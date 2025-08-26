@@ -1,9 +1,0 @@
-{
-	"name": "voyager-app-backend",
-	"version": "0.1.0",
-	"description": "Voyager App Backend With FastAPI",
-	"devDependencies": {
-		"@commitlint/cli": "^19.0.0",
-		"@commitlint/config-conventional": "^19.0.0"
-	}
-}
