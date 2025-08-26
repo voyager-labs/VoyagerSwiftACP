@@ -1,0 +1,40 @@
+[project]
+name = "voyager-app-backend"
+version = "0.1.0"
+description = "Voyager App Backend With FastAPI"
+readme = "README.md"
+requires-python = ">=3.13"
+dependencies = [
+  "fastapi[standard]==0.116.1",
+  "pydantic>=2.11.7",
+  "uvicorn[standard]==0.35.0",
+]
+
+[dependency-groups]
+dev = [
+  "mypy>=1.17.1",
+  "ruff>=0.7.0",
+]
+
+[tool.ruff]
+line-length = 100
+target-version = "py313"
+
+[tool.ruff.lint]
+select = ["FAST"]
+extend-select = ["I"]
+
+[tool.ruff.format]
+quote-style = "double"
+indent-style = "space"
+line-ending = "lf"
+skip-magic-trailing-comma = false
+
+[tool.mypy]
+python_version = "3.13"
+disallow_any_expr = true
+warn_unused_configs = true
+disallow_untyped_defs = true
+disallow_incomplete_defs = true
+check_untyped_defs = true
+disallow_untyped_decorators = true

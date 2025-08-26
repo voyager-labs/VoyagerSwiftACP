@@ -1,0 +1,27 @@
+{
+	"editor.formatOnSave": true,
+	"[python]": {
+		"editor.defaultFormatter": "charliermarsh.ruff",
+		"editor.codeActionsOnSave": {
+			"source.organizeImports": "explicit"
+		}
+	},
+	"[toml]": {
+		"editor.defaultFormatter": "tamasfe.even-better-toml"
+	},
+	"notebook.formatOnSave.enabled": true,
+	"mypy-type-checker.args": ["--python-version=3.13", "--pretty"],
+	"cSpell.customDictionaries": {
+		"custom-dictionary-workspace": {
+			"name": "custom-dictionary-workspace",
+			"path": "${workspaceFolder:voyager-app-backend}/.cspell/custom-dictionary-workspace.txt",
+			"addWords": true,
+			"scope": "workspace"
+		}
+	},
+	"explorer.fileNesting.enabled": true,
+	"explorer.fileNesting.patterns": {
+		"README.md": ".*, pyproject.toml, uv.lock, *.json"
+	},
+	"evenBetterToml.taplo.configFile.path": ".taplo.toml"
+}
