@@ -23,5 +23,11 @@
 3. **개발 서버 실행**
 
    ```bash
-   uv run fastapi dev
+   uv run dev
+   ```
+
+4. **프로덕션 서버 실행**
+
+   ```bash
+   uv run prod
    ```
