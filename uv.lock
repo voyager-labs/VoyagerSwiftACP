@@ -1081,7 +1081,7 @@ wheels = [
 [[package]]
 name = "voyager-app-backend"
 version = "0.1.0"
-source = { virtual = "." }
+source = { editable = "." }
 dependencies = [
     { name = "fastapi", extra = ["standard"] },
     { name = "hydra-core" },
