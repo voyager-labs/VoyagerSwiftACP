@@ -1,0 +1,50 @@
+---
+alwaysApply: true
+description: 'Architecture overview: high-level structure and data flow of the backend.'
+---
+
+# Architecture Overview (High-level)
+
+This document replaces per-module rules for the crawler with a high-level project structure view. Module-specific rules may be reintroduced later when needed.
+
+## Layers & Key Modules
+
+- App/API
+
+  - [src/app/main.py](mdc:src/app/main.py): FastAPI app, lifespan loads config and emits startup banner.
+  - [src/app/cli.py](mdc:src/app/cli.py): `dev`/`prod` wrappers for `fastapi dev/run` with `APP_ENV`.
+
+- Configuration
+
+  - [src/app/config.py](mdc:src/app/config.py): dotenv + Hydra composition, exposes `cfg`.
+  - [src/conf/config.yaml](mdc:src/conf/config.yaml), env: [dev.yaml](mdc:src/conf/env/dev.yaml), [prod.yaml](mdc:src/conf/env/prod.yaml).
+
+- Core (Domain)
+
+  - File Crawler: [src/core/file_crawler/extractor.py](mdc:src/core/file_crawler/extractor.py), [models.py](mdc:src/core/file_crawler/models.py).
+  - AI (planned): embeddings, LLM orchestration, chunking using LangChain.
+  - Services (planned): indexing/search orchestration, pipelines.
+
+- Infra (planned)
+
+  - DB repositories, storage adapters, external services.
+
+- Utils
+  - [src/utils/paths.py](mdc:src/utils/paths.py): project root/source detection, path helpers.
+
+## Data Flow (planned end-to-end)
+
+1. Root selection → file traversal (crawler) → metadata extraction.
+2. Text extraction/chunking (AI pipeline) → embedding batches.
+3. Vector store write (Qdrant) + metadata/payload indexing (SQLite planned for meta store).
+4. Query handling: NL → structured filters → multi-query embeddings → vector search (+filters) → result post-processing.
+
+## Cross-cutting Policies
+
+- Configuration-first: all environment-dependent behavior comes from Hydra config.
+- Logging: no secrets in logs; banner shows only non-sensitive metadata.
+- Error handling: crawler skips permission/missing entries; pipelines prefer fail-soft per item.
+
+## Future Rule Split (when needed)
+
+- Introduce module-specific rules for: Embeddings, Qdrant, SQLite meta store, pipelines, and CLI contracts when components stabilize.

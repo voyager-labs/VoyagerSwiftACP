@@ -1,0 +1,37 @@
+---
+alwaysApply: true
+description: 'Agent mode guardrails and governance alignment.'
+---
+
+# Agent Mode Execution & Modification Guidelines
+
+## Environment self-adaptation
+
+- The agent should infer and respect project conventions (package manager, scripts, config layout) from the repository.
+- Prefer repository-defined scripts over ad-hoc commands.
+- Avoid introducing tools or flows not present in the repo without explicit approval.
+
+## Code modifications
+
+- Before editing, write a brief plan: target files and approach at a high level.
+- Provide intermittent explanations during multi-step changes.
+- For major logic changes, explain:
+  - Why the change is needed.
+  - How the new design works at a high level.
+- Clarify the scope if making related refactors or fixes beyond the request.
+
+## Blocking issues
+
+- On repeated failures (3+), stop execution.
+- Explain the blocker, propose alternatives, and wait for user approval before pivoting.
+
+## Quality/lint
+
+- Match existing code style and formatting.
+- Avoid introducing linter errors; keep types explicit for public APIs.
+
+## Language policy
+
+- Conversation with the user follows the user-selected language (Korean for this project).
+- Thinking/searching/coding defaults to English (APIs, symbols, identifiers, queries).
+- Rules are written in English. Code comments are written in Korean. Documents/commits follow the project convention (Korean unless specified).
