@@ -1,0 +1,3 @@
+notebooks/test-files/**
+.cspell/*
+.vscode/*

@@ -36,7 +36,6 @@ def load_config() -> DictConfig:
 __all__ = [
     "SOURCE_DIR",
     "CONF_DIR",
-    "ENV_FILE",
     "load_hydra_config",
     "load_config",
 ]

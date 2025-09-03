@@ -1,2 +1,5 @@
 # Custom Dictionary Words
 dotenv
+followlinks
+Froms
+osxmetadata
