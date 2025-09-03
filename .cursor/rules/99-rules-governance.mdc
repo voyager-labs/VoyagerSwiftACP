@@ -1,0 +1,37 @@
+---
+alwaysApply: true
+description: 'Rule-first development, sync triggers, and quality bar.'
+---
+
+# Rules Governance
+
+## Core principles
+
+- Rule-first development: read relevant rules before coding; follow existing patterns.
+- Automatic synchronization: when code changes affect rules, update the rules in the same PR.
+
+## Mandatory actions
+
+- Before development: review rules and verify alignment.
+- During development: update rules for any new patterns; keep examples accurate.
+- After development: add valuable implementations as examples; verify currency.
+
+## Update triggers
+
+- New components/features/patterns.
+- Project structure/architecture changes.
+- Dependencies/tech stack changes.
+- Naming conventions/coding standards changes.
+
+## Quality standards
+
+- Accuracy 100% with current codebase.
+- Clarity: specific and actionable guidance.
+- Consistency: uniform style across rules.
+- Currency: reflect latest project state.
+
+## Language policy
+
+- Conversation with the user follows the user-selected language.
+- Thinking/searching/coding defaults to English (APIs, symbols, identifiers, queries).
+- Rules are written in English. Code comments are written in Korean. Documents/commits follow the project convention (Korean unless specified).
