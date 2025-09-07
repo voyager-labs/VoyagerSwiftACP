@@ -1,65 +1,50 @@
-import nltk
-# nltk.download('averaged_perceptron_tagger')
-import traceback
 import os
-import chardet
-import magic
-from langchain_docling import DoclingLoader
 from langchain_unstructured.document_loaders import UnstructuredLoader
-from langchain_pymupdf4llm import PyMuPDF4LLMLoader
-from langchain_community.document_loaders.pdf import ZeroxPDFLoader
+from langchain_teddynote.document_loaders import HWPLoader
 from langchain_community.document_loaders import (
-    DirectoryLoader,
     TextLoader,
     PyMuPDFLoader,
-    UnstructuredPowerPointLoader,
     Docx2txtLoader,
-    DataFrameLoader,
     CSVLoader,
-    UnstructuredCSVLoader,
-    PolarsDataFrameLoader,
-    UnstructuredExcelLoader,
-    UnstructuredTSVLoader,
-    UnstructuredWordDocumentLoader,
-    PyMuPDFLoader,
-    PDFMinerLoader,
-    PDFPlumberLoader,
-    PyPDFLoader,
-    PyPDFDirectoryLoader,
-    PyPDFium2Loader,
-    UnstructuredPDFLoader,
-    UnstructuredTSVLoader,
-    UnstructuredOrgModeLoader,
-    UnstructuredMarkdownLoader
 )
+from .enhanced_router import load_with_router
+
+class EnhancedRouterLoader:
+    def __init__(self, path, mode="paged", strategy="fast", hi_res_model_disabled=True):
+        self.path = path
+        self.mode = mode
+        # strategy, hi_res_model_disabled는 현재 load_with_router에서 사용하지 않음
+
+    def load(self):
+        return load_with_router(self.path, mode=self.mode)
 
 EXT_LOADER_ROUTER = {
     ".txt": TextLoader,
     ".md": TextLoader,
+    ".org": TextLoader,
+    ".docx": Docx2txtLoader,
+    ".doc": EnhancedRouterLoader,
     ".pdf": PyMuPDFLoader,
-    ".docx": UnstructuredWordDocumentLoader,
-    ".xlsx": DoclingLoader,
-    ".csv": TextLoader,
-    ".tsv": UnstructuredTSVLoader,
-    ".pptx": UnstructuredPowerPointLoader,
-    ".ppt": UnstructuredPowerPointLoader,
-    ".xls": DoclingLoader,
-    ".tsv": UnstructuredTSVLoader,
-    ".org": UnstructuredOrgModeLoader
+    ".xlsx": EnhancedRouterLoader,
+    ".xls": EnhancedRouterLoader,
+    ".csv": CSVLoader,
+    ".tsv": CSVLoader,
+    ".pptx": EnhancedRouterLoader,
+    ".ppt": EnhancedRouterLoader,
+    ".hwp": HWPLoader,
+    ".rtf": TextLoader
 }
 
 def get_loader(path):
     ext = os.path.splitext(path)[1].lower()
+    # fallback 로더로 사용
     loader_cls = EXT_LOADER_ROUTER.get(ext, UnstructuredLoader)
 
     if ext == ".txt":
-        # TextLoader는 encoding 파라미터 사용
-        return loader_cls(path, encoding="utf-8")  # 또는 encoding=None
+        return loader_cls(path, encoding="utf-8")
     elif ext == ".csv":
-        # CSVLoader는 autodetect_encoding 파라미터 사용
         return loader_cls(path, autodetect_encoding=True)
     else:
-        # 그 외는 인코딩 없이 Loader 인스턴스 생성
         return loader_cls(path)
 
 
@@ -76,7 +61,6 @@ def get_file_paths(folder_path):
 def connect_loader(folder_path, extensions=None):
     docs = []
     failed_files = []
-    # fallback_count = 0
     file_paths = get_file_paths(folder_path)
     for file_path in file_paths:
         ext = os.path.splitext(file_path)[1].lower()
@@ -85,10 +69,9 @@ def connect_loader(folder_path, extensions=None):
         loader = get_loader(file_path)
         try:
             loaded = loader.load()
-            docs.extend(loaded)
+            docs.append(loaded)
         except Exception as e:
             print(f"[ERROR] 파일 로드 실패: {file_path} ({type(e).__name__}) - {e}")
-            # traceback.print_exc()
             failed_files.append(file_path)
             continue
     return docs, failed_files
