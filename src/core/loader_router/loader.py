@@ -7,18 +7,32 @@ from langchain_community.document_loaders import (
     Docx2txtLoader,
     CSVLoader,
 )
-from .enhanced_router import load_with_router
+from langchain_core.documents import Document
+from .enhanced_router import load_document_with_router
+from pathlib import Path
+from typing import List, Tuple, Dict, Union
+from omegaconf import DictConfig
 
 class EnhancedRouterLoader:
-    def __init__(self, path, mode="paged", strategy="fast", hi_res_model_disabled=True):
+    def __init__(self, path: str, cfg: DictConfig, mode: str="paged"):
         self.path = path
+        self.cfg = cfg
         self.mode = mode
-        # strategy, hi_res_model_disabled는 현재 load_with_router에서 사용하지 않음
 
-    def load(self):
-        return load_with_router(self.path, mode=self.mode)
+    def load(self) -> List[Document]:
+        return load_document_with_router(Path(self.path), self.cfg)
 
-EXT_LOADER_ROUTER = {
+LoaderType = Union[
+    TextLoader,
+    PyMuPDFLoader,
+    Docx2txtLoader,
+    CSVLoader,
+    HWPLoader,
+    EnhancedRouterLoader,
+    UnstructuredLoader
+]
+
+EXT_LOADER_ROUTER: Dict[str, type[LoaderType]] = {
     ".txt": TextLoader,
     ".md": TextLoader,
     ".org": TextLoader,
@@ -35,38 +49,42 @@ EXT_LOADER_ROUTER = {
     ".rtf": TextLoader
 }
 
-def get_loader(path):
+def get_loader(path: str, cfg: DictConfig) -> LoaderType:
     ext = os.path.splitext(path)[1].lower()
     # fallback 로더로 사용
     loader_cls = EXT_LOADER_ROUTER.get(ext, UnstructuredLoader)
 
-    if ext == ".txt":
-        return loader_cls(path, encoding="utf-8")
-    elif ext == ".csv":
-        return loader_cls(path, autodetect_encoding=True)
+    loader_kwargs = {
+        ".txt": {"encoding": "utf-8"},
+        ".csv": {"autodetect_encoding": True},
+    }
+    
+    kwargs = loader_kwargs.get(ext, {})
+    
+    # EnhancedRouterLoader는 cfg가 필요함
+    if loader_cls == EnhancedRouterLoader:
+        return loader_cls(path, cfg, **kwargs)
     else:
-        return loader_cls(path)
-
+        return loader_cls(path, **kwargs)
 
 # 폴더 내 모든 파일 경로 수집
-def get_file_paths(folder_path):
-    file_paths = []
+def get_file_paths(folder_path: str) -> List[str]:
+    file_paths: List[str] = []
     for file in os.listdir(folder_path):
         full_path = os.path.join(folder_path, file)
         if os.path.isfile(full_path):
             file_paths.append(full_path)
     return file_paths
 
-
-def connect_loader(folder_path, extensions=None):
-    docs = []
-    failed_files = []
+def connect_loader(folder_path: str, cfg: DictConfig, extensions: List[str] = []) -> Tuple[List[List[Document]], List[str]]:
+    docs: List[List[Document]] = []
+    failed_files: List[str] = []
     file_paths = get_file_paths(folder_path)
     for file_path in file_paths:
         ext = os.path.splitext(file_path)[1].lower()
-        if extensions is not None and ext not in extensions:
+        if ext not in extensions:
             continue  # 지정한 확장자가 아니면 스킵
-        loader = get_loader(file_path)
+        loader = get_loader(file_path, cfg)
         try:
             loaded = loader.load()
             docs.append(loaded)
