@@ -16,6 +16,5 @@ llm:
     embedding_model: text-embedding-3-small
     timeout_s: 30
 
-# LibreOffice 설정
 libreoffice:
-    soffice_path: ${oc.env:SOFFICE, "../../resources/LibreOffice.app/Contents/MacOS/soffice"}
+    soffice_path: "../../resources/LibreOffice.app/Contents/MacOS/soffice"
