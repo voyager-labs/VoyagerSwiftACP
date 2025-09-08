@@ -1,17 +1,21 @@
 defaults:
-  - env: dev
-  - _self_
+    - env: dev
+    - _self_
 
 app:
-  name: voyager
-  env: ${env.name}
+    name: voyager
+    env: ${env.name}
 
 llm:
-  provider: openai
-  api_key: ${oc.env:OPENAI_API_KEY, ""}
-  org_id: ${oc.env:OPENAI_ORG_ID, ""}
-  project: ${oc.env:OPENAI_PROJECT, ""}
+    provider: openai
+    api_key: ${oc.env:OPENAI_API_KEY, ""}
+    org_id: ${oc.env:OPENAI_ORG_ID, ""}
+    project: ${oc.env:OPENAI_PROJECT, ""}
 
-  chat_model: gpt-5-nano
-  embedding_model: text-embedding-3-small
-  timeout_s: 30
+    chat_model: gpt-5-nano
+    embedding_model: text-embedding-3-small
+    timeout_s: 30
+
+# LibreOffice 설정
+libreoffice:
+    soffice_path: ${oc.env:SOFFICE, "../../resources/LibreOffice.app/Contents/MacOS/soffice"}
