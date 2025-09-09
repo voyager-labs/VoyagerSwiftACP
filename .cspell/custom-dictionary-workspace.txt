@@ -1,5 +1,12 @@
 # Custom Dictionary Words
 dotenv
+fastapi
 followlinks
 Froms
+ipykernel
 osxmetadata
+pydantic
+pyproject
+pyright
+uvicorn
+venv

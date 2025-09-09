@@ -17,7 +17,7 @@
 2. **의존성 설치**
 
    ```bash
-   uv sync
+   uv sync && uv run pre-commit install
    ```
 
 3. **개발 서버 실행**
