@@ -24,9 +24,9 @@ def init_engine(cfg: DictConfig) -> None:
     if _engine is not None:
         return
 
-    file_name: str = str(cfg.sqlite.file)
-    echo: bool = bool(cfg.sqlite.echo)
-    check_same_thread: bool = bool(cfg.sqlite.check_same_thread)
+    file_name: str = str(cfg.db.file)
+    echo: bool = bool(cfg.db.echo)
+    check_same_thread: bool = bool(cfg.db.check_same_thread)
 
     def _creator() -> Any:  # pragma: no cover
         conn = sqlite3.connect(file_name, check_same_thread=check_same_thread)
@@ -44,7 +44,7 @@ def init_engine(cfg: DictConfig) -> None:
             pass
         return conn
 
-    engine: Engine = create_engine("sqlite://", echo=echo, creator=_creator)
+    engine: Engine = create_engine(str(cfg.db.url), echo=echo, creator=_creator)
 
     SessionLocal = sessionmaker(bind=engine, class_=Session, expire_on_commit=False)
     _engine = engine

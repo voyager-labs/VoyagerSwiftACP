@@ -1,2 +1,5 @@
-name: dev
-debug: true
+# @package _global_
+
+app:
+  env: dev
+  debug: true

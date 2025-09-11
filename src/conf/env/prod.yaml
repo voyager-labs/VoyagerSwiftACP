@@ -1,2 +1,5 @@
-name: prod
-debug: false
+# @package _global_
+
+app:
+  env: prod
+  debug: false
