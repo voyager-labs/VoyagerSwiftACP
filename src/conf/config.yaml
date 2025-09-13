@@ -1,10 +1,10 @@
 defaults:
   - env: dev
+  - db: sqlite
   - _self_
 
 app:
   name: voyager
-  env: ${env.name}
 
 llm:
   provider: openai
