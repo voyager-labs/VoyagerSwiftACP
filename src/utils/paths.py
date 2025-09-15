@@ -22,3 +22,26 @@ def calculate_depth_from_home(file_path: Path) -> int:
     except ValueError:
         # 파일이 HOME 디렉토리 하위에 없는 경우
         return -1
+
+
+def get_relative_path_from_home(file_path: Path) -> str | None:
+    """HOME 디렉토리 기준 상대 경로를 ~/... 형태로 반환합니다.
+
+    Args:
+        file_path: 절대 경로가 아닌 경우 resolve()하여 처리
+
+    Returns:
+        HOME 디렉토리 하위에 있으면 ~/... 형태 경로 문자열, 아니면 None
+
+    Examples:
+        ~/Documents/project/file.txt
+        ~/Desktop/test.py
+    """
+    home_path = Path.home()
+    resolved_path = file_path.resolve()
+    try:
+        relative_path = resolved_path.relative_to(home_path)
+        return f"~/{relative_path}"
+    except ValueError:
+        # 파일이 HOME 디렉토리 하위에 없는 경우
+        return None

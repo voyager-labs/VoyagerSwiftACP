@@ -6,7 +6,7 @@ import threading
 from pathlib import Path
 from typing import Generator, Iterable, Literal
 
-from core.file_crawler.models import VoyagerFileMeta
+from .models import VoyagerOSXMetaData
 
 
 def _process_directory_entry(
@@ -99,25 +99,30 @@ def walk_files_concurrently(root: Path) -> Generator[Path]:
         yield item
 
 
-def to_voyager_file_meta(
+def convert_path_stat_osxmetadata(
     items: Iterable[Path],
     *,
     on_error: Literal["log", "skip", "raise"] = "log",
-) -> Generator[VoyagerFileMeta, None, None]:
-    """Path → VoyagerFileMeta 제너레이터 변환.
+) -> Generator[tuple[Path, os.stat_result, VoyagerOSXMetaData]]:
+    """Path → (Path, stat, OSX 메타데이터) 제너레이터 변환
 
-    - 입력: Iterable[Path]. 디렉토리는 조용히 스킵합니다.
-    - on_error 정책:
-      - "log": FileNotFoundError/PermissionError는 warning, 그 외 예외는 error(exc_info=True)로 로깅 후 스킵
-      - "skip": 로깅 없이 스킵
-      - "raise": 예외를 전파하여 스트림을 중단
-    - logger: 사용자 지정 로거 사용 가능(미지정 시 "voyager.pipeline").
-    - 반환: `VoyagerFileMeta` 항목을 순차적으로 생성하는 제너레이터.
+    동작
+    - 입력: Iterable[Path]. 디렉토리는 스킵(파일만 대상), 심볼릭 링크는 무시.
+    - 각 항목에 대해 `path.stat()`과 `VoyagerOSXMetaData(str(path))`를 생성하여
+      `(Path, os.stat_result, VoyagerOSXMetaData)` 튜플로 `yield`합니다.
+
+    예외 처리(on_error)
+    - "log": FileNotFoundError/PermissionError는 warning, 그 외 예외는 error(exc_info=True)로 로깅 후 스킵.
+    - "skip": 로깅 없이 해당 항목만 스킵.
+    - "raise": 예외를 전파하여 스트림을 중단.
+
+    반환
+    - 각 파일마다 `(Path, os.stat_result, VoyagerOSXMetaData)` 튜플을 순차적으로 생성하는 제너레이터.
     """
     # TODO: logger 세팅
     for path in items:
         try:
-            yield VoyagerFileMeta.from_file_path(path)
+            yield path, path.stat(), VoyagerOSXMetaData(str(path))
         except (FileNotFoundError, PermissionError) as e:
             if on_error == "raise":
                 raise

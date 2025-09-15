@@ -1,8 +1,6 @@
-from .extractor import to_voyager_file_meta, walk_files_concurrently
-from .models import VoyagerFileMeta
+from .extractor import convert_path_stat_osxmetadata, walk_files_concurrently
 
 __all__ = [
-    "to_voyager_file_meta",
+    "convert_path_stat_osxmetadata",
     "walk_files_concurrently",
-    "VoyagerFileMeta",
 ]

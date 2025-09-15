@@ -1,12 +1,15 @@
 # Custom Dictionary Words
+birthtime
 dotenv
 fastapi
 followlinks
 Froms
 ipykernel
+nlink
 osxmetadata
 pydantic
 pyproject
 pyright
+sessionmaker
 uvicorn
 venv
