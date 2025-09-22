@@ -7,4 +7,4 @@ file_map:
   prod: ~/.voyager/voyager.db # TODO: 앱 배포시 파일 경로 재확인 필요
 
 file: ${oc.select:db.file_map.${app.env}, ${db.file_map.dev}}
-url: ${db.driver}://
+protocol: ${db.driver}://

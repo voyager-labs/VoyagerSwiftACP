@@ -10,6 +10,9 @@ osxmetadata
 pydantic
 pyproject
 pyright
+repr
 sessionmaker
+sqlalchemy
+sqlmodel
 uvicorn
 venv

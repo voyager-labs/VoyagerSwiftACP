@@ -7,7 +7,7 @@ from sqlalchemy.sql.schema import Table
 from sqlmodel import Session, select
 from sqlmodel.sql.expression import SelectOfScalar
 
-from infra.db.engine import get_max_variables
+from infra.db.engine import engine_manager
 from infra.schemas.file_entry_schema import FileEntrySchema
 
 
@@ -121,7 +121,7 @@ class FileEntriesRepository:
         insert_cols = [c for c in table.c if c.name != "id"]
 
         # SQLite 변수 한도는 엔진 초기화 시 캐시된 값을 사용
-        max_vars = get_max_variables()
+        max_vars = engine_manager.max_variables
 
         num_cols = max(1, len(insert_cols))
         max_rows_per_stmt = max(1, (max_vars // num_cols))

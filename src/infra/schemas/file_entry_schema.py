@@ -29,10 +29,8 @@ class FileEntrySchema(SQLModel, table=True):
     size: int = Field(index=True, description="파일 크기 (st_size)")
     dev_id: int | None = Field(default=None, description="Device id (st_dev)")
     inode: int | None = Field(default=None, description="플랫폼 inode (st_ino)")
-    mode: int = Field(description="POSIX 파일 모드 (st_mode)")
     owner_uid: int = Field(description="소유자 사용자 ID (st_uid)")
     owner_gid: int = Field(description="소유자 그룹 ID (st_gid)")
-    nlink: int = Field(description="하드 링크 수 (st_nlink)")
     uniform_type_identifier: str | None = Field(
         default=None, index=True, description="유니폼 타입 식별자 (kMDItemContentType)"
     )
@@ -40,7 +38,6 @@ class FileEntrySchema(SQLModel, table=True):
     is_invisible: bool = Field(
         default=False, index=True, description="숨김 파일 여부 (kMDItemFSInvisible)"
     )
-    where_from: str | None = Field(default=None, description="파일 출처 (kMDItemWhereFroms)")
 
     # Timestamps
     creation_date: datetime = Field(description="파일 생성 시간 (kMDItemFSCreationDate)")
@@ -58,8 +55,8 @@ class FileEntrySchema(SQLModel, table=True):
     birthtime: datetime | None = Field(default=None, description="OS 생성 시간 (st_birthtime)")
 
     # JSON blobs
-    finder_tags: list[str] = Field(
-        sa_column=Column(JSON), description="Finder 파일 태그 (_kMDItemUserTags)"
+    original_stat: dict[str, Any] = Field(
+        sa_column=Column(JSON), description="원본 파일 정보 (os.stat_result)"
     )
     original_metadata: dict[str, Any] = Field(
         sa_column=Column(JSON), description="원본 메타데이터 (OSXMetaData)"
