@@ -1,0 +1,3 @@
+tokenization:
+  encoder: "o200k_base"
+  max_tokens: 8191

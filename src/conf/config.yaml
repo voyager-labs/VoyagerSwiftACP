@@ -1,6 +1,8 @@
 defaults:
   - env: dev
   - db: sqlite
+  - processing/chunking
+  - processing/tokenization
   - _self_
 
 app:
@@ -18,3 +20,7 @@ llm:
 
 libreoffice:
   soffice_path: "../../resources/LibreOffice.app/Contents/MacOS/soffice"
+
+# 하위 그룹으로 구성된 설정을 루트에서도 동일 키로 참조 가능하게 별칭 제공
+chunking: ${processing.chunking}
+tokenization: ${processing.tokenization}
