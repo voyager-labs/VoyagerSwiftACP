@@ -23,5 +23,13 @@
 	"explorer.fileNesting.patterns": {
 		"README.md": ".*, pyproject.toml, uv.lock, *.json"
 	},
+  "files.exclude": {
+    "**/*cache": true,
+    "**/__pycache__": true,
+    ".venv": true,
+  },
+	"search.exclude": {
+		"notebooks/test-files": true
+	},
 	"evenBetterToml.taplo.configFile.path": ".taplo.toml"
 }

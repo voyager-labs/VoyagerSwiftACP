@@ -1,0 +1,10 @@
+driver: sqlite
+echo: ${app.debug}
+check_same_thread: false
+
+file_map:
+  dev: voyager.dev.db
+  prod: ~/.voyager/voyager.db # TODO: 앱 배포시 파일 경로 재확인 필요
+
+file: ${oc.select:db.file_map.${app.env}, ${db.file_map.dev}}
+protocol: ${db.driver}://

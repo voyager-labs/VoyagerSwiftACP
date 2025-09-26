@@ -1,0 +1,26 @@
+defaults:
+  - env: dev
+  - db: sqlite
+  - processing/chunking
+  - processing/tokenization
+  - _self_
+
+app:
+  name: voyager
+
+llm:
+  provider: openai
+  api_key: ${oc.env:OPENAI_API_KEY, ""}
+  org_id: ${oc.env:OPENAI_ORG_ID, ""}
+  project: ${oc.env:OPENAI_PROJECT, ""}
+
+  chat_model: gpt-5-nano
+  embedding_model: text-embedding-3-small
+  timeout_s: 30
+
+libreoffice:
+  soffice_path: "../../resources/LibreOffice.app/Contents/MacOS/soffice"
+
+# 하위 그룹으로 구성된 설정을 루트에서도 동일 키로 참조 가능하게 별칭 제공
+chunking: ${processing.chunking}
+tokenization: ${processing.tokenization}

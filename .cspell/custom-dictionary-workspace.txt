@@ -1,1 +1,18 @@
 # Custom Dictionary Words
+birthtime
+dotenv
+fastapi
+followlinks
+Froms
+ipykernel
+nlink
+osxmetadata
+pydantic
+pyproject
+pyright
+repr
+sessionmaker
+sqlalchemy
+sqlmodel
+uvicorn
+venv

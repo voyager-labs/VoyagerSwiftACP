@@ -1,0 +1,19 @@
+chunking:
+  defaults:
+    chunk_size: 800
+    chunk_overlap: 80
+    use_markdown_splitter: false
+  per_ext:
+    .md: { chunk_size: 1200, chunk_overlap: 120, use_markdown_splitter: true }
+    .pdf: { chunk_size: 1000, chunk_overlap: 100 }
+    .docx: { chunk_size: 1000, chunk_overlap: 150 }
+    .doc: { chunk_size: 1000, chunk_overlap: 150 }
+    .xlsx: { chunk_size: 500, chunk_overlap: 50 }
+    .xls: { chunk_size: 500, chunk_overlap: 50 }
+    .csv: { chunk_size: 300, chunk_overlap: 30 }
+    .tsv: { chunk_size: 300, chunk_overlap: 30 }
+    .pptx: { chunk_size: 800, chunk_overlap: 100 }
+    .ppt: { chunk_size: 800, chunk_overlap: 100 }
+    .hwp: { chunk_size: 1000, chunk_overlap: 100 }
+    .rtf: { chunk_size: 800, chunk_overlap: 80 }
+    .txt: { chunk_size: 800, chunk_overlap: 80 }
