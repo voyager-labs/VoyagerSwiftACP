@@ -1,35 +1,47 @@
 {
-	"editor.formatOnSave": true,
-	"[python]": {
-		"editor.defaultFormatter": "charliermarsh.ruff",
-		"editor.codeActionsOnSave": {
-			"source.organizeImports": "explicit"
-		}
-	},
-	"[toml]": {
-		"editor.defaultFormatter": "tamasfe.even-better-toml"
-	},
-	"notebook.formatOnSave.enabled": true,
-	"mypy-type-checker.args": ["--python-version=3.13", "--pretty"],
-	"cSpell.customDictionaries": {
-		"custom-dictionary-workspace": {
-			"name": "custom-dictionary-workspace",
-			"path": "${workspaceFolder:voyager-app-backend}/.cspell/custom-dictionary-workspace.txt",
-			"addWords": true,
-			"scope": "workspace"
-		}
-	},
-	"explorer.fileNesting.enabled": true,
-	"explorer.fileNesting.patterns": {
-		"README.md": ".*, pyproject.toml, uv.lock, *.json"
-	},
+  "editor.formatOnSave": true,
+  "[python]": {
+    "editor.defaultFormatter": "charliermarsh.ruff",
+    "editor.codeActionsOnSave": {
+      "source.organizeImports": "explicit"
+    }
+  },
+  "[toml]": {
+    "editor.defaultFormatter": "tamasfe.even-better-toml"
+  },
+  "[swift]": {
+    "editor.formatOnSave": true,
+    "editor.defaultFormatter": "vknabel.vscode-swiftformat"
+  },
+  "swiftformat.enable": true,
+  "swiftformat.configSearchPaths": [
+    "${workspaceFolder}/apps/macos/Voyager/.swiftformat"
+  ],
+  "swiftformat.path": "/opt/homebrew/bin/swiftformat",
+  "swiftlint.enable": true,
+  "swiftlint.configPath": "${workspaceFolder}/apps/macos/Voyager/.swiftlint.yml",
+  "swiftlint.path": "/opt/homebrew/bin/swiftlint",
+  "notebook.formatOnSave.enabled": true,
+  "mypy-type-checker.args": ["--python-version=3.13", "--pretty"],
+  "cSpell.customDictionaries": {
+    "custom-dictionary-workspace": {
+      "name": "custom-dictionary-workspace",
+      "path": "${workspaceFolder:voyager-app-backend}/.cspell/custom-dictionary-workspace.txt",
+      "addWords": true,
+      "scope": "workspace"
+    }
+  },
+  "explorer.fileNesting.enabled": true,
+  "explorer.fileNesting.patterns": {
+    "README.md": ".*, pyproject.toml, uv.lock, *.json"
+  },
   "files.exclude": {
     "**/*cache": true,
     "**/__pycache__": true,
-    ".venv": true,
+    ".venv": true
   },
-	"search.exclude": {
-		"notebooks/test-files": true
-	},
-	"evenBetterToml.taplo.configFile.path": ".taplo.toml"
+  "search.exclude": {
+    "notebooks/test-files": true
+  },
+  "evenBetterToml.taplo.configFile.path": ".taplo.toml"
 }

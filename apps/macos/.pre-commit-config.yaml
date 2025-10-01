@@ -1,0 +1,31 @@
+repos:
+  # SwiftLint: Swift 코드 린팅
+  - repo: local
+    hooks:
+      - id: swiftlint
+        name: SwiftLint
+        entry: swiftlint
+        args: ["--strict"]
+        language: system
+        files: "\\.swift$"
+
+  # SwiftFormat: Swift 코드 포맷팅
+  - repo: local
+    hooks:
+      - id: swiftformat
+        name: SwiftFormat
+        entry: swiftformat
+        args: ["--lint", "--inferoptions"]
+        language: system
+        files: "\\.swift$"
+
+  # Swift 패키지 의존성 동기화 (선택사항)
+  - repo: local
+    hooks:
+      - id: swift-package-resolve
+        name: Swift Package Resolve
+        entry: xcodebuild
+        args: ["-resolvePackageDependencies"]
+        language: system
+        files: "\\.(xcodeproj|xcworkspace)$"
+        stages: [pre-push]

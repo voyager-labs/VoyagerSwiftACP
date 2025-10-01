@@ -1,0 +1,10 @@
+--indent 4
+--tabwidth 4
+--maxwidth 120
+--trimwhitespace always
+--commas always
+--semicolons never
+--ranges spaced
+--closingparen balanced
+--header strip
+--self remove

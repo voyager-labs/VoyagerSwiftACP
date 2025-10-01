@@ -19,7 +19,24 @@ wheels/
 coverage.xml
 /.coverage*
 
+# Xcode
+.build/
+xcuserdata/
+*.xcodeproj/*
+!*.xcodeproj/project.pbxproj
+!*.xcodeproj/xcshareddata/
+!*.xcodeproj/project.xcworkspace/
+!*.xcworkspace/contents.xcworkspacedata
+/*.gcno
+**/xcshareddata/WorkspaceSettings.xcsettings
+DerivedData/
+*.hmap
+*.dSYM.zip
+*.dSYM
+
 # Environment variables
 .env
 .env*
 !.env.example
+
+.history/

@@ -5,6 +5,9 @@
     "charliermarsh.ruff",
 		"streetsidesoftware.code-spell-checker",
 		"tamasfe.even-better-toml",
-    "editorconfig.editorconfig",
+		"editorconfig.editorconfig",
+		"sweetpad.sweetpad",
+		"vknabel.vscode-swiftformat",
+		"vknabel.vscode-swiftlint",
 	]
 }
