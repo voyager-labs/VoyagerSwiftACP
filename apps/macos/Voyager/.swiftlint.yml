@@ -1,0 +1,141 @@
+# SwiftLint 설정 파일
+# Voyager macOS 앱용 SwiftLint 규칙
+
+# 포함할 파일/디렉토리
+included:
+  - Voyager
+  - VoyagerTests
+  - VoyagerUITests
+  - VoyagerHelper
+
+# 제외할 파일/디렉토리
+excluded:
+  - .build
+  - Packages
+  - Voyager.xcodeproj
+  - Voyager.xcodeproj/xcuserdata
+  - Voyager.xcodeproj/project.xcworkspace/xcuserdata
+
+# 활성화할 규칙들
+opt_in_rules:
+  - array_init
+  - attributes
+  - closure_body_length
+  - closure_end_indentation
+  - closure_spacing
+  - collection_alignment
+  - contains_over_filter_count
+  - contains_over_filter_is_empty
+  - contains_over_first_not_nil
+  - contains_over_range_nil_comparison
+  - discouraged_object_literal
+  - empty_collection_literal
+  - empty_count
+  - empty_string
+  - enum_case_associated_values_count
+  - explicit_init
+  - extension_access_modifier
+  - fallthrough
+  - fatal_error_message
+  - file_name
+  - first_where
+  - force_unwrapping
+  - function_default_parameter_at_end
+  - identical_operands
+  - implicit_return
+  - joined_default_parameter
+  - last_where
+  - legacy_random
+  - literal_expression_end_indentation
+  - lower_acl_than_parent
+  - modifier_order
+  - multiline_arguments
+  - multiline_function_chains
+  - multiline_literal_brackets
+  - multiline_parameters
+  - multiline_parameters_brackets
+  - operator_usage_whitespace
+  - overridden_super_call
+  - pattern_matching_keywords
+  - prefer_self_type_over_type_of_self
+  - prefer_zero_over_explicit_init
+  - prefixed_toplevel_constant
+  - prohibited_interface_builder
+  - prohibited_super_call
+  - quick_discouraged_call
+  - quick_discouraged_focused_test
+  - quick_discouraged_pending_test
+  - redundant_nil_coalescing
+  - redundant_type_annotation
+  - required_enum_case
+  - single_test_class
+  - sorted_first_last
+  - sorted_imports
+  - strong_iboutlet
+  - switch_case_alignment
+  - toggle_bool
+  - unavailable_function
+  - unneeded_parentheses_in_closure_argument
+  - untyped_error_in_catch
+  - vertical_parameter_alignment_on_call
+  - vertical_whitespace_closing_braces
+  - vertical_whitespace_opening_braces
+  - xct_specific_matcher
+  - yoda_condition
+
+# 비활성화할 규칙들
+disabled_rules:
+  - todo
+
+# 규칙별 설정
+line_length:
+  warning: 120
+  error: 200
+  ignores_urls: true
+  ignores_function_declarations: true
+  ignores_comments: true
+
+function_body_length:
+  warning: 50
+  error: 100
+
+function_parameter_count:
+  warning: 6
+  error: 8
+
+type_body_length:
+  warning: 300
+  error: 500
+
+file_length:
+  warning: 500
+  error: 1000
+
+cyclomatic_complexity:
+  warning: 10
+  error: 20
+
+identifier_name:
+  min_length:
+    warning: 2
+    error: 1
+  max_length:
+    warning: 40
+    error: 60
+  excluded:
+    - id
+    - url
+    - uri
+    - api
+    - ui
+    - db
+
+# 린터 실행 옵션
+analyzer_rules:
+  - explicit_self
+  - unused_declaration
+  - unused_import
+  - unused_parameter
+
+# 경고 레벨
+warning_threshold: 10

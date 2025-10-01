@@ -1,0 +1,62 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>SchemeUserState</key>
+	<dict>
+		<key>SWXMLHashPlayground (Playground).xcscheme</key>
+		<dict>
+			<key>orderHint</key>
+			<integer>2</integer>
+		</dict>
+		<key>Voyager.xcscheme_^#shared#^_</key>
+		<dict>
+			<key>orderHint</key>
+			<integer>1</integer>
+		</dict>
+		<key>VoyagerHelper.xcscheme_^#shared#^_</key>
+		<dict>
+			<key>orderHint</key>
+			<integer>0</integer>
+		</dict>
+		<key>voyager.xcscheme_^#shared#^_</key>
+		<dict>
+			<key>orderHint</key>
+			<integer>1</integer>
+		</dict>
+	</dict>
+	<key>SuppressBuildableAutocreation</key>
+	<dict>
+		<key>7E14EDCB2E86622C005AC834</key>
+		<dict>
+			<key>primary</key>
+			<true/>
+		</dict>
+		<key>7E14EDDA2E86622E005AC834</key>
+		<dict>
+			<key>primary</key>
+			<true/>
+		</dict>
+		<key>7E14EDE42E86622E005AC834</key>
+		<dict>
+			<key>primary</key>
+			<true/>
+		</dict>
+		<key>7E14EE222E866E82005AC834</key>
+		<dict>
+			<key>primary</key>
+			<true/>
+		</dict>
+		<key>7E14EE2E2E866E85005AC834</key>
+		<dict>
+			<key>primary</key>
+			<true/>
+		</dict>
+		<key>7E14EE382E866E86005AC834</key>
+		<dict>
+			<key>primary</key>
+			<true/>
+		</dict>
+	</dict>
+</dict>
+</plist>
