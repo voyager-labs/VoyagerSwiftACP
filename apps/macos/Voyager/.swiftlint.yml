@@ -86,6 +86,8 @@ opt_in_rules:
 # 비활성화할 규칙들
 disabled_rules:
   - todo
+  - opening_brace
+  - closure_body_length
 
 # 규칙별 설정
 line_length:
