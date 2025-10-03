@@ -1,8 +1,10 @@
+import Inject
 import SwiftUI
 
 /// 좌측 사이드바 (탭 목록)
 struct SidebarView: View {
     @EnvironmentObject var tabManager: TabManager
+    @ObserveInjection var inject
     @State private var draggingTab: TabViewModel?
     @State private var dragLocation: CGPoint?
     // 중앙 구분선 제거: 행 사이 경계(마지막 핀/첫 언핀)를 사용
@@ -125,6 +127,7 @@ struct SidebarView: View {
             Spacer()
         }
         .frame(minWidth: 200)
+        .enableInjection()
     }
 }
 

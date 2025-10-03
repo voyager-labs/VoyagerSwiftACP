@@ -1,8 +1,10 @@
+import Inject
 import SwiftUI
 
 /// 메인 윈도우 컨테이너 (Arc Browser 스타일)
 struct MainWindowView: View {
     @StateObject private var tabManager = TabManager()
+    @ObserveInjection var inject
 
     var body: some View {
         ZStack(alignment: .leading) {
@@ -12,6 +14,7 @@ struct MainWindowView: View {
         }
         .frame(minWidth: 800, minHeight: 600)
         .focusedSceneValue(\.tabManager, tabManager)
+        .enableInjection()
     }
 
     private var sidebarBackground: some View {
