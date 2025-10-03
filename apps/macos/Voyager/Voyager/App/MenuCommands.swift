@@ -1,3 +1,4 @@
+import AppKit
 import SwiftUI
 
 /// 메뉴바 커맨드 정의
@@ -11,6 +12,17 @@ struct MenuCommands: Commands {
                 tabManager?.createTab()
             }
             .keyboardShortcut("t", modifiers: .command)
+        }
+
+        CommandGroup(replacing: .saveItem) {
+            // 기본 Close/Close All 메뉴들 제거
+        }
+
+        CommandGroup(after: .newItem) {
+            Button("Close Window") {
+                NSApp.sendAction(#selector(NSWindow.performClose(_:)), to: nil, from: nil)
+            }
+            .keyboardShortcut("w", modifiers: [.command, .shift])
 
             Button("Close Tab") {
                 if let selectedID = tabManager?.selectedTabID {
