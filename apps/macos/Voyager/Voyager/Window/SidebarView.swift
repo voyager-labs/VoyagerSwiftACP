@@ -1,3 +1,4 @@
+import Foundation
 import Inject
 import SwiftUI
 
@@ -123,7 +124,6 @@ struct SidebarView: View {
             .buttonStyle(.plain)
             .background(Color.clear)
             .cornerRadius(6)
-
             Spacer()
         }
         .frame(minWidth: 200)
