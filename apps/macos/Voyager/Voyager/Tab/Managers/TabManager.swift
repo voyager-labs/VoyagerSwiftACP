@@ -59,7 +59,7 @@ class TabManager: ObservableObject {
     /// 새 탭 생성
     @discardableResult
     func createTab(currentPath: String? = nil) -> TabViewModel {
-        let path = currentPath ?? SettingManager.shared.defaultTabPath
+        let path = currentPath ?? Settings.shared.defaultTabPath
         return lifecycleManager.createTab(navigationManager: navigationManager, currentPath: path)
     }
 

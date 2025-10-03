@@ -12,7 +12,7 @@ class TabLifecycleManager: ObservableObject {
     @discardableResult
     func createTab(navigationManager: TabNavigationManager, currentPath: String?) -> TabViewModel {
         // 초기 경로를 기반으로 탭 제목 생성
-        let initialPath = currentPath ?? SettingManager.shared.defaultTabPath
+        let initialPath = currentPath ?? Settings.shared.defaultTabPath
         let tabTitle = TabUtils.getDisplayName(for: initialPath)
 
         let newTab = TabModel(title: tabTitle, currentPath: currentPath)
