@@ -8,9 +8,7 @@ class TabHistoryManager: ObservableObject {
     @Published var recentlyClosedTabs: [TabModel] = []
     private let maxRecentTabs = 10
 
-    /// 닫힌 탭을 히스토리에 추가
     func addToHistory(_ tab: TabModel) {
-        // 닫힌 탭을 히스토리에 추가 (최신이 맨 앞에)
         recentlyClosedTabs.insert(tab, at: 0)
 
         // 최대 개수 초과 시 오래된 것 제거
@@ -19,7 +17,6 @@ class TabHistoryManager: ObservableObject {
         }
     }
 
-    /// 최근 닫은 탭을 복원
     @discardableResult
     func restoreRecentlyClosedTab() -> TabModel? {
         guard !recentlyClosedTabs.isEmpty else { return nil }

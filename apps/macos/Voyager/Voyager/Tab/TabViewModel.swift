@@ -2,7 +2,6 @@ import Combine
 import Foundation
 import SwiftUI
 
-/// 개별 탭의 어댑터 (Model ↔ View 연결)
 @MainActor
 class TabViewModel: ObservableObject, Identifiable {
     @Published private(set) var tab: TabModel
@@ -11,30 +10,69 @@ class TabViewModel: ObservableObject, Identifiable {
     var title: String { tab.title }
     var isPinned: Bool { tab.isPinned }
     var currentPath: String? { tab.currentPath }
+    var navigationHistory: [String] { tab.navigationHistory }
+    var currentHistoryIndex: Int { tab.currentHistoryIndex }
 
     init(tab: TabModel) {
         self.tab = tab
     }
 
-    /// 탭 제목 업데이트
     func updateTitle(_ newTitle: String) {
-        tab.title = newTitle
+        TabStateManager.shared.updateTabTitle(for: &tab, newTitle: newTitle)
         objectWillChange.send()
     }
 
-    /// 탭 경로 업데이트
     func updatePath(_ newPath: String?) {
-        tab.currentPath = newPath
+        TabStateManager.shared.updateTabPath(for: &tab, newPath: newPath)
         objectWillChange.send()
     }
 
-    /// 탭 핀 상태 토글
     func togglePin() {
-        tab.isPinned.toggle()
+        TabStateManager.shared.toggleTabPin(for: &tab)
         objectWillChange.send()
     }
 
-    /// 현재 스냅샷을 반환 (히스토리 저장용)
+    func goBack() -> String? {
+        let result = TabNavigationManager.shared.goBack(for: &tab)
+        objectWillChange.send()
+        return result
+    }
+
+    func goForward() -> String? {
+        let result = TabNavigationManager.shared.goForward(for: &tab)
+        objectWillChange.send()
+        return result
+    }
+
+    func canGoBack() -> Bool {
+        TabNavigationManager.shared.canGoBack(for: tab)
+    }
+
+    func canGoForward() -> Bool {
+        TabNavigationManager.shared.canGoForward(for: tab)
+    }
+
+    func updateNavigationHistory(newPath: String) {
+        TabNavigationManager.shared.updateNavigationHistory(for: &tab, newPath: newPath)
+        objectWillChange.send()
+    }
+
+    func updateTabContent(currentPath: String, initialPath: String) {
+        TabStateManager.shared.updateTabContent(for: &tab, currentPath: currentPath, initialPath: initialPath)
+        objectWillChange.send()
+    }
+
+    func setCurrentHistoryIndexToLast() {
+        TabNavigationManager.shared.setCurrentHistoryIndexToLast(for: &tab)
+        objectWillChange.send()
+    }
+
+    func initializeTabContent(targetPath: String) {
+        // TabStateManager에 초기화 로직 위임
+        TabStateManager.shared.initializeTabContent(for: &tab, targetPath: targetPath)
+        objectWillChange.send()
+    }
+
     func snapshot() -> TabModel {
         tab
     }

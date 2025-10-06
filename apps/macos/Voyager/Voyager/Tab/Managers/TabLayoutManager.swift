@@ -1,11 +1,9 @@
 import AppKit
-import Combine
 import Foundation
 import SwiftUI
 
 /// 탭 레이아웃 관리 (순서/위치/핀/제목)
-@MainActor
-class TabLayoutManager: ObservableObject {
+class TabLayoutManager {
     /// 탭 순서 이동 (드래그 앤 드롭용)
     func moveTab(tabs: inout [TabViewModel], from sourceIndex: Int, to destinationIndex: Int) {
         guard sourceIndex != destinationIndex,
@@ -24,12 +22,6 @@ class TabLayoutManager: ObservableObject {
         tabs.insert(movingTab, at: insertIndex)
     }
 
-    /// 탭 ID로 순서 이동
-    func moveTab(tabs: inout [TabViewModel], id: UUID, to targetIndex: Int) {
-        guard let sourceIndex = tabs.firstIndex(where: { $0.id == id }) else { return }
-        moveTab(tabs: &tabs, from: sourceIndex, to: targetIndex)
-    }
-
     /// 내부 헬퍼: 대상 탭 앞/뒤로 이동 (제거 후 대상 인덱스 재탐색)
     private func moveTabRelative(tabs: inout [TabViewModel], to targetID: UUID, movingID: UUID, placeBefore: Bool) {
         guard let sourceIndex = tabs.firstIndex(where: { $0.id == movingID }) else { return }
@@ -46,7 +38,6 @@ class TabLayoutManager: ObservableObject {
         tabs.insert(moving, at: insertIndex)
     }
 
-    /// 탭을 다른 탭 앞/뒤로 이동
     func moveTab(tabs: inout [TabViewModel], id: UUID, before targetID: UUID) {
         moveTabRelative(tabs: &tabs, to: targetID, movingID: id, placeBefore: true)
     }
@@ -55,33 +46,86 @@ class TabLayoutManager: ObservableObject {
         moveTabRelative(tabs: &tabs, to: targetID, movingID: id, placeBefore: false)
     }
 
-    /// 탭 핀/언핀 토글
     func togglePin(tabs: inout [TabViewModel], id: UUID) {
         guard let index = tabs.firstIndex(where: { $0.id == id }) else { return }
 
-        // 탭의 핀 상태 토글
         tabs[index].togglePin()
+
+        // 핀 상태로 변경 시 현재 경로를 히스토리에 추가하고 마지막 인덱스로 설정
+        if tabs[index].isPinned {
+            // 현재 경로를 히스토리에 추가 (중복 방지)
+            if let currentPath = tabs[index].currentPath,
+               tabs[index].navigationHistory.last != currentPath
+            {
+                tabs[index].updateNavigationHistory(newPath: currentPath)
+            }
+            tabs[index].setCurrentHistoryIndexToLast()
+        }
 
         // 핀 상태에 따라 탭 재정렬
         let pinnedTabs = tabs.filter { $0.isPinned }
         let unpinnedTabs = tabs.filter { !$0.isPinned }
         tabs = pinnedTabs + unpinnedTabs
+
+        // 핀 상태를 UserDefaults에 저장
+        let tabModels = tabs.map { $0.snapshot() }
+        PinnedTabsManager.shared.savePinnedTabs(tabModels)
     }
 
-    /// 탭 제목 업데이트 (경로 변경 시)
-    func updateTabTitle(tabs: inout [TabViewModel], id: UUID, currentPath: String?) {
-        guard let index = tabs.firstIndex(where: { $0.id == id }) else { return }
-        let newTitle = TabUtils.getDisplayName(for: currentPath ?? NSHomeDirectory())
-        tabs[index].updateTitle(newTitle)
-    }
-
-    /// 핀된 탭들
     func pinnedTabs(from tabs: [TabViewModel]) -> [TabViewModel] {
         tabs.filter { $0.isPinned }
     }
 
-    /// 일반 탭들
     func unpinnedTabs(from tabs: [TabViewModel]) -> [TabViewModel] {
         tabs.filter { !$0.isPinned }
+    }
+
+    /// 드래그 앤 드롭으로 탭 이동 처리
+    func handleTabDragDrop(
+        tabs: inout [TabViewModel],
+        draggedTabId: UUID,
+        translation: CGSize,
+        pinnedTabs: [TabViewModel],
+        unpinnedTabs: [TabViewModel]
+    ) {
+        let allTabs = pinnedTabs + unpinnedTabs
+        guard let currentIndex = allTabs.firstIndex(where: { $0.id == draggedTabId }) else {
+            return
+        }
+
+        // 드래그 거리가 충분한지 확인 (최소 20px)
+        guard abs(translation.height) > 20 else {
+            return
+        }
+
+        // 드래그 방향에 따라 이동할 위치 계산
+        let targetIndex: Int
+        if translation.height > 0 {
+            // 아래로 드래그: 다음 탭 앞으로 이동
+            targetIndex = min(currentIndex + 1, allTabs.count - 1)
+        } else {
+            // 위로 드래그: 이전 탭 앞으로 이동
+            targetIndex = max(currentIndex - 1, 0)
+        }
+
+        // 같은 위치면 무시
+        guard targetIndex != currentIndex else {
+            return
+        }
+
+        let draggedTab = allTabs[currentIndex]
+        let targetTab = allTabs[targetIndex]
+
+        // 핀 상태가 다르면 핀 상태 변경
+        if targetTab.isPinned != draggedTab.isPinned {
+            togglePin(tabs: &tabs, id: draggedTabId)
+        }
+
+        // 탭 순서 이동
+        moveTab(
+            tabs: &tabs,
+            from: currentIndex,
+            to: translation.height > 0 ? targetIndex : targetIndex
+        )
     }
 }

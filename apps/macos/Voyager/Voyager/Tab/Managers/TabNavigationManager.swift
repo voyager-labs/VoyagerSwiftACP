@@ -1,74 +1,70 @@
-import Combine
 import Foundation
-import SwiftUI
 
-/// 탭 이동 방향
-enum TabDirection {
-    case next
-    case previous
-}
+class TabNavigationManager {
+    static let shared = TabNavigationManager()
 
-/// 탭 네비게이션 관리 (선택/이동)
-@MainActor
-class TabNavigationManager: ObservableObject {
-    @Published var selectedTabID: UUID?
+    private init() {}
 
-    /// 탭 선택
-    func selectTab(id: UUID, tabs: [TabViewModel]) {
-        guard tabs.contains(where: { $0.id == id }) else { return }
-        selectedTabID = id
-    }
+    func updateNavigationHistory(for tabModel: inout TabModel, newPath: String) {
+        // 현재 인덱스 이후의 히스토리 제거 (새로운 경로로 분기하는 경우)
+        if tabModel.currentHistoryIndex < tabModel.navigationHistory.count - 1 {
+            let keepCount = tabModel.currentHistoryIndex + 1
+            tabModel.navigationHistory = Array(tabModel.navigationHistory.prefix(keepCount))
+        }
 
-    /// 탭 이동 (다음/이전)
-    func selectTab(direction: TabDirection, tabs: [TabViewModel]) {
-        guard !tabs.isEmpty else { return }
-
-        if let currentID = selectedTabID,
-           let currentIndex = tabs.firstIndex(where: { $0.id == currentID })
-        {
-            let targetIndex: Int
-            switch direction {
-            case .next:
-                targetIndex = (currentIndex + 1) % tabs.count
-            case .previous:
-                targetIndex = currentIndex > 0 ? currentIndex - 1 : tabs.count - 1
-            }
-            selectedTabID = tabs[targetIndex].id
-        } else {
-            // 선택된 탭이 없으면 방향에 따라 첫 번째 또는 마지막 탭 선택
-            switch direction {
-            case .next:
-                selectedTabID = tabs.first?.id
-            case .previous:
-                selectedTabID = tabs.last?.id
-            }
+        // 중복 방지: 현재 경로와 같으면 추가하지 않음
+        if tabModel.navigationHistory.last != newPath {
+            tabModel.navigationHistory.append(newPath)
+            tabModel.currentHistoryIndex = tabModel.navigationHistory.count - 1
         }
     }
 
-    /// 현재 선택된 탭
-    func currentTab(from tabs: [TabViewModel]) -> TabViewModel? {
-        tabs.first { $0.id == selectedTabID }
+    func canGoBack(for tabModel: TabModel) -> Bool {
+        // 히스토리 기반 뒤로가기 우선
+        if tabModel.navigationHistory.count > 1 && tabModel.currentHistoryIndex > 0 {
+            return true
+        }
+
+        // 히스토리가 없으면 부모 디렉토리 기반 뒤로가기
+        return tabModel.currentPath != NSHomeDirectory()
     }
 
-    /// 탭이 삭제될 때 선택 상태 조정
-    func adjustSelectionAfterTabRemoval(removedTabID: UUID, removedTabIndex: Int, tabs: [TabViewModel]) {
-        if selectedTabID == removedTabID {
-            if tabs.isEmpty {
-                selectedTabID = nil
-            } else {
-                // 이전에 보고 있던 탭을 선택하도록 로직 개선
-                let targetIndex: Int
+    func goBack(for tabModel: inout TabModel) -> String? {
+        guard tabModel.currentHistoryIndex > 0 else { return nil }
 
-                if removedTabIndex >= tabs.count {
-                    // 제거된 탭이 마지막이었으면 이전 탭 선택
-                    targetIndex = tabs.count - 1
-                } else {
-                    // 제거된 탭의 다음 탭 선택 (제거된 탭이 있던 자리의 탭)
-                    targetIndex = removedTabIndex
-                }
+        tabModel.currentHistoryIndex -= 1
+        updateCurrentPathFromHistory(for: &tabModel)
+        return getCurrentHistoryPath(for: tabModel)
+    }
 
-                selectedTabID = tabs[targetIndex].id
-            }
+    func canGoForward(for tabModel: TabModel) -> Bool {
+        tabModel.currentHistoryIndex < tabModel.navigationHistory.count - 1
+    }
+
+    func goForward(for tabModel: inout TabModel) -> String? {
+        guard tabModel.currentHistoryIndex < tabModel.navigationHistory.count - 1 else { return nil }
+
+        tabModel.currentHistoryIndex += 1
+        updateCurrentPathFromHistory(for: &tabModel)
+        return getCurrentHistoryPath(for: tabModel)
+    }
+
+    func setCurrentHistoryIndexToLast(for tabModel: inout TabModel) {
+        if !tabModel.navigationHistory.isEmpty {
+            tabModel.currentHistoryIndex = tabModel.navigationHistory.count - 1
+        }
+    }
+
+    private func getCurrentHistoryPath(for tabModel: TabModel) -> String? {
+        guard tabModel.currentHistoryIndex >= 0, tabModel.currentHistoryIndex < tabModel.navigationHistory.count else {
+            return nil
+        }
+        return tabModel.navigationHistory[tabModel.currentHistoryIndex]
+    }
+
+    private func updateCurrentPathFromHistory(for tabModel: inout TabModel) {
+        if let newPath = getCurrentHistoryPath(for: tabModel) {
+            tabModel.currentPath = newPath
         }
     }
 }

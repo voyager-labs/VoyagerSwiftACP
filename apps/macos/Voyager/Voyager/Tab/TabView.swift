@@ -1,7 +1,6 @@
 import Inject
 import SwiftUI
 
-/// 개별 탭의 내용을 표시하는 뷰
 struct TabView: View {
     let tab: TabViewModel
     @EnvironmentObject var tabManager: TabManager
@@ -20,7 +19,7 @@ struct TabView: View {
                 emptyView
             }
         }
-        .id(tab.id) // 탭별 독립적인 뷰 인스턴스 보장
+        .id(tab.id)
         .enableInjection()
     }
 

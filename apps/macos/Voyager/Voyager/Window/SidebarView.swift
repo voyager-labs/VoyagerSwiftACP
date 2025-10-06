@@ -328,44 +328,8 @@ struct TabRowView: View {
 
     // 드롭 처리 함수
     private func handleDrop(value: DragGesture.Value) {
-        // 드래그 거리가 충분한지 확인 (최소 20px)
-        guard abs(value.translation.height) > 20 else {
-            return
-        }
-
-        let allTabs = tabManager.pinnedTabs + tabManager.unpinnedTabs
-        guard let currentIndex = allTabs.firstIndex(where: { $0.id == tab.id }) else {
-            return
-        }
-
-        // 드래그 방향에 따라 이동할 위치 계산
-        let targetIndex: Int
-        if value.translation.height > 0 {
-            // 아래로 드래그: 다음 탭 앞으로 이동
-            targetIndex = min(currentIndex + 1, allTabs.count - 1)
-        } else {
-            // 위로 드래그: 이전 탭 앞으로 이동
-            targetIndex = max(currentIndex - 1, 0)
-        }
-
-        // 같은 위치면 무시
-        guard targetIndex != currentIndex else {
-            return
-        }
-
-        let targetTab = allTabs[targetIndex]
-
-        // 핀 상태가 다르면 핀 상태 변경
-        if targetTab.isPinned != tab.isPinned {
-            tabManager.togglePin(id: tab.id)
-        }
-
-        // 탭 순서 이동
-        if value.translation.height > 0 {
-            tabManager.moveTab(id: tab.id, after: targetTab.id)
-        } else {
-            tabManager.moveTab(id: tab.id, before: targetTab.id)
-        }
+        // TabManager에 드래그 앤 드롭 로직 위임
+        tabManager.handleTabDragDrop(draggedTabId: tab.id, translation: value.translation)
     }
 }
 

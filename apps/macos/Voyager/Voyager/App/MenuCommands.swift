@@ -6,19 +6,24 @@ struct MenuCommands: Commands {
     @FocusedValue(\.tabManager)
     var tabManager: TabManager?
 
+    private func getPinTabTitle(for tabManager: TabManager?) -> String {
+        guard let tabManager = tabManager,
+              let currentTab = tabManager.currentTab
+        else {
+            return "Pin Tab"
+        }
+        return currentTab.isPinned ? "Unpin Tab" : "Pin Tab"
+    }
+
     var body: some Commands {
         CommandGroup(after: .newItem) {
             Button("New Tab") {
                 tabManager?.createTab()
             }
             .keyboardShortcut("t", modifiers: .command)
-        }
 
-        CommandGroup(replacing: .saveItem) {
-            // 기본 Close/Close All 메뉴들 제거
-        }
+            Divider()
 
-        CommandGroup(after: .newItem) {
             Button("Close Window") {
                 NSApp.sendAction(#selector(NSWindow.performClose(_:)), to: nil, from: nil)
             }
@@ -32,7 +37,11 @@ struct MenuCommands: Commands {
             .keyboardShortcut("w", modifiers: .command)
         }
 
-        CommandMenu("Tab") {
+        CommandGroup(replacing: .saveItem) {
+            // 기본 Close/Close All 메뉴들 제거
+        }
+
+        CommandMenu("Tabs") {
             Button("Previous Tab") {
                 tabManager?.selectTab(direction: .previous)
             }
@@ -42,6 +51,32 @@ struct MenuCommands: Commands {
                 tabManager?.selectTab(direction: .next)
             }
             .keyboardShortcut(.rightArrow, modifiers: .command)
+
+            Divider()
+
+            Button("Go Back") {
+                if let currentTab = tabManager?.currentTab {
+                    _ = currentTab.goBack()
+                }
+            }
+            .keyboardShortcut(.leftArrow, modifiers: [.command, .shift])
+
+            Button("Go Forward") {
+                if let currentTab = tabManager?.currentTab {
+                    _ = currentTab.goForward()
+                }
+            }
+            .keyboardShortcut(.rightArrow, modifiers: [.command, .shift])
+
+            Divider()
+
+            Button(getPinTabTitle(for: tabManager)) {
+                if let selectedID = tabManager?.selectedTabID {
+                    tabManager?.togglePin(id: selectedID)
+                }
+            }
+            .keyboardShortcut("p", modifiers: .command)
+            .disabled(tabManager?.selectedTabID == nil)
 
             Divider()
 
