@@ -33,7 +33,7 @@ struct FileBrowserView: View {
             )
             viewModel.initializeContent()
         }
-        .onChange(of: viewModel.currentPath) { _, newPath in
+        .onChange(of: viewModel.currentPath) { newPath in
             viewModel.onPathChanged(newPath: newPath)
         }
     }
