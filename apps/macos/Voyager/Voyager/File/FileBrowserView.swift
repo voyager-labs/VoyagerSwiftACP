@@ -39,7 +39,7 @@ struct FileBrowserView: View {
                 loadFolderContents()
             }
         }
-        .onChange(of: currentPath) { _, newPath in
+        .onChange(of: currentPath) { newPath in
             loadFolderContents()
             updateTabContent(currentPath: newPath, initialPath: initialPath)
         }

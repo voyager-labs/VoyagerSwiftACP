@@ -26,7 +26,7 @@ struct SidebarView: View {
                     // 마지막 핀 탭의 하단을 경계로 사용
                     (tabManager.pinnedTabs.last?.id == tab.id) ? GeometryReader { geo in
                         Color.clear.onAppear { boundaryY = geo.frame(in: .global).maxY }
-                            .onChange(of: tabManager.pinnedTabs.count) { _, _ in
+                            .onChange(of: tabManager.pinnedTabs.count) { _ in
                                 boundaryY = geo.frame(in: .global).maxY
                             }
                     } : nil
@@ -84,7 +84,7 @@ struct SidebarView: View {
                     (tabManager.pinnedTabs.isEmpty && tabManager.unpinnedTabs.first?.id == tab.id) ?
                         GeometryReader { geo in
                             Color.clear.onAppear { boundaryY = geo.frame(in: .global).minY }
-                                .onChange(of: tabManager.unpinnedTabs.count) { _, _ in
+                                .onChange(of: tabManager.unpinnedTabs.count) { _ in
                                     boundaryY = geo.frame(in: .global).minY
                                 }
                         } : nil
@@ -152,7 +152,7 @@ struct TabRowView: View {
             let dragY = dragLocation?.y ?? -10000
             // 탭 내용 (구분선 제거)
             tabContent
-                .onChange(of: dragLocation) { _, _ in
+                .onChange(of: dragLocation) { _ in
                     // 드래그 중 타겟 경계 업데이트 (자기 자신 제외)
                     // dragLocation가 nil로 변하는 시점(제스처 종료)에는 타겟을 유지한다
                     guard let dragLoc = dragLocation, let dragging = draggingTab, dragging.id != tab.id else { return }
