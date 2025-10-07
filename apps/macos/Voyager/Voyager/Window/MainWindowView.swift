@@ -15,6 +15,10 @@ struct MainWindowView: View {
         .frame(minWidth: 800, minHeight: 600)
         .focusedSceneValue(\.tabManager, tabManager)
         .enableInjection()
+        .onDisappear {
+            // 윈도우 닫힐 때 핀 탭 저장
+            PinnedTabsManager.shared.saveToPlist()
+        }
     }
 
     private var sidebarBackground: some View {

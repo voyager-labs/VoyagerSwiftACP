@@ -65,10 +65,6 @@ class TabLayoutManager {
         let pinnedTabs = tabs.filter { $0.isPinned }
         let unpinnedTabs = tabs.filter { !$0.isPinned }
         tabs = pinnedTabs + unpinnedTabs
-
-        // 핀 상태를 UserDefaults에 저장
-        let tabModels = tabs.map { $0.snapshot() }
-        PinnedTabsManager.shared.savePinnedTabs(tabModels)
     }
 
     func pinnedTabs(from tabs: [TabViewModel]) -> [TabViewModel] {

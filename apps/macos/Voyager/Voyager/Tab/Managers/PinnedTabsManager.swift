@@ -9,57 +9,114 @@ class PinnedTabsManager: ObservableObject {
     private let userDefaults = UserDefaults.standard
     private let pinnedTabsKey = "pinnedTabs"
 
-    // UserDefaults 키 상수
+    // SQLite DATETIME 포맷
+    private let dateFormatter: DateFormatter = {
+        let formatter = DateFormatter()
+        formatter.dateFormat = "yyyy-MM-dd HH:mm:ss"
+        formatter.timeZone = TimeZone.current
+        return formatter
+    }()
+
+    // UserDefaults 키 상수 (SQLite 스키마와 일치)
     private enum Keys {
         static let id = "id"
+        static let targetId = "targetId"
         static let title = "title"
-        static let currentPath = "currentPath"
-        static let backHistory = "backHistory"
-        static let forwardHistory = "forwardHistory"
-        static let pinnedAt = "pinnedAt"
+        static let targetType = "targetType"
+        static let orderKey = "orderKey"
+        static let properties = "properties"
+        static let createdAt = "createdAt"
+        static let updatedAt = "updatedAt"
+        static let isArchived = "isArchived"
+        static let archivedAt = "archivedAt"
     }
 
     @Published var pinStateChanged = UUID()
 
-    private init() {}
+    // 전역 공유 메모리 (모든 탭 정보)
+    @Published var allTabs: [UUID: TabModel] = [:]
 
-    func savePinnedTabs(_ tabs: [TabModel]) {
-        let pinnedTabs = tabs.filter { $0.isPinned }
-        let data = pinnedTabs.map { tab in
-            [
-                Keys.id: tab.id.uuidString,
-                Keys.title: tab.title,
-                Keys.currentPath: tab.currentPath ?? "",
-                Keys.backHistory: tab.backHistory,
-                Keys.forwardHistory: tab.forwardHistory,
-                Keys.pinnedAt: Date().timeIntervalSince1970,
-            ]
+    private init() {
+        // 앱 시작 시 plist에서 핀 탭 로드
+        let pinnedTabs = loadFromPlist()
+        for tab in pinnedTabs {
+            allTabs[tab.id] = tab
         }
+    }
 
-        userDefaults.set(data, forKey: pinnedTabsKey)
+    func updateTab(_ tab: TabModel) {
+        allTabs[tab.id] = tab
+    }
 
+    func removeTab(id: UUID) {
+        allTabs.removeValue(forKey: id)
+    }
+
+    func notifyPinStateChanged() {
         pinStateChanged = UUID()
     }
 
-    func loadPinnedTabs() -> [TabModel] {
+    func getPinnedTabs() -> [TabModel] {
+        allTabs.values.filter { $0.isPinned }.sorted { $0.title < $1.title }
+    }
+
+    func saveToPlist() {
+        let pinnedTabs = allTabs.values.filter { $0.isPinned }
+
+        let data = pinnedTabs.enumerated().map { index, tab in
+            // properties JSONB 구조
+            let properties: [String: Any] = [
+                "currentPath": tab.currentPath ?? "",
+                "backHistory": tab.backHistory,
+                "forwardHistory": tab.forwardHistory,
+            ]
+
+            let now = Date()
+            let nowString = dateFormatter.string(from: now)
+            let recordId = index + 1
+
+            var record: [String: Any] = [
+                Keys.id: recordId,
+                Keys.targetId: tab.id.uuidString,
+                Keys.title: tab.title,
+                Keys.targetType: "DIRECTORY",
+                Keys.orderKey: index,
+                Keys.properties: properties,
+                Keys.createdAt: nowString,
+                Keys.updatedAt: nowString,
+                Keys.isArchived: false,
+            ]
+
+            return record
+        }
+
+        userDefaults.set(data, forKey: pinnedTabsKey)
+    }
+
+    private func loadFromPlist() -> [TabModel] {
         guard let data = userDefaults.array(forKey: pinnedTabsKey) as? [[String: Any]] else {
             return []
         }
 
         return data.compactMap { dict in
-            guard let idString = dict[Keys.id] as? String,
-                  let id = UUID(uuidString: idString),
-                  let title = dict[Keys.title] as? String
+            if let isArchived = dict[Keys.isArchived] as? Bool, isArchived {
+                return nil
+            }
+
+            guard let targetIdString = dict[Keys.targetId] as? String,
+                  let targetId = UUID(uuidString: targetIdString),
+                  let title = dict[Keys.title] as? String,
+                  let properties = dict[Keys.properties] as? [String: Any]
             else {
                 return nil
             }
 
-            let currentPath = (dict[Keys.currentPath] as? String).flatMap { $0.isEmpty ? nil : $0 }
-            let backHistory = dict[Keys.backHistory] as? [String] ?? []
-            let forwardHistory = dict[Keys.forwardHistory] as? [String] ?? []
+            let currentPath = (properties["currentPath"] as? String).flatMap { $0.isEmpty ? nil : $0 }
+            let backHistory = properties["backHistory"] as? [String] ?? []
+            let forwardHistory = properties["forwardHistory"] as? [String] ?? []
 
             return TabModel(
-                id: id,
+                id: targetId,
                 title: title,
                 currentPath: currentPath,
                 isPinned: true,
@@ -70,8 +127,7 @@ class PinnedTabsManager: ObservableObject {
     }
 
     func isTabPinned(id: UUID) -> Bool {
-        let pinnedTabs = loadPinnedTabs()
-        return pinnedTabs.contains { $0.id == id }
+        allTabs[id]?.isPinned ?? false
     }
 
     func clearPinnedTabs() {

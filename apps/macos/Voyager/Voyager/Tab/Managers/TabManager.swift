@@ -59,6 +59,16 @@ class TabManager: ObservableObject {
 
         historyManager.$recentlyClosedTabs
             .assign(to: &$recentlyClosedTabs)
+
+        // 탭 변경 시 전역 메모리 동기화
+        $tabs
+            .sink { [weak self] tabs in
+                guard let self = self else { return }
+                for tab in tabs {
+                    PinnedTabsManager.shared.updateTab(tab.snapshot())
+                }
+            }
+            .store(in: &cancellables)
     }
 
     @discardableResult
@@ -117,6 +127,10 @@ class TabManager: ObservableObject {
 
     func togglePin(id: UUID) {
         layoutManager.togglePin(tabs: &tabs, id: id)
+        objectWillChange.send()
+
+        // 핀 상태 변경을 다른 윈도우에 알림
+        PinnedTabsManager.shared.notifyPinStateChanged()
     }
 
     @discardableResult
@@ -136,7 +150,7 @@ class TabManager: ObservableObject {
     }
 
     private func syncPinnedTabsFromGlobal() {
-        let globalPinnedTabs = PinnedTabsManager.shared.loadPinnedTabs()
+        let globalPinnedTabs = PinnedTabsManager.shared.getPinnedTabs()
 
         for tab in tabs where tab.isPinned {
             let globalTab = globalPinnedTabs.first { $0.id == tab.id }

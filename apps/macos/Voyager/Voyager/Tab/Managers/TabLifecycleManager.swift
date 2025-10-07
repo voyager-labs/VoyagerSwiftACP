@@ -18,6 +18,9 @@ class TabLifecycleManager: ObservableObject {
 
         tabs.append(vm)
 
+        // 전역 메모리에 등록
+        PinnedTabsManager.shared.updateTab(newTab)
+
         TabSelectionManager.shared.selectTab(id: vm.id, tabs: tabs)
 
         return vm
@@ -26,8 +29,13 @@ class TabLifecycleManager: ObservableObject {
     func closeTab(id: UUID, historyManager: TabHistoryManager) -> Bool {
         guard let index = tabs.firstIndex(where: { $0.id == id }) else { return false }
 
-        let closedTab = tabs[index].snapshot() // ViewModel의 snapshot 사용
+        let closedTab = tabs[index].snapshot()
         tabs.remove(at: index)
+
+        // 전역 메모리에서도 제거 (일반 탭인 경우만)
+        if !closedTab.isPinned {
+            PinnedTabsManager.shared.removeTab(id: id)
+        }
 
         historyManager.addToHistory(closedTab)
 
@@ -51,6 +59,9 @@ class TabLifecycleManager: ObservableObject {
         )
         let duplicatedVM = TabViewModel(tab: duplicatedTab)
 
+        // 전역 메모리에 등록
+        PinnedTabsManager.shared.updateTab(duplicatedTab)
+
         // 원본 탭 다음 위치에 삽입
         if let originalIndex = tabs.firstIndex(where: { $0.id == id }) {
             let insertIndex = originalIndex + 1
@@ -70,7 +81,7 @@ class TabLifecycleManager: ObservableObject {
     }
 
     func restorePinnedTabs() {
-        let pinnedTabs = PinnedTabsManager.shared.loadPinnedTabs()
+        let pinnedTabs = PinnedTabsManager.shared.getPinnedTabs()
 
         for pinnedTab in pinnedTabs {
             let vm = TabViewModel(tab: pinnedTab)
