@@ -10,8 +10,8 @@ class TabViewModel: ObservableObject, Identifiable {
     var title: String { tab.title }
     var isPinned: Bool { tab.isPinned }
     var currentPath: String? { tab.currentPath }
-    var navigationHistory: [String] { tab.navigationHistory }
-    var currentHistoryIndex: Int { tab.currentHistoryIndex }
+    var backHistory: [String] { tab.backHistory }
+    var forwardHistory: [String] { tab.forwardHistory }
 
     init(tab: TabModel) {
         self.tab = tab
@@ -52,18 +52,13 @@ class TabViewModel: ObservableObject, Identifiable {
         TabNavigationManager.shared.canGoForward(for: tab)
     }
 
-    func updateNavigationHistory(newPath: String) {
-        TabNavigationManager.shared.updateNavigationHistory(for: &tab, newPath: newPath)
+    func navigateTo(newPath: String) {
+        TabNavigationManager.shared.navigateTo(for: &tab, newPath: newPath)
         objectWillChange.send()
     }
 
     func updateTabContent(currentPath: String, initialPath: String) {
         TabStateManager.shared.updateTabContent(for: &tab, currentPath: currentPath, initialPath: initialPath)
-        objectWillChange.send()
-    }
-
-    func setCurrentHistoryIndexToLast() {
-        TabNavigationManager.shared.setCurrentHistoryIndexToLast(for: &tab)
         objectWillChange.send()
     }
 

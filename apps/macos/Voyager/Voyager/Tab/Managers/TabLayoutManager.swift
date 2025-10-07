@@ -55,11 +55,10 @@ class TabLayoutManager {
         if tabs[index].isPinned {
             // 현재 경로를 히스토리에 추가 (중복 방지)
             if let currentPath = tabs[index].currentPath,
-               tabs[index].navigationHistory.last != currentPath
+               tabs[index].backHistory.last != currentPath
             {
-                tabs[index].updateNavigationHistory(newPath: currentPath)
+                tabs[index].navigateTo(newPath: currentPath)
             }
-            tabs[index].setCurrentHistoryIndexToLast()
         }
 
         // 핀 상태에 따라 탭 재정렬

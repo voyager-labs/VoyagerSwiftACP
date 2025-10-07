@@ -49,14 +49,14 @@ class FileBrowserViewModel: ObservableObject {
 
     func navigateToHome() {
         let homePath = NSHomeDirectory()
-        currentTab?.updateNavigationHistory(newPath: homePath)
+        currentTab?.navigateTo(newPath: homePath)
         currentPath = homePath
         updateTabContent(currentPath: homePath, initialPath: initialPath ?? "")
         loadFolderContents()
     }
 
     func navigateToFolder(path: String) {
-        currentTab?.updateNavigationHistory(newPath: path)
+        currentTab?.navigateTo(newPath: path)
         currentPath = path
         updateTabContent(currentPath: path, initialPath: initialPath ?? "")
         loadFolderContents()

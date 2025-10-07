@@ -6,22 +6,21 @@ struct TabModel: Identifiable, Codable {
     var title: String
     var currentPath: String?
     var isPinned: Bool
-    var navigationHistory: [String]
-    var currentHistoryIndex: Int
-
+    var backHistory: [String]
+    var forwardHistory: [String]
     init(
         id: UUID = UUID(),
         title: String = "New Tab",
         currentPath: String? = nil,
         isPinned: Bool = false,
-        navigationHistory: [String] = [],
-        currentHistoryIndex: Int = 0
+        backHistory: [String] = [],
+        forwardHistory: [String] = []
     ) {
         self.id = id
         self.title = title
         self.currentPath = currentPath
         self.isPinned = isPinned
-        self.navigationHistory = navigationHistory
-        self.currentHistoryIndex = currentHistoryIndex
+        self.backHistory = backHistory
+        self.forwardHistory = forwardHistory
     }
 }

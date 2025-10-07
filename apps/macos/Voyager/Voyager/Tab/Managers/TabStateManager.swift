@@ -24,15 +24,12 @@ class TabStateManager {
     }
 
     func initializeTabContent(for tabModel: inout TabModel, targetPath: String) {
-        // 히스토리가 비어있으면 새 탭 - 초기 경로를 히스토리에 추가
-        if tabModel.navigationHistory.isEmpty {
-            tabModel.navigationHistory.append(targetPath)
-            tabModel.currentHistoryIndex = 0
-            tabModel.currentPath = targetPath
+        if tabModel.backHistory.isEmpty, tabModel.forwardHistory.isEmpty {
+            TabNavigationManager.shared.initializeHistory(for: &tabModel, initialPath: targetPath)
         } else {
-            // 복원된 탭 - 히스토리 인덱스에 맞는 경로로 설정
-            if tabModel.currentHistoryIndex >= 0, tabModel.currentHistoryIndex < tabModel.navigationHistory.count {
-                tabModel.currentPath = tabModel.navigationHistory[tabModel.currentHistoryIndex]
+            // 복원된 탭 - currentPath가 설정되어 있으면 그대로 사용
+            if tabModel.currentPath == nil {
+                tabModel.currentPath = targetPath
             }
         }
     }

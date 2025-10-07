@@ -14,8 +14,8 @@ class PinnedTabsManager: ObservableObject {
         static let id = "id"
         static let title = "title"
         static let currentPath = "currentPath"
-        static let navigationHistory = "navigationHistory"
-        static let currentHistoryIndex = "currentHistoryIndex"
+        static let backHistory = "backHistory"
+        static let forwardHistory = "forwardHistory"
         static let pinnedAt = "pinnedAt"
     }
 
@@ -30,8 +30,8 @@ class PinnedTabsManager: ObservableObject {
                 Keys.id: tab.id.uuidString,
                 Keys.title: tab.title,
                 Keys.currentPath: tab.currentPath ?? "",
-                Keys.navigationHistory: tab.navigationHistory,
-                Keys.currentHistoryIndex: tab.currentHistoryIndex,
+                Keys.backHistory: tab.backHistory,
+                Keys.forwardHistory: tab.forwardHistory,
                 Keys.pinnedAt: Date().timeIntervalSince1970,
             ]
         }
@@ -55,16 +55,16 @@ class PinnedTabsManager: ObservableObject {
             }
 
             let currentPath = (dict[Keys.currentPath] as? String).flatMap { $0.isEmpty ? nil : $0 }
-            let navigationHistory = dict[Keys.navigationHistory] as? [String] ?? []
-            let currentHistoryIndex = dict[Keys.currentHistoryIndex] as? Int ?? 0
+            let backHistory = dict[Keys.backHistory] as? [String] ?? []
+            let forwardHistory = dict[Keys.forwardHistory] as? [String] ?? []
 
             return TabModel(
                 id: id,
                 title: title,
                 currentPath: currentPath,
                 isPinned: true,
-                navigationHistory: navigationHistory,
-                currentHistoryIndex: currentHistoryIndex
+                backHistory: backHistory,
+                forwardHistory: forwardHistory
             )
         }
     }
