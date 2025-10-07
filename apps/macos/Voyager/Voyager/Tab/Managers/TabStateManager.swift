@@ -24,6 +24,11 @@ class TabStateManager {
     }
 
     func initializeTabContent(for tabModel: inout TabModel, targetPath: String) {
+        if tabModel.isPinned, tabModel.currentPath != nil {
+            return
+        }
+
+        // 새로운 탭이거나 히스토리가 비어있는 경우
         if tabModel.backHistory.isEmpty, tabModel.forwardHistory.isEmpty {
             TabNavigationManager.shared.initializeHistory(for: &tabModel, initialPath: targetPath)
         } else {
