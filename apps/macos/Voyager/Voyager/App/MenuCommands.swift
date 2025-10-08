@@ -6,6 +6,9 @@ struct MenuCommands: Commands {
     @FocusedValue(\.tabManager)
     var tabManager: TabManager?
 
+    @FocusedValue(\.isSidebarVisible)
+    var isSidebarVisible: Binding<Bool>?
+
     private func getPinTabTitle(for tabManager: TabManager?) -> String {
         guard let tabManager = tabManager,
               let currentTab = tabManager.currentTab
@@ -86,16 +89,14 @@ struct MenuCommands: Commands {
             .keyboardShortcut("t", modifiers: [.command, .shift])
             .disabled(tabManager?.hasRecentlyClosedTabs == false)
         }
-    }
-}
 
-struct TabManagerKey: FocusedValueKey {
-    typealias Value = TabManager
-}
-
-extension FocusedValues {
-    var tabManager: TabManager? {
-        get { self[TabManagerKey.self] }
-        set { self[TabManagerKey.self] = newValue }
+        // View 메뉴
+        CommandMenu("View") {
+            Button(isSidebarVisible?.wrappedValue == true ? "Hide Sidebar" : "Show Sidebar") {
+                isSidebarVisible?.wrappedValue.toggle()
+            }
+            .keyboardShortcut("s", modifiers: .command)
+            .disabled(isSidebarVisible == nil)
+        }
     }
 }

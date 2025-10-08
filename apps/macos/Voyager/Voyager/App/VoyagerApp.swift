@@ -19,7 +19,7 @@ struct VoyagerApp: App {
 
     var body: some Scene {
         WindowGroup {
-            MainWindowView()
+            FileManagerView()
         }
         .windowStyle(.hiddenTitleBar)
         .commands {

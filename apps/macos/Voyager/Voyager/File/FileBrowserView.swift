@@ -7,6 +7,8 @@ struct FileBrowserView: View {
     let savedCurrentPath: String?
     @EnvironmentObject var tabManager: TabManager
     @StateObject private var viewModel = FileBrowserViewModel()
+    @Environment(\.isSidebarVisible)
+    var isSidebarVisible
 
     var body: some View {
         VStack(spacing: 0) {
@@ -15,15 +17,15 @@ struct FileBrowserView: View {
             Divider()
 
             if viewModel.isLoading {
-                Spacer()
                 ProgressView("Loading...")
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
-                Spacer()
             } else {
                 folderList
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .background(Color(red: 0.22, green: 0.22, blue: 0.24))
+        .edgesIgnoringSafeArea(.top)
         .onAppear {
             viewModel.configure(
                 tabId: tabId,
@@ -39,7 +41,13 @@ struct FileBrowserView: View {
     }
 
     private var pathBar: some View {
-        HStack {
+        HStack(spacing: 8) {
+            // Sidebar 없을 때 트래픽 라이트 공간
+            if !isSidebarVisible {
+                Spacer()
+                    .frame(width: 70)
+            }
+
             Button(action: {
                 viewModel.navigateToHome()
             }, label: {
@@ -76,6 +84,7 @@ struct FileBrowserView: View {
         }
         .padding(.horizontal, 12)
         .padding(.vertical, 8)
+        .background(Color(red: 0.22, green: 0.22, blue: 0.24))
     }
 
     private var folderList: some View {

@@ -50,6 +50,7 @@ struct SidebarView: View {
 
             // 시각적 구분선(핀 영역이 비어있을 때 드롭 인디케이터로 작동)
             Divider()
+                .padding(.horizontal, 8)
                 .padding(.vertical, 8)
                 .background(
                     // 핀 영역이 비어있을 때 언핀 탭을 핀 영역으로 드래그하면 구분선이 드롭 인디케이터로 작동
@@ -326,14 +327,12 @@ struct TabRowView: View {
         }
     }
 
-    // 드롭 처리 함수
     private func handleDrop(value: DragGesture.Value) {
         // TabManager에 드래그 앤 드롭 로직 위임
         tabManager.handleTabDragDrop(draggedTabId: tab.id, translation: value.translation)
     }
 }
 
-/// 탭들 사이의 구분선 영역
 struct TabDividerView: View {
     let tabId: UUID
     @Binding var draggingTab: TabViewModel?
