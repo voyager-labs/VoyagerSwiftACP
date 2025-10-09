@@ -1,7 +1,6 @@
 import SwiftUI
 
 struct ContentPaneView: View {
-    let isSidebarVisible: Bool
     @EnvironmentObject var tabManager: TabManager
 
     var body: some View {

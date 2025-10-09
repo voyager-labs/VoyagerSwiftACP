@@ -4,9 +4,6 @@ import SwiftUI
 
 /// 좌측 사이드바 (탭 목록)
 struct SidebarView: View {
-    var isFloating: Bool = false
-    var onHoverChange: ((Bool) -> Void)?
-
     @EnvironmentObject var tabManager: TabManager
     @ObserveInjection var inject
     @State private var draggingTab: TabViewModel?
@@ -19,17 +16,6 @@ struct SidebarView: View {
     var body: some View {
         content
             .frame(maxHeight: .infinity)
-            .background(isFloating ? Color(red: 0.18, green: 0.18, blue: 0.20) : .clear)
-            .cornerRadius(isFloating ? 8 : 0)
-            .shadow(color: .black.opacity(isFloating ? 0.5 : 0), radius: isFloating ? 20 : 0, x: isFloating ? 5 : 0)
-            .padding(isFloating ? 6 : 0)
-            .frame(width: isFloating ? 220 : nil)
-            .transition(isFloating ? .move(edge: .leading) : .identity)
-            .onHover { hovering in
-                if isFloating {
-                    onHoverChange?(hovering)
-                }
-            }
     }
 
     private var content: some View {
