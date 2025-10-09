@@ -6,8 +6,8 @@ struct MenuCommands: Commands {
     @FocusedValue(\.tabManager)
     var tabManager: TabManager?
 
-    @FocusedValue(\.isSidebarVisible)
-    var isSidebarVisible: Binding<Bool>?
+    @FocusedValue(\.columnVisibility)
+    var columnVisibility: Binding<NavigationSplitViewVisibility>?
 
     private func getPinTabTitle(for tabManager: TabManager?) -> String {
         guard let tabManager = tabManager,
@@ -90,13 +90,13 @@ struct MenuCommands: Commands {
             .disabled(tabManager?.hasRecentlyClosedTabs == false)
         }
 
-        // View 메뉴
         CommandMenu("View") {
-            Button(isSidebarVisible?.wrappedValue == true ? "Hide Sidebar" : "Show Sidebar") {
-                isSidebarVisible?.wrappedValue.toggle()
+            Button(columnVisibility?.wrappedValue == .all ? "Hide Sidebar" : "Show Sidebar") {
+                let current = columnVisibility?.wrappedValue
+                columnVisibility?.wrappedValue = (current == .all) ? .detailOnly : .all
             }
             .keyboardShortcut("s", modifiers: .command)
-            .disabled(isSidebarVisible == nil)
+            .disabled(columnVisibility == nil)
         }
     }
 }

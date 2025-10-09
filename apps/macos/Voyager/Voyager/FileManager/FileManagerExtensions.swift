@@ -6,8 +6,8 @@ struct TabManagerKey: FocusedValueKey {
     typealias Value = TabManager
 }
 
-struct IsSidebarVisibleKey: FocusedValueKey {
-    typealias Value = Binding<Bool>
+struct ColumnVisibilityKey: FocusedValueKey {
+    typealias Value = Binding<NavigationSplitViewVisibility>
 }
 
 extension FocusedValues {
@@ -16,19 +16,8 @@ extension FocusedValues {
         set { self[TabManagerKey.self] = newValue }
     }
 
-    var isSidebarVisible: Binding<Bool>? {
-        get { self[IsSidebarVisibleKey.self] }
-        set { self[IsSidebarVisibleKey.self] = newValue }
-    }
-}
-
-private struct IsSidebarVisibleEnvironmentKey: EnvironmentKey {
-    static let defaultValue: Bool = true
-}
-
-extension EnvironmentValues {
-    var isSidebarVisible: Bool {
-        get { self[IsSidebarVisibleEnvironmentKey.self] }
-        set { self[IsSidebarVisibleEnvironmentKey.self] = newValue }
+    var columnVisibility: Binding<NavigationSplitViewVisibility>? {
+        get { self[ColumnVisibilityKey.self] }
+        set { self[ColumnVisibilityKey.self] = newValue }
     }
 }

@@ -7,20 +7,9 @@ struct TabView: View {
     @ObserveInjection var inject
 
     var body: some View {
-        Group {
-            if let currentPath = tab.currentPath {
-                FileBrowserView(
-                    tabId: tab.id,
-                    initialPath: currentPath,
-                    savedCurrentPath: currentPath
-                )
-                .environmentObject(tabManager)
-            } else {
-                emptyView
-            }
-        }
-        .id(tab.id)
-        .enableInjection()
+        emptyView
+            .id(tab.id)
+            .enableInjection()
     }
 
     private var emptyView: some View {
