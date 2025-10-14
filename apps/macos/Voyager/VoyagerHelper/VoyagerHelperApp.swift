@@ -1,10 +1,3 @@
-//
-//  VoyagerHelperApp.swift
-//  Voyager
-//
-//  Created by 오원식 on 1/2/25.
-//
-
 import Foundation
 
 @main

@@ -1,0 +1,43 @@
+---
+globs: apps/macos/**/*.swift
+description: 'Swift-dotenv integration patterns and environment management'
+---
+
+# Swift-dotenv Integration
+
+## Environment loading patterns
+
+- **Repository root detection**: Infer project root from bundle path
+- **Dotenv configuration**: Use `Dotenv.configure(atPath: rootEnv.path, overwrite: true)`
+- **Values access**: Access via `Dotenv.values` dictionary
+
+## Implementation example
+
+```swift
+import SwiftDotenv
+
+private func loadEnvConfig() {
+    envRootURL = inferRootFromBundle(start: Bundle.main.bundleURL)
+    if let root = envRootURL {
+        let rootEnv = root.appendingPathComponent(".env")
+        try? Dotenv.configure(atPath: rootEnv.path, overwrite: true)
+        envVars = Dotenv.values
+    }
+}
+```
+
+## Path resolution
+
+- **Absolute paths**: Use as-is (`/path/to/file`)
+- **Relative paths**: Resolve from project root (`logs/voyager.log` → `{root}/logs/voyager.log`)
+- **Variable substitution**: Handle `$(SRCROOT)` and similar build-time variables
+
+## Integration with existing systems
+
+- **Backend launcher**: Use `BackendManagerDotenv.swift` for dotenv-based backend management
+- **Logging**: Resolve log file paths relative to project root
+- **Environment management**: Single source of truth via `.env` file
+
+References
+- Implementation: [BackendManagerDotenv.swift](mdc:apps/macos/Voyager/VoyagerHelper/BackendManagerDotenv.swift)
+- Overview: [10-frontend-overview.mdc](mdc:.cursor/rules/10-frontend-overview.mdc)
