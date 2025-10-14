@@ -47,3 +47,7 @@ buildServer.json
 !.env.example
 
 .history/
+
+# Logs
+apps/macos/logs/
+*.log
