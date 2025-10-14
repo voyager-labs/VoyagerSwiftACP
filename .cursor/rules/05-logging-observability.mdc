@@ -1,0 +1,31 @@
+---
+alwaysApply: true
+description: 'Logging, observability, and redaction guidance across the monorepo'
+---
+
+# Logging & Observability
+
+## Backend (FastAPI)
+
+- Primary logger: `uvicorn.error` for startup banner and runtime warnings/errors
+- Levels: `INFO` for lifecycle, `WARNING` for recoverable events, `ERROR` for failures
+- Never log API keys, tokens, or `.env` contents; only non-sensitive metadata
+- Startup banner example: `env=dev db_rev=...` (see [apps/backend/src/app/main.py](mdc:apps/backend/src/app/main.py))
+
+## Frontend (macOS SwiftUI)
+
+- Helper captures backend stdout/stderr to `VOYAGER_LOG_FILE`
+- File path: `apps/macos/logs/voyager.log` (see [BackendManagerDotenv.swift](mdc:apps/macos/Voyager/VoyagerHelper/BackendManagerDotenv.swift))
+- Keep logs out of repo; rotate manually when large
+
+## PII Redaction
+
+- Never log secrets or tokens; redact with `***` when unavoidable
+- Avoid logging full file paths or user-identifying data
+- Prefer anonymized summaries over raw data
+
+## Future Observability
+
+- Consider structured logging and health checks (`/healthz`) when needed
+- Metrics: request duration, failure counts, background job timings
+
