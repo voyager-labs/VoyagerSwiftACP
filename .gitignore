@@ -34,6 +34,13 @@ DerivedData/
 *.dSYM.zip
 *.dSYM
 
+# Code coverage and profiling
+*.profraw
+default.profraw
+
+# Language Server Protocol
+buildServer.json
+
 # Environment variables
 .env
 .env*
