@@ -1,0 +1,41 @@
+---
+alwaysApply: true
+description: 'Local dev workflows for backend and macOS app; env coordination'
+---
+
+# Dev Run & Environment Coordination
+
+## Backend (FastAPI)
+
+- Directory: [apps/backend](mdc:apps/backend)
+- Commands
+  - `uv sync`
+  - `uv run dev` (fast refresh, APP_ENV=dev)
+  - `uv run prod` (production)
+
+## macOS app (SwiftUI)
+
+- Directory: [apps/macos/Voyager](mdc:apps/macos/Voyager)
+- **Xcode**: Open the workspace in Xcode and run the desired scheme
+- **Cursor/VSCode**: Use Sweetpad extension for Swift development
+  - Install Sweetpad extension in Cursor/VSCode
+  - Open Swift files directly in Cursor/VSCode
+  - Build and run via Sweetpad's integrated tools
+- The helper can launch the backend with Swift-dotenv environment loading.
+
+## Environment (.env at repo root)
+
+- Recommended keys:
+  - `APP_ENV=dev|prod` (used by dotenv helper)
+  - `BACKEND_DIR=apps/backend`
+  - `VOYAGER_HOST=127.0.0.1`
+  - `VOYAGER_PORT=8000`
+  - `BACKEND_URL=http://${VOYAGER_HOST}:${VOYAGER_PORT}`
+  - `UV_CMD=uv`
+  - `VOYAGER_PATH=/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/sbin`
+  - `VOYAGER_LOG_FILE=apps/macos/logs/voyager.log`
+
+## Notes
+
+- Frontend should derive API base from `BACKEND_URL`.
+- Ensure backend is running before invoking API-dependent features.
