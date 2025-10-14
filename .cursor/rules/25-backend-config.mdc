@@ -1,0 +1,45 @@
+---
+globs: apps/backend/**/*.py
+description: 'Backend configuration policy — Hydra-based loading, overrides, and secrets management'
+---
+
+# Backend Configuration Policy
+
+## Configuration System
+
+- **Hydra-based**: Configuration management with environment-specific overrides
+- **Config directory**: [apps/backend/src/conf](mdc:apps/backend/src/conf)
+- **Loader**: [apps/backend/src/app/config.py](mdc:apps/backend/src/app/config.py)
+
+## Environment Management
+
+- **Environment selection**: Use `APP_ENV` to switch between `dev`/`prod`
+- **Load order**: Process env vars → `.env` file → Hydra config composition
+- **Override support**: CLI overrides via `uv run dev 'key=value'`
+- **Integration**: Shared environment keys with frontend (see [01-dev-run-and-env.mdc](mdc:.cursor/rules/01-dev-run-and-env.mdc))
+
+## Configuration Access
+
+- **App state**: Load once in FastAPI lifespan and attach to `app.state.config`
+- **Usage**: Access from endpoints/services via `request.app.state.config`
+- **Type safety**: Consider Structured Config migration for complex schemas
+
+## Secrets Management
+
+- **Security guidelines**: Follow [04-security-and-secrets.mdc](mdc:.cursor/rules/04-security-and-secrets.mdc) for comprehensive security practices
+- **Reference pattern**: Use `${oc.env:VAR, ""}` in config files
+
+## Adding New Configuration
+
+1. Define defaults in [config.yaml](mdc:apps/backend/src/conf/config.yaml)
+2. Add environment-specific overrides in [dev.yaml](mdc:apps/backend/src/conf/env/dev.yaml) and [prod.yaml](mdc:apps/backend/src/conf/env/prod.yaml)
+3. Keep secrets in `.env`/environment and reference with `oc.env`
+4. Update related code to reflect type assumptions
+5. Consider impact on data models (see [24-data-modeling-and-schemas.mdc](mdc:.cursor/rules/24-data-modeling-and-schemas.mdc))
+6. Follow security practices (see [04-security-and-secrets.mdc](mdc:.cursor/rules/04-security-and-secrets.mdc))
+
+## Notes
+
+- See [20-backend-overview.mdc](mdc:.cursor/rules/20-backend-overview.mdc) for backend overview
+- See [02-architecture-overview.mdc](mdc:.cursor/rules/02-architecture-overview.mdc) for system architecture
+- See [05-logging-observability.mdc](mdc:.cursor/rules/05-logging-observability.mdc) for logging configuration
