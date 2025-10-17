@@ -8,6 +8,7 @@
 		"editorconfig.editorconfig",
 		"sweetpad.sweetpad",
 		"vknabel.vscode-swiftformat",
-		"vknabel.vscode-swiftlint",
+    "vknabel.vscode-swiftlint",
+    "swiftlang.swift-vscode",
 	]
 }

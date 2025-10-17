@@ -1,0 +1,27 @@
+---
+globs: apps/macos/**/*.swift
+description: 'SwiftUI + TCA frontend overview and backend bootstrap'
+---
+
+# Frontend (macOS SwiftUI + TCA) — Overview
+
+## Structure (Domain-based)
+
+- **Cohesion**: Related functionality grouped by business domain
+- **Separation**: Clear boundaries between domains
+- **Dependencies**: Core infrastructure provides shared services
+- **Scalability**: Easy to add new domains (e.g., AI/Search, Settings, etc.)
+
+## Backend bootstrap from app
+
+- **Swift-dotenv approach**: Environment variables loaded from `.env` at repo root
+- **Implementation**: [BackendManagerDotenv.swift](mdc:apps/macos/Voyager/VoyagerHelper/BackendManagerDotenv.swift)
+- **Environment keys**: `UV_CMD`, `BACKEND_DIR`, `VOYAGER_PATH`, `VOYAGER_HOST`, `VOYAGER_PORT`, `BACKEND_URL`, `VOYAGER_LOG_FILE`
+
+## Notes
+
+- Prefer deriving API base from `BACKEND_URL`.
+- Ensure helper launches backend before issuing API calls.
+- See [12-frontend-http-client-guidelines.mdc](mdc:.cursor/rules/12-frontend-http-client-guidelines.mdc) for HTTP client patterns.
+- See [13-frontend-tca-conventions.mdc](mdc:.cursor/rules/13-frontend-tca-conventions.mdc) for TCA conventions.
+- See [11-frontend-dotenv-integration.mdc](mdc:.cursor/rules/11-frontend-dotenv-integration.mdc) for Swift-dotenv usage.

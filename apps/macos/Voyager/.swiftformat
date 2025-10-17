@@ -8,3 +8,13 @@
 --closingparen balanced
 --header strip
 --self remove
+
+# Exclude pattern matching - ignore TCA reducer syntax
+--disable redundantClosure
+--disable trailingClosures
+
+# Preserve reduce builder syntax
+--ifdef no-indent
+
+# Allow explicit self in @MainActor and escaping closures
+--selfrequired @MainActor,@escaping
