@@ -56,17 +56,5 @@ struct MenuCommands: Commands {
             .keyboardShortcut(.rightArrow, modifiers: .command)
             .disabled(fileManagerStore?.canGoForward == false)
         }
-
-        CommandGroup(after: .windowArrangement) {
-            Button("Select Previous Tab") {
-                NSApp.keyWindow?.selectPreviousTab(nil)
-            }
-            .keyboardShortcut("[", modifiers: [.command, .shift])
-
-            Button("Select Next Tab") {
-                NSApp.keyWindow?.selectNextTab(nil)
-            }
-            .keyboardShortcut("]", modifiers: [.command, .shift])
-        }
     }
 }
