@@ -1,19 +1,11 @@
 import AppKit
 import SwiftUI
 
-class AppDelegate: NSObject, NSApplicationDelegate {
-    func applicationWillTerminate(_: Notification) {
-        // 앱 종료 시 핀 탭 저장
-        PinnedTabsManager.shared.saveToPlist()
-    }
-}
-
 @main
 struct VoyagerApp: App {
-    @NSApplicationDelegateAdaptor(AppDelegate.self)
-    var appDelegate
-
     init() {
+        NSWindow.allowsAutomaticWindowTabbing = true
+        UserDefaults.standard.set(true, forKey: "NSWindowShowTabBarOnlyWithMultipleTabs")
         launchHelperOnce()
     }
 
@@ -22,6 +14,8 @@ struct VoyagerApp: App {
             FileManagerView()
         }
         .windowStyle(.hiddenTitleBar)
+        .windowToolbarStyle(.unified)
+        .defaultSize(width: 850, height: 550)
         .commands {
             MenuCommands()
         }

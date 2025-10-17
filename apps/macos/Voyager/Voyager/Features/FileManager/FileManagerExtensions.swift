@@ -1,9 +1,10 @@
+import ComposableArchitecture
 import SwiftUI
 
 enum FileManagerExtensions {}
 
-struct TabManagerKey: FocusedValueKey {
-    typealias Value = TabManager
+struct FileManagerStoreKey: FocusedValueKey {
+    typealias Value = StoreOf<FileManagerFeature>
 }
 
 struct ColumnVisibilityKey: FocusedValueKey {
@@ -11,9 +12,9 @@ struct ColumnVisibilityKey: FocusedValueKey {
 }
 
 extension FocusedValues {
-    var tabManager: TabManager? {
-        get { self[TabManagerKey.self] }
-        set { self[TabManagerKey.self] = newValue }
+    var fileManagerStore: StoreOf<FileManagerFeature>? {
+        get { self[FileManagerStoreKey.self] }
+        set { self[FileManagerStoreKey.self] = newValue }
     }
 
     var columnVisibility: Binding<NavigationSplitViewVisibility>? {

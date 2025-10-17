@@ -1,102 +1,72 @@
 import AppKit
+import ComposableArchitecture
 import SwiftUI
 
-/// 메뉴바 커맨드 정의
 struct MenuCommands: Commands {
-    @FocusedValue(\.tabManager)
-    var tabManager: TabManager?
+    @FocusedValue(\.fileManagerStore)
+    var fileManagerStore: StoreOf<FileManagerFeature>?
 
     @FocusedValue(\.columnVisibility)
     var columnVisibility: Binding<NavigationSplitViewVisibility>?
 
-    private func getPinTabTitle(for tabManager: TabManager?) -> String {
-        guard let tabManager = tabManager,
-              let currentTab = tabManager.currentTab
-        else {
-            return "Pin Tab"
-        }
-        return currentTab.isPinned ? "Unpin Tab" : "Pin Tab"
-    }
-
     var body: some Commands {
-        CommandGroup(after: .newItem) {
+        CommandGroup(replacing: .newItem) {
+            Button("New Window") {
+                NSApp.sendAction(#selector(NSResponder.newWindowForTab(_:)), to: nil, from: nil)
+            }
+            .keyboardShortcut("n", modifiers: .command)
+
             Button("New Tab") {
-                tabManager?.createTab()
+                NSApp.keyWindow?.newWindowForTab(nil)
             }
             .keyboardShortcut("t", modifiers: .command)
 
             Divider()
 
-            Button("Close Window") {
+            Button("Close Tab") {
                 NSApp.sendAction(#selector(NSWindow.performClose(_:)), to: nil, from: nil)
             }
-            .keyboardShortcut("w", modifiers: [.command, .shift])
-
-            Button("Close Tab") {
-                if let selectedID = tabManager?.selectedTabID {
-                    tabManager?.closeTab(id: selectedID)
-                }
-            }
             .keyboardShortcut("w", modifiers: .command)
+
+            Button("Close Window") {
+                NSApp.keyWindow?.close()
+            }
+            .keyboardShortcut("w", modifiers: [.command, .shift])
         }
 
-        CommandGroup(replacing: .saveItem) {
-            // 기본 Close/Close All 메뉴들 제거
-        }
-
-        CommandMenu("Tabs") {
-            Button("Previous Tab") {
-                tabManager?.selectTab(direction: .previous)
-            }
-            .keyboardShortcut(.leftArrow, modifiers: .command)
-
-            Button("Next Tab") {
-                tabManager?.selectTab(direction: .next)
-            }
-            .keyboardShortcut(.rightArrow, modifiers: .command)
-
-            Divider()
-
-            Button("Go Back") {
-                if let currentTab = tabManager?.currentTab {
-                    _ = currentTab.goBack()
-                }
-            }
-            .keyboardShortcut(.leftArrow, modifiers: [.command, .shift])
-
-            Button("Go Forward") {
-                if let currentTab = tabManager?.currentTab {
-                    _ = currentTab.goForward()
-                }
-            }
-            .keyboardShortcut(.rightArrow, modifiers: [.command, .shift])
-
-            Divider()
-
-            Button(getPinTabTitle(for: tabManager)) {
-                if let selectedID = tabManager?.selectedTabID {
-                    tabManager?.togglePin(id: selectedID)
-                }
-            }
-            .keyboardShortcut("p", modifiers: .command)
-            .disabled(tabManager?.selectedTabID == nil)
-
-            Divider()
-
-            Button("Reopen Recently Closed Tab") {
-                tabManager?.restoreRecentlyClosedTab()
-            }
-            .keyboardShortcut("t", modifiers: [.command, .shift])
-            .disabled(tabManager?.hasRecentlyClosedTabs == false)
-        }
-
-        CommandMenu("View") {
+        CommandGroup(replacing: .sidebar) {
             Button(columnVisibility?.wrappedValue == .all ? "Hide Sidebar" : "Show Sidebar") {
                 let current = columnVisibility?.wrappedValue
                 columnVisibility?.wrappedValue = (current == .all) ? .detailOnly : .all
             }
             .keyboardShortcut("s", modifiers: .command)
             .disabled(columnVisibility == nil)
+        }
+
+        CommandMenu("Go") {
+            Button("Back") {
+                fileManagerStore?.send(.goBack)
+            }
+            .keyboardShortcut(.leftArrow, modifiers: .command)
+            .disabled(fileManagerStore?.canGoBack == false)
+
+            Button("Forward") {
+                fileManagerStore?.send(.goForward)
+            }
+            .keyboardShortcut(.rightArrow, modifiers: .command)
+            .disabled(fileManagerStore?.canGoForward == false)
+        }
+
+        CommandGroup(after: .windowArrangement) {
+            Button("Select Previous Tab") {
+                NSApp.keyWindow?.selectPreviousTab(nil)
+            }
+            .keyboardShortcut("[", modifiers: [.command, .shift])
+
+            Button("Select Next Tab") {
+                NSApp.keyWindow?.selectNextTab(nil)
+            }
+            .keyboardShortcut("]", modifiers: [.command, .shift])
         }
     }
 }
