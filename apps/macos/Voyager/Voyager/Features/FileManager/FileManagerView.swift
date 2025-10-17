@@ -12,13 +12,19 @@ struct FileManagerView: View {
     }
 
     var body: some View {
-        NavigationSplitView(columnVisibility: $columnVisibility) {
-            SidebarView()
-        } detail: {
-            ContentPaneView(store: store)
+        ZStack {
+            KeyCommandView { event in
+                handleKeyCommand(event)
+            }
+
+            NavigationSplitView(columnVisibility: $columnVisibility) {
+                SidebarView()
+            } detail: {
+                ContentPaneView(store: store)
+            }
+            .navigationSplitViewStyle(.balanced)
+            .frame(minWidth: 800, minHeight: 600)
         }
-        .navigationSplitViewStyle(.balanced)
-        .frame(minWidth: 800, minHeight: 600)
         .toolbar {
             ToolbarItemGroup(placement: .navigation) {
                 Button {
@@ -53,5 +59,25 @@ struct FileManagerView: View {
             columnVisibility = savedVisible ? .all : .detailOnly
             store.send(.onAppear)
         }
+    }
+
+    private func handleKeyCommand(_ event: NSEvent) {
+        guard event.modifierFlags.contains(.command) else { return }
+
+        if let number = Int(event.characters ?? ""), (1 ... 9).contains(number) {
+            selectTab(at: number - 1)
+        } else if event.characters == "0" {
+            selectTab(at: 9)
+        }
+    }
+
+    private func selectTab(at index: Int) {
+        guard let window = NSApp.keyWindow,
+              let tabGroup = window.tabGroup,
+              index < tabGroup.windows.count
+        else {
+            return
+        }
+        tabGroup.windows[index].makeKeyAndOrderFront(nil)
     }
 }
