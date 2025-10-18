@@ -29,7 +29,7 @@ struct MenuCommands: Commands {
             }
             .keyboardShortcut("d", modifiers: .command)
 
-            Button("Reopen Closed Tab") {
+            Button("Reopen Recently Closed Tab") {
                 AppDelegate.shared?.reopenLastClosedTab()
             }
             .keyboardShortcut("t", modifiers: [.command, .shift])
@@ -83,10 +83,10 @@ struct MenuCommands: Commands {
             }
             .keyboardShortcut(.rightArrow, modifiers: .command)
             .disabled(fileManagerStore?.canGoForward == false)
+        }
 
-            Divider()
-
-            Button("Last Focused Tab") {
+        CommandGroup(after: .windowList) {
+            Button("Switch Focus to Last Focused Tab") {
                 AppDelegate.shared?.switchToLastFocusedTab()
             }
             .keyboardShortcut(.tab, modifiers: .control)
