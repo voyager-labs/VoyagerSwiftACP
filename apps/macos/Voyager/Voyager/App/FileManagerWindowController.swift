@@ -4,11 +4,21 @@ import SwiftUI
 
 class FileManagerWindowController: NSWindowController, NSWindowDelegate {
     private let initialPath: String?
+    let store: StoreOf<FileManagerFeature>
 
-    init(path: String? = nil, asTab: Bool = true) {
+    init(path: String? = nil, duplicateState: FileManagerFeature.State? = nil, asTab: Bool = true) {
         initialPath = path
 
-        let store = Store(initialState: FileManagerFeature.State()) {
+        let state: FileManagerFeature.State
+        if let duplicateState = duplicateState {
+            var newState = duplicateState
+            newState.fsItems = FSItemsFeature.State()
+            state = newState
+        } else {
+            state = FileManagerFeature.State()
+        }
+
+        store = Store(initialState: state) {
             FileManagerFeature()
         }
         let rootView = FileManagerView(store: store, initialPath: path)

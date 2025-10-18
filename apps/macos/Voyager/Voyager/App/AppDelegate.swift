@@ -1,4 +1,5 @@
 import AppKit
+import ComposableArchitecture
 import SwiftUI
 
 class AppDelegate: NSObject, NSApplicationDelegate {
@@ -35,20 +36,27 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         controller.showWindow(nil)
     }
 
-    @objc
-    func createNewTab(path: String? = nil) {
+    func createNewTab(path: String? = nil, duplicateState: FileManagerFeature.State? = nil) {
         guard let keyWindow = NSApp.keyWindow else {
             createNewWindow(path: path)
             return
         }
 
-        let controller = FileManagerWindowController(path: path, asTab: true)
+        let controller = FileManagerWindowController(path: path, duplicateState: duplicateState, asTab: true)
         windowControllers.append(controller)
 
         if let newWindow = controller.window {
             keyWindow.addTabbedWindow(newWindow, ordered: .above)
             newWindow.makeKeyAndOrderFront(nil)
         }
+    }
+
+    func duplicateCurrentTab() {
+        guard let keyWindow = NSApp.keyWindow,
+              let controller = windowControllers.first(where: { $0.window == keyWindow })
+        else { return }
+
+        createNewTab(duplicateState: controller.store.state)
     }
 
     func windowWillClose(controller: FileManagerWindowController) {

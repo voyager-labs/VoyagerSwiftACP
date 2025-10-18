@@ -22,12 +22,9 @@ struct MenuCommands: Commands {
             .keyboardShortcut("t", modifiers: .command)
 
             Button("Duplicate Tab") {
-                if let currentPath = fileManagerStore?.currentPath {
-                    AppDelegate.shared?.createNewTab(path: currentPath)
-                }
+                AppDelegate.shared?.duplicateCurrentTab()
             }
             .keyboardShortcut("d", modifiers: .command)
-            .disabled(fileManagerStore == nil)
 
             Divider()
 
