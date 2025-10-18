@@ -2,10 +2,15 @@ import AppKit
 import ComposableArchitecture
 import SwiftUI
 
+extension Notification.Name {
+    static let closedTabsChanged = Notification.Name("closedTabsChanged")
+}
+
 class AppDelegate: NSObject, NSApplicationDelegate {
     static var shared: AppDelegate?
 
     var windowControllers: [FileManagerWindowController] = []
+    var closedTabPaths: [String] = []
 
     override init() {
         super.init()
@@ -68,7 +73,31 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         tabGroup.windows[index].makeKeyAndOrderFront(nil)
     }
 
+    func reopenLastClosedTab() {
+        guard let path = closedTabPaths.popLast() else { return }
+        NotificationCenter.default.post(name: .closedTabsChanged, object: nil)
+        createNewTab(path: path)
+    }
+
     func windowWillClose(controller: FileManagerWindowController) {
+        guard let window = controller.window else {
+            windowControllers.removeAll { $0 === controller }
+            return
+        }
+
+        let isTab = window.tabbingMode == .preferred && window.tabbingIdentifier == "file-manager"
+
+        if isTab {
+            let currentPath = controller.store.state.currentPath
+            closedTabPaths.append(currentPath)
+
+            if closedTabPaths.count > 10 {
+                closedTabPaths.removeFirst()
+            }
+
+            NotificationCenter.default.post(name: .closedTabsChanged, object: nil)
+        }
+
         windowControllers.removeAll { $0 === controller }
     }
 

@@ -9,6 +9,8 @@ struct MenuCommands: Commands {
     @FocusedValue(\.columnVisibility)
     var columnVisibility: Binding<NavigationSplitViewVisibility>?
 
+    @State private var hasClosedTabs: Bool = false
+
     var body: some Commands {
         CommandGroup(replacing: .newItem) {
             Button("New Window") {
@@ -25,6 +27,18 @@ struct MenuCommands: Commands {
                 AppDelegate.shared?.duplicateCurrentTab()
             }
             .keyboardShortcut("d", modifiers: .command)
+
+            Button("Reopen Closed Tab") {
+                AppDelegate.shared?.reopenLastClosedTab()
+            }
+            .keyboardShortcut("t", modifiers: [.command, .shift])
+            .disabled(!hasClosedTabs)
+            .onReceive(NotificationCenter.default.publisher(for: .closedTabsChanged)) { _ in
+                hasClosedTabs = !(AppDelegate.shared?.closedTabPaths.isEmpty ?? true)
+            }
+            .onAppear {
+                hasClosedTabs = !(AppDelegate.shared?.closedTabPaths.isEmpty ?? true)
+            }
 
             Divider()
 
