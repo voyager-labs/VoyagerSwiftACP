@@ -10,7 +10,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     static var shared: AppDelegate?
 
     var windowControllers: [FileManagerWindowController] = []
-    var closedTabPaths: [String] = []
+    var closedTabHistory: [(path: String, state: FileManagerFeature.State)] = []
 
     override init() {
         super.init()
@@ -74,9 +74,9 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     func reopenLastClosedTab() {
-        guard let path = closedTabPaths.popLast() else { return }
+        guard let (_, state) = closedTabHistory.popLast() else { return }
         NotificationCenter.default.post(name: .closedTabsChanged, object: nil)
-        createNewTab(path: path)
+        createNewTab(path: nil, duplicateState: state)
     }
 
     func windowWillClose(controller: FileManagerWindowController) {
@@ -89,10 +89,11 @@ class AppDelegate: NSObject, NSApplicationDelegate {
 
         if isTab {
             let currentPath = controller.store.state.currentPath
-            closedTabPaths.append(currentPath)
+            let currentState = controller.store.state
+            closedTabHistory.append((path: currentPath, state: currentState))
 
-            if closedTabPaths.count > 10 {
-                closedTabPaths.removeFirst()
+            if closedTabHistory.count > 10 {
+                closedTabHistory.removeFirst()
             }
 
             NotificationCenter.default.post(name: .closedTabsChanged, object: nil)

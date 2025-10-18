@@ -34,10 +34,10 @@ struct MenuCommands: Commands {
             .keyboardShortcut("t", modifiers: [.command, .shift])
             .disabled(!hasClosedTabs)
             .onReceive(NotificationCenter.default.publisher(for: .closedTabsChanged)) { _ in
-                hasClosedTabs = !(AppDelegate.shared?.closedTabPaths.isEmpty ?? true)
+                hasClosedTabs = !(AppDelegate.shared?.closedTabHistory.isEmpty ?? true)
             }
             .onAppear {
-                hasClosedTabs = !(AppDelegate.shared?.closedTabPaths.isEmpty ?? true)
+                hasClosedTabs = !(AppDelegate.shared?.closedTabHistory.isEmpty ?? true)
             }
 
             Divider()
