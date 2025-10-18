@@ -9,6 +9,9 @@
 --header strip
 --self remove
 
+# Exclude build artifacts and generated files
+--exclude build,Pods,.build,DerivedData
+
 # Exclude pattern matching - ignore TCA reducer syntax
 --disable redundantClosure
 --disable trailingClosures
