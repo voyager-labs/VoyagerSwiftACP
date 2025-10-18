@@ -59,6 +59,15 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         createNewTab(duplicateState: controller.store.state)
     }
 
+    func selectTab(at index: Int) {
+        guard let window = NSApp.keyWindow,
+              let tabGroup = window.tabGroup,
+              index < tabGroup.windows.count
+        else { return }
+
+        tabGroup.windows[index].makeKeyAndOrderFront(nil)
+    }
+
     func windowWillClose(controller: FileManagerWindowController) {
         windowControllers.removeAll { $0 === controller }
     }

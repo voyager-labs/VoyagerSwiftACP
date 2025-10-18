@@ -17,12 +17,9 @@ struct FileManagerView: View {
                 guard event.modifierFlags.contains(.command) else { return }
 
                 if let number = Int(event.characters ?? ""), (1 ... 9).contains(number) {
-                    if let window = NSApp.keyWindow,
-                       let tabGroup = window.tabGroup,
-                       number <= tabGroup.windows.count
-                    {
-                        tabGroup.windows[number - 1].makeKeyAndOrderFront(nil)
-                    }
+                    AppDelegate.shared?.selectTab(at: number - 1)
+                } else if event.characters == "0" {
+                    AppDelegate.shared?.selectTab(at: 9)
                 }
             }
 
