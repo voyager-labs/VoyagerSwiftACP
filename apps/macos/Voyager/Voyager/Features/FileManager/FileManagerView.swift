@@ -4,11 +4,11 @@ import SwiftUI
 struct FileManagerView: View {
     let store: StoreOf<FileManagerFeature>
     @State private var columnVisibility: NavigationSplitViewVisibility = .all
+    let initialPath: String?
 
-    init() {
-        store = Store(initialState: FileManagerFeature.State()) {
-            FileManagerFeature()
-        }
+    init(store: StoreOf<FileManagerFeature>, initialPath: String? = nil) {
+        self.store = store
+        self.initialPath = initialPath
     }
 
     var body: some View {
@@ -17,9 +17,12 @@ struct FileManagerView: View {
                 guard event.modifierFlags.contains(.command) else { return }
 
                 if let number = Int(event.characters ?? ""), (1 ... 9).contains(number) {
-                    store.send(.selectTab(at: number - 1))
-                } else if event.characters == "0" {
-                    store.send(.selectTab(at: 9))
+                    if let window = NSApp.keyWindow,
+                       let tabGroup = window.tabGroup,
+                       number <= tabGroup.windows.count
+                    {
+                        tabGroup.windows[number - 1].makeKeyAndOrderFront(nil)
+                    }
                 }
             }
 
@@ -63,7 +66,12 @@ struct FileManagerView: View {
         .onAppear {
             let savedVisible = UserDefaults.standard.object(forKey: "sidebarVisible") as? Bool ?? true
             columnVisibility = savedVisible ? .all : .detailOnly
-            store.send(.onAppear)
+
+            if let path = initialPath {
+                store.send(.navigateTo(path))
+            } else {
+                store.send(.onAppear)
+            }
         }
     }
 }

@@ -12,24 +12,40 @@ struct MenuCommands: Commands {
     var body: some Commands {
         CommandGroup(replacing: .newItem) {
             Button("New Window") {
-                NSApp.sendAction(#selector(NSResponder.newWindowForTab(_:)), to: nil, from: nil)
+                AppDelegate.shared?.createNewWindow()
             }
             .keyboardShortcut("n", modifiers: .command)
 
             Button("New Tab") {
-                NSApp.keyWindow?.newWindowForTab(nil)
+                AppDelegate.shared?.createNewTab()
             }
             .keyboardShortcut("t", modifiers: .command)
+
+            Button("Duplicate Tab") {
+                if let currentPath = fileManagerStore?.currentPath {
+                    AppDelegate.shared?.createNewTab(path: currentPath)
+                }
+            }
+            .keyboardShortcut("d", modifiers: .command)
+            .disabled(fileManagerStore == nil)
 
             Divider()
 
             Button("Close Tab") {
-                NSApp.sendAction(#selector(NSWindow.performClose(_:)), to: nil, from: nil)
+                NSApp.keyWindow?.close()
             }
             .keyboardShortcut("w", modifiers: .command)
 
             Button("Close Window") {
-                NSApp.keyWindow?.close()
+                if let window = NSApp.keyWindow,
+                   let tabGroup = window.tabGroup
+                {
+                    for tabWindow in tabGroup.windows {
+                        tabWindow.close()
+                    }
+                } else {
+                    NSApp.keyWindow?.close()
+                }
             }
             .keyboardShortcut("w", modifiers: [.command, .shift])
         }

@@ -22,8 +22,8 @@ struct FileManagerFeature {
 
     enum Action: Equatable {
         case onAppear
+        case navigateTo(String)
         case openItem(id: String)
-        case selectTab(at: Int)
         case goBack
         case goForward
         case fsItems(FSItemsFeature.Action)
@@ -38,6 +38,12 @@ struct FileManagerFeature {
             switch action {
             case .onAppear:
                 return .send(.fsItems(.loadItems(path: state.currentPath)))
+
+            case let .navigateTo(path):
+                state.currentPath = path
+                state.backHistory = []
+                state.forwardHistory = []
+                return .send(.fsItems(.loadItems(path: path)))
 
             case let .openItem(id):
                 guard let item = state.fsItems.items.first(where: { $0.id == id }) else {
@@ -68,19 +74,6 @@ struct FileManagerFeature {
                 state.backHistory.append(state.currentPath)
                 state.currentPath = nextPath
                 return .send(.fsItems(.loadItems(path: nextPath)))
-
-            case let .selectTab(index):
-                return .run { _ in
-                    await MainActor.run {
-                        guard let window = NSApplication.shared.keyWindow,
-                              let tabGroup = window.tabGroup,
-                              index < tabGroup.windows.count
-                        else {
-                            return
-                        }
-                        tabGroup.windows[index].makeKeyAndOrderFront(nil)
-                    }
-                }
 
             case .fsItems:
                 return .none

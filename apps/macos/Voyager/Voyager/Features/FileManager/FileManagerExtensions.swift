@@ -1,8 +1,6 @@
 import ComposableArchitecture
 import SwiftUI
 
-enum FileManagerExtensions {}
-
 struct FileManagerStoreKey: FocusedValueKey {
     typealias Value = StoreOf<FileManagerFeature>
 }
