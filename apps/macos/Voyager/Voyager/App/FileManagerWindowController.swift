@@ -47,6 +47,10 @@ class FileManagerWindowController: NSWindowController, NSWindowDelegate {
         fatalError("init(coder:) has not been implemented")
     }
 
+    func windowDidBecomeKey(_: Notification) {
+        AppDelegate.shared?.updateFocusHistory(window: window)
+    }
+
     func windowWillClose(_: Notification) {
         AppDelegate.shared?.windowWillClose(controller: self)
     }

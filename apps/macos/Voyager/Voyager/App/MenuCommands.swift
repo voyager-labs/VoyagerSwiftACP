@@ -10,6 +10,7 @@ struct MenuCommands: Commands {
     var columnVisibility: Binding<NavigationSplitViewVisibility>?
 
     @State private var hasClosedTabs: Bool = false
+    @State private var hasFocusHistory: Bool = false
 
     var body: some Commands {
         CommandGroup(replacing: .newItem) {
@@ -82,6 +83,20 @@ struct MenuCommands: Commands {
             }
             .keyboardShortcut(.rightArrow, modifiers: .command)
             .disabled(fileManagerStore?.canGoForward == false)
+
+            Divider()
+
+            Button("Last Focused Tab") {
+                AppDelegate.shared?.switchToLastFocusedTab()
+            }
+            .keyboardShortcut(.tab, modifiers: .control)
+            .disabled(!hasFocusHistory)
+            .onReceive(NotificationCenter.default.publisher(for: .focusHistoryChanged)) { _ in
+                hasFocusHistory = AppDelegate.shared?.hasValidFocusHistory ?? false
+            }
+            .onAppear {
+                hasFocusHistory = AppDelegate.shared?.hasValidFocusHistory ?? false
+            }
         }
     }
 }

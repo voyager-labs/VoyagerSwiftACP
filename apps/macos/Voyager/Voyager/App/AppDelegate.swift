@@ -4,13 +4,23 @@ import SwiftUI
 
 extension Notification.Name {
     static let closedTabsChanged = Notification.Name("closedTabsChanged")
+    static let focusHistoryChanged = Notification.Name("focusHistoryChanged")
 }
 
 class AppDelegate: NSObject, NSApplicationDelegate {
     static var shared: AppDelegate?
 
     var windowControllers: [FileManagerWindowController] = []
-    var closedTabHistory: [(path: String, state: FileManagerFeature.State)] = []
+    var closedTabHistory: [FileManagerFeature.State] = []
+    var focusHistory: [NSWindow] = []
+    private var isNavigatingFocusHistory: Bool = false
+
+    var hasValidFocusHistory: Bool {
+        let validWindows = focusHistory.filter { window in
+            window != NSApp.keyWindow && windowControllers.contains(where: { $0.window == window })
+        }
+        return !validWindows.isEmpty
+    }
 
     override init() {
         super.init()
@@ -74,9 +84,45 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     func reopenLastClosedTab() {
-        guard let (_, state) = closedTabHistory.popLast() else { return }
+        guard let state = closedTabHistory.popLast() else { return }
         NotificationCenter.default.post(name: .closedTabsChanged, object: nil)
         createNewTab(path: nil, duplicateState: state)
+    }
+
+    func updateFocusHistory(window: NSWindow?) {
+        guard let window = window else { return }
+
+        if isNavigatingFocusHistory {
+            isNavigatingFocusHistory = false
+            return
+        }
+
+        focusHistory.removeAll { $0 == window }
+
+        if focusHistory.count >= 10 {
+            focusHistory.removeLast()
+        }
+
+        focusHistory.insert(window, at: 0)
+        NotificationCenter.default.post(name: .focusHistoryChanged, object: nil)
+    }
+
+    func switchToLastFocusedTab() {
+        if let currentWindow = NSApp.keyWindow {
+            focusHistory.removeAll { $0 == currentWindow }
+        }
+
+        let validWindows = focusHistory.filter { window in
+            windowControllers.contains(where: { $0.window == window })
+        }
+
+        guard let targetWindow = validWindows.first else { return }
+
+        focusHistory.removeAll { $0 == targetWindow }
+        NotificationCenter.default.post(name: .focusHistoryChanged, object: nil)
+
+        isNavigatingFocusHistory = true
+        targetWindow.makeKeyAndOrderFront(nil)
     }
 
     func windowWillClose(controller: FileManagerWindowController) {
@@ -88,9 +134,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         let isTab = window.tabbingMode == .preferred && window.tabbingIdentifier == "file-manager"
 
         if isTab {
-            let currentPath = controller.store.state.currentPath
-            let currentState = controller.store.state
-            closedTabHistory.append((path: currentPath, state: currentState))
+            closedTabHistory.append(controller.store.state)
 
             if closedTabHistory.count > 10 {
                 closedTabHistory.removeFirst()
@@ -99,6 +143,8 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             NotificationCenter.default.post(name: .closedTabsChanged, object: nil)
         }
 
+        focusHistory.removeAll { $0 == window }
+        NotificationCenter.default.post(name: .focusHistoryChanged, object: nil)
         windowControllers.removeAll { $0 === controller }
     }
 
