@@ -7,11 +7,9 @@ struct FileManagerFeature {
     @ObservableState
     struct State: Equatable {
         var currentPath: String = FileManager.default.homeDirectoryForCurrentUser.path
-        var items: [FSItemModel] = []
-        var selectedIds: Set<String> = []
-        var isLoading: Bool = false
         var backHistory: [String] = []
         var forwardHistory: [String] = []
+        var fsItems: FSItemsFeature.State = .init()
 
         var canGoBack: Bool {
             !backHistory.isEmpty
@@ -24,82 +22,34 @@ struct FileManagerFeature {
 
     enum Action: Equatable {
         case onAppear
-        case loadItems(path: String)
-        case itemsLoaded([FSItemModel])
-        case selectItem(id: String, isCommandPressed: Bool)
         case openItem(id: String)
         case selectTab(at: Int)
         case goBack
         case goForward
+        case fsItems(FSItemsFeature.Action)
     }
 
     var body: some Reducer<State, Action> {
+        Scope(state: \.fsItems, action: \.fsItems) {
+            FSItemsFeature()
+        }
+
         Reduce { state, action in
             switch action {
             case .onAppear:
-                return .send(.loadItems(path: state.currentPath))
-
-            case let .loadItems(path):
-                state.isLoading = true
-                return .run { send in
-                    let url = URL(fileURLWithPath: (path as NSString).expandingTildeInPath)
-                    let contents = (try? FileManager.default.contentsOfDirectory(
-                        at: url,
-                        includingPropertiesForKeys: [.isDirectoryKey],
-                        options: [.skipsHiddenFiles]
-                    )) ?? []
-
-                    let mapped: [FSItemModel] = contents.map { itemURL in
-                        let isDirectory = (try? itemURL.resourceValues(forKeys: [.isDirectoryKey]))?
-                            .isDirectory ?? false
-                        return FSItemModel(
-                            name: itemURL.lastPathComponent,
-                            fullPath: itemURL.path,
-                            isDirectory: isDirectory
-                        )
-                    }
-
-                    let items = mapped.sorted { item1, item2 in
-                        if item1.isDirectory != item2.isDirectory {
-                            return item1.isDirectory
-                        }
-                        return item1.name.localizedCaseInsensitiveCompare(item2.name) == .orderedAscending
-                    }
-
-                    await send(.itemsLoaded(items))
-                }
-
-            case let .itemsLoaded(items):
-                state.items = items
-                state.isLoading = false
-                return .none
-
-            case let .selectItem(id, isCommandPressed):
-                if isCommandPressed {
-                    if state.selectedIds.contains(id) {
-                        state.selectedIds.remove(id)
-                    } else {
-                        state.selectedIds.insert(id)
-                    }
-                } else {
-                    state.selectedIds = [id]
-                }
-                return .none
+                return .send(.fsItems(.loadItems(path: state.currentPath)))
 
             case let .openItem(id):
-                guard let item = state.items.first(where: { $0.id == id }) else {
+                guard let item = state.fsItems.items.first(where: { $0.id == id }) else {
                     return .none
                 }
 
                 if item.isDirectory {
-                    // 히스토리에 현재 경로 추가
                     state.backHistory.append(state.currentPath)
-                    state.forwardHistory = [] // 새 경로로 이동하면 forward 히스토리 초기화
+                    state.forwardHistory = []
                     state.currentPath = item.fullPath
-                    state.selectedIds = []
-                    return .send(.loadItems(path: item.fullPath))
+                    return .send(.fsItems(.loadItems(path: item.fullPath)))
                 } else {
-                    // 파일 열기 (나중에 구현)
                     return .none
                 }
 
@@ -109,8 +59,7 @@ struct FileManagerFeature {
                 }
                 state.forwardHistory.append(state.currentPath)
                 state.currentPath = previousPath
-                state.selectedIds = []
-                return .send(.loadItems(path: previousPath))
+                return .send(.fsItems(.loadItems(path: previousPath)))
 
             case .goForward:
                 guard let nextPath = state.forwardHistory.popLast() else {
@@ -118,8 +67,7 @@ struct FileManagerFeature {
                 }
                 state.backHistory.append(state.currentPath)
                 state.currentPath = nextPath
-                state.selectedIds = []
-                return .send(.loadItems(path: nextPath))
+                return .send(.fsItems(.loadItems(path: nextPath)))
 
             case let .selectTab(index):
                 return .run { _ in
@@ -133,6 +81,9 @@ struct FileManagerFeature {
                         tabGroup.windows[index].makeKeyAndOrderFront(nil)
                     }
                 }
+
+            case .fsItems:
+                return .none
             }
         }
     }

@@ -5,6 +5,8 @@ struct ContentPaneView: View {
     let store: StoreOf<FileManagerFeature>
 
     var body: some View {
+        let store = store.scope(state: \.fsItems, action: \.fsItems)
+
         if store.isLoading {
             ProgressView()
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -20,7 +22,7 @@ struct ContentPaneView: View {
                                 store.send(.selectItem(id: item.id, isCommandPressed: isCommandPressed))
                             },
                             onOpen: {
-                                store.send(.openItem(id: item.id))
+                                self.store.send(.openItem(id: item.id))
                             }
                         )
                     }
