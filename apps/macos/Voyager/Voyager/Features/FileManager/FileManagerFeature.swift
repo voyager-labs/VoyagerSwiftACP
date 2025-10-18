@@ -1,3 +1,4 @@
+import AppKit
 import ComposableArchitecture
 import Foundation
 
@@ -27,6 +28,7 @@ struct FileManagerFeature {
         case itemsLoaded([FSItemModel])
         case selectItem(id: String, isCommandPressed: Bool)
         case openItem(id: String)
+        case selectTab(at: Int)
         case goBack
         case goForward
     }
@@ -118,6 +120,19 @@ struct FileManagerFeature {
                 state.currentPath = nextPath
                 state.selectedIds = []
                 return .send(.loadItems(path: nextPath))
+
+            case let .selectTab(index):
+                return .run { _ in
+                    await MainActor.run {
+                        guard let window = NSApplication.shared.keyWindow,
+                              let tabGroup = window.tabGroup,
+                              index < tabGroup.windows.count
+                        else {
+                            return
+                        }
+                        tabGroup.windows[index].makeKeyAndOrderFront(nil)
+                    }
+                }
             }
         }
     }
