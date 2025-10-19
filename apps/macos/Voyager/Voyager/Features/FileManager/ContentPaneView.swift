@@ -19,7 +19,12 @@ struct ContentPaneView: View {
                             isSelected: store.selectedIds.contains(item.id),
                             onSelect: {
                                 let isCommandPressed = NSEvent.modifierFlags.contains(.command)
-                                store.send(.selectItem(id: item.id, isCommandPressed: isCommandPressed))
+                                let isShiftPressed = NSEvent.modifierFlags.contains(.shift)
+                                store.send(.selectItem(
+                                    id: item.id,
+                                    isCommandPressed: isCommandPressed,
+                                    isShiftPressed: isShiftPressed
+                                ))
                             },
                             onOpen: {
                                 self.store.send(.openItem(id: item.id))

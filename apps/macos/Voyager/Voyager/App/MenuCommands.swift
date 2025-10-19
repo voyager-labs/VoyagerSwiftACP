@@ -29,6 +29,14 @@ struct MenuCommands: Commands {
             }
             .keyboardShortcut("d", modifiers: .command)
 
+            Divider()
+
+            Button("Open") {
+                fileManagerStore?.send(.openSelectedItem)
+            }
+            .keyboardShortcut(.downArrow, modifiers: .command)
+            .disabled(fileManagerStore?.canOpenSelectedItem == false)
+
             Button("Reopen Recently Closed Tab") {
                 AppDelegate.shared?.reopenLastClosedTab()
             }
@@ -85,12 +93,6 @@ struct MenuCommands: Commands {
             .disabled(fileManagerStore?.canGoForward == false)
 
             Divider()
-
-            Button("Open") {
-                fileManagerStore?.send(.openSelectedItem)
-            }
-            .keyboardShortcut(.downArrow, modifiers: .command)
-            .disabled(fileManagerStore?.canOpenSelectedItem == false)
 
             Button("Enclosing Folder") {
                 fileManagerStore?.send(.goToEnclosingDirectory)

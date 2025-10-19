@@ -33,13 +33,13 @@ struct FileManagerFeature {
         }
 
         var canOpenSelectedItem: Bool {
-            guard let firstSelectedId = fsItems.selectedIds.first,
-                  fsItems.selectedIds.count == 1,
-                  let item = fsItems.items.first(where: { $0.id == firstSelectedId })
-            else {
+            guard !fsItems.selectedIds.isEmpty else {
                 return false
             }
-            return item.isDirectory
+            // 선택된 아이템 중 하나라도 폴더면 열 수 있음
+            return fsItems.selectedIds.contains { selectedId in
+                fsItems.items.first(where: { $0.id == selectedId })?.isDirectory == true
+            }
         }
 
         var pathComponents: [(name: String, fullPath: String)] {
@@ -109,12 +109,27 @@ struct FileManagerFeature {
                 }
 
             case .openSelectedItem:
-                guard let firstSelectedId = state.fsItems.selectedIds.first,
-                      state.fsItems.selectedIds.count == 1
-                else {
+                guard !state.fsItems.selectedIds.isEmpty else {
                     return .none
                 }
-                return .send(.openItem(id: firstSelectedId))
+
+                var selectedFolders: [FSItemModel] = []
+                for selectedId in state.fsItems.selectedIds {
+                    if let item = state.fsItems.items.first(where: { $0.id == selectedId }), item.isDirectory {
+                        selectedFolders.append(item)
+                    }
+                }
+
+                if selectedFolders.count == 1 {
+                    return .send(.openItem(id: selectedFolders[0].id))
+                } else if selectedFolders.count > 1 {
+                    for folder in selectedFolders {
+                        AppDelegate.shared?.createNewWindow(path: folder.fullPath)
+                    }
+                    return .none
+                } else {
+                    return .none
+                }
 
             case .goBack:
                 guard let previousPath = state.backHistory.popLast() else {

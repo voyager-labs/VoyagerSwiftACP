@@ -8,13 +8,14 @@ struct FSItemsFeature {
     struct State: Equatable {
         var items: [FSItemModel] = []
         var selectedIds: Set<String> = []
+        var lastSelectedId: String?
         var isLoading: Bool = false
     }
 
     enum Action: Equatable {
         case loadItems(path: String)
         case itemsLoaded([FSItemModel])
-        case selectItem(id: String, isCommandPressed: Bool)
+        case selectItem(id: String, isCommandPressed: Bool, isShiftPressed: Bool)
         case clearSelection
     }
 
@@ -56,15 +57,31 @@ struct FSItemsFeature {
                 state.isLoading = false
                 return .none
 
-            case let .selectItem(id, isCommandPressed):
-                if isCommandPressed {
+            case let .selectItem(id, isCommandPressed, isShiftPressed):
+                if isShiftPressed {
+                    guard let lastId = state.lastSelectedId,
+                          let lastIndex = state.items.firstIndex(where: { $0.id == lastId }),
+                          let currentIndex = state.items.firstIndex(where: { $0.id == id })
+                    else {
+                        state.selectedIds = [id]
+                        state.lastSelectedId = id
+                        return .none
+                    }
+
+                    let range = min(lastIndex, currentIndex) ... max(lastIndex, currentIndex)
+                    let rangeIds = state.items[range].map { $0.id }
+                    state.selectedIds = Set(rangeIds)
+                    state.lastSelectedId = id
+                } else if isCommandPressed {
                     if state.selectedIds.contains(id) {
                         state.selectedIds.remove(id)
                     } else {
                         state.selectedIds.insert(id)
+                        state.lastSelectedId = id
                     }
                 } else {
                     state.selectedIds = [id]
+                    state.lastSelectedId = id
                 }
                 return .none
 
