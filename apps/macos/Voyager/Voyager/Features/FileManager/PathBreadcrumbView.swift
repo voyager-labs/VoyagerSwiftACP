@@ -22,6 +22,21 @@ struct PathBreadcrumbView: View {
                 }
                 .buttonStyle(.borderless)
                 .help(item.fullPath)
+                .contextMenu {
+                    Button {
+                        AppDelegate.shared?.createNewTab(path: item.fullPath)
+                    } label: {
+                        Text("Open in New Tab")
+                    }
+
+                    Button {
+                        let parentPath = URL(fileURLWithPath: item.fullPath).deletingLastPathComponent().path
+                        onNavigate(parentPath)
+                    } label: {
+                        Text("Show in Enclosing Folder")
+                    }
+                    .disabled(item.fullPath == "/")
+                }
 
                 if index < pathComponents.count - 1 {
                     Image(systemName: "chevron.right")
