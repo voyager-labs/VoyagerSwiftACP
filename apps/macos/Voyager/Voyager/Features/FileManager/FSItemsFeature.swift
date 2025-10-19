@@ -18,6 +18,8 @@ struct FSItemsFeature {
         case selectItem(id: String, isCommandPressed: Bool, isShiftPressed: Bool)
         case selectAll
         case clearSelection
+        case selectNextItem
+        case selectPreviousItem
     }
 
     var body: some Reducer<State, Action> {
@@ -95,6 +97,46 @@ struct FSItemsFeature {
 
             case .clearSelection:
                 state.selectedIds = []
+                return .none
+
+            case .selectNextItem:
+                guard !state.items.isEmpty else {
+                    return .none
+                }
+
+                if let lastId = state.lastSelectedId,
+                   let currentIndex = state.items.firstIndex(where: { $0.id == lastId })
+                {
+                    if currentIndex < state.items.count - 1 {
+                        let nextItem = state.items[currentIndex + 1]
+                        state.selectedIds = [nextItem.id]
+                        state.lastSelectedId = nextItem.id
+                    }
+                } else {
+                    let firstItem = state.items[0]
+                    state.selectedIds = [firstItem.id]
+                    state.lastSelectedId = firstItem.id
+                }
+                return .none
+
+            case .selectPreviousItem:
+                guard !state.items.isEmpty else {
+                    return .none
+                }
+
+                if let lastId = state.lastSelectedId,
+                   let currentIndex = state.items.firstIndex(where: { $0.id == lastId })
+                {
+                    if currentIndex > 0 {
+                        let previousItem = state.items[currentIndex - 1]
+                        state.selectedIds = [previousItem.id]
+                        state.lastSelectedId = previousItem.id
+                    }
+                } else {
+                    let lastItem = state.items[state.items.count - 1]
+                    state.selectedIds = [lastItem.id]
+                    state.lastSelectedId = lastItem.id
+                }
                 return .none
             }
         }
