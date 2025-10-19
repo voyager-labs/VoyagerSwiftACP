@@ -16,7 +16,9 @@ struct FileManagerView: View {
             KeyCommandView { event in
                 guard event.modifierFlags.contains(.command) else { return }
 
-                if let number = Int(event.characters ?? ""), (1 ... 9).contains(number) {
+                if event.characters == "a" {
+                    store.send(.fsItems(.selectAll))
+                } else if let number = Int(event.characters ?? ""), (1 ... 9).contains(number) {
                     AppDelegate.shared?.selectTab(at: number - 1)
                 } else if event.characters == "0" {
                     AppDelegate.shared?.selectTab(at: 9)

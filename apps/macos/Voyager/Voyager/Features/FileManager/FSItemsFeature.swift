@@ -16,6 +16,7 @@ struct FSItemsFeature {
         case loadItems(path: String)
         case itemsLoaded([FSItemModel])
         case selectItem(id: String, isCommandPressed: Bool, isShiftPressed: Bool)
+        case selectAll
         case clearSelection
     }
 
@@ -82,6 +83,13 @@ struct FSItemsFeature {
                 } else {
                     state.selectedIds = [id]
                     state.lastSelectedId = id
+                }
+                return .none
+
+            case .selectAll:
+                state.selectedIds = Set(state.items.map { $0.id })
+                if let lastItem = state.items.last {
+                    state.lastSelectedId = lastItem.id
                 }
                 return .none
 
