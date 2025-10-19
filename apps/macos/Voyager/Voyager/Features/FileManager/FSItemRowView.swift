@@ -23,11 +23,17 @@ struct FSItemRowView: View {
         .padding(.vertical, 6)
         .background(isSelected ? Color.accentColor.opacity(0.2) : Color.clear)
         .cornerRadius(4)
-        .onTapGesture {
-            onSelect()
-        }
-        .onTapGesture(count: 2) {
-            onOpen()
-        }
+        .simultaneousGesture(
+            TapGesture()
+                .onEnded { _ in
+                    onSelect()
+                }
+        )
+        .simultaneousGesture(
+            TapGesture(count: 2)
+                .onEnded { _ in
+                    onOpen()
+                }
+        )
     }
 }
