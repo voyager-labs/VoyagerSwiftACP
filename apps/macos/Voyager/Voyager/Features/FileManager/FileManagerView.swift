@@ -14,12 +14,13 @@ struct FileManagerView: View {
     var body: some View {
         ZStack {
             KeyCommandView { event in
-                if event.modifierFlags.isDisjoint(with: [.command, .shift, .option, .control]) {
+                if event.modifierFlags.isDisjoint(with: [.command, .option, .control]) {
+                    let isShiftPressed = event.modifierFlags.contains(.shift)
                     if event.keyCode == 125 {
-                        store.send(.fsItems(.selectNextItem))
+                        store.send(.fsItems(.selectNextItem(isShiftPressed: isShiftPressed)))
                         return
                     } else if event.keyCode == 126 {
-                        store.send(.fsItems(.selectPreviousItem))
+                        store.send(.fsItems(.selectPreviousItem(isShiftPressed: isShiftPressed)))
                         return
                     }
                 }

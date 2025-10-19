@@ -9,6 +9,7 @@ struct FSItemsFeature {
         var items: [FSItemModel] = []
         var selectedIds: Set<String> = []
         var lastSelectedId: String?
+        var rangeAnchorId: String?
         var isLoading: Bool = false
     }
 
@@ -18,8 +19,8 @@ struct FSItemsFeature {
         case selectItem(id: String, isCommandPressed: Bool, isShiftPressed: Bool)
         case selectAll
         case clearSelection
-        case selectNextItem
-        case selectPreviousItem
+        case selectNextItem(isShiftPressed: Bool)
+        case selectPreviousItem(isShiftPressed: Bool)
     }
 
     var body: some Reducer<State, Action> {
@@ -68,6 +69,7 @@ struct FSItemsFeature {
                     else {
                         state.selectedIds = [id]
                         state.lastSelectedId = id
+                        state.rangeAnchorId = nil
                         return .none
                     }
 
@@ -75,6 +77,7 @@ struct FSItemsFeature {
                     let rangeIds = state.items[range].map { $0.id }
                     state.selectedIds = Set(rangeIds)
                     state.lastSelectedId = id
+                    state.rangeAnchorId = lastId
                 } else if isCommandPressed {
                     if state.selectedIds.contains(id) {
                         state.selectedIds.remove(id)
@@ -82,9 +85,11 @@ struct FSItemsFeature {
                         state.selectedIds.insert(id)
                         state.lastSelectedId = id
                     }
+                    state.rangeAnchorId = nil
                 } else {
                     state.selectedIds = [id]
                     state.lastSelectedId = id
+                    state.rangeAnchorId = nil
                 }
                 return .none
 
@@ -99,7 +104,7 @@ struct FSItemsFeature {
                 state.selectedIds = []
                 return .none
 
-            case .selectNextItem:
+            case let .selectNextItem(isShiftPressed):
                 guard !state.items.isEmpty else {
                     return .none
                 }
@@ -109,17 +114,29 @@ struct FSItemsFeature {
                 {
                     if currentIndex < state.items.count - 1 {
                         let nextItem = state.items[currentIndex + 1]
-                        state.selectedIds = [nextItem.id]
+                        if isShiftPressed {
+                            let anchorId = state.rangeAnchorId ?? lastId
+                            guard let anchorIndex = state.items.firstIndex(where: { $0.id == anchorId }) else {
+                                return .none
+                            }
+                            let range = min(anchorIndex, currentIndex + 1) ... max(anchorIndex, currentIndex + 1)
+                            state.selectedIds = Set(state.items[range].map { $0.id })
+                            state.rangeAnchorId = anchorId
+                        } else {
+                            state.selectedIds = [nextItem.id]
+                            state.rangeAnchorId = nil
+                        }
                         state.lastSelectedId = nextItem.id
                     }
                 } else {
                     let firstItem = state.items[0]
                     state.selectedIds = [firstItem.id]
                     state.lastSelectedId = firstItem.id
+                    state.rangeAnchorId = nil
                 }
                 return .none
 
-            case .selectPreviousItem:
+            case let .selectPreviousItem(isShiftPressed):
                 guard !state.items.isEmpty else {
                     return .none
                 }
@@ -129,13 +146,25 @@ struct FSItemsFeature {
                 {
                     if currentIndex > 0 {
                         let previousItem = state.items[currentIndex - 1]
-                        state.selectedIds = [previousItem.id]
+                        if isShiftPressed {
+                            let anchorId = state.rangeAnchorId ?? lastId
+                            guard let anchorIndex = state.items.firstIndex(where: { $0.id == anchorId }) else {
+                                return .none
+                            }
+                            let range = min(anchorIndex, currentIndex - 1) ... max(anchorIndex, currentIndex - 1)
+                            state.selectedIds = Set(state.items[range].map { $0.id })
+                            state.rangeAnchorId = anchorId
+                        } else {
+                            state.selectedIds = [previousItem.id]
+                            state.rangeAnchorId = nil
+                        }
                         state.lastSelectedId = previousItem.id
                     }
                 } else {
                     let lastItem = state.items[state.items.count - 1]
                     state.selectedIds = [lastItem.id]
                     state.lastSelectedId = lastItem.id
+                    state.rangeAnchorId = nil
                 }
                 return .none
             }
