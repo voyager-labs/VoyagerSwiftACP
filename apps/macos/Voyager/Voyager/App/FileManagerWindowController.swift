@@ -28,8 +28,6 @@ class FileManagerWindowController: NSWindowController, NSWindowDelegate {
         window.setContentSize(NSSize(width: 850, height: 550))
         window.minSize = NSSize(width: 800, height: 600)
         window.styleMask = [.titled, .closable, .miniaturizable, .resizable, .fullSizeContentView]
-        window.titleVisibility = .hidden
-        window.titlebarAppearsTransparent = true
 
         if asTab {
             window.tabbingMode = .preferred
@@ -40,6 +38,8 @@ class FileManagerWindowController: NSWindowController, NSWindowDelegate {
 
         super.init(window: window)
         window.delegate = self
+
+        window.title = FileManagerFeature.makeWindowTitle(for: path ?? state.currentPath)
     }
 
     @available(*, unavailable)

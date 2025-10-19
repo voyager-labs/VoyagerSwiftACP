@@ -10,9 +10,15 @@ struct PathBreadcrumbView: View {
                 Button {
                     onNavigate(item.fullPath)
                 } label: {
-                    Text(item.name)
-                        .font(.system(size: 13))
-                        .foregroundColor(.primary)
+                    HStack(spacing: 4) {
+                        Image(systemName: index == 0 ? "externaldrive.fill" : "folder.fill")
+                            .font(.system(size: 12))
+                            .foregroundColor(index == 0 ? .secondary : .blue)
+
+                        Text(item.name)
+                            .font(.system(size: 13))
+                            .foregroundColor(.primary)
+                    }
                 }
                 .buttonStyle(.borderless)
                 .help(item.fullPath)

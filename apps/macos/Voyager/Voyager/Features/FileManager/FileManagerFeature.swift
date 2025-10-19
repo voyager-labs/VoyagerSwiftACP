@@ -4,9 +4,16 @@ import Foundation
 
 @Reducer
 struct FileManagerFeature {
+    static func makeWindowTitle(for path: String) -> String {
+        if path == "/" {
+            return FileManager.default.displayName(atPath: "/")
+        }
+        return FileManager.default.displayName(atPath: path)
+    }
+
     @ObservableState
     struct State: Equatable {
-        var currentPath: String = FileManager.default.homeDirectoryForCurrentUser.path
+        var currentPath: String = Settings.shared.defaultTabPath
         var backHistory: [String] = []
         var forwardHistory: [String] = []
         var fsItems: FSItemsFeature.State = .init()
@@ -27,9 +34,10 @@ struct FileManagerFeature {
 
         var pathComponents: [(name: String, fullPath: String)] {
             var result: [(String, String)] = []
+            let fileManager = FileManager.default
 
             if currentPath.hasPrefix("/") {
-                result.append(("/", "/"))
+                result.append((fileManager.displayName(atPath: "/"), "/"))
             }
 
             let components = currentPath.split(separator: "/").map(String.init)
@@ -37,11 +45,15 @@ struct FileManagerFeature {
 
             for component in components {
                 accumulated += component
-                result.append((component, accumulated))
+                result.append((fileManager.displayName(atPath: accumulated), accumulated))
                 accumulated += "/"
             }
 
             return result
+        }
+
+        var windowTitle: String {
+            FileManagerFeature.makeWindowTitle(for: currentPath)
         }
     }
 

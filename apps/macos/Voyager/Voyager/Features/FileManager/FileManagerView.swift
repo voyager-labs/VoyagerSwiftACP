@@ -26,10 +26,25 @@ struct FileManagerView: View {
             NavigationSplitView(columnVisibility: $columnVisibility) {
                 SidebarView()
             } detail: {
-                ContentPaneView(store: store)
+                VStack(spacing: 0) {
+                    HStack {
+                        PathBreadcrumbView(
+                            pathComponents: store.pathComponents,
+                            onNavigate: { path in
+                                store.send(.navigateTo(path))
+                            }
+                        )
+                        Spacer()
+                    }
+                    .padding(.horizontal, 16)
+                    .padding(.vertical, 8)
+
+                    ContentPaneView(store: store)
+                }
             }
             .navigationSplitViewStyle(.balanced)
             .frame(minWidth: 800, minHeight: 600)
+            .navigationTitle(store.windowTitle)
         }
         .toolbar {
             ToolbarItemGroup(placement: .navigation) {
@@ -46,15 +61,6 @@ struct FileManagerView: View {
                     Image(systemName: "chevron.right")
                 }
                 .disabled(!store.canGoForward)
-            }
-
-            ToolbarItem(placement: .automatic) {
-                PathBreadcrumbView(
-                    pathComponents: store.pathComponents,
-                    onNavigate: { path in
-                        store.send(.navigateTo(path))
-                    }
-                )
             }
         }
         .focusedSceneValue(\.fileManagerStore, store)
