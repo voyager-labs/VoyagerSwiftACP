@@ -24,6 +24,25 @@ struct FileManagerFeature {
             let parent = url.deletingLastPathComponent()
             return parent.path != currentPath && currentPath != "/"
         }
+
+        var pathComponents: [(name: String, fullPath: String)] {
+            var result: [(String, String)] = []
+
+            if currentPath.hasPrefix("/") {
+                result.append(("/", "/"))
+            }
+
+            let components = currentPath.split(separator: "/").map(String.init)
+            var accumulated = "/"
+
+            for component in components {
+                accumulated += component
+                result.append((component, accumulated))
+                accumulated += "/"
+            }
+
+            return result
+        }
     }
 
     enum Action: Equatable {

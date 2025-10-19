@@ -48,11 +48,13 @@ struct FileManagerView: View {
                 .disabled(!store.canGoForward)
             }
 
-            ToolbarItem(placement: .principal) {
-                Text(store.currentPath)
-                    .font(.headline)
-                    .lineLimit(1)
-                    .truncationMode(.middle)
+            ToolbarItem(placement: .automatic) {
+                PathBreadcrumbView(
+                    pathComponents: store.pathComponents,
+                    onNavigate: { path in
+                        store.send(.navigateTo(path))
+                    }
+                )
             }
         }
         .focusedSceneValue(\.fileManagerStore, store)
