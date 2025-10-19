@@ -86,6 +86,12 @@ struct MenuCommands: Commands {
 
             Divider()
 
+            Button("Open") {
+                fileManagerStore?.send(.openSelectedItem)
+            }
+            .keyboardShortcut(.downArrow, modifiers: .command)
+            .disabled(fileManagerStore?.canOpenSelectedItem == false)
+
             Button("Enclosing Folder") {
                 fileManagerStore?.send(.goToEnclosingDirectory)
             }

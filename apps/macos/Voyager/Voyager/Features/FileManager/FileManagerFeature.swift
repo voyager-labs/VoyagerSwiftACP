@@ -32,6 +32,16 @@ struct FileManagerFeature {
             return parent.path != currentPath && currentPath != "/"
         }
 
+        var canOpenSelectedItem: Bool {
+            guard let firstSelectedId = fsItems.selectedIds.first,
+                  fsItems.selectedIds.count == 1,
+                  let item = fsItems.items.first(where: { $0.id == firstSelectedId })
+            else {
+                return false
+            }
+            return item.isDirectory
+        }
+
         var pathComponents: [(name: String, fullPath: String)] {
             var result: [(String, String)] = []
             let fileManager = FileManager.default
@@ -61,6 +71,7 @@ struct FileManagerFeature {
         case onAppear
         case navigateTo(String)
         case openItem(id: String)
+        case openSelectedItem
         case goBack
         case goForward
         case goToEnclosingDirectory
@@ -96,6 +107,14 @@ struct FileManagerFeature {
                 } else {
                     return .none
                 }
+
+            case .openSelectedItem:
+                guard let firstSelectedId = state.fsItems.selectedIds.first,
+                      state.fsItems.selectedIds.count == 1
+                else {
+                    return .none
+                }
+                return .send(.openItem(id: firstSelectedId))
 
             case .goBack:
                 guard let previousPath = state.backHistory.popLast() else {
