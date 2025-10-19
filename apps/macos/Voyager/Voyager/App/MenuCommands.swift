@@ -75,13 +75,13 @@ struct MenuCommands: Commands {
             Button("Back") {
                 fileManagerStore?.send(.goBack)
             }
-            .keyboardShortcut(.leftArrow, modifiers: .command)
+            .keyboardShortcut("[", modifiers: .command)
             .disabled(fileManagerStore?.canGoBack == false)
 
             Button("Forward") {
                 fileManagerStore?.send(.goForward)
             }
-            .keyboardShortcut(.rightArrow, modifiers: .command)
+            .keyboardShortcut("]", modifiers: .command)
             .disabled(fileManagerStore?.canGoForward == false)
 
             Divider()
