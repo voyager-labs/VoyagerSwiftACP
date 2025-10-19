@@ -78,9 +78,9 @@ struct FileManagerFeature {
                 return .send(.fsItems(.loadItems(path: state.currentPath)))
 
             case let .navigateTo(path):
-                state.currentPath = path
-                state.backHistory = []
+                state.backHistory.append(state.currentPath)
                 state.forwardHistory = []
+                state.currentPath = path
                 return .send(.fsItems(.loadItems(path: path)))
 
             case let .openItem(id):
