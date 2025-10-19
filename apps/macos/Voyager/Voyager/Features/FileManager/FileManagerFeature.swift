@@ -18,6 +18,12 @@ struct FileManagerFeature {
         var canGoForward: Bool {
             !forwardHistory.isEmpty
         }
+
+        var canGoToEnclosingDirectory: Bool {
+            let url = URL(fileURLWithPath: currentPath)
+            let parent = url.deletingLastPathComponent()
+            return parent.path != currentPath && currentPath != "/"
+        }
     }
 
     enum Action: Equatable {
@@ -26,6 +32,7 @@ struct FileManagerFeature {
         case openItem(id: String)
         case goBack
         case goForward
+        case goToEnclosingDirectory
         case fsItems(FSItemsFeature.Action)
     }
 
@@ -74,6 +81,20 @@ struct FileManagerFeature {
                 state.backHistory.append(state.currentPath)
                 state.currentPath = nextPath
                 return .send(.fsItems(.loadItems(path: nextPath)))
+
+            case .goToEnclosingDirectory:
+                let url = URL(fileURLWithPath: state.currentPath)
+                let parentURL = url.deletingLastPathComponent()
+
+                guard parentURL.path != state.currentPath else {
+                    return .none
+                }
+
+                state.backHistory.append(state.currentPath)
+                state.forwardHistory = []
+                state.currentPath = parentURL.path
+
+                return .send(.fsItems(.loadItems(path: parentURL.path)))
 
             case .fsItems:
                 return .none

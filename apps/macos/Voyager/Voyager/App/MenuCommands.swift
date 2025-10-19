@@ -83,6 +83,14 @@ struct MenuCommands: Commands {
             }
             .keyboardShortcut(.rightArrow, modifiers: .command)
             .disabled(fileManagerStore?.canGoForward == false)
+
+            Divider()
+
+            Button("Enclosing Folder") {
+                fileManagerStore?.send(.goToEnclosingDirectory)
+            }
+            .keyboardShortcut(.upArrow, modifiers: .command)
+            .disabled(fileManagerStore?.canGoToEnclosingDirectory == false)
         }
 
         CommandGroup(after: .windowList) {
