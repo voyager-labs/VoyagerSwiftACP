@@ -37,7 +37,6 @@ opt_in_rules:
   - extension_access_modifier
   - fallthrough
   - fatal_error_message
-  - file_name
   - first_where
   - force_unwrapping
   - function_default_parameter_at_end
@@ -86,6 +85,10 @@ opt_in_rules:
 # 비활성화할 규칙들
 disabled_rules:
   - todo
+  - opening_brace
+  - closure_body_length
+  - trailing_comma
+  - file_name
 
 # 규칙별 설정
 line_length:

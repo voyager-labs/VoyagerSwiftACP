@@ -10,6 +10,7 @@ description: 'Agent mode guardrails and governance alignment.'
 - The agent should infer and respect project conventions (package manager, scripts, config layout) from the repository.
 - Prefer repository-defined scripts over ad-hoc commands.
 - Avoid introducing tools or flows not present in the repo without explicit approval.
+  - Use absolute-style monorepo paths in examples (e.g., `apps/backend/...`, `apps/macos/...`).
 
 ## Code modifications
 
@@ -19,6 +20,7 @@ description: 'Agent mode guardrails and governance alignment.'
   - Why the change is needed.
   - How the new design works at a high level.
 - Clarify the scope if making related refactors or fixes beyond the request.
+ - For monorepo: specify which app is affected (backend vs macOS) and list files with monorepo paths.
 
 ## Blocking issues
 
@@ -30,8 +32,18 @@ description: 'Agent mode guardrails and governance alignment.'
 - Match existing code style and formatting.
 - Avoid introducing linter errors; keep types explicit for public APIs.
 
+## Rule management
+
+- **Before creating/updating rules**: Check existing rules for conflicts and overlaps.
+- **SSOT principle**: Ensure each topic has one authoritative rule file (see [99-rules-governance.mdc](mdc:.cursor/rules/99-rules-governance.mdc) for detailed SSOT enforcement patterns).
+- **Cross-references**: Use `[rule-name.mdc](mdc:.cursor/rules/rule-name.mdc)` format for linking to related rules. Reference specific sections when applicable (e.g., "see [03-error-handling-policy.mdc](mdc:.cursor/rules/03-error-handling-policy.mdc) for error formats").
+- **Consistency check**: Verify terminology, formatting, and content alignment across all rules.
+- **Avoid duplication**: Consolidate repeated content and reference instead of copying.
+- **Maintain currency**: Rules must reflect the current state of the codebase 100%.
+
 ## Language policy
 
 - Conversation with the user follows the user-selected language (Korean for this project).
 - Thinking/searching/coding defaults to English (APIs, symbols, identifiers, queries).
 - Rules are written in English. Code comments are written in Korean. Documents/commits follow the project convention (Korean unless specified).
+- Commit messages follow [06-commit-messages.mdc](mdc:.cursor/rules/06-commit-messages.mdc) standard.
