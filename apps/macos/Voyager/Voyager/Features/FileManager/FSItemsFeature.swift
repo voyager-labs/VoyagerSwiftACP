@@ -15,6 +15,7 @@ struct FSItemsFeature {
         case loadItems(path: String)
         case itemsLoaded([FSItemModel])
         case selectItem(id: String, isCommandPressed: Bool)
+        case clearSelection
     }
 
     var body: some Reducer<State, Action> {
@@ -65,6 +66,10 @@ struct FSItemsFeature {
                 } else {
                     state.selectedIds = [id]
                 }
+                return .none
+
+            case .clearSelection:
+                state.selectedIds = []
                 return .none
             }
         }

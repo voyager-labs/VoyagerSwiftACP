@@ -28,6 +28,11 @@ struct ContentPaneView: View {
                     }
                 }
                 .padding(8)
+                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+                .contentShape(Rectangle())
+                .onTapGesture {
+                    store.send(.clearSelection)
+                }
             }
         }
     }
