@@ -102,6 +102,8 @@ struct FSItemsFeature {
 
             case .clearSelection:
                 state.selectedIds = []
+                state.lastSelectedId = nil
+                state.rangeAnchorId = nil
                 return .none
 
             case let .selectNextItem(isShiftPressed):
