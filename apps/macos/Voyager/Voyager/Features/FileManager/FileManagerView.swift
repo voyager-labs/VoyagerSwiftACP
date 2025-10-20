@@ -75,6 +75,20 @@ struct FileManagerView: View {
                 }
                 .disabled(!store.canGoForward)
             }
+
+            ToolbarItemGroup(placement: .primaryAction) {
+                Picker("Layout", selection: Binding(
+                    get: { store.viewLayout },
+                    set: { store.send(.changeLayout($0)) }
+                )) {
+                    Label("List", systemImage: "list.bullet")
+                        .tag(FileManagerFeature.ViewLayout.list)
+                    Label("Grid", systemImage: "square.grid.2x2")
+                        .tag(FileManagerFeature.ViewLayout.grid)
+                }
+                .pickerStyle(.segmented)
+                .fixedSize()
+            }
         }
         .focusedSceneValue(\.fileManagerStore, store)
         .focusedSceneValue(\.columnVisibility, $columnVisibility)

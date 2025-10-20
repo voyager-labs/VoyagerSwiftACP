@@ -17,6 +17,7 @@ struct FileManagerFeature {
         var backHistory: [String] = []
         var forwardHistory: [String] = []
         var fsItems: FSItemsFeature.State = .init()
+        var viewLayout: ViewLayout = .list
 
         var canGoBack: Bool {
             !backHistory.isEmpty
@@ -67,6 +68,11 @@ struct FileManagerFeature {
         }
     }
 
+    enum ViewLayout: String, Equatable, Codable {
+        case list
+        case grid
+    }
+
     enum Action: Equatable {
         case onAppear
         case navigateTo(String)
@@ -75,6 +81,7 @@ struct FileManagerFeature {
         case goBack
         case goForward
         case goToEnclosingDirectory
+        case changeLayout(ViewLayout)
         case fsItems(FSItemsFeature.Action)
     }
 
@@ -160,6 +167,11 @@ struct FileManagerFeature {
                 state.currentPath = parentURL.path
 
                 return .send(.fsItems(.loadItems(path: parentURL.path)))
+
+            case let .changeLayout(layout):
+                state.viewLayout = layout
+                UserDefaults.standard.set(layout.rawValue, forKey: "viewLayout")
+                return .none
 
             case .fsItems:
                 return .none

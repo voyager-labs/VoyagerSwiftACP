@@ -5,6 +5,11 @@ struct ContentPaneView: View {
     let store: StoreOf<FileManagerFeature>
 
     var body: some View {
-        ContentPaneListView(store: store)
+        switch store.viewLayout {
+        case .list:
+            ContentPaneListView(store: store)
+        case .grid:
+            ContentPaneGridView(store: store)
+        }
     }
 }
