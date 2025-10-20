@@ -4,9 +4,12 @@ import SwiftUI
 struct ContentPaneGridView: View {
     let store: StoreOf<FileManagerFeature>
 
-    private let columns = [
-        GridItem(.adaptive(minimum: 100, maximum: 120), spacing: 16),
-    ]
+    private let itemMinWidth: CGFloat = 100
+    private let itemMaxWidth: CGFloat = 120
+    private let itemSpacing: CGFloat = 16
+    private var columns: [GridItem] {
+        [GridItem(.adaptive(minimum: itemMinWidth, maximum: itemMaxWidth), spacing: itemSpacing)]
+    }
 
     var body: some View {
         let fsStore = store.scope(state: \.fsItems, action: \.fsItems)
@@ -44,6 +47,25 @@ struct ContentPaneGridView: View {
                     .onTapGesture {
                         fsStore.send(.clearSelection)
                     }
+                    .background(
+                        GeometryReader { geo in
+                            Color.clear
+                                .onAppear {
+                                    let count = max(
+                                        1,
+                                        Int((geo.size.width - 32 + itemSpacing) / (itemMinWidth + itemSpacing))
+                                    )
+                                    store.send(.updateGridColumnCount(count))
+                                }
+                                .onChange(of: geo.size.width) { newWidth in
+                                    let count = max(
+                                        1,
+                                        Int((newWidth - 32 + itemSpacing) / (itemMinWidth + itemSpacing))
+                                    )
+                                    store.send(.updateGridColumnCount(count))
+                                }
+                        }
+                    )
                 }
                 .onChange(of: fsStore.lastSelectedId) { newId in
                     if let id = newId {

@@ -21,6 +21,7 @@ struct FSItemsFeature {
         case clearSelection
         case selectNextItem(isShiftPressed: Bool)
         case selectPreviousItem(isShiftPressed: Bool)
+        case selectByOffset(offset: Int, isShiftPressed: Bool)
     }
 
     var body: some Reducer<State, Action> {
@@ -168,6 +169,41 @@ struct FSItemsFeature {
                     state.lastSelectedId = lastItem.id
                     state.rangeAnchorId = nil
                 }
+                return .none
+
+            case let .selectByOffset(offset, isShiftPressed):
+                guard !state.items.isEmpty else { return .none }
+
+                guard let currentId = state.lastSelectedId,
+                      let currentIndex = state.items.firstIndex(where: { $0.id == currentId })
+                else {
+                    if offset >= 0 {
+                        guard let first = state.items.first else { return .none }
+                        state.selectedIds = [first.id]
+                        state.lastSelectedId = first.id
+                    } else {
+                        guard let last = state.items.last else { return .none }
+                        state.selectedIds = [last.id]
+                        state.lastSelectedId = last.id
+                    }
+                    state.rangeAnchorId = nil
+                    return .none
+                }
+
+                let targetIndex = max(0, min(state.items.count - 1, currentIndex + offset))
+                let targetItem = state.items[targetIndex]
+
+                if isShiftPressed {
+                    let anchorId = state.rangeAnchorId ?? currentId
+                    guard let anchorIndex = state.items.firstIndex(where: { $0.id == anchorId }) else { return .none }
+                    let range = min(anchorIndex, targetIndex) ... max(anchorIndex, targetIndex)
+                    state.selectedIds = Set(state.items[range].map { $0.id })
+                    state.rangeAnchorId = anchorId
+                } else {
+                    state.selectedIds = [targetItem.id]
+                    state.rangeAnchorId = nil
+                }
+                state.lastSelectedId = targetItem.id
                 return .none
             }
         }

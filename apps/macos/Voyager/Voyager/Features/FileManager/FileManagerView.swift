@@ -16,13 +16,27 @@ struct FileManagerView: View {
             KeyCommandView { event in
                 if event.modifierFlags.isDisjoint(with: [.command, .option, .control]) {
                     let isShiftPressed = event.modifierFlags.contains(.shift)
-                    if event.keyCode == 125 {
-                        store.send(.fsItems(.selectNextItem(isShiftPressed: isShiftPressed)))
-                        return
-                    } else if event.keyCode == 126 {
-                        store.send(.fsItems(.selectPreviousItem(isShiftPressed: isShiftPressed)))
-                        return
+                    let row = (store.viewLayout == .grid && store.gridColumnCount > 1) ? store.gridColumnCount : 1
+
+                    @MainActor
+                    func move(_ offset: Int) {
+                        if offset == 1 {
+                            store.send(.fsItems(.selectNextItem(isShiftPressed: isShiftPressed)))
+                        } else if offset == -1 {
+                            store.send(.fsItems(.selectPreviousItem(isShiftPressed: isShiftPressed)))
+                        } else {
+                            store.send(.fsItems(.selectByOffset(offset: offset, isShiftPressed: isShiftPressed)))
+                        }
                     }
+
+                    switch event.keyCode {
+                    case 123 where store.viewLayout == .grid: move(-1) // ←
+                    case 124 where store.viewLayout == .grid: move(+1) // →
+                    case 126: move(-row) // ↑
+                    case 125: move(+row) // ↓
+                    default: break
+                    }
+                    return
                 }
 
                 guard event.modifierFlags.contains(.command) else { return }

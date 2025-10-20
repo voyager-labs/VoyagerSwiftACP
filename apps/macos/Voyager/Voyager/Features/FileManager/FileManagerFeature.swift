@@ -18,6 +18,7 @@ struct FileManagerFeature {
         var forwardHistory: [String] = []
         var fsItems: FSItemsFeature.State = .init()
         var viewLayout: ViewLayout = .list
+        var gridColumnCount: Int = 1
 
         var canGoBack: Bool {
             !backHistory.isEmpty
@@ -82,6 +83,7 @@ struct FileManagerFeature {
         case goForward
         case goToEnclosingDirectory
         case changeLayout(ViewLayout)
+        case updateGridColumnCount(Int)
         case fsItems(FSItemsFeature.Action)
     }
 
@@ -171,6 +173,10 @@ struct FileManagerFeature {
             case let .changeLayout(layout):
                 state.viewLayout = layout
                 UserDefaults.standard.set(layout.rawValue, forKey: "viewLayout")
+                return .none
+
+            case let .updateGridColumnCount(count):
+                state.gridColumnCount = max(1, count)
                 return .none
 
             case .fsItems:
