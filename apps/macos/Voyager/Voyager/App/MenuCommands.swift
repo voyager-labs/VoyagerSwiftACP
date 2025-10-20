@@ -101,6 +101,18 @@ struct MenuCommands: Commands {
             .disabled(fileManagerStore?.canGoToEnclosingDirectory == false)
         }
 
+        CommandGroup(after: .sidebar) {
+            Button("as List") {
+                fileManagerStore?.send(.changeLayout(.list))
+            }
+            .disabled(fileManagerStore?.viewLayout == .list)
+
+            Button("as Icons") {
+                fileManagerStore?.send(.changeLayout(.grid))
+            }
+            .disabled(fileManagerStore?.viewLayout == .grid)
+        }
+
         CommandGroup(after: .windowList) {
             Button("Switch Focus to Last Focused Tab") {
                 AppDelegate.shared?.switchToLastFocusedTab()
