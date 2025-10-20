@@ -8,14 +8,14 @@ struct FSItemListView: View {
 
     var body: some View {
         HStack(spacing: 8) {
-            // 아이콘
             Image(systemName: item.isDirectory ? "folder.fill" : "doc.fill")
                 .foregroundColor(item.isDirectory ? .blue : .gray)
+                .opacity(item.isHidden ? 0.5 : 1.0)
                 .frame(width: 20)
 
-            // 이름
             Text(item.name)
                 .font(.system(size: 13))
+                .opacity(item.isHidden ? 0.5 : 1.0)
 
             Spacer()
         }

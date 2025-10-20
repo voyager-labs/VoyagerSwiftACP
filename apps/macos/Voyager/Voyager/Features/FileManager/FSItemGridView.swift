@@ -11,6 +11,7 @@ struct FSItemGridView: View {
             Image(systemName: item.isDirectory ? "folder.fill" : "doc.fill")
                 .font(.system(size: 48))
                 .foregroundColor(item.isDirectory ? .blue : .secondary)
+                .opacity(item.isHidden ? 0.5 : 1.0)
                 .frame(width: 80, height: 80)
 
             Text(item.name)
@@ -18,6 +19,7 @@ struct FSItemGridView: View {
                 .lineLimit(2)
                 .multilineTextAlignment(.center)
                 .frame(width: 100, height: 32, alignment: .top)
+                .opacity(item.isHidden ? 0.5 : 1.0)
         }
         .padding(8)
         .background(

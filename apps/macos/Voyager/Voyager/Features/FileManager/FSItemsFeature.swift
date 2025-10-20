@@ -42,12 +42,14 @@ struct FSItemsFeature {
                     )) ?? []
 
                     let mapped: [FSItemModel] = contents.map { itemURL in
-                        let values = try? itemURL.resourceValues(forKeys: [.isDirectoryKey])
+                        let values = try? itemURL.resourceValues(forKeys: [.isDirectoryKey, .isHiddenKey])
                         let isDirectory = values?.isDirectory ?? false
+                        let isHidden = values?.isHidden ?? false
                         return FSItemModel(
                             name: itemURL.lastPathComponent,
                             fullPath: itemURL.path,
-                            isDirectory: isDirectory
+                            isDirectory: isDirectory,
+                            isHidden: isHidden
                         )
                     }
 
