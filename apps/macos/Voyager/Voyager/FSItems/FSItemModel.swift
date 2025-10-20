@@ -6,12 +6,26 @@ struct FSItemModel: Identifiable, Equatable, Sendable {
     let fullPath: String
     let isDirectory: Bool
     let isHidden: Bool
+    let size: Int64
+    let modifiedDate: Date
+    let fileExtension: String
 
-    nonisolated init(name: String, fullPath: String, isDirectory: Bool, isHidden: Bool) {
+    nonisolated init(
+        name: String,
+        fullPath: String,
+        isDirectory: Bool,
+        isHidden: Bool,
+        size: Int64 = 0,
+        modifiedDate: Date = Date(),
+        fileExtension: String = ""
+    ) {
         id = fullPath
         self.name = name
         self.fullPath = fullPath
         self.isDirectory = isDirectory
         self.isHidden = isHidden
+        self.size = size
+        self.modifiedDate = modifiedDate
+        self.fileExtension = fileExtension
     }
 }

@@ -37,19 +37,36 @@ struct FSItemsFeature {
                     let options: FileManager.DirectoryEnumerationOptions = showHidden ? [] : [.skipsHiddenFiles]
                     let contents = (try? FileManager.default.contentsOfDirectory(
                         at: url,
-                        includingPropertiesForKeys: [.isDirectoryKey],
+                        includingPropertiesForKeys: [
+                            .isDirectoryKey,
+                            .isHiddenKey,
+                            .fileSizeKey,
+                            .contentModificationDateKey,
+                        ],
                         options: options
                     )) ?? []
 
                     let mapped: [FSItemModel] = contents.map { itemURL in
-                        let values = try? itemURL.resourceValues(forKeys: [.isDirectoryKey, .isHiddenKey])
+                        let values = try? itemURL.resourceValues(forKeys: [
+                            .isDirectoryKey,
+                            .isHiddenKey,
+                            .fileSizeKey,
+                            .contentModificationDateKey,
+                        ])
                         let isDirectory = values?.isDirectory ?? false
                         let isHidden = values?.isHidden ?? false
+                        let size = Int64(values?.fileSize ?? 0)
+                        let modifiedDate = values?.contentModificationDate ?? Date()
+                        let fileExtension = isDirectory ? "" : itemURL.pathExtension
+
                         return FSItemModel(
                             name: itemURL.lastPathComponent,
                             fullPath: itemURL.path,
                             isDirectory: isDirectory,
-                            isHidden: isHidden
+                            isHidden: isHidden,
+                            size: size,
+                            modifiedDate: modifiedDate,
+                            fileExtension: fileExtension
                         )
                     }
 
