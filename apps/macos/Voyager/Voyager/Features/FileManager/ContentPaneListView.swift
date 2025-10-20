@@ -15,7 +15,7 @@ struct ContentPaneListView: View {
                 ScrollView {
                     LazyVStack(alignment: .leading, spacing: 4) {
                         ForEach(fsStore.items) { item in
-                            FSItemRowView(
+                            FSItemListView(
                                 item: item,
                                 isSelected: fsStore.selectedIds.contains(item.id),
                                 onSelect: {

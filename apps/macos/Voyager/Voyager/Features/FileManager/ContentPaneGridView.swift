@@ -19,7 +19,7 @@ struct ContentPaneGridView: View {
                 ScrollView {
                     LazyVGrid(columns: columns, spacing: 16) {
                         ForEach(fsStore.items) { item in
-                            FSItemGridCell(
+                            FSItemGridView(
                                 item: item,
                                 isSelected: fsStore.selectedIds.contains(item.id),
                                 onSelect: {

@@ -1,6 +1,6 @@
 import SwiftUI
 
-struct FSItemGridCell: View {
+struct FSItemGridView: View {
     let item: FSItemModel
     let isSelected: Bool
     let onSelect: () -> Void

@@ -1,6 +1,6 @@
 import SwiftUI
 
-struct FSItemRowView: View {
+struct FSItemListView: View {
     let item: FSItemModel
     let isSelected: Bool
     let onSelect: () -> Void
