@@ -19,6 +19,7 @@ struct FileManagerFeature {
         var fsItems: FSItemsFeature.State = .init()
         var viewLayout: ViewLayout = .list
         var gridColumnCount: Int = 1
+        var showHiddenFiles: Bool = UserDefaults.standard.bool(forKey: "showHiddenFiles")
 
         var canGoBack: Bool {
             !backHistory.isEmpty
@@ -84,6 +85,7 @@ struct FileManagerFeature {
         case goToEnclosingDirectory
         case changeLayout(ViewLayout)
         case updateGridColumnCount(Int)
+        case toggleShowHiddenFiles
         case fsItems(FSItemsFeature.Action)
     }
 
@@ -95,7 +97,10 @@ struct FileManagerFeature {
         Reduce { state, action in
             switch action {
             case .onAppear:
-                return .send(.fsItems(.loadItems(path: state.currentPath)))
+                return .merge(
+                    .send(.fsItems(.setShowHidden(state.showHiddenFiles))),
+                    .send(.fsItems(.loadItems(path: state.currentPath)))
+                )
 
             case let .navigateTo(path):
                 state.backHistory.append(state.currentPath)
@@ -178,6 +183,14 @@ struct FileManagerFeature {
             case let .updateGridColumnCount(count):
                 state.gridColumnCount = max(1, count)
                 return .none
+
+            case .toggleShowHiddenFiles:
+                state.showHiddenFiles.toggle()
+                UserDefaults.standard.set(state.showHiddenFiles, forKey: "showHiddenFiles")
+                return .merge(
+                    .send(.fsItems(.setShowHidden(state.showHiddenFiles))),
+                    .send(.fsItems(.loadItems(path: state.currentPath)))
+                )
 
             case .fsItems:
                 return .none

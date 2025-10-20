@@ -111,6 +111,13 @@ struct MenuCommands: Commands {
                 fileManagerStore?.send(.changeLayout(.grid))
             }
             .disabled(fileManagerStore?.viewLayout == .grid)
+
+            Divider()
+
+            Button(fileManagerStore?.showHiddenFiles == true ? "Hide Hidden Files" : "Show Hidden Files") {
+                fileManagerStore?.send(.toggleShowHiddenFiles)
+            }
+            .keyboardShortcut(".", modifiers: [.command, .shift])
         }
 
         CommandGroup(after: .windowList) {

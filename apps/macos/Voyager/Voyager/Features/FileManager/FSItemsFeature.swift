@@ -11,11 +11,13 @@ struct FSItemsFeature {
         var lastSelectedId: String?
         var rangeAnchorId: String?
         var isLoading: Bool = false
+        var showHiddenFiles: Bool = false
     }
 
     enum Action: Equatable {
         case loadItems(path: String)
         case itemsLoaded([FSItemModel])
+        case setShowHidden(Bool)
         case selectItem(id: String, isCommandPressed: Bool, isShiftPressed: Bool)
         case selectAll
         case clearSelection
@@ -29,17 +31,19 @@ struct FSItemsFeature {
             switch action {
             case let .loadItems(path):
                 state.isLoading = true
-                return .run { send in
+                let showHidden = state.showHiddenFiles
+                return .run { [showHidden] send in
                     let url = URL(fileURLWithPath: (path as NSString).expandingTildeInPath)
+                    let options: FileManager.DirectoryEnumerationOptions = showHidden ? [] : [.skipsHiddenFiles]
                     let contents = (try? FileManager.default.contentsOfDirectory(
                         at: url,
                         includingPropertiesForKeys: [.isDirectoryKey],
-                        options: [.skipsHiddenFiles]
+                        options: options
                     )) ?? []
 
                     let mapped: [FSItemModel] = contents.map { itemURL in
-                        let isDirectory = (try? itemURL.resourceValues(forKeys: [.isDirectoryKey]))?
-                            .isDirectory ?? false
+                        let values = try? itemURL.resourceValues(forKeys: [.isDirectoryKey])
+                        let isDirectory = values?.isDirectory ?? false
                         return FSItemModel(
                             name: itemURL.lastPathComponent,
                             fullPath: itemURL.path,
@@ -56,6 +60,10 @@ struct FSItemsFeature {
 
                     await send(.itemsLoaded(items))
                 }
+
+            case let .setShowHidden(show):
+                state.showHiddenFiles = show
+                return .none
 
             case let .itemsLoaded(items):
                 state.items = items
