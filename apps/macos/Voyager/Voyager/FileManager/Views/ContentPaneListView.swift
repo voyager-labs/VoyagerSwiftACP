@@ -105,10 +105,9 @@ struct ContentPaneListView: View {
                             }
                         }
                         .onChange(of: fsStore.lastSelectedId) { newId in
-                            if let id = newId {
-                                withAnimation {
-                                    proxy.scrollTo(id, anchor: .center)
-                                }
+                            if fsStore.shouldScrollToSelection, let id = newId {
+                                proxy.scrollTo(id, anchor: nil)
+                                fsStore.send(.resetScrollFlag)
                             }
                         }
                     }

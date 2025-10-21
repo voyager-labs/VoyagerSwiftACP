@@ -13,6 +13,7 @@ struct FSItemsFeature {
         var rangeAnchorId: String?
         var isLoading: Bool = false
         var showHiddenFiles: Bool = false
+        var shouldScrollToSelection: Bool = false
 
         var sortKey: SortKey = .name
         var sortOrder: SortOrder = .ascending
@@ -42,6 +43,7 @@ struct FSItemsFeature {
         case selectNextItem(isShiftPressed: Bool)
         case selectPreviousItem(isShiftPressed: Bool)
         case selectByOffset(offset: Int, isShiftPressed: Bool)
+        case resetScrollFlag
 
         case setSortKey(SortKey)
         case setSortOrder(SortOrder)
@@ -133,6 +135,8 @@ struct FSItemsFeature {
                 return .none
 
             case let .selectItem(id, isCommandPressed, isShiftPressed):
+                state.shouldScrollToSelection = false
+
                 if isShiftPressed {
                     guard let lastId = state.lastSelectedId,
                           let lastIndex = state.items.firstIndex(where: { $0.id == lastId }),
@@ -200,12 +204,14 @@ struct FSItemsFeature {
                             state.rangeAnchorId = nil
                         }
                         state.lastSelectedId = nextItem.id
+                        state.shouldScrollToSelection = true
                     }
                 } else {
                     let firstItem = state.items[0]
                     state.selectedIds = [firstItem.id]
                     state.lastSelectedId = firstItem.id
                     state.rangeAnchorId = nil
+                    state.shouldScrollToSelection = true
                 }
                 return .none
 
@@ -232,12 +238,14 @@ struct FSItemsFeature {
                             state.rangeAnchorId = nil
                         }
                         state.lastSelectedId = previousItem.id
+                        state.shouldScrollToSelection = true
                     }
                 } else {
                     let lastItem = state.items[state.items.count - 1]
                     state.selectedIds = [lastItem.id]
                     state.lastSelectedId = lastItem.id
                     state.rangeAnchorId = nil
+                    state.shouldScrollToSelection = true
                 }
                 return .none
 
@@ -257,6 +265,7 @@ struct FSItemsFeature {
                         state.lastSelectedId = last.id
                     }
                     state.rangeAnchorId = nil
+                    state.shouldScrollToSelection = true
                     return .none
                 }
 
@@ -274,6 +283,7 @@ struct FSItemsFeature {
                     state.rangeAnchorId = nil
                 }
                 state.lastSelectedId = targetItem.id
+                state.shouldScrollToSelection = true
                 return .none
 
             case let .setSortKey(key):
@@ -292,6 +302,10 @@ struct FSItemsFeature {
                 let sorted = FSItemsSorting.sortItems(state.items, by: state.sortKey, order: state.sortOrder)
                 state.items = sorted
                 state.groupedItems = FSItemsGrouping.groupItems(sorted, by: state.groupKey)
+                return .none
+
+            case .resetScrollFlag:
+                state.shouldScrollToSelection = false
                 return .none
             }
         }
