@@ -2,50 +2,9 @@ import ComposableArchitecture
 import CoreServices
 import Foundation
 
-enum SortKey: String, Equatable, CaseIterable {
-    case name
-    case size
-    case modified
-    case type
-}
-
-enum SortOrder: String, Equatable {
-    case ascending
-    case descending
-}
-
 /// 파일 시스템 아이템 목록 및 선택 관리 (FSV 영역)
 @Reducer
 struct FSItemsFeature {
-    static func sortItems(
-        _ items: [FSItemModel],
-        by sortKey: SortKey,
-        order: SortOrder
-    ) -> [FSItemModel] {
-        items.sorted { item1, item2 in
-            let comparison: ComparisonResult
-            switch sortKey {
-            case .name:
-                comparison = item1.name.localizedCaseInsensitiveCompare(item2.name)
-            case .size:
-                comparison = item1.size < item2.size ? .orderedAscending :
-                    item1.size > item2.size ? .orderedDescending : .orderedSame
-            case .modified:
-                comparison = item1.modifiedDate < item2.modifiedDate ? .orderedAscending :
-                    item1.modifiedDate > item2.modifiedDate ? .orderedDescending : .orderedSame
-            case .type:
-                comparison = item1.kind.localizedCaseInsensitiveCompare(item2.kind)
-            }
-
-            switch order {
-            case .ascending:
-                return comparison == .orderedAscending
-            case .descending:
-                return comparison == .orderedDescending
-            }
-        }
-    }
-
     @ObservableState
     struct State: Equatable {
         var items: [FSItemModel] = []
@@ -58,6 +17,9 @@ struct FSItemsFeature {
         var sortKey: SortKey = .name
         var sortOrder: SortOrder = .ascending
         var hasUserSetSortOrder: Bool = false
+
+        var groupKey: GroupKey = .none
+        var groupedItems: [GroupedItems] = []
 
         var defaultSortOrder: SortOrder {
             switch sortKey {
@@ -73,6 +35,7 @@ struct FSItemsFeature {
         case loadItems(path: String)
         case itemsLoaded([FSItemModel])
         case setShowHidden(Bool)
+        case setGroupKey(GroupKey)
         case selectItem(id: String, isCommandPressed: Bool, isShiftPressed: Bool)
         case selectAll
         case clearSelection
@@ -150,8 +113,16 @@ struct FSItemsFeature {
                 state.showHiddenFiles = show
                 return .none
 
+            case let .setGroupKey(key):
+                state.groupKey = key
+                let sorted = FSItemsSorting.sortItems(state.items, by: state.sortKey, order: state.sortOrder)
+                state.groupedItems = FSItemsGrouping.groupItems(sorted, by: key)
+                return .none
+
             case let .itemsLoaded(items):
-                state.items = Self.sortItems(items, by: state.sortKey, order: state.sortOrder)
+                let sorted = FSItemsSorting.sortItems(items, by: state.sortKey, order: state.sortOrder)
+                state.items = sorted
+                state.groupedItems = FSItemsGrouping.groupItems(sorted, by: state.groupKey)
                 state.isLoading = false
                 return .none
 
@@ -304,13 +275,17 @@ struct FSItemsFeature {
                 if !state.hasUserSetSortOrder {
                     state.sortOrder = state.defaultSortOrder
                 }
-                state.items = Self.sortItems(state.items, by: state.sortKey, order: state.sortOrder)
+                let sorted = FSItemsSorting.sortItems(state.items, by: state.sortKey, order: state.sortOrder)
+                state.items = sorted
+                state.groupedItems = FSItemsGrouping.groupItems(sorted, by: state.groupKey)
                 return .none
 
             case let .setSortOrder(order):
                 state.sortOrder = order
                 state.hasUserSetSortOrder = true
-                state.items = Self.sortItems(state.items, by: state.sortKey, order: state.sortOrder)
+                let sorted = FSItemsSorting.sortItems(state.items, by: state.sortKey, order: state.sortOrder)
+                state.items = sorted
+                state.groupedItems = FSItemsGrouping.groupItems(sorted, by: state.groupKey)
                 return .none
             }
         }

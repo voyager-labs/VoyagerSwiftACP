@@ -121,6 +121,70 @@ struct MenuCommands: Commands {
 
             Divider()
 
+            Menu("Group By") {
+                Button(
+                    action: { fileManagerStore?.send(.changeGroupKey(.none)) },
+                    label: {
+                        HStack {
+                            Text("None")
+                            if fileManagerStore?.fsItems.groupKey == GroupKey.none {
+                                Image(systemName: "checkmark")
+                            }
+                        }
+                    }
+                )
+
+                Divider()
+
+                Button(
+                    action: { fileManagerStore?.send(.changeGroupKey(.name)) },
+                    label: {
+                        HStack {
+                            Text("Name")
+                            if fileManagerStore?.fsItems.groupKey == .name {
+                                Image(systemName: "checkmark")
+                            }
+                        }
+                    }
+                )
+
+                Button(
+                    action: { fileManagerStore?.send(.changeGroupKey(.dateModified)) },
+                    label: {
+                        HStack {
+                            Text("Date Modified")
+                            if fileManagerStore?.fsItems.groupKey == .dateModified {
+                                Image(systemName: "checkmark")
+                            }
+                        }
+                    }
+                )
+
+                Button(
+                    action: { fileManagerStore?.send(.changeGroupKey(.size)) },
+                    label: {
+                        HStack {
+                            Text("Size")
+                            if fileManagerStore?.fsItems.groupKey == .size {
+                                Image(systemName: "checkmark")
+                            }
+                        }
+                    }
+                )
+
+                Button(
+                    action: { fileManagerStore?.send(.changeGroupKey(.kind)) },
+                    label: {
+                        HStack {
+                            Text("Kind")
+                            if fileManagerStore?.fsItems.groupKey == .kind {
+                                Image(systemName: "checkmark")
+                            }
+                        }
+                    }
+                )
+            }
+
             Menu("Sort By") {
                 Button(
                     action: { fileManagerStore?.send(.changeSortKey(.name)) },

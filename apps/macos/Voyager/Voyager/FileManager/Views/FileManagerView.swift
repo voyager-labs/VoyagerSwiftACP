@@ -142,6 +142,70 @@ struct FileManagerView: View {
                 .fixedSize()
 
                 Menu {
+                    Menu("Group By") {
+                        Button(
+                            action: { store.send(.changeGroupKey(.none)) },
+                            label: {
+                                HStack {
+                                    Text("None")
+                                    if store.fsItems.groupKey == .none {
+                                        Image(systemName: "checkmark")
+                                    }
+                                }
+                            }
+                        )
+
+                        Divider()
+
+                        Button(
+                            action: { store.send(.changeGroupKey(.name)) },
+                            label: {
+                                HStack {
+                                    Text("Name")
+                                    if store.fsItems.groupKey == .name {
+                                        Image(systemName: "checkmark")
+                                    }
+                                }
+                            }
+                        )
+
+                        Button(
+                            action: { store.send(.changeGroupKey(.dateModified)) },
+                            label: {
+                                HStack {
+                                    Text("Date Modified")
+                                    if store.fsItems.groupKey == .dateModified {
+                                        Image(systemName: "checkmark")
+                                    }
+                                }
+                            }
+                        )
+
+                        Button(
+                            action: { store.send(.changeGroupKey(.size)) },
+                            label: {
+                                HStack {
+                                    Text("Size")
+                                    if store.fsItems.groupKey == .size {
+                                        Image(systemName: "checkmark")
+                                    }
+                                }
+                            }
+                        )
+
+                        Button(
+                            action: { store.send(.changeGroupKey(.kind)) },
+                            label: {
+                                HStack {
+                                    Text("Kind")
+                                    if store.fsItems.groupKey == .kind {
+                                        Image(systemName: "checkmark")
+                                    }
+                                }
+                            }
+                        )
+                    }
+
                     Menu("Sort By") {
                         Button(
                             action: { store.send(.changeSortKey(.name)) },

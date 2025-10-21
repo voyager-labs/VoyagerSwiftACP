@@ -94,6 +94,7 @@ struct FileManagerFeature {
 
         case changeSortKey(SortKey)
         case changeSortOrder(SortOrder)
+        case changeGroupKey(GroupKey)
 
         case fsItems(FSItemsFeature.Action)
     }
@@ -239,6 +240,9 @@ struct FileManagerFeature {
                 state.sortOrder = order
                 UserDefaults.standard.set(order.rawValue, forKey: "sortOrder")
                 return .send(.fsItems(.setSortOrder(order)))
+
+            case let .changeGroupKey(key):
+                return .send(.fsItems(.setGroupKey(key)))
 
             case .fsItems:
                 return .none

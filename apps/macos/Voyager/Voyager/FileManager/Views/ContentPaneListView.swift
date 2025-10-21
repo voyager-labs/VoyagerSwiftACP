@@ -31,25 +31,71 @@ struct ContentPaneListView: View {
                     ScrollViewReader { proxy in
                         ScrollView {
                             LazyVStack(alignment: .leading, spacing: 4) {
-                                ForEach(fsStore.items) { item in
-                                    FSItemListView(
-                                        item: item,
-                                        isSelected: fsStore.selectedIds.contains(item.id),
-                                        availableWidth: geometry.size.width,
-                                        onSelect: {
-                                            let isCommandPressed = NSEvent.modifierFlags.contains(.command)
-                                            let isShiftPressed = NSEvent.modifierFlags.contains(.shift)
-                                            fsStore.send(.selectItem(
-                                                id: item.id,
-                                                isCommandPressed: isCommandPressed,
-                                                isShiftPressed: isShiftPressed
-                                            ))
-                                        },
-                                        onOpen: {
-                                            store.send(.openItem(id: item.id))
+                                if fsStore.groupKey == .none {
+                                    ForEach(fsStore.items) { item in
+                                        FSItemListView(
+                                            item: item,
+                                            isSelected: fsStore.selectedIds.contains(item.id),
+                                            availableWidth: geometry.size.width,
+                                            onSelect: {
+                                                let isCommandPressed = NSEvent.modifierFlags.contains(.command)
+                                                let isShiftPressed = NSEvent.modifierFlags.contains(.shift)
+                                                fsStore.send(.selectItem(
+                                                    id: item.id,
+                                                    isCommandPressed: isCommandPressed,
+                                                    isShiftPressed: isShiftPressed
+                                                ))
+                                            },
+                                            onOpen: {
+                                                store.send(.openItem(id: item.id))
+                                            }
+                                        )
+                                        .id(item.id)
+                                    }
+                                } else {
+                                    ForEach(Array(fsStore.groupedItems.enumerated()),
+                                            id: \.element.groupName)
+                                    { index, group in
+                                        if index > 0 {
+                                            Spacer()
+                                                .frame(height: 16)
                                         }
-                                    )
-                                    .id(item.id)
+
+                                        // 이름 그룹화일 때는 헤더 숨김 (파인더 방식)
+                                        if !group.groupName.isEmpty && fsStore.groupKey != .name {
+                                            HStack(spacing: 8) {
+                                                Spacer()
+                                                    .frame(width: 28)
+                                                Text(group.groupName)
+                                                    .font(.headline)
+                                                    .foregroundColor(.primary)
+                                                Spacer()
+                                            }
+                                            .padding(.horizontal, 8)
+                                            .padding(.bottom, 4)
+                                        }
+
+                                        ForEach(group.items) { item in
+                                            FSItemListView(
+                                                item: item,
+                                                isSelected: fsStore.selectedIds.contains(item.id),
+                                                availableWidth: geometry.size.width,
+                                                onSelect: {
+                                                    let isCommandPressed = NSEvent.modifierFlags.contains(.command)
+                                                    let isShiftPressed = NSEvent.modifierFlags.contains(.shift)
+                                                    fsStore.send(.selectItem(
+                                                        id: item.id,
+                                                        isCommandPressed: isCommandPressed,
+                                                        isShiftPressed: isShiftPressed
+                                                    ))
+                                                },
+                                                onOpen: {
+                                                    store.send(.openItem(id: item.id))
+                                                }
+                                            )
+                                            .id(item.id)
+                                        }
+                                    }
                                 }
                             }
                             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)

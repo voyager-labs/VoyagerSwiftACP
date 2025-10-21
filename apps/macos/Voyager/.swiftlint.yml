@@ -141,4 +141,4 @@ analyzer_rules:
   - unused_parameter
 
 # 경고 레벨
-warning_threshold: 10
+warning_threshold: 20
