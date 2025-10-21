@@ -76,6 +76,7 @@ enum FSItemsGrouping {
             if itemYear == currentYear {
                 let formatter = DateFormatter()
                 formatter.dateFormat = "MMMM"
+                formatter.locale = Locale.current
                 return formatter.string(from: item.modifiedDate)
             } else {
                 return "\(itemYear)"
@@ -99,16 +100,38 @@ enum FSItemsGrouping {
             let rhsYear = Int(rhs.groupName) ?? 0
             return lhsYear > rhsYear
         } else if !lhsIsYear, !rhsIsYear {
-            let monthNames = [
-                "January", "February", "March", "April", "May", "June",
-                "July", "August", "September", "October", "November", "December",
-            ]
-            let lhsIndex = monthNames.firstIndex(of: lhs.groupName) ?? 0
-            let rhsIndex = monthNames.firstIndex(of: rhs.groupName) ?? 0
-            return lhsIndex > rhsIndex
+            let formatter = DateFormatter()
+            formatter.dateFormat = "MMMM"
+            formatter.locale = Locale.current
+
+            let calendar = Calendar.current
+            let currentYear = calendar.component(.year, from: Date())
+
+            let lhsDate = calendar.date(from: DateComponents(
+                year: currentYear,
+                month: getMonthNumber(from: lhs.groupName, formatter: formatter)
+            )) ?? Date()
+            let rhsDate = calendar.date(from: DateComponents(
+                year: currentYear,
+                month: getMonthNumber(from: rhs.groupName, formatter: formatter)
+            )) ?? Date()
+
+            return lhsDate > rhsDate
         } else {
             return !lhsIsYear
         }
+    }
+
+    private static func getMonthNumber(from monthName: String, formatter: DateFormatter) -> Int {
+        let calendar = Calendar.current
+        for month in 1 ... 12 {
+            if let date = calendar.date(from: DateComponents(year: 2024, month: month, day: 1)),
+               formatter.string(from: date) == monthName
+            {
+                return month
+            }
+        }
+        return 1
     }
 
     private static func groupBySize(_ files: [FSItemModel]) -> [GroupedItems] {
