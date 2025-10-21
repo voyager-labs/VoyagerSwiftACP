@@ -22,6 +22,14 @@ struct FSItemsFeature {
         var groupKey: GroupKey = .none
         var groupedItems: [GroupedItems] = []
 
+        var displayOrderItems: [FSItemModel] {
+            if groupKey == .none {
+                return items
+            } else {
+                return groupedItems.flatMap { $0.items }
+            }
+        }
+
         var defaultSortOrder: SortOrder {
             switch sortKey {
             case .dateModified:
@@ -182,22 +190,23 @@ struct FSItemsFeature {
                 return .none
 
             case let .selectNextItem(isShiftPressed):
-                guard !state.items.isEmpty else {
+                let displayItems = state.displayOrderItems
+                guard !displayItems.isEmpty else {
                     return .none
                 }
 
                 if let lastId = state.lastSelectedId,
-                   let currentIndex = state.items.firstIndex(where: { $0.id == lastId })
+                   let currentIndex = displayItems.firstIndex(where: { $0.id == lastId })
                 {
-                    if currentIndex < state.items.count - 1 {
-                        let nextItem = state.items[currentIndex + 1]
+                    if currentIndex < displayItems.count - 1 {
+                        let nextItem = displayItems[currentIndex + 1]
                         if isShiftPressed {
                             let anchorId = state.rangeAnchorId ?? lastId
-                            guard let anchorIndex = state.items.firstIndex(where: { $0.id == anchorId }) else {
+                            guard let anchorIndex = displayItems.firstIndex(where: { $0.id == anchorId }) else {
                                 return .none
                             }
                             let range = min(anchorIndex, currentIndex + 1) ... max(anchorIndex, currentIndex + 1)
-                            state.selectedIds = Set(state.items[range].map { $0.id })
+                            state.selectedIds = Set(displayItems[range].map { $0.id })
                             state.rangeAnchorId = anchorId
                         } else {
                             state.selectedIds = [nextItem.id]
@@ -207,7 +216,7 @@ struct FSItemsFeature {
                         state.shouldScrollToSelection = true
                     }
                 } else {
-                    let firstItem = state.items[0]
+                    let firstItem = displayItems[0]
                     state.selectedIds = [firstItem.id]
                     state.lastSelectedId = firstItem.id
                     state.rangeAnchorId = nil
@@ -216,22 +225,23 @@ struct FSItemsFeature {
                 return .none
 
             case let .selectPreviousItem(isShiftPressed):
-                guard !state.items.isEmpty else {
+                let displayItems = state.displayOrderItems
+                guard !displayItems.isEmpty else {
                     return .none
                 }
 
                 if let lastId = state.lastSelectedId,
-                   let currentIndex = state.items.firstIndex(where: { $0.id == lastId })
+                   let currentIndex = displayItems.firstIndex(where: { $0.id == lastId })
                 {
                     if currentIndex > 0 {
-                        let previousItem = state.items[currentIndex - 1]
+                        let previousItem = displayItems[currentIndex - 1]
                         if isShiftPressed {
                             let anchorId = state.rangeAnchorId ?? lastId
-                            guard let anchorIndex = state.items.firstIndex(where: { $0.id == anchorId }) else {
+                            guard let anchorIndex = displayItems.firstIndex(where: { $0.id == anchorId }) else {
                                 return .none
                             }
                             let range = min(anchorIndex, currentIndex - 1) ... max(anchorIndex, currentIndex - 1)
-                            state.selectedIds = Set(state.items[range].map { $0.id })
+                            state.selectedIds = Set(displayItems[range].map { $0.id })
                             state.rangeAnchorId = anchorId
                         } else {
                             state.selectedIds = [previousItem.id]
@@ -241,7 +251,7 @@ struct FSItemsFeature {
                         state.shouldScrollToSelection = true
                     }
                 } else {
-                    let lastItem = state.items[state.items.count - 1]
+                    let lastItem = displayItems[displayItems.count - 1]
                     state.selectedIds = [lastItem.id]
                     state.lastSelectedId = lastItem.id
                     state.rangeAnchorId = nil
@@ -250,17 +260,18 @@ struct FSItemsFeature {
                 return .none
 
             case let .selectByOffset(offset, isShiftPressed):
-                guard !state.items.isEmpty else { return .none }
+                let displayItems = state.displayOrderItems
+                guard !displayItems.isEmpty else { return .none }
 
                 guard let currentId = state.lastSelectedId,
-                      let currentIndex = state.items.firstIndex(where: { $0.id == currentId })
+                      let currentIndex = displayItems.firstIndex(where: { $0.id == currentId })
                 else {
                     if offset >= 0 {
-                        guard let first = state.items.first else { return .none }
+                        guard let first = displayItems.first else { return .none }
                         state.selectedIds = [first.id]
                         state.lastSelectedId = first.id
                     } else {
-                        guard let last = state.items.last else { return .none }
+                        guard let last = displayItems.last else { return .none }
                         state.selectedIds = [last.id]
                         state.lastSelectedId = last.id
                     }
@@ -269,14 +280,14 @@ struct FSItemsFeature {
                     return .none
                 }
 
-                let targetIndex = max(0, min(state.items.count - 1, currentIndex + offset))
-                let targetItem = state.items[targetIndex]
+                let targetIndex = max(0, min(displayItems.count - 1, currentIndex + offset))
+                let targetItem = displayItems[targetIndex]
 
                 if isShiftPressed {
                     let anchorId = state.rangeAnchorId ?? currentId
-                    guard let anchorIndex = state.items.firstIndex(where: { $0.id == anchorId }) else { return .none }
+                    guard let anchorIndex = displayItems.firstIndex(where: { $0.id == anchorId }) else { return .none }
                     let range = min(anchorIndex, targetIndex) ... max(anchorIndex, targetIndex)
-                    state.selectedIds = Set(state.items[range].map { $0.id })
+                    state.selectedIds = Set(displayItems[range].map { $0.id })
                     state.rangeAnchorId = anchorId
                 } else {
                     state.selectedIds = [targetItem.id]
