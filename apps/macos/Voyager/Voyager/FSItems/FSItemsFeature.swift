@@ -22,10 +22,6 @@ struct FSItemsFeature {
         order: SortOrder
     ) -> [FSItemModel] {
         items.sorted { item1, item2 in
-            if item1.isDirectory != item2.isDirectory {
-                return item1.isDirectory
-            }
-
             let comparison: ComparisonResult
             switch sortKey {
             case .name:

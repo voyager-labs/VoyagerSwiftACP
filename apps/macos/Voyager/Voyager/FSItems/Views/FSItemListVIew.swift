@@ -84,7 +84,7 @@ struct FSItemListView: View {
     private func sizeText(_ item: FSItemModel) -> String {
         if item.isDirectory { return "--" }
         let formatter = ByteCountFormatter()
-        formatter.allowedUnits = [.useKB, .useMB, .useGB]
+        formatter.allowedUnits = [.useBytes, .useKB, .useMB, .useGB]
         formatter.countStyle = .file
         return formatter.string(fromByteCount: item.size)
     }
