@@ -77,18 +77,54 @@ struct FileManagerView: View {
         }
         .toolbar {
             ToolbarItemGroup(placement: .navigation) {
-                Button {
-                    store.send(.goBack)
+                Menu {
+                    if store.backHistory.isEmpty {
+                        Text("No history")
+                            .foregroundColor(.secondary)
+                    } else {
+                        ForEach(0 ..< store.backHistory.count, id: \.self) { index in
+                            let reversedIndex = store.backHistory.count - 1 - index
+                            Button(
+                                action: {
+                                    store.send(.goToHistoryIndex(index, isBackHistory: true))
+                                },
+                                label: {
+                                    Text(FileManager.default.displayName(atPath: store.backHistory[reversedIndex]))
+                                }
+                            )
+                        }
+                    }
                 } label: {
                     Image(systemName: "chevron.left")
+                } primaryAction: {
+                    store.send(.goBack)
                 }
+                .menuIndicator(.hidden)
                 .disabled(!store.canGoBack)
 
-                Button {
-                    store.send(.goForward)
+                Menu {
+                    if store.forwardHistory.isEmpty {
+                        Text("No history")
+                            .foregroundColor(.secondary)
+                    } else {
+                        ForEach(0 ..< store.forwardHistory.count, id: \.self) { index in
+                            let reversedIndex = store.forwardHistory.count - 1 - index
+                            Button(
+                                action: {
+                                    store.send(.goToHistoryIndex(index, isBackHistory: false))
+                                },
+                                label: {
+                                    Text(FileManager.default.displayName(atPath: store.forwardHistory[reversedIndex]))
+                                }
+                            )
+                        }
+                    }
                 } label: {
                     Image(systemName: "chevron.right")
+                } primaryAction: {
+                    store.send(.goForward)
                 }
+                .menuIndicator(.hidden)
                 .disabled(!store.canGoForward)
             }
 

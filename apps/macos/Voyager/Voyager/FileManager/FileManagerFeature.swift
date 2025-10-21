@@ -86,6 +86,7 @@ struct FileManagerFeature {
         case openSelectedItem
         case goBack
         case goForward
+        case goToHistoryIndex(Int, isBackHistory: Bool)
         case goToEnclosingDirectory
         case changeLayout(ViewLayout)
         case updateGridColumnCount(Int)
@@ -170,6 +171,33 @@ struct FileManagerFeature {
                 state.backHistory.append(state.currentPath)
                 state.currentPath = nextPath
                 return .send(.fsItems(.loadItems(path: nextPath)))
+
+            case let .goToHistoryIndex(index, isBackHistory):
+                if isBackHistory {
+                    guard index < state.backHistory.count else { return .none }
+                    let targetPath = state.backHistory[state.backHistory.count - 1 - index]
+
+                    for idx in (state.backHistory.count - index) ..< state.backHistory.count {
+                        state.forwardHistory.append(state.backHistory[idx])
+                    }
+                    state.forwardHistory.append(state.currentPath)
+
+                    state.backHistory.removeLast(index + 1)
+                    state.currentPath = targetPath
+                    return .send(.fsItems(.loadItems(path: targetPath)))
+                } else {
+                    guard index < state.forwardHistory.count else { return .none }
+                    let targetPath = state.forwardHistory[state.forwardHistory.count - 1 - index]
+
+                    for idx in (state.forwardHistory.count - index) ..< state.forwardHistory.count {
+                        state.backHistory.append(state.forwardHistory[idx])
+                    }
+                    state.backHistory.append(state.currentPath)
+
+                    state.forwardHistory.removeLast(index + 1)
+                    state.currentPath = targetPath
+                    return .send(.fsItems(.loadItems(path: targetPath)))
+                }
 
             case .goToEnclosingDirectory:
                 let url = URL(fileURLWithPath: state.currentPath)
