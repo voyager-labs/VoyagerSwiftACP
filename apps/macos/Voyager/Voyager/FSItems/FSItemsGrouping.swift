@@ -18,8 +18,8 @@ struct GroupedItems: Equatable {
 }
 
 enum FSItemsGrouping {
-    private static func groupByName(_ files: [FSItemModel]) -> [GroupedItems] {
-        let dictionary = Dictionary(grouping: files) { item -> String in
+    private static func groupByName(_ items: [FSItemModel]) -> [GroupedItems] {
+        let dictionary = Dictionary(grouping: items) { item -> String in
             guard let firstChar = item.name.uppercased().first else { return "#" }
             if firstChar.isLetter {
                 return String(firstChar)
@@ -43,31 +43,31 @@ enum FSItemsGrouping {
         let calendar = Calendar.current
         let now = Date()
 
-        let dateGroups: [(String, (FSItemModel) -> Bool)] = [
-            ("Today", { calendar.isDateInToday($0.modifiedDate) }),
-            ("Yesterday", { calendar.isDateInYesterday($0.modifiedDate) }),
-            ("Previous 7 Days", { item in
-                if let weekAgo = calendar.date(byAdding: .day, value: -7, to: now) {
-                    return item.modifiedDate > weekAgo
-                }
-                return false
-            }),
-        ]
-
         var result: [GroupedItems] = []
+        var processedFiles: Set<String> = []
 
-        for (groupName, predicate) in dateGroups {
-            let items = files.filter(predicate)
-            if !items.isEmpty {
-                result.append(GroupedItems(groupName: groupName, items: items))
-            }
+        let todayFiles = files.filter { calendar.isDateInToday($0.modifiedDate) }
+        if !todayFiles.isEmpty {
+            result.append(GroupedItems(groupName: "Today", items: todayFiles))
+            processedFiles.formUnion(todayFiles.map { $0.id })
         }
 
-        let remainingFiles = files.filter { item in
-            !calendar.isDateInToday(item.modifiedDate) &&
-                !calendar.isDateInYesterday(item.modifiedDate) &&
-                !(calendar.date(byAdding: .day, value: -7, to: now).map { item.modifiedDate > $0 } ?? false)
+        let yesterdayFiles = files.filter { calendar.isDateInYesterday($0.modifiedDate) }
+        if !yesterdayFiles.isEmpty {
+            result.append(GroupedItems(groupName: "Yesterday", items: yesterdayFiles))
+            processedFiles.formUnion(yesterdayFiles.map { $0.id })
         }
+
+        let weekAgo = calendar.date(byAdding: .day, value: -7, to: now) ?? now
+        let previous7DaysFiles = files.filter { item in
+            item.modifiedDate > weekAgo && !processedFiles.contains(item.id)
+        }
+        if !previous7DaysFiles.isEmpty {
+            result.append(GroupedItems(groupName: "Previous 7 Days", items: previous7DaysFiles))
+            processedFiles.formUnion(previous7DaysFiles.map { $0.id })
+        }
+
+        let remainingFiles = files.filter { !processedFiles.contains($0.id) }
 
         let monthYearGroups = Dictionary(grouping: remainingFiles) { item -> String in
             let itemYear = calendar.component(.year, from: item.modifiedDate)
@@ -161,7 +161,8 @@ enum FSItemsGrouping {
             break
 
         case .name:
-            result.append(contentsOf: groupByName(items))
+            let sortedItems = items.sorted { $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending }
+            result.append(GroupedItems(groupName: "", items: sortedItems))
 
         case .dateModified:
             result.append(contentsOf: groupByDate(items))
