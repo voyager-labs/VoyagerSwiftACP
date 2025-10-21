@@ -1,4 +1,5 @@
 import ComposableArchitecture
+import CoreServices
 import Foundation
 
 enum SortKey: String, Equatable, CaseIterable {
@@ -33,7 +34,7 @@ struct FSItemsFeature {
                 comparison = item1.modifiedDate < item2.modifiedDate ? .orderedAscending :
                     item1.modifiedDate > item2.modifiedDate ? .orderedDescending : .orderedSame
             case .type:
-                comparison = item1.fileExtension.localizedCaseInsensitiveCompare(item2.fileExtension)
+                comparison = item1.kind.localizedCaseInsensitiveCompare(item2.kind)
             }
 
             switch order {
@@ -116,6 +117,20 @@ struct FSItemsFeature {
                         let modifiedDate = values?.contentModificationDate ?? Date()
                         let fileExtension = isDirectory ? "" : itemURL.pathExtension
 
+                        var kind = ""
+                        if let mdItem = MDItemCreate(kCFAllocatorDefault, itemURL.path as CFString) {
+                            kind = (MDItemCopyAttribute(mdItem, kMDItemKind) as? String) ?? ""
+                        }
+                        if kind.isEmpty {
+                            if isDirectory {
+                                kind = "Folder"
+                            } else if fileExtension.isEmpty {
+                                kind = "File"
+                            } else {
+                                kind = fileExtension.capitalized
+                            }
+                        }
+
                         return FSItemModel(
                             name: itemURL.lastPathComponent,
                             fullPath: itemURL.path,
@@ -123,7 +138,8 @@ struct FSItemsFeature {
                             isHidden: isHidden,
                             size: size,
                             modifiedDate: modifiedDate,
-                            fileExtension: fileExtension
+                            fileExtension: fileExtension,
+                            kind: kind
                         )
                     }
 

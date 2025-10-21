@@ -9,6 +9,7 @@ struct FSItemModel: Identifiable, Equatable, Sendable {
     let size: Int64
     let modifiedDate: Date
     let fileExtension: String
+    let kind: String
 
     nonisolated init(
         name: String,
@@ -17,7 +18,8 @@ struct FSItemModel: Identifiable, Equatable, Sendable {
         isHidden: Bool,
         size: Int64 = 0,
         modifiedDate: Date = Date(),
-        fileExtension: String = ""
+        fileExtension: String = "",
+        kind: String = ""
     ) {
         id = fullPath
         self.name = name
@@ -27,5 +29,6 @@ struct FSItemModel: Identifiable, Equatable, Sendable {
         self.size = size
         self.modifiedDate = modifiedDate
         self.fileExtension = fileExtension
+        self.kind = kind
     }
 }

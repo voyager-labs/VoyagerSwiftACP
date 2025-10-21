@@ -97,9 +97,6 @@ struct FSItemListView: View {
     }
 
     private func kindText(_ item: FSItemModel) -> String {
-        if item.isDirectory {
-            return "Folder"
-        }
-        return item.fileExtension.isEmpty ? "File" : item.fileExtension.capitalized
+        item.kind
     }
 }
