@@ -8,6 +8,8 @@ struct FSItemModel: Identifiable, Equatable, Sendable {
     let isHidden: Bool
     let size: Int64
     let modifiedDate: Date
+    let createdDate: Date
+    let addedDate: Date
     let fileExtension: String
     let kind: String
 
@@ -18,6 +20,8 @@ struct FSItemModel: Identifiable, Equatable, Sendable {
         isHidden: Bool,
         size: Int64 = 0,
         modifiedDate: Date = Date(),
+        createdDate: Date = Date(),
+        addedDate: Date = Date(),
         fileExtension: String = "",
         kind: String = ""
     ) {
@@ -28,6 +32,8 @@ struct FSItemModel: Identifiable, Equatable, Sendable {
         self.isHidden = isHidden
         self.size = size
         self.modifiedDate = modifiedDate
+        self.createdDate = createdDate
+        self.addedDate = addedDate
         self.fileExtension = fileExtension
         self.kind = kind
     }

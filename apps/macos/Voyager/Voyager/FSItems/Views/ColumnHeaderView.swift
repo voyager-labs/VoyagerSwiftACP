@@ -65,10 +65,10 @@ struct ColumnHeaderView: View {
 
             Button(
                 action: {
-                    if sortKey == .modified {
+                    if sortKey == .dateModified {
                         onSortOrderToggle()
                     } else {
-                        onSortKeyChange(.modified)
+                        onSortKeyChange(.dateModified)
                     }
                 },
                 label: {
@@ -77,7 +77,7 @@ struct ColumnHeaderView: View {
                             .font(.system(size: 12, weight: .medium))
                             .foregroundColor(.primary)
 
-                        if sortKey == .modified {
+                        if sortKey == .dateModified {
                             Image(systemName: sortOrder == .ascending ? "chevron.up" : "chevron.down")
                                 .font(.system(size: 10))
                                 .foregroundColor(.accentColor)
@@ -125,10 +125,10 @@ struct ColumnHeaderView: View {
 
             Button(
                 action: {
-                    if sortKey == .type {
+                    if sortKey == .kind {
                         onSortOrderToggle()
                     } else {
-                        onSortKeyChange(.type)
+                        onSortKeyChange(.kind)
                     }
                 },
                 label: {
@@ -137,7 +137,7 @@ struct ColumnHeaderView: View {
                             .font(.system(size: 12, weight: .medium))
                             .foregroundColor(.primary)
 
-                        if sortKey == .type {
+                        if sortKey == .kind {
                             Image(systemName: sortOrder == .ascending ? "chevron.up" : "chevron.down")
                                 .font(.system(size: 10))
                                 .foregroundColor(.accentColor)

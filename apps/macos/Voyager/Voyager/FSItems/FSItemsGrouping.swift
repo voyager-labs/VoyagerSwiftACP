@@ -3,9 +3,11 @@ import Foundation
 enum GroupKey: String, Equatable, CaseIterable {
     case none = "None"
     case name = "Name"
-    case dateModified = "Date Modified"
-    case size = "Size"
     case kind = "Kind"
+    case dateAdded = "Date Added"
+    case dateModified = "Date Modified"
+    case dateCreated = "Date Created"
+    case size = "Size"
 }
 
 struct GroupedItems: Equatable {
@@ -39,20 +41,23 @@ enum FSItemsGrouping {
             }
     }
 
-    private static func groupByDate(_ files: [FSItemModel]) -> [GroupedItems] {
+    private static func groupByDate(
+        _ files: [FSItemModel],
+        dateKeyPath: KeyPath<FSItemModel, Date> = \.modifiedDate
+    ) -> [GroupedItems] {
         let calendar = Calendar.current
         let now = Date()
 
         var result: [GroupedItems] = []
         var processedFiles: Set<String> = []
 
-        let todayFiles = files.filter { calendar.isDateInToday($0.modifiedDate) }
+        let todayFiles = files.filter { calendar.isDateInToday($0[keyPath: dateKeyPath]) }
         if !todayFiles.isEmpty {
             result.append(GroupedItems(groupName: "Today", items: todayFiles))
             processedFiles.formUnion(todayFiles.map { $0.id })
         }
 
-        let yesterdayFiles = files.filter { calendar.isDateInYesterday($0.modifiedDate) }
+        let yesterdayFiles = files.filter { calendar.isDateInYesterday($0[keyPath: dateKeyPath]) }
         if !yesterdayFiles.isEmpty {
             result.append(GroupedItems(groupName: "Yesterday", items: yesterdayFiles))
             processedFiles.formUnion(yesterdayFiles.map { $0.id })
@@ -60,7 +65,7 @@ enum FSItemsGrouping {
 
         let weekAgo = calendar.date(byAdding: .day, value: -7, to: now) ?? now
         let previous7DaysFiles = files.filter { item in
-            item.modifiedDate > weekAgo && !processedFiles.contains(item.id)
+            item[keyPath: dateKeyPath] > weekAgo && !processedFiles.contains(item.id)
         }
         if !previous7DaysFiles.isEmpty {
             result.append(GroupedItems(groupName: "Previous 7 Days", items: previous7DaysFiles))
@@ -70,14 +75,14 @@ enum FSItemsGrouping {
         let remainingFiles = files.filter { !processedFiles.contains($0.id) }
 
         let monthYearGroups = Dictionary(grouping: remainingFiles) { item -> String in
-            let itemYear = calendar.component(.year, from: item.modifiedDate)
+            let itemYear = calendar.component(.year, from: item[keyPath: dateKeyPath])
             let currentYear = calendar.component(.year, from: now)
 
             if itemYear == currentYear {
                 let formatter = DateFormatter()
                 formatter.dateFormat = "MMMM"
                 formatter.locale = Locale.current
-                return formatter.string(from: item.modifiedDate)
+                return formatter.string(from: item[keyPath: dateKeyPath])
             } else {
                 return "\(itemYear)"
             }
@@ -187,8 +192,22 @@ enum FSItemsGrouping {
             let sortedItems = items.sorted { $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending }
             result.append(GroupedItems(groupName: "", items: sortedItems))
 
+        case .kind:
+            let folders = items.filter { $0.isDirectory }
+            if !folders.isEmpty {
+                result.append(GroupedItems(groupName: "", items: folders))
+            }
+            let files = items.filter { !$0.isDirectory }
+            result.append(contentsOf: groupByKind(files))
+
+        case .dateAdded:
+            result.append(contentsOf: groupByDate(items, dateKeyPath: \.addedDate))
+
         case .dateModified:
             result.append(contentsOf: groupByDate(items))
+
+        case .dateCreated:
+            result.append(contentsOf: groupByDate(items, dateKeyPath: \.createdDate))
 
         case .size:
             let files = items.filter { !$0.isDirectory }
@@ -197,14 +216,6 @@ enum FSItemsGrouping {
             if !folders.isEmpty {
                 result.append(GroupedItems(groupName: "---", items: folders))
             }
-
-        case .kind:
-            let folders = items.filter { $0.isDirectory }
-            if !folders.isEmpty {
-                result.append(GroupedItems(groupName: "", items: folders))
-            }
-            let files = items.filter { !$0.isDirectory }
-            result.append(contentsOf: groupByKind(files))
         }
 
         return result

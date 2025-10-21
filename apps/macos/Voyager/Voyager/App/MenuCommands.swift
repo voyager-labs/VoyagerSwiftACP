@@ -149,6 +149,30 @@ struct MenuCommands: Commands {
                 )
 
                 Button(
+                    action: { fileManagerStore?.send(.changeGroupKey(.kind)) },
+                    label: {
+                        HStack {
+                            Text("Kind")
+                            if fileManagerStore?.fsItems.groupKey == .kind {
+                                Image(systemName: "checkmark")
+                            }
+                        }
+                    }
+                )
+
+                Button(
+                    action: { fileManagerStore?.send(.changeGroupKey(.dateAdded)) },
+                    label: {
+                        HStack {
+                            Text("Date Added")
+                            if fileManagerStore?.fsItems.groupKey == .dateAdded {
+                                Image(systemName: "checkmark")
+                            }
+                        }
+                    }
+                )
+
+                Button(
                     action: { fileManagerStore?.send(.changeGroupKey(.dateModified)) },
                     label: {
                         HStack {
@@ -161,11 +185,11 @@ struct MenuCommands: Commands {
                 )
 
                 Button(
-                    action: { fileManagerStore?.send(.changeGroupKey(.size)) },
+                    action: { fileManagerStore?.send(.changeGroupKey(.dateCreated)) },
                     label: {
                         HStack {
-                            Text("Size")
-                            if fileManagerStore?.fsItems.groupKey == .size {
+                            Text("Date Created")
+                            if fileManagerStore?.fsItems.groupKey == .dateCreated {
                                 Image(systemName: "checkmark")
                             }
                         }
@@ -173,11 +197,11 @@ struct MenuCommands: Commands {
                 )
 
                 Button(
-                    action: { fileManagerStore?.send(.changeGroupKey(.kind)) },
+                    action: { fileManagerStore?.send(.changeGroupKey(.size)) },
                     label: {
                         HStack {
-                            Text("Kind")
-                            if fileManagerStore?.fsItems.groupKey == .kind {
+                            Text("Size")
+                            if fileManagerStore?.fsItems.groupKey == .size {
                                 Image(systemName: "checkmark")
                             }
                         }
@@ -199,35 +223,59 @@ struct MenuCommands: Commands {
                 )
 
                 Button(
+                    action: { fileManagerStore?.send(.changeSortKey(.kind)) },
+                    label: {
+                        HStack {
+                            Text("Kind")
+                            if fileManagerStore?.sortKey == .kind {
+                                Image(systemName: "checkmark")
+                            }
+                        }
+                    }
+                )
+
+                Button(
+                    action: { fileManagerStore?.send(.changeSortKey(.dateAdded)) },
+                    label: {
+                        HStack {
+                            Text("Date Added")
+                            if fileManagerStore?.sortKey == .dateAdded {
+                                Image(systemName: "checkmark")
+                            }
+                        }
+                    }
+                )
+
+                Button(
+                    action: { fileManagerStore?.send(.changeSortKey(.dateModified)) },
+                    label: {
+                        HStack {
+                            Text("Date Modified")
+                            if fileManagerStore?.sortKey == .dateModified {
+                                Image(systemName: "checkmark")
+                            }
+                        }
+                    }
+                )
+
+                Button(
+                    action: { fileManagerStore?.send(.changeSortKey(.dateCreated)) },
+                    label: {
+                        HStack {
+                            Text("Date Created")
+                            if fileManagerStore?.sortKey == .dateCreated {
+                                Image(systemName: "checkmark")
+                            }
+                        }
+                    }
+                )
+
+                Button(
                     action: { fileManagerStore?.send(.changeSortKey(.size)) },
                     label: {
                         HStack {
                             Text("Size")
                             if fileManagerStore?.sortKey == .size {
-                                Image(systemName: "checkmark")
-                            }
-                        }
-                    }
-                )
-
-                Button(
-                    action: { fileManagerStore?.send(.changeSortKey(.modified)) },
-                    label: {
-                        HStack {
-                            Text("Modified Date")
-                            if fileManagerStore?.sortKey == .modified {
-                                Image(systemName: "checkmark")
-                            }
-                        }
-                    }
-                )
-
-                Button(
-                    action: { fileManagerStore?.send(.changeSortKey(.type)) },
-                    label: {
-                        HStack {
-                            Text("Type")
-                            if fileManagerStore?.sortKey == .type {
                                 Image(systemName: "checkmark")
                             }
                         }

@@ -23,9 +23,9 @@ struct FSItemsFeature {
 
         var defaultSortOrder: SortOrder {
             switch sortKey {
-            case .modified:
+            case .dateModified:
                 return .descending
-            case .name, .size, .type:
+            case .name, .kind, .dateAdded, .dateCreated, .size:
                 return .ascending
             }
         }
@@ -81,8 +81,12 @@ struct FSItemsFeature {
                         let fileExtension = isDirectory ? "" : itemURL.pathExtension
 
                         var kind = ""
+                        var createdDate = Date()
+                        var addedDate = Date()
                         if let mdItem = MDItemCreate(kCFAllocatorDefault, itemURL.path as CFString) {
                             kind = (MDItemCopyAttribute(mdItem, kMDItemKind) as? String) ?? ""
+                            createdDate = (MDItemCopyAttribute(mdItem, kMDItemContentCreationDate) as? Date) ?? Date()
+                            addedDate = (MDItemCopyAttribute(mdItem, kMDItemDateAdded) as? Date) ?? Date()
                         }
                         if kind.isEmpty {
                             if isDirectory {
@@ -101,6 +105,8 @@ struct FSItemsFeature {
                             isHidden: isHidden,
                             size: size,
                             modifiedDate: modifiedDate,
+                            createdDate: createdDate,
+                            addedDate: addedDate,
                             fileExtension: fileExtension,
                             kind: kind
                         )
