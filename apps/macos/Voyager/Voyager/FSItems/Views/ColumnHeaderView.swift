@@ -1,7 +1,11 @@
 import SwiftUI
 
 struct ColumnHeaderView: View {
+    let sortKey: SortKey
+    let sortOrder: SortOrder
     let availableWidth: CGFloat
+    let onSortKeyChange: (SortKey) -> Void
+    let onSortOrderToggle: () -> Void
 
     private struct ColumnWidths {
         let name: CGFloat
@@ -25,48 +29,126 @@ struct ColumnHeaderView: View {
 
     var body: some View {
         HStack(spacing: 0) {
-            HStack(spacing: 8) {
-                Rectangle()
-                    .fill(Color.clear)
-                    .frame(width: 20, height: 1)
+            Button(
+                action: {
+                    if sortKey == .name {
+                        onSortOrderToggle()
+                    } else {
+                        onSortKeyChange(.name)
+                    }
+                },
+                label: {
+                    HStack(spacing: 8) {
+                        Rectangle()
+                            .fill(Color.clear)
+                            .frame(width: 20, height: 1)
 
-                Text("Name")
-                    .font(.system(size: 12, weight: .medium))
-                    .foregroundColor(.primary)
-            }
-            .frame(width: columnWidths.name, alignment: .leading)
-            .padding(.vertical, 6)
-            .padding(.leading, 8)
+                        Text("Name")
+                            .font(.system(size: 12, weight: .medium))
+                            .foregroundColor(.primary)
 
-            Divider()
-                .frame(height: 20)
-
-            Text("Date Modified")
-                .font(.system(size: 12, weight: .medium))
-                .foregroundColor(.primary)
-                .frame(width: columnWidths.date, alignment: .leading)
-                .padding(.vertical, 6)
-                .padding(.leading, 8)
-
-            Divider()
-                .frame(height: 20)
-
-            Text("Size")
-                .font(.system(size: 12, weight: .medium))
-                .foregroundColor(.primary)
-                .frame(width: columnWidths.size, alignment: .trailing)
-                .padding(.vertical, 6)
-                .padding(.trailing, 8)
+                        if sortKey == .name {
+                            Image(systemName: sortOrder == .ascending ? "chevron.up" : "chevron.down")
+                                .font(.system(size: 10))
+                                .foregroundColor(.accentColor)
+                        }
+                    }
+                    .frame(width: columnWidths.name, alignment: .leading)
+                    .padding(.vertical, 6)
+                    .padding(.leading, 8)
+                }
+            )
+            .buttonStyle(PlainButtonStyle())
 
             Divider()
                 .frame(height: 20)
 
-            Text("Kind")
-                .font(.system(size: 12, weight: .medium))
-                .foregroundColor(.primary)
-                .frame(width: columnWidths.kind, alignment: .leading)
-                .padding(.vertical, 6)
-                .padding(.leading, 8)
+            Button(
+                action: {
+                    if sortKey == .modified {
+                        onSortOrderToggle()
+                    } else {
+                        onSortKeyChange(.modified)
+                    }
+                },
+                label: {
+                    HStack(spacing: 4) {
+                        Text("Date Modified")
+                            .font(.system(size: 12, weight: .medium))
+                            .foregroundColor(.primary)
+
+                        if sortKey == .modified {
+                            Image(systemName: sortOrder == .ascending ? "chevron.up" : "chevron.down")
+                                .font(.system(size: 10))
+                                .foregroundColor(.accentColor)
+                        }
+                    }
+                    .frame(width: columnWidths.date, alignment: .leading)
+                    .padding(.vertical, 6)
+                    .padding(.leading, 8)
+                }
+            )
+            .buttonStyle(PlainButtonStyle())
+
+            Divider()
+                .frame(height: 20)
+
+            Button(
+                action: {
+                    if sortKey == .size {
+                        onSortOrderToggle()
+                    } else {
+                        onSortKeyChange(.size)
+                    }
+                },
+                label: {
+                    HStack(spacing: 4) {
+                        Text("Size")
+                            .font(.system(size: 12, weight: .medium))
+                            .foregroundColor(.primary)
+
+                        if sortKey == .size {
+                            Image(systemName: sortOrder == .ascending ? "chevron.up" : "chevron.down")
+                                .font(.system(size: 10))
+                                .foregroundColor(.accentColor)
+                        }
+                    }
+                    .frame(width: columnWidths.size, alignment: .trailing)
+                    .padding(.vertical, 6)
+                    .padding(.trailing, 8)
+                }
+            )
+            .buttonStyle(PlainButtonStyle())
+
+            Divider()
+                .frame(height: 20)
+
+            Button(
+                action: {
+                    if sortKey == .type {
+                        onSortOrderToggle()
+                    } else {
+                        onSortKeyChange(.type)
+                    }
+                },
+                label: {
+                    HStack(spacing: 4) {
+                        Text("Kind")
+                            .font(.system(size: 12, weight: .medium))
+                            .foregroundColor(.primary)
+
+                        if sortKey == .type {
+                            Image(systemName: sortOrder == .ascending ? "chevron.up" : "chevron.down")
+                                .font(.system(size: 10))
+                                .foregroundColor(.accentColor)
+                        }
+                    }
+                    .frame(width: columnWidths.kind, alignment: .leading)
+                    .padding(.vertical, 6)
+                    .padding(.leading, 8)
+                }
+            )
+            .buttonStyle(PlainButtonStyle())
         }
         .background(Color.clear)
         .overlay(
@@ -79,6 +161,12 @@ struct ColumnHeaderView: View {
 }
 
 #Preview {
-    ColumnHeaderView(availableWidth: 800)
-        .frame(height: 30)
+    ColumnHeaderView(
+        sortKey: .name,
+        sortOrder: .ascending,
+        availableWidth: 800,
+        onSortKeyChange: { _ in },
+        onSortOrderToggle: {}
+    )
+    .frame(height: 30)
 }

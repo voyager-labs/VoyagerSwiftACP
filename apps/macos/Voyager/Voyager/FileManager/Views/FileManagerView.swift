@@ -104,6 +104,85 @@ struct FileManagerView: View {
                 }
                 .pickerStyle(.segmented)
                 .fixedSize()
+
+                Menu {
+                    Menu("Sort By") {
+                        Button(
+                            action: { store.send(.changeSortKey(.name)) },
+                            label: {
+                                HStack {
+                                    Text("Name")
+                                    if store.sortKey == .name {
+                                        Image(systemName: "checkmark")
+                                    }
+                                }
+                            }
+                        )
+                        Button(
+                            action: { store.send(.changeSortKey(.size)) },
+                            label: {
+                                HStack {
+                                    Text("Size")
+                                    if store.sortKey == .size {
+                                        Image(systemName: "checkmark")
+                                    }
+                                }
+                            }
+                        )
+                        Button(
+                            action: { store.send(.changeSortKey(.modified)) },
+                            label: {
+                                HStack {
+                                    Text("Date Modified")
+                                    if store.sortKey == .modified {
+                                        Image(systemName: "checkmark")
+                                    }
+                                }
+                            }
+                        )
+                        Button(
+                            action: { store.send(.changeSortKey(.type)) },
+                            label: {
+                                HStack {
+                                    Text("Type")
+                                    if store.sortKey == .type {
+                                        Image(systemName: "checkmark")
+                                    }
+                                }
+                            }
+                        )
+
+                        Divider()
+
+                        Button(
+                            action: { store.send(.changeSortOrder(.ascending)) },
+                            label: {
+                                HStack {
+                                    Text("Ascending")
+                                    if store.sortOrder == .ascending {
+                                        Image(systemName: "checkmark")
+                                    }
+                                }
+                            }
+                        )
+
+                        Button(
+                            action: { store.send(.changeSortOrder(.descending)) },
+                            label: {
+                                HStack {
+                                    Text("Descending")
+                                    if store.sortOrder == .descending {
+                                        Image(systemName: "checkmark")
+                                    }
+                                }
+                            }
+                        )
+                    }
+                } label: {
+                    Image(systemName: "ellipsis")
+                }
+                .menuIndicator(.hidden)
+                .frame(minWidth: 32)
             }
         }
         .focusedSceneValue(\.fileManagerStore, store)

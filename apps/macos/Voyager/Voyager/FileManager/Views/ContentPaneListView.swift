@@ -15,7 +15,18 @@ struct ContentPaneListView: View {
         } else {
             GeometryReader { geometry in
                 VStack(spacing: 0) {
-                    ColumnHeaderView(availableWidth: geometry.size.width)
+                    ColumnHeaderView(
+                        sortKey: fsStore.sortKey,
+                        sortOrder: fsStore.sortOrder,
+                        availableWidth: geometry.size.width,
+                        onSortKeyChange: { key in
+                            store.send(.changeSortKey(key))
+                        },
+                        onSortOrderToggle: {
+                            let newOrder = fsStore.sortOrder == .ascending ? SortOrder.descending : SortOrder.ascending
+                            store.send(.changeSortOrder(newOrder))
+                        }
+                    )
 
                     ScrollViewReader { proxy in
                         ScrollView {

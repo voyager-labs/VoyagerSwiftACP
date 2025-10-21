@@ -118,6 +118,84 @@ struct MenuCommands: Commands {
                 fileManagerStore?.send(.toggleShowHiddenFiles)
             }
             .keyboardShortcut(".", modifiers: [.command, .shift])
+
+            Divider()
+
+            Menu("Sort By") {
+                Button(
+                    action: { fileManagerStore?.send(.changeSortKey(.name)) },
+                    label: {
+                        HStack {
+                            Text("Name")
+                            if fileManagerStore?.sortKey == .name {
+                                Image(systemName: "checkmark")
+                            }
+                        }
+                    }
+                )
+
+                Button(
+                    action: { fileManagerStore?.send(.changeSortKey(.size)) },
+                    label: {
+                        HStack {
+                            Text("Size")
+                            if fileManagerStore?.sortKey == .size {
+                                Image(systemName: "checkmark")
+                            }
+                        }
+                    }
+                )
+
+                Button(
+                    action: { fileManagerStore?.send(.changeSortKey(.modified)) },
+                    label: {
+                        HStack {
+                            Text("Modified Date")
+                            if fileManagerStore?.sortKey == .modified {
+                                Image(systemName: "checkmark")
+                            }
+                        }
+                    }
+                )
+
+                Button(
+                    action: { fileManagerStore?.send(.changeSortKey(.type)) },
+                    label: {
+                        HStack {
+                            Text("Type")
+                            if fileManagerStore?.sortKey == .type {
+                                Image(systemName: "checkmark")
+                            }
+                        }
+                    }
+                )
+
+                Divider()
+
+                Button(
+                    action: { fileManagerStore?.send(.changeSortOrder(.ascending)) },
+                    label: {
+                        HStack {
+                            Text("Ascending")
+                            if fileManagerStore?.sortOrder == .ascending {
+                                Image(systemName: "checkmark")
+                            }
+                        }
+                    }
+                )
+
+                Button(
+                    action: { fileManagerStore?.send(.changeSortOrder(.descending)) },
+                    label: {
+                        HStack {
+                            Text("Descending")
+                            if fileManagerStore?.sortOrder == .descending {
+                                Image(systemName: "checkmark")
+                            }
+                        }
+                    }
+                )
+            }
         }
 
         CommandGroup(after: .windowList) {

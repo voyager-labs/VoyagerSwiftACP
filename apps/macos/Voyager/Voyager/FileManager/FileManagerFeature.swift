@@ -21,6 +21,10 @@ struct FileManagerFeature {
         var gridColumnCount: Int = 1
         var showHiddenFiles: Bool = UserDefaults.standard.bool(forKey: "showHiddenFiles")
 
+        var sortKey: SortKey = .init(rawValue: UserDefaults.standard.string(forKey: "sortKey") ?? "") ?? .name
+        var sortOrder: SortOrder =
+            .init(rawValue: UserDefaults.standard.string(forKey: "sortOrder") ?? "") ?? .ascending
+
         var canGoBack: Bool {
             !backHistory.isEmpty
         }
@@ -86,6 +90,10 @@ struct FileManagerFeature {
         case changeLayout(ViewLayout)
         case updateGridColumnCount(Int)
         case toggleShowHiddenFiles
+
+        case changeSortKey(SortKey)
+        case changeSortOrder(SortOrder)
+
         case fsItems(FSItemsFeature.Action)
     }
 
@@ -99,6 +107,8 @@ struct FileManagerFeature {
             case .onAppear:
                 return .merge(
                     .send(.fsItems(.setShowHidden(state.showHiddenFiles))),
+                    .send(.fsItems(.setSortKey(state.sortKey))),
+                    .send(.fsItems(.setSortOrder(state.sortOrder))),
                     .send(.fsItems(.loadItems(path: state.currentPath)))
                 )
 
@@ -191,6 +201,16 @@ struct FileManagerFeature {
                     .send(.fsItems(.setShowHidden(state.showHiddenFiles))),
                     .send(.fsItems(.loadItems(path: state.currentPath)))
                 )
+
+            case let .changeSortKey(key):
+                state.sortKey = key
+                UserDefaults.standard.set(key.rawValue, forKey: "sortKey")
+                return .send(.fsItems(.setSortKey(key)))
+
+            case let .changeSortOrder(order):
+                state.sortOrder = order
+                UserDefaults.standard.set(order.rawValue, forKey: "sortOrder")
+                return .send(.fsItems(.setSortOrder(order)))
 
             case .fsItems:
                 return .none

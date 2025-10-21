@@ -1,4 +1,5 @@
 import SwiftUI
+import UniformTypeIdentifiers
 
 struct FSItemListView: View {
     let item: FSItemModel
@@ -47,23 +48,23 @@ struct FSItemListView: View {
             Text(dateText(item.modifiedDate))
                 .font(.system(size: 12))
                 .opacity(item.isHidden ? 0.5 : 1.0)
-            .frame(width: columnWidths.date, alignment: .leading)
-            .padding(.vertical, 6)
-            .padding(.leading, 8)
+                .frame(width: columnWidths.date, alignment: .leading)
+                .padding(.vertical, 6)
+                .padding(.leading, 8)
 
             Text(sizeText(item))
                 .font(.system(size: 12))
                 .opacity(item.isHidden ? 0.5 : 1.0)
-            .frame(width: columnWidths.size, alignment: .trailing)
-            .padding(.vertical, 6)
-            .padding(.trailing, 8)
+                .frame(width: columnWidths.size, alignment: .trailing)
+                .padding(.vertical, 6)
+                .padding(.trailing, 8)
 
             Text(kindText(item))
                 .font(.system(size: 12))
                 .opacity(item.isHidden ? 0.5 : 1.0)
-            .frame(width: columnWidths.kind, alignment: .leading)
-            .padding(.vertical, 6)
-            .padding(.leading, 8)
+                .frame(width: columnWidths.kind, alignment: .leading)
+                .padding(.vertical, 6)
+                .padding(.leading, 8)
         }
         .background(isSelected ? Color.accentColor.opacity(0.2) : Color.clear)
         .simultaneousGesture(

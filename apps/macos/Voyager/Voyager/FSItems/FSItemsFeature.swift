@@ -1,9 +1,54 @@
 import ComposableArchitecture
 import Foundation
 
+enum SortKey: String, Equatable, CaseIterable {
+    case name
+    case size
+    case modified
+    case type
+}
+
+enum SortOrder: String, Equatable {
+    case ascending
+    case descending
+}
+
 /// 파일 시스템 아이템 목록 및 선택 관리 (FSV 영역)
 @Reducer
 struct FSItemsFeature {
+    static func sortItems(
+        _ items: [FSItemModel],
+        by sortKey: SortKey,
+        order: SortOrder
+    ) -> [FSItemModel] {
+        items.sorted { item1, item2 in
+            if item1.isDirectory != item2.isDirectory {
+                return item1.isDirectory
+            }
+
+            let comparison: ComparisonResult
+            switch sortKey {
+            case .name:
+                comparison = item1.name.localizedCaseInsensitiveCompare(item2.name)
+            case .size:
+                comparison = item1.size < item2.size ? .orderedAscending :
+                    item1.size > item2.size ? .orderedDescending : .orderedSame
+            case .modified:
+                comparison = item1.modifiedDate < item2.modifiedDate ? .orderedAscending :
+                    item1.modifiedDate > item2.modifiedDate ? .orderedDescending : .orderedSame
+            case .type:
+                comparison = item1.fileExtension.localizedCaseInsensitiveCompare(item2.fileExtension)
+            }
+
+            switch order {
+            case .ascending:
+                return comparison == .orderedAscending
+            case .descending:
+                return comparison == .orderedDescending
+            }
+        }
+    }
+
     @ObservableState
     struct State: Equatable {
         var items: [FSItemModel] = []
@@ -12,6 +57,19 @@ struct FSItemsFeature {
         var rangeAnchorId: String?
         var isLoading: Bool = false
         var showHiddenFiles: Bool = false
+
+        var sortKey: SortKey = .name
+        var sortOrder: SortOrder = .ascending
+        var hasUserSetSortOrder: Bool = false
+
+        var defaultSortOrder: SortOrder {
+            switch sortKey {
+            case .modified:
+                return .descending
+            case .name, .size, .type:
+                return .ascending
+            }
+        }
     }
 
     enum Action: Equatable {
@@ -24,6 +82,9 @@ struct FSItemsFeature {
         case selectNextItem(isShiftPressed: Bool)
         case selectPreviousItem(isShiftPressed: Bool)
         case selectByOffset(offset: Int, isShiftPressed: Bool)
+
+        case setSortKey(SortKey)
+        case setSortOrder(SortOrder)
     }
 
     var body: some Reducer<State, Action> {
@@ -70,14 +131,7 @@ struct FSItemsFeature {
                         )
                     }
 
-                    let items = mapped.sorted { item1, item2 in
-                        if item1.isDirectory != item2.isDirectory {
-                            return item1.isDirectory
-                        }
-                        return item1.name.localizedCaseInsensitiveCompare(item2.name) == .orderedAscending
-                    }
-
-                    await send(.itemsLoaded(items))
+                    await send(.itemsLoaded(mapped))
                 }
 
             case let .setShowHidden(show):
@@ -85,7 +139,7 @@ struct FSItemsFeature {
                 return .none
 
             case let .itemsLoaded(items):
-                state.items = items
+                state.items = Self.sortItems(items, by: state.sortKey, order: state.sortOrder)
                 state.isLoading = false
                 return .none
 
@@ -231,6 +285,20 @@ struct FSItemsFeature {
                     state.rangeAnchorId = nil
                 }
                 state.lastSelectedId = targetItem.id
+                return .none
+
+            case let .setSortKey(key):
+                state.sortKey = key
+                if !state.hasUserSetSortOrder {
+                    state.sortOrder = state.defaultSortOrder
+                }
+                state.items = Self.sortItems(state.items, by: state.sortKey, order: state.sortOrder)
+                return .none
+
+            case let .setSortOrder(order):
+                state.sortOrder = order
+                state.hasUserSetSortOrder = true
+                state.items = Self.sortItems(state.items, by: state.sortKey, order: state.sortOrder)
                 return .none
             }
         }
