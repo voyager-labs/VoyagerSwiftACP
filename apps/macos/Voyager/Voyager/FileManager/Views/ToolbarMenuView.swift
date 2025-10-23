@@ -256,6 +256,7 @@ struct ToolbarMenuView: View {
                     }
                 )
             }
+            .disabled(store.fsItems.groupKey != .none)
         } label: {
             Image(systemName: "ellipsis")
         }
