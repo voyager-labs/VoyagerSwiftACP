@@ -1,6 +1,4 @@
-import AppKit
 import ComposableArchitecture
-import CoreServices
 import Foundation
 
 /// 파일 시스템 아이템 목록 및 선택 관리 (FSV 영역)
@@ -66,75 +64,9 @@ struct FSItemsFeature {
                 let showHidden = state.showHiddenFiles
                 return .run { [showHidden] send in
                     let url = URL(fileURLWithPath: (path as NSString).expandingTildeInPath)
-                    let options: FileManager.DirectoryEnumerationOptions = showHidden ? [] : [.skipsHiddenFiles]
-                    let contents = (try? FileManager.default.contentsOfDirectory(
-                        at: url,
-                        includingPropertiesForKeys: [
-                            .isDirectoryKey,
-                            .isHiddenKey,
-                            .fileSizeKey,
-                            .contentModificationDateKey,
-                        ],
-                        options: options
-                    )) ?? []
+                    let loadItems: [FSItem] = FSItemsLoadUtils.loadItems(at: url, showHidden: showHidden)
 
-                    let mapped: [FSItem] = contents.map { itemURL in
-                        let values = try? itemURL.resourceValues(forKeys: [
-                            .isDirectoryKey,
-                            .isHiddenKey,
-                            .fileSizeKey,
-                            .contentModificationDateKey,
-                        ])
-                        let isDirectory = values?.isDirectory ?? false
-                        let isHidden = values?.isHidden ?? false
-                        let size = Int64(values?.fileSize ?? 0)
-                        let modifiedDate = values?.contentModificationDate ?? Date()
-                        let fileExtension = isDirectory ? "" : itemURL.pathExtension
-
-                        var kind = ""
-                        var createdDate = Date()
-                        var addedDate = Date()
-                        var lastOpenedDate: Date?
-                        var creatorApplication: String?
-                        if let mdItem = MDItemCreate(kCFAllocatorDefault, itemURL.path as CFString) {
-                            kind = (MDItemCopyAttribute(mdItem, kMDItemKind) as? String) ?? ""
-                            createdDate = (MDItemCopyAttribute(mdItem, kMDItemContentCreationDate) as? Date) ?? Date()
-                            addedDate = (MDItemCopyAttribute(mdItem, kMDItemDateAdded) as? Date) ?? Date()
-                            lastOpenedDate = MDItemCopyAttribute(mdItem, kMDItemLastUsedDate) as? Date
-                        }
-
-                        if !isDirectory {
-                            if let appURL = NSWorkspace.shared.urlForApplication(toOpen: itemURL) {
-                                creatorApplication = appURL.deletingPathExtension().lastPathComponent
-                            }
-                        }
-                        if kind.isEmpty {
-                            if isDirectory {
-                                kind = "Folder"
-                            } else if fileExtension.isEmpty {
-                                kind = "File"
-                            } else {
-                                kind = fileExtension.capitalized
-                            }
-                        }
-
-                        return FSItem(
-                            name: itemURL.lastPathComponent,
-                            fullPath: itemURL.path,
-                            isDirectory: isDirectory,
-                            isHidden: isHidden,
-                            size: size,
-                            modifiedDate: modifiedDate,
-                            createdDate: createdDate,
-                            addedDate: addedDate,
-                            lastOpenedDate: lastOpenedDate,
-                            fileExtension: fileExtension,
-                            kind: kind,
-                            creatorApplication: creatorApplication
-                        )
-                    }
-
-                    await send(.itemsLoaded(mapped))
+                    await send(.itemsLoaded(loadItems))
                 }
 
             case let .setShowHidden(show):
