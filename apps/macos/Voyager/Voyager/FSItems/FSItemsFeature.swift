@@ -33,7 +33,7 @@ struct FSItemsFeature {
             switch sortKey {
             case .dateModified:
                 return .descending
-            case .name, .kind, .application, .dateLastOpened, .dateAdded, .dateCreated, .size:
+            case .name, .kind, .application, .dateLastOpened, .dateAdded, .dateCreated, .size, .tags:
                 return .ascending
             }
         }

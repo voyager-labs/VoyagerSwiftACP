@@ -79,6 +79,18 @@ struct ViewMenuCommands: Commands {
                 )
 
                 Button(
+                    action: { fileManagerStore?.send(.changeGroupKey(.application)) },
+                    label: {
+                        HStack {
+                            Text("Application")
+                            if fileManagerStore?.fsItems.groupKey == .application {
+                                Image(systemName: "checkmark")
+                            }
+                        }
+                    }
+                )
+
+                Button(
                     action: { fileManagerStore?.send(.changeGroupKey(.dateLastOpened)) },
                     label: {
                         HStack {
@@ -137,6 +149,17 @@ struct ViewMenuCommands: Commands {
                         }
                     }
                 )
+                Button(
+                    action: { fileManagerStore?.send(.changeGroupKey(.tags)) },
+                    label: {
+                        HStack {
+                            Text("Tags")
+                            if fileManagerStore?.fsItems.groupKey == .tags {
+                                Image(systemName: "checkmark")
+                            }
+                        }
+                    }
+                )
             }
 
             Divider()
@@ -160,6 +183,18 @@ struct ViewMenuCommands: Commands {
                         HStack {
                             Text("Kind")
                             if fileManagerStore?.sortKey == .kind {
+                                Image(systemName: "checkmark")
+                            }
+                        }
+                    }
+                )
+
+                Button(
+                    action: { fileManagerStore?.send(.changeSortKey(.application)) },
+                    label: {
+                        HStack {
+                            Text("Application")
+                            if fileManagerStore?.sortKey == .application {
                                 Image(systemName: "checkmark")
                             }
                         }
@@ -220,6 +255,17 @@ struct ViewMenuCommands: Commands {
                         HStack {
                             Text("Size")
                             if fileManagerStore?.sortKey == .size {
+                                Image(systemName: "checkmark")
+                            }
+                        }
+                    }
+                )
+                Button(
+                    action: { fileManagerStore?.send(.changeSortKey(.tags)) },
+                    label: {
+                        HStack {
+                            Text("Tags")
+                            if fileManagerStore?.sortKey == .tags {
                                 Image(systemName: "checkmark")
                             }
                         }

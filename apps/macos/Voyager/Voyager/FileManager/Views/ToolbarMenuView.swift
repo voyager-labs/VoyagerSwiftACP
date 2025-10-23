@@ -116,6 +116,17 @@ struct ToolbarMenuView: View {
                         }
                     }
                 )
+                Button(
+                    action: { store.send(.changeGroupKey(.tags)) },
+                    label: {
+                        HStack {
+                            Text("Tags")
+                            if store.fsItems.groupKey == .tags {
+                                Image(systemName: "checkmark")
+                            }
+                        }
+                    }
+                )
             }
 
             Menu("Sort By") {
@@ -202,6 +213,17 @@ struct ToolbarMenuView: View {
                         HStack {
                             Text("Size")
                             if store.sortKey == .size {
+                                Image(systemName: "checkmark")
+                            }
+                        }
+                    }
+                )
+                Button(
+                    action: { store.send(.changeSortKey(.tags)) },
+                    label: {
+                        HStack {
+                            Text("Tags")
+                            if store.sortKey == .tags {
                                 Image(systemName: "checkmark")
                             }
                         }

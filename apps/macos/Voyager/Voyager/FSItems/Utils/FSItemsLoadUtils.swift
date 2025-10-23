@@ -4,6 +4,12 @@ import Foundation
 import UniformTypeIdentifiers
 
 enum FSItemsLoadUtils {
+    private struct ItemMetadata {
+        let kind: String
+        let creatorApplication: String?
+        let tags: [String]?
+    }
+
     nonisolated static func loadItems(at directoryURL: URL, showHidden: Bool = false) -> [FSItem] {
         let fileManager = FileManager.default
 
@@ -43,7 +49,7 @@ enum FSItemsLoadUtils {
         let addedDate = resourceValues?.addedToDirectoryDate ?? Date()
         let lastOpenedDate = resourceValues?.contentAccessDate
 
-        let (kind, creatorApplication) = getItemMetadata(from: itemURL, isDirectory: isDirectory.boolValue)
+        let metadata = getItemMetadata(from: itemURL, isDirectory: isDirectory.boolValue)
 
         return FSItem(
             name: name,
@@ -56,24 +62,28 @@ enum FSItemsLoadUtils {
             addedDate: addedDate,
             lastOpenedDate: lastOpenedDate,
             fileExtension: itemURL.pathExtension,
-            kind: kind,
-            creatorApplication: creatorApplication
+            kind: metadata.kind,
+            creatorApplication: metadata.creatorApplication,
+            tags: metadata.tags
         )
     }
 
     private nonisolated static func getItemMetadata(
         from itemURL: URL,
         isDirectory: Bool
-    ) -> (kind: String, creatorApplication: String?) {
+    ) -> ItemMetadata {
         var kind: String
         var creatorApplication: String?
+        var tags: [String]?
 
         if isDirectory {
             kind = "Folder"
         } else {
             kind = itemURL.pathExtension.isEmpty ? "File" : itemURL.pathExtension.uppercased() + " File"
+        }
 
-            if let mdItem = MDItemCreate(kCFAllocatorDefault, itemURL.path as CFString) {
+        if let mdItem = MDItemCreate(kCFAllocatorDefault, itemURL.path as CFString) {
+            if !isDirectory {
                 if let contentType = MDItemCopyAttribute(mdItem, kMDItemContentType) as? String {
                     if let uti = UTType(mimeType: contentType) {
                         kind = uti.localizedDescription ?? contentType
@@ -84,8 +94,17 @@ enum FSItemsLoadUtils {
                     creatorApplication = appURL.deletingPathExtension().lastPathComponent
                 }
             }
+
+            if let rawTags = MDItemCopyAttribute(mdItem, "kMDItemUserTags" as CFString) as? [String] {
+                tags = rawTags.map { tag in
+                    if let newlineIndex = tag.firstIndex(of: "\n") {
+                        return String(tag[..<newlineIndex])
+                    }
+                    return tag
+                }
+            }
         }
 
-        return (kind, creatorApplication)
+        return ItemMetadata(kind: kind, creatorApplication: creatorApplication, tags: tags)
     }
 }

@@ -14,6 +14,7 @@ struct FSItem: Identifiable, Equatable, Sendable {
     let fileExtension: String
     let kind: String
     let creatorApplication: String?
+    let tags: [String]?
 
     nonisolated init(
         name: String,
@@ -27,7 +28,8 @@ struct FSItem: Identifiable, Equatable, Sendable {
         lastOpenedDate: Date? = nil,
         fileExtension: String = "",
         kind: String = "",
-        creatorApplication: String? = nil
+        creatorApplication: String? = nil,
+        tags: [String]? = nil
     ) {
         id = fullPath
         self.name = name
@@ -42,5 +44,6 @@ struct FSItem: Identifiable, Equatable, Sendable {
         self.fileExtension = fileExtension
         self.kind = kind
         self.creatorApplication = creatorApplication
+        self.tags = tags
     }
 }

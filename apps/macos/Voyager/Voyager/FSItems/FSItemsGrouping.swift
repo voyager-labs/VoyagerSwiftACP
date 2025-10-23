@@ -10,6 +10,7 @@ enum GroupKey: String, Equatable, CaseIterable {
     case dateModified = "Date Modified"
     case dateCreated = "Date Created"
     case size = "Size"
+    case tags = "Tags"
 }
 
 struct GroupedItems: Equatable {
@@ -191,30 +192,32 @@ enum FSItemsGrouping {
             return [GroupedItems(groupName: "", items: items)]
         }
 
-        var result: [GroupedItems] = []
+        return groupItemsByKey(items, groupKey: groupKey)
+    }
 
+    private static func groupItemsByKey(_ items: [FSItem], groupKey: GroupKey) -> [GroupedItems] {
         switch groupKey {
         case .none:
-            break
+            return [GroupedItems(groupName: "", items: items)]
         case .name:
-            result.append(contentsOf: groupItemsByName(items))
+            return groupItemsByName(items)
         case .kind:
-            result.append(contentsOf: groupItemsByKind(items))
+            return groupItemsByKind(items)
         case .application:
-            result.append(contentsOf: groupItemsByApplication(items))
+            return groupItemsByApplication(items)
         case .dateLastOpened:
-            result.append(contentsOf: groupItemsByDateLastOpened(items))
+            return groupItemsByDateLastOpened(items)
         case .dateAdded:
-            result.append(contentsOf: groupByDate(items, dateKeyPath: \.addedDate))
+            return groupByDate(items, dateKeyPath: \.addedDate)
         case .dateModified:
-            result.append(contentsOf: groupByDate(items))
+            return groupByDate(items)
         case .dateCreated:
-            result.append(contentsOf: groupByDate(items, dateKeyPath: \.createdDate))
+            return groupByDate(items, dateKeyPath: \.createdDate)
         case .size:
-            result.append(contentsOf: groupItemsBySize(items))
+            return groupItemsBySize(items)
+        case .tags:
+            return groupItemsByTags(items)
         }
-
-        return result
     }
 
     private static func groupItemsByName(_ items: [FSItem]) -> [GroupedItems] {
@@ -281,6 +284,54 @@ enum FSItemsGrouping {
         if !folders.isEmpty {
             result.append(GroupedItems(groupName: "---", items: folders))
         }
+        return result
+    }
+
+    private static func groupItemsByTags(_ items: [FSItem]) -> [GroupedItems] {
+        var result: [GroupedItems] = []
+
+        var tagToItems: [String: [FSItem]] = [:]
+        var itemsWithoutTags: [FSItem] = []
+
+        for item in items {
+            if let itemTags = item.tags, !itemTags.isEmpty {
+                for tag in itemTags {
+                    tagToItems[tag, default: []].append(item)
+                }
+            } else {
+                itemsWithoutTags.append(item)
+            }
+        }
+
+        let colorOrder = ["Red", "Orange", "Yellow", "Green", "Blue", "Purple", "Gray"]
+
+        for color in colorOrder {
+            if let taggedItems = tagToItems[color] {
+                result.append(GroupedItems(
+                    groupName: color,
+                    items: taggedItems.sorted { $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending }
+                ))
+                tagToItems.removeValue(forKey: color)
+            }
+        }
+
+        let remainingTags = tagToItems.keys.sorted { $0.localizedCaseInsensitiveCompare($1) == .orderedAscending }
+        for tag in remainingTags {
+            if let taggedItems = tagToItems[tag] {
+                result.append(GroupedItems(
+                    groupName: tag,
+                    items: taggedItems.sorted { $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending }
+                ))
+            }
+        }
+
+        if !itemsWithoutTags.isEmpty {
+            result.append(GroupedItems(
+                groupName: "No Tags",
+                items: itemsWithoutTags.sorted { $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending }
+            ))
+        }
+
         return result
     }
 }

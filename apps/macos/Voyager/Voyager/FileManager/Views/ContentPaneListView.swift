@@ -61,12 +61,24 @@ struct ContentPaneListView: View {
                                                 .frame(height: 16)
                                         }
 
-                                        // 이름 그룹화일 때는 헤더 숨김 (파인더 방식)
                                         if !group.groupName.isEmpty && fsStore.groupKey != .name {
                                             HStack(spacing: 8) {
                                                 Spacer()
                                                     .frame(width: 28)
-                                                Text(group.groupName)
+
+                                                let tagInfo = FSItemTagUtils.getTagInfo(group.groupName)
+
+                                                if let color = tagInfo.color {
+                                                    Circle()
+                                                        .fill(color)
+                                                        .frame(width: 8, height: 8)
+                                                        .overlay(
+                                                            Circle()
+                                                                .stroke(Color.primary.opacity(0.2), lineWidth: 1)
+                                                        )
+                                                }
+
+                                                Text(tagInfo.localizedName)
                                                     .font(.headline)
                                                     .foregroundColor(.primary)
                                                 Spacer()
