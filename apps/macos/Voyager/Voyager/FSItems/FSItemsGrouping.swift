@@ -54,32 +54,9 @@ enum FSItemsGrouping {
         var result: [GroupedItems] = []
         var processedFiles: Set<String> = []
 
-        let todayFiles = files.filter { calendar.isDateInToday($0[keyPath: dateKeyPath]) }
-        if !todayFiles.isEmpty {
-            result.append(GroupedItems(groupName: "Today", items: todayFiles))
-            processedFiles.formUnion(todayFiles.map { $0.id })
-        }
-
-        let yesterdayFiles = files.filter { calendar.isDateInYesterday($0[keyPath: dateKeyPath]) }
-        if !yesterdayFiles.isEmpty {
-            result.append(GroupedItems(groupName: "Yesterday", items: yesterdayFiles))
-            processedFiles.formUnion(yesterdayFiles.map { $0.id })
-        }
-
-        let weekAgo = calendar.date(byAdding: .day, value: -8, to: now) ?? now
-        let yesterdayEnd = calendar.date(byAdding: .day, value: -1, to: now) ?? now
-
-        let weekAgoDate = calendar.startOfDay(for: weekAgo)
-        let yesterdayEndDate = calendar.startOfDay(for: yesterdayEnd)
-
-        let previous7DaysFiles = files.filter { item in
-            let itemDate = calendar.startOfDay(for: item[keyPath: dateKeyPath])
-            return itemDate >= weekAgoDate && itemDate <= yesterdayEndDate && !processedFiles.contains(item.id)
-        }
-        if !previous7DaysFiles.isEmpty {
-            result.append(GroupedItems(groupName: "Previous 7 Days", items: previous7DaysFiles))
-            processedFiles.formUnion(previous7DaysFiles.map { $0.id })
-        }
+        let recentGroups = groupRecentDateFiles(files, dateKeyPath: dateKeyPath, calendar: calendar, now: now)
+        result.append(contentsOf: recentGroups.groups)
+        processedFiles.formUnion(recentGroups.processedFiles)
 
         let remainingFiles = files.filter { !processedFiles.contains($0.id) }
 
@@ -104,6 +81,56 @@ enum FSItemsGrouping {
         result.append(contentsOf: sortedGroups)
 
         return result
+    }
+
+    private static func groupRecentDateFiles(
+        _ files: [FSItem],
+        dateKeyPath: KeyPath<FSItem, Date>,
+        calendar: Calendar,
+        now: Date
+    ) -> (groups: [GroupedItems], processedFiles: Set<String>) {
+        var result: [GroupedItems] = []
+        var processedFiles: Set<String> = []
+
+        let todayFiles = files.filter { calendar.isDateInToday($0[keyPath: dateKeyPath]) }
+        if !todayFiles.isEmpty {
+            result.append(GroupedItems(groupName: "Today", items: todayFiles))
+            processedFiles.formUnion(todayFiles.map { $0.id })
+        }
+
+        let yesterdayFiles = files.filter { calendar.isDateInYesterday($0[keyPath: dateKeyPath]) }
+        if !yesterdayFiles.isEmpty {
+            result.append(GroupedItems(groupName: "Yesterday", items: yesterdayFiles))
+            processedFiles.formUnion(yesterdayFiles.map { $0.id })
+        }
+
+        let weekAgo = calendar.date(byAdding: .day, value: -8, to: now) ?? now
+        let yesterdayEnd = calendar.date(byAdding: .day, value: -1, to: now) ?? now
+        let weekAgoDate = calendar.startOfDay(for: weekAgo)
+        let yesterdayEndDate = calendar.startOfDay(for: yesterdayEnd)
+
+        let previous7DaysFiles = files.filter { item in
+            let itemDate = calendar.startOfDay(for: item[keyPath: dateKeyPath])
+            return itemDate >= weekAgoDate && itemDate <= yesterdayEndDate && !processedFiles.contains(item.id)
+        }
+        if !previous7DaysFiles.isEmpty {
+            result.append(GroupedItems(groupName: "Previous 7 Days", items: previous7DaysFiles))
+            processedFiles.formUnion(previous7DaysFiles.map { $0.id })
+        }
+
+        let monthAgo = calendar.date(byAdding: .day, value: -37, to: now) ?? now
+        let monthAgoDate = calendar.startOfDay(for: monthAgo)
+
+        let previous30DaysFiles = files.filter { item in
+            let itemDate = calendar.startOfDay(for: item[keyPath: dateKeyPath])
+            return itemDate >= monthAgoDate && itemDate < weekAgoDate && !processedFiles.contains(item.id)
+        }
+        if !previous30DaysFiles.isEmpty {
+            result.append(GroupedItems(groupName: "Previous 30 Days", items: previous30DaysFiles))
+            processedFiles.formUnion(previous30DaysFiles.map { $0.id })
+        }
+
+        return (groups: result, processedFiles: processedFiles)
     }
 
     private static func sortMonthYearGroups(_ lhs: GroupedItems, _ rhs: GroupedItems) -> Bool {
