@@ -11,7 +11,8 @@ struct VoyagerApp: App {
             EmptyView()
         }
         .commands {
-            MenuCommands()
+            AppMenuCommands()
+            ViewMenuCommands()
         }
     }
 }
