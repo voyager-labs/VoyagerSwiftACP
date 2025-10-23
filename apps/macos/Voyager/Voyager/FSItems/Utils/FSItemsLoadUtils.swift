@@ -8,6 +8,7 @@ enum FSItemsLoadUtils {
         let kind: String
         let creatorApplication: String?
         let tags: [String]?
+        let lastUsedDate: Date?
     }
 
     nonisolated static func loadItems(at directoryURL: URL, showHidden: Bool = false) -> [FSItem] {
@@ -47,9 +48,9 @@ enum FSItemsLoadUtils {
         let modifiedDate = resourceValues?.contentModificationDate ?? Date()
         let createdDate = resourceValues?.creationDate ?? Date()
         let addedDate = resourceValues?.addedToDirectoryDate ?? Date()
-        let lastOpenedDate = resourceValues?.contentAccessDate
 
         let metadata = getItemMetadata(from: itemURL, isDirectory: isDirectory.boolValue)
+        let lastOpenedDate = metadata.lastUsedDate
 
         return FSItem(
             name: name,
@@ -75,6 +76,7 @@ enum FSItemsLoadUtils {
         var kind: String
         var creatorApplication: String?
         var tags: [String]?
+        var lastUsedDate: Date?
 
         if isDirectory {
             kind = "Folder"
@@ -103,8 +105,11 @@ enum FSItemsLoadUtils {
                     return tag
                 }
             }
+            if let lastUsed = MDItemCopyAttribute(mdItem, "kMDItemLastUsedDate" as CFString) as? Date {
+                lastUsedDate = lastUsed
+            }
         }
 
-        return ItemMetadata(kind: kind, creatorApplication: creatorApplication, tags: tags)
+        return ItemMetadata(kind: kind, creatorApplication: creatorApplication, tags: tags, lastUsedDate: lastUsedDate)
     }
 }
