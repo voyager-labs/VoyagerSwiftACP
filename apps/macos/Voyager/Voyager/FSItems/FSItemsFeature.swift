@@ -75,8 +75,7 @@ struct FSItemsFeature {
 
             case let .setGroupKey(key):
                 state.groupKey = key
-                let sorted = FSItemsSorting.sortItems(state.items, by: state.sortKey, order: state.sortOrder)
-                state.groupedItems = FSItemsGrouping.groupItems(sorted, by: key)
+                state.groupedItems = FSItemsGrouping.groupItems(state.items, by: key)
                 return .none
 
             case let .itemsLoaded(items):
