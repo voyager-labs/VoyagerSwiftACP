@@ -66,9 +66,9 @@ struct ContentPaneListView: View {
                                                 Spacer()
                                                     .frame(width: 28)
 
-                                                let tagInfo = FSItemTagUtils.getTagInfo(group.groupName)
+                                                let tagColor = FSItemTagUtils.getTagColor(group.groupName)
 
-                                                if let color = tagInfo.color {
+                                                if let color = tagColor {
                                                     Circle()
                                                         .fill(color)
                                                         .frame(width: 8, height: 8)
@@ -78,7 +78,7 @@ struct ContentPaneListView: View {
                                                         )
                                                 }
 
-                                                Text(tagInfo.localizedName)
+                                                Text(group.groupName)
                                                     .font(.headline)
                                                     .foregroundColor(.primary)
                                                 Spacer()
