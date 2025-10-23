@@ -10,6 +10,7 @@ struct FSItem: Identifiable, Equatable, Sendable {
     let modifiedDate: Date
     let createdDate: Date
     let addedDate: Date
+    let lastOpenedDate: Date?
     let fileExtension: String
     let kind: String
 
@@ -22,6 +23,7 @@ struct FSItem: Identifiable, Equatable, Sendable {
         modifiedDate: Date = Date(),
         createdDate: Date = Date(),
         addedDate: Date = Date(),
+        lastOpenedDate: Date? = nil,
         fileExtension: String = "",
         kind: String = ""
     ) {
@@ -34,6 +36,7 @@ struct FSItem: Identifiable, Equatable, Sendable {
         self.modifiedDate = modifiedDate
         self.createdDate = createdDate
         self.addedDate = addedDate
+        self.lastOpenedDate = lastOpenedDate
         self.fileExtension = fileExtension
         self.kind = kind
     }

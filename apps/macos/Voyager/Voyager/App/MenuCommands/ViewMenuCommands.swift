@@ -79,6 +79,18 @@ struct ViewMenuCommands: Commands {
                 )
 
                 Button(
+                    action: { fileManagerStore?.send(.changeGroupKey(.dateLastOpened)) },
+                    label: {
+                        HStack {
+                            Text("Date Last Opened")
+                            if fileManagerStore?.fsItems.groupKey == .dateLastOpened {
+                                Image(systemName: "checkmark")
+                            }
+                        }
+                    }
+                )
+
+                Button(
                     action: { fileManagerStore?.send(.changeGroupKey(.dateAdded)) },
                     label: {
                         HStack {
@@ -148,6 +160,18 @@ struct ViewMenuCommands: Commands {
                         HStack {
                             Text("Kind")
                             if fileManagerStore?.sortKey == .kind {
+                                Image(systemName: "checkmark")
+                            }
+                        }
+                    }
+                )
+
+                Button(
+                    action: { fileManagerStore?.send(.changeSortKey(.dateLastOpened)) },
+                    label: {
+                        HStack {
+                            Text("Date Last Opened")
+                            if fileManagerStore?.sortKey == .dateLastOpened {
                                 Image(systemName: "checkmark")
                             }
                         }

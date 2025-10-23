@@ -3,6 +3,7 @@ import Foundation
 enum SortKey: String, Equatable, CaseIterable {
     case name
     case kind
+    case dateLastOpened
     case dateAdded
     case dateModified
     case dateCreated
@@ -27,6 +28,11 @@ enum FSItemsSorting {
                 comparison = item1.name.localizedCaseInsensitiveCompare(item2.name)
             case .kind:
                 comparison = item1.kind.localizedCaseInsensitiveCompare(item2.kind)
+            case .dateLastOpened:
+                let date1 = item1.lastOpenedDate ?? .distantPast
+                let date2 = item2.lastOpenedDate ?? .distantPast
+                comparison = date1 < date2 ? .orderedAscending :
+                    date1 > date2 ? .orderedDescending : .orderedSame
             case .dateAdded:
                 comparison = item1.addedDate < item2.addedDate ? .orderedAscending :
                     item1.addedDate > item2.addedDate ? .orderedDescending : .orderedSame

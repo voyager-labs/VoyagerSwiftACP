@@ -4,6 +4,7 @@ enum GroupKey: String, Equatable, CaseIterable {
     case none = "None"
     case name = "Name"
     case kind = "Kind"
+    case dateLastOpened = "Date Last Opened"
     case dateAdded = "Date Added"
     case dateModified = "Date Modified"
     case dateCreated = "Date Created"
@@ -93,6 +94,7 @@ enum FSItemsGrouping {
             .sorted(by: sortMonthYearGroups)
 
         result.append(contentsOf: sortedGroups)
+
         return result
     }
 
@@ -187,37 +189,66 @@ enum FSItemsGrouping {
         switch groupKey {
         case .none:
             break
-
         case .name:
-            let sortedItems = items.sorted { $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending }
-            result.append(GroupedItems(groupName: "", items: sortedItems))
-
+            result.append(contentsOf: groupItemsByName(items))
         case .kind:
-            let folders = items.filter { $0.isDirectory }
-            if !folders.isEmpty {
-                result.append(GroupedItems(groupName: "", items: folders))
-            }
-            let files = items.filter { !$0.isDirectory }
-            result.append(contentsOf: groupByKind(files))
-
+            result.append(contentsOf: groupItemsByKind(items))
+        case .dateLastOpened:
+            result.append(contentsOf: groupItemsByDateLastOpened(items))
         case .dateAdded:
             result.append(contentsOf: groupByDate(items, dateKeyPath: \.addedDate))
-
         case .dateModified:
             result.append(contentsOf: groupByDate(items))
-
         case .dateCreated:
             result.append(contentsOf: groupByDate(items, dateKeyPath: \.createdDate))
-
         case .size:
-            let files = items.filter { !$0.isDirectory }
-            result.append(contentsOf: groupBySize(files))
-            let folders = items.filter { $0.isDirectory }
-            if !folders.isEmpty {
-                result.append(GroupedItems(groupName: "---", items: folders))
-            }
+            result.append(contentsOf: groupItemsBySize(items))
         }
 
+        return result
+    }
+
+    private static func groupItemsByName(_ items: [FSItem]) -> [GroupedItems] {
+        let sortedItems = items.sorted { $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending }
+        return [GroupedItems(groupName: "", items: sortedItems)]
+    }
+
+    private static func groupItemsByKind(_ items: [FSItem]) -> [GroupedItems] {
+        var result: [GroupedItems] = []
+        let folders = items.filter { $0.isDirectory }
+        if !folders.isEmpty {
+            result.append(GroupedItems(groupName: "", items: folders))
+        }
+        let files = items.filter { !$0.isDirectory }
+        result.append(contentsOf: groupByKind(files))
+        return result
+    }
+
+    private static func groupItemsByDateLastOpened(_ items: [FSItem]) -> [GroupedItems] {
+        var result: [GroupedItems] = []
+        let itemsWithDates = items.compactMap { item -> FSItem? in
+            guard item.lastOpenedDate != nil else { return nil }
+            return item
+        }
+        if !itemsWithDates.isEmpty {
+            result.append(contentsOf: groupByDate(itemsWithDates, dateKeyPath: \.lastOpenedDate!))
+        }
+
+        let itemsWithoutDates = items.filter { $0.lastOpenedDate == nil }
+        if !itemsWithoutDates.isEmpty {
+            result.append(GroupedItems(groupName: "Earlier", items: itemsWithoutDates))
+        }
+        return result
+    }
+
+    private static func groupItemsBySize(_ items: [FSItem]) -> [GroupedItems] {
+        var result: [GroupedItems] = []
+        let files = items.filter { !$0.isDirectory }
+        result.append(contentsOf: groupBySize(files))
+        let folders = items.filter { $0.isDirectory }
+        if !folders.isEmpty {
+            result.append(GroupedItems(groupName: "---", items: folders))
+        }
         return result
     }
 }

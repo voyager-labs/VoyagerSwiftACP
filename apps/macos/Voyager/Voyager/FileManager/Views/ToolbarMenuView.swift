@@ -46,6 +46,18 @@ struct ToolbarMenuView: View {
                 )
 
                 Button(
+                    action: { store.send(.changeGroupKey(.dateLastOpened)) },
+                    label: {
+                        HStack {
+                            Text("Date Last Opened")
+                            if store.fsItems.groupKey == .dateLastOpened {
+                                Image(systemName: "checkmark")
+                            }
+                        }
+                    }
+                )
+
+                Button(
                     action: { store.send(.changeGroupKey(.dateAdded)) },
                     label: {
                         HStack {
@@ -112,6 +124,17 @@ struct ToolbarMenuView: View {
                         HStack {
                             Text("Kind")
                             if store.sortKey == .kind {
+                                Image(systemName: "checkmark")
+                            }
+                        }
+                    }
+                )
+                Button(
+                    action: { store.send(.changeSortKey(.dateLastOpened)) },
+                    label: {
+                        HStack {
+                            Text("Date Last Opened")
+                            if store.sortKey == .dateLastOpened {
                                 Image(systemName: "checkmark")
                             }
                         }
