@@ -16,10 +16,10 @@ enum SortOrder: String, Equatable {
 
 enum FSItemsSorting {
     static func sortItems(
-        _ items: [FSItemModel],
+        _ items: [FSItem],
         by sortKey: SortKey,
         order: SortOrder
-    ) -> [FSItemModel] {
+    ) -> [FSItem] {
         items.sorted { item1, item2 in
             let comparison: ComparisonResult
             switch sortKey {

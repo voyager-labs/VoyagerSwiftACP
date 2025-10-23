@@ -12,7 +12,7 @@ enum GroupKey: String, Equatable, CaseIterable {
 
 struct GroupedItems: Equatable {
     let groupName: String
-    let items: [FSItemModel]
+    let items: [FSItem]
 
     var count: Int {
         items.count
@@ -20,7 +20,7 @@ struct GroupedItems: Equatable {
 }
 
 enum FSItemsGrouping {
-    private static func groupByName(_ items: [FSItemModel]) -> [GroupedItems] {
+    private static func groupByName(_ items: [FSItem]) -> [GroupedItems] {
         let dictionary = Dictionary(grouping: items) { item -> String in
             guard let firstChar = item.name.uppercased().first else { return "#" }
             if firstChar.isLetter {
@@ -42,8 +42,8 @@ enum FSItemsGrouping {
     }
 
     private static func groupByDate(
-        _ files: [FSItemModel],
-        dateKeyPath: KeyPath<FSItemModel, Date> = \.modifiedDate
+        _ files: [FSItem],
+        dateKeyPath: KeyPath<FSItem, Date> = \.modifiedDate
     ) -> [GroupedItems] {
         let calendar = Calendar.current
         let now = Date()
@@ -139,7 +139,7 @@ enum FSItemsGrouping {
         return 1
     }
 
-    private static func groupBySize(_ files: [FSItemModel]) -> [GroupedItems] {
+    private static func groupBySize(_ files: [FSItem]) -> [GroupedItems] {
         let dictionary = Dictionary(grouping: files) { item -> String in
             let size = item.size
             switch size {
@@ -168,14 +168,14 @@ enum FSItemsGrouping {
         }
     }
 
-    private static func groupByKind(_ files: [FSItemModel]) -> [GroupedItems] {
+    private static func groupByKind(_ files: [FSItem]) -> [GroupedItems] {
         Dictionary(grouping: files) { $0.kind }
             .map { GroupedItems(groupName: $0.key, items: $0.value) }
             .sorted { $0.groupName < $1.groupName }
     }
 
     static func groupItems(
-        _ items: [FSItemModel],
+        _ items: [FSItem],
         by groupKey: GroupKey
     ) -> [GroupedItems] {
         guard groupKey != .none else {

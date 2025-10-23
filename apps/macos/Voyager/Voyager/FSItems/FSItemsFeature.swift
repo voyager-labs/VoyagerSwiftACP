@@ -7,7 +7,7 @@ import Foundation
 struct FSItemsFeature {
     @ObservableState
     struct State: Equatable {
-        var items: [FSItemModel] = []
+        var items: [FSItem] = []
         var selectedIds: Set<String> = []
         var lastSelectedId: String?
         var rangeAnchorId: String?
@@ -22,7 +22,7 @@ struct FSItemsFeature {
         var groupKey: GroupKey = .none
         var groupedItems: [GroupedItems] = []
 
-        var displayOrderItems: [FSItemModel] {
+        var displayOrderItems: [FSItem] {
             if groupKey == .none {
                 return items
             } else {
@@ -42,7 +42,7 @@ struct FSItemsFeature {
 
     enum Action: Equatable {
         case loadItems(path: String)
-        case itemsLoaded([FSItemModel])
+        case itemsLoaded([FSItem])
         case setShowHidden(Bool)
         case setGroupKey(GroupKey)
         case selectItem(id: String, isCommandPressed: Bool, isShiftPressed: Bool)
@@ -77,7 +77,7 @@ struct FSItemsFeature {
                         options: options
                     )) ?? []
 
-                    let mapped: [FSItemModel] = contents.map { itemURL in
+                    let mapped: [FSItem] = contents.map { itemURL in
                         let values = try? itemURL.resourceValues(forKeys: [
                             .isDirectoryKey,
                             .isHiddenKey,
@@ -108,7 +108,7 @@ struct FSItemsFeature {
                             }
                         }
 
-                        return FSItemModel(
+                        return FSItem(
                             name: itemURL.lastPathComponent,
                             fullPath: itemURL.path,
                             isDirectory: isDirectory,

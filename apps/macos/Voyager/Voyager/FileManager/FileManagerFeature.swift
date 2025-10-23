@@ -139,7 +139,7 @@ struct FileManagerFeature {
                     return .none
                 }
 
-                var selectedFolders: [FSItemModel] = []
+                var selectedFolders: [FSItem] = []
                 for selectedId in state.fsItems.selectedIds {
                     if let item = state.fsItems.items.first(where: { $0.id == selectedId }), item.isDirectory {
                         selectedFolders.append(item)

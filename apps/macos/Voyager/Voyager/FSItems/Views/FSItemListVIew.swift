@@ -2,7 +2,7 @@ import SwiftUI
 import UniformTypeIdentifiers
 
 struct FSItemListView: View {
-    let item: FSItemModel
+    let item: FSItem
     let isSelected: Bool
     let availableWidth: CGFloat
     let onSelect: () -> Void
@@ -81,7 +81,7 @@ struct FSItemListView: View {
         )
     }
 
-    private func sizeText(_ item: FSItemModel) -> String {
+    private func sizeText(_ item: FSItem) -> String {
         if item.isDirectory { return "--" }
         let formatter = ByteCountFormatter()
         formatter.allowedUnits = [.useBytes, .useKB, .useMB, .useGB]
@@ -96,7 +96,7 @@ struct FSItemListView: View {
         return formatter.string(from: date)
     }
 
-    private func kindText(_ item: FSItemModel) -> String {
+    private func kindText(_ item: FSItem) -> String {
         item.kind
     }
 }
