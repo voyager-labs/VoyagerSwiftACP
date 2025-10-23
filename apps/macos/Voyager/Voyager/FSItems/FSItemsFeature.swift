@@ -1,3 +1,4 @@
+import AppKit
 import ComposableArchitecture
 import CoreServices
 import Foundation
@@ -34,7 +35,7 @@ struct FSItemsFeature {
             switch sortKey {
             case .dateModified:
                 return .descending
-            case .name, .kind, .dateLastOpened, .dateAdded, .dateCreated, .size:
+            case .name, .kind, .application, .dateLastOpened, .dateAdded, .dateCreated, .size:
                 return .ascending
             }
         }
@@ -94,11 +95,18 @@ struct FSItemsFeature {
                         var createdDate = Date()
                         var addedDate = Date()
                         var lastOpenedDate: Date?
+                        var creatorApplication: String?
                         if let mdItem = MDItemCreate(kCFAllocatorDefault, itemURL.path as CFString) {
                             kind = (MDItemCopyAttribute(mdItem, kMDItemKind) as? String) ?? ""
                             createdDate = (MDItemCopyAttribute(mdItem, kMDItemContentCreationDate) as? Date) ?? Date()
                             addedDate = (MDItemCopyAttribute(mdItem, kMDItemDateAdded) as? Date) ?? Date()
                             lastOpenedDate = MDItemCopyAttribute(mdItem, kMDItemLastUsedDate) as? Date
+                        }
+
+                        if !isDirectory {
+                            if let appURL = NSWorkspace.shared.urlForApplication(toOpen: itemURL) {
+                                creatorApplication = appURL.deletingPathExtension().lastPathComponent
+                            }
                         }
                         if kind.isEmpty {
                             if isDirectory {
@@ -121,7 +129,8 @@ struct FSItemsFeature {
                             addedDate: addedDate,
                             lastOpenedDate: lastOpenedDate,
                             fileExtension: fileExtension,
-                            kind: kind
+                            kind: kind,
+                            creatorApplication: creatorApplication
                         )
                     }
 

@@ -46,6 +46,18 @@ struct ToolbarMenuView: View {
                 )
 
                 Button(
+                    action: { store.send(.changeGroupKey(.application)) },
+                    label: {
+                        HStack {
+                            Text("Application")
+                            if store.fsItems.groupKey == .application {
+                                Image(systemName: "checkmark")
+                            }
+                        }
+                    }
+                )
+
+                Button(
                     action: { store.send(.changeGroupKey(.dateLastOpened)) },
                     label: {
                         HStack {
@@ -124,6 +136,17 @@ struct ToolbarMenuView: View {
                         HStack {
                             Text("Kind")
                             if store.sortKey == .kind {
+                                Image(systemName: "checkmark")
+                            }
+                        }
+                    }
+                )
+                Button(
+                    action: { store.send(.changeSortKey(.application)) },
+                    label: {
+                        HStack {
+                            Text("Application")
+                            if store.sortKey == .application {
                                 Image(systemName: "checkmark")
                             }
                         }

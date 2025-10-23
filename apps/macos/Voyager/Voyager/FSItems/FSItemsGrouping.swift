@@ -4,6 +4,7 @@ enum GroupKey: String, Equatable, CaseIterable {
     case none = "None"
     case name = "Name"
     case kind = "Kind"
+    case application = "Application"
     case dateLastOpened = "Date Last Opened"
     case dateAdded = "Date Added"
     case dateModified = "Date Modified"
@@ -199,6 +200,8 @@ enum FSItemsGrouping {
             result.append(contentsOf: groupItemsByName(items))
         case .kind:
             result.append(contentsOf: groupItemsByKind(items))
+        case .application:
+            result.append(contentsOf: groupItemsByApplication(items))
         case .dateLastOpened:
             result.append(contentsOf: groupItemsByDateLastOpened(items))
         case .dateAdded:
@@ -244,6 +247,29 @@ enum FSItemsGrouping {
         if !itemsWithoutDates.isEmpty {
             result.append(GroupedItems(groupName: "Earlier", items: itemsWithoutDates))
         }
+        return result
+    }
+
+    private static func groupItemsByApplication(_ items: [FSItem]) -> [GroupedItems] {
+        let grouped = Dictionary(grouping: items) { item -> String in
+            if item.isDirectory || item.creatorApplication == nil {
+                return "Other"
+            }
+            return item.creatorApplication ?? "Other"
+        }
+
+        let sortedGroups = grouped.sorted {
+            $0.key.localizedCaseInsensitiveCompare($1.key) == .orderedAscending
+        }
+
+        var result: [GroupedItems] = []
+        for (appName, groupFiles) in sortedGroups {
+            let sortedFiles = groupFiles.sorted {
+                $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending
+            }
+            result.append(GroupedItems(groupName: appName, items: sortedFiles))
+        }
+
         return result
     }
 
