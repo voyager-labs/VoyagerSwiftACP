@@ -64,9 +64,15 @@ enum FSItemsGrouping {
             processedFiles.formUnion(yesterdayFiles.map { $0.id })
         }
 
-        let weekAgo = calendar.date(byAdding: .day, value: -7, to: now) ?? now
+        let weekAgo = calendar.date(byAdding: .day, value: -8, to: now) ?? now
+        let yesterdayEnd = calendar.date(byAdding: .day, value: -1, to: now) ?? now
+
+        let weekAgoDate = calendar.startOfDay(for: weekAgo)
+        let yesterdayEndDate = calendar.startOfDay(for: yesterdayEnd)
+
         let previous7DaysFiles = files.filter { item in
-            item[keyPath: dateKeyPath] > weekAgo && !processedFiles.contains(item.id)
+            let itemDate = calendar.startOfDay(for: item[keyPath: dateKeyPath])
+            return itemDate >= weekAgoDate && itemDate <= yesterdayEndDate && !processedFiles.contains(item.id)
         }
         if !previous7DaysFiles.isEmpty {
             result.append(GroupedItems(groupName: "Previous 7 Days", items: previous7DaysFiles))
