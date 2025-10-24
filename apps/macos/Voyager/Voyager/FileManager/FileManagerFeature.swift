@@ -11,9 +11,23 @@ struct FileManagerFeature {
         return FileManager.default.displayName(atPath: path)
     }
 
+    enum NavigationState: Equatable {
+        case folder(String)
+        case recents
+        case shared
+    }
+
     @ObservableState
     struct State: Equatable {
-        var currentPath: String = Settings.shared.defaultTabPath
+        var navigationState: NavigationState = .folder(Settings.shared.defaultTabPath)
+        var currentPath: String {
+            switch navigationState {
+            case let .folder(path): return path
+            case .recents: return "Recents"
+            case .shared: return "Shared"
+            }
+        }
+
         var backHistory: [String] = []
         var forwardHistory: [String] = []
         var fsItems: FSItemsFeature.State = .init()
@@ -122,7 +136,7 @@ struct FileManagerFeature {
             case let .navigateTo(path):
                 state.backHistory.append(state.currentPath)
                 state.forwardHistory = []
-                state.currentPath = path
+                state.navigationState = .folder(path)
                 return .send(.fsItems(.loadItems(path: path)))
 
             case let .openItem(id):
@@ -133,7 +147,7 @@ struct FileManagerFeature {
                 if item.isDirectory {
                     state.backHistory.append(state.currentPath)
                     state.forwardHistory = []
-                    state.currentPath = item.fullPath
+                    state.navigationState = .folder(item.fullPath)
                     return .send(.fsItems(.loadItems(path: item.fullPath)))
                 } else {
                     return .none
@@ -167,16 +181,18 @@ struct FileManagerFeature {
                     return .none
                 }
                 state.forwardHistory.append(state.currentPath)
-                state.currentPath = previousPath
-                return .send(.fsItems(.loadItems(path: previousPath)))
+
+                state.navigationState = navigationStateFromPath(previousPath)
+                return navigateToState(state.navigationState)
 
             case .goForward:
                 guard let nextPath = state.forwardHistory.popLast() else {
                     return .none
                 }
                 state.backHistory.append(state.currentPath)
-                state.currentPath = nextPath
-                return .send(.fsItems(.loadItems(path: nextPath)))
+
+                state.navigationState = navigationStateFromPath(nextPath)
+                return navigateToState(state.navigationState)
 
             case let .goToHistoryIndex(index, isBackHistory):
                 if isBackHistory {
@@ -189,8 +205,9 @@ struct FileManagerFeature {
                     state.forwardHistory.append(state.currentPath)
 
                     state.backHistory.removeLast(index + 1)
-                    state.currentPath = targetPath
-                    return .send(.fsItems(.loadItems(path: targetPath)))
+
+                    state.navigationState = navigationStateFromPath(targetPath)
+                    return navigateToState(state.navigationState)
                 } else {
                     guard index < state.forwardHistory.count else { return .none }
                     let targetPath = state.forwardHistory[state.forwardHistory.count - 1 - index]
@@ -201,8 +218,9 @@ struct FileManagerFeature {
                     state.backHistory.append(state.currentPath)
 
                     state.forwardHistory.removeLast(index + 1)
-                    state.currentPath = targetPath
-                    return .send(.fsItems(.loadItems(path: targetPath)))
+
+                    state.navigationState = navigationStateFromPath(targetPath)
+                    return navigateToState(state.navigationState)
                 }
 
             case .goToEnclosingDirectory:
@@ -215,7 +233,7 @@ struct FileManagerFeature {
 
                 state.backHistory.append(state.currentPath)
                 state.forwardHistory = []
-                state.currentPath = parentURL.path
+                state.navigationState = .folder(parentURL.path)
 
                 return .send(.fsItems(.loadItems(path: parentURL.path)))
 
@@ -234,13 +252,16 @@ struct FileManagerFeature {
 
             case .showRecents:
                 state.selectedSidebarItem = "Recents"
-                state.currentPath = "Recents"
                 state.backHistory.append(state.currentPath)
                 state.forwardHistory = []
+                state.navigationState = .recents
                 return .send(.fsItems(.loadRecentItems))
 
             case .showShared:
                 state.selectedSidebarItem = "Shared"
+                state.backHistory.append(state.currentPath)
+                state.forwardHistory = []
+                state.navigationState = .shared
                 // Shared 섹션은 빈 상태로 유지 (네트워크 리소스 기능은 미구현)
                 return .none
 
@@ -264,7 +285,7 @@ struct FileManagerFeature {
                 state.selectedSidebarItem = location.name
                 state.backHistory.append(state.currentPath)
                 state.forwardHistory = []
-                state.currentPath = location.url.path
+                state.navigationState = .folder(location.url.path)
                 return .send(.fsItems(.loadItems(path: location.url.path)))
 
             case let .changeSortKey(key):
@@ -283,6 +304,28 @@ struct FileManagerFeature {
             case .fsItems:
                 return .none
             }
+        }
+    }
+
+    private func navigateToState(_ navigationState: NavigationState) -> Effect<Action> {
+        switch navigationState {
+        case .recents:
+            return .send(.fsItems(.loadRecentItems))
+        case .shared:
+            return .none
+        case let .folder(path):
+            return .send(.fsItems(.loadItems(path: path)))
+        }
+    }
+
+    private func navigationStateFromPath(_ path: String) -> NavigationState {
+        switch path {
+        case "Recents":
+            return .recents
+        case "Shared":
+            return .shared
+        default:
+            return .folder(path)
         }
     }
 }
