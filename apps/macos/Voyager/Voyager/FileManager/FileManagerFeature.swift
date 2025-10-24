@@ -20,6 +20,7 @@ struct FileManagerFeature {
         var viewLayout: ViewLayout = .list
         var showHiddenFiles: Bool = UserDefaults.standard.bool(forKey: "showHiddenFiles")
         var selectedSidebarItem: String?
+        var locations: [SidebarUtils.LocationItem] = []
 
         var sortKey: SortKey = .init(rawValue: UserDefaults.standard.string(forKey: "sortKey") ?? "") ?? .name
         var sortOrder: SortOrder =
@@ -92,6 +93,9 @@ struct FileManagerFeature {
         case toggleShowHiddenFiles
         case showRecents
         case showShared
+        case loadLocations
+        case locationsLoaded([SidebarUtils.LocationItem])
+        case openLocation(SidebarUtils.LocationItem)
 
         case changeSortKey(SortKey)
         case changeSortOrder(SortOrder)
@@ -239,6 +243,29 @@ struct FileManagerFeature {
                 state.selectedSidebarItem = "Shared"
                 // Shared 섹션은 빈 상태로 유지 (네트워크 리소스 기능은 미구현)
                 return .none
+
+            case .loadLocations:
+                return .run { send in
+                    let locations = await SidebarUtils.loadLocations()
+                    await send(.locationsLoaded(locations))
+                }
+
+            case let .locationsLoaded(locations):
+                state.locations = locations
+                return .none
+
+            case let .openLocation(location):
+                // AirDrop은 기능 미구현으로 아무 동작하지 않음
+                if location.name == "AirDrop" {
+                    state.selectedSidebarItem = location.name
+                    return .none
+                }
+
+                state.selectedSidebarItem = location.name
+                state.backHistory.append(state.currentPath)
+                state.forwardHistory = []
+                state.currentPath = location.url.path
+                return .send(.fsItems(.loadItems(path: location.url.path)))
 
             case let .changeSortKey(key):
                 state.sortKey = key

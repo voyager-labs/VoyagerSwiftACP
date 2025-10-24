@@ -157,6 +157,8 @@ struct FileManagerView: View {
             } else {
                 store.send(.onAppear)
             }
+
+            store.send(.loadLocations)
         }
     }
 }
