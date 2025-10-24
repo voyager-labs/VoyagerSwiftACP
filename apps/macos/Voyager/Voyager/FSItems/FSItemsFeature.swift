@@ -31,9 +31,9 @@ struct FSItemsFeature {
 
         var defaultSortOrder: SortOrder {
             switch sortKey {
-            case .dateModified:
+            case .dateModified, .dateCreated, .dateAdded, .dateLastOpened:
                 return .descending
-            case .name, .kind, .application, .dateLastOpened, .dateAdded, .dateCreated, .size, .tags:
+            case .name, .kind, .application, .size, .tags:
                 return .ascending
             }
         }
