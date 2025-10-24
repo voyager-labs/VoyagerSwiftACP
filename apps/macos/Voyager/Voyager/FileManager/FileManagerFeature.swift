@@ -87,6 +87,14 @@ struct FileManagerFeature {
         var windowTitle: String {
             FileManagerFeature.makeWindowTitle(for: currentPath)
         }
+
+        mutating func matchSidebarToPath(_ path: String, locations: [SidebarUtils.LocationItem]) {
+            if let matchingLocation = locations.first(where: { $0.url.path == path }) {
+                selectedSidebarItem = matchingLocation.name
+            } else {
+                selectedSidebarItem = nil
+            }
+        }
     }
 
     enum ViewLayout: String, Equatable, Codable {
@@ -137,6 +145,7 @@ struct FileManagerFeature {
                 state.backHistory.append(state.currentPath)
                 state.forwardHistory = []
                 state.navigationState = .folder(path)
+                state.matchSidebarToPath(path, locations: state.locations)
                 return .send(.fsItems(.loadItems(path: path)))
 
             case let .openItem(id):
@@ -148,6 +157,7 @@ struct FileManagerFeature {
                     state.backHistory.append(state.currentPath)
                     state.forwardHistory = []
                     state.navigationState = .folder(item.fullPath)
+                    state.matchSidebarToPath(item.fullPath, locations: state.locations)
                     return .send(.fsItems(.loadItems(path: item.fullPath)))
                 } else {
                     return .none
@@ -273,12 +283,17 @@ struct FileManagerFeature {
 
             case let .locationsLoaded(locations):
                 state.locations = locations
+                state.matchSidebarToPath(state.currentPath, locations: locations)
                 return .none
 
             case let .openLocation(location):
                 // AirDrop은 기능 미구현으로 아무 동작하지 않음
                 if location.name == "AirDrop" {
                     state.selectedSidebarItem = location.name
+                    return .none
+                }
+
+                if state.currentPath == location.url.path {
                     return .none
                 }
 
