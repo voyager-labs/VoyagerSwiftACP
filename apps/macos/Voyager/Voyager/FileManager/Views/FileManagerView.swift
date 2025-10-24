@@ -52,7 +52,7 @@ struct FileManagerView: View {
             }
 
             NavigationSplitView(columnVisibility: $columnVisibility) {
-                SidebarView()
+                SidebarView(store: store)
             } detail: {
                 VStack(spacing: 0) {
                     HStack {

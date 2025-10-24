@@ -27,7 +27,7 @@ enum FSItemsLoadUtils {
         }
     }
 
-    private nonisolated static func convertURLToFSItem(_ itemURL: URL) -> FSItem? {
+    nonisolated static func convertURLToFSItem(_ itemURL: URL) -> FSItem? {
         let fileManager = FileManager.default
         var isDirectory: ObjCBool = false
         guard fileManager.fileExists(atPath: itemURL.path, isDirectory: &isDirectory) else {

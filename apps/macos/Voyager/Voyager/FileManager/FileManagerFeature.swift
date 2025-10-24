@@ -19,6 +19,7 @@ struct FileManagerFeature {
         var fsItems: FSItemsFeature.State = .init()
         var viewLayout: ViewLayout = .list
         var showHiddenFiles: Bool = UserDefaults.standard.bool(forKey: "showHiddenFiles")
+        var selectedSidebarItem: String?
 
         var sortKey: SortKey = .init(rawValue: UserDefaults.standard.string(forKey: "sortKey") ?? "") ?? .name
         var sortOrder: SortOrder =
@@ -89,6 +90,8 @@ struct FileManagerFeature {
         case goToEnclosingDirectory
         case changeLayout(ViewLayout)
         case toggleShowHiddenFiles
+        case showRecents
+        case showShared
 
         case changeSortKey(SortKey)
         case changeSortOrder(SortOrder)
@@ -224,6 +227,18 @@ struct FileManagerFeature {
                     .send(.fsItems(.setShowHidden(state.showHiddenFiles))),
                     .send(.fsItems(.loadItems(path: state.currentPath)))
                 )
+
+            case .showRecents:
+                state.selectedSidebarItem = "Recents"
+                state.currentPath = "Recents"
+                state.backHistory.append(state.currentPath)
+                state.forwardHistory = []
+                return .send(.fsItems(.loadRecentItems))
+
+            case .showShared:
+                state.selectedSidebarItem = "Shared"
+                // Shared 섹션은 빈 상태로 유지 (네트워크 리소스 기능은 미구현)
+                return .none
 
             case let .changeSortKey(key):
                 state.sortKey = key

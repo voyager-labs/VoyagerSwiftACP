@@ -1,3 +1,4 @@
+import AppKit
 import ComposableArchitecture
 import Foundation
 
@@ -41,6 +42,7 @@ struct FSItemsFeature {
 
     enum Action: Equatable {
         case loadItems(path: String)
+        case loadRecentItems
         case itemsLoaded([FSItem])
         case setShowHidden(Bool)
         case setGroupKey(GroupKey)
@@ -67,6 +69,72 @@ struct FSItemsFeature {
                     let loadItems: [FSItem] = FSItemsLoadUtils.loadItems(at: url, showHidden: showHidden)
 
                     await send(.itemsLoaded(loadItems))
+                }
+
+            case .loadRecentItems:
+                state.isLoading = true
+                return .run { send in
+                    let recentFiles = await withCheckedContinuation { continuation in
+                        DispatchQueue.main.async {
+                            let query = NSMetadataQuery()
+                            query.searchScopes = []
+                            query.predicate = NSPredicate(
+                                format: "kMDItemLastUsedDate > %@",
+                                Date.distantPast as NSDate
+                            )
+                            query.sortDescriptors = [NSSortDescriptor(key: "kMDItemLastUsedDate", ascending: false)]
+
+                            var observer: NSObjectProtocol?
+                            var hasCompleted = false
+
+                            observer = NotificationCenter.default.addObserver(
+                                forName: .NSMetadataQueryDidFinishGathering,
+                                object: query,
+                                queue: .main
+                            ) { _ in
+                                guard !hasCompleted else { return }
+                                hasCompleted = true
+                                query.stop()
+
+                                let urls: [URL] = Array(query.results
+                                    .compactMap { $0 as? NSMetadataItem }
+                                    .compactMap { item -> URL? in
+                                        guard let path = item.value(forAttribute: kMDItemPath as String) as? String
+                                        else { return nil }
+
+                                        var isDirectory: ObjCBool = false
+                                        if FileManager.default.fileExists(atPath: path, isDirectory: &isDirectory) {
+                                            if isDirectory.boolValue { return nil }
+                                        }
+
+                                        return URL(fileURLWithPath: path)
+                                    }
+                                    .prefix(100))
+
+                                continuation.resume(returning: urls)
+
+                                if let observer = observer {
+                                    NotificationCenter.default.removeObserver(observer)
+                                }
+                            }
+
+                            query.start()
+
+                            DispatchQueue.main.asyncAfter(deadline: .now() + 5) {
+                                guard !hasCompleted else { return }
+                                hasCompleted = true
+                                query.stop()
+                                continuation.resume(returning: [])
+
+                                if let observer = observer {
+                                    NotificationCenter.default.removeObserver(observer)
+                                }
+                            }
+                        }
+                    }
+
+                    let recentItems = recentFiles.compactMap { FSItemsLoadUtils.convertURLToFSItem($0) }
+                    await send(.itemsLoaded(recentItems))
                 }
 
             case let .setShowHidden(show):
