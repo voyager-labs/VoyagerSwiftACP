@@ -18,7 +18,6 @@ struct FileManagerFeature {
         var forwardHistory: [String] = []
         var fsItems: FSItemsFeature.State = .init()
         var viewLayout: ViewLayout = .list
-        var gridColumnCount: Int = 1
         var showHiddenFiles: Bool = UserDefaults.standard.bool(forKey: "showHiddenFiles")
 
         var sortKey: SortKey = .init(rawValue: UserDefaults.standard.string(forKey: "sortKey") ?? "") ?? .name
@@ -89,7 +88,6 @@ struct FileManagerFeature {
         case goToHistoryIndex(Int, isBackHistory: Bool)
         case goToEnclosingDirectory
         case changeLayout(ViewLayout)
-        case updateGridColumnCount(Int)
         case toggleShowHiddenFiles
 
         case changeSortKey(SortKey)
@@ -217,10 +215,6 @@ struct FileManagerFeature {
             case let .changeLayout(layout):
                 state.viewLayout = layout
                 UserDefaults.standard.set(layout.rawValue, forKey: "viewLayout")
-                return .none
-
-            case let .updateGridColumnCount(count):
-                state.gridColumnCount = max(1, count)
                 return .none
 
             case .toggleShowHiddenFiles:

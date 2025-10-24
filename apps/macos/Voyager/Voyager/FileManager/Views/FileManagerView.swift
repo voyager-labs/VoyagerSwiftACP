@@ -16,7 +16,6 @@ struct FileManagerView: View {
             KeyCommandView { event in
                 if event.modifierFlags.isDisjoint(with: [.command, .option, .control]) {
                     let isShiftPressed = event.modifierFlags.contains(.shift)
-                    let row = (store.viewLayout == .grid && store.gridColumnCount > 1) ? store.gridColumnCount : 1
 
                     @MainActor
                     func move(_ offset: Int) {
@@ -32,8 +31,8 @@ struct FileManagerView: View {
                     switch event.keyCode {
                     case 123 where store.viewLayout == .grid: move(-1) // ←
                     case 124 where store.viewLayout == .grid: move(+1) // →
-                    case 126: move(-row) // ↑
-                    case 125: move(+row) // ↓
+                    case 126: move(-1) // ↑
+                    case 125: move(+1) // ↓
                     default: break
                     }
                     return

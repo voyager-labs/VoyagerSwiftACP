@@ -98,25 +98,6 @@ struct ContentPaneGridView: View {
                     .onTapGesture {
                         fsStore.send(.clearSelection)
                     }
-                    .background(
-                        GeometryReader { geo in
-                            Color.clear
-                                .onAppear {
-                                    let count = max(
-                                        1,
-                                        Int((geo.size.width - 32 + itemSpacing) / (itemMinWidth + itemSpacing))
-                                    )
-                                    store.send(.updateGridColumnCount(count))
-                                }
-                                .onChange(of: geo.size.width) { newWidth in
-                                    let count = max(
-                                        1,
-                                        Int((newWidth - 32 + itemSpacing) / (itemMinWidth + itemSpacing))
-                                    )
-                                    store.send(.updateGridColumnCount(count))
-                                }
-                        }
-                    )
                 }
                 .onChange(of: fsStore.lastSelectedId) { newId in
                     if fsStore.shouldScrollToSelection, let id = newId {
