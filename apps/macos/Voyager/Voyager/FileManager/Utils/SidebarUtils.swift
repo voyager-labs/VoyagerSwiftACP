@@ -1,5 +1,9 @@
 import AppKit
+import CoreServices
 import Foundation
+import SwiftUI
+
+@preconcurrency import ObjectiveC
 
 enum SidebarUtils {
     struct LocationItem: Equatable {
@@ -7,6 +11,8 @@ enum SidebarUtils {
         let url: URL
         let iconName: String
     }
+
+    typealias TagItem = TagInfo
 
     @MainActor
     static func loadLocations() -> [LocationItem] {
@@ -66,16 +72,18 @@ enum SidebarUtils {
     }
 
     @MainActor
-    static func loadRecentItems() async -> [FSItem] {
-        let recentFiles = await withCheckedContinuation { continuation in
+    private static func searchFiles(
+        predicate: NSPredicate,
+        sortDescriptors: [NSSortDescriptor] = [],
+        timeout: TimeInterval = 5,
+        filterFiles: Bool = false
+    ) async -> [URL] {
+        await withCheckedContinuation { continuation in
             DispatchQueue.main.async {
                 let query = NSMetadataQuery()
                 query.searchScopes = []
-                query.predicate = NSPredicate(
-                    format: "kMDItemLastUsedDate > %@",
-                    Date.distantPast as NSDate
-                )
-                query.sortDescriptors = [NSSortDescriptor(key: "kMDItemLastUsedDate", ascending: false)]
+                query.predicate = predicate
+                query.sortDescriptors = sortDescriptors
 
                 var observer: NSObjectProtocol?
                 var hasCompleted = false
@@ -92,12 +100,14 @@ enum SidebarUtils {
                     let urls: [URL] = Array(query.results
                         .compactMap { $0 as? NSMetadataItem }
                         .compactMap { item -> URL? in
-                            guard let path = item.value(forAttribute: kMDItemPath as String) as? String
+                            guard let path = item.value(forAttribute: "kMDItemPath") as? String
                             else { return nil }
 
-                            var isDirectory: ObjCBool = false
-                            if FileManager.default.fileExists(atPath: path, isDirectory: &isDirectory) {
-                                if isDirectory.boolValue { return nil }
+                            if filterFiles {
+                                var isDirectory: ObjCBool = false
+                                if FileManager.default.fileExists(atPath: path, isDirectory: &isDirectory) {
+                                    if isDirectory.boolValue { return nil }
+                                }
                             }
 
                             return URL(fileURLWithPath: path)
@@ -113,7 +123,7 @@ enum SidebarUtils {
 
                 query.start()
 
-                DispatchQueue.main.asyncAfter(deadline: .now() + 5) {
+                DispatchQueue.main.asyncAfter(deadline: .now() + timeout) {
                     guard !hasCompleted else { return }
                     hasCompleted = true
                     query.stop()
@@ -125,8 +135,39 @@ enum SidebarUtils {
                 }
             }
         }
+    }
 
-        let recentItems = recentFiles.compactMap { FSItemsLoadUtils.convertURLToFSItem($0) }
-        return recentItems
+    @MainActor
+    static func loadTags() -> [TagItem] {
+        FSItemTagUtils.getAllTags().map { tagInfo in
+            TagItem(name: tagInfo.name, color: tagInfo.color, tag: tagInfo.tag)
+        }
+    }
+
+    @MainActor
+    static func loadRecentItems() async -> [FSItem] {
+        let predicate = NSPredicate(format: "kMDItemLastUsedDate > %@", Date.distantPast as NSDate)
+        let sortDescriptors = [NSSortDescriptor(key: "kMDItemLastUsedDate", ascending: false)]
+
+        let recentFiles = await searchFiles(
+            predicate: predicate,
+            sortDescriptors: sortDescriptors,
+            filterFiles: true
+        )
+
+        return recentFiles.compactMap { FSItemsLoadUtils.convertURLToFSItem($0) }
+    }
+
+    @MainActor
+    static func loadFilesWithTag(_ tag: String) async -> [FSItem] {
+        let predicate = NSPredicate(format: "kMDItemUserTags CONTAINS %@", tag)
+        let sortDescriptors = [NSSortDescriptor(key: "kMDItemLastUsedDate", ascending: false)]
+
+        let taggedFiles = await searchFiles(
+            predicate: predicate,
+            sortDescriptors: sortDescriptors
+        )
+
+        return taggedFiles.compactMap { FSItemsLoadUtils.convertURLToFSItem($0) }
     }
 }

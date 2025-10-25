@@ -1,6 +1,7 @@
 import AppKit
 import ComposableArchitecture
 import Foundation
+import SwiftUI
 
 @Reducer
 struct FileManagerFeature {
@@ -11,20 +12,15 @@ struct FileManagerFeature {
         return FileManager.default.displayName(atPath: path)
     }
 
-    enum NavigationState: Equatable {
-        case folder(String)
-        case recents
-        case shared
-    }
-
     @ObservableState
     struct State: Equatable {
-        var navigationState: NavigationState = .folder(Settings.shared.defaultTabPath)
+        var navigationState: FileManagerNavigationUtils.NavigationState = .folder(Settings.shared.defaultTabPath)
         var currentPath: String {
             switch navigationState {
             case let .folder(path): return path
             case .recents: return "Recents"
             case .shared: return "Shared"
+            case let .tags(tagName): return tagName
             }
         }
 
@@ -35,6 +31,7 @@ struct FileManagerFeature {
         var showHiddenFiles: Bool = UserDefaults.standard.bool(forKey: "showHiddenFiles")
         var selectedSidebarItem: String?
         var locations: [SidebarUtils.LocationItem] = []
+        var tags: [SidebarUtils.TagItem] = []
 
         var sortKey: SortKey = .init(rawValue: UserDefaults.standard.string(forKey: "sortKey") ?? "") ?? .name
         var sortOrder: SortOrder =
@@ -65,23 +62,28 @@ struct FileManagerFeature {
         }
 
         var pathComponents: [(name: String, fullPath: String)] {
-            var result: [(String, String)] = []
-            let fileManager = FileManager.default
+            switch navigationState {
+            case .recents, .shared, .tags:
+                return []
+            case let .folder(path):
+                var result: [(String, String)] = []
+                let fileManager = FileManager.default
 
-            if currentPath.hasPrefix("/") {
-                result.append((fileManager.displayName(atPath: "/"), "/"))
+                if path.hasPrefix("/") {
+                    result.append((fileManager.displayName(atPath: "/"), "/"))
+                }
+
+                let components = path.split(separator: "/").map(String.init)
+                var accumulated = "/"
+
+                for component in components {
+                    accumulated += component
+                    result.append((fileManager.displayName(atPath: accumulated), accumulated))
+                    accumulated += "/"
+                }
+
+                return result
             }
-
-            let components = currentPath.split(separator: "/").map(String.init)
-            var accumulated = "/"
-
-            for component in components {
-                accumulated += component
-                result.append((fileManager.displayName(atPath: accumulated), accumulated))
-                accumulated += "/"
-            }
-
-            return result
         }
 
         var windowTitle: String {
@@ -89,7 +91,9 @@ struct FileManagerFeature {
         }
 
         mutating func matchSidebarToPath(_ path: String, locations: [SidebarUtils.LocationItem]) {
-            if let matchingLocation = locations.first(where: { $0.url.path == path }) {
+            if FSItemTagUtils.getTagNames().contains(path) {
+                selectedSidebarItem = path
+            } else if let matchingLocation = locations.first(where: { $0.url.path == path }) {
                 selectedSidebarItem = matchingLocation.name
             } else {
                 selectedSidebarItem = nil
@@ -119,6 +123,10 @@ struct FileManagerFeature {
         case locationsLoaded([SidebarUtils.LocationItem])
         case openLocation(SidebarUtils.LocationItem)
 
+        case loadTags
+        case tagsLoaded([SidebarUtils.TagItem])
+        case showTag(SidebarUtils.TagItem)
+
         case changeSortKey(SortKey)
         case changeSortOrder(SortOrder)
         case changeGroupKey(GroupKey)
@@ -138,7 +146,9 @@ struct FileManagerFeature {
                     .send(.fsItems(.setShowHidden(state.showHiddenFiles))),
                     .send(.fsItems(.setSortKey(state.sortKey))),
                     .send(.fsItems(.setSortOrder(state.sortOrder))),
-                    .send(.fsItems(.loadItems(path: state.currentPath)))
+                    .send(.fsItems(.loadItems(path: state.currentPath))),
+                    .send(.loadLocations),
+                    .send(.loadTags)
                 )
 
             case let .navigateTo(path):
@@ -192,8 +202,9 @@ struct FileManagerFeature {
                 }
                 state.forwardHistory.append(state.currentPath)
 
-                state.navigationState = navigationStateFromPath(previousPath)
-                return navigateToState(state.navigationState)
+                state.navigationState = FileManagerNavigationUtils.navigationStateFromPath(previousPath)
+                state.matchSidebarToPath(previousPath, locations: state.locations)
+                return FileManagerNavigationUtils.navigateToState(state.navigationState)
 
             case .goForward:
                 guard let nextPath = state.forwardHistory.popLast() else {
@@ -201,8 +212,9 @@ struct FileManagerFeature {
                 }
                 state.backHistory.append(state.currentPath)
 
-                state.navigationState = navigationStateFromPath(nextPath)
-                return navigateToState(state.navigationState)
+                state.navigationState = FileManagerNavigationUtils.navigationStateFromPath(nextPath)
+                state.matchSidebarToPath(nextPath, locations: state.locations)
+                return FileManagerNavigationUtils.navigateToState(state.navigationState)
 
             case let .goToHistoryIndex(index, isBackHistory):
                 if isBackHistory {
@@ -216,8 +228,9 @@ struct FileManagerFeature {
 
                     state.backHistory.removeLast(index + 1)
 
-                    state.navigationState = navigationStateFromPath(targetPath)
-                    return navigateToState(state.navigationState)
+                    state.navigationState = FileManagerNavigationUtils.navigationStateFromPath(targetPath)
+                    state.matchSidebarToPath(targetPath, locations: state.locations)
+                    return FileManagerNavigationUtils.navigateToState(state.navigationState)
                 } else {
                     guard index < state.forwardHistory.count else { return .none }
                     let targetPath = state.forwardHistory[state.forwardHistory.count - 1 - index]
@@ -229,8 +242,9 @@ struct FileManagerFeature {
 
                     state.forwardHistory.removeLast(index + 1)
 
-                    state.navigationState = navigationStateFromPath(targetPath)
-                    return navigateToState(state.navigationState)
+                    state.navigationState = FileManagerNavigationUtils.navigationStateFromPath(targetPath)
+                    state.matchSidebarToPath(targetPath, locations: state.locations)
+                    return FileManagerNavigationUtils.navigateToState(state.navigationState)
                 }
 
             case .goToEnclosingDirectory:
@@ -303,6 +317,26 @@ struct FileManagerFeature {
                 state.navigationState = .folder(location.url.path)
                 return .send(.fsItems(.loadItems(path: location.url.path)))
 
+            case .loadTags:
+                return .run { send in
+                    let tags = await SidebarUtils.loadTags()
+                    await send(.tagsLoaded(tags))
+                }
+
+            case let .tagsLoaded(tags):
+                state.tags = tags
+                return .none
+
+            case let .showTag(tagItem):
+                state.selectedSidebarItem = tagItem.name
+                state.backHistory.append(state.currentPath)
+                state.forwardHistory = []
+                state.navigationState = .tags(tagItem.name)
+                return .run { send in
+                    let taggedItems = await SidebarUtils.loadFilesWithTag(tagItem.tag)
+                    await send(.fsItems(.itemsLoaded(taggedItems)))
+                }
+
             case let .changeSortKey(key):
                 state.sortKey = key
                 UserDefaults.standard.set(key.rawValue, forKey: "sortKey")
@@ -319,28 +353,6 @@ struct FileManagerFeature {
             case .fsItems:
                 return .none
             }
-        }
-    }
-
-    private func navigateToState(_ navigationState: NavigationState) -> Effect<Action> {
-        switch navigationState {
-        case .recents:
-            return .send(.fsItems(.loadRecentItems))
-        case .shared:
-            return .none
-        case let .folder(path):
-            return .send(.fsItems(.loadItems(path: path)))
-        }
-    }
-
-    private func navigationStateFromPath(_ path: String) -> NavigationState {
-        switch path {
-        case "Recents":
-            return .recents
-        case "Shared":
-            return .shared
-        default:
-            return .folder(path)
         }
     }
 }
