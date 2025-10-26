@@ -4,19 +4,39 @@ import Foundation
 import QuickLookUI
 import UniformTypeIdentifiers
 
+public struct ApplicationInfo: Identifiable, Equatable, Sendable {
+    public let id: String
+    public let name: String
+    public let bundleID: String?
+    public let isDefault: Bool
+
+    public nonisolated init(id: String, name: String, bundleID: String?, isDefault: Bool = false) {
+        self.id = id
+        self.name = name
+        self.bundleID = bundleID
+        self.isDefault = isDefault
+    }
+}
+
 public struct FileSystemClient: Sendable {
     public var open: @Sendable (URL, OpenKind) async throws -> Void
     public var setDefaultApp: @Sendable (UTType, String) async throws -> Void
     public var quickLook: @Sendable (URL) async throws -> Void
+    public var applicationsForFile: @Sendable (URL) async -> [ApplicationInfo]
+    public var defaultApplication: @Sendable (UTType) async -> ApplicationInfo?
 
     public nonisolated init(
         open: @escaping @Sendable (URL, OpenKind) async throws -> Void,
         setDefaultApp: @escaping @Sendable (UTType, String) async throws -> Void,
-        quickLook: @escaping @Sendable (URL) async throws -> Void
+        quickLook: @escaping @Sendable (URL) async throws -> Void,
+        applicationsForFile: @escaping @Sendable (URL) async -> [ApplicationInfo],
+        defaultApplication: @escaping @Sendable (UTType) async -> ApplicationInfo?
     ) {
         self.open = open
         self.setDefaultApp = setDefaultApp
         self.quickLook = quickLook
+        self.applicationsForFile = applicationsForFile
+        self.defaultApplication = defaultApplication
     }
 }
 
@@ -89,6 +109,53 @@ extension FileSystemClient: DependencyKey {
                     let token = await MainActor.run { SecurityScopedURLToken(url: url) }
                     await FSItemQuickLookCoordinator.shared.present(url: url, scopeToken: token)
                 }
+            },
+            applicationsForFile: { url in
+                let workspace = NSWorkspace.shared
+                let appURLs = workspace.urlsForApplications(toOpen: url)
+
+                var seen = Set<String>()
+                var apps: [ApplicationInfo] = []
+
+                await withTaskGroup(of: ApplicationInfo?.self) { group in
+                    for appURL in appURLs {
+                        guard let bundleID = Bundle(url: appURL)?.bundleIdentifier,
+                              seen.insert(bundleID).inserted
+                        else { continue }
+
+                        group.addTask { @MainActor in
+                            let name = FileManager.default.displayName(atPath: appURL.path)
+                            return ApplicationInfo(id: bundleID, name: name, bundleID: bundleID)
+                        }
+                    }
+
+                    for await app in group {
+                        if let app = app {
+                            apps.append(app)
+                        }
+                    }
+                }
+
+                return apps
+            },
+            defaultApplication: { fileType in
+                guard #available(macOS 13.0, *) else { return nil }
+
+                guard let defaultAppURL = LSCopyDefaultApplicationURLForContentType(
+                    fileType.identifier as CFString,
+                    .viewer,
+                    nil
+                )?.takeRetainedValue() as URL?,
+                    let bundleID = Bundle(url: defaultAppURL)?.bundleIdentifier
+                else { return nil }
+
+                let name = await MainActor.run {
+                    FileManager.default.displayName(atPath: defaultAppURL.path)
+                }
+
+                return await MainActor.run {
+                    ApplicationInfo(id: bundleID, name: name, bundleID: bundleID)
+                }
             }
         )
     }
@@ -100,15 +167,31 @@ extension FileSystemClient: DependencyKey {
         return FileSystemClient(
             open: { _, _ in unimplemented() },
             setDefaultApp: { _, _ in unimplemented() },
-            quickLook: { _ in unimplemented() }
+            quickLook: { _ in unimplemented() },
+            applicationsForFile: { _ in unimplemented() },
+            defaultApplication: { _ in unimplemented() }
         )
     }
 
     public nonisolated static var previewValue: FileSystemClient {
-        FileSystemClient(
+        let previewInfo = ApplicationInfo(
+            id: "com.apple.preview",
+            name: "Preview",
+            bundleID: "com.apple.preview"
+        )
+        let chromeInfo = ApplicationInfo(id: "com.google.Chrome", name: "Google Chrome", bundleID: "com.google.Chrome")
+        let otherInfo = ApplicationInfo(id: "other", name: "Other…", bundleID: nil)
+
+        return FileSystemClient(
             open: { _, _ in },
             setDefaultApp: { _, _ in },
-            quickLook: { _ in }
+            quickLook: { _ in },
+            applicationsForFile: { _ async in
+                [previewInfo, chromeInfo, otherInfo]
+            },
+            defaultApplication: { _ async in
+                previewInfo
+            }
         )
     }
 }

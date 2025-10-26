@@ -1,3 +1,4 @@
+import AppKit
 import SwiftUI
 import UniformTypeIdentifiers
 
@@ -5,9 +6,13 @@ struct FSItemListView: View {
     let item: FSItem
     let isSelected: Bool
     let availableWidth: CGFloat
+    let applications: [ApplicationInfo]?
     let onSelect: () -> Void
     let onOpen: () -> Void
     let onQuickLook: () -> Void
+    let onOpenWithApp: (String?) -> Void
+    let onSetDefaultApp: (String, UTType?) -> Void
+    let onSetDefaultAppWithOther: () -> Void
 
     private struct ColumnWidths {
         let name: CGFloat
@@ -84,9 +89,74 @@ struct FSItemListView: View {
             Button("Open") {
                 onOpen()
             }
+            .keyboardShortcut(.downArrow, modifiers: [.command])
 
             Button("Quick Look") {
                 onQuickLook()
+            }
+            .keyboardShortcut(.space, modifiers: [])
+
+            if let apps = applications, !apps.isEmpty {
+                Menu("Open With") {
+                    let regularApps = apps.filter { $0.id != "other" }
+
+                    ForEach(Array(regularApps.enumerated()), id: \.element.id) { _, app in
+                        Button {
+                            onOpenWithApp(app.bundleID)
+                        } label: {
+                            HStack {
+                                if let bundleID = app.bundleID {
+                                    appIconView(for: bundleID)
+                                }
+                                Text(app.isDefault ? "\(app.name) (default)" : app.name)
+                            }
+                        }
+
+                        if app.isDefault {
+                            Divider()
+                        }
+                    }
+
+                    Divider()
+                    Button("Other…") {
+                        onOpenWithApp(nil)
+                    }
+                }
+            } else if !item.isDirectory {
+                Button("Open With…") {
+                    onOpenWithApp(nil)
+                }
+            }
+
+            if !item.isDirectory, let apps = applications {
+                Menu("Set Default App") {
+                    let fileType = UTType(filenameExtension: item.fileExtension)
+                    let regularApps = apps.filter { $0.bundleID != nil && $0.id != "other" }
+
+                    ForEach(Array(regularApps.enumerated()), id: \.element.id) { _, app in
+                        Button {
+                            if let bundleID = app.bundleID {
+                                onSetDefaultApp(bundleID, fileType)
+                            }
+                        } label: {
+                            HStack {
+                                if let bundleID = app.bundleID {
+                                    appIconView(for: bundleID)
+                                }
+                                Text(app.isDefault ? "\(app.name) (default)" : app.name)
+                            }
+                        }
+
+                        if app.isDefault {
+                            Divider()
+                        }
+                    }
+
+                    Divider()
+                    Button("Other…") {
+                        onSetDefaultAppWithOther()
+                    }
+                }
             }
         }
     }
@@ -108,5 +178,28 @@ struct FSItemListView: View {
 
     private func kindText(_ item: FSItem) -> String {
         item.kind
+    }
+
+    @ViewBuilder
+    private func appIconView(for bundleID: String) -> some View {
+        if let icon = appIcon(for: bundleID, size: 16) {
+            Image(nsImage: icon)
+        }
+    }
+
+    private func appIcon(for bundleID: String, size: CGFloat) -> NSImage? {
+        guard let appURL = NSWorkspace.shared.urlForApplication(withBundleIdentifier: bundleID) else {
+            return nil
+        }
+
+        let originalIcon = NSWorkspace.shared.icon(forFile: appURL.path)
+
+        // 원본 이미지를 지정된 크기로 리사이즈
+        let resizedIcon = NSImage(size: NSSize(width: size, height: size))
+        resizedIcon.lockFocus()
+        originalIcon.draw(in: NSRect(x: 0, y: 0, width: size, height: size))
+        resizedIcon.unlockFocus()
+
+        return resizedIcon
     }
 }

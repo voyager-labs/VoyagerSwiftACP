@@ -8,86 +8,230 @@ import UniformTypeIdentifiers
 struct FSItemsOperationsFeature {
     @ObservableState
     struct State: Equatable {
-        var isOperationBusy: Bool = false
-        var lastOperationError: FileOpError?
+        var itemStates: [String: ItemOperationState] = [:]
+        var applicationsForItems: [String: [ApplicationInfo]] = [:]
+    }
+
+    struct ItemOperationState: Equatable {
+        var isBusy: Bool
+        var lastError: FileOpError?
+
+        init(isBusy: Bool = false, lastError: FileOpError? = nil) {
+            self.isBusy = isBusy
+            self.lastError = lastError
+        }
     }
 
     enum Action: Sendable {
         case openFiles(files: [FSItem])
         case quickLookFile(file: FSItem)
         case openFileWithApp(file: FSItem)
-        case clearOperationError
-        case operationStarted(OperationKind)
-        case operationFinished(OperationKind, Result<Void, FileOpError>)
+        case openFileWithAppBundleID(filePath: String, bundleID: String, url: URL)
+        case setDefaultAppForFile(type: UTType?, bundleID: String, file: FSItem)
+        case setDefaultAppWithOther(file: FSItem)
+        case loadApplicationsForFile(file: FSItem)
+        case applicationsLoaded(String, [ApplicationInfo]) // 파일 경로, 앱 목록
+        case operationStarted(String, OperationKind) // 파일 경로, 작업 종류
+        case operationFinished(String, OperationKind, Result<Void, FileOpError>) // 파일 경로, 작업 종류, 결과
+        case clearError(String) // 파일 경로
     }
 
     @Dependency(\.fileSystemClient)
     var fileSystemClient
+    @Dependency(\.fileSystemCapabilities)
+    var capabilities
 
     var body: some Reducer<State, Action> {
         Reduce { state, action in
             switch action {
-            case .clearOperationError:
-                state.lastOperationError = nil
+            case let .clearError(filePath):
+                state.itemStates[filePath]?.lastError = nil
                 return .none
 
-            case .operationStarted:
-                state.isOperationBusy = true
-                state.lastOperationError = nil
+            case let .operationStarted(filePath, _):
+                state.itemStates[filePath] = ItemOperationState(isBusy: true, lastError: nil)
                 return .none
 
-            case let .operationFinished(_, result):
-                state.isOperationBusy = false
+            case let .operationFinished(filePath, kind, result):
+                state.itemStates[filePath]?.isBusy = false
                 switch result {
                 case .success:
-                    return .none
+                    state.itemStates[filePath]?.lastError = nil
+
+                    // 기본 앱 설정 성공 시 앱 목록 재로드
+                    if case .setDefaultApp = kind {
+                        state.applicationsForItems[filePath] = nil
+                        let url = URL(fileURLWithPath: filePath)
+                        let isDirectory = (try? url.resourceValues(forKeys: [.isDirectoryKey]))?.isDirectory ?? false
+                        let fileExtension = url.pathExtension
+                        guard !isDirectory else { return .none }
+                        let fileType = UTType(filenameExtension: fileExtension) ?? .data
+
+                        return loadApplications(for: filePath, url: url, fileType: fileType)
+                    }
                 case let .failure(error):
-                    state.lastOperationError = error
-                    return .none
+                    state.itemStates[filePath]?.lastError = error
                 }
+                return .none
 
             case let .openFiles(files):
                 guard !files.isEmpty else {
                     return .none
                 }
 
-                let filesToOpen = files
-                return run(kind: .openDefault) {
-                    for file in filesToOpen {
-                        let url = URL(fileURLWithPath: file.fullPath)
-                        try await fileSystemClient.open(url, .defaultApp)
+                return .run { send in
+                    for file in files {
+                        let filePath = file.fullPath
+                        let url = URL(fileURLWithPath: filePath)
+                        await send(.operationStarted(filePath, .openDefault))
+                        do {
+                            try await fileSystemClient.open(url, .defaultApp)
+                            await send(.operationFinished(filePath, .openDefault, .success(())))
+                        } catch {
+                            await send(.operationFinished(filePath, .openDefault, .failure(error.fileOpError)))
+                        }
                     }
                 }
 
             case let .quickLookFile(file):
-                let url = URL(fileURLWithPath: file.fullPath)
-                return run(kind: .quickLook) {
+                let filePath = file.fullPath
+                let url = URL(fileURLWithPath: filePath)
+                return run(for: filePath, kind: .quickLook) {
                     try await fileSystemClient.quickLook(url)
                 }
 
             case let .openFileWithApp(file):
-                let url = URL(fileURLWithPath: file.fullPath)
-                return run(kind: .openWithApp) {
+                let filePath = file.fullPath
+                let url = URL(fileURLWithPath: filePath)
+                return .run { send in
                     if let bundleID = await selectApplication(for: url)?.bundleID {
-                        try await fileSystemClient.open(url, .bundleID(bundleID))
+                        await send(.openFileWithAppBundleID(filePath: filePath, bundleID: bundleID, url: url))
                     }
                 }
+
+            case let .openFileWithAppBundleID(filePath, bundleID, url):
+                return run(for: filePath, kind: .openWithApp(bundleID)) {
+                    try await fileSystemClient.open(url, .bundleID(bundleID))
+                }
+
+            case let .setDefaultAppForFile(type, bundleID, file):
+                if let error = validateDefaultAppSetting(file: file) {
+                    state.itemStates[file.fullPath] = ItemOperationState(isBusy: false, lastError: error)
+                    return .none
+                }
+
+                let resolvedType = type ?? UTType(filenameExtension: file.fileExtension)
+                guard let fileType = resolvedType else {
+                    state.itemStates[file.fullPath] = ItemOperationState(isBusy: false, lastError: .unsupportedType)
+                    return .none
+                }
+                let filePath = file.fullPath
+                return run(for: filePath, kind: .setDefaultApp(bundleID)) {
+                    try await fileSystemClient.setDefaultApp(fileType, bundleID)
+                }
+
+            case let .setDefaultAppWithOther(file):
+                if let error = validateDefaultAppSetting(file: file) {
+                    state.itemStates[file.fullPath] = ItemOperationState(isBusy: false, lastError: error)
+                    return .none
+                }
+
+                let filePath = file.fullPath
+                let url = URL(fileURLWithPath: filePath)
+                return .run { send in
+                    if let selection = await selectApplication(for: url) {
+                        await send(.setDefaultAppForFile(
+                            type: selection.type,
+                            bundleID: selection.bundleID,
+                            file: file
+                        ))
+                    }
+                }
+
+            case let .loadApplicationsForFile(file):
+                guard !file.isDirectory else { return .none }
+                let filePath = file.fullPath
+
+                guard state.applicationsForItems[filePath] == nil else {
+                    return .none
+                }
+
+                let url = URL(fileURLWithPath: filePath)
+                let fileType = UTType(filenameExtension: file.fileExtension) ?? .data
+
+                return loadApplications(for: filePath, url: url, fileType: fileType)
+
+            case let .applicationsLoaded(filePath, apps):
+                state.applicationsForItems[filePath] = apps
+                return .none
             }
         }
     }
 
+    private func validateDefaultAppSetting(file: FSItem) -> FileOpError? {
+        guard !file.isDirectory else {
+            return .unsupportedType
+        }
+        guard capabilities.supportsDefaultAppManagement else {
+            return .system(
+                message: "Setting default apps is not supported yet.",
+                suggestion: "Enable default-app capability before using this action."
+            )
+        }
+        return nil
+    }
+
     private func run(
+        for filePath: String,
         kind: OperationKind,
         operation: @escaping @Sendable () async throws -> Void
     ) -> Effect<Action> {
         .run { send in
-            await send(.operationStarted(kind))
+            await send(.operationStarted(filePath, kind))
             do {
                 try await operation()
-                await send(.operationFinished(kind, .success(())))
+                await send(.operationFinished(filePath, kind, .success(())))
             } catch {
-                await send(.operationFinished(kind, .failure(error.fileOpError)))
+                await send(.operationFinished(filePath, kind, .failure(error.fileOpError)))
             }
+        }
+    }
+
+    private func loadApplications(
+        for filePath: String,
+        url: URL,
+        fileType: UTType
+    ) -> Effect<Action> {
+        .run { send in
+            let apps = await fileSystemClient.applicationsForFile(url)
+            let defaultApp = await fileSystemClient.defaultApplication(fileType)
+
+            let appsWithDefaultFlag = apps.map { app in
+                let isDefault = defaultApp?.bundleID == app.bundleID
+                return ApplicationInfo(
+                    id: app.id,
+                    name: app.name,
+                    bundleID: app.bundleID,
+                    isDefault: isDefault
+                )
+            }
+
+            var finalApps = appsWithDefaultFlag
+            finalApps.append(ApplicationInfo(
+                id: "other",
+                name: "Other…",
+                bundleID: nil,
+                isDefault: false
+            ))
+
+            finalApps.sort { lhs, rhs in
+                if lhs.isDefault != rhs.isDefault {
+                    return lhs.isDefault
+                }
+                return lhs.name < rhs.name
+            }
+
+            await send(.applicationsLoaded(filePath, finalApps))
         }
     }
 }
@@ -121,7 +265,8 @@ private func selectApplication(for itemURL: URL) -> ApplicationSelection? {
 
 enum OperationKind: Equatable, Hashable, Sendable {
     case openDefault
-    case openWithApp
+    case openWithApp(String)
+    case setDefaultApp(String)
     case quickLook
 }
 

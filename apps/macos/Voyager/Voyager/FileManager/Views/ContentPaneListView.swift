@@ -6,6 +6,66 @@ struct ContentPaneListView: View {
 
     @State private var availableWidth: CGFloat = 0
 
+    private func sendWithSelection(
+        _ item: FSItem,
+        fsStore: Store<FSItemsFeature.State, FSItemsFeature.Action>,
+        action: @escaping () -> Void
+    ) {
+        fsStore.send(.selectItem(id: item.id, isCommandPressed: false, isShiftPressed: false))
+        action()
+    }
+
+    @ViewBuilder
+    private func itemRow(
+        item: FSItem,
+        fsStore: Store<FSItemsFeature.State, FSItemsFeature.Action>,
+        geometry: GeometryProxy
+    ) -> FSItemListView {
+        FSItemListView(
+            item: item,
+            isSelected: fsStore.selectedIds.contains(item.id),
+            availableWidth: geometry.size.width,
+            applications: fsStore.operations.applicationsForItems[item.fullPath],
+            onSelect: {
+                let isCommandPressed = NSEvent.modifierFlags.contains(.command)
+                let isShiftPressed = NSEvent.modifierFlags.contains(.shift)
+                fsStore.send(.selectItem(
+                    id: item.id,
+                    isCommandPressed: isCommandPressed,
+                    isShiftPressed: isShiftPressed
+                ))
+            },
+            onOpen: {
+                sendWithSelection(item, fsStore: fsStore, action: {
+                    fsStore.send(.openSelectedItem)
+                })
+            },
+            onQuickLook: {
+                sendWithSelection(item, fsStore: fsStore, action: {
+                    fsStore.send(.quickLookSelectedItem)
+                })
+            },
+            onOpenWithApp: { bundleID in
+                sendWithSelection(item, fsStore: fsStore, action: {
+                    fsStore.send(.openWithSelectedItem(bundleID: bundleID))
+                })
+            },
+            onSetDefaultApp: { bundleID, type in
+                sendWithSelection(item, fsStore: fsStore, action: {
+                    fsStore.send(.setDefaultAppForSelectedItem(
+                        bundleID: bundleID,
+                        type: type
+                    ))
+                })
+            },
+            onSetDefaultAppWithOther: {
+                sendWithSelection(item, fsStore: fsStore, action: {
+                    fsStore.send(.setDefaultAppWithOtherForSelectedItem)
+                })
+            }
+        )
+    }
+
     var body: some View {
         let fsStore = store.scope(state: \.fsItems, action: \.fsItems)
 
@@ -33,37 +93,13 @@ struct ContentPaneListView: View {
                             LazyVStack(alignment: .leading, spacing: 4) {
                                 if fsStore.groupKey == .none {
                                     ForEach(fsStore.items) { item in
-                                        FSItemListView(
-                                            item: item,
-                                            isSelected: fsStore.selectedIds.contains(item.id),
-                                            availableWidth: geometry.size.width,
-                                            onSelect: {
-                                                let isCommandPressed = NSEvent.modifierFlags.contains(.command)
-                                                let isShiftPressed = NSEvent.modifierFlags.contains(.shift)
-                                                fsStore.send(.selectItem(
-                                                    id: item.id,
-                                                    isCommandPressed: isCommandPressed,
-                                                    isShiftPressed: isShiftPressed
-                                                ))
-                                            },
-                                            onOpen: {
-                                                fsStore.send(.selectItem(
-                                                    id: item.id,
-                                                    isCommandPressed: false,
-                                                    isShiftPressed: false
-                                                ))
-                                                store.send(.openSelectedItem)
-                                            },
-                                            onQuickLook: {
-                                                fsStore.send(.selectItem(
-                                                    id: item.id,
-                                                    isCommandPressed: false,
-                                                    isShiftPressed: false
-                                                ))
-                                                store.send(.quickLookSelectedItem)
+                                        itemRow(item: item, fsStore: fsStore, geometry: geometry)
+                                            .id(item.id)
+                                            .task {
+                                                if !item.isDirectory {
+                                                    fsStore.send(.operations(.loadApplicationsForFile(file: item)))
+                                                }
                                             }
-                                        )
-                                        .id(item.id)
                                     }
                                 } else {
                                     ForEach(Array(fsStore.groupedItems.enumerated()),
@@ -101,37 +137,13 @@ struct ContentPaneListView: View {
                                         }
 
                                         ForEach(group.items) { item in
-                                            FSItemListView(
-                                                item: item,
-                                                isSelected: fsStore.selectedIds.contains(item.id),
-                                                availableWidth: geometry.size.width,
-                                                onSelect: {
-                                                    let isCommandPressed = NSEvent.modifierFlags.contains(.command)
-                                                    let isShiftPressed = NSEvent.modifierFlags.contains(.shift)
-                                                    fsStore.send(.selectItem(
-                                                        id: item.id,
-                                                        isCommandPressed: isCommandPressed,
-                                                        isShiftPressed: isShiftPressed
-                                                    ))
-                                                },
-                                                onOpen: {
-                                                    fsStore.send(.selectItem(
-                                                        id: item.id,
-                                                        isCommandPressed: false,
-                                                        isShiftPressed: false
-                                                    ))
-                                                    store.send(.openSelectedItem)
-                                                },
-                                                onQuickLook: {
-                                                    fsStore.send(.selectItem(
-                                                        id: item.id,
-                                                        isCommandPressed: false,
-                                                        isShiftPressed: false
-                                                    ))
-                                                    store.send(.quickLookSelectedItem)
+                                            itemRow(item: item, fsStore: fsStore, geometry: geometry)
+                                                .id(item.id)
+                                                .task {
+                                                    if !item.isDirectory {
+                                                        fsStore.send(.operations(.loadApplicationsForFile(file: item)))
+                                                    }
                                                 }
-                                            )
-                                            .id(item.id)
                                         }
                                     }
                                 }
