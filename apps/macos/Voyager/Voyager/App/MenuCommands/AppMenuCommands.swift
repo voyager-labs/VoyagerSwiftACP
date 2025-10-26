@@ -16,6 +16,13 @@ struct AppMenuCommands: Commands {
             }
             .keyboardShortcut("n", modifiers: .command)
 
+            Button("New Folder") {
+                if let currentPath = fileManagerStore?.currentPath {
+                    fileManagerStore?.send(.fsItems(.operations(.createNewFolder(path: currentPath))))
+                }
+            }
+            .keyboardShortcut("n", modifiers: [.command, .shift])
+
             Button("New Tab") {
                 AppDelegate.shared?.createNewTab()
             }

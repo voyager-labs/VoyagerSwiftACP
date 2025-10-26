@@ -77,6 +77,15 @@ struct FSItemsFeature {
 
         Reduce { state, action in
             switch action {
+            case let .operations(.operationFinished(filePath, kind, result)):
+                if case .createFolder = kind, case .success = result {
+                    return .send(.loadItems(path: filePath))
+                }
+                return .none
+
+            case .operations:
+                return .none
+
             case let .loadItems(path):
                 state.isLoading = true
                 let showHidden = state.showHiddenFiles
@@ -287,7 +296,8 @@ struct FSItemsFeature {
                 state.shouldScrollToSelection = false
                 return .none
 
-            case .navigateFolder:
+            case let .navigateFolder(id):
+                // 폴더 이동은 부모 Feature에서 처리
                 return .none
 
             case .openSelectedItem:
@@ -383,9 +393,6 @@ struct FSItemsFeature {
                 }
 
                 return .send(.operations(.setDefaultAppWithOther(file: item)))
-
-            case .operations:
-                return .none
             }
         }
     }

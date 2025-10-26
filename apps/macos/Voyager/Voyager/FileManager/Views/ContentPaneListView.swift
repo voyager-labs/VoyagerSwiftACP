@@ -154,6 +154,12 @@ struct ContentPaneListView: View {
                                 fsStore.send(.clearSelection)
                             }
                         }
+                        .contextMenu {
+                            Button("New Folder") {
+                                store.send(.fsItems(.operations(.createNewFolder(path: store.currentPath))))
+                            }
+                            .keyboardShortcut("n", modifiers: [.command, .shift])
+                        }
                         .onChange(of: fsStore.lastSelectedId) { newId in
                             if fsStore.shouldScrollToSelection, let id = newId {
                                 proxy.scrollTo(id, anchor: nil)

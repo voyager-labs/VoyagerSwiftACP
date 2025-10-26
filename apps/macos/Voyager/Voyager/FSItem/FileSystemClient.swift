@@ -24,19 +24,22 @@ public struct FileSystemClient: Sendable {
     public var quickLook: @Sendable (URL) async throws -> Void
     public var applicationsForFile: @Sendable (URL) async -> [ApplicationInfo]
     public var defaultApplication: @Sendable (UTType) async -> ApplicationInfo?
+    public var createFolder: @Sendable (URL, String) async throws -> Void
 
     public nonisolated init(
         open: @escaping @Sendable (URL, OpenKind) async throws -> Void,
         setDefaultApp: @escaping @Sendable (UTType, String) async throws -> Void,
         quickLook: @escaping @Sendable (URL) async throws -> Void,
         applicationsForFile: @escaping @Sendable (URL) async -> [ApplicationInfo],
-        defaultApplication: @escaping @Sendable (UTType) async -> ApplicationInfo?
+        defaultApplication: @escaping @Sendable (UTType) async -> ApplicationInfo?,
+        createFolder: @escaping @Sendable (URL, String) async throws -> Void
     ) {
         self.open = open
         self.setDefaultApp = setDefaultApp
         self.quickLook = quickLook
         self.applicationsForFile = applicationsForFile
         self.defaultApplication = defaultApplication
+        self.createFolder = createFolder
     }
 }
 
@@ -156,6 +159,14 @@ extension FileSystemClient: DependencyKey {
                 return await MainActor.run {
                     ApplicationInfo(id: bundleID, name: name, bundleID: bundleID)
                 }
+            },
+            createFolder: { parentURL, folderName in
+                let folderURL = parentURL.appendingPathComponent(folderName)
+                try FileManager.default.createDirectory(
+                    at: folderURL,
+                    withIntermediateDirectories: false,
+                    attributes: nil
+                )
             }
         )
     }
@@ -169,7 +180,8 @@ extension FileSystemClient: DependencyKey {
             setDefaultApp: { _, _ in unimplemented() },
             quickLook: { _ in unimplemented() },
             applicationsForFile: { _ in unimplemented() },
-            defaultApplication: { _ in unimplemented() }
+            defaultApplication: { _ in unimplemented() },
+            createFolder: { _, _ in unimplemented() }
         )
     }
 
@@ -191,7 +203,8 @@ extension FileSystemClient: DependencyKey {
             },
             defaultApplication: { _ async in
                 previewInfo
-            }
+            },
+            createFolder: { _, _ in }
         )
     }
 }

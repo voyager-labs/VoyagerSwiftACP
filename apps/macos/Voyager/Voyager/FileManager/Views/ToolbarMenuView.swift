@@ -6,6 +6,14 @@ struct ToolbarMenuView: View {
 
     var body: some View {
         Menu {
+            Button("New Folder") {
+                let currentPath = store.currentPath
+                store.send(.fsItems(.operations(.createNewFolder(path: currentPath))))
+            }
+            .keyboardShortcut("n", modifiers: [.command, .shift])
+
+            Divider()
+
             Menu("Group By") {
                 Button(
                     action: { store.send(.changeGroupKey(.none)) },

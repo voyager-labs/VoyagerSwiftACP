@@ -30,10 +30,11 @@ struct FSItemsOperationsFeature {
         case setDefaultAppForFile(type: UTType?, bundleID: String, file: FSItem)
         case setDefaultAppWithOther(file: FSItem)
         case loadApplicationsForFile(file: FSItem)
-        case applicationsLoaded(String, [ApplicationInfo]) // 파일 경로, 앱 목록
-        case operationStarted(String, OperationKind) // 파일 경로, 작업 종류
-        case operationFinished(String, OperationKind, Result<Void, FileOpError>) // 파일 경로, 작업 종류, 결과
-        case clearError(String) // 파일 경로
+        case createNewFolder(path: String)
+        case applicationsLoaded(String, [ApplicationInfo])
+        case operationStarted(String, OperationKind)
+        case operationFinished(String, OperationKind, Result<Void, FileOpError>)
+        case clearError(String)
     }
 
     @Dependency(\.fileSystemClient)
@@ -164,6 +165,21 @@ struct FSItemsOperationsFeature {
             case let .applicationsLoaded(filePath, apps):
                 state.applicationsForItems[filePath] = apps
                 return .none
+
+            case let .createNewFolder(path):
+                let parentURL = URL(fileURLWithPath: path)
+                var folderName = "untitled folder"
+                var folderURL = parentURL.appendingPathComponent(folderName)
+                var counter = 2
+                while FileManager.default.fileExists(atPath: folderURL.path) {
+                    folderName = "untitled folder \(counter)"
+                    folderURL = parentURL.appendingPathComponent(folderName)
+                    counter += 1
+                }
+                let finalFolderName = folderName
+                return run(for: path, kind: .createFolder) {
+                    try await fileSystemClient.createFolder(parentURL, finalFolderName)
+                }
             }
         }
     }
@@ -268,6 +284,7 @@ enum OperationKind: Equatable, Hashable, Sendable {
     case openWithApp(String)
     case setDefaultApp(String)
     case quickLook
+    case createFolder
 }
 
 extension Error {
