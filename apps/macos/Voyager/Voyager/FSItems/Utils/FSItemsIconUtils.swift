@@ -3,16 +3,43 @@ import Foundation
 import UniformTypeIdentifiers
 
 enum FSItemsIconUtils {
+    private static var iconCache: [String: NSImage] = [:]
+    private static let cacheLock = NSLock()
+
     static func icon(for item: FSItem) -> NSImage {
-        if item.isDirectory {
-            return NSWorkspace.shared.icon(forFile: item.fullPath)
+        let cacheKey = item.isDirectory
+            ? "dir:\(item.fullPath)"
+            : UTType(filenameExtension: item.fileExtension)
+            .map { "type:\($0.identifier)" }
+            ?? "file:\(item.fullPath)"
+
+        cacheLock.lock()
+        defer { cacheLock.unlock() }
+
+        if let cached = iconCache[cacheKey] {
+            return cached
         }
 
-        // 파일 타입별 아이콘 가져오기
-        if let type = UTType(filenameExtension: item.fileExtension) {
-            return NSWorkspace.shared.icon(for: type)
-        }
+        let icon = item.isDirectory
+            ? NSWorkspace.shared.icon(forFile: item.fullPath)
+            : (UTType(filenameExtension: item.fileExtension)
+                .map { NSWorkspace.shared.icon(for: $0) }
+                ?? NSWorkspace.shared.icon(forFile: item.fullPath))
 
-        return NSWorkspace.shared.icon(forFile: item.fullPath)
+        if iconCache.count > 1000 {
+            let keysToRemove = Array(iconCache.keys.prefix(500))
+            for key in keysToRemove {
+                iconCache.removeValue(forKey: key)
+            }
+        }
+        iconCache[cacheKey] = icon
+
+        return icon
+    }
+
+    static func clearCache() {
+        cacheLock.lock()
+        iconCache.removeAll()
+        cacheLock.unlock()
     }
 }
