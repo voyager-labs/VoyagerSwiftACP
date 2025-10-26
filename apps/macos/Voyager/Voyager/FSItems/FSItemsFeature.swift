@@ -24,8 +24,7 @@ struct FSItemsFeature {
         var groupKey: GroupKey = .none
         var groupedItems: [GroupedItems] = []
 
-        var isOperationBusy: Bool = false
-        var lastOperationError: FileOpError?
+        var operations: FSItemsOperationsFeature.State = .init()
 
         var displayOrderItems: [FSItem] {
             if groupKey == .none {
@@ -62,20 +61,18 @@ struct FSItemsFeature {
         case setSortKey(SortKey)
         case setSortOrder(SortOrder)
 
-        case clearOperationError
-        case operationStarted(OperationKind)
-        case operationFinished(OperationKind, Result<Void, FileOpError>)
-
         case openSelectedItem
         case quickLookSelectedItem
         case openWithSelectedItem
         case navigateFolder(id: String)
+        case operations(FSItemsOperationsFeature.Action)
     }
 
-    @Dependency(\.fileSystemClient)
-    var fileSystemClient
-
     var body: some Reducer<State, Action> {
+        Scope(state: \.operations, action: \.operations) {
+            FSItemsOperationsFeature()
+        }
+
         Reduce { state, action in
             switch action {
             case let .loadItems(path):
@@ -288,25 +285,6 @@ struct FSItemsFeature {
                 state.shouldScrollToSelection = false
                 return .none
 
-            case .clearOperationError:
-                state.lastOperationError = nil
-                return .none
-
-            case .operationStarted:
-                state.isOperationBusy = true
-                state.lastOperationError = nil
-                return .none
-
-            case let .operationFinished(_, result):
-                state.isOperationBusy = false
-                switch result {
-                case .success:
-                    return .none
-                case let .failure(error):
-                    state.lastOperationError = error
-                    return .none
-                }
-
             case .navigateFolder:
                 return .none
 
@@ -345,13 +323,7 @@ struct FSItemsFeature {
                     return .none
                 }
 
-                let filesToOpen = selectedFiles
-                return run(kind: .openDefault) {
-                    for file in filesToOpen {
-                        let url = URL(fileURLWithPath: file.fullPath)
-                        try await fileSystemClient.open(url, .defaultApp)
-                    }
-                }
+                return .send(.operations(.openFiles(files: selectedFiles)))
 
             case .quickLookSelectedItem:
                 guard state.selectedIds.count == 1,
@@ -361,10 +333,7 @@ struct FSItemsFeature {
                     return .none
                 }
 
-                let url = URL(fileURLWithPath: item.fullPath)
-                return run(kind: .quickLook) {
-                    try await fileSystemClient.quickLook(url)
-                }
+                return .send(.operations(.quickLookFile(file: item)))
 
             case .openWithSelectedItem:
                 guard state.selectedIds.count == 1,
@@ -375,80 +344,13 @@ struct FSItemsFeature {
                     return .none
                 }
 
-                let url = URL(fileURLWithPath: item.fullPath)
-                return run(kind: .openWithApp) {
-                    if let bundleID = await selectApplication(for: url)?.bundleID {
-                        try await fileSystemClient.open(url, .bundleID(bundleID))
-                    }
-                }
-            }
-        }
-    }
+                return .send(.operations(.openFileWithApp(file: item)))
 
-    private func run(
-        kind: OperationKind,
-        operation: @escaping @Sendable () async throws -> Void
-    ) -> Effect<Action> {
-        .run { send in
-            await send(.operationStarted(kind))
-            do {
-                try await operation()
-                await send(.operationFinished(kind, .success(())))
-            } catch {
-                await send(.operationFinished(kind, .failure(error.fileOpError)))
+            case .operations:
+                return .none
             }
         }
     }
 }
 
-private struct ApplicationSelection {
-    let bundleID: String
-    let type: UTType?
-}
-
-@MainActor
-private func selectApplication(for itemURL: URL) -> ApplicationSelection? {
-    let panel = NSOpenPanel()
-    panel.canChooseDirectories = false
-    panel.canChooseFiles = true
-    panel.allowsMultipleSelection = false
-    if #available(macOS 13.0, *) {
-        panel.allowedContentTypes = [.application]
-    } else {
-        panel.allowedFileTypes = ["app"]
-    }
-    panel.prompt = "Choose"
-    panel.message = "Select an application for \(itemURL.lastPathComponent)."
-
-    guard panel.runModal() == .OK, let appURL = panel.url, let bundleID = Bundle(url: appURL)?.bundleIdentifier else {
-        return nil
-    }
-
-    let type = UTType(filenameExtension: itemURL.pathExtension)
-    return ApplicationSelection(bundleID: bundleID, type: type)
-}
-
-enum OperationKind: Equatable, Hashable, Sendable {
-    case openDefault
-    case openWithApp
-    case setDefaultApp
-    case quickLook
-}
-
-extension Error {
-    var fileOpError: FileOpError {
-        if let error = self as? FileOpError { return error }
-        if let nsError = self as NSError?, nsError.domain == NSCocoaErrorDomain {
-            switch nsError.code {
-            case NSFileReadNoSuchFileError, NSFileNoSuchFileError:
-                return .notFound
-            case NSUserCancelledError:
-                return .cancelled
-            default:
-                return .system(message: nsError.localizedDescription)
-            }
-        }
-        return .system(message: localizedDescription)
-    }
-}
 // swiftlint:enable type_body_length
