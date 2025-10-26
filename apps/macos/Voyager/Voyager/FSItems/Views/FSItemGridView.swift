@@ -1,3 +1,4 @@
+import AppKit
 import SwiftUI
 
 struct FSItemGridView: View {
@@ -8,20 +9,20 @@ struct FSItemGridView: View {
 
     var body: some View {
         VStack(spacing: 4) {
-            Image(systemName: item.isDirectory ? "folder.fill" : "doc.fill")
-                .font(.system(size: 48))
-                .foregroundColor(item.isDirectory ? .blue : .secondary)
+            Image(nsImage: FSItemsIconUtils.icon(for: item))
+                .resizable()
+                .scaledToFit()
                 .opacity(item.isHidden ? 0.5 : 1.0)
-                .frame(width: 80, height: 80)
+                .frame(width: 64, height: 64)
 
             Text(item.name)
-                .font(.system(size: 12))
+                .font(.system(size: 11))
                 .lineLimit(2)
                 .multilineTextAlignment(.center)
-                .frame(width: 100, height: 32, alignment: .top)
+                .frame(width: 80, height: 28, alignment: .top)
                 .opacity(item.isHidden ? 0.5 : 1.0)
         }
-        .padding(8)
+        .padding(6)
         .background(
             RoundedRectangle(cornerRadius: 8)
                 .fill(isSelected ? Color.accentColor.opacity(0.2) : Color.clear)

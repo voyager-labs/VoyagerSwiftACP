@@ -298,7 +298,7 @@ struct ViewMenuCommands: Commands {
                     }
                 )
             }
-            .disabled(fileManagerStore?.fsItems.groupKey != .none)
+            .disabled(fileManagerStore?.fsItems.groupKey != GroupKey.none)
         }
     }
 }

@@ -37,10 +37,11 @@ struct FSItemListView: View {
     var body: some View {
         HStack(spacing: 0) {
             HStack(spacing: 8) {
-                Image(systemName: item.isDirectory ? "folder.fill" : "doc.fill")
-                    .foregroundColor(item.isDirectory ? .blue : .gray)
+                Image(nsImage: FSItemsIconUtils.icon(for: item))
+                    .resizable()
+                    .scaledToFit()
                     .opacity(item.isHidden ? 0.5 : 1.0)
-                    .frame(width: 20)
+                    .frame(width: 20, height: 20)
 
                 Text(item.name)
                     .font(.system(size: 13))
