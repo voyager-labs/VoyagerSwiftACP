@@ -9,7 +9,7 @@ public struct FileSystemClient: Sendable {
     public var setDefaultApp: @Sendable (UTType, String) async throws -> Void
     public var quickLook: @Sendable (URL) async throws -> Void
 
-    public init(
+    public nonisolated init(
         open: @escaping @Sendable (URL, OpenKind) async throws -> Void,
         setDefaultApp: @escaping @Sendable (UTType, String) async throws -> Void,
         quickLook: @escaping @Sendable (URL) async throws -> Void
@@ -55,12 +55,11 @@ public enum FileOpError: Error, Equatable, Sendable {
 }
 
 extension FileSystemClient: DependencyKey {
-    public static var liveValue: FileSystemClient {
-        let workspace = NSWorkspace.shared
-
-        return FileSystemClient(
+    public nonisolated static var liveValue: FileSystemClient {
+        FileSystemClient(
             open: { url, kind in
                 try await withScopedAccess(url) {
+                    let workspace = NSWorkspace.shared
                     switch kind {
                     case .defaultApp:
                         guard workspace.open(url) else {
@@ -76,22 +75,28 @@ extension FileSystemClient: DependencyKey {
                 }
             },
             setDefaultApp: { type, bundleID in
-                let status = LSSetDefaultRoleHandlerForContentType(type.identifier as CFString, .all, bundleID as CFString)
+                let status = LSSetDefaultRoleHandlerForContentType(
+                    type.identifier as CFString,
+                    .all,
+                    bundleID as CFString
+                )
                 guard status == noErr else {
                     throw FileOpError.system(message: "Failed to set default app.")
                 }
             },
             quickLook: { url in
                 try await withScopedAccess(url) {
-                    let token = SecurityScopedURLToken(url: url)
+                    let token = await MainActor.run { SecurityScopedURLToken(url: url) }
                     await FSItemQuickLookCoordinator.shared.present(url: url, scopeToken: token)
                 }
             }
         )
     }
 
-    public static var testValue: FileSystemClient {
-        let unimplemented = { @Sendable (_: Any...) -> Never in fatalError("FileSystemClient test dependency not set.") }
+    public nonisolated static var testValue: FileSystemClient {
+        let unimplemented = { @Sendable (_: Any...) -> Never in
+            fatalError("FileSystemClient test dependency not set.")
+        }
         return FileSystemClient(
             open: { _, _ in unimplemented() },
             setDefaultApp: { _, _ in unimplemented() },
@@ -99,7 +104,7 @@ extension FileSystemClient: DependencyKey {
         )
     }
 
-    public static var previewValue: FileSystemClient {
+    public nonisolated static var previewValue: FileSystemClient {
         FileSystemClient(
             open: { _, _ in },
             setDefaultApp: { _, _ in },
@@ -109,7 +114,7 @@ extension FileSystemClient: DependencyKey {
 }
 
 public extension DependencyValues {
-    var fileSystemClient: FileSystemClient {
+    nonisolated var fileSystemClient: FileSystemClient {
         get { self[FileSystemClient.self] }
         set { self[FileSystemClient.self] = newValue }
     }

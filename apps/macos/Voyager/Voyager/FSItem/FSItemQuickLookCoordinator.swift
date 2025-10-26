@@ -1,6 +1,7 @@
 import AppKit
 import QuickLookUI
 
+@MainActor
 final class FSItemQuickLookCoordinator: NSObject, QLPreviewPanelDataSource, QLPreviewPanelDelegate {
     static let shared = FSItemQuickLookCoordinator()
 
@@ -26,15 +27,15 @@ final class FSItemQuickLookCoordinator: NSObject, QLPreviewPanelDataSource, QLPr
         panel.reloadData()
     }
 
-    nonisolated func numberOfPreviewItems(in _: QLPreviewPanel!) -> Int {
+    func numberOfPreviewItems(in _: QLPreviewPanel!) -> Int {
         currentURL == nil ? 0 : 1
     }
 
-    nonisolated func previewPanel(_ panel: QLPreviewPanel!, previewItemAt _: Int) -> QLPreviewItem! {
+    func previewPanel(_: QLPreviewPanel!, previewItemAt _: Int) -> QLPreviewItem! {
         currentURL.map { $0 as NSURL }
     }
 
-    nonisolated func previewPanelWillClose(_: QLPreviewPanel!) {
+    func previewPanelWillClose(_: QLPreviewPanel!) {
         Task { @MainActor in
             scopeToken?.invalidate()
             scopeToken = nil
@@ -61,7 +62,9 @@ final class SecurityScopedURLToken {
     }
 
     deinit {
-        invalidate()
+        if isAccessing {
+            url.stopAccessingSecurityScopedResource()
+        }
     }
 
     func invalidate() {
@@ -69,8 +72,8 @@ final class SecurityScopedURLToken {
         if Thread.isMainThread {
             url.stopAccessingSecurityScopedResource()
         } else {
-            DispatchQueue.main.async {
-                url.stopAccessingSecurityScopedResource()
+            DispatchQueue.main.async { [weak self] in
+                self?.url.stopAccessingSecurityScopedResource()
             }
         }
     }

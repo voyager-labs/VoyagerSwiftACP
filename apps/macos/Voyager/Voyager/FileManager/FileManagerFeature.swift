@@ -55,10 +55,17 @@ struct FileManagerFeature {
             guard !fsItems.selectedIds.isEmpty else {
                 return false
             }
-            // 선택된 아이템 중 하나라도 폴더면 열 수 있음
-            return fsItems.selectedIds.contains { selectedId in
-                fsItems.items.first(where: { $0.id == selectedId })?.isDirectory == true
+            return fsItems.items.contains { fsItems.selectedIds.contains($0.id) }
+        }
+
+        var canQuickLookSelectedItem: Bool {
+            guard fsItems.selectedIds.count == 1 else {
+                return false
             }
+            guard let selectedId = fsItems.selectedIds.first else {
+                return false
+            }
+            return fsItems.items.contains(where: { $0.id == selectedId })
         }
 
         var pathComponents: [(name: String, fullPath: String)] {
@@ -106,11 +113,11 @@ struct FileManagerFeature {
         case grid
     }
 
-    enum Action: Equatable {
+    enum Action: Sendable {
         case onAppear
         case navigateTo(String)
-        case openItem(id: String)
         case openSelectedItem
+        case quickLookSelectedItem
         case goBack
         case goForward
         case goToHistoryIndex(Int, isBackHistory: Bool)
@@ -158,43 +165,11 @@ struct FileManagerFeature {
                 state.matchSidebarToPath(path, locations: state.locations)
                 return .send(.fsItems(.loadItems(path: path)))
 
-            case let .openItem(id):
-                guard let item = state.fsItems.items.first(where: { $0.id == id }) else {
-                    return .none
-                }
-
-                if item.isDirectory {
-                    state.backHistory.append(state.currentPath)
-                    state.forwardHistory = []
-                    state.navigationState = .folder(item.fullPath)
-                    state.matchSidebarToPath(item.fullPath, locations: state.locations)
-                    return .send(.fsItems(.loadItems(path: item.fullPath)))
-                } else {
-                    return .none
-                }
-
             case .openSelectedItem:
-                guard !state.fsItems.selectedIds.isEmpty else {
-                    return .none
-                }
+                return .send(.fsItems(.openSelectedItem))
 
-                var selectedFolders: [FSItem] = []
-                for selectedId in state.fsItems.selectedIds {
-                    if let item = state.fsItems.items.first(where: { $0.id == selectedId }), item.isDirectory {
-                        selectedFolders.append(item)
-                    }
-                }
-
-                if selectedFolders.count == 1 {
-                    return .send(.openItem(id: selectedFolders[0].id))
-                } else if selectedFolders.count > 1 {
-                    for folder in selectedFolders {
-                        AppDelegate.shared?.createNewWindow(path: folder.fullPath)
-                    }
-                    return .none
-                } else {
-                    return .none
-                }
+            case .quickLookSelectedItem:
+                return .send(.fsItems(.quickLookSelectedItem))
 
             case .goBack:
                 guard let previousPath = state.backHistory.popLast() else {
@@ -350,8 +325,20 @@ struct FileManagerFeature {
             case let .changeGroupKey(key):
                 return .send(.fsItems(.setGroupKey(key)))
 
-            case .fsItems:
-                return .none
+            case let .fsItems(action):
+                switch action {
+                case let .navigateFolder(id):
+                    guard let item = state.fsItems.items.first(where: { $0.id == id }) else {
+                        return .none
+                    }
+                    state.backHistory.append(state.currentPath)
+                    state.forwardHistory = []
+                    state.navigationState = .folder(item.fullPath)
+                    state.matchSidebarToPath(item.fullPath, locations: state.locations)
+                    return .send(.fsItems(.loadItems(path: item.fullPath)))
+                default:
+                    return .none
+                }
             }
         }
     }

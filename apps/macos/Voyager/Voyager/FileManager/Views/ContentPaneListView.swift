@@ -47,7 +47,20 @@ struct ContentPaneListView: View {
                                                 ))
                                             },
                                             onOpen: {
-                                                store.send(.openItem(id: item.id))
+                                                fsStore.send(.selectItem(
+                                                    id: item.id,
+                                                    isCommandPressed: false,
+                                                    isShiftPressed: false
+                                                ))
+                                                store.send(.openSelectedItem)
+                                            },
+                                            onQuickLook: {
+                                                fsStore.send(.selectItem(
+                                                    id: item.id,
+                                                    isCommandPressed: false,
+                                                    isShiftPressed: false
+                                                ))
+                                                store.send(.quickLookSelectedItem)
                                             }
                                         )
                                         .id(item.id)
@@ -102,7 +115,20 @@ struct ContentPaneListView: View {
                                                     ))
                                                 },
                                                 onOpen: {
-                                                    store.send(.openItem(id: item.id))
+                                                    fsStore.send(.selectItem(
+                                                        id: item.id,
+                                                        isCommandPressed: false,
+                                                        isShiftPressed: false
+                                                    ))
+                                                    store.send(.openSelectedItem)
+                                                },
+                                                onQuickLook: {
+                                                    fsStore.send(.selectItem(
+                                                        id: item.id,
+                                                        isCommandPressed: false,
+                                                        isShiftPressed: false
+                                                    ))
+                                                    store.send(.quickLookSelectedItem)
                                                 }
                                             )
                                             .id(item.id)

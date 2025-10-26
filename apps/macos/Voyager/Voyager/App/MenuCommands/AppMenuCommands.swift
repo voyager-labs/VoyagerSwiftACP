@@ -34,6 +34,12 @@ struct AppMenuCommands: Commands {
             .keyboardShortcut(.downArrow, modifiers: .command)
             .disabled(fileManagerStore?.canOpenSelectedItem == false)
 
+            Button("Quick Look") {
+                fileManagerStore?.send(.quickLookSelectedItem)
+            }
+            .keyboardShortcut(.space, modifiers: [])
+            .disabled(fileManagerStore?.canQuickLookSelectedItem == false)
+
             Button("Reopen Recently Closed Tab") {
                 AppDelegate.shared?.reopenLastClosedTab()
             }
@@ -65,6 +71,8 @@ struct AppMenuCommands: Commands {
                 }
             }
             .keyboardShortcut("w", modifiers: [.command, .shift])
+
+            Divider()
         }
 
         CommandMenu("Go") {

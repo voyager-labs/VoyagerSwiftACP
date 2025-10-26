@@ -14,6 +14,13 @@ struct FileManagerView: View {
     var body: some View {
         ZStack {
             KeyCommandView { event in
+                if event.keyCode == 49 && event.modifierFlags.isDisjoint(with: [.command, .option, .control, .shift]) {
+                    if store.canQuickLookSelectedItem {
+                        store.send(.quickLookSelectedItem)
+                    }
+                    return
+                }
+
                 if event.modifierFlags.isDisjoint(with: [.command, .option, .control]) {
                     let isShiftPressed = event.modifierFlags.contains(.shift)
 

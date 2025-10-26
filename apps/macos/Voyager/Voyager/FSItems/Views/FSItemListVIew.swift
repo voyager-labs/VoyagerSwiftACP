@@ -7,6 +7,7 @@ struct FSItemListView: View {
     let availableWidth: CGFloat
     let onSelect: () -> Void
     let onOpen: () -> Void
+    let onQuickLook: () -> Void
 
     private struct ColumnWidths {
         let name: CGFloat
@@ -79,6 +80,15 @@ struct FSItemListView: View {
                     onOpen()
                 }
         )
+        .contextMenu {
+            Button("Open") {
+                onOpen()
+            }
+
+            Button("Quick Look") {
+                onQuickLook()
+            }
+        }
     }
 
     private func sizeText(_ item: FSItem) -> String {

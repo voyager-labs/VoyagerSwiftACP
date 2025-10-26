@@ -1,7 +1,9 @@
 import AppKit
 import ComposableArchitecture
 import Foundation
+import UniformTypeIdentifiers
 
+// swiftlint:disable type_body_length
 /// 파일 시스템 아이템 목록 및 선택 관리 (FSV 영역)
 @Reducer
 struct FSItemsFeature {
@@ -22,6 +24,9 @@ struct FSItemsFeature {
         var groupKey: GroupKey = .none
         var groupedItems: [GroupedItems] = []
 
+        var isOperationBusy: Bool = false
+        var lastOperationError: FileOpError?
+
         var displayOrderItems: [FSItem] {
             if groupKey == .none {
                 return items
@@ -40,7 +45,7 @@ struct FSItemsFeature {
         }
     }
 
-    enum Action: Equatable {
+    enum Action: Sendable {
         case loadItems(path: String)
         case loadRecentItems
         case itemsLoaded([FSItem])
@@ -56,7 +61,19 @@ struct FSItemsFeature {
 
         case setSortKey(SortKey)
         case setSortOrder(SortOrder)
+
+        case clearOperationError
+        case operationStarted(OperationKind)
+        case operationFinished(OperationKind, Result<Void, FileOpError>)
+
+        case openSelectedItem
+        case quickLookSelectedItem
+        case openWithSelectedItem
+        case navigateFolder(id: String)
     }
+
+    @Dependency(\.fileSystemClient)
+    var fileSystemClient
 
     var body: some Reducer<State, Action> {
         Reduce { state, action in
@@ -270,7 +287,168 @@ struct FSItemsFeature {
             case .resetScrollFlag:
                 state.shouldScrollToSelection = false
                 return .none
+
+            case .clearOperationError:
+                state.lastOperationError = nil
+                return .none
+
+            case .operationStarted:
+                state.isOperationBusy = true
+                state.lastOperationError = nil
+                return .none
+
+            case let .operationFinished(_, result):
+                state.isOperationBusy = false
+                switch result {
+                case .success:
+                    return .none
+                case let .failure(error):
+                    state.lastOperationError = error
+                    return .none
+                }
+
+            case .navigateFolder:
+                return .none
+
+            case .openSelectedItem:
+                guard !state.selectedIds.isEmpty else {
+                    return .none
+                }
+
+                var selectedFolders: [FSItem] = []
+                var selectedFiles: [FSItem] = []
+
+                for selectedId in state.selectedIds {
+                    if let item = state.items.first(where: { $0.id == selectedId }) {
+                        if item.isDirectory {
+                            selectedFolders.append(item)
+                        } else {
+                            selectedFiles.append(item)
+                        }
+                    }
+                }
+
+                if selectedFolders.count == 1 && selectedFiles.isEmpty {
+                    return .send(.navigateFolder(id: selectedFolders[0].id))
+                } else if selectedFolders.count > 1 && selectedFiles.isEmpty {
+                    for folder in selectedFolders {
+                        AppDelegate.shared?.createNewWindow(path: folder.fullPath)
+                    }
+                    return .none
+                } else if !selectedFolders.isEmpty {
+                    for folder in selectedFolders {
+                        AppDelegate.shared?.createNewWindow(path: folder.fullPath)
+                    }
+                }
+
+                guard !selectedFiles.isEmpty else {
+                    return .none
+                }
+
+                let filesToOpen = selectedFiles
+                return run(kind: .openDefault) {
+                    for file in filesToOpen {
+                        let url = URL(fileURLWithPath: file.fullPath)
+                        try await fileSystemClient.open(url, .defaultApp)
+                    }
+                }
+
+            case .quickLookSelectedItem:
+                guard state.selectedIds.count == 1,
+                      let selectedId = state.selectedIds.first,
+                      let item = state.items.first(where: { $0.id == selectedId })
+                else {
+                    return .none
+                }
+
+                let url = URL(fileURLWithPath: item.fullPath)
+                return run(kind: .quickLook) {
+                    try await fileSystemClient.quickLook(url)
+                }
+
+            case .openWithSelectedItem:
+                guard state.selectedIds.count == 1,
+                      let selectedId = state.selectedIds.first,
+                      let item = state.items.first(where: { $0.id == selectedId }),
+                      !item.isDirectory
+                else {
+                    return .none
+                }
+
+                let url = URL(fileURLWithPath: item.fullPath)
+                return run(kind: .openWithApp) {
+                    if let bundleID = await selectApplication(for: url)?.bundleID {
+                        try await fileSystemClient.open(url, .bundleID(bundleID))
+                    }
+                }
+            }
+        }
+    }
+
+    private func run(
+        kind: OperationKind,
+        operation: @escaping @Sendable () async throws -> Void
+    ) -> Effect<Action> {
+        .run { send in
+            await send(.operationStarted(kind))
+            do {
+                try await operation()
+                await send(.operationFinished(kind, .success(())))
+            } catch {
+                await send(.operationFinished(kind, .failure(error.fileOpError)))
             }
         }
     }
 }
+
+private struct ApplicationSelection {
+    let bundleID: String
+    let type: UTType?
+}
+
+@MainActor
+private func selectApplication(for itemURL: URL) -> ApplicationSelection? {
+    let panel = NSOpenPanel()
+    panel.canChooseDirectories = false
+    panel.canChooseFiles = true
+    panel.allowsMultipleSelection = false
+    if #available(macOS 13.0, *) {
+        panel.allowedContentTypes = [.application]
+    } else {
+        panel.allowedFileTypes = ["app"]
+    }
+    panel.prompt = "Choose"
+    panel.message = "Select an application for \(itemURL.lastPathComponent)."
+
+    guard panel.runModal() == .OK, let appURL = panel.url, let bundleID = Bundle(url: appURL)?.bundleIdentifier else {
+        return nil
+    }
+
+    let type = UTType(filenameExtension: itemURL.pathExtension)
+    return ApplicationSelection(bundleID: bundleID, type: type)
+}
+
+enum OperationKind: Equatable, Hashable, Sendable {
+    case openDefault
+    case openWithApp
+    case setDefaultApp
+    case quickLook
+}
+
+extension Error {
+    var fileOpError: FileOpError {
+        if let error = self as? FileOpError { return error }
+        if let nsError = self as NSError?, nsError.domain == NSCocoaErrorDomain {
+            switch nsError.code {
+            case NSFileReadNoSuchFileError, NSFileNoSuchFileError:
+                return .notFound
+            case NSUserCancelledError:
+                return .cancelled
+            default:
+                return .system(message: nsError.localizedDescription)
+            }
+        }
+        return .system(message: localizedDescription)
+    }
+}
+// swiftlint:enable type_body_length
