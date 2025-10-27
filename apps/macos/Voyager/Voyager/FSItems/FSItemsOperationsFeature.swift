@@ -31,6 +31,7 @@ struct FSItemsOperationsFeature {
         case setDefaultAppWithOther(file: FSItem)
         case loadApplicationsForFile(file: FSItem)
         case createNewFolder(path: String)
+        case copySelectedItems(files: [FSItem])
         case applicationsLoaded(String, [ApplicationInfo])
         case operationStarted(String, OperationKind)
         case operationFinished(String, OperationKind, Result<Void, FileOpError>)
@@ -180,6 +181,15 @@ struct FSItemsOperationsFeature {
                 return run(for: path, kind: .createFolder) {
                     try await fileSystemClient.createFolder(parentURL, finalFolderName)
                 }
+
+            case let .copySelectedItems(files):
+                let pasteboard = NSPasteboard.general
+                pasteboard.clearContents()
+
+                let paths = files.map { $0.fullPath }
+                pasteboard.setString(paths.joined(separator: "\n"), forType: .string)
+
+                return .none
             }
         }
     }

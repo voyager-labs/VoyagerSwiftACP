@@ -67,6 +67,7 @@ struct FSItemsFeature {
         case setDefaultAppForSelectedItem(bundleID: String, type: UTType?)
         case setDefaultAppWithOtherForSelectedItem
         case navigateFolder(id: String)
+        case copySelectedItems
         case operations(FSItemsOperationsFeature.Action)
     }
 
@@ -393,6 +394,14 @@ struct FSItemsFeature {
                 }
 
                 return .send(.operations(.setDefaultAppWithOther(file: item)))
+
+            case .copySelectedItems:
+                guard !state.selectedIds.isEmpty else {
+                    return .none
+                }
+
+                let selectedItems = state.items.filter { state.selectedIds.contains($0.id) }
+                return .send(.operations(.copySelectedItems(files: selectedItems)))
             }
         }
     }
