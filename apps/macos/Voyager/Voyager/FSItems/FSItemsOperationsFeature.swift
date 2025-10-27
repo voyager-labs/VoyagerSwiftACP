@@ -4,6 +4,7 @@ import Foundation
 import UniformTypeIdentifiers
 
 /// FSItems의 파일 시스템 작업 관리
+
 @Reducer
 struct FSItemsOperationsFeature {
     @ObservableState
@@ -32,6 +33,7 @@ struct FSItemsOperationsFeature {
         case loadApplicationsForFile(file: FSItem)
         case createNewFolder(path: String)
         case copySelectedItems(files: [FSItem])
+        case pasteItems(sourcePaths: [String], destinationPath: String, operation: ClipboardOperation)
         case applicationsLoaded(String, [ApplicationInfo])
         case operationStarted(String, OperationKind)
         case operationFinished(String, OperationKind, Result<Void, FileOpError>)
@@ -190,8 +192,49 @@ struct FSItemsOperationsFeature {
                 pasteboard.setString(paths.joined(separator: "\n"), forType: .string)
 
                 return .none
+
+            case let .pasteItems(sourcePaths, destinationPath, operation):
+                let destinationURL = URL(fileURLWithPath: destinationPath)
+                let destinations = makeUniqueFilePaths(sourcePaths: sourcePaths, destinationURL: destinationURL)
+
+                return run(for: destinationPath, kind: .pasteFile) {
+                    for (sourceURL, destURL) in destinations {
+                        switch operation {
+                        case .copy: try await fileSystemClient.pasteFile(sourceURL, destURL)
+                        case .cut: try await fileSystemClient.moveFile(sourceURL, destURL)
+                        }
+                    }
+                }
             }
         }
+    }
+
+    private func makeUniqueFilePaths(sourcePaths: [String], destinationURL: URL) -> [(URL, URL)] {
+        var destinations: [(URL, URL)] = []
+
+        for sourcePath in sourcePaths {
+            let sourceURL = URL(fileURLWithPath: sourcePath)
+            let fileName = sourceURL.lastPathComponent
+            let nameWithoutExtension = fileName.deletingPathExtension()
+            let fileExtension = fileName.pathExtension
+
+            var destURL = destinationURL.appendingPathComponent(fileName)
+            var counter = 1
+
+            while FileManager.default.fileExists(atPath: destURL.path) {
+                if counter == 1 {
+                    let name = fileExtension.isEmpty ? "\(nameWithoutExtension) copy" : "\(nameWithoutExtension) copy.\(fileExtension)"
+                    destURL = destinationURL.appendingPathComponent(name)
+                } else {
+                    let name = fileExtension.isEmpty ? "\(nameWithoutExtension) copy \(counter)" : "\(nameWithoutExtension) copy \(counter).\(fileExtension)"
+                    destURL = destinationURL.appendingPathComponent(name)
+                }
+                counter += 1
+            }
+            destinations.append((sourceURL, destURL))
+        }
+
+        return destinations
     }
 
     private func validateDefaultAppSetting(file: FSItem) -> FileOpError? {
@@ -295,6 +338,7 @@ enum OperationKind: Equatable, Hashable, Sendable {
     case setDefaultApp(String)
     case quickLook
     case createFolder
+    case pasteFile
 }
 
 extension Error {
@@ -311,5 +355,15 @@ extension Error {
             }
         }
         return .system(message: localizedDescription)
+    }
+}
+
+extension String {
+    func deletingPathExtension() -> String {
+        (self as NSString).deletingPathExtension
+    }
+
+    var pathExtension: String {
+        (self as NSString).pathExtension
     }
 }

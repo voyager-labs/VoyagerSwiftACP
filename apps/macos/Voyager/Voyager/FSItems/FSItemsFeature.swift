@@ -3,6 +3,11 @@ import ComposableArchitecture
 import Foundation
 import UniformTypeIdentifiers
 
+enum ClipboardOperation: Equatable, Sendable {
+    case copy
+    case cut
+}
+
 // swiftlint:disable type_body_length
 /// 파일 시스템 아이템 목록 및 선택 관리 (FSV 영역)
 @Reducer
@@ -25,6 +30,9 @@ struct FSItemsFeature {
         var groupedItems: [GroupedItems] = []
 
         var operations: FSItemsOperationsFeature.State = .init()
+
+        var clipboardItems: [String] = []
+        var clipboardOperation: ClipboardOperation = .copy
 
         var displayOrderItems: [FSItem] {
             if groupKey == .none {
@@ -68,6 +76,7 @@ struct FSItemsFeature {
         case setDefaultAppWithOtherForSelectedItem
         case navigateFolder(id: String)
         case copySelectedItems
+        case pasteItems(destinationPath: String)
         case operations(FSItemsOperationsFeature.Action)
     }
 
@@ -80,6 +89,8 @@ struct FSItemsFeature {
             switch action {
             case let .operations(.operationFinished(filePath, kind, result)):
                 if case .createFolder = kind, case .success = result {
+                    return .send(.loadItems(path: filePath))
+                } else if case .pasteFile = kind, case .success = result {
                     return .send(.loadItems(path: filePath))
                 }
                 return .none
@@ -401,7 +412,20 @@ struct FSItemsFeature {
                 }
 
                 let selectedItems = state.items.filter { state.selectedIds.contains($0.id) }
+                state.clipboardItems = selectedItems.map { $0.fullPath }
+                state.clipboardOperation = .copy
                 return .send(.operations(.copySelectedItems(files: selectedItems)))
+
+            case let .pasteItems(destinationPath):
+                guard !state.clipboardItems.isEmpty else {
+                    return .none
+                }
+
+                return .send(.operations(.pasteItems(
+                    sourcePaths: state.clipboardItems,
+                    destinationPath: destinationPath,
+                    operation: state.clipboardOperation
+                )))
             }
         }
     }

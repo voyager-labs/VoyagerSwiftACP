@@ -49,10 +49,10 @@ struct FileManagerView: View {
 
                 if event.characters == "a" {
                     store.send(.fsItems(.selectAll))
-                } else if event.characters == "c" && !event.modifierFlags.intersection([.shift, .option, .control])
-                    .contains(.shift)
-                {
+                } else if event.characters == "c" {
                     store.send(.fsItems(.copySelectedItems))
+                } else if event.characters == "v" {
+                    store.send(.fsItems(.pasteItems(destinationPath: store.currentPath)))
                 } else if event.characters == "." && event.modifierFlags.contains(.shift) {
                     store.send(.toggleShowHiddenFiles)
                 } else if let number = Int(event.characters ?? ""), (1 ... 9).contains(number) {

@@ -25,6 +25,8 @@ public struct FileSystemClient: Sendable {
     public var applicationsForFile: @Sendable (URL) async -> [ApplicationInfo]
     public var defaultApplication: @Sendable (UTType) async -> ApplicationInfo?
     public var createFolder: @Sendable (URL, String) async throws -> Void
+    public var pasteFile: @Sendable (URL, URL) async throws -> Void
+    public var moveFile: @Sendable (URL, URL) async throws -> Void
 
     public nonisolated init(
         open: @escaping @Sendable (URL, OpenKind) async throws -> Void,
@@ -32,7 +34,9 @@ public struct FileSystemClient: Sendable {
         quickLook: @escaping @Sendable (URL) async throws -> Void,
         applicationsForFile: @escaping @Sendable (URL) async -> [ApplicationInfo],
         defaultApplication: @escaping @Sendable (UTType) async -> ApplicationInfo?,
-        createFolder: @escaping @Sendable (URL, String) async throws -> Void
+        createFolder: @escaping @Sendable (URL, String) async throws -> Void,
+        pasteFile: @escaping @Sendable (URL, URL) async throws -> Void,
+        moveFile: @escaping @Sendable (URL, URL) async throws -> Void
     ) {
         self.open = open
         self.setDefaultApp = setDefaultApp
@@ -40,6 +44,8 @@ public struct FileSystemClient: Sendable {
         self.applicationsForFile = applicationsForFile
         self.defaultApplication = defaultApplication
         self.createFolder = createFolder
+        self.pasteFile = pasteFile
+        self.moveFile = moveFile
     }
 }
 
@@ -167,6 +173,12 @@ extension FileSystemClient: DependencyKey {
                     withIntermediateDirectories: false,
                     attributes: nil
                 )
+            },
+            pasteFile: { sourceURL, destinationURL in
+                try FileManager.default.copyItem(at: sourceURL, to: destinationURL)
+            },
+            moveFile: { sourceURL, destinationURL in
+                try FileManager.default.moveItem(at: sourceURL, to: destinationURL)
             }
         )
     }
@@ -181,7 +193,9 @@ extension FileSystemClient: DependencyKey {
             quickLook: { _ in unimplemented() },
             applicationsForFile: { _ in unimplemented() },
             defaultApplication: { _ in unimplemented() },
-            createFolder: { _, _ in unimplemented() }
+            createFolder: { _, _ in unimplemented() },
+            pasteFile: { _, _ in unimplemented() },
+            moveFile: { _, _ in unimplemented() }
         )
     }
 
@@ -204,7 +218,9 @@ extension FileSystemClient: DependencyKey {
             defaultApplication: { _ async in
                 previewInfo
             },
-            createFolder: { _, _ in }
+            createFolder: { _, _ in },
+            pasteFile: { _, _ in },
+            moveFile: { _, _ in }
         )
     }
 }
