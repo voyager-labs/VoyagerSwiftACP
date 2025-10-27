@@ -5,6 +5,7 @@ import UniformTypeIdentifiers
 struct FSItemListView: View {
     let item: FSItem
     let isSelected: Bool
+    let isCut: Bool
     let availableWidth: CGFloat
     let applications: [ApplicationInfo]?
     let onSelect: () -> Void
@@ -40,12 +41,12 @@ struct FSItemListView: View {
                 Image(nsImage: FSItemsIconUtils.icon(for: item))
                     .resizable()
                     .scaledToFit()
-                    .opacity(item.isHidden ? 0.5 : 1.0)
+                    .opacity(item.isHidden || isCut ? 0.5 : 1.0)
                     .frame(width: 20, height: 20)
 
                 Text(item.name)
                     .font(.system(size: 13))
-                    .opacity(item.isHidden ? 0.5 : 1.0)
+                    .opacity(item.isHidden || isCut ? 0.5 : 1.0)
                     .lineLimit(1)
             }
             .frame(width: columnWidths.name, alignment: .leading)
@@ -54,21 +55,21 @@ struct FSItemListView: View {
 
             Text(dateText(item.modifiedDate))
                 .font(.system(size: 12))
-                .opacity(item.isHidden ? 0.5 : 1.0)
+                .opacity(item.isHidden || isCut ? 0.5 : 1.0)
                 .frame(width: columnWidths.date, alignment: .leading)
                 .padding(.vertical, 6)
                 .padding(.leading, 8)
 
             Text(sizeText(item))
                 .font(.system(size: 12))
-                .opacity(item.isHidden ? 0.5 : 1.0)
+                .opacity(item.isHidden || isCut ? 0.5 : 1.0)
                 .frame(width: columnWidths.size, alignment: .trailing)
                 .padding(.vertical, 6)
                 .padding(.trailing, 8)
 
             Text(kindText(item))
                 .font(.system(size: 12))
-                .opacity(item.isHidden ? 0.5 : 1.0)
+                .opacity(item.isHidden || isCut ? 0.5 : 1.0)
                 .frame(width: columnWidths.kind, alignment: .leading)
                 .padding(.vertical, 6)
                 .padding(.leading, 8)

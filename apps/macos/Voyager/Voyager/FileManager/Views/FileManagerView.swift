@@ -51,6 +51,8 @@ struct FileManagerView: View {
                     store.send(.fsItems(.selectAll))
                 } else if event.characters == "c" {
                     store.send(.fsItems(.copySelectedItems))
+                } else if event.characters == "x" {
+                    store.send(.fsItems(.cutSelectedItems))
                 } else if event.characters == "v" {
                     store.send(.fsItems(.pasteItems(destinationPath: store.currentPath)))
                 } else if event.characters == "." && event.modifierFlags.contains(.shift) {

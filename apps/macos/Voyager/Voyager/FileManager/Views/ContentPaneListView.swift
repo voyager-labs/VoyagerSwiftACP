@@ -24,6 +24,7 @@ struct ContentPaneListView: View {
         FSItemListView(
             item: item,
             isSelected: fsStore.selectedIds.contains(item.id),
+            isCut: fsStore.clipboardItems.contains(item.fullPath) && fsStore.clipboardOperation == .cut,
             availableWidth: geometry.size.width,
             applications: fsStore.operations.applicationsForItems[item.fullPath],
             onSelect: {

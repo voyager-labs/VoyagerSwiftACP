@@ -27,6 +27,8 @@ struct ContentPaneGridView: View {
                                     FSItemGridView(
                                         item: item,
                                         isSelected: fsStore.selectedIds.contains(item.id),
+                                        isCut: fsStore.clipboardItems.contains(item.fullPath) && fsStore
+                                            .clipboardOperation == .cut,
                                         onSelect: {
                                             let isCommandPressed = NSEvent.modifierFlags.contains(.command)
                                             let isShiftPressed = NSEvent.modifierFlags.contains(.shift)
@@ -78,6 +80,8 @@ struct ContentPaneGridView: View {
                                         FSItemGridView(
                                             item: item,
                                             isSelected: fsStore.selectedIds.contains(item.id),
+                                            isCut: fsStore.clipboardItems.contains(item.fullPath) && fsStore
+                                                .clipboardOperation == .cut,
                                             onSelect: {
                                                 let isCommandPressed = NSEvent.modifierFlags.contains(.command)
                                                 let isShiftPressed = NSEvent.modifierFlags.contains(.shift)

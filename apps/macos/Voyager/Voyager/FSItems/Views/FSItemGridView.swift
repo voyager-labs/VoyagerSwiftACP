@@ -4,6 +4,7 @@ import SwiftUI
 struct FSItemGridView: View {
     let item: FSItem
     let isSelected: Bool
+    let isCut: Bool
     let onSelect: () -> Void
     let onOpen: () -> Void
 
@@ -12,7 +13,7 @@ struct FSItemGridView: View {
             Image(nsImage: FSItemsIconUtils.icon(for: item))
                 .resizable()
                 .scaledToFit()
-                .opacity(item.isHidden ? 0.5 : 1.0)
+                .opacity(item.isHidden || isCut ? 0.5 : 1.0)
                 .frame(width: 64, height: 64)
 
             Text(item.name)
@@ -20,7 +21,7 @@ struct FSItemGridView: View {
                 .lineLimit(2)
                 .multilineTextAlignment(.center)
                 .frame(width: 80, height: 28, alignment: .top)
-                .opacity(item.isHidden ? 0.5 : 1.0)
+                .opacity(item.isHidden || isCut ? 0.5 : 1.0)
         }
         .padding(6)
         .background(

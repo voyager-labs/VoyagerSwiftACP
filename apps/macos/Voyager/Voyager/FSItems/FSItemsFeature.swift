@@ -76,6 +76,7 @@ struct FSItemsFeature {
         case setDefaultAppWithOtherForSelectedItem
         case navigateFolder(id: String)
         case copySelectedItems
+        case cutSelectedItems
         case pasteItems(destinationPath: String)
         case operations(FSItemsOperationsFeature.Action)
     }
@@ -91,6 +92,11 @@ struct FSItemsFeature {
                 if case .createFolder = kind, case .success = result {
                     return .send(.loadItems(path: filePath))
                 } else if case .pasteFile = kind, case .success = result {
+                    // Cut 후 Paste 성공 시 클립보드 초기화
+                    if state.clipboardOperation == .cut {
+                        state.clipboardItems = []
+                        state.clipboardOperation = .copy
+                    }
                     return .send(.loadItems(path: filePath))
                 }
                 return .none
@@ -414,6 +420,16 @@ struct FSItemsFeature {
                 let selectedItems = state.items.filter { state.selectedIds.contains($0.id) }
                 state.clipboardItems = selectedItems.map { $0.fullPath }
                 state.clipboardOperation = .copy
+                return .send(.operations(.copySelectedItems(files: selectedItems)))
+
+            case .cutSelectedItems:
+                guard !state.selectedIds.isEmpty else {
+                    return .none
+                }
+
+                let selectedItems = state.items.filter { state.selectedIds.contains($0.id) }
+                state.clipboardItems = selectedItems.map { $0.fullPath }
+                state.clipboardOperation = .cut
                 return .send(.operations(.copySelectedItems(files: selectedItems)))
 
             case let .pasteItems(destinationPath):
