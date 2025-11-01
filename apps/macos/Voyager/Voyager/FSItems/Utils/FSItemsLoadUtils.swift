@@ -144,6 +144,9 @@ enum FSItemsLoadUtils {
         }
 
         let count = contents.count
+        if count == 0 {
+            return "No items"
+        }
         return "\(count) item\(count == 1 ? "" : "s")"
     }
 

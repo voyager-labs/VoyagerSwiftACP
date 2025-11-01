@@ -36,19 +36,32 @@ struct FSItemGridView: View {
 
             VStack(spacing: 0) {
                 VStack(spacing: 0) {
-                    Text(item.name)
-                        .font(.system(size: 12))
-                        .lineLimit(2)
-                        .multilineTextAlignment(.center)
-                        .opacity(item.isHidden || isCut ? 0.5 : 1.0)
-                        .padding(.horizontal, 4)
-                        .padding(.vertical, 2)
-                        .background(
-                            RoundedRectangle(cornerRadius: 4)
-                                .fill(isSelected ? Color.accentColor : Color.clear)
-                        )
-                        .foregroundColor(isSelected ? .white : .primary)
-                        .fixedSize(horizontal: false, vertical: true)
+                    HStack(alignment: .top, spacing: 4) {
+                        if let tags = item.tags, !tags.isEmpty {
+                            HStack(spacing: 4) {
+                                ForEach(tags.prefix(3), id: \.self) { tag in
+                                    Circle()
+                                        .fill(FSItemTagUtils.getTagColor(tag) ?? Color.gray)
+                                        .frame(width: 8, height: 8)
+                                }
+                            }
+                            .padding(.top, 2)
+                        }
+
+                        Text(item.name)
+                            .font(.system(size: 12))
+                            .lineLimit(2)
+                            .multilineTextAlignment(.center)
+                            .opacity(item.isHidden || isCut ? 0.5 : 1.0)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+                    .padding(.horizontal, 4)
+                    .padding(.vertical, 2)
+                    .background(
+                        RoundedRectangle(cornerRadius: 4)
+                            .fill(isSelected ? Color(nsColor: .controlAccentColor) : Color.clear)
+                    )
+                    .foregroundColor(isSelected ? .white : .primary)
 
                     if let additionalInfo = item.additionalInfo {
                         Text(additionalInfo)
@@ -59,7 +72,7 @@ struct FSItemGridView: View {
                 }
                 .frame(minHeight: 50, alignment: .top)
             }
-            .frame(width: 130)
+            .frame(width: 120)
             .padding(.horizontal, 4)
             .contentShape(Rectangle())
             .simultaneousGesture(
