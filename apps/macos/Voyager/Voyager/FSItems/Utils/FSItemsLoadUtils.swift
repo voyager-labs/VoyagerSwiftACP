@@ -52,6 +52,8 @@ enum FSItemsLoadUtils {
         let metadata = getItemMetadata(from: itemURL, isDirectory: isDirectory.boolValue)
         let lastOpenedDate = metadata.lastUsedDate
 
+        let additionalInfo = calculateAdditionalInfo(url: itemURL, isDirectory: isDirectory.boolValue)
+
         return FSItem(
             name: name,
             fullPath: itemURL.path,
@@ -65,7 +67,8 @@ enum FSItemsLoadUtils {
             fileExtension: itemURL.pathExtension,
             kind: metadata.kind,
             creatorApplication: metadata.creatorApplication,
-            tags: metadata.tags
+            tags: metadata.tags,
+            additionalInfo: additionalInfo
         )
     }
 
@@ -111,5 +114,64 @@ enum FSItemsLoadUtils {
         }
 
         return ItemMetadata(kind: kind, creatorApplication: creatorApplication, tags: tags, lastUsedDate: lastUsedDate)
+    }
+
+    private nonisolated static func calculateAdditionalInfo(url: URL, isDirectory: Bool) -> String? {
+        if isDirectory {
+            return getFolderItemCount(url)
+        }
+
+        let ext = url.pathExtension.lowercased()
+
+        if ["jpg", "jpeg", "png", "heic", "gif", "webp", "bmp", "tiff"].contains(ext) {
+            return getImageResolution(url)
+        }
+
+        if ["zip", "tar", "gz", "bz2", "xz", "rar", "7z", "dmg", "pkg"].contains(ext) {
+            return getFormattedFileSize(url)
+        }
+
+        return nil
+    }
+
+    private nonisolated static func getFolderItemCount(_ url: URL) -> String? {
+        guard let contents = try? FileManager.default.contentsOfDirectory(
+            at: url,
+            includingPropertiesForKeys: nil,
+            options: [.skipsHiddenFiles]
+        ) else {
+            return nil
+        }
+
+        let count = contents.count
+        return "\(count) item\(count == 1 ? "" : "s")"
+    }
+
+    private nonisolated static func getImageResolution(_ url: URL) -> String? {
+        guard let imageSource = CGImageSourceCreateWithURL(url as CFURL, nil),
+              let properties = CGImageSourceCopyPropertiesAtIndex(imageSource, 0, nil) as? [CFString: Any],
+              let width = properties[kCGImagePropertyPixelWidth] as? Int,
+              let height = properties[kCGImagePropertyPixelHeight] as? Int
+        else {
+            return nil
+        }
+
+        return "\(width) × \(height)"
+    }
+
+    private nonisolated static func getFormattedFileSize(_ url: URL) -> String? {
+        guard let resourceValues = try? url.resourceValues(forKeys: [.fileSizeKey]),
+              let fileSize = resourceValues.fileSize
+        else {
+            return nil
+        }
+
+        let formatter = ByteCountFormatter()
+        formatter.allowedUnits = [.useKB, .useMB, .useGB]
+        formatter.countStyle = .file
+        formatter.includesUnit = true
+        formatter.isAdaptive = true
+
+        return formatter.string(fromByteCount: Int64(fileSize))
     }
 }
