@@ -71,6 +71,9 @@ struct FileManagerView: View {
                     HStack {
                         PathBreadcrumbView(
                             pathComponents: store.pathComponents,
+                            selectedItem: store.fsItems.selectedIds.count == 1
+                                ? store.fsItems.items.first(where: { $0.id == store.fsItems.selectedIds.first })
+                                : nil,
                             onNavigate: { path in
                                 store.send(.navigateTo(path))
                             }

@@ -2,6 +2,7 @@ import SwiftUI
 
 struct PathBreadcrumbView: View {
     let pathComponents: [(name: String, fullPath: String)]
+    let selectedItem: FSItem?
     let onNavigate: (String) -> Void
 
     var body: some View {
@@ -16,12 +17,13 @@ struct PathBreadcrumbView: View {
                         onNavigate(item.fullPath)
                     } label: {
                         HStack(spacing: 4) {
-                            Image(systemName: index == 0 ? "externaldrive.fill" : "folder.fill")
-                                .font(.system(size: 12))
-                                .foregroundColor(index == 0 ? .secondary : .blue)
+                            Image(nsImage: NSWorkspace.shared.icon(forFile: item.fullPath))
+                                .resizable()
+                                .scaledToFit()
+                                .frame(width: 14, height: 14)
 
                             Text(item.name)
-                                .font(.system(size: 13))
+                                .font(.system(size: 12))
                                 .foregroundColor(.primary)
                         }
                     }
@@ -47,6 +49,23 @@ struct PathBreadcrumbView: View {
                         Image(systemName: "chevron.right")
                             .font(.system(size: 10))
                             .foregroundColor(.secondary)
+                    }
+                }
+
+                if let selectedItem = selectedItem, !pathComponents.isEmpty {
+                    Image(systemName: "chevron.right")
+                        .font(.system(size: 10))
+                        .foregroundColor(.secondary)
+
+                    HStack(spacing: 4) {
+                        Image(nsImage: FSItemsIconUtils.icon(for: selectedItem))
+                            .resizable()
+                            .scaledToFit()
+                            .frame(width: 14, height: 14)
+
+                        Text(selectedItem.name)
+                            .font(.system(size: 12))
+                            .foregroundColor(.primary)
                     }
                 }
             }
