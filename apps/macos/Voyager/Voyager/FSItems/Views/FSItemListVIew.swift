@@ -35,6 +35,13 @@ struct FSItemListView: View {
         )
     }
 
+    private func styledText(_ text: String, fontSize: CGFloat, isPrimary: Bool = true) -> some View {
+        Text(text)
+            .font(.system(size: fontSize))
+            .foregroundColor(isSelected ? .white : (isPrimary ? .primary : .secondary))
+            .opacity(item.isHidden || isCut ? 0.5 : 1.0)
+    }
+
     var body: some View {
         HStack(spacing: 0) {
             HStack(spacing: 8) {
@@ -42,37 +49,41 @@ struct FSItemListView: View {
                     .opacity(item.isHidden || isCut ? 0.5 : 1.0)
                     .frame(width: 20, height: 20)
 
-                Text(item.name)
-                    .font(.system(size: 13))
-                    .opacity(item.isHidden || isCut ? 0.5 : 1.0)
+                styledText(item.name, fontSize: 13)
                     .lineLimit(1)
+
+                Spacer(minLength: 0)
+
+                if let tags = item.tags, !tags.isEmpty {
+                    HStack(spacing: 4) {
+                        ForEach(tags.prefix(3), id: \.self) { tag in
+                            Circle()
+                                .fill(FSItemTagUtils.getTagColor(tag) ?? Color.gray)
+                                .frame(width: 8, height: 8)
+                        }
+                    }
+                }
             }
             .frame(width: columnWidths.name, alignment: .leading)
-            .padding(.vertical, 6)
             .padding(.leading, 8)
 
-            Text(dateText(item.modifiedDate))
-                .font(.system(size: 12))
-                .opacity(item.isHidden || isCut ? 0.5 : 1.0)
+            styledText(dateText(item.modifiedDate), fontSize: 12, isPrimary: false)
                 .frame(width: columnWidths.date, alignment: .leading)
-                .padding(.vertical, 6)
                 .padding(.leading, 8)
 
-            Text(sizeText(item))
-                .font(.system(size: 12))
-                .opacity(item.isHidden || isCut ? 0.5 : 1.0)
+            styledText(sizeText(item), fontSize: 12, isPrimary: false)
                 .frame(width: columnWidths.size, alignment: .trailing)
-                .padding(.vertical, 6)
-                .padding(.trailing, 8)
+                .padding(.leading, 8)
 
-            Text(kindText(item))
-                .font(.system(size: 12))
-                .opacity(item.isHidden || isCut ? 0.5 : 1.0)
+            styledText(kindText(item), fontSize: 12, isPrimary: false)
                 .frame(width: columnWidths.kind, alignment: .leading)
-                .padding(.vertical, 6)
                 .padding(.leading, 8)
         }
-        .background(isSelected ? Color.accentColor.opacity(0.2) : Color.clear)
+        .padding(.vertical, 1)
+        .background(
+            RoundedRectangle(cornerRadius: 6)
+                .fill(isSelected ? Color(nsColor: .controlAccentColor) : Color.clear)
+        )
         .simultaneousGesture(
             TapGesture()
                 .onEnded { _ in

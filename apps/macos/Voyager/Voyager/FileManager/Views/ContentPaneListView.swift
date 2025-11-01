@@ -91,10 +91,11 @@ struct ContentPaneListView: View {
 
                     ScrollViewReader { proxy in
                         ScrollView {
-                            LazyVStack(alignment: .leading, spacing: 4) {
+                            LazyVStack(alignment: .leading, spacing: 0) {
                                 if fsStore.groupKey == .none {
-                                    ForEach(fsStore.items) { item in
+                                    ForEach(Array(fsStore.items.enumerated()), id: \.element.id) { index, item in
                                         itemRow(item: item, fsStore: fsStore, geometry: geometry)
+                                            .background(index % 2 == 0 ? Color.clear : Color.primary.opacity(0.05))
                                             .id(item.id)
                                             .task {
                                                 if !item.isDirectory {
@@ -137,8 +138,10 @@ struct ContentPaneListView: View {
                                             .padding(.bottom, 4)
                                         }
 
-                                        ForEach(group.items) { item in
+                                        ForEach(Array(group.items.enumerated()), id: \.element.id) { itemIndex, item in
                                             itemRow(item: item, fsStore: fsStore, geometry: geometry)
+                                                .background(itemIndex % 2 == 0 ? Color.clear : Color.primary
+                                                    .opacity(0.05))
                                                 .id(item.id)
                                                 .task {
                                                     if !item.isDirectory {
