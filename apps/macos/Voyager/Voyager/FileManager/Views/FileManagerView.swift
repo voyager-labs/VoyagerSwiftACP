@@ -84,7 +84,7 @@ struct FileManagerView: View {
                 }
             }
             .navigationSplitViewStyle(.balanced)
-            .frame(minWidth: 800, minHeight: 600)
+            .frame(minWidth: 600, minHeight: 350)
             .navigationTitle(store.windowTitle)
         }
         .toolbar {
