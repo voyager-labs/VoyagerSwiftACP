@@ -38,9 +38,7 @@ struct FSItemListView: View {
     var body: some View {
         HStack(spacing: 0) {
             HStack(spacing: 8) {
-                Image(nsImage: FSItemsIconUtils.icon(for: item))
-                    .resizable()
-                    .scaledToFit()
+                ThumbnailView(item: item, displaySize: 20)
                     .opacity(item.isHidden || isCut ? 0.5 : 1.0)
                     .frame(width: 20, height: 20)
 

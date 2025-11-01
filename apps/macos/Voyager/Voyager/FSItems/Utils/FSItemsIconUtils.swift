@@ -3,8 +3,8 @@ import Foundation
 import UniformTypeIdentifiers
 
 enum FSItemsIconUtils {
-    private static var iconCache: [String: NSImage] = [:]
-    private static let cacheLock = NSLock()
+    private static let iconCache = NSCache<NSString, NSImage>()
+    private static let thumbnailCache = NSCache<NSString, NSImage>()
 
     static func icon(for item: FSItem) -> NSImage {
         let cacheKey = item.isDirectory
@@ -13,10 +13,7 @@ enum FSItemsIconUtils {
             .map { "type:\($0.identifier)" }
             ?? "generic:file"
 
-        cacheLock.lock()
-        defer { cacheLock.unlock() }
-
-        if let cached = iconCache[cacheKey] {
+        if let cached = iconCache.object(forKey: cacheKey as NSString) {
             return cached
         }
 
@@ -29,20 +26,20 @@ enum FSItemsIconUtils {
             icon = NSWorkspace.shared.icon(for: .data)
         }
 
-        if iconCache.count > 1000 {
-            let keysToRemove = Array(iconCache.keys.prefix(500))
-            for key in keysToRemove {
-                iconCache.removeValue(forKey: key)
-            }
-        }
-        iconCache[cacheKey] = icon
-
+        iconCache.setObject(icon, forKey: cacheKey as NSString)
         return icon
     }
 
     static func clearCache() {
-        cacheLock.lock()
-        iconCache.removeAll()
-        cacheLock.unlock()
+        iconCache.removeAllObjects()
+        thumbnailCache.removeAllObjects()
+    }
+
+    static func getThumbnail(for path: String) -> NSImage? {
+        thumbnailCache.object(forKey: path as NSString)
+    }
+
+    static func saveThumbnail(_ image: NSImage, for path: String) {
+        thumbnailCache.setObject(image, forKey: path as NSString)
     }
 }

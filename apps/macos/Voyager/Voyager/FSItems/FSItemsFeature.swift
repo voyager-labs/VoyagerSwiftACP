@@ -135,7 +135,20 @@ struct FSItemsFeature {
                 state.items = sorted
                 state.groupedItems = FSItemsGrouping.groupItems(sorted, by: state.groupKey)
                 state.isLoading = false
-                return .none
+
+                return .run { _ in
+                    Task.detached(priority: .background) {
+                        let scale = await MainActor.run { NSScreen.main?.backingScaleFactor ?? 2.0 }
+                        let baseSize: CGFloat = 64
+                        let size = CGSize(width: baseSize * scale, height: baseSize * scale)
+
+                        await ThumbnailGeneratorUtils.prefetchThumbnails(
+                            for: sorted,
+                            size: size,
+                            scale: scale
+                        )
+                    }
+                }
 
             case let .selectItem(id, isCommandPressed, isShiftPressed):
                 state.shouldScrollToSelection = false
