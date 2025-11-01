@@ -45,7 +45,7 @@ struct ColumnHeaderView: View {
 
                         Text("Name")
                             .font(.system(size: 12, weight: .medium))
-                            .foregroundColor(.primary)
+                            .foregroundColor(sortKey == .name ? .primary : .secondary)
 
                         if sortKey == .name {
                             Image(systemName: sortOrder == .ascending ? "chevron.up" : "chevron.down")
@@ -75,7 +75,7 @@ struct ColumnHeaderView: View {
                     HStack(spacing: 4) {
                         Text("Date Modified")
                             .font(.system(size: 12, weight: .medium))
-                            .foregroundColor(.primary)
+                            .foregroundColor(sortKey == .dateModified ? .primary : .secondary)
 
                         if sortKey == .dateModified {
                             Image(systemName: sortOrder == .ascending ? "chevron.up" : "chevron.down")
@@ -105,7 +105,7 @@ struct ColumnHeaderView: View {
                     HStack(spacing: 4) {
                         Text("Size")
                             .font(.system(size: 12, weight: .medium))
-                            .foregroundColor(.primary)
+                            .foregroundColor(sortKey == .size ? .primary : .secondary)
 
                         if sortKey == .size {
                             Image(systemName: sortOrder == .ascending ? "chevron.up" : "chevron.down")
@@ -113,9 +113,9 @@ struct ColumnHeaderView: View {
                                 .foregroundColor(.accentColor)
                         }
                     }
-                    .frame(width: columnWidths.size, alignment: .trailing)
+                    .frame(width: columnWidths.size, alignment: .leading)
                     .padding(.vertical, 6)
-                    .padding(.trailing, 8)
+                    .padding(.leading, 8)
                 }
             )
             .buttonStyle(PlainButtonStyle())
@@ -135,7 +135,7 @@ struct ColumnHeaderView: View {
                     HStack(spacing: 4) {
                         Text("Kind")
                             .font(.system(size: 12, weight: .medium))
-                            .foregroundColor(.primary)
+                            .foregroundColor(sortKey == .kind ? .primary : .secondary)
 
                         if sortKey == .kind {
                             Image(systemName: sortOrder == .ascending ? "chevron.up" : "chevron.down")
