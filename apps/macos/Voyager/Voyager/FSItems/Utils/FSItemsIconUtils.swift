@@ -8,10 +8,10 @@ enum FSItemsIconUtils {
 
     static func icon(for item: FSItem) -> NSImage {
         let cacheKey = item.isDirectory
-            ? "dir:\(item.fullPath)"
+            ? "generic:folder"
             : UTType(filenameExtension: item.fileExtension)
             .map { "type:\($0.identifier)" }
-            ?? "file:\(item.fullPath)"
+            ?? "generic:file"
 
         cacheLock.lock()
         defer { cacheLock.unlock() }
@@ -20,11 +20,14 @@ enum FSItemsIconUtils {
             return cached
         }
 
-        let icon = item.isDirectory
-            ? NSWorkspace.shared.icon(forFile: item.fullPath)
-            : (UTType(filenameExtension: item.fileExtension)
-                .map { NSWorkspace.shared.icon(for: $0) }
-                ?? NSWorkspace.shared.icon(forFile: item.fullPath))
+        let icon: NSImage
+        if item.isDirectory {
+            icon = NSWorkspace.shared.icon(for: .folder)
+        } else if let utType = UTType(filenameExtension: item.fileExtension) {
+            icon = NSWorkspace.shared.icon(for: utType)
+        } else {
+            icon = NSWorkspace.shared.icon(for: .data)
+        }
 
         if iconCache.count > 1000 {
             let keysToRemove = Array(iconCache.keys.prefix(500))
