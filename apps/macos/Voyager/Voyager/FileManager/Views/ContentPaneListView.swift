@@ -1,5 +1,6 @@
 import ComposableArchitecture
 import SwiftUI
+import UniformTypeIdentifiers
 
 struct ContentPaneListView: View {
     let store: StoreOf<FileManagerFeature>
@@ -15,6 +16,7 @@ struct ContentPaneListView: View {
         action()
     }
 
+    // swiftlint:disable function_body_length
     @ViewBuilder
     private func itemRow(
         item: FSItem,
@@ -63,9 +65,21 @@ struct ContentPaneListView: View {
                 sendWithSelection(item, fsStore: fsStore, action: {
                     fsStore.send(.setDefaultAppWithOtherForSelectedItem)
                 })
+            },
+            onStartDrag: {
+                let dragPaths = fsStore.selectedIds.isEmpty
+                    ? [item.fullPath]
+                    : fsStore.items.filter { fsStore.selectedIds.contains($0.id) }
+                    .map { $0.fullPath }
+                fsStore.send(.startDrag(paths: dragPaths))
+            },
+            onDrop: { folderPath in
+                fsStore.send(.dropToFolder(destinationPath: folderPath))
             }
         )
     }
+
+    // swiftlint:enable function_body_length
 
     var body: some View {
         let fsStore = store.scope(state: \.fsItems, action: \.fsItems)
@@ -170,6 +184,10 @@ struct ContentPaneListView: View {
                                 fsStore.send(.resetScrollFlag)
                             }
                         }
+                    }
+                    .onDrop(of: [UTType.fileURL.identifier], isTargeted: nil) { _, _ in
+                        fsStore.send(.dropToFolder(destinationPath: store.currentPath))
+                        return true
                     }
                 }
             }

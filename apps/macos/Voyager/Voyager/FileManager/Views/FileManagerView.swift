@@ -180,6 +180,7 @@ struct FileManagerView: View {
             }
 
             store.send(.loadLocations)
+            store.send(.fsItems(.onAppear))
         }
     }
 }

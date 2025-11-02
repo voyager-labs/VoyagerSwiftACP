@@ -1,5 +1,6 @@
 import AppKit
 import SwiftUI
+import UniformTypeIdentifiers
 
 struct FSItemGridView: View {
     let item: FSItem
@@ -7,6 +8,10 @@ struct FSItemGridView: View {
     let isCut: Bool
     let onSelect: () -> Void
     let onOpen: () -> Void
+    let onStartDrag: () -> Void
+    let onDrop: (String) -> Void
+
+    @State private var isDropTarget = false
 
     var body: some View {
         VStack(spacing: 1) {
@@ -89,6 +94,43 @@ struct FSItemGridView: View {
                         }
                     }
             )
+        }
+        .onDrag {
+            onStartDrag()
+
+            let url = URL(fileURLWithPath: item.fullPath)
+            let provider = NSItemProvider()
+
+            provider
+                .registerFileRepresentation(forTypeIdentifier: UTType.fileURL.identifier,
+                                            visibility: .all)
+                { completion in
+                    completion(url, true, nil)
+                    return nil
+                }
+
+            return provider
+        }
+        .if(item.isDirectory) { view in
+            view.onDrop(of: [UTType.fileURL.identifier], isTargeted: $isDropTarget) { _, _ in
+                onDrop(item.fullPath)
+                return true
+            }
+            .overlay(
+                RoundedRectangle(cornerRadius: 8)
+                    .stroke(Color.blue, lineWidth: isDropTarget ? 2 : 0)
+            )
+        }
+    }
+}
+
+extension View {
+    @ViewBuilder
+    func `if`<Content: View>(_ condition: Bool, transform: (Self) -> Content) -> some View {
+        if condition {
+            transform(self)
+        } else {
+            self
         }
     }
 }

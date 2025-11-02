@@ -29,6 +29,10 @@ public struct FileSystemClient: Sendable {
     public var moveFile: @Sendable (URL, URL) async throws -> Void
     public var loadItems: @Sendable (URL, Bool) async throws -> [FSItem]
     public var fileExists: @Sendable (String) -> Bool
+    public var saveDragPaths: @Sendable ([String]) -> Void
+    public var loadDragPaths: @Sendable () -> [String]
+    public var postFileSystemChanged: @Sendable ([String]) -> Void
+    public var observeFileSystemChanged: @Sendable () -> AsyncStream<[String]>
 
     public nonisolated init(
         open: @escaping @Sendable (URL, OpenKind) async throws -> Void,
@@ -40,7 +44,11 @@ public struct FileSystemClient: Sendable {
         pasteFile: @escaping @Sendable (URL, URL) async throws -> Void,
         moveFile: @escaping @Sendable (URL, URL) async throws -> Void,
         loadItems: @escaping @Sendable (URL, Bool) async throws -> [FSItem],
-        fileExists: @escaping @Sendable (String) -> Bool
+        fileExists: @escaping @Sendable (String) -> Bool,
+        saveDragPaths: @escaping @Sendable ([String]) -> Void,
+        loadDragPaths: @escaping @Sendable () -> [String],
+        postFileSystemChanged: @escaping @Sendable ([String]) -> Void,
+        observeFileSystemChanged: @escaping @Sendable () -> AsyncStream<[String]>
     ) {
         self.open = open
         self.setDefaultApp = setDefaultApp
@@ -52,6 +60,10 @@ public struct FileSystemClient: Sendable {
         self.moveFile = moveFile
         self.loadItems = loadItems
         self.fileExists = fileExists
+        self.saveDragPaths = saveDragPaths
+        self.loadDragPaths = loadDragPaths
+        self.postFileSystemChanged = postFileSystemChanged
+        self.observeFileSystemChanged = observeFileSystemChanged
     }
 }
 
@@ -212,6 +224,56 @@ extension FileSystemClient: DependencyKey {
             },
             fileExists: { path in
                 FileManager.default.fileExists(atPath: path)
+            },
+            saveDragPaths: { paths in
+                // 커스텀 Pasteboard 사용 (drag는 시스템 전용)
+                let pasteboard = NSPasteboard(name: NSPasteboard.Name("VoyagerDragDrop"))
+                pasteboard.clearContents()
+                let pathString = paths.joined(separator: "\n")
+                pasteboard.setString(pathString, forType: .string)
+            },
+            loadDragPaths: {
+                let pasteboard = NSPasteboard(name: NSPasteboard.Name("VoyagerDragDrop"))
+                guard let pathString = pasteboard.string(forType: .string),
+                      !pathString.isEmpty
+                else {
+                    return []
+                }
+                return pathString.split(separator: "\n").map(String.init)
+            },
+            postFileSystemChanged: { paths in
+                let notificationName = NSNotification.Name("VoyagerFileSystemChanged")
+                NotificationCenter.default.post(
+                    name: notificationName,
+                    object: nil,
+                    userInfo: ["paths": paths]
+                )
+            },
+            observeFileSystemChanged: {
+                AsyncStream { continuation in
+                    final class ObserverBox: @unchecked Sendable {
+                        var observer: (any NSObjectProtocol)?
+                        let center = NotificationCenter.default
+                    }
+
+                    let notificationName = NSNotification.Name("VoyagerFileSystemChanged")
+                    let box = ObserverBox()
+                    box.observer = box.center.addObserver(
+                        forName: notificationName,
+                        object: nil,
+                        queue: .main
+                    ) { notification in
+                        if let paths = notification.userInfo?["paths"] as? [String] {
+                            continuation.yield(paths)
+                        }
+                    }
+
+                    continuation.onTermination = { @Sendable _ in
+                        if let obs = box.observer {
+                            box.center.removeObserver(obs)
+                        }
+                    }
+                }
             }
         )
     }
@@ -230,7 +292,11 @@ extension FileSystemClient: DependencyKey {
             pasteFile: { _, _ in unimplemented() },
             moveFile: { _, _ in unimplemented() },
             loadItems: { _, _ in [] },
-            fileExists: { _ in false }
+            fileExists: { _ in false },
+            saveDragPaths: { _ in },
+            loadDragPaths: { [] },
+            postFileSystemChanged: { _ in },
+            observeFileSystemChanged: { AsyncStream { _ in } }
         )
     }
 
@@ -257,7 +323,11 @@ extension FileSystemClient: DependencyKey {
             pasteFile: { _, _ in },
             moveFile: { _, _ in },
             loadItems: { _, _ in [] },
-            fileExists: { _ in false }
+            fileExists: { _ in false },
+            saveDragPaths: { _ in },
+            loadDragPaths: { [] },
+            postFileSystemChanged: { _ in },
+            observeFileSystemChanged: { AsyncStream { _ in } }
         )
     }
 }

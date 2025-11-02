@@ -1,3 +1,4 @@
+// swiftlint:disable file_length
 import AppKit
 import ComposableArchitecture
 import Foundation
@@ -34,6 +35,8 @@ struct FSItemsFeature {
         var clipboardItems: [String] = []
         var clipboardOperation: ClipboardOperation = .copy
 
+        var isDragDropOperation: Bool = false
+
         var displayOrderItems: [FSItem] {
             if groupKey == .none {
                 return items
@@ -53,6 +56,8 @@ struct FSItemsFeature {
     }
 
     enum Action: Sendable {
+        case onAppear
+        case reloadCurrentFolder
         case loadItems(path: String)
         case loadRecentItems
         case itemsLoaded([FSItem])
@@ -79,6 +84,9 @@ struct FSItemsFeature {
         case cutSelectedItems
         case pasteItems(destinationPath: String)
         case duplicateSelectedItems
+        case startDrag(paths: [String])
+        case dropToFolder(destinationPath: String)
+        case dropItems(sourcePaths: [String], destinationPath: String)
         case operations(FSItemsOperationsFeature.Action)
     }
 
@@ -92,16 +100,52 @@ struct FSItemsFeature {
 
         Reduce { state, action in
             switch action {
+            case .onAppear:
+                return .run { send in
+                    for await _ in await fileSystemClient.observeFileSystemChanged() {
+                        await send(.reloadCurrentFolder)
+                    }
+                }
+                .cancellable(id: "FileSystemObserver", cancelInFlight: true)
+
+            case .reloadCurrentFolder:
+                let currentPath = state.items.first.map {
+                    URL(fileURLWithPath: $0.fullPath).deletingLastPathComponent().path
+                } ?? "/"
+                return .send(.loadItems(path: currentPath))
+
             case let .operations(.operationFinished(filePath, kind, result)):
                 if case .createFolder = kind, case .success = result {
                     return .send(.loadItems(path: filePath))
-                } else if case .pasteFile = kind, case .success = result {
-                    // Cut 후 Paste 성공 시 클립보드 초기화
-                    if state.clipboardOperation == .cut {
-                        state.clipboardItems = []
-                        state.clipboardOperation = .copy
+                } else if case .pasteFile = kind {
+                    if state.isDragDropOperation {
+                        state.isDragDropOperation = false
+
+                        if case .success = result {
+                            if state.clipboardOperation == .cut {
+                                state.clipboardItems = []
+                                state.clipboardOperation = .copy
+                            }
+
+                            let movedPaths = [filePath]
+                            return .run { _ in
+                                await fileSystemClient.postFileSystemChanged(movedPaths)
+                            }
+                        } else {
+                            let currentPath = state.items.first.map {
+                                URL(fileURLWithPath: $0.fullPath).deletingLastPathComponent().path
+                            } ?? "/"
+                            return .send(.loadItems(path: currentPath))
+                        }
                     }
-                    return .send(.loadItems(path: filePath))
+
+                    if case .success = result {
+                        if state.clipboardOperation == .cut {
+                            state.clipboardItems = []
+                            state.clipboardOperation = .copy
+                        }
+                        return .send(.loadItems(path: filePath))
+                    }
                 }
                 return .none
 
@@ -477,6 +521,46 @@ struct FSItemsFeature {
                     sourcePaths: selectedItems.map { $0.fullPath },
                     destinationPath: parentPath,
                     operation: .copy
+                )))
+
+            case let .startDrag(paths):
+                fileSystemClient.saveDragPaths(paths)
+                return .none
+
+            case let .dropToFolder(destinationPath):
+                let sourcePaths = fileSystemClient.loadDragPaths()
+                guard !sourcePaths.isEmpty else {
+                    return .none
+                }
+                return .send(.dropItems(sourcePaths: sourcePaths, destinationPath: destinationPath))
+
+            case let .dropItems(sourcePaths, destinationPath):
+                guard !sourcePaths.isEmpty else {
+                    return .none
+                }
+
+                // 같은 폴더로 이동은 무시
+                let sourceParent = URL(fileURLWithPath: sourcePaths[0])
+                    .deletingLastPathComponent().path
+                if sourceParent == destinationPath {
+                    return .none
+                }
+
+                // 자기 자신의 하위 폴더로 이동 방지
+                for sourcePath in sourcePaths {
+                    if destinationPath.hasPrefix(sourcePath + "/") || destinationPath == sourcePath {
+                        return .none
+                    }
+                }
+
+                // Drag & Drop 플래그 설정
+                state.isDragDropOperation = true
+
+                // Move 작업 (Cut & Paste)
+                return .send(.operations(.pasteItems(
+                    sourcePaths: sourcePaths,
+                    destinationPath: destinationPath,
+                    operation: .cut
                 )))
             }
         }

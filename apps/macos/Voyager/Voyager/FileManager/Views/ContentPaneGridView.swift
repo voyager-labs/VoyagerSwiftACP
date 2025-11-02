@@ -1,5 +1,6 @@
 import ComposableArchitecture
 import SwiftUI
+import UniformTypeIdentifiers
 
 struct ContentPaneGridView: View {
     let store: StoreOf<FileManagerFeature>
@@ -52,6 +53,16 @@ struct ContentPaneGridView: View {
                                                     isShiftPressed: false
                                                 ))
                                                 store.send(.openSelectedItem)
+                                            },
+                                            onStartDrag: {
+                                                let dragPaths = fsStore.selectedIds.isEmpty
+                                                    ? [item.fullPath]
+                                                    : fsStore.items.filter { fsStore.selectedIds.contains($0.id) }
+                                                    .map { $0.fullPath }
+                                                fsStore.send(.startDrag(paths: dragPaths))
+                                            },
+                                            onDrop: { folderPath in
+                                                fsStore.send(.dropToFolder(destinationPath: folderPath))
                                             }
                                         )
                                         .id(item.id)
@@ -105,6 +116,16 @@ struct ContentPaneGridView: View {
                                                         isShiftPressed: false
                                                     ))
                                                     store.send(.openSelectedItem)
+                                                },
+                                                onStartDrag: {
+                                                    let dragPaths = fsStore.selectedIds.isEmpty
+                                                        ? [item.fullPath]
+                                                        : fsStore.items.filter { fsStore.selectedIds.contains($0.id) }
+                                                        .map { $0.fullPath }
+                                                    fsStore.send(.startDrag(paths: dragPaths))
+                                                },
+                                                onDrop: { folderPath in
+                                                    fsStore.send(.dropToFolder(destinationPath: folderPath))
                                                 }
                                             )
                                             .id(item.id)
@@ -123,6 +144,10 @@ struct ContentPaneGridView: View {
                         fsStore.send(.resetScrollFlag)
                     }
                 }
+            }
+            .onDrop(of: [UTType.fileURL.identifier], isTargeted: nil) { _, _ in
+                fsStore.send(.dropToFolder(destinationPath: store.currentPath))
+                return true
             }
         }
     }

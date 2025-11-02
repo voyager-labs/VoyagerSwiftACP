@@ -14,6 +14,10 @@ struct FSItemListView: View {
     let onOpenWithApp: (String?) -> Void
     let onSetDefaultApp: (String, UTType?) -> Void
     let onSetDefaultAppWithOther: () -> Void
+    let onStartDrag: () -> Void
+    let onDrop: (String) -> Void
+
+    @State private var isDropTarget = false
 
     private struct ColumnWidths {
         let name: CGFloat
@@ -96,6 +100,32 @@ struct FSItemListView: View {
                     onOpen()
                 }
         )
+        .onDrag {
+            onStartDrag()
+
+            let url = URL(fileURLWithPath: item.fullPath)
+            let provider = NSItemProvider()
+
+            provider
+                .registerFileRepresentation(forTypeIdentifier: UTType.fileURL.identifier,
+                                            visibility: .all)
+                { completion in
+                    completion(url, true, nil)
+                    return nil
+                }
+
+            return provider
+        }
+        .if(item.isDirectory) { view in
+            view.onDrop(of: [UTType.fileURL.identifier], isTargeted: $isDropTarget) { _, _ in
+                onDrop(item.fullPath)
+                return true
+            }
+            .background(
+                RoundedRectangle(cornerRadius: 6)
+                    .stroke(Color.blue, lineWidth: isDropTarget ? 2 : 0)
+            )
+        }
         .contextMenu {
             Button("Open") {
                 onOpen()
