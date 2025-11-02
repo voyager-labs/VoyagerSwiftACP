@@ -31,7 +31,6 @@ struct AppMenuCommands: Commands {
             Button("Duplicate Tab") {
                 AppDelegate.shared?.duplicateCurrentTab()
             }
-            .keyboardShortcut("d", modifiers: .command)
 
             Divider()
 

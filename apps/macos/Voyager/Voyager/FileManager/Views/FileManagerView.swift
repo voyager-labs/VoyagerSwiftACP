@@ -63,6 +63,12 @@ struct FileManagerView: View {
                     store.send(.fsItems(.cutSelectedItems))
                 } else if event.characters == "v" {
                     store.send(.fsItems(.pasteItems(destinationPath: store.currentPath)))
+                } else if event.characters == "d" {
+                    if !store.fsItems.selectedIds.isEmpty {
+                        store.send(.duplicateSelectedItems)
+                    } else {
+                        AppDelegate.shared?.duplicateCurrentTab()
+                    }
                 } else if event.characters == "." && event.modifierFlags.contains(.shift) {
                     store.send(.toggleShowHiddenFiles)
                 } else if let number = Int(event.characters ?? ""), (1 ... 9).contains(number) {

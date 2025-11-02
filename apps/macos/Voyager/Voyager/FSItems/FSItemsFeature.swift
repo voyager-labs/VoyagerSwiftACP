@@ -78,6 +78,7 @@ struct FSItemsFeature {
         case copySelectedItems
         case cutSelectedItems
         case pasteItems(destinationPath: String)
+        case duplicateSelectedItems
         case operations(FSItemsOperationsFeature.Action)
     }
 
@@ -461,6 +462,21 @@ struct FSItemsFeature {
                     sourcePaths: state.clipboardItems,
                     destinationPath: destinationPath,
                     operation: state.clipboardOperation
+                )))
+
+            case .duplicateSelectedItems:
+                let selectedItems = state.items.filter { state.selectedIds.contains($0.id) }
+                guard !selectedItems.isEmpty else {
+                    return .none
+                }
+
+                let parentPath = URL(fileURLWithPath: selectedItems[0].fullPath)
+                    .deletingLastPathComponent().path
+
+                return .send(.operations(.pasteItems(
+                    sourcePaths: selectedItems.map { $0.fullPath },
+                    destinationPath: parentPath,
+                    operation: .copy
                 )))
             }
         }
