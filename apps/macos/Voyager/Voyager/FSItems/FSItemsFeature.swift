@@ -4,7 +4,7 @@ import ComposableArchitecture
 import Foundation
 import UniformTypeIdentifiers
 
-enum ClipboardOperation: Equatable, Sendable {
+public enum ClipboardOperation: Equatable, Sendable {
     case copy
     case cut
 }
@@ -115,36 +115,34 @@ struct FSItemsFeature {
                 return .send(.loadItems(path: currentPath))
 
             case let .operations(.operationFinished(filePath, kind, result)):
-                if case .createFolder = kind, case .success = result {
-                    return .send(.loadItems(path: filePath))
+                if case .success = result {
+                    if case .createFolder = kind {
+                        return .run { _ in
+                            await fileSystemClient.postFileSystemChanged([filePath])
+                        }
+                    } else if case .pasteFile = kind {
+                        if state.isDragDropOperation {
+                            state.isDragDropOperation = false
+                        }
+
+                        if state.clipboardOperation == .cut {
+                            state.clipboardItems = []
+                            state.clipboardOperation = .copy
+                            fileSystemClient.saveClipboardPaths([], .copy)
+                        }
+
+                        return .run { _ in
+                            await fileSystemClient.postFileSystemChanged([filePath])
+                        }
+                    }
                 } else if case .pasteFile = kind {
                     if state.isDragDropOperation {
                         state.isDragDropOperation = false
 
-                        if case .success = result {
-                            if state.clipboardOperation == .cut {
-                                state.clipboardItems = []
-                                state.clipboardOperation = .copy
-                            }
-
-                            let movedPaths = [filePath]
-                            return .run { _ in
-                                await fileSystemClient.postFileSystemChanged(movedPaths)
-                            }
-                        } else {
-                            let currentPath = state.items.first.map {
-                                URL(fileURLWithPath: $0.fullPath).deletingLastPathComponent().path
-                            } ?? "/"
-                            return .send(.loadItems(path: currentPath))
-                        }
-                    }
-
-                    if case .success = result {
-                        if state.clipboardOperation == .cut {
-                            state.clipboardItems = []
-                            state.clipboardOperation = .copy
-                        }
-                        return .send(.loadItems(path: filePath))
+                        let currentPath = state.items.first.map {
+                            URL(fileURLWithPath: $0.fullPath).deletingLastPathComponent().path
+                        } ?? "/"
+                        return .send(.loadItems(path: currentPath))
                     }
                 }
                 return .none
@@ -483,8 +481,12 @@ struct FSItemsFeature {
                 }
 
                 let selectedItems = state.items.filter { state.selectedIds.contains($0.id) }
-                state.clipboardItems = selectedItems.map { $0.fullPath }
+                let selectedPaths = selectedItems.map { $0.fullPath }
+
+                state.clipboardItems = selectedPaths
                 state.clipboardOperation = .copy
+                fileSystemClient.saveClipboardPaths(selectedPaths, .copy)
+
                 return .send(.operations(.copySelectedItems(files: selectedItems)))
 
             case .cutSelectedItems:
@@ -493,19 +495,27 @@ struct FSItemsFeature {
                 }
 
                 let selectedItems = state.items.filter { state.selectedIds.contains($0.id) }
-                state.clipboardItems = selectedItems.map { $0.fullPath }
+                let selectedPaths = selectedItems.map { $0.fullPath }
+
+                state.clipboardItems = selectedPaths
                 state.clipboardOperation = .cut
+                fileSystemClient.saveClipboardPaths(selectedPaths, .cut)
+
                 return .send(.operations(.copySelectedItems(files: selectedItems)))
 
             case let .pasteItems(destinationPath):
-                guard !state.clipboardItems.isEmpty else {
+                let (clipboardPaths, clipboardOp) = fileSystemClient.loadClipboardPaths()
+                guard !clipboardPaths.isEmpty else {
                     return .none
                 }
 
+                state.clipboardItems = clipboardPaths
+                state.clipboardOperation = clipboardOp
+
                 return .send(.operations(.pasteItems(
-                    sourcePaths: state.clipboardItems,
+                    sourcePaths: clipboardPaths,
                     destinationPath: destinationPath,
-                    operation: state.clipboardOperation
+                    operation: clipboardOp
                 )))
 
             case .duplicateSelectedItems:

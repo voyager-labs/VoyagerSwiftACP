@@ -31,6 +31,8 @@ public struct FileSystemClient: Sendable {
     public var fileExists: @Sendable (String) -> Bool
     public var saveDragPaths: @Sendable ([String]) -> Void
     public var loadDragPaths: @Sendable () -> [String]
+    public var saveClipboardPaths: @Sendable ([String], ClipboardOperation) -> Void
+    public var loadClipboardPaths: @Sendable () -> ([String], ClipboardOperation)
     public var postFileSystemChanged: @Sendable ([String]) -> Void
     public var observeFileSystemChanged: @Sendable () -> AsyncStream<[String]>
 
@@ -47,6 +49,8 @@ public struct FileSystemClient: Sendable {
         fileExists: @escaping @Sendable (String) -> Bool,
         saveDragPaths: @escaping @Sendable ([String]) -> Void,
         loadDragPaths: @escaping @Sendable () -> [String],
+        saveClipboardPaths: @escaping @Sendable ([String], ClipboardOperation) -> Void,
+        loadClipboardPaths: @escaping @Sendable () -> ([String], ClipboardOperation),
         postFileSystemChanged: @escaping @Sendable ([String]) -> Void,
         observeFileSystemChanged: @escaping @Sendable () -> AsyncStream<[String]>
     ) {
@@ -62,6 +66,8 @@ public struct FileSystemClient: Sendable {
         self.fileExists = fileExists
         self.saveDragPaths = saveDragPaths
         self.loadDragPaths = loadDragPaths
+        self.saveClipboardPaths = saveClipboardPaths
+        self.loadClipboardPaths = loadClipboardPaths
         self.postFileSystemChanged = postFileSystemChanged
         self.observeFileSystemChanged = observeFileSystemChanged
     }
@@ -241,6 +247,31 @@ extension FileSystemClient: DependencyKey {
                 }
                 return pathString.split(separator: "\n").map(String.init)
             },
+            saveClipboardPaths: { paths, operation in
+                let pasteboard = NSPasteboard(name: NSPasteboard.Name("VoyagerClipboard"))
+                pasteboard.clearContents()
+                let pathString = paths.joined(separator: "\n")
+                pasteboard.setString(pathString, forType: .string)
+
+                switch operation {
+                case .copy:
+                    pasteboard.setString("copy", forType: NSPasteboard.PasteboardType("VoyagerClipboardOperation"))
+                case .cut:
+                    pasteboard.setString("cut", forType: NSPasteboard.PasteboardType("VoyagerClipboardOperation"))
+                }
+            },
+            loadClipboardPaths: {
+                let pasteboard = NSPasteboard(name: NSPasteboard.Name("VoyagerClipboard"))
+                guard let pathString = pasteboard.string(forType: .string),
+                      !pathString.isEmpty
+                else {
+                    return ([], .copy)
+                }
+                let paths = pathString.split(separator: "\n").map(String.init)
+                let opString = pasteboard.string(forType: NSPasteboard.PasteboardType("VoyagerClipboardOperation"))
+                let operation: ClipboardOperation = opString == "cut" ? .cut : .copy
+                return (paths, operation)
+            },
             postFileSystemChanged: { paths in
                 let notificationName = NSNotification.Name("VoyagerFileSystemChanged")
                 NotificationCenter.default.post(
@@ -295,6 +326,8 @@ extension FileSystemClient: DependencyKey {
             fileExists: { _ in false },
             saveDragPaths: { _ in },
             loadDragPaths: { [] },
+            saveClipboardPaths: { _, _ in },
+            loadClipboardPaths: { ([], .copy) },
             postFileSystemChanged: { _ in },
             observeFileSystemChanged: { AsyncStream { _ in } }
         )
@@ -326,6 +359,8 @@ extension FileSystemClient: DependencyKey {
             fileExists: { _ in false },
             saveDragPaths: { _ in },
             loadDragPaths: { [] },
+            saveClipboardPaths: { _, _ in },
+            loadClipboardPaths: { ([], .copy) },
             postFileSystemChanged: { _ in },
             observeFileSystemChanged: { AsyncStream { _ in } }
         )
