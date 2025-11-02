@@ -3,6 +3,28 @@ import ComposableArchitecture
 import Foundation
 import SwiftUI
 
+struct BreadcrumbItem: Equatable {
+    let name: String
+    let fullPath: String
+    let icon: NSImage
+
+    static func == (lhs: Self, rhs: Self) -> Bool {
+        lhs.name == rhs.name && lhs.fullPath == rhs.fullPath
+    }
+
+    init(path: String) {
+        fullPath = path
+        name = FileManager.default.displayName(atPath: path)
+        icon = NSWorkspace.shared.icon(forFile: path)
+    }
+
+    init(fsItem: FSItem) {
+        fullPath = fsItem.fullPath
+        name = fsItem.name
+        icon = FSItemsIconUtils.icon(for: fsItem)
+    }
+}
+
 @Reducer
 struct FileManagerFeature {
     static func makeWindowTitle(for path: String) -> String {
@@ -68,16 +90,15 @@ struct FileManagerFeature {
             return fsItems.items.contains(where: { $0.id == selectedId })
         }
 
-        var pathComponents: [(name: String, fullPath: String)] {
+        var breadcrumbItems: [BreadcrumbItem] {
             switch navigationState {
             case .recents, .shared, .tags:
                 return []
             case let .folder(path):
-                var result: [(String, String)] = []
-                let fileManager = FileManager.default
+                var result: [BreadcrumbItem] = []
 
                 if path.hasPrefix("/") {
-                    result.append((fileManager.displayName(atPath: "/"), "/"))
+                    result.append(BreadcrumbItem(path: "/"))
                 }
 
                 let components = path.split(separator: "/").map(String.init)
@@ -85,12 +106,20 @@ struct FileManagerFeature {
 
                 for component in components {
                     accumulated += component
-                    result.append((fileManager.displayName(atPath: accumulated), accumulated))
+                    result.append(BreadcrumbItem(path: accumulated))
                     accumulated += "/"
                 }
 
                 return result
             }
+        }
+
+        var selectedBreadcrumbItem: BreadcrumbItem? {
+            guard fsItems.selectedIds.count == 1,
+                  let selectedItem = fsItems.items.first(where: { $0.id == fsItems.selectedIds.first })
+            else { return nil }
+
+            return BreadcrumbItem(fsItem: selectedItem)
         }
 
         var windowTitle: String {
