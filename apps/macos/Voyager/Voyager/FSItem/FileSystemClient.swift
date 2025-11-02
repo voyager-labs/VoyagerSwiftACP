@@ -28,6 +28,7 @@ public struct FileSystemClient: Sendable {
     public var pasteFile: @Sendable (URL, URL) async throws -> Void
     public var moveFile: @Sendable (URL, URL) async throws -> Void
     public var loadItems: @Sendable (URL, Bool) async throws -> [FSItem]
+    public var fileExists: @Sendable (String) -> Bool
 
     public nonisolated init(
         open: @escaping @Sendable (URL, OpenKind) async throws -> Void,
@@ -38,7 +39,8 @@ public struct FileSystemClient: Sendable {
         createFolder: @escaping @Sendable (URL, String) async throws -> Void,
         pasteFile: @escaping @Sendable (URL, URL) async throws -> Void,
         moveFile: @escaping @Sendable (URL, URL) async throws -> Void,
-        loadItems: @escaping @Sendable (URL, Bool) async throws -> [FSItem]
+        loadItems: @escaping @Sendable (URL, Bool) async throws -> [FSItem],
+        fileExists: @escaping @Sendable (String) -> Bool
     ) {
         self.open = open
         self.setDefaultApp = setDefaultApp
@@ -49,6 +51,7 @@ public struct FileSystemClient: Sendable {
         self.pasteFile = pasteFile
         self.moveFile = moveFile
         self.loadItems = loadItems
+        self.fileExists = fileExists
     }
 }
 
@@ -206,6 +209,9 @@ extension FileSystemClient: DependencyKey {
 
                     return contents.compactMap { FSItemsLoadUtils.convertURLToFSItem($0) }
                 }.value
+            },
+            fileExists: { path in
+                FileManager.default.fileExists(atPath: path)
             }
         )
     }
@@ -223,7 +229,8 @@ extension FileSystemClient: DependencyKey {
             createFolder: { _, _ in unimplemented() },
             pasteFile: { _, _ in unimplemented() },
             moveFile: { _, _ in unimplemented() },
-            loadItems: { _, _ in [] }
+            loadItems: { _, _ in [] },
+            fileExists: { _ in false }
         )
     }
 
@@ -249,7 +256,8 @@ extension FileSystemClient: DependencyKey {
             createFolder: { _, _ in },
             pasteFile: { _, _ in },
             moveFile: { _, _ in },
-            loadItems: { _, _ in [] }
+            loadItems: { _, _ in [] },
+            fileExists: { _ in false }
         )
     }
 }

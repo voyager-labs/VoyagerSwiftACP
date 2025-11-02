@@ -174,7 +174,7 @@ struct FSItemsOperationsFeature {
                 var folderName = "untitled folder"
                 var folderURL = parentURL.appendingPathComponent(folderName)
                 var counter = 2
-                while FileManager.default.fileExists(atPath: folderURL.path) {
+                while fileSystemClient.fileExists(folderURL.path) {
                     folderName = "untitled folder \(counter)"
                     folderURL = parentURL.appendingPathComponent(folderName)
                     counter += 1
@@ -221,7 +221,7 @@ struct FSItemsOperationsFeature {
             var destURL = destinationURL.appendingPathComponent(fileName)
             var counter = 1
 
-            while FileManager.default.fileExists(atPath: destURL.path) {
+            while fileSystemClient.fileExists(destURL.path) {
                 if counter == 1 {
                     let name = fileExtension.isEmpty ? "\(nameWithoutExtension) copy" : "\(nameWithoutExtension) copy.\(fileExtension)"
                     destURL = destinationURL.appendingPathComponent(name)
