@@ -86,7 +86,7 @@ struct FSItemsFeature {
         case duplicateSelectedItems
         case startDrag(paths: [String])
         case dropToFolder(destinationPath: String)
-        case dropItems(sourcePaths: [String], destinationPath: String)
+        case dropItems(sourcePaths: [String], destinationPath: String, isOptionDrag: Bool)
         case operations(FSItemsOperationsFeature.Action)
     }
 
@@ -538,42 +538,51 @@ struct FSItemsFeature {
 
             case let .startDrag(paths):
                 fileSystemClient.saveDragPaths(paths)
+                let isOptionPressed = NSEvent.modifierFlags.contains(.option)
+                fileSystemClient.saveDragWithOption(isOptionPressed)
                 return .none
 
             case let .dropToFolder(destinationPath):
                 let sourcePaths = fileSystemClient.loadDragPaths()
+                let isOptionPressed = fileSystemClient.loadDragWithOption()
                 guard !sourcePaths.isEmpty else {
                     return .none
                 }
-                return .send(.dropItems(sourcePaths: sourcePaths, destinationPath: destinationPath))
+                return .send(.dropItems(
+                    sourcePaths: sourcePaths,
+                    destinationPath: destinationPath,
+                    isOptionDrag: isOptionPressed
+                ))
 
-            case let .dropItems(sourcePaths, destinationPath):
+            case let .dropItems(sourcePaths, destinationPath, isOptionDrag):
                 guard !sourcePaths.isEmpty else {
                     return .none
                 }
 
-                // 같은 폴더로 이동은 무시
-                let sourceParent = URL(fileURLWithPath: sourcePaths[0])
-                    .deletingLastPathComponent().path
-                if sourceParent == destinationPath {
-                    return .none
-                }
-
-                // 자기 자신의 하위 폴더로 이동 방지
-                for sourcePath in sourcePaths {
-                    if destinationPath.hasPrefix(sourcePath + "/") || destinationPath == sourcePath {
+                if !isOptionDrag {
+                    let sourceParent = URL(fileURLWithPath: sourcePaths[0])
+                        .deletingLastPathComponent().path
+                    if sourceParent == destinationPath {
                         return .none
+                    }
+
+                    // 자기 자신의 하위 폴더로 이동 방지
+                    for sourcePath in sourcePaths {
+                        if destinationPath.hasPrefix(sourcePath + "/") || destinationPath == sourcePath {
+                            return .none
+                        }
                     }
                 }
 
                 // Drag & Drop 플래그 설정
                 state.isDragDropOperation = true
 
-                // Move 작업 (Cut & Paste)
+                // Option 키에 따라 Copy 또는 Move
+                let operation: ClipboardOperation = isOptionDrag ? .copy : .cut
                 return .send(.operations(.pasteItems(
                     sourcePaths: sourcePaths,
                     destinationPath: destinationPath,
-                    operation: .cut
+                    operation: operation
                 )))
             }
         }

@@ -31,6 +31,8 @@ public struct FileSystemClient: Sendable {
     public var fileExists: @Sendable (String) -> Bool
     public var saveDragPaths: @Sendable ([String]) -> Void
     public var loadDragPaths: @Sendable () -> [String]
+    public var saveDragWithOption: @Sendable (Bool) -> Void
+    public var loadDragWithOption: @Sendable () -> Bool
     public var saveClipboardPaths: @Sendable ([String], ClipboardOperation) -> Void
     public var loadClipboardPaths: @Sendable () -> ([String], ClipboardOperation)
     public var postFileSystemChanged: @Sendable ([String]) -> Void
@@ -49,6 +51,8 @@ public struct FileSystemClient: Sendable {
         fileExists: @escaping @Sendable (String) -> Bool,
         saveDragPaths: @escaping @Sendable ([String]) -> Void,
         loadDragPaths: @escaping @Sendable () -> [String],
+        saveDragWithOption: @escaping @Sendable (Bool) -> Void,
+        loadDragWithOption: @escaping @Sendable () -> Bool,
         saveClipboardPaths: @escaping @Sendable ([String], ClipboardOperation) -> Void,
         loadClipboardPaths: @escaping @Sendable () -> ([String], ClipboardOperation),
         postFileSystemChanged: @escaping @Sendable ([String]) -> Void,
@@ -66,6 +70,8 @@ public struct FileSystemClient: Sendable {
         self.fileExists = fileExists
         self.saveDragPaths = saveDragPaths
         self.loadDragPaths = loadDragPaths
+        self.saveDragWithOption = saveDragWithOption
+        self.loadDragWithOption = loadDragWithOption
         self.saveClipboardPaths = saveClipboardPaths
         self.loadClipboardPaths = loadClipboardPaths
         self.postFileSystemChanged = postFileSystemChanged
@@ -247,6 +253,16 @@ extension FileSystemClient: DependencyKey {
                 }
                 return pathString.split(separator: "\n").map(String.init)
             },
+            saveDragWithOption: { isOptionPressed in
+                let pasteboard = NSPasteboard(name: NSPasteboard.Name("VoyagerDragDrop"))
+                pasteboard.setString(isOptionPressed ? "true" : "false",
+                                     forType: NSPasteboard.PasteboardType("VoyagerDragOption"))
+            },
+            loadDragWithOption: {
+                let pasteboard = NSPasteboard(name: NSPasteboard.Name("VoyagerDragDrop"))
+                let optionString = pasteboard.string(forType: NSPasteboard.PasteboardType("VoyagerDragOption"))
+                return optionString == "true"
+            },
             saveClipboardPaths: { paths, operation in
                 let pasteboard = NSPasteboard(name: NSPasteboard.Name("VoyagerClipboard"))
                 pasteboard.clearContents()
@@ -326,6 +342,8 @@ extension FileSystemClient: DependencyKey {
             fileExists: { _ in false },
             saveDragPaths: { _ in },
             loadDragPaths: { [] },
+            saveDragWithOption: { _ in },
+            loadDragWithOption: { false },
             saveClipboardPaths: { _, _ in },
             loadClipboardPaths: { ([], .copy) },
             postFileSystemChanged: { _ in },
@@ -359,6 +377,8 @@ extension FileSystemClient: DependencyKey {
             fileExists: { _ in false },
             saveDragPaths: { _ in },
             loadDragPaths: { [] },
+            saveDragWithOption: { _ in },
+            loadDragWithOption: { false },
             saveClipboardPaths: { _, _ in },
             loadClipboardPaths: { ([], .copy) },
             postFileSystemChanged: { _ in },
