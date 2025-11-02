@@ -50,14 +50,14 @@ struct FileManagerFeature {
         var forwardHistory: [String] = []
         var fsItems: FSItemsFeature.State = .init()
         var viewLayout: ViewLayout = .list
-        var showHiddenFiles: Bool = UserDefaults.standard.bool(forKey: "showHiddenFiles")
+        var showHiddenFiles: Bool = false
+        var sidebarVisible: Bool = true
         var selectedSidebarItem: String?
         var locations: [SidebarUtils.LocationItem] = []
         var tags: [SidebarUtils.TagItem] = []
 
-        var sortKey: SortKey = .init(rawValue: UserDefaults.standard.string(forKey: "sortKey") ?? "") ?? .name
-        var sortOrder: SortOrder =
-            .init(rawValue: UserDefaults.standard.string(forKey: "sortOrder") ?? "") ?? .ascending
+        var sortKey: SortKey = .name
+        var sortOrder: SortOrder = .ascending
 
         var canGoBack: Bool {
             !backHistory.isEmpty
@@ -153,6 +153,7 @@ struct FileManagerFeature {
         case goToEnclosingDirectory
         case changeLayout(ViewLayout)
         case toggleShowHiddenFiles
+        case setSidebarVisible(Bool)
         case showRecents
         case showShared
         case loadLocations
@@ -178,6 +179,13 @@ struct FileManagerFeature {
         Reduce { state, action in
             switch action {
             case .onAppear:
+                state.showHiddenFiles = UserDefaults.standard.bool(forKey: "showHiddenFiles")
+                state.sidebarVisible = UserDefaults.standard.object(forKey: "sidebarVisible") as? Bool ?? true
+                state.sortKey = SortKey(rawValue: UserDefaults.standard.string(forKey: "sortKey") ?? "") ?? .name
+                state
+                    .sortOrder = SortOrder(rawValue: UserDefaults.standard.string(forKey: "sortOrder") ?? "") ??
+                    .ascending
+
                 return .merge(
                     .send(.fsItems(.setShowHidden(state.showHiddenFiles))),
                     .send(.fsItems(.setSortKey(state.sortKey))),
@@ -277,6 +285,11 @@ struct FileManagerFeature {
                     .send(.fsItems(.setShowHidden(state.showHiddenFiles))),
                     .send(.fsItems(.loadItems(path: state.currentPath)))
                 )
+
+            case let .setSidebarVisible(visible):
+                state.sidebarVisible = visible
+                UserDefaults.standard.set(visible, forKey: "sidebarVisible")
+                return .none
 
             case .showRecents:
                 state.selectedSidebarItem = "Recents"

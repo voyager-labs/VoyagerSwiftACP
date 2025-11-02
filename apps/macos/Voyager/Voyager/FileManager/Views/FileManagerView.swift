@@ -3,12 +3,20 @@ import SwiftUI
 
 struct FileManagerView: View {
     let store: StoreOf<FileManagerFeature>
-    @State private var columnVisibility: NavigationSplitViewVisibility = .all
     let initialPath: String?
 
     init(store: StoreOf<FileManagerFeature>, initialPath: String? = nil) {
         self.store = store
         self.initialPath = initialPath
+    }
+
+    private var columnVisibility: Binding<NavigationSplitViewVisibility> {
+        Binding(
+            get: { store.sidebarVisible ? .all : .detailOnly },
+            set: { newValue in
+                store.send(.setSidebarVisible(newValue == .all))
+            }
+        )
     }
 
     var body: some View {
@@ -64,7 +72,7 @@ struct FileManagerView: View {
                 }
             }
 
-            NavigationSplitView(columnVisibility: $columnVisibility) {
+            NavigationSplitView(columnVisibility: columnVisibility) {
                 SidebarView(store: store)
             } detail: {
                 VStack(spacing: 0) {
@@ -158,14 +166,7 @@ struct FileManagerView: View {
             }
         }
         .focusedSceneValue(\.fileManagerStore, store)
-        .focusedSceneValue(\.columnVisibility, $columnVisibility)
-        .onChange(of: columnVisibility) { newValue in
-            UserDefaults.standard.set(newValue == .all, forKey: "sidebarVisible")
-        }
         .onAppear {
-            let savedVisible = UserDefaults.standard.object(forKey: "sidebarVisible") as? Bool ?? true
-            columnVisibility = savedVisible ? .all : .detailOnly
-
             if let path = initialPath {
                 store.send(.navigateTo(path))
             } else {

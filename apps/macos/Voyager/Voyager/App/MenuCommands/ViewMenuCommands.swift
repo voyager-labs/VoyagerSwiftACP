@@ -6,17 +6,14 @@ struct ViewMenuCommands: Commands {
     @FocusedValue(\.fileManagerStore)
     var fileManagerStore: StoreOf<FileManagerFeature>?
 
-    @FocusedValue(\.columnVisibility)
-    var columnVisibility: Binding<NavigationSplitViewVisibility>?
-
     var body: some Commands {
         CommandGroup(replacing: .sidebar) {
-            Button(columnVisibility?.wrappedValue == .all ? "Hide Sidebar" : "Show Sidebar") {
-                let current = columnVisibility?.wrappedValue
-                columnVisibility?.wrappedValue = (current == .all) ? .detailOnly : .all
+            Button(fileManagerStore?.sidebarVisible == true ? "Hide Sidebar" : "Show Sidebar") {
+                let newValue = !(fileManagerStore?.sidebarVisible ?? true)
+                fileManagerStore?.send(.setSidebarVisible(newValue))
             }
             .keyboardShortcut("s", modifiers: .command)
-            .disabled(columnVisibility == nil)
+            .disabled(fileManagerStore == nil)
         }
 
         CommandGroup(after: .sidebar) {
