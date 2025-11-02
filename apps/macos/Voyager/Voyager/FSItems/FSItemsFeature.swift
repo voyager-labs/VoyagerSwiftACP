@@ -152,6 +152,9 @@ struct FSItemsFeature {
 
             case let .loadItems(path):
                 state.isLoading = true
+                state.selectedIds = []
+                state.lastSelectedId = nil
+                state.rangeAnchorId = nil
 
                 return .run { [showHidden = state.showHiddenFiles] send in
                     let url = URL(fileURLWithPath: (path as NSString).expandingTildeInPath)
