@@ -81,6 +81,9 @@ struct FSItemsFeature {
         case operations(FSItemsOperationsFeature.Action)
     }
 
+    @Dependency(\.fileSystemClient)
+    var fileSystemClient
+
     var body: some Reducer<State, Action> {
         Scope(state: \.operations, action: \.operations) {
             FSItemsOperationsFeature()
@@ -106,12 +109,16 @@ struct FSItemsFeature {
 
             case let .loadItems(path):
                 state.isLoading = true
-                let showHidden = state.showHiddenFiles
-                return .run { [showHidden] send in
-                    let url = URL(fileURLWithPath: (path as NSString).expandingTildeInPath)
-                    let loadItems: [FSItem] = FSItemsLoadUtils.loadItems(at: url, showHidden: showHidden)
 
-                    await send(.itemsLoaded(loadItems))
+                return .run { [showHidden = state.showHiddenFiles] send in
+                    let url = URL(fileURLWithPath: (path as NSString).expandingTildeInPath)
+
+                    do {
+                        let items = try await fileSystemClient.loadItems(url, showHidden)
+                        await send(.itemsLoaded(items))
+                    } catch {
+                        await send(.itemsLoaded([]))
+                    }
                 }
 
             case .loadRecentItems:

@@ -11,22 +11,6 @@ enum FSItemsLoadUtils {
         let lastUsedDate: Date?
     }
 
-    nonisolated static func loadItems(at directoryURL: URL, showHidden: Bool = false) -> [FSItem] {
-        let fileManager = FileManager.default
-
-        do {
-            let options: FileManager.DirectoryEnumerationOptions = showHidden ? [] : [.skipsHiddenFiles]
-            let contents = try fileManager.contentsOfDirectory(
-                at: directoryURL,
-                includingPropertiesForKeys: nil,
-                options: options
-            )
-            return contents.compactMap { convertURLToFSItem($0) }
-        } catch {
-            return []
-        }
-    }
-
     nonisolated static func convertURLToFSItem(_ itemURL: URL) -> FSItem? {
         let fileManager = FileManager.default
         var isDirectory: ObjCBool = false

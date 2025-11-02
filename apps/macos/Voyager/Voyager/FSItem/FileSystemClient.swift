@@ -27,6 +27,7 @@ public struct FileSystemClient: Sendable {
     public var createFolder: @Sendable (URL, String) async throws -> Void
     public var pasteFile: @Sendable (URL, URL) async throws -> Void
     public var moveFile: @Sendable (URL, URL) async throws -> Void
+    public var loadItems: @Sendable (URL, Bool) async throws -> [FSItem]
 
     public nonisolated init(
         open: @escaping @Sendable (URL, OpenKind) async throws -> Void,
@@ -36,7 +37,8 @@ public struct FileSystemClient: Sendable {
         defaultApplication: @escaping @Sendable (UTType) async -> ApplicationInfo?,
         createFolder: @escaping @Sendable (URL, String) async throws -> Void,
         pasteFile: @escaping @Sendable (URL, URL) async throws -> Void,
-        moveFile: @escaping @Sendable (URL, URL) async throws -> Void
+        moveFile: @escaping @Sendable (URL, URL) async throws -> Void,
+        loadItems: @escaping @Sendable (URL, Bool) async throws -> [FSItem]
     ) {
         self.open = open
         self.setDefaultApp = setDefaultApp
@@ -46,6 +48,7 @@ public struct FileSystemClient: Sendable {
         self.createFolder = createFolder
         self.pasteFile = pasteFile
         self.moveFile = moveFile
+        self.loadItems = loadItems
     }
 }
 
@@ -179,6 +182,30 @@ extension FileSystemClient: DependencyKey {
             },
             moveFile: { sourceURL, destinationURL in
                 try FileManager.default.moveItem(at: sourceURL, to: destinationURL)
+            },
+            loadItems: { directoryURL, showHidden in
+                try await Task.detached {
+                    let fileManager = FileManager.default
+                    let options: FileManager.DirectoryEnumerationOptions = showHidden ? [] : [.skipsHiddenFiles]
+
+                    let contents = try fileManager.contentsOfDirectory(
+                        at: directoryURL,
+                        includingPropertiesForKeys: [
+                            .nameKey,
+                            .fileSizeKey,
+                            .contentModificationDateKey,
+                            .creationDateKey,
+                            .contentTypeKey,
+                            .isDirectoryKey,
+                            .isHiddenKey,
+                            .labelColorKey,
+                            .tagNamesKey,
+                        ],
+                        options: options
+                    )
+
+                    return contents.compactMap { FSItemsLoadUtils.convertURLToFSItem($0) }
+                }.value
             }
         )
     }
@@ -195,7 +222,8 @@ extension FileSystemClient: DependencyKey {
             defaultApplication: { _ in unimplemented() },
             createFolder: { _, _ in unimplemented() },
             pasteFile: { _, _ in unimplemented() },
-            moveFile: { _, _ in unimplemented() }
+            moveFile: { _, _ in unimplemented() },
+            loadItems: { _, _ in [] }
         )
     }
 
@@ -220,7 +248,8 @@ extension FileSystemClient: DependencyKey {
             },
             createFolder: { _, _ in },
             pasteFile: { _, _ in },
-            moveFile: { _, _ in }
+            moveFile: { _, _ in },
+            loadItems: { _, _ in [] }
         )
     }
 }

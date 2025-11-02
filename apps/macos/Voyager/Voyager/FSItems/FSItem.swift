@@ -1,23 +1,23 @@
 import Foundation
 
-struct FSItem: Identifiable, Equatable, Sendable {
-    let id: String // fullPath를 ID로 사용
-    let name: String
-    let fullPath: String
-    let isDirectory: Bool
-    let isHidden: Bool
-    let size: Int64
-    let modifiedDate: Date
-    let createdDate: Date
-    let addedDate: Date
-    let lastOpenedDate: Date?
-    let fileExtension: String
-    let kind: String
-    let creatorApplication: String?
-    let tags: [String]?
-    let additionalInfo: String?
+public struct FSItem: Identifiable, Equatable, Sendable {
+    public let id: String // fullPath를 ID로 사용
+    public let name: String
+    public let fullPath: String
+    public let isDirectory: Bool
+    public let isHidden: Bool
+    public let size: Int64
+    public let modifiedDate: Date
+    public let createdDate: Date
+    public let addedDate: Date
+    public let lastOpenedDate: Date?
+    public let fileExtension: String
+    public let kind: String
+    public let creatorApplication: String?
+    public let tags: [String]?
+    public let additionalInfo: String?
 
-    nonisolated init(
+    public nonisolated init(
         name: String,
         fullPath: String,
         isDirectory: Bool,
