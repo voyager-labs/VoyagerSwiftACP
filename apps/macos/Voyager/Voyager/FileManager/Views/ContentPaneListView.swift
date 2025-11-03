@@ -137,11 +137,12 @@ struct ContentPaneListView: View {
                                             Spacer()
                                                 .frame(width: 28)
 
-                                            let tagColor = FSItemTagUtils.getTagColor(group.groupName)
-
-                                            if let color = tagColor {
+                                            if fsStore.groupKey == .tags,
+                                               let colorCode = group.items.first?.tags?
+                                               .first(where: { $0.name == group.groupName })?.colorCode
+                                            {
                                                 Circle()
-                                                    .fill(color)
+                                                    .fill(FSItemTagUtils.getTagColor(colorCode: colorCode))
                                                     .frame(width: 8, height: 8)
                                                     .overlay(
                                                         Circle()

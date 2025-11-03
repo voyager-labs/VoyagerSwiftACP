@@ -50,9 +50,9 @@ enum FSItemsSorting {
         case .size:
             return compareSizes(item1.size, item2.size)
         case .tags:
-            let tags1 = item1.tags?.first ?? ""
-            let tags2 = item2.tags?.first ?? ""
-            return tags1.localizedCaseInsensitiveCompare(tags2)
+            let tag1Name = item1.tags?.first?.name ?? ""
+            let tag2Name = item2.tags?.first?.name ?? ""
+            return tag1Name.localizedCaseInsensitiveCompare(tag2Name)
         }
     }
 

@@ -133,7 +133,7 @@ struct FileManagerFeature {
         }
 
         mutating func matchSidebarToPath(_ path: String, locations: [SidebarUtils.LocationItem]) {
-            if FSItemTagUtils.getTagNames().contains(path) {
+            if !path.hasPrefix("/") {
                 selectedSidebarItem = path
             } else if let matchingLocation = locations.first(where: { $0.url.path == path }) {
                 selectedSidebarItem = matchingLocation.name
@@ -375,7 +375,7 @@ struct FileManagerFeature {
                 state.forwardHistory = []
                 state.navigationState = .tags(tagItem.name)
                 return .run { send in
-                    let taggedItems = await SidebarUtils.loadFilesWithTag(tagItem.tag)
+                    let taggedItems = await SidebarUtils.loadFilesWithTag(tagItem.name)
                     await send(.fsItems(.itemsLoaded(taggedItems)))
                 }
 

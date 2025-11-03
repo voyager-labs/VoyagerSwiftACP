@@ -7,7 +7,7 @@ enum FSItemsLoadUtils {
     private struct ItemMetadata {
         let kind: String
         let creatorApplication: String?
-        let tags: [String]?
+        let tags: [FileTag]?
         let lastUsedDate: Date?
     }
 
@@ -62,7 +62,7 @@ enum FSItemsLoadUtils {
     ) -> ItemMetadata {
         var kind: String
         var creatorApplication: String?
-        var tags: [String]?
+        var tags: [FileTag]?
         var lastUsedDate: Date?
 
         if isDirectory {
@@ -85,11 +85,10 @@ enum FSItemsLoadUtils {
             }
 
             if let rawTags = MDItemCopyAttribute(mdItem, "kMDItemUserTags" as CFString) as? [String] {
-                tags = rawTags.map { tag in
-                    if let newlineIndex = tag.firstIndex(of: "\n") {
-                        return String(tag[..<newlineIndex])
-                    }
-                    return tag
+                let nameToColorCode = FSItemTagUtils.getTagNameToColorCodeMapping()
+                tags = rawTags.map { tagString in
+                    let colorCode = nameToColorCode[tagString] ?? 0
+                    return FileTag(name: tagString, colorCode: colorCode)
                 }
             }
             if let lastUsed = MDItemCopyAttribute(mdItem, "kMDItemLastUsedDate" as CFString) as? Date {

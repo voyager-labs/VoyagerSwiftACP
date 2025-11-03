@@ -134,7 +134,7 @@ struct SidebarView: View {
                         .padding(.horizontal, 12)
                         .padding(.top, 8)
 
-                    ForEach(store.tags, id: \.tag) { tag in
+                    ForEach(store.tags, id: \.name) { tag in
                         TagItemView(
                             tag: tag,
                             isSelected: store.selectedSidebarItem == tag.name

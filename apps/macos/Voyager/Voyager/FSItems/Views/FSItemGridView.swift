@@ -52,7 +52,7 @@ struct FSItemGridView: View {
                             HStack(spacing: 4) {
                                 ForEach(tags.prefix(3), id: \.self) { tag in
                                     Circle()
-                                        .fill(FSItemTagUtils.getTagColor(tag) ?? Color.gray)
+                                        .fill(FSItemTagUtils.getTagColor(colorCode: tag.colorCode))
                                         .frame(width: 8, height: 8)
                                 }
                             }

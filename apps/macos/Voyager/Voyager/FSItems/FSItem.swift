@@ -1,5 +1,15 @@
 import Foundation
 
+public struct FileTag: Equatable, Sendable, Hashable {
+    public let name: String
+    public let colorCode: Int
+
+    public nonisolated init(name: String, colorCode: Int) {
+        self.name = name
+        self.colorCode = colorCode
+    }
+}
+
 public struct FSItem: Identifiable, Sendable {
     public let id: String // fullPath를 ID로 사용
     public let name: String
@@ -14,7 +24,7 @@ public struct FSItem: Identifiable, Sendable {
     public let fileExtension: String
     public let kind: String
     public let creatorApplication: String?
-    public let tags: [String]?
+    public let tags: [FileTag]?
     public let additionalInfo: String?
 
     public nonisolated init(
@@ -30,7 +40,7 @@ public struct FSItem: Identifiable, Sendable {
         fileExtension: String = "",
         kind: String = "",
         creatorApplication: String? = nil,
-        tags: [String]? = nil,
+        tags: [FileTag]? = nil,
         additionalInfo: String? = nil
     ) {
         id = fullPath

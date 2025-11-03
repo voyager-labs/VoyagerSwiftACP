@@ -323,30 +323,36 @@ enum FSItemsGrouping {
         for item in items {
             if let itemTags = item.tags, !itemTags.isEmpty {
                 for tag in itemTags {
-                    tagToItems[tag, default: []].append(item)
+                    tagToItems[tag.name, default: []].append(item)
                 }
             } else {
                 itemsWithoutTags.append(item)
             }
         }
 
-        let colorOrder = ["Red", "Orange", "Yellow", "Green", "Blue", "Purple", "Gray"]
+        var processedTags = Set<String>()
 
-        for color in colorOrder {
-            if let taggedItems = tagToItems[color] {
-                result.append(GroupedItems(
-                    groupName: color,
-                    items: taggedItems.sorted { $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending }
-                ))
-                tagToItems.removeValue(forKey: color)
+        for colorCode in FSItemTagUtils.colorCodeOrder {
+            for (tagName, taggedItems) in tagToItems {
+                if let firstTag = taggedItems.first?.tags?.first(where: { $0.name == tagName }),
+                   firstTag.colorCode == colorCode
+                {
+                    result.append(GroupedItems(
+                        groupName: tagName,
+                        items: taggedItems
+                            .sorted { $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending }
+                    ))
+                    processedTags.insert(tagName)
+                }
             }
         }
 
-        let remainingTags = tagToItems.keys.sorted { $0.localizedCaseInsensitiveCompare($1) == .orderedAscending }
-        for tag in remainingTags {
-            if let taggedItems = tagToItems[tag] {
+        let remainingTags = tagToItems.keys.filter { !processedTags.contains($0) }
+            .sorted { $0.localizedCaseInsensitiveCompare($1) == .orderedAscending }
+        for tagName in remainingTags {
+            if let taggedItems = tagToItems[tagName] {
                 result.append(GroupedItems(
-                    groupName: tag,
+                    groupName: tagName,
                     items: taggedItems.sorted { $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending }
                 ))
             }

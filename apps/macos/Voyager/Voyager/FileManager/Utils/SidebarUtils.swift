@@ -12,7 +12,10 @@ enum SidebarUtils {
         let iconName: String
     }
 
-    typealias TagItem = TagInfo
+    struct TagItem: Equatable {
+        let name: String
+        let color: Color
+    }
 
     @MainActor
     static func loadLocations() -> [LocationItem] {
@@ -138,10 +141,27 @@ enum SidebarUtils {
     }
 
     @MainActor
-    static func loadTags() -> [TagItem] {
-        FSItemTagUtils.getAllTags().map { tagInfo in
-            TagItem(name: tagInfo.name, color: tagInfo.color, tag: tagInfo.tag)
-        }
+    static func loadTags() async -> [TagItem] {
+        let tagNames = FSItemTagUtils.getFavoriteTagNames()
+        let nameToColorCode = FSItemTagUtils.getTagNameToColorCodeMapping()
+
+        return tagNames
+            .filter { !$0.isEmpty }
+            .map { name in
+                let colorCode = nameToColorCode[name] ?? 0
+                return TagItem(
+                    name: name,
+                    color: FSItemTagUtils.getTagColor(colorCode: colorCode)
+                )
+            }
+            .sorted { tag1, tag2 in
+                let colorCode1 = nameToColorCode[tag1.name] ?? 0
+                let colorCode2 = nameToColorCode[tag2.name] ?? 0
+
+                let idx1 = FSItemTagUtils.colorCodeOrder.firstIndex(of: colorCode1) ?? 999
+                let idx2 = FSItemTagUtils.colorCodeOrder.firstIndex(of: colorCode2) ?? 999
+                return idx1 < idx2
+            }
     }
 
     @MainActor

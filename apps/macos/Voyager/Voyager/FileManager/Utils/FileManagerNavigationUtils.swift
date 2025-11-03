@@ -31,10 +31,12 @@ enum FileManagerNavigationUtils {
             return .recents
         case "Shared":
             return .shared
-        case let tagName where FSItemTagUtils.getTagNames().contains(tagName):
-            return .tags(path)
         default:
-            return .folder(path)
+            if path.hasPrefix("/") {
+                return .folder(path)
+            } else {
+                return .tags(path)
+            }
         }
     }
 }
