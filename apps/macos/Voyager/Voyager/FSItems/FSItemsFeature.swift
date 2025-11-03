@@ -219,8 +219,10 @@ struct FSItemsFeature {
                 }
 
             case let .selectItem(id, isCommandPressed, isShiftPressed):
+                var renameEffect: Effect<Action> = .none
+
                 if state.isRenaming {
-                    return .send(.commitRename)
+                    renameEffect = .send(.commitRename)
                 }
 
                 state.shouldScrollToSelection = false
@@ -233,7 +235,7 @@ struct FSItemsFeature {
                         state.selectedIds = [id]
                         state.lastSelectedId = id
                         state.rangeAnchorId = nil
-                        return .none
+                        return .merge(renameEffect, .none)
                     }
 
                     let range = min(lastIndex, currentIndex) ... max(lastIndex, currentIndex)
@@ -254,7 +256,7 @@ struct FSItemsFeature {
                     state.lastSelectedId = id
                     state.rangeAnchorId = nil
                 }
-                return .none
+                return .merge(renameEffect, .none)
 
             case .selectAll:
                 state.selectedIds = Set(state.items.map { $0.id })
