@@ -2,6 +2,7 @@
 import AppKit
 import ComposableArchitecture
 import Foundation
+import IdentifiedCollections
 import UniformTypeIdentifiers
 
 public enum ClipboardOperation: Equatable, Sendable {
@@ -15,7 +16,7 @@ public enum ClipboardOperation: Equatable, Sendable {
 struct FSItemsFeature {
     @ObservableState
     struct State: Equatable {
-        var items: [FSItem] = []
+        var items: IdentifiedArrayOf<FSItem> = []
         var selectedIds: Set<String> = []
         var lastSelectedId: String?
         var rangeAnchorId: String?
@@ -46,7 +47,7 @@ struct FSItemsFeature {
 
         var displayOrderItems: [FSItem] {
             if groupKey == .none {
-                return items
+                return Array(items)
             } else {
                 return groupedItems.flatMap { $0.items }
             }
@@ -166,7 +167,6 @@ struct FSItemsFeature {
                 return .none
 
             case let .loadItems(path):
-                state.isLoading = true
                 state.selectedIds = []
                 state.lastSelectedId = nil
                 state.rangeAnchorId = nil
@@ -183,7 +183,6 @@ struct FSItemsFeature {
                 }
 
             case .loadRecentItems:
-                state.isLoading = true
                 return .run { send in
                     let recentItems = await SidebarUtils.loadRecentItems()
                     await send(.itemsLoaded(recentItems))
@@ -195,14 +194,13 @@ struct FSItemsFeature {
 
             case let .setGroupKey(key):
                 state.groupKey = key
-                state.groupedItems = FSItemsGrouping.groupItems(state.items, by: key)
+                state.groupedItems = FSItemsGrouping.groupItems(Array(state.items), by: key)
                 return .none
 
             case let .itemsLoaded(items):
                 let sorted = FSItemsSorting.sortItems(items, by: state.sortKey, order: state.sortOrder)
-                state.items = sorted
-                state.groupedItems = FSItemsGrouping.groupItems(sorted, by: state.groupKey)
-                state.isLoading = false
+                state.items = IdentifiedArray(uniqueElements: sorted)
+                state.groupedItems = FSItemsGrouping.groupItems(Array(state.items), by: state.groupKey)
 
                 return .run { _ in
                     Task.detached(priority: .background) {
@@ -211,7 +209,7 @@ struct FSItemsFeature {
                         let size = CGSize(width: baseSize * scale, height: baseSize * scale)
 
                         await ThumbnailGeneratorUtils.prefetchThumbnails(
-                            for: sorted,
+                            for: Array(sorted),
                             size: size,
                             scale: scale
                         )
@@ -229,8 +227,8 @@ struct FSItemsFeature {
 
                 if isShiftPressed {
                     guard let lastId = state.lastSelectedId,
-                          let lastIndex = state.items.firstIndex(where: { $0.id == lastId }),
-                          let currentIndex = state.items.firstIndex(where: { $0.id == id })
+                          let lastIndex = Array(state.items).firstIndex(where: { $0.id == lastId }),
+                          let currentIndex = Array(state.items).firstIndex(where: { $0.id == id })
                     else {
                         state.selectedIds = [id]
                         state.lastSelectedId = id
@@ -238,8 +236,9 @@ struct FSItemsFeature {
                         return .merge(renameEffect, .none)
                     }
 
+                    let itemsArray = Array(state.items)
                     let range = min(lastIndex, currentIndex) ... max(lastIndex, currentIndex)
-                    let rangeIds = state.items[range].map { $0.id }
+                    let rangeIds = itemsArray[range].map { $0.id }
                     state.selectedIds = Set(rangeIds)
                     state.lastSelectedId = id
                     state.rangeAnchorId = lastId
@@ -384,16 +383,16 @@ struct FSItemsFeature {
                 if !state.hasUserSetSortOrder {
                     state.sortOrder = state.defaultSortOrder
                 }
-                let sorted = FSItemsSorting.sortItems(state.items, by: state.sortKey, order: state.sortOrder)
-                state.items = sorted
+                let sorted = FSItemsSorting.sortItems(Array(state.items), by: state.sortKey, order: state.sortOrder)
+                state.items = IdentifiedArray(uniqueElements: sorted)
                 state.groupedItems = FSItemsGrouping.groupItems(sorted, by: state.groupKey)
                 return .none
 
             case let .setSortOrder(order):
                 state.sortOrder = order
                 state.hasUserSetSortOrder = true
-                let sorted = FSItemsSorting.sortItems(state.items, by: state.sortKey, order: state.sortOrder)
-                state.items = sorted
+                let sorted = FSItemsSorting.sortItems(Array(state.items), by: state.sortKey, order: state.sortOrder)
+                state.items = IdentifiedArray(uniqueElements: sorted)
                 state.groupedItems = FSItemsGrouping.groupItems(sorted, by: state.groupKey)
                 return .none
 
@@ -504,7 +503,7 @@ struct FSItemsFeature {
                     return .none
                 }
 
-                let selectedItems = state.items.filter { state.selectedIds.contains($0.id) }
+                let selectedItems = Array(state.items.filter { state.selectedIds.contains($0.id) })
                 let selectedPaths = selectedItems.map { $0.fullPath }
 
                 state.clipboardItems = selectedPaths
@@ -518,7 +517,7 @@ struct FSItemsFeature {
                     return .none
                 }
 
-                let selectedItems = state.items.filter { state.selectedIds.contains($0.id) }
+                let selectedItems = Array(state.items.filter { state.selectedIds.contains($0.id) })
                 let selectedPaths = selectedItems.map { $0.fullPath }
 
                 state.clipboardItems = selectedPaths
@@ -543,7 +542,7 @@ struct FSItemsFeature {
                 )))
 
             case .duplicateSelectedItems:
-                let selectedItems = state.items.filter { state.selectedIds.contains($0.id) }
+                let selectedItems = Array(state.items.filter { state.selectedIds.contains($0.id) })
                 guard !selectedItems.isEmpty else {
                     return .none
                 }

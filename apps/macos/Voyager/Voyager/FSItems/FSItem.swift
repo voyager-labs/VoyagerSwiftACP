@@ -1,6 +1,6 @@
 import Foundation
 
-public struct FSItem: Identifiable, Equatable, Sendable {
+public struct FSItem: Identifiable, Sendable {
     public let id: String // fullPath를 ID로 사용
     public let name: String
     public let fullPath: String
@@ -48,5 +48,11 @@ public struct FSItem: Identifiable, Equatable, Sendable {
         self.creatorApplication = creatorApplication
         self.tags = tags
         self.additionalInfo = additionalInfo
+    }
+}
+
+extension FSItem: Equatable {
+    public static func == (lhs: FSItem, rhs: FSItem) -> Bool {
+        lhs.id == rhs.id
     }
 }
