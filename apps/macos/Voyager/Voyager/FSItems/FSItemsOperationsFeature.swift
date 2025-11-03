@@ -34,6 +34,7 @@ struct FSItemsOperationsFeature {
         case createNewFolder(path: String)
         case copySelectedItems(files: [FSItem])
         case pasteItems(sourcePaths: [String], destinationPath: String, operation: ClipboardOperation)
+        case renameItem(oldPath: String, newPath: String)
         case applicationsLoaded(String, [ApplicationInfo])
         case operationStarted(String, OperationKind)
         case operationFinished(String, OperationKind, Result<Void, FileOpError>)
@@ -205,6 +206,14 @@ struct FSItemsOperationsFeature {
                         }
                     }
                 }
+
+            case let .renameItem(oldPath, newPath):
+                let sourceURL = URL(fileURLWithPath: oldPath)
+                let destURL = URL(fileURLWithPath: newPath)
+
+                return run(for: oldPath, kind: .rename) {
+                    try await fileSystemClient.renameFile(sourceURL, destURL)
+                }
             }
         }
     }
@@ -339,6 +348,7 @@ enum OperationKind: Equatable, Hashable, Sendable {
     case quickLook
     case createFolder
     case pasteFile
+    case rename
 }
 
 extension Error {

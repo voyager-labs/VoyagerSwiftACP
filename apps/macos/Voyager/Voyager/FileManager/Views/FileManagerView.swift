@@ -5,6 +5,8 @@ struct FileManagerView: View {
     let store: StoreOf<FileManagerFeature>
     let initialPath: String?
 
+    @FocusState private var isKeyCommandFocused: Bool
+
     init(store: StoreOf<FileManagerFeature>, initialPath: String? = nil) {
         self.store = store
         self.initialPath = initialPath
@@ -22,6 +24,25 @@ struct FileManagerView: View {
     var body: some View {
         ZStack {
             KeyCommandView { event in
+                if event.keyCode == 53 && store.fsItems.isRenaming {
+                    store.send(.fsItems(.cancelRename))
+                    return
+                }
+
+                if event.keyCode == 36 && event.modifierFlags.isDisjoint(with: [.command, .option, .control, .shift]) {
+                    if store.fsItems.isRenaming {
+                        store.send(.fsItems(.commitRename))
+                        return
+                    }
+
+                    if store.fsItems.selectedIds.count == 1,
+                       let selectedId = store.fsItems.selectedIds.first
+                    {
+                        store.send(.fsItems(.startRename(id: selectedId)))
+                    }
+                    return
+                }
+
                 if event.keyCode == 49 && event.modifierFlags.isDisjoint(with: [.command, .option, .control, .shift]) {
                     if store.canQuickLookSelectedItem {
                         store.send(.quickLookSelectedItem)
@@ -77,6 +98,8 @@ struct FileManagerView: View {
                     AppDelegate.shared?.selectTab(at: 9)
                 }
             }
+            .focusable()
+            .focused($isKeyCommandFocused)
 
             NavigationSplitView(columnVisibility: columnVisibility) {
                 SidebarView(store: store)
@@ -172,6 +195,13 @@ struct FileManagerView: View {
             }
         }
         .focusedSceneValue(\.fileManagerStore, store)
+        .onChange(of: store.fsItems.isRenaming) { isRenaming in
+            if !isRenaming {
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
+                    isKeyCommandFocused = true
+                }
+            }
+        }
         .onAppear {
             if let path = initialPath {
                 store.send(.navigateTo(path))
@@ -181,6 +211,10 @@ struct FileManagerView: View {
 
             store.send(.loadLocations)
             store.send(.fsItems(.onAppear))
+
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) {
+                isKeyCommandFocused = true
+            }
         }
     }
 }

@@ -27,6 +27,8 @@ struct ContentPaneListView: View {
             item: item,
             isSelected: fsStore.selectedIds.contains(item.id),
             isCut: fsStore.clipboardItems.contains(item.fullPath) && fsStore.clipboardOperation == .cut,
+            isRenaming: fsStore.renamingItemId == item.id,
+            renamingText: fsStore.renamingText,
             availableWidth: geometry.size.width,
             applications: fsStore.operations.applicationsForItems[item.fullPath],
             onSelect: {
@@ -65,6 +67,15 @@ struct ContentPaneListView: View {
                 sendWithSelection(item, fsStore: fsStore, action: {
                     fsStore.send(.setDefaultAppWithOtherForSelectedItem)
                 })
+            },
+            onRenameUpdate: { text in
+                fsStore.send(.updateRenamingText(text))
+            },
+            onRenameCommit: {
+                fsStore.send(.commitRename)
+            },
+            onRenameCancel: {
+                fsStore.send(.cancelRename)
             },
             onStartDrag: {
                 let dragPaths = fsStore.selectedIds.isEmpty
@@ -169,6 +180,9 @@ struct ContentPaneListView: View {
                             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
                             .contentShape(Rectangle())
                             .onTapGesture {
+                                if fsStore.isRenaming {
+                                    fsStore.send(.commitRename)
+                                }
                                 fsStore.send(.clearSelection)
                             }
                         }

@@ -27,6 +27,7 @@ public struct FileSystemClient: Sendable {
     public var createFolder: @Sendable (URL, String) async throws -> Void
     public var pasteFile: @Sendable (URL, URL) async throws -> Void
     public var moveFile: @Sendable (URL, URL) async throws -> Void
+    public var renameFile: @Sendable (URL, URL) async throws -> Void
     public var loadItems: @Sendable (URL, Bool) async throws -> [FSItem]
     public var fileExists: @Sendable (String) -> Bool
     public var saveDragPaths: @Sendable ([String]) -> Void
@@ -47,6 +48,7 @@ public struct FileSystemClient: Sendable {
         createFolder: @escaping @Sendable (URL, String) async throws -> Void,
         pasteFile: @escaping @Sendable (URL, URL) async throws -> Void,
         moveFile: @escaping @Sendable (URL, URL) async throws -> Void,
+        renameFile: @escaping @Sendable (URL, URL) async throws -> Void,
         loadItems: @escaping @Sendable (URL, Bool) async throws -> [FSItem],
         fileExists: @escaping @Sendable (String) -> Bool,
         saveDragPaths: @escaping @Sendable ([String]) -> Void,
@@ -66,6 +68,7 @@ public struct FileSystemClient: Sendable {
         self.createFolder = createFolder
         self.pasteFile = pasteFile
         self.moveFile = moveFile
+        self.renameFile = renameFile
         self.loadItems = loadItems
         self.fileExists = fileExists
         self.saveDragPaths = saveDragPaths
@@ -210,6 +213,9 @@ extension FileSystemClient: DependencyKey {
             moveFile: { sourceURL, destinationURL in
                 try FileManager.default.moveItem(at: sourceURL, to: destinationURL)
             },
+            renameFile: { sourceURL, destinationURL in
+                try FileManager.default.moveItem(at: sourceURL, to: destinationURL)
+            },
             loadItems: { directoryURL, showHidden in
                 try await Task.detached {
                     let fileManager = FileManager.default
@@ -338,6 +344,7 @@ extension FileSystemClient: DependencyKey {
             createFolder: { _, _ in unimplemented() },
             pasteFile: { _, _ in unimplemented() },
             moveFile: { _, _ in unimplemented() },
+            renameFile: { _, _ in unimplemented() },
             loadItems: { _, _ in [] },
             fileExists: { _ in false },
             saveDragPaths: { _ in },
@@ -373,6 +380,7 @@ extension FileSystemClient: DependencyKey {
             createFolder: { _, _ in },
             pasteFile: { _, _ in },
             moveFile: { _, _ in },
+            renameFile: { _, _ in },
             loadItems: { _, _ in [] },
             fileExists: { _ in false },
             saveDragPaths: { _ in },

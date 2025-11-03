@@ -6,6 +6,8 @@ struct FSItemListView: View {
     let item: FSItem
     let isSelected: Bool
     let isCut: Bool
+    let isRenaming: Bool
+    let renamingText: String
     let availableWidth: CGFloat
     let applications: [ApplicationInfo]?
     let onSelect: () -> Void
@@ -14,10 +16,14 @@ struct FSItemListView: View {
     let onOpenWithApp: (String?) -> Void
     let onSetDefaultApp: (String, UTType?) -> Void
     let onSetDefaultAppWithOther: () -> Void
+    let onRenameUpdate: (String) -> Void
+    let onRenameCommit: () -> Void
+    let onRenameCancel: () -> Void
     let onStartDrag: () -> Void
     let onDrop: (String) -> Void
 
     @State private var isDropTarget = false
+    @FocusState private var isTextFieldFocused: Bool
 
     private struct ColumnWidths {
         let name: CGFloat
@@ -53,8 +59,31 @@ struct FSItemListView: View {
                     .opacity(item.isHidden || isCut ? 0.5 : 1.0)
                     .frame(width: 20, height: 20)
 
-                styledText(item.name, fontSize: 13)
-                    .lineLimit(1)
+                if isRenaming {
+                    TextField("", text: Binding(
+                        get: { renamingText },
+                        set: { onRenameUpdate($0) }
+                    ))
+                    .font(.system(size: 13))
+                    .textFieldStyle(.plain)
+                    .background(Color.black)
+                    .cornerRadius(4)
+                    .focused($isTextFieldFocused)
+                    .onSubmit {
+                        onRenameCommit()
+                    }
+                    .onExitCommand {
+                        onRenameCancel()
+                    }
+                    .onAppear {
+                        DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) {
+                            isTextFieldFocused = true
+                        }
+                    }
+                } else {
+                    styledText(item.name, fontSize: 13)
+                        .lineLimit(1)
+                }
 
                 Spacer(minLength: 0)
 

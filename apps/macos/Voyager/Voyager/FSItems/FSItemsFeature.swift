@@ -37,6 +37,13 @@ struct FSItemsFeature {
 
         var isDragDropOperation: Bool = false
 
+        var renamingItemId: String?
+        var renamingText: String = ""
+
+        var isRenaming: Bool {
+            renamingItemId != nil
+        }
+
         var displayOrderItems: [FSItem] {
             if groupKey == .none {
                 return items
@@ -87,6 +94,10 @@ struct FSItemsFeature {
         case startDrag(paths: [String])
         case dropToFolder(destinationPath: String)
         case dropItems(sourcePaths: [String], destinationPath: String, isOptionDrag: Bool)
+        case startRename(id: String)
+        case updateRenamingText(String)
+        case commitRename
+        case cancelRename
         case operations(FSItemsOperationsFeature.Action)
     }
 
@@ -131,6 +142,10 @@ struct FSItemsFeature {
                             fileSystemClient.saveClipboardPaths([], .copy)
                         }
 
+                        return .run { _ in
+                            await fileSystemClient.postFileSystemChanged([filePath])
+                        }
+                    } else if case .rename = kind {
                         return .run { _ in
                             await fileSystemClient.postFileSystemChanged([filePath])
                         }
@@ -204,6 +219,10 @@ struct FSItemsFeature {
                 }
 
             case let .selectItem(id, isCommandPressed, isShiftPressed):
+                if state.isRenaming {
+                    return .send(.commitRename)
+                }
+
                 state.shouldScrollToSelection = false
 
                 if isShiftPressed {
@@ -584,6 +603,53 @@ struct FSItemsFeature {
                     destinationPath: destinationPath,
                     operation: operation
                 )))
+
+            case let .startRename(id):
+                guard let item = state.items.first(where: { $0.id == id }) else {
+                    return .none
+                }
+
+                state.renamingItemId = id
+                state.renamingText = item.name
+
+                return .none
+
+            case let .updateRenamingText(text):
+                state.renamingText = text
+                return .none
+
+            case .commitRename:
+                guard let itemId = state.renamingItemId,
+                      let item = state.items.first(where: { $0.id == itemId })
+                else {
+                    return .send(.cancelRename)
+                }
+
+                let trimmed = state.renamingText.trimmingCharacters(in: .whitespaces)
+
+                guard !trimmed.isEmpty else {
+                    return .send(.cancelRename)
+                }
+
+                let finalName = trimmed
+
+                if finalName == item.name {
+                    return .send(.cancelRename)
+                }
+
+                let oldPath = item.fullPath
+                let parentPath = URL(fileURLWithPath: oldPath).deletingLastPathComponent()
+                let newPath = parentPath.appendingPathComponent(finalName).path
+
+                state.renamingItemId = nil
+                state.renamingText = ""
+
+                return .send(.operations(.renameItem(oldPath: oldPath, newPath: newPath)))
+
+            case .cancelRename:
+                state.renamingItemId = nil
+                state.renamingText = ""
+                return .none
             }
         }
     }

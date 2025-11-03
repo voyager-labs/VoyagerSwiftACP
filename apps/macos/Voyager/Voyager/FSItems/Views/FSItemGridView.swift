@@ -6,12 +6,18 @@ struct FSItemGridView: View {
     let item: FSItem
     let isSelected: Bool
     let isCut: Bool
+    let isRenaming: Bool
+    let renamingText: String
     let onSelect: () -> Void
     let onOpen: () -> Void
+    let onRenameUpdate: (String) -> Void
+    let onRenameCommit: () -> Void
+    let onRenameCancel: () -> Void
     let onStartDrag: () -> Void
     let onDrop: (String) -> Void
 
     @State private var isDropTarget = false
+    @FocusState private var isTextFieldFocused: Bool
 
     var body: some View {
         VStack(spacing: 1) {
@@ -53,12 +59,36 @@ struct FSItemGridView: View {
                             .padding(.top, 2)
                         }
 
-                        Text(item.name)
+                        if isRenaming {
+                            TextField("", text: Binding(
+                                get: { renamingText },
+                                set: { onRenameUpdate($0) }
+                            ))
                             .font(.system(size: 12))
-                            .lineLimit(2)
                             .multilineTextAlignment(.center)
-                            .opacity(item.isHidden || isCut ? 0.5 : 1.0)
-                            .fixedSize(horizontal: false, vertical: true)
+                            .textFieldStyle(.plain)
+                            .background(Color.black)
+                            .cornerRadius(4)
+                            .focused($isTextFieldFocused)
+                            .onSubmit {
+                                onRenameCommit()
+                            }
+                            .onExitCommand {
+                                onRenameCancel()
+                            }
+                            .onAppear {
+                                DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) {
+                                    isTextFieldFocused = true
+                                }
+                            }
+                        } else {
+                            Text(item.name)
+                                .font(.system(size: 12))
+                                .lineLimit(2)
+                                .multilineTextAlignment(.center)
+                                .opacity(item.isHidden || isCut ? 0.5 : 1.0)
+                                .fixedSize(horizontal: false, vertical: true)
+                        }
                     }
                     .padding(.horizontal, 4)
                     .padding(.vertical, 2)
