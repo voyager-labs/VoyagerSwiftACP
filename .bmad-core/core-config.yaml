@@ -1,4 +1,7 @@
 markdownExploder: true
+language:
+  default: ko
+  agentResponses: ko
 qa:
   qaLocation: docs/qa
 prd:
