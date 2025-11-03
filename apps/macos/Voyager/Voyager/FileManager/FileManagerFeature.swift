@@ -43,6 +43,7 @@ struct FileManagerFeature {
             case let .folder(path): return path
             case .recents: return "Recents"
             case .shared: return "Shared"
+            case .airdrop: return "AirDrop"
             case let .tags(tagName): return tagName
             }
         }
@@ -59,6 +60,7 @@ struct FileManagerFeature {
         var showHiddenFiles: Bool = false
         var sidebarVisible: Bool = true
         var selectedSidebarItem: String?
+        var favorites: [SidebarUtils.FavoriteItem] = []
         var locations: [SidebarUtils.LocationItem] = []
         var tags: [SidebarUtils.TagItem] = []
 
@@ -98,7 +100,7 @@ struct FileManagerFeature {
 
         var breadcrumbItems: [BreadcrumbItem] {
             switch navigationState {
-            case .recents, .shared, .tags:
+            case .recents, .shared, .airdrop, .tags:
                 return []
             case let .folder(path):
                 var result: [BreadcrumbItem] = []
@@ -169,6 +171,10 @@ struct FileManagerFeature {
         case setSidebarVisible(Bool)
         case showRecents
         case showShared
+        case loadFavorites
+        case favoritesLoaded([SidebarUtils.FavoriteItem])
+        case openFavorite(SidebarUtils.FavoriteItem)
+
         case loadLocations
         case locationsLoaded([SidebarUtils.LocationItem])
         case openLocation(SidebarUtils.LocationItem)
@@ -204,6 +210,7 @@ struct FileManagerFeature {
                     .send(.fsItems(.setSortKey(state.sortKey))),
                     .send(.fsItems(.setSortOrder(state.sortOrder))),
                     .send(.fsItems(.loadItems(path: state.currentPath))),
+                    .send(.loadFavorites),
                     .send(.loadLocations),
                     .send(.loadTags)
                 )
@@ -327,7 +334,30 @@ struct FileManagerFeature {
                 state.forwardHistory = []
                 state.navigationState = .shared
                 // Shared 섹션은 빈 상태로 유지 (네트워크 리소스 기능은 미구현)
+                state.titlePath = "Shared"
+                return .send(.fsItems(.itemsLoaded([])))
+
+            case .loadFavorites:
+                return .run { send in
+                    let favorites = await SidebarUtils.loadFavorites()
+                    await send(.favoritesLoaded(favorites))
+                }
+
+            case let .favoritesLoaded(favorites):
+                state.favorites = favorites
                 return .none
+
+            case let .openFavorite(favorite):
+                if state.currentPath == favorite.url.path {
+                    return .none
+                }
+
+                state.saveCurrentScrollPosition()
+                state.selectedSidebarItem = favorite.name
+                state.backHistory.append(state.currentPath)
+                state.forwardHistory = []
+                state.navigationState = .folder(favorite.url.path)
+                return .send(.fsItems(.loadItems(path: favorite.url.path)))
 
             case .loadLocations:
                 return .run { send in
@@ -341,20 +371,22 @@ struct FileManagerFeature {
                 return .none
 
             case let .openLocation(location):
-                // AirDrop은 기능 미구현으로 아무 동작하지 않음
+                state.saveCurrentScrollPosition()
+                state.selectedSidebarItem = location.name
+                state.backHistory.append(state.currentPath)
+                state.forwardHistory = []
+
+                // AirDrop은 기능 미구현으로 빈 상태 유지
                 if location.name == "AirDrop" {
-                    state.selectedSidebarItem = location.name
-                    return .none
+                    state.navigationState = .airdrop
+                    state.titlePath = "AirDrop"
+                    return .send(.fsItems(.itemsLoaded([])))
                 }
 
                 if state.currentPath == location.url.path {
                     return .none
                 }
 
-                state.saveCurrentScrollPosition()
-                state.selectedSidebarItem = location.name
-                state.backHistory.append(state.currentPath)
-                state.forwardHistory = []
                 state.navigationState = .folder(location.url.path)
                 return .send(.fsItems(.loadItems(path: location.url.path)))
 

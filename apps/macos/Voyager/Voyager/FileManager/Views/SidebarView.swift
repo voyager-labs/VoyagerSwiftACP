@@ -86,6 +86,11 @@ struct SidebarView: View {
                 Spacer()
                     .frame(height: 8)
 
+                favoritesSection
+
+                Spacer()
+                    .frame(height: 8)
+
                 locationsSection
 
                 Spacer()
@@ -98,6 +103,30 @@ struct SidebarView: View {
         }
         .frame(minWidth: 200)
         .background(Color(NSColor.controlBackgroundColor))
+    }
+
+    private var favoritesSection: some View {
+        Group {
+            if !store.favorites.isEmpty {
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("Favorites")
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                        .padding(.horizontal, 12)
+                        .padding(.top, 8)
+
+                    ForEach(store.favorites, id: \.url) { favorite in
+                        SidebarItemView(
+                            iconName: favorite.iconName,
+                            title: favorite.name,
+                            isSelected: store.selectedSidebarItem == favorite.name
+                        ) {
+                            store.send(.openFavorite(favorite))
+                        }
+                    }
+                }
+            }
+        }
     }
 
     private var locationsSection: some View {

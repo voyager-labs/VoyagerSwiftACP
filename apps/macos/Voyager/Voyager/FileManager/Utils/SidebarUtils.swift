@@ -17,6 +17,37 @@ enum SidebarUtils {
         let color: Color
     }
 
+    struct FavoriteItem: Equatable {
+        let name: String
+        let url: URL
+        let iconName: String
+    }
+
+    @MainActor
+    static func loadFavorites() -> [FavoriteItem] {
+        func makeFavorite(
+            name: String,
+            directory: FileManager.SearchPathDirectory,
+            iconName: String,
+            domain: FileManager.SearchPathDomainMask = .userDomainMask
+        ) -> FavoriteItem? {
+            guard let url = FileManager.default.urls(for: directory, in: domain).first else { return nil }
+            return FavoriteItem(name: name, url: url, iconName: iconName)
+        }
+
+        return [
+            makeFavorite(
+                name: "Applications",
+                directory: .applicationDirectory,
+                iconName: "folder",
+                domain: .localDomainMask
+            ),
+            makeFavorite(name: "Desktop", directory: .desktopDirectory, iconName: "desktopcomputer"),
+            makeFavorite(name: "Documents", directory: .documentDirectory, iconName: "doc"),
+            makeFavorite(name: "Downloads", directory: .downloadsDirectory, iconName: "arrow.down.circle"),
+        ].compactMap { $0 }
+    }
+
     @MainActor
     static func loadLocations() -> [LocationItem] {
         var locations: [LocationItem] = []
