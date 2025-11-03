@@ -149,6 +149,40 @@ struct FileManagerFeature {
                 scrollPositions[currentPath] = selectedId
             }
         }
+
+        mutating func navigateToFolder(_ path: String, sidebarItemName: String) {
+            saveCurrentScrollPosition()
+            selectedSidebarItem = sidebarItemName
+            backHistory.append(currentPath)
+            forwardHistory = []
+            navigationState = .folder(path)
+        }
+
+        mutating func navigate(
+            to navigationState: FileManagerNavigationUtils.NavigationState,
+            sidebarItemName: String
+        ) {
+            saveCurrentScrollPosition()
+            selectedSidebarItem = sidebarItemName
+            backHistory.append(currentPath)
+            forwardHistory = []
+            self.navigationState = navigationState
+        }
+
+        mutating func navigateFromHistory(
+            to path: String,
+            addToForward: Bool,
+            locations: [SidebarUtils.LocationItem]
+        ) {
+            saveCurrentScrollPosition()
+            if addToForward {
+                forwardHistory.append(currentPath)
+            } else {
+                backHistory.append(currentPath)
+            }
+            navigationState = FileManagerNavigationUtils.navigationStateFromPath(path)
+            matchSidebarToPath(path, locations: locations)
+        }
     }
 
     enum ViewLayout: String, Equatable, Codable {
@@ -233,25 +267,13 @@ struct FileManagerFeature {
                 return .send(.fsItems(.duplicateSelectedItems))
 
             case .goBack:
-                guard let previousPath = state.backHistory.popLast() else {
-                    return .none
-                }
-                state.saveCurrentScrollPosition()
-                state.forwardHistory.append(state.currentPath)
-
-                state.navigationState = FileManagerNavigationUtils.navigationStateFromPath(previousPath)
-                state.matchSidebarToPath(previousPath, locations: state.locations)
+                guard let previousPath = state.backHistory.popLast() else { return .none }
+                state.navigateFromHistory(to: previousPath, addToForward: true, locations: state.locations)
                 return FileManagerNavigationUtils.navigateToState(state.navigationState)
 
             case .goForward:
-                guard let nextPath = state.forwardHistory.popLast() else {
-                    return .none
-                }
-                state.saveCurrentScrollPosition()
-                state.backHistory.append(state.currentPath)
-
-                state.navigationState = FileManagerNavigationUtils.navigationStateFromPath(nextPath)
-                state.matchSidebarToPath(nextPath, locations: state.locations)
+                guard let nextPath = state.forwardHistory.popLast() else { return .none }
+                state.navigateFromHistory(to: nextPath, addToForward: false, locations: state.locations)
                 return FileManagerNavigationUtils.navigateToState(state.navigationState)
 
             case let .goToHistoryIndex(index, isBackHistory):
@@ -290,15 +312,9 @@ struct FileManagerFeature {
                 let url = URL(fileURLWithPath: state.currentPath)
                 let parentURL = url.deletingLastPathComponent()
 
-                guard parentURL.path != state.currentPath else {
-                    return .none
-                }
+                guard parentURL.path != state.currentPath else { return .none }
 
-                state.saveCurrentScrollPosition()
-                state.backHistory.append(state.currentPath)
-                state.forwardHistory = []
-                state.navigationState = .folder(parentURL.path)
-
+                state.navigateToFolder(parentURL.path, sidebarItemName: parentURL.lastPathComponent)
                 return .send(.fsItems(.loadItems(path: parentURL.path)))
 
             case let .changeLayout(layout):
@@ -320,20 +336,11 @@ struct FileManagerFeature {
                 return .none
 
             case .showRecents:
-                state.saveCurrentScrollPosition()
-                state.selectedSidebarItem = "Recents"
-                state.backHistory.append(state.currentPath)
-                state.forwardHistory = []
-                state.navigationState = .recents
+                state.navigate(to: .recents, sidebarItemName: "Recents")
                 return .send(.fsItems(.loadRecentItems))
 
             case .showShared:
-                state.saveCurrentScrollPosition()
-                state.selectedSidebarItem = "Shared"
-                state.backHistory.append(state.currentPath)
-                state.forwardHistory = []
-                state.navigationState = .shared
-                // Shared 섹션은 빈 상태로 유지 (네트워크 리소스 기능은 미구현)
+                state.navigate(to: .shared, sidebarItemName: "Shared")
                 state.titlePath = "Shared"
                 return .send(.fsItems(.itemsLoaded([])))
 
@@ -348,15 +355,8 @@ struct FileManagerFeature {
                 return .none
 
             case let .openFavorite(favorite):
-                if state.currentPath == favorite.url.path {
-                    return .none
-                }
-
-                state.saveCurrentScrollPosition()
-                state.selectedSidebarItem = favorite.name
-                state.backHistory.append(state.currentPath)
-                state.forwardHistory = []
-                state.navigationState = .folder(favorite.url.path)
+                guard state.currentPath != favorite.url.path else { return .none }
+                state.navigateToFolder(favorite.url.path, sidebarItemName: favorite.name)
                 return .send(.fsItems(.loadItems(path: favorite.url.path)))
 
             case .loadLocations:
@@ -371,23 +371,15 @@ struct FileManagerFeature {
                 return .none
 
             case let .openLocation(location):
-                state.saveCurrentScrollPosition()
-                state.selectedSidebarItem = location.name
-                state.backHistory.append(state.currentPath)
-                state.forwardHistory = []
-
                 // AirDrop은 기능 미구현으로 빈 상태 유지
                 if location.name == "AirDrop" {
-                    state.navigationState = .airdrop
+                    state.navigate(to: .airdrop, sidebarItemName: "AirDrop")
                     state.titlePath = "AirDrop"
                     return .send(.fsItems(.itemsLoaded([])))
                 }
 
-                if state.currentPath == location.url.path {
-                    return .none
-                }
-
-                state.navigationState = .folder(location.url.path)
+                guard state.currentPath != location.url.path else { return .none }
+                state.navigateToFolder(location.url.path, sidebarItemName: location.name)
                 return .send(.fsItems(.loadItems(path: location.url.path)))
 
             case .loadTags:
@@ -401,11 +393,7 @@ struct FileManagerFeature {
                 return .none
 
             case let .showTag(tagItem):
-                state.saveCurrentScrollPosition()
-                state.selectedSidebarItem = tagItem.name
-                state.backHistory.append(state.currentPath)
-                state.forwardHistory = []
-                state.navigationState = .tags(tagItem.name)
+                state.navigate(to: .tags(tagItem.name), sidebarItemName: tagItem.name)
                 return .run { send in
                     let taggedItems = await SidebarUtils.loadFilesWithTag(tagItem.name)
                     await send(.fsItems(.itemsLoaded(taggedItems)))
@@ -442,10 +430,7 @@ struct FileManagerFeature {
                     guard let item = state.fsItems.items.first(where: { $0.id == id }) else {
                         return .none
                     }
-                    state.saveCurrentScrollPosition()
-                    state.backHistory.append(state.currentPath)
-                    state.forwardHistory = []
-                    state.navigationState = .folder(item.fullPath)
+                    state.navigateToFolder(item.fullPath, sidebarItemName: item.name)
                     state.matchSidebarToPath(item.fullPath, locations: state.locations)
                     return .send(.fsItems(.loadItems(path: item.fullPath)))
 

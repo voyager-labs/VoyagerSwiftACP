@@ -61,6 +61,12 @@ struct FSItemsFeature {
                 return .ascending
             }
         }
+
+        mutating func clearSelection() {
+            selectedIds = []
+            lastSelectedId = nil
+            rangeAnchorId = nil
+        }
     }
 
     enum Action: Sendable {
@@ -167,9 +173,7 @@ struct FSItemsFeature {
                 return .none
 
             case let .loadItems(path):
-                state.selectedIds = []
-                state.lastSelectedId = nil
-                state.rangeAnchorId = nil
+                state.clearSelection()
 
                 return .run { [showHidden = state.showHiddenFiles] send in
                     let url = URL(fileURLWithPath: (path as NSString).expandingTildeInPath)
@@ -265,9 +269,7 @@ struct FSItemsFeature {
                 return .none
 
             case .clearSelection:
-                state.selectedIds = []
-                state.lastSelectedId = nil
-                state.rangeAnchorId = nil
+                state.clearSelection()
                 return .none
 
             case let .selectNextItem(isShiftPressed):
