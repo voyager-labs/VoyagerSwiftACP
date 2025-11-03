@@ -1,14 +1,24 @@
 """파일 메타데이터 관련 API 라우트"""
 
-from fastapi import APIRouter, Query
-from sqlmodel import select
+from fastapi import APIRouter, HTTPException, Query
+from pydantic import BaseModel
+from sqlmodel import select, text
 
 from app.config import load_config
+from core.llm.ollama_client import OllamaClient
+from core.llm.query_converter import QueryConverter
 from infra.db.engine import engine_manager
 from infra.repositories.file_entries import FileEntriesRepository
 from infra.schemas.file_entry_schema import FileEntrySchema
 
 router = APIRouter(prefix="/files", tags=["files"])
+
+
+class NaturalQueryRequest(BaseModel):
+    """자연어 검색 요청"""
+
+    query: str
+    limit: int = 50
 
 # 앱 시작 시 DB 초기화 (이미 main.py에서 수행됨)
 cfg = load_config()
@@ -51,6 +61,32 @@ async def list_files(
                 for item in results
             ],
         }
+
+
+@router.get("/db-size")
+async def get_db_size():
+    """데이터베이스 파일 크기 및 파일 개수 조회"""
+    import os
+    from pathlib import Path
+
+    db_path = Path(__file__).parent.parent.parent.parent / "voyager.dev.db"
+
+    if not db_path.exists():
+        return {"error": "Database file not found", "path": str(db_path)}
+
+    db_size_bytes = os.path.getsize(db_path)
+
+    # 파일 개수 조회
+    with engine_manager.session(autocommit=False) as session:
+        file_count = len(session.exec(select(FileEntrySchema)).all())
+
+    return {
+        "db_path": str(db_path),
+        "db_size_bytes": db_size_bytes,
+        "db_size_mb": round(db_size_bytes / (1024 * 1024), 2),
+        "db_size_gb": round(db_size_bytes / (1024 * 1024 * 1024), 2),
+        "total_files": file_count,
+    }
 
 
 @router.get("/stats")
@@ -148,3 +184,82 @@ async def get_file_detail(file_id: int):
             "owner_uid": file.owner_uid,
             "owner_gid": file.owner_gid,
         }
+
+
+@router.post("/query")
+async def natural_language_search(request: NaturalQueryRequest):
+    """자연어 검색 (LLM 기반)
+
+    사용자의 자연어 쿼리를 LLM이 SQL 조건식으로 변환하여 검색합니다.
+
+    Examples:
+        - "어제 다운로드한 PDF 파일"
+        - "최근 1주일 이내 수정된 이미지"
+        - "Downloads 폴더의 큰 파일"
+    """
+    # Ollama 클라이언트 초기화
+    ollama = OllamaClient(model="qwen2.5:7b")
+
+    # 서버 상태 확인
+    if not await ollama.health_check():
+        raise HTTPException(
+            status_code=503,
+            detail="Ollama 서버가 실행 중이지 않습니다. 'ollama serve' 명령으로 시작하세요.",
+        )
+
+    try:
+        # 쿼리 변환
+        converter = QueryConverter(ollama)
+        where_clause = await converter.convert(request.query)
+
+        if not where_clause:
+            return {
+                "query": request.query,
+                "where_clause": None,
+                "count": 0,
+                "items": [],
+                "error": "쿼리를 SQL 조건식으로 변환할 수 없습니다.",
+            }
+
+        # SQL 실행
+        with engine_manager.session(autocommit=False) as session:
+            # WHERE 절을 포함한 쿼리 생성
+            sql = f"""
+                SELECT id, path, name_full, size, extension, file_kind, modification_date
+                FROM file_entries
+                WHERE {where_clause}
+                ORDER BY modification_date DESC
+                LIMIT {request.limit}
+            """
+
+            stmt = text(sql)
+            result = session.exec(stmt)
+            rows = result.fetchall()
+
+            # 결과 변환
+            items = []
+            for row in rows:
+                items.append(
+                    {
+                        "id": row[0],
+                        "path": row[1],
+                        "name": row[2],
+                        "size": row[3],
+                        "extension": row[4],
+                        "file_kind": row[5],
+                        "modification_date": row[6],  # SQLite에서 문자열로 반환됨
+                    }
+                )
+
+            return {
+                "query": request.query,
+                "where_clause": where_clause,
+                "count": len(items),
+                "items": items,
+            }
+
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"검색 실행 오류: {str(e)}")
+
+    finally:
+        await ollama.close()

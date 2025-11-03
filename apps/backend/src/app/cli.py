@@ -126,14 +126,49 @@ def index() -> None:
 
                 # 배치 저장
                 if len(batch) >= args.batch_size:
-                    repo.batch_upsert(batch)
-                    print(f"✅ {len(batch)}개 파일 DB 저장 완료 (총 {file_count}개)       ")
+                    try:
+                        repo.batch_upsert(batch)
+                        session.commit()  # 배치마다 커밋
+                        print(f"✅ {len(batch)}개 파일 DB 저장 완료 (총 {file_count}개)       ")
+                    except Exception as e:
+                        session.rollback()  # 에러 시 롤백
+                        print(f"⚠️  배치 저장 중 오류 발생 (중복 파일 가능성)")
+                        print(f"💡 개별 저장으로 재시도 중...")
+                        # 개별 저장으로 재시도
+                        success = 0
+                        skipped = 0
+                        for entry in batch:
+                            try:
+                                repo.upsert_one(entry)
+                                session.commit()
+                                success += 1
+                            except Exception:
+                                session.rollback()
+                                skipped += 1  # 중복 등의 이유로 실패한 파일
+                        print(f"   → 저장 성공: {success}개, 중복 스킵: {skipped}개")
                     batch = []
 
             # 남은 배치 처리
             if batch:
-                repo.batch_upsert(batch)
-                print(f"✅ 마지막 {len(batch)}개 파일 DB 저장 완료       ")
+                try:
+                    repo.batch_upsert(batch)
+                    session.commit()  # 마지막 배치 커밋
+                    print(f"✅ 마지막 {len(batch)}개 파일 DB 저장 완료       ")
+                except Exception as e:
+                    session.rollback()  # 에러 시 롤백
+                    print(f"⚠️  마지막 배치 저장 중 오류 (중복 파일 가능성)")
+                    print(f"💡 개별 저장으로 재시도 중...")
+                    success = 0
+                    skipped = 0
+                    for entry in batch:
+                        try:
+                            repo.upsert_one(entry)
+                            session.commit()
+                            success += 1
+                        except Exception:
+                            session.rollback()
+                            skipped += 1
+                    print(f"   → 저장 성공: {success}개, 중복 스킵: {skipped}개")
 
         print(f"\n🎉 완료! 총 {file_count}개 파일 수집 (제외: {exclude_count}개)")
         print(f"💡 http://localhost:8000/docs 에서 결과 확인 (서버 실행 필요)")
