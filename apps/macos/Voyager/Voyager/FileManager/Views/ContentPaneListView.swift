@@ -86,6 +86,9 @@ struct ContentPaneListView: View {
             },
             onDrop: { folderPath in
                 fsStore.send(.dropToFolder(destinationPath: folderPath))
+            },
+            onLoadApplications: {
+                fsStore.send(.operations(.loadApplicationsForFile(file: item)))
             }
         )
     }
@@ -113,16 +116,12 @@ struct ContentPaneListView: View {
                 ScrollViewReader { proxy in
                     ScrollView {
                         LazyVStack(alignment: .leading, spacing: 0) {
+                            Color.clear.frame(height: 0).id("scrollTop")
                             if fsStore.groupKey == .none {
                                 ForEach(Array(fsStore.items.enumerated()), id: \.element.id) { index, item in
                                     itemRow(item: item, fsStore: fsStore, geometry: geometry)
                                         .background(index % 2 == 0 ? Color.clear : Color.primary.opacity(0.05))
                                         .id(item.id)
-                                        .task {
-                                            if !item.isDirectory {
-                                                fsStore.send(.operations(.loadApplicationsForFile(file: item)))
-                                            }
-                                        }
                                 }
                             } else {
                                 ForEach(Array(fsStore.groupedItems.enumerated()),
@@ -164,11 +163,6 @@ struct ContentPaneListView: View {
                                             .background(itemIndex % 2 == 0 ? Color.clear : Color.primary
                                                 .opacity(0.05))
                                             .id(item.id)
-                                            .task {
-                                                if !item.isDirectory {
-                                                    fsStore.send(.operations(.loadApplicationsForFile(file: item)))
-                                                }
-                                            }
                                     }
                                 }
                             }
@@ -182,7 +176,6 @@ struct ContentPaneListView: View {
                             fsStore.send(.clearSelection)
                         }
                     }
-                    .animation(.easeInOut(duration: 0.15), value: fsStore.items)
                     .contextMenu {
                         Button("New Folder") {
                             store.send(.fsItems(.operations(.createNewFolder(path: store.currentPath))))
@@ -193,6 +186,13 @@ struct ContentPaneListView: View {
                         if fsStore.shouldScrollToSelection, let id = newId {
                             proxy.scrollTo(id, anchor: nil)
                             fsStore.send(.resetScrollFlag)
+                        }
+                    }
+                    .onChange(of: store.scrollTargetId) { targetId in
+                        if let targetId = targetId {
+                            proxy.scrollTo(targetId, anchor: .top)
+                        } else {
+                            proxy.scrollTo("scrollTop", anchor: .top)
                         }
                     }
                 }

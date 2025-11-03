@@ -28,6 +28,7 @@ struct ContentPaneGridView: View {
                         }
 
                     LazyVStack(alignment: .leading, spacing: 16) {
+                        Color.clear.frame(height: 0).id("scrollTop")
                         if fsStore.groupKey == .none {
                             LazyVGrid(columns: columns, spacing: 16) {
                                 ForEach(fsStore.items) { item in
@@ -159,11 +160,17 @@ struct ContentPaneGridView: View {
                     .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
                 }
             }
-            .animation(.easeInOut(duration: 0.15), value: fsStore.items)
             .onChange(of: fsStore.lastSelectedId) { newId in
                 if fsStore.shouldScrollToSelection, let id = newId {
                     proxy.scrollTo(id, anchor: nil)
                     fsStore.send(.resetScrollFlag)
+                }
+            }
+            .onChange(of: store.scrollTargetId) { targetId in
+                if let targetId = targetId {
+                    proxy.scrollTo(targetId, anchor: .top)
+                } else {
+                    proxy.scrollTo("scrollTop", anchor: .top)
                 }
             }
         }

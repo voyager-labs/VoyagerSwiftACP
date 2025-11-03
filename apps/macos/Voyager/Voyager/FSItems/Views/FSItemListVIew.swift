@@ -21,9 +21,24 @@ struct FSItemListView: View {
     let onRenameCancel: () -> Void
     let onStartDrag: () -> Void
     let onDrop: (String) -> Void
+    let onLoadApplications: () -> Void
 
     @State private var isDropTarget = false
     @FocusState private var isTextFieldFocused: Bool
+
+    private static let dateFormatter: DateFormatter = {
+        let formatter = DateFormatter()
+        formatter.dateStyle = .medium
+        formatter.timeStyle = .short
+        return formatter
+    }()
+
+    private static let byteFormatter: ByteCountFormatter = {
+        let formatter = ByteCountFormatter()
+        formatter.allowedUnits = [.useBytes, .useKB, .useMB, .useGB]
+        formatter.countStyle = .file
+        return formatter
+    }()
 
     private struct ColumnWidths {
         let name: CGFloat
@@ -156,6 +171,12 @@ struct FSItemListView: View {
             )
         }
         .contextMenu {
+            let task = Task {
+                if !item.isDirectory && applications == nil {
+                    onLoadApplications()
+                }
+            }
+
             Button("Open") {
                 onOpen()
             }
@@ -233,17 +254,11 @@ struct FSItemListView: View {
 
     private func sizeText(_ item: FSItem) -> String {
         if item.isDirectory { return "--" }
-        let formatter = ByteCountFormatter()
-        formatter.allowedUnits = [.useBytes, .useKB, .useMB, .useGB]
-        formatter.countStyle = .file
-        return formatter.string(fromByteCount: item.size)
+        return Self.byteFormatter.string(fromByteCount: item.size)
     }
 
     private func dateText(_ date: Date) -> String {
-        let formatter = DateFormatter()
-        formatter.dateStyle = .medium
-        formatter.timeStyle = .short
-        return formatter.string(from: date)
+        Self.dateFormatter.string(from: date)
     }
 
     private func kindText(_ item: FSItem) -> String {

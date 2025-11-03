@@ -25,6 +25,7 @@ struct BreadcrumbItem: Equatable {
     }
 }
 
+// swiftlint:disable type_body_length
 @Reducer
 struct FileManagerFeature {
     static func makeWindowTitle(for path: String) -> String {
@@ -45,6 +46,11 @@ struct FileManagerFeature {
             case let .tags(tagName): return tagName
             }
         }
+
+        var titlePath: String = Settings.shared.defaultTabPath
+
+        var scrollPositions: [String: String] = [:]
+        var scrollTargetId: String?
 
         var backHistory: [String] = []
         var forwardHistory: [String] = []
@@ -123,7 +129,7 @@ struct FileManagerFeature {
         }
 
         var windowTitle: String {
-            FileManagerFeature.makeWindowTitle(for: currentPath)
+            FileManagerFeature.makeWindowTitle(for: titlePath)
         }
 
         mutating func matchSidebarToPath(_ path: String, locations: [SidebarUtils.LocationItem]) {
@@ -133,6 +139,12 @@ struct FileManagerFeature {
                 selectedSidebarItem = matchingLocation.name
             } else {
                 selectedSidebarItem = nil
+            }
+        }
+
+        mutating func saveCurrentScrollPosition() {
+            if let selectedId = fsItems.selectedIds.first {
+                scrollPositions[currentPath] = selectedId
             }
         }
     }
@@ -197,6 +209,7 @@ struct FileManagerFeature {
                 )
 
             case let .navigateTo(path):
+                state.saveCurrentScrollPosition()
                 state.backHistory.append(state.currentPath)
                 state.forwardHistory = []
                 state.navigationState = .folder(path)
@@ -216,6 +229,7 @@ struct FileManagerFeature {
                 guard let previousPath = state.backHistory.popLast() else {
                     return .none
                 }
+                state.saveCurrentScrollPosition()
                 state.forwardHistory.append(state.currentPath)
 
                 state.navigationState = FileManagerNavigationUtils.navigationStateFromPath(previousPath)
@@ -226,6 +240,7 @@ struct FileManagerFeature {
                 guard let nextPath = state.forwardHistory.popLast() else {
                     return .none
                 }
+                state.saveCurrentScrollPosition()
                 state.backHistory.append(state.currentPath)
 
                 state.navigationState = FileManagerNavigationUtils.navigationStateFromPath(nextPath)
@@ -233,6 +248,7 @@ struct FileManagerFeature {
                 return FileManagerNavigationUtils.navigateToState(state.navigationState)
 
             case let .goToHistoryIndex(index, isBackHistory):
+                state.saveCurrentScrollPosition()
                 if isBackHistory {
                     guard index < state.backHistory.count else { return .none }
                     let targetPath = state.backHistory[state.backHistory.count - 1 - index]
@@ -271,6 +287,7 @@ struct FileManagerFeature {
                     return .none
                 }
 
+                state.saveCurrentScrollPosition()
                 state.backHistory.append(state.currentPath)
                 state.forwardHistory = []
                 state.navigationState = .folder(parentURL.path)
@@ -296,6 +313,7 @@ struct FileManagerFeature {
                 return .none
 
             case .showRecents:
+                state.saveCurrentScrollPosition()
                 state.selectedSidebarItem = "Recents"
                 state.backHistory.append(state.currentPath)
                 state.forwardHistory = []
@@ -303,6 +321,7 @@ struct FileManagerFeature {
                 return .send(.fsItems(.loadRecentItems))
 
             case .showShared:
+                state.saveCurrentScrollPosition()
                 state.selectedSidebarItem = "Shared"
                 state.backHistory.append(state.currentPath)
                 state.forwardHistory = []
@@ -332,6 +351,7 @@ struct FileManagerFeature {
                     return .none
                 }
 
+                state.saveCurrentScrollPosition()
                 state.selectedSidebarItem = location.name
                 state.backHistory.append(state.currentPath)
                 state.forwardHistory = []
@@ -349,6 +369,7 @@ struct FileManagerFeature {
                 return .none
 
             case let .showTag(tagItem):
+                state.saveCurrentScrollPosition()
                 state.selectedSidebarItem = tagItem.name
                 state.backHistory.append(state.currentPath)
                 state.forwardHistory = []
@@ -373,15 +394,29 @@ struct FileManagerFeature {
 
             case let .fsItems(action):
                 switch action {
+                case .itemsLoaded:
+                    state.titlePath = state.currentPath
+
+                    if let savedId = state.scrollPositions[state.currentPath],
+                       state.fsItems.items.contains(where: { $0.id == savedId })
+                    {
+                        state.scrollTargetId = savedId
+                    } else {
+                        state.scrollTargetId = nil
+                    }
+                    return .none
+
                 case let .navigateFolder(id):
                     guard let item = state.fsItems.items.first(where: { $0.id == id }) else {
                         return .none
                     }
+                    state.saveCurrentScrollPosition()
                     state.backHistory.append(state.currentPath)
                     state.forwardHistory = []
                     state.navigationState = .folder(item.fullPath)
                     state.matchSidebarToPath(item.fullPath, locations: state.locations)
                     return .send(.fsItems(.loadItems(path: item.fullPath)))
+
                 default:
                     return .none
                 }
@@ -389,3 +424,5 @@ struct FileManagerFeature {
         }
     }
 }
+
+// swiftlint:enable type_body_length
