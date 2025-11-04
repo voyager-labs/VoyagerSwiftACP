@@ -3225,7 +3225,7 @@ To generate a masterful, comprehensive, and optimized prompt that can be used wi
 
 ## Inputs
 
-- Completed UI/UX Specification (`front-end-spec.md`)
+- Completed UI/UX Specification (sharded: `docs/frontend/`, start at `docs/frontend/index.md`)
 - Completed Frontend Architecture Document (`front-end-architecture`) or a full stack combined architecture such as `architecture.md`
 - Main System Architecture Document (`architecture` - for API contracts and tech stack to give further context)
 
@@ -3815,13 +3815,13 @@ npm run seed        # Seed test data
 
 1. **In Web UI (Gemini, ChatGPT, Claude)**:
    - Present the entire document in one response (or multiple if too long)
-   - Tell user to copy and save as `docs/brownfield-architecture.md` or `docs/project-architecture.md`
-   - Mention it can be sharded later in IDE if needed
+   - Tell user to save under `docs/architecture/` as sharded files and update `docs/architecture/index.md`
+   - Mention a single-file snapshot is discouraged; prefer shards for maintenance
 
 2. **In IDE Environment**:
-   - Create the document as `docs/brownfield-architecture.md`
-   - Inform user this single document contains all architectural information
-   - Can be sharded later using PO agent if desired
+   - Create or update shards in `docs/architecture/` and maintain `docs/architecture/index.md`
+   - Inform user the architecture documentation is organized as shards for easier maintenance
+   - If a single-file snapshot exists, note it is deprecated in favor of shards
 
 The document should be comprehensive enough that future agents can understand:
 
@@ -4418,9 +4418,9 @@ Check for available documentation in this order:
 1. **Sharded PRD/Architecture** (docs/prd/, docs/architecture/)
    - If found, recommend using create-next-story task instead
 
-2. **Brownfield Architecture Document** (docs/brownfield-architecture.md or similar)
-   - Created by document-project task
-   - Contains actual system state, technical debt, workarounds
+2. **Architecture Single-File Snapshot** (if present)
+   - May be produced by document-project task
+   - Contains actual system state, technical debt, workarounds; prefer migrating to shards
 
 3. **Brownfield PRD** (docs/prd.md)
    - May contain embedded technical details
@@ -4460,7 +4460,7 @@ If any required information is missing, list the missing information and ask the
 
 #### 2.1 From Document-Project Output
 
-If using brownfield-architecture.md from document-project:
+If using a single-file architecture snapshot from document-project:
 
 - **Technical Debt Section**: Note any workarounds affecting this story
 - **Key Files Section**: Identify files that will need modification
@@ -5389,4 +5389,3 @@ Choose a number (0-8) or 9 to proceed:
 ```
 
 <!-- END: BMAD-AGENTS -->
-
