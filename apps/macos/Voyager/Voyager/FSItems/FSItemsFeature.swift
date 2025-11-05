@@ -118,6 +118,7 @@ struct FSItemsFeature {
         case moveSelectedItemsToTrash
         case deleteSelectedItemsImmediately
         case confirmDeleteImmediately(items: [FSItem])
+        case putBackSelectedItems
         case startRename(id: String)
         case updateRenamingText(String)
         case commitRename
@@ -176,6 +177,8 @@ struct FSItemsFeature {
                     } else if case .moveToTrash = kind {
                         return .send(.reloadCurrentFolder)
                     } else if case .deleteImmediately = kind {
+                        return .send(.reloadCurrentFolder)
+                    } else if case .putBack = kind {
                         return .send(.reloadCurrentFolder)
                     }
                 } else if case .pasteFile = kind {
@@ -691,6 +694,13 @@ struct FSItemsFeature {
 
             case let .confirmDeleteImmediately(items):
                 return .send(.operations(.deleteImmediately(items: items)))
+
+            case .putBackSelectedItems:
+                let selectedItems = Array(state.items.filter { state.selectedIds.contains($0.id) })
+
+                guard !selectedItems.isEmpty else { return .none }
+
+                return .send(.operations(.putBackFromTrash(items: selectedItems)))
 
             case .commitRename:
                 guard let itemId = state.renamingItemId,

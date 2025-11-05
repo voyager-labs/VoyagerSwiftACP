@@ -12,7 +12,9 @@ struct ContentPaneListView: View {
         fsStore: Store<FSItemsFeature.State, FSItemsFeature.Action>,
         action: @escaping () -> Void
     ) {
-        fsStore.send(.selectItem(id: item.id, isCommandPressed: false, isShiftPressed: false))
+        if !fsStore.selectedIds.contains(item.id) {
+            fsStore.send(.selectItem(id: item.id, isCommandPressed: false, isShiftPressed: false))
+        }
         action()
     }
 
@@ -21,7 +23,8 @@ struct ContentPaneListView: View {
     private func itemRow(
         item: FSItem,
         fsStore: Store<FSItemsFeature.State, FSItemsFeature.Action>,
-        geometry: GeometryProxy
+        geometry: GeometryProxy,
+        isTrashFolder: Bool = false
     ) -> FSItemListView {
         FSItemListView(
             item: item,
@@ -89,7 +92,12 @@ struct ContentPaneListView: View {
             },
             onLoadApplications: {
                 fsStore.send(.operations(.loadApplicationsForFile(file: item)))
-            }
+            },
+            onPutBack: isTrashFolder ? {
+                sendWithSelection(item, fsStore: fsStore, action: {
+                    fsStore.send(.putBackSelectedItems)
+                })
+            } : nil
         )
     }
 
@@ -119,9 +127,14 @@ struct ContentPaneListView: View {
                             Color.clear.frame(height: 0).id("scrollTop")
                             if fsStore.groupKey == .none {
                                 ForEach(Array(fsStore.items.enumerated()), id: \.element.id) { index, item in
-                                    itemRow(item: item, fsStore: fsStore, geometry: geometry)
-                                        .background(index % 2 == 0 ? Color.clear : Color.primary.opacity(0.05))
-                                        .id(item.id)
+                                    itemRow(
+                                        item: item,
+                                        fsStore: fsStore,
+                                        geometry: geometry,
+                                        isTrashFolder: store.isTrashFolder
+                                    )
+                                    .background(index % 2 == 0 ? Color.clear : Color.primary.opacity(0.05))
+                                    .id(item.id)
                                 }
                             } else {
                                 ForEach(Array(fsStore.groupedItems.enumerated()),
@@ -160,10 +173,15 @@ struct ContentPaneListView: View {
                                     }
 
                                     ForEach(Array(group.items.enumerated()), id: \.element.id) { itemIndex, item in
-                                        itemRow(item: item, fsStore: fsStore, geometry: geometry)
-                                            .background(itemIndex % 2 == 0 ? Color.clear : Color.primary
-                                                .opacity(0.05))
-                                            .id(item.id)
+                                        itemRow(
+                                            item: item,
+                                            fsStore: fsStore,
+                                            geometry: geometry,
+                                            isTrashFolder: store.isTrashFolder
+                                        )
+                                        .background(itemIndex % 2 == 0 ? Color.clear : Color.primary
+                                            .opacity(0.05))
+                                        .id(item.id)
                                     }
                                 }
                             }

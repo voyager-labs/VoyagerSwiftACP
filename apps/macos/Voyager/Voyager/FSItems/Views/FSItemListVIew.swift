@@ -22,6 +22,7 @@ struct FSItemListView: View {
     let onStartDrag: () -> Void
     let onDrop: (String) -> Void
     let onLoadApplications: () -> Void
+    let onPutBack: (() -> Void)?
 
     @State private var isDropTarget = false
     @FocusState private var isTextFieldFocused: Bool
@@ -176,6 +177,14 @@ struct FSItemListView: View {
                 if !item.isDirectory && applications == nil {
                     onLoadApplications()
                 }
+            }
+
+            if let onPutBack = onPutBack {
+                Button("Put Back") {
+                    onPutBack()
+                }
+
+                Divider()
             }
 
             Button("Open") {

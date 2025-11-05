@@ -3,8 +3,8 @@ import ComposableArchitecture
 import Foundation
 import UniformTypeIdentifiers
 
+// swiftlint:disable type_body_length
 /// FSItems의 파일 시스템 작업 관리
-
 @Reducer
 struct FSItemsOperationsFeature {
     @ObservableState
@@ -37,6 +37,7 @@ struct FSItemsOperationsFeature {
         case renameItem(oldPath: String, newPath: String)
         case moveToTrash(items: [FSItem])
         case deleteImmediately(items: [FSItem])
+        case putBackFromTrash(items: [FSItem])
         case applicationsLoaded(String, [ApplicationInfo])
         case operationStarted(String, OperationKind)
         case operationFinished(String, OperationKind, Result<Void, FileOpError>)
@@ -209,13 +210,91 @@ struct FSItemsOperationsFeature {
                 }
 
             case let .moveToTrash(items):
-                return runBatch(items: items, kind: .moveToTrash) { url in
-                    try await fileSystemClient.moveToTrash(url)
+                return .run { send in
+                    for item in items {
+                        await send(.operationStarted(item.fullPath, .moveToTrash))
+
+                        do {
+                            let url = URL(fileURLWithPath: item.fullPath)
+                            var result: NSURL?
+
+                            try await MainActor.run {
+                                try FileManager.default.trashItem(at: url, resultingItemURL: &result)
+                            }
+
+                            if let trashURL = result as URL? {
+                                let metadata = TrashMetadata(
+                                    trashPath: trashURL.path,
+                                    originalPath: item.fullPath,
+                                    deletedDate: Date()
+                                )
+                                await TrashMetadataStore.shared.save(metadata)
+                            }
+
+                            await send(.operationFinished(item.fullPath, .moveToTrash, .success(())))
+                        } catch {
+                            await send(.operationFinished(item.fullPath, .moveToTrash, .failure(error.fileOpError)))
+                        }
+                    }
                 }
 
             case let .deleteImmediately(items):
                 return runBatch(items: items, kind: .deleteImmediately) { url in
                     try await fileSystemClient.deleteImmediately(url)
+                }
+
+            case let .putBackFromTrash(items):
+                return .run { [fileSystemClient] send in
+                    for item in items {
+                        await send(.operationStarted(item.fullPath, .putBack))
+
+                        guard let metadata = await TrashMetadataStore.shared.find(trashPath: item.fullPath)
+                        else {
+                            await send(.operationFinished(
+                                item.fullPath,
+                                .putBack,
+                                .failure(.system(message: "Original path not found"))
+                            ))
+                            continue
+                        }
+
+                        let originalPath = metadata.originalPath
+
+                        do {
+                            try await fileSystemClient.putBackFromTrash(
+                                URL(fileURLWithPath: item.fullPath),
+                                originalPath
+                            )
+                            await send(.operationFinished(item.fullPath, .putBack, .success(())))
+                        } catch let error as FileOpError where error.isFileExists {
+                            guard let itemName = error.itemName else {
+                                await send(.operationFinished(item.fullPath, .putBack, .failure(error)))
+                                continue
+                            }
+
+                            let shouldReplace = await MainActor.run {
+                                FSItemAlertUtils.showReplaceConfirmationAlert(itemName: itemName) == .replace
+                            }
+
+                            if shouldReplace {
+                                do {
+                                    let originalURL = URL(fileURLWithPath: originalPath)
+                                    try FileManager.default.removeItem(at: originalURL)
+                                    try await fileSystemClient.putBackFromTrash(
+                                        URL(fileURLWithPath: item.fullPath),
+                                        originalPath
+                                    )
+                                    await send(.operationFinished(item.fullPath, .putBack, .success(())))
+                                } catch {
+                                    await send(.operationFinished(item.fullPath, .putBack, .failure(error.fileOpError)))
+                                }
+                            } else {
+                                await send(.operationFinished(item.fullPath, .putBack, .failure(.cancelled)))
+                            }
+                        } catch {
+                            await send(.operationFinished(item.fullPath, .putBack, .failure(error.fileOpError)))
+                        }
+                    }
                 }
             }
         }
@@ -383,6 +462,7 @@ enum OperationKind: Equatable, Hashable, Sendable {
     case rename
     case moveToTrash
     case deleteImmediately
+    case putBack
 }
 
 extension Error {
@@ -411,3 +491,5 @@ extension String {
         (self as NSString).pathExtension
     }
 }
+
+// swiftlint:enable type_body_length

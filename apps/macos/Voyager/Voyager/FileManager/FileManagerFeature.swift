@@ -48,6 +48,12 @@ struct FileManagerFeature {
             }
         }
 
+        var isTrashFolder: Bool {
+            guard case let .folder(path) = navigationState else { return false }
+            let trashPath = FileManager.default.urls(for: .trashDirectory, in: .userDomainMask).first?.path ?? ""
+            return path == trashPath || path.starts(with: trashPath + "/")
+        }
+
         var titlePath: String = Settings.shared.defaultTabPath
 
         var scrollPositions: [String: String] = [:]
@@ -198,6 +204,7 @@ struct FileManagerFeature {
         case duplicateSelectedItems
         case moveSelectedItemsToTrash
         case deleteSelectedItemsImmediately
+        case putBackSelectedItems
         case goBack
         case goForward
         case goToHistoryIndex(Int, isBackHistory: Bool)
@@ -273,6 +280,9 @@ struct FileManagerFeature {
 
             case .deleteSelectedItemsImmediately:
                 return .send(.fsItems(.deleteSelectedItemsImmediately))
+
+            case .putBackSelectedItems:
+                return .send(.fsItems(.putBackSelectedItems))
 
             case .goBack:
                 guard let previousPath = state.backHistory.popLast() else { return .none }

@@ -21,4 +21,24 @@ enum FSItemAlertUtils {
         let response = alert.runModal()
         return response == .alertFirstButtonReturn
     }
+
+    @MainActor
+    static func showReplaceConfirmationAlert(itemName: String) -> ReplaceAlertResponse {
+        let alert = NSAlert()
+
+        alert.messageText = "A newer item named \"\(itemName)\" already exists in this location. Do you want to replace it with the older one you're moving?"
+
+        alert.alertStyle = .warning
+
+        alert.addButton(withTitle: "Stop")
+        alert.addButton(withTitle: "Replace")
+
+        let response = alert.runModal()
+        return response == .alertFirstButtonReturn ? .stop : .replace
+    }
+
+    enum ReplaceAlertResponse {
+        case stop
+        case replace
+    }
 }

@@ -30,6 +30,7 @@ public struct FileSystemClient: Sendable {
     public var renameFile: @Sendable (URL, URL) async throws -> Void
     public var moveToTrash: @Sendable (URL) async throws -> Void
     public var deleteImmediately: @Sendable (URL) async throws -> Void
+    public var putBackFromTrash: @Sendable (URL, String) async throws -> Void
     public var loadItems: @Sendable (URL, Bool) async throws -> [FSItem]
     public var fileExists: @Sendable (String) -> Bool
     public var saveDragPaths: @Sendable ([String]) -> Void
@@ -53,6 +54,7 @@ public struct FileSystemClient: Sendable {
         renameFile: @escaping @Sendable (URL, URL) async throws -> Void,
         moveToTrash: @escaping @Sendable (URL) async throws -> Void,
         deleteImmediately: @escaping @Sendable (URL) async throws -> Void,
+        putBackFromTrash: @escaping @Sendable (URL, String) async throws -> Void,
         loadItems: @escaping @Sendable (URL, Bool) async throws -> [FSItem],
         fileExists: @escaping @Sendable (String) -> Bool,
         saveDragPaths: @escaping @Sendable ([String]) -> Void,
@@ -75,6 +77,7 @@ public struct FileSystemClient: Sendable {
         self.renameFile = renameFile
         self.moveToTrash = moveToTrash
         self.deleteImmediately = deleteImmediately
+        self.putBackFromTrash = putBackFromTrash
         self.loadItems = loadItems
         self.fileExists = fileExists
         self.saveDragPaths = saveDragPaths
@@ -97,6 +100,7 @@ public enum FileOpError: Error, Equatable, Sendable {
     case notFound
     case unsupportedType
     case cancelled
+    case fileExists(itemName: String)
     case system(message: String, suggestion: String? = nil)
 
     public var message: String {
@@ -107,6 +111,8 @@ public enum FileOpError: Error, Equatable, Sendable {
             return "This item type is not supported."
         case .cancelled:
             return "The operation was cancelled."
+        case let .fileExists(itemName):
+            return "A newer item named \"\(itemName)\" already exists in this location."
         case let .system(message, _):
             return message
         }
@@ -119,6 +125,20 @@ public enum FileOpError: Error, Equatable, Sendable {
         default:
             return nil
         }
+    }
+
+    public var isFileExists: Bool {
+        if case .fileExists = self {
+            return true
+        }
+        return false
+    }
+
+    public var itemName: String? {
+        if case let .fileExists(name) = self {
+            return name
+        }
+        return nil
     }
 }
 
@@ -230,6 +250,25 @@ extension FileSystemClient: DependencyKey {
             },
             deleteImmediately: { url in
                 try FileManager.default.removeItem(at: url)
+            },
+            putBackFromTrash: { trashURL, originalPath in
+                let originalURL = URL(fileURLWithPath: originalPath)
+
+                let parentURL = originalURL.deletingLastPathComponent()
+                if !FileManager.default.fileExists(atPath: parentURL.path) {
+                    try FileManager.default.createDirectory(
+                        at: parentURL,
+                        withIntermediateDirectories: true
+                    )
+                }
+
+                if FileManager.default.fileExists(atPath: originalURL.path) {
+                    throw FileOpError.fileExists(itemName: originalURL.lastPathComponent)
+                }
+
+                try FileManager.default.moveItem(at: trashURL, to: originalURL)
+
+                await TrashMetadataStore.shared.remove(trashPath: trashURL.path)
             },
             loadItems: { directoryURL, showHidden in
                 try await Task.detached {
@@ -362,6 +401,7 @@ extension FileSystemClient: DependencyKey {
             renameFile: { _, _ in unimplemented() },
             moveToTrash: { _ in unimplemented() },
             deleteImmediately: { _ in unimplemented() },
+            putBackFromTrash: { _, _ in unimplemented() },
             loadItems: { _, _ in [] },
             fileExists: { _ in false },
             saveDragPaths: { _ in },
@@ -400,6 +440,7 @@ extension FileSystemClient: DependencyKey {
             renameFile: { _, _ in },
             moveToTrash: { _ in },
             deleteImmediately: { _ in },
+            putBackFromTrash: { _, _ in },
             loadItems: { _, _ in [] },
             fileExists: { _ in false },
             saveDragPaths: { _ in },
