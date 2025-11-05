@@ -69,6 +69,7 @@ struct FSItemGridView: View {
                             .textFieldStyle(.plain)
                             .background(Color.black)
                             .cornerRadius(4)
+                            .fixedSize()
                             .focused($isTextFieldFocused)
                             .onSubmit {
                                 onRenameCommit()
