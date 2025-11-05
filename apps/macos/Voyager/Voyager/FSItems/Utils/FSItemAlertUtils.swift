@@ -23,26 +23,6 @@ enum FSItemAlertUtils {
     }
 
     @MainActor
-    static func showReplaceConfirmationAlert(itemName: String) -> ReplaceAlertResponse {
-        let alert = NSAlert()
-
-        alert.messageText = "A newer item named \"\(itemName)\" already exists in this location. Do you want to replace it with the older one you're moving?"
-
-        alert.alertStyle = .warning
-
-        alert.addButton(withTitle: "Stop")
-        alert.addButton(withTitle: "Replace")
-
-        let response = alert.runModal()
-        return response == .alertFirstButtonReturn ? .stop : .replace
-    }
-
-    enum ReplaceAlertResponse {
-        case stop
-        case replace
-    }
-
-    @MainActor
     static func showRenameConflictAlert(itemName: String) {
         let alert = NSAlert()
         alert.alertStyle = .warning
@@ -53,14 +33,34 @@ enum FSItemAlertUtils {
     }
 
     @MainActor
-    static func showMoveReplaceAlert(itemName: String) -> ReplaceAlertResponse {
+    static func showReplaceAlert(
+        itemName: String,
+        context: ReplaceContext
+    ) -> ReplaceAlertResponse {
         let alert = NSAlert()
         alert.alertStyle = .warning
-        alert.messageText = "An older item named \"\(itemName)\" already exists in this location. Do you want to replace it with the newer one you're moving?"
+
+        switch context {
+        case .putBack:
+            alert.messageText = "A newer item named \"\(itemName)\" already exists in this location. Do you want to replace it with the older one you're moving?"
+        case .move:
+            alert.messageText = "An older item named \"\(itemName)\" already exists in this location. Do you want to replace it with the newer one you're moving?"
+        }
+
         alert.addButton(withTitle: "Stop")
         alert.addButton(withTitle: "Replace")
 
         let response = alert.runModal()
         return response == .alertFirstButtonReturn ? .stop : .replace
+    }
+
+    enum ReplaceContext {
+        case putBack
+        case move
+    }
+
+    enum ReplaceAlertResponse {
+        case stop
+        case replace
     }
 }

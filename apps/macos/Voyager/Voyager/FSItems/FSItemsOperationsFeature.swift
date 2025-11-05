@@ -219,7 +219,7 @@ struct FSItemsOperationsFeature {
                             }
 
                             let shouldReplace = await MainActor.run {
-                                FSItemAlertUtils.showMoveReplaceAlert(itemName: itemName) == .replace
+                                FSItemAlertUtils.showReplaceAlert(itemName: itemName, context: .move) == .replace
                             }
 
                             if shouldReplace {
@@ -332,7 +332,7 @@ struct FSItemsOperationsFeature {
                             }
 
                             let shouldReplace = await MainActor.run {
-                                FSItemAlertUtils.showReplaceConfirmationAlert(itemName: itemName) == .replace
+                                FSItemAlertUtils.showReplaceAlert(itemName: itemName, context: .putBack) == .replace
                             }
 
                             if shouldReplace {

@@ -155,45 +155,45 @@ struct FSItemsFeature {
                 return .send(.loadItems(path: currentPath))
 
             case let .operations(.operationFinished(filePath, kind, result)):
-                if case .success = result {
-                    if case .createFolder = kind {
-                        return .run { _ in
-                            await fileSystemClient.postFileSystemChanged([filePath])
-                        }
-                    } else if case .pasteFile = kind {
-                        if state.clipboardOperation == .cut {
-                            state.clipboardItems = []
-                            state.clipboardOperation = .copy
-                            fileSystemClient.saveClipboardPaths([], .copy)
-                        }
-
-                        if state.isDragDropOperation {
-                            state.isDragDropOperation = false
-                        }
-
-                        return .send(.reloadCurrentFolder)
-                    } else if case .rename = kind {
-                        return .run { _ in
-                            await fileSystemClient.postFileSystemChanged([filePath])
-                        }
-                    } else if case .moveToTrash = kind {
-                        return .send(.reloadCurrentFolder)
-                    } else if case .deleteImmediately = kind {
-                        return .send(.reloadCurrentFolder)
-                    } else if case .putBack = kind {
-                        return .send(.reloadCurrentFolder)
+                switch (kind, result) {
+                case (.createFolder, .success):
+                    return .run { _ in
+                        await fileSystemClient.postFileSystemChanged([filePath])
                     }
-                } else if case .pasteFile = kind {
+
+                case (.pasteFile, .success):
+                    if state.clipboardOperation == .cut {
+                        state.clipboardItems = []
+                        state.clipboardOperation = .copy
+                        fileSystemClient.saveClipboardPaths([], .copy)
+                    }
+
                     if state.isDragDropOperation {
                         state.isDragDropOperation = false
-
-                        let currentPath = state.items.first.map {
-                            URL(fileURLWithPath: $0.fullPath).deletingLastPathComponent().path
-                        } ?? "/"
-                        return .send(.loadItems(path: currentPath))
                     }
+
+                    return .send(.reloadCurrentFolder)
+
+                case (.rename, .success):
+                    return .run { _ in
+                        await fileSystemClient.postFileSystemChanged([filePath])
+                    }
+
+                case (.moveToTrash, .success),
+                     (.deleteImmediately, .success),
+                     (.putBack, .success):
+                    return .send(.reloadCurrentFolder)
+
+                case (.pasteFile, .failure):
+                    if state.isDragDropOperation {
+                        state.isDragDropOperation = false
+                        return .send(.reloadCurrentFolder)
+                    }
+                    return .none
+
+                default:
+                    return .none
                 }
-                return .none
 
             case .operations:
                 return .none
