@@ -50,6 +50,15 @@ struct FileManagerView: View {
                     return
                 }
 
+                if event.keyCode == 51 && event.modifierFlags.contains(.command) && event.modifierFlags
+                    .contains(.option)
+                {
+                    if !store.fsItems.selectedIds.isEmpty {
+                        store.send(.deleteSelectedItemsImmediately)
+                    }
+                    return
+                }
+
                 if event.keyCode == 51 && event.modifierFlags.contains(.command) && !event.modifierFlags
                     .contains(.option)
                 {

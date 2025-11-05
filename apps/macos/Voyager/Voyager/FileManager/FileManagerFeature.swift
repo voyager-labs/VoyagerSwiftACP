@@ -197,6 +197,7 @@ struct FileManagerFeature {
         case quickLookSelectedItem
         case duplicateSelectedItems
         case moveSelectedItemsToTrash
+        case deleteSelectedItemsImmediately
         case goBack
         case goForward
         case goToHistoryIndex(Int, isBackHistory: Bool)
@@ -269,6 +270,9 @@ struct FileManagerFeature {
 
             case .moveSelectedItemsToTrash:
                 return .send(.fsItems(.moveSelectedItemsToTrash))
+
+            case .deleteSelectedItemsImmediately:
+                return .send(.fsItems(.deleteSelectedItemsImmediately))
 
             case .goBack:
                 guard let previousPath = state.backHistory.popLast() else { return .none }

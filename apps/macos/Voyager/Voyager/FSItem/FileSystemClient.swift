@@ -29,6 +29,7 @@ public struct FileSystemClient: Sendable {
     public var moveFile: @Sendable (URL, URL) async throws -> Void
     public var renameFile: @Sendable (URL, URL) async throws -> Void
     public var moveToTrash: @Sendable (URL) async throws -> Void
+    public var deleteImmediately: @Sendable (URL) async throws -> Void
     public var loadItems: @Sendable (URL, Bool) async throws -> [FSItem]
     public var fileExists: @Sendable (String) -> Bool
     public var saveDragPaths: @Sendable ([String]) -> Void
@@ -51,6 +52,7 @@ public struct FileSystemClient: Sendable {
         moveFile: @escaping @Sendable (URL, URL) async throws -> Void,
         renameFile: @escaping @Sendable (URL, URL) async throws -> Void,
         moveToTrash: @escaping @Sendable (URL) async throws -> Void,
+        deleteImmediately: @escaping @Sendable (URL) async throws -> Void,
         loadItems: @escaping @Sendable (URL, Bool) async throws -> [FSItem],
         fileExists: @escaping @Sendable (String) -> Bool,
         saveDragPaths: @escaping @Sendable ([String]) -> Void,
@@ -72,6 +74,7 @@ public struct FileSystemClient: Sendable {
         self.moveFile = moveFile
         self.renameFile = renameFile
         self.moveToTrash = moveToTrash
+        self.deleteImmediately = deleteImmediately
         self.loadItems = loadItems
         self.fileExists = fileExists
         self.saveDragPaths = saveDragPaths
@@ -225,6 +228,9 @@ extension FileSystemClient: DependencyKey {
                     try FileManager.default.trashItem(at: url, resultingItemURL: &result)
                 }
             },
+            deleteImmediately: { url in
+                try FileManager.default.removeItem(at: url)
+            },
             loadItems: { directoryURL, showHidden in
                 try await Task.detached {
                     let fileManager = FileManager.default
@@ -355,6 +361,7 @@ extension FileSystemClient: DependencyKey {
             moveFile: { _, _ in unimplemented() },
             renameFile: { _, _ in unimplemented() },
             moveToTrash: { _ in unimplemented() },
+            deleteImmediately: { _ in unimplemented() },
             loadItems: { _, _ in [] },
             fileExists: { _ in false },
             saveDragPaths: { _ in },
@@ -392,6 +399,7 @@ extension FileSystemClient: DependencyKey {
             moveFile: { _, _ in },
             renameFile: { _, _ in },
             moveToTrash: { _ in },
+            deleteImmediately: { _ in },
             loadItems: { _, _ in [] },
             fileExists: { _ in false },
             saveDragPaths: { _ in },

@@ -36,6 +36,7 @@ struct FSItemsOperationsFeature {
         case pasteItems(sourcePaths: [String], destinationPath: String, operation: ClipboardOperation)
         case renameItem(oldPath: String, newPath: String)
         case moveToTrash(items: [FSItem])
+        case deleteImmediately(items: [FSItem])
         case applicationsLoaded(String, [ApplicationInfo])
         case operationStarted(String, OperationKind)
         case operationFinished(String, OperationKind, Result<Void, FileOpError>)
@@ -208,27 +209,13 @@ struct FSItemsOperationsFeature {
                 }
 
             case let .moveToTrash(items):
-                let paths = items.map { $0.fullPath }
+                return runBatch(items: items, kind: .moveToTrash) { url in
+                    try await fileSystemClient.moveToTrash(url)
+                }
 
-                return .run { [fileSystemClient] send in
-                    for path in paths {
-                        await send(.operationStarted(path, .moveToTrash))
-                    }
-
-                    do {
-                        for path in paths {
-                            let url = URL(fileURLWithPath: path)
-                            try await fileSystemClient.moveToTrash(url)
-                        }
-
-                        for path in paths {
-                            await send(.operationFinished(path, .moveToTrash, .success(())))
-                        }
-                    } catch {
-                        for path in paths {
-                            await send(.operationFinished(path, .moveToTrash, .failure(error.fileOpError)))
-                        }
-                    }
+            case let .deleteImmediately(items):
+                return runBatch(items: items, kind: .deleteImmediately) { url in
+                    try await fileSystemClient.deleteImmediately(url)
                 }
             }
         }
@@ -287,6 +274,35 @@ struct FSItemsOperationsFeature {
                 await send(.operationFinished(filePath, kind, .success(())))
             } catch {
                 await send(.operationFinished(filePath, kind, .failure(error.fileOpError)))
+            }
+        }
+    }
+
+    private func runBatch(
+        items: [FSItem],
+        kind: OperationKind,
+        operation: @escaping @Sendable (URL) async throws -> Void
+    ) -> Effect<Action> {
+        let paths = items.map { $0.fullPath }
+
+        return .run { send in
+            for path in paths {
+                await send(.operationStarted(path, kind))
+            }
+
+            do {
+                for path in paths {
+                    let url = URL(fileURLWithPath: path)
+                    try await operation(url)
+                }
+
+                for path in paths {
+                    await send(.operationFinished(path, kind, .success(())))
+                }
+            } catch {
+                for path in paths {
+                    await send(.operationFinished(path, kind, .failure(error.fileOpError)))
+                }
             }
         }
     }
@@ -366,6 +382,7 @@ enum OperationKind: Equatable, Hashable, Sendable {
     case pasteFile
     case rename
     case moveToTrash
+    case deleteImmediately
 }
 
 extension Error {

@@ -116,6 +116,8 @@ struct FSItemsFeature {
         case createNewFolder(currentPath: String)
         case confirmNewFolder(name: String, path: String)
         case moveSelectedItemsToTrash
+        case deleteSelectedItemsImmediately
+        case confirmDeleteImmediately(items: [FSItem])
         case startRename(id: String)
         case updateRenamingText(String)
         case commitRename
@@ -172,6 +174,8 @@ struct FSItemsFeature {
                             await fileSystemClient.postFileSystemChanged([filePath])
                         }
                     } else if case .moveToTrash = kind {
+                        return .send(.reloadCurrentFolder)
+                    } else if case .deleteImmediately = kind {
                         return .send(.reloadCurrentFolder)
                     }
                 } else if case .pasteFile = kind {
@@ -670,6 +674,23 @@ struct FSItemsFeature {
                 guard !selectedItems.isEmpty else { return .none }
 
                 return .send(.operations(.moveToTrash(items: selectedItems)))
+
+            case .deleteSelectedItemsImmediately:
+                let selectedItems = Array(state.items.filter { state.selectedIds.contains($0.id) })
+
+                guard !selectedItems.isEmpty else { return .none }
+
+                return .run { send in
+                    let itemNames = selectedItems.map { $0.name }
+                    let confirmed = await FSItemAlertUtils.showDeleteConfirmationAlert(itemNames: itemNames)
+
+                    if confirmed {
+                        await send(.confirmDeleteImmediately(items: selectedItems))
+                    }
+                }
+
+            case let .confirmDeleteImmediately(items):
+                return .send(.operations(.deleteImmediately(items: items)))
 
             case .commitRename:
                 guard let itemId = state.renamingItemId,
