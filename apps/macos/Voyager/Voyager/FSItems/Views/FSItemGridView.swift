@@ -130,16 +130,7 @@ struct FSItemGridView: View {
             onStartDrag()
 
             let url = URL(fileURLWithPath: item.fullPath)
-            let provider = NSItemProvider()
-
-            provider
-                .registerFileRepresentation(forTypeIdentifier: UTType.fileURL.identifier,
-                                            visibility: .all)
-                { completion in
-                    completion(url, true, nil)
-                    return nil
-                }
-
+            let provider = NSItemProvider(object: url as NSURL)
             return provider
         }
         .if(item.isDirectory) { view in

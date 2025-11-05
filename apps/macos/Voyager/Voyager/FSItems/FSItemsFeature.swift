@@ -42,6 +42,8 @@ struct FSItemsFeature {
         var renamingText: String = ""
         var creatingNewFolderId: String?
         var creatingNewFolderPath: String?
+        var creatingNewFolderOriginalName: String?
+        var selectAfterLoadFolderName: String?
 
         var isRenaming: Bool {
             renamingItemId != nil
@@ -78,6 +80,7 @@ struct FSItemsFeature {
         mutating func clearCreatingFolder() {
             creatingNewFolderId = nil
             creatingNewFolderPath = nil
+            creatingNewFolderOriginalName = nil
         }
     }
 
@@ -114,11 +117,12 @@ struct FSItemsFeature {
         case dropToFolder(destinationPath: String)
         case dropItems(sourcePaths: [String], destinationPath: String, isOptionDrag: Bool)
         case createNewFolder(currentPath: String)
-        case confirmNewFolder(name: String, path: String)
+        case confirmNewFolder(name: String, path: String, originalName: String)
         case moveSelectedItemsToTrash
         case deleteSelectedItemsImmediately
         case confirmDeleteImmediately(items: [FSItem])
         case putBackSelectedItems
+        case setSelectAfterLoad(folderName: String)
         case startRename(id: String)
         case updateRenamingText(String)
         case commitRename
@@ -157,19 +161,17 @@ struct FSItemsFeature {
                             await fileSystemClient.postFileSystemChanged([filePath])
                         }
                     } else if case .pasteFile = kind {
-                        if state.isDragDropOperation {
-                            state.isDragDropOperation = false
-                        }
-
                         if state.clipboardOperation == .cut {
                             state.clipboardItems = []
                             state.clipboardOperation = .copy
                             fileSystemClient.saveClipboardPaths([], .copy)
                         }
 
-                        return .run { _ in
-                            await fileSystemClient.postFileSystemChanged([filePath])
+                        if state.isDragDropOperation {
+                            state.isDragDropOperation = false
                         }
+
+                        return .send(.reloadCurrentFolder)
                     } else if case .rename = kind {
                         return .run { _ in
                             await fileSystemClient.postFileSystemChanged([filePath])
@@ -229,6 +231,16 @@ struct FSItemsFeature {
                 let sorted = FSItemsSorting.sortItems(items, by: state.sortKey, order: state.sortOrder)
                 state.items = IdentifiedArray(uniqueElements: sorted)
                 state.groupedItems = FSItemsGrouping.groupItems(Array(state.items), by: state.groupKey)
+
+                if let folderName = state.selectAfterLoadFolderName {
+                    state.selectAfterLoadFolderName = nil
+                    if let folder = state.items.first(where: { $0.name == folderName && $0.isDirectory }) {
+                        state.selectedIds = [folder.id]
+                        state.lastSelectedId = folder.id
+                        state.rangeAnchorId = nil
+                        state.shouldScrollToSelection = true
+                    }
+                }
 
                 return .run { _ in
                     Task.detached(priority: .background) {
@@ -659,15 +671,30 @@ struct FSItemsFeature {
                 state.items.insert(tempItem, at: 0)
                 state.creatingNewFolderId = tempId
                 state.creatingNewFolderPath = currentPath
+                state.creatingNewFolderOriginalName = folderName
                 state.renamingItemId = tempId
                 state.renamingText = folderName
                 state.shouldScrollToSelection = true
 
                 return .none
 
-            case let .confirmNewFolder(name, path):
+            case let .confirmNewFolder(name, path, originalName):
                 return .run { send in
-                    await send(.operations(.createNewFolder(name: name, parentPath: path)))
+                    let parentURL = URL(fileURLWithPath: path)
+                    let targetPath = parentURL.appendingPathComponent(name).path
+
+                    let folderName: String
+                    if FileManager.default.fileExists(atPath: targetPath) {
+                        await MainActor.run {
+                            FSItemAlertUtils.showRenameConflictAlert(itemName: name)
+                        }
+                        folderName = originalName
+                    } else {
+                        folderName = name
+                    }
+
+                    await send(.operations(.createNewFolder(name: folderName, parentPath: path)))
+                    await send(.setSelectAfterLoad(folderName: folderName))
                     await send(.loadItems(path: path))
                 }
 
@@ -702,6 +729,10 @@ struct FSItemsFeature {
 
                 return .send(.operations(.putBackFromTrash(items: selectedItems)))
 
+            case let .setSelectAfterLoad(folderName):
+                state.selectAfterLoadFolderName = folderName
+                return .none
+
             case .commitRename:
                 guard let itemId = state.renamingItemId,
                       let item = state.items.first(where: { $0.id == itemId })
@@ -719,13 +750,14 @@ struct FSItemsFeature {
 
                 if let creatingId = state.creatingNewFolderId,
                    creatingId == itemId,
-                   let parentPath = state.creatingNewFolderPath
+                   let parentPath = state.creatingNewFolderPath,
+                   let originalName = state.creatingNewFolderOriginalName
                 {
                     state.clearRenaming()
                     state.clearCreatingFolder()
                     state.items.remove(id: itemId)
 
-                    return .send(.confirmNewFolder(name: finalName, path: parentPath))
+                    return .send(.confirmNewFolder(name: finalName, path: parentPath, originalName: originalName))
                 }
 
                 if finalName == item.name {

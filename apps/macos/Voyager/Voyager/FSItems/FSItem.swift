@@ -63,7 +63,9 @@ public struct FSItem: Identifiable, Sendable {
 
 extension FSItem: Equatable {
     public static func == (lhs: FSItem, rhs: FSItem) -> Bool {
-        lhs.id == rhs.id
+        lhs.id == rhs.id &&
+            lhs.modifiedDate == rhs.modifiedDate &&
+            lhs.size == rhs.size
     }
 
     public static func temporaryFolder(id: String, name: String) -> FSItem {

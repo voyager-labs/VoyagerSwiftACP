@@ -234,12 +234,21 @@ extension FileSystemClient: DependencyKey {
                 )
             },
             pasteFile: { sourceURL, destinationURL in
+                if FileManager.default.fileExists(atPath: destinationURL.path) {
+                    throw FileOpError.fileExists(itemName: destinationURL.lastPathComponent)
+                }
                 try FileManager.default.copyItem(at: sourceURL, to: destinationURL)
             },
             moveFile: { sourceURL, destinationURL in
+                if FileManager.default.fileExists(atPath: destinationURL.path) {
+                    throw FileOpError.fileExists(itemName: destinationURL.lastPathComponent)
+                }
                 try FileManager.default.moveItem(at: sourceURL, to: destinationURL)
             },
             renameFile: { sourceURL, destinationURL in
+                if FileManager.default.fileExists(atPath: destinationURL.path) {
+                    throw FileOpError.fileExists(itemName: destinationURL.lastPathComponent)
+                }
                 try FileManager.default.moveItem(at: sourceURL, to: destinationURL)
             },
             moveToTrash: { url in

@@ -3,7 +3,7 @@ import ComposableArchitecture
 import Foundation
 import UniformTypeIdentifiers
 
-// swiftlint:disable type_body_length
+// swiftlint:disable type_body_length file_length
 /// FSItems의 파일 시스템 작업 관리
 @Reducer
 struct FSItemsOperationsFeature {
@@ -190,13 +190,57 @@ struct FSItemsOperationsFeature {
 
             case let .pasteItems(sourcePaths, destinationPath, operation):
                 let destinationURL = URL(fileURLWithPath: destinationPath)
-                let destinations = makeUniqueFilePaths(sourcePaths: sourcePaths, destinationURL: destinationURL)
+                let destinations = avoidNameCollisions(
+                    sourcePaths: sourcePaths,
+                    destinationURL: destinationURL,
+                    operation: operation
+                )
 
-                return run(for: destinationPath, kind: .pasteFile) {
+                let isCopy = operation == .copy
+
+                return .run { [fileSystemClient] send in
                     for (sourceURL, destURL) in destinations {
-                        switch operation {
-                        case .copy: try await fileSystemClient.pasteFile(sourceURL, destURL)
-                        case .cut: try await fileSystemClient.moveFile(sourceURL, destURL)
+                        let sourcePath = sourceURL.path
+                        let kind: OperationKind = .pasteFile
+
+                        await send(.operationStarted(sourcePath, kind))
+
+                        do {
+                            if isCopy {
+                                try await fileSystemClient.pasteFile(sourceURL, destURL)
+                            } else {
+                                try await fileSystemClient.moveFile(sourceURL, destURL)
+                            }
+                            await send(.operationFinished(sourcePath, kind, .success(())))
+                        } catch let error as FileOpError where error.isFileExists {
+                            guard let itemName = error.itemName else {
+                                await send(.operationFinished(sourcePath, kind, .failure(error)))
+                                continue
+                            }
+
+                            let shouldReplace = await MainActor.run {
+                                FSItemAlertUtils.showMoveReplaceAlert(itemName: itemName) == .replace
+                            }
+
+                            if shouldReplace {
+                                do {
+                                    try FileManager.default.removeItem(at: destURL)
+                                    if isCopy {
+                                        try await fileSystemClient.pasteFile(sourceURL, destURL)
+                                    } else {
+                                        try await fileSystemClient.moveFile(sourceURL, destURL)
+                                    }
+
+                                    let destinationFolder = destURL.deletingLastPathComponent().path
+                                    await send(.operationFinished(destinationFolder, kind, .success(())))
+                                } catch {
+                                    await send(.operationFinished(sourcePath, kind, .failure(error.fileOpError)))
+                                }
+                            } else {
+                                await send(.operationFinished(sourcePath, kind, .failure(.cancelled)))
+                            }
+                        } catch {
+                            await send(.operationFinished(sourcePath, kind, .failure(error.fileOpError)))
                         }
                     }
                 }
@@ -205,8 +249,23 @@ struct FSItemsOperationsFeature {
                 let sourceURL = URL(fileURLWithPath: oldPath)
                 let destURL = URL(fileURLWithPath: newPath)
 
-                return run(for: oldPath, kind: .rename) {
-                    try await fileSystemClient.renameFile(sourceURL, destURL)
+                return .run { send in
+                    await send(.operationStarted(oldPath, .rename))
+                    do {
+                        try await fileSystemClient.renameFile(sourceURL, destURL)
+                        await send(.operationFinished(oldPath, .rename, .success(())))
+                    } catch let error as FileOpError where error.isFileExists {
+                        guard let itemName = error.itemName else {
+                            await send(.operationFinished(oldPath, .rename, .failure(error)))
+                            return
+                        }
+                        await MainActor.run {
+                            FSItemAlertUtils.showRenameConflictAlert(itemName: itemName)
+                        }
+                        await send(.operationFinished(oldPath, .rename, .failure(error)))
+                    } catch {
+                        await send(.operationFinished(oldPath, .rename, .failure(error.fileOpError)))
+                    }
                 }
 
             case let .moveToTrash(items):
@@ -300,28 +359,41 @@ struct FSItemsOperationsFeature {
         }
     }
 
-    private func makeUniqueFilePaths(sourcePaths: [String], destinationURL: URL) -> [(URL, URL)] {
+    private func avoidNameCollisions(
+        sourcePaths: [String],
+        destinationURL: URL,
+        operation: ClipboardOperation
+    ) -> [(URL, URL)] {
         var destinations: [(URL, URL)] = []
 
         for sourcePath in sourcePaths {
             let sourceURL = URL(fileURLWithPath: sourcePath)
             let fileName = sourceURL.lastPathComponent
-            let nameWithoutExtension = fileName.deletingPathExtension()
-            let fileExtension = fileName.pathExtension
+            let sourceParent = sourceURL.deletingLastPathComponent()
 
             var destURL = destinationURL.appendingPathComponent(fileName)
-            var counter = 1
 
-            while fileSystemClient.fileExists(destURL.path) {
-                if counter == 1 {
-                    let name = fileExtension.isEmpty ? "\(nameWithoutExtension) copy" : "\(nameWithoutExtension) copy.\(fileExtension)"
+            if operation == .copy, sourceParent == destinationURL {
+                let nameWithoutExtension = fileName.deletingPathExtension()
+                let fileExtension = fileName.pathExtension
+                var counter = 1
+
+                while fileSystemClient.fileExists(destURL.path) {
+                    let name: String
+                    if counter == 1 {
+                        name = fileExtension.isEmpty
+                            ? "\(nameWithoutExtension) copy"
+                            : "\(nameWithoutExtension) copy.\(fileExtension)"
+                    } else {
+                        name = fileExtension.isEmpty
+                            ? "\(nameWithoutExtension) copy \(counter)"
+                            : "\(nameWithoutExtension) copy \(counter).\(fileExtension)"
+                    }
                     destURL = destinationURL.appendingPathComponent(name)
-                } else {
-                    let name = fileExtension.isEmpty ? "\(nameWithoutExtension) copy \(counter)" : "\(nameWithoutExtension) copy \(counter).\(fileExtension)"
-                    destURL = destinationURL.appendingPathComponent(name)
+                    counter += 1
                 }
-                counter += 1
             }
+
             destinations.append((sourceURL, destURL))
         }
 
@@ -492,4 +564,4 @@ extension String {
     }
 }
 
-// swiftlint:enable type_body_length
+// swiftlint:enable type_body_length file_length
