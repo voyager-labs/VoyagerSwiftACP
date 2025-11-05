@@ -7,8 +7,7 @@ struct ToolbarMenuView: View {
     var body: some View {
         Menu {
             Button("New Folder") {
-                let currentPath = store.currentPath
-                store.send(.fsItems(.operations(.createNewFolder(path: currentPath))))
+                store.send(.fsItems(.createNewFolder(currentPath: store.currentPath)))
             }
             .keyboardShortcut("n", modifiers: [.command, .shift])
 

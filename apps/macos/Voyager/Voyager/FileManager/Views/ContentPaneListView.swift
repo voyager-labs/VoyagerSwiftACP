@@ -179,7 +179,7 @@ struct ContentPaneListView: View {
                     }
                     .contextMenu {
                         Button("New Folder") {
-                            store.send(.fsItems(.operations(.createNewFolder(path: store.currentPath))))
+                            store.send(.fsItems(.createNewFolder(currentPath: store.currentPath)))
                         }
                         .keyboardShortcut("n", modifiers: [.command, .shift])
                     }

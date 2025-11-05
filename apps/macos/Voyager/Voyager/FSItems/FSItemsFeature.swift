@@ -40,6 +40,8 @@ struct FSItemsFeature {
 
         var renamingItemId: String?
         var renamingText: String = ""
+        var creatingNewFolderId: String?
+        var creatingNewFolderPath: String?
 
         var isRenaming: Bool {
             renamingItemId != nil
@@ -66,6 +68,16 @@ struct FSItemsFeature {
             selectedIds = []
             lastSelectedId = nil
             rangeAnchorId = nil
+        }
+
+        mutating func clearRenaming() {
+            renamingItemId = nil
+            renamingText = ""
+        }
+
+        mutating func clearCreatingFolder() {
+            creatingNewFolderId = nil
+            creatingNewFolderPath = nil
         }
     }
 
@@ -101,6 +113,8 @@ struct FSItemsFeature {
         case startDrag(paths: [String])
         case dropToFolder(destinationPath: String)
         case dropItems(sourcePaths: [String], destinationPath: String, isOptionDrag: Bool)
+        case createNewFolder(currentPath: String)
+        case confirmNewFolder(name: String, path: String)
         case startRename(id: String)
         case updateRenamingText(String)
         case commitRename
@@ -621,6 +635,32 @@ struct FSItemsFeature {
                 state.renamingText = text
                 return .none
 
+            case let .createNewFolder(currentPath):
+                var folderName = "untitled folder"
+                var counter = 2
+                while state.items.contains(where: { $0.name == folderName }) {
+                    folderName = "untitled folder \(counter)"
+                    counter += 1
+                }
+
+                let tempId = "temp-\(UUID().uuidString)"
+                let tempItem = FSItem.temporaryFolder(id: tempId, name: folderName)
+
+                state.items.insert(tempItem, at: 0)
+                state.creatingNewFolderId = tempId
+                state.creatingNewFolderPath = currentPath
+                state.renamingItemId = tempId
+                state.renamingText = folderName
+                state.shouldScrollToSelection = true
+
+                return .none
+
+            case let .confirmNewFolder(name, path):
+                return .run { send in
+                    await send(.operations(.createNewFolder(name: name, parentPath: path)))
+                    await send(.loadItems(path: path))
+                }
+
             case .commitRename:
                 guard let itemId = state.renamingItemId,
                       let item = state.items.first(where: { $0.id == itemId })
@@ -636,6 +676,17 @@ struct FSItemsFeature {
 
                 let finalName = trimmed
 
+                if let creatingId = state.creatingNewFolderId,
+                   creatingId == itemId,
+                   let parentPath = state.creatingNewFolderPath
+                {
+                    state.clearRenaming()
+                    state.clearCreatingFolder()
+                    state.items.remove(id: itemId)
+
+                    return .send(.confirmNewFolder(name: finalName, path: parentPath))
+                }
+
                 if finalName == item.name {
                     return .send(.cancelRename)
                 }
@@ -644,14 +695,17 @@ struct FSItemsFeature {
                 let parentPath = URL(fileURLWithPath: oldPath).deletingLastPathComponent()
                 let newPath = parentPath.appendingPathComponent(finalName).path
 
-                state.renamingItemId = nil
-                state.renamingText = ""
+                state.clearRenaming()
 
                 return .send(.operations(.renameItem(oldPath: oldPath, newPath: newPath)))
 
             case .cancelRename:
-                state.renamingItemId = nil
-                state.renamingText = ""
+                if let creatingId = state.creatingNewFolderId, creatingId == state.renamingItemId {
+                    state.items.remove(id: creatingId)
+                    state.clearCreatingFolder()
+                }
+
+                state.clearRenaming()
                 return .none
             }
         }

@@ -65,4 +65,14 @@ extension FSItem: Equatable {
     public static func == (lhs: FSItem, rhs: FSItem) -> Bool {
         lhs.id == rhs.id
     }
+
+    public static func temporaryFolder(id: String, name: String) -> FSItem {
+        FSItem(
+            name: name,
+            fullPath: id,
+            isDirectory: true,
+            isHidden: false,
+            kind: "Folder"
+        )
+    }
 }

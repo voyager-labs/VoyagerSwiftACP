@@ -18,7 +18,7 @@ struct AppMenuCommands: Commands {
 
             Button("New Folder") {
                 if let currentPath = fileManagerStore?.currentPath {
-                    fileManagerStore?.send(.fsItems(.operations(.createNewFolder(path: currentPath))))
+                    fileManagerStore?.send(.fsItems(.createNewFolder(currentPath: currentPath)))
                 }
             }
             .keyboardShortcut("n", modifiers: [.command, .shift])

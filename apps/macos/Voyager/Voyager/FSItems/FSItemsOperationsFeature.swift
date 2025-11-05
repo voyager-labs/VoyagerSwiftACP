@@ -31,7 +31,7 @@ struct FSItemsOperationsFeature {
         case setDefaultAppForFile(type: UTType?, bundleID: String, file: FSItem)
         case setDefaultAppWithOther(file: FSItem)
         case loadApplicationsForFile(file: FSItem)
-        case createNewFolder(path: String)
+        case createNewFolder(name: String, parentPath: String)
         case copySelectedItems(files: [FSItem])
         case pasteItems(sourcePaths: [String], destinationPath: String, operation: ClipboardOperation)
         case renameItem(oldPath: String, newPath: String)
@@ -170,19 +170,10 @@ struct FSItemsOperationsFeature {
                 state.applicationsForItems[filePath] = apps
                 return .none
 
-            case let .createNewFolder(path):
-                let parentURL = URL(fileURLWithPath: path)
-                var folderName = "untitled folder"
-                var folderURL = parentURL.appendingPathComponent(folderName)
-                var counter = 2
-                while fileSystemClient.fileExists(folderURL.path) {
-                    folderName = "untitled folder \(counter)"
-                    folderURL = parentURL.appendingPathComponent(folderName)
-                    counter += 1
-                }
-                let finalFolderName = folderName
-                return run(for: path, kind: .createFolder) {
-                    try await fileSystemClient.createFolder(parentURL, finalFolderName)
+            case let .createNewFolder(name, parentPath):
+                let parentURL = URL(fileURLWithPath: parentPath)
+                return run(for: parentPath, kind: .createFolder) {
+                    try await fileSystemClient.createFolder(parentURL, name)
                 }
 
             case let .copySelectedItems(files):
