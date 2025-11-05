@@ -35,6 +35,7 @@ struct FSItemsOperationsFeature {
         case copySelectedItems(files: [FSItem])
         case pasteItems(sourcePaths: [String], destinationPath: String, operation: ClipboardOperation)
         case renameItem(oldPath: String, newPath: String)
+        case moveToTrash(items: [FSItem])
         case applicationsLoaded(String, [ApplicationInfo])
         case operationStarted(String, OperationKind)
         case operationFinished(String, OperationKind, Result<Void, FileOpError>)
@@ -205,6 +206,30 @@ struct FSItemsOperationsFeature {
                 return run(for: oldPath, kind: .rename) {
                     try await fileSystemClient.renameFile(sourceURL, destURL)
                 }
+
+            case let .moveToTrash(items):
+                let paths = items.map { $0.fullPath }
+
+                return .run { [fileSystemClient] send in
+                    for path in paths {
+                        await send(.operationStarted(path, .moveToTrash))
+                    }
+
+                    do {
+                        for path in paths {
+                            let url = URL(fileURLWithPath: path)
+                            try await fileSystemClient.moveToTrash(url)
+                        }
+
+                        for path in paths {
+                            await send(.operationFinished(path, .moveToTrash, .success(())))
+                        }
+                    } catch {
+                        for path in paths {
+                            await send(.operationFinished(path, .moveToTrash, .failure(error.fileOpError)))
+                        }
+                    }
+                }
             }
         }
     }
@@ -340,6 +365,7 @@ enum OperationKind: Equatable, Hashable, Sendable {
     case createFolder
     case pasteFile
     case rename
+    case moveToTrash
 }
 
 extension Error {

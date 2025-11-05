@@ -28,6 +28,7 @@ public struct FileSystemClient: Sendable {
     public var pasteFile: @Sendable (URL, URL) async throws -> Void
     public var moveFile: @Sendable (URL, URL) async throws -> Void
     public var renameFile: @Sendable (URL, URL) async throws -> Void
+    public var moveToTrash: @Sendable (URL) async throws -> Void
     public var loadItems: @Sendable (URL, Bool) async throws -> [FSItem]
     public var fileExists: @Sendable (String) -> Bool
     public var saveDragPaths: @Sendable ([String]) -> Void
@@ -49,6 +50,7 @@ public struct FileSystemClient: Sendable {
         pasteFile: @escaping @Sendable (URL, URL) async throws -> Void,
         moveFile: @escaping @Sendable (URL, URL) async throws -> Void,
         renameFile: @escaping @Sendable (URL, URL) async throws -> Void,
+        moveToTrash: @escaping @Sendable (URL) async throws -> Void,
         loadItems: @escaping @Sendable (URL, Bool) async throws -> [FSItem],
         fileExists: @escaping @Sendable (String) -> Bool,
         saveDragPaths: @escaping @Sendable ([String]) -> Void,
@@ -69,6 +71,7 @@ public struct FileSystemClient: Sendable {
         self.pasteFile = pasteFile
         self.moveFile = moveFile
         self.renameFile = renameFile
+        self.moveToTrash = moveToTrash
         self.loadItems = loadItems
         self.fileExists = fileExists
         self.saveDragPaths = saveDragPaths
@@ -216,6 +219,12 @@ extension FileSystemClient: DependencyKey {
             renameFile: { sourceURL, destinationURL in
                 try FileManager.default.moveItem(at: sourceURL, to: destinationURL)
             },
+            moveToTrash: { url in
+                try await MainActor.run {
+                    var result: NSURL?
+                    try FileManager.default.trashItem(at: url, resultingItemURL: &result)
+                }
+            },
             loadItems: { directoryURL, showHidden in
                 try await Task.detached {
                     let fileManager = FileManager.default
@@ -345,6 +354,7 @@ extension FileSystemClient: DependencyKey {
             pasteFile: { _, _ in unimplemented() },
             moveFile: { _, _ in unimplemented() },
             renameFile: { _, _ in unimplemented() },
+            moveToTrash: { _ in unimplemented() },
             loadItems: { _, _ in [] },
             fileExists: { _ in false },
             saveDragPaths: { _ in },
@@ -381,6 +391,7 @@ extension FileSystemClient: DependencyKey {
             pasteFile: { _, _ in },
             moveFile: { _, _ in },
             renameFile: { _, _ in },
+            moveToTrash: { _ in },
             loadItems: { _, _ in [] },
             fileExists: { _ in false },
             saveDragPaths: { _ in },

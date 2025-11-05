@@ -115,6 +115,7 @@ struct FSItemsFeature {
         case dropItems(sourcePaths: [String], destinationPath: String, isOptionDrag: Bool)
         case createNewFolder(currentPath: String)
         case confirmNewFolder(name: String, path: String)
+        case moveSelectedItemsToTrash
         case startRename(id: String)
         case updateRenamingText(String)
         case commitRename
@@ -170,6 +171,8 @@ struct FSItemsFeature {
                         return .run { _ in
                             await fileSystemClient.postFileSystemChanged([filePath])
                         }
+                    } else if case .moveToTrash = kind {
+                        return .send(.reloadCurrentFolder)
                     }
                 } else if case .pasteFile = kind {
                     if state.isDragDropOperation {
@@ -660,6 +663,13 @@ struct FSItemsFeature {
                     await send(.operations(.createNewFolder(name: name, parentPath: path)))
                     await send(.loadItems(path: path))
                 }
+
+            case .moveSelectedItemsToTrash:
+                let selectedItems = Array(state.items.filter { state.selectedIds.contains($0.id) })
+
+                guard !selectedItems.isEmpty else { return .none }
+
+                return .send(.operations(.moveToTrash(items: selectedItems)))
 
             case .commitRename:
                 guard let itemId = state.renamingItemId,
