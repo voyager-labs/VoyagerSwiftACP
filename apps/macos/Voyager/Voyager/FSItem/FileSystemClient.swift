@@ -33,6 +33,7 @@ public struct FileSystemClient: Sendable {
     public var deleteImmediately: @Sendable (URL) async throws -> Void
     public var putBackFromTrash: @Sendable (URL, String) async throws -> Void
     public var compressItems: @Sendable ([URL]) async throws -> URL
+    public var extractCompressedFile: @Sendable (URL) async throws -> Void
     public var loadItems: @Sendable (URL, Bool) async throws -> [FSItem]
     public var fileExists: @Sendable (String) -> Bool
     public var saveDragPaths: @Sendable ([String]) -> Void
@@ -58,6 +59,7 @@ public struct FileSystemClient: Sendable {
         deleteImmediately: @escaping @Sendable (URL) async throws -> Void,
         putBackFromTrash: @escaping @Sendable (URL, String) async throws -> Void,
         compressItems: @escaping @Sendable ([URL]) async throws -> URL,
+        extractCompressedFile: @escaping @Sendable (URL) async throws -> Void,
         loadItems: @escaping @Sendable (URL, Bool) async throws -> [FSItem],
         fileExists: @escaping @Sendable (String) -> Bool,
         saveDragPaths: @escaping @Sendable ([String]) -> Void,
@@ -82,6 +84,7 @@ public struct FileSystemClient: Sendable {
         self.deleteImmediately = deleteImmediately
         self.putBackFromTrash = putBackFromTrash
         self.compressItems = compressItems
+        self.extractCompressedFile = extractCompressedFile
         self.loadItems = loadItems
         self.fileExists = fileExists
         self.saveDragPaths = saveDragPaths
@@ -325,6 +328,70 @@ extension FileSystemClient: DependencyKey {
 
                 return archiveURL
             },
+            extractCompressedFile: { zipURL in
+                guard zipURL.pathExtension.lowercased() == "zip" else {
+                    throw FileOpError.unsupportedType
+                }
+
+                let parentURL = zipURL.deletingLastPathComponent()
+                let tempURL = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+
+                defer {
+                    try? FileManager.default.removeItem(at: tempURL)
+                }
+
+                try FileManager.default.createDirectory(at: tempURL, withIntermediateDirectories: true)
+
+                let process = Process()
+                process.executableURL = URL(fileURLWithPath: "/usr/bin/unzip")
+                process.arguments = ["-o", "-q", zipURL.path, "-d", tempURL.path]
+
+                try process.run()
+                process.waitUntilExit()
+
+                guard process.terminationStatus == 0 else {
+                    throw FileOpError.system(message: "Extraction failed")
+                }
+
+                let extractedItems = try FileManager.default.contentsOfDirectory(
+                    at: tempURL,
+                    includingPropertiesForKeys: nil
+                )
+
+                if extractedItems.count == 1 {
+                    let item = extractedItems[0]
+                    var targetURL = parentURL.appendingPathComponent(item.lastPathComponent)
+                    var counter = 2
+
+                    while FileManager.default.fileExists(atPath: targetURL.path) {
+                        let name = (item.lastPathComponent as NSString).deletingPathExtension
+                        let ext = (item.lastPathComponent as NSString).pathExtension
+
+                        targetURL = ext.isEmpty
+                            ? parentURL.appendingPathComponent("\(name) \(counter)")
+                            : parentURL.appendingPathComponent("\(name) \(counter).\(ext)")
+                        counter += 1
+                    }
+
+                    try FileManager.default.moveItem(at: item, to: targetURL)
+                } else {
+                    let baseName = zipURL.deletingPathExtension().lastPathComponent
+                    var folderURL = parentURL.appendingPathComponent(baseName)
+                    var counter = 2
+
+                    while FileManager.default.fileExists(atPath: folderURL.path) {
+                        folderURL = parentURL.appendingPathComponent("\(baseName) \(counter)")
+                        counter += 1
+                    }
+
+                    try FileManager.default.createDirectory(at: folderURL, withIntermediateDirectories: false)
+
+                    for item in extractedItems {
+                        let target = folderURL.appendingPathComponent(item.lastPathComponent)
+                        try FileManager.default.moveItem(at: item, to: target)
+                    }
+                }
+            },
             loadItems: { directoryURL, showHidden in
                 try await Task.detached {
                     let fileManager = FileManager.default
@@ -458,6 +525,7 @@ extension FileSystemClient: DependencyKey {
             deleteImmediately: { _ in unimplemented() },
             putBackFromTrash: { _, _ in unimplemented() },
             compressItems: { _ in unimplemented() },
+            extractCompressedFile: { _ in unimplemented() },
             loadItems: { _, _ in [] },
             fileExists: { _ in false },
             saveDragPaths: { _ in },
@@ -498,6 +566,7 @@ extension FileSystemClient: DependencyKey {
             deleteImmediately: { _ in },
             putBackFromTrash: { _, _ in },
             compressItems: { _ in URL(fileURLWithPath: "/tmp/Archive.zip") },
+            extractCompressedFile: { _ in },
             loadItems: { _, _ in [] },
             fileExists: { _ in false },
             saveDragPaths: { _ in },

@@ -186,7 +186,8 @@ struct FSItemsFeature {
                      (.putBack, .success):
                     return .send(.reloadCurrentFolder)
 
-                case (.compress, .success):
+                case (.compress, .success),
+                     (.extract, .success):
                     return .send(.reloadCurrentFolder)
 
                 case (.pasteFile, .failure):
@@ -482,7 +483,29 @@ struct FSItemsFeature {
                     return .none
                 }
 
-                return .send(.operations(.openFiles(files: selectedFiles)))
+                var zipFiles: [FSItem] = []
+                var regularFiles: [FSItem] = []
+
+                for file in selectedFiles {
+                    if file.fileExtension.lowercased() == "zip" {
+                        zipFiles.append(file)
+                    } else {
+                        regularFiles.append(file)
+                    }
+                }
+
+                var effects: [Effect<Action>] = []
+
+                for zipFile in zipFiles {
+                    effects.append(.send(.operations(.extractCompressedFile(file: zipFile))))
+                }
+
+                if !regularFiles.isEmpty {
+                    effects.append(.send(.operations(.openFiles(files: regularFiles))))
+                }
+
+                guard !effects.isEmpty else { return .none }
+                return .merge(effects)
 
             case .quickLookSelectedItem:
                 guard state.selectedIds.count == 1,

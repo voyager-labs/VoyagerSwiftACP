@@ -253,10 +253,12 @@ struct FSItemListView: View {
                 }
             }
 
-            Divider()
+            if item.fileExtension.lowercased() != "zip" {
+                Divider()
 
-            Button(selectedCount == 1 ? "Compress \"\(item.name)\"" : "Compress") {
-                onCompress()
+                Button(selectedCount == 1 ? "Compress \"\(item.name)\"" : "Compress") {
+                    onCompress()
+                }
             }
         }
     }
