@@ -122,6 +122,7 @@ struct FSItemsFeature {
         case deleteSelectedItemsImmediately
         case confirmDeleteImmediately(items: [FSItem])
         case putBackSelectedItems
+        case compressSelectedItems
         case emptyTrash
         case setSelectAfterLoad(folderName: String)
         case startRename(id: String)
@@ -183,6 +184,9 @@ struct FSItemsFeature {
                 case (.moveToTrash, .success),
                      (.deleteImmediately, .success),
                      (.putBack, .success):
+                    return .send(.reloadCurrentFolder)
+
+                case (.compress, .success):
                     return .send(.reloadCurrentFolder)
 
                 case (.pasteFile, .failure):
@@ -729,6 +733,13 @@ struct FSItemsFeature {
                 guard !selectedItems.isEmpty else { return .none }
 
                 return .send(.operations(.putBackFromTrash(items: selectedItems)))
+
+            case .compressSelectedItems:
+                let selectedItems = Array(state.items.filter { state.selectedIds.contains($0.id) })
+
+                guard !selectedItems.isEmpty else { return .none }
+
+                return .send(.operations(.compressItems(items: selectedItems)))
 
             case .emptyTrash:
                 let allItems = Array(state.items)

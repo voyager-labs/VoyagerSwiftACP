@@ -1,3 +1,4 @@
+// swiftlint:disable file_length
 import AppKit
 import ComposableArchitecture
 import Foundation
@@ -31,6 +32,7 @@ public struct FileSystemClient: Sendable {
     public var moveToTrash: @Sendable (URL) async throws -> Void
     public var deleteImmediately: @Sendable (URL) async throws -> Void
     public var putBackFromTrash: @Sendable (URL, String) async throws -> Void
+    public var compressItems: @Sendable ([URL]) async throws -> URL
     public var loadItems: @Sendable (URL, Bool) async throws -> [FSItem]
     public var fileExists: @Sendable (String) -> Bool
     public var saveDragPaths: @Sendable ([String]) -> Void
@@ -55,6 +57,7 @@ public struct FileSystemClient: Sendable {
         moveToTrash: @escaping @Sendable (URL) async throws -> Void,
         deleteImmediately: @escaping @Sendable (URL) async throws -> Void,
         putBackFromTrash: @escaping @Sendable (URL, String) async throws -> Void,
+        compressItems: @escaping @Sendable ([URL]) async throws -> URL,
         loadItems: @escaping @Sendable (URL, Bool) async throws -> [FSItem],
         fileExists: @escaping @Sendable (String) -> Bool,
         saveDragPaths: @escaping @Sendable ([String]) -> Void,
@@ -78,6 +81,7 @@ public struct FileSystemClient: Sendable {
         self.moveToTrash = moveToTrash
         self.deleteImmediately = deleteImmediately
         self.putBackFromTrash = putBackFromTrash
+        self.compressItems = compressItems
         self.loadItems = loadItems
         self.fileExists = fileExists
         self.saveDragPaths = saveDragPaths
@@ -279,6 +283,48 @@ extension FileSystemClient: DependencyKey {
 
                 await TrashMetadataStore.shared.remove(trashPath: trashURL.path)
             },
+            compressItems: { itemURLs in
+                guard !itemURLs.isEmpty else {
+                    throw FileOpError.system(message: "No items to compress")
+                }
+
+                let parentURL = itemURLs[0].deletingLastPathComponent()
+
+                let archiveName: String
+                if itemURLs.count == 1 {
+                    let itemName = itemURLs[0].lastPathComponent
+                    archiveName = "\(itemName).zip"
+                } else {
+                    archiveName = "Archive.zip"
+                }
+
+                var archiveURL = parentURL.appendingPathComponent(archiveName)
+                var counter = 2
+                while FileManager.default.fileExists(atPath: archiveURL.path) {
+                    let baseName = archiveName.replacingOccurrences(of: ".zip", with: "")
+                    archiveURL = parentURL.appendingPathComponent("\(baseName) \(counter).zip")
+                    counter += 1
+                }
+
+                let process = Process()
+                process.executableURL = URL(fileURLWithPath: "/usr/bin/zip")
+                process.currentDirectoryURL = parentURL
+
+                var arguments = ["-r", "-q", archiveURL.lastPathComponent]
+                for itemURL in itemURLs {
+                    arguments.append(itemURL.lastPathComponent)
+                }
+                process.arguments = arguments
+
+                try process.run()
+                process.waitUntilExit()
+
+                guard process.terminationStatus == 0 else {
+                    throw FileOpError.system(message: "Compression failed")
+                }
+
+                return archiveURL
+            },
             loadItems: { directoryURL, showHidden in
                 try await Task.detached {
                     let fileManager = FileManager.default
@@ -411,6 +457,7 @@ extension FileSystemClient: DependencyKey {
             moveToTrash: { _ in unimplemented() },
             deleteImmediately: { _ in unimplemented() },
             putBackFromTrash: { _, _ in unimplemented() },
+            compressItems: { _ in unimplemented() },
             loadItems: { _, _ in [] },
             fileExists: { _ in false },
             saveDragPaths: { _ in },
@@ -450,6 +497,7 @@ extension FileSystemClient: DependencyKey {
             moveToTrash: { _ in },
             deleteImmediately: { _ in },
             putBackFromTrash: { _, _ in },
+            compressItems: { _ in URL(fileURLWithPath: "/tmp/Archive.zip") },
             loadItems: { _, _ in [] },
             fileExists: { _ in false },
             saveDragPaths: { _ in },

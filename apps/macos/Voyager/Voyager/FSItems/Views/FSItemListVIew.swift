@@ -23,6 +23,8 @@ struct FSItemListView: View {
     let onDrop: (String) -> Void
     let onLoadApplications: () -> Void
     let onPutBack: (() -> Void)?
+    let onCompress: () -> Void
+    let selectedCount: Int
 
     @State private var isDropTarget = false
     @FocusState private var isTextFieldFocused: Bool
@@ -249,6 +251,12 @@ struct FSItemListView: View {
                         onSetDefaultAppWithOther()
                     }
                 }
+            }
+
+            Divider()
+
+            Button(selectedCount == 1 ? "Compress \"\(item.name)\"" : "Compress") {
+                onCompress()
             }
         }
     }

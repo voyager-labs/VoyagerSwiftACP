@@ -39,6 +39,7 @@ struct FSItemsOperationsFeature {
         case deleteImmediately(items: [FSItem])
         case putBackFromTrash(items: [FSItem])
         case emptyTrash(items: [FSItem])
+        case compressItems(items: [FSItem])
         case applicationsLoaded(String, [ApplicationInfo])
         case operationStarted(String, OperationKind)
         case operationFinished(String, OperationKind, Result<Void, FileOpError>)
@@ -356,6 +357,23 @@ struct FSItemsOperationsFeature {
                         }
                     }
                 }
+
+            case let .compressItems(items):
+                let itemURLs = items.map { URL(fileURLWithPath: $0.fullPath) }
+                guard let firstItem = items.first else { return .none }
+                let parentPath = URL(fileURLWithPath: firstItem.fullPath).deletingLastPathComponent().path
+
+                return .run { [fileSystemClient] send in
+                    await send(.operationStarted(parentPath, .compress))
+
+                    do {
+                        let archiveURL = try await fileSystemClient.compressItems(itemURLs)
+                        await send(.operationFinished(parentPath, .compress, .success(())))
+                        await fileSystemClient.postFileSystemChanged([archiveURL.path])
+                    } catch {
+                        await send(.operationFinished(parentPath, .compress, .failure(error.fileOpError)))
+                    }
+                }
             }
         }
     }
@@ -538,6 +556,7 @@ enum OperationKind: Equatable, Hashable, Sendable {
     case moveToTrash
     case deleteImmediately
     case putBack
+    case compress
 }
 
 extension Error {

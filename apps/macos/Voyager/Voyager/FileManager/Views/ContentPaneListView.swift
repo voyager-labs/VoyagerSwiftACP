@@ -97,7 +97,13 @@ struct ContentPaneListView: View {
                 sendWithSelection(item, fsStore: fsStore, action: {
                     fsStore.send(.putBackSelectedItems)
                 })
-            } : nil
+            } : nil,
+            onCompress: {
+                sendWithSelection(item, fsStore: fsStore, action: {
+                    fsStore.send(.compressSelectedItems)
+                })
+            },
+            selectedCount: fsStore.selectedIds.isEmpty ? 1 : fsStore.selectedIds.count
         )
     }
 
