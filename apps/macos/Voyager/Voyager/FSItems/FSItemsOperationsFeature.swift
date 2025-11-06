@@ -270,63 +270,38 @@ struct FSItemsOperationsFeature {
                 }
 
             case let .moveToTrash(items):
-                return .run { send in
-                    for item in items {
-                        await send(.operationStarted(item.fullPath, .moveToTrash))
+                return runParallel(items: items, kind: .moveToTrash) { url in
+                    var result: NSURL?
+                    try await MainActor.run {
+                        try FileManager.default.trashItem(at: url, resultingItemURL: &result)
+                    }
 
-                        do {
-                            let url = URL(fileURLWithPath: item.fullPath)
-                            var result: NSURL?
-
-                            try await MainActor.run {
-                                try FileManager.default.trashItem(at: url, resultingItemURL: &result)
-                            }
-
-                            if let trashURL = result as URL? {
-                                let metadata = TrashMetadata(
-                                    trashPath: trashURL.path,
-                                    originalPath: item.fullPath,
-                                    deletedDate: Date()
-                                )
-                                await TrashMetadataStore.shared.save(metadata)
-                            }
-
-                            await send(.operationFinished(item.fullPath, .moveToTrash, .success(())))
-                        } catch {
-                            await send(.operationFinished(item.fullPath, .moveToTrash, .failure(error.fileOpError)))
-                        }
+                    if let trashURL = result as URL? {
+                        let metadata = TrashMetadata(
+                            trashPath: trashURL.path,
+                            originalPath: url.path,
+                            deletedDate: Date()
+                        )
+                        await TrashMetadataStore.shared.save(metadata)
                     }
                 }
 
             case let .deleteImmediately(items):
-                return runBatch(items: items, kind: .deleteImmediately) { url in
+                return runParallel(items: items, kind: .deleteImmediately) { url in
                     try await fileSystemClient.deleteImmediately(url)
                 }
 
             case let .emptyTrash(items):
-                return .run { [fileSystemClient] send in
-                    await withTaskGroup(of: Void.self) { group in
-                        for item in items {
-                            group.addTask {
-                                await send(.operationStarted(item.fullPath, .deleteImmediately))
-
-                                do {
-                                    let url = URL(fileURLWithPath: item.fullPath)
-                                    try await fileSystemClient.deleteImmediately(url)
-                                    await send(.operationFinished(item.fullPath, .deleteImmediately, .success(())))
-                                } catch {
-                                    await send(.operationFinished(
-                                        item.fullPath,
-                                        .deleteImmediately,
-                                        .failure(error.fileOpError)
-                                    ))
-                                }
-                            }
-                        }
+                return runParallel(
+                    items: items,
+                    kind: .deleteImmediately,
+                    operation: { url in
+                        try await fileSystemClient.deleteImmediately(url)
+                    },
+                    onComplete: {
+                        await TrashMetadataStore.shared.removeAll()
                     }
-
-                    await TrashMetadataStore.shared.removeAll()
-                }
+                )
 
             case let .putBackFromTrash(items):
                 return .run { [fileSystemClient] send in
@@ -455,32 +430,34 @@ struct FSItemsOperationsFeature {
         }
     }
 
-    private func runBatch(
+    private func runParallel(
         items: [FSItem],
         kind: OperationKind,
-        operation: @escaping @Sendable (URL) async throws -> Void
+        operation: @escaping @Sendable (URL) async throws -> Void,
+        onComplete: (@Sendable () async -> Void)? = nil
     ) -> Effect<Action> {
-        let paths = items.map { $0.fullPath }
+        .run { send in
+            await withTaskGroup(of: Void.self) { group in
+                for item in items {
+                    group.addTask {
+                        await send(.operationStarted(item.fullPath, kind))
 
-        return .run { send in
-            for path in paths {
-                await send(.operationStarted(path, kind))
+                        do {
+                            let url = URL(fileURLWithPath: item.fullPath)
+                            try await operation(url)
+                            await send(.operationFinished(item.fullPath, kind, .success(())))
+                        } catch {
+                            await send(.operationFinished(
+                                item.fullPath,
+                                kind,
+                                .failure(error.fileOpError)
+                            ))
+                        }
+                    }
+                }
             }
 
-            do {
-                for path in paths {
-                    let url = URL(fileURLWithPath: path)
-                    try await operation(url)
-                }
-
-                for path in paths {
-                    await send(.operationFinished(path, kind, .success(())))
-                }
-            } catch {
-                for path in paths {
-                    await send(.operationFinished(path, kind, .failure(error.fileOpError)))
-                }
-            }
+            await onComplete?()
         }
     }
 
