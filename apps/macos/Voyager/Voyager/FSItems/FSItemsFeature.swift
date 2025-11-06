@@ -123,6 +123,7 @@ struct FSItemsFeature {
         case confirmDeleteImmediately(items: [FSItem])
         case putBackSelectedItems
         case compressSelectedItems
+        case extractSelectedItem
         case emptyTrash
         case setSelectAfterLoad(folderName: String)
         case startRename(id: String)
@@ -483,29 +484,7 @@ struct FSItemsFeature {
                     return .none
                 }
 
-                var zipFiles: [FSItem] = []
-                var regularFiles: [FSItem] = []
-
-                for file in selectedFiles {
-                    if file.fileExtension.lowercased() == "zip" {
-                        zipFiles.append(file)
-                    } else {
-                        regularFiles.append(file)
-                    }
-                }
-
-                var effects: [Effect<Action>] = []
-
-                for zipFile in zipFiles {
-                    effects.append(.send(.operations(.extractCompressedFile(file: zipFile))))
-                }
-
-                if !regularFiles.isEmpty {
-                    effects.append(.send(.operations(.openFiles(files: regularFiles))))
-                }
-
-                guard !effects.isEmpty else { return .none }
-                return .merge(effects)
+                return .send(.operations(.openFiles(files: selectedFiles)))
 
             case .quickLookSelectedItem:
                 guard state.selectedIds.count == 1,
@@ -763,6 +742,13 @@ struct FSItemsFeature {
                 guard !selectedItems.isEmpty else { return .none }
 
                 return .send(.operations(.compressItems(items: selectedItems)))
+
+            case .extractSelectedItem:
+                guard let selectedItem = state.items.first(where: { state.selectedIds.contains($0.id) }),
+                      selectedItem.fileExtension.lowercased() == "zip"
+                else { return .none }
+
+                return .send(.operations(.extractCompressedFile(file: selectedItem)))
 
             case .emptyTrash:
                 let allItems = Array(state.items)

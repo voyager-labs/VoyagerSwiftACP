@@ -218,7 +218,7 @@ extension FileSystemClient: DependencyKey {
 
                 guard let defaultAppURL = LSCopyDefaultApplicationURLForContentType(
                     fileType.identifier as CFString,
-                    .viewer,
+                    .all,
                     nil
                 )?.takeRetainedValue() as URL?,
                     let bundleID = Bundle(url: defaultAppURL)?.bundleIdentifier

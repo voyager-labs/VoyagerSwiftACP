@@ -24,7 +24,10 @@ struct FSItemListView: View {
     let onLoadApplications: () -> Void
     let onPutBack: (() -> Void)?
     let onCompress: () -> Void
+    let onExtract: () -> Void
     let selectedCount: Int
+    let showCompress: Bool
+    let showExtract: Bool
 
     @State private var isDropTarget = false
     @FocusState private var isTextFieldFocused: Bool
@@ -253,11 +256,19 @@ struct FSItemListView: View {
                 }
             }
 
-            if item.fileExtension.lowercased() != "zip" {
+            if showCompress || showExtract {
                 Divider()
+            }
 
+            if showCompress {
                 Button(selectedCount == 1 ? "Compress \"\(item.name)\"" : "Compress") {
                     onCompress()
+                }
+            }
+
+            if showExtract {
+                Button("Extract Archive") {
+                    onExtract()
                 }
             }
         }

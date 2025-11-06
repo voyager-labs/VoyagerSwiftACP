@@ -26,6 +26,13 @@ struct ContentPaneListView: View {
         geometry: GeometryProxy,
         isTrashFolder: Bool = false
     ) -> FSItemListView {
+        let selectedItems = fsStore.items.filter { fsStore.selectedIds.contains($0.id) }
+        let containsZipFiles = selectedItems.contains { $0.fileExtension.lowercased() == "zip" }
+        let containsNonZipFiles = selectedItems.contains { $0.fileExtension.lowercased() != "zip" }
+
+        let showCompress = !containsZipFiles
+        let showExtract = containsZipFiles && !containsNonZipFiles
+
         FSItemListView(
             item: item,
             isSelected: fsStore.selectedIds.contains(item.id),
@@ -103,7 +110,14 @@ struct ContentPaneListView: View {
                     fsStore.send(.compressSelectedItems)
                 })
             },
-            selectedCount: fsStore.selectedIds.isEmpty ? 1 : fsStore.selectedIds.count
+            onExtract: {
+                sendWithSelection(item, fsStore: fsStore, action: {
+                    fsStore.send(.extractSelectedItem)
+                })
+            },
+            selectedCount: fsStore.selectedIds.isEmpty ? 1 : fsStore.selectedIds.count,
+            showCompress: showCompress,
+            showExtract: showExtract
         )
     }
 
