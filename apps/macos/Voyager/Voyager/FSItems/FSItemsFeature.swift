@@ -122,6 +122,7 @@ struct FSItemsFeature {
         case deleteSelectedItemsImmediately
         case confirmDeleteImmediately(items: [FSItem])
         case putBackSelectedItems
+        case emptyTrash
         case setSelectAfterLoad(folderName: String)
         case startRename(id: String)
         case updateRenamingText(String)
@@ -728,6 +729,14 @@ struct FSItemsFeature {
                 guard !selectedItems.isEmpty else { return .none }
 
                 return .send(.operations(.putBackFromTrash(items: selectedItems)))
+
+            case .emptyTrash:
+                let allItems = Array(state.items)
+                return .run { send in
+                    let shouldEmpty = await FSItemAlertUtils.showEmptyTrashConfirmationAlert(itemCount: allItems.count)
+                    guard shouldEmpty else { return }
+                    await send(.operations(.emptyTrash(items: allItems)))
+                }
 
             case let .setSelectAfterLoad(folderName):
                 state.selectAfterLoadFolderName = folderName

@@ -196,10 +196,16 @@ struct ContentPaneListView: View {
                         }
                     }
                     .contextMenu {
-                        Button("New Folder") {
-                            store.send(.fsItems(.createNewFolder(currentPath: store.currentPath)))
+                        if store.isTrashFolder {
+                            Button("Empty Trash") {
+                                store.send(.emptyTrash)
+                            }
+                        } else {
+                            Button("New Folder") {
+                                store.send(.fsItems(.createNewFolder(currentPath: store.currentPath)))
+                            }
+                            .keyboardShortcut("n", modifiers: [.command, .shift])
                         }
-                        .keyboardShortcut("n", modifiers: [.command, .shift])
                     }
                     .onChange(of: fsStore.lastSelectedId) { newId in
                         if fsStore.shouldScrollToSelection, let id = newId {

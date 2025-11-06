@@ -160,6 +160,22 @@ struct ContentPaneGridView: View {
                     }
                     .padding(16)
                     .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+                    .contentShape(Rectangle())
+                    .onTapGesture {
+                        fsStore.send(.clearSelection)
+                    }
+                    .contextMenu {
+                        if store.isTrashFolder {
+                            Button("Empty Trash") {
+                                store.send(.emptyTrash)
+                            }
+                        } else {
+                            Button("New Folder") {
+                                store.send(.fsItems(.createNewFolder(currentPath: store.currentPath)))
+                            }
+                            .keyboardShortcut("n", modifiers: [.command, .shift])
+                        }
+                    }
                 }
             }
             .onChange(of: fsStore.lastSelectedId) { newId in

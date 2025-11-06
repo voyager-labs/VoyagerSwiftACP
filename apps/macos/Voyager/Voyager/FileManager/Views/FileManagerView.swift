@@ -132,6 +132,15 @@ struct FileManagerView: View {
                             }
                         )
                         Spacer()
+
+                        if store.isTrashFolder {
+                            Button("Empty") {
+                                store.send(.emptyTrash)
+                            }
+                            .controlSize(.small)
+                            .buttonStyle(.borderedProminent)
+                            .tint(Color(white: 0.3))
+                        }
                     }
                     .padding(.horizontal, 16)
                     .padding(.vertical, 8)

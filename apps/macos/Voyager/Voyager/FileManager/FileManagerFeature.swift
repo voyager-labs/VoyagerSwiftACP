@@ -205,6 +205,9 @@ struct FileManagerFeature {
         case moveSelectedItemsToTrash
         case deleteSelectedItemsImmediately
         case putBackSelectedItems
+        case emptyTrash
+        case emptyTrashCompleted
+        case closeWindow
         case goBack
         case goForward
         case goToHistoryIndex(Int, isBackHistory: Bool)
@@ -283,6 +286,19 @@ struct FileManagerFeature {
 
             case .putBackSelectedItems:
                 return .send(.fsItems(.putBackSelectedItems))
+
+            case .emptyTrash:
+                return .send(.fsItems(.emptyTrash))
+
+            case .emptyTrashCompleted:
+                return .send(.closeWindow)
+
+            case .closeWindow:
+                return .run { _ in
+                    await MainActor.run {
+                        NSApp.keyWindow?.close()
+                    }
+                }
 
             case .goBack:
                 guard let previousPath = state.backHistory.popLast() else { return .none }
@@ -441,6 +457,13 @@ struct FileManagerFeature {
                         state.scrollTargetId = savedId
                     } else {
                         state.scrollTargetId = nil
+                    }
+                    return .none
+
+                case .operations(.operationFinished(_, .deleteImmediately, .success)):
+                    // emptyTrash 완료 감지
+                    if state.isTrashFolder {
+                        return .send(.emptyTrashCompleted)
                     }
                     return .none
 

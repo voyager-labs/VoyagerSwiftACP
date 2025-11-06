@@ -38,6 +38,7 @@ struct FSItemsOperationsFeature {
         case moveToTrash(items: [FSItem])
         case deleteImmediately(items: [FSItem])
         case putBackFromTrash(items: [FSItem])
+        case emptyTrash(items: [FSItem])
         case applicationsLoaded(String, [ApplicationInfo])
         case operationStarted(String, OperationKind)
         case operationFinished(String, OperationKind, Result<Void, FileOpError>)
@@ -300,6 +301,31 @@ struct FSItemsOperationsFeature {
             case let .deleteImmediately(items):
                 return runBatch(items: items, kind: .deleteImmediately) { url in
                     try await fileSystemClient.deleteImmediately(url)
+                }
+
+            case let .emptyTrash(items):
+                return .run { [fileSystemClient] send in
+                    await withTaskGroup(of: Void.self) { group in
+                        for item in items {
+                            group.addTask {
+                                await send(.operationStarted(item.fullPath, .deleteImmediately))
+
+                                do {
+                                    let url = URL(fileURLWithPath: item.fullPath)
+                                    try await fileSystemClient.deleteImmediately(url)
+                                    await send(.operationFinished(item.fullPath, .deleteImmediately, .success(())))
+                                } catch {
+                                    await send(.operationFinished(
+                                        item.fullPath,
+                                        .deleteImmediately,
+                                        .failure(error.fileOpError)
+                                    ))
+                                }
+                            }
+                        }
+                    }
+
+                    await TrashMetadataStore.shared.removeAll()
                 }
 
             case let .putBackFromTrash(items):

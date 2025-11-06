@@ -63,4 +63,33 @@ enum FSItemAlertUtils {
         case stop
         case replace
     }
+
+    @MainActor
+    static func showEmptyTrashConfirmationAlert(itemCount: Int) -> Bool {
+        let alert = NSAlert()
+        alert.alertStyle = .informational
+
+        let trashIcon = NSWorkspace.shared.icon(forFileType: NSFileTypeForHFSTypeCode(OSType(kFullTrashIcon)))
+        alert.icon = trashIcon
+
+        if itemCount == 0 {
+            alert.messageText = "The Trash is empty."
+            alert.informativeText = "There are no items to delete."
+            alert.addButton(withTitle: "OK")
+            alert.runModal()
+            return false
+        } else if itemCount == 1 {
+            alert.messageText = "Are you sure you want to permanently erase the item in the Trash?"
+        } else {
+            alert.messageText = "Are you sure you want to permanently erase the \(itemCount) items in the Trash?"
+        }
+
+        alert.informativeText = "You can't undo this action."
+        alert.addButton(withTitle: "Empty Trash")
+        alert.addButton(withTitle: "Cancel")
+        alert.buttons[0].hasDestructiveAction = true
+
+        let response = alert.runModal()
+        return response == .alertFirstButtonReturn
+    }
 }
