@@ -41,6 +41,7 @@ struct FSItemsOperationsFeature {
         case emptyTrash(items: [FSItem])
         case compressItems(items: [FSItem])
         case extractCompressedFile(file: FSItem)
+        case toggleTagForItem(file: FSItem, tag: String)
         case applicationsLoaded(String, [ApplicationInfo])
         case operationStarted(String, OperationKind)
         case operationFinished(String, OperationKind, Result<Void, FileOpError>)
@@ -391,6 +392,14 @@ struct FSItemsOperationsFeature {
                         await send(.operationFinished(parentPath, .extract, .failure(error.fileOpError)))
                     }
                 }
+
+            case let .toggleTagForItem(file, tag):
+                let filePath = file.fullPath
+                let url = URL(fileURLWithPath: filePath)
+
+                return run(for: filePath, kind: .setTags) {
+                    try await fileSystemClient.toggleTag(url, tag)
+                }
             }
         }
     }
@@ -575,6 +584,7 @@ enum OperationKind: Equatable, Hashable, Sendable {
     case putBack
     case compress
     case extract
+    case setTags
 }
 
 extension Error {

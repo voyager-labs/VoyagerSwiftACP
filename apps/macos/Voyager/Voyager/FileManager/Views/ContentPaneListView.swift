@@ -115,6 +115,11 @@ struct ContentPaneListView: View {
                     fsStore.send(.extractSelectedItem)
                 })
             },
+            onToggleTag: { tag in
+                sendWithSelection(item, fsStore: fsStore, action: {
+                    fsStore.send(.toggleTagForSelectedItem(tag: tag))
+                })
+            },
             selectedCount: fsStore.selectedIds.isEmpty ? 1 : fsStore.selectedIds.count,
             showCompress: showCompress,
             showExtract: showExtract

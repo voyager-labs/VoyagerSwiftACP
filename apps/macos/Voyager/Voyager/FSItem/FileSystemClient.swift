@@ -34,6 +34,9 @@ public struct FileSystemClient: Sendable {
     public var putBackFromTrash: @Sendable (URL, String) async throws -> Void
     public var compressItems: @Sendable ([URL]) async throws -> URL
     public var extractCompressedFile: @Sendable (URL) async throws -> Void
+    public var getTags: @Sendable (URL) async throws -> [String]
+    public var setTags: @Sendable (URL, [String]) async throws -> Void
+    public var toggleTag: @Sendable (URL, String) async throws -> Void
     public var loadItems: @Sendable (URL, Bool) async throws -> [FSItem]
     public var fileExists: @Sendable (String) -> Bool
     public var saveDragPaths: @Sendable ([String]) -> Void
@@ -60,6 +63,9 @@ public struct FileSystemClient: Sendable {
         putBackFromTrash: @escaping @Sendable (URL, String) async throws -> Void,
         compressItems: @escaping @Sendable ([URL]) async throws -> URL,
         extractCompressedFile: @escaping @Sendable (URL) async throws -> Void,
+        getTags: @escaping @Sendable (URL) async throws -> [String],
+        setTags: @escaping @Sendable (URL, [String]) async throws -> Void,
+        toggleTag: @escaping @Sendable (URL, String) async throws -> Void,
         loadItems: @escaping @Sendable (URL, Bool) async throws -> [FSItem],
         fileExists: @escaping @Sendable (String) -> Bool,
         saveDragPaths: @escaping @Sendable ([String]) -> Void,
@@ -85,6 +91,9 @@ public struct FileSystemClient: Sendable {
         self.putBackFromTrash = putBackFromTrash
         self.compressItems = compressItems
         self.extractCompressedFile = extractCompressedFile
+        self.getTags = getTags
+        self.setTags = setTags
+        self.toggleTag = toggleTag
         self.loadItems = loadItems
         self.fileExists = fileExists
         self.saveDragPaths = saveDragPaths
@@ -146,6 +155,38 @@ public enum FileOpError: Error, Equatable, Sendable {
             return name
         }
         return nil
+    }
+}
+
+private nonisolated func setFileTags(url: URL, tags: [String]) throws {
+    if tags.isEmpty {
+        let result = removexattr(
+            url.path,
+            "com.apple.metadata:_kMDItemUserTags",
+            XATTR_NOFOLLOW
+        )
+        if result != 0, errno != ENOATTR {
+            throw FileOpError.system(message: "Failed to remove tags")
+        }
+    } else {
+        let tagData = try PropertyListSerialization.data(
+            fromPropertyList: tags,
+            format: .binary,
+            options: 0
+        )
+
+        let result = setxattr(
+            url.path,
+            "com.apple.metadata:_kMDItemUserTags",
+            (tagData as NSData).bytes,
+            tagData.count,
+            0,
+            XATTR_NOFOLLOW
+        )
+
+        if result != 0 {
+            throw FileOpError.system(message: "Failed to set tags")
+        }
     }
 }
 
@@ -392,6 +433,24 @@ extension FileSystemClient: DependencyKey {
                     }
                 }
             },
+            getTags: { url in
+                let values = try url.resourceValues(forKeys: [.tagNamesKey])
+                return values.tagNames ?? []
+            },
+            setTags: { url, tags in
+                try setFileTags(url: url, tags: tags)
+            },
+            toggleTag: { url, tag in
+                var currentTags = try url.resourceValues(forKeys: [.tagNamesKey]).tagNames ?? []
+
+                if currentTags.contains(tag) {
+                    currentTags.removeAll { $0 == tag }
+                } else {
+                    currentTags.append(tag)
+                }
+
+                try setFileTags(url: url, tags: currentTags)
+            },
             loadItems: { directoryURL, showHidden in
                 try await Task.detached {
                     let fileManager = FileManager.default
@@ -526,6 +585,9 @@ extension FileSystemClient: DependencyKey {
             putBackFromTrash: { _, _ in unimplemented() },
             compressItems: { _ in unimplemented() },
             extractCompressedFile: { _ in unimplemented() },
+            getTags: { _ in unimplemented() },
+            setTags: { _, _ in unimplemented() },
+            toggleTag: { _, _ in unimplemented() },
             loadItems: { _, _ in [] },
             fileExists: { _ in false },
             saveDragPaths: { _ in },
@@ -567,6 +629,9 @@ extension FileSystemClient: DependencyKey {
             putBackFromTrash: { _, _ in },
             compressItems: { _ in URL(fileURLWithPath: "/tmp/Archive.zip") },
             extractCompressedFile: { _ in },
+            getTags: { _ in [] },
+            setTags: { _, _ in },
+            toggleTag: { _, _ in },
             loadItems: { _, _ in [] },
             fileExists: { _ in false },
             saveDragPaths: { _ in },

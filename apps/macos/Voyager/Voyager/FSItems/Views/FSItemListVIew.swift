@@ -25,6 +25,7 @@ struct FSItemListView: View {
     let onPutBack: (() -> Void)?
     let onCompress: () -> Void
     let onExtract: () -> Void
+    let onToggleTag: (String) -> Void
     let selectedCount: Int
     let showCompress: Bool
     let showExtract: Bool
@@ -271,6 +272,25 @@ struct FSItemListView: View {
                     onExtract()
                 }
             }
+
+            Divider()
+
+            Menu("Tags") {
+                ForEach(FSItemTagUtils.getFavoriteTagNames().filter { !$0.isEmpty }.prefix(7), id: \.self) { tag in
+                    let colorCode = FSItemTagUtils.getTagNameToColorCodeMapping()[tag] ?? 0
+                    let tagColor = FSItemTagUtils.getTagColor(colorCode: colorCode)
+                    let isTagged = item.tags?.contains(where: { $0.name == tag }) ?? false
+
+                    Button {
+                        onToggleTag(tag)
+                    } label: {
+                        HStack {
+                            Image(nsImage: colorCircleImage(color: tagColor, size: 10))
+                            Text(isTagged ? "\(tag) ✓" : tag)
+                        }
+                    }
+                }
+            }
         }
     }
 
@@ -308,5 +328,15 @@ struct FSItemListView: View {
         resizedIcon.unlockFocus()
 
         return resizedIcon
+    }
+
+    private func colorCircleImage(color: Color, size: CGFloat) -> NSImage {
+        let image = NSImage(size: NSSize(width: size, height: size))
+        image.lockFocus()
+        NSColor(color).setFill()
+        let path = NSBezierPath(ovalIn: NSRect(x: 0, y: 0, width: size, height: size))
+        path.fill()
+        image.unlockFocus()
+        return image
     }
 }

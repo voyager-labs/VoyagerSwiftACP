@@ -124,6 +124,7 @@ struct FSItemsFeature {
         case putBackSelectedItems
         case compressSelectedItems
         case extractSelectedItem
+        case toggleTagForSelectedItem(tag: String)
         case emptyTrash
         case setSelectAfterLoad(folderName: String)
         case startRename(id: String)
@@ -188,7 +189,8 @@ struct FSItemsFeature {
                     return .send(.reloadCurrentFolder)
 
                 case (.compress, .success),
-                     (.extract, .success):
+                     (.extract, .success),
+                     (.setTags, .success):
                     return .send(.reloadCurrentFolder)
 
                 case (.pasteFile, .failure):
@@ -749,6 +751,16 @@ struct FSItemsFeature {
                 else { return .none }
 
                 return .send(.operations(.extractCompressedFile(file: selectedItem)))
+
+            case let .toggleTagForSelectedItem(tag):
+                let selectedItems = state.items.filter { state.selectedIds.contains($0.id) }
+                guard !selectedItems.isEmpty else { return .none }
+
+                return .merge(
+                    selectedItems.map { item in
+                        .send(.operations(.toggleTagForItem(file: item, tag: tag)))
+                    }
+                )
 
             case .emptyTrash:
                 let allItems = Array(state.items)
