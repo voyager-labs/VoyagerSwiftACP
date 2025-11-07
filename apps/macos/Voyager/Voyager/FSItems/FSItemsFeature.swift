@@ -95,6 +95,7 @@ struct FSItemsFeature {
         case onAppear
         case reloadCurrentFolder
         case loadItems(path: String)
+        case reloadItems
         case loadRecentItems
         case loadTagItems(tagName: String)
         case itemsLoaded([FSItem])
@@ -173,8 +174,7 @@ struct FSItemsFeature {
                         return .send(.loadRecentItems)
                     }
                 } else {
-                    guard let path = state.currentFolderPath else { return .none }
-                    return .send(.loadItems(path: path))
+                    return .send(.reloadItems)
                 }
 
             case let .operations(.operationFinished(filePath, kind, result)):
@@ -265,6 +265,20 @@ struct FSItemsFeature {
                     }
                     .cancellable(id: CancelID.fsEventsWatcher, cancelInFlight: true)
                 )
+
+            case .reloadItems:
+                guard let path = state.currentFolderPath else { return .none }
+
+                return .run { [fileSystemClient, showHidden = state.showHiddenFiles, path] send in
+                    let url = URL(fileURLWithPath: (path as NSString).expandingTildeInPath)
+
+                    do {
+                        let items = try await fileSystemClient.loadItems(url, showHidden)
+                        await send(.itemsLoaded(items))
+                    } catch {
+                        await send(.itemsLoaded([]))
+                    }
+                }
 
             case .loadRecentItems:
                 state.currentFolderPath = nil
