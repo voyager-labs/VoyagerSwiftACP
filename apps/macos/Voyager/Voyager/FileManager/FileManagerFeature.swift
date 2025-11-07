@@ -428,10 +428,7 @@ struct FileManagerFeature {
 
             case let .showTag(tagItem):
                 state.navigate(to: .tags(tagItem.name), sidebarItemName: tagItem.name)
-                return .run { send in
-                    let taggedItems = await SidebarUtils.loadFilesWithTag(tagItem.name)
-                    await send(.fsItems(.itemsLoaded(taggedItems)))
-                }
+                return .send(.fsItems(.loadTagItems(tagName: tagItem.name)))
 
             case let .changeSortKey(key):
                 state.sortKey = key

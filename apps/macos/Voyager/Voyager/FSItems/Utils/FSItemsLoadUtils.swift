@@ -84,9 +84,9 @@ enum FSItemsLoadUtils {
                 }
             }
 
-            if let rawTags = MDItemCopyAttribute(mdItem, "kMDItemUserTags" as CFString) as? [String] {
+            if let tagNames = try? itemURL.resourceValues(forKeys: [.tagNamesKey]).tagNames {
                 let nameToColorCode = FSItemTagUtils.getTagNameToColorCodeMapping()
-                tags = rawTags.map { tagString in
+                tags = tagNames.map { tagString in
                     let colorCode = nameToColorCode[tagString] ?? 0
                     return FileTag(name: tagString, colorCode: colorCode)
                 }

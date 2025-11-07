@@ -219,6 +219,11 @@ enum SidebarUtils {
             sortDescriptors: sortDescriptors
         )
 
-        return taggedFiles.compactMap { FSItemsLoadUtils.convertURLToFSItem($0) }
+        return taggedFiles.compactMap { url in
+            guard let item = FSItemsLoadUtils.convertURLToFSItem(url) else { return nil }
+
+            let hasTags = item.tags?.contains(where: { $0.name == tag }) ?? false
+            return hasTags ? item : nil
+        }
     }
 }

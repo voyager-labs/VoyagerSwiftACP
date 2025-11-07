@@ -65,7 +65,8 @@ extension FSItem: Equatable {
     public static func == (lhs: FSItem, rhs: FSItem) -> Bool {
         lhs.id == rhs.id &&
             lhs.modifiedDate == rhs.modifiedDate &&
-            lhs.size == rhs.size
+            lhs.size == rhs.size &&
+            lhs.tags == rhs.tags
     }
 
     public static func temporaryFolder(id: String, name: String) -> FSItem {

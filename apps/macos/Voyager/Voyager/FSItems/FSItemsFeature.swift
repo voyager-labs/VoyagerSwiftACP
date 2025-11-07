@@ -45,6 +45,9 @@ struct FSItemsFeature {
         var creatingNewFolderOriginalName: String?
         var selectAfterLoadFolderName: String?
 
+        var currentFolderPath: String?
+        var isVirtualFolder: Bool = false
+
         var isRenaming: Bool {
             renamingItemId != nil
         }
@@ -89,6 +92,7 @@ struct FSItemsFeature {
         case reloadCurrentFolder
         case loadItems(path: String)
         case loadRecentItems
+        case loadTagItems(tagName: String)
         case itemsLoaded([FSItem])
         case setShowHidden(Bool)
         case setGroupKey(GroupKey)
@@ -153,10 +157,16 @@ struct FSItemsFeature {
                 .cancellable(id: "FileSystemObserver", cancelInFlight: true)
 
             case .reloadCurrentFolder:
-                let currentPath = state.items.first.map {
-                    URL(fileURLWithPath: $0.fullPath).deletingLastPathComponent().path
-                } ?? "/"
-                return .send(.loadItems(path: currentPath))
+                if state.isVirtualFolder {
+                    if let tagName = state.currentFolderPath {
+                        return .send(.loadTagItems(tagName: tagName))
+                    } else {
+                        return .send(.loadRecentItems)
+                    }
+                } else {
+                    guard let path = state.currentFolderPath else { return .none }
+                    return .send(.loadItems(path: path))
+                }
 
             case let .operations(.operationFinished(filePath, kind, result)):
                 switch (kind, result) {
@@ -209,6 +219,8 @@ struct FSItemsFeature {
 
             case let .loadItems(path):
                 state.clearSelection()
+                state.currentFolderPath = path
+                state.isVirtualFolder = false
 
                 return .run { [showHidden = state.showHiddenFiles] send in
                     let url = URL(fileURLWithPath: (path as NSString).expandingTildeInPath)
@@ -222,9 +234,21 @@ struct FSItemsFeature {
                 }
 
             case .loadRecentItems:
+                state.currentFolderPath = nil
+                state.isVirtualFolder = true
+
                 return .run { send in
                     let recentItems = await SidebarUtils.loadRecentItems()
                     await send(.itemsLoaded(recentItems))
+                }
+
+            case let .loadTagItems(tagName):
+                state.currentFolderPath = tagName
+                state.isVirtualFolder = true
+
+                return .run { send in
+                    let taggedItems = await SidebarUtils.loadFilesWithTag(tagName)
+                    await send(.itemsLoaded(taggedItems))
                 }
 
             case let .setShowHidden(show):
