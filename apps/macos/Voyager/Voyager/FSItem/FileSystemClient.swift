@@ -543,15 +543,18 @@ extension FileSystemClient: DependencyKey {
                 }
             },
             loadClipboardPaths: {
-                let pasteboard = NSPasteboard(name: NSPasteboard.Name("VoyagerClipboard"))
-                guard let pathString = pasteboard.string(forType: .string),
-                      !pathString.isEmpty
-                else {
+                let pasteboard = NSPasteboard.general
+
+                guard let urls = pasteboard.readObjects(forClasses: [NSURL.self]) as? [URL] else {
                     return ([], .copy)
                 }
-                let paths = pathString.split(separator: "\n").map(String.init)
-                let opString = pasteboard.string(forType: NSPasteboard.PasteboardType("VoyagerClipboardOperation"))
+
+                let paths = urls.map { $0.path }
+
+                let opString = pasteboard
+                    .string(forType: NSPasteboard.PasteboardType("com.voyager.clipboard.operation"))
                 let operation: ClipboardOperation = opString == "cut" ? .cut : .copy
+
                 return (paths, operation)
             },
             postFileSystemChanged: { paths in

@@ -184,7 +184,12 @@ struct FSItemsFeature {
                     if state.clipboardOperation == .cut {
                         state.clipboardItems = []
                         state.clipboardOperation = .copy
-                        fileSystemClient.saveClipboardPaths([], .copy)
+
+                        let pasteboard = NSPasteboard.general
+                        pasteboard.setString(
+                            "",
+                            forType: NSPasteboard.PasteboardType("com.voyager.clipboard.operation")
+                        )
                     }
 
                     if state.isDragDropOperation {
@@ -601,7 +606,6 @@ struct FSItemsFeature {
 
                 state.clipboardItems = selectedPaths
                 state.clipboardOperation = .copy
-                fileSystemClient.saveClipboardPaths(selectedPaths, .copy)
 
                 return .send(.operations(.copySelectedItems(files: selectedItems)))
 
@@ -615,9 +619,13 @@ struct FSItemsFeature {
 
                 state.clipboardItems = selectedPaths
                 state.clipboardOperation = .cut
-                fileSystemClient.saveClipboardPaths(selectedPaths, .cut)
 
-                return .send(.operations(.copySelectedItems(files: selectedItems)))
+                return .run { send in
+                    await send(.operations(.copySelectedItems(files: selectedItems)))
+
+                    let pasteboard = NSPasteboard.general
+                    pasteboard.setString("cut", forType: NSPasteboard.PasteboardType("com.voyager.clipboard.operation"))
+                }
 
             case let .pasteItems(destinationPath):
                 let (clipboardPaths, clipboardOp) = fileSystemClient.loadClipboardPaths()

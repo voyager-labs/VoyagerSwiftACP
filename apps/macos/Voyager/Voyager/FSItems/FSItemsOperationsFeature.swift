@@ -187,8 +187,8 @@ struct FSItemsOperationsFeature {
                 let pasteboard = NSPasteboard.general
                 pasteboard.clearContents()
 
-                let paths = files.map { $0.fullPath }
-                pasteboard.setString(paths.joined(separator: "\n"), forType: .string)
+                let urls = files.map { URL(fileURLWithPath: $0.fullPath) }
+                pasteboard.writeObjects(urls as [NSURL])
 
                 return .none
 
