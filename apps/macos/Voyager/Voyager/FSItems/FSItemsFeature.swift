@@ -14,6 +14,10 @@ public enum ClipboardOperation: Equatable, Sendable {
 /// 파일 시스템 아이템 목록 및 선택 관리 (FSV 영역)
 @Reducer
 struct FSItemsFeature {
+    private enum CancelID {
+        static let fsEventsWatcher = "fsEventsWatcher"
+    }
+
     @ObservableState
     struct State: Equatable {
         var items: IdentifiedArrayOf<FSItem> = []
@@ -94,6 +98,7 @@ struct FSItemsFeature {
         case loadRecentItems
         case loadTagItems(tagName: String)
         case itemsLoaded([FSItem])
+        case fileSystemChanged([String])
         case setShowHidden(Bool)
         case setGroupKey(GroupKey)
         case selectItem(id: String, isCommandPressed: Bool, isShiftPressed: Bool)
@@ -222,16 +227,30 @@ struct FSItemsFeature {
                 state.currentFolderPath = path
                 state.isVirtualFolder = false
 
-                return .run { [showHidden = state.showHiddenFiles] send in
-                    let url = URL(fileURLWithPath: (path as NSString).expandingTildeInPath)
+                return .merge(
+                    .cancel(id: CancelID.fsEventsWatcher),
 
-                    do {
-                        let items = try await fileSystemClient.loadItems(url, showHidden)
-                        await send(.itemsLoaded(items))
-                    } catch {
-                        await send(.itemsLoaded([]))
+                    .run { [fileSystemClient, showHidden = state.showHiddenFiles, path] send in
+                        let url = URL(fileURLWithPath: (path as NSString).expandingTildeInPath)
+
+                        do {
+                            let items = try await fileSystemClient.loadItems(url, showHidden)
+                            await send(.itemsLoaded(items))
+                        } catch {
+                            await send(.itemsLoaded([]))
+                        }
+                    },
+
+                    .run { [fileSystemClient, path] send in
+                        let url = URL(fileURLWithPath: (path as NSString).expandingTildeInPath)
+                        let stream = fileSystemClient.startWatchingDirectory(url)
+
+                        for await changedPaths in stream {
+                            await send(.fileSystemChanged(changedPaths))
+                        }
                     }
-                }
+                    .cancellable(id: CancelID.fsEventsWatcher, cancelInFlight: true)
+                )
 
             case .loadRecentItems:
                 state.currentFolderPath = nil
@@ -250,6 +269,9 @@ struct FSItemsFeature {
                     let taggedItems = await SidebarUtils.loadFilesWithTag(tagName)
                     await send(.itemsLoaded(taggedItems))
                 }
+
+            case .fileSystemChanged:
+                return .send(.reloadCurrentFolder)
 
             case let .setShowHidden(show):
                 state.showHiddenFiles = show
@@ -471,7 +493,7 @@ struct FSItemsFeature {
                 state.shouldScrollToSelection = false
                 return .none
 
-            case let .navigateFolder(id):
+            case .navigateFolder:
                 // 폴더 이동은 부모 Feature에서 처리
                 return .none
 

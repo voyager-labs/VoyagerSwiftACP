@@ -47,6 +47,8 @@ public struct FileSystemClient: Sendable {
     public var loadClipboardPaths: @Sendable () -> ([String], ClipboardOperation)
     public var postFileSystemChanged: @Sendable ([String]) -> Void
     public var observeFileSystemChanged: @Sendable () -> AsyncStream<[String]>
+    public var startWatchingDirectory: @Sendable (URL) -> AsyncStream<[String]>
+    public var stopWatchingDirectory: @Sendable () -> Void
 
     public nonisolated init(
         open: @escaping @Sendable (URL, OpenKind) async throws -> Void,
@@ -75,7 +77,9 @@ public struct FileSystemClient: Sendable {
         saveClipboardPaths: @escaping @Sendable ([String], ClipboardOperation) -> Void,
         loadClipboardPaths: @escaping @Sendable () -> ([String], ClipboardOperation),
         postFileSystemChanged: @escaping @Sendable ([String]) -> Void,
-        observeFileSystemChanged: @escaping @Sendable () -> AsyncStream<[String]>
+        observeFileSystemChanged: @escaping @Sendable () -> AsyncStream<[String]>,
+        startWatchingDirectory: @escaping @Sendable (URL) -> AsyncStream<[String]>,
+        stopWatchingDirectory: @escaping @Sendable () -> Void
     ) {
         self.open = open
         self.setDefaultApp = setDefaultApp
@@ -104,6 +108,8 @@ public struct FileSystemClient: Sendable {
         self.loadClipboardPaths = loadClipboardPaths
         self.postFileSystemChanged = postFileSystemChanged
         self.observeFileSystemChanged = observeFileSystemChanged
+        self.startWatchingDirectory = startWatchingDirectory
+        self.stopWatchingDirectory = stopWatchingDirectory
     }
 }
 
@@ -192,7 +198,26 @@ private nonisolated func setFileTags(url: URL, tags: [String]) throws {
 
 extension FileSystemClient: DependencyKey {
     public nonisolated static var liveValue: FileSystemClient {
-        FileSystemClient(
+        final class FSEventsWatcher: @unchecked Sendable {
+            var eventStream: FSEventStreamRef?
+            let lock = NSLock()
+
+            func setStream(_ stream: FSEventStreamRef?) {
+                lock.lock()
+                defer { lock.unlock() }
+                eventStream = stream
+            }
+
+            func getStream() -> FSEventStreamRef? {
+                lock.lock()
+                defer { lock.unlock() }
+                return eventStream
+            }
+        }
+
+        let watcher = FSEventsWatcher()
+
+        return FileSystemClient(
             open: { url, kind in
                 try await withScopedAccess(url) {
                     let workspace = NSWorkspace.shared
@@ -562,6 +587,83 @@ extension FileSystemClient: DependencyKey {
                         }
                     }
                 }
+            },
+            startWatchingDirectory: { url in
+                AsyncStream { continuation in
+                    final class ContinuationBox {
+                        let continuation: AsyncStream<[String]>.Continuation
+                        init(_ continuation: AsyncStream<[String]>.Continuation) {
+                            self.continuation = continuation
+                        }
+                    }
+
+                    let box = ContinuationBox(continuation)
+
+                    let callback: FSEventStreamCallback = { _, info, _, eventPaths, _, _ in
+                        guard let info = info else { return }
+
+                        let box = Unmanaged<ContinuationBox>
+                            .fromOpaque(info)
+                            .takeUnretainedValue()
+
+                        guard let paths = unsafeBitCast(eventPaths, to: NSArray.self) as? [String] else {
+                            return
+                        }
+                        box.continuation.yield(paths)
+                    }
+
+                    var context = FSEventStreamContext(
+                        version: 0,
+                        info: Unmanaged.passRetained(box).toOpaque(),
+                        retain: nil,
+                        release: { info in
+                            guard let info = info else { return }
+                            Unmanaged<ContinuationBox>.fromOpaque(info).release()
+                        },
+                        copyDescription: nil
+                    )
+
+                    guard let stream = FSEventStreamCreate(
+                        nil,
+                        callback,
+                        &context,
+                        [url.path] as CFArray,
+                        FSEventStreamEventId(kFSEventStreamEventIdSinceNow),
+                        0.3, // 300ms 지연 (배터리 효율)
+                        UInt32(kFSEventStreamCreateFlagFileEvents | kFSEventStreamCreateFlagUseCFTypes)
+                    ) else {
+                        continuation.finish()
+                        return
+                    }
+
+                    FSEventStreamSetDispatchQueue(stream, DispatchQueue.main)
+
+                    guard FSEventStreamStart(stream) else {
+                        FSEventStreamInvalidate(stream)
+                        FSEventStreamRelease(stream)
+                        continuation.finish()
+                        return
+                    }
+
+                    watcher.setStream(stream)
+
+                    continuation.onTermination = { @Sendable _ in
+                        if let stream = watcher.getStream() {
+                            FSEventStreamStop(stream)
+                            FSEventStreamInvalidate(stream)
+                            FSEventStreamRelease(stream)
+                            watcher.setStream(nil)
+                        }
+                    }
+                }
+            },
+            stopWatchingDirectory: {
+                if let stream = watcher.getStream() {
+                    FSEventStreamStop(stream)
+                    FSEventStreamInvalidate(stream)
+                    FSEventStreamRelease(stream)
+                    watcher.setStream(nil)
+                }
             }
         )
     }
@@ -597,7 +699,9 @@ extension FileSystemClient: DependencyKey {
             saveClipboardPaths: { _, _ in },
             loadClipboardPaths: { ([], .copy) },
             postFileSystemChanged: { _ in },
-            observeFileSystemChanged: { AsyncStream { _ in } }
+            observeFileSystemChanged: { AsyncStream { _ in } },
+            startWatchingDirectory: { _ in AsyncStream { _ in } },
+            stopWatchingDirectory: {}
         )
     }
 
@@ -641,7 +745,9 @@ extension FileSystemClient: DependencyKey {
             saveClipboardPaths: { _, _ in },
             loadClipboardPaths: { ([], .copy) },
             postFileSystemChanged: { _ in },
-            observeFileSystemChanged: { AsyncStream { _ in } }
+            observeFileSystemChanged: { AsyncStream { _ in } },
+            startWatchingDirectory: { _ in AsyncStream { _ in } },
+            stopWatchingDirectory: {}
         )
     }
 }
