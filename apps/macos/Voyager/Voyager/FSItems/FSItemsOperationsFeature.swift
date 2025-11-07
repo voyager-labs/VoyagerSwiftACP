@@ -200,6 +200,15 @@ struct FSItemsOperationsFeature {
                     operation: operation
                 )
 
+                guard !destinations.isEmpty else {
+                    if operation == .cut {
+                        return .run { send in
+                            await send(.operationFinished(destinationPath, .pasteFile, .success(())))
+                        }
+                    }
+                    return .none
+                }
+
                 let isCopy = operation == .copy
 
                 return .run { [fileSystemClient] send in
@@ -437,6 +446,10 @@ struct FSItemsOperationsFeature {
                     destURL = destinationURL.appendingPathComponent(name)
                     counter += 1
                 }
+            }
+
+            if operation == .cut, sourceParent == destinationURL {
+                continue
             }
 
             destinations.append((sourceURL, destURL))
