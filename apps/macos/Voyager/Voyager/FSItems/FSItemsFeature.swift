@@ -162,6 +162,10 @@ struct FSItemsFeature {
                 .cancellable(id: "FileSystemObserver", cancelInFlight: true)
 
             case .reloadCurrentFolder:
+                let (clipboardPaths, clipboardOp) = fileSystemClient.loadClipboardPaths()
+                state.clipboardItems = clipboardPaths
+                state.clipboardOperation = clipboardOp
+
                 if state.isVirtualFolder {
                     if let tagName = state.currentFolderPath {
                         return .send(.loadTagItems(tagName: tagName))
@@ -196,7 +200,12 @@ struct FSItemsFeature {
                         state.isDragDropOperation = false
                     }
 
-                    return .send(.reloadCurrentFolder)
+                    return .merge(
+                        .send(.reloadCurrentFolder),
+                        .run { _ in
+                            await fileSystemClient.postFileSystemChanged([filePath])
+                        }
+                    )
 
                 case (.rename, .success):
                     return .run { _ in
@@ -607,7 +616,11 @@ struct FSItemsFeature {
                 state.clipboardItems = selectedPaths
                 state.clipboardOperation = .copy
 
-                return .send(.operations(.copySelectedItems(files: selectedItems)))
+                return .run { [fileSystemClient] send in
+                    await send(.operations(.copySelectedItems(files: selectedItems)))
+
+                    await fileSystemClient.postFileSystemChanged([])
+                }
 
             case .cutSelectedItems:
                 guard !state.selectedIds.isEmpty else {
@@ -620,11 +633,13 @@ struct FSItemsFeature {
                 state.clipboardItems = selectedPaths
                 state.clipboardOperation = .cut
 
-                return .run { send in
+                return .run { [fileSystemClient] send in
                     await send(.operations(.copySelectedItems(files: selectedItems)))
 
                     let pasteboard = NSPasteboard.general
                     pasteboard.setString("cut", forType: NSPasteboard.PasteboardType("com.voyager.clipboard.operation"))
+
+                    await fileSystemClient.postFileSystemChanged([])
                 }
 
             case let .pasteItems(destinationPath):
