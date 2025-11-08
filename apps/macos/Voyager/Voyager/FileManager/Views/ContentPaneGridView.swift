@@ -192,7 +192,14 @@ struct ContentPaneGridView: View {
                 }
             }
         }
-        .onDrop(of: [UTType.fileURL.identifier], isTargeted: nil) { _, _ in
+        .border(fsStore.isDropTargeted ? Color.accentColor : Color.clear, width: 2)
+        .onDrop(
+            of: [UTType.fileURL.identifier],
+            isTargeted: Binding(
+                get: { fsStore.isDropTargeted },
+                set: { fsStore.send(.setDropTargeted($0)) }
+            )
+        ) { _, _ in
             fsStore.send(.dropToFolder(destinationPath: store.currentPath))
             return true
         }

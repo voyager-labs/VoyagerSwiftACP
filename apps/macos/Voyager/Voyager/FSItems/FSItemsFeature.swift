@@ -41,6 +41,7 @@ struct FSItemsFeature {
         var clipboardOperation: ClipboardOperation = .copy
 
         var isDragDropOperation: Bool = false
+        var isDropTargeted: Bool = false
 
         var renamingItemId: String?
         var renamingText: String = ""
@@ -102,6 +103,7 @@ struct FSItemsFeature {
         case fileSystemChanged([String])
         case setShowHidden(Bool)
         case setGroupKey(GroupKey)
+        case setDropTargeted(Bool)
         case selectItem(id: String, isCommandPressed: Bool, isShiftPressed: Bool)
         case selectAll
         case clearSelection
@@ -310,16 +312,20 @@ struct FSItemsFeature {
                 state.groupedItems = FSItemsGrouping.groupItems(Array(state.items), by: key)
                 return .none
 
+            case let .setDropTargeted(isTargeted):
+                state.isDropTargeted = isTargeted
+                return .none
+
             case let .itemsLoaded(items):
                 let sorted = FSItemsSorting.sortItems(items, by: state.sortKey, order: state.sortOrder)
                 state.items = IdentifiedArray(uniqueElements: sorted)
                 state.groupedItems = FSItemsGrouping.groupItems(Array(state.items), by: state.groupKey)
 
-                if let folderName = state.selectAfterLoadFolderName {
+                if let itemName = state.selectAfterLoadFolderName {
                     state.selectAfterLoadFolderName = nil
-                    if let folder = state.items.first(where: { $0.name == folderName && $0.isDirectory }) {
-                        state.selectedIds = [folder.id]
-                        state.lastSelectedId = folder.id
+                    if let item = state.items.first(where: { $0.name == itemName }) {
+                        state.selectedIds = [item.id]
+                        state.lastSelectedId = item.id
                         state.rangeAnchorId = nil
                         state.shouldScrollToSelection = true
                     }
@@ -727,13 +733,37 @@ struct FSItemsFeature {
                 // Drag & Drop 플래그 설정
                 state.isDragDropOperation = true
 
+                // 단일 파일 포커싱 설정 (현재 폴더로 드롭 시)
+                if destinationPath == state.currentFolderPath, let firstPath = sourcePaths.first {
+                    let fileName = URL(fileURLWithPath: firstPath).lastPathComponent
+                    state.selectAfterLoadFolderName = fileName
+                }
+
                 // Option 키에 따라 Copy 또는 Move
                 let operation: ClipboardOperation = isOptionDrag ? .copy : .cut
-                return .send(.operations(.pasteItems(
-                    sourcePaths: sourcePaths,
-                    destinationPath: destinationPath,
-                    operation: operation
-                )))
+
+                return .merge(
+                    .send(.operations(.pasteItems(
+                        sourcePaths: sourcePaths,
+                        destinationPath: destinationPath,
+                        operation: operation
+                    ))),
+
+                    // 윈도우 포커싱 (destinationPath의 윈도우 찾기)
+                    .run { [destinationPath] _ in
+                        try? await Task.sleep(nanoseconds: 500_000_000)
+                        await MainActor.run {
+                            guard let appDelegate = AppDelegate.shared else { return }
+
+                            // destinationPath에 해당하는 윈도우 찾기
+                            let targetController = appDelegate.windowControllers.first { controller in
+                                controller.store.currentPath == destinationPath
+                            }
+
+                            targetController?.window?.makeKeyAndOrderFront(nil)
+                        }
+                    }
+                )
 
             case let .startRename(id):
                 guard let item = state.items.first(where: { $0.id == id }) else {
