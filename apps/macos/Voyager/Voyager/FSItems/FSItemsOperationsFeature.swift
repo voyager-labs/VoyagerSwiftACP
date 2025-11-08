@@ -113,13 +113,7 @@ struct FSItemsOperationsFeature {
                 }
 
             case let .openFileWithApp(file):
-                let filePath = file.fullPath
-                let url = URL(fileURLWithPath: filePath)
-                return .run { send in
-                    if let bundleID = await selectApplication(for: url)?.bundleID {
-                        await send(.openFileWithAppBundleID(filePath: filePath, bundleID: bundleID, url: url))
-                    }
-                }
+                return selectApplicationAndOpenFile(for: file, defaultChecked: false)
 
             case let .openFileWithAppBundleID(filePath, bundleID, url):
                 return run(for: filePath, kind: .openWithApp(bundleID)) {
@@ -148,17 +142,7 @@ struct FSItemsOperationsFeature {
                     return .none
                 }
 
-                let filePath = file.fullPath
-                let url = URL(fileURLWithPath: filePath)
-                return .run { send in
-                    if let selection = await selectApplication(for: url) {
-                        await send(.setDefaultAppForFile(
-                            type: selection.type,
-                            bundleID: selection.bundleID,
-                            file: file
-                        ))
-                    }
-                }
+                return selectApplicationAndOpenFile(for: file, defaultChecked: true)
 
             case let .loadApplicationsForFile(file):
                 guard !file.isDirectory else { return .none }
@@ -557,13 +541,36 @@ struct FSItemsOperationsFeature {
     }
 }
 
+private func selectApplicationAndOpenFile(
+    for file: FSItem,
+    defaultChecked: Bool
+) -> Effect<FSItemsOperationsFeature.Action> {
+    let filePath = file.fullPath
+    let url = URL(fileURLWithPath: filePath)
+
+    return .run { send in
+        guard let selection = await selectApplication(for: url, defaultChecked: defaultChecked) else { return }
+
+        if selection.setAsDefault, let type = selection.type {
+            await send(.setDefaultAppForFile(
+                type: type,
+                bundleID: selection.bundleID,
+                file: file
+            ))
+        }
+
+        await send(.openFileWithAppBundleID(filePath: filePath, bundleID: selection.bundleID, url: url))
+    }
+}
+
 private struct ApplicationSelection {
     let bundleID: String
     let type: UTType?
+    let setAsDefault: Bool
 }
 
 @MainActor
-private func selectApplication(for itemURL: URL) -> ApplicationSelection? {
+private func selectApplication(for itemURL: URL, defaultChecked: Bool = false) -> ApplicationSelection? {
     let panel = NSOpenPanel()
     panel.canChooseDirectories = false
     panel.canChooseFiles = true
@@ -573,15 +580,34 @@ private func selectApplication(for itemURL: URL) -> ApplicationSelection? {
     } else {
         panel.allowedFileTypes = ["app"]
     }
-    panel.prompt = "Choose"
-    panel.message = "Select an application for \(itemURL.lastPathComponent)."
+
+    panel.prompt = "Open"
+    panel.message = "Choose an application to open the document \"\(itemURL.lastPathComponent)\"."
+
+    let checkbox = NSButton(checkboxWithTitle: "Always Open With", target: nil, action: nil)
+    checkbox.state = defaultChecked ? .on : .off
+    checkbox.sizeToFit()
+
+    let accessoryView = NSView(frame: NSRect(x: 0, y: 0, width: 400, height: 40))
+
+    let xPosition = (accessoryView.frame.width - checkbox.frame.width) / 2
+    let yPosition = (accessoryView.frame.height - checkbox.frame.height) / 2
+    checkbox.frame = NSRect(x: xPosition, y: yPosition, width: checkbox.frame.width, height: checkbox.frame.height)
+    accessoryView.addSubview(checkbox)
+
+    panel.accessoryView = accessoryView
+    panel.isAccessoryViewDisclosed = true
 
     guard panel.runModal() == .OK, let appURL = panel.url, let bundleID = Bundle(url: appURL)?.bundleIdentifier else {
         return nil
     }
 
     let type = UTType(filenameExtension: itemURL.pathExtension)
-    return ApplicationSelection(bundleID: bundleID, type: type)
+    return ApplicationSelection(
+        bundleID: bundleID,
+        type: type,
+        setAsDefault: checkbox.state == .on
+    )
 }
 
 enum OperationKind: Equatable, Hashable, Sendable {
