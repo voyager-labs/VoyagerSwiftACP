@@ -20,7 +20,7 @@ struct FSItemListView: View {
     let onRenameCommit: () -> Void
     let onRenameCancel: () -> Void
     let onStartDrag: () -> Void
-    let onDrop: (String) -> Void
+    let onDrop: ([NSItemProvider], String) -> Void
     let onLoadApplications: () -> Void
     let onPutBack: (() -> Void)?
     let onCompress: () -> Void
@@ -160,8 +160,8 @@ struct FSItemListView: View {
             return provider
         }
         .if(item.isDirectory) { view in
-            view.onDrop(of: [UTType.fileURL.identifier], isTargeted: $isDropTarget) { _, _ in
-                onDrop(item.fullPath)
+            view.onDrop(of: [UTType.fileURL.identifier], isTargeted: $isDropTarget) { providers, _ in
+                onDrop(providers, item.fullPath)
                 return true
             }
             .background(

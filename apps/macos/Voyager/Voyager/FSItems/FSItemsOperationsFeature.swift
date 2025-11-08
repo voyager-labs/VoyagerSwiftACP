@@ -97,7 +97,7 @@ struct FSItemsOperationsFeature {
                         let url = URL(fileURLWithPath: filePath)
                         await send(.operationStarted(filePath, .openDefault))
                         do {
-                            try await fileSystemClient.open(url, .defaultApp)
+                        try await fileSystemClient.open(url, .defaultApp)
                             await send(.operationFinished(filePath, .openDefault, .success(())))
                         } catch {
                             await send(.operationFinished(filePath, .openDefault, .failure(error.fileOpError)))
@@ -123,7 +123,7 @@ struct FSItemsOperationsFeature {
 
             case let .openFileWithAppBundleID(filePath, bundleID, url):
                 return run(for: filePath, kind: .openWithApp(bundleID)) {
-                    try await fileSystemClient.open(url, .bundleID(bundleID))
+                        try await fileSystemClient.open(url, .bundleID(bundleID))
                 }
 
             case let .setDefaultAppForFile(type, bundleID, file):

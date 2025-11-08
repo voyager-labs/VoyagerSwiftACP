@@ -94,8 +94,8 @@ struct ContentPaneListView: View {
                     .map { $0.fullPath }
                 fsStore.send(.startDrag(paths: dragPaths))
             },
-            onDrop: { folderPath in
-                fsStore.send(.dropToFolder(destinationPath: folderPath))
+            onDrop: { providers, folderPath in
+                fsStore.send(.handleDrop(providers: providers, destinationPath: folderPath))
             },
             onLoadApplications: {
                 fsStore.send(.operations(.loadApplicationsForFile(file: item)))
@@ -253,8 +253,8 @@ struct ContentPaneListView: View {
                         get: { fsStore.isDropTargeted },
                         set: { fsStore.send(.setDropTargeted($0)) }
                     )
-                ) { _, _ in
-                    fsStore.send(.dropToFolder(destinationPath: store.currentPath))
+                ) { providers, _ in
+                    fsStore.send(.handleDrop(providers: providers, destinationPath: store.currentPath))
                     return true
                 }
             }

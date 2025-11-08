@@ -337,11 +337,11 @@ enum FSItemsGrouping {
                 if let firstTag = taggedItems.first?.tags?.first(where: { $0.name == tagName }),
                    firstTag.colorCode == colorCode
                 {
-                    result.append(GroupedItems(
+                result.append(GroupedItems(
                         groupName: tagName,
                         items: taggedItems
                             .sorted { $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending }
-                    ))
+                ))
                     processedTags.insert(tagName)
                 }
             }
