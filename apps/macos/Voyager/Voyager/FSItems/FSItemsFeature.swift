@@ -366,7 +366,15 @@ struct FSItemsFeature {
                         state.selectedIds = [id]
                         state.lastSelectedId = id
                         state.rangeAnchorId = nil
-                        return .merge(renameEffect, .none)
+
+                        var preloadEffect: Effect<Action> = .none
+                        if let selectedItem = state.items.first(where: { $0.id == id }),
+                           !selectedItem.isDirectory
+                        {
+                            preloadEffect = .send(.operations(.loadApplicationsForFile(file: selectedItem)))
+                        }
+
+                        return .merge(renameEffect, preloadEffect)
                     }
 
                     let itemsArray = Array(state.items)
@@ -388,7 +396,15 @@ struct FSItemsFeature {
                     state.lastSelectedId = id
                     state.rangeAnchorId = nil
                 }
-                return .merge(renameEffect, .none)
+
+                var preloadEffect: Effect<Action> = .none
+                if let selectedItem = state.items.first(where: { $0.id == id }),
+                   !selectedItem.isDirectory
+                {
+                    preloadEffect = .send(.operations(.loadApplicationsForFile(file: selectedItem)))
+                }
+
+                return .merge(renameEffect, preloadEffect)
 
             case .selectAll:
                 state.selectedIds = Set(state.items.map { $0.id })

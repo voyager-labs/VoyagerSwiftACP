@@ -50,6 +50,19 @@ struct FileManagerView: View {
                     return
                 }
 
+                if event.keyCode == 125 && event.modifierFlags.contains(.command) && event.modifierFlags
+                    .contains(.option)
+                {
+                    if store.fsItems.selectedIds.count == 1,
+                       let selectedId = store.fsItems.selectedIds.first,
+                       let selectedItem = store.fsItems.items.first(where: { $0.id == selectedId }),
+                       selectedItem.isDirectory
+                    {
+                        AppDelegate.shared?.createNewTab(path: selectedItem.fullPath)
+                    }
+                    return
+                }
+
                 if event.keyCode == 51 && event.modifierFlags.contains(.command) && event.modifierFlags
                     .contains(.option)
                 {
@@ -230,13 +243,16 @@ struct FileManagerView: View {
             }
         }
         .onAppear {
+            store.send(.loadFavorites)
+            store.send(.loadLocations)
+            store.send(.loadTags)
+
             if let path = initialPath {
                 store.send(.navigateTo(path))
             } else {
                 store.send(.onAppear)
             }
 
-            store.send(.loadLocations)
             store.send(.fsItems(.onAppear))
 
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) {

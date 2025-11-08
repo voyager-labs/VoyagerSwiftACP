@@ -55,6 +55,11 @@ struct ContentPaneListView: View {
                     fsStore.send(.openSelectedItem)
                 })
             },
+            onOpenInNewTab: {
+                if item.isDirectory {
+                    AppDelegate.shared?.createNewTab(path: item.fullPath)
+                }
+            },
             onQuickLook: {
                 sendWithSelection(item, fsStore: fsStore, action: {
                     fsStore.send(.quickLookSelectedItem)
@@ -105,14 +110,47 @@ struct ContentPaneListView: View {
                     fsStore.send(.putBackSelectedItems)
                 })
             } : nil,
+            onMoveToTrash: {
+                sendWithSelection(item, fsStore: fsStore, action: {
+                    fsStore.send(.moveSelectedItemsToTrash)
+                })
+            },
+            onDeleteImmediately: {
+                sendWithSelection(item, fsStore: fsStore, action: {
+                    fsStore.send(.deleteSelectedItemsImmediately)
+                })
+            },
+            onEmptyTrash: {
+                store.send(.emptyTrash)
+            },
+            onRename: {
+                sendWithSelection(item, fsStore: fsStore, action: {
+                    fsStore.send(.startRename(id: item.id))
+                })
+            },
             onCompress: {
                 sendWithSelection(item, fsStore: fsStore, action: {
                     fsStore.send(.compressSelectedItems)
                 })
             },
+            onDuplicate: {
+                sendWithSelection(item, fsStore: fsStore, action: {
+                    fsStore.send(.duplicateSelectedItems)
+                })
+            },
             onExtract: {
                 sendWithSelection(item, fsStore: fsStore, action: {
                     fsStore.send(.extractSelectedItem)
+                })
+            },
+            onCopy: {
+                sendWithSelection(item, fsStore: fsStore, action: {
+                    fsStore.send(.copySelectedItems)
+                })
+            },
+            onCut: {
+                sendWithSelection(item, fsStore: fsStore, action: {
+                    fsStore.send(.cutSelectedItems)
                 })
             },
             onToggleTag: { tag in

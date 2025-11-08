@@ -12,6 +12,7 @@ struct FSItemListView: View {
     let applications: [ApplicationInfo]?
     let onSelect: () -> Void
     let onOpen: () -> Void
+    let onOpenInNewTab: () -> Void
     let onQuickLook: () -> Void
     let onOpenWithApp: (String?) -> Void
     let onSetDefaultApp: (String, UTType?) -> Void
@@ -23,8 +24,15 @@ struct FSItemListView: View {
     let onDrop: ([NSItemProvider], String) -> Void
     let onLoadApplications: () -> Void
     let onPutBack: (() -> Void)?
+    let onMoveToTrash: () -> Void
+    let onDeleteImmediately: () -> Void
+    let onEmptyTrash: () -> Void
+    let onRename: () -> Void
     let onCompress: () -> Void
+    let onDuplicate: () -> Void
     let onExtract: () -> Void
+    let onCopy: () -> Void
+    let onCut: () -> Void
     let onToggleTag: (String) -> Void
     let selectedCount: Int
     let showCompress: Bool
@@ -170,151 +178,258 @@ struct FSItemListView: View {
             )
         }
         .contextMenu {
-            let task = Task {
-                if !item.isDirectory && applications == nil {
-                    onLoadApplications()
-                }
-            }
+            contextMenuContent
+        }
+    }
+}
 
-            if let onPutBack = onPutBack {
-                Button("Put Back") {
-                    onPutBack()
-                }
-
-                Divider()
-            }
-
-            Button("Open") {
+private extension FSItemListView {
+    @ViewBuilder var contextMenuContent: some View {
+        Group {
+            Button {
                 onOpen()
+            } label: {
+                Label("Open", systemImage: "arrow.up.forward.square")
             }
             .keyboardShortcut(.downArrow, modifiers: [.command])
-
-            Button("Quick Look") {
-                onQuickLook()
+        }
+        .onAppear {
+            if !item.isDirectory && applications == nil {
+                onLoadApplications()
             }
-            .keyboardShortcut(.space, modifiers: [])
+        }
 
-            if let apps = applications, !apps.isEmpty {
-                Menu("Open With") {
-                    let regularApps = apps.filter { $0.id != "other" }
+        if item.isDirectory {
+            Button {
+                onOpenInNewTab()
+            } label: {
+                Label("Open in New Tab", systemImage: "plus.square.on.square")
+            }
+            .keyboardShortcut(.downArrow, modifiers: [.command, .option])
+        }
 
-                    ForEach(Array(regularApps.enumerated()), id: \.element.id) { _, app in
-                        Button {
-                            onOpenWithApp(app.bundleID)
-                        } label: {
-                            HStack {
-                                if let bundleID = app.bundleID {
-                                    appIconView(for: bundleID)
-                                }
-                                Text(app.isDefault ? "\(app.name) (default)" : app.name)
+        if let apps = applications, !apps.isEmpty {
+            Menu {
+                let regularApps = apps.filter { $0.id != "other" }
+
+                ForEach(Array(regularApps.enumerated()), id: \.element.id) { _, app in
+                    Button {
+                        onOpenWithApp(app.bundleID)
+                    } label: {
+                        HStack {
+                            if let bundleID = app.bundleID {
+                                appIconView(for: bundleID)
                             }
-                        }
-
-                        if app.isDefault {
-                            Divider()
+                            Text(app.isDefault ? "\(app.name) (default)" : app.name)
                         }
                     }
 
-                    Divider()
-                    Button("Other…") {
-                        onOpenWithApp(nil)
+                    if app.isDefault {
+                        Divider()
                     }
                 }
-            } else if !item.isDirectory {
-                Button("Open With…") {
+
+                Divider()
+                Button("Other…") {
                     onOpenWithApp(nil)
                 }
+            } label: {
+                Label("Open With", systemImage: "app.badge")
             }
+        } else if !item.isDirectory {
+            Button {
+                onOpenWithApp(nil)
+            } label: {
+                Label("Open With…", systemImage: "app.badge")
+            }
+        }
 
-            if !item.isDirectory, let apps = applications {
-                Menu("Set Default App") {
-                    let fileType = UTType(filenameExtension: item.fileExtension)
-                    let regularApps = apps.filter { $0.bundleID != nil && $0.id != "other" }
+        if !item.isDirectory, let apps = applications {
+            Menu {
+                let fileType = UTType(filenameExtension: item.fileExtension)
+                let regularApps = apps.filter { $0.bundleID != nil && $0.id != "other" }
 
-                    ForEach(Array(regularApps.enumerated()), id: \.element.id) { _, app in
-                        Button {
+                ForEach(Array(regularApps.enumerated()), id: \.element.id) { _, app in
+                    Button {
+                        if let bundleID = app.bundleID {
+                            onSetDefaultApp(bundleID, fileType)
+                        }
+                    } label: {
+                        HStack {
                             if let bundleID = app.bundleID {
-                                onSetDefaultApp(bundleID, fileType)
+                                appIconView(for: bundleID)
                             }
-                        } label: {
-                            HStack {
-                                if let bundleID = app.bundleID {
-                                    appIconView(for: bundleID)
-                                }
-                                Text(app.isDefault ? "\(app.name) (default)" : app.name)
-                            }
-                        }
-
-                        if app.isDefault {
-                            Divider()
+                            Text(app.isDefault ? "\(app.name) (default)" : app.name)
                         }
                     }
 
-                    Divider()
-                    Button("Other…") {
-                        onSetDefaultAppWithOther()
+                    if app.isDefault {
+                        Divider()
                     }
                 }
-            }
 
-            if showCompress || showExtract {
                 Divider()
+                Button("Other…") {
+                    onSetDefaultAppWithOther()
+                }
+            } label: {
+                Label("Set Default App", systemImage: "app.badge.checkmark")
+            }
+        }
+
+        Divider()
+
+        if let onPutBack = onPutBack {
+            Button {
+                onPutBack()
+            } label: {
+                Label("Put Back", systemImage: "trash.slash")
             }
 
-            if showCompress {
-                Button(selectedCount == 1 ? "Compress \"\(item.name)\"" : "Compress") {
-                    onCompress()
-                }
+            Button {
+                onDeleteImmediately()
+            } label: {
+                Label("Delete Immediately...", systemImage: "trash")
             }
+            .keyboardShortcut(.delete, modifiers: [.command, .option])
 
-            if showExtract {
-                Button("Extract Archive") {
-                    onExtract()
-                }
+            Button {
+                onEmptyTrash()
+            } label: {
+                Label("Empty Trash", systemImage: "trash")
             }
 
             Divider()
 
-            Menu("Tags") {
-                ForEach(FSItemTagUtils.getFavoriteTagNames().filter { !$0.isEmpty }.prefix(7), id: \.self) { tag in
-                    let colorCode = FSItemTagUtils.getTagNameToColorCodeMapping()[tag] ?? 0
-                    let tagColor = FSItemTagUtils.getTagColor(colorCode: colorCode)
-                    let isTagged = item.tags?.contains(where: { $0.name == tag }) ?? false
+            Button {
+                onQuickLook()
+            } label: {
+                Label("Quick Look \"\(item.name)\"", systemImage: "eye")
+            }
+            .keyboardShortcut(.space, modifiers: [])
 
-                    Button {
-                        onToggleTag(tag)
-                    } label: {
-                        HStack {
-                            Image(nsImage: colorCircleImage(color: tagColor, size: 10))
-                            Text(isTagged ? "\(tag) ✓" : tag)
-                        }
+            Divider()
+
+            Button {
+                onCopy()
+            } label: {
+                Label("Copy", systemImage: "doc.on.doc")
+            }
+            .keyboardShortcut("c", modifiers: [.command])
+        } else {
+            Button {
+                onMoveToTrash()
+            } label: {
+                Label("Move to Trash", systemImage: "trash")
+            }
+            .keyboardShortcut(.delete, modifiers: [.command])
+
+            Button {
+                onDeleteImmediately()
+            } label: {
+                Label("Delete Immediately...", systemImage: "trash")
+            }
+            .keyboardShortcut(.delete, modifiers: [.command, .option])
+
+            Divider()
+
+            Button {
+                onRename()
+            } label: {
+                Label("Rename", systemImage: "pencil")
+            }
+            .keyboardShortcut(.return, modifiers: [])
+
+            if showCompress {
+                Button {
+                    onCompress()
+                } label: {
+                    Label(selectedCount == 1 ? "Compress \"\(item.name)\"" : "Compress", systemImage: "doc.zipper")
+                }
+            }
+
+            Button {
+                onDuplicate()
+            } label: {
+                Label("Duplicate", systemImage: "plus.square.on.square")
+            }
+            .keyboardShortcut("d", modifiers: [.command])
+
+            if showExtract {
+                Button {
+                    onExtract()
+                } label: {
+                    Label("Extract Archive", systemImage: "doc.zipper")
+                }
+            }
+
+            Button {
+                onQuickLook()
+            } label: {
+                Label("Quick Look", systemImage: "eye")
+            }
+            .keyboardShortcut(.space, modifiers: [])
+
+            Divider()
+
+            Button {
+                onCopy()
+            } label: {
+                Label("Copy", systemImage: "doc.on.doc")
+            }
+            .keyboardShortcut("c", modifiers: [.command])
+
+            Button {
+                onCut()
+            } label: {
+                Label("Cut", systemImage: "scissors")
+            }
+            .keyboardShortcut("x", modifiers: [.command])
+        }
+
+        Divider()
+
+        Menu {
+            ForEach(FSItemTagUtils.getFavoriteTagNames().filter { !$0.isEmpty }.prefix(7), id: \.self) { tag in
+                let colorCode = FSItemTagUtils.getTagNameToColorCodeMapping()[tag] ?? 0
+                let tagColor = FSItemTagUtils.getTagColor(colorCode: colorCode)
+                let isTagged = item.tags?.contains(where: { $0.name == tag }) ?? false
+
+                Button {
+                    onToggleTag(tag)
+                } label: {
+                    HStack {
+                        Image(nsImage: colorCircleImage(color: tagColor, size: 10))
+                        Text(isTagged ? "\(tag) ✓" : tag)
                     }
                 }
             }
+        } label: {
+            Label("Tags", systemImage: "tag")
         }
     }
 
-    private func sizeText(_ item: FSItem) -> String {
+    func sizeText(_ item: FSItem) -> String {
         if item.isDirectory { return "--" }
         return Self.byteFormatter.string(fromByteCount: item.size)
     }
 
-    private func dateText(_ date: Date) -> String {
+    func dateText(_ date: Date) -> String {
         Self.dateFormatter.string(from: date)
     }
 
-    private func kindText(_ item: FSItem) -> String {
+    func kindText(_ item: FSItem) -> String {
         item.kind
     }
 
     @ViewBuilder
-    private func appIconView(for bundleID: String) -> some View {
+    func appIconView(for bundleID: String) -> some View {
         if let icon = appIcon(for: bundleID, size: 16) {
             Image(nsImage: icon)
         }
     }
 
-    private func appIcon(for bundleID: String, size: CGFloat) -> NSImage? {
+    func appIcon(for bundleID: String, size: CGFloat) -> NSImage? {
         guard let appURL = NSWorkspace.shared.urlForApplication(withBundleIdentifier: bundleID) else {
             return nil
         }
@@ -330,7 +445,7 @@ struct FSItemListView: View {
         return resizedIcon
     }
 
-    private func colorCircleImage(color: Color, size: CGFloat) -> NSImage {
+    func colorCircleImage(color: Color, size: CGFloat) -> NSImage {
         let image = NSImage(size: NSSize(width: size, height: size))
         image.lockFocus()
         NSColor(color).setFill()
