@@ -48,7 +48,7 @@ struct FSItemsFeature {
         var creatingNewFolderId: String?
         var creatingNewFolderPath: String?
         var creatingNewFolderOriginalName: String?
-        var selectAfterLoadFolderName: String?
+        var selectAfterLoadFileNames: [String] = []
 
         var currentFolderPath: String?
         var isVirtualFolder: Bool = false
@@ -138,7 +138,7 @@ struct FSItemsFeature {
         case extractSelectedItem
         case toggleTagForSelectedItem(tag: String)
         case emptyTrash
-        case setSelectAfterLoad(folderName: String)
+        case setSelectAfterLoad(fileNames: [String])
         case startRename(id: String)
         case updateRenamingText(String)
         case commitRename
@@ -321,11 +321,14 @@ struct FSItemsFeature {
                 state.items = IdentifiedArray(uniqueElements: sorted)
                 state.groupedItems = FSItemsGrouping.groupItems(Array(state.items), by: state.groupKey)
 
-                if let itemName = state.selectAfterLoadFolderName {
-                    state.selectAfterLoadFolderName = nil
-                    if let item = state.items.first(where: { $0.name == itemName }) {
-                        state.selectedIds = [item.id]
-                        state.lastSelectedId = item.id
+                if !state.selectAfterLoadFileNames.isEmpty {
+                    let fileNamesToSelect = state.selectAfterLoadFileNames
+                    state.selectAfterLoadFileNames = []
+
+                    let itemsToSelect = state.items.filter { fileNamesToSelect.contains($0.name) }
+                    if !itemsToSelect.isEmpty {
+                        state.selectedIds = Set(itemsToSelect.map { $0.id })
+                        state.lastSelectedId = itemsToSelect.first?.id
                         state.rangeAnchorId = nil
                         state.shouldScrollToSelection = true
                     }
@@ -733,10 +736,9 @@ struct FSItemsFeature {
                 // Drag & Drop 플래그 설정
                 state.isDragDropOperation = true
 
-                // 단일 파일 포커싱 설정 (현재 폴더로 드롭 시)
-                if destinationPath == state.currentFolderPath, let firstPath = sourcePaths.first {
-                    let fileName = URL(fileURLWithPath: firstPath).lastPathComponent
-                    state.selectAfterLoadFolderName = fileName
+                if destinationPath == state.currentFolderPath {
+                    let fileNames = sourcePaths.map { URL(fileURLWithPath: $0).lastPathComponent }
+                    state.selectAfterLoadFileNames = fileNames
                 }
 
                 // Option 키에 따라 Copy 또는 Move
@@ -816,7 +818,7 @@ struct FSItemsFeature {
                     }
 
                     await send(.operations(.createNewFolder(name: folderName, parentPath: path)))
-                    await send(.setSelectAfterLoad(folderName: folderName))
+                    await send(.setSelectAfterLoad(fileNames: [folderName]))
                     await send(.loadItems(path: path))
                 }
 
@@ -883,8 +885,8 @@ struct FSItemsFeature {
                     await send(.operations(.emptyTrash(items: allItems)))
                 }
 
-            case let .setSelectAfterLoad(folderName):
-                state.selectAfterLoadFolderName = folderName
+            case let .setSelectAfterLoad(fileNames):
+                state.selectAfterLoadFileNames = fileNames
                 return .none
 
             case .commitRename:
