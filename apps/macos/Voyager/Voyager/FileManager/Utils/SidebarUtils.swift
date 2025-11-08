@@ -88,12 +88,6 @@ enum SidebarUtils {
             }
         }
 
-        locations.append(LocationItem(
-            name: "AirDrop",
-            url: URL(fileURLWithPath: "/"),
-            iconName: "antenna.radiowaves.left.and.right"
-        ))
-
         if let trashURL = FileManager.default.urls(for: .trashDirectory, in: .userDomainMask).first {
             locations.append(LocationItem(
                 name: "Trash",

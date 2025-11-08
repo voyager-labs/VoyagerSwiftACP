@@ -42,8 +42,6 @@ struct FileManagerFeature {
             switch navigationState {
             case let .folder(path): return path
             case .recents: return "Recents"
-            case .shared: return "Shared"
-            case .airdrop: return "AirDrop"
             case let .tags(tagName): return tagName
             }
         }
@@ -106,7 +104,7 @@ struct FileManagerFeature {
 
         var breadcrumbItems: [BreadcrumbItem] {
             switch navigationState {
-            case .recents, .shared, .airdrop, .tags:
+            case .recents, .tags:
                 return []
             case let .folder(path):
                 var result: [BreadcrumbItem] = []
@@ -140,14 +138,16 @@ struct FileManagerFeature {
             FileManagerFeature.makeWindowTitle(for: titlePath)
         }
 
-        mutating func matchSidebarToPath(_ path: String, locations: [SidebarUtils.LocationItem]) {
-            if !path.hasPrefix("/") {
-                selectedSidebarItem = path
-            } else if let matchingLocation = locations.first(where: { $0.url.path == path }) {
-                selectedSidebarItem = matchingLocation.name
-            } else {
-                selectedSidebarItem = nil
-            }
+        mutating func matchSidebarToPath(
+            _ path: String,
+            favorites: [SidebarUtils.FavoriteItem],
+            locations: [SidebarUtils.LocationItem]
+        ) {
+            selectedSidebarItem = {
+                if !path.hasPrefix("/") { return path }
+                return favorites.first(where: { $0.url.path == path })?.name
+                    ?? locations.first(where: { $0.url.path == path })?.name
+            }()
         }
 
         mutating func saveCurrentScrollPosition() {
@@ -187,7 +187,7 @@ struct FileManagerFeature {
                 backHistory.append(currentPath)
             }
             navigationState = FileManagerNavigationUtils.navigationStateFromPath(path)
-            matchSidebarToPath(path, locations: locations)
+            matchSidebarToPath(path, favorites: favorites, locations: locations)
         }
     }
 
@@ -216,7 +216,6 @@ struct FileManagerFeature {
         case toggleShowHiddenFiles
         case setSidebarVisible(Bool)
         case showRecents
-        case showShared
         case loadFavorites
         case favoritesLoaded([SidebarUtils.FavoriteItem])
         case openFavorite(SidebarUtils.FavoriteItem)
@@ -266,7 +265,7 @@ struct FileManagerFeature {
                 state.backHistory.append(state.currentPath)
                 state.forwardHistory = []
                 state.navigationState = .folder(path)
-                state.matchSidebarToPath(path, locations: state.locations)
+                state.matchSidebarToPath(path, favorites: state.favorites, locations: state.locations)
                 return .send(.fsItems(.loadItems(path: path)))
 
             case .openSelectedItem:
@@ -324,7 +323,7 @@ struct FileManagerFeature {
                     state.backHistory.removeLast(index + 1)
 
                     state.navigationState = FileManagerNavigationUtils.navigationStateFromPath(targetPath)
-                    state.matchSidebarToPath(targetPath, locations: state.locations)
+                    state.matchSidebarToPath(targetPath, favorites: state.favorites, locations: state.locations)
                     return FileManagerNavigationUtils.navigateToState(state.navigationState)
                 } else {
                     guard index < state.forwardHistory.count else { return .none }
@@ -338,7 +337,7 @@ struct FileManagerFeature {
                     state.forwardHistory.removeLast(index + 1)
 
                     state.navigationState = FileManagerNavigationUtils.navigationStateFromPath(targetPath)
-                    state.matchSidebarToPath(targetPath, locations: state.locations)
+                    state.matchSidebarToPath(targetPath, favorites: state.favorites, locations: state.locations)
                     return FileManagerNavigationUtils.navigateToState(state.navigationState)
                 }
 
@@ -373,11 +372,6 @@ struct FileManagerFeature {
                 state.navigate(to: .recents, sidebarItemName: "Recents")
                 return .send(.fsItems(.loadRecentItems))
 
-            case .showShared:
-                state.navigate(to: .shared, sidebarItemName: "Shared")
-                state.titlePath = "Shared"
-                return .send(.fsItems(.itemsLoaded([])))
-
             case .loadFavorites:
                 return .run { send in
                     let favorites = await SidebarUtils.loadFavorites()
@@ -401,17 +395,10 @@ struct FileManagerFeature {
 
             case let .locationsLoaded(locations):
                 state.locations = locations
-                state.matchSidebarToPath(state.currentPath, locations: locations)
+                state.matchSidebarToPath(state.currentPath, favorites: state.favorites, locations: locations)
                 return .none
 
             case let .openLocation(location):
-                // AirDrop은 기능 미구현으로 빈 상태 유지
-                if location.name == "AirDrop" {
-                    state.navigate(to: .airdrop, sidebarItemName: "AirDrop")
-                    state.titlePath = "AirDrop"
-                    return .send(.fsItems(.itemsLoaded([])))
-                }
-
                 guard state.currentPath != location.url.path else { return .none }
                 state.navigateToFolder(location.url.path, sidebarItemName: location.name)
                 return .send(.fsItems(.loadItems(path: location.url.path)))
@@ -469,7 +456,6 @@ struct FileManagerFeature {
                         return .none
                     }
                     state.navigateToFolder(item.fullPath, sidebarItemName: item.name)
-                    state.matchSidebarToPath(item.fullPath, locations: state.locations)
                     return .send(.fsItems(.loadItems(path: item.fullPath)))
 
                 default:

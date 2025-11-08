@@ -75,14 +75,6 @@ struct SidebarView: View {
                 }
                 .padding(.top, 8)
 
-                SidebarItemView(
-                    iconName: "folder",
-                    title: "Shared",
-                    isSelected: store.selectedSidebarItem == "Shared"
-                ) {
-                    store.send(.showShared)
-                }
-
                 Spacer()
                     .frame(height: 8)
 

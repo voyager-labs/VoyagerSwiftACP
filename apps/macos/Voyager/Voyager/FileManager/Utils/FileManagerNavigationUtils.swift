@@ -5,8 +5,6 @@ enum FileManagerNavigationUtils {
     enum NavigationState: Equatable {
         case folder(String)
         case recents
-        case shared
-        case airdrop
         case tags(String)
     }
 
@@ -14,10 +12,6 @@ enum FileManagerNavigationUtils {
         switch navigationState {
         case .recents:
             return .send(.fsItems(.loadRecentItems))
-        case .shared:
-            return .none
-        case .airdrop:
-            return .none
         case let .folder(path):
             return .send(.fsItems(.loadItems(path: path)))
         case let .tags(tagName):
@@ -32,10 +26,6 @@ enum FileManagerNavigationUtils {
         switch path {
         case "Recents":
             return .recents
-        case "Shared":
-            return .shared
-        case "AirDrop":
-            return .airdrop
         default:
             if path.hasPrefix("/") {
                 return .folder(path)
