@@ -153,10 +153,9 @@ struct FSItemListView: View {
                 .padding(.leading, 8)
         }
         .padding(.vertical, 1)
-        .background(
-            RoundedRectangle(cornerRadius: 6)
-                .fill(isSelected ? Color(nsColor: .controlAccentColor) : Color.clear)
-        )
+        .contentShape(Rectangle())
+        .background(isSelected ? Color(nsColor: .selectedContentBackgroundColor) : Color.clear)
+        .clipShape(RoundedRectangle(cornerRadius: 6))
         .simultaneousGesture(
             TapGesture()
                 .onEnded { _ in

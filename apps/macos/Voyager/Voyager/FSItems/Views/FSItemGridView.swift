@@ -96,7 +96,7 @@ struct FSItemGridView: View {
                     .padding(.vertical, 2)
                     .background(
                         RoundedRectangle(cornerRadius: 4)
-                            .fill(isSelected ? Color(nsColor: .controlAccentColor) : Color.clear)
+                            .fill(isSelected ? Color(nsColor: .selectedContentBackgroundColor) : Color.clear)
                     )
                     .foregroundColor(isSelected ? .white : .primary)
 

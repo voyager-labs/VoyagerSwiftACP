@@ -26,7 +26,11 @@ struct ContentPaneListView: View {
         geometry: GeometryProxy,
         isTrashFolder: Bool = false
     ) -> FSItemListView {
-        let selectedItems = fsStore.items.filter { fsStore.selectedIds.contains($0.id) }
+        let selectedIds = fsStore.selectedIds
+        let clipboardItems = fsStore.clipboardItems
+        let thumbnailsReady = fsStore.thumbnailsReady
+
+        let selectedItems = fsStore.items.filter { selectedIds.contains($0.id) }
         let containsZipFiles = selectedItems.contains { $0.fileExtension.lowercased() == "zip" }
         let containsNonZipFiles = selectedItems.contains { $0.fileExtension.lowercased() != "zip" }
 
@@ -35,13 +39,13 @@ struct ContentPaneListView: View {
 
         FSItemListView(
             item: item,
-            isSelected: fsStore.selectedIds.contains(item.id),
-            isCut: fsStore.clipboardItems.contains(item.fullPath) && fsStore.clipboardOperation == .cut,
+            isSelected: selectedIds.contains(item.id),
+            isCut: clipboardItems.contains(item.fullPath) && fsStore.clipboardOperation == .cut,
             isRenaming: fsStore.renamingItemId == item.id,
             renamingText: fsStore.renamingText,
             availableWidth: geometry.size.width,
             applications: fsStore.operations.applicationsForItems[item.fullPath],
-            isThumbnailReady: fsStore.thumbnailsReady.contains(item.fullPath),
+            isThumbnailReady: thumbnailsReady.contains(item.fullPath),
             onSelect: {
                 let isCommandPressed = NSEvent.modifierFlags.contains(.command)
                 let isShiftPressed = NSEvent.modifierFlags.contains(.shift)

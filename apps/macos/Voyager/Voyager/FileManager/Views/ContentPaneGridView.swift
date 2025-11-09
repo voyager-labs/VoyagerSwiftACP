@@ -30,16 +30,20 @@ struct ContentPaneGridView: View {
                     LazyVStack(alignment: .leading, spacing: 16) {
                         Color.clear.frame(height: 0).id("scrollTop")
                         if fsStore.groupKey == .none {
+                            let selectedIds = fsStore.selectedIds
+                            let clipboardItems = fsStore.clipboardItems
+                            let thumbnailsReady = fsStore.thumbnailsReady
+
                             LazyVGrid(columns: columns, spacing: 16) {
                                 ForEach(fsStore.items) { item in
                                     FSItemGridView(
                                         item: item,
-                                        isSelected: fsStore.selectedIds.contains(item.id),
-                                        isCut: fsStore.clipboardItems.contains(item.fullPath) && fsStore
+                                        isSelected: selectedIds.contains(item.id),
+                                        isCut: clipboardItems.contains(item.fullPath) && fsStore
                                             .clipboardOperation == .cut,
                                         isRenaming: fsStore.renamingItemId == item.id,
                                         renamingText: fsStore.renamingText,
-                                        isThumbnailReady: fsStore.thumbnailsReady.contains(item.fullPath),
+                                        isThumbnailReady: thumbnailsReady.contains(item.fullPath),
                                         onSelect: {
                                             let isCommandPressed = NSEvent.modifierFlags.contains(.command)
                                             let isShiftPressed = NSEvent.modifierFlags.contains(.shift)
@@ -67,9 +71,9 @@ struct ContentPaneGridView: View {
                                             fsStore.send(.cancelRename)
                                         },
                                         onStartDrag: {
-                                            let dragPaths = fsStore.selectedIds.isEmpty
+                                            let dragPaths = selectedIds.isEmpty
                                                 ? [item.fullPath]
-                                                : fsStore.items.filter { fsStore.selectedIds.contains($0.id) }
+                                                : fsStore.items.filter { selectedIds.contains($0.id) }
                                                 .map { $0.fullPath }
                                             fsStore.send(.startDrag(paths: dragPaths))
                                         },
@@ -81,6 +85,10 @@ struct ContentPaneGridView: View {
                                 }
                             }
                         } else {
+                            let selectedIds = fsStore.selectedIds
+                            let clipboardItems = fsStore.clipboardItems
+                            let thumbnailsReady = fsStore.thumbnailsReady
+
                             ForEach(Array(fsStore.groupedItems.enumerated()),
                                     id: \.element.groupName)
                             { index, group in
@@ -111,12 +119,12 @@ struct ContentPaneGridView: View {
                                     ForEach(group.items) { item in
                                         FSItemGridView(
                                             item: item,
-                                            isSelected: fsStore.selectedIds.contains(item.id),
-                                            isCut: fsStore.clipboardItems.contains(item.fullPath) && fsStore
+                                            isSelected: selectedIds.contains(item.id),
+                                            isCut: clipboardItems.contains(item.fullPath) && fsStore
                                                 .clipboardOperation == .cut,
                                             isRenaming: fsStore.renamingItemId == item.id,
                                             renamingText: fsStore.renamingText,
-                                            isThumbnailReady: fsStore.thumbnailsReady.contains(item.fullPath),
+                                            isThumbnailReady: thumbnailsReady.contains(item.fullPath),
                                             onSelect: {
                                                 let isCommandPressed = NSEvent.modifierFlags.contains(.command)
                                                 let isShiftPressed = NSEvent.modifierFlags.contains(.shift)
@@ -144,9 +152,9 @@ struct ContentPaneGridView: View {
                                                 fsStore.send(.cancelRename)
                                             },
                                             onStartDrag: {
-                                                let dragPaths = fsStore.selectedIds.isEmpty
+                                                let dragPaths = selectedIds.isEmpty
                                                     ? [item.fullPath]
-                                                    : fsStore.items.filter { fsStore.selectedIds.contains($0.id) }
+                                                    : fsStore.items.filter { selectedIds.contains($0.id) }
                                                     .map { $0.fullPath }
                                                 fsStore.send(.startDrag(paths: dragPaths))
                                             },
