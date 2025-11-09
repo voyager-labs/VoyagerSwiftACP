@@ -4,12 +4,14 @@ import SwiftUI
 struct ThumbnailView: View {
     let item: FSItem
     let displaySize: CGFloat
+    let isReady: Bool
 
     var body: some View {
         Image(nsImage: displayIcon)
             .resizable()
             .scaledToFit()
             .clipShape(RoundedRectangle(cornerRadius: 4))
+            .id("\(item.fullPath)-\(isReady)")
     }
 
     private var displayIcon: NSImage {
@@ -17,10 +19,5 @@ struct ThumbnailView: View {
             return cached
         }
         return FSItemsIconUtils.icon(for: item)
-    }
-
-    private var thumbnailSize: CGSize {
-        let scale = NSScreen.main?.backingScaleFactor ?? 2.0
-        return CGSize(width: displaySize * scale, height: displaySize * scale)
     }
 }

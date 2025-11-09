@@ -52,6 +52,7 @@ struct FSItemsFeature {
 
         var currentFolderPath: String?
         var isVirtualFolder: Bool = false
+        var thumbnailsReady: Set<String> = []
 
         var isRenaming: Bool {
             renamingItemId != nil
@@ -138,6 +139,7 @@ struct FSItemsFeature {
         case toggleTagForSelectedItem(tag: String)
         case emptyTrash
         case setSelectAfterLoad(fileNames: [String])
+        case thumbnailsReady(paths: [String])
         case startRename(id: String)
         case updateRenamingText(String)
         case commitRename
@@ -334,17 +336,58 @@ struct FSItemsFeature {
                     }
                 }
 
-                return .run { _ in
-                    Task.detached(priority: .background) {
-                        let scale = await MainActor.run { NSScreen.main?.backingScaleFactor ?? 2.0 }
-                        let baseSize: CGFloat = 64
-                        let size = CGSize(width: baseSize * scale, height: baseSize * scale)
+                return .run { send in
+                    let scale = await MainActor.run { NSScreen.main?.backingScaleFactor ?? 2.0 }
+                    let baseSize: CGFloat = 64
+                    let size = CGSize(width: baseSize * scale, height: baseSize * scale)
 
-                        await ThumbnailGeneratorUtils.prefetchThumbnails(
-                            for: Array(sorted),
-                            size: size,
-                            scale: scale
-                        )
+                    await withTaskGroup(of: String?.self) { group in
+                        for item in sorted {
+                            group.addTask {
+                                let canGenerate = await MainActor.run {
+                                    ThumbnailGeneratorUtils.canGenerateThumbnail(for: item)
+                                }
+                                guard canGenerate else { return nil }
+
+                                let hasCached = await MainActor.run {
+                                    FSItemsIconUtils.getThumbnail(for: item.fullPath) != nil
+                                }
+                                if hasCached {
+                                    return item.fullPath
+                                }
+
+                                let url = URL(fileURLWithPath: item.fullPath)
+                                if let thumbnail = await ThumbnailGeneratorUtils.generateThumbnail(
+                                    for: url,
+                                    size: size,
+                                    scale: scale
+                                ) {
+                                    await MainActor.run {
+                                        FSItemsIconUtils.saveThumbnail(thumbnail, for: item.fullPath)
+                                    }
+                                    return item.fullPath
+                                }
+                                return nil
+                            }
+                        }
+
+                        var readyPaths: [String] = []
+                        for await path in group {
+                            if let path = path {
+                                readyPaths.append(path)
+
+                                // 10개마다 일괄 업데이트
+                                if readyPaths.count >= 10 {
+                                    await send(.thumbnailsReady(paths: readyPaths))
+                                    readyPaths = []
+                                }
+                            }
+                        }
+
+                        // 남은 항목 처리
+                        if !readyPaths.isEmpty {
+                            await send(.thumbnailsReady(paths: readyPaths))
+                        }
                     }
                 }
 
@@ -937,6 +980,10 @@ struct FSItemsFeature {
 
             case let .setSelectAfterLoad(fileNames):
                 state.selectAfterLoadFileNames = fileNames
+                return .none
+
+            case let .thumbnailsReady(paths):
+                state.thumbnailsReady.formUnion(paths)
                 return .none
 
             case .commitRename:

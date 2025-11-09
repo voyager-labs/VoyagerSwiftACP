@@ -39,6 +39,7 @@ struct ContentPaneGridView: View {
                                             .clipboardOperation == .cut,
                                         isRenaming: fsStore.renamingItemId == item.id,
                                         renamingText: fsStore.renamingText,
+                                        isThumbnailReady: fsStore.thumbnailsReady.contains(item.fullPath),
                                         onSelect: {
                                             let isCommandPressed = NSEvent.modifierFlags.contains(.command)
                                             let isShiftPressed = NSEvent.modifierFlags.contains(.shift)
@@ -115,6 +116,7 @@ struct ContentPaneGridView: View {
                                                 .clipboardOperation == .cut,
                                             isRenaming: fsStore.renamingItemId == item.id,
                                             renamingText: fsStore.renamingText,
+                                            isThumbnailReady: fsStore.thumbnailsReady.contains(item.fullPath),
                                             onSelect: {
                                                 let isCommandPressed = NSEvent.modifierFlags.contains(.command)
                                                 let isShiftPressed = NSEvent.modifierFlags.contains(.shift)

@@ -10,6 +10,7 @@ struct FSItemListView: View {
     let renamingText: String
     let availableWidth: CGFloat
     let applications: [ApplicationInfo]?
+    let isThumbnailReady: Bool
     let onSelect: () -> Void
     let onOpen: () -> Void
     let onOpenInNewTab: (Bool) -> Void
@@ -86,7 +87,7 @@ struct FSItemListView: View {
     var body: some View {
         HStack(spacing: 0) {
             HStack(spacing: 8) {
-                ThumbnailView(item: item, displaySize: 20)
+                ThumbnailView(item: item, displaySize: 20, isReady: isThumbnailReady)
                     .opacity(item.isHidden || isCut ? 0.5 : 1.0)
                     .frame(width: 20, height: 20)
                     .popover(isPresented: $showTagsEditor, arrowEdge: .bottom) {

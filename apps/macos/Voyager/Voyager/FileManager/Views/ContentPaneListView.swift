@@ -41,6 +41,7 @@ struct ContentPaneListView: View {
             renamingText: fsStore.renamingText,
             availableWidth: geometry.size.width,
             applications: fsStore.operations.applicationsForItems[item.fullPath],
+            isThumbnailReady: fsStore.thumbnailsReady.contains(item.fullPath),
             onSelect: {
                 let isCommandPressed = NSEvent.modifierFlags.contains(.command)
                 let isShiftPressed = NSEvent.modifierFlags.contains(.shift)

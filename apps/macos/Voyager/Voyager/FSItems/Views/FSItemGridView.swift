@@ -8,6 +8,7 @@ struct FSItemGridView: View {
     let isCut: Bool
     let isRenaming: Bool
     let renamingText: String
+    let isThumbnailReady: Bool
     let onSelect: () -> Void
     let onOpen: () -> Void
     let onRenameUpdate: (String) -> Void
@@ -21,7 +22,7 @@ struct FSItemGridView: View {
 
     var body: some View {
         VStack(spacing: 1) {
-            ThumbnailView(item: item, displaySize: 64)
+            ThumbnailView(item: item, displaySize: 64, isReady: isThumbnailReady)
                 .opacity(item.isHidden || isCut ? 0.5 : 1.0)
                 .frame(width: 64, height: 64)
                 .padding(8)
