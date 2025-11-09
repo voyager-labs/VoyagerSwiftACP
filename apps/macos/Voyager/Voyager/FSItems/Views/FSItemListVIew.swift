@@ -40,6 +40,7 @@ struct FSItemListView: View {
     @FocusState private var isTextFieldFocused: Bool
     @State private var isOptionPressed = false
     @State private var optionKeyTimer: Timer?
+    @State private var showTagsEditor = false
 
     private static let dateFormatter: DateFormatter = {
         let formatter = DateFormatter()
@@ -88,6 +89,13 @@ struct FSItemListView: View {
                 ThumbnailView(item: item, displaySize: 20)
                     .opacity(item.isHidden || isCut ? 0.5 : 1.0)
                     .frame(width: 20, height: 20)
+                    .popover(isPresented: $showTagsEditor, arrowEdge: .bottom) {
+                        TagsEditorView(
+                            fileName: item.name,
+                            currentTags: item.tags ?? [],
+                            onToggleTag: onToggleTag
+                        )
+                    }
 
                 if isRenaming {
                     TextField("", text: Binding(
@@ -394,6 +402,12 @@ private extension FSItemListView {
                         Text(isTagged ? "\(tag) ✓" : tag)
                     }
                 }
+            }
+
+            Divider()
+
+            Button("Edit Tags...") {
+                showTagsEditor = true
             }
         } label: {
             Label("Tags", systemImage: "tag")
