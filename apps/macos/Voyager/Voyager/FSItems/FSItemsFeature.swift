@@ -127,6 +127,7 @@ struct FSItemsFeature {
         case startDrag(paths: [String])
         case dropToFolder(destinationPath: String)
         case handleDrop(providers: [NSItemProvider], destinationPath: String)
+        case handleDropToTag(providers: [NSItemProvider], tagName: String)
         case dropItems(sourcePaths: [String], destinationPath: String, isOptionDrag: Bool)
         case createNewFolder(currentPath: String)
         case confirmNewFolder(name: String, path: String, originalName: String)
@@ -787,6 +788,36 @@ struct FSItemsFeature {
                                 destinationPath: destinationPath,
                                 isOptionDrag: isOption
                             ))
+                        }
+                    }
+                }
+
+            case let .handleDropToTag(providers, tagName):
+                return .run { @MainActor [fileSystemClient] _ in
+                    var urls: [URL] = []
+                    for provider in providers
+                        where provider.hasItemConformingToTypeIdentifier(UTType.fileURL.identifier)
+                    {
+                        let result: URL? = await withCheckedContinuation { continuation in
+                            provider.loadItem(forTypeIdentifier: UTType.fileURL.identifier, options: nil) { item, _ in
+                                var url: URL?
+                                if let urlItem = item as? URL {
+                                    url = urlItem
+                                } else if let data = item as? Data {
+                                    url = URL(dataRepresentation: data, relativeTo: nil)
+                                }
+                                continuation.resume(returning: url)
+                            }
+                        }
+                        if let url = result {
+                            urls.append(url)
+                        }
+                    }
+
+                    for url in urls {
+                        let currentTags = (try? await fileSystemClient.getTags(url)) ?? []
+                        if !currentTags.contains(tagName) {
+                            try? await fileSystemClient.toggleTag(url, tagName)
                         }
                     }
                 }

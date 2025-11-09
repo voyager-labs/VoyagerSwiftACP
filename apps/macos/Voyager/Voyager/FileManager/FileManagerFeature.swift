@@ -232,8 +232,14 @@ struct FileManagerFeature {
         case changeSortOrder(SortOrder)
         case changeGroupKey(GroupKey)
 
+        case dropItemsToSidebarFolder(providers: [NSItemProvider], targetURL: URL)
+        case dropItemsToTag(providers: [NSItemProvider], tagName: String)
+
         case fsItems(FSItemsFeature.Action)
     }
+
+    @Dependency(\.fileSystemClient)
+    var fileSystemClient
 
     var body: some Reducer<State, Action> {
         Scope(state: \.fsItems, action: \.fsItems) {
@@ -429,6 +435,18 @@ struct FileManagerFeature {
 
             case let .changeGroupKey(key):
                 return .send(.fsItems(.setGroupKey(key)))
+
+            case let .dropItemsToSidebarFolder(providers, targetURL):
+                return .send(.fsItems(.handleDrop(
+                    providers: providers,
+                    destinationPath: targetURL.path
+                )))
+
+            case let .dropItemsToTag(providers, tagName):
+                return .send(.fsItems(.handleDropToTag(
+                    providers: providers,
+                    tagName: tagName
+                )))
 
             case let .fsItems(action):
                 switch action {
