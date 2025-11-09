@@ -136,27 +136,31 @@ struct FileManagerView: View {
                 SidebarView(store: store)
             } detail: {
                 VStack(spacing: 0) {
-                    HStack {
-                        PathBreadcrumbView(
-                            breadcrumbItems: store.breadcrumbItems,
-                            selectedItem: store.selectedBreadcrumbItem,
-                            onNavigate: { path in
-                                store.send(.navigateTo(path))
-                            }
-                        )
-                        Spacer()
+                    GeometryReader { geometry in
+                        HStack {
+                            PathBreadcrumbView(
+                                breadcrumbItems: store.breadcrumbItems,
+                                selectedItem: store.selectedBreadcrumbItem,
+                                availableWidth: geometry.size.width - 32 - (store.isTrashFolder ? 80 : 0),
+                                onNavigate: { path in
+                                    store.send(.navigateTo(path))
+                                }
+                            )
+                            Spacer()
 
-                        if store.isTrashFolder {
-                            Button("Empty") {
-                                store.send(.emptyTrash)
+                            if store.isTrashFolder {
+                                Button("Empty") {
+                                    store.send(.emptyTrash)
+                                }
+                                .controlSize(.small)
+                                .buttonStyle(.borderedProminent)
+                                .tint(Color(white: 0.3))
                             }
-                            .controlSize(.small)
-                            .buttonStyle(.borderedProminent)
-                            .tint(Color(white: 0.3))
                         }
+                        .padding(.horizontal, 16)
+                        .padding(.vertical, 8)
                     }
-                    .padding(.horizontal, 16)
-                    .padding(.vertical, 8)
+                    .frame(height: 36)
 
                     ContentPaneView(store: store)
                 }

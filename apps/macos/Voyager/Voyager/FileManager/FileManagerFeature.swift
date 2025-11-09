@@ -3,28 +3,6 @@ import ComposableArchitecture
 import Foundation
 import SwiftUI
 
-struct BreadcrumbItem: Equatable {
-    let name: String
-    let fullPath: String
-    let icon: NSImage
-
-    static func == (lhs: Self, rhs: Self) -> Bool {
-        lhs.name == rhs.name && lhs.fullPath == rhs.fullPath
-    }
-
-    init(path: String) {
-        fullPath = path
-        name = FileManager.default.displayName(atPath: path)
-        icon = NSWorkspace.shared.icon(forFile: path)
-    }
-
-    init(fsItem: FSItem) {
-        fullPath = fsItem.fullPath
-        name = fsItem.name
-        icon = FSItemsIconUtils.icon(for: fsItem)
-    }
-}
-
 // swiftlint:disable type_body_length
 @Reducer
 struct FileManagerFeature {
@@ -102,15 +80,40 @@ struct FileManagerFeature {
             return fsItems.items.contains(where: { $0.id == selectedId })
         }
 
-        var breadcrumbItems: [BreadcrumbItem] {
+        var breadcrumbItems: [BreadcrumbUtils.Item] {
             switch navigationState {
             case .recents, .tags:
                 return []
             case let .folder(path):
-                var result: [BreadcrumbItem] = []
+                if isTrashFolder {
+                    guard let trashURL = FileManager.default.urls(
+                        for: .trashDirectory,
+                        in: .userDomainMask
+                    ).first else {
+                        return []
+                    }
+
+                    var result: [BreadcrumbUtils.Item] = []
+                    result.append(BreadcrumbUtils.Item(path: trashURL.path))
+
+                    if path != trashURL.path {
+                        let relativePath = path.replacingOccurrences(of: trashURL.path + "/", with: "")
+                        let components = relativePath.split(separator: "/").map(String.init)
+                        var accumulated = trashURL.path
+
+                        for component in components {
+                            accumulated += "/" + component
+                            result.append(BreadcrumbUtils.Item(path: accumulated))
+                        }
+                    }
+
+                    return result
+                }
+
+                var result: [BreadcrumbUtils.Item] = []
 
                 if path.hasPrefix("/") {
-                    result.append(BreadcrumbItem(path: "/"))
+                    result.append(BreadcrumbUtils.Item(path: "/"))
                 }
 
                 let components = path.split(separator: "/").map(String.init)
@@ -118,7 +121,7 @@ struct FileManagerFeature {
 
                 for component in components {
                     accumulated += component
-                    result.append(BreadcrumbItem(path: accumulated))
+                    result.append(BreadcrumbUtils.Item(path: accumulated))
                     accumulated += "/"
                 }
 
@@ -126,12 +129,12 @@ struct FileManagerFeature {
             }
         }
 
-        var selectedBreadcrumbItem: BreadcrumbItem? {
+        var selectedBreadcrumbItem: BreadcrumbUtils.Item? {
             guard fsItems.selectedIds.count == 1,
                   let selectedItem = fsItems.items.first(where: { $0.id == fsItems.selectedIds.first })
             else { return nil }
 
-            return BreadcrumbItem(fsItem: selectedItem)
+            return BreadcrumbUtils.Item(fsItem: selectedItem)
         }
 
         var windowTitle: String {
