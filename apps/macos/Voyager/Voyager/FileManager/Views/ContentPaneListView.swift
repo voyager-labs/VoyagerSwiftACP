@@ -55,9 +55,13 @@ struct ContentPaneListView: View {
                     fsStore.send(.openSelectedItem)
                 })
             },
-            onOpenInNewTab: {
+            onOpenInNewTab: { shouldOpenInNewWindow in
                 if item.isDirectory {
-                    AppDelegate.shared?.createNewTab(path: item.fullPath)
+                    if shouldOpenInNewWindow {
+                        AppDelegate.shared?.createNewWindow(path: item.fullPath)
+                    } else {
+                        AppDelegate.shared?.createNewTab(path: item.fullPath)
+                    }
                 }
             },
             onQuickLook: {
@@ -65,22 +69,9 @@ struct ContentPaneListView: View {
                     fsStore.send(.quickLookSelectedItem)
                 })
             },
-            onOpenWithApp: { bundleID in
+            onOpenWithApp: { bundleID, shouldSetAsDefault in
                 sendWithSelection(item, fsStore: fsStore, action: {
-                    fsStore.send(.openWithSelectedItem(bundleID: bundleID))
-                })
-            },
-            onSetDefaultApp: { bundleID, type in
-                sendWithSelection(item, fsStore: fsStore, action: {
-                    fsStore.send(.setDefaultAppForSelectedItem(
-                        bundleID: bundleID,
-                        type: type
-                    ))
-                })
-            },
-            onSetDefaultAppWithOther: {
-                sendWithSelection(item, fsStore: fsStore, action: {
-                    fsStore.send(.setDefaultAppWithOtherForSelectedItem)
+                    fsStore.send(.openWithSelectedItem(bundleID: bundleID, shouldSetAsDefault: shouldSetAsDefault))
                 })
             },
             onRenameUpdate: { text in

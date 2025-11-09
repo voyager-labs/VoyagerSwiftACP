@@ -117,9 +117,7 @@ struct FSItemsFeature {
 
         case openSelectedItem
         case quickLookSelectedItem
-        case openWithSelectedItem(bundleID: String?)
-        case setDefaultAppForSelectedItem(bundleID: String, type: UTType?)
-        case setDefaultAppWithOtherForSelectedItem
+        case openWithSelectedItem(bundleID: String?, shouldSetAsDefault: Bool)
         case navigateFolder(id: String)
         case copySelectedItems
         case cutSelectedItems
@@ -598,7 +596,7 @@ struct FSItemsFeature {
 
                 return .send(.operations(.quickLookFile(file: item)))
 
-            case let .openWithSelectedItem(bundleID):
+            case let .openWithSelectedItem(bundleID, shouldSetAsDefault):
                 guard state.selectedIds.count == 1,
                       let selectedId = state.selectedIds.first,
                       let item = state.items.first(where: { $0.id == selectedId }),
@@ -610,40 +608,32 @@ struct FSItemsFeature {
                 if let bundleID = bundleID {
                     let filePath = item.fullPath
                     let url = URL(fileURLWithPath: filePath)
-                    return .send(.operations(.openFileWithAppBundleID(
+                    let fileType = UTType(filenameExtension: item.fileExtension)
+
+                    var effects: [Effect<Action>] = []
+
+                    if shouldSetAsDefault, let fileType = fileType {
+                        effects.append(.send(.operations(.setDefaultAppForFile(
+                            type: fileType,
+                            bundleID: bundleID,
+                            file: item
+                        ))))
+                    }
+
+                    effects.append(.send(.operations(.openFileWithAppBundleID(
                         filePath: filePath,
                         bundleID: bundleID,
                         url: url
-                    )))
+                    ))))
+
+                    return .concatenate(effects)
                 } else {
-                    return .send(.operations(.openFileWithApp(file: item)))
+                    if shouldSetAsDefault {
+                        return .send(.operations(.setDefaultAppWithOther(file: item)))
+                    } else {
+                        return .send(.operations(.openFileWithApp(file: item)))
+                    }
                 }
-
-            case let .setDefaultAppForSelectedItem(bundleID, type):
-                guard state.selectedIds.count == 1,
-                      let selectedId = state.selectedIds.first,
-                      let item = state.items.first(where: { $0.id == selectedId }),
-                      !item.isDirectory
-                else {
-                    return .none
-                }
-
-                return .send(.operations(.setDefaultAppForFile(
-                    type: type ?? UTType(filenameExtension: item.fileExtension),
-                    bundleID: bundleID,
-                    file: item
-                )))
-
-            case .setDefaultAppWithOtherForSelectedItem:
-                guard state.selectedIds.count == 1,
-                      let selectedId = state.selectedIds.first,
-                      let item = state.items.first(where: { $0.id == selectedId }),
-                      !item.isDirectory
-                else {
-                    return .none
-                }
-
-                return .send(.operations(.setDefaultAppWithOther(file: item)))
 
             case .copySelectedItems:
                 guard !state.selectedIds.isEmpty else {

@@ -12,11 +12,9 @@ struct FSItemListView: View {
     let applications: [ApplicationInfo]?
     let onSelect: () -> Void
     let onOpen: () -> Void
-    let onOpenInNewTab: () -> Void
+    let onOpenInNewTab: (Bool) -> Void
     let onQuickLook: () -> Void
-    let onOpenWithApp: (String?) -> Void
-    let onSetDefaultApp: (String, UTType?) -> Void
-    let onSetDefaultAppWithOther: () -> Void
+    let onOpenWithApp: (String?, Bool) -> Void
     let onRenameUpdate: (String) -> Void
     let onRenameCommit: () -> Void
     let onRenameCancel: () -> Void
@@ -40,6 +38,8 @@ struct FSItemListView: View {
 
     @State private var isDropTarget = false
     @FocusState private var isTextFieldFocused: Bool
+    @State private var isOptionPressed = false
+    @State private var optionKeyTimer: Timer?
 
     private static let dateFormatter: DateFormatter = {
         let formatter = DateFormatter()
@@ -180,6 +180,27 @@ struct FSItemListView: View {
         .contextMenu {
             contextMenuContent
         }
+        .onAppear {
+            startOptionKeyMonitoring()
+        }
+        .onDisappear {
+            stopOptionKeyMonitoring()
+        }
+    }
+
+    private func startOptionKeyMonitoring() {
+        let timer = Timer(timeInterval: 0.02, repeats: true) { _ in
+            DispatchQueue.main.async {
+                isOptionPressed = NSEvent.modifierFlags.contains(.option)
+            }
+        }
+        RunLoop.main.add(timer, forMode: .common)
+        optionKeyTimer = timer
+    }
+
+    private func stopOptionKeyMonitoring() {
+        optionKeyTimer?.invalidate()
+        optionKeyTimer = nil
     }
 }
 
@@ -201,9 +222,12 @@ private extension FSItemListView {
 
         if item.isDirectory {
             Button {
-                onOpenInNewTab()
+                onOpenInNewTab(isOptionPressed)
             } label: {
-                Label("Open in New Tab", systemImage: "plus.square.on.square")
+                Label(
+                    isOptionPressed ? "Open in New Window" : "Open in New Tab",
+                    systemImage: isOptionPressed ? "macwindow.badge.plus" : "plus.square.on.square"
+                )
             }
             .keyboardShortcut(.downArrow, modifiers: [.command, .option])
         }
@@ -214,7 +238,7 @@ private extension FSItemListView {
 
                 ForEach(Array(regularApps.enumerated()), id: \.element.id) { _, app in
                     Button {
-                        onOpenWithApp(app.bundleID)
+                        onOpenWithApp(app.bundleID, isOptionPressed)
                     } label: {
                         HStack {
                             if let bundleID = app.bundleID {
@@ -231,49 +255,16 @@ private extension FSItemListView {
 
                 Divider()
                 Button("Other…") {
-                    onOpenWithApp(nil)
+                    onOpenWithApp(nil, isOptionPressed)
                 }
             } label: {
-                Label("Open With", systemImage: "app.badge")
+                Label(isOptionPressed ? "Always Open With" : "Open With", systemImage: "app.badge")
             }
         } else if !item.isDirectory {
             Button {
-                onOpenWithApp(nil)
+                onOpenWithApp(nil, isOptionPressed)
             } label: {
-                Label("Open With…", systemImage: "app.badge")
-            }
-        }
-
-        if !item.isDirectory, let apps = applications {
-            Menu {
-                let fileType = UTType(filenameExtension: item.fileExtension)
-                let regularApps = apps.filter { $0.bundleID != nil && $0.id != "other" }
-
-                ForEach(Array(regularApps.enumerated()), id: \.element.id) { _, app in
-                    Button {
-                        if let bundleID = app.bundleID {
-                            onSetDefaultApp(bundleID, fileType)
-                        }
-                    } label: {
-                        HStack {
-                            if let bundleID = app.bundleID {
-                                appIconView(for: bundleID)
-                            }
-                            Text(app.isDefault ? "\(app.name) (default)" : app.name)
-                        }
-                    }
-
-                    if app.isDefault {
-                        Divider()
-                    }
-                }
-
-                Divider()
-                Button("Other…") {
-                    onSetDefaultAppWithOther()
-                }
-            } label: {
-                Label("Set Default App", systemImage: "app.badge.checkmark")
+                Label(isOptionPressed ? "Always Open With…" : "Open With…", systemImage: "app.badge")
             }
         }
 
