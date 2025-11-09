@@ -92,9 +92,21 @@ struct FSItemsOperationsFeature {
                 }
 
                 return .run { send in
-                    for file in files {
+                    for (index, file) in files.enumerated() {
                         let filePath = file.fullPath
                         let url = URL(fileURLWithPath: filePath)
+
+                        if isInTrash(filePath) {
+                            let hasMoreFiles = index < files.count - 1
+                            let shouldContinue = await MainActor.run {
+                                FSItemAlertUtils.showTrashFileAlert(fileName: file.name, hasMoreFiles: hasMoreFiles)
+                            }
+                            if !shouldContinue {
+                                break
+                            }
+                            continue
+                        }
+
                         await send(.operationStarted(filePath, .openDefault))
                         do {
                             try await fileSystemClient.open(url, .defaultApp)
@@ -116,6 +128,15 @@ struct FSItemsOperationsFeature {
                 return selectApplicationAndOpenFile(for: file, defaultChecked: false)
 
             case let .openFileWithAppBundleID(filePath, bundleID, url):
+                if isInTrash(filePath) {
+                    let fileName = URL(fileURLWithPath: filePath).lastPathComponent
+                    return .run { _ in
+                        _ = await MainActor.run {
+                            FSItemAlertUtils.showTrashFileAlert(fileName: fileName, hasMoreFiles: false)
+                        }
+                    }
+                }
+
                 return run(for: filePath, kind: .openWithApp(bundleID)) {
                     try await fileSystemClient.open(url, .bundleID(bundleID))
                 }
@@ -539,6 +560,13 @@ struct FSItemsOperationsFeature {
             await send(.applicationsLoaded(filePath, finalApps))
         }
     }
+}
+
+// MARK: - Private Helpers
+
+private nonisolated func isInTrash(_ filePath: String) -> Bool {
+    let trashPath = FileManager.default.urls(for: .trashDirectory, in: .userDomainMask).first?.path ?? ""
+    return filePath.starts(with: trashPath + "/")
 }
 
 private func selectApplicationAndOpenFile(

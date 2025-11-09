@@ -92,4 +92,26 @@ enum FSItemAlertUtils {
         let response = alert.runModal()
         return response == .alertFirstButtonReturn
     }
+
+    @MainActor
+    static func showTrashFileAlert(fileName: String, hasMoreFiles: Bool) -> Bool {
+        let alert = NSAlert()
+        alert.alertStyle = .warning
+        alert.icon = NSImage(named: NSImage.cautionName)
+
+        alert.messageText = "The document \"\(fileName)\" can't be opened because it's in the Trash."
+
+        alert.informativeText = "To use this item, first drag it out of the Trash."
+
+        if hasMoreFiles {
+            alert.addButton(withTitle: "Continue")
+            alert.addButton(withTitle: "Cancel")
+            let response = alert.runModal()
+            return response == .alertFirstButtonReturn
+        } else {
+            alert.addButton(withTitle: "OK")
+            alert.runModal()
+            return false
+        }
+    }
 }
