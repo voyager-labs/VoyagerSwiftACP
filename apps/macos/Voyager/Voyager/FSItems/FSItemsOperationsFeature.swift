@@ -591,10 +591,93 @@ private func selectApplicationAndOpenFile(
     }
 }
 
+private class OpenWithPanelDelegate: NSObject, NSOpenSavePanelDelegate {
+    let fileURL: URL
+    var enableMode: EnableMode
+    weak var panel: NSOpenPanel?
+
+    enum EnableMode: Int {
+        case recommended = 0
+        case all = 1
+    }
+
+    init(fileURL: URL, enableMode: EnableMode = .recommended) {
+        self.fileURL = fileURL
+        self.enableMode = enableMode
+        super.init()
+    }
+
+    func panel(_: Any, shouldEnable url: URL) -> Bool {
+        // .app 번들만 허용 (앱은 디렉토리지만 특수 취급)
+        guard url.pathExtension == "app" else { return false }
+
+        // "All Applications" 모드면 모두 활성화
+        guard enableMode == .recommended else { return true }
+
+        // "Recommended": 파일 타입 지원하는지 확인
+        let workspace = NSWorkspace.shared
+        let supportedApps = workspace.urlsForApplications(toOpen: fileURL)
+        return supportedApps.contains(url)
+    }
+
+    @objc
+    func enableModeChanged(_ sender: NSPopUpButton) {
+        enableMode = EnableMode(rawValue: sender.indexOfSelectedItem) ?? .recommended
+        panel?.validateVisibleColumns()
+    }
+}
+
 private struct ApplicationSelection {
     let bundleID: String
     let type: UTType?
     let setAsDefault: Bool
+}
+
+@MainActor
+private func createOpenWithAccessoryView(
+    delegate: OpenWithPanelDelegate,
+    defaultChecked: Bool
+) -> (view: NSView, checkbox: NSButton) {
+    let enableLabel = NSTextField(labelWithString: "Enable:")
+    enableLabel.isEditable = false
+    enableLabel.isBordered = false
+    enableLabel.backgroundColor = .clear
+    enableLabel.sizeToFit()
+
+    let enablePopup = NSPopUpButton(frame: NSRect(x: 0, y: 0, width: 200, height: 26), pullsDown: false)
+    enablePopup.addItems(withTitles: ["Recommended Applications", "All Applications"])
+    enablePopup.target = delegate
+    enablePopup.action = #selector(OpenWithPanelDelegate.enableModeChanged(_:))
+
+    let enableStack = NSStackView(views: [enableLabel, enablePopup])
+    enableStack.orientation = .horizontal
+    enableStack.spacing = 8
+    enableStack.alignment = .centerY
+
+    let checkbox = NSButton(checkboxWithTitle: "Always Open With", target: nil, action: nil)
+    checkbox.state = defaultChecked ? .on : .off
+    checkbox.sizeToFit()
+
+    let mainStack = NSStackView(views: [enableStack, checkbox])
+    mainStack.orientation = .vertical
+    mainStack.spacing = 12
+    mainStack.alignment = .centerX
+
+    let fittingSize = mainStack.fittingSize
+    mainStack.setFrameSize(fittingSize)
+
+    let accessoryView = NSView()
+    accessoryView.translatesAutoresizingMaskIntoConstraints = false
+    accessoryView.addSubview(mainStack)
+
+    mainStack.translatesAutoresizingMaskIntoConstraints = false
+    NSLayoutConstraint.activate([
+        mainStack.centerXAnchor.constraint(equalTo: accessoryView.centerXAnchor),
+        mainStack.centerYAnchor.constraint(equalTo: accessoryView.centerYAnchor),
+        accessoryView.heightAnchor.constraint(equalToConstant: fittingSize.height + 20),
+    ])
+
+    return (accessoryView, checkbox)
 }
 
 @MainActor
@@ -612,17 +695,11 @@ private func selectApplication(for itemURL: URL, defaultChecked: Bool = false) -
     panel.prompt = "Open"
     panel.message = "Choose an application to open the document \"\(itemURL.lastPathComponent)\"."
 
-    let checkbox = NSButton(checkboxWithTitle: "Always Open With", target: nil, action: nil)
-    checkbox.state = defaultChecked ? .on : .off
-    checkbox.sizeToFit()
+    let delegate = OpenWithPanelDelegate(fileURL: itemURL, enableMode: .recommended)
+    panel.delegate = delegate
+    delegate.panel = panel
 
-    let accessoryView = NSView(frame: NSRect(x: 0, y: 0, width: 400, height: 40))
-
-    let xPosition = (accessoryView.frame.width - checkbox.frame.width) / 2
-    let yPosition = (accessoryView.frame.height - checkbox.frame.height) / 2
-    checkbox.frame = NSRect(x: xPosition, y: yPosition, width: checkbox.frame.width, height: checkbox.frame.height)
-    accessoryView.addSubview(checkbox)
-
+    let (accessoryView, checkbox) = createOpenWithAccessoryView(delegate: delegate, defaultChecked: defaultChecked)
     panel.accessoryView = accessoryView
     panel.isAccessoryViewDisclosed = true
 
