@@ -295,6 +295,7 @@ struct FSItemsFeature {
                 state.isVirtualFolder = true
 
                 return .run { send in
+                    try await Task.sleep(for: .milliseconds(500))
                     let taggedItems = await SidebarUtils.loadFilesWithTag(tagName)
                     await send(.itemsLoaded(taggedItems))
                 }
