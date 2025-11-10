@@ -5,6 +5,19 @@ import UniformTypeIdentifiers
 struct ContentPaneGridView: View {
     let store: StoreOf<FileManagerFeature>
 
+    @State private var savedTopItemId: String?
+
+    private func isNearTop(_ geometry: GeometryProxy) -> Bool {
+        let frame = geometry.frame(in: .named("scrollView"))
+        return frame.minY >= 0 && frame.minY < 50
+    }
+
+    private func saveScrollPositionBeforeOpen() {
+        if let topId = savedTopItemId {
+            store.send(.saveTopVisibleItem(topId, forPath: store.currentPath))
+        }
+    }
+
     private let itemMinWidth: CGFloat = 100
     private let itemMaxWidth: CGFloat = 120
     private let itemSpacing: CGFloat = 20
@@ -59,6 +72,7 @@ struct ContentPaneGridView: View {
                                                 isCommandPressed: false,
                                                 isShiftPressed: false
                                             ))
+                                            saveScrollPositionBeforeOpen()
                                             store.send(.openSelectedItem)
                                         },
                                         onRenameUpdate: { text in
@@ -79,6 +93,14 @@ struct ContentPaneGridView: View {
                                         },
                                         onDrop: { providers, folderPath in
                                             fsStore.send(.handleDrop(providers: providers, destinationPath: folderPath))
+                                        }
+                                    )
+                                    .background(
+                                        GeometryReader { itemGeometry in
+                                            Color.clear.preference(
+                                                key: VisibleTopItemKey.self,
+                                                value: isNearTop(itemGeometry) ? item.id : ""
+                                            )
                                         }
                                     )
                                     .id(item.id)
@@ -140,6 +162,7 @@ struct ContentPaneGridView: View {
                                                     isCommandPressed: false,
                                                     isShiftPressed: false
                                                 ))
+                                                saveScrollPositionBeforeOpen()
                                                 store.send(.openSelectedItem)
                                             },
                                             onRenameUpdate: { text in
@@ -165,6 +188,14 @@ struct ContentPaneGridView: View {
                                                 ))
                                             }
                                         )
+                                        .background(
+                                            GeometryReader { itemGeometry in
+                                                Color.clear.preference(
+                                                    key: VisibleTopItemKey.self,
+                                                    value: isNearTop(itemGeometry) ? item.id : ""
+                                                )
+                                            }
+                                        )
                                         .id(item.id)
                                     }
                                 }
@@ -176,6 +207,11 @@ struct ContentPaneGridView: View {
                     .contentShape(Rectangle())
                     .onTapGesture {
                         fsStore.send(.clearSelection)
+                    }
+                    .coordinateSpace(name: "scrollView")
+                    .onPreferenceChange(VisibleTopItemKey.self) { topItemId in
+                        guard !topItemId.isEmpty, topItemId != savedTopItemId else { return }
+                        savedTopItemId = topItemId
                     }
                     .contextMenu {
                         if store.isTrashFolder {
@@ -196,6 +232,12 @@ struct ContentPaneGridView: View {
                     proxy.scrollTo(id, anchor: nil)
                     fsStore.send(.resetScrollFlag)
                 }
+            }
+            .onChange(of: store.currentPath) { [oldPath = store.currentPath] _ in
+                if let topId = savedTopItemId {
+                    store.send(.saveTopVisibleItem(topId, forPath: oldPath))
+                }
+                savedTopItemId = nil
             }
             .onChange(of: store.scrollTargetId) { targetId in
                 if let targetId = targetId {

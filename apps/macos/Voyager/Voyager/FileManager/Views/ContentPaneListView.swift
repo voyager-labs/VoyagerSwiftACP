@@ -2,10 +2,17 @@ import ComposableArchitecture
 import SwiftUI
 import UniformTypeIdentifiers
 
+// swiftlint:disable type_body_length
 struct ContentPaneListView: View {
     let store: StoreOf<FileManagerFeature>
 
     @State private var availableWidth: CGFloat = 0
+    @State private var savedTopItemId: String?
+
+    private func isNearTop(_ geometry: GeometryProxy) -> Bool {
+        let frame = geometry.frame(in: .named("scrollView"))
+        return frame.minY >= 0 && frame.minY < 30
+    }
 
     private func sendWithSelection(
         _ item: FSItem,
@@ -16,6 +23,12 @@ struct ContentPaneListView: View {
             fsStore.send(.selectItem(id: item.id, isCommandPressed: false, isShiftPressed: false))
         }
         action()
+    }
+
+    private func saveScrollPositionBeforeOpen() {
+        if let topId = savedTopItemId {
+            store.send(.saveTopVisibleItem(topId, forPath: store.currentPath))
+        }
     }
 
     // swiftlint:disable function_body_length
@@ -57,6 +70,7 @@ struct ContentPaneListView: View {
             },
             onOpen: {
                 sendWithSelection(item, fsStore: fsStore, action: {
+                    saveScrollPositionBeforeOpen()
                     fsStore.send(.openSelectedItem)
                 })
             },
@@ -193,6 +207,14 @@ struct ContentPaneListView: View {
                                         isTrashFolder: store.isTrashFolder
                                     )
                                     .background(index % 2 == 0 ? Color.clear : Color.primary.opacity(0.05))
+                                    .background(
+                                        GeometryReader { itemGeometry in
+                                            Color.clear.preference(
+                                                key: VisibleTopItemKey.self,
+                                                value: isNearTop(itemGeometry) ? item.id : ""
+                                            )
+                                        }
+                                    )
                                     .id(item.id)
                                 }
                             } else {
@@ -240,6 +262,14 @@ struct ContentPaneListView: View {
                                         )
                                         .background(itemIndex % 2 == 0 ? Color.clear : Color.primary
                                             .opacity(0.05))
+                                        .background(
+                                            GeometryReader { itemGeometry in
+                                                Color.clear.preference(
+                                                    key: VisibleTopItemKey.self,
+                                                    value: isNearTop(itemGeometry) ? item.id : ""
+                                                )
+                                            }
+                                        )
                                         .id(item.id)
                                     }
                                 }
@@ -253,6 +283,11 @@ struct ContentPaneListView: View {
                             }
                             fsStore.send(.clearSelection)
                         }
+                    }
+                    .coordinateSpace(name: "scrollView")
+                    .onPreferenceChange(VisibleTopItemKey.self) { topItemId in
+                        guard !topItemId.isEmpty, topItemId != savedTopItemId else { return }
+                        savedTopItemId = topItemId
                     }
                     .contextMenu {
                         if store.isTrashFolder {
@@ -271,6 +306,12 @@ struct ContentPaneListView: View {
                             proxy.scrollTo(id, anchor: nil)
                             fsStore.send(.resetScrollFlag)
                         }
+                    }
+                    .onChange(of: store.currentPath) { [oldPath = store.currentPath] _ in
+                        if let topId = savedTopItemId {
+                            store.send(.saveTopVisibleItem(topId, forPath: oldPath))
+                        }
+                        savedTopItemId = nil
                     }
                     .onChange(of: store.scrollTargetId) { targetId in
                         if let targetId = targetId {
@@ -295,3 +336,5 @@ struct ContentPaneListView: View {
         }
     }
 }
+
+// swiftlint:enable type_body_length

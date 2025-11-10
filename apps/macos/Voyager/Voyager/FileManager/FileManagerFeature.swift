@@ -32,7 +32,7 @@ struct FileManagerFeature {
 
         var titlePath: String = Settings.shared.defaultTabPath
 
-        var scrollPositions: [String: String] = [:]
+        var topVisibleItems: [String: String] = [:]
         var scrollTargetId: String?
 
         var backHistory: [String] = []
@@ -153,14 +153,7 @@ struct FileManagerFeature {
             }()
         }
 
-        mutating func saveCurrentScrollPosition() {
-            if let selectedId = fsItems.selectedIds.first {
-                scrollPositions[currentPath] = selectedId
-            }
-        }
-
         mutating func navigateToFolder(_ path: String, sidebarItemName: String) {
-            saveCurrentScrollPosition()
             selectedSidebarItem = sidebarItemName
             backHistory.append(currentPath)
             forwardHistory = []
@@ -171,7 +164,6 @@ struct FileManagerFeature {
             to navigationState: FileManagerNavigationUtils.NavigationState,
             sidebarItemName: String
         ) {
-            saveCurrentScrollPosition()
             selectedSidebarItem = sidebarItemName
             backHistory.append(currentPath)
             forwardHistory = []
@@ -183,7 +175,6 @@ struct FileManagerFeature {
             addToForward: Bool,
             locations: [SidebarUtils.LocationItem]
         ) {
-            saveCurrentScrollPosition()
             if addToForward {
                 forwardHistory.append(currentPath)
             } else {
@@ -218,6 +209,7 @@ struct FileManagerFeature {
         case changeLayout(ViewLayout)
         case toggleShowHiddenFiles
         case setSidebarVisible(Bool)
+        case saveTopVisibleItem(String, forPath: String)
         case showRecents
         case loadFavorites
         case favoritesLoaded([SidebarUtils.FavoriteItem])
@@ -270,7 +262,6 @@ struct FileManagerFeature {
                 )
 
             case let .navigateTo(path):
-                state.saveCurrentScrollPosition()
                 state.backHistory.append(state.currentPath)
                 state.forwardHistory = []
                 state.navigationState = .folder(path)
@@ -319,7 +310,6 @@ struct FileManagerFeature {
                 return FileManagerNavigationUtils.navigateToState(state.navigationState)
 
             case let .goToHistoryIndex(index, isBackHistory):
-                state.saveCurrentScrollPosition()
                 if isBackHistory {
                     guard index < state.backHistory.count else { return .none }
                     let targetPath = state.backHistory[state.backHistory.count - 1 - index]
@@ -371,6 +361,10 @@ struct FileManagerFeature {
                     .send(.fsItems(.setShowHidden(state.showHiddenFiles))),
                     .send(.fsItems(.loadItems(path: state.currentPath)))
                 )
+
+            case let .saveTopVisibleItem(itemId, forPath: path):
+                state.topVisibleItems[path] = itemId
+                return .none
 
             case let .setSidebarVisible(visible):
                 state.sidebarVisible = visible
@@ -456,10 +450,10 @@ struct FileManagerFeature {
                 case .itemsLoaded:
                     state.titlePath = state.currentPath
 
-                    if let savedId = state.scrollPositions[state.currentPath],
-                       state.fsItems.items.contains(where: { $0.id == savedId })
+                    if let topItemId = state.topVisibleItems[state.currentPath],
+                       state.fsItems.items.contains(where: { $0.id == topItemId })
                     {
-                        state.scrollTargetId = savedId
+                        state.scrollTargetId = topItemId
                     } else {
                         state.scrollTargetId = nil
                     }
