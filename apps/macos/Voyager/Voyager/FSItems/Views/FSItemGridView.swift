@@ -125,9 +125,7 @@ struct FSItemGridView: View {
         .simultaneousGesture(
             TapGesture(count: 2)
                 .onEnded { _ in
-                    if item.isDirectory {
-                        onOpen()
-                    }
+                    onOpen()
                 }
         )
         .onDrag {
