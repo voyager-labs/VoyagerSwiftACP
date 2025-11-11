@@ -176,10 +176,14 @@ struct FSItemListView: View {
             return provider
         }
         .if(item.isDirectory) { view in
-            view.onDrop(of: [UTType.fileURL.identifier], isTargeted: $isDropTarget) { providers, _ in
-                onDrop(providers, item.fullPath)
-                return true
-            }
+            view.onDrop(
+                of: [UTType.fileURL],
+                delegate: FileDropDelegate(
+                    item: item,
+                    onDrop: onDrop,
+                    isDropTarget: $isDropTarget
+                )
+            )
             .background(
                 RoundedRectangle(cornerRadius: 6)
                     .stroke(Color.blue, lineWidth: isDropTarget ? 2 : 0)
