@@ -2,12 +2,20 @@ import ComposableArchitecture
 import SwiftUI
 import UniformTypeIdentifiers
 
+private struct ListRowPositionKey: PreferenceKey {
+    static var defaultValue: [String: CGRect] = [:]
+    static func reduce(value: inout [String: CGRect], nextValue: () -> [String: CGRect]) {
+        value.merge(nextValue()) { $1 }
+    }
+}
+
 // swiftlint:disable type_body_length
 struct ContentPaneListView: View {
     let store: StoreOf<FileManagerFeature>
 
     @State private var availableWidth: CGFloat = 0
     @State private var savedTopItemId: String?
+    @State private var rowPositions: [String: CGRect] = [:]
 
     private func isNearTop(_ geometry: GeometryProxy) -> Bool {
         let frame = geometry.frame(in: .named("scrollView"))
@@ -29,6 +37,32 @@ struct ContentPaneListView: View {
         if let topId = savedTopItemId {
             store.send(.saveTopVisibleItem(topId, forPath: store.currentPath))
         }
+    }
+
+    private func findItemAtPoint(_ point: CGPoint) -> String? {
+        for (itemId, rect) in rowPositions where rect.contains(point) {
+            return itemId
+        }
+        return nil
+    }
+
+    private func findNearestItemAtY(_ yPosition: CGFloat) -> String? {
+        guard !rowPositions.isEmpty else { return nil }
+
+        var nearest: (id: String, distance: CGFloat)?
+        for (itemId, rect) in rowPositions {
+            let centerY = rect.midY
+            let distance = abs(yPosition - centerY)
+
+            if let nearestDistance = nearest?.distance {
+                if distance < nearestDistance {
+                    nearest = (itemId, distance)
+                }
+            } else {
+                nearest = (itemId, distance)
+            }
+        }
+        return nearest?.id
     }
 
     // swiftlint:disable function_body_length
@@ -206,13 +240,21 @@ struct ContentPaneListView: View {
                                         geometry: geometry,
                                         isTrashFolder: store.isTrashFolder
                                     )
+                                    .frame(maxWidth: .infinity, alignment: .leading)
                                     .background(index % 2 == 0 ? Color.clear : Color.primary.opacity(0.05))
                                     .background(
                                         GeometryReader { itemGeometry in
-                                            Color.clear.preference(
-                                                key: VisibleTopItemKey.self,
-                                                value: isNearTop(itemGeometry) ? item.id : ""
-                                            )
+                                            Color.clear
+                                                .preference(
+                                                    key: VisibleTopItemKey.self,
+                                                    value: isNearTop(itemGeometry) ? item.id : ""
+                                                )
+                                                .preference(
+                                                    key: ListRowPositionKey.self,
+                                                    value: [
+                                                        item.id: itemGeometry.frame(in: .named("listContainer")),
+                                                    ]
+                                                )
                                         }
                                     )
                                     .id(item.id)
@@ -260,14 +302,22 @@ struct ContentPaneListView: View {
                                             geometry: geometry,
                                             isTrashFolder: store.isTrashFolder
                                         )
+                                        .frame(maxWidth: .infinity, alignment: .leading)
                                         .background(itemIndex % 2 == 0 ? Color.clear : Color.primary
                                             .opacity(0.05))
                                         .background(
                                             GeometryReader { itemGeometry in
-                                                Color.clear.preference(
-                                                    key: VisibleTopItemKey.self,
-                                                    value: isNearTop(itemGeometry) ? item.id : ""
-                                                )
+                                                Color.clear
+                                                    .preference(
+                                                        key: VisibleTopItemKey.self,
+                                                        value: isNearTop(itemGeometry) ? item.id : ""
+                                                    )
+                                                    .preference(
+                                                        key: ListRowPositionKey.self,
+                                                        value: [
+                                                            item.id: itemGeometry.frame(in: .named("listContainer")),
+                                                        ]
+                                                    )
                                             }
                                         )
                                         .id(item.id)
@@ -285,10 +335,49 @@ struct ContentPaneListView: View {
                         }
                     }
                     .coordinateSpace(name: "scrollView")
+                    .coordinateSpace(name: "listContainer")
                     .onPreferenceChange(VisibleTopItemKey.self) { topItemId in
                         guard !topItemId.isEmpty, topItemId != savedTopItemId else { return }
                         savedTopItemId = topItemId
                     }
+                    .onPreferenceChange(ListRowPositionKey.self) { positions in
+                        rowPositions = positions
+                    }
+                    .simultaneousGesture(
+                        DragGesture(minimumDistance: 10, coordinateSpace: .named("listContainer"))
+                            .onChanged { value in
+                                guard !rowPositions.isEmpty else { return }
+
+                                if fsStore.listRowDragSelection != nil {
+                                    if let currentItemId = findItemAtPoint(value.location) {
+                                        fsStore.send(.updateListRowDrag(currentItemId: currentItemId))
+                                    }
+                                } else {
+                                    guard let nearestItemId = findNearestItemAtY(value.startLocation.y)
+                                    else { return }
+
+                                    let modifiers: ModifierFlags = {
+                                        if NSEvent.modifierFlags.contains(.command) {
+                                            return .command
+                                        } else if NSEvent.modifierFlags.contains(.shift) {
+                                            return .shift
+                                        } else {
+                                            return .none
+                                        }
+                                    }()
+
+                                    fsStore.send(.startListRowDrag(
+                                        startItemId: nearestItemId,
+                                        modifierFlags: modifiers
+                                    ))
+                                }
+                            }
+                            .onEnded { _ in
+                                if fsStore.listRowDragSelection != nil {
+                                    fsStore.send(.endListRowDrag)
+                                }
+                            }
+                    )
                     .contextMenu {
                         if store.isTrashFolder {
                             Button("Empty Trash") {

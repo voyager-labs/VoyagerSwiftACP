@@ -56,6 +56,7 @@ struct FSItemsFeature {
         var thumbnailsReady: Set<String> = []
 
         var lassoSelection: LassoSelection?
+        var listRowDragSelection: ListRowDragSelection?
         var itemPositions: [String: CGRect] = [:]
         var gridColumnCount: Int = 1
 
@@ -158,6 +159,10 @@ struct FSItemsFeature {
         case endLassoSelection
         case cancelLassoSelection
         case lassoAutoScrollTick
+        case startListRowDrag(startItemId: String, modifierFlags: ModifierFlags)
+        case updateListRowDrag(currentItemId: String)
+        case endListRowDrag
+        case cancelListRowDrag
 
         case operations(FSItemsOperationsFeature.Action)
     }
@@ -430,7 +435,7 @@ struct FSItemsFeature {
                         let itemsArray = Array(state.items)
                         let range = min(anchorIndex, currentIndex) ... max(anchorIndex, currentIndex)
                         let rangeIds = itemsArray[range].map { $0.id }
-                        state.selectedIds = Set(rangeIds)
+                        state.selectedIds.formUnion(rangeIds)
                         state.lastSelectedId = id
                     } else {
                         state.selectedIds.insert(id)
@@ -1195,6 +1200,61 @@ struct FSItemsFeature {
                 // TODO: 자동 스크롤 구현 (View와 연동 필요)
                 // 현재는 스킵 (나중에 NSScrollView 래퍼 구현 시 추가)
                 return .none
+
+            case let .startListRowDrag(startItemId, modifierFlags):
+                state.listRowDragSelection = ListRowDragSelection(
+                    startItemId: startItemId,
+                    currentItemId: startItemId,
+                    initialSelectedIds: modifierFlags == .none ? [] : state.selectedIds,
+                    modifierFlags: modifierFlags
+                )
+                return .none
+
+            case let .updateListRowDrag(currentItemId):
+                guard var drag = state.listRowDragSelection else { return .none }
+                drag.currentItemId = currentItemId
+                state.listRowDragSelection = drag
+
+                let displayItems = state.displayOrderItems
+                guard let startIndex = displayItems.firstIndex(where: { $0.id == drag.startItemId }),
+                      let currentIndex = displayItems.firstIndex(where: { $0.id == currentItemId })
+                else { return .none }
+
+                let range = min(startIndex, currentIndex) ... max(startIndex, currentIndex)
+                let rangeIds = Set(displayItems[range].map { $0.id })
+
+                switch drag.modifierFlags {
+                case .none:
+                    state.selectedIds = rangeIds
+                case .shift:
+                    state.selectedIds = drag.initialSelectedIds.union(rangeIds)
+                case .command:
+                    state.selectedIds = drag.initialSelectedIds.symmetricDifference(rangeIds)
+                }
+                return .none
+
+            case .endListRowDrag:
+                if let drag = state.listRowDragSelection, !state.selectedIds.isEmpty {
+                    state.lastSelectedId = drag.currentItemId
+                    state.rangeAnchorId = drag.currentItemId
+                }
+                state.listRowDragSelection = nil
+                return .none
+
+            case .cancelListRowDrag:
+                if let drag = state.listRowDragSelection {
+                    state.selectedIds = drag.initialSelectedIds
+                    if !drag.initialSelectedIds.isEmpty {
+                        if let lastItem = state.displayOrderItems
+                            .last(where: { drag.initialSelectedIds.contains($0.id) })
+                        {
+                            state.lastSelectedId = lastItem.id
+                        }
+                    }
+                    state.rangeAnchorId = nil
+                }
+                state.listRowDragSelection = nil
+                return .none
             }
         }
     }
@@ -1206,6 +1266,13 @@ enum ModifierFlags: Equatable, Sendable {
     case none
     case command
     case shift
+}
+
+struct ListRowDragSelection: Equatable, Sendable {
+    var startItemId: String
+    var currentItemId: String
+    var initialSelectedIds: Set<String>
+    var modifierFlags: ModifierFlags
 }
 
 struct LassoSelection: Equatable, Sendable {

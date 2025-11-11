@@ -123,6 +123,14 @@ struct FSItemListView: View {
                 } else {
                     styledText(item.name, fontSize: 13)
                         .lineLimit(1)
+                        .if(!isSelected) { view in
+                            view.onDrag {
+                                onStartDrag()
+                                let url = URL(fileURLWithPath: item.fullPath)
+                                let provider = NSItemProvider(object: url as NSURL)
+                                return provider
+                            }
+                        }
                 }
 
                 Spacer(minLength: 0)
@@ -168,12 +176,13 @@ struct FSItemListView: View {
                     onOpen()
                 }
         )
-        .onDrag {
-            onStartDrag()
-
-            let url = URL(fileURLWithPath: item.fullPath)
-            let provider = NSItemProvider(object: url as NSURL)
-            return provider
+        .if(isSelected) { view in
+            view.onDrag {
+                onStartDrag()
+                let url = URL(fileURLWithPath: item.fullPath)
+                let provider = NSItemProvider(object: url as NSURL)
+                return provider
+            }
         }
         .if(item.isDirectory) { view in
             view.onDrop(
