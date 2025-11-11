@@ -30,20 +30,14 @@ struct FSItemGridView: View {
                     RoundedRectangle(cornerRadius: 8)
                         .fill(isSelected ? Color.gray.opacity(0.2) : Color.clear)
                 )
-                .contentShape(Rectangle())
-                .simultaneousGesture(
-                    TapGesture()
-                        .onEnded { _ in
-                            onSelect()
-                        }
-                )
-                .simultaneousGesture(
-                    TapGesture(count: 2)
-                        .onEnded { _ in
-                            if item.isDirectory {
-                                onOpen()
-                            }
-                        }
+                .contentShape(RoundedRectangle(cornerRadius: 8))
+                .background(
+                    GeometryReader { geo in
+                        Color.clear.preference(
+                            key: ItemPositionKey.self,
+                            value: [item.id + "_icon": geo.frame(in: .named("contentPane"))]
+                        )
+                    }
                 )
 
             VStack(spacing: 0) {
@@ -99,6 +93,7 @@ struct FSItemGridView: View {
                             .fill(isSelected ? Color(nsColor: .selectedContentBackgroundColor) : Color.clear)
                     )
                     .foregroundColor(isSelected ? .white : .primary)
+                    .contentShape(RoundedRectangle(cornerRadius: 4))
 
                     if let additionalInfo = item.additionalInfo {
                         Text(additionalInfo)
@@ -107,29 +102,35 @@ struct FSItemGridView: View {
                             .lineLimit(1)
                     }
                 }
+                .background(
+                    GeometryReader { geo in
+                        Color.clear.preference(
+                            key: ItemPositionKey.self,
+                            value: [item.id + "_text": geo.frame(in: .named("contentPane"))]
+                        )
+                    }
+                )
                 .frame(minHeight: 50, alignment: .top)
             }
             .frame(width: 120)
             .padding(.horizontal, 4)
-            .contentShape(Rectangle())
-            .simultaneousGesture(
-                TapGesture()
-                    .onEnded { _ in
-                        onSelect()
-                    }
-            )
-            .simultaneousGesture(
-                TapGesture(count: 2)
-                    .onEnded { _ in
-                        if item.isDirectory {
-                            onOpen()
-                        }
-                    }
-            )
         }
+        .simultaneousGesture(
+            TapGesture()
+                .onEnded { _ in
+                    onSelect()
+                }
+        )
+        .simultaneousGesture(
+            TapGesture(count: 2)
+                .onEnded { _ in
+                    if item.isDirectory {
+                        onOpen()
+                    }
+                }
+        )
         .onDrag {
             onStartDrag()
-
             let url = URL(fileURLWithPath: item.fullPath)
             let provider = NSItemProvider(object: url as NSURL)
             return provider

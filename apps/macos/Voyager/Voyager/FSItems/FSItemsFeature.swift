@@ -16,6 +16,7 @@ public enum ClipboardOperation: Equatable, Sendable {
 struct FSItemsFeature {
     private enum CancelID {
         static let fsEventsWatcher = "fsEventsWatcher"
+        static let lassoAutoScroll = "lassoAutoScroll"
     }
 
     @ObservableState
@@ -53,6 +54,9 @@ struct FSItemsFeature {
         var currentFolderPath: String?
         var isVirtualFolder: Bool = false
         var thumbnailsReady: Set<String> = []
+
+        var lassoSelection: LassoSelection?
+        var itemPositions: [String: CGRect] = [:]
 
         var isRenaming: Bool {
             renamingItemId != nil
@@ -145,6 +149,14 @@ struct FSItemsFeature {
         case updateRenamingText(String)
         case commitRename
         case cancelRename
+
+        case updateItemPositions([String: CGRect])
+        case startLassoSelection(startPoint: CGPoint, scrollViewBounds: CGRect, modifierFlags: ModifierFlags)
+        case updateLassoSelection(currentPoint: CGPoint)
+        case endLassoSelection
+        case cancelLassoSelection
+        case lassoAutoScrollTick
+
         case operations(FSItemsOperationsFeature.Action)
     }
 
@@ -402,13 +414,18 @@ struct FSItemsFeature {
                 state.shouldScrollToSelection = false
 
                 if isShiftPressed {
-                    guard let lastId = state.lastSelectedId,
-                          let lastIndex = Array(state.items).firstIndex(where: { $0.id == lastId }),
-                          let currentIndex = Array(state.items).firstIndex(where: { $0.id == id })
-                    else {
-                        state.selectedIds = [id]
+                    if let anchorId = state.rangeAnchorId,
+                       let anchorIndex = Array(state.items).firstIndex(where: { $0.id == anchorId }),
+                       let currentIndex = Array(state.items).firstIndex(where: { $0.id == id })
+                    {
+                        let itemsArray = Array(state.items)
+                        let range = min(anchorIndex, currentIndex) ... max(anchorIndex, currentIndex)
+                        let rangeIds = itemsArray[range].map { $0.id }
+                        state.selectedIds = Set(rangeIds)
                         state.lastSelectedId = id
-                        state.rangeAnchorId = nil
+                    } else {
+                        state.selectedIds.insert(id)
+                        state.lastSelectedId = id
 
                         var preloadEffect: Effect<Action> = .none
                         if let selectedItem = state.items.first(where: { $0.id == id }),
@@ -419,13 +436,6 @@ struct FSItemsFeature {
 
                         return .merge(renameEffect, preloadEffect)
                     }
-
-                    let itemsArray = Array(state.items)
-                    let range = min(lastIndex, currentIndex) ... max(lastIndex, currentIndex)
-                    let rangeIds = itemsArray[range].map { $0.id }
-                    state.selectedIds = Set(rangeIds)
-                    state.lastSelectedId = id
-                    state.rangeAnchorId = lastId
                 } else if isCommandPressed {
                     if state.selectedIds.contains(id) {
                         state.selectedIds.remove(id)
@@ -1064,9 +1074,154 @@ struct FSItemsFeature {
 
                 state.clearRenaming()
                 return .none
+
+            case let .updateItemPositions(positions):
+                state.itemPositions = positions
+                return .none
+
+            case let .startLassoSelection(startPoint, scrollViewBounds, modifierFlags):
+                state.lassoSelection = LassoSelection(
+                    startPoint: startPoint,
+                    currentPoint: startPoint,
+                    scrollViewBounds: scrollViewBounds,
+                    initialSelectedIds: modifierFlags == .none ? [] : state.selectedIds,
+                    modifierFlags: modifierFlags
+                )
+                return .none
+
+            case let .updateLassoSelection(currentPoint):
+                guard var lasso = state.lassoSelection else { return .none }
+                lasso.currentPoint = currentPoint
+
+                let itemsInLasso = LassoSelectionUtils.calculateItemsInRect(
+                    lasso.rect,
+                    items: state.items,
+                    itemPositions: state.itemPositions
+                )
+
+                // Modifier에 따라 최종 선택 계산
+                state.selectedIds = LassoSelectionUtils.calculateFinalSelection(
+                    itemsInLasso: itemsInLasso,
+                    initialSelected: lasso.initialSelectedIds,
+                    modifierFlags: lasso.modifierFlags
+                )
+
+                if !state.selectedIds.isEmpty {
+                    if let lastItem = state.displayOrderItems.last(where: { state.selectedIds.contains($0.id) }) {
+                        state.lastSelectedId = lastItem.id
+                    }
+                }
+
+                state.lassoSelection = lasso
+
+                if lasso.autoScrollDirection != nil {
+                    return .run { send in
+                        while true {
+                            try await Task.sleep(for: .milliseconds(16)) // 60fps
+                            await send(.lassoAutoScrollTick)
+                        }
+                    }
+                    .cancellable(id: CancelID.lassoAutoScroll, cancelInFlight: true)
+                } else {
+                    return .cancel(id: CancelID.lassoAutoScroll)
+                }
+
+            case .endLassoSelection:
+                if !state.selectedIds.isEmpty {
+                    if let lastItem = state.displayOrderItems.last(where: { state.selectedIds.contains($0.id) }) {
+                        state.lastSelectedId = lastItem.id
+                        state.rangeAnchorId = nil
+                    }
+                }
+
+                state.lassoSelection = nil
+                return .cancel(id: CancelID.lassoAutoScroll)
+
+            case .cancelLassoSelection:
+                if let lasso = state.lassoSelection {
+                    state.selectedIds = lasso.initialSelectedIds
+
+                    if !lasso.initialSelectedIds.isEmpty {
+                        if let lastItem = state.displayOrderItems
+                            .last(where: { lasso.initialSelectedIds.contains($0.id) })
+                        {
+                            state.lastSelectedId = lastItem.id
+                        }
+                    }
+                    state.rangeAnchorId = nil
+                }
+                state.lassoSelection = nil
+                return .cancel(id: CancelID.lassoAutoScroll)
+
+            case .lassoAutoScrollTick:
+                // TODO: 자동 스크롤 구현 (View와 연동 필요)
+                // 현재는 스킵 (나중에 NSScrollView 래퍼 구현 시 추가)
+                return .none
             }
         }
     }
 }
 
 // swiftlint:enable type_body_length
+
+enum ModifierFlags: Equatable, Sendable {
+    case none
+    case command
+    case shift
+}
+
+struct LassoSelection: Equatable, Sendable {
+    var startPoint: CGPoint
+    var currentPoint: CGPoint
+    var scrollViewBounds: CGRect
+    var initialSelectedIds: Set<String>
+    var modifierFlags: ModifierFlags
+
+    var rect: CGRect {
+        let minX = min(startPoint.x, currentPoint.x)
+        let minY = min(startPoint.y, currentPoint.y)
+        let maxX = max(startPoint.x, currentPoint.x)
+        let maxY = max(startPoint.y, currentPoint.y)
+
+        return CGRect(
+            x: minX,
+            y: minY,
+            width: maxX - minX,
+            height: maxY - minY
+        )
+    }
+
+    var autoScrollDirection: AutoScrollDirection? {
+        let hotZoneSize: CGFloat = 20
+        let currentY = currentPoint.y
+
+        if currentY < scrollViewBounds.minY + hotZoneSize {
+            return .up
+        } else if currentY > scrollViewBounds.maxY - hotZoneSize {
+            return .down
+        }
+        return nil
+    }
+
+    var autoScrollSpeed: CGFloat {
+        guard let direction = autoScrollDirection else { return 0 }
+
+        let hotZoneSize: CGFloat = 20
+        let currentY = currentPoint.y
+
+        let distance: CGFloat
+        switch direction {
+        case .up:
+            distance = (scrollViewBounds.minY + hotZoneSize) - currentY
+        case .down:
+            distance = currentY - (scrollViewBounds.maxY - hotZoneSize)
+        }
+
+        return min(max(distance / hotZoneSize * 10, 1), 10)
+    }
+}
+
+enum AutoScrollDirection: Equatable, Sendable {
+    case up
+    case down
+}

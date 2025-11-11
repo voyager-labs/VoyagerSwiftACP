@@ -209,10 +209,57 @@ struct ContentPaneGridView: View {
                         fsStore.send(.clearSelection)
                     }
                     .coordinateSpace(name: "scrollView")
+                    .coordinateSpace(name: "contentPane")
                     .onPreferenceChange(VisibleTopItemKey.self) { topItemId in
                         guard !topItemId.isEmpty, topItemId != savedTopItemId else { return }
                         savedTopItemId = topItemId
                     }
+                    .onPreferenceChange(ItemPositionKey.self) { positions in
+                        fsStore.send(.updateItemPositions(positions))
+                    }
+                    .simultaneousGesture(
+                        DragGesture(minimumDistance: 10, coordinateSpace: .named("contentPane"))
+                            .onChanged { value in
+                                guard !fsStore.itemPositions.isEmpty else { return }
+
+                                if fsStore.lassoSelection != nil {
+                                    fsStore.send(.updateLassoSelection(currentPoint: value.location))
+                                } else {
+                                    let dragDistance = LassoSelectionUtils.calculateDragDistance(
+                                        from: value.startLocation,
+                                        to: value.location
+                                    )
+
+                                    if dragDistance > 15,
+                                       !LassoSelectionUtils.isPointOverAnyItem(
+                                           value.startLocation,
+                                           itemPositions: fsStore.itemPositions
+                                       )
+                                    {
+                                        let modifiers = LassoSelectionUtils.detectModifierFlags()
+                                        let scrollViewBounds = CGRect(x: 0, y: 0, width: 1000, height: 1000)
+
+                                        fsStore.send(.startLassoSelection(
+                                            startPoint: value.startLocation,
+                                            scrollViewBounds: scrollViewBounds,
+                                            modifierFlags: modifiers
+                                        ))
+                                    }
+                                }
+                            }
+                            .onEnded { _ in
+                                if fsStore.lassoSelection != nil {
+                                    fsStore.send(.endLassoSelection)
+                                }
+                            }
+                    )
+                    .overlay(
+                        Group {
+                            if let lasso = fsStore.lassoSelection {
+                                LassoRectangleView(rect: lasso.rect)
+                            }
+                        }
+                    )
                     .contextMenu {
                         if store.isTrashFolder {
                             Button("Empty Trash") {
