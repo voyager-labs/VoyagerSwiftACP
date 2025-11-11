@@ -113,7 +113,8 @@ struct ContentPaneGridView: View {
                                         },
                                         onDrop: { providers, folderPath in
                                             fsStore.send(.handleDrop(providers: providers, destinationPath: folderPath))
-                                        }
+                                        },
+                                        draggingPaths: fsStore.draggingPaths
                                     )
                                     .background(
                                         GeometryReader { itemGeometry in
@@ -213,7 +214,8 @@ struct ContentPaneGridView: View {
                                                     providers: providers,
                                                     destinationPath: folderPath
                                                 ))
-                                            }
+                                            },
+                                            draggingPaths: fsStore.draggingPaths
                                         )
                                         .background(
                                             GeometryReader { itemGeometry in

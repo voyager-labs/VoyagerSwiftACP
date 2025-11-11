@@ -204,7 +204,8 @@ struct ContentPaneListView: View {
             },
             selectedCount: fsStore.selectedIds.isEmpty ? 1 : fsStore.selectedIds.count,
             showCompress: showCompress,
-            showExtract: showExtract
+            showExtract: showExtract,
+            draggingPaths: fsStore.draggingPaths
         )
     }
 

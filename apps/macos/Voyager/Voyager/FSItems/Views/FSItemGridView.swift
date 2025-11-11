@@ -16,6 +16,7 @@ struct FSItemGridView: View {
     let onRenameCancel: () -> Void
     let onStartDrag: () -> Void
     let onDrop: ([NSItemProvider], String) -> Void
+    let draggingPaths: [String]
 
     @State private var isDropTarget = false
     @FocusState private var isTextFieldFocused: Bool
@@ -141,7 +142,8 @@ struct FSItemGridView: View {
                 delegate: FileDropDelegate(
                     item: item,
                     onDrop: onDrop,
-                    isDropTarget: $isDropTarget
+                    isDropTarget: $isDropTarget,
+                    draggingPaths: draggingPaths
                 )
             )
             .overlay(

@@ -36,6 +36,7 @@ struct FSItemListView: View {
     let selectedCount: Int
     let showCompress: Bool
     let showExtract: Bool
+    let draggingPaths: [String]
 
     @State private var isDropTarget = false
     @FocusState private var isTextFieldFocused: Bool
@@ -190,7 +191,8 @@ struct FSItemListView: View {
                 delegate: FileDropDelegate(
                     item: item,
                     onDrop: onDrop,
-                    isDropTarget: $isDropTarget
+                    isDropTarget: $isDropTarget,
+                    draggingPaths: draggingPaths
                 )
             )
             .background(

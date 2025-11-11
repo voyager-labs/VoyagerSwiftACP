@@ -43,6 +43,7 @@ struct FSItemsFeature {
 
         var isDragDropOperation: Bool = false
         var isDropTargeted: Bool = false
+        var draggingPaths: [String] = []
 
         var renamingItemId: String?
         var renamingText: String = ""
@@ -793,6 +794,7 @@ struct FSItemsFeature {
                 )))
 
             case let .startDrag(paths):
+                state.draggingPaths = paths
                 fileSystemClient.saveDragPaths(paths)
                 let isOptionPressed = NSEvent.modifierFlags.contains(.option)
                 fileSystemClient.saveDragWithOption(isOptionPressed)
@@ -803,9 +805,11 @@ struct FSItemsFeature {
                 let hasExternalProviders = !providers.isEmpty
 
                 if !draggedPaths.isEmpty && !hasExternalProviders {
+                    state.draggingPaths = []
                     return .send(.dropToFolder(destinationPath: destinationPath))
                 }
 
+                state.draggingPaths = []
                 fileSystemClient.saveDragPaths([])
 
                 return .run { @MainActor send in

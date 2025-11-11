@@ -7,6 +7,7 @@ struct FileDropDelegate: DropDelegate {
     let destinationPath: String
     let onDrop: ([NSItemProvider], String) -> Void
     let isDropTarget: Binding<Bool>?
+    let draggingPaths: [String]
 
     init(store: StoreOf<FileManagerFeature>, fsStore: StoreOf<FSItemsFeature>) {
         destinationPath = store.currentPath
@@ -17,15 +18,26 @@ struct FileDropDelegate: DropDelegate {
             get: { fsStore.isDropTargeted },
             set: { fsStore.send(.setDropTargeted($0)) }
         )
+        draggingPaths = fsStore.draggingPaths
     }
 
-    init(item: FSItem, onDrop: @escaping ([NSItemProvider], String) -> Void, isDropTarget: Binding<Bool>) {
+    init(
+        item: FSItem,
+        onDrop: @escaping ([NSItemProvider], String) -> Void,
+        isDropTarget: Binding<Bool>,
+        draggingPaths: [String]
+    ) {
         destinationPath = item.fullPath
         self.onDrop = onDrop
         self.isDropTarget = isDropTarget
+        self.draggingPaths = draggingPaths
     }
 
     func dropEntered(info _: DropInfo) {
+        // 드래그 중인 파일이 드롭 대상에 포함되어 있으면 하이라이트 안 함
+        if draggingPaths.contains(destinationPath) {
+            return
+        }
         isDropTarget?.wrappedValue = true
     }
 
