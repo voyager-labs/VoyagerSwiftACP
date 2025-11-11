@@ -328,7 +328,14 @@ struct FSItemsFeature {
                 return .none
 
             case let .setDropTargeted(isTargeted):
-                state.isDropTargeted = isTargeted
+                let draggedPaths = fileSystemClient.loadDragPaths()
+
+                if !draggedPaths.isEmpty, let currentFolder = state.currentFolderPath {
+                    let sourceParent = URL(fileURLWithPath: draggedPaths[0]).deletingLastPathComponent().path
+                    state.isDropTargeted = (sourceParent != currentFolder) && isTargeted
+                } else {
+                    state.isDropTargeted = isTargeted
+                }
                 return .none
 
             case let .itemsLoaded(items):
@@ -765,40 +772,44 @@ struct FSItemsFeature {
 
             case let .handleDrop(providers, destinationPath):
                 let draggedPaths = fileSystemClient.loadDragPaths()
-                if !draggedPaths.isEmpty {
-                    return .send(.dropToFolder(destinationPath: destinationPath))
-                } else {
-                    return .run { @MainActor send in
-                        var urls: [URL] = []
-                        for provider in providers
-                            where provider.hasItemConformingToTypeIdentifier(UTType.fileURL.identifier)
-                        {
-                            let result: URL? = await withCheckedContinuation { continuation in
-                                provider
-                                    .loadItem(forTypeIdentifier: UTType.fileURL.identifier, options: nil) { item, _ in
-                                        var url: URL?
-                                        if let urlItem = item as? URL {
-                                            url = urlItem
-                                        } else if let data = item as? Data {
-                                            url = URL(dataRepresentation: data, relativeTo: nil)
-                                        }
-                                        continuation.resume(returning: url)
-                                    }
-                            }
-                            if let url = result {
-                                urls.append(url)
-                            }
-                        }
+                let hasExternalProviders = !providers.isEmpty
 
-                        if !urls.isEmpty {
-                            let paths = urls.map { $0.path }
-                            let isOption = NSEvent.modifierFlags.contains(.option)
-                            await send(.dropItems(
-                                sourcePaths: paths,
-                                destinationPath: destinationPath,
-                                isOptionDrag: isOption
-                            ))
+                if !draggedPaths.isEmpty && !hasExternalProviders {
+                    return .send(.dropToFolder(destinationPath: destinationPath))
+                }
+
+                fileSystemClient.saveDragPaths([])
+
+                return .run { @MainActor send in
+                    var urls: [URL] = []
+                    for provider in providers
+                        where provider.hasItemConformingToTypeIdentifier(UTType.fileURL.identifier)
+                    {
+                        let result: URL? = await withCheckedContinuation { continuation in
+                            provider
+                                .loadItem(forTypeIdentifier: UTType.fileURL.identifier, options: nil) { item, _ in
+                                    var url: URL?
+                                    if let urlItem = item as? URL {
+                                        url = urlItem
+                                    } else if let data = item as? Data {
+                                        url = URL(dataRepresentation: data, relativeTo: nil)
+                                    }
+                                    continuation.resume(returning: url)
+                                }
                         }
+                        if let url = result {
+                            urls.append(url)
+                        }
+                    }
+
+                    if !urls.isEmpty {
+                        let paths = urls.map { $0.path }
+                        let isOption = NSEvent.modifierFlags.contains(.option)
+                        await send(.dropItems(
+                            sourcePaths: paths,
+                            destinationPath: destinationPath,
+                            isOptionDrag: isOption
+                        ))
                     }
                 }
 
