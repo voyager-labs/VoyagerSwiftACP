@@ -1,6 +1,14 @@
+// swiftlint:disable type_body_length
 import ComposableArchitecture
 import SwiftUI
 import UniformTypeIdentifiers
+
+private struct GridItemPositionKey: PreferenceKey {
+    static var defaultValue: [String: CGRect] = [:]
+    static func reduce(value: inout [String: CGRect], nextValue: () -> [String: CGRect]) {
+        value.merge(nextValue()) { $1 }
+    }
+}
 
 struct ContentPaneGridView: View {
     let store: StoreOf<FileManagerFeature>
@@ -16,6 +24,18 @@ struct ContentPaneGridView: View {
         if let topId = savedTopItemId {
             store.send(.saveTopVisibleItem(topId, forPath: store.currentPath))
         }
+    }
+
+    private func updateGridColumnCount(positions: [String: CGRect]) {
+        guard !positions.isEmpty else { return }
+
+        let sortedByY = positions.values.sorted { $0.minY < $1.minY }
+        guard let firstItemY = sortedByY.first?.minY else { return }
+
+        let firstRowItems = sortedByY.filter { abs($0.minY - firstItemY) < 1 }
+        let columnCount = firstRowItems.count
+
+        store.send(.fsItems(.updateGridColumnCount(columnCount)))
     }
 
     private let itemMinWidth: CGFloat = 100
@@ -97,10 +117,17 @@ struct ContentPaneGridView: View {
                                     )
                                     .background(
                                         GeometryReader { itemGeometry in
-                                            Color.clear.preference(
-                                                key: VisibleTopItemKey.self,
-                                                value: isNearTop(itemGeometry) ? item.id : ""
-                                            )
+                                            Color.clear
+                                                .preference(
+                                                    key: VisibleTopItemKey.self,
+                                                    value: isNearTop(itemGeometry) ? item.id : ""
+                                                )
+                                                .preference(
+                                                    key: GridItemPositionKey.self,
+                                                    value: [
+                                                        item.id: itemGeometry.frame(in: .named("gridContainer")),
+                                                    ]
+                                                )
                                         }
                                     )
                                     .id(item.id)
@@ -190,10 +217,17 @@ struct ContentPaneGridView: View {
                                         )
                                         .background(
                                             GeometryReader { itemGeometry in
-                                                Color.clear.preference(
-                                                    key: VisibleTopItemKey.self,
-                                                    value: isNearTop(itemGeometry) ? item.id : ""
-                                                )
+                                                Color.clear
+                                                    .preference(
+                                                        key: VisibleTopItemKey.self,
+                                                        value: isNearTop(itemGeometry) ? item.id : ""
+                                                    )
+                                                    .preference(
+                                                        key: GridItemPositionKey.self,
+                                                        value: [
+                                                            item.id: itemGeometry.frame(in: .named("gridContainer")),
+                                                        ]
+                                                    )
                                             }
                                         )
                                         .id(item.id)
@@ -210,9 +244,13 @@ struct ContentPaneGridView: View {
                     }
                     .coordinateSpace(name: "scrollView")
                     .coordinateSpace(name: "contentPane")
+                    .coordinateSpace(name: "gridContainer")
                     .onPreferenceChange(VisibleTopItemKey.self) { topItemId in
                         guard !topItemId.isEmpty, topItemId != savedTopItemId else { return }
                         savedTopItemId = topItemId
+                    }
+                    .onPreferenceChange(GridItemPositionKey.self) { positions in
+                        updateGridColumnCount(positions: positions)
                     }
                     .onPreferenceChange(ItemPositionKey.self) { positions in
                         fsStore.send(.updateItemPositions(positions))
@@ -301,3 +339,5 @@ struct ContentPaneGridView: View {
         )
     }
 }
+
+// swiftlint:enable type_body_length

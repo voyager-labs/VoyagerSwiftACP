@@ -57,6 +57,7 @@ struct FSItemsFeature {
 
         var lassoSelection: LassoSelection?
         var itemPositions: [String: CGRect] = [:]
+        var gridColumnCount: Int = 1
 
         var isRenaming: Bool {
             renamingItemId != nil
@@ -151,6 +152,7 @@ struct FSItemsFeature {
         case cancelRename
 
         case updateItemPositions([String: CGRect])
+        case updateGridColumnCount(Int)
         case startLassoSelection(startPoint: CGPoint, scrollViewBounds: CGRect, modifierFlags: ModifierFlags)
         case updateLassoSelection(currentPoint: CGPoint)
         case endLassoSelection
@@ -554,21 +556,42 @@ struct FSItemsFeature {
                 guard let currentId = state.lastSelectedId,
                       let currentIndex = displayItems.firstIndex(where: { $0.id == currentId })
                 else {
-                    if offset >= 0 {
-                        guard let first = displayItems.first else { return .none }
-                        state.selectedIds = [first.id]
-                        state.lastSelectedId = first.id
-                    } else {
-                        guard let last = displayItems.last else { return .none }
-                        state.selectedIds = [last.id]
-                        state.lastSelectedId = last.id
-                    }
-                    state.rangeAnchorId = nil
+                    let targetItem = offset >= 0 ? displayItems.first : displayItems.last
+                    guard let item = targetItem else { return .none }
+
+                    state.selectedIds = [item.id]
+                    state.lastSelectedId = item.id
+                    state.rangeAnchorId = item.id
                     state.shouldScrollToSelection = true
                     return .none
                 }
 
-                let targetIndex = max(0, min(displayItems.count - 1, currentIndex + offset))
+                var targetIndex: Int
+
+                if abs(offset) > 1 {
+                    let columnCount = state.gridColumnCount
+                    let currentRow = currentIndex / columnCount
+                    let currentCol = currentIndex % columnCount
+                    let targetRow = currentRow + (offset > 0 ? 1 : -1)
+
+                    let totalRows = (displayItems.count + columnCount - 1) / columnCount
+
+                    if targetRow < 0 || targetRow >= totalRows {
+                        return .none
+                    }
+
+                    let targetRowStart = targetRow * columnCount
+                    let targetRowEnd = min(displayItems.count - 1, (targetRow + 1) * columnCount - 1)
+
+                    targetIndex = targetRowStart + currentCol
+
+                    if targetIndex > targetRowEnd {
+                        targetIndex = targetRowEnd
+                    }
+                } else {
+                    targetIndex = max(0, min(displayItems.count - 1, currentIndex + offset))
+                }
+
                 let targetItem = displayItems[targetIndex]
 
                 if isShiftPressed {
@@ -579,7 +602,7 @@ struct FSItemsFeature {
                     state.rangeAnchorId = anchorId
                 } else {
                     state.selectedIds = [targetItem.id]
-                    state.rangeAnchorId = nil
+                    state.rangeAnchorId = targetItem.id
                 }
                 state.lastSelectedId = targetItem.id
                 state.shouldScrollToSelection = true
@@ -1088,6 +1111,10 @@ struct FSItemsFeature {
 
             case let .updateItemPositions(positions):
                 state.itemPositions = positions
+                return .none
+
+            case let .updateGridColumnCount(count):
+                state.gridColumnCount = count
                 return .none
 
             case let .startLassoSelection(startPoint, scrollViewBounds, modifierFlags):

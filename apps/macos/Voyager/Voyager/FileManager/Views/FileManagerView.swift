@@ -98,8 +98,14 @@ struct FileManagerView: View {
                     switch event.keyCode {
                     case 123 where store.viewLayout == .grid: move(-1) // ←
                     case 124 where store.viewLayout == .grid: move(+1) // →
-                    case 126: move(-1) // ↑
-                    case 125: move(+1) // ↓
+                    case 126 where store.viewLayout == .grid: // ↑ Grid 행 이동
+                        let columnCount = store.fsItems.gridColumnCount
+                        move(-columnCount)
+                    case 125 where store.viewLayout == .grid: // ↓ Grid 행 이동
+                        let columnCount = store.fsItems.gridColumnCount
+                        move(+columnCount)
+                    case 126: move(-1) // ↑ List
+                    case 125: move(+1) // ↓ List
                     default: break
                     }
                     return
