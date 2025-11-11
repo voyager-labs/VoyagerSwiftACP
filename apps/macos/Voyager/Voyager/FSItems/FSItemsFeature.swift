@@ -454,7 +454,7 @@ struct FSItemsFeature {
                 } else {
                     state.selectedIds = [id]
                     state.lastSelectedId = id
-                    state.rangeAnchorId = nil
+                    state.rangeAnchorId = id
                 }
 
                 var preloadEffect: Effect<Action> = .none
