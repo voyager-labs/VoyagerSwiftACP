@@ -16,6 +16,9 @@ struct ContentPaneListView: View {
     @State private var availableWidth: CGFloat = 0
     @State private var savedTopItemId: String?
     @State private var rowPositions: [String: CGRect] = [:]
+    @State private var scrollViewHeight: CGFloat = 0
+
+    private let rowHeight: CGFloat = 24
 
     private func isNearTop(_ geometry: GeometryProxy) -> Bool {
         let frame = geometry.frame(in: .named("scrollView"))
@@ -211,6 +214,129 @@ struct ContentPaneListView: View {
 
     // swiftlint:enable function_body_length
 
+    private func zebraBackgroundColor(for index: Int) -> Color {
+        index % 2 == 0 ? Color.clear : Color.primary.opacity(0.05)
+    }
+
+    @ViewBuilder
+    private func styledItemRow(
+        item: FSItem,
+        index: Int,
+        fsStore: Store<FSItemsFeature.State, FSItemsFeature.Action>,
+        geometry: GeometryProxy
+    ) -> some View {
+        let bgColor = zebraBackgroundColor(for: index)
+
+        itemRow(
+            item: item,
+            fsStore: fsStore,
+            geometry: geometry,
+            isTrashFolder: store.isTrashFolder
+        )
+        .frame(height: rowHeight)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(bgColor)
+        .background(
+            GeometryReader { itemGeometry in
+                Color.clear
+                    .preference(
+                        key: VisibleTopItemKey.self,
+                        value: isNearTop(itemGeometry) ? item.id : ""
+                    )
+                    .preference(
+                        key: ListRowPositionKey.self,
+                        value: [
+                            item.id: itemGeometry.frame(in: .named("listContainer")),
+                        ]
+                    )
+            }
+        )
+        .id(item.id)
+    }
+
+    @ViewBuilder
+    private func groupHeader(
+        group: GroupedItems,
+        fsStore: Store<FSItemsFeature.State, FSItemsFeature.Action>
+    ) -> some View {
+        HStack(spacing: 8) {
+            Spacer().frame(width: 28)
+
+            if fsStore.groupKey == .tags,
+               let colorCode = group.items.first?.tags?
+               .first(where: { $0.name == group.groupName })?.colorCode
+            {
+                Circle()
+                    .fill(FSItemTagUtils.getTagColor(colorCode: colorCode))
+                    .frame(width: 8, height: 8)
+                    .overlay(
+                        Circle()
+                            .stroke(Color.primary.opacity(0.2), lineWidth: 1)
+                    )
+            }
+
+            Text(group.groupName)
+                .font(.headline)
+                .foregroundColor(.primary)
+            Spacer()
+        }
+        .padding(.horizontal, 8)
+        .padding(.bottom, 4)
+    }
+
+    @ViewBuilder
+    private func groupedItemsContent(
+        fsStore: Store<FSItemsFeature.State, FSItemsFeature.Action>,
+        geometry: GeometryProxy
+    ) -> some View {
+        ForEach(Array(fsStore.groupedItems.enumerated()), id: \.element.groupName) { index, group in
+            if index > 0 {
+                Spacer().frame(height: 16)
+            }
+
+            if !group.groupName.isEmpty && fsStore.groupKey != .name {
+                groupHeader(group: group, fsStore: fsStore)
+            }
+
+            ForEach(Array(group.items.enumerated()), id: \.element.id) { itemIndex, item in
+                styledItemRow(item: item, index: itemIndex, fsStore: fsStore, geometry: geometry)
+            }
+        }
+    }
+
+    @ViewBuilder
+    private func listContent(
+        fsStore: Store<FSItemsFeature.State, FSItemsFeature.Action>,
+        geometry: GeometryProxy
+    ) -> some View {
+        Color.clear.frame(height: 0).id("scrollTop")
+
+        if fsStore.groupKey == .none {
+            ForEach(Array(fsStore.items.enumerated()), id: \.element.id) { index, item in
+                styledItemRow(item: item, index: index, fsStore: fsStore, geometry: geometry)
+            }
+        } else {
+            groupedItemsContent(fsStore: fsStore, geometry: geometry)
+        }
+
+        emptyRowsView(itemsCount: fsStore.items.count, scrollHeight: scrollViewHeight)
+    }
+
+    @ViewBuilder
+    private func emptyRowsView(itemsCount: Int, scrollHeight: CGFloat) -> some View {
+        if scrollHeight > 0 {
+            let heightRows = Int(ceil(scrollHeight / rowHeight))
+            let totalRows = max(heightRows, itemsCount)
+            let emptyRows = max(0, totalRows - itemsCount)
+
+            ForEach(0 ..< emptyRows, id: \.self) { index in
+                zebraBackgroundColor(for: itemsCount + index)
+                    .frame(height: rowHeight)
+                    .frame(maxWidth: .infinity)
+            }
+        }
+    }
+
     var body: some View {
         let fsStore = store.scope(state: \.fsItems, action: \.fsItems)
 
@@ -232,99 +358,7 @@ struct ContentPaneListView: View {
                 ScrollViewReader { proxy in
                     ScrollView {
                         LazyVStack(alignment: .leading, spacing: 0) {
-                            Color.clear.frame(height: 0).id("scrollTop")
-                            if fsStore.groupKey == .none {
-                                ForEach(Array(fsStore.items.enumerated()), id: \.element.id) { index, item in
-                                    itemRow(
-                                        item: item,
-                                        fsStore: fsStore,
-                                        geometry: geometry,
-                                        isTrashFolder: store.isTrashFolder
-                                    )
-                                    .frame(maxWidth: .infinity, alignment: .leading)
-                                    .background(index % 2 == 0 ? Color.clear : Color.primary.opacity(0.05))
-                                    .background(
-                                        GeometryReader { itemGeometry in
-                                            Color.clear
-                                                .preference(
-                                                    key: VisibleTopItemKey.self,
-                                                    value: isNearTop(itemGeometry) ? item.id : ""
-                                                )
-                                                .preference(
-                                                    key: ListRowPositionKey.self,
-                                                    value: [
-                                                        item.id: itemGeometry.frame(in: .named("listContainer")),
-                                                    ]
-                                                )
-                                        }
-                                    )
-                                    .id(item.id)
-                                }
-                            } else {
-                                ForEach(Array(fsStore.groupedItems.enumerated()),
-                                        id: \.element.groupName)
-                                { index, group in
-                                    if index > 0 {
-                                        Spacer()
-                                            .frame(height: 16)
-                                    }
-
-                                    if !group.groupName.isEmpty && fsStore.groupKey != .name {
-                                        HStack(spacing: 8) {
-                                            Spacer()
-                                                .frame(width: 28)
-
-                                            if fsStore.groupKey == .tags,
-                                               let colorCode = group.items.first?.tags?
-                                               .first(where: { $0.name == group.groupName })?.colorCode
-                                            {
-                                                Circle()
-                                                    .fill(FSItemTagUtils.getTagColor(colorCode: colorCode))
-                                                    .frame(width: 8, height: 8)
-                                                    .overlay(
-                                                        Circle()
-                                                            .stroke(Color.primary.opacity(0.2), lineWidth: 1)
-                                                    )
-                                            }
-
-                                            Text(group.groupName)
-                                                .font(.headline)
-                                                .foregroundColor(.primary)
-                                            Spacer()
-                                        }
-                                        .padding(.horizontal, 8)
-                                        .padding(.bottom, 4)
-                                    }
-
-                                    ForEach(Array(group.items.enumerated()), id: \.element.id) { itemIndex, item in
-                                        itemRow(
-                                            item: item,
-                                            fsStore: fsStore,
-                                            geometry: geometry,
-                                            isTrashFolder: store.isTrashFolder
-                                        )
-                                        .frame(maxWidth: .infinity, alignment: .leading)
-                                        .background(itemIndex % 2 == 0 ? Color.clear : Color.primary
-                                            .opacity(0.05))
-                                        .background(
-                                            GeometryReader { itemGeometry in
-                                                Color.clear
-                                                    .preference(
-                                                        key: VisibleTopItemKey.self,
-                                                        value: isNearTop(itemGeometry) ? item.id : ""
-                                                    )
-                                                    .preference(
-                                                        key: ListRowPositionKey.self,
-                                                        value: [
-                                                            item.id: itemGeometry.frame(in: .named("listContainer")),
-                                                        ]
-                                                    )
-                                            }
-                                        )
-                                        .id(item.id)
-                                    }
-                                }
-                            }
+                            listContent(fsStore: fsStore, geometry: geometry)
                         }
                         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
                         .contentShape(Rectangle())
@@ -335,6 +369,17 @@ struct ContentPaneListView: View {
                             fsStore.send(.clearSelection)
                         }
                     }
+                    .background(
+                        GeometryReader { scrollGeometry in
+                            Color.clear
+                                .onAppear {
+                                    scrollViewHeight = scrollGeometry.size.height
+                                }
+                                .onChange(of: scrollGeometry.size.height) { newHeight in
+                                    scrollViewHeight = newHeight
+                                }
+                        }
+                    )
                     .coordinateSpace(name: "scrollView")
                     .coordinateSpace(name: "listContainer")
                     .onPreferenceChange(VisibleTopItemKey.self) { topItemId in
