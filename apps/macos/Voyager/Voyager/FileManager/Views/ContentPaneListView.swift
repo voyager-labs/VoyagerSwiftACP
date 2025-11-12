@@ -324,15 +324,25 @@ struct ContentPaneListView: View {
 
     @ViewBuilder
     private func emptyRowsView(itemsCount: Int, scrollHeight: CGFloat) -> some View {
-        if scrollHeight > 0 {
-            let heightRows = Int(ceil(scrollHeight / rowHeight))
-            let totalRows = max(heightRows, itemsCount)
-            let emptyRows = max(0, totalRows - itemsCount)
+        let currentHeight = CGFloat(itemsCount) * rowHeight
+        let remainingHeight = scrollHeight - currentHeight
 
-            ForEach(0 ..< emptyRows, id: \.self) { index in
+        if remainingHeight > 0 {
+            let fullRows = Int(remainingHeight / rowHeight)
+            let partialHeight = remainingHeight - CGFloat(fullRows) * rowHeight
+
+            ForEach(0 ..< fullRows, id: \.self) { index in
                 zebraBackgroundColor(for: itemsCount + index)
                     .frame(height: rowHeight)
                     .frame(maxWidth: .infinity)
+                    .allowsHitTesting(false)
+            }
+
+            if partialHeight > 0 {
+                zebraBackgroundColor(for: itemsCount + fullRows)
+                    .frame(height: partialHeight)
+                    .frame(maxWidth: .infinity)
+                    .allowsHitTesting(false)
             }
         }
     }
