@@ -124,6 +124,7 @@ struct FSItemListView: View {
                 } else {
                     styledText(item.name, fontSize: 13)
                         .lineLimit(1)
+                        .truncationMode(.middle)
                         .if(!isSelected) { view in
                             view.onDrag {
                                 onStartDrag()
@@ -137,13 +138,11 @@ struct FSItemListView: View {
                 Spacer(minLength: 0)
 
                 if let tags = item.tags, !tags.isEmpty {
-                    HStack(spacing: 4) {
-                        ForEach(tags.prefix(3), id: \.self) { tag in
-                            Circle()
-                                .fill(FSItemTagUtils.getTagColor(colorCode: tag.colorCode))
-                                .frame(width: 8, height: 8)
-                        }
-                    }
+                    OverlappingTagsView(
+                        tags: tags,
+                        isSelected: isSelected,
+                        showBorderWhenUnselected: true
+                    )
                 }
             }
             .frame(width: columnWidths.name, alignment: .leading)

@@ -45,13 +45,11 @@ struct FSItemGridView: View {
                 VStack(spacing: 0) {
                     HStack(alignment: .top, spacing: 4) {
                         if let tags = item.tags, !tags.isEmpty {
-                            HStack(spacing: 4) {
-                                ForEach(tags.prefix(3), id: \.self) { tag in
-                                    Circle()
-                                        .fill(FSItemTagUtils.getTagColor(colorCode: tag.colorCode))
-                                        .frame(width: 8, height: 8)
-                                }
-                            }
+                            OverlappingTagsView(
+                                tags: tags,
+                                isSelected: isSelected,
+                                showBorderWhenUnselected: false
+                            )
                             .padding(.top, 2)
                         }
 
@@ -82,6 +80,7 @@ struct FSItemGridView: View {
                             Text(item.name)
                                 .font(.system(size: 12))
                                 .lineLimit(2)
+                                .truncationMode(.middle)
                                 .multilineTextAlignment(.center)
                                 .opacity(item.isHidden || isCut ? 0.5 : 1.0)
                                 .fixedSize(horizontal: false, vertical: true)
