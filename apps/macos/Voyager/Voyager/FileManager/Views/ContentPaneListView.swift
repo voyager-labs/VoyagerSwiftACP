@@ -25,17 +25,6 @@ struct ContentPaneListView: View {
         return frame.minY >= 0 && frame.minY < 30
     }
 
-    private func sendWithSelection(
-        _ item: FSItem,
-        fsStore: Store<FSItemsFeature.State, FSItemsFeature.Action>,
-        action: @escaping () -> Void
-    ) {
-        if !fsStore.selectedIds.contains(item.id) {
-            fsStore.send(.selectItem(id: item.id, isCommandPressed: false, isShiftPressed: false))
-        }
-        action()
-    }
-
     private func saveScrollPositionBeforeOpen() {
         if let topId = savedTopItemId {
             store.send(.saveTopVisibleItem(topId, forPath: store.currentPath))
@@ -68,7 +57,6 @@ struct ContentPaneListView: View {
         return nearest?.id
     }
 
-    // swiftlint:disable function_body_length
     @ViewBuilder
     private func itemRow(
         item: FSItem,
@@ -81,11 +69,15 @@ struct ContentPaneListView: View {
         let thumbnailsReady = fsStore.thumbnailsReady
 
         let selectedItems = fsStore.items.filter { selectedIds.contains($0.id) }
-        let containsZipFiles = selectedItems.contains { $0.fileExtension.lowercased() == "zip" }
-        let containsNonZipFiles = selectedItems.contains { $0.fileExtension.lowercased() != "zip" }
+        let (showCompress, showExtract) = calculateCompressExtractOptions(selectedItems: selectedItems)
 
-        let showCompress = !containsZipFiles
-        let showExtract = containsZipFiles && !containsNonZipFiles
+        let handlers = makeContextMenuHandlers(
+            item: item,
+            fsStore: fsStore,
+            saveScrollPosition: saveScrollPositionBeforeOpen,
+            isTrashFolder: isTrashFolder,
+            onEmptyTrash: { store.send(.emptyTrash) }
+        )
 
         FSItemListView(
             item: item,
@@ -96,123 +88,34 @@ struct ContentPaneListView: View {
             availableWidth: geometry.size.width,
             applications: fsStore.operations.applicationsForItems[item.fullPath],
             isThumbnailReady: thumbnailsReady.contains(item.fullPath),
-            onSelect: {
-                let isCommandPressed = NSEvent.modifierFlags.contains(.command)
-                let isShiftPressed = NSEvent.modifierFlags.contains(.shift)
-                fsStore.send(.selectItem(
-                    id: item.id,
-                    isCommandPressed: isCommandPressed,
-                    isShiftPressed: isShiftPressed
-                ))
-            },
-            onOpen: {
-                sendWithSelection(item, fsStore: fsStore, action: {
-                    saveScrollPositionBeforeOpen()
-                    fsStore.send(.openSelectedItem)
-                })
-            },
-            onOpenInNewTab: { shouldOpenInNewWindow in
-                if item.isDirectory {
-                    if shouldOpenInNewWindow {
-                        AppDelegate.shared?.createNewWindow(path: item.fullPath)
-                    } else {
-                        AppDelegate.shared?.createNewTab(path: item.fullPath)
-                    }
-                }
-            },
-            onQuickLook: {
-                sendWithSelection(item, fsStore: fsStore, action: {
-                    fsStore.send(.quickLookSelectedItem)
-                })
-            },
-            onOpenWithApp: { bundleID, shouldSetAsDefault in
-                sendWithSelection(item, fsStore: fsStore, action: {
-                    fsStore.send(.openWithSelectedItem(bundleID: bundleID, shouldSetAsDefault: shouldSetAsDefault))
-                })
-            },
-            onRenameUpdate: { text in
-                fsStore.send(.updateRenamingText(text))
-            },
-            onRenameCommit: {
-                fsStore.send(.commitRename)
-            },
-            onRenameCancel: {
-                fsStore.send(.cancelRename)
-            },
-            onStartDrag: {
-                let dragPaths = fsStore.selectedIds.isEmpty
-                    ? [item.fullPath]
-                    : fsStore.items.filter { fsStore.selectedIds.contains($0.id) }
-                    .map { $0.fullPath }
-                fsStore.send(.startDrag(paths: dragPaths))
-            },
-            onDrop: { providers, folderPath in
-                fsStore.send(.handleDrop(providers: providers, destinationPath: folderPath))
-            },
-            onLoadApplications: {
-                fsStore.send(.operations(.loadApplicationsForFile(file: item)))
-            },
-            onPutBack: isTrashFolder ? {
-                sendWithSelection(item, fsStore: fsStore, action: {
-                    fsStore.send(.putBackSelectedItems)
-                })
-            } : nil,
-            onMoveToTrash: {
-                sendWithSelection(item, fsStore: fsStore, action: {
-                    fsStore.send(.moveSelectedItemsToTrash)
-                })
-            },
-            onDeleteImmediately: {
-                sendWithSelection(item, fsStore: fsStore, action: {
-                    fsStore.send(.deleteSelectedItemsImmediately)
-                })
-            },
-            onEmptyTrash: {
-                store.send(.emptyTrash)
-            },
-            onRename: {
-                sendWithSelection(item, fsStore: fsStore, action: {
-                    fsStore.send(.startRename(id: item.id))
-                })
-            },
-            onCompress: {
-                sendWithSelection(item, fsStore: fsStore, action: {
-                    fsStore.send(.compressSelectedItems)
-                })
-            },
-            onDuplicate: {
-                sendWithSelection(item, fsStore: fsStore, action: {
-                    fsStore.send(.duplicateSelectedItems)
-                })
-            },
-            onExtract: {
-                sendWithSelection(item, fsStore: fsStore, action: {
-                    fsStore.send(.extractSelectedItem)
-                })
-            },
-            onCopy: {
-                sendWithSelection(item, fsStore: fsStore, action: {
-                    fsStore.send(.copySelectedItems)
-                })
-            },
-            onCut: {
-                sendWithSelection(item, fsStore: fsStore, action: {
-                    fsStore.send(.cutSelectedItems)
-                })
-            },
-            onToggleTag: { tag in
-                sendWithSelection(item, fsStore: fsStore, action: {
-                    fsStore.send(.toggleTagForSelectedItem(tag: tag))
-                })
-            },
+            onSelect: handlers.onSelect,
+            onOpen: handlers.onOpen,
+            onOpenInNewTab: handlers.onOpenInNewTab,
+            onQuickLook: handlers.onQuickLook,
+            onOpenWithApp: handlers.onOpenWithApp,
+            onRenameUpdate: handlers.onRenameUpdate,
+            onRenameCommit: handlers.onRenameCommit,
+            onRenameCancel: handlers.onRenameCancel,
+            onStartDrag: handlers.onStartDrag,
+            onDrop: handlers.onDrop,
+            onLoadApplications: handlers.onLoadApplications,
+            onPutBack: handlers.onPutBack,
+            onMoveToTrash: handlers.onMoveToTrash,
+            onDeleteImmediately: handlers.onDeleteImmediately,
+            onEmptyTrash: handlers.onEmptyTrash,
+            onRename: handlers.onRename,
+            onCompress: handlers.onCompress,
+            onDuplicate: handlers.onDuplicate,
+            onExtract: handlers.onExtract,
+            onCopy: handlers.onCopy,
+            onCut: handlers.onCut,
+            onToggleTag: handlers.onToggleTag,
             selectedCount: fsStore.selectedIds.isEmpty ? 1 : fsStore.selectedIds.count,
             showCompress: showCompress,
             showExtract: showExtract,
             draggingPaths: fsStore.draggingPaths
         )
     }
-
-    // swiftlint:enable function_body_length
 
     private func zebraBackgroundColor(for index: Int) -> Color {
         index % 2 == 0 ? Color.clear : Color.primary.opacity(0.05)
