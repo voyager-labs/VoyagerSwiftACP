@@ -21,6 +21,17 @@ struct ContentPaneGridView: View {
         return frame.minY >= 0 && frame.minY < 50
     }
 
+    private func sendWithSelection(
+        _ item: FSItem,
+        fsStore: Store<FSItemsFeature.State, FSItemsFeature.Action>,
+        action: @escaping () -> Void
+    ) {
+        if !fsStore.selectedIds.contains(item.id) {
+            fsStore.send(.selectItem(id: item.id, isCommandPressed: false, isShiftPressed: false))
+        }
+        action()
+    }
+
     private func saveScrollPositionBeforeOpen() {
         if let topId = savedTopItemId {
             store.send(.saveTopVisibleItem(topId, forPath: store.currentPath))
@@ -70,6 +81,151 @@ struct ContentPaneGridView: View {
         [GridItem(.adaptive(minimum: itemMinWidth, maximum: itemMaxWidth), spacing: itemSpacing)]
     }
 
+    // swiftlint:disable function_body_length
+    @ViewBuilder
+    private func itemGrid(
+        item: FSItem,
+        store: StoreOf<FileManagerFeature>,
+        fsStore: Store<FSItemsFeature.State, FSItemsFeature.Action>,
+        isTrashFolder: Bool = false
+    ) -> FSItemGridView {
+        let selectedIds = fsStore.selectedIds
+        let clipboardItems = fsStore.clipboardItems
+        let thumbnailsReady = fsStore.thumbnailsReady
+
+        let selectedItems = fsStore.items.filter { selectedIds.contains($0.id) }
+        let containsZipFiles = selectedItems.contains { $0.fileExtension.lowercased() == "zip" }
+        let containsNonZipFiles = selectedItems.contains { $0.fileExtension.lowercased() != "zip" }
+
+        let showCompress = !containsZipFiles
+        let showExtract = containsZipFiles && !containsNonZipFiles
+
+        FSItemGridView(
+            item: item,
+            isSelected: selectedIds.contains(item.id),
+            isCut: clipboardItems.contains(item.fullPath) && fsStore.clipboardOperation == .cut,
+            isRenaming: fsStore.renamingItemId == item.id,
+            renamingText: fsStore.renamingText,
+            isThumbnailReady: thumbnailsReady.contains(item.fullPath),
+            applications: fsStore.operations.applicationsForItems[item.fullPath],
+            onSelect: {
+                let isCommandPressed = NSEvent.modifierFlags.contains(.command)
+                let isShiftPressed = NSEvent.modifierFlags.contains(.shift)
+                fsStore.send(.selectItem(
+                    id: item.id,
+                    isCommandPressed: isCommandPressed,
+                    isShiftPressed: isShiftPressed
+                ))
+            },
+            onOpen: {
+                sendWithSelection(item, fsStore: fsStore, action: {
+                    saveScrollPositionBeforeOpen()
+                    fsStore.send(.openSelectedItem)
+                })
+            },
+            onOpenInNewTab: { shouldOpenInNewWindow in
+                if item.isDirectory {
+                    if shouldOpenInNewWindow {
+                        AppDelegate.shared?.createNewWindow(path: item.fullPath)
+                    } else {
+                        AppDelegate.shared?.createNewTab(path: item.fullPath)
+                    }
+                }
+            },
+            onQuickLook: {
+                sendWithSelection(item, fsStore: fsStore, action: {
+                    fsStore.send(.quickLookSelectedItem)
+                })
+            },
+            onOpenWithApp: { bundleID, shouldSetAsDefault in
+                sendWithSelection(item, fsStore: fsStore, action: {
+                    fsStore.send(.openWithSelectedItem(bundleID: bundleID, shouldSetAsDefault: shouldSetAsDefault))
+                })
+            },
+            onRenameUpdate: { text in
+                fsStore.send(.updateRenamingText(text))
+            },
+            onRenameCommit: {
+                fsStore.send(.commitRename)
+            },
+            onRenameCancel: {
+                fsStore.send(.cancelRename)
+            },
+            onStartDrag: {
+                let dragPaths = fsStore.selectedIds.isEmpty
+                    ? [item.fullPath]
+                    : fsStore.items.filter { fsStore.selectedIds.contains($0.id) }
+                    .map { $0.fullPath }
+                fsStore.send(.startDrag(paths: dragPaths))
+            },
+            onDrop: { providers, folderPath in
+                fsStore.send(.handleDrop(providers: providers, destinationPath: folderPath))
+            },
+            onLoadApplications: {
+                fsStore.send(.operations(.loadApplicationsForFile(file: item)))
+            },
+            onPutBack: isTrashFolder ? {
+                sendWithSelection(item, fsStore: fsStore, action: {
+                    fsStore.send(.putBackSelectedItems)
+                })
+            } : nil,
+            onMoveToTrash: {
+                sendWithSelection(item, fsStore: fsStore, action: {
+                    fsStore.send(.moveSelectedItemsToTrash)
+                })
+            },
+            onDeleteImmediately: {
+                sendWithSelection(item, fsStore: fsStore, action: {
+                    fsStore.send(.deleteSelectedItemsImmediately)
+                })
+            },
+            onEmptyTrash: {
+                store.send(.emptyTrash)
+            },
+            onRename: {
+                sendWithSelection(item, fsStore: fsStore, action: {
+                    fsStore.send(.startRename(id: item.id))
+                })
+            },
+            onCompress: {
+                sendWithSelection(item, fsStore: fsStore, action: {
+                    fsStore.send(.compressSelectedItems)
+                })
+            },
+            onDuplicate: {
+                sendWithSelection(item, fsStore: fsStore, action: {
+                    fsStore.send(.duplicateSelectedItems)
+                })
+            },
+            onExtract: {
+                sendWithSelection(item, fsStore: fsStore, action: {
+                    fsStore.send(.extractSelectedItem)
+                })
+            },
+            onCopy: {
+                sendWithSelection(item, fsStore: fsStore, action: {
+                    fsStore.send(.copySelectedItems)
+                })
+            },
+            onCut: {
+                sendWithSelection(item, fsStore: fsStore, action: {
+                    fsStore.send(.cutSelectedItems)
+                })
+            },
+            onToggleTag: { tag in
+                sendWithSelection(item, fsStore: fsStore, action: {
+                    fsStore.send(.toggleTagForSelectedItem(tag: tag))
+                })
+            },
+            selectedCount: fsStore.selectedIds.isEmpty ? 1 : fsStore.selectedIds.count,
+            showCompress: showCompress,
+            showExtract: showExtract,
+            draggingPaths: fsStore.draggingPaths
+        )
+    }
+
+    // swiftlint:enable function_body_length
+
     var body: some View {
         let fsStore = store.scope(state: \.fsItems, action: \.fsItems)
 
@@ -91,61 +247,13 @@ struct ContentPaneGridView: View {
                             Color.clear.frame(height: 0).id("scrollTop")
                             LazyVStack(alignment: .leading, spacing: 16) {
                                 if fsStore.groupKey == .none {
-                                    let selectedIds = fsStore.selectedIds
-                                    let clipboardItems = fsStore.clipboardItems
-                                    let thumbnailsReady = fsStore.thumbnailsReady
-
                                     LazyVGrid(columns: columns, spacing: 16) {
                                         ForEach(fsStore.items) { item in
-                                            FSItemGridView(
+                                            itemGrid(
                                                 item: item,
-                                                isSelected: selectedIds.contains(item.id),
-                                                isCut: clipboardItems.contains(item.fullPath) && fsStore
-                                                    .clipboardOperation == .cut,
-                                                isRenaming: fsStore.renamingItemId == item.id,
-                                                renamingText: fsStore.renamingText,
-                                                isThumbnailReady: thumbnailsReady.contains(item.fullPath),
-                                                onSelect: {
-                                                    let isCommandPressed = NSEvent.modifierFlags.contains(.command)
-                                                    let isShiftPressed = NSEvent.modifierFlags.contains(.shift)
-                                                    fsStore.send(.selectItem(
-                                                        id: item.id,
-                                                        isCommandPressed: isCommandPressed,
-                                                        isShiftPressed: isShiftPressed
-                                                    ))
-                                                },
-                                                onOpen: {
-                                                    fsStore.send(.selectItem(
-                                                        id: item.id,
-                                                        isCommandPressed: false,
-                                                        isShiftPressed: false
-                                                    ))
-                                                    saveScrollPositionBeforeOpen()
-                                                    store.send(.openSelectedItem)
-                                                },
-                                                onRenameUpdate: { text in
-                                                    fsStore.send(.updateRenamingText(text))
-                                                },
-                                                onRenameCommit: {
-                                                    fsStore.send(.commitRename)
-                                                },
-                                                onRenameCancel: {
-                                                    fsStore.send(.cancelRename)
-                                                },
-                                                onStartDrag: {
-                                                    let dragPaths = selectedIds.isEmpty
-                                                        ? [item.fullPath]
-                                                        : fsStore.items.filter { selectedIds.contains($0.id) }
-                                                        .map { $0.fullPath }
-                                                    fsStore.send(.startDrag(paths: dragPaths))
-                                                },
-                                                onDrop: { providers, folderPath in
-                                                    fsStore.send(.handleDrop(
-                                                        providers: providers,
-                                                        destinationPath: folderPath
-                                                    ))
-                                                },
-                                                draggingPaths: fsStore.draggingPaths
+                                                store: store,
+                                                fsStore: fsStore,
+                                                isTrashFolder: store.isTrashFolder
                                             )
                                             .background(
                                                 GeometryReader { itemGeometry in
@@ -172,10 +280,6 @@ struct ContentPaneGridView: View {
                                         columnCount: fsStore.gridColumnCount
                                     )
                                 } else {
-                                    let selectedIds = fsStore.selectedIds
-                                    let clipboardItems = fsStore.clipboardItems
-                                    let thumbnailsReady = fsStore.thumbnailsReady
-
                                     ForEach(Array(fsStore.groupedItems.enumerated()),
                                             id: \.element.groupName)
                                     { index, group in
@@ -204,55 +308,11 @@ struct ContentPaneGridView: View {
 
                                         LazyVGrid(columns: columns, spacing: 16) {
                                             ForEach(group.items) { item in
-                                                FSItemGridView(
+                                                itemGrid(
                                                     item: item,
-                                                    isSelected: selectedIds.contains(item.id),
-                                                    isCut: clipboardItems.contains(item.fullPath) && fsStore
-                                                        .clipboardOperation == .cut,
-                                                    isRenaming: fsStore.renamingItemId == item.id,
-                                                    renamingText: fsStore.renamingText,
-                                                    isThumbnailReady: thumbnailsReady.contains(item.fullPath),
-                                                    onSelect: {
-                                                        let isCommandPressed = NSEvent.modifierFlags.contains(.command)
-                                                        let isShiftPressed = NSEvent.modifierFlags.contains(.shift)
-                                                        fsStore.send(.selectItem(
-                                                            id: item.id,
-                                                            isCommandPressed: isCommandPressed,
-                                                            isShiftPressed: isShiftPressed
-                                                        ))
-                                                    },
-                                                    onOpen: {
-                                                        fsStore.send(.selectItem(
-                                                            id: item.id,
-                                                            isCommandPressed: false,
-                                                            isShiftPressed: false
-                                                        ))
-                                                        saveScrollPositionBeforeOpen()
-                                                        store.send(.openSelectedItem)
-                                                    },
-                                                    onRenameUpdate: { text in
-                                                        fsStore.send(.updateRenamingText(text))
-                                                    },
-                                                    onRenameCommit: {
-                                                        fsStore.send(.commitRename)
-                                                    },
-                                                    onRenameCancel: {
-                                                        fsStore.send(.cancelRename)
-                                                    },
-                                                    onStartDrag: {
-                                                        let dragPaths = selectedIds.isEmpty
-                                                            ? [item.fullPath]
-                                                            : fsStore.items.filter { selectedIds.contains($0.id) }
-                                                            .map { $0.fullPath }
-                                                        fsStore.send(.startDrag(paths: dragPaths))
-                                                    },
-                                                    onDrop: { providers, folderPath in
-                                                        fsStore.send(.handleDrop(
-                                                            providers: providers,
-                                                            destinationPath: folderPath
-                                                        ))
-                                                    },
-                                                    draggingPaths: fsStore.draggingPaths
+                                                    store: store,
+                                                    fsStore: fsStore,
+                                                    isTrashFolder: store.isTrashFolder
                                                 )
                                                 .background(
                                                     GeometryReader { itemGeometry in

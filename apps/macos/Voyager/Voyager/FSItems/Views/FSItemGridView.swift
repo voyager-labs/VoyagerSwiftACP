@@ -9,17 +9,39 @@ struct FSItemGridView: View {
     let isRenaming: Bool
     let renamingText: String
     let isThumbnailReady: Bool
+    let applications: [ApplicationInfo]?
     let onSelect: () -> Void
     let onOpen: () -> Void
+    let onOpenInNewTab: ((Bool) -> Void)?
+    let onQuickLook: (() -> Void)?
+    let onOpenWithApp: ((String?, Bool) -> Void)?
     let onRenameUpdate: (String) -> Void
     let onRenameCommit: () -> Void
     let onRenameCancel: () -> Void
     let onStartDrag: () -> Void
     let onDrop: ([NSItemProvider], String) -> Void
+    let onLoadApplications: (() -> Void)?
+    let onPutBack: (() -> Void)?
+    let onMoveToTrash: (() -> Void)?
+    let onDeleteImmediately: (() -> Void)?
+    let onEmptyTrash: (() -> Void)?
+    let onRename: (() -> Void)?
+    let onCompress: (() -> Void)?
+    let onDuplicate: (() -> Void)?
+    let onExtract: (() -> Void)?
+    let onCopy: (() -> Void)?
+    let onCut: (() -> Void)?
+    let onToggleTag: ((String) -> Void)?
+    let selectedCount: Int
+    let showCompress: Bool
+    let showExtract: Bool
     let draggingPaths: [String]
 
     @State private var isDropTarget = false
     @FocusState private var isTextFieldFocused: Bool
+    @State private var isOptionPressed = false
+    @State private var optionKeyTimer: Timer?
+    @State private var showTagsEditor = false
 
     var body: some View {
         VStack(spacing: 1) {
@@ -51,6 +73,15 @@ struct FSItemGridView: View {
                                 showBorderWhenUnselected: false
                             )
                             .padding(.top, 2)
+                            .popover(isPresented: $showTagsEditor, arrowEdge: .bottom) {
+                                TagsEditorView(
+                                    fileName: item.name,
+                                    currentTags: item.tags ?? [],
+                                    onToggleTag: { tag in
+                                        onToggleTag?(tag)
+                                    }
+                                )
+                            }
                         }
 
                         if isRenaming {
@@ -148,6 +179,288 @@ struct FSItemGridView: View {
                     .stroke(Color.blue, lineWidth: isDropTarget ? 2 : 0)
             )
         }
+        .contextMenu {
+            contextMenuContent
+        }
+        .onAppear {
+            startOptionKeyMonitoring()
+        }
+        .onDisappear {
+            stopOptionKeyMonitoring()
+        }
+    }
+
+    private func startOptionKeyMonitoring() {
+        let timer = Timer(timeInterval: 0.02, repeats: true) { _ in
+            DispatchQueue.main.async {
+                isOptionPressed = NSEvent.modifierFlags.contains(.option)
+            }
+        }
+        RunLoop.main.add(timer, forMode: .common)
+        optionKeyTimer = timer
+    }
+
+    private func stopOptionKeyMonitoring() {
+        optionKeyTimer?.invalidate()
+        optionKeyTimer = nil
+    }
+}
+
+private extension FSItemGridView {
+    @ViewBuilder var contextMenuContent: some View {
+        Group {
+            Button {
+                onOpen()
+            } label: {
+                Label("Open", systemImage: "arrow.up.forward.square")
+            }
+            .keyboardShortcut(.downArrow, modifiers: [.command])
+        }
+        .onAppear {
+            if !item.isDirectory, let onLoadApplications = onLoadApplications, applications == nil {
+                onLoadApplications()
+            }
+        }
+
+        if item.isDirectory, let onOpenInNewTab = onOpenInNewTab {
+            Button {
+                onOpenInNewTab(isOptionPressed)
+            } label: {
+                Label(
+                    isOptionPressed ? "Open in New Window" : "Open in New Tab",
+                    systemImage: isOptionPressed ? "macwindow.badge.plus" : "plus.square.on.square"
+                )
+            }
+            .keyboardShortcut(.downArrow, modifiers: [.command, .option])
+        }
+
+        if let apps = applications, !apps.isEmpty {
+            Menu {
+                let regularApps = apps.filter { $0.id != "other" }
+
+                ForEach(Array(regularApps.enumerated()), id: \.element.id) { _, app in
+                    Button {
+                        onOpenWithApp?(app.bundleID, isOptionPressed)
+                    } label: {
+                        HStack {
+                            if let bundleID = app.bundleID {
+                                appIconView(for: bundleID)
+                            }
+                            Text(app.isDefault ? "\(app.name) (default)" : app.name)
+                        }
+                    }
+
+                    if app.isDefault {
+                        Divider()
+                    }
+                }
+
+                Divider()
+                Button("Other…") {
+                    onOpenWithApp?(nil, isOptionPressed)
+                }
+            } label: {
+                Label(isOptionPressed ? "Always Open With" : "Open With", systemImage: "app.badge")
+            }
+        } else if !item.isDirectory, let onOpenWithApp = onOpenWithApp {
+            Button {
+                onOpenWithApp(nil, isOptionPressed)
+            } label: {
+                Label(isOptionPressed ? "Always Open With…" : "Open With…", systemImage: "app.badge")
+            }
+        }
+
+        Divider()
+
+        if let onPutBack = onPutBack {
+            Button {
+                onPutBack()
+            } label: {
+                Label("Put Back", systemImage: "trash.slash")
+            }
+
+            if let onDeleteImmediately = onDeleteImmediately {
+                Button {
+                    onDeleteImmediately()
+                } label: {
+                    Label("Delete Immediately...", systemImage: "trash")
+                }
+                .keyboardShortcut(.delete, modifiers: [.command, .option])
+            }
+
+            if let onEmptyTrash = onEmptyTrash {
+                Button {
+                    onEmptyTrash()
+                } label: {
+                    Label("Empty Trash", systemImage: "trash")
+                }
+            }
+
+            Divider()
+
+            if let onQuickLook = onQuickLook {
+                Button {
+                    onQuickLook()
+                } label: {
+                    Label("Quick Look \"\(item.name)\"", systemImage: "eye")
+                }
+                .keyboardShortcut(.space, modifiers: [])
+            }
+
+            Divider()
+
+            if let onCopy = onCopy {
+                Button {
+                    onCopy()
+                } label: {
+                    Label("Copy", systemImage: "doc.on.doc")
+                }
+                .keyboardShortcut("c", modifiers: [.command])
+            }
+        } else {
+            if let onMoveToTrash = onMoveToTrash {
+                Button {
+                    onMoveToTrash()
+                } label: {
+                    Label("Move to Trash", systemImage: "trash")
+                }
+                .keyboardShortcut(.delete, modifiers: [.command])
+            }
+
+            if let onDeleteImmediately = onDeleteImmediately {
+                Button {
+                    onDeleteImmediately()
+                } label: {
+                    Label("Delete Immediately...", systemImage: "trash")
+                }
+                .keyboardShortcut(.delete, modifiers: [.command, .option])
+            }
+
+            Divider()
+
+            if let onRename = onRename {
+                Button {
+                    onRename()
+                } label: {
+                    Label("Rename", systemImage: "pencil")
+                }
+                .keyboardShortcut(.return, modifiers: [])
+            }
+
+            if showCompress, let onCompress = onCompress {
+                Button {
+                    onCompress()
+                } label: {
+                    Label(selectedCount == 1 ? "Compress \"\(item.name)\"" : "Compress", systemImage: "doc.zipper")
+                }
+            }
+
+            if let onDuplicate = onDuplicate {
+                Button {
+                    onDuplicate()
+                } label: {
+                    Label("Duplicate", systemImage: "plus.square.on.square")
+                }
+                .keyboardShortcut("d", modifiers: [.command])
+            }
+
+            if showExtract, let onExtract = onExtract {
+                Button {
+                    onExtract()
+                } label: {
+                    Label("Extract Archive", systemImage: "doc.zipper")
+                }
+            }
+
+            if let onQuickLook = onQuickLook {
+                Button {
+                    onQuickLook()
+                } label: {
+                    Label("Quick Look", systemImage: "eye")
+                }
+                .keyboardShortcut(.space, modifiers: [])
+            }
+
+            Divider()
+
+            if let onCopy = onCopy {
+                Button {
+                    onCopy()
+                } label: {
+                    Label("Copy", systemImage: "doc.on.doc")
+                }
+                .keyboardShortcut("c", modifiers: [.command])
+            }
+
+            if let onCut = onCut {
+                Button {
+                    onCut()
+                } label: {
+                    Label("Cut", systemImage: "scissors")
+                }
+                .keyboardShortcut("x", modifiers: [.command])
+            }
+        }
+
+        Divider()
+
+        Menu {
+            ForEach(FSItemTagUtils.getFavoriteTagNames().filter { !$0.isEmpty }.prefix(7), id: \.self) { tag in
+                let colorCode = FSItemTagUtils.getTagNameToColorCodeMapping()[tag] ?? 0
+                let tagColor = FSItemTagUtils.getTagColor(colorCode: colorCode)
+                let isTagged = item.tags?.contains(where: { $0.name == tag }) ?? false
+
+                Button {
+                    onToggleTag?(tag)
+                } label: {
+                    HStack {
+                        Image(nsImage: colorCircleImage(color: tagColor, size: 10))
+                        Text(isTagged ? "\(tag) ✓" : tag)
+                    }
+                }
+            }
+
+            Divider()
+
+            Button("Edit Tags...") {
+                showTagsEditor = true
+            }
+        } label: {
+            Label("Tags", systemImage: "tag")
+        }
+    }
+
+    @ViewBuilder
+    func appIconView(for bundleID: String) -> some View {
+        if let icon = appIcon(for: bundleID, size: 16) {
+            Image(nsImage: icon)
+        }
+    }
+
+    func appIcon(for bundleID: String, size: CGFloat) -> NSImage? {
+        guard let appURL = NSWorkspace.shared.urlForApplication(withBundleIdentifier: bundleID) else {
+            return nil
+        }
+
+        let originalIcon = NSWorkspace.shared.icon(forFile: appURL.path)
+
+        // 원본 이미지를 지정된 크기로 리사이즈
+        let resizedIcon = NSImage(size: NSSize(width: size, height: size))
+        resizedIcon.lockFocus()
+        originalIcon.draw(in: NSRect(x: 0, y: 0, width: size, height: size))
+        resizedIcon.unlockFocus()
+
+        return resizedIcon
+    }
+
+    func colorCircleImage(color: Color, size: CGFloat) -> NSImage {
+        let image = NSImage(size: NSSize(width: size, height: size))
+        image.lockFocus()
+        NSColor(color).setFill()
+        let path = NSBezierPath(ovalIn: NSRect(x: 0, y: 0, width: size, height: size))
+        path.fill()
+        image.unlockFocus()
+        return image
     }
 }
 
