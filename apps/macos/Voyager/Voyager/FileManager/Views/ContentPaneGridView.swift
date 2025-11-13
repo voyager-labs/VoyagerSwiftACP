@@ -280,43 +280,43 @@ struct ContentPaneGridView: View {
                             .keyboardShortcut("n", modifiers: [.command, .shift])
                         }
                     }
-                }
-                .simultaneousGesture(
-                    DragGesture(minimumDistance: 10, coordinateSpace: .named("contentPane"))
-                        .onChanged { value in
-                            guard !fsStore.itemPositions.isEmpty else { return }
+                    .simultaneousGesture(
+                        DragGesture(minimumDistance: 10, coordinateSpace: .named("contentPane"))
+                            .onChanged { value in
+                                guard !fsStore.itemPositions.isEmpty else { return }
 
-                            if fsStore.lassoSelection != nil {
-                                fsStore.send(.updateLassoSelection(currentPoint: value.location))
-                            } else {
-                                let dragDistance = LassoSelectionUtils.calculateDragDistance(
-                                    from: value.startLocation,
-                                    to: value.location
-                                )
+                                if fsStore.lassoSelection != nil {
+                                    fsStore.send(.updateLassoSelection(currentPoint: value.location))
+                                } else {
+                                    let dragDistance = LassoSelectionUtils.calculateDragDistance(
+                                        from: value.startLocation,
+                                        to: value.location
+                                    )
 
-                                if dragDistance > 15,
-                                   !LassoSelectionUtils.isPointOverAnyItem(
-                                       value.startLocation,
-                                       itemPositions: fsStore.itemPositions
-                                   )
-                                {
-                                    let modifiers = LassoSelectionUtils.detectModifierFlags()
-                                    let scrollViewBounds = CGRect(x: 0, y: 0, width: 1000, height: 1000)
+                                    if dragDistance > 15,
+                                       !LassoSelectionUtils.isPointOverAnyItem(
+                                           value.startLocation,
+                                           itemPositions: fsStore.itemPositions
+                                       )
+                                    {
+                                        let modifiers = LassoSelectionUtils.detectModifierFlags()
+                                        let scrollViewBounds = CGRect(x: 0, y: 0, width: 1000, height: 1000)
 
-                                    fsStore.send(.startLassoSelection(
-                                        startPoint: value.startLocation,
-                                        scrollViewBounds: scrollViewBounds,
-                                        modifierFlags: modifiers
-                                    ))
+                                        fsStore.send(.startLassoSelection(
+                                            startPoint: value.startLocation,
+                                            scrollViewBounds: scrollViewBounds,
+                                            modifierFlags: modifiers
+                                        ))
+                                    }
                                 }
                             }
-                        }
-                        .onEnded { _ in
-                            if fsStore.lassoSelection != nil {
-                                fsStore.send(.endLassoSelection)
+                            .onEnded { _ in
+                                if fsStore.lassoSelection != nil {
+                                    fsStore.send(.endLassoSelection)
+                                }
                             }
-                        }
-                )
+                    )
+                }
                 .onChange(of: fsStore.lastSelectedId) { newId in
                     if fsStore.shouldScrollToSelection, let id = newId {
                         proxy.scrollTo(id, anchor: nil)
