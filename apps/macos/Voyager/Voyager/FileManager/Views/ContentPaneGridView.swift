@@ -1,6 +1,9 @@
 // swiftlint:disable type_body_length
+import AppKit
 import ComposableArchitecture
 import SwiftUI
+@_spi(Advanced)
+import SwiftUIIntrospect
 import UniformTypeIdentifiers
 
 private struct GridItemPositionKey: PreferenceKey {
@@ -13,18 +16,16 @@ private struct GridItemPositionKey: PreferenceKey {
 struct ContentPaneGridView: View {
     let store: StoreOf<FileManagerFeature>
 
-    @State private var savedTopItemId: String?
     @State private var scrollViewHeight: CGFloat = 0
-
-    private func isNearTop(_ geometry: GeometryProxy) -> Bool {
-        let frame = geometry.frame(in: .named("scrollView"))
-        return frame.minY >= 0 && frame.minY < 50
-    }
+    @State private var nsScrollView: NSScrollView?
+    @State private var hasRestoredScrollPosition: Bool = false
 
     private func saveScrollPositionBeforeOpen() {
-        if let topId = savedTopItemId {
-            store.send(.saveTopVisibleItem(topId, forPath: store.currentPath))
-        }
+        ScrollPositionUtils.saveScrollPosition(
+            scrollView: nsScrollView,
+            currentPath: store.currentPath,
+            store: store
+        )
     }
 
     private func updateGridColumnCount(positions: [String: CGRect]) {
@@ -162,10 +163,6 @@ struct ContentPaneGridView: View {
                                                 GeometryReader { itemGeometry in
                                                     Color.clear
                                                         .preference(
-                                                            key: VisibleTopItemKey.self,
-                                                            value: isNearTop(itemGeometry) ? item.id : ""
-                                                        )
-                                                        .preference(
                                                             key: GridItemPositionKey.self,
                                                             value: [
                                                                 item.id: itemGeometry
@@ -221,10 +218,6 @@ struct ContentPaneGridView: View {
                                                     GeometryReader { itemGeometry in
                                                         Color.clear
                                                             .preference(
-                                                                key: VisibleTopItemKey.self,
-                                                                value: isNearTop(itemGeometry) ? item.id : ""
-                                                            )
-                                                            .preference(
                                                                 key: GridItemPositionKey.self,
                                                                 value: [
                                                                     item.id: itemGeometry
@@ -251,10 +244,6 @@ struct ContentPaneGridView: View {
                     .coordinateSpace(name: "scrollView")
                     .coordinateSpace(name: "contentPane")
                     .coordinateSpace(name: "gridContainer")
-                    .onPreferenceChange(VisibleTopItemKey.self) { topItemId in
-                        guard !topItemId.isEmpty, topItemId != savedTopItemId else { return }
-                        savedTopItemId = topItemId
-                    }
                     .onPreferenceChange(GridItemPositionKey.self) { positions in
                         updateGridColumnCount(positions: positions)
                     }
@@ -323,9 +312,25 @@ struct ContentPaneGridView: View {
                         fsStore.send(.resetScrollFlag)
                     }
                 }
+                .introspect(.scrollView, on: .macOS(.v13...)) { scrollView in
+                    nsScrollView = scrollView
+                }
                 .onChange(of: store.currentPath) { _ in
-                    proxy.scrollTo("scrollTop", anchor: .top)
-                    savedTopItemId = nil
+                    hasRestoredScrollPosition = false
+                }
+                .onChange(of: fsStore.items.count) { itemCount in
+                    guard itemCount != 0 else { return }
+
+                    if store.scrollPositions[store.currentPath] != nil {
+                        ScrollPositionUtils.restoreScrollPosition(
+                            scrollView: nsScrollView,
+                            currentPath: store.currentPath,
+                            scrollPositions: store.scrollPositions,
+                            hasRestored: &hasRestoredScrollPosition
+                        )
+                    } else {
+                        proxy.scrollTo("scrollTop", anchor: .top)
+                    }
                 }
             }
             .onAppear {

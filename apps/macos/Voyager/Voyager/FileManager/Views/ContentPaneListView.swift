@@ -1,5 +1,8 @@
+import AppKit
 import ComposableArchitecture
 import SwiftUI
+@_spi(Advanced)
+import SwiftUIIntrospect
 import UniformTypeIdentifiers
 
 private struct ListRowPositionKey: PreferenceKey {
@@ -14,21 +17,19 @@ struct ContentPaneListView: View {
     let store: StoreOf<FileManagerFeature>
 
     @State private var availableWidth: CGFloat = 0
-    @State private var savedTopItemId: String?
     @State private var rowPositions: [String: CGRect] = [:]
     @State private var scrollViewHeight: CGFloat = 0
+    @State private var nsScrollView: NSScrollView?
+    @State private var hasRestoredScrollPosition: Bool = false
 
     private let rowHeight: CGFloat = 24
 
-    private func isNearTop(_ geometry: GeometryProxy) -> Bool {
-        let frame = geometry.frame(in: .named("scrollView"))
-        return frame.minY >= 0 && frame.minY < 30
-    }
-
     private func saveScrollPositionBeforeOpen() {
-        if let topId = savedTopItemId {
-            store.send(.saveTopVisibleItem(topId, forPath: store.currentPath))
-        }
+        ScrollPositionUtils.saveScrollPosition(
+            scrollView: nsScrollView,
+            currentPath: store.currentPath,
+            store: store
+        )
     }
 
     private func findItemAtPoint(_ point: CGPoint) -> String? {
@@ -142,10 +143,6 @@ struct ContentPaneListView: View {
         .background(
             GeometryReader { itemGeometry in
                 Color.clear
-                    .preference(
-                        key: VisibleTopItemKey.self,
-                        value: isNearTop(itemGeometry) ? item.id : ""
-                    )
                     .preference(
                         key: ListRowPositionKey.self,
                         value: [
@@ -295,10 +292,6 @@ struct ContentPaneListView: View {
                     )
                     .coordinateSpace(name: "scrollView")
                     .coordinateSpace(name: "listContainer")
-                    .onPreferenceChange(VisibleTopItemKey.self) { topItemId in
-                        guard !topItemId.isEmpty, topItemId != savedTopItemId else { return }
-                        savedTopItemId = topItemId
-                    }
                     .onPreferenceChange(ListRowPositionKey.self) { positions in
                         rowPositions = positions
                     }
@@ -355,15 +348,22 @@ struct ContentPaneListView: View {
                             fsStore.send(.resetScrollFlag)
                         }
                     }
-                    .onChange(of: store.currentPath) { [oldPath = store.currentPath] _ in
-                        if let topId = savedTopItemId {
-                            store.send(.saveTopVisibleItem(topId, forPath: oldPath))
-                        }
-                        savedTopItemId = nil
+                    .introspect(.scrollView, on: .macOS(.v13...)) { scrollView in
+                        nsScrollView = scrollView
                     }
-                    .onChange(of: store.scrollTargetId) { targetId in
-                        if let targetId = targetId {
-                            proxy.scrollTo(targetId, anchor: .top)
+                    .onChange(of: store.currentPath) { _ in
+                        hasRestoredScrollPosition = false
+                    }
+                    .onChange(of: fsStore.items.count) { itemCount in
+                        guard itemCount != 0 else { return }
+
+                        if store.scrollPositions[store.currentPath] != nil {
+                            ScrollPositionUtils.restoreScrollPosition(
+                                scrollView: nsScrollView,
+                                currentPath: store.currentPath,
+                                scrollPositions: store.scrollPositions,
+                                hasRestored: &hasRestoredScrollPosition
+                            )
                         } else {
                             proxy.scrollTo("scrollTop", anchor: .top)
                         }

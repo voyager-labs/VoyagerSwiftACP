@@ -2,6 +2,17 @@ import AppKit
 import CoreGraphics
 import Foundation
 import IdentifiedCollections
+import SwiftUI
+
+struct ItemPositionKey: PreferenceKey {
+    typealias Value = [String: CGRect]
+
+    static var defaultValue: [String: CGRect] = [:]
+
+    static func reduce(value: inout [String: CGRect], nextValue: () -> [String: CGRect]) {
+        value.merge(nextValue()) { _, new in new }
+    }
+}
 
 enum LassoSelectionUtils {
     static func calculateDragDistance(from start: CGPoint, to end: CGPoint) -> CGFloat {

@@ -1,23 +1,34 @@
-import SwiftUI
+import AppKit
+import ComposableArchitecture
+import Foundation
 
-struct VisibleTopItemKey: PreferenceKey {
-    static let defaultValue: String = ""
-
-    static func reduce(value: inout String, nextValue: () -> String) {
-        let newValue = nextValue()
-
-        if value.isEmpty {
-            value = newValue
-        }
+enum ScrollPositionUtils {
+    /// 스크롤 위치를 저장합니다.
+    static func saveScrollPosition(
+        scrollView: NSScrollView?,
+        currentPath: String,
+        store: StoreOf<FileManagerFeature>
+    ) {
+        guard let scrollView = scrollView else { return }
+        let offset = scrollView.contentView.bounds.origin
+        store.send(.saveScrollOffset(offset, forPath: currentPath))
     }
-}
 
-struct ItemPositionKey: PreferenceKey {
-    typealias Value = [String: CGRect]
+    /// 저장된 스크롤 위치를 복원합니다.
+    static func restoreScrollPosition(
+        scrollView: NSScrollView?,
+        currentPath: String,
+        scrollPositions: [String: CGPoint],
+        hasRestored: inout Bool
+    ) {
+        guard !hasRestored,
+              let scrollView = scrollView,
+              let savedOffset = scrollPositions[currentPath]
+        else {
+            return
+        }
 
-    static var defaultValue: [String: CGRect] = [:]
-
-    static func reduce(value: inout [String: CGRect], nextValue: () -> [String: CGRect]) {
-        value.merge(nextValue()) { _, new in new }
+        scrollView.contentView.scroll(to: savedOffset)
+        hasRestored = true
     }
 }

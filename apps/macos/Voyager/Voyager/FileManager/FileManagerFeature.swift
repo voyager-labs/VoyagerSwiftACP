@@ -32,8 +32,7 @@ struct FileManagerFeature {
 
         var titlePath: String = Settings.shared.defaultTabPath
 
-        var topVisibleItems: [String: String] = [:]
-        var scrollTargetId: String?
+        var scrollPositions: [String: CGPoint] = [:]
 
         var backHistory: [String] = []
         var forwardHistory: [String] = []
@@ -209,7 +208,7 @@ struct FileManagerFeature {
         case changeLayout(ViewLayout)
         case toggleShowHiddenFiles
         case setSidebarVisible(Bool)
-        case saveTopVisibleItem(String, forPath: String)
+        case saveScrollOffset(CGPoint, forPath: String)
         case showRecents
         case loadFavorites
         case favoritesLoaded([SidebarUtils.FavoriteItem])
@@ -362,8 +361,8 @@ struct FileManagerFeature {
                     .send(.fsItems(.loadItems(path: state.currentPath)))
                 )
 
-            case let .saveTopVisibleItem(itemId, forPath: path):
-                state.topVisibleItems[path] = itemId
+            case let .saveScrollOffset(offset, forPath: path):
+                state.scrollPositions[path] = offset
                 return .none
 
             case let .setSidebarVisible(visible):
@@ -449,14 +448,6 @@ struct FileManagerFeature {
                 switch action {
                 case .itemsLoaded:
                     state.titlePath = state.currentPath
-
-                    if let topItemId = state.topVisibleItems[state.currentPath],
-                       state.fsItems.items.contains(where: { $0.id == topItemId })
-                    {
-                        state.scrollTargetId = topItemId
-                    } else {
-                        state.scrollTargetId = nil
-                    }
                     return .none
 
                 case .operations(.operationFinished(_, .deleteImmediately, .success)):
