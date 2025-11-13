@@ -16,7 +16,6 @@ public enum ClipboardOperation: Equatable, Sendable {
 struct FSItemsFeature {
     private enum CancelID {
         static let fsEventsWatcher = "fsEventsWatcher"
-        static let lassoAutoScroll = "lassoAutoScroll"
     }
 
     @ObservableState
@@ -155,11 +154,10 @@ struct FSItemsFeature {
 
         case updateItemPositions([String: CGRect])
         case updateGridColumnCount(Int)
-        case startLassoSelection(startPoint: CGPoint, scrollViewBounds: CGRect, modifierFlags: ModifierFlags)
+        case startLassoSelection(startPoint: CGPoint, modifierFlags: ModifierFlags)
         case updateLassoSelection(currentPoint: CGPoint)
         case endLassoSelection
         case cancelLassoSelection
-        case lassoAutoScrollTick
         case startListRowDrag(startItemId: String, modifierFlags: ModifierFlags)
         case updateListRowDrag(currentItemId: String)
         case endListRowDrag
@@ -1126,11 +1124,10 @@ struct FSItemsFeature {
                 state.gridColumnCount = count
                 return .none
 
-            case let .startLassoSelection(startPoint, scrollViewBounds, modifierFlags):
+            case let .startLassoSelection(startPoint, modifierFlags):
                 state.lassoSelection = LassoSelection(
                     startPoint: startPoint,
                     currentPoint: startPoint,
-                    scrollViewBounds: scrollViewBounds,
                     initialSelectedIds: modifierFlags == .none ? [] : state.selectedIds,
                     modifierFlags: modifierFlags
                 )
@@ -1160,18 +1157,7 @@ struct FSItemsFeature {
                 }
 
                 state.lassoSelection = lasso
-
-                if lasso.autoScrollDirection != nil {
-                    return .run { send in
-                        while true {
-                            try await Task.sleep(for: .milliseconds(16)) // 60fps
-                            await send(.lassoAutoScrollTick)
-                        }
-                    }
-                    .cancellable(id: CancelID.lassoAutoScroll, cancelInFlight: true)
-                } else {
-                    return .cancel(id: CancelID.lassoAutoScroll)
-                }
+                return .none
 
             case .endLassoSelection:
                 if !state.selectedIds.isEmpty {
@@ -1182,7 +1168,7 @@ struct FSItemsFeature {
                 }
 
                 state.lassoSelection = nil
-                return .cancel(id: CancelID.lassoAutoScroll)
+                return .none
 
             case .cancelLassoSelection:
                 if let lasso = state.lassoSelection {
@@ -1198,11 +1184,6 @@ struct FSItemsFeature {
                     state.rangeAnchorId = nil
                 }
                 state.lassoSelection = nil
-                return .cancel(id: CancelID.lassoAutoScroll)
-
-            case .lassoAutoScrollTick:
-                // TODO: 자동 스크롤 구현 (View와 연동 필요)
-                // 현재는 스킵 (나중에 NSScrollView 래퍼 구현 시 추가)
                 return .none
 
             case let .startListRowDrag(startItemId, modifierFlags):
@@ -1282,7 +1263,6 @@ struct ListRowDragSelection: Equatable, Sendable {
 struct LassoSelection: Equatable, Sendable {
     var startPoint: CGPoint
     var currentPoint: CGPoint
-    var scrollViewBounds: CGRect
     var initialSelectedIds: Set<String>
     var modifierFlags: ModifierFlags
 
@@ -1299,38 +1279,4 @@ struct LassoSelection: Equatable, Sendable {
             height: maxY - minY
         )
     }
-
-    var autoScrollDirection: AutoScrollDirection? {
-        let hotZoneSize: CGFloat = 20
-        let currentY = currentPoint.y
-
-        if currentY < scrollViewBounds.minY + hotZoneSize {
-            return .up
-        } else if currentY > scrollViewBounds.maxY - hotZoneSize {
-            return .down
-        }
-        return nil
-    }
-
-    var autoScrollSpeed: CGFloat {
-        guard let direction = autoScrollDirection else { return 0 }
-
-        let hotZoneSize: CGFloat = 20
-        let currentY = currentPoint.y
-
-        let distance: CGFloat
-        switch direction {
-        case .up:
-            distance = (scrollViewBounds.minY + hotZoneSize) - currentY
-        case .down:
-            distance = currentY - (scrollViewBounds.maxY - hotZoneSize)
-        }
-
-        return min(max(distance / hotZoneSize * 10, 1), 10)
-    }
-}
-
-enum AutoScrollDirection: Equatable, Sendable {
-    case up
-    case down
 }

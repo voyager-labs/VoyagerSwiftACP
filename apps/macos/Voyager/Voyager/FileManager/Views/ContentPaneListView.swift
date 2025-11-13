@@ -304,19 +304,13 @@ struct ContentPaneListView: View {
                                     if let currentItemId = findItemAtPoint(value.location) {
                                         fsStore.send(.updateListRowDrag(currentItemId: currentItemId))
                                     }
+
+                                    ScrollPositionUtils.performAutoScroll(scrollView: nsScrollView)
                                 } else {
                                     guard let nearestItemId = findNearestItemAtY(value.startLocation.y)
                                     else { return }
 
-                                    let modifiers: ModifierFlags = {
-                                        if NSEvent.modifierFlags.contains(.command) {
-                                            return .command
-                                        } else if NSEvent.modifierFlags.contains(.shift) {
-                                            return .shift
-                                        } else {
-                                            return .none
-                                        }
-                                    }()
+                                    let modifiers = LassoSelectionUtils.detectModifierFlags()
 
                                     fsStore.send(.startListRowDrag(
                                         startItemId: nearestItemId,

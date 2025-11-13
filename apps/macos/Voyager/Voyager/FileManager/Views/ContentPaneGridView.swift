@@ -276,6 +276,8 @@ struct ContentPaneGridView: View {
 
                                 if fsStore.lassoSelection != nil {
                                     fsStore.send(.updateLassoSelection(currentPoint: value.location))
+
+                                    ScrollPositionUtils.performAutoScroll(scrollView: nsScrollView)
                                 } else {
                                     let dragDistance = LassoSelectionUtils.calculateDragDistance(
                                         from: value.startLocation,
@@ -289,11 +291,9 @@ struct ContentPaneGridView: View {
                                        )
                                     {
                                         let modifiers = LassoSelectionUtils.detectModifierFlags()
-                                        let scrollViewBounds = CGRect(x: 0, y: 0, width: 1000, height: 1000)
 
                                         fsStore.send(.startLassoSelection(
                                             startPoint: value.startLocation,
-                                            scrollViewBounds: scrollViewBounds,
                                             modifierFlags: modifiers
                                         ))
                                     }
