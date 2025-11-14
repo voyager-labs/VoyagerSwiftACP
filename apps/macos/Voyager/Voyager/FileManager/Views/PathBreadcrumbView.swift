@@ -46,12 +46,18 @@ private struct BreadcrumbItemView: View {
 
             Text(item.name)
                 .font(.system(size: 12))
-                .foregroundColor(.secondary)
                 .lineLimit(1)
                 .truncationMode(truncationMode)
                 .frame(width: width, alignment: .leading)
                 .fixedSize(horizontal: needsFixedSize, vertical: false)
         }
+    }
+}
+
+private struct BreadcrumbButtonStyle: ButtonStyle {
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .foregroundColor(configuration.isPressed ? .white : .secondary)
     }
 }
 
@@ -171,7 +177,7 @@ struct PathBreadcrumbView: View {
                             truncationMode: .tail
                         )
                     }
-                    .buttonStyle(.borderless)
+                    .buttonStyle(BreadcrumbButtonStyle())
                     .help(item.fullPath)
                     .onHover { isHovered in
                         hoveredIndex = isHovered ? index : nil
@@ -210,6 +216,7 @@ struct PathBreadcrumbView: View {
                         needsFixedSize: true,
                         truncationMode: .middle
                     )
+                    .foregroundColor(.secondary)
                 }
             }
         }
