@@ -1,4 +1,3 @@
-// swiftlint:disable type_body_length
 import AppKit
 import ComposableArchitecture
 import SwiftUI
@@ -6,19 +5,18 @@ import SwiftUI
 import SwiftUIIntrospect
 import UniformTypeIdentifiers
 
-private struct GridItemPositionKey: PreferenceKey {
-    static var defaultValue: [String: CGRect] = [:]
-    static func reduce(value: inout [String: CGRect], nextValue: () -> [String: CGRect]) {
-        value.merge(nextValue()) { $1 }
-    }
+private struct GridLayoutConfig {
+    let columns: Int
+    let spacing: CGFloat
+    let edgePadding: CGFloat
 }
 
 struct ContentPaneGridView: View {
     let store: StoreOf<FileManagerFeature>
 
-    @State private var scrollViewHeight: CGFloat = 0
     @State private var nsScrollView: NSScrollView?
     @State private var hasRestoredScrollPosition: Bool = false
+    @State private var gridColumnCount: Int = 1
 
     private func saveScrollPositionBeforeOpen() {
         ScrollPositionUtils.saveScrollPosition(
@@ -28,47 +26,35 @@ struct ContentPaneGridView: View {
         )
     }
 
-    private func updateGridColumnCount(positions: [String: CGRect]) {
-        guard !positions.isEmpty else { return }
+    private let itemWidth: CGFloat = 120
+    private let horizontalPadding: CGFloat = 16
+    private let minSpacing: CGFloat = 12
+    private let maxSpacing: CGFloat = 32
+    private let verticalSpacing: CGFloat = 16
 
-        let sortedByY = positions.values.sorted { $0.minY < $1.minY }
-        guard let firstItemY = sortedByY.first?.minY else { return }
+    private func resolveLayout(for width: CGFloat) -> GridLayoutConfig {
+        let usableWidth = max(width - (horizontalPadding * 2), itemWidth)
+        let candidateColumns = max(1, Int((usableWidth + minSpacing) / (itemWidth + minSpacing)))
 
-        let firstRowItems = sortedByY.filter { abs($0.minY - firstItemY) < 1 }
-        let columnCount = firstRowItems.count
-
-        store.send(.fsItems(.updateGridColumnCount(columnCount)))
-    }
-
-    private let itemMinWidth: CGFloat = 100
-    private let itemMaxWidth: CGFloat = 120
-    private let itemSpacing: CGFloat = 20
-    private let gridItemHeight: CGFloat = 100
-
-    @ViewBuilder
-    private func emptyGridSpace(itemsCount: Int, columnCount: Int) -> some View {
-        let rowHeight = gridItemHeight + itemSpacing
-        let currentRows = Int(ceil(Double(itemsCount) / Double(columnCount)))
-        let currentHeight = CGFloat(currentRows) * rowHeight
-
-        if currentHeight < scrollViewHeight {
-            let neededHeight = scrollViewHeight - currentHeight
-            let emptyRows = Int(neededHeight / rowHeight)
-
-            ForEach(0 ..< emptyRows, id: \.self) { _ in
-                HStack(spacing: itemSpacing) {
-                    ForEach(0 ..< columnCount, id: \.self) { _ in
-                        Color.clear
-                            .frame(width: itemMaxWidth, height: gridItemHeight)
-                            .allowsHitTesting(false)
-                    }
-                }
-            }
+        if candidateColumns == 1 {
+            let padding = max(horizontalPadding, (width - itemWidth) / 2)
+            return GridLayoutConfig(columns: 1, spacing: minSpacing, edgePadding: padding)
         }
+
+        let occupiedWidth = CGFloat(candidateColumns) * itemWidth
+        let remainingWidth = max(0, usableWidth - occupiedWidth)
+        let spacing = min(maxSpacing, max(minSpacing, remainingWidth / CGFloat(candidateColumns - 1)))
+        let usedWidth = occupiedWidth + spacing * CGFloat(candidateColumns - 1)
+        let edgePadding = max(horizontalPadding, (width - usedWidth) / 2)
+
+        return GridLayoutConfig(columns: candidateColumns, spacing: spacing, edgePadding: edgePadding)
     }
 
-    private var columns: [GridItem] {
-        [GridItem(.adaptive(minimum: itemMinWidth, maximum: itemMaxWidth), spacing: itemSpacing)]
+    private func makeColumns(count: Int, spacing: CGFloat) -> [GridItem] {
+        Array(
+            repeating: GridItem(.fixed(itemWidth), spacing: spacing, alignment: .top),
+            count: max(1, count)
+        )
     }
 
     @ViewBuilder
@@ -134,6 +120,9 @@ struct ContentPaneGridView: View {
         let fsStore = store.scope(state: \.fsItems, action: \.fsItems)
 
         GeometryReader { geometry in
+            let layout = resolveLayout(for: geometry.size.width)
+            let columns = makeColumns(count: layout.columns, spacing: layout.spacing)
+
             ScrollViewReader { proxy in
                 ScrollView {
                     ZStack {
@@ -150,103 +139,20 @@ struct ContentPaneGridView: View {
                         VStack(spacing: 0) {
                             Color.clear.frame(height: 0).id("scrollTop")
                             LazyVStack(alignment: .leading, spacing: 16) {
-                                if fsStore.groupKey == .none {
-                                    LazyVGrid(columns: columns, spacing: 16) {
-                                        ForEach(fsStore.items) { item in
-                                            itemGrid(
-                                                item: item,
-                                                store: store,
-                                                fsStore: fsStore,
-                                                isTrashFolder: store.isTrashFolder
-                                            )
-                                            .background(
-                                                GeometryReader { itemGeometry in
-                                                    Color.clear
-                                                        .preference(
-                                                            key: GridItemPositionKey.self,
-                                                            value: [
-                                                                item.id: itemGeometry
-                                                                    .frame(in: .named("gridContainer")),
-                                                            ]
-                                                        )
-                                                }
-                                            )
-                                            .id(item.id)
-                                        }
-                                    }
-
-                                    emptyGridSpace(
-                                        itemsCount: fsStore.items.count,
-                                        columnCount: fsStore.gridColumnCount
-                                    )
-                                } else {
-                                    ForEach(Array(fsStore.groupedItems.enumerated()),
-                                            id: \.element.groupName)
-                                    { index, group in
-                                        if index > 0 {
-                                            Spacer()
-                                                .frame(height: 16)
-                                        }
-
-                                        if !group.groupName.isEmpty && fsStore.groupKey != .name {
-                                            HStack(spacing: 8) {
-                                                if fsStore.groupKey == .tags,
-                                                   let colorCode = group.items.first?.tags?
-                                                   .first(where: { $0.name == group.groupName })?.colorCode
-                                                {
-                                                    Circle()
-                                                        .fill(FSItemTagUtils.getTagColor(colorCode: colorCode))
-                                                        .frame(width: 8, height: 8)
-                                                }
-                                                Text(group.groupName)
-                                                    .font(.headline)
-                                                    .foregroundColor(.primary)
-                                                Spacer()
-                                            }
-                                            .padding(.horizontal, 16)
-                                        }
-
-                                        LazyVGrid(columns: columns, spacing: 16) {
-                                            ForEach(group.items) { item in
-                                                itemGrid(
-                                                    item: item,
-                                                    store: store,
-                                                    fsStore: fsStore,
-                                                    isTrashFolder: store.isTrashFolder
-                                                )
-                                                .background(
-                                                    GeometryReader { itemGeometry in
-                                                        Color.clear
-                                                            .preference(
-                                                                key: GridItemPositionKey.self,
-                                                                value: [
-                                                                    item.id: itemGeometry
-                                                                        .frame(in: .named("gridContainer")),
-                                                                ]
-                                                            )
-                                                    }
-                                                )
-                                                .id(item.id)
-                                            }
-                                        }
-                                    }
-
-                                    emptyGridSpace(
-                                        itemsCount: fsStore.items.count,
-                                        columnCount: fsStore.gridColumnCount
-                                    )
-                                }
+                                gridSections(
+                                    fsStore: fsStore,
+                                    store: store,
+                                    columns: columns
+                                )
                             }
                         }
-                        .padding([.horizontal, .bottom], 16)
-                        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+                        .padding(.horizontal, layout.edgePadding)
+                        .padding(.bottom, horizontalPadding)
+                        .frame(maxWidth: .infinity, minHeight: geometry.size.height, alignment: .topLeading)
                     }
                     .coordinateSpace(name: "scrollView")
                     .coordinateSpace(name: "contentPane")
                     .coordinateSpace(name: "gridContainer")
-                    .onPreferenceChange(GridItemPositionKey.self) { positions in
-                        updateGridColumnCount(positions: positions)
-                    }
                     .onPreferenceChange(ItemPositionKey.self) { positions in
                         fsStore.send(.updateItemPositions(positions))
                     }
@@ -334,10 +240,11 @@ struct ContentPaneGridView: View {
                 }
             }
             .onAppear {
-                scrollViewHeight = geometry.size.height
+                updateColumnCountIfNeeded(layout.columns)
             }
-            .onChange(of: geometry.size) { newSize in
-                scrollViewHeight = newSize.height
+            .onChange(of: geometry.size.width) { newWidth in
+                let newLayout = resolveLayout(for: newWidth)
+                updateColumnCountIfNeeded(newLayout.columns)
             }
         }
         .border(fsStore.isDropTargeted ? Color.accentColor : Color.clear, width: 2)
@@ -346,6 +253,65 @@ struct ContentPaneGridView: View {
             delegate: FileDropDelegate(store: store, fsStore: fsStore)
         )
     }
-}
 
-// swiftlint:enable type_body_length
+    private func updateColumnCountIfNeeded(_ newValue: Int) {
+        guard gridColumnCount != newValue else { return }
+        gridColumnCount = newValue
+        store.send(.fsItems(.updateGridColumnCount(newValue)))
+    }
+
+    @ViewBuilder
+    private func gridSections(
+        fsStore: Store<FSItemsFeature.State, FSItemsFeature.Action>,
+        store: StoreOf<FileManagerFeature>,
+        columns: [GridItem]
+    ) -> some View {
+        if fsStore.groupKey == .none {
+            LazyVGrid(columns: columns, alignment: .leading, spacing: verticalSpacing) {
+                ForEach(fsStore.items) { item in
+                    itemGrid(
+                        item: item,
+                        store: store,
+                        fsStore: fsStore,
+                        isTrashFolder: store.isTrashFolder
+                    )
+                }
+            }
+        } else {
+            ForEach(Array(fsStore.groupedItems.enumerated()), id: \.element.groupName) { index, group in
+                if index > 0 {
+                    Spacer().frame(height: 16)
+                }
+
+                if !group.groupName.isEmpty && fsStore.groupKey != .name {
+                    HStack(spacing: 8) {
+                        if fsStore.groupKey == .tags,
+                           let colorCode = group.items.first?.tags?
+                           .first(where: { $0.name == group.groupName })?.colorCode
+                        {
+                            Circle()
+                                .fill(FSItemTagUtils.getTagColor(colorCode: colorCode))
+                                .frame(width: 8, height: 8)
+                        }
+                        Text(group.groupName)
+                            .font(.headline)
+                            .foregroundColor(.primary)
+                        Spacer()
+                    }
+                    .padding(.horizontal, 16)
+                }
+
+                LazyVGrid(columns: columns, alignment: .leading, spacing: verticalSpacing) {
+                    ForEach(group.items) { item in
+                        itemGrid(
+                            item: item,
+                            store: store,
+                            fsStore: fsStore,
+                            isTrashFolder: store.isTrashFolder
+                        )
+                    }
+                }
+            }
+        }
+    }
+}
