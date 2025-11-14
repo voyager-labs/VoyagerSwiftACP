@@ -261,8 +261,10 @@ struct FileManagerFeature {
                 )
 
             case let .navigateTo(path):
-                state.backHistory.append(state.currentPath)
-                state.forwardHistory = []
+                if path != state.currentPath {
+                    state.backHistory.append(state.currentPath)
+                    state.forwardHistory = []
+                }
                 state.navigationState = .folder(path)
                 state.matchSidebarToPath(path, favorites: state.favorites, locations: state.locations)
                 return .send(.fsItems(.loadItems(path: path)))
