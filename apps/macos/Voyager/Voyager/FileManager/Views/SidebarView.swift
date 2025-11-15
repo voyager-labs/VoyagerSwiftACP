@@ -122,6 +122,39 @@ struct TagItemView: View {
     }
 }
 
+private struct SidebarSectionHeader: View {
+    let title: String
+    let isCollapsed: Bool
+    let onToggle: () -> Void
+
+    @State private var isHovered = false
+
+    var body: some View {
+        HStack(spacing: 4) {
+            Text(title)
+                .font(.caption)
+                .foregroundColor(.secondary)
+            Spacer()
+            Image(systemName: isCollapsed ? "chevron.right" : "chevron.down")
+                .font(.system(size: 11, weight: .semibold))
+                .foregroundColor(.secondary)
+                .opacity(isHovered ? 1 : 0)
+        }
+        .padding(.leading, 12)
+        .padding(.trailing, 20)
+        .padding(.vertical, 4)
+        .contentShape(Rectangle())
+        .onTapGesture {
+            onToggle()
+        }
+        .onHover { hovering in
+            withAnimation(.easeInOut(duration: 0.1)) {
+                isHovered = hovering
+            }
+        }
+    }
+}
+
 struct SidebarView: View {
     let store: StoreOf<FileManagerFeature>
 
@@ -167,26 +200,31 @@ struct SidebarView: View {
         Group {
             if !store.favorites.isEmpty {
                 VStack(alignment: .leading, spacing: 4) {
-                    Text("Favorites")
-                        .font(.caption)
-                        .foregroundColor(.secondary)
-                        .padding(.horizontal, 12)
-                        .padding(.top, 8)
+                    SidebarSectionHeader(
+                        title: "Favorites",
+                        isCollapsed: store.isFavoritesCollapsed,
+                        onToggle: {
+                            store.send(.toggleFavoritesSection)
+                        }
+                    )
+                    .padding(.top, 8)
 
-                    ForEach(store.favorites, id: \.url) { favorite in
-                        SidebarItemView(
-                            iconName: favorite.iconName,
-                            title: favorite.name,
-                            isSelected: store.selectedSidebarItem == favorite.name,
-                            isFavorite: true,
-                            targetURL: favorite.url,
-                            action: {
-                                store.send(.openFavorite(favorite))
-                            },
-                            onDrop: { providers, targetURL in
-                                store.send(.dropItemsToSidebarFolder(providers: providers, targetURL: targetURL))
-                            }
-                        )
+                    if !store.isFavoritesCollapsed {
+                        ForEach(store.favorites, id: \.url) { favorite in
+                            SidebarItemView(
+                                iconName: favorite.iconName,
+                                title: favorite.name,
+                                isSelected: store.selectedSidebarItem == favorite.name,
+                                isFavorite: true,
+                                targetURL: favorite.url,
+                                action: {
+                                    store.send(.openFavorite(favorite))
+                                },
+                                onDrop: { providers, targetURL in
+                                    store.send(.dropItemsToSidebarFolder(providers: providers, targetURL: targetURL))
+                                }
+                            )
+                        }
                     }
                 }
             }
@@ -197,26 +235,31 @@ struct SidebarView: View {
         Group {
             if !store.locations.isEmpty {
                 VStack(alignment: .leading, spacing: 4) {
-                    Text("Locations")
-                        .font(.caption)
-                        .foregroundColor(.secondary)
-                        .padding(.horizontal, 12)
-                        .padding(.top, 8)
+                    SidebarSectionHeader(
+                        title: "Locations",
+                        isCollapsed: store.isLocationsCollapsed,
+                        onToggle: {
+                            store.send(.toggleLocationsSection)
+                        }
+                    )
+                    .padding(.top, 8)
 
-                    ForEach(store.locations, id: \.url) { location in
-                        SidebarItemView(
-                            iconName: location.iconName,
-                            title: location.name,
-                            isSelected: store.selectedSidebarItem == location.name,
-                            isFavorite: false,
-                            targetURL: location.url,
-                            action: {
-                                store.send(.openLocation(location))
-                            },
-                            onDrop: { providers, targetURL in
-                                store.send(.dropItemsToSidebarFolder(providers: providers, targetURL: targetURL))
-                            }
-                        )
+                    if !store.isLocationsCollapsed {
+                        ForEach(store.locations, id: \.url) { location in
+                            SidebarItemView(
+                                iconName: location.iconName,
+                                title: location.name,
+                                isSelected: store.selectedSidebarItem == location.name,
+                                isFavorite: false,
+                                targetURL: location.url,
+                                action: {
+                                    store.send(.openLocation(location))
+                                },
+                                onDrop: { providers, targetURL in
+                                    store.send(.dropItemsToSidebarFolder(providers: providers, targetURL: targetURL))
+                                }
+                            )
+                        }
                     }
                 }
             }
@@ -227,23 +270,28 @@ struct SidebarView: View {
         Group {
             if !store.tags.isEmpty {
                 VStack(alignment: .leading, spacing: 4) {
-                    Text("Tags")
-                        .font(.caption)
-                        .foregroundColor(.secondary)
-                        .padding(.horizontal, 12)
-                        .padding(.top, 8)
+                    SidebarSectionHeader(
+                        title: "Tags",
+                        isCollapsed: store.isTagsCollapsed,
+                        onToggle: {
+                            store.send(.toggleTagsSection)
+                        }
+                    )
+                    .padding(.top, 8)
 
-                    ForEach(store.tags, id: \.name) { tag in
-                        TagItemView(
-                            tag: tag,
-                            isSelected: store.selectedSidebarItem == tag.name,
-                            action: {
-                                store.send(.showTag(tag))
-                            },
-                            onDrop: { providers, tagName in
-                                store.send(.dropItemsToTag(providers: providers, tagName: tagName))
-                            }
-                        )
+                    if !store.isTagsCollapsed {
+                        ForEach(store.tags, id: \.name) { tag in
+                            TagItemView(
+                                tag: tag,
+                                isSelected: store.selectedSidebarItem == tag.name,
+                                action: {
+                                    store.send(.showTag(tag))
+                                },
+                                onDrop: { providers, tagName in
+                                    store.send(.dropItemsToTag(providers: providers, tagName: tagName))
+                                }
+                            )
+                        }
                     }
                 }
             }

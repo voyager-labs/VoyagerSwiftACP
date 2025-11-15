@@ -44,6 +44,9 @@ struct FileManagerFeature {
         var favorites: [SidebarUtils.FavoriteItem] = []
         var locations: [SidebarUtils.LocationItem] = []
         var tags: [SidebarUtils.TagItem] = []
+        var isFavoritesCollapsed: Bool = false
+        var isLocationsCollapsed: Bool = false
+        var isTagsCollapsed: Bool = false
 
         var sortKey: SortKey = .name
         var sortOrder: SortOrder = .ascending
@@ -230,6 +233,9 @@ struct FileManagerFeature {
         case dropItemsToTag(providers: [NSItemProvider], tagName: String)
 
         case fsItems(FSItemsFeature.Action)
+        case toggleFavoritesSection
+        case toggleLocationsSection
+        case toggleTagsSection
     }
 
     @Dependency(\.fileSystemClient)
@@ -370,6 +376,18 @@ struct FileManagerFeature {
             case let .setSidebarVisible(visible):
                 state.sidebarVisible = visible
                 UserDefaults.standard.set(visible, forKey: "sidebarVisible")
+                return .none
+
+            case .toggleFavoritesSection:
+                state.isFavoritesCollapsed.toggle()
+                return .none
+
+            case .toggleLocationsSection:
+                state.isLocationsCollapsed.toggle()
+                return .none
+
+            case .toggleTagsSection:
+                state.isTagsCollapsed.toggle()
                 return .none
 
             case .showRecents:
