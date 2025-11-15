@@ -108,7 +108,7 @@ struct FSItemListView: View {
                     .textFieldStyle(.plain)
                     .background(Color.black)
                     .cornerRadius(4)
-                    .fixedSize()
+                    .frame(maxWidth: columnWidths.name - 32, alignment: .leading)
                     .focused($isTextFieldFocused)
                     .onSubmit {
                         onRenameCommit()
