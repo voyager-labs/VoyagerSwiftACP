@@ -1104,6 +1104,7 @@ struct FSItemsFeature {
                 let newPath = parentPath.appendingPathComponent(finalName).path
 
                 state.clearRenaming()
+                state.selectAfterLoadFileNames = [finalName]
 
                 return .send(.operations(.renameItem(oldPath: oldPath, newPath: newPath)))
 
