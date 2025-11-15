@@ -7,28 +7,10 @@ struct ColumnHeaderView: View {
     let onSortKeyChange: (SortKey) -> Void
     let onSortOrderToggle: () -> Void
 
-    private struct ColumnWidths {
-        let name: CGFloat
-        let date: CGFloat
-        let size: CGFloat
-        let kind: CGFloat
-    }
-
-    private var columnWidths: ColumnWidths {
-        let totalPadding = 16.0
-        let dividerWidth = 3.0 * 1.0
-        let availableForColumns = availableWidth - totalPadding - dividerWidth
-
-        return ColumnWidths(
-            name: availableForColumns * 0.4,
-            date: availableForColumns * 0.35,
-            size: availableForColumns * 0.1,
-            kind: availableForColumns * 0.15
-        )
-    }
-
     var body: some View {
-        HStack(spacing: 0) {
+        let layout = ListColumnLayout(availableWidth: availableWidth)
+
+        HStack(spacing: layout.columnSpacing) {
             Button(
                 action: {
                     if sortKey == .name {
@@ -53,15 +35,11 @@ struct ColumnHeaderView: View {
                                 .foregroundColor(.accentColor)
                         }
                     }
-                    .frame(width: columnWidths.name, alignment: .leading)
+                    .frame(width: layout.name, alignment: .leading)
                     .padding(.vertical, 6)
-                    .padding(.leading, 8)
                 }
             )
             .buttonStyle(PlainButtonStyle())
-
-            Divider()
-                .frame(height: 20)
 
             Button(
                 action: {
@@ -83,15 +61,11 @@ struct ColumnHeaderView: View {
                                 .foregroundColor(.accentColor)
                         }
                     }
-                    .frame(width: columnWidths.date, alignment: .leading)
+                    .frame(width: layout.date, alignment: .leading)
                     .padding(.vertical, 6)
-                    .padding(.leading, 8)
                 }
             )
             .buttonStyle(PlainButtonStyle())
-
-            Divider()
-                .frame(height: 20)
 
             Button(
                 action: {
@@ -113,15 +87,11 @@ struct ColumnHeaderView: View {
                                 .foregroundColor(.accentColor)
                         }
                     }
-                    .frame(width: columnWidths.size, alignment: .leading)
+                    .frame(width: layout.size, alignment: .trailing)
                     .padding(.vertical, 6)
-                    .padding(.leading, 8)
                 }
             )
             .buttonStyle(PlainButtonStyle())
-
-            Divider()
-                .frame(height: 20)
 
             Button(
                 action: {
@@ -143,13 +113,13 @@ struct ColumnHeaderView: View {
                                 .foregroundColor(.accentColor)
                         }
                     }
-                    .frame(width: columnWidths.kind, alignment: .leading)
+                    .frame(width: layout.kind, alignment: .leading)
                     .padding(.vertical, 6)
-                    .padding(.leading, 8)
                 }
             )
             .buttonStyle(PlainButtonStyle())
         }
+        .padding(.horizontal, layout.outerPadding)
         .background(Color.clear)
         .overlay(
             Rectangle()

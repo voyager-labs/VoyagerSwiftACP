@@ -16,7 +16,7 @@ private struct ListRowPositionKey: PreferenceKey {
 struct ContentPaneListView: View {
     let store: StoreOf<FileManagerFeature>
 
-    @State private var availableWidth: CGFloat = 0
+    @State private var contentWidth: CGFloat = 0
     @State private var rowPositions: [String: CGRect] = [:]
     @State private var scrollViewHeight: CGFloat = 0
     @State private var nsScrollView: NSScrollView?
@@ -80,13 +80,15 @@ struct ContentPaneListView: View {
             onEmptyTrash: { store.send(.emptyTrash) }
         )
 
-        FSItemListView(
+        let width = contentWidth > 0 ? contentWidth : geometry.size.width
+
+        return FSItemListView(
             item: item,
             isSelected: selectedIds.contains(item.id),
             isCut: clipboardItems.contains(item.fullPath) && fsStore.clipboardOperation == .cut,
             isRenaming: fsStore.renamingItemId == item.id,
             renamingText: fsStore.renamingText,
-            availableWidth: geometry.size.width,
+            availableWidth: width,
             applications: fsStore.operations.applicationsForItems[item.fullPath],
             isThumbnailReady: thumbnailsReady.contains(item.fullPath),
             onSelect: handlers.onSelect,
@@ -252,10 +254,12 @@ struct ContentPaneListView: View {
 
         GeometryReader { geometry in
             VStack(spacing: 0) {
+                let headerWidth = contentWidth > 0 ? contentWidth : geometry.size.width
+
                 ColumnHeaderView(
                     sortKey: fsStore.sortKey,
                     sortOrder: fsStore.sortOrder,
-                    availableWidth: geometry.size.width,
+                    availableWidth: headerWidth,
                     onSortKeyChange: { key in
                         store.send(.changeSortKey(key))
                     },
@@ -284,9 +288,13 @@ struct ContentPaneListView: View {
                             Color.clear
                                 .onAppear {
                                     scrollViewHeight = scrollGeometry.size.height
+                                    contentWidth = scrollGeometry.size.width
                                 }
                                 .onChange(of: scrollGeometry.size.height) { newHeight in
                                     scrollViewHeight = newHeight
+                                }
+                                .onChange(of: scrollGeometry.size.width) { newWidth in
+                                    contentWidth = newWidth
                                 }
                         }
                     )

@@ -58,26 +58,6 @@ struct FSItemListView: View {
         return formatter
     }()
 
-    private struct ColumnWidths {
-        let name: CGFloat
-        let date: CGFloat
-        let size: CGFloat
-        let kind: CGFloat
-    }
-
-    private var columnWidths: ColumnWidths {
-        let totalPadding = 16.0
-        let dividerWidth = 3.0 * 1.0
-        let availableForColumns = availableWidth - totalPadding - dividerWidth
-
-        return ColumnWidths(
-            name: availableForColumns * 0.4,
-            date: availableForColumns * 0.35,
-            size: availableForColumns * 0.1,
-            kind: availableForColumns * 0.15
-        )
-    }
-
     private func styledText(_ text: String, fontSize: CGFloat, isPrimary: Bool = true) -> some View {
         Text(text)
             .font(.system(size: fontSize))
@@ -86,7 +66,9 @@ struct FSItemListView: View {
     }
 
     var body: some View {
-        HStack(spacing: 0) {
+        let layout = ListColumnLayout(availableWidth: availableWidth)
+
+        HStack(spacing: layout.columnSpacing) {
             HStack(spacing: 8) {
                 ThumbnailView(item: item, displaySize: 20, isReady: isThumbnailReady)
                     .opacity(item.isHidden || isCut ? 0.5 : 1.0)
@@ -108,7 +90,7 @@ struct FSItemListView: View {
                     .textFieldStyle(.plain)
                     .background(Color.black)
                     .cornerRadius(4)
-                    .frame(maxWidth: columnWidths.name - 32, alignment: .leading)
+                    .frame(maxWidth: max(layout.name - 32, 40), alignment: .leading)
                     .focused($isTextFieldFocused)
                     .onSubmit {
                         onRenameCommit()
@@ -145,22 +127,21 @@ struct FSItemListView: View {
                     )
                 }
             }
-            .frame(width: columnWidths.name, alignment: .leading)
-            .padding(.leading, 8)
+            .frame(width: layout.name, alignment: .leading)
 
             styledText(dateText(item.modifiedDate), fontSize: 12, isPrimary: false)
-                .frame(width: columnWidths.date, alignment: .leading)
-                .padding(.leading, 8)
+                .frame(width: layout.date, alignment: .leading)
 
             styledText(sizeText(item), fontSize: 12, isPrimary: false)
-                .frame(width: columnWidths.size, alignment: .trailing)
-                .padding(.leading, 8)
+                .frame(width: layout.size, alignment: .trailing)
 
             styledText(kindText(item), fontSize: 12, isPrimary: false)
-                .frame(width: columnWidths.kind, alignment: .leading)
-                .padding(.leading, 8)
+                .frame(width: layout.kind, alignment: .leading)
+                .lineLimit(1)
+                .truncationMode(.middle)
         }
         .padding(.vertical, 1)
+        .padding(.horizontal, layout.outerPadding)
         .contentShape(Rectangle())
         .background(isSelected ? Color(nsColor: .selectedContentBackgroundColor) : Color.clear)
         .clipShape(RoundedRectangle(cornerRadius: 6))
