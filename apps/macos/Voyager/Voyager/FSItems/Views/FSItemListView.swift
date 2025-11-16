@@ -44,6 +44,7 @@ struct FSItemListView: View {
     @State private var isOptionPressed = false
     @State private var optionKeyTimer: Timer?
     @State private var showTagsEditor = false
+    @State private var dragEnabled = false
 
     private static let dateFormatter: DateFormatter = {
         let formatter = DateFormatter()
@@ -112,14 +113,6 @@ struct FSItemListView: View {
                     styledText(item.name, fontSize: 13)
                         .lineLimit(1)
                         .truncationMode(.middle)
-                        .if(!isSelected) { view in
-                            view.onDrag {
-                                onStartDrag()
-                                let url = URL(fileURLWithPath: item.fullPath)
-                                let provider = NSItemProvider(object: url as NSURL)
-                                return provider
-                            }
-                        }
                 }
 
                 Spacer(minLength: 0)
@@ -150,6 +143,7 @@ struct FSItemListView: View {
         .contentShape(Rectangle())
         .background(isSelected ? Color(nsColor: .selectedContentBackgroundColor) : Color.clear)
         .clipShape(RoundedRectangle(cornerRadius: 6))
+        // Grid와 동일하게 두 제스처를 동시에 부착해 즉시성 유지
         .simultaneousGesture(
             TapGesture()
                 .onEnded { _ in
@@ -162,12 +156,25 @@ struct FSItemListView: View {
                     onOpen()
                 }
         )
-        .if(isSelected) { view in
+        .if(dragEnabled) { view in
             view.onDrag {
                 onStartDrag()
                 let url = URL(fileURLWithPath: item.fullPath)
                 let provider = NSItemProvider(object: url as NSURL)
                 return provider
+            }
+        }
+        .onChange(of: isSelected) { selected in
+            if selected {
+                dragEnabled = false
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.25) {
+                    // 더블클릭 두 번째 탭이 끝난 뒤에 드래그 활성화
+                    if isSelected {
+                        dragEnabled = true
+                    }
+                }
+            } else {
+                dragEnabled = false
             }
         }
         .if(item.isDirectory) { view in
