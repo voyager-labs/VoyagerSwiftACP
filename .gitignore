@@ -51,3 +51,4 @@ buildServer.json
 # Logs
 apps/macos/logs/
 *.log
+# BMAD (local only)
