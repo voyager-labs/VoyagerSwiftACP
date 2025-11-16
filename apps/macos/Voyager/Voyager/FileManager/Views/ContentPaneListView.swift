@@ -63,6 +63,7 @@ struct ContentPaneListView: View {
         item: FSItem,
         fsStore: Store<FSItemsFeature.State, FSItemsFeature.Action>,
         geometry: GeometryProxy,
+        store: StoreOf<FileManagerFeature>,
         isTrashFolder: Bool = false
     ) -> FSItemListView {
         let selectedIds = fsStore.selectedIds
@@ -82,13 +83,14 @@ struct ContentPaneListView: View {
 
         let width = contentWidth > 0 ? contentWidth : geometry.size.width
 
-        return FSItemListView(
+        FSItemListView(
             item: item,
             isSelected: selectedIds.contains(item.id),
             isCut: clipboardItems.contains(item.fullPath) && fsStore.clipboardOperation == .cut,
             isRenaming: fsStore.renamingItemId == item.id,
             renamingText: fsStore.renamingText,
             availableWidth: width,
+            columnWidths: store.columnWidths,
             applications: fsStore.operations.applicationsForItems[item.fullPath],
             isThumbnailReady: thumbnailsReady.contains(item.fullPath),
             onSelect: handlers.onSelect,
@@ -129,7 +131,8 @@ struct ContentPaneListView: View {
         item: FSItem,
         index: Int,
         fsStore: Store<FSItemsFeature.State, FSItemsFeature.Action>,
-        geometry: GeometryProxy
+        geometry: GeometryProxy,
+        store: StoreOf<FileManagerFeature>
     ) -> some View {
         let bgColor = zebraBackgroundColor(for: index)
 
@@ -137,6 +140,7 @@ struct ContentPaneListView: View {
             item: item,
             fsStore: fsStore,
             geometry: geometry,
+            store: store,
             isTrashFolder: store.isTrashFolder
         )
         .frame(height: rowHeight)
@@ -189,7 +193,8 @@ struct ContentPaneListView: View {
     @ViewBuilder
     private func groupedItemsContent(
         fsStore: Store<FSItemsFeature.State, FSItemsFeature.Action>,
-        geometry: GeometryProxy
+        geometry: GeometryProxy,
+        store: StoreOf<FileManagerFeature>
     ) -> some View {
         ForEach(Array(fsStore.groupedItems.enumerated()), id: \.element.groupName) { index, group in
             if index > 0 {
@@ -201,7 +206,7 @@ struct ContentPaneListView: View {
             }
 
             ForEach(Array(group.items.enumerated()), id: \.element.id) { itemIndex, item in
-                styledItemRow(item: item, index: itemIndex, fsStore: fsStore, geometry: geometry)
+                styledItemRow(item: item, index: itemIndex, fsStore: fsStore, geometry: geometry, store: store)
             }
         }
     }
@@ -209,16 +214,17 @@ struct ContentPaneListView: View {
     @ViewBuilder
     private func listContent(
         fsStore: Store<FSItemsFeature.State, FSItemsFeature.Action>,
-        geometry: GeometryProxy
+        geometry: GeometryProxy,
+        store: StoreOf<FileManagerFeature>
     ) -> some View {
         Color.clear.frame(height: 0).id("scrollTop")
 
         if fsStore.groupKey == .none {
             ForEach(Array(fsStore.items.enumerated()), id: \.element.id) { index, item in
-                styledItemRow(item: item, index: index, fsStore: fsStore, geometry: geometry)
+                styledItemRow(item: item, index: index, fsStore: fsStore, geometry: geometry, store: store)
             }
         } else {
-            groupedItemsContent(fsStore: fsStore, geometry: geometry)
+            groupedItemsContent(fsStore: fsStore, geometry: geometry, store: store)
         }
 
         emptyRowsView(itemsCount: fsStore.items.count, scrollHeight: scrollViewHeight)
@@ -260,19 +266,31 @@ struct ContentPaneListView: View {
                     sortKey: fsStore.sortKey,
                     sortOrder: fsStore.sortOrder,
                     availableWidth: headerWidth,
+                    columnWidths: store.columnWidths,
                     onSortKeyChange: { key in
                         store.send(.changeSortKey(key))
                     },
                     onSortOrderToggle: {
                         let newOrder = fsStore.sortOrder == .ascending ? SortOrder.descending : SortOrder.ascending
                         store.send(.changeSortOrder(newOrder))
+                    },
+                    onColumnResize: { column, delta in
+                        store.send(.updateColumnWidth(
+                            FileManagerFeature.ColumnUpdate(
+                                column: column,
+                                delta: delta,
+                                totalWidth: headerWidth,
+                                padding: ListColumnLayout.outerPadding,
+                                spacing: ListColumnLayout.columnSpacing
+                            )
+                        ))
                     }
                 )
 
                 ScrollViewReader { proxy in
                     ScrollView {
                         LazyVStack(alignment: .leading, spacing: 0) {
-                            listContent(fsStore: fsStore, geometry: geometry)
+                            listContent(fsStore: fsStore, geometry: geometry, store: store)
                         }
                         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
                         .contentShape(Rectangle())

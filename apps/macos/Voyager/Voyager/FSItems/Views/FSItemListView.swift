@@ -9,6 +9,7 @@ struct FSItemListView: View {
     let isRenaming: Bool
     let renamingText: String
     let availableWidth: CGFloat
+    let columnWidths: ListColumnWidths
     let applications: [ApplicationInfo]?
     let isThumbnailReady: Bool
     let onSelect: () -> Void
@@ -66,7 +67,11 @@ struct FSItemListView: View {
     }
 
     var body: some View {
-        let layout = ListColumnLayout(availableWidth: availableWidth)
+        let layout = columnWidths.makeAbsoluteWidths(
+            totalWidth: availableWidth,
+            padding: ListColumnLayout.outerPadding,
+            spacing: ListColumnLayout.columnSpacing
+        )
 
         HStack(spacing: layout.columnSpacing) {
             HStack(spacing: 8) {

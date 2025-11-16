@@ -3,7 +3,7 @@ import ComposableArchitecture
 import Foundation
 import SwiftUI
 
-// swiftlint:disable type_body_length
+// swiftlint:disable type_body_length file_length
 @Reducer
 struct FileManagerFeature {
     static func makeWindowTitle(for path: String) -> String {
@@ -47,6 +47,7 @@ struct FileManagerFeature {
         var isFavoritesCollapsed: Bool = false
         var isLocationsCollapsed: Bool = false
         var isTagsCollapsed: Bool = false
+        var columnWidths: ListColumnWidths = .default
 
         var sortKey: SortKey = .name
         var sortOrder: SortOrder = .ascending
@@ -192,6 +193,14 @@ struct FileManagerFeature {
         case grid
     }
 
+    struct ColumnUpdate: Equatable, Sendable {
+        let column: ListColumnWidths.Column
+        let delta: CGFloat
+        let totalWidth: CGFloat
+        let padding: CGFloat
+        let spacing: CGFloat
+    }
+
     enum Action: Sendable {
         case onAppear
         case navigateTo(String)
@@ -236,6 +245,7 @@ struct FileManagerFeature {
         case toggleFavoritesSection
         case toggleLocationsSection
         case toggleTagsSection
+        case updateColumnWidth(ColumnUpdate)
     }
 
     @Dependency(\.fileSystemClient)
@@ -255,6 +265,15 @@ struct FileManagerFeature {
                 state
                     .sortOrder = SortOrder(rawValue: UserDefaults.standard.string(forKey: "sortOrder") ?? "") ??
                     .ascending
+
+                if UserDefaults.standard.object(forKey: "columnWidthName") != nil {
+                    state.columnWidths = ListColumnWidths(
+                        name: CGFloat(UserDefaults.standard.double(forKey: "columnWidthName")),
+                        date: CGFloat(UserDefaults.standard.double(forKey: "columnWidthDate")),
+                        size: CGFloat(UserDefaults.standard.double(forKey: "columnWidthSize")),
+                        kind: CGFloat(UserDefaults.standard.double(forKey: "columnWidthKind"))
+                    )
+                }
 
                 return .merge(
                     .send(.fsItems(.setShowHidden(state.showHiddenFiles))),
@@ -388,6 +407,20 @@ struct FileManagerFeature {
 
             case .toggleTagsSection:
                 state.isTagsCollapsed.toggle()
+                return .none
+
+            case let .updateColumnWidth(ctx):
+                state.columnWidths = state.columnWidths.updated(
+                    column: ctx.column,
+                    delta: ctx.delta,
+                    totalWidth: ctx.totalWidth,
+                    padding: ctx.padding,
+                    spacing: ctx.spacing
+                )
+                UserDefaults.standard.set(state.columnWidths.name, forKey: "columnWidthName")
+                UserDefaults.standard.set(state.columnWidths.date, forKey: "columnWidthDate")
+                UserDefaults.standard.set(state.columnWidths.size, forKey: "columnWidthSize")
+                UserDefaults.standard.set(state.columnWidths.kind, forKey: "columnWidthKind")
                 return .none
 
             case .showRecents:
