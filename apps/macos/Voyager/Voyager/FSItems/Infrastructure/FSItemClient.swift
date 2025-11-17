@@ -43,7 +43,6 @@ public struct FSItemClient: Sendable {
     public var loadDragPaths: @Sendable () -> [String]
     public var saveDragWithOption: @Sendable (Bool) -> Void
     public var loadDragWithOption: @Sendable () -> Bool
-    public var saveClipboardPaths: @Sendable ([String], ClipboardOperation) -> Void
     public var loadClipboardPaths: @Sendable () -> ([String], ClipboardOperation)
     public var postFileSystemChanged: @Sendable ([String]) -> Void
     public var observeFileSystemChanged: @Sendable () -> AsyncStream<[String]>
@@ -74,7 +73,6 @@ public struct FSItemClient: Sendable {
         loadDragPaths: @escaping @Sendable () -> [String],
         saveDragWithOption: @escaping @Sendable (Bool) -> Void,
         loadDragWithOption: @escaping @Sendable () -> Bool,
-        saveClipboardPaths: @escaping @Sendable ([String], ClipboardOperation) -> Void,
         loadClipboardPaths: @escaping @Sendable () -> ([String], ClipboardOperation),
         postFileSystemChanged: @escaping @Sendable ([String]) -> Void,
         observeFileSystemChanged: @escaping @Sendable () -> AsyncStream<[String]>,
@@ -104,7 +102,6 @@ public struct FSItemClient: Sendable {
         self.loadDragPaths = loadDragPaths
         self.saveDragWithOption = saveDragWithOption
         self.loadDragWithOption = loadDragWithOption
-        self.saveClipboardPaths = saveClipboardPaths
         self.loadClipboardPaths = loadClipboardPaths
         self.postFileSystemChanged = postFileSystemChanged
         self.observeFileSystemChanged = observeFileSystemChanged
@@ -529,19 +526,6 @@ extension FSItemClient: DependencyKey {
                 let optionString = pasteboard.string(forType: NSPasteboard.PasteboardType("VoyagerDragOption"))
                 return optionString == "true"
             },
-            saveClipboardPaths: { paths, operation in
-                let pasteboard = NSPasteboard(name: NSPasteboard.Name("VoyagerClipboard"))
-                pasteboard.clearContents()
-                let pathString = paths.joined(separator: "\n")
-                pasteboard.setString(pathString, forType: .string)
-
-                switch operation {
-                case .copy:
-                    pasteboard.setString("copy", forType: NSPasteboard.PasteboardType("VoyagerClipboardOperation"))
-                case .cut:
-                    pasteboard.setString("cut", forType: NSPasteboard.PasteboardType("VoyagerClipboardOperation"))
-                }
-            },
             loadClipboardPaths: {
                 let pasteboard = NSPasteboard.general
 
@@ -699,7 +683,6 @@ extension FSItemClient: DependencyKey {
             loadDragPaths: { [] },
             saveDragWithOption: { _ in },
             loadDragWithOption: { false },
-            saveClipboardPaths: { _, _ in },
             loadClipboardPaths: { ([], .copy) },
             postFileSystemChanged: { _ in },
             observeFileSystemChanged: { AsyncStream { _ in } },
@@ -745,7 +728,6 @@ extension FSItemClient: DependencyKey {
             loadDragPaths: { [] },
             saveDragWithOption: { _ in },
             loadDragWithOption: { false },
-            saveClipboardPaths: { _, _ in },
             loadClipboardPaths: { ([], .copy) },
             postFileSystemChanged: { _ in },
             observeFileSystemChanged: { AsyncStream { _ in } },
