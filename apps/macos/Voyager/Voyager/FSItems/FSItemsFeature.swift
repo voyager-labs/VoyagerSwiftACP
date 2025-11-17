@@ -202,9 +202,19 @@ struct FSItemsFeature {
             case let .operations(.operationFinished(filePath, kind, result)):
                 switch (kind, result) {
                 case (.createFolder, .success):
-                    return .run { _ in
-                        await fileSystemClient.postFileSystemChanged([filePath])
-                    }
+                    let isNewFolderFlow = !state.selectAfterLoadFileNames.isEmpty
+
+                    return .merge(
+                        .run { _ in
+                            await fileSystemClient.postFileSystemChanged([filePath])
+                        },
+                        {
+                            if isNewFolderFlow, let currentPath = state.currentFolderPath {
+                                return .send(.loadItems(path: currentPath))
+                            }
+                            return .none
+                        }()
+                    )
 
                 case (.pasteFile, .success):
                     if state.clipboardOperation == .cut {
@@ -259,7 +269,9 @@ struct FSItemsFeature {
                 return .none
 
             case let .loadItems(path):
-                state.clearSelection()
+                if state.selectAfterLoadFileNames.isEmpty {
+                    state.clearSelection()
+                }
                 state.currentFolderPath = path
                 state.isVirtualFolder = false
 
@@ -992,9 +1004,8 @@ struct FSItemsFeature {
                         folderName = name
                     }
 
-                    await send(.operations(.createNewFolder(name: folderName, parentPath: path)))
                     await send(.setSelectAfterLoad(fileNames: [folderName]))
-                    await send(.loadItems(path: path))
+                    await send(.operations(.createNewFolder(name: folderName, parentPath: path)))
                 }
 
             case .moveSelectedItemsToTrash:
