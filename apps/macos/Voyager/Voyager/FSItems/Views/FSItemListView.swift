@@ -44,7 +44,6 @@ struct FSItemListView: View {
     @State private var isOptionPressed = false
     @State private var optionKeyTimer: Timer?
     @State private var showTagsEditor = false
-    @State private var dragEnabled = false
 
     private static let dateFormatter: DateFormatter = {
         let formatter = DateFormatter()
@@ -74,76 +73,96 @@ struct FSItemListView: View {
             spacing: ListColumnLayout.columnSpacing
         )
 
-        HStack(spacing: layout.columnSpacing) {
-            HStack(spacing: 8) {
-                ThumbnailView(item: item, displaySize: 20, isReady: isThumbnailReady)
-                    .opacity(item.isHidden || isCut ? 0.5 : 1.0)
-                    .frame(width: 20, height: 20)
-                    .popover(isPresented: $showTagsEditor, arrowEdge: .bottom) {
-                        TagsEditorView(
-                            fileName: item.name,
-                            currentTags: item.tags ?? [],
-                            onToggleTag: onToggleTag
-                        )
-                    }
+        HStack(spacing: 0) {
+            Color.clear
+                .frame(width: layout.outerPadding / 2)
 
-                if isRenaming {
-                    TextField("", text: Binding(
-                        get: { renamingText },
-                        set: { onRenameUpdate($0) }
-                    ))
-                    .font(.system(size: 13))
-                    .textFieldStyle(.plain)
-                    .background(Color.black)
-                    .cornerRadius(4)
-                    .frame(maxWidth: max(layout.name - 32, 40), alignment: .leading)
-                    .focused($isTextFieldFocused)
-                    .onSubmit {
-                        onRenameCommit()
-                    }
-                    .onExitCommand {
-                        onRenameCancel()
-                    }
-                    .onAppear {
-                        DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) {
-                            isTextFieldFocused = true
+            HStack(spacing: 0) {
+                Color.clear
+                    .frame(width: layout.outerPadding / 2)
+
+                HStack(spacing: layout.columnSpacing) {
+                    HStack(spacing: 8) {
+                        ThumbnailView(item: item, displaySize: 20, isReady: isThumbnailReady)
+                            .opacity(item.isHidden || isCut ? 0.5 : 1.0)
+                            .frame(width: 20, height: 20)
+                            .popover(isPresented: $showTagsEditor, arrowEdge: .bottom) {
+                                TagsEditorView(
+                                    fileName: item.name,
+                                    currentTags: item.tags ?? [],
+                                    onToggleTag: onToggleTag
+                                )
+                            }
+
+                        if isRenaming {
+                            TextField("", text: Binding(
+                                get: { renamingText },
+                                set: { onRenameUpdate($0) }
+                            ))
+                            .font(.system(size: 13))
+                            .textFieldStyle(.plain)
+                            .background(Color.black)
+                            .cornerRadius(4)
+                            .frame(maxWidth: max(layout.name - 32, 40), alignment: .leading)
+                            .focused($isTextFieldFocused)
+                            .onSubmit {
+                                onRenameCommit()
+                            }
+                            .onExitCommand {
+                                onRenameCancel()
+                            }
+                            .onAppear {
+                                DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) {
+                                    isTextFieldFocused = true
+                                }
+                            }
+                        } else {
+                            styledText(item.name, fontSize: 13)
+                                .lineLimit(1)
+                                .truncationMode(.middle)
+                        }
+
+                        Spacer(minLength: 0)
+
+                        if let tags = item.tags, !tags.isEmpty {
+                            OverlappingTagsView(
+                                tags: tags,
+                                isSelected: isSelected,
+                                showBorderWhenUnselected: true
+                            )
                         }
                     }
-                } else {
-                    styledText(item.name, fontSize: 13)
+                    .frame(width: layout.name, alignment: .leading)
+
+                    styledText(dateText(item.modifiedDate), fontSize: 12, isPrimary: false)
+                        .frame(width: layout.date, alignment: .leading)
+
+                    styledText(sizeText(item), fontSize: 12, isPrimary: false)
+                        .frame(width: layout.size, alignment: .trailing)
+
+                    styledText(kindText(item), fontSize: 12, isPrimary: false)
+                        .frame(width: layout.kind, alignment: .leading)
                         .lineLimit(1)
                         .truncationMode(.middle)
                 }
-
-                Spacer(minLength: 0)
-
-                if let tags = item.tags, !tags.isEmpty {
-                    OverlappingTagsView(
-                        tags: tags,
-                        isSelected: isSelected,
-                        showBorderWhenUnselected: true
-                    )
+                .padding(.vertical, 1)
+                .contentShape(Rectangle())
+                .onDrag {
+                    onStartDrag()
+                    let url = URL(fileURLWithPath: item.fullPath)
+                    let provider = NSItemProvider(object: url as NSURL)
+                    return provider
                 }
+
+                Color.clear
+                    .frame(width: layout.outerPadding / 2)
             }
-            .frame(width: layout.name, alignment: .leading)
+            .background(isSelected ? Color(nsColor: .selectedContentBackgroundColor) : Color.clear)
+            .clipShape(RoundedRectangle(cornerRadius: 6))
 
-            styledText(dateText(item.modifiedDate), fontSize: 12, isPrimary: false)
-                .frame(width: layout.date, alignment: .leading)
-
-            styledText(sizeText(item), fontSize: 12, isPrimary: false)
-                .frame(width: layout.size, alignment: .trailing)
-
-            styledText(kindText(item), fontSize: 12, isPrimary: false)
-                .frame(width: layout.kind, alignment: .leading)
-                .lineLimit(1)
-                .truncationMode(.middle)
+            Color.clear
+                .frame(width: layout.outerPadding / 2)
         }
-        .padding(.vertical, 1)
-        .padding(.horizontal, layout.outerPadding)
-        .contentShape(Rectangle())
-        .background(isSelected ? Color(nsColor: .selectedContentBackgroundColor) : Color.clear)
-        .clipShape(RoundedRectangle(cornerRadius: 6))
-        // Grid와 동일하게 두 제스처를 동시에 부착해 즉시성 유지
         .simultaneousGesture(
             TapGesture()
                 .onEnded { _ in
@@ -156,27 +175,6 @@ struct FSItemListView: View {
                     onOpen()
                 }
         )
-        .if(dragEnabled) { view in
-            view.onDrag {
-                onStartDrag()
-                let url = URL(fileURLWithPath: item.fullPath)
-                let provider = NSItemProvider(object: url as NSURL)
-                return provider
-            }
-        }
-        .onChange(of: isSelected) { selected in
-            if selected {
-                dragEnabled = false
-                DispatchQueue.main.asyncAfter(deadline: .now() + 0.25) {
-                    // 더블클릭 두 번째 탭이 끝난 뒤에 드래그 활성화
-                    if isSelected {
-                        dragEnabled = true
-                    }
-                }
-            } else {
-                dragEnabled = false
-            }
-        }
         .if(item.isDirectory) { view in
             view.onDrop(
                 of: [UTType.fileURL],

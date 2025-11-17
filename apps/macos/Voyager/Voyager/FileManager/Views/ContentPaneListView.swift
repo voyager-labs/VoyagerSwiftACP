@@ -243,14 +243,14 @@ struct ContentPaneListView: View {
                 zebraBackgroundColor(for: itemsCount + index)
                     .frame(height: rowHeight)
                     .frame(maxWidth: .infinity)
-                    .allowsHitTesting(false)
+                    .contentShape(Rectangle())
             }
 
             if partialHeight > 0 {
                 zebraBackgroundColor(for: itemsCount + fullRows)
                     .frame(height: partialHeight)
                     .frame(maxWidth: .infinity)
-                    .allowsHitTesting(false)
+                    .contentShape(Rectangle())
             }
         }
     }
@@ -293,13 +293,15 @@ struct ContentPaneListView: View {
                             listContent(fsStore: fsStore, geometry: geometry, store: store)
                         }
                         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-                        .contentShape(Rectangle())
-                        .onTapGesture {
-                            if fsStore.isRenaming {
-                                fsStore.send(.commitRename)
-                            }
-                            fsStore.send(.clearSelection)
-                        }
+                        .simultaneousGesture(
+                            TapGesture()
+                                .onEnded { _ in
+                                    if fsStore.isRenaming {
+                                        fsStore.send(.commitRename)
+                                    }
+                                    fsStore.send(.clearSelection)
+                                }
+                        )
                     }
                     .background(
                         GeometryReader { scrollGeometry in
@@ -324,8 +326,6 @@ struct ContentPaneListView: View {
                     .simultaneousGesture(
                         DragGesture(minimumDistance: 10, coordinateSpace: .named("listContainer"))
                             .onChanged { value in
-                                guard !rowPositions.isEmpty else { return }
-
                                 if fsStore.listRowDragSelection != nil {
                                     if let currentItemId = findItemAtPoint(value.location) {
                                         fsStore.send(.updateListRowDrag(currentItemId: currentItemId))
@@ -333,15 +333,27 @@ struct ContentPaneListView: View {
 
                                     ScrollPositionUtils.performAutoScroll(scrollView: nsScrollView)
                                 } else {
-                                    guard let nearestItemId = findNearestItemAtY(value.startLocation.y)
-                                    else { return }
+                                    if !fsStore.items.isEmpty {
+                                        let startItemId: String?
+                                        if let nearestItemId = findNearestItemAtY(value.startLocation.y) {
+                                            startItemId = nearestItemId
+                                        } else {
+                                            let itemIndex = max(0, min(
+                                                Int(value.startLocation.y / rowHeight),
+                                                fsStore.items.count - 1
+                                            ))
+                                            startItemId = itemIndex < fsStore.items.count ? fsStore.items[itemIndex]
+                                                .id : nil
+                                        }
 
-                                    let modifiers = LassoSelectionUtils.detectModifierFlags()
-
-                                    fsStore.send(.startListRowDrag(
-                                        startItemId: nearestItemId,
-                                        modifierFlags: modifiers
-                                    ))
+                                        if let itemId = startItemId {
+                                            let modifiers = LassoSelectionUtils.detectModifierFlags()
+                                            fsStore.send(.startListRowDrag(
+                                                startItemId: itemId,
+                                                modifierFlags: modifiers
+                                            ))
+                                        }
+                                    }
                                 }
                             }
                             .onEnded { _ in
