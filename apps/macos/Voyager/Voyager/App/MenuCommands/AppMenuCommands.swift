@@ -2,12 +2,9 @@ import AppKit
 import ComposableArchitecture
 import SwiftUI
 
-struct MenuCommands: Commands {
+struct AppMenuCommands: Commands {
     @FocusedValue(\.fileManagerStore)
     var fileManagerStore: StoreOf<FileManagerFeature>?
-
-    @FocusedValue(\.columnVisibility)
-    var columnVisibility: Binding<NavigationSplitViewVisibility>?
 
     @State private var hasClosedTabs: Bool = false
     @State private var hasFocusHistory: Bool = false
@@ -19,6 +16,13 @@ struct MenuCommands: Commands {
             }
             .keyboardShortcut("n", modifiers: .command)
 
+            Button("New Folder") {
+                if let currentPath = fileManagerStore?.currentPath {
+                    fileManagerStore?.send(.fsItems(.createNewFolder(currentPath: currentPath)))
+                }
+            }
+            .keyboardShortcut("n", modifiers: [.command, .shift])
+
             Button("New Tab") {
                 AppDelegate.shared?.createNewTab()
             }
@@ -27,7 +31,20 @@ struct MenuCommands: Commands {
             Button("Duplicate Tab") {
                 AppDelegate.shared?.duplicateCurrentTab()
             }
-            .keyboardShortcut("d", modifiers: .command)
+
+            Divider()
+
+            Button("Open") {
+                fileManagerStore?.send(.openSelectedItem)
+            }
+            .keyboardShortcut(.downArrow, modifiers: .command)
+            .disabled(fileManagerStore?.canOpenSelectedItem == false)
+
+            Button("Quick Look") {
+                fileManagerStore?.send(.quickLookSelectedItem)
+            }
+            .keyboardShortcut(.space, modifiers: [])
+            .disabled(fileManagerStore?.canQuickLookSelectedItem == false)
 
             Button("Reopen Recently Closed Tab") {
                 AppDelegate.shared?.reopenLastClosedTab()
@@ -60,29 +77,30 @@ struct MenuCommands: Commands {
                 }
             }
             .keyboardShortcut("w", modifiers: [.command, .shift])
-        }
 
-        CommandGroup(replacing: .sidebar) {
-            Button(columnVisibility?.wrappedValue == .all ? "Hide Sidebar" : "Show Sidebar") {
-                let current = columnVisibility?.wrappedValue
-                columnVisibility?.wrappedValue = (current == .all) ? .detailOnly : .all
-            }
-            .keyboardShortcut("s", modifiers: .command)
-            .disabled(columnVisibility == nil)
+            Divider()
         }
 
         CommandMenu("Go") {
             Button("Back") {
                 fileManagerStore?.send(.goBack)
             }
-            .keyboardShortcut(.leftArrow, modifiers: .command)
+            .keyboardShortcut("[", modifiers: .command)
             .disabled(fileManagerStore?.canGoBack == false)
 
             Button("Forward") {
                 fileManagerStore?.send(.goForward)
             }
-            .keyboardShortcut(.rightArrow, modifiers: .command)
+            .keyboardShortcut("]", modifiers: .command)
             .disabled(fileManagerStore?.canGoForward == false)
+
+            Divider()
+
+            Button("Enclosing Folder") {
+                fileManagerStore?.send(.goToEnclosingDirectory)
+            }
+            .keyboardShortcut(.upArrow, modifiers: .command)
+            .disabled(fileManagerStore?.canGoToEnclosingDirectory == false)
         }
 
         CommandGroup(after: .windowList) {
