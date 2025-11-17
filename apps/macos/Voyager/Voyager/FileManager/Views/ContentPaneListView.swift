@@ -289,19 +289,22 @@ struct ContentPaneListView: View {
 
                 ScrollViewReader { proxy in
                     ScrollView {
-                        LazyVStack(alignment: .leading, spacing: 0) {
-                            listContent(fsStore: fsStore, geometry: geometry, store: store)
-                        }
-                        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-                        .simultaneousGesture(
-                            TapGesture()
-                                .onEnded { _ in
+                        ZStack {
+                            Color.clear
+                                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                                .contentShape(Rectangle())
+                                .onTapGesture {
                                     if fsStore.isRenaming {
                                         fsStore.send(.commitRename)
                                     }
                                     fsStore.send(.clearSelection)
                                 }
-                        )
+
+                            LazyVStack(alignment: .leading, spacing: 0) {
+                                listContent(fsStore: fsStore, geometry: geometry, store: store)
+                            }
+                            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+                        }
                     }
                     .background(
                         GeometryReader { scrollGeometry in

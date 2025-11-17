@@ -10,7 +10,7 @@ struct FSItemGridView: View {
     let renamingText: String
     let isThumbnailReady: Bool
     let applications: [ApplicationInfo]?
-    let onSelect: () -> Void
+    let onSelect: (Bool, Bool) -> Void // (isCommandPressed, isShiftPressed)
     let onOpen: () -> Void
     let onOpenInNewTab: ((Bool) -> Void)?
     let onQuickLook: (() -> Void)?
@@ -149,7 +149,10 @@ struct FSItemGridView: View {
         .simultaneousGesture(
             TapGesture()
                 .onEnded { _ in
-                    onSelect()
+                    let currentEvent = NSApp.currentEvent
+                    let isCommandPressed = currentEvent?.modifierFlags.contains(.command) ?? false
+                    let isShiftPressed = currentEvent?.modifierFlags.contains(.shift) ?? false
+                    onSelect(isCommandPressed, isShiftPressed)
                 }
         )
         .simultaneousGesture(

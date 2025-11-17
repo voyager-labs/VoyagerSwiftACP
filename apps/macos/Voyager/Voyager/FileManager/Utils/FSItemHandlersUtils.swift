@@ -27,7 +27,7 @@ func calculateCompressExtractOptions(
 }
 
 struct FSItemContextMenuHandlers {
-    let onSelect: () -> Void
+    let onSelect: (Bool, Bool) -> Void
     let onOpen: () -> Void
     let onOpenInNewTab: (Bool) -> Void
     let onQuickLook: () -> Void
@@ -59,9 +59,7 @@ func makeContextMenuHandlers(
     isTrashFolder: Bool,
     onEmptyTrash: @escaping () -> Void
 ) -> FSItemContextMenuHandlers {
-    let onSelect: () -> Void = {
-        let isCommandPressed = NSEvent.modifierFlags.contains(.command)
-        let isShiftPressed = NSEvent.modifierFlags.contains(.shift)
+    let onSelect: (Bool, Bool) -> Void = { isCommandPressed, isShiftPressed in
         fsStore.send(.selectItem(
             id: item.id,
             isCommandPressed: isCommandPressed,

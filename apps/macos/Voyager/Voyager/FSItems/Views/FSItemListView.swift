@@ -12,7 +12,7 @@ struct FSItemListView: View {
     let columnWidths: ListColumnWidths
     let applications: [ApplicationInfo]?
     let isThumbnailReady: Bool
-    let onSelect: () -> Void
+    let onSelect: (Bool, Bool) -> Void
     let onOpen: () -> Void
     let onOpenInNewTab: (Bool) -> Void
     let onQuickLook: () -> Void
@@ -166,7 +166,10 @@ struct FSItemListView: View {
         .simultaneousGesture(
             TapGesture()
                 .onEnded { _ in
-                    onSelect()
+                    let currentEvent = NSApp.currentEvent
+                    let isCommandPressed = currentEvent?.modifierFlags.contains(.command) ?? false
+                    let isShiftPressed = currentEvent?.modifierFlags.contains(.shift) ?? false
+                    onSelect(isCommandPressed, isShiftPressed)
                 }
         )
         .simultaneousGesture(

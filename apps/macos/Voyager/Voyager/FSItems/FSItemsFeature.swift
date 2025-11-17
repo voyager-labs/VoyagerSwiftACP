@@ -51,6 +51,8 @@ struct FSItemsFeature {
         var creatingNewFolderOriginalName: String?
         var selectAfterLoadFileNames: [String] = []
 
+        var isListView: Bool = true
+
         var currentFolderPath: String?
         var isVirtualFolder: Bool = false
         var thumbnailsReady: Set<String> = []
@@ -439,27 +441,39 @@ struct FSItemsFeature {
                 state.shouldScrollToSelection = false
 
                 if isShiftPressed {
-                    if let anchorId = state.rangeAnchorId,
-                       let anchorIndex = Array(state.items).firstIndex(where: { $0.id == anchorId }),
-                       let currentIndex = Array(state.items).firstIndex(where: { $0.id == id })
-                    {
-                        let itemsArray = Array(state.items)
-                        let range = min(anchorIndex, currentIndex) ... max(anchorIndex, currentIndex)
-                        let rangeIds = itemsArray[range].map { $0.id }
-                        state.selectedIds.formUnion(rangeIds)
-                        state.lastSelectedId = id
-                    } else {
-                        state.selectedIds.insert(id)
-                        state.lastSelectedId = id
+                    if state.isListView {
+                        let anchorId = state.rangeAnchorId ?? state.lastSelectedId
 
-                        var preloadEffect: Effect<Action> = .none
-                        if let selectedItem = state.items.first(where: { $0.id == id }),
-                           !selectedItem.isDirectory
+                        if let anchorId = anchorId,
+                           let anchorIndex = Array(state.items).firstIndex(where: { $0.id == anchorId }),
+                           let currentIndex = Array(state.items).firstIndex(where: { $0.id == id })
                         {
-                            preloadEffect = .send(.operations(.loadApplicationsForFile(file: selectedItem)))
-                        }
+                            let itemsArray = Array(state.items)
+                            let range = min(anchorIndex, currentIndex) ... max(anchorIndex, currentIndex)
+                            let rangeIds = itemsArray[range].map { $0.id }
+                            state.selectedIds.formUnion(rangeIds)
+                            state.lastSelectedId = id
+                        } else {
+                            state.selectedIds.insert(id)
+                            state.lastSelectedId = id
 
-                        return .merge(renameEffect, preloadEffect)
+                            var preloadEffect: Effect<Action> = .none
+                            if let selectedItem = state.items.first(where: { $0.id == id }),
+                               !selectedItem.isDirectory
+                            {
+                                preloadEffect = .send(.operations(.loadApplicationsForFile(file: selectedItem)))
+                            }
+
+                            return .merge(renameEffect, preloadEffect)
+                        }
+                    } else {
+                        if state.selectedIds.contains(id) {
+                            state.selectedIds.remove(id)
+                        } else {
+                            state.selectedIds.insert(id)
+                            state.lastSelectedId = id
+                        }
+                        state.rangeAnchorId = nil
                     }
                 } else if isCommandPressed {
                     if state.selectedIds.contains(id) {

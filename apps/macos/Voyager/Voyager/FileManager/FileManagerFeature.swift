@@ -266,6 +266,15 @@ struct FileManagerFeature {
                     .sortOrder = SortOrder(rawValue: UserDefaults.standard.string(forKey: "sortOrder") ?? "") ??
                     .ascending
 
+                if let viewLayoutRaw = UserDefaults.standard.string(forKey: "viewLayout"),
+                   let savedLayout = ViewLayout(rawValue: viewLayoutRaw)
+                {
+                    state.viewLayout = savedLayout
+                } else {
+                    state.viewLayout = .list
+                }
+                state.fsItems.isListView = state.viewLayout == .list
+
                 if UserDefaults.standard.object(forKey: "columnWidthName") != nil {
                     state.columnWidths = ListColumnWidths(
                         name: CGFloat(UserDefaults.standard.double(forKey: "columnWidthName")),
@@ -377,6 +386,7 @@ struct FileManagerFeature {
 
             case let .changeLayout(layout):
                 state.viewLayout = layout
+                state.fsItems.isListView = layout == .list
                 UserDefaults.standard.set(layout.rawValue, forKey: "viewLayout")
                 return .none
 
