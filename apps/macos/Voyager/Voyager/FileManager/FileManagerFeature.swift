@@ -15,7 +15,7 @@ struct FileManagerFeature {
 
     @ObservableState
     struct State: Equatable {
-        var navigationState: FileManagerNavigationUtils.NavigationState = .folder(Settings.shared.defaultTabPath)
+        var navigationState: FileManagerNavigationUtils.NavigationState = .folder(AppSettings.shared.defaultTabPath)
         var currentPath: String {
             switch navigationState {
             case let .folder(path): return path
@@ -30,7 +30,7 @@ struct FileManagerFeature {
             return path == trashPath || path.starts(with: trashPath + "/")
         }
 
-        var titlePath: String = Settings.shared.defaultTabPath
+        var titlePath: String = AppSettings.shared.defaultTabPath
 
         var scrollPositions: [String: CGPoint] = [:]
 
@@ -248,8 +248,8 @@ struct FileManagerFeature {
         case updateColumnWidth(ColumnUpdate)
     }
 
-    @Dependency(\.fileSystemClient)
-    var fileSystemClient
+    @Dependency(\.fsItemClient)
+    var fsItemClient
 
     var body: some Reducer<State, Action> {
         Scope(state: \.fsItems, action: \.fsItems) {

@@ -2,8 +2,8 @@ import ComposableArchitecture
 import SwiftUI
 import UniformTypeIdentifiers
 
-/// 범용 드롭 동작을 제어하는 DropDelegate
-struct FileDropDelegate: DropDelegate {
+/// FSItem 드롭 동작을 제어하는 DropDelegate
+struct FSItemDropDelegate: DropDelegate {
     let destinationPath: String
     let onDrop: ([NSItemProvider], String) -> Void
     let isDropTarget: Binding<Bool>?

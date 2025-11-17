@@ -19,7 +19,7 @@ public struct ApplicationInfo: Identifiable, Equatable, Sendable {
     }
 }
 
-public struct FileSystemClient: Sendable {
+public struct FSItemClient: Sendable {
     public var open: @Sendable (URL, OpenKind) async throws -> Void
     public var setDefaultApp: @Sendable (UTType, String) async throws -> Void
     public var quickLook: @Sendable (URL) async throws -> Void
@@ -196,8 +196,8 @@ private nonisolated func setFileTags(url: URL, tags: [String]) throws {
     }
 }
 
-extension FileSystemClient: DependencyKey {
-    public nonisolated static var liveValue: FileSystemClient {
+extension FSItemClient: DependencyKey {
+    public nonisolated static var liveValue: FSItemClient {
         final class FSEventsWatcher: @unchecked Sendable {
             var eventStream: FSEventStreamRef?
             let lock = NSLock()
@@ -217,7 +217,7 @@ extension FileSystemClient: DependencyKey {
 
         let watcher = FSEventsWatcher()
 
-        return FileSystemClient(
+        return FSItemClient(
             open: { url, kind in
                 try await withScopedAccess(url) {
                     let workspace = NSWorkspace.shared
@@ -497,7 +497,7 @@ extension FileSystemClient: DependencyKey {
                         options: options
                     )
 
-                    return contents.compactMap { FSItemsLoadUtils.convertURLToFSItem($0) }
+                    return contents.compactMap { FSItemLoadUtils.convertURLToFSItem($0) }
                 }.value
             },
             fileExists: { path in
@@ -671,11 +671,11 @@ extension FileSystemClient: DependencyKey {
         )
     }
 
-    public nonisolated static var testValue: FileSystemClient {
+    public nonisolated static var testValue: FSItemClient {
         let unimplemented = { @Sendable (_: Any...) -> Never in
-            fatalError("FileSystemClient test dependency not set.")
+            fatalError("FSItemClient test dependency not set.")
         }
-        return FileSystemClient(
+        return FSItemClient(
             open: { _, _ in unimplemented() },
             setDefaultApp: { _, _ in unimplemented() },
             quickLook: { _ in unimplemented() },
@@ -708,7 +708,7 @@ extension FileSystemClient: DependencyKey {
         )
     }
 
-    public nonisolated static var previewValue: FileSystemClient {
+    public nonisolated static var previewValue: FSItemClient {
         let previewInfo = ApplicationInfo(
             id: "com.apple.preview",
             name: "Preview",
@@ -717,7 +717,7 @@ extension FileSystemClient: DependencyKey {
         let chromeInfo = ApplicationInfo(id: "com.google.Chrome", name: "Google Chrome", bundleID: "com.google.Chrome")
         let otherInfo = ApplicationInfo(id: "other", name: "Other…", bundleID: nil)
 
-        return FileSystemClient(
+        return FSItemClient(
             open: { _, _ in },
             setDefaultApp: { _, _ in },
             quickLook: { _ in },
@@ -756,9 +756,9 @@ extension FileSystemClient: DependencyKey {
 }
 
 public extension DependencyValues {
-    nonisolated var fileSystemClient: FileSystemClient {
-        get { self[FileSystemClient.self] }
-        set { self[FileSystemClient.self] = newValue }
+    nonisolated var fsItemClient: FSItemClient {
+        get { self[FSItemClient.self] }
+        set { self[FSItemClient.self] = newValue }
     }
 }
 

@@ -3,7 +3,7 @@ import CoreServices
 import Foundation
 import UniformTypeIdentifiers
 
-enum FSItemsLoadUtils {
+enum FSItemLoadUtils {
     private struct ItemMetadata {
         let kind: String
         let creatorApplication: String?

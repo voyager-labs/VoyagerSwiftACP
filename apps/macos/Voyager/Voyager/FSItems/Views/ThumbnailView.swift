@@ -15,9 +15,9 @@ struct ThumbnailView: View {
     }
 
     private var displayIcon: NSImage {
-        if let cached = FSItemsIconUtils.getThumbnail(for: item.fullPath) {
+        if let cached = FSItemIconUtils.getThumbnail(for: item.fullPath) {
             return cached
         }
-        return FSItemsIconUtils.icon(for: item)
+        return FSItemIconUtils.icon(for: item)
     }
 }

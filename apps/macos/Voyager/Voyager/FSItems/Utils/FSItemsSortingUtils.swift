@@ -17,7 +17,7 @@ enum SortOrder: String, Equatable {
     case descending
 }
 
-enum FSItemsSorting {
+enum FSItemsSortingUtils {
     static func sortItems(
         _ items: [FSItem],
         by sortKey: SortKey,

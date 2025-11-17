@@ -3,8 +3,8 @@ import Foundation
 
 /// 전역 설정 관리자
 @MainActor
-class Settings: ObservableObject {
-    static let shared = Settings()
+class AppSettings: ObservableObject {
+    static let shared = AppSettings()
 
     @Published var defaultTabPath: String
 

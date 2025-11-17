@@ -168,8 +168,8 @@ struct FSItemsFeature {
         case operations(FSItemsOperationsFeature.Action)
     }
 
-    @Dependency(\.fileSystemClient)
-    var fileSystemClient
+    @Dependency(\.fsItemClient)
+    var fsItemClient
 
     var body: some Reducer<State, Action> {
         Scope(state: \.operations, action: \.operations) {
@@ -180,14 +180,14 @@ struct FSItemsFeature {
             switch action {
             case .onAppear:
                 return .run { send in
-                    for await _ in await fileSystemClient.observeFileSystemChanged() {
+                    for await _ in await fsItemClient.observeFileSystemChanged() {
                         await send(.reloadCurrentFolder)
                     }
                 }
                 .cancellable(id: "FileSystemObserver", cancelInFlight: true)
 
             case .reloadCurrentFolder:
-                let (clipboardPaths, clipboardOp) = fileSystemClient.loadClipboardPaths()
+                let (clipboardPaths, clipboardOp) = fsItemClient.loadClipboardPaths()
                 state.clipboardItems = clipboardPaths
                 state.clipboardOperation = clipboardOp
 
@@ -208,7 +208,7 @@ struct FSItemsFeature {
 
                     return .merge(
                         .run { _ in
-                            await fileSystemClient.postFileSystemChanged([filePath])
+                            await fsItemClient.postFileSystemChanged([filePath])
                         },
                         {
                             if isNewFolderFlow, let currentPath = state.currentFolderPath {
@@ -237,13 +237,13 @@ struct FSItemsFeature {
                     return .merge(
                         .send(.reloadCurrentFolder),
                         .run { _ in
-                            await fileSystemClient.postFileSystemChanged([filePath])
+                            await fsItemClient.postFileSystemChanged([filePath])
                         }
                     )
 
                 case (.rename, .success):
                     return .run { _ in
-                        await fileSystemClient.postFileSystemChanged([filePath])
+                        await fsItemClient.postFileSystemChanged([filePath])
                     }
 
                 case (.moveToTrash, .success),
@@ -280,20 +280,20 @@ struct FSItemsFeature {
                 return .merge(
                     .cancel(id: CancelID.fsEventsWatcher),
 
-                    .run { [fileSystemClient, showHidden = state.showHiddenFiles, path] send in
+                    .run { [fsItemClient, showHidden = state.showHiddenFiles, path] send in
                         let url = URL(fileURLWithPath: (path as NSString).expandingTildeInPath)
 
                         do {
-                            let items = try await fileSystemClient.loadItems(url, showHidden)
+                            let items = try await fsItemClient.loadItems(url, showHidden)
                             await send(.itemsLoaded(items))
                         } catch {
                             await send(.itemsLoaded([]))
                         }
                     },
 
-                    .run { [fileSystemClient, path] send in
+                    .run { [fsItemClient, path] send in
                         let url = URL(fileURLWithPath: (path as NSString).expandingTildeInPath)
-                        let stream = fileSystemClient.startWatchingDirectory(url)
+                        let stream = fsItemClient.startWatchingDirectory(url)
 
                         for await changedPaths in stream {
                             await send(.fileSystemChanged(changedPaths))
@@ -305,11 +305,11 @@ struct FSItemsFeature {
             case .reloadItems:
                 guard let path = state.currentFolderPath else { return .none }
 
-                return .run { [fileSystemClient, showHidden = state.showHiddenFiles, path] send in
+                return .run { [fsItemClient, showHidden = state.showHiddenFiles, path] send in
                     let url = URL(fileURLWithPath: (path as NSString).expandingTildeInPath)
 
                     do {
-                        let items = try await fileSystemClient.loadItems(url, showHidden)
+                        let items = try await fsItemClient.loadItems(url, showHidden)
                         await send(.itemsLoaded(items))
                     } catch {
                         await send(.itemsLoaded([]))
@@ -344,11 +344,11 @@ struct FSItemsFeature {
 
             case let .setGroupKey(key):
                 state.groupKey = key
-                state.groupedItems = FSItemsGrouping.groupItems(Array(state.items), by: key)
+                state.groupedItems = FSItemsGroupingUtils.groupItems(Array(state.items), by: key)
                 return .none
 
             case let .setDropTargeted(isTargeted):
-                let draggedPaths = fileSystemClient.loadDragPaths()
+                let draggedPaths = fsItemClient.loadDragPaths()
 
                 if !draggedPaths.isEmpty, let currentFolder = state.currentFolderPath {
                     let sourceParent = URL(fileURLWithPath: draggedPaths[0]).deletingLastPathComponent().path
@@ -359,9 +359,9 @@ struct FSItemsFeature {
                 return .none
 
             case let .itemsLoaded(items):
-                let sorted = FSItemsSorting.sortItems(items, by: state.sortKey, order: state.sortOrder)
+                let sorted = FSItemsSortingUtils.sortItems(items, by: state.sortKey, order: state.sortOrder)
                 state.items = IdentifiedArray(uniqueElements: sorted)
-                state.groupedItems = FSItemsGrouping.groupItems(Array(state.items), by: state.groupKey)
+                state.groupedItems = FSItemsGroupingUtils.groupItems(Array(state.items), by: state.groupKey)
 
                 if !state.selectAfterLoadFileNames.isEmpty {
                     let fileNamesToSelect = state.selectAfterLoadFileNames
@@ -390,7 +390,7 @@ struct FSItemsFeature {
                                 guard canGenerate else { return nil }
 
                                 let hasCached = await MainActor.run {
-                                    FSItemsIconUtils.getThumbnail(for: item.fullPath) != nil
+                                    FSItemIconUtils.getThumbnail(for: item.fullPath) != nil
                                 }
                                 if hasCached {
                                     return item.fullPath
@@ -403,7 +403,7 @@ struct FSItemsFeature {
                                     scale: scale
                                 ) {
                                     await MainActor.run {
-                                        FSItemsIconUtils.saveThumbnail(thumbnail, for: item.fullPath)
+                                        FSItemIconUtils.saveThumbnail(thumbnail, for: item.fullPath)
                                     }
                                     return item.fullPath
                                 }
@@ -643,17 +643,25 @@ struct FSItemsFeature {
                 if !state.hasUserSetSortOrder {
                     state.sortOrder = state.defaultSortOrder
                 }
-                let sorted = FSItemsSorting.sortItems(Array(state.items), by: state.sortKey, order: state.sortOrder)
+                let sorted = FSItemsSortingUtils.sortItems(
+                    Array(state.items),
+                    by: state.sortKey,
+                    order: state.sortOrder
+                )
                 state.items = IdentifiedArray(uniqueElements: sorted)
-                state.groupedItems = FSItemsGrouping.groupItems(sorted, by: state.groupKey)
+                state.groupedItems = FSItemsGroupingUtils.groupItems(sorted, by: state.groupKey)
                 return .none
 
             case let .setSortOrder(order):
                 state.sortOrder = order
                 state.hasUserSetSortOrder = true
-                let sorted = FSItemsSorting.sortItems(Array(state.items), by: state.sortKey, order: state.sortOrder)
+                let sorted = FSItemsSortingUtils.sortItems(
+                    Array(state.items),
+                    by: state.sortKey,
+                    order: state.sortOrder
+                )
                 state.items = IdentifiedArray(uniqueElements: sorted)
-                state.groupedItems = FSItemsGrouping.groupItems(sorted, by: state.groupKey)
+                state.groupedItems = FSItemsGroupingUtils.groupItems(sorted, by: state.groupKey)
                 return .none
 
             case .resetScrollFlag:
@@ -761,10 +769,10 @@ struct FSItemsFeature {
                 state.clipboardItems = selectedPaths
                 state.clipboardOperation = .copy
 
-                return .run { [fileSystemClient] send in
+                return .run { [fsItemClient] send in
                     await send(.operations(.copySelectedItems(files: selectedItems)))
 
-                    await fileSystemClient.postFileSystemChanged([])
+                    await fsItemClient.postFileSystemChanged([])
                 }
 
             case .cutSelectedItems:
@@ -778,17 +786,17 @@ struct FSItemsFeature {
                 state.clipboardItems = selectedPaths
                 state.clipboardOperation = .cut
 
-                return .run { [fileSystemClient] send in
+                return .run { [fsItemClient] send in
                     await send(.operations(.copySelectedItems(files: selectedItems)))
 
                     let pasteboard = NSPasteboard.general
                     pasteboard.setString("cut", forType: NSPasteboard.PasteboardType("com.voyager.clipboard.operation"))
 
-                    await fileSystemClient.postFileSystemChanged([])
+                    await fsItemClient.postFileSystemChanged([])
                 }
 
             case let .pasteItems(destinationPath):
-                let (clipboardPaths, clipboardOp) = fileSystemClient.loadClipboardPaths()
+                let (clipboardPaths, clipboardOp) = fsItemClient.loadClipboardPaths()
                 guard !clipboardPaths.isEmpty else {
                     return .none
                 }
@@ -819,13 +827,13 @@ struct FSItemsFeature {
 
             case let .startDrag(paths):
                 state.draggingPaths = paths
-                fileSystemClient.saveDragPaths(paths)
+                fsItemClient.saveDragPaths(paths)
                 let isOptionPressed = NSEvent.modifierFlags.contains(.option)
-                fileSystemClient.saveDragWithOption(isOptionPressed)
+                fsItemClient.saveDragWithOption(isOptionPressed)
                 return .none
 
             case let .handleDrop(providers, destinationPath):
-                let draggedPaths = fileSystemClient.loadDragPaths()
+                let draggedPaths = fsItemClient.loadDragPaths()
                 let hasExternalProviders = !providers.isEmpty
 
                 if !draggedPaths.isEmpty && !hasExternalProviders {
@@ -834,7 +842,7 @@ struct FSItemsFeature {
                 }
 
                 state.draggingPaths = []
-                fileSystemClient.saveDragPaths([])
+                fsItemClient.saveDragPaths([])
 
                 return .run { @MainActor send in
                     var urls: [URL] = []
@@ -870,7 +878,7 @@ struct FSItemsFeature {
                 }
 
             case let .handleDropToTag(providers, tagName):
-                return .run { @MainActor [fileSystemClient] _ in
+                return .run { @MainActor [fsItemClient] _ in
                     var urls: [URL] = []
                     for provider in providers
                         where provider.hasItemConformingToTypeIdentifier(UTType.fileURL.identifier)
@@ -892,18 +900,18 @@ struct FSItemsFeature {
                     }
 
                     for url in urls {
-                        let currentTags = (try? await fileSystemClient.getTags(url)) ?? []
+                        let currentTags = (try? await fsItemClient.getTags(url)) ?? []
                         if !currentTags.contains(tagName) {
-                            try? await fileSystemClient.toggleTag(url, tagName)
+                            try? await fsItemClient.toggleTag(url, tagName)
                         }
                     }
                 }
 
             case let .dropToFolder(destinationPath):
-                let sourcePaths = fileSystemClient.loadDragPaths()
-                let isOptionPressed = fileSystemClient.loadDragWithOption()
+                let sourcePaths = fsItemClient.loadDragPaths()
+                let isOptionPressed = fsItemClient.loadDragWithOption()
 
-                fileSystemClient.saveDragPaths([])
+                fsItemClient.saveDragPaths([])
 
                 guard !sourcePaths.isEmpty else {
                     return .none

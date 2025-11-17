@@ -181,7 +181,7 @@ struct FSItemListView: View {
         .if(item.isDirectory) { view in
             view.onDrop(
                 of: [UTType.fileURL],
-                delegate: FileDropDelegate(
+                delegate: FSItemDropDelegate(
                     item: item,
                     onDrop: onDrop,
                     isDropTarget: $isDropTarget,

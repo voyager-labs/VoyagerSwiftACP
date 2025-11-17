@@ -42,7 +42,7 @@ enum ThumbnailGeneratorUtils {
 
         await withTaskGroup(of: (String, NSImage?).self) { group in
             for item in thumbnailItems {
-                if FSItemsIconUtils.getThumbnail(for: item.fullPath) != nil {
+                if FSItemIconUtils.getThumbnail(for: item.fullPath) != nil {
                     continue
                 }
 
@@ -55,7 +55,7 @@ enum ThumbnailGeneratorUtils {
 
             for await (path, image) in group {
                 if let image = image {
-                    FSItemsIconUtils.saveThumbnail(image, for: path)
+                    FSItemIconUtils.saveThumbnail(image, for: path)
                 }
             }
         }

@@ -2,7 +2,7 @@ import AppKit
 import Foundation
 import UniformTypeIdentifiers
 
-enum FSItemsIconUtils {
+enum FSItemIconUtils {
     private static let iconCache = NSCache<NSString, NSImage>()
     private static let thumbnailCache = NSCache<NSString, NSImage>()
 

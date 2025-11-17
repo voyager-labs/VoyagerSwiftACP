@@ -39,23 +39,67 @@ struct ContentPaneListView: View {
         return nil
     }
 
+    private struct NearestItem {
+        let id: String
+        let distance: CGFloat
+    }
+
     private func findNearestItemAtY(_ yPosition: CGFloat) -> String? {
         guard !rowPositions.isEmpty else { return nil }
 
-        var nearest: (id: String, distance: CGFloat)?
+        var nearest: NearestItem?
         for (itemId, rect) in rowPositions {
             let centerY = rect.midY
             let distance = abs(yPosition - centerY)
 
             if let nearestDistance = nearest?.distance {
                 if distance < nearestDistance {
-                    nearest = (itemId, distance)
+                    nearest = NearestItem(id: itemId, distance: distance)
                 }
             } else {
-                nearest = (itemId, distance)
+                nearest = NearestItem(id: itemId, distance: distance)
             }
         }
         return nearest?.id
+    }
+
+    private struct ItemRowProps {
+        let handlers: FSItemContextMenuHandlers
+        let width: CGFloat
+        let showCompress: Bool
+        let showExtract: Bool
+    }
+
+    private func buildItemRowProps(
+        item: FSItem,
+        fsStore: Store<FSItemsFeature.State, FSItemsFeature.Action>,
+        geometry: GeometryProxy,
+        store: StoreOf<FileManagerFeature>,
+        isTrashFolder: Bool
+    ) -> ItemRowProps {
+        let selectedIds = fsStore.selectedIds
+        let selectedItems = fsStore.items.filter { selectedIds.contains($0.id) }
+        let options = FSItemContextMenuUtils
+            .calculateCompressExtractOptions(selectedItems: selectedItems)
+        let showCompress = options.showCompress
+        let showExtract = options.showExtract
+
+        let handlers = makeContextMenuHandlers(
+            item: item,
+            fsStore: fsStore,
+            saveScrollPosition: saveScrollPositionBeforeOpen,
+            isTrashFolder: isTrashFolder,
+            onEmptyTrash: { store.send(.emptyTrash) }
+        )
+
+        let width = contentWidth > 0 ? contentWidth : geometry.size.width
+
+        return ItemRowProps(
+            handlers: handlers,
+            width: width,
+            showCompress: showCompress,
+            showExtract: showExtract
+        )
     }
 
     @ViewBuilder
@@ -69,19 +113,13 @@ struct ContentPaneListView: View {
         let selectedIds = fsStore.selectedIds
         let clipboardItems = fsStore.clipboardItems
         let thumbnailsReady = fsStore.thumbnailsReady
-
-        let selectedItems = fsStore.items.filter { selectedIds.contains($0.id) }
-        let (showCompress, showExtract) = calculateCompressExtractOptions(selectedItems: selectedItems)
-
-        let handlers = makeContextMenuHandlers(
+        let props = buildItemRowProps(
             item: item,
             fsStore: fsStore,
-            saveScrollPosition: saveScrollPositionBeforeOpen,
-            isTrashFolder: isTrashFolder,
-            onEmptyTrash: { store.send(.emptyTrash) }
+            geometry: geometry,
+            store: store,
+            isTrashFolder: isTrashFolder
         )
-
-        let width = contentWidth > 0 ? contentWidth : geometry.size.width
 
         FSItemListView(
             item: item,
@@ -89,35 +127,35 @@ struct ContentPaneListView: View {
             isCut: clipboardItems.contains(item.fullPath) && fsStore.clipboardOperation == .cut,
             isRenaming: fsStore.renamingItemId == item.id,
             renamingText: fsStore.renamingText,
-            availableWidth: width,
+            availableWidth: props.width,
             columnWidths: store.columnWidths,
             applications: fsStore.operations.applicationsForItems[item.fullPath],
             isThumbnailReady: thumbnailsReady.contains(item.fullPath),
-            onSelect: handlers.onSelect,
-            onOpen: handlers.onOpen,
-            onOpenInNewTab: handlers.onOpenInNewTab,
-            onQuickLook: handlers.onQuickLook,
-            onOpenWithApp: handlers.onOpenWithApp,
-            onRenameUpdate: handlers.onRenameUpdate,
-            onRenameCommit: handlers.onRenameCommit,
-            onRenameCancel: handlers.onRenameCancel,
-            onStartDrag: handlers.onStartDrag,
-            onDrop: handlers.onDrop,
-            onLoadApplications: handlers.onLoadApplications,
-            onPutBack: handlers.onPutBack,
-            onMoveToTrash: handlers.onMoveToTrash,
-            onDeleteImmediately: handlers.onDeleteImmediately,
-            onEmptyTrash: handlers.onEmptyTrash,
-            onRename: handlers.onRename,
-            onCompress: handlers.onCompress,
-            onDuplicate: handlers.onDuplicate,
-            onExtract: handlers.onExtract,
-            onCopy: handlers.onCopy,
-            onCut: handlers.onCut,
-            onToggleTag: handlers.onToggleTag,
+            onSelect: props.handlers.onSelect,
+            onOpen: props.handlers.onOpen,
+            onOpenInNewTab: props.handlers.onOpenInNewTab,
+            onQuickLook: props.handlers.onQuickLook,
+            onOpenWithApp: props.handlers.onOpenWithApp,
+            onRenameUpdate: props.handlers.onRenameUpdate,
+            onRenameCommit: props.handlers.onRenameCommit,
+            onRenameCancel: props.handlers.onRenameCancel,
+            onStartDrag: props.handlers.onStartDrag,
+            onDrop: props.handlers.onDrop,
+            onLoadApplications: props.handlers.onLoadApplications,
+            onPutBack: props.handlers.onPutBack,
+            onMoveToTrash: props.handlers.onMoveToTrash,
+            onDeleteImmediately: props.handlers.onDeleteImmediately,
+            onEmptyTrash: props.handlers.onEmptyTrash,
+            onRename: props.handlers.onRename,
+            onCompress: props.handlers.onCompress,
+            onDuplicate: props.handlers.onDuplicate,
+            onExtract: props.handlers.onExtract,
+            onCopy: props.handlers.onCopy,
+            onCut: props.handlers.onCut,
+            onToggleTag: props.handlers.onToggleTag,
             selectedCount: fsStore.selectedIds.isEmpty ? 1 : fsStore.selectedIds.count,
-            showCompress: showCompress,
-            showExtract: showExtract,
+            showCompress: props.showCompress,
+            showExtract: props.showExtract,
             draggingPaths: fsStore.draggingPaths
         )
     }
@@ -407,7 +445,7 @@ struct ContentPaneListView: View {
                 .border(fsStore.isDropTargeted ? Color.accentColor : Color.clear, width: 2)
                 .onDrop(
                     of: [UTType.fileURL],
-                    delegate: FileDropDelegate(store: store, fsStore: fsStore)
+                    delegate: FSItemDropDelegate(store: store, fsStore: fsStore)
                 )
             }
         }

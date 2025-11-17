@@ -3,29 +3,6 @@ import Foundation
 import IdentifiedCollections
 import SwiftUI
 
-func sendWithSelection(
-    _ item: FSItem,
-    fsStore: Store<FSItemsFeature.State, FSItemsFeature.Action>,
-    action: @escaping () -> Void
-) {
-    if !fsStore.selectedIds.contains(item.id) {
-        fsStore.send(.selectItem(id: item.id, isCommandPressed: false, isShiftPressed: false))
-    }
-    action()
-}
-
-func calculateCompressExtractOptions(
-    selectedItems: IdentifiedArrayOf<FSItem>
-) -> (showCompress: Bool, showExtract: Bool) {
-    let containsZipFiles = selectedItems.contains { $0.fileExtension.lowercased() == "zip" }
-    let containsNonZipFiles = selectedItems.contains { $0.fileExtension.lowercased() != "zip" }
-
-    let showCompress = !containsZipFiles
-    let showExtract = containsZipFiles && !containsNonZipFiles
-
-    return (showCompress, showExtract)
-}
-
 struct FSItemContextMenuHandlers {
     let onSelect: (Bool, Bool) -> Void
     let onOpen: () -> Void
@@ -68,7 +45,7 @@ func makeContextMenuHandlers(
     }
 
     let onOpen: () -> Void = {
-        sendWithSelection(item, fsStore: fsStore, action: {
+        FSItemContextMenuUtils.sendWithSelection(item, fsStore: fsStore, action: {
             saveScrollPosition()
             fsStore.send(.openSelectedItem)
         })
@@ -85,13 +62,13 @@ func makeContextMenuHandlers(
     }
 
     let onQuickLook: () -> Void = {
-        sendWithSelection(item, fsStore: fsStore, action: {
+        FSItemContextMenuUtils.sendWithSelection(item, fsStore: fsStore, action: {
             fsStore.send(.quickLookSelectedItem)
         })
     }
 
     let onOpenWithApp: (String?, Bool) -> Void = { bundleID, shouldSetAsDefault in
-        sendWithSelection(item, fsStore: fsStore, action: {
+        FSItemContextMenuUtils.sendWithSelection(item, fsStore: fsStore, action: {
             fsStore.send(.openWithSelectedItem(bundleID: bundleID, shouldSetAsDefault: shouldSetAsDefault))
         })
     }
@@ -125,61 +102,61 @@ func makeContextMenuHandlers(
     }
 
     let onPutBack: (() -> Void)? = isTrashFolder ? {
-        sendWithSelection(item, fsStore: fsStore, action: {
+        FSItemContextMenuUtils.sendWithSelection(item, fsStore: fsStore, action: {
             fsStore.send(.putBackSelectedItems)
         })
     } : nil
 
     let onMoveToTrash: () -> Void = {
-        sendWithSelection(item, fsStore: fsStore, action: {
+        FSItemContextMenuUtils.sendWithSelection(item, fsStore: fsStore, action: {
             fsStore.send(.moveSelectedItemsToTrash)
         })
     }
 
     let onDeleteImmediately: () -> Void = {
-        sendWithSelection(item, fsStore: fsStore, action: {
+        FSItemContextMenuUtils.sendWithSelection(item, fsStore: fsStore, action: {
             fsStore.send(.deleteSelectedItemsImmediately)
         })
     }
 
     let onRename: () -> Void = {
-        sendWithSelection(item, fsStore: fsStore, action: {
+        FSItemContextMenuUtils.sendWithSelection(item, fsStore: fsStore, action: {
             fsStore.send(.startRename(id: item.id))
         })
     }
 
     let onCompress: () -> Void = {
-        sendWithSelection(item, fsStore: fsStore, action: {
+        FSItemContextMenuUtils.sendWithSelection(item, fsStore: fsStore, action: {
             fsStore.send(.compressSelectedItems)
         })
     }
 
     let onDuplicate: () -> Void = {
-        sendWithSelection(item, fsStore: fsStore, action: {
+        FSItemContextMenuUtils.sendWithSelection(item, fsStore: fsStore, action: {
             fsStore.send(.duplicateSelectedItems)
         })
     }
 
     let onExtract: () -> Void = {
-        sendWithSelection(item, fsStore: fsStore, action: {
+        FSItemContextMenuUtils.sendWithSelection(item, fsStore: fsStore, action: {
             fsStore.send(.extractSelectedItem)
         })
     }
 
     let onCopy: () -> Void = {
-        sendWithSelection(item, fsStore: fsStore, action: {
+        FSItemContextMenuUtils.sendWithSelection(item, fsStore: fsStore, action: {
             fsStore.send(.copySelectedItems)
         })
     }
 
     let onCut: () -> Void = {
-        sendWithSelection(item, fsStore: fsStore, action: {
+        FSItemContextMenuUtils.sendWithSelection(item, fsStore: fsStore, action: {
             fsStore.send(.cutSelectedItems)
         })
     }
 
     let onToggleTag: (String) -> Void = { tag in
-        sendWithSelection(item, fsStore: fsStore, action: {
+        FSItemContextMenuUtils.sendWithSelection(item, fsStore: fsStore, action: {
             fsStore.send(.toggleTagForSelectedItem(tag: tag))
         })
     }

@@ -200,7 +200,7 @@ enum SidebarUtils {
             filterFiles: true
         )
 
-        return recentFiles.compactMap { FSItemsLoadUtils.convertURLToFSItem($0) }
+        return recentFiles.compactMap { FSItemLoadUtils.convertURLToFSItem($0) }
     }
 
     @MainActor
@@ -214,7 +214,7 @@ enum SidebarUtils {
         )
 
         return taggedFiles.compactMap { url in
-            guard let item = FSItemsLoadUtils.convertURLToFSItem(url) else { return nil }
+            guard let item = FSItemLoadUtils.convertURLToFSItem(url) else { return nil }
 
             let hasTags = item.tags?.contains(where: { $0.name == tag }) ?? false
             return hasTags ? item : nil

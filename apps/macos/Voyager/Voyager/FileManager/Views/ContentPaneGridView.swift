@@ -69,7 +69,8 @@ struct ContentPaneGridView: View {
         let thumbnailsReady = fsStore.thumbnailsReady
 
         let selectedItems = fsStore.items.filter { selectedIds.contains($0.id) }
-        let (showCompress, showExtract) = calculateCompressExtractOptions(selectedItems: selectedItems)
+        let (showCompress, showExtract) = FSItemContextMenuUtils
+            .calculateCompressExtractOptions(selectedItems: selectedItems)
 
         let handlers = makeContextMenuHandlers(
             item: item,
@@ -250,7 +251,7 @@ struct ContentPaneGridView: View {
         .border(fsStore.isDropTargeted ? Color.accentColor : Color.clear, width: 2)
         .onDrop(
             of: [UTType.fileURL],
-            delegate: FileDropDelegate(store: store, fsStore: fsStore)
+            delegate: FSItemDropDelegate(store: store, fsStore: fsStore)
         )
     }
 

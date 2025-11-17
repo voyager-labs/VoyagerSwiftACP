@@ -22,7 +22,7 @@ struct GroupedItems: Equatable {
     }
 }
 
-enum FSItemsGrouping {
+enum FSItemsGroupingUtils {
     private static func groupByName(_ items: [FSItem]) -> [GroupedItems] {
         let dictionary = Dictionary(grouping: items) { item -> String in
             guard let firstChar = item.name.uppercased().first else { return "#" }
