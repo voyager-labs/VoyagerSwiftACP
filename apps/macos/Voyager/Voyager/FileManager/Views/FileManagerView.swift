@@ -3,17 +3,84 @@ import SwiftUI
 
 struct FileManagerView: View {
     let store: StoreOf<FileManagerFeature>
-    @State private var columnVisibility: NavigationSplitViewVisibility = .all
     let initialPath: String?
+
+    @FocusState private var isKeyCommandFocused: Bool
 
     init(store: StoreOf<FileManagerFeature>, initialPath: String? = nil) {
         self.store = store
         self.initialPath = initialPath
     }
 
+    private var columnVisibility: Binding<NavigationSplitViewVisibility> {
+        Binding(
+            get: { store.sidebarVisible ? .all : .detailOnly },
+            set: { newValue in
+                store.send(.setSidebarVisible(newValue == .all))
+            }
+        )
+    }
+
     var body: some View {
         ZStack {
             KeyCommandView { event in
+                if event.keyCode == 53 && store.fsItems.isRenaming {
+                    store.send(.fsItems(.cancelRename))
+                    return
+                }
+
+                if event.keyCode == 36 && event.modifierFlags.isDisjoint(with: [.command, .option, .control, .shift]) {
+                    if store.fsItems.isRenaming {
+                        store.send(.fsItems(.commitRename))
+                        return
+                    }
+
+                    if store.fsItems.selectedIds.count == 1,
+                       let selectedId = store.fsItems.selectedIds.first
+                    {
+                        store.send(.fsItems(.startRename(id: selectedId)))
+                    }
+                    return
+                }
+
+                if event.keyCode == 49 && event.modifierFlags.isDisjoint(with: [.command, .option, .control, .shift]) {
+                    if store.canQuickLookSelectedItem {
+                        store.send(.quickLookSelectedItem)
+                    }
+                    return
+                }
+
+                if event.keyCode == 125 && event.modifierFlags.contains(.command) && event.modifierFlags
+                    .contains(.option)
+                {
+                    if store.fsItems.selectedIds.count == 1,
+                       let selectedId = store.fsItems.selectedIds.first,
+                       let selectedItem = store.fsItems.items.first(where: { $0.id == selectedId }),
+                       selectedItem.isDirectory
+                    {
+                        AppDelegate.shared?.createNewTab(path: selectedItem.fullPath)
+                    }
+                    return
+                }
+
+                if event.keyCode == 51 && event.modifierFlags.contains(.command) && event.modifierFlags
+                    .contains(.option)
+                {
+                    if !store.fsItems.selectedIds.isEmpty {
+                        store.send(.deleteSelectedItemsImmediately)
+                    }
+                    return
+                }
+
+                if event.keyCode == 51 && event.modifierFlags.contains(.command) && !event.modifierFlags
+                    .contains(.option)
+                {
+                    if !store.fsItems.selectedIds.isEmpty {
+                        store.send(.moveSelectedItemsToTrash)
+                    }
+                    return
+                }
+
                 if event.modifierFlags.isDisjoint(with: [.command, .option, .control]) {
                     let isShiftPressed = event.modifierFlags.contains(.shift)
 
@@ -31,8 +98,14 @@ struct FileManagerView: View {
                     switch event.keyCode {
                     case 123 where store.viewLayout == .grid: move(-1) // ←
                     case 124 where store.viewLayout == .grid: move(+1) // →
-                    case 126: move(-1) // ↑
-                    case 125: move(+1) // ↓
+                    case 126 where store.viewLayout == .grid: // ↑ Grid 행 이동
+                        let columnCount = store.fsItems.gridColumnCount
+                        move(-columnCount)
+                    case 125 where store.viewLayout == .grid: // ↓ Grid 행 이동
+                        let columnCount = store.fsItems.gridColumnCount
+                        move(+columnCount)
+                    case 126: move(-1) // ↑ List
+                    case 125: move(+1) // ↓ List
                     default: break
                     }
                     return
@@ -42,6 +115,18 @@ struct FileManagerView: View {
 
                 if event.characters == "a" {
                     store.send(.fsItems(.selectAll))
+                } else if event.characters == "c" {
+                    store.send(.fsItems(.copySelectedItems))
+                } else if event.characters == "x" {
+                    store.send(.fsItems(.cutSelectedItems))
+                } else if event.characters == "v" {
+                    store.send(.fsItems(.pasteItems(destinationPath: store.currentPath)))
+                } else if event.characters == "d" {
+                    if !store.fsItems.selectedIds.isEmpty {
+                        store.send(.duplicateSelectedItems)
+                    } else {
+                        AppDelegate.shared?.duplicateCurrentTab()
+                    }
                 } else if event.characters == "." && event.modifierFlags.contains(.shift) {
                     store.send(.toggleShowHiddenFiles)
                 } else if let number = Int(event.characters ?? ""), (1 ... 9).contains(number) {
@@ -50,28 +135,44 @@ struct FileManagerView: View {
                     AppDelegate.shared?.selectTab(at: 9)
                 }
             }
+            .focusable()
+            .focused($isKeyCommandFocused)
 
-            NavigationSplitView(columnVisibility: $columnVisibility) {
+            NavigationSplitView(columnVisibility: columnVisibility) {
                 SidebarView(store: store)
             } detail: {
                 VStack(spacing: 0) {
-                    HStack {
-                        PathBreadcrumbView(
-                            pathComponents: store.pathComponents,
-                            onNavigate: { path in
-                                store.send(.navigateTo(path))
+                    GeometryReader { geometry in
+                        HStack {
+                            PathBreadcrumbView(
+                                breadcrumbItems: store.breadcrumbItems,
+                                selectedItem: store.selectedBreadcrumbItem,
+                                availableWidth: geometry.size.width - 32 - (store.isTrashFolder ? 80 : 0),
+                                onNavigate: { path in
+                                    store.send(.navigateTo(path))
+                                }
+                            )
+                            Spacer()
+
+                            if store.isTrashFolder {
+                                Button("Empty") {
+                                    store.send(.emptyTrash)
+                                }
+                                .controlSize(.small)
+                                .buttonStyle(.borderedProminent)
+                                .tint(Color(white: 0.3))
                             }
-                        )
-                        Spacer()
+                        }
+                        .padding(.horizontal, 16)
+                        .padding(.vertical, 8)
                     }
-                    .padding(.horizontal, 16)
-                    .padding(.vertical, 8)
+                    .frame(height: 36)
 
                     ContentPaneView(store: store)
                 }
             }
             .navigationSplitViewStyle(.balanced)
-            .frame(minWidth: 800, minHeight: 600)
+            .frame(minWidth: 600, minHeight: 350)
             .navigationTitle(store.windowTitle)
         }
         .toolbar {
@@ -144,13 +245,17 @@ struct FileManagerView: View {
             }
         }
         .focusedSceneValue(\.fileManagerStore, store)
-        .focusedSceneValue(\.columnVisibility, $columnVisibility)
-        .onChange(of: columnVisibility) { newValue in
-            UserDefaults.standard.set(newValue == .all, forKey: "sidebarVisible")
+        .onChange(of: store.fsItems.isRenaming) { isRenaming in
+            if !isRenaming {
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
+                    isKeyCommandFocused = true
+                }
+            }
         }
         .onAppear {
-            let savedVisible = UserDefaults.standard.object(forKey: "sidebarVisible") as? Bool ?? true
-            columnVisibility = savedVisible ? .all : .detailOnly
+            store.send(.loadFavorites)
+            store.send(.loadLocations)
+            store.send(.loadTags)
 
             if let path = initialPath {
                 store.send(.navigateTo(path))
@@ -158,7 +263,11 @@ struct FileManagerView: View {
                 store.send(.onAppear)
             }
 
-            store.send(.loadLocations)
+            store.send(.fsItems(.onAppear))
+
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) {
+                isKeyCommandFocused = true
+            }
         }
     }
 }

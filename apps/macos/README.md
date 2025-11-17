@@ -4,8 +4,8 @@
 
 ### 필수 요구사항
 
--   **macOS**: 12.4 (Monterey) 이상
--   **Swift**: 5.0 이상
+-   **macOS**: 13.5 (Ventura) 이상
+-   **Swift**: 6.0
 -   **SwiftLint**: 코드 스타일 검사 도구
 -   **SwiftFormat**: 코드 포맷팅 도구
 
@@ -38,13 +38,14 @@ brew install swiftformat
 
 1. **Build Settings**에서 다음을 확인:
 
-    - Deployment Target: macOS 12.4
-    - Swift Language Version: Swift 5.0
+    - Deployment Target: macOS 13.5
+    - Swift Language Version: Swift 6.0
 
 2. **Scheme 설정**:
 
-    - Run scheme: Voyager
-    - Test scheme: VoyagerTests
+    - Run scheme: Voyager (메인 앱)
+    - Helper scheme: VoyagerHelper (백엔드 관리 헬퍼 앱)
+    - Test schemes: VoyagerTests, VoyagerUITests
 
 ## 빌드 및 실행
 
@@ -66,8 +67,14 @@ xcodebuild -workspace Voyager.xcworkspace -scheme Voyager test
 # 모든 테스트 실행
 xcodebuild test -workspace Voyager.xcworkspace -scheme Voyager
 
-# 특정 테스트 타겟 실행
-xcodebuild test -workspace Voyager.xcworkspace -scheme VoyagerTests
+# 단위 테스트 실행
+xcodebuild test -workspace Voyager.xcworkspace -scheme Voyager -only-testing:VoyagerTests
+
+# UI 테스트 실행
+xcodebuild test -workspace Voyager.xcworkspace -scheme Voyager -only-testing:VoyagerUITests
+
+# 헬퍼 앱 테스트 실행
+xcodebuild test -workspace Voyager.xcworkspace -scheme VoyagerHelper
 ```
 
 ### 로그 확인
@@ -76,17 +83,26 @@ xcodebuild test -workspace Voyager.xcworkspace -scheme VoyagerTests
 log stream --predicate 'subsystem == "com.voyager.app"'
 ```
 
+## 프로젝트 구성
+
+### 타겟 설명
+
+-   **Voyager**: 메인 macOS 파일 관리자 앱
+-   **VoyagerHelper**: 백엔드 서비스를 관리하는 헬퍼 앱
+
 ## 의존성 관리
 
 ### Swift Package Manager
 
 프로젝트에서 사용하는 외부 라이브러리:
 
--   **SwiftDotenv** : 환경변수 관리
+-   **swift-composable-architecture** : TCA 프레임워크 (상태 관리)
+-   **swiftui-introspect** : SwiftUI에서 AppKit 접근
+-   **swift-dotenv** : 환경변수 관리 (.env 파일 지원)
 -   **Inject** : SwiftUI 핫 리로딩
--   **SwiftLint** : 코드 스타일 검사 도구
--   **SwiftFormat** : 코드 포맷팅 도구
 -   **InjectionNext** : 고급 코드 인젝션
+-   **swift-identified-collections** : 식별 가능한 컬렉션
+-   **swift-dependencies** : 의존성 주입 프레임워크
 
 ### InjectionNext 사용법
 

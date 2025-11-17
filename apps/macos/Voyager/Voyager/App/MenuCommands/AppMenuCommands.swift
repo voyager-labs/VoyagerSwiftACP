@@ -16,6 +16,13 @@ struct AppMenuCommands: Commands {
             }
             .keyboardShortcut("n", modifiers: .command)
 
+            Button("New Folder") {
+                if let currentPath = fileManagerStore?.currentPath {
+                    fileManagerStore?.send(.fsItems(.createNewFolder(currentPath: currentPath)))
+                }
+            }
+            .keyboardShortcut("n", modifiers: [.command, .shift])
+
             Button("New Tab") {
                 AppDelegate.shared?.createNewTab()
             }
@@ -24,7 +31,6 @@ struct AppMenuCommands: Commands {
             Button("Duplicate Tab") {
                 AppDelegate.shared?.duplicateCurrentTab()
             }
-            .keyboardShortcut("d", modifiers: .command)
 
             Divider()
 
@@ -33,6 +39,12 @@ struct AppMenuCommands: Commands {
             }
             .keyboardShortcut(.downArrow, modifiers: .command)
             .disabled(fileManagerStore?.canOpenSelectedItem == false)
+
+            Button("Quick Look") {
+                fileManagerStore?.send(.quickLookSelectedItem)
+            }
+            .keyboardShortcut(.space, modifiers: [])
+            .disabled(fileManagerStore?.canQuickLookSelectedItem == false)
 
             Button("Reopen Recently Closed Tab") {
                 AppDelegate.shared?.reopenLastClosedTab()
@@ -65,6 +77,8 @@ struct AppMenuCommands: Commands {
                 }
             }
             .keyboardShortcut("w", modifiers: [.command, .shift])
+
+            Divider()
         }
 
         CommandMenu("Go") {

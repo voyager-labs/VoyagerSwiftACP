@@ -8,6 +8,7 @@
 
 /* Begin PBXBuildFile section */
 		6CFB7B382E9D48B40005FDF6 /* ComposableArchitecture in Frameworks */ = {isa = PBXBuildFile; productRef = 6CFB7B372E9D48B40005FDF6 /* ComposableArchitecture */; };
+		7E1724A12EC5BA6600385F6E /* SwiftUIIntrospect in Frameworks */ = {isa = PBXBuildFile; productRef = 7E1724A02EC5BA6600385F6E /* SwiftUIIntrospect */; };
 		7E1974712E8BDC0700D041D3 /* InjectionNext in Frameworks */ = {isa = PBXBuildFile; productRef = 7E1974702E8BDC0700D041D3 /* InjectionNext */; };
 		7E6AF6AD2E8BABD8005DC7D3 /* Inject in Frameworks */ = {isa = PBXBuildFile; productRef = 7E6AF6AC2E8BABD8005DC7D3 /* Inject */; };
 		7E9D64952E8CDDC8006CB69F /* SwiftDotenv in Frameworks */ = {isa = PBXBuildFile; productRef = 7E9D64942E8CDDC8006CB69F /* SwiftDotenv */; };
@@ -96,6 +97,7 @@
 				7E6AF6AD2E8BABD8005DC7D3 /* Inject in Frameworks */,
 				7EEC64512E8CE684004ACEA5 /* SwiftDotenv in Frameworks */,
 				6CFB7B382E9D48B40005FDF6 /* ComposableArchitecture in Frameworks */,
+				7E1724A12EC5BA6600385F6E /* SwiftUIIntrospect in Frameworks */,
 				7E1974712E8BDC0700D041D3 /* InjectionNext in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
@@ -191,6 +193,7 @@
 				7E1974702E8BDC0700D041D3 /* InjectionNext */,
 				7EEC64502E8CE684004ACEA5 /* SwiftDotenv */,
 				6CFB7B372E9D48B40005FDF6 /* ComposableArchitecture */,
+				7E1724A02EC5BA6600385F6E /* SwiftUIIntrospect */,
 			);
 			productName = Voyager;
 			productReference = 7E14EDCC2E86622C005AC834 /* Voyager.app */;
@@ -361,6 +364,7 @@
 				7E19746F2E8BDC0700D041D3 /* XCRemoteSwiftPackageReference "InjectionNext" */,
 				7E9D64932E8CDDC8006CB69F /* XCRemoteSwiftPackageReference "swift-dotenv" */,
 				6CFB7B362E9D48B40005FDF6 /* XCRemoteSwiftPackageReference "swift-composable-architecture" */,
+				7E17249F2EC5B91C00385F6E /* XCRemoteSwiftPackageReference "SwiftUI-Introspect" */,
 			);
 			preferredProjectObjectVersion = 77;
 			productRefGroup = 7E14EDCD2E86622C005AC834 /* Products */;
@@ -1031,6 +1035,14 @@
 				minimumVersion = 1.22.3;
 			};
 		};
+		7E17249F2EC5B91C00385F6E /* XCRemoteSwiftPackageReference "SwiftUI-Introspect" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/siteline/SwiftUI-Introspect";
+			requirement = {
+				kind = upToNextMajorVersion;
+				minimumVersion = 26.0.0;
+			};
+		};
 		7E19746F2E8BDC0700D041D3 /* XCRemoteSwiftPackageReference "InjectionNext" */ = {
 			isa = XCRemoteSwiftPackageReference;
 			repositoryURL = "https://github.com/johnno1962/InjectionNext";
@@ -1062,6 +1074,11 @@
 			isa = XCSwiftPackageProductDependency;
 			package = 6CFB7B362E9D48B40005FDF6 /* XCRemoteSwiftPackageReference "swift-composable-architecture" */;
 			productName = ComposableArchitecture;
+		};
+		7E1724A02EC5BA6600385F6E /* SwiftUIIntrospect */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 7E17249F2EC5B91C00385F6E /* XCRemoteSwiftPackageReference "SwiftUI-Introspect" */;
+			productName = SwiftUIIntrospect;
 		};
 		7E1974702E8BDC0700D041D3 /* InjectionNext */ = {
 			isa = XCSwiftPackageProductDependency;
