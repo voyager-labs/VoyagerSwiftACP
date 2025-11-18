@@ -772,7 +772,7 @@ struct FSItemsFeature {
                 return .run { [fsItemClient] send in
                     await send(.operations(.copySelectedItems(files: selectedItems)))
 
-                    await fsItemClient.postFileSystemChanged([])
+                    fsItemClient.postFileSystemChanged([])
                 }
 
             case .cutSelectedItems:
@@ -792,7 +792,7 @@ struct FSItemsFeature {
                     let pasteboard = NSPasteboard.general
                     pasteboard.setString("cut", forType: NSPasteboard.PasteboardType("com.voyager.clipboard.operation"))
 
-                    await fsItemClient.postFileSystemChanged([])
+                    fsItemClient.postFileSystemChanged([])
                 }
 
             case let .pasteItems(destinationPath):

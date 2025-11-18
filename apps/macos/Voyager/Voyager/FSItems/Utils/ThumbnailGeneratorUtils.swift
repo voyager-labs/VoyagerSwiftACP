@@ -3,6 +3,14 @@ import Foundation
 import QuickLookThumbnailing
 import UniformTypeIdentifiers
 
+final class SendableImage: @unchecked Sendable {
+    let image: NSImage?
+
+    nonisolated init(_ image: NSImage?) {
+        self.image = image
+    }
+}
+
 enum ThumbnailGeneratorUtils {
     static func canGenerateThumbnail(for item: FSItem) -> Bool {
         guard !item.isDirectory else { return false }
@@ -40,7 +48,7 @@ enum ThumbnailGeneratorUtils {
     ) async {
         let thumbnailItems = items.filter { canGenerateThumbnail(for: $0) }
 
-        await withTaskGroup(of: (String, NSImage?).self) { group in
+        await withTaskGroup(of: (String, SendableImage).self) { group in
             for item in thumbnailItems {
                 if FSItemIconUtils.getThumbnail(for: item.fullPath) != nil {
                     continue
@@ -49,12 +57,13 @@ enum ThumbnailGeneratorUtils {
                 group.addTask(priority: .background) {
                     let url = URL(fileURLWithPath: item.fullPath)
                     let image = await generateThumbnail(for: url, size: size, scale: scale)
-                    return (item.fullPath, image)
+                    let sendableImage = SendableImage(image)
+                    return (item.fullPath, sendableImage)
                 }
             }
 
-            for await (path, image) in group {
-                if let image = image {
+            for await (path, sendableImage) in group {
+                if let image = sendableImage.image {
                     FSItemIconUtils.saveThumbnail(image, for: path)
                 }
             }

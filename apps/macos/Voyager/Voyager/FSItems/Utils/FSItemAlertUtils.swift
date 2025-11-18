@@ -69,8 +69,9 @@ enum FSItemAlertUtils {
         let alert = NSAlert()
         alert.alertStyle = .informational
 
-        let trashIcon = NSWorkspace.shared.icon(forFileType: NSFileTypeForHFSTypeCode(OSType(kFullTrashIcon)))
-        alert.icon = trashIcon
+        if let trashIcon = NSImage(systemSymbolName: "trash", accessibilityDescription: "Trash") {
+            alert.icon = trashIcon
+        }
 
         if itemCount == 0 {
             alert.messageText = "The Trash is empty."

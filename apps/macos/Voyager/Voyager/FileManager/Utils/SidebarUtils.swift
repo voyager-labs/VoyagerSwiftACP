@@ -99,6 +99,55 @@ enum SidebarUtils {
         return locations
     }
 
+    private final class CompletionState: @unchecked Sendable {
+        private let lock = NSLock()
+        private nonisolated(unsafe) var _hasCompleted = false
+
+        nonisolated func setCompleted() -> Bool {
+            lock.lock()
+            defer { lock.unlock() }
+            if _hasCompleted {
+                return false
+            }
+            _hasCompleted = true
+            return true
+        }
+    }
+
+    private final class QueryWrapper: @unchecked Sendable {
+        nonisolated(unsafe) let query: NSMetadataQuery
+        init(_ query: NSMetadataQuery) {
+            self.query = query
+        }
+    }
+
+    private final class ObserverWrapper: @unchecked Sendable {
+        private let lock = NSLock()
+        private nonisolated(unsafe) var _observer: NSObjectProtocol?
+
+        init(_ observer: NSObjectProtocol?) {
+            _observer = observer
+        }
+
+        nonisolated func setObserver(_ observer: NSObjectProtocol?) {
+            lock.lock()
+            defer { lock.unlock() }
+            if let oldObserver = _observer {
+                NotificationCenter.default.removeObserver(oldObserver)
+            }
+            _observer = observer
+        }
+
+        nonisolated func remove() {
+            lock.lock()
+            defer { lock.unlock() }
+            if let observer = _observer {
+                NotificationCenter.default.removeObserver(observer)
+                _observer = nil
+            }
+        }
+    }
+
     @MainActor
     private static func searchFiles(
         predicate: NSPredicate,
@@ -113,52 +162,55 @@ enum SidebarUtils {
                 query.predicate = predicate
                 query.sortDescriptors = sortDescriptors
 
-                var observer: NSObjectProtocol?
-                var hasCompleted = false
+                let completionState = CompletionState()
+                let queryWrapper = QueryWrapper(query)
+                let observerWrapper = ObserverWrapper(nil)
 
-                observer = NotificationCenter.default.addObserver(
+                let observer = NotificationCenter.default.addObserver(
                     forName: .NSMetadataQueryDidFinishGathering,
-                    object: query,
+                    object: queryWrapper.query,
                     queue: .main
                 ) { _ in
-                    guard !hasCompleted else { return }
-                    hasCompleted = true
-                    query.stop()
+                    let capturedQuery = queryWrapper.query
+                    Task { @MainActor in
+                        guard completionState.setCompleted() else { return }
+                        capturedQuery.stop()
 
-                    let urls: [URL] = Array(query.results
-                        .compactMap { $0 as? NSMetadataItem }
-                        .compactMap { item -> URL? in
-                            guard let path = item.value(forAttribute: "kMDItemPath") as? String
-                            else { return nil }
+                        let urls: [URL] = Array(capturedQuery.results
+                            .compactMap { $0 as? NSMetadataItem }
+                            .compactMap { item -> URL? in
+                                guard let path = item.value(forAttribute: "kMDItemPath") as? String
+                                else { return nil }
 
-                            if filterFiles {
-                                var isDirectory: ObjCBool = false
-                                if FileManager.default.fileExists(atPath: path, isDirectory: &isDirectory) {
-                                    if isDirectory.boolValue { return nil }
+                                if filterFiles {
+                                    var isDirectory: ObjCBool = false
+                                    if FileManager.default.fileExists(atPath: path, isDirectory: &isDirectory) {
+                                        if isDirectory.boolValue { return nil }
+                                    }
                                 }
+
+                                return URL(fileURLWithPath: path)
                             }
+                            .prefix(100))
 
-                            return URL(fileURLWithPath: path)
-                        }
-                        .prefix(100))
+                        continuation.resume(returning: urls)
 
-                    continuation.resume(returning: urls)
-
-                    if let observer = observer {
-                        NotificationCenter.default.removeObserver(observer)
+                        observerWrapper.remove()
                     }
                 }
+
+                observerWrapper.setObserver(observer)
 
                 query.start()
 
                 DispatchQueue.main.asyncAfter(deadline: .now() + timeout) {
-                    guard !hasCompleted else { return }
-                    hasCompleted = true
-                    query.stop()
-                    continuation.resume(returning: [])
+                    let capturedQuery = queryWrapper.query
+                    Task { @MainActor in
+                        guard completionState.setCompleted() else { return }
+                        capturedQuery.stop()
+                        continuation.resume(returning: [])
 
-                    if let observer = observer {
-                        NotificationCenter.default.removeObserver(observer)
+                        observerWrapper.remove()
                     }
                 }
             }
