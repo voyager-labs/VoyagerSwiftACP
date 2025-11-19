@@ -4,20 +4,64 @@
 
 ## Quick Start
 
-- Backend
+* Backend
 
-  - Setup: `cd apps/backend && uv sync && uv run pre-commit install`
-  - Dev server: `uv run dev`
-  - Tests: `uv run pytest`
-- macOS App
+  * Setup: `cd apps/backend && uv sync && uv run pre-commit install`
+  * Dev server: `uv run dev`
+  * Tests: `uv run pytest`
+* macOS App
 
-  - Xcode에서 시작: `xed apps/macos/Voyager/Voyager.xcodeproj` (열기 후 `Cmd+R` 실행)
-  - VSCode 류 IDE(Sweetpad Extension)에서 실행:
-    - Xcode 프로젝트 열기: Sweetpad로 `apps/macos/Voyager/Voyager.xcodeproj` 오픈
-    - 스킴 실행: `Voyager` 스킴을 선택하여 Debug 구성으로 실행
-    - 참고: Sweetpad 환경에 따라 CLI/버튼 동작이 다를 수 있습니다. 스킴/구성은 Xcode 프로젝트와 동기화되어야 합니다.
-  - Build (CLI): `xcodebuild -project apps/macos/Voyager/Voyager.xcodeproj -scheme Voyager -configuration Debug`
-  - Tests (CLI): `xcodebuild test -scheme Voyager -project apps/macos/Voyager/Voyager.xcodeproj`
+  * Xcode에서 시작: `xed apps/macos/Voyager/Voyager.xcodeproj` (열기 후 `Cmd+R` 실행)
+  * VSCode 류 IDE(Sweetpad Extension)에서 실행:
+    * Xcode 프로젝트 열기: Sweetpad로 `apps/macos/Voyager/Voyager.xcodeproj` 오픈
+    * 스킴 실행: `Voyager` 스킴을 선택하여 Debug 구성으로 실행
+    * 참고: Sweetpad 환경에 따라 CLI/버튼 동작이 다를 수 있습니다. 스킴/구성은 Xcode 프로젝트와 동기화되어야 합니다.
+  * Build (CLI): `xcodebuild -project apps/macos/Voyager/Voyager.xcodeproj -scheme Voyager -configuration Debug`
+  * Tests (CLI): `xcodebuild test -scheme Voyager -project apps/macos/Voyager/Voyager.xcodeproj`
+
+### Xcode 버전 관리
+
+이 레포에서는 루트 디렉터리의 `.xcode-version` 파일로 **공식 Xcode 버전**을 고정해서 사용합니다.
+모든 로컬 개발 환경과 CI는 이 버전에 맞추는 것을 원칙으로 합니다.
+
+#### 사전 준비
+
+* macOS
+* [Homebrew](https://brew.sh) 설치
+* Xcode 설치 및 업데이트 권한
+
+#### 이 프로젝트용 Xcode 설정 방법
+
+처음 클론했거나, Xcode 버전을 다시 맞추고 싶을 때 **레포 루트에서** 다음을 실행합니다.
+
+```bash
+chmod +x scripts/xcodes.sh   # 최초 1회만 필요 (이미 실행 권한이 있으면 생략 가능)
+./scripts/xcodes.sh
+```
+
+이 스크립트는 다음 작업을 수행합니다.
+
+1. 레포 루트의 `.xcode-version` 파일을 읽어, 필요한 Xcode 버전을 확인합니다.
+2. `xcodes` CLI가 설치되어 있지 않으면 Homebrew로 설치합니다.
+3. `xcodes install <버전>`으로 해당 Xcode 버전을 설치합니다. (이미 설치되어 있다면 건너뜁니다)
+4. `xcodes select <버전>`으로 해당 버전을 현재 macOS의 활성 Xcode로 설정합니다.
+
+설정이 제대로 되었는지 확인하려면:
+
+```bash
+xcodebuild -version
+```
+
+을 실행했을 때 출력되는 Xcode 버전이 `.xcode-version`에 적힌 값과 일치해야 합니다.
+
+#### 스크립트를 실행해야 하는 시점
+
+* 이 레포를 **처음 클론한 직후**
+* 다른 프로젝트 때문에 Xcode 버전을 변경했다가, **다시 Voyager 앱을 개발하려고 할 때**
+* `.xcode-version`이 변경된 PR이 머지되어, **새로운 공식 Xcode 버전에 맞추어야 할 때**
+
+> 이 레포에서 작업할 때는 항상 `.xcode-version`에 적힌 Xcode 버전으로 빌드하는 것을 원칙으로 합니다.
+> 다른 프로젝트와 혼용해서 Xcode 버전을 바꾼 경우, Voyager 작업 전에 `./scripts/xcodes.sh`를 한 번 실행해 Xcode 버전을 다시 맞춰 주세요.
 
 ## Conventions
 
