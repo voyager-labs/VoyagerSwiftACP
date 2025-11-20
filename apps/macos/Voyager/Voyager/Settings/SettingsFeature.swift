@@ -207,7 +207,19 @@ struct SettingsFeature {
                     ?? NSHomeDirectory()
                 state.generalSettings.startingDirectory = startingDir
                 state.generalSettings.selectedDirectoryOption = DirectoryOption.from(path: startingDir)
-                state.generalSettings.launchAtStartup = UserDefaults.standard.bool(forKey: SettingsKeys.launchAtStartup)
+
+                let appService = SMAppService.mainApp
+                let actualStatus = appService.status
+                let isActuallyRegistered = (actualStatus == .enabled)
+
+                let savedValue = UserDefaults.standard.bool(forKey: SettingsKeys.launchAtStartup)
+                if savedValue != isActuallyRegistered {
+                    state.generalSettings.launchAtStartup = isActuallyRegistered
+                    UserDefaults.standard.set(isActuallyRegistered, forKey: SettingsKeys.launchAtStartup)
+                } else {
+                    state.generalSettings.launchAtStartup = savedValue
+                }
+
                 state.generalSettings.automaticUpdate = UserDefaults.standard
                     .object(forKey: SettingsKeys.automaticUpdate) as? Bool ?? true
                 state.generalSettings.alertBeforeQuit = UserDefaults.standard.bool(forKey: SettingsKeys.alertBeforeQuit)
