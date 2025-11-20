@@ -2,6 +2,19 @@
 
 프로젝트 개요와 실행/문서 진입점을 간단히 제공합니다.
 
+## Monorepo Layout
+
+- `apps/backend`: FastAPI 백엔드 (uv)
+- `apps/macos/Voyager`: macOS SwiftUI + TCA 앱과 Helper
+- `docs/`: AI 에이전트용 PRD/아키텍처 문서 인덱스
+
+## Environment Setup
+
+- 루트에서 `.env.example` → `.env` 복사 후 필요한 값 채우기
+- `APP_ENV`는 지원하는 값 `dev` 또는 `prod`만 사용합니다.
+- 백엔드 기동에 필요한 기본 키: `UV_CMD`, `BACKEND_DIR`, `VOYAGER_HOST`, `VOYAGER_PORT`, `BACKEND_URL`, `VOYAGER_LOG_FILE`
+- 비밀키(`OPENAI_API_KEY` 등)는 커밋 금지, 로컬 `.env`나 CI 시크릿으로만 관리
+
 ## Quick Start
 
 * Backend
@@ -14,10 +27,11 @@
   * Xcode에서 시작: `xed apps/macos/Voyager/Voyager.xcodeproj` (열기 후 `Cmd+R` 실행)
   * VSCode 류 IDE(Sweetpad Extension)에서 실행:
     * Xcode 프로젝트 열기: Sweetpad로 `apps/macos/Voyager/Voyager.xcodeproj` 오픈
-    * 스킴 실행: `Voyager` 스킴을 선택하여 Debug 구성으로 실행
+    * 스킴 실행: `Voyager-Dev` 스킴을 선택하여 Debug 구성으로 실행
     * 참고: Sweetpad 환경에 따라 CLI/버튼 동작이 다를 수 있습니다. 스킴/구성은 Xcode 프로젝트와 동기화되어야 합니다.
-  * Build (CLI): `xcodebuild -project apps/macos/Voyager/Voyager.xcodeproj -scheme Voyager -configuration Debug`
-  * Tests (CLI): `xcodebuild test -scheme Voyager -project apps/macos/Voyager/Voyager.xcodeproj`
+  * Build (CLI): `xcodebuild -project apps/macos/Voyager/Voyager.xcodeproj -scheme Voyager-Dev -configuration Debug`
+  * Prod build/archive (CLI): `xcodebuild -project apps/macos/Voyager/Voyager.xcodeproj -scheme Voyager-Prod -configuration Release`
+  * Tests (CLI): `xcodebuild test -scheme Voyager-Dev -project apps/macos/Voyager/Voyager.xcodeproj`
 
 ### Xcode 버전 관리
 

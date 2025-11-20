@@ -1,12 +1,26 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <Scheme
-   LastUpgradeVersion = "2600"
+   LastUpgradeVersion = "2610"
    version = "1.7">
    <BuildAction
       parallelizeBuildables = "YES"
       buildImplicitDependencies = "YES"
       buildArchitectures = "Automatic">
       <BuildActionEntries>
+         <BuildActionEntry
+            buildForTesting = "YES"
+            buildForRunning = "YES"
+            buildForProfiling = "YES"
+            buildForArchiving = "YES"
+            buildForAnalyzing = "YES">
+            <BuildableReference
+               BuildableIdentifier = "primary"
+               BlueprintIdentifier = "7E14EDCB2E86622C005AC834"
+               BuildableName = "Voyager.app"
+               BlueprintName = "Voyager"
+               ReferencedContainer = "container:Voyager.xcodeproj">
+            </BuildableReference>
+         </BuildActionEntry>
          <BuildActionEntry
             buildForTesting = "YES"
             buildForRunning = "YES"
@@ -35,9 +49,9 @@
             parallelizable = "YES">
             <BuildableReference
                BuildableIdentifier = "primary"
-               BlueprintIdentifier = "7E14EE2E2E866E85005AC834"
-               BuildableName = "VoyagerHelperTests.xctest"
-               BlueprintName = "VoyagerHelperTests"
+               BlueprintIdentifier = "7E14EDDA2E86622E005AC834"
+               BuildableName = "VoyagerTests.xctest"
+               BlueprintName = "VoyagerTests"
                ReferencedContainer = "container:Voyager.xcodeproj">
             </BuildableReference>
          </TestableReference>
@@ -46,9 +60,9 @@
             parallelizable = "YES">
             <BuildableReference
                BuildableIdentifier = "primary"
-               BlueprintIdentifier = "7E14EE382E866E86005AC834"
-               BuildableName = "VoyagerHelperUITests.xctest"
-               BlueprintName = "VoyagerHelperUITests"
+               BlueprintIdentifier = "7E14EDE42E86622E005AC834"
+               BuildableName = "VoyagerUITests.xctest"
+               BlueprintName = "VoyagerUITests"
                ReferencedContainer = "container:Voyager.xcodeproj">
             </BuildableReference>
          </TestableReference>
@@ -68,12 +82,19 @@
          runnableDebuggingMode = "0">
          <BuildableReference
             BuildableIdentifier = "primary"
-            BlueprintIdentifier = "7E14EE222E866E82005AC834"
-            BuildableName = "VoyagerHelper.app"
-            BlueprintName = "VoyagerHelper"
+            BlueprintIdentifier = "7E14EDCB2E86622C005AC834"
+            BuildableName = "Voyager.app"
+            BlueprintName = "Voyager"
             ReferencedContainer = "container:Voyager.xcodeproj">
          </BuildableReference>
       </BuildableProductRunnable>
+      <EnvironmentVariables>
+         <EnvironmentVariable
+            key = "INJECTION_PROJECT_ROOT"
+            value = "$(SRCROOT)"
+            isEnabled = "YES">
+         </EnvironmentVariable>
+      </EnvironmentVariables>
    </LaunchAction>
    <ProfileAction
       buildConfiguration = "Release"
@@ -85,9 +106,9 @@
          runnableDebuggingMode = "0">
          <BuildableReference
             BuildableIdentifier = "primary"
-            BlueprintIdentifier = "7E14EE222E866E82005AC834"
-            BuildableName = "VoyagerHelper.app"
-            BlueprintName = "VoyagerHelper"
+            BlueprintIdentifier = "7E14EDCB2E86622C005AC834"
+            BuildableName = "Voyager.app"
+            BlueprintName = "Voyager"
             ReferencedContainer = "container:Voyager.xcodeproj">
          </BuildableReference>
       </BuildableProductRunnable>

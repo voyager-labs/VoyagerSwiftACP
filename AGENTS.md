@@ -18,8 +18,8 @@ Before making changes, review the additional guardrails in `.cursor/rules`.
 
 - Backend setup: `cd apps/backend && uv sync && uv run pre-commit install` installs dependencies and hooks.
 - Backend dev server: `uv run dev` launches FastAPI with auto-reload; `uv run prod` mirrors production settings.
-- macOS app: open with `xed apps/macos/Voyager/Voyager.xcodeproj` for GUI work, or build via `xcodebuild -project apps/macos/Voyager/Voyager.xcodeproj -scheme Voyager -configuration Debug`.
-- macOS tests: `xcodebuild test -scheme Voyager -project apps/macos/Voyager/Voyager.xcodeproj` runs unit and UI test bundles headlessly.
+- macOS app: open with `xed apps/macos/Voyager/Voyager.xcodeproj` for GUI work, or build via `xcodebuild -project apps/macos/Voyager/Voyager.xcodeproj -scheme Voyager-Dev -configuration Debug`.
+- macOS tests: `xcodebuild test -scheme Voyager-Dev -project apps/macos/Voyager/Voyager.xcodeproj` runs unit and UI test bundles headlessly.
 
 ## Coding Style & Naming Conventions
 

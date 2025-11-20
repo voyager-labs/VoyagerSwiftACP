@@ -10,4 +10,4 @@
 ## 테스트 실행(제안)
 
 - Backend: `cd apps/backend && uv run pytest` (테스트 추가 후)
-- macOS: `xcodebuild test -scheme Voyager -project apps/macos/Voyager/Voyager.xcodeproj`
+- macOS: `xcodebuild test -scheme Voyager-Dev -project apps/macos/Voyager/Voyager.xcodeproj`

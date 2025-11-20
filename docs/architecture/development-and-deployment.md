@@ -7,7 +7,8 @@
 - Backend prod 유사: `uv run prod`
 - macOS 앱:
   - GUI: `apps/macos/Voyager/Voyager.xcodeproj` 열기
-  - CLI 빌드: `xcodebuild -project apps/macos/Voyager/Voyager.xcodeproj -scheme Voyager -configuration Debug`
+  - CLI 빌드: `xcodebuild -project apps/macos/Voyager/Voyager.xcodeproj -scheme Voyager-Dev -configuration Debug`
+  - 배포/Archive: `xcodebuild -project apps/macos/Voyager/Voyager.xcodeproj -scheme Voyager-Prod -configuration Release`
 
 환경
 
@@ -30,7 +31,7 @@
 
 2) macOS 앱 실행
 - GUI: `apps/macos/Voyager/Voyager.xcodeproj` 열기
-- 또는 CLI 빌드: `xcodebuild -project apps/macos/Voyager/Voyager.xcodeproj -scheme Voyager -configuration Debug`
+- 또는 CLI 빌드: `xcodebuild -project apps/macos/Voyager/Voyager.xcodeproj -scheme Voyager-Dev -configuration Debug`
 
 3) 연동 확인
 - 앱에서 Dock 호출 → 간단한 질의 입력 → 백엔드 로그에서 `/search` 요청/응답 확인
