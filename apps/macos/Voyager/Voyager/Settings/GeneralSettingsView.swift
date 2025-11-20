@@ -8,6 +8,19 @@ struct GeneralSettingsView: View {
     var body: some View {
         Form {
             Section {
+                Toggle("Launch at Startup", isOn: Binding(
+                    get: { store.generalSettings.launchAtStartup },
+                    set: { store.send(.general(.toggleLaunchAtStartup($0))) }
+                ))
+
+                if let error = store.generalSettings.launchAtStartupError {
+                    Text(error)
+                        .font(.caption)
+                        .foregroundColor(.red)
+                }
+            }
+
+            Section {
                 HStack {
                     Text("Starting Directory")
                     Spacer()
@@ -86,7 +99,7 @@ struct GeneralSettingsView: View {
                     .disabled(store.generalSettings.isSelectingDirectory)
                 }
 
-                if let error = store.generalSettings.errorMessage {
+                if let error = store.generalSettings.startingDirectoryError {
                     Text(error)
                         .font(.caption)
                         .foregroundColor(.red)

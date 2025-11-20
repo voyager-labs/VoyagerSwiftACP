@@ -1,6 +1,7 @@
 import AppKit
 import ComposableArchitecture
 import Foundation
+import ServiceManagement
 import SwiftUI
 
 enum DirectoryOption: Equatable, Hashable, Identifiable {
@@ -165,7 +166,9 @@ struct SettingsFeature {
         var startingDirectory: String = ""
         var selectedDirectoryOption: DirectoryOption = .home
         var isSelectingDirectory: Bool = false
-        var errorMessage: String?
+        var startingDirectoryError: String?
+        var launchAtStartup: Bool = false
+        var launchAtStartupError: String?
     }
 
     enum Action: Sendable {
@@ -181,6 +184,7 @@ struct SettingsFeature {
         case selectDirectoryOption(DirectoryOption)
         case openOtherDirectoryPanel
         case startingDirectorySelected(String?)
+        case toggleLaunchAtStartup(Bool)
     }
 
     var body: some Reducer<State, Action> {
@@ -198,12 +202,13 @@ struct SettingsFeature {
                     ?? NSHomeDirectory()
                 state.generalSettings.startingDirectory = startingDir
                 state.generalSettings.selectedDirectoryOption = DirectoryOption.from(path: startingDir)
+                state.generalSettings.launchAtStartup = UserDefaults.standard.bool(forKey: SettingsKeys.launchAtStartup)
                 return .none
 
             case let .general(.setStartingDirectory(path)):
                 state.generalSettings.startingDirectory = path
                 state.generalSettings.selectedDirectoryOption = DirectoryOption.from(path: path)
-                state.generalSettings.errorMessage = nil
+                state.generalSettings.startingDirectoryError = nil
                 UserDefaults.standard.set(path, forKey: SettingsKeys.defaultTabPath)
                 return .none
 
@@ -218,7 +223,7 @@ struct SettingsFeature {
 
             case .general(.openOtherDirectoryPanel):
                 state.generalSettings.isSelectingDirectory = true
-                state.generalSettings.errorMessage = nil
+                state.generalSettings.startingDirectoryError = nil
                 return .run { send in
                     let path = await Task { @MainActor in
                         showDirectorySelectionPanel()
@@ -240,13 +245,30 @@ struct SettingsFeature {
                     {
                         return .send(.general(.setStartingDirectory(path)))
                     } else {
-                        state.generalSettings.errorMessage = "Selected path is not a directory"
+                        state.generalSettings.startingDirectoryError = "Selected path is not a directory"
                         return .none
                     }
                 } else {
-                    state.generalSettings.errorMessage = "Invalid directory path"
+                    state.generalSettings.startingDirectoryError = "Invalid directory path"
                     return .none
                 }
+
+            case let .general(.toggleLaunchAtStartup(enabled)):
+                do {
+                    let appService = SMAppService.mainApp
+                    if enabled {
+                        try appService.register()
+                    } else {
+                        try appService.unregister()
+                    }
+                    state.generalSettings.launchAtStartup = enabled
+                    UserDefaults.standard.set(enabled, forKey: SettingsKeys.launchAtStartup)
+                    state.generalSettings.launchAtStartupError = nil
+                } catch {
+                    state.generalSettings.launchAtStartupError =
+                        "Failed to set launch at startup: \(error.localizedDescription)"
+                }
+                return .none
             }
         }
     }
