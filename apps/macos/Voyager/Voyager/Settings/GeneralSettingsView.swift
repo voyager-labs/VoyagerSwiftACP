@@ -18,6 +18,22 @@ struct GeneralSettingsView: View {
                         .font(.caption)
                         .foregroundColor(.red)
                 }
+
+                Toggle("Automatic Update", isOn: Binding(
+                    get: { store.generalSettings.automaticUpdate },
+                    set: { store.send(.general(.toggleAutomaticUpdate($0))) }
+                ))
+
+                if let error = store.generalSettings.automaticUpdateError {
+                    Text(error)
+                        .font(.caption)
+                        .foregroundColor(.red)
+                }
+
+                Toggle("Alert Before App Quit", isOn: Binding(
+                    get: { store.generalSettings.alertBeforeQuit },
+                    set: { store.send(.general(.toggleAlertBeforeQuit($0))) }
+                ))
             }
 
             Section {

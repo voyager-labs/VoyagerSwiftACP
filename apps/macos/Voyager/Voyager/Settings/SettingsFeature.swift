@@ -169,6 +169,9 @@ struct SettingsFeature {
         var startingDirectoryError: String?
         var launchAtStartup: Bool = false
         var launchAtStartupError: String?
+        var automaticUpdate: Bool = true
+        var automaticUpdateError: String?
+        var alertBeforeQuit: Bool = false
     }
 
     enum Action: Sendable {
@@ -185,6 +188,8 @@ struct SettingsFeature {
         case openOtherDirectoryPanel
         case startingDirectorySelected(String?)
         case toggleLaunchAtStartup(Bool)
+        case toggleAutomaticUpdate(Bool)
+        case toggleAlertBeforeQuit(Bool)
     }
 
     var body: some Reducer<State, Action> {
@@ -203,6 +208,9 @@ struct SettingsFeature {
                 state.generalSettings.startingDirectory = startingDir
                 state.generalSettings.selectedDirectoryOption = DirectoryOption.from(path: startingDir)
                 state.generalSettings.launchAtStartup = UserDefaults.standard.bool(forKey: SettingsKeys.launchAtStartup)
+                state.generalSettings.automaticUpdate = UserDefaults.standard
+                    .object(forKey: SettingsKeys.automaticUpdate) as? Bool ?? true
+                state.generalSettings.alertBeforeQuit = UserDefaults.standard.bool(forKey: SettingsKeys.alertBeforeQuit)
                 return .none
 
             case let .general(.setStartingDirectory(path)):
@@ -268,6 +276,18 @@ struct SettingsFeature {
                     state.generalSettings.launchAtStartupError =
                         "Failed to set launch at startup: \(error.localizedDescription)"
                 }
+                return .none
+
+            case let .general(.toggleAutomaticUpdate(enabled)):
+                state.generalSettings.automaticUpdate = enabled
+                UserDefaults.standard.set(enabled, forKey: SettingsKeys.automaticUpdate)
+                state.generalSettings.automaticUpdateError = nil
+                // TODO: 추후 업데이트 기능 구현 시 여기서 업데이트 체크 로직 연동
+                return .none
+
+            case let .general(.toggleAlertBeforeQuit(enabled)):
+                state.generalSettings.alertBeforeQuit = enabled
+                UserDefaults.standard.set(enabled, forKey: SettingsKeys.alertBeforeQuit)
                 return .none
             }
         }
