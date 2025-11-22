@@ -1,12 +1,18 @@
-"""Ollama LLM 클라이언트"""
+"""Ollama LLM 클라이언트
+
+레거시 지원을 위한 OllamaClient.
+새 코드는 LangChainProvider 사용을 권장합니다.
+"""
 
 import json
 from typing import Any
 
 import httpx
 
+from core.llm.llm_provider import LLMProvider
 
-class OllamaClient:
+
+class OllamaClient(LLMProvider):
     """Ollama API 클라이언트"""
 
     def __init__(self, base_url: str = "http://localhost:11434", model: str = "llama3.2"):
