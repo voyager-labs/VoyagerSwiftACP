@@ -10,6 +10,8 @@ extension Notification.Name {
 class AppDelegate: NSObject, NSApplicationDelegate {
     static var shared: AppDelegate?
 
+    private let helperManager = HelperLifecycleManager()
+
     var windowControllers: [FileManagerWindowController] = []
     var closedTabHistory: [FileManagerFeature.State] = []
     var focusHistory: [NSWindow] = []
@@ -27,9 +29,13 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         AppDelegate.shared = self
     }
 
+    @MainActor
+    func applicationWillFinishLaunching(_: Notification) {
+        helperManager.start()
+    }
+
     func applicationDidFinishLaunching(_: Notification) {
         NSWindow.allowsAutomaticWindowTabbing = true
-        launchHelperOnce()
         createNewWindow()
     }
 
@@ -148,22 +154,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         windowControllers.removeAll { $0 === controller }
     }
 
-    private func launchHelperOnce() {
-        let mainURL = Bundle.main.bundleURL
-        let buildDir = mainURL.deletingLastPathComponent()
-        let helperURL = buildDir.appendingPathComponent("VoyagerHelper.app")
-
-        guard FileManager.default.fileExists(atPath: helperURL.path) else { return }
-
-        let runningApps = NSWorkspace.shared.runningApplications
-        let isHelperRunning = runningApps.contains { app in
-            app.bundleIdentifier == "fm.voyager.VoyagerHelper"
-        }
-
-        if !isHelperRunning {
-            let config = NSWorkspace.OpenConfiguration()
-            config.environment = ProcessInfo.processInfo.environment
-            NSWorkspace.shared.openApplication(at: helperURL, configuration: config) { _, _ in }
-        }
+    func applicationWillTerminate(_: Notification) {
+        helperManager.stop()
     }
 }
