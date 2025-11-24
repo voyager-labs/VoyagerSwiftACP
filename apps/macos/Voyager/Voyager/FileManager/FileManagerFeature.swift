@@ -15,7 +15,7 @@ struct FileManagerFeature {
 
     @ObservableState
     struct State: Equatable {
-        var navigationState: FileManagerNavigationUtils.NavigationState = .folder(AppSettings.shared.defaultTabPath)
+        var navigationState: FileManagerNavigationUtils.NavigationState = .folder(SettingsFeature.getDefaultTabPath())
         var currentPath: String {
             switch navigationState {
             case let .folder(path): return path
@@ -30,7 +30,7 @@ struct FileManagerFeature {
             return path == trashPath || path.starts(with: trashPath + "/")
         }
 
-        var titlePath: String = AppSettings.shared.defaultTabPath
+        var titlePath: String = SettingsFeature.getDefaultTabPath()
 
         var scrollPositions: [String: CGPoint] = [:]
 
