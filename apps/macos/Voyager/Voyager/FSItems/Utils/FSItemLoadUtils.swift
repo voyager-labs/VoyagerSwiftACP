@@ -25,6 +25,7 @@ enum FSItemLoadUtils {
             .creationDateKey,
             .addedToDirectoryDateKey,
             .contentAccessDateKey,
+            .isHiddenKey,
         ])
 
         let name = resourceValues?.name ?? itemURL.lastPathComponent
@@ -32,6 +33,8 @@ enum FSItemLoadUtils {
         let modifiedDate = resourceValues?.contentModificationDate ?? Date()
         let createdDate = resourceValues?.creationDate ?? Date()
         let addedDate = resourceValues?.addedToDirectoryDate ?? Date()
+
+        let isHidden = resourceValues?.isHidden ?? false || name.hasPrefix(".")
 
         let metadata = getItemMetadata(from: itemURL, isDirectory: isDirectory.boolValue)
         let lastOpenedDate = metadata.lastUsedDate
@@ -42,7 +45,7 @@ enum FSItemLoadUtils {
             name: name,
             fullPath: itemURL.path,
             isDirectory: isDirectory.boolValue,
-            isHidden: false,
+            isHidden: isHidden,
             size: size,
             modifiedDate: modifiedDate,
             createdDate: createdDate,
