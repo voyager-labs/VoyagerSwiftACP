@@ -34,4 +34,51 @@ enum BreadcrumbUtils {
             icon = FSItemIconUtils.icon(for: fsItem)
         }
     }
+
+    static func findSpecialRootPath(for path: String, isTrashFolder: Bool) -> String? {
+        if isTrashFolder,
+           let trashURL = FileManager.default.urls(for: .trashDirectory, in: .userDomainMask).first
+        {
+            return trashURL.path
+        }
+        if path.hasPrefix(SidebarUtils.iCloudDrivePath) {
+            return SidebarUtils.iCloudDrivePath
+        }
+        if path.hasPrefix(SidebarUtils.cloudStoragePath + "/") {
+            let relativePath = path.replacingOccurrences(of: SidebarUtils.cloudStoragePath + "/", with: "")
+            if let firstSlashIndex = relativePath.firstIndex(of: "/") {
+                return (SidebarUtils.cloudStoragePath as NSString)
+                    .appendingPathComponent(String(relativePath[..<firstSlashIndex]))
+            }
+            return path
+        }
+        return nil
+    }
+
+    static func buildBreadcrumbs(from root: String, to target: String) -> [Item] {
+        var result = [Item(path: root)]
+        if target != root {
+            let relativePath = target.replacingOccurrences(of: root + "/", with: "")
+            var accumulated = root
+            for component in relativePath.split(separator: "/") {
+                accumulated += "/" + component
+                result.append(Item(path: accumulated))
+            }
+        }
+        return result
+    }
+
+    static func buildBreadcrumbsForStandardPath(_ path: String) -> [Item] {
+        var result: [Item] = []
+        if path.hasPrefix("/") {
+            result.append(Item(path: "/"))
+        }
+        var accumulated = "/"
+        for component in path.split(separator: "/") {
+            accumulated += component
+            result.append(Item(path: accumulated))
+            accumulated += "/"
+        }
+        return result
+    }
 }

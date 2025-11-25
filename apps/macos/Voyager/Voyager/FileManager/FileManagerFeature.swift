@@ -97,47 +97,10 @@ struct FileManagerFeature {
                 }
                 return [BreadcrumbUtils.Item(path: SidebarUtils.computerName)]
             case let .folder(path):
-                if isTrashFolder {
-                    guard let trashURL = FileManager.default.urls(
-                        for: .trashDirectory,
-                        in: .userDomainMask
-                    ).first else {
-                        return []
-                    }
-
-                    var result: [BreadcrumbUtils.Item] = []
-                    result.append(BreadcrumbUtils.Item(path: trashURL.path))
-
-                    if path != trashURL.path {
-                        let relativePath = path.replacingOccurrences(of: trashURL.path + "/", with: "")
-                        let components = relativePath.split(separator: "/").map(String.init)
-                        var accumulated = trashURL.path
-
-                        for component in components {
-                            accumulated += "/" + component
-                            result.append(BreadcrumbUtils.Item(path: accumulated))
-                        }
-                    }
-
-                    return result
+                if let rootPath = BreadcrumbUtils.findSpecialRootPath(for: path, isTrashFolder: isTrashFolder) {
+                    return BreadcrumbUtils.buildBreadcrumbs(from: rootPath, to: path)
                 }
-
-                var result: [BreadcrumbUtils.Item] = []
-
-                if path.hasPrefix("/") {
-                    result.append(BreadcrumbUtils.Item(path: "/"))
-                }
-
-                let components = path.split(separator: "/").map(String.init)
-                var accumulated = "/"
-
-                for component in components {
-                    accumulated += component
-                    result.append(BreadcrumbUtils.Item(path: accumulated))
-                    accumulated += "/"
-                }
-
-                return result
+                return BreadcrumbUtils.buildBreadcrumbsForStandardPath(path)
             }
         }
 
