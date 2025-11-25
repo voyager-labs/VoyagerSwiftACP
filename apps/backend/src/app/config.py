@@ -13,7 +13,7 @@ CONF_DIR: Path = SOURCE_DIR / "conf"
 
 
 def load_hydra_config() -> DictConfig:
-    app_env = os.getenv("APP_ENV")
+    app_env = os.getenv("PUBLIC_APP_ENV")
     overrides = [f"env={app_env}"] if app_env else []
     try:
         with initialize_config_dir(config_dir=str(CONF_DIR), version_base=None):

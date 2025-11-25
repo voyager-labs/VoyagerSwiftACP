@@ -24,7 +24,7 @@ def _run_fastapi(*args: str, env: dict[str, str] | None = None) -> int:
 
 def _with_env(default_env: str) -> dict[str, str]:
     merged = os.environ.copy()
-    merged.setdefault("APP_ENV", default_env)
+    merged.setdefault("PUBLIC_APP_ENV", default_env)
     return merged
 
 
