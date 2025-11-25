@@ -13,14 +13,18 @@ enum BreadcrumbUtils {
 
         init(path: String) {
             fullPath = path
-            name = FileManager.default.displayName(atPath: path)
-
-            if let trashPath = FileManager.default.urls(for: .trashDirectory, in: .userDomainMask).first?.path,
-               path == trashPath
-            {
-                icon = NSImage(named: NSImage.trashFullName) ?? NSWorkspace.shared.icon(forFile: path)
+            if path == SidebarUtils.computerName {
+                name = path
+                icon = NSImage(named: "NSComputer") ?? NSWorkspace.shared.icon(forFile: "/")
             } else {
-                icon = NSWorkspace.shared.icon(forFile: path)
+                name = FileManager.default.displayName(atPath: path)
+                if let trashPath = FileManager.default.urls(for: .trashDirectory, in: .userDomainMask).first?.path,
+                   path == trashPath
+                {
+                    icon = NSImage(named: NSImage.trashFullName) ?? NSWorkspace.shared.icon(forFile: path)
+                } else {
+                    icon = NSWorkspace.shared.icon(forFile: path)
+                }
             }
         }
 

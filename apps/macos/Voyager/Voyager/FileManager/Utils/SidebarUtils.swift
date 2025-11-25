@@ -10,6 +10,14 @@ enum SidebarUtils {
         let name: String
         let url: URL
         let iconName: String
+
+        var isComputer: Bool {
+            url.scheme == "computer"
+        }
+    }
+
+    static var computerName: String {
+        Host.current().localizedName ?? FileManager.default.displayName(atPath: "/")
     }
 
     struct TagItem: Equatable {
@@ -58,6 +66,12 @@ enum SidebarUtils {
             name: NSUserName(),
             url: homeURL,
             iconName: "house"
+        ))
+
+        locations.append(LocationItem(
+            name: computerName,
+            url: URL(string: "computer://") ?? URL(fileURLWithPath: "/"),
+            iconName: "laptopcomputer"
         ))
 
         if let mountedVolumes = FileManager.default.mountedVolumeURLs(

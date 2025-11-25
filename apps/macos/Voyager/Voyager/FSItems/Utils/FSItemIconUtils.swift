@@ -7,6 +7,10 @@ enum FSItemIconUtils {
     private static let thumbnailCache = NSCache<NSString, NSImage>()
 
     static func icon(for item: FSItem) -> NSImage {
+        if item.fullPath == "/" {
+            return NSWorkspace.shared.icon(forFile: "/")
+        }
+
         let cacheKey = item.isDirectory
             ? "generic:folder"
             : UTType(filenameExtension: item.fileExtension)

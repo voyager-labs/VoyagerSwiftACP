@@ -251,9 +251,13 @@ struct SidebarView: View {
                                 title: location.name,
                                 isSelected: store.selectedSidebarItem == location.name,
                                 isFavorite: false,
-                                targetURL: location.url,
+                                targetURL: location.isComputer ? nil : location.url,
                                 action: {
-                                    store.send(.openLocation(location))
+                                    if location.isComputer {
+                                        store.send(.showComputer)
+                                    } else {
+                                        store.send(.openLocation(location))
+                                    }
                                 },
                                 onDrop: { providers, targetURL in
                                     store.send(.dropItemsToSidebarFolder(providers: providers, targetURL: targetURL))

@@ -108,6 +108,7 @@ struct FSItemsFeature {
         case reloadItems
         case loadRecentItems
         case loadTagItems(tagName: String)
+        case loadComputerItems
         case itemsLoaded([FSItem])
         case fileSystemChanged([String])
         case setShowHidden(Bool)
@@ -192,7 +193,9 @@ struct FSItemsFeature {
                 state.clipboardOperation = clipboardOp
 
                 if state.isVirtualFolder {
-                    if let tagName = state.currentFolderPath {
+                    if state.currentFolderPath == SidebarUtils.computerName {
+                        return .send(.loadComputerItems)
+                    } else if let tagName = state.currentFolderPath {
                         return .send(.loadTagItems(tagName: tagName))
                     } else {
                         return .send(.loadRecentItems)
@@ -333,6 +336,15 @@ struct FSItemsFeature {
                     try await Task.sleep(for: .milliseconds(500))
                     let taggedItems = await SidebarUtils.loadFilesWithTag(tagName)
                     await send(.itemsLoaded(taggedItems))
+                }
+
+            case .loadComputerItems:
+                state.currentFolderPath = SidebarUtils.computerName
+                state.isVirtualFolder = true
+
+                return .run { send in
+                    let computerItems = try await fsItemClient.loadComputerItems()
+                    await send(.itemsLoaded(computerItems))
                 }
 
             case .fileSystemChanged:
