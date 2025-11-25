@@ -46,6 +46,8 @@ struct SidebarItemView: View {
                 .frame(width: 16)
             Text(title)
                 .foregroundColor(textColor)
+                .lineLimit(1)
+                .truncationMode(.tail)
             Spacer()
         }
         .padding(.horizontal, 12)
@@ -104,6 +106,8 @@ struct TagItemView: View {
                 .frame(width: 8, height: 8)
             Text(tag.name)
                 .foregroundColor(textColor)
+                .lineLimit(1)
+                .truncationMode(.tail)
             Spacer()
         }
         .padding(.horizontal, 12)
@@ -192,7 +196,7 @@ struct SidebarView: View {
                 Spacer()
             }
         }
-        .frame(minWidth: 200)
+        .frame(minWidth: 150)
         .background(Color(NSColor.controlBackgroundColor))
     }
 
