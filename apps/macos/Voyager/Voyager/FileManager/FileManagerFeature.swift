@@ -92,7 +92,10 @@ struct FileManagerFeature {
             case .recents, .tags:
                 return []
             case .computer:
-                if let selected = selectedBreadcrumbItem, selected.fullPath == "/" {
+                if fsItems.selectedIds.count == 1,
+                   let selectedItem = fsItems.items.first(where: { $0.id == fsItems.selectedIds.first }),
+                   selectedItem.fullPath == "/"
+                {
                     return []
                 }
                 return [BreadcrumbUtils.Item(path: SidebarUtils.computerName)]
@@ -111,9 +114,7 @@ struct FileManagerFeature {
 
             let selectedBreadcrumb = BreadcrumbUtils.Item(fsItem: selectedItem)
 
-            if let lastBreadcrumb = breadcrumbItems.last,
-               lastBreadcrumb.fullPath == selectedBreadcrumb.fullPath
-            {
+            if selectedBreadcrumb.fullPath == currentPath {
                 return nil
             }
 
