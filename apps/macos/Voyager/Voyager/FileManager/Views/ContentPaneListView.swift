@@ -265,11 +265,22 @@ struct ContentPaneListView: View {
             groupedItemsContent(fsStore: fsStore, geometry: geometry, store: store)
         }
 
-        emptyRowsView(itemsCount: fsStore.items.count, scrollHeight: scrollViewHeight)
+        emptyRowsView(itemsCount: fsStore.items.count, scrollHeight: scrollViewHeight, fsStore: fsStore)
+    }
+
+    private func emptyRowTapAction(fsStore: Store<FSItemsFeature.State, FSItemsFeature.Action>) {
+        if fsStore.isRenaming {
+            fsStore.send(.commitRename)
+        }
+        fsStore.send(.clearSelection)
     }
 
     @ViewBuilder
-    private func emptyRowsView(itemsCount: Int, scrollHeight: CGFloat) -> some View {
+    private func emptyRowsView(
+        itemsCount: Int,
+        scrollHeight: CGFloat,
+        fsStore: Store<FSItemsFeature.State, FSItemsFeature.Action>
+    ) -> some View {
         let currentHeight = CGFloat(itemsCount) * rowHeight
         let remainingHeight = scrollHeight - currentHeight
 
@@ -282,6 +293,9 @@ struct ContentPaneListView: View {
                     .frame(height: rowHeight)
                     .frame(maxWidth: .infinity)
                     .contentShape(Rectangle())
+                    .onTapGesture {
+                        emptyRowTapAction(fsStore: fsStore)
+                    }
             }
 
             if partialHeight > 0 {
@@ -289,6 +303,9 @@ struct ContentPaneListView: View {
                     .frame(height: partialHeight)
                     .frame(maxWidth: .infinity)
                     .contentShape(Rectangle())
+                    .onTapGesture {
+                        emptyRowTapAction(fsStore: fsStore)
+                    }
             }
         }
     }
@@ -341,7 +358,7 @@ struct ContentPaneListView: View {
                             LazyVStack(alignment: .leading, spacing: 0) {
                                 listContent(fsStore: fsStore, geometry: geometry, store: store)
                             }
-                            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+                            .frame(maxWidth: .infinity, alignment: .topLeading)
                         }
                     }
                     .background(
