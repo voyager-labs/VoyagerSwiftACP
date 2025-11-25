@@ -146,7 +146,15 @@ struct FileManagerFeature {
                   let selectedItem = fsItems.items.first(where: { $0.id == fsItems.selectedIds.first })
             else { return nil }
 
-            return BreadcrumbUtils.Item(fsItem: selectedItem)
+            let selectedBreadcrumb = BreadcrumbUtils.Item(fsItem: selectedItem)
+
+            if let lastBreadcrumb = breadcrumbItems.last,
+               lastBreadcrumb.fullPath == selectedBreadcrumb.fullPath
+            {
+                return nil
+            }
+
+            return selectedBreadcrumb
         }
 
         var windowTitle: String {
