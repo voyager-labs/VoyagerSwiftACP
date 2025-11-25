@@ -259,6 +259,7 @@ struct FileManagerFeature {
         case toggleLocationsSection
         case toggleTagsSection
         case updateColumnWidth(ColumnUpdate)
+        case setSidebarWidth(CGFloat)
     }
 
     @Dependency(\.fsItemClient)
@@ -433,6 +434,11 @@ struct FileManagerFeature {
 
             case .toggleTagsSection:
                 state.isTagsCollapsed.toggle()
+                return .none
+
+            case let .setSidebarWidth(width):
+                let clampedWidth = max(150, min(400, width))
+                UserDefaults.standard.set(clampedWidth, forKey: "sidebarWidth")
                 return .none
 
             case let .updateColumnWidth(ctx):

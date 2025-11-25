@@ -198,6 +198,22 @@ struct SidebarView: View {
         }
         .frame(minWidth: 150)
         .background(Color(NSColor.controlBackgroundColor))
+        .navigationSplitViewColumnWidth(ideal: {
+            if let savedWidth = UserDefaults.standard.object(forKey: "sidebarWidth") as? Double,
+               savedWidth > 0
+            {
+                return CGFloat(savedWidth)
+            }
+            return 200
+        }())
+        .background(
+            GeometryReader { geometry in
+                Color.clear
+                    .onChange(of: geometry.size.width) { newWidth in
+                        store.send(.setSidebarWidth(newWidth))
+                    }
+            }
+        )
     }
 
     private var favoritesSection: some View {
