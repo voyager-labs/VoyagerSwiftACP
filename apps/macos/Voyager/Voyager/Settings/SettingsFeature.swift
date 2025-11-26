@@ -130,7 +130,7 @@ enum DirectoryOption: Equatable, Hashable, Identifiable {
     }
 }
 
-enum AppTheme: String, CaseIterable, Equatable {
+public enum AppTheme: String, CaseIterable, Equatable {
     case light
     case dark
     case system
@@ -224,6 +224,9 @@ struct SettingsFeature {
         case setTheme(AppTheme)
     }
 
+    @Dependency(\.appearanceSettingsClient)
+    var appearanceSettingsClient: AppearanceSettingsClient
+
     var body: some Reducer<State, Action> {
         Reduce { state, action in
             switch action {
@@ -256,9 +259,7 @@ struct SettingsFeature {
                     .object(forKey: SettingsKeys.automaticUpdate) as? Bool ?? true
                 state.generalSettings.alertBeforeQuit = UserDefaults.standard.bool(forKey: SettingsKeys.alertBeforeQuit)
 
-                let themeRawValue = UserDefaults.standard.string(forKey: SettingsKeys.theme) ?? "system"
-                let theme = AppTheme(rawValue: themeRawValue) ?? .system
-                state.appearanceSettings.theme = theme
+                state.appearanceSettings.theme = appearanceSettingsClient.loadTheme()
                 return .none
 
             case let .general(.setStartingDirectory(path)):
@@ -341,10 +342,8 @@ struct SettingsFeature {
             case let .appearance(.setTheme(theme)):
                 state.appearanceSettings.theme = theme
                 UserDefaults.standard.set(theme.rawValue, forKey: SettingsKeys.theme)
-                return .run { _ in
-                    await MainActor.run {
-                        AppearanceSettingsUtils.shared.applyTheme(theme)
-                    }
+                return .run { [appearanceSettingsClient] _ in
+                    await appearanceSettingsClient.applyTheme(theme)
                 }
             }
         }
