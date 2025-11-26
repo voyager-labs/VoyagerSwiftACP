@@ -5,11 +5,11 @@ description = "Voyager App Backend With FastAPI"
 readme = "README.md"
 requires-python = ">=3.13"
 dependencies = [
+  "alembic>=1.13.2",
   "chromadb>=0.5.0",
   "docx2txt>=0.8",
   "fastapi[standard]==0.116.1",
   "hydra-core>=1.3.2",
-  "alembic>=1.13.2",
   "langchain-community>=0.3.0",
   "langchain-core>=0.3.0",
   "langchain-ollama>=0.3.0",
@@ -64,6 +64,7 @@ package = true
 
 [tool.uv.build-backend]
 module-name = "app"
+packages = ["app", "core", "infra", "utils"]
 
 [project.scripts]
 dev = "app.cli:dev"
