@@ -29,6 +29,10 @@ class AppDelegate: NSObject, NSApplicationDelegate {
 
     func applicationDidFinishLaunching(_: Notification) {
         NSWindow.allowsAutomaticWindowTabbing = true
+
+        let theme = AppearanceSettingsUtils.shared.loadTheme()
+        AppearanceSettingsUtils.shared.applyTheme(theme)
+
         launchHelperOnce()
         createNewWindow()
     }

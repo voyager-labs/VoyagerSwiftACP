@@ -130,8 +130,26 @@ enum DirectoryOption: Equatable, Hashable, Identifiable {
     }
 }
 
+enum AppTheme: String, CaseIterable, Equatable {
+    case light
+    case dark
+    case system
+
+    var displayName: String {
+        switch self {
+        case .light:
+            "Light"
+        case .dark:
+            "Dark"
+        case .system:
+            "Auto"
+        }
+    }
+}
+
 enum SettingsSection: String, CaseIterable, Identifiable {
     case general
+    case appearance
 
     var id: String { rawValue }
 
@@ -139,6 +157,8 @@ enum SettingsSection: String, CaseIterable, Identifiable {
         switch self {
         case .general:
             "General"
+        case .appearance:
+            "Appearance"
         }
     }
 
@@ -146,6 +166,8 @@ enum SettingsSection: String, CaseIterable, Identifiable {
         switch self {
         case .general:
             "gear"
+        case .appearance:
+            "paintbrush"
         }
     }
 }
@@ -160,6 +182,7 @@ struct SettingsFeature {
     struct State: Equatable {
         var selectedSection: SettingsSection = .general
         var generalSettings = GeneralSettingsState()
+        var appearanceSettings = AppearanceSettingsState()
     }
 
     struct GeneralSettingsState: Equatable {
@@ -174,12 +197,17 @@ struct SettingsFeature {
         var alertBeforeQuit: Bool = false
     }
 
+    struct AppearanceSettingsState: Equatable {
+        var theme: AppTheme = .system
+    }
+
     enum Action: Sendable {
         case onAppear
         case loadSettings
         case selectSection(SettingsSection)
 
         case general(GeneralSettingsAction)
+        case appearance(AppearanceSettingsAction)
     }
 
     enum GeneralSettingsAction: Sendable {
@@ -190,6 +218,10 @@ struct SettingsFeature {
         case toggleLaunchAtStartup(Bool)
         case toggleAutomaticUpdate(Bool)
         case toggleAlertBeforeQuit(Bool)
+    }
+
+    enum AppearanceSettingsAction: Sendable {
+        case setTheme(AppTheme)
     }
 
     var body: some Reducer<State, Action> {
@@ -223,6 +255,10 @@ struct SettingsFeature {
                 state.generalSettings.automaticUpdate = UserDefaults.standard
                     .object(forKey: SettingsKeys.automaticUpdate) as? Bool ?? true
                 state.generalSettings.alertBeforeQuit = UserDefaults.standard.bool(forKey: SettingsKeys.alertBeforeQuit)
+
+                let themeRawValue = UserDefaults.standard.string(forKey: SettingsKeys.theme) ?? "system"
+                let theme = AppTheme(rawValue: themeRawValue) ?? .system
+                state.appearanceSettings.theme = theme
                 return .none
 
             case let .general(.setStartingDirectory(path)):
@@ -301,6 +337,15 @@ struct SettingsFeature {
                 state.generalSettings.alertBeforeQuit = enabled
                 UserDefaults.standard.set(enabled, forKey: SettingsKeys.alertBeforeQuit)
                 return .none
+
+            case let .appearance(.setTheme(theme)):
+                state.appearanceSettings.theme = theme
+                UserDefaults.standard.set(theme.rawValue, forKey: SettingsKeys.theme)
+                return .run { _ in
+                    await MainActor.run {
+                        AppearanceSettingsUtils.shared.applyTheme(theme)
+                    }
+                }
             }
         }
     }

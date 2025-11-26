@@ -92,7 +92,7 @@ struct FSItemGridView: View {
                             .font(.system(size: 12))
                             .multilineTextAlignment(.center)
                             .textFieldStyle(.plain)
-                            .background(Color.black)
+                            .background(Color(nsColor: .textBackgroundColor))
                             .cornerRadius(4)
                             .frame(maxWidth: 112)
                             .focused($isTextFieldFocused)

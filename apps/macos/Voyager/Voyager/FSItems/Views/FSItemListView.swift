@@ -101,7 +101,7 @@ struct FSItemListView: View {
                             ))
                             .font(.system(size: 13))
                             .textFieldStyle(.plain)
-                            .background(Color.black)
+                            .background(Color(nsColor: .textBackgroundColor))
                             .cornerRadius(4)
                             .frame(maxWidth: max(layout.name - 32, 40), alignment: .leading)
                             .focused($isTextFieldFocused)
