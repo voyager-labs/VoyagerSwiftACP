@@ -29,8 +29,15 @@ struct AppMenuCommands: Commands {
             .keyboardShortcut("t", modifiers: .command)
 
             Button("Duplicate Tab") {
-                AppDelegate.shared?.duplicateCurrentTab()
+                if let fileManagerStore = fileManagerStore,
+                   !fileManagerStore.fsItems.selectedIds.isEmpty
+                {
+                    fileManagerStore.send(.duplicateSelectedItems)
+                } else {
+                    AppDelegate.shared?.duplicateCurrentTab()
+                }
             }
+            .keyboardShortcut("d", modifiers: .command)
 
             Divider()
 
@@ -59,11 +66,19 @@ struct AppMenuCommands: Commands {
             }
 
             Divider()
+        }
 
+        CommandGroup(replacing: .saveItem) {
             Button("Close Tab") {
                 NSApp.keyWindow?.close()
             }
             .keyboardShortcut("w", modifiers: .command)
+            .disabled({
+                guard let window = NSApp.keyWindow,
+                      let tabGroup = window.tabGroup
+                else { return true }
+                return tabGroup.windows.count <= 1
+            }())
 
             Button("Close Window") {
                 if let window = NSApp.keyWindow,
@@ -78,7 +93,24 @@ struct AppMenuCommands: Commands {
             }
             .keyboardShortcut("w", modifiers: [.command, .shift])
 
-            Divider()
+            Button("Close All") {
+                var processedTabGroups = Set<NSWindow>()
+
+                for window in NSApp.windows {
+                    if let tabGroup = window.tabGroup,
+                       let firstWindow = tabGroup.windows.first
+                    {
+                        guard !processedTabGroups.contains(firstWindow) else { continue }
+                        processedTabGroups.insert(firstWindow)
+                        for tabWindow in tabGroup.windows {
+                            tabWindow.close()
+                        }
+                    } else {
+                        window.close()
+                    }
+                }
+            }
+            .keyboardShortcut("w", modifiers: [.command, .option])
         }
 
         CommandMenu("Go") {
@@ -93,8 +125,6 @@ struct AppMenuCommands: Commands {
             }
             .keyboardShortcut("]", modifiers: .command)
             .disabled(fileManagerStore?.canGoForward == false)
-
-            Divider()
 
             Button("Enclosing Folder") {
                 fileManagerStore?.send(.goToEnclosingDirectory)
