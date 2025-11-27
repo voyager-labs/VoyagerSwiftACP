@@ -134,6 +134,7 @@ struct ContentPaneListView: View {
             applications: fsStore.operations.applicationsForItems[item.fullPath],
             isThumbnailReady: thumbnailsReady.contains(item.fullPath),
             iconSize: store.listIconSize,
+            textSize: store.listTextSize,
             onSelect: props.handlers.onSelect,
             onOpen: props.handlers.onOpen,
             onOpenInNewTab: props.handlers.onOpenInNewTab,

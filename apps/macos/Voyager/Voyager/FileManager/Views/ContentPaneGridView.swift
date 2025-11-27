@@ -92,6 +92,7 @@ struct ContentPaneGridView: View {
             isThumbnailReady: thumbnailsReady.contains(item.fullPath),
             applications: fsStore.operations.applicationsForItems[item.fullPath],
             iconSize: store.gridIconSize,
+            textSize: store.gridTextSize,
             onSelect: handlers.onSelect,
             onOpen: handlers.onOpen,
             onOpenInNewTab: handlers.onOpenInNewTab,

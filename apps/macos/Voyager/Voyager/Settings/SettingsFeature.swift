@@ -201,6 +201,8 @@ struct SettingsFeature {
         var theme: AppTheme = .system
         var listIconSize: CGFloat = 20
         var gridIconSize: CGFloat = 64
+        var listTextSize: CGFloat = 13
+        var gridTextSize: CGFloat = 12
     }
 
     enum Action: Sendable {
@@ -226,6 +228,8 @@ struct SettingsFeature {
         case setTheme(AppTheme)
         case setListIconSize(CGFloat)
         case setGridIconSize(CGFloat)
+        case setListTextSize(CGFloat)
+        case setGridTextSize(CGFloat)
     }
 
     @Dependency(\.appearanceSettingsClient)
@@ -273,6 +277,16 @@ struct SettingsFeature {
                 let savedGridIconSize = UserDefaults.standard.object(forKey: SettingsKeys.gridIconSize) as? CGFloat
                 if let gridIconSize = savedGridIconSize {
                     state.appearanceSettings.gridIconSize = gridIconSize
+                }
+
+                let savedListTextSize = UserDefaults.standard.object(forKey: SettingsKeys.listTextSize) as? CGFloat
+                if let listTextSize = savedListTextSize {
+                    state.appearanceSettings.listTextSize = listTextSize
+                }
+
+                let savedGridTextSize = UserDefaults.standard.object(forKey: SettingsKeys.gridTextSize) as? CGFloat
+                if let gridTextSize = savedGridTextSize {
+                    state.appearanceSettings.gridTextSize = gridTextSize
                 }
 
                 return .none
@@ -369,6 +383,16 @@ struct SettingsFeature {
             case let .appearance(.setGridIconSize(size)):
                 state.appearanceSettings.gridIconSize = size
                 UserDefaults.standard.set(size, forKey: SettingsKeys.gridIconSize)
+                return .none
+
+            case let .appearance(.setListTextSize(size)):
+                state.appearanceSettings.listTextSize = size
+                UserDefaults.standard.set(size, forKey: SettingsKeys.listTextSize)
+                return .none
+
+            case let .appearance(.setGridTextSize(size)):
+                state.appearanceSettings.gridTextSize = size
+                UserDefaults.standard.set(size, forKey: SettingsKeys.gridTextSize)
                 return .none
             }
         }

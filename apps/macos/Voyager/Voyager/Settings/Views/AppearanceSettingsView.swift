@@ -223,6 +223,63 @@ struct AppearanceSettingsView: View {
                 }
                 .padding(.vertical, 4)
             }
+
+            Section("Text Size") {
+                VStack(alignment: .leading, spacing: 10) {
+                    HStack(alignment: .top, spacing: 20) {
+                        Text("List View")
+                            .foregroundColor(.primary)
+                            .fixedSize(horizontal: true, vertical: false)
+                            .frame(width: 140, alignment: .leading)
+
+                        Spacer()
+
+                        HStack(spacing: 12) {
+                            Slider(
+                                value: Binding(
+                                    get: { store.appearanceSettings.listTextSize },
+                                    set: { store.send(.appearance(.setListTextSize($0))) }
+                                ),
+                                in: 10 ... 16,
+                                step: 1
+                            )
+                            .frame(width: 200)
+
+                            Text("\(Int(store.appearanceSettings.listTextSize)) pt")
+                                .foregroundColor(.secondary)
+                                .fixedSize(horizontal: true, vertical: false)
+                                .frame(minWidth: 70, alignment: .trailing)
+                        }
+                    }
+
+                    HStack(alignment: .top, spacing: 20) {
+                        Text("Grid View")
+                            .foregroundColor(.primary)
+                            .fixedSize(horizontal: true, vertical: false)
+                            .frame(width: 140, alignment: .leading)
+
+                        Spacer()
+
+                        HStack(spacing: 12) {
+                            Slider(
+                                value: Binding(
+                                    get: { store.appearanceSettings.gridTextSize },
+                                    set: { store.send(.appearance(.setGridTextSize($0))) }
+                                ),
+                                in: 10 ... 16,
+                                step: 1
+                            )
+                            .frame(width: 200)
+
+                            Text("\(Int(store.appearanceSettings.gridTextSize)) pt")
+                                .foregroundColor(.secondary)
+                                .fixedSize(horizontal: true, vertical: false)
+                                .frame(minWidth: 70, alignment: .trailing)
+                        }
+                    }
+                }
+                .padding(.vertical, 4)
+            }
         }
         .formStyle(.grouped)
         .scrollContentBackground(.hidden)

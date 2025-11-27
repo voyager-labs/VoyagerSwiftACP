@@ -11,6 +11,7 @@ struct FSItemGridView: View {
     let isThumbnailReady: Bool
     let applications: [ApplicationInfo]?
     let iconSize: CGFloat
+    let textSize: CGFloat
     let onSelect: (Bool, Bool) -> Void // (isCommandPressed, isShiftPressed)
     let onOpen: () -> Void
     let onOpenInNewTab: ((Bool) -> Void)?
@@ -90,7 +91,7 @@ struct FSItemGridView: View {
                                 get: { renamingText },
                                 set: { onRenameUpdate($0) }
                             ))
-                            .font(.system(size: 12))
+                            .font(.system(size: textSize))
                             .multilineTextAlignment(.center)
                             .textFieldStyle(.plain)
                             .background(Color(nsColor: .textBackgroundColor))
@@ -110,7 +111,7 @@ struct FSItemGridView: View {
                             }
                         } else {
                             Text(item.name)
-                                .font(.system(size: 12))
+                                .font(.system(size: textSize))
                                 .lineLimit(2)
                                 .truncationMode(.middle)
                                 .multilineTextAlignment(.center)
@@ -129,7 +130,7 @@ struct FSItemGridView: View {
 
                     if let additionalInfo = item.additionalInfo {
                         Text(additionalInfo)
-                            .font(.system(size: 11))
+                            .font(.system(size: max(8, textSize - 1)))
                             .foregroundColor(.blue)
                             .lineLimit(1)
                     }
