@@ -5,17 +5,40 @@ import Foundation
 public struct AppearanceSettingsClient: Sendable {
     public var loadTheme: @Sendable () -> AppTheme
     public var applyTheme: @Sendable (AppTheme) async -> Void
+    public var applyThemeSync: @Sendable (AppTheme) -> Void
 
     public nonisolated init(
         loadTheme: @escaping @Sendable () -> AppTheme,
-        applyTheme: @escaping @Sendable (AppTheme) async -> Void
+        applyTheme: @escaping @Sendable (AppTheme) async -> Void,
+        applyThemeSync: @escaping @Sendable (AppTheme) -> Void
     ) {
         self.loadTheme = loadTheme
         self.applyTheme = applyTheme
+        self.applyThemeSync = applyThemeSync
     }
 }
 
 extension AppearanceSettingsClient: DependencyKey {
+    private static func themeToAppearanceName(_ theme: AppTheme) -> NSAppearance.Name? {
+        switch theme {
+        case .light:
+            .aqua
+        case .dark:
+            .darkAqua
+        case .system:
+            nil
+        }
+    }
+
+    @MainActor
+    private static func applyAppearance(_ theme: AppTheme) {
+        if let appearanceName = themeToAppearanceName(theme) {
+            NSApp.appearance = NSAppearance(named: appearanceName)
+        } else {
+            NSApp.appearance = nil
+        }
+    }
+
     public nonisolated static var liveValue: AppearanceSettingsClient {
         AppearanceSettingsClient(
             loadTheme: {
@@ -28,19 +51,17 @@ extension AppearanceSettingsClient: DependencyKey {
             },
             applyTheme: { theme in
                 await MainActor.run {
-                    let appearance: NSAppearance.Name? = switch theme {
-                    case .light:
-                        .aqua
-                    case .dark:
-                        .darkAqua
-                    case .system:
-                        nil
+                    applyAppearance(theme)
+                }
+            },
+            applyThemeSync: { theme in
+                if Thread.isMainThread {
+                    MainActor.assumeIsolated {
+                        applyAppearance(theme)
                     }
-
-                    if let appearance = appearance {
-                        NSApp.appearance = NSAppearance(named: appearance)
-                    } else {
-                        NSApp.appearance = nil
+                } else {
+                    DispatchQueue.main.sync {
+                        applyAppearance(theme)
                     }
                 }
             }
@@ -50,14 +71,16 @@ extension AppearanceSettingsClient: DependencyKey {
     public nonisolated static var testValue: AppearanceSettingsClient {
         AppearanceSettingsClient(
             loadTheme: { .system },
-            applyTheme: { _ in }
+            applyTheme: { _ in },
+            applyThemeSync: { _ in }
         )
     }
 
     public nonisolated static var previewValue: AppearanceSettingsClient {
         AppearanceSettingsClient(
             loadTheme: { .system },
-            applyTheme: { _ in }
+            applyTheme: { _ in },
+            applyThemeSync: { _ in }
         )
     }
 }
