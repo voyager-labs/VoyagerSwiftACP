@@ -6,4 +6,6 @@ public enum SettingsKeys {
     static let automaticUpdate = "automaticUpdate"
     static let alertBeforeQuit = "alertBeforeQuit"
     static let theme = "theme"
+    static let listIconSize = "listIconSize"
+    static let gridIconSize = "gridIconSize"
 }

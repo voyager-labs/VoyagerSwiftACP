@@ -12,6 +12,7 @@ struct FSItemListView: View {
     let columnWidths: ListColumnWidths
     let applications: [ApplicationInfo]?
     let isThumbnailReady: Bool
+    let iconSize: CGFloat
     let onSelect: (Bool, Bool) -> Void
     let onOpen: () -> Void
     let onOpenInNewTab: (Bool) -> Void
@@ -83,9 +84,9 @@ struct FSItemListView: View {
 
                 HStack(spacing: layout.columnSpacing) {
                     HStack(spacing: 8) {
-                        ThumbnailView(item: item, displaySize: 20, isReady: isThumbnailReady)
+                        ThumbnailView(item: item, displaySize: iconSize, isReady: isThumbnailReady)
                             .opacity(item.isHidden || isCut ? 0.5 : 1.0)
-                            .frame(width: 20, height: 20)
+                            .frame(width: iconSize, height: iconSize)
                             .popover(isPresented: $showTagsEditor, arrowEdge: .bottom) {
                                 TagsEditorView(
                                     fileName: item.name,

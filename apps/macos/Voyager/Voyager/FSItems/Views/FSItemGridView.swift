@@ -10,6 +10,7 @@ struct FSItemGridView: View {
     let renamingText: String
     let isThumbnailReady: Bool
     let applications: [ApplicationInfo]?
+    let iconSize: CGFloat
     let onSelect: (Bool, Bool) -> Void // (isCommandPressed, isShiftPressed)
     let onOpen: () -> Void
     let onOpenInNewTab: ((Bool) -> Void)?
@@ -45,9 +46,9 @@ struct FSItemGridView: View {
 
     var body: some View {
         VStack(spacing: 1) {
-            ThumbnailView(item: item, displaySize: 64, isReady: isThumbnailReady)
+            ThumbnailView(item: item, displaySize: iconSize, isReady: isThumbnailReady)
                 .opacity(item.isHidden || isCut ? 0.5 : 1.0)
-                .frame(width: 64, height: 64)
+                .frame(width: iconSize, height: iconSize)
                 .padding(8)
                 .background(
                     RoundedRectangle(cornerRadius: 8)

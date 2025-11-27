@@ -199,6 +199,8 @@ struct SettingsFeature {
 
     struct AppearanceSettingsState: Equatable {
         var theme: AppTheme = .system
+        var listIconSize: CGFloat = 20
+        var gridIconSize: CGFloat = 64
     }
 
     enum Action: Sendable {
@@ -222,6 +224,8 @@ struct SettingsFeature {
 
     enum AppearanceSettingsAction: Sendable {
         case setTheme(AppTheme)
+        case setListIconSize(CGFloat)
+        case setGridIconSize(CGFloat)
     }
 
     @Dependency(\.appearanceSettingsClient)
@@ -260,6 +264,17 @@ struct SettingsFeature {
                 state.generalSettings.alertBeforeQuit = UserDefaults.standard.bool(forKey: SettingsKeys.alertBeforeQuit)
 
                 state.appearanceSettings.theme = appearanceSettingsClient.loadTheme()
+
+                let savedListIconSize = UserDefaults.standard.object(forKey: SettingsKeys.listIconSize) as? CGFloat
+                if let listIconSize = savedListIconSize {
+                    state.appearanceSettings.listIconSize = listIconSize
+                }
+
+                let savedGridIconSize = UserDefaults.standard.object(forKey: SettingsKeys.gridIconSize) as? CGFloat
+                if let gridIconSize = savedGridIconSize {
+                    state.appearanceSettings.gridIconSize = gridIconSize
+                }
+
                 return .none
 
             case let .general(.setStartingDirectory(path)):
@@ -345,6 +360,16 @@ struct SettingsFeature {
                 return .run { [appearanceSettingsClient] _ in
                     await appearanceSettingsClient.applyTheme(theme)
                 }
+
+            case let .appearance(.setListIconSize(size)):
+                state.appearanceSettings.listIconSize = size
+                UserDefaults.standard.set(size, forKey: SettingsKeys.listIconSize)
+                return .none
+
+            case let .appearance(.setGridIconSize(size)):
+                state.appearanceSettings.gridIconSize = size
+                UserDefaults.standard.set(size, forKey: SettingsKeys.gridIconSize)
+                return .none
             }
         }
     }

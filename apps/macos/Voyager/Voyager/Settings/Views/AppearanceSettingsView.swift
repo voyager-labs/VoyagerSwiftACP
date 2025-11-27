@@ -164,6 +164,65 @@ struct AppearanceSettingsView: View {
                 }
                 .padding(.vertical, 4)
             }
+
+            Section("Icon Size") {
+                VStack(alignment: .leading, spacing: 10) {
+                    HStack(alignment: .top, spacing: 20) {
+                        Text("List View")
+                            .foregroundColor(.primary)
+                            .fixedSize(horizontal: true, vertical: false)
+                            .frame(width: 140, alignment: .leading)
+
+                        Spacer()
+
+                        HStack(spacing: 12) {
+                            Slider(
+                                value: Binding(
+                                    get: { store.appearanceSettings.listIconSize },
+                                    set: { store.send(.appearance(.setListIconSize($0))) }
+                                ),
+                                in: 16 ... 32,
+                                step: 1
+                            )
+                            .frame(width: 200)
+
+                            Text("\(Int(store.appearanceSettings.listIconSize))" +
+                                "x\(Int(store.appearanceSettings.listIconSize))")
+                                .foregroundColor(.secondary)
+                                .fixedSize(horizontal: true, vertical: false)
+                                .frame(minWidth: 70, alignment: .trailing)
+                        }
+                    }
+
+                    HStack(alignment: .top, spacing: 20) {
+                        Text("Grid View")
+                            .foregroundColor(.primary)
+                            .fixedSize(horizontal: true, vertical: false)
+                            .frame(width: 140, alignment: .leading)
+
+                        Spacer()
+
+                        HStack(spacing: 12) {
+                            Slider(
+                                value: Binding(
+                                    get: { store.appearanceSettings.gridIconSize },
+                                    set: { store.send(.appearance(.setGridIconSize($0))) }
+                                ),
+                                in: 16 ... 512,
+                                step: 4
+                            )
+                            .frame(width: 200)
+
+                            Text("\(Int(store.appearanceSettings.gridIconSize))" +
+                                "x\(Int(store.appearanceSettings.gridIconSize))")
+                                .foregroundColor(.secondary)
+                                .fixedSize(horizontal: true, vertical: false)
+                                .frame(minWidth: 70, alignment: .trailing)
+                        }
+                    }
+                }
+                .padding(.vertical, 4)
+            }
         }
         .formStyle(.grouped)
         .scrollContentBackground(.hidden)
