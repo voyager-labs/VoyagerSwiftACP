@@ -7,15 +7,14 @@ from core.llm.ollama_client import OllamaClient  # 레거시 지원
 
 # 공통 유틸리티
 from core.llm.query_converter import QueryConverter
-from core.llm.registry_query_builder import RegistryQueryBuilder
-from core.llm.query_validator import QueryValidator
 
-# 5가지 쿼리 변환 방식
-from core.llm.method1_separated_converter import SeparatedQueryConverter
+# 쿼리 변환 방식 (방법 2, 4, 2+재시도)
 from core.llm.method2_llm_only_converter import LLMOnlyQueryConverter
-from core.llm.method3_two_stage_converter import TwoStageQueryConverter
 from core.llm.method4_validated_converter import ValidatedQueryConverter
-from core.llm.method5_self_correction_converter import SelfCorrectionQueryConverter
+from core.llm.method2_with_retry_converter import Method2WithRetryConverter
+
+# 후처리 유틸리티
+from core.llm.sql_postprocessor import SQLPostProcessor
 
 __all__ = [
     # LLM Provider
@@ -24,12 +23,10 @@ __all__ = [
     "OllamaClient",  # 레거시
     # 유틸리티
     "QueryConverter",
-    "RegistryQueryBuilder",
-    "QueryValidator",
-    # 5가지 변환 방식
-    "SeparatedQueryConverter",
+    # 변환 방식
     "LLMOnlyQueryConverter",
-    "TwoStageQueryConverter",
     "ValidatedQueryConverter",
-    "SelfCorrectionQueryConverter",
+    "Method2WithRetryConverter",
+    # 후처리
+    "SQLPostProcessor",
 ]
