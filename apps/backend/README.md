@@ -1,48 +1,65 @@
-# Voyager File Manager App Backend
+# Voyager Backend
 
-### 필수 요구사항
+LLM 기반 자연어 파일 검색 API
 
-- uv 패키지 매니저
-- Python 3.13 이상
+## 테스트 환경 설정
 
-### 설치 및 실행 방법
+### 1. 서버 실행
 
-1. **프로젝트 클론**
+```bash
+cd apps/backend
+uv sync
+uv run dev
+```
 
-   ```bash
-   git clone https://github.com/voyager-labs/voyager-app-backend.git
-   cd voyager-app-backend
-   ```
+서버: http://localhost:8000
 
-2. **의존성 설치**
+### 2. Ollama 설치
 
-   ```bash
-   uv sync && uv run pre-commit install
-   ```
+```bash
+brew install ollama
+ollama pull qwen2.5:7b
+```
 
-3. **개발 서버 실행**
+### 3. 파일 인덱싱
 
-   ```bash
-   uv run dev
-   ```
+```bash
+uv run index --path ~/Downloads
+```
 
-4. **프로덕션 서버 실행**
+---
 
-   ```bash
-   uv run prod
-   ```
+## API 엔드포인트
 
-### DB 마이그레이션 (Alembic)
+### `GET /api/files/stats`
+파일 통계 조회
 
-SQLite 데이터베이스 스키마 변경 관리를 위해 Alembic을 사용함
-SQLModel Schema 정의가 변경되면, 아래 절차로 마이그레이션 파일을 생성하고 DB 스키마를 최신 상태로 유지할 수 있음.
+```bash
+curl http://localhost:8000/api/files/stats
+```
 
-1. **마이그레이션 파일 생성** (모델 변경 감지 후 자동 코드 생성)
-   ```bash
-   uv run alembic revision --autogenerate -m "변경 내용 설명"
-   ```
+### `GET /api/files/db-size`
+DB 크기 및 파일 개수 조회
 
-2. **마이그레이션 적용** (DB를 최신 상태로 업데이트)
-   ```bash
-   uv run alembic upgrade head
-   ```
+```bash
+curl http://localhost:8000/api/files/db-size
+```
+
+### `POST /api/files/query`
+자연어 검색
+
+```bash
+curl -X POST http://localhost:8000/api/files/query \
+  -H "Content-Type: application/json" \
+  -d '{"query":"PDF 파일"}'
+```
+
+**쿼리 예시:**
+- "PDF 파일"
+- "최근 1주일 이내 수정된 이미지"
+- "큰 동영상 파일"
+- "Downloads 폴더의 파일"
+
+---
+
+**상세 가이드**: [QUICK_START.md](QUICK_START.md)
