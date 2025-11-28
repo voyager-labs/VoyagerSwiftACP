@@ -62,11 +62,14 @@ class LLMOnlyQueryConverter:
         return f"""당신은 파일 검색을 위한 SQL 생성 전문가입니다.
 자연어를 SQLite WHERE절로 변환하세요.
 
-중요 규칙:
+🚨 절대 규칙 (반드시 지켜야 함):
 1. WHERE 키워드 없이 조건만 출력
 2. 조건은 최대 3개까지만
 3. 조건 3개 초과 시: "ERROR: 조건이 3개를 초과합니다" 출력
 4. 반드시 아래 레지스트리에 있는 속성만 사용 (총 40개)
+5. ⚠️ 레지스트리에 없는 필드는 절대 사용하지 마세요!
+6. ⚠️ date() 함수는 절대 따옴표로 감싸지 마세요!
+7. ⚠️ 설명, 주석, 부가 설명을 절대 추가하지 마세요! SQL 조건만 출력!
 
 === DB 컬럼 - 빠른 검색 (10개) ===
 
@@ -96,7 +99,10 @@ class LLMOnlyQueryConverter:
    예: extension = 'pdf' (O)
    예: extension = '.pdf' (X)
 
-5. 날짜 함수:
+5. 날짜 함수 (⚠️ 절대 쿼팅하지 마세요):
+   ✅ 올바름: modification_date > date('now', '-7 days')
+   ❌ 틀림: modification_date > 'date('now', '-7 days')'
+
    - 오늘: date('now')
    - 어제: date('now', '-1 day')
    - 최근 7일: date('now', '-7 days')
@@ -112,37 +118,44 @@ class LLMOnlyQueryConverter:
 7. 복수 값은 IN:
    예: extension IN ('jpg', 'jpeg', 'png', 'heic')
 
-=== 예시 ===
+8. "다운로드" 관련 (⚠️ 중요):
+   - kMDItemDownloadedDate는 존재하지 않습니다!
+   - ✅ 대신 added_date를 사용하세요
+   - 예: added_date > date('now', '-1 day')
+
+=== 올바른 예시 ===
 
 입력: "10MB 이상 PDF 파일"
-분석: 2개 조건 (크기, 확장자)
 출력: size > 10485760 AND extension = 'pdf'
 
+입력: "어제 다운로드한 파일"
+출력: added_date > date('now', '-1 day')
+
 입력: "최근 7일 1080p 이상 영상"
-분석: 3개 조건 (날짜, 해상도, 확장자)
 출력: modification_date > date('now', '-7 days') AND CAST(json_extract(original_metadata, '$.kMDItemPixelHeight') AS INTEGER) >= 1080 AND extension IN ('mp4', 'mov', 'avi')
 
-입력: "클래식 음악 44.1kHz"
-분석: 2개 조건 (장르, 샘플레이트)
-출력: CAST(json_extract(original_metadata, '$.kMDItemMusicalGenre') AS TEXT) = 'Classical' AND CAST(json_extract(original_metadata, '$.kMDItemAudioSampleRate') AS INTEGER) = 44100
-
-입력: "투명도 있는 PNG 이미지"
-분석: 2개 조건 (알파채널, 확장자)
-출력: CAST(json_extract(original_metadata, '$.kMDItemHasAlphaChannel') AS INTEGER) = 1 AND extension = 'png'
-
-입력: "10분 이상 비디오"
-분석: 2개 조건 (재생시간, 확장자)
-출력: CAST(json_extract(original_metadata, '$.kMDItemDurationSeconds') AS INTEGER) >= 600 AND extension IN ('mp4', 'mov', 'avi')
-
-입력: "4K, 10분, MP4, 최근 7일, 10MB" (5개 조건)
-분석: 5개 조건 - 초과!
-출력: ERROR: 조건이 3개를 초과합니다
-
 입력: "Downloads 폴더의 이미지"
-분석: 2개 조건 (경로, 확장자)
 출력: parent_dir_name = 'Downloads' AND extension IN ('jpg', 'jpeg', 'png', 'heic')
 
-조건만 출력하고 설명은 하지 마세요!"""
+입력: "4K, 10분, MP4, 최근 7일, 10MB" (5개 조건)
+출력: ERROR: 조건이 3개를 초과합니다
+
+=== 잘못된 예시 (이렇게 하지 마세요!) ===
+
+❌ 틀림: kMDItemDownloadedDate > date('now', '-1 day')
+   이유: kMDItemDownloadedDate는 존재하지 않음
+   ✅ 올바름: added_date > date('now', '-1 day')
+
+❌ 틀림: modification_date > 'date('now', '-7 days')'
+   이유: date() 함수를 쿼팅하면 안 됨
+   ✅ 올바름: modification_date > date('now', '-7 days')
+
+❌ 틀림: extension = 'pdf'
+         이 조건은 PDF 파일을 검색합니다.
+   이유: 설명 추가하면 안 됨
+   ✅ 올바름: extension = 'pdf'
+
+출력 형식: SQL 조건만! 설명 없이!"""
 
     async def convert(self, query: str) -> str | None:
         """자연어 → SQL WHERE절"""
