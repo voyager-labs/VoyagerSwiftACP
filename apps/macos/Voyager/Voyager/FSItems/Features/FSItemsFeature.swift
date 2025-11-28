@@ -469,14 +469,14 @@ struct FSItemsFeature {
                             state.selectedIds.insert(id)
                             state.lastSelectedId = id
 
-                            var preloadEffect: Effect<Action> = .none
-                            if let selectedItem = state.items.first(where: { $0.id == id }),
-                               !selectedItem.isDirectory
-                            {
-                                preloadEffect = .send(.operations(.loadApplicationsForFile(file: selectedItem)))
-                            }
-
-                            return .merge(renameEffect, preloadEffect)
+                            return .merge(
+                                renameEffect,
+                                preloadApplicationsEffect(
+                                    selectedIds: state.selectedIds,
+                                    items: state.items,
+                                    currentItemId: id
+                                )
+                            )
                         }
                     } else {
                         if state.selectedIds.contains(id) {
@@ -501,24 +501,22 @@ struct FSItemsFeature {
                     state.rangeAnchorId = id
                 }
 
-                var preloadEffect: Effect<Action> = .none
-                if let selectedItem = state.items.first(where: { $0.id == id }),
-                   !selectedItem.isDirectory
-                {
-                    preloadEffect = .send(.operations(.loadApplicationsForFile(file: selectedItem)))
-                }
-
-                return .merge(renameEffect, preloadEffect)
+                return .merge(
+                    renameEffect,
+                    preloadApplicationsEffect(selectedIds: state.selectedIds, items: state.items, currentItemId: id)
+                )
 
             case .selectAll:
                 state.selectedIds = Set(state.items.map { $0.id })
                 if let lastItem = state.items.last {
                     state.lastSelectedId = lastItem.id
                 }
-                return .none
+
+                return preloadApplicationsEffect(selectedIds: state.selectedIds, items: state.items)
 
             case .clearSelection:
                 state.clearSelection()
+                state.operations.commonApplicationsForSelectedFiles = []
                 return .none
 
             case let .selectNextItem(isShiftPressed):
@@ -554,7 +552,7 @@ struct FSItemsFeature {
                     state.rangeAnchorId = nil
                     state.shouldScrollToSelection = true
                 }
-                return .none
+                return preloadApplicationsEffect(selectedIds: state.selectedIds, items: state.items)
 
             case let .selectPreviousItem(isShiftPressed):
                 let displayItems = state.displayOrderItems
@@ -589,7 +587,7 @@ struct FSItemsFeature {
                     state.rangeAnchorId = nil
                     state.shouldScrollToSelection = true
                 }
-                return .none
+                return preloadApplicationsEffect(selectedIds: state.selectedIds, items: state.items)
 
             case let .selectByOffset(offset, isShiftPressed):
                 let displayItems = state.displayOrderItems
@@ -605,7 +603,11 @@ struct FSItemsFeature {
                     state.lastSelectedId = item.id
                     state.rangeAnchorId = item.id
                     state.shouldScrollToSelection = true
-                    return .none
+                    return preloadApplicationsEffect(
+                        selectedIds: state.selectedIds,
+                        items: state.items,
+                        currentItemId: item.id
+                    )
                 }
 
                 var targetIndex: Int
@@ -648,7 +650,7 @@ struct FSItemsFeature {
                 }
                 state.lastSelectedId = targetItem.id
                 state.shouldScrollToSelection = true
-                return .none
+                return preloadApplicationsEffect(selectedIds: state.selectedIds, items: state.items)
 
             case let .setSortKey(key):
                 state.sortKey = key
@@ -689,18 +691,9 @@ struct FSItemsFeature {
                     return .none
                 }
 
-                var selectedFolders: [FSItem] = []
-                var selectedFiles: [FSItem] = []
-
-                for selectedId in state.selectedIds {
-                    if let item = state.items.first(where: { $0.id == selectedId }) {
-                        if item.isDirectory {
-                            selectedFolders.append(item)
-                        } else {
-                            selectedFiles.append(item)
-                        }
-                    }
-                }
+                let selectedItems = getSelectedItems(selectedIds: state.selectedIds, items: state.items)
+                let selectedFolders = selectedItems.filter { $0.isDirectory }
+                let selectedFiles = selectedItems.filter { !$0.isDirectory }
 
                 if selectedFolders.count == 1 && selectedFiles.isEmpty {
                     return .send(.navigateFolder(id: selectedFolders[0].id))
@@ -732,41 +725,74 @@ struct FSItemsFeature {
                 return .send(.operations(.quickLookFile(file: item)))
 
             case let .openWithSelectedItem(bundleID, shouldSetAsDefault):
-                guard state.selectedIds.count == 1,
-                      let selectedId = state.selectedIds.first,
-                      let item = state.items.first(where: { $0.id == selectedId }),
-                      !item.isDirectory
-                else {
+                let selectedFiles = getSelectedFiles(selectedIds: state.selectedIds, items: state.items)
+
+                guard !selectedFiles.isEmpty else {
                     return .none
                 }
 
-                if let bundleID = bundleID {
-                    let filePath = item.fullPath
-                    let url = URL(fileURLWithPath: filePath)
-                    let fileType = UTType(filenameExtension: item.fileExtension)
+                if selectedFiles.count == 1 {
+                    guard let item = selectedFiles.first else { return .none }
 
-                    var effects: [Effect<Action>] = []
+                    if let bundleID = bundleID {
+                        let filePath = item.fullPath
+                        let url = URL(fileURLWithPath: filePath)
+                        let fileType = UTType(filenameExtension: item.fileExtension)
 
-                    if shouldSetAsDefault, let fileType = fileType {
-                        effects.append(.send(.operations(.setDefaultAppForFile(
-                            type: fileType,
+                        var effects: [Effect<Action>] = []
+
+                        if shouldSetAsDefault, let fileType = fileType {
+                            effects.append(.send(.operations(.setDefaultAppForFile(
+                                type: fileType,
+                                bundleID: bundleID,
+                                file: item
+                            ))))
+                        }
+
+                        effects.append(.send(.operations(.openFileWithAppBundleID(
+                            filePath: filePath,
                             bundleID: bundleID,
-                            file: item
+                            url: url
                         ))))
-                    }
 
-                    effects.append(.send(.operations(.openFileWithAppBundleID(
-                        filePath: filePath,
-                        bundleID: bundleID,
-                        url: url
-                    ))))
-
-                    return .concatenate(effects)
-                } else {
-                    if shouldSetAsDefault {
-                        return .send(.operations(.setDefaultAppWithOther(file: item)))
+                        return .concatenate(effects)
                     } else {
-                        return .send(.operations(.openFileWithApp(file: item)))
+                        if shouldSetAsDefault {
+                            return .send(.operations(.setDefaultAppWithOther(file: item)))
+                        } else {
+                            return .send(.operations(.openFileWithApp(file: item)))
+                        }
+                    }
+                } else {
+                    if let bundleID = bundleID {
+                        var effects: [Effect<Action>] = []
+
+                        for file in selectedFiles {
+                            let filePath = file.fullPath
+                            let url = URL(fileURLWithPath: filePath)
+                            let fileType = UTType(filenameExtension: file.fileExtension)
+
+                            if shouldSetAsDefault, let fileType = fileType {
+                                effects.append(.send(.operations(.setDefaultAppForFile(
+                                    type: fileType,
+                                    bundleID: bundleID,
+                                    file: file
+                                ))))
+                            }
+
+                            effects.append(.send(.operations(.openFileWithAppBundleID(
+                                filePath: filePath,
+                                bundleID: bundleID,
+                                url: url
+                            ))))
+                        }
+
+                        return .concatenate(effects)
+                    } else {
+                        return .send(.operations(.openFilesWithAppFromOther(
+                            files: selectedFiles,
+                            shouldSetAsDefault: shouldSetAsDefault
+                        )))
                     }
                 }
 
@@ -775,7 +801,7 @@ struct FSItemsFeature {
                     return .none
                 }
 
-                let selectedItems = Array(state.items.filter { state.selectedIds.contains($0.id) })
+                let selectedItems = getSelectedItems(selectedIds: state.selectedIds, items: state.items)
                 let selectedPaths = selectedItems.map { $0.fullPath }
 
                 state.clipboardItems = selectedPaths
@@ -792,7 +818,7 @@ struct FSItemsFeature {
                     return .none
                 }
 
-                let selectedItems = Array(state.items.filter { state.selectedIds.contains($0.id) })
+                let selectedItems = getSelectedItems(selectedIds: state.selectedIds, items: state.items)
                 let selectedPaths = selectedItems.map { $0.fullPath }
 
                 state.clipboardItems = selectedPaths
@@ -823,7 +849,7 @@ struct FSItemsFeature {
                 )))
 
             case .duplicateSelectedItems:
-                let selectedItems = Array(state.items.filter { state.selectedIds.contains($0.id) })
+                let selectedItems = getSelectedItems(selectedIds: state.selectedIds, items: state.items)
                 guard !selectedItems.isEmpty else {
                     return .none
                 }
@@ -1043,15 +1069,13 @@ struct FSItemsFeature {
                 }
 
             case .moveSelectedItemsToTrash:
-                let selectedItems = Array(state.items.filter { state.selectedIds.contains($0.id) })
-
+                let selectedItems = getSelectedItems(selectedIds: state.selectedIds, items: state.items)
                 guard !selectedItems.isEmpty else { return .none }
 
                 return .send(.operations(.moveToTrash(items: selectedItems)))
 
             case .deleteSelectedItemsImmediately:
-                let selectedItems = Array(state.items.filter { state.selectedIds.contains($0.id) })
-
+                let selectedItems = getSelectedItems(selectedIds: state.selectedIds, items: state.items)
                 guard !selectedItems.isEmpty else { return .none }
 
                 return .run { send in
@@ -1067,15 +1091,13 @@ struct FSItemsFeature {
                 return .send(.operations(.deleteImmediately(items: items)))
 
             case .putBackSelectedItems:
-                let selectedItems = Array(state.items.filter { state.selectedIds.contains($0.id) })
-
+                let selectedItems = getSelectedItems(selectedIds: state.selectedIds, items: state.items)
                 guard !selectedItems.isEmpty else { return .none }
 
                 return .send(.operations(.putBackFromTrash(items: selectedItems)))
 
             case .compressSelectedItems:
-                let selectedItems = Array(state.items.filter { state.selectedIds.contains($0.id) })
-
+                let selectedItems = getSelectedItems(selectedIds: state.selectedIds, items: state.items)
                 guard !selectedItems.isEmpty else { return .none }
 
                 return .send(.operations(.compressItems(items: selectedItems)))
@@ -1088,7 +1110,7 @@ struct FSItemsFeature {
                 return .send(.operations(.extractCompressedFile(file: selectedItem)))
 
             case let .toggleTagForSelectedItem(tag):
-                let selectedItems = state.items.filter { state.selectedIds.contains($0.id) }
+                let selectedItems = getSelectedItems(selectedIds: state.selectedIds, items: state.items)
                 guard !selectedItems.isEmpty else { return .none }
 
                 return .merge(
@@ -1288,6 +1310,40 @@ struct FSItemsFeature {
                 return .none
             }
         }
+    }
+
+    private func getSelectedItems(
+        selectedIds: Set<String>,
+        items: IdentifiedArrayOf<FSItem>
+    ) -> [FSItem] {
+        Array(items.filter { selectedIds.contains($0.id) })
+    }
+
+    private func getSelectedFiles(
+        selectedIds: Set<String>,
+        items: IdentifiedArrayOf<FSItem>
+    ) -> [FSItem] {
+        getSelectedItems(selectedIds: selectedIds, items: items).filter { !$0.isDirectory }
+    }
+
+    private func preloadApplicationsEffect(
+        selectedIds: Set<String>,
+        items: IdentifiedArrayOf<FSItem>,
+        currentItemId: String? = nil
+    ) -> Effect<Action> {
+        let selectedFiles = getSelectedFiles(selectedIds: selectedIds, items: items)
+
+        if selectedFiles.count > 1 {
+            return .send(.operations(.loadCommonApplicationsForFiles(files: selectedFiles)))
+        } else if selectedFiles.count == 1, let file = selectedFiles.first {
+            return .send(.operations(.loadApplicationsForFile(file: file)))
+        } else if let itemId = currentItemId,
+                  let item = items.first(where: { $0.id == itemId }),
+                  !item.isDirectory
+        {
+            return .send(.operations(.loadApplicationsForFile(file: item)))
+        }
+        return .none
     }
 }
 
