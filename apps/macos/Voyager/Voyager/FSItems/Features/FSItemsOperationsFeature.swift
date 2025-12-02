@@ -11,6 +11,7 @@ struct FSItemsOperationsFeature {
     struct State: Equatable {
         var itemStates: [String: ItemOperationState] = [:]
         var applicationsForItems: [String: [ApplicationInfo]] = [:]
+        var commonApplicationsForSelectedFiles: [ApplicationInfo] = []
     }
 
     struct ItemOperationState: Equatable {
@@ -30,6 +31,7 @@ struct FSItemsOperationsFeature {
         case openFileWithAppBundleID(filePath: String, bundleID: String, url: URL)
         case setDefaultAppForFile(type: UTType?, bundleID: String, file: FSItem)
         case setDefaultAppWithOther(file: FSItem)
+        case openFilesWithAppFromOther(files: [FSItem], shouldSetAsDefault: Bool)
         case loadApplicationsForFile(file: FSItem)
         case createNewFolder(name: String, parentPath: String)
         case copySelectedItems(files: [FSItem])
@@ -43,6 +45,8 @@ struct FSItemsOperationsFeature {
         case extractCompressedFile(file: FSItem)
         case toggleTagForItem(file: FSItem, tag: String)
         case applicationsLoaded(String, [ApplicationInfo])
+        case loadCommonApplicationsForFiles(files: [FSItem])
+        case commonApplicationsLoaded([ApplicationInfo])
         case operationStarted(String, OperationKind)
         case operationFinished(String, OperationKind, Result<Void, FileOpError>)
         case clearError(String)
@@ -165,6 +169,16 @@ struct FSItemsOperationsFeature {
 
                 return selectApplicationAndOpenFile(for: file, defaultChecked: true)
 
+            case let .openFilesWithAppFromOther(files, shouldSetAsDefault):
+                for file in files {
+                    if let error = validateDefaultAppSetting(file: file) {
+                        state.itemStates[file.fullPath] = ItemOperationState(isBusy: false, lastError: error)
+                        return .none
+                    }
+                }
+
+                return selectApplicationAndOpenFile(for: files, defaultChecked: shouldSetAsDefault)
+
             case let .loadApplicationsForFile(file):
                 guard !file.isDirectory else { return .none }
                 let filePath = file.fullPath
@@ -180,6 +194,13 @@ struct FSItemsOperationsFeature {
 
             case let .applicationsLoaded(filePath, apps):
                 state.applicationsForItems[filePath] = apps
+                return .none
+
+            case let .loadCommonApplicationsForFiles(files):
+                return loadCommonApplications(for: files)
+
+            case let .commonApplicationsLoaded(apps):
+                state.commonApplicationsForSelectedFiles = apps
                 return .none
 
             case let .createNewFolder(name, parentPath):
@@ -542,27 +563,156 @@ struct FSItemsOperationsFeature {
                 )
             }
 
-            var finalApps = appsWithDefaultFlag
-            finalApps.append(ApplicationInfo(
-                id: "other",
-                name: "Other…",
-                bundleID: nil,
-                isDefault: false
-            ))
-
-            finalApps.sort { lhs, rhs in
-                if lhs.isDefault != rhs.isDefault {
-                    return lhs.isDefault
-                }
-                return lhs.name < rhs.name
-            }
-
+            let finalApps = finalizeApplicationList(appsWithDefaultFlag)
             await send(.applicationsLoaded(filePath, finalApps))
         }
     }
+
+    private func loadCommonApplications(for files: [FSItem]) -> Effect<Action> {
+        .run { [fsItemClient] send in
+            let commonApps = await computeCommonApplications(files: files, fsItemClient: fsItemClient)
+            let finalApps = finalizeApplicationList(commonApps)
+            await send(.commonApplicationsLoaded(finalApps))
+        }
+    }
+
+    private func computeCommonApplications(
+        files: [FSItem],
+        fsItemClient: FSItemClient
+    ) async -> [ApplicationInfo] {
+        let fileInfos = prepareFileInfos(from: files)
+        guard !fileInfos.isEmpty else { return [] }
+
+        let allAppMaps = await collectApplicationMaps(fileInfos: fileInfos, fsItemClient: fsItemClient)
+        guard !allAppMaps.isEmpty else { return [] }
+
+        let commonBundleIDs = findCommonBundleIDs(from: allAppMaps)
+        let fileTypeToDefaultApp = await loadDefaultApps(fileInfos: fileInfos, fsItemClient: fsItemClient)
+        return buildCommonApps(
+            bundleIDs: commonBundleIDs,
+            appMaps: allAppMaps,
+            fileInfos: fileInfos,
+            fileTypeToDefaultApp: fileTypeToDefaultApp
+        )
+    }
+
+    private struct FileInfo {
+        let file: FSItem
+        let fileType: UTType
+        let url: URL
+    }
+
+    private func prepareFileInfos(from files: [FSItem]) -> [FileInfo] {
+        files.compactMap { file in
+            guard !file.isDirectory,
+                  let fileType = UTType(filenameExtension: file.fileExtension)
+            else { return nil }
+            return FileInfo(file: file, fileType: fileType, url: URL(fileURLWithPath: file.fullPath))
+        }
+    }
+
+    private func collectApplicationMaps(
+        fileInfos: [FileInfo],
+        fsItemClient: FSItemClient
+    ) async -> [[String: ApplicationInfo]] {
+        var allAppMaps: [[String: ApplicationInfo]] = []
+        await withTaskGroup(of: [String: ApplicationInfo]?.self) { group in
+            for fileInfo in fileInfos {
+                group.addTask {
+                    let apps = await fsItemClient.applicationsForFile(fileInfo.url)
+                    var appMap: [String: ApplicationInfo] = [:]
+                    for app in apps {
+                        if let bundleID = app.bundleID {
+                            appMap[bundleID] = app
+                        }
+                    }
+                    return appMap
+                }
+            }
+
+            for await appMap in group {
+                if let appMap = appMap {
+                    allAppMaps.append(appMap)
+                }
+            }
+        }
+        return allAppMaps
+    }
+
+    private func findCommonBundleIDs(from allAppMaps: [[String: ApplicationInfo]]) -> Set<String> {
+        guard let firstMap = allAppMaps.first else { return [] }
+        var commonBundleIDs = Set(firstMap.keys)
+        for appMap in allAppMaps.dropFirst() {
+            commonBundleIDs = commonBundleIDs.intersection(Set(appMap.keys))
+        }
+        return commonBundleIDs
+    }
+
+    private func loadDefaultApps(
+        fileInfos: [FileInfo],
+        fsItemClient: FSItemClient
+    ) async -> [String: String] {
+        var fileTypeToDefaultApp: [String: String] = [:]
+        await withTaskGroup(of: (String, String?)?.self) { group in
+            for fileInfo in fileInfos {
+                group.addTask {
+                    let defaultApp = await fsItemClient.defaultApplication(fileInfo.fileType)
+                    return (fileInfo.fileType.identifier, defaultApp?.bundleID)
+                }
+            }
+
+            for await result in group {
+                if let (typeID, bundleID) = result, let bundleID = bundleID {
+                    fileTypeToDefaultApp[typeID] = bundleID
+                }
+            }
+        }
+        return fileTypeToDefaultApp
+    }
+
+    private func buildCommonApps(
+        bundleIDs: Set<String>,
+        appMaps: [[String: ApplicationInfo]],
+        fileInfos: [FileInfo],
+        fileTypeToDefaultApp: [String: String]
+    ) -> [ApplicationInfo] {
+        var commonApps: [ApplicationInfo] = []
+        guard let firstAppMap = appMaps.first else { return [] }
+
+        for bundleID in bundleIDs {
+            guard let app = firstAppMap[bundleID] else { continue }
+
+            let isDefault = fileInfos.allSatisfy { fileInfo in
+                fileTypeToDefaultApp[fileInfo.fileType.identifier] == bundleID
+            }
+
+            commonApps.append(ApplicationInfo(
+                id: app.id,
+                name: app.name,
+                bundleID: app.bundleID,
+                isDefault: isDefault
+            ))
+        }
+        return commonApps
+    }
 }
 
-// MARK: - Private Helpers
+private nonisolated func finalizeApplicationList(_ apps: [ApplicationInfo]) -> [ApplicationInfo] {
+    var result = apps
+    result.append(ApplicationInfo(
+        id: "other",
+        name: "Other…",
+        bundleID: nil,
+        isDefault: false
+    ))
+    result.sort { lhs, rhs in
+        if lhs.isDefault != rhs.isDefault {
+            return lhs.isDefault
+        }
+        return lhs.name < rhs.name
+    }
+    return result
+}
 
 private nonisolated func isInTrash(_ filePath: String) -> Bool {
     let trashPath = FileManager.default.urls(for: .trashDirectory, in: .userDomainMask).first?.path ?? ""
@@ -573,26 +723,54 @@ private func selectApplicationAndOpenFile(
     for file: FSItem,
     defaultChecked: Bool
 ) -> Effect<FSItemsOperationsFeature.Action> {
-    let filePath = file.fullPath
-    let url = URL(fileURLWithPath: filePath)
+    selectApplicationAndOpenFile(for: [file], defaultChecked: defaultChecked)
+}
+
+private func selectApplicationAndOpenFile(
+    for files: [FSItem],
+    defaultChecked: Bool
+) -> Effect<FSItemsOperationsFeature.Action> {
+    let fileURLs = files.map { URL(fileURLWithPath: $0.fullPath) }
 
     return .run { send in
-        guard let selection = await selectApplication(for: url, defaultChecked: defaultChecked) else { return }
+        guard let selection = await selectApplication(for: fileURLs, defaultChecked: defaultChecked) else { return }
 
-        if selection.setAsDefault, let type = selection.type {
-            await send(.setDefaultAppForFile(
-                type: type,
-                bundleID: selection.bundleID,
-                file: file
-            ))
+        for file in files {
+            let effects = applyApplicationSelection(selection, to: file)
+            for effect in effects {
+                await send(effect)
+            }
         }
-
-        await send(.openFileWithAppBundleID(filePath: filePath, bundleID: selection.bundleID, url: url))
     }
 }
 
+private nonisolated func applyApplicationSelection(
+    _ selection: ApplicationSelection,
+    to file: FSItem
+) -> [FSItemsOperationsFeature.Action] {
+    var effects: [FSItemsOperationsFeature.Action] = []
+
+    if selection.setAsDefault, let type = UTType(filenameExtension: file.fileExtension) {
+        effects.append(.setDefaultAppForFile(
+            type: type,
+            bundleID: selection.bundleID,
+            file: file
+        ))
+    }
+
+    let filePath = file.fullPath
+    effects.append(.openFileWithAppBundleID(
+        filePath: filePath,
+        bundleID: selection.bundleID,
+        url: URL(fileURLWithPath: filePath)
+    ))
+
+    return effects
+}
+
 private class OpenWithPanelDelegate: NSObject, NSOpenSavePanelDelegate {
-    let fileURL: URL
+    let fileURL: URL?
+    let fileURLs: [URL]?
     var enableMode: EnableMode
     weak var panel: NSOpenPanel?
 
@@ -601,23 +779,31 @@ private class OpenWithPanelDelegate: NSObject, NSOpenSavePanelDelegate {
         case all = 1
     }
 
-    init(fileURL: URL, enableMode: EnableMode = .recommended) {
+    init(fileURL: URL? = nil, fileURLs: [URL]? = nil, enableMode: EnableMode = .recommended) {
         self.fileURL = fileURL
+        self.fileURLs = fileURLs
         self.enableMode = enableMode
         super.init()
     }
 
     func panel(_: Any, shouldEnable url: URL) -> Bool {
-        // .app 번들만 허용 (앱은 디렉토리지만 특수 취급)
         guard url.pathExtension == "app" else { return false }
-
-        // "All Applications" 모드면 모두 활성화
         guard enableMode == .recommended else { return true }
 
-        // "Recommended": 파일 타입 지원하는지 확인
         let workspace = NSWorkspace.shared
-        let supportedApps = workspace.urlsForApplications(toOpen: fileURL)
-        return supportedApps.contains(url)
+        if let fileURL = fileURL {
+            let supportedApps = workspace.urlsForApplications(toOpen: fileURL)
+            return supportedApps.contains(url)
+        } else if let fileURLs = fileURLs {
+            for fileURL in fileURLs {
+                let supportedApps = workspace.urlsForApplications(toOpen: fileURL)
+                if !supportedApps.contains(url) {
+                    return false
+                }
+            }
+            return true
+        }
+        return false
     }
 
     @objc
@@ -682,6 +868,31 @@ private func createOpenWithAccessoryView(
 
 @MainActor
 private func selectApplication(for itemURL: URL, defaultChecked: Bool = false) -> ApplicationSelection? {
+    selectApplication(
+        fileURL: itemURL,
+        fileURLs: nil,
+        message: "Choose an application to open the document \"\(itemURL.lastPathComponent)\".",
+        defaultChecked: defaultChecked
+    )
+}
+
+@MainActor
+private func selectApplication(for fileURLs: [URL], defaultChecked: Bool = false) -> ApplicationSelection? {
+    selectApplication(
+        fileURL: nil,
+        fileURLs: fileURLs,
+        message: "Choose an application to open \(fileURLs.count) items.",
+        defaultChecked: defaultChecked
+    )
+}
+
+@MainActor
+private func selectApplication(
+    fileURL: URL?,
+    fileURLs: [URL]?,
+    message: String,
+    defaultChecked: Bool
+) -> ApplicationSelection? {
     let panel = NSOpenPanel()
     panel.canChooseDirectories = false
     panel.canChooseFiles = true
@@ -693,9 +904,9 @@ private func selectApplication(for itemURL: URL, defaultChecked: Bool = false) -
     }
 
     panel.prompt = "Open"
-    panel.message = "Choose an application to open the document \"\(itemURL.lastPathComponent)\"."
+    panel.message = message
 
-    let delegate = OpenWithPanelDelegate(fileURL: itemURL, enableMode: .recommended)
+    let delegate = OpenWithPanelDelegate(fileURL: fileURL, fileURLs: fileURLs, enableMode: .recommended)
     panel.delegate = delegate
     delegate.panel = panel
 
@@ -707,7 +918,7 @@ private func selectApplication(for itemURL: URL, defaultChecked: Bool = false) -
         return nil
     }
 
-    let type = UTType(filenameExtension: itemURL.pathExtension)
+    let type = (fileURL ?? fileURLs?.first).flatMap { UTType(filenameExtension: $0.pathExtension) }
     return ApplicationSelection(
         bundleID: bundleID,
         type: type,

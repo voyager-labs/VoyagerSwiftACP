@@ -11,6 +11,7 @@ struct FSItemListView: View {
     let availableWidth: CGFloat
     let columnWidths: ListColumnWidths
     let applications: [ApplicationInfo]?
+    let commonApplications: [ApplicationInfo]?
     let isThumbnailReady: Bool
     let onSelect: (Bool, Bool) -> Void
     let onOpen: () -> Void
@@ -23,6 +24,7 @@ struct FSItemListView: View {
     let onStartDrag: () -> Void
     let onDrop: ([NSItemProvider], String) -> Void
     let onLoadApplications: () -> Void
+    let onLoadCommonApplications: (() -> Void)?
     let onPutBack: (() -> Void)?
     let onMoveToTrash: () -> Void
     let onDeleteImmediately: () -> Void
@@ -231,7 +233,9 @@ private extension FSItemListView {
             .keyboardShortcut(.downArrow, modifiers: [.command])
         }
         .onAppear {
-            if !item.isDirectory && applications == nil {
+            if selectedCount > 1, commonApplications == nil {
+                onLoadCommonApplications?()
+            } else if !item.isDirectory, applications == nil {
                 onLoadApplications()
             }
         }
@@ -248,39 +252,43 @@ private extension FSItemListView {
             .keyboardShortcut(.downArrow, modifiers: [.command, .option])
         }
 
-        if let apps = applications, !apps.isEmpty {
-            Menu {
-                let regularApps = apps.filter { $0.id != "other" }
+        if !item.isDirectory {
+            let appsToShow = selectedCount > 1 ? commonApplications : applications
 
-                ForEach(Array(regularApps.enumerated()), id: \.element.id) { _, app in
-                    Button {
-                        onOpenWithApp(app.bundleID, isOptionPressed)
-                    } label: {
-                        HStack {
-                            if let bundleID = app.bundleID {
-                                appIconView(for: bundleID)
+            if let apps = appsToShow, !apps.isEmpty {
+                Menu {
+                    let regularApps = apps.filter { $0.id != "other" }
+
+                    ForEach(Array(regularApps.enumerated()), id: \.element.id) { _, app in
+                        Button {
+                            onOpenWithApp(app.bundleID, isOptionPressed)
+                        } label: {
+                            HStack {
+                                if let bundleID = app.bundleID {
+                                    appIconView(for: bundleID)
+                                }
+                                Text(app.isDefault ? "\(app.name) (default)" : app.name)
                             }
-                            Text(app.isDefault ? "\(app.name) (default)" : app.name)
+                        }
+
+                        if app.isDefault {
+                            Divider()
                         }
                     }
 
-                    if app.isDefault {
-                        Divider()
+                    Divider()
+                    Button("Other…") {
+                        onOpenWithApp(nil, isOptionPressed)
                     }
+                } label: {
+                    Label(isOptionPressed ? "Always Open With" : "Open With", systemImage: "app.badge")
                 }
-
-                Divider()
-                Button("Other…") {
+            } else {
+                Button {
                     onOpenWithApp(nil, isOptionPressed)
+                } label: {
+                    Label(isOptionPressed ? "Always Open With…" : "Open With…", systemImage: "app.badge")
                 }
-            } label: {
-                Label(isOptionPressed ? "Always Open With" : "Open With", systemImage: "app.badge")
-            }
-        } else if !item.isDirectory {
-            Button {
-                onOpenWithApp(nil, isOptionPressed)
-            } label: {
-                Label(isOptionPressed ? "Always Open With…" : "Open With…", systemImage: "app.badge")
             }
         }
 

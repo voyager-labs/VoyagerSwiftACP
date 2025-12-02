@@ -113,21 +113,7 @@ struct FileManagerView: View {
 
                 guard event.modifierFlags.contains(.command) else { return }
 
-                if event.characters == "a" {
-                    store.send(.fsItems(.selectAll))
-                } else if event.characters == "c" {
-                    store.send(.fsItems(.copySelectedItems))
-                } else if event.characters == "x" {
-                    store.send(.fsItems(.cutSelectedItems))
-                } else if event.characters == "v" {
-                    store.send(.fsItems(.pasteItems(destinationPath: store.currentPath)))
-                } else if event.characters == "d" {
-                    if !store.fsItems.selectedIds.isEmpty {
-                        store.send(.duplicateSelectedItems)
-                    } else {
-                        AppDelegate.shared?.duplicateCurrentTab()
-                    }
-                } else if event.characters == "." && event.modifierFlags.contains(.shift) {
+                if event.characters == "." && event.modifierFlags.contains(.shift) {
                     store.send(.toggleShowHiddenFiles)
                 } else if let number = Int(event.characters ?? ""), (1 ... 9).contains(number) {
                     AppDelegate.shared?.selectTab(at: number - 1)

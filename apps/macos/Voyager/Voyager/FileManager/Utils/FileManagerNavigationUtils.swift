@@ -6,6 +6,7 @@ enum FileManagerNavigationUtils {
         case folder(String)
         case recents
         case tags(String)
+        case computer
     }
 
     static func navigateToState(_ navigationState: NavigationState) -> Effect<FileManagerFeature.Action> {
@@ -19,6 +20,8 @@ enum FileManagerNavigationUtils {
                 let taggedItems = await SidebarUtils.loadFilesWithTag(tagName)
                 await send(.fsItems(.itemsLoaded(taggedItems)))
             }
+        case .computer:
+            return .send(.fsItems(.loadComputerItems))
         }
     }
 
@@ -27,7 +30,9 @@ enum FileManagerNavigationUtils {
         case "Recents":
             return .recents
         default:
-            if path.hasPrefix("/") {
+            if path == SidebarUtils.computerName {
+                return .computer
+            } else if path.hasPrefix("/") {
                 return .folder(path)
             } else {
                 return .tags(path)

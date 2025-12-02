@@ -12,6 +12,7 @@ struct VoyagerApp: App {
         }
         .commands {
             AppMenuCommands()
+            EditMenuCommands()
             ViewMenuCommands()
         }
     }

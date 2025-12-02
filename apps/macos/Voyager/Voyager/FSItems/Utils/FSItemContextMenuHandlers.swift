@@ -15,6 +15,7 @@ struct FSItemContextMenuHandlers {
     let onStartDrag: () -> Void
     let onDrop: ([NSItemProvider], String) -> Void
     let onLoadApplications: () -> Void
+    let onLoadCommonApplications: (() -> Void)?
     let onPutBack: (() -> Void)?
     let onMoveToTrash: () -> Void
     let onDeleteImmediately: () -> Void
@@ -101,6 +102,13 @@ func makeContextMenuHandlers(
         fsStore.send(.operations(.loadApplicationsForFile(file: item)))
     }
 
+    let onLoadCommonApplications: (() -> Void)? = {
+        let selectedItems = Array(fsStore.items.filter { fsStore.selectedIds.contains($0.id) })
+        let selectedFiles = selectedItems.filter { !$0.isDirectory }
+        guard selectedFiles.count > 1 else { return }
+        fsStore.send(.operations(.loadCommonApplicationsForFiles(files: selectedFiles)))
+    }
+
     let onPutBack: (() -> Void)? = isTrashFolder ? {
         FSItemContextMenuUtils.sendWithSelection(item, fsStore: fsStore, action: {
             fsStore.send(.putBackSelectedItems)
@@ -173,6 +181,7 @@ func makeContextMenuHandlers(
         onStartDrag: onStartDrag,
         onDrop: onDrop,
         onLoadApplications: onLoadApplications,
+        onLoadCommonApplications: onLoadCommonApplications,
         onPutBack: onPutBack,
         onMoveToTrash: onMoveToTrash,
         onDeleteImmediately: onDeleteImmediately,
