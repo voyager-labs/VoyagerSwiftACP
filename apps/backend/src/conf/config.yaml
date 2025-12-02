@@ -8,16 +8,17 @@ app:
 
 # LLM 설정 (LangChain 기반)
 llm:
-  provider: ollama  # ollama, openai, anthropic
-  model: qwen2.5:7b
-  temperature: 0.7
+  provider: openai # ollama, openai, anthropic
+  # model: gpt-5-nano-2025-08-07
+  model: gpt-5-mini-2025-08-07
+  temperature: 0.3 # SQL 생성은 낮은 temperature 권장
 
   # Provider별 설정
   ollama:
     base_url: http://localhost:11434
 
   openai:
-    api_key: ${OPENAI_API_KEY:}
+    api_key: ${oc.env:OPENAI_API_KEY}
 
   anthropic:
-    api_key: ${ANTHROPIC_API_KEY:}
+    api_key: ${oc.env:ANTHROPIC_API_KEY,""}
