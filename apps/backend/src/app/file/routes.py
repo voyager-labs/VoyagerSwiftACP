@@ -8,10 +8,11 @@ from app.config import load_config
 from core.llm.langchain_provider import LangChainProvider
 from core.llm.query_converter import QueryConverter
 
-# 쿼리 변환 방식 (Method 2, 4, 2+Retry)
+# 쿼리 변환 방식 (Method 2, 4, 2+Retry, Enhanced)
 from core.llm.method2_llm_only_converter import LLMOnlyQueryConverter
 from core.llm.method2_with_retry_converter import Method2WithRetryConverter
 from core.llm.method4_validated_converter import ValidatedQueryConverter
+from core.llm.method2_enhanced_converter import Method2EnhancedConverter
 
 from infra.db.engine import engine_manager
 from infra.repositories.file_entries import FileEntriesRepository
@@ -297,6 +298,7 @@ async def _execute_query_with_method(converter, request: NaturalQueryRequest):
     if not metadata["sql"]:
         return {
             "query": request.query,
+            "success": False,
             "method": metadata["method"],
             "description": metadata["description"],
             "where_clause": None,
@@ -307,41 +309,55 @@ async def _execute_query_with_method(converter, request: NaturalQueryRequest):
         }
 
     # SQL 실행
-    with engine_manager.session(autocommit=False) as session:
-        sql = f"""
-            SELECT id, path, name_full, size, extension, file_kind, modification_date
-            FROM file_entries
-            WHERE {metadata["sql"]}
-            ORDER BY modification_date DESC
-            LIMIT {request.limit}
-        """
+    try:
+        with engine_manager.session(autocommit=False) as session:
+            sql = f"""
+                SELECT id, path, name_full, size, extension, file_kind, modification_date
+                FROM file_entries
+                WHERE {metadata["sql"]}
+                ORDER BY modification_date DESC
+                LIMIT {request.limit}
+            """
 
-        stmt = text(sql)
-        result = session.exec(stmt)
-        rows = result.fetchall()
+            stmt = text(sql)
+            result = session.exec(stmt)
+            rows = result.fetchall()
 
-        items = []
-        for row in rows:
-            items.append(
-                {
-                    "id": row[0],
-                    "path": row[1],
-                    "name": row[2],
-                    "size": row[3],
-                    "extension": row[4],
-                    "file_kind": row[5],
-                    "modification_date": row[6],
-                }
-            )
+            items = []
+            for row in rows:
+                items.append(
+                    {
+                        "id": row[0],
+                        "path": row[1],
+                        "name": row[2],
+                        "size": row[3],
+                        "extension": row[4],
+                        "file_kind": row[5],
+                        "modification_date": row[6],
+                    }
+                )
 
+            return {
+                "query": request.query,
+                "success": True,
+                "method": metadata["method"],
+                "description": metadata["description"],
+                "where_clause": metadata["sql"],
+                "count": len(items),
+                "items": items,
+                "metadata": metadata,
+            }
+    except Exception as e:
         return {
             "query": request.query,
+            "success": False,
             "method": metadata["method"],
             "description": metadata["description"],
             "where_clause": metadata["sql"],
-            "count": len(items),
-            "items": items,
+            "count": 0,
+            "items": [],
             "metadata": metadata,
+            "error": str(e),
         }
 
 
@@ -507,5 +523,151 @@ async def query_method2_retry(request: NaturalQueryRequest):
 
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"검색 실행 오류: {str(e)}")
+    finally:
+        await llm.close()
+
+
+@router.post("/query/method2-test")
+async def query_method2_test(request: NaturalQueryRequest):
+    """Method 2 테스트용 엔드포인트 (간단 출력)
+
+    성공 여부, 생성된 SQL, 실행 시간만 반환합니다.
+    결과 items는 포함하지 않습니다.
+    """
+    import time
+
+    start_time = time.time()
+    llm = create_llm_provider()
+
+    if not await llm.health_check():
+        return {
+            "success": False,
+            "error": "LLM 서버가 실행 중이지 않습니다.",
+            "execution_time": round(time.time() - start_time, 2),
+        }
+
+    generated_sql = None
+    try:
+        converter = LLMOnlyQueryConverter(llm)
+        metadata = await converter.convert_with_metadata(request.query)
+        generated_sql = metadata.get("sql")
+
+        if not generated_sql:
+            return {
+                "query": request.query,
+                "success": False,
+                "where_clause": None,
+                "count": 0,
+                "error": "SQL 변환 실패",
+                "execution_time": round(time.time() - start_time, 2),
+            }
+
+        # SQL 실행
+        with engine_manager.session(autocommit=False) as session:
+            sql = f"""
+                SELECT id, path, name_full, size, extension, file_kind, modification_date
+                FROM file_entries
+                WHERE {generated_sql}
+                ORDER BY modification_date DESC
+                LIMIT {request.limit}
+            """
+
+            stmt = text(sql)
+            result = session.exec(stmt)
+            rows = result.fetchall()
+
+            return {
+                "query": request.query,
+                "success": True,
+                "where_clause": generated_sql,
+                "count": len(rows),
+                "execution_time": round(time.time() - start_time, 2),
+            }
+
+    except Exception as e:
+        return {
+            "query": request.query,
+            "success": False,
+            "where_clause": generated_sql,
+            "count": 0,
+            "error": str(e)[:200],
+            "execution_time": round(time.time() - start_time, 2),
+        }
+    finally:
+        await llm.close()
+
+
+@router.post("/query/method2-enhanced")
+async def query_method2_enhanced(request: NaturalQueryRequest):
+    """Method 2 Enhanced: 동적 스키마 + JSON 출력 + Self-Validation + CoT
+
+    범용적 개선사항:
+        1. 동적 스키마 주입 - 관련 필드만 포함하여 토큰 절약
+        2. Structured Output (JSON) - 안정적인 출력 파싱
+        3. Self-Validation - LLM이 생성 전 스스로 체크
+        4. Chain-of-Thought - 단계별 사고 유도
+        5. 다단계 폴백 - 항상 유효한 SQL 반환
+    """
+    import time
+
+    start_time = time.time()
+    llm = create_llm_provider()
+
+    if not await llm.health_check():
+        return {
+            "success": False,
+            "error": "LLM 서버가 실행 중이지 않습니다.",
+            "execution_time": round(time.time() - start_time, 2),
+        }
+
+    generated_sql = None
+    try:
+        converter = Method2EnhancedConverter(llm)
+        metadata = await converter.convert_with_metadata(request.query)
+        generated_sql = metadata.get("sql")
+
+        if not generated_sql:
+            return {
+                "query": request.query,
+                "success": False,
+                "where_clause": None,
+                "count": 0,
+                "metadata": metadata,
+                "error": "SQL 변환 실패",
+                "execution_time": round(time.time() - start_time, 2),
+            }
+
+        # SQL 실행
+        with engine_manager.session(autocommit=False) as session:
+            sql = f"""
+                SELECT id, path, name_full, size, extension, file_kind, modification_date
+                FROM file_entries
+                WHERE {generated_sql}
+                ORDER BY modification_date DESC
+                LIMIT {request.limit}
+            """
+
+            stmt = text(sql)
+            result = session.exec(stmt)
+            rows = result.fetchall()
+
+            return {
+                "query": request.query,
+                "success": True,
+                "where_clause": generated_sql,
+                "count": len(rows),
+                "metadata": metadata,
+                "execution_time": round(time.time() - start_time, 2),
+            }
+
+    except Exception as e:
+        return {
+            "query": request.query,
+            "success": False,
+            "where_clause": generated_sql,
+            "count": 0,
+            "error": str(e)[:200],
+            "execution_time": round(time.time() - start_time, 2),
+        }
     finally:
         await llm.close()
