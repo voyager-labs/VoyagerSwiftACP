@@ -159,11 +159,7 @@ struct PathBreadcrumbView: View {
 
     var body: some View {
         HStack(spacing: itemSpacing) {
-            if breadcrumbItems.isEmpty {
-                Text("")
-                    .font(.system(size: 13))
-                    .opacity(0)
-            } else {
+            if !breadcrumbItems.isEmpty {
                 ForEach(Array(breadcrumbItems.enumerated()), id: \.offset) { index, item in
                     let position = ItemPosition(index: index, totalCount: breadcrumbItems.count)
 
@@ -204,20 +200,22 @@ struct PathBreadcrumbView: View {
                             .foregroundColor(.secondary)
                     }
                 }
+            }
 
-                if let selectedItem = selectedItem, !breadcrumbItems.isEmpty {
+            if let selectedItem = selectedItem {
+                if !breadcrumbItems.isEmpty {
                     Image(systemName: "chevron.right")
                         .font(.system(size: 10))
                         .foregroundColor(.secondary)
-
-                    BreadcrumbItemView(
-                        item: selectedItem,
-                        width: selectedItem.name.width(),
-                        needsFixedSize: true,
-                        truncationMode: .middle
-                    )
-                    .foregroundColor(.secondary)
                 }
+
+                BreadcrumbItemView(
+                    item: selectedItem,
+                    width: selectedItem.name.width(),
+                    needsFixedSize: true,
+                    truncationMode: .middle
+                )
+                .foregroundColor(.secondary)
             }
         }
         .fixedSize(horizontal: true, vertical: false)

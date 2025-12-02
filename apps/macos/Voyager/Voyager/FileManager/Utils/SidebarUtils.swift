@@ -10,6 +10,24 @@ enum SidebarUtils {
         let name: String
         let url: URL
         let iconName: String
+
+        var isComputer: Bool {
+            url.scheme == "computer"
+        }
+    }
+
+    static var computerName: String {
+        Host.current().localizedName ?? FileManager.default.displayName(atPath: "/")
+    }
+
+    static var iCloudDrivePath: String {
+        (NSHomeDirectory() as NSString)
+            .appendingPathComponent("Library/Mobile Documents/com~apple~CloudDocs")
+    }
+
+    static var cloudStoragePath: String {
+        (NSHomeDirectory() as NSString)
+            .appendingPathComponent("Library/CloudStorage")
     }
 
     struct TagItem: Equatable {
@@ -49,9 +67,80 @@ enum SidebarUtils {
     }
 
     @MainActor
-    static func loadLocations() -> [LocationItem] {
-        var locations: [LocationItem] = []
+    private static func loadExternalVolumes() -> [LocationItem] {
+        var volumes: [LocationItem] = []
 
+        guard let mountedVolumes = FileManager.default.mountedVolumeURLs(
+            includingResourceValuesForKeys: [.volumeIsRemovableKey, .volumeIsEjectableKey],
+            options: []
+        ) else {
+            return volumes
+        }
+
+        for volumeURL in mountedVolumes {
+            let volumeName = volumeURL.lastPathComponent
+            let resourceValues = try? volumeURL.resourceValues(forKeys: [
+                .volumeIsRemovableKey,
+                .volumeIsEjectableKey,
+            ])
+
+            let isRemovable = resourceValues?.volumeIsRemovable ?? false
+            let isEjectable = resourceValues?.volumeIsEjectable ?? false
+
+            let systemPrefixes = ["com.apple", "VM", "Preboot", "Update", "xarts", "iSCPreboot", "Hardware", "mnt"]
+            let isSystemMount = systemPrefixes
+                .contains { volumeName.hasPrefix($0) } || volumeName == "/" || volumeName == "home"
+
+            if isRemovable || isEjectable, !isSystemMount {
+                volumes.append(LocationItem(
+                    name: volumeName,
+                    url: volumeURL,
+                    iconName: "externaldrive"
+                ))
+            }
+        }
+
+        return volumes
+    }
+
+    @MainActor
+    private static func addiCloudDrive(to locations: inout [LocationItem]) {
+        let iCloudDriveURL = URL(fileURLWithPath: iCloudDrivePath)
+        if FileManager.default.fileExists(atPath: iCloudDrivePath) {
+            locations.append(LocationItem(
+                name: "iCloud Drive",
+                url: iCloudDriveURL,
+                iconName: "icloud"
+            ))
+        }
+    }
+
+    @MainActor
+    private static func addCloudStorageFolders(to locations: inout [LocationItem]) {
+        let cloudStorageURL = URL(fileURLWithPath: cloudStoragePath)
+        guard let cloudStorageContents = try? FileManager.default.contentsOfDirectory(
+            at: cloudStorageURL,
+            includingPropertiesForKeys: [.isDirectoryKey],
+            options: [.skipsHiddenFiles]
+        ) else {
+            return
+        }
+
+        for itemURL in cloudStorageContents {
+            if let isDirectory = try? itemURL.resourceValues(forKeys: [.isDirectoryKey]).isDirectory,
+               isDirectory == true
+            {
+                locations.append(LocationItem(
+                    name: itemURL.lastPathComponent,
+                    url: itemURL,
+                    iconName: "folder"
+                ))
+            }
+        }
+    }
+
+    @MainActor
+    private static func addSystemLocations(to locations: inout [LocationItem]) {
         let homeURL = URL(fileURLWithPath: NSHomeDirectory())
 
         locations.append(LocationItem(
@@ -60,33 +149,11 @@ enum SidebarUtils {
             iconName: "house"
         ))
 
-        if let mountedVolumes = FileManager.default.mountedVolumeURLs(
-            includingResourceValuesForKeys: [.volumeIsRemovableKey, .volumeIsEjectableKey],
-            options: []
-        ) {
-            for volumeURL in mountedVolumes {
-                let volumeName = volumeURL.lastPathComponent
-                let resourceValues = try? volumeURL.resourceValues(forKeys: [
-                    .volumeIsRemovableKey,
-                    .volumeIsEjectableKey,
-                ])
-
-                let isRemovable = resourceValues?.volumeIsRemovable ?? false
-                let isEjectable = resourceValues?.volumeIsEjectable ?? false
-
-                let systemPrefixes = ["com.apple", "VM", "Preboot", "Update", "xarts", "iSCPreboot", "Hardware", "mnt"]
-                let isSystemMount = systemPrefixes
-                    .contains { volumeName.hasPrefix($0) } || volumeName == "/" || volumeName == "home"
-
-                if isRemovable || isEjectable, !isSystemMount {
-                    locations.append(LocationItem(
-                        name: volumeName,
-                        url: volumeURL,
-                        iconName: "externaldrive"
-                    ))
-                }
-            }
-        }
+        locations.append(LocationItem(
+            name: computerName,
+            url: URL(string: "computer://") ?? URL(fileURLWithPath: "/"),
+            iconName: "laptopcomputer"
+        ))
 
         if let trashURL = FileManager.default.urls(for: .trashDirectory, in: .userDomainMask).first {
             locations.append(LocationItem(
@@ -95,6 +162,16 @@ enum SidebarUtils {
                 iconName: "trash"
             ))
         }
+    }
+
+    @MainActor
+    static func loadLocations() -> [LocationItem] {
+        var locations: [LocationItem] = []
+
+        locations.append(contentsOf: loadExternalVolumes())
+        addiCloudDrive(to: &locations)
+        addCloudStorageFolders(to: &locations)
+        addSystemLocations(to: &locations)
 
         return locations
     }
