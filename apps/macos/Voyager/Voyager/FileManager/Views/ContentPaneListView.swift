@@ -22,7 +22,9 @@ struct ContentPaneListView: View {
     @State private var nsScrollView: NSScrollView?
     @State private var hasRestoredScrollPosition: Bool = false
 
-    private let rowHeight: CGFloat = 24
+    private var rowHeight: CGFloat {
+        max(24, store.listIconSize + 4)
+    }
 
     private func saveScrollPositionBeforeOpen() {
         ScrollPositionUtils.saveScrollPosition(
@@ -132,6 +134,8 @@ struct ContentPaneListView: View {
             applications: fsStore.operations.applicationsForItems[item.fullPath],
             commonApplications: selectedIds.count > 1 ? fsStore.operations.commonApplicationsForSelectedFiles : nil,
             isThumbnailReady: thumbnailsReady.contains(item.fullPath),
+            iconSize: store.listIconSize,
+            textSize: store.listTextSize,
             onSelect: props.handlers.onSelect,
             onOpen: props.handlers.onOpen,
             onOpenInNewTab: props.handlers.onOpenInNewTab,

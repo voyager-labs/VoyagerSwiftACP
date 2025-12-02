@@ -25,10 +25,15 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     override init() {
         super.init()
         AppDelegate.shared = self
+
+        let appearanceSettingsClient = AppearanceSettingsClient.liveValue
+        let theme = appearanceSettingsClient.loadTheme()
+        appearanceSettingsClient.applyThemeSync(theme)
     }
 
     func applicationDidFinishLaunching(_: Notification) {
         NSWindow.allowsAutomaticWindowTabbing = true
+
         launchHelperOnce()
         createNewWindow()
     }
@@ -42,6 +47,26 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             createNewWindow()
         }
         return true
+    }
+
+    func applicationShouldTerminate(_: NSApplication) -> NSApplication.TerminateReply {
+        let shouldAlert = UserDefaults.standard.bool(forKey: SettingsKeys.alertBeforeQuit)
+
+        guard shouldAlert else {
+            return .terminateNow
+        }
+
+        let isIndexing = checkIndexingStatus()
+
+        showQuitAlert(isIndexing: isIndexing) { shouldQuit in
+            if shouldQuit {
+                NSApplication.shared.reply(toApplicationShouldTerminate: true)
+            } else {
+                NSApplication.shared.reply(toApplicationShouldTerminate: false)
+            }
+        }
+
+        return .terminateLater
     }
 
     @objc
@@ -165,5 +190,27 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             config.environment = ProcessInfo.processInfo.environment
             NSWorkspace.shared.openApplication(at: helperURL, configuration: config) { _, _ in }
         }
+    }
+
+    private func checkIndexingStatus() -> Bool {
+        // TODO: 추후 인덱싱 기능 구현 시 실제 상태 확인
+        false
+    }
+
+    private func showQuitAlert(isIndexing: Bool, completion: @escaping (Bool) -> Void) {
+        let alert = NSAlert()
+        alert.messageText = isIndexing
+            ? "Indexing is in progress. Quitting will stop the indexing process."
+            : "Are you sure you want to quit Voyager?"
+        alert.informativeText = isIndexing
+            ? "To stop indexing and quit, click 'Quit'."
+            : "You may have unsaved work."
+
+        alert.addButton(withTitle: "Quit")
+        alert.addButton(withTitle: "Cancel")
+        alert.alertStyle = .warning
+
+        let response = alert.runModal()
+        completion(response == .alertFirstButtonReturn)
     }
 }

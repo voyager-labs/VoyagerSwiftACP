@@ -26,11 +26,14 @@ struct ContentPaneGridView: View {
         )
     }
 
-    private let itemWidth: CGFloat = 120
+    private var itemWidth: CGFloat {
+        max(120, max(store.gridIconSize + 16, 112))
+    }
+
     private let horizontalPadding: CGFloat = 16
-    private let minSpacing: CGFloat = 12
-    private let maxSpacing: CGFloat = 32
-    private let verticalSpacing: CGFloat = 16
+    private let minSpacing: CGFloat = 4
+    private let maxSpacing: CGFloat = 8
+    private let verticalSpacing: CGFloat = 8
 
     private func resolveLayout(for width: CGFloat) -> GridLayoutConfig {
         let usableWidth = max(width - (horizontalPadding * 2), itemWidth)
@@ -88,6 +91,8 @@ struct ContentPaneGridView: View {
             renamingText: fsStore.renamingText,
             isThumbnailReady: thumbnailsReady.contains(item.fullPath),
             applications: fsStore.operations.applicationsForItems[item.fullPath],
+            iconSize: store.gridIconSize,
+            textSize: store.gridTextSize,
             commonApplications: selectedIds.count > 1 ? fsStore.operations.commonApplicationsForSelectedFiles : nil,
             onSelect: handlers.onSelect,
             onOpen: handlers.onOpen,
