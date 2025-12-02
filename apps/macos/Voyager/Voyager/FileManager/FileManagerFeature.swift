@@ -10,6 +10,9 @@ struct FileManagerFeature {
         if path == "/" {
             return FileManager.default.displayName(atPath: "/")
         }
+        if path == SidebarUtils.computerName {
+            return path
+        }
         return FileManager.default.displayName(atPath: path)
     }
 
@@ -21,6 +24,7 @@ struct FileManagerFeature {
             case let .folder(path): return path
             case .recents: return "Recents"
             case let .tags(tagName): return tagName
+            case .computer: return SidebarUtils.computerName
             }
         }
 
@@ -92,48 +96,19 @@ struct FileManagerFeature {
             switch navigationState {
             case .recents, .tags:
                 return []
+            case .computer:
+                if fsItems.selectedIds.count == 1,
+                   let selectedItem = fsItems.items.first(where: { $0.id == fsItems.selectedIds.first }),
+                   selectedItem.fullPath == "/"
+                {
+                    return []
+                }
+                return [BreadcrumbUtils.Item(path: SidebarUtils.computerName)]
             case let .folder(path):
-                if isTrashFolder {
-                    guard let trashURL = FileManager.default.urls(
-                        for: .trashDirectory,
-                        in: .userDomainMask
-                    ).first else {
-                        return []
-                    }
-
-                    var result: [BreadcrumbUtils.Item] = []
-                    result.append(BreadcrumbUtils.Item(path: trashURL.path))
-
-                    if path != trashURL.path {
-                        let relativePath = path.replacingOccurrences(of: trashURL.path + "/", with: "")
-                        let components = relativePath.split(separator: "/").map(String.init)
-                        var accumulated = trashURL.path
-
-                        for component in components {
-                            accumulated += "/" + component
-                            result.append(BreadcrumbUtils.Item(path: accumulated))
-                        }
-                    }
-
-                    return result
+                if let rootPath = BreadcrumbUtils.findSpecialRootPath(for: path, isTrashFolder: isTrashFolder) {
+                    return BreadcrumbUtils.buildBreadcrumbs(from: rootPath, to: path)
                 }
-
-                var result: [BreadcrumbUtils.Item] = []
-
-                if path.hasPrefix("/") {
-                    result.append(BreadcrumbUtils.Item(path: "/"))
-                }
-
-                let components = path.split(separator: "/").map(String.init)
-                var accumulated = "/"
-
-                for component in components {
-                    accumulated += component
-                    result.append(BreadcrumbUtils.Item(path: accumulated))
-                    accumulated += "/"
-                }
-
-                return result
+                return BreadcrumbUtils.buildBreadcrumbsForStandardPath(path)
             }
         }
 
@@ -142,7 +117,13 @@ struct FileManagerFeature {
                   let selectedItem = fsItems.items.first(where: { $0.id == fsItems.selectedIds.first })
             else { return nil }
 
-            return BreadcrumbUtils.Item(fsItem: selectedItem)
+            let selectedBreadcrumb = BreadcrumbUtils.Item(fsItem: selectedItem)
+
+            if selectedBreadcrumb.fullPath == currentPath {
+                return nil
+            }
+
+            return selectedBreadcrumb
         }
 
         var windowTitle: String {
@@ -155,6 +136,9 @@ struct FileManagerFeature {
             locations: [SidebarUtils.LocationItem]
         ) {
             selectedSidebarItem = {
+                if path == SidebarUtils.computerName {
+                    return locations.first(where: { $0.isComputer })?.name ?? path
+                }
                 if !path.hasPrefix("/") { return path }
                 return favorites.first(where: { $0.url.path == path })?.name
                     ?? locations.first(where: { $0.url.path == path })?.name
@@ -227,6 +211,7 @@ struct FileManagerFeature {
         case setSidebarVisible(Bool)
         case saveScrollOffset(CGPoint, forPath: String)
         case showRecents
+        case showComputer
         case loadFavorites
         case favoritesLoaded([SidebarUtils.FavoriteItem])
         case openFavorite(SidebarUtils.FavoriteItem)
@@ -255,6 +240,7 @@ struct FileManagerFeature {
         case updateGridIconSize(CGFloat)
         case updateListTextSize(CGFloat)
         case updateGridTextSize(CGFloat)
+        case setSidebarWidth(CGFloat)
     }
 
     @Dependency(\.fsItemClient)
@@ -340,6 +326,9 @@ struct FileManagerFeature {
                 )
 
             case let .navigateTo(path):
+                if path == SidebarUtils.computerName && state.currentPath == SidebarUtils.computerName {
+                    return .none
+                }
                 if path != state.currentPath {
                     state.backHistory.append(state.currentPath)
                     state.forwardHistory = []
@@ -464,6 +453,11 @@ struct FileManagerFeature {
                 state.isTagsCollapsed.toggle()
                 return .none
 
+            case let .setSidebarWidth(width):
+                let clampedWidth = max(150, min(400, width))
+                UserDefaults.standard.set(clampedWidth, forKey: "sidebarWidth")
+                return .none
+
             case let .updateColumnWidth(ctx):
                 state.columnWidths = state.columnWidths.updated(
                     column: ctx.column,
@@ -481,6 +475,10 @@ struct FileManagerFeature {
             case .showRecents:
                 state.navigate(to: .recents, sidebarItemName: "Recents")
                 return .send(.fsItems(.loadRecentItems))
+
+            case .showComputer:
+                state.navigate(to: .computer, sidebarItemName: SidebarUtils.computerName)
+                return .send(.fsItems(.loadComputerItems))
 
             case .loadFavorites:
                 return .run { send in

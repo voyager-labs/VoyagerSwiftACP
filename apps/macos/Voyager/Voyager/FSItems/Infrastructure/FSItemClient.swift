@@ -38,6 +38,7 @@ public struct FSItemClient: Sendable {
     public var setTags: @Sendable (URL, [String]) async throws -> Void
     public var toggleTag: @Sendable (URL, String) async throws -> Void
     public var loadItems: @Sendable (URL, Bool) async throws -> [FSItem]
+    public var loadComputerItems: @Sendable () async throws -> [FSItem]
     public var fileExists: @Sendable (String) -> Bool
     public var saveDragPaths: @Sendable ([String]) -> Void
     public var loadDragPaths: @Sendable () -> [String]
@@ -68,6 +69,7 @@ public struct FSItemClient: Sendable {
         setTags: @escaping @Sendable (URL, [String]) async throws -> Void,
         toggleTag: @escaping @Sendable (URL, String) async throws -> Void,
         loadItems: @escaping @Sendable (URL, Bool) async throws -> [FSItem],
+        loadComputerItems: @escaping @Sendable () async throws -> [FSItem],
         fileExists: @escaping @Sendable (String) -> Bool,
         saveDragPaths: @escaping @Sendable ([String]) -> Void,
         loadDragPaths: @escaping @Sendable () -> [String],
@@ -97,6 +99,7 @@ public struct FSItemClient: Sendable {
         self.setTags = setTags
         self.toggleTag = toggleTag
         self.loadItems = loadItems
+        self.loadComputerItems = loadComputerItems
         self.fileExists = fileExists
         self.saveDragPaths = saveDragPaths
         self.loadDragPaths = loadDragPaths
@@ -497,6 +500,20 @@ extension FSItemClient: DependencyKey {
                     return contents.compactMap { FSItemLoadUtils.convertURLToFSItem($0) }
                 }.value
             },
+            loadComputerItems: {
+                try await Task.detached {
+                    let rootName = FileManager.default.displayName(atPath: "/")
+                    return [
+                        FSItem(
+                            name: rootName,
+                            fullPath: "/",
+                            isDirectory: true,
+                            isHidden: false,
+                            kind: "Volume"
+                        ),
+                    ]
+                }.value
+            },
             fileExists: { path in
                 FileManager.default.fileExists(atPath: path)
             },
@@ -678,6 +695,7 @@ extension FSItemClient: DependencyKey {
             setTags: { _, _ in unimplemented() },
             toggleTag: { _, _ in unimplemented() },
             loadItems: { _, _ in [] },
+            loadComputerItems: { [] },
             fileExists: { _ in false },
             saveDragPaths: { _ in },
             loadDragPaths: { [] },
@@ -723,6 +741,7 @@ extension FSItemClient: DependencyKey {
             setTags: { _, _ in },
             toggleTag: { _, _ in },
             loadItems: { _, _ in [] },
+            loadComputerItems: { [] },
             fileExists: { _ in false },
             saveDragPaths: { _ in },
             loadDragPaths: { [] },
