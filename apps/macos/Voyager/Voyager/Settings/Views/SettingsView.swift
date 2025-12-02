@@ -22,6 +22,12 @@ struct SettingsView: View {
                     Label("General", systemImage: "gear")
                 }
                 .tag(SettingsSection.general)
+
+            AppearanceSettingsView(store: store)
+                .tabItem {
+                    Label("Appearance", systemImage: SettingsSection.appearance.iconName)
+                }
+                .tag(SettingsSection.appearance)
         }
         .frame(width: 600, height: 400)
         .onAppear {

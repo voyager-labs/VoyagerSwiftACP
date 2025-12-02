@@ -20,10 +20,9 @@ struct SidebarItemView: View {
 
     private var backgroundColor: Color {
         if isDropTarget {
-            return Color.accentColor // Finder 스타일: 진한 파란색
+            return Color.accentColor
         } else if isSelected {
-            // Favorites: 연한 파란색, Locations: 어두운 회색
-            return isFavorite ? Color.blue.opacity(0.1) : Color(white: 0.2)
+            return Color(nsColor: .unemphasizedSelectedContentBackgroundColor)
         } else {
             return Color.clear
         }
@@ -81,7 +80,7 @@ struct TagItemView: View {
         if isDropTarget {
             return Color.accentColor
         } else if isSelected {
-            return Color(white: 0.2)
+            return Color(nsColor: .unemphasizedSelectedContentBackgroundColor)
         } else {
             return Color.clear
         }

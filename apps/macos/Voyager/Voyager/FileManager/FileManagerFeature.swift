@@ -52,6 +52,11 @@ struct FileManagerFeature {
         var sortKey: SortKey = .name
         var sortOrder: SortOrder = .ascending
 
+        var listIconSize: CGFloat = 20
+        var gridIconSize: CGFloat = 64
+        var listTextSize: CGFloat = 13
+        var gridTextSize: CGFloat = 12
+
         var canGoBack: Bool {
             !backHistory.isEmpty
         }
@@ -246,6 +251,10 @@ struct FileManagerFeature {
         case toggleLocationsSection
         case toggleTagsSection
         case updateColumnWidth(ColumnUpdate)
+        case updateListIconSize(CGFloat)
+        case updateGridIconSize(CGFloat)
+        case updateListTextSize(CGFloat)
+        case updateGridTextSize(CGFloat)
     }
 
     @Dependency(\.fsItemClient)
@@ -284,6 +293,20 @@ struct FileManagerFeature {
                     )
                 }
 
+                if let listIconSize = UserDefaults.standard.object(forKey: SettingsKeys.listIconSize) as? CGFloat {
+                    state.listIconSize = listIconSize
+                }
+                if let gridIconSize = UserDefaults.standard.object(forKey: SettingsKeys.gridIconSize) as? CGFloat {
+                    state.gridIconSize = gridIconSize
+                }
+
+                if let listTextSize = UserDefaults.standard.object(forKey: SettingsKeys.listTextSize) as? CGFloat {
+                    state.listTextSize = listTextSize
+                }
+                if let gridTextSize = UserDefaults.standard.object(forKey: SettingsKeys.gridTextSize) as? CGFloat {
+                    state.gridTextSize = gridTextSize
+                }
+
                 return .merge(
                     .send(.fsItems(.setShowHidden(state.showHiddenFiles))),
                     .send(.fsItems(.setSortKey(state.sortKey))),
@@ -291,7 +314,29 @@ struct FileManagerFeature {
                     .send(.fsItems(.loadItems(path: state.currentPath))),
                     .send(.loadFavorites),
                     .send(.loadLocations),
-                    .send(.loadTags)
+                    .send(.loadTags),
+                    .run { send in
+                        let listIconSizeKey = "listIconSize"
+                        let gridIconSizeKey = "gridIconSize"
+                        let listTextSizeKey = "listTextSize"
+                        let gridTextSizeKey = "gridTextSize"
+                        for await _ in NotificationCenter.default.notifications(
+                            named: UserDefaults.didChangeNotification
+                        ) {
+                            if let listIconSize = UserDefaults.standard.object(forKey: listIconSizeKey) as? CGFloat {
+                                await send(.updateListIconSize(listIconSize))
+                            }
+                            if let gridIconSize = UserDefaults.standard.object(forKey: gridIconSizeKey) as? CGFloat {
+                                await send(.updateGridIconSize(gridIconSize))
+                            }
+                            if let listTextSize = UserDefaults.standard.object(forKey: listTextSizeKey) as? CGFloat {
+                                await send(.updateListTextSize(listTextSize))
+                            }
+                            if let gridTextSize = UserDefaults.standard.object(forKey: gridTextSizeKey) as? CGFloat {
+                                await send(.updateGridTextSize(gridTextSize))
+                            }
+                        }
+                    }
                 )
 
             case let .navigateTo(path):
@@ -530,6 +575,22 @@ struct FileManagerFeature {
                 default:
                     return .none
                 }
+
+            case let .updateListIconSize(size):
+                state.listIconSize = size
+                return .none
+
+            case let .updateGridIconSize(size):
+                state.gridIconSize = size
+                return .none
+
+            case let .updateListTextSize(size):
+                state.listTextSize = size
+                return .none
+
+            case let .updateGridTextSize(size):
+                state.gridTextSize = size
+                return .none
             }
         }
     }

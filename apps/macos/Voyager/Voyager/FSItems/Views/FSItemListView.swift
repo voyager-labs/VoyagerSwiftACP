@@ -12,6 +12,8 @@ struct FSItemListView: View {
     let columnWidths: ListColumnWidths
     let applications: [ApplicationInfo]?
     let isThumbnailReady: Bool
+    let iconSize: CGFloat
+    let textSize: CGFloat
     let onSelect: (Bool, Bool) -> Void
     let onOpen: () -> Void
     let onOpenInNewTab: (Bool) -> Void
@@ -83,9 +85,9 @@ struct FSItemListView: View {
 
                 HStack(spacing: layout.columnSpacing) {
                     HStack(spacing: 8) {
-                        ThumbnailView(item: item, displaySize: 20, isReady: isThumbnailReady)
+                        ThumbnailView(item: item, displaySize: iconSize, isReady: isThumbnailReady)
                             .opacity(item.isHidden || isCut ? 0.5 : 1.0)
-                            .frame(width: 20, height: 20)
+                            .frame(width: iconSize, height: iconSize)
                             .popover(isPresented: $showTagsEditor, arrowEdge: .bottom) {
                                 TagsEditorView(
                                     fileName: item.name,
@@ -99,9 +101,9 @@ struct FSItemListView: View {
                                 get: { renamingText },
                                 set: { onRenameUpdate($0) }
                             ))
-                            .font(.system(size: 13))
+                            .font(.system(size: textSize))
                             .textFieldStyle(.plain)
-                            .background(Color.black)
+                            .background(Color(nsColor: .textBackgroundColor))
                             .cornerRadius(4)
                             .frame(maxWidth: max(layout.name - 32, 40), alignment: .leading)
                             .focused($isTextFieldFocused)
@@ -117,7 +119,7 @@ struct FSItemListView: View {
                                 }
                             }
                         } else {
-                            styledText(item.name, fontSize: 13)
+                            styledText(item.name, fontSize: textSize)
                                 .lineLimit(1)
                                 .truncationMode(.middle)
                         }
@@ -134,13 +136,13 @@ struct FSItemListView: View {
                     }
                     .frame(width: layout.name, alignment: .leading)
 
-                    styledText(dateText(item.modifiedDate), fontSize: 12, isPrimary: false)
+                    styledText(dateText(item.modifiedDate), fontSize: max(10, textSize - 1), isPrimary: false)
                         .frame(width: layout.date, alignment: .leading)
 
-                    styledText(sizeText(item), fontSize: 12, isPrimary: false)
+                    styledText(sizeText(item), fontSize: max(10, textSize - 1), isPrimary: false)
                         .frame(width: layout.size, alignment: .trailing)
 
-                    styledText(kindText(item), fontSize: 12, isPrimary: false)
+                    styledText(kindText(item), fontSize: max(10, textSize - 1), isPrimary: false)
                         .frame(width: layout.kind, alignment: .leading)
                         .lineLimit(1)
                         .truncationMode(.middle)

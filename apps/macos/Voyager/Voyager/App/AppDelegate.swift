@@ -25,10 +25,15 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     override init() {
         super.init()
         AppDelegate.shared = self
+
+        let appearanceSettingsClient = AppearanceSettingsClient.liveValue
+        let theme = appearanceSettingsClient.loadTheme()
+        appearanceSettingsClient.applyThemeSync(theme)
     }
 
     func applicationDidFinishLaunching(_: Notification) {
         NSWindow.allowsAutomaticWindowTabbing = true
+
         launchHelperOnce()
         createNewWindow()
     }

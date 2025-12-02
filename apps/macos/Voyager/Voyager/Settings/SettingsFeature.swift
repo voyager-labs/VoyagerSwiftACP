@@ -130,8 +130,26 @@ enum DirectoryOption: Equatable, Hashable, Identifiable {
     }
 }
 
+public enum AppTheme: String, CaseIterable, Equatable {
+    case light
+    case dark
+    case system
+
+    var displayName: String {
+        switch self {
+        case .light:
+            "Light"
+        case .dark:
+            "Dark"
+        case .system:
+            "Auto"
+        }
+    }
+}
+
 enum SettingsSection: String, CaseIterable, Identifiable {
     case general
+    case appearance
 
     var id: String { rawValue }
 
@@ -139,6 +157,8 @@ enum SettingsSection: String, CaseIterable, Identifiable {
         switch self {
         case .general:
             "General"
+        case .appearance:
+            "Appearance"
         }
     }
 
@@ -146,6 +166,8 @@ enum SettingsSection: String, CaseIterable, Identifiable {
         switch self {
         case .general:
             "gear"
+        case .appearance:
+            "paintbrush"
         }
     }
 }
@@ -160,6 +182,7 @@ struct SettingsFeature {
     struct State: Equatable {
         var selectedSection: SettingsSection = .general
         var generalSettings = GeneralSettingsState()
+        var appearanceSettings = AppearanceSettingsState()
     }
 
     struct GeneralSettingsState: Equatable {
@@ -174,12 +197,21 @@ struct SettingsFeature {
         var alertBeforeQuit: Bool = false
     }
 
+    struct AppearanceSettingsState: Equatable {
+        var theme: AppTheme = .system
+        var listIconSize: CGFloat = 20
+        var gridIconSize: CGFloat = 64
+        var listTextSize: CGFloat = 13
+        var gridTextSize: CGFloat = 12
+    }
+
     enum Action: Sendable {
         case onAppear
         case loadSettings
         case selectSection(SettingsSection)
 
         case general(GeneralSettingsAction)
+        case appearance(AppearanceSettingsAction)
     }
 
     enum GeneralSettingsAction: Sendable {
@@ -191,6 +223,17 @@ struct SettingsFeature {
         case toggleAutomaticUpdate(Bool)
         case toggleAlertBeforeQuit(Bool)
     }
+
+    enum AppearanceSettingsAction: Sendable {
+        case setTheme(AppTheme)
+        case setListIconSize(CGFloat)
+        case setGridIconSize(CGFloat)
+        case setListTextSize(CGFloat)
+        case setGridTextSize(CGFloat)
+    }
+
+    @Dependency(\.appearanceSettingsClient)
+    var appearanceSettingsClient: AppearanceSettingsClient
 
     var body: some Reducer<State, Action> {
         Reduce { state, action in
@@ -223,6 +266,29 @@ struct SettingsFeature {
                 state.generalSettings.automaticUpdate = UserDefaults.standard
                     .object(forKey: SettingsKeys.automaticUpdate) as? Bool ?? true
                 state.generalSettings.alertBeforeQuit = UserDefaults.standard.bool(forKey: SettingsKeys.alertBeforeQuit)
+
+                state.appearanceSettings.theme = appearanceSettingsClient.loadTheme()
+
+                let savedListIconSize = UserDefaults.standard.object(forKey: SettingsKeys.listIconSize) as? CGFloat
+                if let listIconSize = savedListIconSize {
+                    state.appearanceSettings.listIconSize = listIconSize
+                }
+
+                let savedGridIconSize = UserDefaults.standard.object(forKey: SettingsKeys.gridIconSize) as? CGFloat
+                if let gridIconSize = savedGridIconSize {
+                    state.appearanceSettings.gridIconSize = gridIconSize
+                }
+
+                let savedListTextSize = UserDefaults.standard.object(forKey: SettingsKeys.listTextSize) as? CGFloat
+                if let listTextSize = savedListTextSize {
+                    state.appearanceSettings.listTextSize = listTextSize
+                }
+
+                let savedGridTextSize = UserDefaults.standard.object(forKey: SettingsKeys.gridTextSize) as? CGFloat
+                if let gridTextSize = savedGridTextSize {
+                    state.appearanceSettings.gridTextSize = gridTextSize
+                }
+
                 return .none
 
             case let .general(.setStartingDirectory(path)):
@@ -300,6 +366,33 @@ struct SettingsFeature {
             case let .general(.toggleAlertBeforeQuit(enabled)):
                 state.generalSettings.alertBeforeQuit = enabled
                 UserDefaults.standard.set(enabled, forKey: SettingsKeys.alertBeforeQuit)
+                return .none
+
+            case let .appearance(.setTheme(theme)):
+                state.appearanceSettings.theme = theme
+                UserDefaults.standard.set(theme.rawValue, forKey: SettingsKeys.theme)
+                return .run { [appearanceSettingsClient] _ in
+                    await appearanceSettingsClient.applyTheme(theme)
+                }
+
+            case let .appearance(.setListIconSize(size)):
+                state.appearanceSettings.listIconSize = size
+                UserDefaults.standard.set(size, forKey: SettingsKeys.listIconSize)
+                return .none
+
+            case let .appearance(.setGridIconSize(size)):
+                state.appearanceSettings.gridIconSize = size
+                UserDefaults.standard.set(size, forKey: SettingsKeys.gridIconSize)
+                return .none
+
+            case let .appearance(.setListTextSize(size)):
+                state.appearanceSettings.listTextSize = size
+                UserDefaults.standard.set(size, forKey: SettingsKeys.listTextSize)
+                return .none
+
+            case let .appearance(.setGridTextSize(size)):
+                state.appearanceSettings.gridTextSize = size
+                UserDefaults.standard.set(size, forKey: SettingsKeys.gridTextSize)
                 return .none
             }
         }

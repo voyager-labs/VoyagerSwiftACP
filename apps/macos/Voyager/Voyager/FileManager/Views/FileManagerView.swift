@@ -159,8 +159,11 @@ struct FileManagerView: View {
                                     store.send(.emptyTrash)
                                 }
                                 .controlSize(.small)
-                                .buttonStyle(.borderedProminent)
-                                .tint(Color(white: 0.3))
+                                .buttonStyle(.plain)
+                                .padding(.horizontal, 12)
+                                .padding(.vertical, 4)
+                                .background(Color(nsColor: .unemphasizedSelectedContentBackgroundColor))
+                                .cornerRadius(6)
                             }
                         }
                         .padding(.horizontal, 16)
