@@ -147,44 +147,17 @@ class Method2EnhancedConverter:
         return db_section, json_section
 
     def _build_system_prompt(self, db_section: str, json_section: str) -> str:
-        """동적 시스템 프롬프트 생성"""
-        return f"""당신은 파일 검색 SQL WHERE절 생성 전문가입니다.
-자연어를 SQLite WHERE절로 변환하세요.
+        """동적 시스템 프롬프트 생성 (최소화)"""
+        return f"""SQL WHERE절 생성. 조건만 출력, 설명 금지.
 
-🚨 절대 규칙:
-1. WHERE 키워드 없이 조건만 출력
-2. 조건은 최대 3개까지만
-3. 아래 목록에 있는 필드만 사용
-4. date() 함수는 절대 따옴표로 감싸지 마세요
-5. 설명 없이 SQL 조건만 출력!
-
-=== 사용 가능한 필드 ===
-
-[DB 컬럼] - 직접 사용
+[DB컬럼]
 {db_section}
 
-[JSON 필드] - CAST(json_extract(...)) 형식 필수
+[JSON필드]
 {json_section}
 
-=== SQL 생성 규칙 ===
-
-1. DB 컬럼: 직접 사용
-   size > 10485760
-   extension = 'pdf'
-   modification_date > date('now', '-7 days')
-
-2. JSON 필드: CAST(json_extract(original_metadata, '$.필드명') AS 타입) 형식
-   CAST(json_extract(original_metadata, '$.kMDItemPixelHeight') AS INTEGER) >= 1080
-
-3. 크기: 1KB=1024, 1MB=1048576, 1GB=1073741824
-
-4. 날짜:
-   ✅ modification_date > date('now', '-7 days')
-   ❌ modification_date > 'date('now', '-7 days')'
-
-5. 확장자는 점 없이: extension = 'pdf'
-
-출력: SQL 조건만! 설명 없이!"""
+규칙: DB컬럼 직접사용, JSON은 CAST(json_extract(original_metadata,'$.필드') AS 타입)
+크기: 1MB=1048576 | 날짜: date('now','-7 days') 따옴표X | 확장자: 점 없이 | 최대 3조건"""
 
     async def convert(self, query: str) -> str | None:
         """자연어 → SQL WHERE절"""
