@@ -64,8 +64,8 @@ class LLMOnlyQueryConverter:
 
 🚨 절대 규칙 (반드시 지켜야 함):
 1. WHERE 키워드 없이 조건만 출력
-2. 조건은 최대 3개까지만
-3. 조건 3개 초과 시: "ERROR: 조건이 3개를 초과합니다" 출력
+2. 조건은 최대 4개까지만
+3. 조건 4개 초과 시: "ERROR: 조건이 4개를 초과합니다" 출력
 4. 반드시 아래 레지스트리에 있는 속성만 사용 (총 40개)
 5. ⚠️ 레지스트리에 없는 필드는 절대 사용하지 마세요!
 6. ⚠️ date() 함수는 절대 따옴표로 감싸지 마세요!
@@ -138,7 +138,7 @@ class LLMOnlyQueryConverter:
 출력: parent_dir_name = 'Downloads' AND extension IN ('jpg', 'jpeg', 'png', 'heic')
 
 입력: "4K, 10분, MP4, 최근 7일, 10MB" (5개 조건)
-출력: ERROR: 조건이 3개를 초과합니다
+출력: ERROR: 조건이 4개를 초과합니다
 
 === 잘못된 예시 (이렇게 하지 마세요!) ===
 
