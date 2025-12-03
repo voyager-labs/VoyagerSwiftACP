@@ -6,8 +6,17 @@ LLM이 레지스트리를 참조하여
 
 from typing import Any
 
+from pydantic import BaseModel, Field
+
 from core.llm.llm_provider import LLMProvider
 from core.metadata.mditem_registry import get_indexed_attributes, get_json_attributes
+
+
+class SQLConditions(BaseModel):
+    """SQL WHERE절 조건 출력 스키마"""
+
+    conditions: str = Field(description="SQL WHERE 조건절 (최대 4개, WHERE 키워드 제외)")
+    error: str | None = Field(None, description="에러 메시지 (조건 4개 초과 시)")
 
 
 class LLMOnlyQueryConverter:
@@ -66,16 +75,34 @@ class LLMOnlyQueryConverter:
 1. WHERE 키워드 없이 조건만 출력
 2. 조건은 최대 4개까지만
 3. 조건 4개 초과 시: "ERROR: 조건이 4개를 초과합니다" 출력
-4. 반드시 아래 레지스트리에 있는 속성만 사용 (총 40개)
-5. ⚠️ 레지스트리에 없는 필드는 절대 사용하지 마세요!
+4. 반드시 아래에 있는 속성만 사용
+5. ⚠️ 없는 필드는 절대 사용하지 마세요! (name, filename 등 없음)
 6. ⚠️ date() 함수는 절대 따옴표로 감싸지 마세요!
 7. ⚠️ 설명, 주석, 부가 설명을 절대 추가하지 마세요! SQL 조건만 출력!
 
-=== DB 컬럼 - 빠른 검색 (10개) ===
+=== 추가 DB 컬럼 (중요!) ===
+
+  - name_full (STRING) - 파일 이름 (확장자 포함)
+    검색어: 파일명, 이름
+    예시: name_full LIKE '%report%'
+    ⚠️ 'name' 컬럼은 없습니다! 반드시 'name_full' 사용!
+
+  - parent_dir_name (STRING) - 현재 파일이 있는 폴더 이름
+    검색어: 폴더, 디렉토리, 위치
+    예시: parent_dir_name = 'Downloads'
+    예시: parent_dir_name IN ('Downloads', 'Documents')
+    ⚠️ 폴더 위치 검색은 반드시 parent_dir_name 사용!
+    ⚠️ kMDItemWhereFroms는 다운로드 URL 출처이므로 폴더 검색에 사용하지 마세요!
+
+  - extension (STRING) - 파일 확장자 (점 없이)
+    예시: extension = 'pdf'
+    예시: extension IN ('jpg', 'jpeg', 'png')
+
+=== DB 컬럼 - 빠른 검색 ===
 
 {chr(10).join(db_fields_info)}
 
-=== JSON 필드 - 느린 검색 (30개) ===
+=== JSON 필드 - 느린 검색 ===
 
 {chr(10).join(json_fields_info)}
 
@@ -137,10 +164,30 @@ class LLMOnlyQueryConverter:
 입력: "Downloads 폴더의 이미지"
 출력: parent_dir_name = 'Downloads' AND extension IN ('jpg', 'jpeg', 'png', 'heic')
 
+입력: "Downloads 또는 Documents 폴더의 파일"
+출력: parent_dir_name IN ('Downloads', 'Documents')
+
+입력: "파일명에 report가 포함된 PDF"
+출력: name_full LIKE '%report%' AND extension = 'pdf'
+
+입력: "파일명에 공백이 있는 PDF"
+출력: name_full LIKE '% %' AND extension = 'pdf'
+
+입력: "암호화된 PDF"
+출력: extension = 'pdf' AND CAST(json_extract(original_metadata, '$.kMDItemSecurityMethod') AS TEXT) IS NOT NULL
+
 입력: "4K, 10분, MP4, 최근 7일, 10MB" (5개 조건)
 출력: ERROR: 조건이 4개를 초과합니다
 
 === 잘못된 예시 (이렇게 하지 마세요!) ===
+
+❌ 틀림: name LIKE '%report%'
+   이유: 'name' 컬럼은 존재하지 않음
+   ✅ 올바름: name_full LIKE '%report%'
+
+❌ 틀림: kMDItemWhereFroms LIKE '%Downloads%'
+   이유: kMDItemWhereFroms는 다운로드 URL 출처이며, 폴더 위치가 아님
+   ✅ 올바름: parent_dir_name = 'Downloads'
 
 ❌ 틀림: kMDItemDownloadedDate > date('now', '-1 day')
    이유: kMDItemDownloadedDate는 존재하지 않음
@@ -160,16 +207,18 @@ class LLMOnlyQueryConverter:
     async def convert(self, query: str) -> str | None:
         """자연어 → SQL WHERE절"""
         try:
-            response = await self.client.generate(
-                prompt=f"입력: {query}\n출력:", system=self.system_prompt
+            result = await self.client.generate_structured(
+                prompt=f"입력: {query}\n출력:",
+                schema=SQLConditions,
+                system=self.system_prompt,
             )
 
-            sql = response.strip()
-
             # 에러 체크
-            if sql.startswith("ERROR:"):
-                print(f"[방식 2] {sql}")
+            if result.error:
+                print(f"[방식 2] {result.error}")
                 return None
+
+            sql = result.conditions.strip()
 
             if not sql or sql.lower() in ["null", "none", ""]:
                 return None

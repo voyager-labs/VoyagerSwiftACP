@@ -11,6 +11,7 @@ from langchain_core.language_models import BaseLLM
 from langchain_core.messages import HumanMessage, SystemMessage
 from langchain_core.prompts import ChatPromptTemplate
 from langchain_openai import ChatOpenAI
+from pydantic import BaseModel
 
 from core.llm.llm_provider import LLMProvider
 
@@ -159,3 +160,38 @@ class LangChainProvider(LLMProvider):
         현재 LangChain은 자동으로 리소스를 관리하므로 별도 작업 없음
         """
         pass
+
+    async def generate_structured(
+        self,
+        prompt: str,
+        schema: type[BaseModel],
+        system: str | None = None,
+    ) -> BaseModel:
+        """구조화된 출력 생성
+
+        Args:
+            prompt: 사용자 프롬프트
+            schema: Pydantic 스키마 클래스
+            system: 시스템 프롬프트 (선택)
+
+        Returns:
+            스키마에 맞는 구조화된 응답
+        """
+        try:
+            structured_llm = self.llm.with_structured_output(schema)
+
+            if system:
+                escaped_system = self._escape_prompt_template(system)
+                template = ChatPromptTemplate.from_messages(
+                    [
+                        ("system", escaped_system),
+                        ("human", "{input}"),
+                    ]
+                )
+                chain = template | structured_llm
+                return await chain.ainvoke({"input": prompt})
+            else:
+                return await structured_llm.ainvoke(prompt)
+
+        except Exception as e:
+            raise RuntimeError(f"Structured output 생성 오류: {e}")

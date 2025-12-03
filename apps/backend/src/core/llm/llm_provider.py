@@ -5,6 +5,8 @@
 
 from abc import ABC, abstractmethod
 
+from pydantic import BaseModel
+
 
 class LLMProvider(ABC):
     """LLM 제공자 추상 클래스"""
@@ -34,4 +36,23 @@ class LLMProvider(ABC):
     @abstractmethod
     async def close(self) -> None:
         """리소스 정리"""
+        pass
+
+    @abstractmethod
+    async def generate_structured(
+        self,
+        prompt: str,
+        schema: type[BaseModel],
+        system: str | None = None,
+    ) -> BaseModel:
+        """구조화된 출력 생성
+
+        Args:
+            prompt: 사용자 프롬프트
+            schema: Pydantic 스키마 클래스
+            system: 시스템 프롬프트 (선택)
+
+        Returns:
+            스키마에 맞는 구조화된 응답
+        """
         pass
