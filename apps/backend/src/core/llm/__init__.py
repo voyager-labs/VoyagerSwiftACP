@@ -11,9 +11,6 @@ from core.llm.query_converter import QueryConverter
 # 쿼리 변환 방식 (방법 2)
 from core.llm.method2_llm_only_converter import LLMOnlyQueryConverter
 
-# 후처리 유틸리티
-from core.llm.sql_postprocessor import SQLPostProcessor
-
 __all__ = [
     # LLM Provider
     "LLMProvider",
@@ -23,6 +20,4 @@ __all__ = [
     "QueryConverter",
     # 변환 방식
     "LLMOnlyQueryConverter",
-    # 후처리
-    "SQLPostProcessor",
 ]
