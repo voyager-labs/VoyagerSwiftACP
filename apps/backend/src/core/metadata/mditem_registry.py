@@ -347,6 +347,15 @@ MDITEM_REGISTRY: dict[str, MDItemAttribute] = {
         search_aliases=["페이지높이", "page height"],
         category="document",
     ),
+    "kMDItemSecurityMethod": MDItemAttribute(
+        key="kMDItemSecurityMethod",
+        db_field=None,
+        type=MDItemType.STRING,
+        description="문서 보안/암호화 방식",
+        examples=["Password Encrypted", "None"],
+        search_aliases=["암호화", "보안", "encrypted", "security", "password"],
+        category="document",
+    ),
     # ============================================
     # 다운로드/출처 속성 (Download Attributes)
     # ============================================
