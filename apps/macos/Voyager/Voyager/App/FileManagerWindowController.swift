@@ -28,6 +28,10 @@ class FileManagerWindowController: NSWindowController, NSWindowDelegate {
         window.styleMask = [.titled, .closable, .miniaturizable, .resizable, .fullSizeContentView]
         window.minSize = NSSize(width: 600, height: 350)
 
+        window.titlebarAppearsTransparent = true
+        window.titleVisibility = .hidden
+        window.toolbar = nil
+
         let desiredSize = NSSize(width: 960, height: 510)
         let screenFrame = NSScreen.main?.visibleFrame ?? NSRect.zero
         let origin = NSPoint(

@@ -12,15 +12,6 @@ struct FileManagerView: View {
         self.initialPath = initialPath
     }
 
-    private var columnVisibility: Binding<NavigationSplitViewVisibility> {
-        Binding(
-            get: { store.sidebarVisible ? .all : .detailOnly },
-            set: { newValue in
-                store.send(.setSidebarVisible(newValue == .all))
-            }
-        )
-    }
-
     var body: some View {
         ZStack {
             KeyCommandView { event in
@@ -124,114 +115,20 @@ struct FileManagerView: View {
             .focusable()
             .focused($isKeyCommandFocused)
 
-            NavigationSplitView(columnVisibility: columnVisibility) {
-                SidebarView(store: store)
-            } detail: {
-                VStack(spacing: 0) {
-                    GeometryReader { geometry in
-                        HStack {
-                            PathBreadcrumbView(
-                                breadcrumbItems: store.breadcrumbItems,
-                                selectedItem: store.selectedBreadcrumbItem,
-                                availableWidth: geometry.size.width - 32 - (store.isTrashFolder ? 80 : 0),
-                                onNavigate: { path in
-                                    store.send(.navigateTo(path))
-                                }
-                            )
-                            Spacer()
+            HStack(spacing: 0) {
+                if store.sidebarVisible {
+                    SidebarView(store: store)
+                        .frame(width: 220)
+                        .ignoresSafeArea(.all, edges: .top)
+                }
 
-                            if store.isTrashFolder {
-                                Button("Empty") {
-                                    store.send(.emptyTrash)
-                                }
-                                .controlSize(.small)
-                                .buttonStyle(.plain)
-                                .padding(.horizontal, 12)
-                                .padding(.vertical, 4)
-                                .background(Color(nsColor: .unemphasizedSelectedContentBackgroundColor))
-                                .cornerRadius(6)
-                            }
-                        }
-                        .padding(.horizontal, 16)
-                        .padding(.vertical, 8)
-                    }
-                    .frame(height: 36)
-
+                VStack(alignment: .leading, spacing: 0) {
+                    CustomToolbarView(store: store)
                     ContentPaneView(store: store)
                 }
+                .ignoresSafeArea(.all, edges: .top)
             }
-            .navigationSplitViewStyle(.balanced)
             .frame(minWidth: 600, minHeight: 350)
-            .navigationTitle(store.windowTitle)
-        }
-        .toolbar {
-            ToolbarItemGroup(placement: .navigation) {
-                Menu {
-                    if store.backHistory.isEmpty {
-                        Text("No history")
-                            .foregroundColor(.secondary)
-                    } else {
-                        ForEach(0 ..< store.backHistory.count, id: \.self) { index in
-                            let reversedIndex = store.backHistory.count - 1 - index
-                            Button(
-                                action: {
-                                    store.send(.goToHistoryIndex(index, isBackHistory: true))
-                                },
-                                label: {
-                                    Text(FileManager.default.displayName(atPath: store.backHistory[reversedIndex]))
-                                }
-                            )
-                        }
-                    }
-                } label: {
-                    Image(systemName: "chevron.left")
-                } primaryAction: {
-                    store.send(.goBack)
-                }
-                .menuIndicator(.hidden)
-                .disabled(!store.canGoBack)
-
-                Menu {
-                    if store.forwardHistory.isEmpty {
-                        Text("No history")
-                            .foregroundColor(.secondary)
-                    } else {
-                        ForEach(0 ..< store.forwardHistory.count, id: \.self) { index in
-                            let reversedIndex = store.forwardHistory.count - 1 - index
-                            Button(
-                                action: {
-                                    store.send(.goToHistoryIndex(index, isBackHistory: false))
-                                },
-                                label: {
-                                    Text(FileManager.default.displayName(atPath: store.forwardHistory[reversedIndex]))
-                                }
-                            )
-                        }
-                    }
-                } label: {
-                    Image(systemName: "chevron.right")
-                } primaryAction: {
-                    store.send(.goForward)
-                }
-                .menuIndicator(.hidden)
-                .disabled(!store.canGoForward)
-            }
-
-            ToolbarItemGroup(placement: .primaryAction) {
-                Picker("Layout", selection: Binding(
-                    get: { store.viewLayout },
-                    set: { store.send(.changeLayout($0)) }
-                )) {
-                    Label("List", systemImage: "list.bullet")
-                        .tag(FileManagerFeature.ViewLayout.list)
-                    Label("Grid", systemImage: "square.grid.2x2")
-                        .tag(FileManagerFeature.ViewLayout.grid)
-                }
-                .pickerStyle(.segmented)
-                .fixedSize()
-
-                ToolbarMenuView(store: store)
-            }
         }
         .focusedSceneValue(\.fileManagerStore, store)
         .onChange(of: store.fsItems.isRenaming) { isRenaming in

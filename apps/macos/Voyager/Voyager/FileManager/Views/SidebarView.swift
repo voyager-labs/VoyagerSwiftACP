@@ -162,41 +162,48 @@ struct SidebarView: View {
     let store: StoreOf<FileManagerFeature>
 
     var body: some View {
-        ScrollView {
-            VStack(alignment: .leading, spacing: 0) {
-                SidebarItemView(
-                    iconName: "clock",
-                    title: "Recents",
-                    isSelected: store.selectedSidebarItem == "Recents",
-                    isFavorite: true,
-                    targetURL: nil,
-                    action: {
-                        store.send(.showRecents)
-                    },
-                    onDrop: nil
-                )
-                .padding(.top, 8)
+        VStack(spacing: 0) {
+            VisualEffectBackgroundView(material: .sidebar)
+                .frame(height: 50)
+                .ignoresSafeArea(.all, edges: .top)
 
-                Spacer()
-                    .frame(height: 8)
+            ScrollView {
+                VStack(alignment: .leading, spacing: 0) {
+                    SidebarItemView(
+                        iconName: "clock",
+                        title: "Recents",
+                        isSelected: store.selectedSidebarItem == "Recents",
+                        isFavorite: true,
+                        targetURL: nil,
+                        action: {
+                            store.send(.showRecents)
+                        },
+                        onDrop: nil
+                    )
+                    .padding(.top, 8)
 
-                favoritesSection
+                    Spacer()
+                        .frame(height: 8)
 
-                Spacer()
-                    .frame(height: 8)
+                    favoritesSection
 
-                locationsSection
+                    Spacer()
+                        .frame(height: 8)
 
-                Spacer()
-                    .frame(height: 8)
+                    locationsSection
 
-                tagsSection
+                    Spacer()
+                        .frame(height: 8)
 
-                Spacer()
+                    tagsSection
+
+                    Spacer()
+                }
             }
+            .clipped()
         }
         .frame(minWidth: 150)
-        .background(Color(NSColor.controlBackgroundColor))
+        .background(VisualEffectBackgroundView(material: .sidebar))
         .navigationSplitViewColumnWidth(ideal: {
             if let savedWidth = UserDefaults.standard.object(forKey: "sidebarWidth") as? Double,
                savedWidth > 0
