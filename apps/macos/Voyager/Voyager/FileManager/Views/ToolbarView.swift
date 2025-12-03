@@ -4,6 +4,8 @@ import SwiftUI
 struct CustomToolbarView: View {
     let store: StoreOf<FileManagerFeature>
 
+    private let trafficLightAreaWidth: CGFloat = 80
+
     var body: some View {
         HStack(spacing: 12) {
             Menu {
@@ -69,6 +71,7 @@ struct CustomToolbarView: View {
         }
         .frame(maxHeight: .infinity)
         .padding(0)
+        .padding(.leading, store.sidebarVisible ? 0 : trafficLightAreaWidth)
         .padding(.horizontal, 16)
         .frame(height: 56)
         .frame(maxWidth: .infinity)
