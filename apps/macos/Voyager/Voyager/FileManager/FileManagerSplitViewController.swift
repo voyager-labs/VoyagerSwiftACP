@@ -1,4 +1,5 @@
 import AppKit
+import Combine
 import ComposableArchitecture
 import SwiftUI
 
@@ -6,11 +7,17 @@ class FileManagerSplitViewController: NSViewController, NSSplitViewDelegate {
     let store: StoreOf<FileManagerFeature>
     let initialPath: String?
     private var hasSetInitialLayout = false
+    private var inspectorHosting: NSViewController?
+    private var observationTask: Task<Void, Never>?
 
     init(store: StoreOf<FileManagerFeature>, initialPath: String? = nil) {
         self.store = store
         self.initialPath = initialPath
         super.init(nibName: nil, bundle: nil)
+    }
+
+    deinit {
+        observationTask?.cancel()
     }
 
     @available(*, unavailable)
@@ -61,6 +68,48 @@ class FileManagerSplitViewController: NSViewController, NSSplitViewDelegate {
         }
 
         store.send(.fsItems(.onAppear))
+
+        observeInspectorState()
+    }
+
+    private func observeInspectorState() {
+        observationTask = Task { @MainActor in
+            for await inspectorVisible in store.publisher.inspectorVisible.values {
+                updateInspectorPane(visible: inspectorVisible)
+            }
+        }
+    }
+
+    @MainActor
+    private func updateInspectorPane(visible: Bool) {
+        guard let splitView = view as? NSSplitView else { return }
+
+        if visible {
+            if inspectorHosting == nil {
+                let inspectorView = InspectorPaneView(store: store)
+                    .ignoresSafeArea(.all, edges: .top)
+                let hosting = NSHostingController(rootView: inspectorView)
+                hosting.view.frame = NSRect(x: 0, y: 0, width: 300, height: 600)
+                hosting.safeAreaRegions = []
+                inspectorHosting = hosting
+                addChild(hosting)
+
+                splitView.addArrangedSubview(hosting.view)
+                splitView.setHoldingPriority(.defaultLow - 2, forSubviewAt: 2)
+
+                splitView.layoutSubtreeIfNeeded()
+
+                let totalWidth = splitView.bounds.width
+                splitView.setPosition(totalWidth - 300, ofDividerAt: 1)
+                splitView.adjustSubviews()
+            }
+        } else {
+            if let hosting = inspectorHosting {
+                hosting.view.removeFromSuperview()
+                hosting.removeFromParent()
+                inspectorHosting = nil
+            }
+        }
     }
 
     override func viewDidAppear() {
@@ -81,7 +130,11 @@ class FileManagerSplitViewController: NSViewController, NSSplitViewDelegate {
         constrainMinCoordinate proposedMinimumPosition: CGFloat,
         ofSubviewAt dividerIndex: Int
     ) -> CGFloat {
-        dividerIndex == 0 ? 150 : proposedMinimumPosition
+        switch dividerIndex {
+        case 0: return 150
+        case 1: return proposedMinimumPosition
+        default: return proposedMinimumPosition
+        }
     }
 
     func splitView(
@@ -89,7 +142,11 @@ class FileManagerSplitViewController: NSViewController, NSSplitViewDelegate {
         constrainMaxCoordinate proposedMaximumPosition: CGFloat,
         ofSubviewAt dividerIndex: Int
     ) -> CGFloat {
-        dividerIndex == 0 ? 400 : proposedMaximumPosition
+        switch dividerIndex {
+        case 0: return 400
+        case 1: return proposedMaximumPosition
+        default: return proposedMaximumPosition
+        }
     }
 
     func splitView(_ splitView: NSSplitView, shouldAdjustSizeOfSubview view: NSView) -> Bool {
