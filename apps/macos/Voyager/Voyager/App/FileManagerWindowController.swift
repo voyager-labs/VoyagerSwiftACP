@@ -32,14 +32,6 @@ class FileManagerWindowController: NSWindowController, NSWindowDelegate {
         window.toolbar = nil
         window.isMovableByWindowBackground = true
 
-        let desiredSize = NSSize(width: 960, height: 510)
-        let screenFrame = NSScreen.main?.visibleFrame ?? NSRect.zero
-        let origin = NSPoint(
-            x: screenFrame.midX - desiredSize.width / 2,
-            y: screenFrame.midY - desiredSize.height / 2
-        )
-        window.setFrame(NSRect(origin: origin, size: desiredSize), display: false)
-
         if asTab {
             window.tabbingMode = .preferred
             window.tabbingIdentifier = "file-manager"
@@ -51,6 +43,23 @@ class FileManagerWindowController: NSWindowController, NSWindowDelegate {
         window.delegate = self
 
         window.setFrameAutosaveName("VoyagerMainWindow")
+
+        if !window.setFrameUsingName("VoyagerMainWindow") {
+            let desiredSize: NSSize
+
+            if let existingWindow = AppDelegate.shared?.windowControllers.first?.window {
+                desiredSize = existingWindow.frame.size
+            } else {
+                desiredSize = NSSize(width: 960, height: 510)
+            }
+
+            let screenFrame = NSScreen.main?.visibleFrame ?? NSRect.zero
+            let origin = NSPoint(
+                x: screenFrame.midX - desiredSize.width / 2,
+                y: screenFrame.midY - desiredSize.height / 2
+            )
+            window.setFrame(NSRect(origin: origin, size: desiredSize), display: false)
+        }
 
         window.title = FileManagerFeature.makeWindowTitle(for: path ?? state.currentPath)
     }
