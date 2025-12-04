@@ -28,23 +28,14 @@ struct SidebarItemView: View {
         }
     }
 
-    private var textColor: Color {
-        if isDropTarget {
-            return Color.white
-        } else if isSelected {
-            return isFavorite ? Color.blue : Color.primary
-        } else {
-            return Color.primary
-        }
-    }
-
     var body: some View {
         HStack(spacing: 8) {
             Image(systemName: iconName)
-                .foregroundColor(textColor)
+                .symbolRenderingMode(.hierarchical)
+                .foregroundColor(isDropTarget ? .white : .accentColor)
                 .frame(width: 16)
             Text(title)
-                .foregroundColor(textColor)
+                .foregroundColor(isDropTarget ? .white : .primary)
                 .lineLimit(1)
                 .truncationMode(.tail)
             Spacer()
@@ -88,23 +79,13 @@ struct TagItemView: View {
         }
     }
 
-    private var textColor: Color {
-        if isDropTarget {
-            return Color.white
-        } else if isSelected {
-            return tag.color
-        } else {
-            return Color.primary
-        }
-    }
-
     var body: some View {
         HStack(spacing: 8) {
             Circle()
                 .fill(tag.color)
                 .frame(width: 8, height: 8)
             Text(tag.name)
-                .foregroundColor(textColor)
+                .foregroundColor(isDropTarget ? .white : .primary)
                 .lineLimit(1)
                 .truncationMode(.tail)
             Spacer()
