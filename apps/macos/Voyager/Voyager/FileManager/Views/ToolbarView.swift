@@ -1,7 +1,7 @@
 import ComposableArchitecture
 import SwiftUI
 
-struct CustomToolbarView: View {
+struct ToolbarView: View {
     let store: StoreOf<FileManagerFeature>
 
     private let trafficLightAreaWidth: CGFloat = 80

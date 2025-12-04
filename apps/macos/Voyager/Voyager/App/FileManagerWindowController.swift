@@ -21,16 +21,16 @@ class FileManagerWindowController: NSWindowController, NSWindowDelegate {
         store = Store(initialState: state) {
             FileManagerFeature()
         }
-        let rootView = FileManagerView(store: store, initialPath: path)
-        let hostingController = NSHostingController(rootView: rootView)
 
-        let window = NSWindow(contentViewController: hostingController)
+        let splitViewController = FileManagerSplitViewController(store: store, initialPath: path)
+        let window = NSWindow(contentViewController: splitViewController)
         window.styleMask = [.titled, .closable, .miniaturizable, .resizable, .fullSizeContentView]
         window.minSize = NSSize(width: 600, height: 350)
 
         window.titlebarAppearsTransparent = true
         window.titleVisibility = .hidden
         window.toolbar = nil
+        window.isMovableByWindowBackground = true
 
         let desiredSize = NSSize(width: 960, height: 510)
         let screenFrame = NSScreen.main?.visibleFrame ?? NSRect.zero
