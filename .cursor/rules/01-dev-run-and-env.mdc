@@ -23,6 +23,17 @@ description: 'Local dev workflows for backend and macOS app; env coordination'
   - Build and run via Sweetpad's integrated tools
 - The helper can launch the backend with Swift-dotenv environment loading.
 
+### Build Configurations
+
+- **Debug builds**: Use local `uv` environment (requires `uv` in PATH)
+  - Backend venv preparation skipped
+  - Helper launches backend via `uv run dev|prod`
+- **Release builds**: Use bundled backend venv (self-contained)
+  - [scripts/prepare-backend-venv.sh](mdc:scripts/prepare-backend-venv.sh) automatically runs during VoyagerHelper build
+  - Creates `apps/backend/build/backend-venv` with backend wheel and dependencies
+  - Venv is copied into app bundle at `VoyagerHelper.app/Contents/Resources/backend-venv`
+  - Helper uses bundled `backend-venv/bin/python` instead of local `uv`
+
 ## Environment (.env at repo root)
 
 - Recommended keys:
@@ -31,7 +42,6 @@ description: 'Local dev workflows for backend and macOS app; env coordination'
   - `VOYAGER_HOST=127.0.0.1`
   - `VOYAGER_PORT=8000`
   - `BACKEND_URL=http://${VOYAGER_HOST}:${VOYAGER_PORT}`
-  - `UV_CMD=uv`
   - `VOYAGER_PATH=/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/sbin`
   - `VOYAGER_LOG_FILE=apps/macos/logs/voyager.log`
 

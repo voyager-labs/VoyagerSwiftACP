@@ -17,6 +17,7 @@ description: 'Backend configuration policy — Hydra-based loading, overrides, a
 - **Load order**: Process env vars → `.env` file → Hydra config composition
 - **Override support**: CLI overrides via `uv run dev 'key=value'`
 - **Integration**: Shared environment keys with frontend (see [01-dev-run-and-env.mdc](mdc:.cursor/rules/01-dev-run-and-env.mdc))
+- **Runtime injection**: Hydra/OmegaConf only reads `${oc.env:VAR, ""}` if the variable exists at process start, so ensure secrets from Keychain/Secrets Store are exported before invoking `uv run ...`. macOS helper can run `scripts/load-secrets-from-keychain.sh` to emit `KEY="value"` pairs and feed them into the backend process environment; CI/CD can achieve the same by exporting secrets in the job runner.
 
 ## Configuration Access
 
@@ -28,6 +29,7 @@ description: 'Backend configuration policy — Hydra-based loading, overrides, a
 
 - **Security guidelines**: Follow [04-security-and-secrets.mdc](mdc:.cursor/rules/04-security-and-secrets.mdc) for comprehensive security practices
 - **Reference pattern**: Use `${oc.env:VAR, ""}` in config files
+- **Bundling note**: PyInstaller/zipapp artifacts must never embed secrets. Keep `.env` (dev) or Keychain/Secrets Store (prod) outside the artifact and rely on runtime env vars so the same Hydra config works everywhere.
 
 ## Adding New Configuration
 

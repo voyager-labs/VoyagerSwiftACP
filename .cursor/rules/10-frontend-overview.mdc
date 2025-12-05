@@ -16,7 +16,12 @@ description: 'SwiftUI + TCA frontend overview and backend bootstrap'
 
 - **Swift-dotenv approach**: Environment variables loaded from `.env` at repo root
 - **Implementation**: [BackendManagerDotenv.swift](mdc:apps/macos/Voyager/VoyagerHelper/BackendManagerDotenv.swift)
-- **Environment keys**: `UV_CMD`, `BACKEND_DIR`, `VOYAGER_PATH`, `VOYAGER_HOST`, `VOYAGER_PORT`, `BACKEND_URL`, `VOYAGER_LOG_FILE`
+- **Environment keys**: `BACKEND_DIR`, `VOYAGER_PATH`, `VOYAGER_HOST`, `VOYAGER_PORT`, `BACKEND_URL`, `VOYAGER_LOG_FILE`
+- **Backend execution modes**:
+  - **Debug builds**: Uses local `uv` to launch backend (`uv run dev|prod`)
+  - **Release builds**: Uses bundled `backend-venv/bin/python` from app resources
+    - Venv prepared by [scripts/prepare-backend-venv.sh](mdc:scripts/prepare-backend-venv.sh) during build
+    - Self-contained app bundle without requiring local `uv` installation
 
 ## Notes
 
