@@ -10,17 +10,21 @@ struct FileManagerFeature {
         if path == "/" {
             return FileManager.default.displayName(atPath: "/")
         }
+        if path == SidebarUtils.computerName {
+            return path
+        }
         return FileManager.default.displayName(atPath: path)
     }
 
     @ObservableState
     struct State: Equatable {
-        var navigationState: FileManagerNavigationUtils.NavigationState = .folder(AppSettings.shared.defaultTabPath)
+        var navigationState: FileManagerNavigationUtils.NavigationState = .folder(SettingsFeature.getDefaultTabPath())
         var currentPath: String {
             switch navigationState {
             case let .folder(path): return path
             case .recents: return "Recents"
             case let .tags(tagName): return tagName
+            case .computer: return SidebarUtils.computerName
             }
         }
 
@@ -30,7 +34,7 @@ struct FileManagerFeature {
             return path == trashPath || path.starts(with: trashPath + "/")
         }
 
-        var titlePath: String = AppSettings.shared.defaultTabPath
+        var titlePath: String = SettingsFeature.getDefaultTabPath()
 
         var scrollPositions: [String: CGPoint] = [:]
 
@@ -51,6 +55,11 @@ struct FileManagerFeature {
 
         var sortKey: SortKey = .name
         var sortOrder: SortOrder = .ascending
+
+        var listIconSize: CGFloat = 20
+        var gridIconSize: CGFloat = 64
+        var listTextSize: CGFloat = 13
+        var gridTextSize: CGFloat = 12
 
         var canGoBack: Bool {
             !backHistory.isEmpty
@@ -87,48 +96,19 @@ struct FileManagerFeature {
             switch navigationState {
             case .recents, .tags:
                 return []
+            case .computer:
+                if fsItems.selectedIds.count == 1,
+                   let selectedItem = fsItems.items.first(where: { $0.id == fsItems.selectedIds.first }),
+                   selectedItem.fullPath == "/"
+                {
+                    return []
+                }
+                return [BreadcrumbUtils.Item(path: SidebarUtils.computerName)]
             case let .folder(path):
-                if isTrashFolder {
-                    guard let trashURL = FileManager.default.urls(
-                        for: .trashDirectory,
-                        in: .userDomainMask
-                    ).first else {
-                        return []
-                    }
-
-                    var result: [BreadcrumbUtils.Item] = []
-                    result.append(BreadcrumbUtils.Item(path: trashURL.path))
-
-                    if path != trashURL.path {
-                        let relativePath = path.replacingOccurrences(of: trashURL.path + "/", with: "")
-                        let components = relativePath.split(separator: "/").map(String.init)
-                        var accumulated = trashURL.path
-
-                        for component in components {
-                            accumulated += "/" + component
-                            result.append(BreadcrumbUtils.Item(path: accumulated))
-                        }
-                    }
-
-                    return result
+                if let rootPath = BreadcrumbUtils.findSpecialRootPath(for: path, isTrashFolder: isTrashFolder) {
+                    return BreadcrumbUtils.buildBreadcrumbs(from: rootPath, to: path)
                 }
-
-                var result: [BreadcrumbUtils.Item] = []
-
-                if path.hasPrefix("/") {
-                    result.append(BreadcrumbUtils.Item(path: "/"))
-                }
-
-                let components = path.split(separator: "/").map(String.init)
-                var accumulated = "/"
-
-                for component in components {
-                    accumulated += component
-                    result.append(BreadcrumbUtils.Item(path: accumulated))
-                    accumulated += "/"
-                }
-
-                return result
+                return BreadcrumbUtils.buildBreadcrumbsForStandardPath(path)
             }
         }
 
@@ -137,7 +117,13 @@ struct FileManagerFeature {
                   let selectedItem = fsItems.items.first(where: { $0.id == fsItems.selectedIds.first })
             else { return nil }
 
-            return BreadcrumbUtils.Item(fsItem: selectedItem)
+            let selectedBreadcrumb = BreadcrumbUtils.Item(fsItem: selectedItem)
+
+            if selectedBreadcrumb.fullPath == currentPath {
+                return nil
+            }
+
+            return selectedBreadcrumb
         }
 
         var windowTitle: String {
@@ -150,6 +136,9 @@ struct FileManagerFeature {
             locations: [SidebarUtils.LocationItem]
         ) {
             selectedSidebarItem = {
+                if path == SidebarUtils.computerName {
+                    return locations.first(where: { $0.isComputer })?.name ?? path
+                }
                 if !path.hasPrefix("/") { return path }
                 return favorites.first(where: { $0.url.path == path })?.name
                     ?? locations.first(where: { $0.url.path == path })?.name
@@ -222,6 +211,7 @@ struct FileManagerFeature {
         case setSidebarVisible(Bool)
         case saveScrollOffset(CGPoint, forPath: String)
         case showRecents
+        case showComputer
         case loadFavorites
         case favoritesLoaded([SidebarUtils.FavoriteItem])
         case openFavorite(SidebarUtils.FavoriteItem)
@@ -246,6 +236,11 @@ struct FileManagerFeature {
         case toggleLocationsSection
         case toggleTagsSection
         case updateColumnWidth(ColumnUpdate)
+        case updateListIconSize(CGFloat)
+        case updateGridIconSize(CGFloat)
+        case updateListTextSize(CGFloat)
+        case updateGridTextSize(CGFloat)
+        case setSidebarWidth(CGFloat)
     }
 
     @Dependency(\.fsItemClient)
@@ -284,6 +279,20 @@ struct FileManagerFeature {
                     )
                 }
 
+                if let listIconSize = UserDefaults.standard.object(forKey: SettingsKeys.listIconSize) as? CGFloat {
+                    state.listIconSize = listIconSize
+                }
+                if let gridIconSize = UserDefaults.standard.object(forKey: SettingsKeys.gridIconSize) as? CGFloat {
+                    state.gridIconSize = gridIconSize
+                }
+
+                if let listTextSize = UserDefaults.standard.object(forKey: SettingsKeys.listTextSize) as? CGFloat {
+                    state.listTextSize = listTextSize
+                }
+                if let gridTextSize = UserDefaults.standard.object(forKey: SettingsKeys.gridTextSize) as? CGFloat {
+                    state.gridTextSize = gridTextSize
+                }
+
                 return .merge(
                     .send(.fsItems(.setShowHidden(state.showHiddenFiles))),
                     .send(.fsItems(.setSortKey(state.sortKey))),
@@ -291,10 +300,35 @@ struct FileManagerFeature {
                     .send(.fsItems(.loadItems(path: state.currentPath))),
                     .send(.loadFavorites),
                     .send(.loadLocations),
-                    .send(.loadTags)
+                    .send(.loadTags),
+                    .run { send in
+                        let listIconSizeKey = "listIconSize"
+                        let gridIconSizeKey = "gridIconSize"
+                        let listTextSizeKey = "listTextSize"
+                        let gridTextSizeKey = "gridTextSize"
+                        for await _ in NotificationCenter.default.notifications(
+                            named: UserDefaults.didChangeNotification
+                        ) {
+                            if let listIconSize = UserDefaults.standard.object(forKey: listIconSizeKey) as? CGFloat {
+                                await send(.updateListIconSize(listIconSize))
+                            }
+                            if let gridIconSize = UserDefaults.standard.object(forKey: gridIconSizeKey) as? CGFloat {
+                                await send(.updateGridIconSize(gridIconSize))
+                            }
+                            if let listTextSize = UserDefaults.standard.object(forKey: listTextSizeKey) as? CGFloat {
+                                await send(.updateListTextSize(listTextSize))
+                            }
+                            if let gridTextSize = UserDefaults.standard.object(forKey: gridTextSizeKey) as? CGFloat {
+                                await send(.updateGridTextSize(gridTextSize))
+                            }
+                        }
+                    }
                 )
 
             case let .navigateTo(path):
+                if path == SidebarUtils.computerName && state.currentPath == SidebarUtils.computerName {
+                    return .none
+                }
                 if path != state.currentPath {
                     state.backHistory.append(state.currentPath)
                     state.forwardHistory = []
@@ -419,6 +453,11 @@ struct FileManagerFeature {
                 state.isTagsCollapsed.toggle()
                 return .none
 
+            case let .setSidebarWidth(width):
+                let clampedWidth = max(150, min(400, width))
+                UserDefaults.standard.set(clampedWidth, forKey: "sidebarWidth")
+                return .none
+
             case let .updateColumnWidth(ctx):
                 state.columnWidths = state.columnWidths.updated(
                     column: ctx.column,
@@ -436,6 +475,10 @@ struct FileManagerFeature {
             case .showRecents:
                 state.navigate(to: .recents, sidebarItemName: "Recents")
                 return .send(.fsItems(.loadRecentItems))
+
+            case .showComputer:
+                state.navigate(to: .computer, sidebarItemName: SidebarUtils.computerName)
+                return .send(.fsItems(.loadComputerItems))
 
             case .loadFavorites:
                 return .run { send in
@@ -530,6 +573,22 @@ struct FileManagerFeature {
                 default:
                     return .none
                 }
+
+            case let .updateListIconSize(size):
+                state.listIconSize = size
+                return .none
+
+            case let .updateGridIconSize(size):
+                state.gridIconSize = size
+                return .none
+
+            case let .updateListTextSize(size):
+                state.listTextSize = size
+                return .none
+
+            case let .updateGridTextSize(size):
+                state.gridTextSize = size
+                return .none
             }
         }
     }

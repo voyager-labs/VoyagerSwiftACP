@@ -10,6 +10,9 @@ struct FSItemGridView: View {
     let renamingText: String
     let isThumbnailReady: Bool
     let applications: [ApplicationInfo]?
+    let iconSize: CGFloat
+    let textSize: CGFloat
+    let commonApplications: [ApplicationInfo]?
     let onSelect: (Bool, Bool) -> Void // (isCommandPressed, isShiftPressed)
     let onOpen: () -> Void
     let onOpenInNewTab: ((Bool) -> Void)?
@@ -21,6 +24,7 @@ struct FSItemGridView: View {
     let onStartDrag: () -> Void
     let onDrop: ([NSItemProvider], String) -> Void
     let onLoadApplications: (() -> Void)?
+    let onLoadCommonApplications: (() -> Void)?
     let onPutBack: (() -> Void)?
     let onMoveToTrash: (() -> Void)?
     let onDeleteImmediately: (() -> Void)?
@@ -45,9 +49,9 @@ struct FSItemGridView: View {
 
     var body: some View {
         VStack(spacing: 1) {
-            ThumbnailView(item: item, displaySize: 64, isReady: isThumbnailReady)
+            ThumbnailView(item: item, displaySize: iconSize, isReady: isThumbnailReady)
                 .opacity(item.isHidden || isCut ? 0.5 : 1.0)
-                .frame(width: 64, height: 64)
+                .frame(width: iconSize, height: iconSize)
                 .padding(8)
                 .background(
                     RoundedRectangle(cornerRadius: 8)
@@ -89,10 +93,10 @@ struct FSItemGridView: View {
                                 get: { renamingText },
                                 set: { onRenameUpdate($0) }
                             ))
-                            .font(.system(size: 12))
+                            .font(.system(size: textSize))
                             .multilineTextAlignment(.center)
                             .textFieldStyle(.plain)
-                            .background(Color.black)
+                            .background(Color(nsColor: .textBackgroundColor))
                             .cornerRadius(4)
                             .frame(maxWidth: 112)
                             .focused($isTextFieldFocused)
@@ -109,7 +113,7 @@ struct FSItemGridView: View {
                             }
                         } else {
                             Text(item.name)
-                                .font(.system(size: 12))
+                                .font(.system(size: textSize))
                                 .lineLimit(2)
                                 .truncationMode(.middle)
                                 .multilineTextAlignment(.center)
@@ -128,7 +132,7 @@ struct FSItemGridView: View {
 
                     if let additionalInfo = item.additionalInfo {
                         Text(additionalInfo)
-                            .font(.system(size: 11))
+                            .font(.system(size: max(8, textSize - 1)))
                             .foregroundColor(.blue)
                             .lineLimit(1)
                     }
@@ -220,8 +224,10 @@ private extension FSItemGridView {
             .keyboardShortcut(.downArrow, modifiers: [.command])
         }
         .onAppear {
-            if !item.isDirectory, let onLoadApplications = onLoadApplications, applications == nil {
-                onLoadApplications()
+            if selectedCount > 1, commonApplications == nil {
+                onLoadCommonApplications?()
+            } else if !item.isDirectory, applications == nil {
+                onLoadApplications?()
             }
         }
 
@@ -237,39 +243,43 @@ private extension FSItemGridView {
             .keyboardShortcut(.downArrow, modifiers: [.command, .option])
         }
 
-        if let apps = applications, !apps.isEmpty {
-            Menu {
-                let regularApps = apps.filter { $0.id != "other" }
+        if !item.isDirectory, let onOpenWithApp = onOpenWithApp {
+            let appsToShow = selectedCount > 1 ? commonApplications : applications
 
-                ForEach(Array(regularApps.enumerated()), id: \.element.id) { _, app in
-                    Button {
-                        onOpenWithApp?(app.bundleID, isOptionPressed)
-                    } label: {
-                        HStack {
-                            if let bundleID = app.bundleID {
-                                appIconView(for: bundleID)
+            if let apps = appsToShow, !apps.isEmpty {
+                Menu {
+                    let regularApps = apps.filter { $0.id != "other" }
+
+                    ForEach(Array(regularApps.enumerated()), id: \.element.id) { _, app in
+                        Button {
+                            onOpenWithApp(app.bundleID, isOptionPressed)
+                        } label: {
+                            HStack {
+                                if let bundleID = app.bundleID {
+                                    appIconView(for: bundleID)
+                                }
+                                Text(app.isDefault ? "\(app.name) (default)" : app.name)
                             }
-                            Text(app.isDefault ? "\(app.name) (default)" : app.name)
+                        }
+
+                        if app.isDefault {
+                            Divider()
                         }
                     }
 
-                    if app.isDefault {
-                        Divider()
+                    Divider()
+                    Button("Other…") {
+                        onOpenWithApp(nil, isOptionPressed)
                     }
+                } label: {
+                    Label(isOptionPressed ? "Always Open With" : "Open With", systemImage: "app.badge")
                 }
-
-                Divider()
-                Button("Other…") {
-                    onOpenWithApp?(nil, isOptionPressed)
+            } else {
+                Button {
+                    onOpenWithApp(nil, isOptionPressed)
+                } label: {
+                    Label(isOptionPressed ? "Always Open With…" : "Open With…", systemImage: "app.badge")
                 }
-            } label: {
-                Label(isOptionPressed ? "Always Open With" : "Open With", systemImage: "app.badge")
-            }
-        } else if !item.isDirectory, let onOpenWithApp = onOpenWithApp {
-            Button {
-                onOpenWithApp(nil, isOptionPressed)
-            } label: {
-                Label(isOptionPressed ? "Always Open With…" : "Open With…", systemImage: "app.badge")
             }
         }
 
@@ -432,6 +442,17 @@ private extension FSItemGridView {
             Label("Tags", systemImage: "tag")
         }
     }
+}
+
+extension View {
+    @ViewBuilder
+    func `if`<Content: View>(_ condition: Bool, transform: (Self) -> Content) -> some View {
+        if condition {
+            transform(self)
+        } else {
+            self
+        }
+    }
 
     @ViewBuilder
     func appIconView(for bundleID: String) -> some View {
@@ -464,16 +485,5 @@ private extension FSItemGridView {
         path.fill()
         image.unlockFocus()
         return image
-    }
-}
-
-extension View {
-    @ViewBuilder
-    func `if`<Content: View>(_ condition: Bool, transform: (Self) -> Content) -> some View {
-        if condition {
-            transform(self)
-        } else {
-            self
-        }
     }
 }

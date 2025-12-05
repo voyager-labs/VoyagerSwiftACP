@@ -11,7 +11,10 @@ struct FSItemListView: View {
     let availableWidth: CGFloat
     let columnWidths: ListColumnWidths
     let applications: [ApplicationInfo]?
+    let commonApplications: [ApplicationInfo]?
     let isThumbnailReady: Bool
+    let iconSize: CGFloat
+    let textSize: CGFloat
     let onSelect: (Bool, Bool) -> Void
     let onOpen: () -> Void
     let onOpenInNewTab: (Bool) -> Void
@@ -23,6 +26,7 @@ struct FSItemListView: View {
     let onStartDrag: () -> Void
     let onDrop: ([NSItemProvider], String) -> Void
     let onLoadApplications: () -> Void
+    let onLoadCommonApplications: (() -> Void)?
     let onPutBack: (() -> Void)?
     let onMoveToTrash: () -> Void
     let onDeleteImmediately: () -> Void
@@ -83,9 +87,9 @@ struct FSItemListView: View {
 
                 HStack(spacing: layout.columnSpacing) {
                     HStack(spacing: 8) {
-                        ThumbnailView(item: item, displaySize: 20, isReady: isThumbnailReady)
+                        ThumbnailView(item: item, displaySize: iconSize, isReady: isThumbnailReady)
                             .opacity(item.isHidden || isCut ? 0.5 : 1.0)
-                            .frame(width: 20, height: 20)
+                            .frame(width: iconSize, height: iconSize)
                             .popover(isPresented: $showTagsEditor, arrowEdge: .bottom) {
                                 TagsEditorView(
                                     fileName: item.name,
@@ -99,9 +103,9 @@ struct FSItemListView: View {
                                 get: { renamingText },
                                 set: { onRenameUpdate($0) }
                             ))
-                            .font(.system(size: 13))
+                            .font(.system(size: textSize))
                             .textFieldStyle(.plain)
-                            .background(Color.black)
+                            .background(Color(nsColor: .textBackgroundColor))
                             .cornerRadius(4)
                             .frame(maxWidth: max(layout.name - 32, 40), alignment: .leading)
                             .focused($isTextFieldFocused)
@@ -117,7 +121,7 @@ struct FSItemListView: View {
                                 }
                             }
                         } else {
-                            styledText(item.name, fontSize: 13)
+                            styledText(item.name, fontSize: textSize)
                                 .lineLimit(1)
                                 .truncationMode(.middle)
                         }
@@ -134,13 +138,13 @@ struct FSItemListView: View {
                     }
                     .frame(width: layout.name, alignment: .leading)
 
-                    styledText(dateText(item.modifiedDate), fontSize: 12, isPrimary: false)
+                    styledText(dateText(item.modifiedDate), fontSize: max(10, textSize - 1), isPrimary: false)
                         .frame(width: layout.date, alignment: .leading)
 
-                    styledText(sizeText(item), fontSize: 12, isPrimary: false)
+                    styledText(sizeText(item), fontSize: max(10, textSize - 1), isPrimary: false)
                         .frame(width: layout.size, alignment: .trailing)
 
-                    styledText(kindText(item), fontSize: 12, isPrimary: false)
+                    styledText(kindText(item), fontSize: max(10, textSize - 1), isPrimary: false)
                         .frame(width: layout.kind, alignment: .leading)
                         .lineLimit(1)
                         .truncationMode(.middle)
@@ -231,7 +235,9 @@ private extension FSItemListView {
             .keyboardShortcut(.downArrow, modifiers: [.command])
         }
         .onAppear {
-            if !item.isDirectory && applications == nil {
+            if selectedCount > 1, commonApplications == nil {
+                onLoadCommonApplications?()
+            } else if !item.isDirectory, applications == nil {
                 onLoadApplications()
             }
         }
@@ -248,39 +254,43 @@ private extension FSItemListView {
             .keyboardShortcut(.downArrow, modifiers: [.command, .option])
         }
 
-        if let apps = applications, !apps.isEmpty {
-            Menu {
-                let regularApps = apps.filter { $0.id != "other" }
+        if !item.isDirectory {
+            let appsToShow = selectedCount > 1 ? commonApplications : applications
 
-                ForEach(Array(regularApps.enumerated()), id: \.element.id) { _, app in
-                    Button {
-                        onOpenWithApp(app.bundleID, isOptionPressed)
-                    } label: {
-                        HStack {
-                            if let bundleID = app.bundleID {
-                                appIconView(for: bundleID)
+            if let apps = appsToShow, !apps.isEmpty {
+                Menu {
+                    let regularApps = apps.filter { $0.id != "other" }
+
+                    ForEach(Array(regularApps.enumerated()), id: \.element.id) { _, app in
+                        Button {
+                            onOpenWithApp(app.bundleID, isOptionPressed)
+                        } label: {
+                            HStack {
+                                if let bundleID = app.bundleID {
+                                    appIconView(for: bundleID)
+                                }
+                                Text(app.isDefault ? "\(app.name) (default)" : app.name)
                             }
-                            Text(app.isDefault ? "\(app.name) (default)" : app.name)
+                        }
+
+                        if app.isDefault {
+                            Divider()
                         }
                     }
 
-                    if app.isDefault {
-                        Divider()
+                    Divider()
+                    Button("Other…") {
+                        onOpenWithApp(nil, isOptionPressed)
                     }
+                } label: {
+                    Label(isOptionPressed ? "Always Open With" : "Open With", systemImage: "app.badge")
                 }
-
-                Divider()
-                Button("Other…") {
+            } else {
+                Button {
                     onOpenWithApp(nil, isOptionPressed)
+                } label: {
+                    Label(isOptionPressed ? "Always Open With…" : "Open With…", systemImage: "app.badge")
                 }
-            } label: {
-                Label(isOptionPressed ? "Always Open With" : "Open With", systemImage: "app.badge")
-            }
-        } else if !item.isDirectory {
-            Button {
-                onOpenWithApp(nil, isOptionPressed)
-            } label: {
-                Label(isOptionPressed ? "Always Open With…" : "Open With…", systemImage: "app.badge")
             }
         }
 

@@ -22,7 +22,9 @@ struct ContentPaneListView: View {
     @State private var nsScrollView: NSScrollView?
     @State private var hasRestoredScrollPosition: Bool = false
 
-    private let rowHeight: CGFloat = 24
+    private var rowHeight: CGFloat {
+        max(24, store.listIconSize + 4)
+    }
 
     private func saveScrollPositionBeforeOpen() {
         ScrollPositionUtils.saveScrollPosition(
@@ -130,7 +132,10 @@ struct ContentPaneListView: View {
             availableWidth: props.width,
             columnWidths: store.columnWidths,
             applications: fsStore.operations.applicationsForItems[item.fullPath],
+            commonApplications: selectedIds.count > 1 ? fsStore.operations.commonApplicationsForSelectedFiles : nil,
             isThumbnailReady: thumbnailsReady.contains(item.fullPath),
+            iconSize: store.listIconSize,
+            textSize: store.listTextSize,
             onSelect: props.handlers.onSelect,
             onOpen: props.handlers.onOpen,
             onOpenInNewTab: props.handlers.onOpenInNewTab,
@@ -142,6 +147,7 @@ struct ContentPaneListView: View {
             onStartDrag: props.handlers.onStartDrag,
             onDrop: props.handlers.onDrop,
             onLoadApplications: props.handlers.onLoadApplications,
+            onLoadCommonApplications: props.handlers.onLoadCommonApplications,
             onPutBack: props.handlers.onPutBack,
             onMoveToTrash: props.handlers.onMoveToTrash,
             onDeleteImmediately: props.handlers.onDeleteImmediately,
@@ -265,11 +271,22 @@ struct ContentPaneListView: View {
             groupedItemsContent(fsStore: fsStore, geometry: geometry, store: store)
         }
 
-        emptyRowsView(itemsCount: fsStore.items.count, scrollHeight: scrollViewHeight)
+        emptyRowsView(itemsCount: fsStore.items.count, scrollHeight: scrollViewHeight, fsStore: fsStore)
+    }
+
+    private func emptyRowTapAction(fsStore: Store<FSItemsFeature.State, FSItemsFeature.Action>) {
+        if fsStore.isRenaming {
+            fsStore.send(.commitRename)
+        }
+        fsStore.send(.clearSelection)
     }
 
     @ViewBuilder
-    private func emptyRowsView(itemsCount: Int, scrollHeight: CGFloat) -> some View {
+    private func emptyRowsView(
+        itemsCount: Int,
+        scrollHeight: CGFloat,
+        fsStore: Store<FSItemsFeature.State, FSItemsFeature.Action>
+    ) -> some View {
         let currentHeight = CGFloat(itemsCount) * rowHeight
         let remainingHeight = scrollHeight - currentHeight
 
@@ -282,6 +299,9 @@ struct ContentPaneListView: View {
                     .frame(height: rowHeight)
                     .frame(maxWidth: .infinity)
                     .contentShape(Rectangle())
+                    .onTapGesture {
+                        emptyRowTapAction(fsStore: fsStore)
+                    }
             }
 
             if partialHeight > 0 {
@@ -289,6 +309,9 @@ struct ContentPaneListView: View {
                     .frame(height: partialHeight)
                     .frame(maxWidth: .infinity)
                     .contentShape(Rectangle())
+                    .onTapGesture {
+                        emptyRowTapAction(fsStore: fsStore)
+                    }
             }
         }
     }
@@ -341,7 +364,7 @@ struct ContentPaneListView: View {
                             LazyVStack(alignment: .leading, spacing: 0) {
                                 listContent(fsStore: fsStore, geometry: geometry, store: store)
                             }
-                            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+                            .frame(maxWidth: .infinity, alignment: .topLeading)
                         }
                     }
                     .background(

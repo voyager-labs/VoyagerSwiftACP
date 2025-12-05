@@ -20,10 +20,9 @@ struct SidebarItemView: View {
 
     private var backgroundColor: Color {
         if isDropTarget {
-            return Color.accentColor // Finder 스타일: 진한 파란색
+            return Color.accentColor
         } else if isSelected {
-            // Favorites: 연한 파란색, Locations: 어두운 회색
-            return isFavorite ? Color.blue.opacity(0.1) : Color(white: 0.2)
+            return Color(nsColor: .unemphasizedSelectedContentBackgroundColor)
         } else {
             return Color.clear
         }
@@ -46,6 +45,8 @@ struct SidebarItemView: View {
                 .frame(width: 16)
             Text(title)
                 .foregroundColor(textColor)
+                .lineLimit(1)
+                .truncationMode(.tail)
             Spacer()
         }
         .padding(.horizontal, 12)
@@ -81,7 +82,7 @@ struct TagItemView: View {
         if isDropTarget {
             return Color.accentColor
         } else if isSelected {
-            return Color(white: 0.2)
+            return Color(nsColor: .unemphasizedSelectedContentBackgroundColor)
         } else {
             return Color.clear
         }
@@ -104,6 +105,8 @@ struct TagItemView: View {
                 .frame(width: 8, height: 8)
             Text(tag.name)
                 .foregroundColor(textColor)
+                .lineLimit(1)
+                .truncationMode(.tail)
             Spacer()
         }
         .padding(.horizontal, 12)
@@ -192,8 +195,24 @@ struct SidebarView: View {
                 Spacer()
             }
         }
-        .frame(minWidth: 200)
+        .frame(minWidth: 150)
         .background(Color(NSColor.controlBackgroundColor))
+        .navigationSplitViewColumnWidth(ideal: {
+            if let savedWidth = UserDefaults.standard.object(forKey: "sidebarWidth") as? Double,
+               savedWidth > 0
+            {
+                return CGFloat(savedWidth)
+            }
+            return 200
+        }())
+        .background(
+            GeometryReader { geometry in
+                Color.clear
+                    .onChange(of: geometry.size.width) { newWidth in
+                        store.send(.setSidebarWidth(newWidth))
+                    }
+            }
+        )
     }
 
     private var favoritesSection: some View {
@@ -251,9 +270,13 @@ struct SidebarView: View {
                                 title: location.name,
                                 isSelected: store.selectedSidebarItem == location.name,
                                 isFavorite: false,
-                                targetURL: location.url,
+                                targetURL: location.isComputer ? nil : location.url,
                                 action: {
-                                    store.send(.openLocation(location))
+                                    if location.isComputer {
+                                        store.send(.showComputer)
+                                    } else {
+                                        store.send(.openLocation(location))
+                                    }
                                 },
                                 onDrop: { providers, targetURL in
                                     store.send(.dropItemsToSidebarFolder(providers: providers, targetURL: targetURL))
