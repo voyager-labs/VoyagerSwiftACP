@@ -45,6 +45,7 @@ struct FileManagerFeature {
         var showHiddenFiles: Bool = false
         var sidebarVisible: Bool = true
         var inspectorVisible: Bool = false
+        var inspectorPaneExists: Bool = false
         var selectedSidebarItem: String?
         var favorites: [SidebarUtils.FavoriteItem] = []
         var locations: [SidebarUtils.LocationItem] = []
@@ -211,6 +212,7 @@ struct FileManagerFeature {
         case toggleShowHiddenFiles
         case setSidebarVisible(Bool)
         case toggleInspector
+        case setInspectorPaneExists(Bool)
         case saveScrollOffset(CGPoint, forPath: String)
         case showRecents
         case showComputer
@@ -436,6 +438,10 @@ struct FileManagerFeature {
 
             case .toggleInspector:
                 state.inspectorVisible.toggle()
+                return .none
+
+            case let .setInspectorPaneExists(exists):
+                state.inspectorPaneExists = exists
                 return .none
 
             case let .saveScrollOffset(offset, forPath: path):

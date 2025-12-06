@@ -102,12 +102,20 @@ class FileManagerSplitViewController: NSViewController, NSSplitViewDelegate {
                 let totalWidth = splitView.bounds.width
                 splitView.setPosition(totalWidth - 300, ofDividerAt: 1)
                 splitView.adjustSubviews()
+
+                store.send(.setInspectorPaneExists(true))
             }
         } else {
             if let hosting = inspectorHosting {
                 hosting.view.removeFromSuperview()
                 hosting.removeFromParent()
                 inspectorHosting = nil
+
+                let totalWidth = splitView.bounds.width
+                splitView.setPosition(totalWidth, ofDividerAt: 1)
+                splitView.layoutSubtreeIfNeeded()
+
+                store.send(.setInspectorPaneExists(false))
             }
         }
     }

@@ -24,7 +24,7 @@ struct ContentPaneView: View {
                 ContentPaneGridView(store: store)
             }
 
-            if !store.inspectorVisible {
+            if !store.inspectorPaneExists {
                 StatusBarButton(
                     text: statusText,
                     action: { store.send(.toggleInspector) }
