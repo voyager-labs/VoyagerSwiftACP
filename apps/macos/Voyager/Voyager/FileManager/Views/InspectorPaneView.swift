@@ -48,19 +48,46 @@ struct InspectorPaneView: View {
                         .strokeBorder(Color.white.opacity(0.1), lineWidth: 1)
                 )
 
-            Text(scopeText)
-                .font(.system(size: 11))
-                .foregroundColor(.primary)
-                .padding(.horizontal, 10)
-                .padding(.vertical, 5)
-                .background(
-                    Capsule()
-                        .fill(Color.white.opacity(0.15))
-                )
-                .padding(10)
+            HStack(spacing: 6) {
+                folderScopeChip
+                itemCountChip
+            }
+            .padding(10)
         }
         .frame(height: 120)
         .padding(.horizontal, 12)
         .padding(.bottom, 12)
+    }
+
+    private var folderScopeChip: some View {
+        HStack(spacing: 4) {
+            Image(systemName: "folder")
+                .font(.system(size: 9))
+            Text(folderDisplayName)
+                .font(.system(size: 10))
+        }
+        .foregroundColor(.primary)
+        .padding(.horizontal, 8)
+        .padding(.vertical, 4)
+        .background(
+            Capsule()
+                .fill(Color.white.opacity(0.15))
+        )
+    }
+
+    private var itemCountChip: some View {
+        Text(scopeText)
+            .font(.system(size: 11))
+            .foregroundColor(.primary)
+            .padding(.horizontal, 10)
+            .padding(.vertical, 5)
+            .background(
+                Capsule()
+                    .fill(Color.white.opacity(0.15))
+            )
+    }
+
+    private var folderDisplayName: String {
+        FileManagerFeature.makeWindowTitle(for: store.currentPath)
     }
 }
