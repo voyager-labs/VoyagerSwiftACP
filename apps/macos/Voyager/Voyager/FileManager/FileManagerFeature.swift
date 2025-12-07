@@ -94,6 +94,14 @@ struct FileManagerFeature {
             return fsItems.items.contains(where: { $0.id == selectedId })
         }
 
+        var hasSelectedItems: Bool {
+            !fsItems.selectedIds.isEmpty
+        }
+
+        var hasClipboardItems: Bool {
+            !fsItems.clipboardItems.isEmpty
+        }
+
         var breadcrumbItems: [BreadcrumbUtils.Item] {
             switch navigationState {
             case .recents, .tags:
