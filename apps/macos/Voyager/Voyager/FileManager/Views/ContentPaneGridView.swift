@@ -137,6 +137,7 @@ struct ContentPaneGridView: View {
                                         fsStore.send(.commitRename)
                                     }
                                     fsStore.send(.clearSelection)
+                                    restoreFileManagerFocus()
                                 }
 
                             VStack(spacing: 0) {

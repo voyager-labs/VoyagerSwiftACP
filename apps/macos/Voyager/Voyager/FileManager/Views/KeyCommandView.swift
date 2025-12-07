@@ -3,15 +3,39 @@ import SwiftUI
 
 final class KeyCommandHostingView: NSView {
     var onKeyDown: ((NSEvent) -> Void)?
+    static weak var currentFirstResponder: KeyCommandHostingView?
 
     override func keyDown(with event: NSEvent) {
         onKeyDown?(event)
     }
 
+    override func mouseDown(with event: NSEvent) {
+        window?.makeFirstResponder(self)
+        super.mouseDown(with: event)
+    }
+
     override var acceptsFirstResponder: Bool { true }
 
     override func becomeFirstResponder() -> Bool {
-        true
+        KeyCommandHostingView.currentFirstResponder = self
+        return true
+    }
+
+    override func resignFirstResponder() -> Bool {
+        if KeyCommandHostingView.currentFirstResponder == self {
+            KeyCommandHostingView.currentFirstResponder = nil
+        }
+        return true
+    }
+
+    func restoreFocus() {
+        window?.makeFirstResponder(self)
+    }
+}
+
+func restoreFileManagerFocus() {
+    DispatchQueue.main.async {
+        KeyCommandHostingView.currentFirstResponder?.restoreFocus()
     }
 }
 

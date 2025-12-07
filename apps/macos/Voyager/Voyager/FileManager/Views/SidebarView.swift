@@ -1,3 +1,4 @@
+import AppKit
 import ComposableArchitecture
 import SwiftUI
 import UniformTypeIdentifiers
@@ -47,6 +48,7 @@ struct SidebarItemView: View {
         .contentShape(Rectangle())
         .onTapGesture {
             action()
+            restoreFileManagerFocus()
         }
         .onDrop(of: [.fileURL], isTargeted: $isDropTarget) { providers in
             guard let targetURL = targetURL, let onDrop = onDrop else { return false }
@@ -97,6 +99,7 @@ struct TagItemView: View {
         .contentShape(Rectangle())
         .onTapGesture {
             action()
+            restoreFileManagerFocus()
         }
         .onDrop(of: [.fileURL], isTargeted: $isDropTarget) { providers in
             guard let onDrop = onDrop else { return false }
