@@ -1,7 +1,7 @@
-"""방식 2: LLM 전담 (LLM이 모든 것 처리)
+"""LLM 기반 쿼리 컨버터
 
 LLM이 레지스트리를 참조하여
-자연어 분석 + SQL 생성을 모두 수행합니다.
+자연어를 SQL WHERE절로 변환합니다.
 """
 
 from typing import Any
@@ -19,8 +19,8 @@ class SQLConditions(BaseModel):
     error: str | None = Field(None, description="에러 메시지 (조건 4개 초과 시)")
 
 
-class LLMOnlyQueryConverter:
-    """방식 2: LLM이 모든 것 담당"""
+class LLMConverter:
+    """LLM 기반 자연어 → SQL 변환기"""
 
     def __init__(self, llm_provider: LLMProvider):
         self.client = llm_provider
@@ -215,7 +215,7 @@ class LLMOnlyQueryConverter:
 
             # 에러 체크
             if result.error:
-                print(f"[방식 2] {result.error}")
+                print(f"[LLMConverter] {result.error}")
                 return None
 
             sql = result.conditions.strip()
@@ -226,7 +226,7 @@ class LLMOnlyQueryConverter:
             return sql
 
         except Exception as e:
-            print(f"[방식 2] 변환 실패: {e}")
+            print(f"[LLMConverter] 변환 실패: {e}")
             return None
 
     async def convert_with_metadata(self, query: str) -> dict[str, Any]:
@@ -234,8 +234,8 @@ class LLMOnlyQueryConverter:
         sql = await self.convert(query)
 
         return {
-            "method": "llm_only",
-            "description": "LLM이 레지스트리 참조하여 직접 SQL 생성",
+            "method": "llm",
+            "description": "LLM 기반 SQL 생성",
             "query": query,
             "sql": sql,
             "success": sql is not None,

@@ -6,10 +6,7 @@ from sqlmodel import select, text
 
 from app.config import load_config
 from core.llm.langchain_provider import LangChainProvider
-from core.llm.query_converter import QueryConverter
-
-# 쿼리 변환 방식 (Method 2)
-from core.llm.method2_llm_only_converter import LLMOnlyQueryConverter
+from core.llm.cached_llm_converter import CachedLLMConverter
 
 from infra.db.engine import engine_manager
 from infra.repositories.file_entries import FileEntriesRepository
@@ -41,6 +38,19 @@ def create_llm_provider() -> LangChainProvider:
         temperature=llm_config.get("temperature", 0.7),
         **provider_config,
     )
+
+
+# 캐시 컨버터 싱글톤 (서버 재시작 전까지 캐시 유지)
+_cached_converter: CachedLLMConverter | None = None
+
+
+def get_cached_converter() -> CachedLLMConverter:
+    """캐시 컨버터 싱글톤 반환"""
+    global _cached_converter
+    if _cached_converter is None:
+        llm = create_llm_provider()
+        _cached_converter = CachedLLMConverter(llm, cache_size=100)
+    return _cached_converter
 
 
 @router.get("/")
@@ -204,212 +214,22 @@ async def get_file_detail(file_id: int):
 
 
 @router.post("/query")
-async def natural_language_search(request: NaturalQueryRequest):
-    """자연어 검색 (LLM 기반)
+async def query_files(request: NaturalQueryRequest):
+    """자연어 쿼리를 SQL로 변환하여 파일 검색
 
-    사용자의 자연어 쿼리를 LLM이 SQL 조건식으로 변환하여 검색합니다.
-
-    Examples:
-        - "어제 다운로드한 PDF 파일"
-        - "최근 1주일 이내 수정된 이미지"
-        - "Downloads 폴더의 큰 파일"
-    """
-    # LLM Provider 초기화
-    llm = create_llm_provider()
-
-    # 서버 상태 확인
-    if not await llm.health_check():
-        raise HTTPException(
-            status_code=503,
-            detail="Ollama 서버가 실행 중이지 않습니다. 'ollama serve' 명령으로 시작하세요.",
-        )
-
-    try:
-        # 쿼리 변환
-        converter = QueryConverter(llm)
-        where_clause = await converter.convert(request.query)
-
-        if not where_clause:
-            return {
-                "query": request.query,
-                "where_clause": None,
-                "count": 0,
-                "items": [],
-                "error": "쿼리를 SQL 조건식으로 변환할 수 없습니다.",
-            }
-
-        # SQL 실행
-        with engine_manager.session(autocommit=False) as session:
-            # WHERE 절을 포함한 쿼리 생성
-            sql = f"""
-                SELECT id, path, name_full, size, extension, file_kind, modification_date
-                FROM file_entries
-                WHERE {where_clause}
-                ORDER BY modification_date DESC
-                LIMIT {request.limit}
-            """
-
-            stmt = text(sql)
-            result = session.exec(stmt)
-            rows = result.fetchall()
-
-            # 결과 변환
-            items = []
-            for row in rows:
-                items.append(
-                    {
-                        "id": row[0],
-                        "path": row[1],
-                        "name": row[2],
-                        "size": row[3],
-                        "extension": row[4],
-                        "file_kind": row[5],
-                        "modification_date": row[6],  # SQLite에서 문자열로 반환됨
-                    }
-                )
-
-            return {
-                "query": request.query,
-                "where_clause": where_clause,
-                "count": len(items),
-                "items": items,
-            }
-
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"검색 실행 오류: {str(e)}")
-
-    finally:
-        await llm.close()
-
-
-# ========================================
-# Method 2 & 4 엔드포인트
-# ========================================
-
-
-async def _execute_query_with_method(converter, request: NaturalQueryRequest):
-    """공통 쿼리 실행 로직"""
-    # convert_with_metadata 사용
-    metadata = await converter.convert_with_metadata(request.query)
-
-    if not metadata["sql"]:
-        return {
-            "query": request.query,
-            "success": False,
-            "method": metadata["method"],
-            "description": metadata["description"],
-            "where_clause": None,
-            "count": 0,
-            "items": [],
-            "metadata": metadata,
-            "error": "쿼리를 SQL 조건식으로 변환할 수 없습니다.",
-        }
-
-    # SQL 실행
-    try:
-        with engine_manager.session(autocommit=False) as session:
-            sql = f"""
-                SELECT id, path, name_full, size, extension, file_kind, modification_date
-                FROM file_entries
-                WHERE {metadata["sql"]}
-                ORDER BY modification_date DESC
-                LIMIT {request.limit}
-            """
-
-            stmt = text(sql)
-            result = session.exec(stmt)
-            rows = result.fetchall()
-
-            items = []
-            for row in rows:
-                items.append(
-                    {
-                        "id": row[0],
-                        "path": row[1],
-                        "name": row[2],
-                        "size": row[3],
-                        "extension": row[4],
-                        "file_kind": row[5],
-                        "modification_date": row[6],
-                    }
-                )
-
-            return {
-                "query": request.query,
-                "success": True,
-                "method": metadata["method"],
-                "description": metadata["description"],
-                "where_clause": metadata["sql"],
-                "count": len(items),
-                "items": items,
-                "metadata": metadata,
-            }
-    except Exception as e:
-        return {
-            "query": request.query,
-            "success": False,
-            "method": metadata["method"],
-            "description": metadata["description"],
-            "where_clause": metadata["sql"],
-            "count": 0,
-            "items": [],
-            "metadata": metadata,
-            "error": str(e),
-        }
-
-
-@router.post("/query/method2")
-async def query_method2(request: NaturalQueryRequest):
-    """Method 2: LLM Only (Primary - 95.9% 성공률)
-
-    LLM이 레지스트리를 참조하여 직접 SQL을 생성합니다.
-
-    장점:
-        - 가장 높은 성공률 (95.9%)
-        - 간단한 구현
-        - 빠른 응답 (LLM 1회 호출)
-
-    단점:
-        - Python validation layer 없음
-    """
-    llm = create_llm_provider()
-
-    if not await llm.health_check():
-        raise HTTPException(status_code=503, detail="LLM 서버가 실행 중이지 않습니다.")
-
-    try:
-        converter = LLMOnlyQueryConverter(llm)
-        return await _execute_query_with_method(converter, request)
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"검색 실행 오류: {str(e)}")
-    finally:
-        await llm.close()
-
-
-@router.post("/query/method2-test")
-async def query_method2_test(request: NaturalQueryRequest):
-    """Method 2 테스트용 엔드포인트 (간단 출력)
-
-    성공 여부, 생성된 SQL, 실행 시간만 반환합니다.
-    결과 items는 포함하지 않습니다.
+    동일한 쿼리는 캐시에서 즉시 반환됩니다.
     """
     import time
 
     start_time = time.time()
-    llm = create_llm_provider()
+    converter = get_cached_converter()
 
-    if not await llm.health_check():
-        return {
-            "success": False,
-            "error": "LLM 서버가 실행 중이지 않습니다.",
-            "execution_time": round(time.time() - start_time, 2),
-        }
+    # 캐시 히트 여부 확인
+    cache_hit = request.query in converter._cache
 
     generated_sql = None
     try:
-        converter = LLMOnlyQueryConverter(llm)
-        metadata = await converter.convert_with_metadata(request.query)
-        generated_sql = metadata.get("sql")
+        generated_sql = await converter.convert(request.query)
 
         if not generated_sql:
             return {
@@ -417,8 +237,9 @@ async def query_method2_test(request: NaturalQueryRequest):
                 "success": False,
                 "where_clause": None,
                 "count": 0,
+                "cache_hit": cache_hit,
                 "error": "SQL 변환 실패",
-                "execution_time": round(time.time() - start_time, 2),
+                "execution_time": round(time.time() - start_time, 3),
             }
 
         # SQL 실행
@@ -440,7 +261,9 @@ async def query_method2_test(request: NaturalQueryRequest):
                 "success": True,
                 "where_clause": generated_sql,
                 "count": len(rows),
-                "execution_time": round(time.time() - start_time, 2),
+                "cache_hit": cache_hit,
+                "cache_size": len(converter._cache),
+                "execution_time": round(time.time() - start_time, 3),
             }
 
     except Exception as e:
@@ -449,10 +272,9 @@ async def query_method2_test(request: NaturalQueryRequest):
             "success": False,
             "where_clause": generated_sql,
             "count": 0,
+            "cache_hit": cache_hit,
             "error": str(e)[:200],
-            "execution_time": round(time.time() - start_time, 2),
+            "execution_time": round(time.time() - start_time, 3),
         }
-    finally:
-        await llm.close()
 
 
