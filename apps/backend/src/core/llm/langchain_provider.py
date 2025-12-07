@@ -53,7 +53,7 @@ class LangChainProvider(LLMProvider):
             return Ollama(
                 model=self.model,
                 base_url=base_url,
-                temperature=self.kwargs.get("temperature", 0.7),
+                temperature=self.kwargs.get("temperature", 0),
             )
 
         elif self.provider == "openai":
@@ -61,7 +61,7 @@ class LangChainProvider(LLMProvider):
             return ChatOpenAI(
                 model=self.model,
                 api_key=api_key,
-                temperature=self.kwargs.get("temperature", 0.7),
+                temperature=self.kwargs.get("temperature", 0),
             )
 
         elif self.provider == "anthropic":
@@ -69,7 +69,7 @@ class LangChainProvider(LLMProvider):
             return ChatAnthropic(
                 model=self.model,
                 anthropic_api_key=api_key,
-                temperature=self.kwargs.get("temperature", 0.7),
+                temperature=self.kwargs.get("temperature", 0),
             )
 
         else:
