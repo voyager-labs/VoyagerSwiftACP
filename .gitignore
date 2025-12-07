@@ -1,53 +1,73 @@
-# Python-generated files
+# Python
 __pycache__/
-*.py[oc]
+*.py[cod]
+*$py.class
+*.so
+.Python
 build/
+develop-eggs/
 dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
 wheels/
-*.egg-info
+*.egg-info/
+.installed.cfg
+*.egg
 
 # Virtual environments
-.venv
+.venv/
+venv/
+ENV/
+env/
 
-# Editors and tooling
-.DS_Store
+# IDE
+.vscode/
 .idea/
-.vscode/*.log
-.ruff_cache/
-.mypy_cache/
-.pytest_cache/
-coverage.xml
-/.coverage*
+*.swp
+*.swo
+*~
 
-# Xcode
-.build/
-xcuserdata/
-*.xcodeproj/*
-!*.xcodeproj/project.pbxproj
-!*.xcodeproj/xcshareddata/
-!*.xcodeproj/project.xcworkspace/
-!*.xcworkspace/contents.xcworkspacedata
-/*.gcno
-**/xcshareddata/WorkspaceSettings.xcsettings
-DerivedData/
-*.hmap
-*.dSYM.zip
-*.dSYM
+# macOS
+.DS_Store
+.AppleDouble
+.LSOverride
 
-# Code coverage and profiling
-*.profraw
-default.profraw
+# Database
+*.db
+*.db-journal
+*.sqlite
+*.sqlite3
 
-# Language Server Protocol
-buildServer.json
-
-# Environment variables
+# Environment
 .env
-.env*
-!.env.example
+.env.local
 
-.history/
+# Testing
+.pytest_cache/
+.coverage
+htmlcov/
+.tox/
+
+# Jupyter
+.ipynb_checkpoints
+*.ipynb
+
+# Build artifacts
+*.profraw
+
+# Test files (369MB 불필요)
+apps/backend/notebooks/test-files/
 
 # Logs
-apps/macos/logs/
 *.log
+
+# Alembic
+apps/backend/alembic.ini.bak
+
+.serena/*

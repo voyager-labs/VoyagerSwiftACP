@@ -1,6 +1,16 @@
 """LLM 통합 모듈"""
 
-from core.llm.ollama_client import OllamaClient
-from core.llm.query_converter import QueryConverter
+# LLM Provider (추상 인터페이스 + 구현체)
+from core.llm.llm_provider import LLMProvider
+from core.llm.langchain_provider import LangChainProvider
 
-__all__ = ["OllamaClient", "QueryConverter"]
+# 쿼리 변환기
+from core.llm.llm_converter import LLMConverter
+from core.llm.cached_llm_converter import CachedLLMConverter
+
+__all__ = [
+    "LLMProvider",
+    "LangChainProvider",
+    "LLMConverter",
+    "CachedLLMConverter",
+]

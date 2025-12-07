@@ -5,8 +5,9 @@ from pydantic import BaseModel
 from sqlmodel import select, text
 
 from app.config import load_config
-from core.llm.ollama_client import OllamaClient
-from core.llm.query_converter import QueryConverter
+from core.llm.langchain_provider import LangChainProvider
+from core.llm.cached_llm_converter import CachedLLMConverter
+
 from infra.db.engine import engine_manager
 from infra.repositories.file_entries import FileEntriesRepository
 from infra.schemas.file_entry_schema import FileEntrySchema
@@ -24,6 +25,32 @@ class NaturalQueryRequest(BaseModel):
 cfg = load_config()
 if not engine_manager.is_initialized:
     engine_manager.initialize(cfg)
+
+
+def create_llm_provider() -> LangChainProvider:
+    """config.yaml 설정으로 LLM Provider 생성"""
+    llm_config = cfg.llm
+    provider_config = getattr(llm_config, llm_config.provider, {})
+
+    return LangChainProvider(
+        provider=llm_config.provider,
+        model=llm_config.model,
+        temperature=llm_config.get("temperature", 0.7),
+        **provider_config,
+    )
+
+
+# 캐시 컨버터 싱글톤 (서버 재시작 전까지 캐시 유지)
+_cached_converter: CachedLLMConverter | None = None
+
+
+def get_cached_converter() -> CachedLLMConverter:
+    """캐시 컨버터 싱글톤 반환"""
+    global _cached_converter
+    if _cached_converter is None:
+        llm = create_llm_provider()
+        _cached_converter = CachedLLMConverter(llm, cache_size=100)
+    return _cached_converter
 
 
 @router.get("/")
@@ -187,47 +214,40 @@ async def get_file_detail(file_id: int):
 
 
 @router.post("/query")
-async def natural_language_search(request: NaturalQueryRequest):
-    """자연어 검색 (LLM 기반)
+async def query_files(request: NaturalQueryRequest):
+    """자연어 쿼리를 SQL로 변환하여 파일 검색
 
-    사용자의 자연어 쿼리를 LLM이 SQL 조건식으로 변환하여 검색합니다.
-
-    Examples:
-        - "어제 다운로드한 PDF 파일"
-        - "최근 1주일 이내 수정된 이미지"
-        - "Downloads 폴더의 큰 파일"
+    동일한 쿼리는 캐시에서 즉시 반환됩니다.
     """
-    # Ollama 클라이언트 초기화
-    ollama = OllamaClient(model="qwen2.5:7b")
+    import time
 
-    # 서버 상태 확인
-    if not await ollama.health_check():
-        raise HTTPException(
-            status_code=503,
-            detail="Ollama 서버가 실행 중이지 않습니다. 'ollama serve' 명령으로 시작하세요.",
-        )
+    start_time = time.time()
+    converter = get_cached_converter()
 
+    # 캐시 히트 여부 확인
+    cache_hit = request.query in converter._cache
+
+    generated_sql = None
     try:
-        # 쿼리 변환
-        converter = QueryConverter(ollama)
-        where_clause = await converter.convert(request.query)
+        generated_sql = await converter.convert(request.query)
 
-        if not where_clause:
+        if not generated_sql:
             return {
                 "query": request.query,
+                "success": False,
                 "where_clause": None,
                 "count": 0,
-                "items": [],
-                "error": "쿼리를 SQL 조건식으로 변환할 수 없습니다.",
+                "cache_hit": cache_hit,
+                "error": "SQL 변환 실패",
+                "execution_time": round(time.time() - start_time, 3),
             }
 
         # SQL 실행
         with engine_manager.session(autocommit=False) as session:
-            # WHERE 절을 포함한 쿼리 생성
             sql = f"""
                 SELECT id, path, name_full, size, extension, file_kind, modification_date
                 FROM file_entries
-                WHERE {where_clause}
+                WHERE {generated_sql}
                 ORDER BY modification_date DESC
                 LIMIT {request.limit}
             """
@@ -236,30 +256,25 @@ async def natural_language_search(request: NaturalQueryRequest):
             result = session.exec(stmt)
             rows = result.fetchall()
 
-            # 결과 변환
-            items = []
-            for row in rows:
-                items.append(
-                    {
-                        "id": row[0],
-                        "path": row[1],
-                        "name": row[2],
-                        "size": row[3],
-                        "extension": row[4],
-                        "file_kind": row[5],
-                        "modification_date": row[6],  # SQLite에서 문자열로 반환됨
-                    }
-                )
-
             return {
                 "query": request.query,
-                "where_clause": where_clause,
-                "count": len(items),
-                "items": items,
+                "success": True,
+                "where_clause": generated_sql,
+                "count": len(rows),
+                "cache_hit": cache_hit,
+                "cache_size": len(converter._cache),
+                "execution_time": round(time.time() - start_time, 3),
             }
 
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"검색 실행 오류: {str(e)}")
+        return {
+            "query": request.query,
+            "success": False,
+            "where_clause": generated_sql,
+            "count": 0,
+            "cache_hit": cache_hit,
+            "error": str(e)[:200],
+            "execution_time": round(time.time() - start_time, 3),
+        }
 
-    finally:
-        await ollama.close()
+
