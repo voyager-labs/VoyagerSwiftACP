@@ -102,10 +102,10 @@ struct InspectorPaneView: View {
 
     private var itemCountChip: some View {
         Text(scopeText)
-            .font(.system(size: 11))
+            .font(.system(size: 10))
             .foregroundColor(.primary)
             .padding(.horizontal, 10)
-            .padding(.vertical, 5)
+            .padding(.vertical, 4)
             .background(
                 Capsule()
                     .fill(Color.white.opacity(0.15))
