@@ -11,9 +11,9 @@ struct ContentPaneView: View {
         let selected = store.fsItems.selectedIds.count
 
         if selected == 0 {
-            return "\(total) items"
+            return "@ \(total) Items"
         } else {
-            return "\(selected) of \(total) selected"
+            return "@ \(selected) of \(total) items selected"
         }
     }
 
