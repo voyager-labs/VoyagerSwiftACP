@@ -36,9 +36,7 @@ struct InspectorPaneView: View {
 
             chatInputArea
         }
-        .frame(width: 300, alignment: .topLeading)
         .frame(maxHeight: .infinity, alignment: .topLeading)
-        .background(Color.black)
     }
 
     private var chatInputArea: some View {

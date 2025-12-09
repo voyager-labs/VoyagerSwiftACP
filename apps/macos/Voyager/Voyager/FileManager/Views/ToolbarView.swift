@@ -75,6 +75,17 @@ struct ToolbarView: View {
         .padding(.horizontal, 16)
         .frame(height: 56)
         .frame(maxWidth: .infinity)
-        .background(VisualEffectBackgroundView(material: .headerView))
+        .background(
+            ZStack {
+                Color(red: 0.17, green: 0.17, blue: 0.17)
+
+                VStack {
+                    Spacer()
+                    Rectangle()
+                        .fill(Color.black.opacity(0.15))
+                        .frame(height: 0.5)
+                }
+            }
+        )
     }
 }

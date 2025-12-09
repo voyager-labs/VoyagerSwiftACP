@@ -147,7 +147,7 @@ struct SidebarView: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            VisualEffectBackgroundView(material: .sidebar)
+            Color(nsColor: .controlBackgroundColor)
                 .frame(height: 50)
                 .ignoresSafeArea(.all, edges: .top)
 
@@ -187,7 +187,7 @@ struct SidebarView: View {
             .clipped()
         }
         .frame(minWidth: 150)
-        .background(VisualEffectBackgroundView(material: .sidebar))
+        .background(Color(nsColor: NSColor.controlBackgroundColor)) // 시스템 색상 (Container, 인스펙터 패인과 동일)
         .navigationSplitViewColumnWidth(ideal: {
             if let savedWidth = UserDefaults.standard.object(forKey: "sidebarWidth") as? Double,
                savedWidth > 0

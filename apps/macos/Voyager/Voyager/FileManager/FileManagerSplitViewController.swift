@@ -10,6 +10,23 @@ class FileManagerSplitViewController: NSViewController, NSSplitViewDelegate {
     private var inspectorHosting: NSViewController?
     private var observationTask: Task<Void, Never>?
 
+    private var contentInspectorContainer: NSView?
+    private var contentHosting: NSViewController?
+    private var contentInspectorDivider: ContentInspectorDivider?
+    private var inspectorWidth: CGFloat = 300
+    private let contentVerticalMargin: CGFloat = 8
+    private var contentLeadingConstraint: NSLayoutConstraint?
+    private var contentTrailingConstraint: NSLayoutConstraint?
+    private var contentTopConstraint: NSLayoutConstraint?
+    private var contentBottomConstraint: NSLayoutConstraint?
+    private var inspectorTrailingConstraint: NSLayoutConstraint?
+    private var inspectorTopConstraint: NSLayoutConstraint?
+    private var inspectorBottomConstraint: NSLayoutConstraint?
+    private var inspectorWidthConstraint: NSLayoutConstraint?
+    private var dividerLeadingConstraint: NSLayoutConstraint?
+    private var dividerTopConstraint: NSLayoutConstraint?
+    private var dividerBottomConstraint: NSLayoutConstraint?
+
     init(store: StoreOf<FileManagerFeature>, initialPath: String? = nil) {
         self.store = store
         self.initialPath = initialPath
@@ -26,32 +43,23 @@ class FileManagerSplitViewController: NSViewController, NSSplitViewDelegate {
     }
 
     override func loadView() {
-        let split = NSSplitView()
-        split.isVertical = true
-        split.dividerStyle = .thin
-        split.delegate = self
+        let mainSplit = createMainSplitView()
+        setupSidebar(in: mainSplit)
+        setupContentContainer(in: mainSplit)
+        view = mainSplit
+    }
 
-        let sidebarHosting = NSHostingController(
-            rootView: SidebarView(store: store).ignoresSafeArea(.all, edges: .top)
-        )
-        sidebarHosting.safeAreaRegions = []
-        split.addArrangedSubview(sidebarHosting.view)
-        split.setHoldingPriority(.defaultLow - 1, forSubviewAt: 0)
-        addChild(sidebarHosting)
+    private func updateContentInspectorLayout() {
+        guard let container = contentInspectorContainer,
+              let contentView = contentHosting?.view else { return }
 
-        let contentHosting = NSHostingController(
-            rootView: VStack(spacing: 0) {
-                ToolbarView(store: store)
-                ContentPaneView(store: store)
-            }
-            .ignoresSafeArea(.all, edges: .top)
-        )
-        contentHosting.safeAreaRegions = []
-        split.addArrangedSubview(contentHosting.view)
-        split.setHoldingPriority(.defaultLow, forSubviewAt: 1)
-        addChild(contentHosting)
+        if let inspectorView = inspectorHosting?.view {
+            setupLayoutWithInspector(container: container, contentView: contentView, inspectorView: inspectorView)
+        } else {
+            setupLayoutWithoutInspector(container: container, contentView: contentView)
+        }
 
-        view = split
+        container.layoutSubtreeIfNeeded()
     }
 
     override func viewDidLoad() {
@@ -80,28 +88,140 @@ class FileManagerSplitViewController: NSViewController, NSSplitViewDelegate {
         }
     }
 
+    override func viewDidAppear() {
+        super.viewDidAppear()
+
+        guard !hasSetInitialLayout,
+              let mainSplitView = view as? NSSplitView,
+              mainSplitView.bounds.width > 0 else { return }
+
+        mainSplitView.setPosition(220, ofDividerAt: 0)
+        mainSplitView.adjustSubviews()
+        hasSetInitialLayout = true
+    }
+}
+
+extension FileManagerSplitViewController {
+    private func createMainSplitView() -> NSSplitView {
+        let mainSplit = NSSplitView()
+        mainSplit.isVertical = true
+        mainSplit.dividerStyle = .thin
+        mainSplit.setValue(NSColor.clear, forKey: "dividerColor")
+        mainSplit.delegate = self
+        mainSplit.wantsLayer = true
+        mainSplit.layer?.backgroundColor = NSColor.controlBackgroundColor.cgColor
+        return mainSplit
+    }
+
+    private func setupSidebar(in mainSplit: NSSplitView) {
+        let sidebarHosting = NSHostingController(
+            rootView: SidebarView(store: store).ignoresSafeArea(.all, edges: .top)
+        )
+        sidebarHosting.safeAreaRegions = []
+        mainSplit.addArrangedSubview(sidebarHosting.view)
+        mainSplit.setHoldingPriority(.defaultLow - 1, forSubviewAt: 0)
+        addChild(sidebarHosting)
+        setupBackgroundLayer(for: sidebarHosting.view)
+    }
+
+    private func setupContentContainer(in mainSplit: NSSplitView) {
+        let container = NSView()
+        container.wantsLayer = true
+        container.layer?.backgroundColor = NSColor.controlBackgroundColor.cgColor
+        container.layer?.zPosition = 5
+        contentInspectorContainer = container
+
+        setupContentPane(in: container)
+        mainSplit.addArrangedSubview(container)
+        mainSplit.setHoldingPriority(.defaultLow, forSubviewAt: 1)
+    }
+
+    private func setupContentPane(in container: NSView) {
+        let contentHosting = NSHostingController(
+            rootView: VStack(spacing: 0) {
+                ToolbarView(store: store)
+                ContentPaneView(store: store)
+            }
+            .ignoresSafeArea(.all, edges: .top)
+        )
+        contentHosting.safeAreaRegions = []
+        contentHosting.view.translatesAutoresizingMaskIntoConstraints = false
+        container.addSubview(contentHosting.view)
+        addChild(contentHosting)
+        self.contentHosting = contentHosting
+        setupElevatedLayer(for: contentHosting.view)
+        setupContentPaneConstraints(container: container, contentView: contentHosting.view)
+    }
+
+    private func setupContentPaneConstraints(container: NSView, contentView: NSView) {
+        contentLeadingConstraint = contentView.leadingAnchor.constraint(
+            equalTo: container.leadingAnchor
+        )
+        contentTopConstraint = contentView.topAnchor.constraint(
+            equalTo: container.topAnchor,
+            constant: contentVerticalMargin
+        )
+        contentBottomConstraint = contentView.bottomAnchor.constraint(
+            equalTo: container.bottomAnchor,
+            constant: -contentVerticalMargin
+        )
+        contentTrailingConstraint = contentView.trailingAnchor.constraint(
+            equalTo: container.trailingAnchor,
+            constant: -contentVerticalMargin
+        )
+        NSLayoutConstraint.activate(
+            [
+                contentLeadingConstraint,
+                contentTopConstraint,
+                contentBottomConstraint,
+                contentTrailingConstraint,
+            ].compactMap { $0 }
+        )
+    }
+
+    private func setupBackgroundLayer(for view: NSView) {
+        view.wantsLayer = true
+        view.layer?.zPosition = 0
+    }
+
+    private func setupElevatedLayer(for view: NSView) {
+        view.wantsLayer = true
+        view.layer?.zPosition = 10
+        view.layer?.backgroundColor = NSColor(red: 0.16, green: 0.16, blue: 0.16, alpha: 1.0).cgColor
+        view.layer?.cornerRadius = 16
+        view.layer?.masksToBounds = true
+    }
+
+    private func setupInspectorLayer(for view: NSView) {
+        view.wantsLayer = true
+        view.layer?.zPosition = 10
+        view.layer?.backgroundColor = NSColor.controlBackgroundColor.cgColor
+    }
+}
+
+extension FileManagerSplitViewController {
     @MainActor
     private func updateInspectorPane(visible: Bool) {
-        guard let splitView = view as? NSSplitView else { return }
+        guard let container = contentInspectorContainer else { return }
 
         if visible {
             if inspectorHosting == nil {
                 let inspectorView = InspectorPaneView(store: store)
                     .ignoresSafeArea(.all, edges: .top)
                 let hosting = NSHostingController(rootView: inspectorView)
-                hosting.view.frame = NSRect(x: 0, y: 0, width: 300, height: 600)
+                hosting.view.translatesAutoresizingMaskIntoConstraints = false
                 hosting.safeAreaRegions = []
                 inspectorHosting = hosting
                 addChild(hosting)
 
-                splitView.addArrangedSubview(hosting.view)
-                splitView.setHoldingPriority(.defaultLow - 2, forSubviewAt: 2)
+                container.addSubview(hosting.view)
+                setupInspectorLayer(for: hosting.view)
 
-                splitView.layoutSubtreeIfNeeded()
-
-                let totalWidth = splitView.bounds.width
-                splitView.setPosition(totalWidth - 300, ofDividerAt: 1)
-                splitView.adjustSubviews()
+                let divider = createDivider()
+                divider.translatesAutoresizingMaskIntoConstraints = false
+                container.addSubview(divider)
+                contentInspectorDivider = divider
+                updateContentInspectorLayout()
 
                 store.send(.setInspectorPaneExists(true))
             }
@@ -111,28 +231,115 @@ class FileManagerSplitViewController: NSViewController, NSSplitViewDelegate {
                 hosting.removeFromParent()
                 inspectorHosting = nil
 
-                let totalWidth = splitView.bounds.width
-                splitView.setPosition(totalWidth, ofDividerAt: 1)
-                splitView.layoutSubtreeIfNeeded()
+                contentInspectorDivider?.removeFromSuperview()
+                contentInspectorDivider = nil
+
+                updateContentInspectorLayout()
 
                 store.send(.setInspectorPaneExists(false))
             }
         }
     }
 
-    override func viewDidAppear() {
-        super.viewDidAppear()
+    private func createDivider() -> ContentInspectorDivider {
+        let divider = ContentInspectorDivider()
+        divider.onResize = { [weak self] deltaX in
+            guard let self = self,
+                  let container = self.contentInspectorContainer else { return }
 
-        guard !hasSetInitialLayout,
-              let splitView = view as? NSSplitView,
-              splitView.bounds.width > 0 else { return }
+            let newInspectorWidth = self.inspectorWidth + deltaX
+            let minInspectorWidth: CGFloat = 200
+            let maxInspectorWidth: CGFloat = container.bounds.width - 400
 
-        splitView.setPosition(220, ofDividerAt: 0)
-        splitView.adjustSubviews()
+            if newInspectorWidth >= minInspectorWidth && newInspectorWidth <= maxInspectorWidth {
+                self.inspectorWidth = newInspectorWidth
+                self.inspectorWidthConstraint?.constant = self.inspectorWidth
+            }
+        }
+        return divider
+    }
+}
 
-        hasSetInitialLayout = true
+extension FileManagerSplitViewController {
+    private func setupLayoutWithInspector(container: NSView, contentView: NSView, inspectorView: NSView) {
+        if let contentTrailing = contentTrailingConstraint {
+            contentTrailing.isActive = false
+        }
+        contentTrailingConstraint = contentView.trailingAnchor.constraint(
+            equalTo: inspectorView.leadingAnchor
+        )
+        contentTrailingConstraint?.isActive = true
+
+        [
+            inspectorTrailingConstraint, inspectorTopConstraint,
+            inspectorBottomConstraint, inspectorWidthConstraint,
+        ].forEach { constraint in
+            constraint?.isActive = false
+        }
+        inspectorTrailingConstraint = inspectorView.trailingAnchor.constraint(
+            equalTo: container.trailingAnchor
+        )
+        inspectorTopConstraint = inspectorView.topAnchor.constraint(
+            equalTo: container.topAnchor
+        )
+        inspectorBottomConstraint = inspectorView.bottomAnchor.constraint(
+            equalTo: container.bottomAnchor
+        )
+        inspectorWidthConstraint = inspectorView.widthAnchor.constraint(equalToConstant: inspectorWidth)
+
+        NSLayoutConstraint.activate(
+            [
+                inspectorTrailingConstraint,
+                inspectorTopConstraint,
+                inspectorBottomConstraint,
+                inspectorWidthConstraint,
+            ].compactMap { $0 }
+        )
+
+        setupDividerConstraints(container: container, inspectorView: inspectorView)
     }
 
+    private func setupDividerConstraints(container: NSView, inspectorView: NSView) {
+        guard let divider = contentInspectorDivider else { return }
+
+        [
+            dividerLeadingConstraint, dividerTopConstraint, dividerBottomConstraint,
+        ].forEach { $0?.isActive = false }
+        dividerLeadingConstraint = divider.leadingAnchor.constraint(
+            equalTo: inspectorView.leadingAnchor,
+            constant: -1
+        )
+        dividerTopConstraint = divider.topAnchor.constraint(equalTo: container.topAnchor)
+        dividerBottomConstraint = divider.bottomAnchor.constraint(equalTo: container.bottomAnchor)
+
+        NSLayoutConstraint.activate(
+            [
+                dividerLeadingConstraint,
+                dividerTopConstraint,
+                dividerBottomConstraint,
+                divider.widthAnchor.constraint(equalToConstant: 2),
+            ].compactMap { $0 }
+        )
+    }
+
+    private func setupLayoutWithoutInspector(container: NSView, contentView: NSView) {
+        if let contentTrailing = contentTrailingConstraint {
+            contentTrailing.isActive = false
+        }
+        contentTrailingConstraint = contentView.trailingAnchor.constraint(
+            equalTo: container.trailingAnchor,
+            constant: -contentVerticalMargin
+        )
+        contentTrailingConstraint?.isActive = true
+
+        [
+            inspectorTrailingConstraint, inspectorTopConstraint,
+            inspectorBottomConstraint, inspectorWidthConstraint,
+        ].forEach { $0?.isActive = false }
+    }
+}
+
+extension FileManagerSplitViewController {
     func splitView(
         _: NSSplitView,
         constrainMinCoordinate proposedMinimumPosition: CGFloat,
@@ -140,7 +347,6 @@ class FileManagerSplitViewController: NSViewController, NSSplitViewDelegate {
     ) -> CGFloat {
         switch dividerIndex {
         case 0: return 150
-        case 1: return proposedMinimumPosition
         default: return proposedMinimumPosition
         }
     }
@@ -152,7 +358,6 @@ class FileManagerSplitViewController: NSViewController, NSSplitViewDelegate {
     ) -> CGFloat {
         switch dividerIndex {
         case 0: return 400
-        case 1: return proposedMaximumPosition
         default: return proposedMaximumPosition
         }
     }
@@ -165,5 +370,9 @@ class FileManagerSplitViewController: NSViewController, NSSplitViewDelegate {
     func splitView(_ splitView: NSSplitView, canCollapseSubview subview: NSView) -> Bool {
         guard let index = splitView.arrangedSubviews.firstIndex(of: subview) else { return false }
         return index == 0
+    }
+
+    func splitViewDidResizeSubviews(_: Notification) {
+        updateContentInspectorLayout()
     }
 }
