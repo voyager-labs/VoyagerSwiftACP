@@ -62,8 +62,12 @@ struct ToolbarView: View {
             .disabled(!store.canGoForward)
             .buttonStyle(.borderless)
 
-            Text(FileManager.default.displayName(atPath: store.currentPath))
-                .font(.system(size: 15, weight: .semibold))
+            HStack(spacing: 4) {
+                Image(systemName: "folder")
+                    .font(.system(size: 12))
+                Text(FileManager.default.displayName(atPath: store.currentPath))
+                    .font(.system(size: 15, weight: .semibold))
+            }
 
             Spacer()
 
@@ -73,8 +77,19 @@ struct ToolbarView: View {
         .padding(0)
         .padding(.leading, store.sidebarVisible ? 0 : trafficLightAreaWidth)
         .padding(.horizontal, 16)
-        .frame(height: 56)
+        .frame(height: 48)
         .frame(maxWidth: .infinity)
-        .background(VisualEffectBackgroundView(material: .headerView))
+        .background(
+            ZStack {
+                Color(red: 0.17, green: 0.17, blue: 0.17)
+
+                VStack {
+                    Spacer()
+                    Rectangle()
+                        .fill(Color.black.opacity(0.15))
+                        .frame(height: 1.0)
+                }
+            }
+        )
     }
 }
