@@ -1,5 +1,6 @@
-# Python
+# Python-generated files
 __pycache__/
+*.py[oc]
 *.py[cod]
 *$py.class
 *.so
@@ -34,19 +35,39 @@ env/
 *~
 
 # macOS
-.DS_Store
 .AppleDouble
 .LSOverride
+
+# Editors and tooling
+.DS_Store
+.idea/
+.vscode/*.log
+.ruff_cache/
+.mypy_cache/
+.pytest_cache/
+coverage.xml
+/.coverage*
+
+# Xcode
+.build/
+xcuserdata/
+*.xcodeproj/*
+!*.xcodeproj/project.pbxproj
+!*.xcodeproj/xcshareddata/
+!*.xcodeproj/project.xcworkspace/
+!*.xcworkspace/contents.xcworkspacedata
+/*.gcno
+**/xcshareddata/WorkspaceSettings.xcsettings
+DerivedData/
+*.hmap
+*.dSYM.zip
+*.dSYM
 
 # Database
 *.db
 *.db-journal
 *.sqlite
 *.sqlite3
-
-# Environment
-.env
-.env.local
 
 # Testing
 .pytest_cache/
@@ -58,14 +79,27 @@ htmlcov/
 .ipynb_checkpoints
 *.ipynb
 
-# Build artifacts
+# Code coverage and profiling
 *.profraw
+default.profraw
 
 # Test files (369MB 불필요)
 apps/backend/notebooks/test-files/
 
+# Language Server Protocol
+buildServer.json
+
+# Environment variables
+.env
+.env*
+!.env.example
+
+.history/
+
 # Logs
+apps/macos/logs/
 *.log
+# BMAD (local only)
 
 # Alembic
 apps/backend/alembic.ini.bak

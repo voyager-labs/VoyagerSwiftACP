@@ -25,11 +25,16 @@ class FileManagerWindowController: NSWindowController, NSWindowDelegate {
         let hostingController = NSHostingController(rootView: rootView)
 
         let window = NSWindow(contentViewController: hostingController)
-        window.setContentSize(NSSize(width: 850, height: 550))
-        window.minSize = NSSize(width: 800, height: 600)
         window.styleMask = [.titled, .closable, .miniaturizable, .resizable, .fullSizeContentView]
-        window.titleVisibility = .hidden
-        window.titlebarAppearsTransparent = true
+        window.minSize = NSSize(width: 600, height: 350)
+
+        let desiredSize = NSSize(width: 960, height: 510)
+        let screenFrame = NSScreen.main?.visibleFrame ?? NSRect.zero
+        let origin = NSPoint(
+            x: screenFrame.midX - desiredSize.width / 2,
+            y: screenFrame.midY - desiredSize.height / 2
+        )
+        window.setFrame(NSRect(origin: origin, size: desiredSize), display: false)
 
         if asTab {
             window.tabbingMode = .preferred
@@ -40,6 +45,10 @@ class FileManagerWindowController: NSWindowController, NSWindowDelegate {
 
         super.init(window: window)
         window.delegate = self
+
+        window.setFrameAutosaveName("VoyagerMainWindow")
+
+        window.title = FileManagerFeature.makeWindowTitle(for: path ?? state.currentPath)
     }
 
     @available(*, unavailable)

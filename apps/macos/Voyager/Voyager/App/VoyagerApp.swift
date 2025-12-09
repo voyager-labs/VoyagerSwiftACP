@@ -7,11 +7,13 @@ struct VoyagerApp: App {
     var appDelegate
 
     var body: some Scene {
-        SwiftUI.Settings {
-            EmptyView()
+        Settings {
+            SettingsView()
         }
         .commands {
-            MenuCommands()
+            AppMenuCommands()
+            EditMenuCommands()
+            ViewMenuCommands()
         }
     }
 }
