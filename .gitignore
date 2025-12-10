@@ -66,6 +66,9 @@ DerivedData/
 # Database
 *.db
 *.db-journal
+*.db-shm
+*.db-wal
+*.db.bak.*
 *.sqlite
 *.sqlite3
 
