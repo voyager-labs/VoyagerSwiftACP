@@ -5,7 +5,6 @@ LangChain을 사용하여 다양한 LLM을 통일된 인터페이스로 제공�
 
 from typing import Any
 
-from langchain_anthropic import ChatAnthropic
 from langchain_community.llms import Ollama
 from langchain_core.language_models import BaseLLM
 from langchain_core.messages import HumanMessage, SystemMessage
@@ -61,14 +60,6 @@ class LangChainProvider(LLMProvider):
             return ChatOpenAI(
                 model=self.model,
                 api_key=api_key,
-                temperature=self.kwargs.get("temperature", 0),
-            )
-
-        elif self.provider == "anthropic":
-            api_key = self.kwargs.get("api_key")
-            return ChatAnthropic(
-                model=self.model,
-                anthropic_api_key=api_key,
                 temperature=self.kwargs.get("temperature", 0),
             )
 
