@@ -5,21 +5,19 @@ struct InspectorPaneView: View {
     let store: StoreOf<FileManagerFeature>
     @State private var chatInput: String = ""
 
-    private var scopeText: String {
-        let total = store.fsItems.items.count
-        let selected = store.fsItems.selectedIds.count
-
-        if selected == 0 {
-            return "Chat with \(total) items"
-        } else {
-            return "Chat with selected \(selected) \(selected == 1 ? "item" : "items")"
-        }
-    }
-
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             HStack {
                 Spacer()
+                Button {
+                    // TODO: 메뉴 기능 구현
+                } label: {
+                    Image(systemName: "ellipsis")
+                        .foregroundColor(.secondary)
+                        .frame(width: 16, height: 16)
+                }
+                .buttonStyle(.plain)
+
                 Button {
                     store.send(.toggleInspector)
                 } label: {
@@ -43,36 +41,58 @@ struct InspectorPaneView: View {
         VStack(alignment: .leading, spacing: 0) {
             HStack(spacing: 6) {
                 folderScopeChip
-                itemCountChip
                 Spacer()
             }
             .padding(.horizontal, 10)
             .padding(.top, 10)
-            .padding(.bottom, 8)
+            .padding(.bottom, 4)
 
-            TextField("Ask anything ...", text: $chatInput, axis: .vertical)
+            TextField("Ask anything...", text: $chatInput)
                 .textFieldStyle(.plain)
                 .font(.system(size: 13))
                 .foregroundColor(.primary)
-                .lineLimit(1...)
+                .lineLimit(1)
                 .padding(.horizontal, 10)
-                .padding(.bottom, 10)
+                .padding(.vertical, 4)
                 .onSubmit {
                     submitMessage()
                 }
+
+            HStack(spacing: 8) {
+                Spacer()
+                submitButton
+            }
+            .padding(.horizontal, 10)
+            .padding(.top, 4)
+            .padding(.bottom, 4)
         }
-        .frame(height: 120, alignment: .top)
+        .frame(height: 100, alignment: .top)
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(
-            RoundedRectangle(cornerRadius: 12)
-                .fill(Color(red: 0.22, green: 0.24, blue: 0.27))
+            RoundedRectangle(cornerRadius: 8)
+                .fill(Color(red: 44 / 255.0, green: 43 / 255.0, blue: 40 / 255.0))
                 .overlay(
-                    RoundedRectangle(cornerRadius: 12)
+                    RoundedRectangle(cornerRadius: 8)
                         .strokeBorder(Color.white.opacity(0.1), lineWidth: 1)
                 )
         )
-        .padding(.horizontal, 12)
-        .padding(.bottom, 12)
+        .padding(.horizontal, 8)
+        .padding(.bottom, 8)
+    }
+
+    private var submitButton: some View {
+        Button(action: submitMessage) {
+            Image(systemName: "arrow.up")
+                .font(.system(size: 12, weight: .semibold))
+                .foregroundColor(.black)
+                .frame(width: 24, height: 24)
+                .background(
+                    Circle()
+                        .fill(Color(red: 0.843, green: 0.714, blue: 0.322))
+                )
+        }
+        .buttonStyle(.plain)
+        .disabled(chatInput.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
     }
 
     private func submitMessage() {
@@ -85,29 +105,17 @@ struct InspectorPaneView: View {
     private var folderScopeChip: some View {
         HStack(spacing: 4) {
             Image(systemName: "folder")
-                .font(.system(size: 9))
+                .font(.system(size: 11))
             Text(folderDisplayName)
-                .font(.system(size: 10))
+                .font(.system(size: 12, weight: .light))
         }
-        .foregroundColor(.primary)
-        .padding(.horizontal, 8)
-        .padding(.vertical, 4)
+        .foregroundColor(Color(red: 218 / 255.0, green: 215 / 255.0, blue: 210 / 255.0))
+        .padding(.horizontal, 6)
+        .padding(.vertical, 3)
         .background(
-            Capsule()
-                .fill(Color.white.opacity(0.15))
+            RoundedRectangle(cornerRadius: 4)
+                .fill(Color(red: 77 / 255.0, green: 73 / 255.0, blue: 67 / 255.0))
         )
-    }
-
-    private var itemCountChip: some View {
-        Text(scopeText)
-            .font(.system(size: 10))
-            .foregroundColor(.primary)
-            .padding(.horizontal, 10)
-            .padding(.vertical, 4)
-            .background(
-                Capsule()
-                    .fill(Color.white.opacity(0.15))
-            )
     }
 
     private var folderDisplayName: String {
