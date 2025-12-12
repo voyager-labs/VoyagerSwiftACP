@@ -2,99 +2,161 @@ import Foundation
 import SwiftDotenv
 
 struct Environment {
+    enum EnvironmentType: String {
+        case dev // Debug builds configuration
+        case prod // Release builds configuration
+
+        var envFileName: String {
+            switch self {
+            case .dev: return ".env.dev"
+            case .prod: return ".env.prod"
+            }
+        }
+    }
+
+    enum BackendMode: String {
+        case source // 로컬 uv 사용 (*-Dev 스킴)
+        case bundled // 번들 venv 사용 (*-Prod 스킴)
+    }
+
     let envVars: [String: String]
+    let environmentType: EnvironmentType
+    let backendMode: BackendMode
 
     init() {
-        try? Dotenv.configure()
+        environmentType = Self.detectEnvironmentType()
+        backendMode = Self.detectBackendMode()
+
+        Self.loadEnvFile(environmentType.envFileName)
+
         envVars = Dotenv.values
     }
 
+    private static func loadEnvFile(_ envFileName: String) {
+        if let resources = Bundle.main.resourceURL {
+            let bundledEnv = resources.appendingPathComponent(envFileName)
+            if FileManager.default.fileExists(atPath: bundledEnv.path) {
+                try? Dotenv.configure(atPath: bundledEnv.path, overwrite: true)
+                return
+            }
+        }
+
+        if let projectRoot = findProjectRoot() {
+            let projectEnv = projectRoot.appendingPathComponent(envFileName)
+            if FileManager.default.fileExists(atPath: projectEnv.path) {
+                try? Dotenv.configure(atPath: projectEnv.path, overwrite: true)
+                return
+            }
+        }
+
+        try? Dotenv.configure()
+    }
+
+    private static func detectEnvironmentType() -> EnvironmentType {
+        if let infoEnv = Bundle.main.infoDictionary?["APP_ENV"] as? String,
+           let envType = EnvironmentType(rawValue: infoEnv)
+        {
+            return envType
+        }
+        return .dev
+    }
+
+    private static func detectBackendMode() -> BackendMode {
+        // 스킴에서 주입된 환경변수 (Xcode Run 시)
+        if let envMode = ProcessInfo.processInfo.environment["BACKEND_MODE"],
+           let mode = BackendMode(rawValue: envMode)
+        {
+            return mode
+        }
+
+        // backend-venv 존재 시 bundled, 없으면 source
+        if let resources = Bundle.main.resourceURL {
+            let venvPath = resources.appendingPathComponent("backend-venv")
+            if FileManager.default.fileExists(atPath: venvPath.path) {
+                return .bundled
+            }
+        }
+
+        return .source
+    }
+
     func value(for key: String) -> String? {
-        guard let raw = envVars[key], !raw.isEmpty else { return nil }
-        return raw
+        if let raw = envVars[key], !raw.isEmpty {
+            return raw
+        }
+        return nil
     }
 
     func backendDirectory() -> String? {
-        let appEnv = value(for: "APP_ENV") ?? "dev"
-
-        if appEnv == "prod" {
-            // Prod: 번들 리소스에서 백엔드 찾기
-            if let bundled = detectBundledBackendDirectory() {
-                return bundled.path
-            }
-        } else {
-            // Dev: 소스 디렉토리에서 백엔드 찾기
-            if let detected = detectSourceBackendDirectory() {
-                return detected.path
-            }
+        switch backendMode {
+        case .bundled:
+            return detectBundledBackendDirectory()?.path
+        case .source:
+            return detectSourceBackendDirectory()?.path
         }
+    }
 
+    private func detectSourceBackendDirectory() -> URL? {
+        guard let projectRoot = Self.findProjectRoot() else { return nil }
+
+        let appsBackend = projectRoot.appendingPathComponent("apps/backend")
+        if Self.hasBackendMarker(in: appsBackend) {
+            return appsBackend
+        }
         return nil
     }
 
-    /// Dev 스킴: 소스 디렉토리에서 백엔드 찾기 (로컬 uv 사용)
-    private func detectSourceBackendDirectory() -> URL? {
+    private static func findProjectRoot() -> URL? {
+        let envFiles = [".env", ".env.dev", ".env.prod"]
+        let startPoints = [
+            URL(fileURLWithPath: FileManager.default.currentDirectoryPath),
+            Bundle.main.bundleURL,
+        ]
+
+        for start in startPoints {
+            if let found = searchUpwards(from: start, for: envFiles, maxDepth: 20) {
+                return found
+            }
+        }
+        return nil
+    }
+
+    private static func searchUpwards(from start: URL, for markerFiles: [String], maxDepth: Int) -> URL? {
         let fm = FileManager.default
-        let helperBundle = Bundle.main.bundleURL
+        var current = start
 
-        // Helper 번들 위치에서 시작해서 백엔드 찾기
-        var current = helperBundle
-        for _ in 0 ..< 8 {
-            // pyproject.toml이 있는 디렉토리 = 백엔드 디렉토리
-            let pyprojectPath = current.appendingPathComponent("pyproject.toml")
-            if fm.fileExists(atPath: pyprojectPath.path) {
-                return current
+        for _ in 0 ..< maxDepth {
+            for marker in markerFiles {
+                if fm.fileExists(atPath: current.appendingPathComponent(marker).path) {
+                    return current
+                }
             }
 
-            // uv.lock이 있는 디렉토리 = 백엔드 디렉토리
-            let uvLockPath = current.appendingPathComponent("uv.lock")
-            if fm.fileExists(atPath: uvLockPath.path) {
-                return current
-            }
-
-            // 현재 디렉토리에 backend 서브디렉토리가 있는지 확인
-            let backendSubdir = current.appendingPathComponent("backend")
-            let backendPyproject = backendSubdir.appendingPathComponent("pyproject.toml")
-            if fm.fileExists(atPath: backendPyproject.path) {
-                return backendSubdir
-            }
-
-            // Helper 근처에 backend 디렉토리 확인
             let parent = current.deletingLastPathComponent()
-            let nearbyBackend = parent.appendingPathComponent("backend")
-            let nearbyPyproject = nearbyBackend.appendingPathComponent("pyproject.toml")
-            if fm.fileExists(atPath: nearbyPyproject.path) {
-                return nearbyBackend
-            }
-
-            // 상위로 이동
             if parent.path == current.path { break }
             current = parent
         }
-
         return nil
     }
 
-    /// Prod 스킴: 번들 리소스에서 백엔드 찾기 (번들된 휠과 venv 사용)
+    private static func hasBackendMarker(in directory: URL) -> Bool {
+        let fm = FileManager.default
+        return fm.fileExists(atPath: directory.appendingPathComponent("pyproject.toml").path)
+            || fm.fileExists(atPath: directory.appendingPathComponent("uv.lock").path)
+    }
+
     private func detectBundledBackendDirectory() -> URL? {
+        guard let resources = Bundle.main.resourceURL else { return nil }
         let fm = FileManager.default
 
-        // 번들 리소스에서 backend-venv 찾기
-        if let resources = Bundle.main.resourceURL {
-            // backend-venv가 번들 리소스에 있는 경우
-            let venvPath = resources.appendingPathComponent("backend-venv")
-            if fm.fileExists(atPath: venvPath.path) {
-                // venv 내부에 백엔드 코드가 있는지 확인
-                // 일반적으로 venv/lib/python*/site-packages/에 휠이 설치됨
-                // 하지만 실행을 위해서는 venv 자체가 working directory가 될 수 있음
-                return venvPath
-            }
+        let venvPath = resources.appendingPathComponent("backend-venv")
+        if fm.fileExists(atPath: venvPath.path) {
+            return venvPath
+        }
 
-            // 번들 리소스에 backend 디렉토리가 있는 경우
-            let backendPath = resources.appendingPathComponent("backend")
-            if fm.fileExists(atPath: backendPath.path) {
-                return backendPath
-            }
+        let backendPath = resources.appendingPathComponent("backend")
+        if fm.fileExists(atPath: backendPath.path) {
+            return backendPath
         }
 
         return nil

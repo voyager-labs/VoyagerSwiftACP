@@ -1,3 +1,4 @@
+import Darwin
 import Foundation
 
 final class ProcessRunner {
@@ -6,48 +7,42 @@ final class ProcessRunner {
 
     init(environment: Environment) {
         self.environment = environment
-
-        // 초기화 시 로깅
-        let backendDir: String
-        if let dir = environment.backendDirectory() {
-            backendDir = dir
-        } else {
-            backendDir = "<nil>"
-        }
-
-        let appEnv = environment.value(for: "APP_ENV") ?? "dev"
-        fputs("[VoyagerHelper] backendDir=\(backendDir) appEnv=\(appEnv)\n", stderr)
     }
 
     func startIfNeeded() {
-        if let running = process, running.isRunning { return }
+        if let running = process, running.isRunning {
+            return
+        }
 
-        let appEnv = environment.value(for: "APP_ENV") ?? "dev"
+        if process != nil {
+            process = nil
+        }
 
-        if appEnv == "prod" {
-            debugLog("[VoyagerHelper] start backend mode=prod (bundled)")
+        // backend mode에 따라 실행 방식 결정
+        switch environment.backendMode {
+        case .bundled:
             startWithBundledPython()
-        } else {
-            debugLog("[VoyagerHelper] start backend mode=dev (uv)")
+        case .source:
             startWithUv()
         }
     }
 
     func stop() {
-        process?.terminate()
-        process = nil
+        if let proc = process {
+            proc.terminate()
+            process = nil
+        }
     }
 
     private func startWithUv() {
         guard let backendDirectory = environment.backendDirectory() else {
-            debugLog("[VoyagerHelper] backend uv skipped: backendDirectory is nil")
+            fputs("[VoyagerHelper] ERROR: backendDirectory not found\n", stderr)
             return
         }
-        let appEnv = environment.value(for: "APP_ENV") ?? "dev"
-        let env = mergedEnvironment(prependingPath: nil)
 
+        let appEnv = environment.environmentType.rawValue
         let proc = Process()
-        proc.environment = env
+        proc.environment = mergedEnvironment(prependingPath: nil)
         proc.currentDirectoryURL = URL(fileURLWithPath: backendDirectory)
         proc.executableURL = URL(fileURLWithPath: "/usr/bin/env")
         proc.arguments = ["uv", "run", appEnv]
@@ -55,31 +50,31 @@ final class ProcessRunner {
         do {
             try proc.run()
             process = proc
+            fputs("[VoyagerHelper] Backend started: uv run \(appEnv) (pid: \(proc.processIdentifier))\n", stderr)
         } catch {
-            debugLog("[VoyagerHelper] backend 시작 실패(uv): \(error)")
+            fputs("[VoyagerHelper] ERROR: Failed to start backend: \(error)\n", stderr)
         }
     }
 
     private func startWithBundledPython() {
         guard let backendDirectory = environment.backendDirectory() else {
-            debugLog("[VoyagerHelper] backend bundled skipped: backendDirectory is nil")
+            fputs("[VoyagerHelper] ERROR: backendDirectory not found\n", stderr)
             return
         }
 
-        // backendDirectory가 backend-venv인 경우, Python 경로는 venv/bin/python
         let pythonPath = URL(fileURLWithPath: backendDirectory).appendingPathComponent("bin/python").path
-        let fm = FileManager.default
-        guard fm.fileExists(atPath: pythonPath) else {
-            debugLog("[VoyagerHelper] backend bundled skipped: Python not found at \(pythonPath)")
+        guard FileManager.default.fileExists(atPath: pythonPath) else {
+            fputs("[VoyagerHelper] ERROR: Python not found at \(pythonPath)\n", stderr)
             return
         }
 
         let host = environment.value(for: "VOYAGER_HOST") ?? "127.0.0.1"
         let port = environment.value(for: "VOYAGER_PORT") ?? "8000"
-        let env = mergedEnvironment(prependingPath: URL(fileURLWithPath: pythonPath).deletingLastPathComponent().path)
 
         let proc = Process()
-        proc.environment = env
+        proc
+            .environment = mergedEnvironment(prependingPath: URL(fileURLWithPath: pythonPath)
+                .deletingLastPathComponent().path)
         proc.currentDirectoryURL = URL(fileURLWithPath: backendDirectory)
         proc.executableURL = URL(fileURLWithPath: pythonPath)
         proc.arguments = ["-m", "uvicorn", "app.main:app", "--host", host, "--port", port]
@@ -87,39 +82,68 @@ final class ProcessRunner {
         do {
             try proc.run()
             process = proc
+            fputs("[VoyagerHelper] Backend started: bundled python (pid: \(proc.processIdentifier))\n", stderr)
         } catch {
-            debugLog("[VoyagerHelper] backend 시작 실패(bundled): \(error)")
+            fputs("[VoyagerHelper] ERROR: Failed to start backend: \(error)\n", stderr)
         }
     }
 
     private func mergedEnvironment(prependingPath: String?) -> [String: String] {
         var env = ProcessInfo.processInfo.environment
-        for (key, value) in environment.envVars {
-            env[key] = value
-        }
 
         // PATH 구성
-        var pathParts: [String] = []
-        if let prepend = prependingPath, !prepend.isEmpty {
-            pathParts.append(prepend)
-        }
-        if let custom = environment.value(for: "VOYAGER_PATH") {
-            pathParts.append(custom)
-        } else {
-            // 홈브류 기본 경로를 넣어 uv 같은 바이너리를 찾기 쉽게 한다
-            pathParts.append("/opt/homebrew/bin:/usr/local/bin")
-        }
-        if let current = ProcessInfo.processInfo.environment["PATH"] {
-            pathParts.append(current)
-        }
-        if !pathParts.isEmpty {
-            env["PATH"] = pathParts.joined(separator: ":")
+        env["PATH"] = buildPath(prependingPath: prependingPath)
+
+        // PYTHONPATH 설정 (번들 모드에서 venv의 site-packages 포함)
+        if let pythonPath = buildPythonPath(existingPath: env["PYTHONPATH"]) {
+            env["PYTHONPATH"] = pythonPath
         }
 
         return env
     }
 
-    private func debugLog(_ message: String) {
-        fputs(message + "\n", stderr)
+    private func buildPath(prependingPath: String?) -> String {
+        var pathParts: [String] = []
+
+        if let prepend = prependingPath, !prepend.isEmpty {
+            pathParts.append(prepend)
+        }
+
+        if let custom = environment.value(for: "VOYAGER_PATH") {
+            pathParts.append(custom)
+        } else {
+            pathParts.append("/opt/homebrew/bin:/usr/local/bin")
+        }
+
+        if let current = ProcessInfo.processInfo.environment["PATH"] {
+            pathParts.append(current)
+        }
+
+        return pathParts.joined(separator: ":")
+    }
+
+    private func buildPythonPath(existingPath: String?) -> String? {
+        guard let backendDir = environment.backendDirectory() else { return nil }
+
+        let libDir = URL(fileURLWithPath: backendDir).appendingPathComponent("lib")
+        let fm = FileManager.default
+
+        guard let libContents = try? fm.contentsOfDirectory(at: libDir, includingPropertiesForKeys: nil) else {
+            return nil
+        }
+
+        // Python 버전을 동적으로 찾기 (lib/python3.x/site-packages)
+        for pythonVersionDir in libContents {
+            let sitePackages = pythonVersionDir.appendingPathComponent("site-packages")
+            if fm.fileExists(atPath: sitePackages.path) {
+                var parts: [String] = [sitePackages.path]
+                if let existing = existingPath, !existing.isEmpty {
+                    parts.append(existing)
+                }
+                return parts.joined(separator: ":")
+            }
+        }
+
+        return nil
     }
 }

@@ -6,6 +6,12 @@ class VoyagerHelperApp {
 
     static func main() {
         let environment = Environment()
+
+        fputs(
+            "[VoyagerHelper] Starting (APP_ENV=\(environment.environmentType.rawValue), BACKEND_MODE=\(environment.backendMode.rawValue))\n",
+            stderr
+        )
+
         let runner = ProcessRunner(environment: environment)
         let lifecycle = HelperLifecycle(processRunner: runner)
         VoyagerHelperApp.lifecycle = lifecycle
