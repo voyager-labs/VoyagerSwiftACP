@@ -69,12 +69,11 @@ struct Environment {
             return mode
         }
 
-        // backend-venv 존재 시 bundled, 없으면 source
-        if let resources = Bundle.main.resourceURL {
-            let venvPath = resources.appendingPathComponent("backend-venv")
-            if FileManager.default.fileExists(atPath: venvPath.path) {
-                return .bundled
-            }
+        // Info.plist에서 읽기 (빌드 스크립트에서 주입)
+        if let infoMode = Bundle.main.infoDictionary?["BACKEND_MODE"] as? String,
+           let mode = BackendMode(rawValue: infoMode)
+        {
+            return mode
         }
 
         return .source
@@ -107,7 +106,7 @@ struct Environment {
     }
 
     private static func findProjectRoot() -> URL? {
-        let envFiles = [".env", ".env.dev", ".env.prod"]
+        let envFiles = [".env.dev", ".env.prod"]
         let startPoints = [
             URL(fileURLWithPath: FileManager.default.currentDirectoryPath),
             Bundle.main.bundleURL,

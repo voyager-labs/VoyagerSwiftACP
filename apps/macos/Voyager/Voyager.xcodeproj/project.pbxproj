@@ -518,6 +518,7 @@
 			);
 			inputPaths = (
 				"$SRCROOT/../../../scripts/prepare-backend-venv.sh",
+				"$SRCROOT/VoyagerHelper/.backend_mode",
 			);
 			name = "Prepare Backend Venv";
 			outputFileListPaths = (
@@ -526,7 +527,7 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 			shellPath = /bin/sh;
-			shellScript = "set -euo pipefail\nif [ \"${CONFIGURATION}\" = \"Debug\" ]; then\n  echo \"Debug build: skip Prepare Backend Venv (uses local uv)\"\n  exit 0\nfi\n# Release build: force rebuild to ensure clean venv with latest packages\nexport FORCE_BACKEND_VENV_REBUILD=1\nREPO_ROOT=\"$(cd \"$SRCROOT/../../..\" && pwd)\"\nSCRIPT=\"$REPO_ROOT/scripts/prepare-backend-venv.sh\"\nif [ ! -x \"$SCRIPT\" ]; then\n  echo \"prepare-backend-venv.sh not found or not executable: $SCRIPT\" >&2\n  exit 0\nfi\nPATH=\"/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/sbin:$PATH\"\nexport PATH\nif ! \"$SCRIPT\" 2>&1; then\n  echo \"[VoyagerHelper] Warning: prepare-backend-venv.sh failed, continuing with existing backend-venv\" >&2\nfi\n";
+			shellScript = "set -euo pipefail\n\n# 스킴의 Pre-action에서 기록한 BACKEND_MODE 파일 읽기\nBACKEND_MODE_FILE=\"$SRCROOT/VoyagerHelper/.backend_mode\"\nif [ -f \"$BACKEND_MODE_FILE\" ]; then\n  BACKEND_MODE=$(cat \"$BACKEND_MODE_FILE\")\n  echo \"[VoyagerHelper] Read BACKEND_MODE=$BACKEND_MODE from Pre-action\"\nelse\n  BACKEND_MODE=\"source\"\n  echo \"[VoyagerHelper] .backend_mode not found, using default: $BACKEND_MODE\"\nfi\n\n# 빌드된 앱 번들의 Info.plist에 BACKEND_MODE 주입\nBUNDLE_PLIST=\"$TARGET_BUILD_DIR/$INFOPLIST_PATH\"\nif [ -f \"$BUNDLE_PLIST\" ]; then\n  /usr/libexec/PlistBuddy -c \"Set :BACKEND_MODE $BACKEND_MODE\" \"$BUNDLE_PLIST\" 2>/dev/null || \\\n  /usr/libexec/PlistBuddy -c \"Add :BACKEND_MODE string $BACKEND_MODE\" \"$BUNDLE_PLIST\"\n  echo \"[VoyagerHelper] Injected BACKEND_MODE=$BACKEND_MODE into $BUNDLE_PLIST\"\nfi\n\n# Debug 빌드에서는 venv 준비 스킵 (로컬 uv 사용)\nif [ \"${CONFIGURATION}\" = \"Debug\" ]; then\n  echo \"Debug build: skip Prepare Backend Venv (uses local uv)\"\n  exit 0\nfi\n\n# Release build: force rebuild to ensure clean venv with latest packages\nexport FORCE_BACKEND_VENV_REBUILD=1\nREPO_ROOT=\"$(cd \"$SRCROOT/../../..\" && pwd)\"\nSCRIPT=\"$REPO_ROOT/scripts/prepare-backend-venv.sh\"\nif [ ! -x \"$SCRIPT\" ]; then\n  echo \"prepare-backend-venv.sh not found or not executable: $SCRIPT\" >&2\n  exit 0\nfi\nPATH=\"/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/sbin:$PATH\"\nexport PATH\nif ! \"$SCRIPT\" 2>&1; then\n  echo \"[VoyagerHelper] Warning: prepare-backend-venv.sh failed, continuing with existing backend-venv\" >&2\nfi\n";
 		};
 /* End PBXShellScriptBuildPhase section */
 
