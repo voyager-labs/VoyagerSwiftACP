@@ -1,3 +1,4 @@
+import AppKit
 import ComposableArchitecture
 import SwiftUI
 
@@ -47,16 +48,25 @@ struct InspectorPaneView: View {
             .padding(.top, 10)
             .padding(.bottom, 4)
 
-            TextField("Ask anything...", text: $chatInput)
-                .textFieldStyle(.plain)
-                .font(.system(size: 13))
-                .foregroundColor(.primary)
-                .lineLimit(1)
-                .padding(.horizontal, 10)
-                .padding(.vertical, 4)
-                .onSubmit {
-                    submitMessage()
+            ZStack(alignment: .topLeading) {
+                TextEditor(text: $chatInput)
+                    .scrollContentBackground(.hidden)
+                    .font(.system(size: 13))
+                    .foregroundColor(.primary)
+                    .frame(minHeight: singleLineHeight, maxHeight: maxHeight)
+                    .fixedSize(horizontal: false, vertical: !chatInput.isEmpty)
+
+                if chatInput.isEmpty {
+                    Text("Ask anything...")
+                        .font(.system(size: 13))
+                        .foregroundColor(.secondary)
+                        .allowsHitTesting(false)
+                        .padding(.leading, 4)
                 }
+            }
+            .frame(height: chatInput.isEmpty ? singleLineHeight : nil)
+            .padding(.horizontal, 10)
+            .padding(.vertical, 4)
 
             HStack(spacing: 8) {
                 Spacer()
@@ -66,7 +76,6 @@ struct InspectorPaneView: View {
             .padding(.top, 4)
             .padding(.bottom, 4)
         }
-        .frame(height: 100, alignment: .top)
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(
             RoundedRectangle(cornerRadius: 8)
@@ -120,5 +129,15 @@ struct InspectorPaneView: View {
 
     private var folderDisplayName: String {
         FileManagerFeature.makeWindowTitle(for: store.currentPath)
+    }
+
+    private var singleLineHeight: CGFloat {
+        let font = NSFont.systemFont(ofSize: 13)
+        let lineHeight = font.ascender - font.descender + font.leading
+        return ceil(lineHeight)
+    }
+
+    private var maxHeight: CGFloat {
+        singleLineHeight * 7
     }
 }
