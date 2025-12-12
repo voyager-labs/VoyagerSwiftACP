@@ -74,7 +74,7 @@ struct InspectorPaneView: View {
             }
             .padding(.horizontal, 10)
             .padding(.top, 4)
-            .padding(.bottom, 4)
+            .padding(.bottom, 8)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(
@@ -86,7 +86,6 @@ struct InspectorPaneView: View {
                 )
         )
         .padding(.horizontal, 8)
-        .padding(.bottom, 8)
     }
 
     private var submitButton: some View {

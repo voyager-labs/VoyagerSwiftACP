@@ -125,14 +125,28 @@ extension FileManagerSplitViewController {
     }
 
     private func setupContentContainer(in mainSplit: NSSplitView) {
+        let wrapper = NSView()
+
         let container = NSView()
         container.wantsLayer = true
         container.layer?.backgroundColor = NSColor.controlBackgroundColor.cgColor
         container.layer?.zPosition = 5
+        container.layer?.cornerRadius = 16
+        container.layer?.masksToBounds = true
+        container.translatesAutoresizingMaskIntoConstraints = false
         contentInspectorContainer = container
 
+        wrapper.addSubview(container)
         setupContentPane(in: container)
-        mainSplit.addArrangedSubview(container)
+
+        NSLayoutConstraint.activate([
+            container.topAnchor.constraint(equalTo: wrapper.topAnchor, constant: contentVerticalMargin),
+            container.bottomAnchor.constraint(equalTo: wrapper.bottomAnchor, constant: -contentVerticalMargin),
+            container.leadingAnchor.constraint(equalTo: wrapper.leadingAnchor),
+            container.trailingAnchor.constraint(equalTo: wrapper.trailingAnchor, constant: -contentVerticalMargin),
+        ])
+
+        mainSplit.addArrangedSubview(wrapper)
         mainSplit.setHoldingPriority(.defaultLow, forSubviewAt: 1)
     }
 
@@ -158,16 +172,13 @@ extension FileManagerSplitViewController {
             equalTo: container.leadingAnchor
         )
         contentTopConstraint = contentView.topAnchor.constraint(
-            equalTo: container.topAnchor,
-            constant: contentVerticalMargin
+            equalTo: container.topAnchor
         )
         contentBottomConstraint = contentView.bottomAnchor.constraint(
-            equalTo: container.bottomAnchor,
-            constant: -contentVerticalMargin
+            equalTo: container.bottomAnchor
         )
         contentTrailingConstraint = contentView.trailingAnchor.constraint(
-            equalTo: container.trailingAnchor,
-            constant: -contentVerticalMargin
+            equalTo: container.trailingAnchor
         )
         NSLayoutConstraint.activate(
             [
@@ -188,8 +199,6 @@ extension FileManagerSplitViewController {
         view.wantsLayer = true
         view.layer?.zPosition = 10
         view.layer?.backgroundColor = NSColor(red: 0.16, green: 0.16, blue: 0.16, alpha: 1.0).cgColor
-        view.layer?.cornerRadius = 16
-        view.layer?.masksToBounds = true
     }
 
     private func setupInspectorLayer(for view: NSView) {
@@ -327,8 +336,7 @@ extension FileManagerSplitViewController {
             contentTrailing.isActive = false
         }
         contentTrailingConstraint = contentView.trailingAnchor.constraint(
-            equalTo: container.trailingAnchor,
-            constant: -contentVerticalMargin
+            equalTo: container.trailingAnchor
         )
         contentTrailingConstraint?.isActive = true
 
