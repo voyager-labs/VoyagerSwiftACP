@@ -66,10 +66,10 @@ final class HelperLifecycleManager {
         terminationObserver = center.addObserver(
             forName: NSWorkspace.didTerminateApplicationNotification,
             object: nil,
-            queue: .main
+            queue: .main,
         ) { [weak self] notification in
             guard
-                let self = self,
+                let self,
                 let app = notification.userInfo?[NSWorkspace.applicationUserInfoKey] as? NSRunningApplication,
                 app.bundleIdentifier == self.helperBundleId
             else { return }

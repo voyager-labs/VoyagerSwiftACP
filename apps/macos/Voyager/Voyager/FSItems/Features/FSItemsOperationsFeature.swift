@@ -223,7 +223,7 @@ struct FSItemsOperationsFeature {
                 let destinations = avoidNameCollisions(
                     sourcePaths: sourcePaths,
                     destinationURL: destinationURL,
-                    operation: operation
+                    operation: operation,
                 )
 
                 guard !destinations.isEmpty else {
@@ -318,7 +318,7 @@ struct FSItemsOperationsFeature {
                         let metadata = TrashMetadata(
                             trashPath: trashURL.path,
                             originalPath: url.path,
-                            deletedDate: Date()
+                            deletedDate: Date(),
                         )
                         await TrashMetadataStore.shared.save(metadata)
                     }
@@ -338,7 +338,7 @@ struct FSItemsOperationsFeature {
                     },
                     onComplete: {
                         await TrashMetadataStore.shared.removeAll()
-                    }
+                    },
                 )
 
             case let .putBackFromTrash(items):
@@ -351,7 +351,7 @@ struct FSItemsOperationsFeature {
                             await send(.operationFinished(
                                 item.fullPath,
                                 .putBack,
-                                .failure(.system(message: "Original path not found"))
+                                .failure(.system(message: "Original path not found")),
                             ))
                             continue
                         }
@@ -361,7 +361,7 @@ struct FSItemsOperationsFeature {
                         do {
                             try await fsItemClient.putBackFromTrash(
                                 URL(fileURLWithPath: item.fullPath),
-                                originalPath
+                                originalPath,
                             )
                             await send(.operationFinished(item.fullPath, .putBack, .success(())))
                         } catch let error as FileOpError where error.isFileExists {
@@ -380,7 +380,7 @@ struct FSItemsOperationsFeature {
                                     try FileManager.default.removeItem(at: originalURL)
                                     try await fsItemClient.putBackFromTrash(
                                         URL(fileURLWithPath: item.fullPath),
-                                        originalPath
+                                        originalPath,
                                     )
                                     await send(.operationFinished(item.fullPath, .putBack, .success(())))
                                 } catch {
@@ -442,7 +442,7 @@ struct FSItemsOperationsFeature {
     private func avoidNameCollisions(
         sourcePaths: [String],
         destinationURL: URL,
-        operation: ClipboardOperation
+        operation: ClipboardOperation,
     ) -> [(URL, URL)] {
         var destinations: [(URL, URL)] = []
 
@@ -459,13 +459,12 @@ struct FSItemsOperationsFeature {
                 var counter = 1
 
                 while fsItemClient.fileExists(destURL.path) {
-                    let name: String
-                    if counter == 1 {
-                        name = fileExtension.isEmpty
+                    let name: String = if counter == 1 {
+                        fileExtension.isEmpty
                             ? "\(nameWithoutExtension) copy"
                             : "\(nameWithoutExtension) copy.\(fileExtension)"
                     } else {
-                        name = fileExtension.isEmpty
+                        fileExtension.isEmpty
                             ? "\(nameWithoutExtension) copy \(counter)"
                             : "\(nameWithoutExtension) copy \(counter).\(fileExtension)"
                     }
@@ -491,7 +490,7 @@ struct FSItemsOperationsFeature {
         guard capabilities.supportsDefaultAppManagement else {
             return .system(
                 message: "Setting default apps is not supported yet.",
-                suggestion: "Enable default-app capability before using this action."
+                suggestion: "Enable default-app capability before using this action.",
             )
         }
         return nil
@@ -500,7 +499,7 @@ struct FSItemsOperationsFeature {
     private func run(
         for filePath: String,
         kind: OperationKind,
-        operation: @escaping @Sendable () async throws -> Void
+        operation: @escaping @Sendable () async throws -> Void,
     ) -> Effect<Action> {
         .run { send in
             await send(.operationStarted(filePath, kind))
@@ -517,7 +516,7 @@ struct FSItemsOperationsFeature {
         items: [FSItem],
         kind: OperationKind,
         operation: @escaping @Sendable (URL) async throws -> Void,
-        onComplete: (@Sendable () async -> Void)? = nil
+        onComplete: (@Sendable () async -> Void)? = nil,
     ) -> Effect<Action> {
         .run { send in
             await withTaskGroup(of: Void.self) { group in
@@ -533,7 +532,7 @@ struct FSItemsOperationsFeature {
                             await send(.operationFinished(
                                 item.fullPath,
                                 kind,
-                                .failure(error.fileOpError)
+                                .failure(error.fileOpError),
                             ))
                         }
                     }
@@ -547,7 +546,7 @@ struct FSItemsOperationsFeature {
     private func loadApplications(
         for filePath: String,
         url: URL,
-        fileType: UTType
+        fileType: UTType,
     ) -> Effect<Action> {
         .run { send in
             let apps = await fsItemClient.applicationsForFile(url)
@@ -559,7 +558,7 @@ struct FSItemsOperationsFeature {
                     id: app.id,
                     name: app.name,
                     bundleID: app.bundleID,
-                    isDefault: isDefault
+                    isDefault: isDefault,
                 )
             }
 
@@ -578,7 +577,7 @@ struct FSItemsOperationsFeature {
 
     private func computeCommonApplications(
         files: [FSItem],
-        fsItemClient: FSItemClient
+        fsItemClient: FSItemClient,
     ) async -> [ApplicationInfo] {
         let fileInfos = prepareFileInfos(from: files)
         guard !fileInfos.isEmpty else { return [] }
@@ -592,7 +591,7 @@ struct FSItemsOperationsFeature {
             bundleIDs: commonBundleIDs,
             appMaps: allAppMaps,
             fileInfos: fileInfos,
-            fileTypeToDefaultApp: fileTypeToDefaultApp
+            fileTypeToDefaultApp: fileTypeToDefaultApp,
         )
     }
 
@@ -613,7 +612,7 @@ struct FSItemsOperationsFeature {
 
     private func collectApplicationMaps(
         fileInfos: [FileInfo],
-        fsItemClient: FSItemClient
+        fsItemClient: FSItemClient,
     ) async -> [[String: ApplicationInfo]] {
         var allAppMaps: [[String: ApplicationInfo]] = []
         await withTaskGroup(of: [String: ApplicationInfo]?.self) { group in
@@ -631,7 +630,7 @@ struct FSItemsOperationsFeature {
             }
 
             for await appMap in group {
-                if let appMap = appMap {
+                if let appMap {
                     allAppMaps.append(appMap)
                 }
             }
@@ -650,7 +649,7 @@ struct FSItemsOperationsFeature {
 
     private func loadDefaultApps(
         fileInfos: [FileInfo],
-        fsItemClient: FSItemClient
+        fsItemClient: FSItemClient,
     ) async -> [String: String] {
         var fileTypeToDefaultApp: [String: String] = [:]
         await withTaskGroup(of: (String, String?)?.self) { group in
@@ -662,7 +661,7 @@ struct FSItemsOperationsFeature {
             }
 
             for await result in group {
-                if let (typeID, bundleID) = result, let bundleID = bundleID {
+                if let (typeID, bundleID) = result, let bundleID {
                     fileTypeToDefaultApp[typeID] = bundleID
                 }
             }
@@ -674,7 +673,7 @@ struct FSItemsOperationsFeature {
         bundleIDs: Set<String>,
         appMaps: [[String: ApplicationInfo]],
         fileInfos: [FileInfo],
-        fileTypeToDefaultApp: [String: String]
+        fileTypeToDefaultApp: [String: String],
     ) -> [ApplicationInfo] {
         var commonApps: [ApplicationInfo] = []
         guard let firstAppMap = appMaps.first else { return [] }
@@ -690,7 +689,7 @@ struct FSItemsOperationsFeature {
                 id: app.id,
                 name: app.name,
                 bundleID: app.bundleID,
-                isDefault: isDefault
+                isDefault: isDefault,
             ))
         }
         return commonApps
@@ -703,7 +702,7 @@ private nonisolated func finalizeApplicationList(_ apps: [ApplicationInfo]) -> [
         id: "other",
         name: "Other…",
         bundleID: nil,
-        isDefault: false
+        isDefault: false,
     ))
     result.sort { lhs, rhs in
         if lhs.isDefault != rhs.isDefault {
@@ -721,14 +720,14 @@ private nonisolated func isInTrash(_ filePath: String) -> Bool {
 
 private func selectApplicationAndOpenFile(
     for file: FSItem,
-    defaultChecked: Bool
+    defaultChecked: Bool,
 ) -> Effect<FSItemsOperationsFeature.Action> {
     selectApplicationAndOpenFile(for: [file], defaultChecked: defaultChecked)
 }
 
 private func selectApplicationAndOpenFile(
     for files: [FSItem],
-    defaultChecked: Bool
+    defaultChecked: Bool,
 ) -> Effect<FSItemsOperationsFeature.Action> {
     let fileURLs = files.map { URL(fileURLWithPath: $0.fullPath) }
 
@@ -746,7 +745,7 @@ private func selectApplicationAndOpenFile(
 
 private nonisolated func applyApplicationSelection(
     _ selection: ApplicationSelection,
-    to file: FSItem
+    to file: FSItem,
 ) -> [FSItemsOperationsFeature.Action] {
     var effects: [FSItemsOperationsFeature.Action] = []
 
@@ -754,7 +753,7 @@ private nonisolated func applyApplicationSelection(
         effects.append(.setDefaultAppForFile(
             type: type,
             bundleID: selection.bundleID,
-            file: file
+            file: file,
         ))
     }
 
@@ -762,7 +761,7 @@ private nonisolated func applyApplicationSelection(
     effects.append(.openFileWithAppBundleID(
         filePath: filePath,
         bundleID: selection.bundleID,
-        url: URL(fileURLWithPath: filePath)
+        url: URL(fileURLWithPath: filePath),
     ))
 
     return effects
@@ -791,10 +790,10 @@ private class OpenWithPanelDelegate: NSObject, NSOpenSavePanelDelegate {
         guard enableMode == .recommended else { return true }
 
         let workspace = NSWorkspace.shared
-        if let fileURL = fileURL {
+        if let fileURL {
             let supportedApps = workspace.urlsForApplications(toOpen: fileURL)
             return supportedApps.contains(url)
-        } else if let fileURLs = fileURLs {
+        } else if let fileURLs {
             for fileURL in fileURLs {
                 let supportedApps = workspace.urlsForApplications(toOpen: fileURL)
                 if !supportedApps.contains(url) {
@@ -822,7 +821,7 @@ private struct ApplicationSelection {
 @MainActor
 private func createOpenWithAccessoryView(
     delegate: OpenWithPanelDelegate,
-    defaultChecked: Bool
+    defaultChecked: Bool,
 ) -> (view: NSView, checkbox: NSButton) {
     let enableLabel = NSTextField(labelWithString: "Enable:")
     enableLabel.isEditable = false
@@ -872,7 +871,7 @@ private func selectApplication(for itemURL: URL, defaultChecked: Bool = false) -
         fileURL: itemURL,
         fileURLs: nil,
         message: "Choose an application to open the document \"\(itemURL.lastPathComponent)\".",
-        defaultChecked: defaultChecked
+        defaultChecked: defaultChecked,
     )
 }
 
@@ -882,7 +881,7 @@ private func selectApplication(for fileURLs: [URL], defaultChecked: Bool = false
         fileURL: nil,
         fileURLs: fileURLs,
         message: "Choose an application to open \(fileURLs.count) items.",
-        defaultChecked: defaultChecked
+        defaultChecked: defaultChecked,
     )
 }
 
@@ -891,7 +890,7 @@ private func selectApplication(
     fileURL: URL?,
     fileURLs: [URL]?,
     message: String,
-    defaultChecked: Bool
+    defaultChecked: Bool,
 ) -> ApplicationSelection? {
     let panel = NSOpenPanel()
     panel.canChooseDirectories = false
@@ -922,7 +921,7 @@ private func selectApplication(
     return ApplicationSelection(
         bundleID: bundleID,
         type: type,
-        setAsDefault: checkbox.state == .on
+        setAsDefault: checkbox.state == .on,
     )
 }
 

@@ -20,21 +20,21 @@ struct SidebarItemView: View {
 
     private var backgroundColor: Color {
         if isDropTarget {
-            return Color.accentColor
+            Color.accentColor
         } else if isSelected {
-            return Color(nsColor: .unemphasizedSelectedContentBackgroundColor)
+            Color(nsColor: .unemphasizedSelectedContentBackgroundColor)
         } else {
-            return Color.clear
+            Color.clear
         }
     }
 
     private var textColor: Color {
         if isDropTarget {
-            return Color.white
+            Color.white
         } else if isSelected {
-            return isFavorite ? Color.blue : Color.primary
+            isFavorite ? Color.blue : Color.primary
         } else {
-            return Color.primary
+            Color.primary
         }
     }
 
@@ -58,7 +58,7 @@ struct SidebarItemView: View {
             action()
         }
         .onDrop(of: [.fileURL], isTargeted: $isDropTarget) { providers in
-            guard let targetURL = targetURL, let onDrop = onDrop else { return false }
+            guard let targetURL, let onDrop else { return false }
             onDrop(providers, targetURL)
             return true
         }
@@ -80,21 +80,21 @@ struct TagItemView: View {
 
     private var backgroundColor: Color {
         if isDropTarget {
-            return Color.accentColor
+            Color.accentColor
         } else if isSelected {
-            return Color(nsColor: .unemphasizedSelectedContentBackgroundColor)
+            Color(nsColor: .unemphasizedSelectedContentBackgroundColor)
         } else {
-            return Color.clear
+            Color.clear
         }
     }
 
     private var textColor: Color {
         if isDropTarget {
-            return Color.white
+            Color.white
         } else if isSelected {
-            return tag.color
+            tag.color
         } else {
-            return Color.primary
+            Color.primary
         }
     }
 
@@ -118,7 +118,7 @@ struct TagItemView: View {
             action()
         }
         .onDrop(of: [.fileURL], isTargeted: $isDropTarget) { providers in
-            guard let onDrop = onDrop else { return false }
+            guard let onDrop else { return false }
             onDrop(providers, tag.name)
             return true
         }
@@ -173,7 +173,7 @@ struct SidebarView: View {
                     action: {
                         store.send(.showRecents)
                     },
-                    onDrop: nil
+                    onDrop: nil,
                 )
                 .padding(.top, 8)
 
@@ -211,7 +211,7 @@ struct SidebarView: View {
                     .onChange(of: geometry.size.width) { newWidth in
                         store.send(.setSidebarWidth(newWidth))
                     }
-            }
+            },
         )
     }
 
@@ -224,7 +224,7 @@ struct SidebarView: View {
                         isCollapsed: store.isFavoritesCollapsed,
                         onToggle: {
                             store.send(.toggleFavoritesSection)
-                        }
+                        },
                     )
                     .padding(.top, 8)
 
@@ -241,7 +241,7 @@ struct SidebarView: View {
                                 },
                                 onDrop: { providers, targetURL in
                                     store.send(.dropItemsToSidebarFolder(providers: providers, targetURL: targetURL))
-                                }
+                                },
                             )
                         }
                     }
@@ -259,7 +259,7 @@ struct SidebarView: View {
                         isCollapsed: store.isLocationsCollapsed,
                         onToggle: {
                             store.send(.toggleLocationsSection)
-                        }
+                        },
                     )
                     .padding(.top, 8)
 
@@ -280,7 +280,7 @@ struct SidebarView: View {
                                 },
                                 onDrop: { providers, targetURL in
                                     store.send(.dropItemsToSidebarFolder(providers: providers, targetURL: targetURL))
-                                }
+                                },
                             )
                         }
                     }
@@ -298,7 +298,7 @@ struct SidebarView: View {
                         isCollapsed: store.isTagsCollapsed,
                         onToggle: {
                             store.send(.toggleTagsSection)
-                        }
+                        },
                     )
                     .padding(.top, 8)
 
@@ -312,7 +312,7 @@ struct SidebarView: View {
                                 },
                                 onDrop: { providers, tagName in
                                     store.send(.dropItemsToTag(providers: providers, tagName: tagName))
-                                }
+                                },
                             )
                         }
                     }

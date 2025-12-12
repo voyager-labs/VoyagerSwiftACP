@@ -14,7 +14,7 @@ actor TrashMetadataStore {
     private init() {
         guard let appSupport = FileManager.default.urls(
             for: .applicationSupportDirectory,
-            in: .userDomainMask
+            in: .userDomainMask,
         ).first else {
             fatalError("Application Support directory not found")
         }
@@ -23,7 +23,7 @@ actor TrashMetadataStore {
 
         try? FileManager.default.createDirectory(
             at: voyagerDir,
-            withIntermediateDirectories: true
+            withIntermediateDirectories: true,
         )
 
         plistURL = voyagerDir.appendingPathComponent("trash_metadata.plist")

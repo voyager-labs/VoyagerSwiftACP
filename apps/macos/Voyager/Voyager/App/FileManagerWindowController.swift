@@ -10,7 +10,7 @@ class FileManagerWindowController: NSWindowController, NSWindowDelegate {
         initialPath = path
 
         let state: FileManagerFeature.State
-        if let duplicateState = duplicateState {
+        if let duplicateState {
             var newState = duplicateState
             newState.fsItems = FSItemsFeature.State()
             state = newState
@@ -32,7 +32,7 @@ class FileManagerWindowController: NSWindowController, NSWindowDelegate {
         let screenFrame = NSScreen.main?.visibleFrame ?? NSRect.zero
         let origin = NSPoint(
             x: screenFrame.midX - desiredSize.width / 2,
-            y: screenFrame.midY - desiredSize.height / 2
+            y: screenFrame.midY - desiredSize.height / 2,
         )
         window.setFrame(NSRect(origin: origin, size: desiredSize), display: false)
 

@@ -46,7 +46,7 @@ struct ViewMenuCommands: Commands {
                                 Image(systemName: "checkmark")
                             }
                         }
-                    }
+                    },
                 )
 
                 Divider()
@@ -60,7 +60,7 @@ struct ViewMenuCommands: Commands {
                                 Image(systemName: "checkmark")
                             }
                         }
-                    }
+                    },
                 )
 
                 Button(
@@ -72,7 +72,7 @@ struct ViewMenuCommands: Commands {
                                 Image(systemName: "checkmark")
                             }
                         }
-                    }
+                    },
                 )
 
                 Button(
@@ -84,7 +84,7 @@ struct ViewMenuCommands: Commands {
                                 Image(systemName: "checkmark")
                             }
                         }
-                    }
+                    },
                 )
 
                 Button(
@@ -96,7 +96,7 @@ struct ViewMenuCommands: Commands {
                                 Image(systemName: "checkmark")
                             }
                         }
-                    }
+                    },
                 )
 
                 Button(
@@ -108,7 +108,7 @@ struct ViewMenuCommands: Commands {
                                 Image(systemName: "checkmark")
                             }
                         }
-                    }
+                    },
                 )
 
                 Button(
@@ -120,7 +120,7 @@ struct ViewMenuCommands: Commands {
                                 Image(systemName: "checkmark")
                             }
                         }
-                    }
+                    },
                 )
 
                 Button(
@@ -132,7 +132,7 @@ struct ViewMenuCommands: Commands {
                                 Image(systemName: "checkmark")
                             }
                         }
-                    }
+                    },
                 )
 
                 Button(
@@ -144,7 +144,7 @@ struct ViewMenuCommands: Commands {
                                 Image(systemName: "checkmark")
                             }
                         }
-                    }
+                    },
                 )
                 Button(
                     action: { fileManagerStore?.send(.changeGroupKey(.tags)) },
@@ -155,7 +155,7 @@ struct ViewMenuCommands: Commands {
                                 Image(systemName: "checkmark")
                             }
                         }
-                    }
+                    },
                 )
             }
 
@@ -171,7 +171,7 @@ struct ViewMenuCommands: Commands {
                                 Image(systemName: "checkmark")
                             }
                         }
-                    }
+                    },
                 )
 
                 Button(
@@ -183,7 +183,7 @@ struct ViewMenuCommands: Commands {
                                 Image(systemName: "checkmark")
                             }
                         }
-                    }
+                    },
                 )
 
                 Button(
@@ -195,7 +195,7 @@ struct ViewMenuCommands: Commands {
                                 Image(systemName: "checkmark")
                             }
                         }
-                    }
+                    },
                 )
 
                 Button(
@@ -207,7 +207,7 @@ struct ViewMenuCommands: Commands {
                                 Image(systemName: "checkmark")
                             }
                         }
-                    }
+                    },
                 )
 
                 Button(
@@ -219,7 +219,7 @@ struct ViewMenuCommands: Commands {
                                 Image(systemName: "checkmark")
                             }
                         }
-                    }
+                    },
                 )
 
                 Button(
@@ -231,7 +231,7 @@ struct ViewMenuCommands: Commands {
                                 Image(systemName: "checkmark")
                             }
                         }
-                    }
+                    },
                 )
 
                 Button(
@@ -243,7 +243,7 @@ struct ViewMenuCommands: Commands {
                                 Image(systemName: "checkmark")
                             }
                         }
-                    }
+                    },
                 )
 
                 Button(
@@ -255,7 +255,7 @@ struct ViewMenuCommands: Commands {
                                 Image(systemName: "checkmark")
                             }
                         }
-                    }
+                    },
                 )
                 Button(
                     action: { fileManagerStore?.send(.changeSortKey(.tags)) },
@@ -266,7 +266,7 @@ struct ViewMenuCommands: Commands {
                                 Image(systemName: "checkmark")
                             }
                         }
-                    }
+                    },
                 )
 
                 Divider()
@@ -280,7 +280,7 @@ struct ViewMenuCommands: Commands {
                                 Image(systemName: "checkmark")
                             }
                         }
-                    }
+                    },
                 )
 
                 Button(
@@ -292,7 +292,7 @@ struct ViewMenuCommands: Commands {
                                 Image(systemName: "checkmark")
                             }
                         }
-                    }
+                    },
                 )
             }
             .disabled(fileManagerStore?.fsItems.groupKey != GroupKey.none)

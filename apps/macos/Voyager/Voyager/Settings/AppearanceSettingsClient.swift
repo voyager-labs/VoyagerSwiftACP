@@ -10,7 +10,7 @@ public struct AppearanceSettingsClient: Sendable {
     public nonisolated init(
         loadTheme: @escaping @Sendable () -> AppTheme,
         applyTheme: @escaping @Sendable (AppTheme) async -> Void,
-        applyThemeSync: @escaping @Sendable (AppTheme) -> Void
+        applyThemeSync: @escaping @Sendable (AppTheme) -> Void,
     ) {
         self.loadTheme = loadTheme
         self.applyTheme = applyTheme
@@ -64,7 +64,7 @@ extension AppearanceSettingsClient: DependencyKey {
                         applyAppearance(theme)
                     }
                 }
-            }
+            },
         )
     }
 
@@ -72,7 +72,7 @@ extension AppearanceSettingsClient: DependencyKey {
         AppearanceSettingsClient(
             loadTheme: { .system },
             applyTheme: { _ in },
-            applyThemeSync: { _ in }
+            applyThemeSync: { _ in },
         )
     }
 
@@ -80,7 +80,7 @@ extension AppearanceSettingsClient: DependencyKey {
         AppearanceSettingsClient(
             loadTheme: { .system },
             applyTheme: { _ in },
-            applyThemeSync: { _ in }
+            applyThemeSync: { _ in },
         )
     }
 }

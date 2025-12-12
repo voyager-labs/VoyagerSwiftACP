@@ -8,8 +8,8 @@ struct Environment {
 
         var envFileName: String {
             switch self {
-            case .dev: return ".env.dev"
-            case .prod: return ".env.prod"
+            case .dev: ".env.dev"
+            case .prod: ".env.prod"
             }
         }
     }
@@ -90,9 +90,9 @@ struct Environment {
     func backendDirectory() -> String? {
         switch backendMode {
         case .bundled:
-            return detectBundledBackendDirectory()?.path
+            detectBundledBackendDirectory()?.path
         case .source:
-            return detectSourceBackendDirectory()?.path
+            detectSourceBackendDirectory()?.path
         }
     }
 
@@ -126,10 +126,8 @@ struct Environment {
         var current = start
 
         for _ in 0 ..< maxDepth {
-            for marker in markerFiles {
-                if fm.fileExists(atPath: current.appendingPathComponent(marker).path) {
-                    return current
-                }
+            for marker in markerFiles where fm.fileExists(atPath: current.appendingPathComponent(marker).path) {
+                return current
             }
 
             let parent = current.deletingLastPathComponent()

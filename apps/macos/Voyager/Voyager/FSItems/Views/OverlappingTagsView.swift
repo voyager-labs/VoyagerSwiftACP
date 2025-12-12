@@ -16,7 +16,7 @@ struct OverlappingTagsView: View {
                     .frame(width: tagSize, height: tagSize)
                     .overlay(
                         Circle()
-                            .stroke(borderColor, lineWidth: 0.5)
+                            .stroke(borderColor, lineWidth: 0.5),
                     )
                     .offset(x: CGFloat(index) * overlapOffset)
             }
@@ -26,11 +26,11 @@ struct OverlappingTagsView: View {
 
     private var borderColor: Color {
         if isSelected {
-            return .white
+            .white
         } else if showBorderWhenUnselected {
-            return .black.opacity(0.3)
+            .black.opacity(0.3)
         } else {
-            return .clear
+            .clear
         }
     }
 

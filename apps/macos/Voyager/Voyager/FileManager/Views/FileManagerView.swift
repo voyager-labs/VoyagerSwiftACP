@@ -17,19 +17,19 @@ struct FileManagerView: View {
             get: { store.sidebarVisible ? .all : .detailOnly },
             set: { newValue in
                 store.send(.setSidebarVisible(newValue == .all))
-            }
+            },
         )
     }
 
     var body: some View {
         ZStack {
             KeyCommandView { event in
-                if event.keyCode == 53 && store.fsItems.isRenaming {
+                if event.keyCode == 53, store.fsItems.isRenaming {
                     store.send(.fsItems(.cancelRename))
                     return
                 }
 
-                if event.keyCode == 36 && event.modifierFlags.isDisjoint(with: [.command, .option, .control, .shift]) {
+                if event.keyCode == 36, event.modifierFlags.isDisjoint(with: [.command, .option, .control, .shift]) {
                     if store.fsItems.isRenaming {
                         store.send(.fsItems(.commitRename))
                         return
@@ -43,14 +43,14 @@ struct FileManagerView: View {
                     return
                 }
 
-                if event.keyCode == 49 && event.modifierFlags.isDisjoint(with: [.command, .option, .control, .shift]) {
+                if event.keyCode == 49, event.modifierFlags.isDisjoint(with: [.command, .option, .control, .shift]) {
                     if store.canQuickLookSelectedItem {
                         store.send(.quickLookSelectedItem)
                     }
                     return
                 }
 
-                if event.keyCode == 125 && event.modifierFlags.contains(.command) && event.modifierFlags
+                if event.keyCode == 125, event.modifierFlags.contains(.command), event.modifierFlags
                     .contains(.option)
                 {
                     if store.fsItems.selectedIds.count == 1,
@@ -63,7 +63,7 @@ struct FileManagerView: View {
                     return
                 }
 
-                if event.keyCode == 51 && event.modifierFlags.contains(.command) && event.modifierFlags
+                if event.keyCode == 51, event.modifierFlags.contains(.command), event.modifierFlags
                     .contains(.option)
                 {
                     if !store.fsItems.selectedIds.isEmpty {
@@ -72,7 +72,7 @@ struct FileManagerView: View {
                     return
                 }
 
-                if event.keyCode == 51 && event.modifierFlags.contains(.command) && !event.modifierFlags
+                if event.keyCode == 51, event.modifierFlags.contains(.command), !event.modifierFlags
                     .contains(.option)
                 {
                     if !store.fsItems.selectedIds.isEmpty {
@@ -113,7 +113,7 @@ struct FileManagerView: View {
 
                 guard event.modifierFlags.contains(.command) else { return }
 
-                if event.characters == "." && event.modifierFlags.contains(.shift) {
+                if event.characters == ".", event.modifierFlags.contains(.shift) {
                     store.send(.toggleShowHiddenFiles)
                 } else if let number = Int(event.characters ?? ""), (1 ... 9).contains(number) {
                     AppDelegate.shared?.selectTab(at: number - 1)
@@ -136,7 +136,7 @@ struct FileManagerView: View {
                                 availableWidth: geometry.size.width - 32 - (store.isTrashFolder ? 80 : 0),
                                 onNavigate: { path in
                                     store.send(.navigateTo(path))
-                                }
+                                },
                             )
                             Spacer()
 
@@ -179,7 +179,7 @@ struct FileManagerView: View {
                                 },
                                 label: {
                                     Text(FileManager.default.displayName(atPath: store.backHistory[reversedIndex]))
-                                }
+                                },
                             )
                         }
                     }
@@ -204,7 +204,7 @@ struct FileManagerView: View {
                                 },
                                 label: {
                                     Text(FileManager.default.displayName(atPath: store.forwardHistory[reversedIndex]))
-                                }
+                                },
                             )
                         }
                     }
@@ -220,7 +220,7 @@ struct FileManagerView: View {
             ToolbarItemGroup(placement: .primaryAction) {
                 Picker("Layout", selection: Binding(
                     get: { store.viewLayout },
-                    set: { store.send(.changeLayout($0)) }
+                    set: { store.send(.changeLayout($0)) },
                 )) {
                     Label("List", systemImage: "list.bullet")
                         .tag(FileManagerFeature.ViewLayout.list)

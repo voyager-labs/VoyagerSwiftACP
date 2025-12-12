@@ -120,7 +120,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     func updateFocusHistory(window: NSWindow?) {
-        guard let window = window else { return }
+        guard let window else { return }
 
         if isNavigatingFocusHistory {
             isNavigatingFocusHistory = false

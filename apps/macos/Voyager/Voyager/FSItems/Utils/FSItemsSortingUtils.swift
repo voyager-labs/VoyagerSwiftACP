@@ -21,7 +21,7 @@ enum FSItemsSortingUtils {
     static func sortItems(
         _ items: [FSItem],
         by sortKey: SortKey,
-        order: SortOrder
+        order: SortOrder,
     ) -> [FSItem] {
         items.sorted { item1, item2 in
             let comparison = compareItems(item1, item2, by: sortKey)

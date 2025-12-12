@@ -9,7 +9,7 @@ class VoyagerHelperApp {
 
         fputs(
             "[VoyagerHelper] Starting (APP_ENV=\(environment.environmentType.rawValue), BACKEND_MODE=\(environment.backendMode.rawValue))\n",
-            stderr
+            stderr,
         )
 
         let runner = ProcessRunner(environment: environment)

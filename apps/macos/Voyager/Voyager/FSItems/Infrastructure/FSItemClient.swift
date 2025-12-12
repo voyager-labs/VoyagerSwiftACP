@@ -79,7 +79,7 @@ public struct FSItemClient: Sendable {
         postFileSystemChanged: @escaping @Sendable ([String]) -> Void,
         observeFileSystemChanged: @escaping @Sendable () -> AsyncStream<[String]>,
         startWatchingDirectory: @escaping @Sendable (URL) -> AsyncStream<[String]>,
-        stopWatchingDirectory: @escaping @Sendable () -> Void
+        stopWatchingDirectory: @escaping @Sendable () -> Void,
     ) {
         self.open = open
         self.setDefaultApp = setDefaultApp
@@ -128,24 +128,24 @@ public enum FileOpError: Error, Equatable, Sendable {
     public var message: String {
         switch self {
         case .notFound:
-            return "The item could not be found."
+            "The item could not be found."
         case .unsupportedType:
-            return "This item type is not supported."
+            "This item type is not supported."
         case .cancelled:
-            return "The operation was cancelled."
+            "The operation was cancelled."
         case let .fileExists(itemName):
-            return "A newer item named \"\(itemName)\" already exists in this location."
+            "A newer item named \"\(itemName)\" already exists in this location."
         case let .system(message, _):
-            return message
+            message
         }
     }
 
     public var suggestion: String? {
         switch self {
         case let .system(_, hint):
-            return hint
+            hint
         default:
-            return nil
+            nil
         }
     }
 
@@ -169,7 +169,7 @@ private nonisolated func setFileTags(url: URL, tags: [String]) throws {
         let result = removexattr(
             url.path,
             "com.apple.metadata:_kMDItemUserTags",
-            XATTR_NOFOLLOW
+            XATTR_NOFOLLOW,
         )
         if result != 0, errno != ENOATTR {
             throw FileOpError.system(message: "Failed to remove tags")
@@ -178,7 +178,7 @@ private nonisolated func setFileTags(url: URL, tags: [String]) throws {
         let tagData = try PropertyListSerialization.data(
             fromPropertyList: tags,
             format: .binary,
-            options: 0
+            options: 0,
         )
 
         let result = setxattr(
@@ -187,7 +187,7 @@ private nonisolated func setFileTags(url: URL, tags: [String]) throws {
             (tagData as NSData).bytes,
             tagData.count,
             0,
-            XATTR_NOFOLLOW
+            XATTR_NOFOLLOW,
         )
 
         if result != 0 {
@@ -239,7 +239,7 @@ extension FSItemClient: DependencyKey {
                 let status = LSSetDefaultRoleHandlerForContentType(
                     type.identifier as CFString,
                     .all,
-                    bundleID as CFString
+                    bundleID as CFString,
                 )
                 guard status == noErr else {
                     throw FileOpError.system(message: "Failed to set default app.")
@@ -271,7 +271,7 @@ extension FSItemClient: DependencyKey {
                     }
 
                     for await app in group {
-                        if let app = app {
+                        if let app {
                             apps.append(app)
                         }
                     }
@@ -285,7 +285,7 @@ extension FSItemClient: DependencyKey {
                 guard let defaultAppURL = LSCopyDefaultApplicationURLForContentType(
                     fileType.identifier as CFString,
                     .all,
-                    nil
+                    nil,
                 )?.takeRetainedValue() as URL?,
                     let bundleID = Bundle(url: defaultAppURL)?.bundleIdentifier
                 else { return nil }
@@ -303,7 +303,7 @@ extension FSItemClient: DependencyKey {
                 try FileManager.default.createDirectory(
                     at: folderURL,
                     withIntermediateDirectories: false,
-                    attributes: nil
+                    attributes: nil,
                 )
             },
             pasteFile: { sourceURL, destinationURL in
@@ -340,7 +340,7 @@ extension FSItemClient: DependencyKey {
                 if !FileManager.default.fileExists(atPath: parentURL.path) {
                     try FileManager.default.createDirectory(
                         at: parentURL,
-                        withIntermediateDirectories: true
+                        withIntermediateDirectories: true,
                     )
                 }
 
@@ -421,7 +421,7 @@ extension FSItemClient: DependencyKey {
 
                 let extractedItems = try FileManager.default.contentsOfDirectory(
                     at: tempURL,
-                    includingPropertiesForKeys: nil
+                    includingPropertiesForKeys: nil,
                 )
 
                 if extractedItems.count == 1 {
@@ -494,7 +494,7 @@ extension FSItemClient: DependencyKey {
                             .labelColorKey,
                             .tagNamesKey,
                         ],
-                        options: options
+                        options: options,
                     )
 
                     return contents.compactMap { FSItemLoadUtils.convertURLToFSItem($0) }
@@ -509,7 +509,7 @@ extension FSItemClient: DependencyKey {
                             fullPath: "/",
                             isDirectory: true,
                             isHidden: false,
-                            kind: "Volume"
+                            kind: "Volume",
                         ),
                     ]
                 }.value
@@ -550,7 +550,7 @@ extension FSItemClient: DependencyKey {
                     return ([], .copy)
                 }
 
-                let paths = urls.map { $0.path }
+                let paths = urls.map(\.path)
 
                 let opString = pasteboard
                     .string(forType: NSPasteboard.PasteboardType("com.voyager.clipboard.operation"))
@@ -563,7 +563,7 @@ extension FSItemClient: DependencyKey {
                 NotificationCenter.default.post(
                     name: notificationName,
                     object: nil,
-                    userInfo: ["paths": paths]
+                    userInfo: ["paths": paths],
                 )
             },
             observeFileSystemChanged: {
@@ -578,7 +578,7 @@ extension FSItemClient: DependencyKey {
                     box.observer = box.center.addObserver(
                         forName: notificationName,
                         object: nil,
-                        queue: .main
+                        queue: .main,
                     ) { notification in
                         if let paths = notification.userInfo?["paths"] as? [String] {
                             continuation.yield(paths)
@@ -604,7 +604,7 @@ extension FSItemClient: DependencyKey {
                     let box = ContinuationBox(continuation)
 
                     let callback: FSEventStreamCallback = { _, info, _, eventPaths, _, _ in
-                        guard let info = info else { return }
+                        guard let info else { return }
 
                         let box = Unmanaged<ContinuationBox>
                             .fromOpaque(info)
@@ -621,10 +621,10 @@ extension FSItemClient: DependencyKey {
                         info: Unmanaged.passRetained(box).toOpaque(),
                         retain: nil,
                         release: { info in
-                            guard let info = info else { return }
+                            guard let info else { return }
                             Unmanaged<ContinuationBox>.fromOpaque(info).release()
                         },
-                        copyDescription: nil
+                        copyDescription: nil,
                     )
 
                     guard let stream = FSEventStreamCreate(
@@ -634,7 +634,7 @@ extension FSItemClient: DependencyKey {
                         [url.path] as CFArray,
                         FSEventStreamEventId(kFSEventStreamEventIdSinceNow),
                         0.3, // 300ms 지연 (배터리 효율)
-                        UInt32(kFSEventStreamCreateFlagFileEvents | kFSEventStreamCreateFlagUseCFTypes)
+                        UInt32(kFSEventStreamCreateFlagFileEvents | kFSEventStreamCreateFlagUseCFTypes),
                     ) else {
                         continuation.finish()
                         return
@@ -668,7 +668,7 @@ extension FSItemClient: DependencyKey {
                     FSEventStreamRelease(stream)
                     watcher.setStream(nil)
                 }
-            }
+            },
         )
     }
 
@@ -705,7 +705,7 @@ extension FSItemClient: DependencyKey {
             postFileSystemChanged: { _ in },
             observeFileSystemChanged: { AsyncStream { _ in } },
             startWatchingDirectory: { _ in AsyncStream { _ in } },
-            stopWatchingDirectory: {}
+            stopWatchingDirectory: {},
         )
     }
 
@@ -713,7 +713,7 @@ extension FSItemClient: DependencyKey {
         let previewInfo = ApplicationInfo(
             id: "com.apple.preview",
             name: "Preview",
-            bundleID: "com.apple.preview"
+            bundleID: "com.apple.preview",
         )
         let chromeInfo = ApplicationInfo(id: "com.google.Chrome", name: "Google Chrome", bundleID: "com.google.Chrome")
         let otherInfo = ApplicationInfo(id: "other", name: "Other…", bundleID: nil)
@@ -751,7 +751,7 @@ extension FSItemClient: DependencyKey {
             postFileSystemChanged: { _ in },
             observeFileSystemChanged: { AsyncStream { _ in } },
             startWatchingDirectory: { _ in AsyncStream { _ in } },
-            stopWatchingDirectory: {}
+            stopWatchingDirectory: {},
         )
     }
 }

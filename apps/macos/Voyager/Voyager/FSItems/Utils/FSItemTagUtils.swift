@@ -5,14 +5,14 @@ enum FSItemTagUtils {
 
     static func getTagColor(colorCode: Int) -> Color {
         switch colorCode {
-        case 1: return .gray
-        case 2: return .green
-        case 3: return .purple
-        case 4: return .blue
-        case 5: return .yellow
-        case 6: return .red
-        case 7: return .orange
-        default: return .gray
+        case 1: .gray
+        case 2: .green
+        case 3: .purple
+        case 4: .blue
+        case 5: .yellow
+        case 6: .red
+        case 7: .orange
+        default: .gray
         }
     }
 

@@ -30,7 +30,7 @@ struct ContentPaneListView: View {
         ScrollPositionUtils.saveScrollPosition(
             scrollView: nsScrollView,
             currentPath: store.currentPath,
-            store: store
+            store: store,
         )
     }
 
@@ -77,7 +77,7 @@ struct ContentPaneListView: View {
         fsStore: Store<FSItemsFeature.State, FSItemsFeature.Action>,
         geometry: GeometryProxy,
         store: StoreOf<FileManagerFeature>,
-        isTrashFolder: Bool
+        isTrashFolder: Bool,
     ) -> ItemRowProps {
         let selectedIds = fsStore.selectedIds
         let selectedItems = fsStore.items.filter { selectedIds.contains($0.id) }
@@ -91,7 +91,7 @@ struct ContentPaneListView: View {
             fsStore: fsStore,
             saveScrollPosition: saveScrollPositionBeforeOpen,
             isTrashFolder: isTrashFolder,
-            onEmptyTrash: { store.send(.emptyTrash) }
+            onEmptyTrash: { store.send(.emptyTrash) },
         )
 
         let width = contentWidth > 0 ? contentWidth : geometry.size.width
@@ -100,7 +100,7 @@ struct ContentPaneListView: View {
             handlers: handlers,
             width: width,
             showCompress: showCompress,
-            showExtract: showExtract
+            showExtract: showExtract,
         )
     }
 
@@ -110,7 +110,7 @@ struct ContentPaneListView: View {
         fsStore: Store<FSItemsFeature.State, FSItemsFeature.Action>,
         geometry: GeometryProxy,
         store: StoreOf<FileManagerFeature>,
-        isTrashFolder: Bool = false
+        isTrashFolder: Bool = false,
     ) -> FSItemListView {
         let selectedIds = fsStore.selectedIds
         let clipboardItems = fsStore.clipboardItems
@@ -120,7 +120,7 @@ struct ContentPaneListView: View {
             fsStore: fsStore,
             geometry: geometry,
             store: store,
-            isTrashFolder: isTrashFolder
+            isTrashFolder: isTrashFolder,
         )
 
         FSItemListView(
@@ -132,7 +132,8 @@ struct ContentPaneListView: View {
             availableWidth: props.width,
             columnWidths: store.columnWidths,
             applications: fsStore.operations.applicationsForItems[item.fullPath],
-            commonApplications: selectedIds.count > 1 ? fsStore.operations.commonApplicationsForSelectedFiles : nil,
+            commonApplications: selectedIds.count > 1 ?
+                fsStore.operations.commonApplicationsForSelectedFiles : nil,
             isThumbnailReady: thumbnailsReady.contains(item.fullPath),
             iconSize: store.listIconSize,
             textSize: store.listTextSize,
@@ -162,7 +163,7 @@ struct ContentPaneListView: View {
             selectedCount: fsStore.selectedIds.isEmpty ? 1 : fsStore.selectedIds.count,
             showCompress: props.showCompress,
             showExtract: props.showExtract,
-            draggingPaths: fsStore.draggingPaths
+            draggingPaths: fsStore.draggingPaths,
         )
     }
 
@@ -176,7 +177,7 @@ struct ContentPaneListView: View {
         index: Int,
         fsStore: Store<FSItemsFeature.State, FSItemsFeature.Action>,
         geometry: GeometryProxy,
-        store: StoreOf<FileManagerFeature>
+        store: StoreOf<FileManagerFeature>,
     ) -> some View {
         let bgColor = zebraBackgroundColor(for: index)
 
@@ -185,7 +186,7 @@ struct ContentPaneListView: View {
             fsStore: fsStore,
             geometry: geometry,
             store: store,
-            isTrashFolder: store.isTrashFolder
+            isTrashFolder: store.isTrashFolder,
         )
         .frame(height: rowHeight)
         .frame(maxWidth: .infinity, alignment: .leading)
@@ -197,9 +198,9 @@ struct ContentPaneListView: View {
                         key: ListRowPositionKey.self,
                         value: [
                             item.id: itemGeometry.frame(in: .named("listContainer")),
-                        ]
+                        ],
                     )
-            }
+            },
         )
         .id(item.id)
     }
@@ -207,7 +208,7 @@ struct ContentPaneListView: View {
     @ViewBuilder
     private func groupHeader(
         group: GroupedItems,
-        fsStore: Store<FSItemsFeature.State, FSItemsFeature.Action>
+        fsStore: Store<FSItemsFeature.State, FSItemsFeature.Action>,
     ) -> some View {
         HStack(spacing: 8) {
             Spacer().frame(width: 28)
@@ -221,7 +222,7 @@ struct ContentPaneListView: View {
                     .frame(width: 8, height: 8)
                     .overlay(
                         Circle()
-                            .stroke(Color.primary.opacity(0.2), lineWidth: 1)
+                            .stroke(Color.primary.opacity(0.2), lineWidth: 1),
                     )
             }
 
@@ -238,14 +239,14 @@ struct ContentPaneListView: View {
     private func groupedItemsContent(
         fsStore: Store<FSItemsFeature.State, FSItemsFeature.Action>,
         geometry: GeometryProxy,
-        store: StoreOf<FileManagerFeature>
+        store: StoreOf<FileManagerFeature>,
     ) -> some View {
         ForEach(Array(fsStore.groupedItems.enumerated()), id: \.element.groupName) { index, group in
             if index > 0 {
                 Spacer().frame(height: 16)
             }
 
-            if !group.groupName.isEmpty && fsStore.groupKey != .name {
+            if !group.groupName.isEmpty, fsStore.groupKey != .name {
                 groupHeader(group: group, fsStore: fsStore)
             }
 
@@ -259,7 +260,7 @@ struct ContentPaneListView: View {
     private func listContent(
         fsStore: Store<FSItemsFeature.State, FSItemsFeature.Action>,
         geometry: GeometryProxy,
-        store: StoreOf<FileManagerFeature>
+        store: StoreOf<FileManagerFeature>,
     ) -> some View {
         Color.clear.frame(height: 0).id("scrollTop")
 
@@ -285,7 +286,7 @@ struct ContentPaneListView: View {
     private func emptyRowsView(
         itemsCount: Int,
         scrollHeight: CGFloat,
-        fsStore: Store<FSItemsFeature.State, FSItemsFeature.Action>
+        fsStore: Store<FSItemsFeature.State, FSItemsFeature.Action>,
     ) -> some View {
         let currentHeight = CGFloat(itemsCount) * rowHeight
         let remainingHeight = scrollHeight - currentHeight
@@ -342,10 +343,10 @@ struct ContentPaneListView: View {
                                 delta: delta,
                                 totalWidth: headerWidth,
                                 padding: ListColumnLayout.outerPadding,
-                                spacing: ListColumnLayout.columnSpacing
-                            )
+                                spacing: ListColumnLayout.columnSpacing,
+                            ),
                         ))
-                    }
+                    },
                 )
 
                 ScrollViewReader { proxy in
@@ -380,7 +381,7 @@ struct ContentPaneListView: View {
                                 .onChange(of: scrollGeometry.size.width) { newWidth in
                                     contentWidth = newWidth
                                 }
-                        }
+                        },
                     )
                     .coordinateSpace(name: "scrollView")
                     .coordinateSpace(name: "listContainer")
@@ -404,7 +405,7 @@ struct ContentPaneListView: View {
                                         } else {
                                             let itemIndex = max(0, min(
                                                 Int(value.startLocation.y / rowHeight),
-                                                fsStore.items.count - 1
+                                                fsStore.items.count - 1,
                                             ))
                                             startItemId = itemIndex < fsStore.items.count ? fsStore.items[itemIndex]
                                                 .id : nil
@@ -414,7 +415,7 @@ struct ContentPaneListView: View {
                                             let modifiers = LassoSelectionUtils.detectModifierFlags()
                                             fsStore.send(.startListRowDrag(
                                                 startItemId: itemId,
-                                                modifierFlags: modifiers
+                                                modifierFlags: modifiers,
                                             ))
                                         }
                                     }
@@ -424,7 +425,7 @@ struct ContentPaneListView: View {
                                 if fsStore.listRowDragSelection != nil {
                                     fsStore.send(.endListRowDrag)
                                 }
-                            }
+                            },
                     )
                     .contextMenu {
                         if store.isTrashFolder {
@@ -458,7 +459,7 @@ struct ContentPaneListView: View {
                                 scrollView: nsScrollView,
                                 currentPath: store.currentPath,
                                 scrollPositions: store.scrollPositions,
-                                hasRestored: &hasRestoredScrollPosition
+                                hasRestored: &hasRestoredScrollPosition,
                             )
                         } else {
                             proxy.scrollTo("scrollTop", anchor: .top)
@@ -468,7 +469,7 @@ struct ContentPaneListView: View {
                 .border(fsStore.isDropTargeted ? Color.accentColor : Color.clear, width: 2)
                 .onDrop(
                     of: [UTType.fileURL],
-                    delegate: FSItemDropDelegate(store: store, fsStore: fsStore)
+                    delegate: FSItemDropDelegate(store: store, fsStore: fsStore),
                 )
             }
         }

@@ -47,7 +47,7 @@ enum SidebarUtils {
             name: String,
             directory: FileManager.SearchPathDirectory,
             iconName: String,
-            domain: FileManager.SearchPathDomainMask = .userDomainMask
+            domain: FileManager.SearchPathDomainMask = .userDomainMask,
         ) -> FavoriteItem? {
             guard let url = FileManager.default.urls(for: directory, in: domain).first else { return nil }
             return FavoriteItem(name: name, url: url, iconName: iconName)
@@ -58,12 +58,12 @@ enum SidebarUtils {
                 name: "Applications",
                 directory: .applicationDirectory,
                 iconName: "folder",
-                domain: .localDomainMask
+                domain: .localDomainMask,
             ),
             makeFavorite(name: "Desktop", directory: .desktopDirectory, iconName: "desktopcomputer"),
             makeFavorite(name: "Documents", directory: .documentDirectory, iconName: "doc"),
             makeFavorite(name: "Downloads", directory: .downloadsDirectory, iconName: "arrow.down.circle"),
-        ].compactMap { $0 }
+        ].compactMap(\.self)
     }
 
     @MainActor
@@ -72,7 +72,7 @@ enum SidebarUtils {
 
         guard let mountedVolumes = FileManager.default.mountedVolumeURLs(
             includingResourceValuesForKeys: [.volumeIsRemovableKey, .volumeIsEjectableKey],
-            options: []
+            options: [],
         ) else {
             return volumes
         }
@@ -95,7 +95,7 @@ enum SidebarUtils {
                 volumes.append(LocationItem(
                     name: volumeName,
                     url: volumeURL,
-                    iconName: "externaldrive"
+                    iconName: "externaldrive",
                 ))
             }
         }
@@ -110,7 +110,7 @@ enum SidebarUtils {
             locations.append(LocationItem(
                 name: "iCloud Drive",
                 url: iCloudDriveURL,
-                iconName: "icloud"
+                iconName: "icloud",
             ))
         }
     }
@@ -121,7 +121,7 @@ enum SidebarUtils {
         guard let cloudStorageContents = try? FileManager.default.contentsOfDirectory(
             at: cloudStorageURL,
             includingPropertiesForKeys: [.isDirectoryKey],
-            options: [.skipsHiddenFiles]
+            options: [.skipsHiddenFiles],
         ) else {
             return
         }
@@ -133,7 +133,7 @@ enum SidebarUtils {
                 locations.append(LocationItem(
                     name: itemURL.lastPathComponent,
                     url: itemURL,
-                    iconName: "folder"
+                    iconName: "folder",
                 ))
             }
         }
@@ -146,20 +146,20 @@ enum SidebarUtils {
         locations.append(LocationItem(
             name: NSUserName(),
             url: homeURL,
-            iconName: "house"
+            iconName: "house",
         ))
 
         locations.append(LocationItem(
             name: computerName,
             url: URL(string: "computer://") ?? URL(fileURLWithPath: "/"),
-            iconName: "laptopcomputer"
+            iconName: "laptopcomputer",
         ))
 
         if let trashURL = FileManager.default.urls(for: .trashDirectory, in: .userDomainMask).first {
             locations.append(LocationItem(
                 name: "Trash",
                 url: trashURL,
-                iconName: "trash"
+                iconName: "trash",
             ))
         }
     }
@@ -230,7 +230,7 @@ enum SidebarUtils {
         predicate: NSPredicate,
         sortDescriptors: [NSSortDescriptor] = [],
         timeout: TimeInterval = 5,
-        filterFiles: Bool = false
+        filterFiles: Bool = false,
     ) async -> [URL] {
         await withCheckedContinuation { continuation in
             DispatchQueue.main.async {
@@ -246,7 +246,7 @@ enum SidebarUtils {
                 let observer = NotificationCenter.default.addObserver(
                     forName: .NSMetadataQueryDidFinishGathering,
                     object: queryWrapper.query,
-                    queue: .main
+                    queue: .main,
                 ) { _ in
                     let capturedQuery = queryWrapper.query
                     Task { @MainActor in
@@ -305,7 +305,7 @@ enum SidebarUtils {
                 let colorCode = nameToColorCode[name] ?? 0
                 return TagItem(
                     name: name,
-                    color: FSItemTagUtils.getTagColor(colorCode: colorCode)
+                    color: FSItemTagUtils.getTagColor(colorCode: colorCode),
                 )
             }
             .sorted { tag1, tag2 in
@@ -326,7 +326,7 @@ enum SidebarUtils {
         let recentFiles = await searchFiles(
             predicate: predicate,
             sortDescriptors: sortDescriptors,
-            filterFiles: true
+            filterFiles: true,
         )
 
         return recentFiles.compactMap { FSItemLoadUtils.convertURLToFSItem($0) }
@@ -339,7 +339,7 @@ enum SidebarUtils {
 
         let taggedFiles = await searchFiles(
             predicate: predicate,
-            sortDescriptors: sortDescriptors
+            sortDescriptors: sortDescriptors,
         )
 
         return taggedFiles.compactMap { url in

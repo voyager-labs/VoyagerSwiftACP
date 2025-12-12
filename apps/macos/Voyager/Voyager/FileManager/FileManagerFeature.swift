@@ -21,10 +21,10 @@ struct FileManagerFeature {
         var navigationState: FileManagerNavigationUtils.NavigationState = .folder(SettingsFeature.getDefaultTabPath())
         var currentPath: String {
             switch navigationState {
-            case let .folder(path): return path
-            case .recents: return "Recents"
-            case let .tags(tagName): return tagName
-            case .computer: return SidebarUtils.computerName
+            case let .folder(path): path
+            case .recents: "Recents"
+            case let .tags(tagName): tagName
+            case .computer: SidebarUtils.computerName
             }
         }
 
@@ -133,7 +133,7 @@ struct FileManagerFeature {
         mutating func matchSidebarToPath(
             _ path: String,
             favorites: [SidebarUtils.FavoriteItem],
-            locations: [SidebarUtils.LocationItem]
+            locations: [SidebarUtils.LocationItem],
         ) {
             selectedSidebarItem = {
                 if path == SidebarUtils.computerName {
@@ -154,7 +154,7 @@ struct FileManagerFeature {
 
         mutating func navigate(
             to navigationState: FileManagerNavigationUtils.NavigationState,
-            sidebarItemName: String
+            sidebarItemName: String,
         ) {
             selectedSidebarItem = sidebarItemName
             backHistory.append(currentPath)
@@ -165,7 +165,7 @@ struct FileManagerFeature {
         mutating func navigateFromHistory(
             to path: String,
             addToForward: Bool,
-            locations: [SidebarUtils.LocationItem]
+            locations: [SidebarUtils.LocationItem],
         ) {
             if addToForward {
                 forwardHistory.append(currentPath)
@@ -275,7 +275,7 @@ struct FileManagerFeature {
                         name: CGFloat(UserDefaults.standard.double(forKey: "columnWidthName")),
                         date: CGFloat(UserDefaults.standard.double(forKey: "columnWidthDate")),
                         size: CGFloat(UserDefaults.standard.double(forKey: "columnWidthSize")),
-                        kind: CGFloat(UserDefaults.standard.double(forKey: "columnWidthKind"))
+                        kind: CGFloat(UserDefaults.standard.double(forKey: "columnWidthKind")),
                     )
                 }
 
@@ -307,7 +307,7 @@ struct FileManagerFeature {
                         let listTextSizeKey = "listTextSize"
                         let gridTextSizeKey = "gridTextSize"
                         for await _ in NotificationCenter.default.notifications(
-                            named: UserDefaults.didChangeNotification
+                            named: UserDefaults.didChangeNotification,
                         ) {
                             if let listIconSize = UserDefaults.standard.object(forKey: listIconSizeKey) as? CGFloat {
                                 await send(.updateListIconSize(listIconSize))
@@ -322,11 +322,11 @@ struct FileManagerFeature {
                                 await send(.updateGridTextSize(gridTextSize))
                             }
                         }
-                    }
+                    },
                 )
 
             case let .navigateTo(path):
-                if path == SidebarUtils.computerName && state.currentPath == SidebarUtils.computerName {
+                if path == SidebarUtils.computerName, state.currentPath == SidebarUtils.computerName {
                     return .none
                 }
                 if path != state.currentPath {
@@ -429,7 +429,7 @@ struct FileManagerFeature {
                 UserDefaults.standard.set(state.showHiddenFiles, forKey: "showHiddenFiles")
                 return .merge(
                     .send(.fsItems(.setShowHidden(state.showHiddenFiles))),
-                    .send(.fsItems(.loadItems(path: state.currentPath)))
+                    .send(.fsItems(.loadItems(path: state.currentPath))),
                 )
 
             case let .saveScrollOffset(offset, forPath: path):
@@ -464,7 +464,7 @@ struct FileManagerFeature {
                     delta: ctx.delta,
                     totalWidth: ctx.totalWidth,
                     padding: ctx.padding,
-                    spacing: ctx.spacing
+                    spacing: ctx.spacing,
                 )
                 UserDefaults.standard.set(state.columnWidths.name, forKey: "columnWidthName")
                 UserDefaults.standard.set(state.columnWidths.date, forKey: "columnWidthDate")
@@ -541,13 +541,13 @@ struct FileManagerFeature {
             case let .dropItemsToSidebarFolder(providers, targetURL):
                 return .send(.fsItems(.handleDrop(
                     providers: providers,
-                    destinationPath: targetURL.path
+                    destinationPath: targetURL.path,
                 )))
 
             case let .dropItemsToTag(providers, tagName):
                 return .send(.fsItems(.handleDropToTag(
                     providers: providers,
-                    tagName: tagName
+                    tagName: tagName,
                 )))
 
             case let .fsItems(action):

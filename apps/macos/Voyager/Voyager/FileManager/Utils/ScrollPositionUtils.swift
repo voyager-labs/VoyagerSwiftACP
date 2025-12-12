@@ -6,9 +6,9 @@ enum ScrollPositionUtils {
     static func saveScrollPosition(
         scrollView: NSScrollView?,
         currentPath: String,
-        store: StoreOf<FileManagerFeature>
+        store: StoreOf<FileManagerFeature>,
     ) {
-        guard let scrollView = scrollView else { return }
+        guard let scrollView else { return }
         let offset = scrollView.contentView.bounds.origin
         store.send(.saveScrollOffset(offset, forPath: currentPath))
     }
@@ -17,10 +17,10 @@ enum ScrollPositionUtils {
         scrollView: NSScrollView?,
         currentPath: String,
         scrollPositions: [String: CGPoint],
-        hasRestored: inout Bool
+        hasRestored: inout Bool,
     ) {
         guard !hasRestored,
-              let scrollView = scrollView,
+              let scrollView,
               let savedOffset = scrollPositions[currentPath]
         else {
             return
@@ -31,7 +31,7 @@ enum ScrollPositionUtils {
     }
 
     static func performAutoScroll(scrollView: NSScrollView?) {
-        guard let scrollView = scrollView,
+        guard let scrollView,
               let currentEvent = NSApplication.shared.currentEvent
         else {
             return

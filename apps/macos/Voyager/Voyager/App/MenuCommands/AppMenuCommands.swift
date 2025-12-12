@@ -29,7 +29,7 @@ struct AppMenuCommands: Commands {
             .keyboardShortcut("t", modifiers: .command)
 
             Button("Duplicate Tab") {
-                if let fileManagerStore = fileManagerStore,
+                if let fileManagerStore,
                    !fileManagerStore.fsItems.selectedIds.isEmpty
                 {
                     fileManagerStore.send(.duplicateSelectedItems)

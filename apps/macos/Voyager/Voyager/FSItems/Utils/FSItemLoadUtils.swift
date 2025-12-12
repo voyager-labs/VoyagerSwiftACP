@@ -55,13 +55,13 @@ enum FSItemLoadUtils {
             kind: metadata.kind,
             creatorApplication: metadata.creatorApplication,
             tags: metadata.tags,
-            additionalInfo: additionalInfo
+            additionalInfo: additionalInfo,
         )
     }
 
     private nonisolated static func getItemMetadata(
         from itemURL: URL,
-        isDirectory: Bool
+        isDirectory: Bool,
     ) -> ItemMetadata {
         var kind: String
         var creatorApplication: String?
@@ -124,7 +124,7 @@ enum FSItemLoadUtils {
         guard let contents = try? FileManager.default.contentsOfDirectory(
             at: url,
             includingPropertiesForKeys: nil,
-            options: [.skipsHiddenFiles]
+            options: [.skipsHiddenFiles],
         ) else {
             return nil
         }
