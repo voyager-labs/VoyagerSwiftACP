@@ -19,8 +19,7 @@ voyager-app/
 │       ├── VoyagerTests         # Unit tests
 │       └── VoyagerUITests       # UI tests
 ├── scripts/
-│   ├── prepare-backend-venv.sh  # Release 빌드용 백엔드 venv 준비 스크립트
-│   └── load-secrets-from-keychain.sh  # macOS Keychain에서 시크릿 로드
+│   └── prepare-backend-venv.sh  # Release 빌드용 백엔드 venv 준비 스크립트
 └── docs/                        # PRD, architecture
 ```
 

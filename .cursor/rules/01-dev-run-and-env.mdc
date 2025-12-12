@@ -23,29 +23,68 @@ description: 'Local dev workflows for backend and macOS app; env coordination'
   - Build and run via Sweetpad's integrated tools
 - The helper can launch the backend with Swift-dotenv environment loading.
 
-### Build Configurations
+### Build Configurations & Schemes
 
-- **Debug builds**: Use local `uv` environment (requires `uv` in PATH)
-  - Backend venv preparation skipped
-  - Helper launches backend via `uv run dev|prod`
-- **Release builds**: Use bundled backend venv (self-contained)
+두 가지 독립적인 축으로 환경 결정:
+- **APP_ENV** (dev/prod): 빌드 설정 기반 (Debug → dev, Release → prod)
+- **BACKEND_MODE** (source/bundled): 스킴 기반 (Dev → source, Prod → bundled)
+
+| 스킴 | 빌드 설정 | APP_ENV | BACKEND_MODE | 백엔드 실행 방식 |
+|------|-----------|---------|--------------|------------------|
+| `Voyager-Dev` | Debug | `dev` (자동) | `source` (자동) | 로컬 `uv` (`uv run dev`) |
+| `Voyager-Prod` | Release | `prod` (자동) | `bundled` (자동) | 번들 venv (`backend-venv/bin/python`) |
+
+**환경 감지 우선순위:**
+1. **APP_ENV**: Info.plist의 `APP_ENV` 키 (빌드 설정에서 자동 주입)
+   - Debug 빌드: `APP_ENV=dev`
+   - Release 빌드: `APP_ENV=prod`
+2. **BACKEND_MODE**: 스킴의 환경변수 (Xcode Run 시 자동 주입)
+   - `*-Dev` 스킴: `BACKEND_MODE=source`
+   - `*-Prod` 스킴: `BACKEND_MODE=bundled`
+3. **Fallback**: 번들 리소스 확인 (`backend-venv` 존재 여부)
+
+- **Dev 스킴 (BACKEND_MODE=source)**: Use local `uv` environment (requires `uv` in PATH)
+  - Helper launches backend via `uv run dev` (APP_ENV=dev)
+  - 백엔드 venv 준비 및 번들링 스킵
+  - 빠른 개발 반복 가능
+- **Prod 스킴 (BACKEND_MODE=bundled)**: Use bundled backend venv (self-contained)
   - [scripts/prepare-backend-venv.sh](mdc:scripts/prepare-backend-venv.sh) automatically runs during VoyagerHelper build
   - Creates `apps/backend/build/backend-venv` with backend wheel and dependencies
   - Venv is copied into app bundle at `VoyagerHelper.app/Contents/Resources/backend-venv`
   - Helper uses bundled `backend-venv/bin/python` instead of local `uv`
+  - 독립형 앱 번들 (배포용)
 
-## Environment (.env at repo root)
+## Environment (.env files at repo root)
 
-- Recommended keys:
-  - `APP_ENV=dev|prod` (used by dotenv helper)
-  - `BACKEND_DIR=apps/backend`
-  - `VOYAGER_HOST=127.0.0.1`
-  - `VOYAGER_PORT=8000`
-  - `BACKEND_URL=http://${VOYAGER_HOST}:${VOYAGER_PORT}`
-  - `VOYAGER_PATH=/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/sbin`
-  - `VOYAGER_LOG_FILE=apps/macos/logs/voyager.log`
+### Environment Files
+
+- **`.env.dev`** (Git ignored): Local development environment
+  - Contains all configuration including secrets (e.g., `OPENAI_API_KEY`)
+  - Used by Debug builds
+  - Create from `.env.example`: `cp .env.example .env.dev`
+- **`.env.prod`** (Git tracked): Production environment template
+  - Contains non-secret configuration only
+  - Secrets are injected from GitHub Secrets during CI/CD builds
+  - Used by Release builds
+
+### Recommended Keys
+
+- `VOYAGER_HOST=127.0.0.1`
+- `VOYAGER_PORT=8000`
+- `BACKEND_URL=http://${VOYAGER_HOST}:${VOYAGER_PORT}`
+- `VOYAGER_PATH=/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/sbin`
+- `VOYAGER_LOG_FILE=apps/macos/logs/voyager.log`
+- `OPENAI_API_KEY=...` (in `.env.dev` only, not in `.env.prod`)
+- `OPENAI_ORG_ID=...` (optional, in `.env.dev` only)
+- `OPENAI_PROJECT=...` (optional, in `.env.dev` only)
+
+### Auto-injected Keys (Build Settings에서 자동 설정)
+
+- `APP_ENV`: Configuration별 자동 설정 (Debug → dev, Release → prod)
+- `BACKEND_MODE`: 스킴별 자동 설정 (Dev → source, Prod → bundled)
 
 ## Notes
 
 - Frontend should derive API base from `BACKEND_URL`.
 - Ensure backend is running before invoking API-dependent features.
+- For local development, create `.env.dev` with your secrets. Never commit secrets to Git.

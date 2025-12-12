@@ -10,16 +10,54 @@
   - CLI 빌드: `xcodebuild -project apps/macos/Voyager/Voyager.xcodeproj -scheme Voyager-Dev -configuration Debug`
   - 배포/Archive: `xcodebuild -project apps/macos/Voyager/Voyager.xcodeproj -scheme Voyager-Prod -configuration Release`
 
-환경
+## 빌드 스킴 및 환경 설정
 
-- 저장소 루트의 `.env.example`; 실제 `.env`가 있으면 macOS 헬퍼가 PATH/UV_CMD 등을 주입
+### 스킴과 빌드 설정
 
-예시 환경변수 (로컬)
+프로젝트는 두 가지 스킴을 제공합니다:
 
-- `APP_ENV=development`
-- `BACKEND_DIR=apps/backend`
-- `VOYAGER_PATH=/Users/you/Projects/voyager-app`
-- `VOYAGER_LOG_FILE=.logs/backend-dev.log`
+| 스킴 | 빌드 설정 | APP_ENV | BACKEND_MODE | 백엔드 실행 방식 |
+|------|-----------|---------|--------------|------------------|
+| `Voyager-Dev` | Debug | `dev` (자동) | `source` (자동) | 로컬 `uv` (`uv run dev`) |
+| `Voyager-Prod` | Release | `prod` (자동) | `bundled` (자동) | 번들 venv (`backend-venv/bin/python`) |
+
+### 환경 자동 감지
+
+앱은 다음 순서로 환경을 감지합니다:
+
+1. **Info.plist의 `APP_ENV`** (빌드 설정에서 자동 주입)
+   - Debug 빌드: `APP_ENV=dev`
+   - Release 빌드: `APP_ENV=prod`
+2. **기본값**: `dev`
+
+### 백엔드 실행 방식 감지
+
+백엔드 실행 방식은 다음 순서로 결정됩니다:
+
+1. **스킴 환경변수 `BACKEND_MODE`** (Xcode Run 시 자동 주입)
+   - `*-Dev` 스킴: `BACKEND_MODE=source`
+   - `*-Prod` 스킴: `BACKEND_MODE=bundled`
+2. **번들 리소스 확인**: `backend-venv` 존재 여부
+3. **기본값**: `source`
+
+### 환경 파일
+
+- **`.env.dev`** (Git ignored): 로컬 개발 환경
+  - Debug 빌드에서 사용
+  - 비밀키 포함 가능
+  - 생성: `cp .env.example .env.dev`
+- **`.env.prod`** (Git tracked): 프로덕션 환경 템플릿
+  - Release 빌드에서 사용
+  - 비밀키 제외, CI/CD에서 주입
+
+### 예시 환경변수 (로컬 `.env.dev`)
+
+- `VOYAGER_HOST=127.0.0.1`
+- `VOYAGER_PORT=8000`
+- `BACKEND_URL=http://127.0.0.1:8000`
+- `VOYAGER_PATH=/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/sbin`
+- `VOYAGER_LOG_FILE=apps/macos/logs/voyager.log`
+- `OPENAI_API_KEY=...` (로컬 개발용)
 
 ## Local Run Guide (End-to-End)
 
@@ -50,27 +88,39 @@
 - 백엔드는 `pyproject.toml`에 정의된 CLI 스크립트로 uvicorn 구동
 - macOS 앱은 런치 시 헬퍼를 통해 백엔드를 자동 기동 가능
 
-### Release 빌드: 번들용 백엔드 venv 준비
+### 빌드 프로세스 상세
 
-Release 빌드 시 자동으로 번들용 백엔드 venv가 준비됩니다:
+#### Debug 빌드 (Dev 스킴)
 
-1. **VoyagerHelper 빌드 단계**에서 `scripts/prepare-backend-venv.sh` 실행
+1. **빌드 설정**: Debug
+2. **APP_ENV**: `dev` (자동 설정)
+3. **BACKEND_MODE**: `source` (스킴에서 자동 주입)
+4. **백엔드 venv 준비**: 스킵 (로컬 `uv` 사용)
+5. **백엔드 venv 번들링**: 스킵
+6. **환경 파일**: `.env.dev` 로드 (프로젝트 루트 또는 번들 리소스)
+7. **백엔드 실행**: `apps/backend`에서 `uv run dev` 실행
+
+#### Release 빌드 (Prod 스킴)
+
+1. **빌드 설정**: Release
+2. **APP_ENV**: `prod` (자동 설정)
+3. **BACKEND_MODE**: `bundled` (스킴에서 자동 주입)
+4. **백엔드 venv 준비** (`Prepare Backend Venv` 빌드 단계):
+   - `scripts/prepare-backend-venv.sh` 실행
    - 백엔드 휠 빌드 (`uv build --wheel`)
    - 번들용 venv 생성 (`apps/backend/build/backend-venv`)
    - uv.lock에서 런타임 의존성 추출 및 설치
    - 빌드된 백엔드 휠을 venv에 설치
-
-2. **"Bundle Backend Venv" 빌드 단계**에서 venv를 앱 번들로 복사
+5. **백엔드 venv 번들링** (`Bundle Backend Venv` 빌드 단계):
    - `apps/backend/build/backend-venv` → `VoyagerHelper.app/Contents/Resources/backend-venv`
-   - Release 빌드에서만 실행 (Debug 빌드는 스킵)
-
-3. **앱 실행 시** 번들된 venv 사용
-   - Release 빌드: 번들 리소스의 `backend-venv/bin/python` 사용
-   - Debug 빌드: 로컬 `uv` 환경 사용
+   - `.env.prod` 파일도 번들에 복사 (없으면 기본값 생성)
+6. **환경 파일**: `.env.prod` 로드 (번들 리소스 우선, 없으면 프로젝트 루트)
+7. **백엔드 실행**: 번들된 `backend-venv/bin/python`으로 직접 실행
 
 **참고:**
-- Debug 빌드에서는 venv 준비를 스킵하고 로컬 개발 환경(`uv`)을 사용합니다
+- Debug 빌드에서는 venv 준비 및 번들링을 모두 스킵하고 로컬 개발 환경(`uv`)을 사용합니다
 - Release 빌드에서만 독립형 앱 번들을 위해 venv가 번들에 포함됩니다
+- 환경 감지는 빌드 설정과 스킴에 따라 자동으로 이루어지므로 수동 설정이 필요 없습니다
 
 ## 보안/인증(로컬 개발)
 
@@ -79,6 +129,64 @@ Release 빌드 시 자동으로 번들용 백엔드 venv가 준비됩니다:
 ## 미들웨어/로깅
 
 - 요청/응답에 대한 구조화 로깅을 선택적으로 도입할 수 있습니다(uvicorn 로거 + 간단 미들웨어). 초기 단계에서는 기본 로그로 충분합니다.
+
+## CI/CD (GitHub Actions)
+
+Release 빌드 및 DMG 패키징은 GitHub Actions에서 자동화되어 있습니다:
+
+### 트리거
+
+- `v*` 태그 푸시 시 자동 실행
+- `workflow_dispatch`로 수동 실행 가능
+
+### 필요한 GitHub Secrets
+
+| Secret | 설명 |
+|--------|------|
+| `APPLE_CERTIFICATE_BASE64` | .p12 인증서 (base64 인코딩) |
+| `APPLE_CERTIFICATE_PASSWORD` | 인증서 비밀번호 |
+| `APPLE_TEAM_ID` | Apple Developer Team ID |
+| `APPLE_ID` | Apple ID (notarization용) |
+| `APPLE_APP_SPECIFIC_PASSWORD` | 앱 전용 비밀번호 (notarization용) |
+| `OPENAI_API_KEY` | OpenAI API 키 (prod 환경용, `.env.prod`에 주입됨) |
+| `OPENAI_ORG_ID` | OpenAI Organization ID (선택적, `.env.prod`에 주입됨) |
+| `OPENAI_PROJECT` | OpenAI Project ID (선택적, `.env.prod`에 주입됨) |
+
+### 빌드 프로세스
+
+1. Python 3.13 + uv 설치
+2. `prepare-backend-venv.sh`로 백엔드 venv 준비
+3. `.env.prod` 생성 및 GitHub Secrets 주입
+   - 기본 설정 (APP_ENV, BACKEND_DIR, etc.) 포함
+   - GitHub Secrets (`OPENAI_API_KEY`, `OPENAI_ORG_ID`, `OPENAI_PROJECT`)를 `.env.prod`에 추가
+4. Apple 인증서 설치 (임시 키체인)
+5. `xcodebuild`로 Release 빌드
+6. DMG 생성 및 서명
+7. Notarization (Apple 인증)
+8. GitHub Release 생성 (태그 빌드 시)
+
+## 코드사이닝 및 Entitlements
+
+### Bundle ID
+
+| 타겟 | Bundle ID |
+|-----|-----------|
+| Voyager (메인 앱) | `fm.voyager.Voyager` |
+| VoyagerHelper | `fm.voyager.VoyagerHelper` |
+
+### Entitlements 구성
+
+**Debug 빌드:**
+- `com.apple.security.get-task-allow`: true (디버거 허용)
+- App Sandbox: 비활성화
+
+**Release 빌드:**
+- `com.apple.security.get-task-allow`: false
+- `com.apple.security.app-sandbox`: true
+- `com.apple.security.inherit`: true (VoyagerHelper, 자식 프로세스 sandbox 상속)
+- `com.apple.security.network.server`: true (VoyagerHelper)
+- `com.apple.security.network.client`: true
+- `com.apple.security.files.user-selected.read-write`: true
 
 ## Observability & Monitoring
 
