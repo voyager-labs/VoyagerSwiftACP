@@ -5,6 +5,8 @@ import SwiftUI
 struct InspectorPaneView: View {
     let store: StoreOf<FileManagerFeature>
     @State private var chatInput: String = ""
+    @Environment(\.colorScheme)
+    var colorScheme
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
@@ -79,7 +81,7 @@ struct InspectorPaneView: View {
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(
             RoundedRectangle(cornerRadius: 8)
-                .fill(Color(red: 44 / 255.0, green: 43 / 255.0, blue: 40 / 255.0))
+                .fill(chatInputBackgroundColor)
                 .overlay(
                     RoundedRectangle(cornerRadius: 8)
                         .strokeBorder(Color.white.opacity(0.1), lineWidth: 1)
@@ -117,12 +119,12 @@ struct InspectorPaneView: View {
             Text(folderDisplayName)
                 .font(.system(size: 12, weight: .light))
         }
-        .foregroundColor(Color(red: 218 / 255.0, green: 215 / 255.0, blue: 210 / 255.0))
+        .foregroundColor(folderChipTextColor)
         .padding(.horizontal, 6)
         .padding(.vertical, 3)
         .background(
             RoundedRectangle(cornerRadius: 4)
-                .fill(Color(red: 77 / 255.0, green: 73 / 255.0, blue: 67 / 255.0))
+                .fill(folderChipBackgroundColor)
         )
     }
 
@@ -138,5 +140,29 @@ struct InspectorPaneView: View {
 
     private var maxHeight: CGFloat {
         singleLineHeight * 7
+    }
+
+    private var chatInputBackgroundColor: Color {
+        if colorScheme == .dark {
+            return Color(red: 44 / 255.0, green: 43 / 255.0, blue: 40 / 255.0)
+        } else {
+            return Color(red: 245 / 255.0, green: 245 / 255.0, blue: 245 / 255.0)
+        }
+    }
+
+    private var folderChipBackgroundColor: Color {
+        if colorScheme == .dark {
+            return Color(red: 77 / 255.0, green: 73 / 255.0, blue: 67 / 255.0)
+        } else {
+            return Color(red: 230 / 255.0, green: 230 / 255.0, blue: 230 / 255.0)
+        }
+    }
+
+    private var folderChipTextColor: Color {
+        if colorScheme == .dark {
+            return Color(red: 218 / 255.0, green: 215 / 255.0, blue: 210 / 255.0)
+        } else {
+            return Color(red: 50 / 255.0, green: 50 / 255.0, blue: 50 / 255.0)
+        }
     }
 }
