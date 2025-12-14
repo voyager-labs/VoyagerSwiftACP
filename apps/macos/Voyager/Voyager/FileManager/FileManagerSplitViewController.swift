@@ -459,7 +459,7 @@ extension FileManagerSplitViewController {
         ofSubviewAt dividerIndex: Int
     ) -> CGFloat {
         switch dividerIndex {
-        case 0: return 400
+        case 0: return 280
         default: return proposedMaximumPosition
         }
     }

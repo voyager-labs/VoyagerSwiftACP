@@ -42,7 +42,7 @@ struct SidebarItemView: View {
             Spacer()
         }
         .padding(.horizontal, 12)
-        .padding(.vertical, 6)
+        .padding(.vertical, 4)
         .background(backgroundView)
         .padding(.horizontal, 8)
         .contentShape(Rectangle())
@@ -93,7 +93,7 @@ struct TagItemView: View {
             Spacer()
         }
         .padding(.horizontal, 12)
-        .padding(.vertical, 6)
+        .padding(.vertical, 4)
         .background(backgroundView)
         .padding(.horizontal, 8)
         .contentShape(Rectangle())
@@ -217,7 +217,7 @@ struct SidebarView: View {
     private var favoritesSection: some View {
         Group {
             if !store.favorites.isEmpty {
-                VStack(alignment: .leading, spacing: 4) {
+                VStack(alignment: .leading, spacing: 0) {
                     SidebarSectionHeader(
                         title: "Favorites",
                         isCollapsed: store.isFavoritesCollapsed,
@@ -252,7 +252,7 @@ struct SidebarView: View {
     private var locationsSection: some View {
         Group {
             if !store.locations.isEmpty {
-                VStack(alignment: .leading, spacing: 4) {
+                VStack(alignment: .leading, spacing: 0) {
                     SidebarSectionHeader(
                         title: "Locations",
                         isCollapsed: store.isLocationsCollapsed,
@@ -291,7 +291,7 @@ struct SidebarView: View {
     private var tagsSection: some View {
         Group {
             if !store.tags.isEmpty {
-                VStack(alignment: .leading, spacing: 4) {
+                VStack(alignment: .leading, spacing: 0) {
                     SidebarSectionHeader(
                         title: "Tags",
                         isCollapsed: store.isTagsCollapsed,
