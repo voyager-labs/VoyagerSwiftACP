@@ -1,4 +1,5 @@
 import AppKit
+import Combine
 import ComposableArchitecture
 import SwiftUI
 
@@ -7,8 +8,12 @@ extension Notification.Name {
     static let focusHistoryChanged = Notification.Name("focusHistoryChanged")
 }
 
-class AppDelegate: NSObject, NSApplicationDelegate {
+class AppDelegate: NSObject, NSApplicationDelegate, ObservableObject {
     static var shared: AppDelegate?
+
+    @Published var hasSelectedItems: Bool = false
+    @Published var hasClipboardItems: Bool = false
+    @Published var hasStore: Bool = false
 
     var windowControllers: [FileManagerWindowController] = []
     var closedTabHistory: [FileManagerFeature.State] = []
@@ -22,13 +27,33 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         return !validWindows.isEmpty
     }
 
+    var currentFileManagerStore: StoreOf<FileManagerFeature>? {
+        guard let keyWindow = NSApp.keyWindow else { return nil }
+        return windowControllers.first(where: { $0.window == keyWindow })?.store
+    }
+
+    func updateMenuState(store: StoreOf<FileManagerFeature>?) {
+        guard let store = store else {
+            hasStore = false
+            hasSelectedItems = false
+            hasClipboardItems = false
+            return
+        }
+
+        hasStore = true
+        hasSelectedItems = store.hasSelectedItems
+        hasClipboardItems = store.hasClipboardItems
+    }
+
     override init() {
         super.init()
         AppDelegate.shared = self
 
         let appearanceSettingsClient = AppearanceSettingsClient.liveValue
         let theme = appearanceSettingsClient.loadTheme()
-        appearanceSettingsClient.applyThemeSync(theme)
+        DispatchQueue.main.async {
+            appearanceSettingsClient.applyThemeSync(theme)
+        }
     }
 
     func applicationDidFinishLaunching(_: Notification) {

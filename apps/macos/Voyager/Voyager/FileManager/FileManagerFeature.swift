@@ -44,6 +44,8 @@ struct FileManagerFeature {
         var viewLayout: ViewLayout = .list
         var showHiddenFiles: Bool = false
         var sidebarVisible: Bool = true
+        var inspectorVisible: Bool = false
+        var inspectorPaneExists: Bool = false
         var selectedSidebarItem: String?
         var favorites: [SidebarUtils.FavoriteItem] = []
         var locations: [SidebarUtils.LocationItem] = []
@@ -90,6 +92,14 @@ struct FileManagerFeature {
                 return false
             }
             return fsItems.items.contains(where: { $0.id == selectedId })
+        }
+
+        var hasSelectedItems: Bool {
+            !fsItems.selectedIds.isEmpty
+        }
+
+        var hasClipboardItems: Bool {
+            !fsItems.clipboardItems.isEmpty
         }
 
         var breadcrumbItems: [BreadcrumbUtils.Item] {
@@ -209,6 +219,8 @@ struct FileManagerFeature {
         case changeLayout(ViewLayout)
         case toggleShowHiddenFiles
         case setSidebarVisible(Bool)
+        case toggleInspector
+        case setInspectorPaneExists(Bool)
         case saveScrollOffset(CGPoint, forPath: String)
         case showRecents
         case showComputer
@@ -431,6 +443,14 @@ struct FileManagerFeature {
                     .send(.fsItems(.setShowHidden(state.showHiddenFiles))),
                     .send(.fsItems(.loadItems(path: state.currentPath)))
                 )
+
+            case .toggleInspector:
+                state.inspectorVisible.toggle()
+                return .none
+
+            case let .setInspectorPaneExists(exists):
+                state.inspectorPaneExists = exists
+                return .none
 
             case let .saveScrollOffset(offset, forPath: path):
                 state.scrollPositions[path] = offset

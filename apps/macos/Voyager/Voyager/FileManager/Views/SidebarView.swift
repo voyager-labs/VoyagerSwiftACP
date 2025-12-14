@@ -1,3 +1,4 @@
+import AppKit
 import ComposableArchitecture
 import SwiftUI
 import UniformTypeIdentifiers
@@ -28,23 +29,14 @@ struct SidebarItemView: View {
         }
     }
 
-    private var textColor: Color {
-        if isDropTarget {
-            return Color.white
-        } else if isSelected {
-            return isFavorite ? Color.blue : Color.primary
-        } else {
-            return Color.primary
-        }
-    }
-
     var body: some View {
         HStack(spacing: 8) {
             Image(systemName: iconName)
-                .foregroundColor(textColor)
+                .symbolRenderingMode(.hierarchical)
+                .foregroundColor(isDropTarget ? .white : .accentColor)
                 .frame(width: 16)
             Text(title)
-                .foregroundColor(textColor)
+                .foregroundColor(isDropTarget ? .white : .primary)
                 .lineLimit(1)
                 .truncationMode(.tail)
             Spacer()
@@ -56,6 +48,7 @@ struct SidebarItemView: View {
         .contentShape(Rectangle())
         .onTapGesture {
             action()
+            restoreFileManagerFocus()
         }
         .onDrop(of: [.fileURL], isTargeted: $isDropTarget) { providers in
             guard let targetURL = targetURL, let onDrop = onDrop else { return false }
@@ -88,23 +81,13 @@ struct TagItemView: View {
         }
     }
 
-    private var textColor: Color {
-        if isDropTarget {
-            return Color.white
-        } else if isSelected {
-            return tag.color
-        } else {
-            return Color.primary
-        }
-    }
-
     var body: some View {
         HStack(spacing: 8) {
             Circle()
                 .fill(tag.color)
                 .frame(width: 8, height: 8)
             Text(tag.name)
-                .foregroundColor(textColor)
+                .foregroundColor(isDropTarget ? .white : .primary)
                 .lineLimit(1)
                 .truncationMode(.tail)
             Spacer()
@@ -116,6 +99,7 @@ struct TagItemView: View {
         .contentShape(Rectangle())
         .onTapGesture {
             action()
+            restoreFileManagerFocus()
         }
         .onDrop(of: [.fileURL], isTargeted: $isDropTarget) { providers in
             guard let onDrop = onDrop else { return false }
@@ -162,41 +146,48 @@ struct SidebarView: View {
     let store: StoreOf<FileManagerFeature>
 
     var body: some View {
-        ScrollView {
-            VStack(alignment: .leading, spacing: 0) {
-                SidebarItemView(
-                    iconName: "clock",
-                    title: "Recents",
-                    isSelected: store.selectedSidebarItem == "Recents",
-                    isFavorite: true,
-                    targetURL: nil,
-                    action: {
-                        store.send(.showRecents)
-                    },
-                    onDrop: nil
-                )
-                .padding(.top, 8)
+        VStack(spacing: 0) {
+            Color(nsColor: .controlBackgroundColor)
+                .frame(height: 50)
+                .ignoresSafeArea(.all, edges: .top)
 
-                Spacer()
-                    .frame(height: 8)
+            ScrollView {
+                VStack(alignment: .leading, spacing: 0) {
+                    SidebarItemView(
+                        iconName: "clock",
+                        title: "Recents",
+                        isSelected: store.selectedSidebarItem == "Recents",
+                        isFavorite: true,
+                        targetURL: nil,
+                        action: {
+                            store.send(.showRecents)
+                        },
+                        onDrop: nil
+                    )
+                    .padding(.top, 8)
 
-                favoritesSection
+                    Spacer()
+                        .frame(height: 8)
 
-                Spacer()
-                    .frame(height: 8)
+                    favoritesSection
 
-                locationsSection
+                    Spacer()
+                        .frame(height: 8)
 
-                Spacer()
-                    .frame(height: 8)
+                    locationsSection
 
-                tagsSection
+                    Spacer()
+                        .frame(height: 8)
 
-                Spacer()
+                    tagsSection
+
+                    Spacer()
+                }
             }
+            .clipped()
         }
         .frame(minWidth: 150)
-        .background(Color(NSColor.controlBackgroundColor))
+        .background(Color(nsColor: NSColor.controlBackgroundColor)) // 시스템 색상 (Container, 인스펙터 패인과 동일)
         .navigationSplitViewColumnWidth(ideal: {
             if let savedWidth = UserDefaults.standard.object(forKey: "sidebarWidth") as? Double,
                savedWidth > 0

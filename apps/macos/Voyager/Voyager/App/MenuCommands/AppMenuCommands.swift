@@ -3,9 +3,6 @@ import ComposableArchitecture
 import SwiftUI
 
 struct AppMenuCommands: Commands {
-    @FocusedValue(\.fileManagerStore)
-    var fileManagerStore: StoreOf<FileManagerFeature>?
-
     @State private var hasClosedTabs: Bool = false
     @State private var hasFocusHistory: Bool = false
 
@@ -17,8 +14,9 @@ struct AppMenuCommands: Commands {
             .keyboardShortcut("n", modifiers: .command)
 
             Button("New Folder") {
-                if let currentPath = fileManagerStore?.currentPath {
-                    fileManagerStore?.send(.fsItems(.createNewFolder(currentPath: currentPath)))
+                if let currentPath = AppDelegate.shared?.currentFileManagerStore?.currentPath {
+                    AppDelegate.shared?.currentFileManagerStore?
+                        .send(.fsItems(.createNewFolder(currentPath: currentPath)))
                 }
             }
             .keyboardShortcut("n", modifiers: [.command, .shift])
@@ -29,7 +27,7 @@ struct AppMenuCommands: Commands {
             .keyboardShortcut("t", modifiers: .command)
 
             Button("Duplicate Tab") {
-                if let fileManagerStore = fileManagerStore,
+                if let fileManagerStore = AppDelegate.shared?.currentFileManagerStore,
                    !fileManagerStore.fsItems.selectedIds.isEmpty
                 {
                     fileManagerStore.send(.duplicateSelectedItems)
@@ -42,16 +40,16 @@ struct AppMenuCommands: Commands {
             Divider()
 
             Button("Open") {
-                fileManagerStore?.send(.openSelectedItem)
+                AppDelegate.shared?.currentFileManagerStore?.send(.openSelectedItem)
             }
             .keyboardShortcut(.downArrow, modifiers: .command)
-            .disabled(fileManagerStore?.canOpenSelectedItem == false)
+            .disabled(AppDelegate.shared?.currentFileManagerStore?.canOpenSelectedItem == false)
 
             Button("Quick Look") {
-                fileManagerStore?.send(.quickLookSelectedItem)
+                AppDelegate.shared?.currentFileManagerStore?.send(.quickLookSelectedItem)
             }
             .keyboardShortcut(.space, modifiers: [])
-            .disabled(fileManagerStore?.canQuickLookSelectedItem == false)
+            .disabled(AppDelegate.shared?.currentFileManagerStore?.canQuickLookSelectedItem == false)
 
             Button("Reopen Recently Closed Tab") {
                 AppDelegate.shared?.reopenLastClosedTab()
@@ -115,22 +113,22 @@ struct AppMenuCommands: Commands {
 
         CommandMenu("Go") {
             Button("Back") {
-                fileManagerStore?.send(.goBack)
+                AppDelegate.shared?.currentFileManagerStore?.send(.goBack)
             }
             .keyboardShortcut("[", modifiers: .command)
-            .disabled(fileManagerStore?.canGoBack == false)
+            .disabled(AppDelegate.shared?.currentFileManagerStore?.canGoBack == false)
 
             Button("Forward") {
-                fileManagerStore?.send(.goForward)
+                AppDelegate.shared?.currentFileManagerStore?.send(.goForward)
             }
             .keyboardShortcut("]", modifiers: .command)
-            .disabled(fileManagerStore?.canGoForward == false)
+            .disabled(AppDelegate.shared?.currentFileManagerStore?.canGoForward == false)
 
             Button("Enclosing Folder") {
-                fileManagerStore?.send(.goToEnclosingDirectory)
+                AppDelegate.shared?.currentFileManagerStore?.send(.goToEnclosingDirectory)
             }
             .keyboardShortcut(.upArrow, modifiers: .command)
-            .disabled(fileManagerStore?.canGoToEnclosingDirectory == false)
+            .disabled(AppDelegate.shared?.currentFileManagerStore?.canGoToEnclosingDirectory == false)
         }
 
         CommandGroup(after: .windowList) {
