@@ -125,6 +125,10 @@ struct InspectorPaneView: View {
         .background(
             RoundedRectangle(cornerRadius: 4)
                 .fill(folderChipBackgroundColor)
+                .overlay(
+                    RoundedRectangle(cornerRadius: 4)
+                        .strokeBorder(folderChipBorderColor, lineWidth: 1)
+                )
         )
     }
 
@@ -146,15 +150,23 @@ struct InspectorPaneView: View {
         if colorScheme == .dark {
             return Color(red: 44 / 255.0, green: 43 / 255.0, blue: 40 / 255.0)
         } else {
-            return Color(red: 245 / 255.0, green: 245 / 255.0, blue: 245 / 255.0)
+            return Color(nsColor: .controlBackgroundColor)
         }
     }
 
     private var folderChipBackgroundColor: Color {
         if colorScheme == .dark {
-            return Color(red: 77 / 255.0, green: 73 / 255.0, blue: 67 / 255.0)
+            return Color(red: 0x37 / 255.0, green: 0x34 / 255.0, blue: 0x30 / 255.0)
         } else {
-            return Color(red: 230 / 255.0, green: 230 / 255.0, blue: 230 / 255.0)
+            return Color(red: 0xFB / 255.0, green: 0xFB / 255.0, blue: 0xFB / 255.0)
+        }
+    }
+
+    private var folderChipBorderColor: Color {
+        if colorScheme == .dark {
+            return Color(red: 0x4D / 255.0, green: 0x49 / 255.0, blue: 0x43 / 255.0)
+        } else {
+            return Color.black.opacity(0.06)
         }
     }
 
