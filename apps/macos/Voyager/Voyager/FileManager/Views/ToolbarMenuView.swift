@@ -1,8 +1,12 @@
+import AppKit
 import ComposableArchitecture
 import SwiftUI
 
 struct ToolbarMenuView: View {
     let store: StoreOf<FileManagerFeature>
+    @State private var isDark: Bool = isDarkMode()
+    @Environment(\.colorScheme)
+    var colorScheme
 
     var body: some View {
         Menu {
@@ -293,10 +297,24 @@ struct ToolbarMenuView: View {
                 .frame(width: 32, height: 32)
                 .background(
                     RoundedRectangle(cornerRadius: 5)
-                        .fill(Color(nsColor: .controlBackgroundColor))
+                        .fill(toolbarMenuButtonBackgroundColor)
                 )
         }
         .menuIndicator(.hidden)
         .buttonStyle(.plain)
+        .onAppear {
+            isDark = isDarkMode()
+        }
+        .onChange(of: colorScheme) { newScheme in
+            isDark = newScheme == .dark
+        }
+    }
+
+    private var toolbarMenuButtonBackgroundColor: Color {
+        if isDark {
+            return Color(nsColor: .controlBackgroundColor)
+        } else {
+            return Color(red: 245 / 255.0, green: 245 / 255.0, blue: 245 / 255.0)
+        }
     }
 }

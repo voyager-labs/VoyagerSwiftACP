@@ -1,8 +1,12 @@
+import AppKit
 import ComposableArchitecture
 import SwiftUI
 
 struct ToolbarView: View {
     let store: StoreOf<FileManagerFeature>
+    @State private var isDark: Bool = isDarkMode()
+    @Environment(\.colorScheme)
+    var colorScheme
 
     private let trafficLightAreaWidth: CGFloat = 80
 
@@ -81,7 +85,7 @@ struct ToolbarView: View {
         .frame(maxWidth: .infinity)
         .background(
             ZStack {
-                Color(red: 0.17, green: 0.17, blue: 0.17)
+                toolbarBackgroundColor
 
                 VStack {
                     Spacer()
@@ -91,5 +95,19 @@ struct ToolbarView: View {
                 }
             }
         )
+        .onAppear {
+            isDark = isDarkMode()
+        }
+        .onChange(of: colorScheme) { newScheme in
+            isDark = newScheme == .dark
+        }
+    }
+
+    private var toolbarBackgroundColor: Color {
+        if isDark {
+            return Color(red: 0.17, green: 0.17, blue: 0.17)
+        } else {
+            return Color(nsColor: .controlBackgroundColor)
+        }
     }
 }

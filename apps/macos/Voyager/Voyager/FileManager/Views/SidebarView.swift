@@ -144,12 +144,14 @@ private struct SidebarSectionHeader: View {
 
 struct SidebarView: View {
     let store: StoreOf<FileManagerFeature>
+    @State private var isDark: Bool = isDarkMode()
+    @Environment(\.colorScheme)
+    var colorScheme
 
     var body: some View {
         VStack(spacing: 0) {
-            Color(nsColor: .controlBackgroundColor)
+            sidebarBackgroundColor
                 .frame(height: 50)
-                .ignoresSafeArea(.all, edges: .top)
 
             ScrollView {
                 VStack(alignment: .leading, spacing: 0) {
@@ -187,7 +189,7 @@ struct SidebarView: View {
             .clipped()
         }
         .frame(minWidth: 150)
-        .background(Color(nsColor: NSColor.controlBackgroundColor)) // 시스템 색상 (Container, 인스펙터 패인과 동일)
+        .background(sidebarBackgroundColor)
         .navigationSplitViewColumnWidth(ideal: {
             if let savedWidth = UserDefaults.standard.object(forKey: "sidebarWidth") as? Double,
                savedWidth > 0
@@ -204,6 +206,12 @@ struct SidebarView: View {
                     }
             }
         )
+        .onAppear {
+            isDark = isDarkMode()
+        }
+        .onChange(of: colorScheme) { newScheme in
+            isDark = newScheme == .dark
+        }
     }
 
     private var favoritesSection: some View {
@@ -309,6 +317,14 @@ struct SidebarView: View {
                     }
                 }
             }
+        }
+    }
+
+    private var sidebarBackgroundColor: Color {
+        if isDark {
+            return Color(nsColor: .controlBackgroundColor)
+        } else {
+            return Color(red: 245 / 255.0, green: 245 / 255.0, blue: 245 / 255.0)
         }
     }
 }
