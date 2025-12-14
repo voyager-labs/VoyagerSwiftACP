@@ -1,10 +1,12 @@
 import AppKit
+import Combine
 import ComposableArchitecture
 import SwiftUI
 
 class FileManagerWindowController: NSWindowController, NSWindowDelegate {
     private let initialPath: String?
     let store: StoreOf<FileManagerFeature>
+    private var cancellables: Set<AnyCancellable> = []
 
     init(path: String? = nil, duplicateState: FileManagerFeature.State? = nil, asTab: Bool = true) {
         initialPath = path
@@ -71,6 +73,28 @@ class FileManagerWindowController: NSWindowController, NSWindowDelegate {
 
     func windowDidBecomeKey(_: Notification) {
         AppDelegate.shared?.updateFocusHistory(window: window)
+        observeStoreChanges()
+    }
+
+    private func observeStoreChanges() {
+        cancellables.removeAll()
+
+        let updateMenuStateIfKeyWindow: () -> Void = { [weak self] in
+            guard let self = self, self.window?.isKeyWindow == true else { return }
+            AppDelegate.shared?.updateMenuState(store: self.store)
+        }
+
+        store.publisher.fsItems.selectedIds
+            .removeDuplicates()
+            .sink { _ in updateMenuStateIfKeyWindow() }
+            .store(in: &cancellables)
+
+        store.publisher.fsItems.clipboardItems
+            .removeDuplicates()
+            .sink { _ in updateMenuStateIfKeyWindow() }
+            .store(in: &cancellables)
+
+        updateMenuStateIfKeyWindow()
     }
 
     func windowWillClose(_: Notification) {

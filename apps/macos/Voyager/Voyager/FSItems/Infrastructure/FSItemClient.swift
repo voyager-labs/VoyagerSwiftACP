@@ -501,7 +501,7 @@ extension FSItemClient: DependencyKey {
                 }.value
             },
             loadComputerItems: {
-                try await Task.detached {
+                await Task.detached {
                     let rootName = FileManager.default.displayName(atPath: "/")
                     return [
                         FSItem(

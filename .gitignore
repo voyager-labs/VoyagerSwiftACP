@@ -1,13 +1,42 @@
 # Python-generated files
 __pycache__/
 *.py[oc]
+*.py[cod]
+*$py.class
+*.so
+.Python
 build/
+develop-eggs/
 dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
 wheels/
-*.egg-info
+*.egg-info/
+.installed.cfg
+*.egg
 
 # Virtual environments
-.venv
+.venv/
+venv/
+ENV/
+env/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# macOS
+.AppleDouble
+.LSOverride
 
 # Editors and tooling
 .DS_Store
@@ -34,9 +63,31 @@ DerivedData/
 *.dSYM.zip
 *.dSYM
 
+# Database
+*.db
+*.db-journal
+*.db-shm
+*.db-wal
+*.db.bak.*
+*.sqlite
+*.sqlite3
+
+# Testing
+.pytest_cache/
+.coverage
+htmlcov/
+.tox/
+
+# Jupyter
+.ipynb_checkpoints
+*.ipynb
+
 # Code coverage and profiling
 *.profraw
 default.profraw
+
+# Test files (369MB 불필요)
+apps/backend/notebooks/test-files/
 
 # Language Server Protocol
 buildServer.json
@@ -52,3 +103,8 @@ buildServer.json
 apps/macos/logs/
 *.log
 # BMAD (local only)
+
+# Alembic
+apps/backend/alembic.ini.bak
+
+.serena/*

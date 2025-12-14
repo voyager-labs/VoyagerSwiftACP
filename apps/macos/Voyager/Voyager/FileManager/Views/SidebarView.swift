@@ -1,3 +1,4 @@
+import AppKit
 import ComposableArchitecture
 import SwiftUI
 import UniformTypeIdentifiers
@@ -47,6 +48,7 @@ struct SidebarItemView: View {
         .contentShape(Rectangle())
         .onTapGesture {
             action()
+            restoreFileManagerFocus()
         }
         .onDrop(of: [.fileURL], isTargeted: $isDropTarget) { providers in
             guard let targetURL = targetURL, let onDrop = onDrop else { return false }
@@ -97,6 +99,7 @@ struct TagItemView: View {
         .contentShape(Rectangle())
         .onTapGesture {
             action()
+            restoreFileManagerFocus()
         }
         .onDrop(of: [.fileURL], isTargeted: $isDropTarget) { providers in
             guard let onDrop = onDrop else { return false }
@@ -144,7 +147,7 @@ struct SidebarView: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            VisualEffectBackgroundView(material: .sidebar)
+            Color(nsColor: .controlBackgroundColor)
                 .frame(height: 50)
                 .ignoresSafeArea(.all, edges: .top)
 
@@ -184,7 +187,7 @@ struct SidebarView: View {
             .clipped()
         }
         .frame(minWidth: 150)
-        .background(VisualEffectBackgroundView(material: .sidebar))
+        .background(Color(nsColor: NSColor.controlBackgroundColor)) // 시스템 색상 (Container, 인스펙터 패인과 동일)
         .navigationSplitViewColumnWidth(ideal: {
             if let savedWidth = UserDefaults.standard.object(forKey: "sidebarWidth") as? Double,
                savedWidth > 0

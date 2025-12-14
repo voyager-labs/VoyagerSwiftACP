@@ -1,26 +1,24 @@
 defaults:
   - env: dev
   - db: sqlite
-  - processing/chunking
-  - processing/tokenization
   - _self_
 
 app:
   name: voyager
 
+# LLM 설정 (LangChain 기반)
 llm:
-  provider: openai
-  api_key: ${oc.env:OPENAI_API_KEY, ""}
-  org_id: ${oc.env:OPENAI_ORG_ID, ""}
-  project: ${oc.env:OPENAI_PROJECT, ""}
+  provider: openai # ollama, openai, anthropic
+  # model: gpt-5-nano-2025-08-07
+  model: gpt-5-mini-2025-08-07
+  temperature: 0.3 # SQL 생성은 낮은 temperature 권장
 
-  chat_model: gpt-5-nano
-  embedding_model: text-embedding-3-small
-  timeout_s: 30
+  # Provider별 설정
+  ollama:
+    base_url: http://localhost:11434
 
-libreoffice:
-  soffice_path: "../../resources/LibreOffice.app/Contents/MacOS/soffice"
+  openai:
+    api_key: ${oc.env:OPENAI_API_KEY}
 
-# 하위 그룹으로 구성된 설정을 루트에서도 동일 키로 참조 가능하게 별칭 제공
-chunking: ${processing.chunking}
-tokenization: ${processing.tokenization}
+  anthropic:
+    api_key: ${oc.env:ANTHROPIC_API_KEY,""}
