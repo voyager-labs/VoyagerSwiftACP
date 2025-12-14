@@ -73,6 +73,7 @@ class FileManagerWindowController: NSWindowController, NSWindowDelegate {
 
     func windowDidBecomeKey(_: Notification) {
         AppDelegate.shared?.updateFocusHistory(window: window)
+        AppDelegate.shared?.updateMenuState(store: store)
         observeStoreChanges()
     }
 

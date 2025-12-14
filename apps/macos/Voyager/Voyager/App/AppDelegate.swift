@@ -14,6 +14,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, ObservableObject {
     @Published var hasSelectedItems: Bool = false
     @Published var hasClipboardItems: Bool = false
     @Published var hasStore: Bool = false
+    @Published var currentFileManagerStore: StoreOf<FileManagerFeature>?
 
     var windowControllers: [FileManagerWindowController] = []
     var closedTabHistory: [FileManagerFeature.State] = []
@@ -27,22 +28,19 @@ class AppDelegate: NSObject, NSApplicationDelegate, ObservableObject {
         return !validWindows.isEmpty
     }
 
-    var currentFileManagerStore: StoreOf<FileManagerFeature>? {
-        guard let keyWindow = NSApp.keyWindow else { return nil }
-        return windowControllers.first(where: { $0.window == keyWindow })?.store
-    }
-
     func updateMenuState(store: StoreOf<FileManagerFeature>?) {
         guard let store = store else {
             hasStore = false
             hasSelectedItems = false
             hasClipboardItems = false
+            currentFileManagerStore = nil
             return
         }
 
         hasStore = true
         hasSelectedItems = store.hasSelectedItems
         hasClipboardItems = store.hasClipboardItems
+        currentFileManagerStore = store
     }
 
     override init() {
@@ -178,6 +176,9 @@ class AppDelegate: NSObject, NSApplicationDelegate, ObservableObject {
     func windowWillClose(controller: FileManagerWindowController) {
         guard let window = controller.window else {
             windowControllers.removeAll { $0 === controller }
+            if windowControllers.isEmpty {
+                currentFileManagerStore = nil
+            }
             return
         }
 
@@ -196,6 +197,16 @@ class AppDelegate: NSObject, NSApplicationDelegate, ObservableObject {
         focusHistory.removeAll { $0 == window }
         NotificationCenter.default.post(name: .focusHistoryChanged, object: nil)
         windowControllers.removeAll { $0 === controller }
+
+        if window.isKeyWindow {
+            if let newKeyWindow = NSApp.keyWindow,
+               let newController = windowControllers.first(where: { $0.window == newKeyWindow })
+            {
+                updateMenuState(store: newController.store)
+            } else {
+                updateMenuState(store: nil)
+            }
+        }
     }
 
     private func launchHelperOnce() {

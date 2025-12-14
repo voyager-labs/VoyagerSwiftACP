@@ -3,39 +3,48 @@ import ComposableArchitecture
 import SwiftUI
 
 struct ViewMenuCommands: Commands {
+    @ObservedObject private var appDelegate: AppDelegate
+
+    init() {
+        guard let shared = AppDelegate.shared else {
+            fatalError("AppDelegate.shared must be initialized before ViewMenuCommands")
+        }
+        _appDelegate = ObservedObject(wrappedValue: shared)
+    }
+
     var body: some Commands {
         CommandGroup(replacing: .sidebar) {
             Button(
-                AppDelegate.shared?.currentFileManagerStore?.sidebarVisible == true
+                appDelegate.currentFileManagerStore?.sidebarVisible == true
                     ? "Hide Sidebar"
                     : "Show Sidebar"
             ) {
-                let newValue = !(AppDelegate.shared?.currentFileManagerStore?.sidebarVisible ?? true)
-                AppDelegate.shared?.currentFileManagerStore?.send(.setSidebarVisible(newValue))
+                let newValue = !(appDelegate.currentFileManagerStore?.sidebarVisible ?? true)
+                appDelegate.currentFileManagerStore?.send(.setSidebarVisible(newValue))
             }
             .keyboardShortcut("s", modifiers: .command)
-            .disabled(AppDelegate.shared?.currentFileManagerStore == nil)
+            .disabled(appDelegate.currentFileManagerStore == nil)
         }
 
         CommandGroup(after: .sidebar) {
             Button("as List") {
-                AppDelegate.shared?.currentFileManagerStore?.send(.changeLayout(.list))
+                appDelegate.currentFileManagerStore?.send(.changeLayout(.list))
             }
-            .disabled(AppDelegate.shared?.currentFileManagerStore?.viewLayout == .list)
+            .disabled(appDelegate.currentFileManagerStore?.viewLayout == .list)
 
             Button("as Icons") {
-                AppDelegate.shared?.currentFileManagerStore?.send(.changeLayout(.grid))
+                appDelegate.currentFileManagerStore?.send(.changeLayout(.grid))
             }
-            .disabled(AppDelegate.shared?.currentFileManagerStore?.viewLayout == .grid)
+            .disabled(appDelegate.currentFileManagerStore?.viewLayout == .grid)
 
             Divider()
 
             Button(
-                AppDelegate.shared?.currentFileManagerStore?.showHiddenFiles == true
+                appDelegate.currentFileManagerStore?.showHiddenFiles == true
                     ? "Hide Hidden Files"
                     : "Show Hidden Files"
             ) {
-                AppDelegate.shared?.currentFileManagerStore?.send(.toggleShowHiddenFiles)
+                appDelegate.currentFileManagerStore?.send(.toggleShowHiddenFiles)
             }
             .keyboardShortcut(".", modifiers: [.command, .shift])
 
@@ -43,11 +52,11 @@ struct ViewMenuCommands: Commands {
 
             Menu("Group By") {
                 Button(
-                    action: { AppDelegate.shared?.currentFileManagerStore?.send(.changeGroupKey(.none)) },
+                    action: { appDelegate.currentFileManagerStore?.send(.changeGroupKey(.none)) },
                     label: {
                         HStack {
                             Text("None")
-                            if AppDelegate.shared?.currentFileManagerStore?.fsItems.groupKey == GroupKey.none {
+                            if appDelegate.currentFileManagerStore?.fsItems.groupKey == GroupKey.none {
                                 Image(systemName: "checkmark")
                             }
                         }
@@ -57,11 +66,11 @@ struct ViewMenuCommands: Commands {
                 Divider()
 
                 Button(
-                    action: { AppDelegate.shared?.currentFileManagerStore?.send(.changeGroupKey(.name)) },
+                    action: { appDelegate.currentFileManagerStore?.send(.changeGroupKey(.name)) },
                     label: {
                         HStack {
                             Text("Name")
-                            if AppDelegate.shared?.currentFileManagerStore?.fsItems.groupKey == .name {
+                            if appDelegate.currentFileManagerStore?.fsItems.groupKey == .name {
                                 Image(systemName: "checkmark")
                             }
                         }
@@ -69,11 +78,11 @@ struct ViewMenuCommands: Commands {
                 )
 
                 Button(
-                    action: { AppDelegate.shared?.currentFileManagerStore?.send(.changeGroupKey(.kind)) },
+                    action: { appDelegate.currentFileManagerStore?.send(.changeGroupKey(.kind)) },
                     label: {
                         HStack {
                             Text("Kind")
-                            if AppDelegate.shared?.currentFileManagerStore?.fsItems.groupKey == .kind {
+                            if appDelegate.currentFileManagerStore?.fsItems.groupKey == .kind {
                                 Image(systemName: "checkmark")
                             }
                         }
@@ -81,11 +90,11 @@ struct ViewMenuCommands: Commands {
                 )
 
                 Button(
-                    action: { AppDelegate.shared?.currentFileManagerStore?.send(.changeGroupKey(.application)) },
+                    action: { appDelegate.currentFileManagerStore?.send(.changeGroupKey(.application)) },
                     label: {
                         HStack {
                             Text("Application")
-                            if AppDelegate.shared?.currentFileManagerStore?.fsItems.groupKey == .application {
+                            if appDelegate.currentFileManagerStore?.fsItems.groupKey == .application {
                                 Image(systemName: "checkmark")
                             }
                         }
@@ -93,11 +102,11 @@ struct ViewMenuCommands: Commands {
                 )
 
                 Button(
-                    action: { AppDelegate.shared?.currentFileManagerStore?.send(.changeGroupKey(.dateLastOpened)) },
+                    action: { appDelegate.currentFileManagerStore?.send(.changeGroupKey(.dateLastOpened)) },
                     label: {
                         HStack {
                             Text("Date Last Opened")
-                            if AppDelegate.shared?.currentFileManagerStore?.fsItems.groupKey == .dateLastOpened {
+                            if appDelegate.currentFileManagerStore?.fsItems.groupKey == .dateLastOpened {
                                 Image(systemName: "checkmark")
                             }
                         }
@@ -105,11 +114,11 @@ struct ViewMenuCommands: Commands {
                 )
 
                 Button(
-                    action: { AppDelegate.shared?.currentFileManagerStore?.send(.changeGroupKey(.dateAdded)) },
+                    action: { appDelegate.currentFileManagerStore?.send(.changeGroupKey(.dateAdded)) },
                     label: {
                         HStack {
                             Text("Date Added")
-                            if AppDelegate.shared?.currentFileManagerStore?.fsItems.groupKey == .dateAdded {
+                            if appDelegate.currentFileManagerStore?.fsItems.groupKey == .dateAdded {
                                 Image(systemName: "checkmark")
                             }
                         }
@@ -117,11 +126,11 @@ struct ViewMenuCommands: Commands {
                 )
 
                 Button(
-                    action: { AppDelegate.shared?.currentFileManagerStore?.send(.changeGroupKey(.dateModified)) },
+                    action: { appDelegate.currentFileManagerStore?.send(.changeGroupKey(.dateModified)) },
                     label: {
                         HStack {
                             Text("Date Modified")
-                            if AppDelegate.shared?.currentFileManagerStore?.fsItems.groupKey == .dateModified {
+                            if appDelegate.currentFileManagerStore?.fsItems.groupKey == .dateModified {
                                 Image(systemName: "checkmark")
                             }
                         }
@@ -129,11 +138,11 @@ struct ViewMenuCommands: Commands {
                 )
 
                 Button(
-                    action: { AppDelegate.shared?.currentFileManagerStore?.send(.changeGroupKey(.dateCreated)) },
+                    action: { appDelegate.currentFileManagerStore?.send(.changeGroupKey(.dateCreated)) },
                     label: {
                         HStack {
                             Text("Date Created")
-                            if AppDelegate.shared?.currentFileManagerStore?.fsItems.groupKey == .dateCreated {
+                            if appDelegate.currentFileManagerStore?.fsItems.groupKey == .dateCreated {
                                 Image(systemName: "checkmark")
                             }
                         }
@@ -141,22 +150,22 @@ struct ViewMenuCommands: Commands {
                 )
 
                 Button(
-                    action: { AppDelegate.shared?.currentFileManagerStore?.send(.changeGroupKey(.size)) },
+                    action: { appDelegate.currentFileManagerStore?.send(.changeGroupKey(.size)) },
                     label: {
                         HStack {
                             Text("Size")
-                            if AppDelegate.shared?.currentFileManagerStore?.fsItems.groupKey == .size {
+                            if appDelegate.currentFileManagerStore?.fsItems.groupKey == .size {
                                 Image(systemName: "checkmark")
                             }
                         }
                     }
                 )
                 Button(
-                    action: { AppDelegate.shared?.currentFileManagerStore?.send(.changeGroupKey(.tags)) },
+                    action: { appDelegate.currentFileManagerStore?.send(.changeGroupKey(.tags)) },
                     label: {
                         HStack {
                             Text("Tags")
-                            if AppDelegate.shared?.currentFileManagerStore?.fsItems.groupKey == .tags {
+                            if appDelegate.currentFileManagerStore?.fsItems.groupKey == .tags {
                                 Image(systemName: "checkmark")
                             }
                         }
@@ -168,11 +177,11 @@ struct ViewMenuCommands: Commands {
 
             Menu("Sort By") {
                 Button(
-                    action: { AppDelegate.shared?.currentFileManagerStore?.send(.changeSortKey(.name)) },
+                    action: { appDelegate.currentFileManagerStore?.send(.changeSortKey(.name)) },
                     label: {
                         HStack {
                             Text("Name")
-                            if AppDelegate.shared?.currentFileManagerStore?.sortKey == .name {
+                            if appDelegate.currentFileManagerStore?.sortKey == .name {
                                 Image(systemName: "checkmark")
                             }
                         }
@@ -180,11 +189,11 @@ struct ViewMenuCommands: Commands {
                 )
 
                 Button(
-                    action: { AppDelegate.shared?.currentFileManagerStore?.send(.changeSortKey(.kind)) },
+                    action: { appDelegate.currentFileManagerStore?.send(.changeSortKey(.kind)) },
                     label: {
                         HStack {
                             Text("Kind")
-                            if AppDelegate.shared?.currentFileManagerStore?.sortKey == .kind {
+                            if appDelegate.currentFileManagerStore?.sortKey == .kind {
                                 Image(systemName: "checkmark")
                             }
                         }
@@ -192,11 +201,11 @@ struct ViewMenuCommands: Commands {
                 )
 
                 Button(
-                    action: { AppDelegate.shared?.currentFileManagerStore?.send(.changeSortKey(.application)) },
+                    action: { appDelegate.currentFileManagerStore?.send(.changeSortKey(.application)) },
                     label: {
                         HStack {
                             Text("Application")
-                            if AppDelegate.shared?.currentFileManagerStore?.sortKey == .application {
+                            if appDelegate.currentFileManagerStore?.sortKey == .application {
                                 Image(systemName: "checkmark")
                             }
                         }
@@ -204,11 +213,11 @@ struct ViewMenuCommands: Commands {
                 )
 
                 Button(
-                    action: { AppDelegate.shared?.currentFileManagerStore?.send(.changeSortKey(.dateLastOpened)) },
+                    action: { appDelegate.currentFileManagerStore?.send(.changeSortKey(.dateLastOpened)) },
                     label: {
                         HStack {
                             Text("Date Last Opened")
-                            if AppDelegate.shared?.currentFileManagerStore?.sortKey == .dateLastOpened {
+                            if appDelegate.currentFileManagerStore?.sortKey == .dateLastOpened {
                                 Image(systemName: "checkmark")
                             }
                         }
@@ -216,11 +225,11 @@ struct ViewMenuCommands: Commands {
                 )
 
                 Button(
-                    action: { AppDelegate.shared?.currentFileManagerStore?.send(.changeSortKey(.dateAdded)) },
+                    action: { appDelegate.currentFileManagerStore?.send(.changeSortKey(.dateAdded)) },
                     label: {
                         HStack {
                             Text("Date Added")
-                            if AppDelegate.shared?.currentFileManagerStore?.sortKey == .dateAdded {
+                            if appDelegate.currentFileManagerStore?.sortKey == .dateAdded {
                                 Image(systemName: "checkmark")
                             }
                         }
@@ -228,11 +237,11 @@ struct ViewMenuCommands: Commands {
                 )
 
                 Button(
-                    action: { AppDelegate.shared?.currentFileManagerStore?.send(.changeSortKey(.dateModified)) },
+                    action: { appDelegate.currentFileManagerStore?.send(.changeSortKey(.dateModified)) },
                     label: {
                         HStack {
                             Text("Date Modified")
-                            if AppDelegate.shared?.currentFileManagerStore?.sortKey == .dateModified {
+                            if appDelegate.currentFileManagerStore?.sortKey == .dateModified {
                                 Image(systemName: "checkmark")
                             }
                         }
@@ -240,11 +249,11 @@ struct ViewMenuCommands: Commands {
                 )
 
                 Button(
-                    action: { AppDelegate.shared?.currentFileManagerStore?.send(.changeSortKey(.dateCreated)) },
+                    action: { appDelegate.currentFileManagerStore?.send(.changeSortKey(.dateCreated)) },
                     label: {
                         HStack {
                             Text("Date Created")
-                            if AppDelegate.shared?.currentFileManagerStore?.sortKey == .dateCreated {
+                            if appDelegate.currentFileManagerStore?.sortKey == .dateCreated {
                                 Image(systemName: "checkmark")
                             }
                         }
@@ -252,22 +261,22 @@ struct ViewMenuCommands: Commands {
                 )
 
                 Button(
-                    action: { AppDelegate.shared?.currentFileManagerStore?.send(.changeSortKey(.size)) },
+                    action: { appDelegate.currentFileManagerStore?.send(.changeSortKey(.size)) },
                     label: {
                         HStack {
                             Text("Size")
-                            if AppDelegate.shared?.currentFileManagerStore?.sortKey == .size {
+                            if appDelegate.currentFileManagerStore?.sortKey == .size {
                                 Image(systemName: "checkmark")
                             }
                         }
                     }
                 )
                 Button(
-                    action: { AppDelegate.shared?.currentFileManagerStore?.send(.changeSortKey(.tags)) },
+                    action: { appDelegate.currentFileManagerStore?.send(.changeSortKey(.tags)) },
                     label: {
                         HStack {
                             Text("Tags")
-                            if AppDelegate.shared?.currentFileManagerStore?.sortKey == .tags {
+                            if appDelegate.currentFileManagerStore?.sortKey == .tags {
                                 Image(systemName: "checkmark")
                             }
                         }
@@ -277,11 +286,11 @@ struct ViewMenuCommands: Commands {
                 Divider()
 
                 Button(
-                    action: { AppDelegate.shared?.currentFileManagerStore?.send(.changeSortOrder(.ascending)) },
+                    action: { appDelegate.currentFileManagerStore?.send(.changeSortOrder(.ascending)) },
                     label: {
                         HStack {
                             Text("Ascending")
-                            if AppDelegate.shared?.currentFileManagerStore?.sortOrder == .ascending {
+                            if appDelegate.currentFileManagerStore?.sortOrder == .ascending {
                                 Image(systemName: "checkmark")
                             }
                         }
@@ -289,18 +298,18 @@ struct ViewMenuCommands: Commands {
                 )
 
                 Button(
-                    action: { AppDelegate.shared?.currentFileManagerStore?.send(.changeSortOrder(.descending)) },
+                    action: { appDelegate.currentFileManagerStore?.send(.changeSortOrder(.descending)) },
                     label: {
                         HStack {
                             Text("Descending")
-                            if AppDelegate.shared?.currentFileManagerStore?.sortOrder == .descending {
+                            if appDelegate.currentFileManagerStore?.sortOrder == .descending {
                                 Image(systemName: "checkmark")
                             }
                         }
                     }
                 )
             }
-            .disabled(AppDelegate.shared?.currentFileManagerStore?.fsItems.groupKey != GroupKey.none)
+            .disabled(appDelegate.currentFileManagerStore?.fsItems.groupKey != GroupKey.none)
         }
     }
 }

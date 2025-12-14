@@ -1,3 +1,4 @@
+// swiftlint:disable file_length
 import AppKit
 import Combine
 import ComposableArchitecture
@@ -116,12 +117,33 @@ class FileManagerSplitViewController: NSViewController, NSSplitViewDelegate {
         store.send(.fsItems(.onAppear))
 
         observeInspectorState()
+        observeSidebarState()
     }
 
     private func observeInspectorState() {
         observationTask = Task { @MainActor in
             for await inspectorVisible in store.publisher.inspectorVisible.values {
                 updateInspectorPane(visible: inspectorVisible)
+            }
+        }
+    }
+
+    private func observeSidebarState() {
+        Task { @MainActor in
+            for await sidebarVisible in store.publisher.sidebarVisible.values {
+                guard let mainSplitView = mainSplitView,
+                      let sidebarView = sidebarHosting?.view else { continue }
+
+                if sidebarVisible {
+                    let savedWidth = UserDefaults.standard.object(forKey: "sidebarWidth") as? Double ?? 220
+                    mainSplitView.setPosition(CGFloat(savedWidth), ofDividerAt: 0)
+                } else {
+                    let currentWidth = sidebarView.frame.width
+                    if currentWidth > 0 {
+                        UserDefaults.standard.set(currentWidth, forKey: "sidebarWidth")
+                    }
+                    mainSplitView.setPosition(0, ofDividerAt: 0)
+                }
             }
         }
     }
@@ -133,7 +155,13 @@ class FileManagerSplitViewController: NSViewController, NSSplitViewDelegate {
               let mainSplitView = view as? NSSplitView,
               mainSplitView.bounds.width > 0 else { return }
 
-        mainSplitView.setPosition(220, ofDividerAt: 0)
+        let savedWidth = UserDefaults.standard.object(forKey: "sidebarWidth") as? Double ?? 220
+        if store.sidebarVisible {
+            mainSplitView.setPosition(CGFloat(savedWidth), ofDividerAt: 0)
+        } else {
+            mainSplitView.setPosition(0, ofDividerAt: 0)
+        }
+
         mainSplitView.adjustSubviews()
         hasSetInitialLayout = true
 
@@ -170,7 +198,7 @@ extension FileManagerSplitViewController {
     private func updateContentPaneColor(for view: NSView) {
         guard let mainSplit = mainSplitView else { return }
         let appearance = mainSplit.effectiveAppearance
-        let isDark = appearance.name == .darkAqua || appearance.name == .vibrantDark
+        let isDark = isDarkMode(appearance: appearance)
 
         appearance.performAsCurrentDrawingAppearance {
             if isDark {
@@ -478,3 +506,5 @@ extension FileManagerSplitViewController {
         updateContentInspectorLayout()
     }
 }
+
+// swiftlint:enable file_length
