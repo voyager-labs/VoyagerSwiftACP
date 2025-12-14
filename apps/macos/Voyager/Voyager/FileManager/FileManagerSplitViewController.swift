@@ -3,16 +3,49 @@ import Combine
 import ComposableArchitecture
 import SwiftUI
 
+class AppearanceAwareSplitView: NSSplitView {
+    var onAppearanceChanged: (() -> Void)?
+
+    override func viewDidChangeEffectiveAppearance() {
+        super.viewDidChangeEffectiveAppearance()
+        updateBackgroundColor()
+        onAppearanceChanged?()
+    }
+
+    override func viewDidMoveToWindow() {
+        super.viewDidMoveToWindow()
+        updateBackgroundColor()
+    }
+
+    func updateBackgroundColor() {
+        wantsLayer = true
+        let appearance = effectiveAppearance
+        let isDark = isDarkMode(appearance: appearance)
+
+        appearance.performAsCurrentDrawingAppearance {
+            layer?.backgroundColor = isDark
+                ? NSColor.controlBackgroundColor.cgColor
+                : NSColor(red: 245 / 255.0, green: 245 / 255.0, blue: 245 / 255.0, alpha: 1.0).cgColor
+        }
+    }
+
+    private func isDarkMode(appearance: NSAppearance) -> Bool {
+        appearance.name == .darkAqua || appearance.name == .vibrantDark
+    }
+}
+
 class FileManagerSplitViewController: NSViewController, NSSplitViewDelegate {
     let store: StoreOf<FileManagerFeature>
     let initialPath: String?
     private var hasSetInitialLayout = false
     private var inspectorHosting: NSViewController?
     private var observationTask: Task<Void, Never>?
+    private var sidebarHosting: NSViewController?
 
     private var contentInspectorContainer: NSView?
     private var contentHosting: NSViewController?
     private var contentInspectorDivider: ContentInspectorDivider?
+    private var mainSplitView: NSSplitView?
     private var inspectorWidth: CGFloat = 300
     private let contentVerticalMargin: CGFloat = 8
     private var contentLeadingConstraint: NSLayoutConstraint?
@@ -44,6 +77,7 @@ class FileManagerSplitViewController: NSViewController, NSSplitViewDelegate {
 
     override func loadView() {
         let mainSplit = createMainSplitView()
+        mainSplitView = mainSplit
         setupSidebar(in: mainSplit)
         setupContentContainer(in: mainSplit)
         view = mainSplit
@@ -64,6 +98,10 @@ class FileManagerSplitViewController: NSViewController, NSSplitViewDelegate {
 
     override func viewDidLoad() {
         super.viewDidLoad()
+
+        if let mainSplit = mainSplitView as? AppearanceAwareSplitView {
+            mainSplit.updateBackgroundColor()
+        }
 
         store.send(.loadFavorites)
         store.send(.loadLocations)
@@ -98,19 +136,49 @@ class FileManagerSplitViewController: NSViewController, NSSplitViewDelegate {
         mainSplitView.setPosition(220, ofDividerAt: 0)
         mainSplitView.adjustSubviews()
         hasSetInitialLayout = true
+
+        updateAllPaneColors()
     }
 }
 
 extension FileManagerSplitViewController {
     private func createMainSplitView() -> NSSplitView {
-        let mainSplit = NSSplitView()
+        let mainSplit = AppearanceAwareSplitView()
         mainSplit.isVertical = true
         mainSplit.dividerStyle = .thin
         mainSplit.setValue(NSColor.clear, forKey: "dividerColor")
         mainSplit.delegate = self
         mainSplit.wantsLayer = true
-        mainSplit.layer?.backgroundColor = NSColor.controlBackgroundColor.cgColor
+        mainSplit.updateBackgroundColor()
+
+        mainSplit.onAppearanceChanged = { [weak self] in
+            self?.updateAllPaneColors()
+        }
+
         return mainSplit
+    }
+
+    private func updateAllPaneColors() {
+        if let contentView = contentHosting?.view {
+            updateContentPaneColor(for: contentView)
+        }
+        if let inspectorView = inspectorHosting?.view {
+            updateInspectorPaneColor(for: inspectorView)
+        }
+    }
+
+    private func updateContentPaneColor(for view: NSView) {
+        guard let mainSplit = mainSplitView else { return }
+        let appearance = mainSplit.effectiveAppearance
+        let isDark = appearance.name == .darkAqua || appearance.name == .vibrantDark
+
+        appearance.performAsCurrentDrawingAppearance {
+            if isDark {
+                view.layer?.backgroundColor = NSColor(red: 0.16, green: 0.16, blue: 0.16, alpha: 1.0).cgColor
+            } else {
+                view.layer?.backgroundColor = NSColor.controlBackgroundColor.cgColor
+            }
+        }
     }
 
     private func setupSidebar(in mainSplit: NSSplitView) {
@@ -118,10 +186,14 @@ extension FileManagerSplitViewController {
             rootView: SidebarView(store: store).ignoresSafeArea(.all, edges: .top)
         )
         sidebarHosting.safeAreaRegions = []
+
+        sidebarHosting.view.wantsLayer = true
+
         mainSplit.addArrangedSubview(sidebarHosting.view)
         mainSplit.setHoldingPriority(.defaultLow - 1, forSubviewAt: 0)
         addChild(sidebarHosting)
-        setupBackgroundLayer(for: sidebarHosting.view)
+        self.sidebarHosting = sidebarHosting
+        setupSidebarLayer(for: sidebarHosting.view)
     }
 
     private func setupContentContainer(in mainSplit: NSSplitView) {
@@ -129,7 +201,6 @@ extension FileManagerSplitViewController {
 
         let container = NSView()
         container.wantsLayer = true
-        container.layer?.backgroundColor = NSColor.controlBackgroundColor.cgColor
         container.layer?.zPosition = 5
         container.layer?.cornerRadius = 16
         container.layer?.masksToBounds = true
@@ -190,7 +261,7 @@ extension FileManagerSplitViewController {
         )
     }
 
-    private func setupBackgroundLayer(for view: NSView) {
+    private func setupSidebarLayer(for view: NSView) {
         view.wantsLayer = true
         view.layer?.zPosition = 0
     }
@@ -198,13 +269,36 @@ extension FileManagerSplitViewController {
     private func setupElevatedLayer(for view: NSView) {
         view.wantsLayer = true
         view.layer?.zPosition = 10
-        view.layer?.backgroundColor = NSColor(red: 0.16, green: 0.16, blue: 0.16, alpha: 1.0).cgColor
+        updateContentPaneColor(for: view)
     }
 
     private func setupInspectorLayer(for view: NSView) {
         view.wantsLayer = true
         view.layer?.zPosition = 10
-        view.layer?.backgroundColor = NSColor.controlBackgroundColor.cgColor
+        updateInspectorPaneColor(for: view)
+    }
+
+    private func updateInspectorPaneColor(for view: NSView) {
+        guard let mainSplit = mainSplitView else { return }
+        let appearance = mainSplit.effectiveAppearance
+        let isDark = isDarkMode(appearance: appearance)
+
+        appearance.performAsCurrentDrawingAppearance {
+            if isDark {
+                view.layer?.backgroundColor = NSColor.controlBackgroundColor.cgColor
+            } else {
+                view.layer?.backgroundColor = NSColor(
+                    red: 245 / 255.0,
+                    green: 245 / 255.0,
+                    blue: 245 / 255.0,
+                    alpha: 1.0
+                ).cgColor
+            }
+        }
+    }
+
+    private func isDarkMode(appearance: NSAppearance) -> Bool {
+        appearance.name == .darkAqua || appearance.name == .vibrantDark
     }
 }
 
