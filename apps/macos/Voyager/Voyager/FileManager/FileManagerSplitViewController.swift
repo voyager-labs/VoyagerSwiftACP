@@ -504,6 +504,13 @@ extension FileManagerSplitViewController {
 
     func splitViewDidResizeSubviews(_: Notification) {
         updateContentInspectorLayout()
+
+        if let sidebarView = sidebarHosting?.view,
+           store.sidebarVisible,
+           sidebarView.frame.width > 0
+        {
+            UserDefaults.standard.set(sidebarView.frame.width, forKey: "sidebarWidth")
+        }
     }
 }
 
