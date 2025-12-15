@@ -62,8 +62,14 @@ struct ColumnHeaderView: View {
             )
         }
         .padding(.horizontal, layout.outerPadding)
-        .frame(height: 22)
+        .frame(height: 28)
         .background(Color.clear)
+        .overlay(
+            Rectangle()
+                .frame(height: 1)
+                .foregroundColor(Color(nsColor: .separatorColor)),
+            alignment: .top,
+        )
         .overlay(
             Rectangle()
                 .frame(height: 1)
@@ -102,8 +108,7 @@ struct ColumnHeaderView: View {
                     .foregroundColor(.accentColor)
             }
         }
-        .frame(width: width, alignment: alignment == .leading ? .leading : .trailing)
-        .padding(.vertical, 6)
+        .frame(width: width, height: 28, alignment: alignment == .leading ? .leading : .trailing)
     }
 
     @ViewBuilder

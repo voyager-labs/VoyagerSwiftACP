@@ -386,6 +386,8 @@ struct FSItemsFeature {
                         state.rangeAnchorId = nil
                         state.shouldScrollToSelection = true
                     }
+                } else {
+                    state.clearSelection()
                 }
 
                 return .run { send in

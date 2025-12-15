@@ -43,6 +43,7 @@ func makeContextMenuHandlers(
             isCommandPressed: isCommandPressed,
             isShiftPressed: isShiftPressed,
         ))
+        restoreFileManagerFocus()
     }
 
     let onOpen: () -> Void = {

@@ -6,6 +6,28 @@ struct ToolbarMenuView: View {
 
     var body: some View {
         Menu {
+            Button(
+                action: { store.send(.changeLayout(.list)) },
+                label: {
+                    HStack {
+                        Image(systemName: "list.bullet")
+                        Text("List")
+                    }
+                }
+            )
+
+            Button(
+                action: { store.send(.changeLayout(.grid)) },
+                label: {
+                    HStack {
+                        Image(systemName: "square.grid.2x2")
+                        Text("Grid")
+                    }
+                }
+            )
+
+            Divider()
+
             Button("New Folder") {
                 store.send(.fsItems(.createNewFolder(currentPath: store.currentPath)))
             }
@@ -265,9 +287,16 @@ struct ToolbarMenuView: View {
             }
             .disabled(store.fsItems.groupKey != .none)
         } label: {
-            Image(systemName: "ellipsis")
+            Image(systemName: "chevron.down")
+                .font(.system(size: 12))
+                .foregroundColor(.secondary)
+                .frame(width: 32, height: 32)
+                .background(
+                    RoundedRectangle(cornerRadius: 5)
+                        .fill(Color(nsColor: .controlBackgroundColor))
+                )
         }
         .menuIndicator(.hidden)
-        .frame(minWidth: 32)
+        .buttonStyle(.plain)
     }
 }

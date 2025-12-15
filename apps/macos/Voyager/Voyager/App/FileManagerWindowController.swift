@@ -1,10 +1,12 @@
 import AppKit
+import Combine
 import ComposableArchitecture
 import SwiftUI
 
 class FileManagerWindowController: NSWindowController, NSWindowDelegate {
     private let initialPath: String?
     let store: StoreOf<FileManagerFeature>
+    private var cancellables: Set<AnyCancellable> = []
 
     init(path: String? = nil, duplicateState: FileManagerFeature.State? = nil, asTab: Bool = true) {
         initialPath = path
@@ -21,20 +23,16 @@ class FileManagerWindowController: NSWindowController, NSWindowDelegate {
         store = Store(initialState: state) {
             FileManagerFeature()
         }
-        let rootView = FileManagerView(store: store, initialPath: path)
-        let hostingController = NSHostingController(rootView: rootView)
 
-        let window = NSWindow(contentViewController: hostingController)
+        let splitViewController = FileManagerSplitViewController(store: store, initialPath: path)
+        let window = NSWindow(contentViewController: splitViewController)
         window.styleMask = [.titled, .closable, .miniaturizable, .resizable, .fullSizeContentView]
         window.minSize = NSSize(width: 600, height: 350)
 
-        let desiredSize = NSSize(width: 960, height: 510)
-        let screenFrame = NSScreen.main?.visibleFrame ?? NSRect.zero
-        let origin = NSPoint(
-            x: screenFrame.midX - desiredSize.width / 2,
-            y: screenFrame.midY - desiredSize.height / 2,
-        )
-        window.setFrame(NSRect(origin: origin, size: desiredSize), display: false)
+        window.titlebarAppearsTransparent = true
+        window.titleVisibility = .hidden
+        window.toolbar = nil
+        window.isMovableByWindowBackground = true
 
         if asTab {
             window.tabbingMode = .preferred
@@ -48,6 +46,21 @@ class FileManagerWindowController: NSWindowController, NSWindowDelegate {
 
         window.setFrameAutosaveName("VoyagerMainWindow")
 
+        if !window.setFrameUsingName("VoyagerMainWindow") {
+            let desiredSize: NSSize = if let existingWindow = AppDelegate.shared?.windowControllers.first?.window {
+                existingWindow.frame.size
+            } else {
+                NSSize(width: 960, height: 510)
+            }
+
+            let screenFrame = NSScreen.main?.visibleFrame ?? NSRect.zero
+            let origin = NSPoint(
+                x: screenFrame.midX - desiredSize.width / 2,
+                y: screenFrame.midY - desiredSize.height / 2,
+            )
+            window.setFrame(NSRect(origin: origin, size: desiredSize), display: false)
+        }
+
         window.title = FileManagerFeature.makeWindowTitle(for: path ?? state.currentPath)
     }
 
@@ -58,6 +71,28 @@ class FileManagerWindowController: NSWindowController, NSWindowDelegate {
 
     func windowDidBecomeKey(_: Notification) {
         AppDelegate.shared?.updateFocusHistory(window: window)
+        observeStoreChanges()
+    }
+
+    private func observeStoreChanges() {
+        cancellables.removeAll()
+
+        let updateMenuStateIfKeyWindow: () -> Void = { [weak self] in
+            guard let self, window?.isKeyWindow == true else { return }
+            AppDelegate.shared?.updateMenuState(store: store)
+        }
+
+        store.publisher.fsItems.selectedIds
+            .removeDuplicates()
+            .sink { _ in updateMenuStateIfKeyWindow() }
+            .store(in: &cancellables)
+
+        store.publisher.fsItems.clipboardItems
+            .removeDuplicates()
+            .sink { _ in updateMenuStateIfKeyWindow() }
+            .store(in: &cancellables)
+
+        updateMenuStateIfKeyWindow()
     }
 
     func windowWillClose(_: Notification) {

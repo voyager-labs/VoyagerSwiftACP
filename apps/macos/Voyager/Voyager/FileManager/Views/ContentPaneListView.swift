@@ -112,9 +112,6 @@ struct ContentPaneListView: View {
         store: StoreOf<FileManagerFeature>,
         isTrashFolder: Bool = false,
     ) -> FSItemListView {
-        let selectedIds = fsStore.selectedIds
-        let clipboardItems = fsStore.clipboardItems
-        let thumbnailsReady = fsStore.thumbnailsReady
         let props = buildItemRowProps(
             item: item,
             fsStore: fsStore,
@@ -123,7 +120,25 @@ struct ContentPaneListView: View {
             isTrashFolder: isTrashFolder,
         )
 
-        FSItemListView(
+        buildFSItemListView(
+            item: item,
+            fsStore: fsStore,
+            store: store,
+            props: props
+        )
+    }
+
+    private func buildFSItemListView(
+        item: FSItem,
+        fsStore: Store<FSItemsFeature.State, FSItemsFeature.Action>,
+        store: StoreOf<FileManagerFeature>,
+        props: ItemRowProps
+    ) -> FSItemListView {
+        let selectedIds = fsStore.selectedIds
+        let clipboardItems = fsStore.clipboardItems
+        let thumbnailsReady = fsStore.thumbnailsReady
+
+        return FSItemListView(
             item: item,
             isSelected: selectedIds.contains(item.id),
             isCut: clipboardItems.contains(item.fullPath) && fsStore.clipboardOperation == .cut,
@@ -280,6 +295,7 @@ struct ContentPaneListView: View {
             fsStore.send(.commitRename)
         }
         fsStore.send(.clearSelection)
+        restoreFileManagerFocus()
     }
 
     @ViewBuilder
@@ -360,6 +376,7 @@ struct ContentPaneListView: View {
                                         fsStore.send(.commitRename)
                                     }
                                     fsStore.send(.clearSelection)
+                                    restoreFileManagerFocus()
                                 }
 
                             LazyVStack(alignment: .leading, spacing: 0) {
