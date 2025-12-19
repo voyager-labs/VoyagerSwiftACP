@@ -117,6 +117,11 @@
             value = "source"
             isEnabled = "YES">
          </EnvironmentVariable>
+         <EnvironmentVariable
+            key = "VOYAGER_PROJECT_ROOT"
+            value = "$(SRCROOT)/../../.."
+            isEnabled = "YES">
+         </EnvironmentVariable>
       </EnvironmentVariables>
    </LaunchAction>
    <ProfileAction

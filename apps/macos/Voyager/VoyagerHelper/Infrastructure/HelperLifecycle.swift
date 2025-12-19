@@ -12,6 +12,7 @@ final class HelperLifecycle {
 
     func start() {
         installSignalHandlers()
+        processRunner.startIfNeeded()
     }
 
     func stop() {

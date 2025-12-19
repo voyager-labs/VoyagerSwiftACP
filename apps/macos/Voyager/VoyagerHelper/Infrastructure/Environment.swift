@@ -27,29 +27,30 @@ struct Environment {
         environmentType = Self.detectEnvironmentType()
         backendMode = Self.detectBackendMode()
 
-        Self.loadEnvFile(environmentType.envFileName)
+        Self.loadEnvFile(environmentType.envFileName, for: backendMode)
 
         envVars = Dotenv.values
     }
 
-    private static func loadEnvFile(_ envFileName: String) {
-        if let resources = Bundle.main.resourceURL {
-            let bundledEnv = resources.appendingPathComponent(envFileName)
-            if FileManager.default.fileExists(atPath: bundledEnv.path) {
-                try? Dotenv.configure(atPath: bundledEnv.path, overwrite: true)
-                return
+    private static func loadEnvFile(_ envFileName: String, for backendMode: BackendMode) {
+        switch backendMode {
+        case .source:
+            if let projectRoot = findProjectRoot() {
+                let projectEnv = projectRoot.appendingPathComponent(envFileName)
+                if FileManager.default.fileExists(atPath: projectEnv.path) {
+                    try? Dotenv.configure(atPath: projectEnv.path, overwrite: true)
+                    return
+                }
+            }
+        case .bundled:
+            if let resources = Bundle.main.resourceURL {
+                let bundledEnv = resources.appendingPathComponent(envFileName)
+                if FileManager.default.fileExists(atPath: bundledEnv.path) {
+                    try? Dotenv.configure(atPath: bundledEnv.path, overwrite: true)
+                    return
+                }
             }
         }
-
-        if let projectRoot = findProjectRoot() {
-            let projectEnv = projectRoot.appendingPathComponent(envFileName)
-            if FileManager.default.fileExists(atPath: projectEnv.path) {
-                try? Dotenv.configure(atPath: projectEnv.path, overwrite: true)
-                return
-            }
-        }
-
-        try? Dotenv.configure()
     }
 
     private static func detectEnvironmentType() -> EnvironmentType {
@@ -106,33 +107,19 @@ struct Environment {
     }
 
     private static func findProjectRoot() -> URL? {
-        let envFiles = [".env.dev", ".env.prod"]
-        let startPoints = [
-            URL(fileURLWithPath: FileManager.default.currentDirectoryPath),
-            Bundle.main.bundleURL,
-        ]
-
-        for start in startPoints {
-            if let found = searchUpwards(from: start, for: envFiles, maxDepth: 20) {
-                return found
-            }
+        // 환경 변수에서 프로젝트 루트 읽기 (Xcode 스킴에서 설정)
+        if let envRoot = ProcessInfo.processInfo.environment["VOYAGER_PROJECT_ROOT"],
+           !envRoot.isEmpty
+        {
+            return URL(fileURLWithPath: envRoot)
         }
-        return nil
-    }
 
-    private static func searchUpwards(from start: URL, for markerFiles: [String], maxDepth: Int) -> URL? {
-        let fm = FileManager.default
-        var current = start
-
-        for _ in 0 ..< maxDepth {
-            for marker in markerFiles where fm.fileExists(atPath: current.appendingPathComponent(marker).path) {
-                return current
-            }
-
-            let parent = current.deletingLastPathComponent()
-            if parent.path == current.path { break }
-            current = parent
+        // 현재 디렉토리에서 프로젝트 루트 찾기
+        let cwd = FileManager.default.currentDirectoryPath
+        if !cwd.isEmpty, cwd != "/" {
+            return URL(fileURLWithPath: cwd)
         }
+
         return nil
     }
 
