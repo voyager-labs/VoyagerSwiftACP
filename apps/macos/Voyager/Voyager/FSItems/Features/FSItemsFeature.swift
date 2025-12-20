@@ -25,6 +25,7 @@ struct FSItemsFeature {
         var lastSelectedId: String?
         var rangeAnchorId: String?
         var isLoading: Bool = false
+        var isReloading: Bool = false
         var showHiddenFiles: Bool = false
         var shouldScrollToSelection: Bool = false
 
@@ -307,6 +308,7 @@ struct FSItemsFeature {
 
             case .reloadItems:
                 guard let path = state.currentFolderPath else { return .none }
+                state.isReloading = true
 
                 return .run { [fsItemClient, showHidden = state.showHiddenFiles, path] send in
                     let url = URL(fileURLWithPath: (path as NSString).expandingTildeInPath)
@@ -386,6 +388,10 @@ struct FSItemsFeature {
                         state.rangeAnchorId = nil
                         state.shouldScrollToSelection = true
                     }
+                } else if state.isReloading {
+                    let validIds = Set(state.items.map { $0.id })
+                    state.selectedIds = state.selectedIds.intersection(validIds)
+                    state.isReloading = false
                 } else {
                     state.clearSelection()
                 }
