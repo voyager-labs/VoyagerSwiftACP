@@ -5,6 +5,7 @@ import SwiftUI
 
 @preconcurrency import ObjectiveC
 
+// swiftlint:disable type_body_length
 enum SidebarUtils {
     struct LocationItem: Equatable {
         let name: String
@@ -35,14 +36,56 @@ enum SidebarUtils {
         let color: Color
     }
 
-    struct FavoriteItem: Equatable {
+    struct FavoriteItem: Equatable, Codable {
         let name: String
         let url: URL
         let iconName: String
+
+        // swiftlint:disable:next nesting
+        enum CodingKeys: String, CodingKey {
+            case name
+            case url
+            case iconName
+        }
+
+        init(name: String, url: URL, iconName: String) {
+            self.name = name
+            self.url = url
+            self.iconName = iconName
+        }
+
+        init(from decoder: Decoder) throws {
+            let container = try decoder.container(keyedBy: CodingKeys.self)
+            name = try container.decode(String.self, forKey: .name)
+            let urlString = try container.decode(String.self, forKey: .url)
+            guard let decodedURL = URL(string: urlString) else {
+                throw DecodingError.dataCorruptedError(
+                    forKey: .url,
+                    in: container,
+                    debugDescription: "Invalid URL string"
+                )
+            }
+            url = decodedURL
+            iconName = try container.decode(String.self, forKey: .iconName)
+        }
+
+        func encode(to encoder: Encoder) throws {
+            var container = encoder.container(keyedBy: CodingKeys.self)
+            try container.encode(name, forKey: .name)
+            try container.encode(url.absoluteString, forKey: .url)
+            try container.encode(iconName, forKey: .iconName)
+        }
     }
 
     @MainActor
-    static func loadFavorites() -> [FavoriteItem] {
+    static func saveFavorites(_ favorites: [FavoriteItem]) {
+        if let encoded = try? JSONEncoder().encode(favorites) {
+            UserDefaults.standard.set(encoded, forKey: "favorites")
+        }
+    }
+
+    @MainActor
+    static func initializeDefaultFavorites() -> [FavoriteItem] {
         func makeFavorite(
             name: String,
             directory: FileManager.SearchPathDirectory,
@@ -64,6 +107,20 @@ enum SidebarUtils {
             makeFavorite(name: "Documents", directory: .documentDirectory, iconName: "doc"),
             makeFavorite(name: "Downloads", directory: .downloadsDirectory, iconName: "arrow.down.circle"),
         ].compactMap { $0 }
+    }
+
+    @MainActor
+    static func loadFavorites() -> [FavoriteItem] {
+        if let data = UserDefaults.standard.data(forKey: "favorites"),
+           let favorites = try? JSONDecoder().decode([FavoriteItem].self, from: data),
+           !favorites.isEmpty
+        {
+            return favorites
+        }
+
+        let defaultFavorites = initializeDefaultFavorites()
+        saveFavorites(defaultFavorites)
+        return defaultFavorites
     }
 
     @MainActor
@@ -350,3 +407,5 @@ enum SidebarUtils {
         }
     }
 }
+
+// swiftlint:enable type_body_length
