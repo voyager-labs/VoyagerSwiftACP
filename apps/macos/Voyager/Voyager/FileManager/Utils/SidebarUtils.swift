@@ -84,6 +84,35 @@ enum SidebarUtils {
         }
     }
 
+    static func iconNameForURL(_ url: URL, isDirectory: Bool) -> String {
+        guard isDirectory else { return "doc" }
+
+        let path = url.path
+
+        if path == NSHomeDirectory() { return "house" }
+
+        if path.hasPrefix("/Volumes/") { return "externaldrive" }
+
+        let fm = FileManager.default
+        // swiftlint:disable:next large_tuple
+        let mappings: [(FileManager.SearchPathDirectory, FileManager.SearchPathDomainMask, String)] = [
+            (.applicationDirectory, .localDomainMask, "folder.badge.gearshape"),
+            (.desktopDirectory, .userDomainMask, "desktopcomputer"),
+            (.documentDirectory, .userDomainMask, "doc.text"),
+            (.downloadsDirectory, .userDomainMask, "arrow.down.circle"),
+            (.moviesDirectory, .userDomainMask, "film"),
+            (.musicDirectory, .userDomainMask, "music.note"),
+            (.picturesDirectory, .userDomainMask, "photo"),
+            (.trashDirectory, .userDomainMask, "trash"),
+        ]
+
+        for (dir, domain, icon) in mappings where fm.urls(for: dir, in: domain).first?.path == path {
+            return icon
+        }
+
+        return "folder"
+    }
+
     @MainActor
     static func initializeDefaultFavorites() -> [FavoriteItem] {
         func makeFavorite(

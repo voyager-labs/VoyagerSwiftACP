@@ -529,7 +529,7 @@ struct FileManagerFeature {
                 }
 
                 let name = FileManager.default.displayName(atPath: url.path)
-                let iconName = isDirectory.boolValue ? "folder" : "doc"
+                let iconName = SidebarUtils.iconNameForURL(url, isDirectory: isDirectory.boolValue)
                 let newFavorite = SidebarUtils.FavoriteItem(name: name, url: url, iconName: iconName)
 
                 let insertIndex = max(0, min(index, state.favorites.count))
