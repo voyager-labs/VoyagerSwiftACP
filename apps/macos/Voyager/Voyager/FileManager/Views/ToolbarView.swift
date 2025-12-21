@@ -193,6 +193,21 @@ struct ToolbarView: View {
             HStack(spacing: 8) {
                 scopeChip
 
+                // 스코프 추가 버튼
+                Button {
+                    // TODO: openScopeMenu (voy-95에서 구현)
+                } label: {
+                    Image(systemName: "plus")
+                        .font(.system(size: 11, weight: .medium))
+                        .foregroundColor(.secondary)
+                        .frame(width: 20, height: 20)
+                        .background(
+                            RoundedRectangle(cornerRadius: 4)
+                                .fill(isDark ? Color.white.opacity(0.1) : Color.black.opacity(0.08))
+                        )
+                }
+                .buttonStyle(.borderless)
+
                 // 필터 칩 영역 (추후 백엔드 응답 시 생성)
                 // TODO: filterChips forEach
 
@@ -203,19 +218,10 @@ struct ToolbarView: View {
     }
 
     private var scopeChip: some View {
-        HStack(spacing: 4) {
-            Image(systemName: "folder")
-                .font(.system(size: 10))
-            Text(FileManager.default.displayName(atPath: store.currentPath))
-                .font(.system(size: 11, weight: .medium))
-        }
-        .padding(.horizontal, 8)
-        .padding(.vertical, 4)
-        .background(
-            RoundedRectangle(cornerRadius: 6)
-                .fill(isDark ? Color.white.opacity(0.1) : Color.black.opacity(0.08))
+        ScopeChipView(
+            path: store.currentPath,
+            isDark: isDark
         )
-        .foregroundColor(.primary.opacity(0.8))
     }
 
     private var toolbarBackgroundColor: Color {
@@ -230,6 +236,38 @@ struct ToolbarView: View {
         if let monitor = escKeyMonitor {
             NSEvent.removeMonitor(monitor)
             escKeyMonitor = nil
+        }
+    }
+}
+
+private struct ScopeChipView: View {
+    let path: String
+    let isDark: Bool
+    @State private var isHovered: Bool = false
+
+    var body: some View {
+        HStack(spacing: 4) {
+            Button {
+                // TODO: removeScopeDirectory(path) (voy-95에서 구현)
+            } label: {
+                Image(systemName: isHovered ? "xmark.circle.fill" : "folder")
+                    .font(.system(size: 10))
+                    .foregroundColor(.secondary)
+            }
+            .buttonStyle(.borderless)
+
+            Text(FileManager.default.displayName(atPath: path))
+                .font(.system(size: 11, weight: .medium))
+        }
+        .padding(.horizontal, 8)
+        .padding(.vertical, 4)
+        .background(
+            RoundedRectangle(cornerRadius: 6)
+                .fill(isDark ? Color.white.opacity(0.1) : Color.black.opacity(0.08))
+        )
+        .foregroundColor(.primary.opacity(0.8))
+        .onHover { hovering in
+            isHovered = hovering
         }
     }
 }
