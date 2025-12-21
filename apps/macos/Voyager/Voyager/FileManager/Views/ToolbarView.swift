@@ -191,39 +191,52 @@ struct ToolbarView: View {
                 .frame(height: 1)
 
             HStack(spacing: 8) {
-                scopeChip
+                // TODO: store.filterScopes 사용 (voy-95에서 구현)
+                // 현재는 현재 경로만 표시
+                ForEach([store.currentPath], id: \.self) { scopePath in
+                    ScopeChipView(
+                        path: scopePath,
+                        isDark: isDark,
+                        favorites: store.favorites,
+                        backHistory: store.backHistory
+                    )
+                }
 
                 // 스코프 추가 버튼
-                Button {
+                addButton(action: {
                     // TODO: openScopeMenu (voy-95에서 구현)
-                } label: {
-                    Image(systemName: "plus")
+                })
+
+                // 스코프 칩 영역과 필터 칩 영역 사이 구분선
+                separatorLine
+
+                // 필터 칩 영역
+                // TODO: store.filterConditions 사용 (voy-95에서 구현)
+                // 테스트용 더미 데이터 (나중에 제거 필요)
+                // Property, Operator, Value 구조는 voy-95에서 확정 후 구현
+                ForEach(["name contains test", "size > 100KB", "modified < 7 days"], id: \.self) { filterText in
+                    // TODO: FilterChipView 구현 (voy-95에서 구현)
+                    // Property, Operator, Value 각각 수정 가능하도록 구현 예정
+                    Text(filterText)
                         .font(.system(size: 11, weight: .medium))
-                        .foregroundColor(.secondary)
-                        .frame(width: 20, height: 20)
+                        .foregroundColor(.primary.opacity(0.8))
+                        .padding(.horizontal, 8)
+                        .padding(.vertical, 4)
                         .background(
-                            RoundedRectangle(cornerRadius: 4)
+                            RoundedRectangle(cornerRadius: 6)
                                 .fill(isDark ? Color.white.opacity(0.1) : Color.black.opacity(0.08))
                         )
                 }
-                .buttonStyle(.borderless)
 
-                // 필터 칩 영역 (추후 백엔드 응답 시 생성)
-                // TODO: filterChips forEach
+                // 필터 추가 버튼
+                addButton(action: {
+                    // TODO: addFilter (voy-95에서 구현)
+                })
 
                 Spacer()
             }
             .padding(.top, 8)
         }
-    }
-
-    private var scopeChip: some View {
-        ScopeChipView(
-            path: store.currentPath,
-            isDark: isDark,
-            favorites: store.favorites,
-            backHistory: store.backHistory
-        )
     }
 
     private var toolbarBackgroundColor: Color {
@@ -232,6 +245,27 @@ struct ToolbarView: View {
         } else {
             return Color(nsColor: .controlBackgroundColor)
         }
+    }
+
+    private var separatorLine: some View {
+        Rectangle()
+            .fill(isDark ? Color.white.opacity(0.1) : Color.black.opacity(0.1))
+            .frame(width: 1)
+            .frame(height: 20)
+    }
+
+    private func addButton(action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            Image(systemName: "plus")
+                .font(.system(size: 11, weight: .medium))
+                .foregroundColor(.secondary)
+                .frame(width: 20, height: 20)
+                .background(
+                    RoundedRectangle(cornerRadius: 4)
+                        .fill(isDark ? Color.white.opacity(0.1) : Color.black.opacity(0.08))
+                )
+        }
+        .buttonStyle(.borderless)
     }
 
     private func cleanupEscKeyMonitor() {
