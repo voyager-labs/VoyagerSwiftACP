@@ -42,7 +42,7 @@ struct SidebarItemView: View {
             Spacer()
         }
         .padding(.horizontal, 12)
-        .padding(.vertical, 6)
+        .padding(.vertical, 4)
         .background(backgroundView)
         .padding(.horizontal, 8)
         .contentShape(Rectangle())
@@ -93,7 +93,7 @@ struct TagItemView: View {
             Spacer()
         }
         .padding(.horizontal, 12)
-        .padding(.vertical, 6)
+        .padding(.vertical, 4)
         .background(backgroundView)
         .padding(.horizontal, 8)
         .contentShape(Rectangle())
@@ -144,12 +144,15 @@ private struct SidebarSectionHeader: View {
 
 struct SidebarView: View {
     let store: StoreOf<FileManagerFeature>
+    @State private var isDark: Bool = isDarkMode()
+    @State private var dropTargetIndex: Int?
+    @Environment(\.colorScheme)
+    var colorScheme
 
     var body: some View {
         VStack(spacing: 0) {
-            Color(nsColor: .controlBackgroundColor)
+            sidebarBackgroundColor
                 .frame(height: 50)
-                .ignoresSafeArea(.all, edges: .top)
 
             ScrollView {
                 VStack(alignment: .leading, spacing: 0) {
@@ -187,7 +190,7 @@ struct SidebarView: View {
             .clipped()
         }
         .frame(minWidth: 150)
-        .background(Color(nsColor: NSColor.controlBackgroundColor)) // 시스템 색상 (Container, 인스펙터 패인과 동일)
+        .background(sidebarBackgroundColor)
         .navigationSplitViewColumnWidth(ideal: {
             if let savedWidth = UserDefaults.standard.object(forKey: "sidebarWidth") as? Double,
                savedWidth > 0
@@ -204,12 +207,18 @@ struct SidebarView: View {
                     }
             }
         )
+        .onAppear {
+            isDark = isDarkMode()
+        }
+        .onChange(of: colorScheme) { newScheme in
+            isDark = newScheme == .dark
+        }
     }
 
     private var favoritesSection: some View {
         Group {
             if !store.favorites.isEmpty {
-                VStack(alignment: .leading, spacing: 4) {
+                VStack(alignment: .leading, spacing: 0) {
                     SidebarSectionHeader(
                         title: "Favorites",
                         isCollapsed: store.isFavoritesCollapsed,
@@ -220,7 +229,9 @@ struct SidebarView: View {
                     .padding(.top, 8)
 
                     if !store.isFavoritesCollapsed {
-                        ForEach(store.favorites, id: \.url) { favorite in
+                        favoriteDropIndicator(at: 0)
+
+                        ForEach(Array(store.favorites.enumerated()), id: \.element.url) { index, favorite in
                             SidebarItemView(
                                 iconName: favorite.iconName,
                                 title: favorite.name,
@@ -231,9 +242,19 @@ struct SidebarView: View {
                                     store.send(.openFavorite(favorite))
                                 },
                                 onDrop: { providers, targetURL in
-                                    store.send(.dropItemsToSidebarFolder(providers: providers, targetURL: targetURL))
+                                    store.send(.dropItemsToSidebarFolder(
+                                        providers: providers,
+                                        targetURL: targetURL
+                                    ))
                                 }
                             )
+                            .contextMenu {
+                                Button("Remove from Sidebar") {
+                                    store.send(.removeFavorite(favorite))
+                                }
+                            }
+
+                            favoriteDropIndicator(at: index + 1)
                         }
                     }
                 }
@@ -241,10 +262,63 @@ struct SidebarView: View {
         }
     }
 
+    @ViewBuilder
+    private func favoriteDropIndicator(at index: Int) -> some View {
+        let isActive = dropTargetIndex == index
+
+        Rectangle()
+            .fill(Color.clear)
+            .frame(height: 4)
+            .frame(maxWidth: .infinity)
+            .overlay(
+                Group {
+                    if isActive {
+                        Rectangle()
+                            .fill(Color.accentColor)
+                            .frame(height: 2)
+                    }
+                }
+            )
+            .padding(.horizontal, 8)
+            .contentShape(Rectangle())
+            .onDrop(of: [UTType.fileURL], isTargeted: Binding(
+                get: { dropTargetIndex == index },
+                set: { isTargeted in
+                    if isTargeted {
+                        dropTargetIndex = index
+                    } else if dropTargetIndex == index {
+                        dropTargetIndex = nil
+                    }
+                }
+            )) { providers in
+                handleFavoriteInsert(providers: providers, at: index)
+            }
+    }
+
+    private func handleFavoriteInsert(providers: [NSItemProvider], at index: Int) -> Bool {
+        dropTargetIndex = nil
+
+        var hasProvider = false
+        for provider in providers where provider.hasItemConformingToTypeIdentifier(UTType.fileURL.identifier) {
+            hasProvider = true
+            provider.loadItem(forTypeIdentifier: UTType.fileURL.identifier, options: nil) { data, _ in
+                if let data = data as? Data,
+                   let urlString = String(data: data, encoding: .utf8),
+                   let url = URL(string: urlString)
+                {
+                    Task { @MainActor in
+                        store.send(.insertFavorite(url: url, at: index))
+                    }
+                }
+            }
+        }
+        return hasProvider
+    }
+
     private var locationsSection: some View {
         Group {
             if !store.locations.isEmpty {
-                VStack(alignment: .leading, spacing: 4) {
+                VStack(alignment: .leading, spacing: 0) {
                     SidebarSectionHeader(
                         title: "Locations",
                         isCollapsed: store.isLocationsCollapsed,
@@ -283,7 +357,7 @@ struct SidebarView: View {
     private var tagsSection: some View {
         Group {
             if !store.tags.isEmpty {
-                VStack(alignment: .leading, spacing: 4) {
+                VStack(alignment: .leading, spacing: 0) {
                     SidebarSectionHeader(
                         title: "Tags",
                         isCollapsed: store.isTagsCollapsed,
@@ -309,6 +383,14 @@ struct SidebarView: View {
                     }
                 }
             }
+        }
+    }
+
+    private var sidebarBackgroundColor: Color {
+        if isDark {
+            return Color(nsColor: .controlBackgroundColor)
+        } else {
+            return Color(red: 245 / 255.0, green: 245 / 255.0, blue: 245 / 255.0)
         }
     }
 }

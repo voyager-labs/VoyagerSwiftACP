@@ -227,6 +227,9 @@ struct FileManagerFeature {
         case loadFavorites
         case favoritesLoaded([SidebarUtils.FavoriteItem])
         case openFavorite(SidebarUtils.FavoriteItem)
+        case insertFavorite(url: URL, at: Int)
+        case removeFavorite(SidebarUtils.FavoriteItem)
+        case reorderFavorites(from: IndexSet, to: Int)
 
         case loadLocations
         case locationsLoaded([SidebarUtils.LocationItem])
@@ -514,6 +517,47 @@ struct FileManagerFeature {
                 guard state.currentPath != favorite.url.path else { return .none }
                 state.navigateToFolder(favorite.url.path, sidebarItemName: favorite.name)
                 return .send(.fsItems(.loadItems(path: favorite.url.path)))
+
+            case let .insertFavorite(url, index):
+                if state.favorites.contains(where: { $0.url.path == url.path }) {
+                    return .none
+                }
+
+                var isDirectory: ObjCBool = false
+                guard FileManager.default.fileExists(atPath: url.path, isDirectory: &isDirectory) else {
+                    return .none
+                }
+
+                let name = FileManager.default.displayName(atPath: url.path)
+                let iconName = SidebarUtils.iconNameForURL(url, isDirectory: isDirectory.boolValue)
+                let newFavorite = SidebarUtils.FavoriteItem(name: name, url: url, iconName: iconName)
+
+                let insertIndex = max(0, min(index, state.favorites.count))
+                state.favorites.insert(newFavorite, at: insertIndex)
+                SidebarUtils.saveFavorites(state.favorites)
+                return .none
+
+            case let .removeFavorite(favorite):
+                state.favorites.removeAll { $0.url.path == favorite.url.path }
+                SidebarUtils.saveFavorites(state.favorites)
+                return .none
+
+            case let .reorderFavorites(source, destination):
+                var reordered = state.favorites
+                let sortedIndices = source.sorted(by: >)
+                var itemsToMove: [SidebarUtils.FavoriteItem] = []
+                for index in sortedIndices {
+                    itemsToMove.insert(reordered.remove(at: index), at: 0)
+                }
+                let maxSourceIndex = source.max() ?? 0
+                let adjustedDestination = destination > maxSourceIndex
+                    ? destination - itemsToMove.count
+                    : destination
+                let insertIndex = max(0, min(adjustedDestination, reordered.count))
+                reordered.insert(contentsOf: itemsToMove, at: insertIndex)
+                state.favorites = reordered
+                SidebarUtils.saveFavorites(state.favorites)
+                return .none
 
             case .loadLocations:
                 return .run { send in
