@@ -2,13 +2,22 @@ import AppKit
 import ComposableArchitecture
 import SwiftUI
 
+private struct ChipSizePreferenceKey: PreferenceKey {
+    static var defaultValue: [AnyHashable: CGSize] = [:]
+
+    static func reduce(value: inout [AnyHashable: CGSize], nextValue: () -> [AnyHashable: CGSize]) {
+        value.merge(nextValue()) { _, new in new }
+    }
+}
+
+// swiftlint:disable type_body_length
 struct ComposeModeOverlay: View {
     let store: StoreOf<FileManagerFeature>
     @State private var isDark: Bool = isDarkMode()
     @State private var localComposeText: String = ""
     @FocusState private var isComposeFieldFocused: Bool
     @Environment(\.colorScheme)
-    var colorScheme
+    private var colorScheme: ColorScheme
     @State private var escKeyMonitor: Any?
 
     private let trafficLightAreaWidth: CGFloat = 80
@@ -35,13 +44,15 @@ struct ComposeModeOverlay: View {
     private var mainContent: some View {
         VStack(spacing: 0) {
             firstRow
+                .fixedSize(horizontal: false, vertical: true)
             horizontalSeparator
             secondRow
+                .fixedSize(horizontal: false, vertical: true)
         }
         .background(
-            RoundedRectangle(cornerRadius: 12) // 둥근 모서리로 독립 창 느낌
+            RoundedRectangle(cornerRadius: 12)
                 .fill(overlayBackground)
-                .shadow(color: .black.opacity(0.4), radius: 24, y: 12) // 더 강한 그림자
+                .shadow(color: .black.opacity(0.4), radius: 24, y: 12)
         )
     }
 
@@ -109,41 +120,233 @@ struct ComposeModeOverlay: View {
             .frame(height: 1)
     }
 
-    private var secondRow: some View {
-        HStack(spacing: 8) {
-            scopeChips
-            scopeAddButton
-            verticalSeparator
-            filterChips
-            filterAddButton
-            Spacer()
+    private enum ChipItemType: Identifiable, Hashable {
+        case scope(path: String)
+        case filter(text: String)
+
+        var id: String {
+            switch self {
+            case let .scope(path):
+                return "scope-\(path)"
+            case let .filter(text):
+                return "filter-\(text)"
+            }
         }
-        .padding(.horizontal, 16)
-        .padding(.leading, store.sidebarVisible ? 0 : trafficLightAreaWidth)
-        .padding(.vertical, 8)
     }
 
-    private var scopeChips: some View {
-        ForEach([store.currentPath], id: \.self) { scopePath in
-            ScopeChipView(
-                path: scopePath,
-                isDark: isDark,
-                favorites: store.favorites,
-                backHistory: store.backHistory
+    @State private var chipSizes: [String: CGSize] = [:]
+    @State private var calculatedHeight: CGFloat = 0
+
+    private let chipHorizontalPadding: CGFloat = 16
+    private let chipSpacing: CGFloat = 8
+    private let chipVerticalPadding: CGFloat = 8
+    private let scopeButtonWidth: CGFloat = 20
+    private let separatorWidth: CGFloat = 1
+    private let filterButtonWidth: CGFloat = 20
+    private let maxChipAreaHeight: CGFloat = 200
+    private let defaultChipHeight: CGFloat = 28
+    private let defaultChipWidth: CGFloat = 120
+
+    private var secondRow: some View {
+        GeometryReader { geometry in
+            let leadingPadding = store.sidebarVisible ? 0 : trafficLightAreaWidth
+            let availableWidth = geometry.size.width - chipHorizontalPadding * 2 - leadingPadding
+
+            // TODO: voy-95에서 백엔드 데이터로 교체 (store.scopes, store.filters)
+            let allChips: [ChipItemType] = [
+                .scope(path: store.currentPath),
+            ] + [
+                .filter(text: "name contains test"),
+                .filter(text: "size > 100KB"),
+                .filter(text: "modified < 7 days"),
+                .filter(text: "type is image"),
+                .filter(text: "created > 2024-01-01"),
+                .filter(text: "tagged with important"),
+                .filter(text: "size < 1MB"),
+                .filter(text: "extension is pdf"),
+            ]
+
+            let params = RowCalculationParams(
+                availableWidth: availableWidth,
+                spacing: chipSpacing,
+                chipSizes: chipSizes,
+                scopeButtonWidth: scopeButtonWidth,
+                separatorWidth: separatorWidth,
+                filterButtonWidth: filterButtonWidth,
+                buttonSpacing: chipSpacing
             )
+            let rows = calculateRowsWithButtons(chips: allChips, params: params)
+
+            VStack(alignment: .leading, spacing: chipSpacing) {
+                ForEach(Array(rows.enumerated()), id: \.offset) { rowIndex, rowChips in
+                    let isLastRow = rowIndex == rows.count - 1
+                    let lastChipIndex = rowChips.count - 1
+
+                    HStack(spacing: chipSpacing) {
+                        ForEach(Array(rowChips.enumerated()), id: \.element.id) { chipIndex, chip in
+                            Group {
+                                switch chip {
+                                case let .scope(path):
+                                    ScopeChipView(
+                                        path: path,
+                                        isDark: isDark,
+                                        favorites: store.favorites,
+                                        backHistory: store.backHistory
+                                    )
+                                case let .filter(text):
+                                    filterChipView(text: text)
+                                }
+                            }
+                            .background(
+                                GeometryReader { chipGeometry in
+                                    Color.clear
+                                        .preference(
+                                            key: ChipSizePreferenceKey.self,
+                                            value: [AnyHashable(chip.id): chipGeometry.size]
+                                        )
+                                }
+                            )
+
+                            // 첫 번째 줄의 첫 번째 칩(스코프) 뒤에 추가 버튼과 구분선 배치
+                            if rowIndex == 0, chipIndex == 0, case .scope = chip {
+                                scopeAddButton
+                                verticalSeparator
+                            }
+
+                            if isLastRow, chipIndex == lastChipIndex, case .scope = chip, rowIndex > 0 {
+                                scopeAddButton
+                                verticalSeparator
+                            }
+                        }
+
+                        if isLastRow, let lastChip = rowChips.last, case .filter = lastChip {
+                            filterAddButton
+                        }
+                    }
+                }
+            }
+            .onPreferenceChange(ChipSizePreferenceKey.self) { sizes in
+                for chip in allChips {
+                    let anyId = AnyHashable(chip.id)
+                    if let size = sizes[anyId] {
+                        chipSizes[chip.id] = size
+                    }
+                }
+                updateCalculatedHeight(
+                    chips: allChips,
+                    availableWidth: availableWidth
+                )
+            }
+            .onAppear {
+                updateCalculatedHeight(
+                    chips: allChips,
+                    availableWidth: availableWidth
+                )
+            }
+            .padding(.horizontal, chipHorizontalPadding)
+            .padding(.leading, leadingPadding)
+            .padding(.vertical, chipVerticalPadding)
         }
+        .frame(height: calculatedHeight)
+    }
+
+    private func updateCalculatedHeight(chips: [ChipItemType], availableWidth: CGFloat) {
+        let params = RowCalculationParams(
+            availableWidth: availableWidth,
+            spacing: chipSpacing,
+            chipSizes: chipSizes,
+            scopeButtonWidth: scopeButtonWidth,
+            separatorWidth: separatorWidth,
+            filterButtonWidth: filterButtonWidth,
+            buttonSpacing: chipSpacing
+        )
+        let updatedRows = calculateRowsWithButtons(chips: chips, params: params)
+        let contentHeight = calculateTotalHeight(rows: updatedRows, chipSizes: chipSizes, spacing: chipSpacing)
+        let paddingHeight = chipVerticalPadding * 2
+        calculatedHeight = min(contentHeight + paddingHeight, maxChipAreaHeight)
+    }
+
+    private func calculateTotalHeight(
+        rows: [[ChipItemType]],
+        chipSizes: [String: CGSize],
+        spacing: CGFloat
+    ) -> CGFloat {
+        guard !rows.isEmpty else { return 0 }
+
+        var totalHeight: CGFloat = 0
+        for row in rows {
+            var maxRowHeight: CGFloat = 0
+            for chip in row {
+                if let chipHeight = chipSizes[chip.id]?.height {
+                    maxRowHeight = max(maxRowHeight, chipHeight)
+                } else {
+                    maxRowHeight = max(maxRowHeight, defaultChipHeight)
+                }
+            }
+            totalHeight += maxRowHeight
+        }
+
+        totalHeight += CGFloat(max(0, rows.count - 1)) * spacing
+        return totalHeight
+    }
+
+    private struct RowCalculationParams {
+        let availableWidth: CGFloat
+        let spacing: CGFloat
+        let chipSizes: [String: CGSize]
+        let scopeButtonWidth: CGFloat
+        let separatorWidth: CGFloat
+        let filterButtonWidth: CGFloat
+        let buttonSpacing: CGFloat
+    }
+
+    private func calculateRowsWithButtons(
+        chips: [ChipItemType],
+        params: RowCalculationParams
+    ) -> [[ChipItemType]] {
+        var rows: [[ChipItemType]] = []
+        var currentRow: [ChipItemType] = []
+        var currentRowWidth: CGFloat = 0
+        var isFirstRow = true
+
+        for chip in chips {
+            let chipWidth = params.chipSizes[chip.id]?.width ?? defaultChipWidth
+            let chipSpacing = currentRow.isEmpty ? 0 : params.spacing
+
+            var rowButtonSpace: CGFloat = 0
+            if isFirstRow, currentRow.isEmpty, case .scope = chip {
+                rowButtonSpace = params.scopeButtonWidth + params.buttonSpacing + params.separatorWidth + params
+                    .buttonSpacing + params.filterButtonWidth
+            } else {
+                rowButtonSpace = params.filterButtonWidth
+            }
+
+            let chipsOnlyWidth = currentRowWidth + chipSpacing + chipWidth
+
+            let effectiveAvailableWidth = params.availableWidth - rowButtonSpace
+
+            if chipsOnlyWidth > effectiveAvailableWidth, !currentRow.isEmpty {
+                rows.append(currentRow)
+                currentRow = [chip]
+                isFirstRow = false
+                currentRowWidth = chipWidth
+            } else {
+                currentRow.append(chip)
+                currentRowWidth = chipsOnlyWidth
+            }
+        }
+
+        if !currentRow.isEmpty {
+            rows.append(currentRow)
+        }
+
+        return rows
     }
 
     private var scopeAddButton: some View {
         addButton(action: {
             // TODO: openScopeMenu (voy-95에서 구현)
         })
-    }
-
-    private var filterChips: some View {
-        ForEach(["name contains test", "size > 100KB", "modified < 7 days"], id: \.self) { filterText in
-            filterChipView(text: filterText)
-        }
     }
 
     private func filterChipView(text: String) -> some View {
@@ -179,13 +382,10 @@ struct ComposeModeOverlay: View {
         }
     }
 
-    // 오버레이 배경색: 툴바보다 약간 밝게/어둡게 조정하여 독립 창 느낌 강화
     private var overlayBackground: Color {
         if isDark {
-            // 다크 모드: 약간 더 밝게
             return Color(red: 0.19, green: 0.19, blue: 0.19)
         } else {
-            // 라이트 모드: 약간 더 어둡게
             return Color(white: 0.96)
         }
     }
@@ -218,3 +418,5 @@ struct ComposeModeOverlay: View {
         }
     }
 }
+
+// swiftlint:enable type_body_length
