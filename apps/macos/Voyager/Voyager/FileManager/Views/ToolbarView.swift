@@ -11,6 +11,34 @@ struct ToolbarView: View {
     private let trafficLightAreaWidth: CGFloat = 80
 
     var body: some View {
+        normalModeContent
+            .frame(maxHeight: .infinity)
+            .padding(0)
+            .padding(.leading, store.sidebarVisible ? 0 : trafficLightAreaWidth)
+            .padding(.horizontal, 16)
+            .frame(height: 48)
+            .frame(maxWidth: .infinity)
+            .background(
+                ZStack {
+                    toolbarBackgroundColor
+
+                    VStack {
+                        Spacer()
+                        Rectangle()
+                            .fill(Color.black.opacity(0.15))
+                            .frame(height: 1.0)
+                    }
+                }
+            )
+            .onAppear {
+                isDark = isDarkMode()
+            }
+            .onChange(of: colorScheme) { newScheme in
+                isDark = newScheme == .dark
+            }
+    }
+
+    private var normalModeContent: some View {
         HStack(spacing: 12) {
             Menu {
                 if store.backHistory.isEmpty {
@@ -66,40 +94,21 @@ struct ToolbarView: View {
             .disabled(!store.canGoForward)
             .buttonStyle(.borderless)
 
-            HStack(spacing: 4) {
-                Image(systemName: "folder")
-                    .font(.system(size: 12))
-                Text(FileManager.default.displayName(atPath: store.currentPath))
-                    .font(.system(size: 15, weight: .semibold))
+            Button {
+                store.send(.enterComposeMode)
+            } label: {
+                HStack(spacing: 4) {
+                    Image(systemName: "folder")
+                        .font(.system(size: 12))
+                    Text(FileManager.default.displayName(atPath: store.currentPath))
+                        .font(.system(size: 15, weight: .semibold))
+                }
             }
+            .buttonStyle(.plain)
 
             Spacer()
 
             ToolbarMenuView(store: store)
-        }
-        .frame(maxHeight: .infinity)
-        .padding(0)
-        .padding(.leading, store.sidebarVisible ? 0 : trafficLightAreaWidth)
-        .padding(.horizontal, 16)
-        .frame(height: 48)
-        .frame(maxWidth: .infinity)
-        .background(
-            ZStack {
-                toolbarBackgroundColor
-
-                VStack {
-                    Spacer()
-                    Rectangle()
-                        .fill(Color.black.opacity(0.15))
-                        .frame(height: 1.0)
-                }
-            }
-        )
-        .onAppear {
-            isDark = isDarkMode()
-        }
-        .onChange(of: colorScheme) { newScheme in
-            isDark = newScheme == .dark
         }
     }
 

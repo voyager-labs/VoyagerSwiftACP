@@ -261,12 +261,23 @@ extension FileManagerSplitViewController {
     }
 
     private func setupContentPane(in container: NSView) {
+        let store = self.store
         let contentHosting = NSHostingController(
-            rootView: VStack(spacing: 0) {
-                ToolbarView(store: store)
-                ContentPaneView(store: store)
+            rootView: WithViewStore(store, observe: \.isComposeMode) { viewStore in
+                ZStack(alignment: .top) {
+                    VStack(spacing: 0) {
+                        ToolbarView(store: store)
+                        ContentPaneView(store: store)
+                    }
+
+                    if viewStore.state {
+                        ComposeModeOverlay(store: store)
+                            .transition(.move(edge: .top).combined(with: .opacity))
+                    }
+                }
+                .ignoresSafeArea(.all, edges: .top)
+                .animation(.spring(response: 0.25, dampingFraction: 0.75), value: viewStore.state)
             }
-            .ignoresSafeArea(.all, edges: .top)
         )
         contentHosting.safeAreaRegions = []
         contentHosting.view.translatesAutoresizingMaskIntoConstraints = false

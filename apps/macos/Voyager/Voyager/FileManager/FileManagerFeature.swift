@@ -55,6 +55,9 @@ struct FileManagerFeature {
         var isTagsCollapsed: Bool = false
         var columnWidths: ListColumnWidths = .default
 
+        var isComposeMode: Bool = false
+        var composeText: String = ""
+
         var sortKey: SortKey = .name
         var sortOrder: SortOrder = .ascending
 
@@ -256,6 +259,10 @@ struct FileManagerFeature {
         case updateListTextSize(CGFloat)
         case updateGridTextSize(CGFloat)
         case setSidebarWidth(CGFloat)
+
+        case enterComposeMode
+        case exitComposeMode
+        case setComposeText(String)
     }
 
     @Dependency(\.fsItemClient)
@@ -652,6 +659,20 @@ struct FileManagerFeature {
 
             case let .updateGridTextSize(size):
                 state.gridTextSize = size
+                return .none
+
+            case .enterComposeMode:
+                state.isComposeMode = true
+                state.composeText = ""
+                return .none
+
+            case .exitComposeMode:
+                state.isComposeMode = false
+                state.composeText = ""
+                return .none
+
+            case let .setComposeText(text):
+                state.composeText = text
                 return .none
             }
         }
