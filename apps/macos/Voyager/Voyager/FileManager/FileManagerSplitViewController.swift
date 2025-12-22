@@ -50,6 +50,7 @@ class FileManagerSplitViewController: NSViewController, NSSplitViewDelegate {
     private var inspectorWidth: CGFloat = 300
     private let contentVerticalMargin: CGFloat = 8
     private var contentLeadingConstraint: NSLayoutConstraint?
+    private var containerLeadingConstraint: NSLayoutConstraint?
     private var contentTrailingConstraint: NSLayoutConstraint?
     private var contentTopConstraint: NSLayoutConstraint?
     private var contentBottomConstraint: NSLayoutConstraint?
@@ -137,13 +138,17 @@ class FileManagerSplitViewController: NSViewController, NSSplitViewDelegate {
                 if sidebarVisible {
                     let savedWidth = UserDefaults.standard.object(forKey: "sidebarWidth") as? Double ?? 220
                     mainSplitView.setPosition(CGFloat(savedWidth), ofDividerAt: 0)
+                    containerLeadingConstraint?.constant = 0
                 } else {
                     let currentWidth = sidebarView.frame.width
                     if currentWidth > 0 {
                         UserDefaults.standard.set(currentWidth, forKey: "sidebarWidth")
                     }
                     mainSplitView.setPosition(0, ofDividerAt: 0)
+                    containerLeadingConstraint?.constant = contentVerticalMargin
                 }
+
+                contentInspectorContainer?.layoutSubtreeIfNeeded()
             }
         }
     }
@@ -238,12 +243,18 @@ extension FileManagerSplitViewController {
         wrapper.addSubview(container)
         setupContentPane(in: container)
 
+        let initialLeading: CGFloat = store.sidebarVisible ? 0 : contentVerticalMargin
+        containerLeadingConstraint = container.leadingAnchor.constraint(
+            equalTo: wrapper.leadingAnchor,
+            constant: initialLeading
+        )
+
         NSLayoutConstraint.activate([
             container.topAnchor.constraint(equalTo: wrapper.topAnchor, constant: contentVerticalMargin),
             container.bottomAnchor.constraint(equalTo: wrapper.bottomAnchor, constant: -contentVerticalMargin),
-            container.leadingAnchor.constraint(equalTo: wrapper.leadingAnchor),
+            containerLeadingConstraint,
             container.trailingAnchor.constraint(equalTo: wrapper.trailingAnchor, constant: -contentVerticalMargin),
-        ])
+        ].compactMap { $0 })
 
         mainSplit.addArrangedSubview(wrapper)
         mainSplit.setHoldingPriority(.defaultLow, forSubviewAt: 1)
