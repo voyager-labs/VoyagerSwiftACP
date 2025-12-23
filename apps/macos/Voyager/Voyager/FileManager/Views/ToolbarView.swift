@@ -5,6 +5,7 @@ import SwiftUI
 struct ToolbarView: View {
     let store: StoreOf<FileManagerFeature>
     @State private var isDark: Bool = isDarkMode()
+    @State private var isHovered: Bool = false
     @Environment(\.colorScheme)
     var colorScheme
 
@@ -30,6 +31,9 @@ struct ToolbarView: View {
                     }
                 }
             )
+            .onHover { hovering in
+                isHovered = hovering
+            }
             .onAppear {
                 isDark = isDarkMode()
             }
@@ -95,6 +99,15 @@ struct ToolbarView: View {
             .buttonStyle(.borderless)
 
             Button {
+                store.send(.goToEnclosingDirectory)
+            } label: {
+                Image(systemName: "arrow.up")
+                    .foregroundColor(store.canGoToEnclosingDirectory ? .primary : .secondary)
+            }
+            .disabled(!store.canGoToEnclosingDirectory)
+            .buttonStyle(.borderless)
+
+            Button {
                 store.send(.enterComposeMode)
             } label: {
                 HStack(spacing: 4) {
@@ -108,7 +121,10 @@ struct ToolbarView: View {
 
             Spacer()
 
-            ToolbarMenuView(store: store)
+            if isHovered {
+                ViewToggleButton(store: store)
+                SortGroupButton(store: store)
+            }
         }
     }
 
