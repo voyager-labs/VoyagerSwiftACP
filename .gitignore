@@ -108,3 +108,5 @@ apps/macos/logs/
 apps/backend/alembic.ini.bak
 
 .serena/*
+
+!scripts/build
