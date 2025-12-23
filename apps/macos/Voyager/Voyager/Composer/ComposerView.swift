@@ -350,7 +350,7 @@ struct ComposerView: View {
         }
         escKeyMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { event in
             if event.keyCode == escapeKeyCode {
-                store.send(.exitComposeMode)
+                store.send(.hideComposer)
                 return nil
             }
             return event

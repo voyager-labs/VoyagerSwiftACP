@@ -267,8 +267,8 @@ struct FileManagerFeature {
         case updateGridTextSize(CGFloat)
         case setSidebarWidth(CGFloat)
 
-        case enterComposeMode
-        case exitComposeMode
+        case enterComposer
+        case exitComposer
         case composer(ComposerFeature.Action)
     }
 
@@ -683,17 +683,14 @@ struct FileManagerFeature {
             case .composer:
                 return .none
 
-            case .enterComposeMode:
+            case .enterComposer:
+                state.composer = .init()
                 state.composer.isPresented = true
-                state.composer.text = ""
-                if state.composer.scopes.isEmpty {
-                    state.composer.scopes.append(state.currentPath)
-                }
+                state.composer.scopes = [state.currentPath]
                 return .none
 
-            case .exitComposeMode:
-                state.composer.isPresented = false
-                state.composer.text = ""
+            case .exitComposer:
+                state.composer = .init()
                 return .none
             }
         }

@@ -29,7 +29,7 @@ struct ToolbarView: View {
                             .fill(Color.black.opacity(0.15))
                             .frame(height: 1.0)
                     }
-                }
+                },
             )
             .onHover { hovering in
                 isHovered = hovering
@@ -57,7 +57,7 @@ struct ToolbarView: View {
                             },
                             label: {
                                 Text(FileManager.default.displayName(atPath: path))
-                            }
+                            },
                         )
                     }
                 }
@@ -84,7 +84,7 @@ struct ToolbarView: View {
                             },
                             label: {
                                 Text(FileManager.default.displayName(atPath: path))
-                            }
+                            },
                         )
                     }
                 }
@@ -108,7 +108,7 @@ struct ToolbarView: View {
             .buttonStyle(.borderless)
 
             Button {
-                store.send(.enterComposeMode)
+                store.send(.enterComposer)
             } label: {
                 HStack(spacing: 4) {
                     Image(systemName: "folder")
@@ -130,9 +130,9 @@ struct ToolbarView: View {
 
     private var toolbarBackgroundColor: Color {
         if isDark {
-            return Color(red: 0.17, green: 0.17, blue: 0.17)
+            Color(red: 0.17, green: 0.17, blue: 0.17)
         } else {
-            return Color(nsColor: .controlBackgroundColor)
+            Color(nsColor: .controlBackgroundColor)
         }
     }
 }
