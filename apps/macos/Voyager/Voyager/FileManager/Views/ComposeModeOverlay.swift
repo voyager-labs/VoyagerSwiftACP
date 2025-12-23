@@ -52,7 +52,11 @@ struct ComposeModeOverlay: View {
         .background(
             RoundedRectangle(cornerRadius: 12)
                 .fill(overlayBackground)
-                .shadow(color: .black.opacity(0.4), radius: 24, y: 12)
+                .overlay(
+                    RoundedRectangle(cornerRadius: 12)
+                        .stroke(overlayBorderColor, lineWidth: 1)
+                )
+                .shadow(color: overlayShadowColor, radius: overlayShadowRadius, y: overlayShadowY)
         )
     }
 
@@ -386,7 +390,39 @@ struct ComposeModeOverlay: View {
         if isDark {
             return Color(red: 0.19, green: 0.19, blue: 0.19)
         } else {
-            return Color(white: 0.96)
+            return Color.white
+        }
+    }
+
+    private var overlayBorderColor: Color {
+        if isDark {
+            return Color.white.opacity(0.1)
+        } else {
+            return Color.black.opacity(0.12)
+        }
+    }
+
+    private var overlayShadowColor: Color {
+        if isDark {
+            return Color.black.opacity(0.4)
+        } else {
+            return Color.black.opacity(0.15)
+        }
+    }
+
+    private var overlayShadowRadius: CGFloat {
+        if isDark {
+            return 24
+        } else {
+            return 16
+        }
+    }
+
+    private var overlayShadowY: CGFloat {
+        if isDark {
+            return 12
+        } else {
+            return 8
         }
     }
 
