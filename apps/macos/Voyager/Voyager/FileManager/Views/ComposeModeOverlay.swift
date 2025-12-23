@@ -125,13 +125,13 @@ struct ComposeModeOverlay: View {
     }
 
     private enum ChipItemType: Identifiable, Hashable {
-        case scope(path: String)
+        case scope(paths: [String])
         case filter(text: String)
 
         var id: String {
             switch self {
-            case let .scope(path):
-                return "scope-\(path)"
+            case let .scope(paths):
+                return "scope-\(paths.joined(separator: "-"))"
             case let .filter(text):
                 return "filter-\(text)"
             }
@@ -144,8 +144,6 @@ struct ComposeModeOverlay: View {
     private let chipHorizontalPadding: CGFloat = 16
     private let chipSpacing: CGFloat = 8
     private let chipVerticalPadding: CGFloat = 8
-    private let scopeButtonWidth: CGFloat = 20
-    private let separatorWidth: CGFloat = 1
     private let filterButtonWidth: CGFloat = 20
     private let maxChipAreaHeight: CGFloat = 200
     private let defaultChipHeight: CGFloat = 28
@@ -156,10 +154,8 @@ struct ComposeModeOverlay: View {
             let leadingPadding = store.sidebarVisible ? 0 : trafficLightAreaWidth
             let availableWidth = geometry.size.width - chipHorizontalPadding * 2 - leadingPadding
 
-            // TODO: voy-95에서 백엔드 데이터로 교체 (store.scopes, store.filters)
-            let allChips: [ChipItemType] = [
-                .scope(path: store.currentPath),
-            ] + [
+            // TODO: voy-95에서 백엔드 데이터로 교체 (store.filters)
+            let allChips: [ChipItemType] = (store.scopes.isEmpty ? [] : [.scope(paths: store.scopes)]) + [
                 .filter(text: "name contains test"),
                 .filter(text: "size > 100KB"),
                 .filter(text: "modified < 7 days"),
@@ -174,8 +170,6 @@ struct ComposeModeOverlay: View {
                 availableWidth: availableWidth,
                 spacing: chipSpacing,
                 chipSizes: chipSizes,
-                scopeButtonWidth: scopeButtonWidth,
-                separatorWidth: separatorWidth,
                 filterButtonWidth: filterButtonWidth,
                 buttonSpacing: chipSpacing
             )
@@ -187,12 +181,13 @@ struct ComposeModeOverlay: View {
                     let lastChipIndex = rowChips.count - 1
 
                     HStack(spacing: chipSpacing) {
-                        ForEach(Array(rowChips.enumerated()), id: \.element.id) { chipIndex, chip in
+                        ForEach(Array(rowChips.enumerated()), id: \.element.id) { _, chip in
                             Group {
                                 switch chip {
-                                case let .scope(path):
+                                case let .scope(paths):
                                     ScopeChipView(
-                                        path: path,
+                                        paths: paths,
+                                        store: store,
                                         isDark: isDark,
                                         favorites: store.favorites,
                                         backHistory: store.backHistory
@@ -210,17 +205,6 @@ struct ComposeModeOverlay: View {
                                         )
                                 }
                             )
-
-                            // 첫 번째 줄의 첫 번째 칩(스코프) 뒤에 추가 버튼과 구분선 배치
-                            if rowIndex == 0, chipIndex == 0, case .scope = chip {
-                                scopeAddButton
-                                verticalSeparator
-                            }
-
-                            if isLastRow, chipIndex == lastChipIndex, case .scope = chip, rowIndex > 0 {
-                                scopeAddButton
-                                verticalSeparator
-                            }
                         }
 
                         if isLastRow, let lastChip = rowChips.last, case .filter = lastChip {
@@ -259,8 +243,6 @@ struct ComposeModeOverlay: View {
             availableWidth: availableWidth,
             spacing: chipSpacing,
             chipSizes: chipSizes,
-            scopeButtonWidth: scopeButtonWidth,
-            separatorWidth: separatorWidth,
             filterButtonWidth: filterButtonWidth,
             buttonSpacing: chipSpacing
         )
@@ -298,8 +280,6 @@ struct ComposeModeOverlay: View {
         let availableWidth: CGFloat
         let spacing: CGFloat
         let chipSizes: [String: CGSize]
-        let scopeButtonWidth: CGFloat
-        let separatorWidth: CGFloat
         let filterButtonWidth: CGFloat
         let buttonSpacing: CGFloat
     }
@@ -311,19 +291,12 @@ struct ComposeModeOverlay: View {
         var rows: [[ChipItemType]] = []
         var currentRow: [ChipItemType] = []
         var currentRowWidth: CGFloat = 0
-        var isFirstRow = true
 
         for chip in chips {
             let chipWidth = params.chipSizes[chip.id]?.width ?? defaultChipWidth
             let chipSpacing = currentRow.isEmpty ? 0 : params.spacing
 
-            var rowButtonSpace: CGFloat = 0
-            if isFirstRow, currentRow.isEmpty, case .scope = chip {
-                rowButtonSpace = params.scopeButtonWidth + params.buttonSpacing + params.separatorWidth + params
-                    .buttonSpacing + params.filterButtonWidth
-            } else {
-                rowButtonSpace = params.filterButtonWidth
-            }
+            let rowButtonSpace = params.filterButtonWidth
 
             let chipsOnlyWidth = currentRowWidth + chipSpacing + chipWidth
 
@@ -332,7 +305,6 @@ struct ComposeModeOverlay: View {
             if chipsOnlyWidth > effectiveAvailableWidth, !currentRow.isEmpty {
                 rows.append(currentRow)
                 currentRow = [chip]
-                isFirstRow = false
                 currentRowWidth = chipWidth
             } else {
                 currentRow.append(chip)
@@ -345,12 +317,6 @@ struct ComposeModeOverlay: View {
         }
 
         return rows
-    }
-
-    private var scopeAddButton: some View {
-        addButton(action: {
-            // TODO: openScopeMenu (voy-95에서 구현)
-        })
     }
 
     private func filterChipView(text: String) -> some View {

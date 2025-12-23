@@ -1,70 +1,28 @@
+import ComposableArchitecture
 import SwiftUI
 
 struct ScopeChipView: View {
-    let path: String
+    let paths: [String]
+    let store: StoreOf<FileManagerFeature>
     let isDark: Bool
     let favorites: [SidebarUtils.FavoriteItem]
     let backHistory: [String]
-    @State private var isHovered: Bool = false
 
     var body: some View {
         HStack(spacing: 4) {
-            Button {
-                // TODO: removeScopeDirectory(path) (voy-95에서 구현)
-            } label: {
-                Image(systemName: isHovered ? "xmark.circle.fill" : "folder")
+            Image(systemName: "folder")
+                .font(.system(size: 10))
+                .foregroundColor(.secondary)
+
+            ForEach(Array(paths.enumerated()), id: \.offset) { index, path in
+                directoryNameChip(path: path, index: index)
+            }
+
+            if !paths.isEmpty {
+                Image(systemName: "chevron.down")
                     .font(.system(size: 10))
                     .foregroundColor(.secondary)
             }
-            .buttonStyle(.borderless)
-
-            Menu {
-                ForEach(favorites, id: \.url) { favorite in
-                    Button {
-                        // TODO: selectScopeDirectory(favorite.url) (voy-95에서 구현)
-                    } label: {
-                        HStack {
-                            Image(systemName: favorite.iconName)
-                                .font(.system(size: 11))
-                            Text(favorite.name)
-                                .font(.system(size: 12))
-                        }
-                    }
-                }
-
-                if !favorites.isEmpty {
-                    Divider()
-                }
-
-                // TODO: Favorites 제외 로직은 voy-95에서 구현
-                ForEach(Array(backHistory.reversed().prefix(10)), id: \.self) { recentPath in
-                    Button {
-                        // TODO: selectScopeDirectory(URL(fileURLWithPath: recentPath)) (voy-95에서 구현)
-                    } label: {
-                        HStack {
-                            Image(systemName: "folder")
-                                .font(.system(size: 11))
-                            Text(FileManager.default.displayName(atPath: recentPath))
-                                .font(.system(size: 12))
-                        }
-                    }
-                }
-
-                if !backHistory.isEmpty {
-                    Divider()
-                }
-
-                Button {
-                    // TODO: NSOpenPanel 열기 (voy-95에서 구현)
-                } label: {
-                    Text("Other...")
-                }
-            } label: {
-                Text(FileManager.default.displayName(atPath: path))
-                    .font(.system(size: 11, weight: .medium))
-                    .foregroundColor(.primary.opacity(0.8))
-            }
-            .menuStyle(.borderlessButton)
         }
         .padding(.horizontal, 8)
         .padding(.vertical, 4)
@@ -72,8 +30,57 @@ struct ScopeChipView: View {
             RoundedRectangle(cornerRadius: 6)
                 .fill(isDark ? Color.white.opacity(0.1) : Color.black.opacity(0.08))
         )
-        .onHover { hovering in
-            isHovered = hovering
+    }
+
+    @ViewBuilder
+    private func directoryNameChip(path: String, index _: Int) -> some View {
+        let displayName = FileManager.default.displayName(atPath: path)
+
+        HStack(spacing: 4) {
+            Text(displayName)
+                .font(.system(size: 11, weight: .medium))
+                .foregroundColor(.primary.opacity(0.8))
+                .lineLimit(1)
+                .truncationMode(.tail)
+                .fixedSize(horizontal: true, vertical: false)
+
+            Button {
+                store.send(.removeScope(path: path))
+            } label: {
+                Image(systemName: "xmark")
+                    .font(.system(size: 8, weight: .medium))
+                    .foregroundColor(.secondary)
+            }
+            .buttonStyle(.borderless)
+        }
+        .padding(.horizontal, 6)
+        .padding(.vertical, 2)
+        .background(
+            RoundedRectangle(cornerRadius: 4)
+                .fill(subChipBackgroundColor)
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: 4)
+                .stroke(subChipBorderColor, lineWidth: 0.5)
+        )
+        .onTapGesture {
+            // TODO: 콤보박스 열기 구현
+        }
+    }
+
+    private var subChipBackgroundColor: Color {
+        if isDark {
+            return Color.white.opacity(0.15)
+        } else {
+            return Color.black.opacity(0.08)
+        }
+    }
+
+    private var subChipBorderColor: Color {
+        if isDark {
+            return Color.white.opacity(0.2)
+        } else {
+            return Color.black.opacity(0.15)
         }
     }
 }

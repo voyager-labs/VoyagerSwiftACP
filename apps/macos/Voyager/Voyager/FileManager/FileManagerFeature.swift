@@ -57,6 +57,7 @@ struct FileManagerFeature {
 
         var isComposeMode: Bool = false
         var composeText: String = ""
+        var scopes: [String] = []
 
         var sortKey: SortKey = .name
         var sortOrder: SortOrder = .ascending
@@ -159,10 +160,18 @@ struct FileManagerFeature {
         }
 
         mutating func navigateToFolder(_ path: String, sidebarItemName: String) {
+            let previousPath = currentPath
             selectedSidebarItem = sidebarItemName
-            backHistory.append(currentPath)
+            backHistory.append(previousPath)
             forwardHistory = []
             navigationState = .folder(path)
+
+            if isComposeMode,
+               !scopes.isEmpty,
+               scopes[0] == previousPath
+            {
+                scopes[0] = path
+            }
         }
 
         mutating func navigate(
@@ -263,6 +272,8 @@ struct FileManagerFeature {
         case enterComposeMode
         case exitComposeMode
         case setComposeText(String)
+        case addScope(path: String)
+        case removeScope(path: String)
     }
 
     @Dependency(\.fsItemClient)
@@ -352,8 +363,16 @@ struct FileManagerFeature {
                     return .none
                 }
                 if path != state.currentPath {
-                    state.backHistory.append(state.currentPath)
+                    let previousPath = state.currentPath
+                    state.backHistory.append(previousPath)
                     state.forwardHistory = []
+
+                    if state.isComposeMode,
+                       !state.scopes.isEmpty,
+                       state.scopes[0] == previousPath
+                    {
+                        state.scopes[0] = path
+                    }
                 }
                 state.navigationState = .folder(path)
                 state.matchSidebarToPath(path, favorites: state.favorites, locations: state.locations)
@@ -664,6 +683,9 @@ struct FileManagerFeature {
             case .enterComposeMode:
                 state.isComposeMode = true
                 state.composeText = ""
+                if state.scopes.isEmpty {
+                    state.scopes.append(state.currentPath)
+                }
                 return .none
 
             case .exitComposeMode:
@@ -673,6 +695,16 @@ struct FileManagerFeature {
 
             case let .setComposeText(text):
                 state.composeText = text
+                return .none
+
+            case let .addScope(path):
+                if !state.scopes.contains(path) {
+                    state.scopes.append(path)
+                }
+                return .none
+
+            case let .removeScope(path):
+                state.scopes.removeAll { $0 == path }
                 return .none
             }
         }
