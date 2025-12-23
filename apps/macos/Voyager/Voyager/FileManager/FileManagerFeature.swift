@@ -55,9 +55,7 @@ struct FileManagerFeature {
         var isTagsCollapsed: Bool = false
         var columnWidths: ListColumnWidths = .default
 
-        var isComposeMode: Bool = false
-        var composeText: String = ""
-        var scopes: [String] = []
+        var composer: ComposerFeature.State = .init()
 
         var sortKey: SortKey = .name
         var sortOrder: SortOrder = .ascending
@@ -166,11 +164,11 @@ struct FileManagerFeature {
             forwardHistory = []
             navigationState = .folder(path)
 
-            if isComposeMode,
-               !scopes.isEmpty,
-               scopes[0] == previousPath
+            if composer.isPresented,
+               !composer.scopes.isEmpty,
+               composer.scopes[0] == previousPath
             {
-                scopes[0] = path
+                composer.scopes[0] = path
             }
         }
 
@@ -271,16 +269,17 @@ struct FileManagerFeature {
 
         case enterComposeMode
         case exitComposeMode
-        case setComposeText(String)
-        case addScope(path: String)
-        case removeScope(path: String)
-        case updateScope(oldPath: String, newPath: String)
+        case composer(ComposerFeature.Action)
     }
 
     @Dependency(\.fsItemClient)
     var fsItemClient
 
     var body: some Reducer<State, Action> {
+        Scope(state: \.composer, action: \.composer) {
+            ComposerFeature()
+        }
+
         Scope(state: \.fsItems, action: \.fsItems) {
             FSItemsFeature()
         }
@@ -368,11 +367,11 @@ struct FileManagerFeature {
                     state.backHistory.append(previousPath)
                     state.forwardHistory = []
 
-                    if state.isComposeMode,
-                       !state.scopes.isEmpty,
-                       state.scopes[0] == previousPath
+                    if state.composer.isPresented,
+                       !state.composer.scopes.isEmpty,
+                       state.composer.scopes[0] == previousPath
                     {
-                        state.scopes[0] = path
+                        state.composer.scopes[0] = path
                     }
                 }
                 state.navigationState = .folder(path)
@@ -681,37 +680,20 @@ struct FileManagerFeature {
                 state.gridTextSize = size
                 return .none
 
+            case .composer:
+                return .none
+
             case .enterComposeMode:
-                state.isComposeMode = true
-                state.composeText = ""
-                if state.scopes.isEmpty {
-                    state.scopes.append(state.currentPath)
+                state.composer.isPresented = true
+                state.composer.text = ""
+                if state.composer.scopes.isEmpty {
+                    state.composer.scopes.append(state.currentPath)
                 }
                 return .none
 
             case .exitComposeMode:
-                state.isComposeMode = false
-                state.composeText = ""
-                return .none
-
-            case let .setComposeText(text):
-                state.composeText = text
-                return .none
-
-            case let .addScope(path):
-                if !state.scopes.contains(path) {
-                    state.scopes.append(path)
-                }
-                return .none
-
-            case let .removeScope(path):
-                state.scopes.removeAll { $0 == path }
-                return .none
-
-            case let .updateScope(oldPath, newPath):
-                if let index = state.scopes.firstIndex(of: oldPath) {
-                    state.scopes[index] = newPath
-                }
+                state.composer.isPresented = false
+                state.composer.text = ""
                 return .none
             }
         }

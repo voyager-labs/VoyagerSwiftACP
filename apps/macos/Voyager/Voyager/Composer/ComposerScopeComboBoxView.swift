@@ -1,8 +1,6 @@
-import ComposableArchitecture
 import SwiftUI
 
-struct ScopeComboBoxView: View {
-    let store: StoreOf<FileManagerFeature>
+struct ComposerScopeComboBoxView: View {
     @Binding var isPresented: Bool
     let oldPath: String?
     let onSelect: (String) -> Void
@@ -10,7 +8,7 @@ struct ScopeComboBoxView: View {
     let backHistory: [String]
 
     @State private var searchText: String = ""
-    @State private var searchResults: [ScopeComboBoxUtils.DirectoryItem] = []
+    @State private var searchResults: [ComposerScopeUtils.DirectoryItem] = []
     @State private var searchTask: Task<Void, Never>?
     @FocusState private var isSearchFocused: Bool
     @Environment(\.colorScheme)
@@ -49,11 +47,11 @@ struct ScopeComboBoxView: View {
                     guard !Task.isCancelled else { return }
 
                     let results = try? await Task.detached(priority: .userInitiated) {
-                        try await ScopeComboBoxUtils.searchDirectories(
+                        try await ComposerScopeUtils.searchDirectories(
                             query: searchText,
                             maxResults: 50,
                             initialMaxDepth: 2,
-                            timeout: 2.0
+                            timeout: 2.0,
                         )
                     }.value
 
@@ -111,10 +109,10 @@ struct ScopeComboBoxView: View {
                         directoryRow(item: item)
                     }
                 } else if searchText.isEmpty {
-                    let combinedList = ScopeComboBoxUtils.buildCombinedList(
+                    let combinedList = ComposerScopeUtils.buildCombinedList(
                         history: backHistory,
                         favorites: favorites,
-                        maxCount: 10
+                        maxCount: 10,
                     )
 
                     ForEach(combinedList) { item in
@@ -131,7 +129,7 @@ struct ScopeComboBoxView: View {
     }
 
     @ViewBuilder
-    private func directoryRow(item: ScopeComboBoxUtils.DirectoryItem) -> some View {
+    private func directoryRow(item: ComposerScopeUtils.DirectoryItem) -> some View {
         Button {
             onSelect(item.path)
             isPresented = false
@@ -159,41 +157,41 @@ struct ScopeComboBoxView: View {
 
     private var comboBoxBackgroundColor: Color {
         if isDark {
-            return Color(red: 0.19, green: 0.19, blue: 0.19)
+            Color(red: 0.19, green: 0.19, blue: 0.19)
         } else {
-            return Color.white
+            Color.white
         }
     }
 
     private var comboBoxBorderColor: Color {
         if isDark {
-            return Color.white.opacity(0.1)
+            Color.white.opacity(0.1)
         } else {
-            return Color.black.opacity(0.12)
+            Color.black.opacity(0.12)
         }
     }
 
     private var comboBoxShadowColor: Color {
         if isDark {
-            return Color.black.opacity(0.4)
+            Color.black.opacity(0.4)
         } else {
-            return Color.black.opacity(0.15)
+            Color.black.opacity(0.15)
         }
     }
 
     private var searchFieldBackgroundColor: Color {
         if isDark {
-            return Color.white.opacity(0.05)
+            Color.white.opacity(0.05)
         } else {
-            return Color.black.opacity(0.03)
+            Color.black.opacity(0.03)
         }
     }
 
     private var separatorColor: Color {
         if isDark {
-            return Color.white.opacity(0.1)
+            Color.white.opacity(0.1)
         } else {
-            return Color.black.opacity(0.1)
+            Color.black.opacity(0.1)
         }
     }
 }

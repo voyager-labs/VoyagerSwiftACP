@@ -11,7 +11,7 @@ private struct ChipSizePreferenceKey: PreferenceKey {
 }
 
 // swiftlint:disable type_body_length
-struct ComposeModeOverlay: View {
+struct ComposerView: View {
     let store: StoreOf<FileManagerFeature>
     @State private var isDark: Bool = isDarkMode()
     @State private var localComposeText: String = ""
@@ -34,8 +34,8 @@ struct ComposeModeOverlay: View {
             .onChange(of: colorScheme) { newScheme in
                 isDark = newScheme == .dark
             }
-            .onChange(of: store.isComposeMode) { isCompose in
-                if !isCompose {
+            .onChange(of: store.composer.isPresented) { isPresented in
+                if !isPresented {
                     cleanupEscKeyMonitor()
                 }
             }
@@ -54,9 +54,9 @@ struct ComposeModeOverlay: View {
                 .fill(overlayBackground)
                 .overlay(
                     RoundedRectangle(cornerRadius: 12)
-                        .stroke(overlayBorderColor, lineWidth: 1)
+                        .stroke(overlayBorderColor, lineWidth: 1),
                 )
-                .shadow(color: overlayShadowColor, radius: overlayShadowRadius, y: overlayShadowY)
+                .shadow(color: overlayShadowColor, radius: overlayShadowRadius, y: overlayShadowY),
         )
     }
 
@@ -96,26 +96,29 @@ struct ComposeModeOverlay: View {
     }
 
     private var textField: some View {
-        TextField("Enter your request...", text: $localComposeText)
-            .textFieldStyle(.plain)
-            .font(.system(size: 13))
-            .padding(.horizontal, 10)
-            .padding(.vertical, 6)
-            .background(
-                RoundedRectangle(cornerRadius: 8)
-                    .fill(isDark ? Color.white.opacity(0.08) : Color.black.opacity(0.05))
-            )
-            .overlay(
-                RoundedRectangle(cornerRadius: 8)
-                    .stroke(isDark ? Color.white.opacity(0.15) : Color.black.opacity(0.12), lineWidth: 1)
-            )
-            .focused($isComposeFieldFocused)
-            .onChange(of: localComposeText) { newValue in
-                store.send(.setComposeText(newValue))
-            }
-            .onSubmit {
-                // TODO: Enter 시 동작 추후 구현
-            }
+        TextField(
+            "Enter your request...",
+            text: Binding(
+                get: { store.composer.text },
+                set: { store.send(.composer(.setText($0))) },
+            ),
+        )
+        .textFieldStyle(.plain)
+        .font(.system(size: 13))
+        .padding(.horizontal, 10)
+        .padding(.vertical, 6)
+        .background(
+            RoundedRectangle(cornerRadius: 8)
+                .fill(isDark ? Color.white.opacity(0.08) : Color.black.opacity(0.05)),
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: 8)
+                .stroke(isDark ? Color.white.opacity(0.15) : Color.black.opacity(0.12), lineWidth: 1),
+        )
+        .focused($isComposeFieldFocused)
+        .onSubmit {
+            // TODO: Enter 시 동작 추후 구현
+        }
     }
 
     private var horizontalSeparator: some View {
@@ -131,9 +134,9 @@ struct ComposeModeOverlay: View {
         var id: String {
             switch self {
             case let .scope(paths):
-                return "scope-\(paths.joined(separator: "-"))"
+                "scope-\(paths.joined(separator: "-"))"
             case let .filter(text):
-                return "filter-\(text)"
+                "filter-\(text)"
             }
         }
     }
@@ -155,42 +158,44 @@ struct ComposeModeOverlay: View {
             let availableWidth = geometry.size.width - chipHorizontalPadding * 2 - leadingPadding
 
             // TODO: voy-95에서 백엔드 데이터로 교체 (store.filters)
-            let allChips: [ChipItemType] = (store.scopes.isEmpty ? [] : [.scope(paths: store.scopes)]) + [
-                .filter(text: "name contains test"),
-                .filter(text: "size > 100KB"),
-                .filter(text: "modified < 7 days"),
-                .filter(text: "type is image"),
-                .filter(text: "created > 2024-01-01"),
-                .filter(text: "tagged with important"),
-                .filter(text: "size < 1MB"),
-                .filter(text: "extension is pdf"),
-            ]
+            let allChips: [ChipItemType] =
+                (store.composer.scopes.isEmpty ? [] : [.scope(paths: store.composer.scopes)]) + [
+                    .filter(text: "name contains test"),
+                    .filter(text: "size > 100KB"),
+                    .filter(text: "modified < 7 days"),
+                    .filter(text: "type is image"),
+                    .filter(text: "created > 2024-01-01"),
+                    .filter(text: "tagged with important"),
+                    .filter(text: "size < 1MB"),
+                    .filter(text: "extension is pdf"),
+                ]
 
             let params = RowCalculationParams(
                 availableWidth: availableWidth,
                 spacing: chipSpacing,
                 chipSizes: chipSizes,
                 filterButtonWidth: filterButtonWidth,
-                buttonSpacing: chipSpacing
+                buttonSpacing: chipSpacing,
             )
             let rows = calculateRowsWithButtons(chips: allChips, params: params)
 
             VStack(alignment: .leading, spacing: chipSpacing) {
                 ForEach(Array(rows.enumerated()), id: \.offset) { rowIndex, rowChips in
                     let isLastRow = rowIndex == rows.count - 1
-                    let lastChipIndex = rowChips.count - 1
+
+                    let composerStore = store.scope(state: \.composer, action: \.composer)
 
                     HStack(spacing: chipSpacing) {
                         ForEach(Array(rowChips.enumerated()), id: \.element.id) { _, chip in
                             Group {
                                 switch chip {
                                 case let .scope(paths):
-                                    ScopeChipView(
+                                    ComposerScopeChipView(
                                         paths: paths,
-                                        store: store,
+                                        store: composerStore,
                                         isDark: isDark,
                                         favorites: store.favorites,
-                                        backHistory: store.backHistory
+                                        backHistory: store.backHistory,
                                     )
                                 case let .filter(text):
                                     filterChipView(text: text)
@@ -201,9 +206,9 @@ struct ComposeModeOverlay: View {
                                     Color.clear
                                         .preference(
                                             key: ChipSizePreferenceKey.self,
-                                            value: [AnyHashable(chip.id): chipGeometry.size]
+                                            value: [AnyHashable(chip.id): chipGeometry.size],
                                         )
-                                }
+                                },
                             )
                         }
 
@@ -222,13 +227,13 @@ struct ComposeModeOverlay: View {
                 }
                 updateCalculatedHeight(
                     chips: allChips,
-                    availableWidth: availableWidth
+                    availableWidth: availableWidth,
                 )
             }
             .onAppear {
                 updateCalculatedHeight(
                     chips: allChips,
-                    availableWidth: availableWidth
+                    availableWidth: availableWidth,
                 )
             }
             .padding(.horizontal, chipHorizontalPadding)
@@ -244,7 +249,7 @@ struct ComposeModeOverlay: View {
             spacing: chipSpacing,
             chipSizes: chipSizes,
             filterButtonWidth: filterButtonWidth,
-            buttonSpacing: chipSpacing
+            buttonSpacing: chipSpacing,
         )
         let updatedRows = calculateRowsWithButtons(chips: chips, params: params)
         let contentHeight = calculateTotalHeight(rows: updatedRows, chipSizes: chipSizes, spacing: chipSpacing)
@@ -255,7 +260,7 @@ struct ComposeModeOverlay: View {
     private func calculateTotalHeight(
         rows: [[ChipItemType]],
         chipSizes: [String: CGSize],
-        spacing: CGFloat
+        spacing: CGFloat,
     ) -> CGFloat {
         guard !rows.isEmpty else { return 0 }
 
@@ -286,7 +291,7 @@ struct ComposeModeOverlay: View {
 
     private func calculateRowsWithButtons(
         chips: [ChipItemType],
-        params: RowCalculationParams
+        params: RowCalculationParams,
     ) -> [[ChipItemType]] {
         var rows: [[ChipItemType]] = []
         var currentRow: [ChipItemType] = []
@@ -327,7 +332,7 @@ struct ComposeModeOverlay: View {
             .padding(.vertical, 4)
             .background(
                 RoundedRectangle(cornerRadius: 6)
-                    .fill(isDark ? Color.white.opacity(0.1) : Color.black.opacity(0.08))
+                    .fill(isDark ? Color.white.opacity(0.1) : Color.black.opacity(0.08)),
             )
     }
 
@@ -354,41 +359,41 @@ struct ComposeModeOverlay: View {
 
     private var overlayBackground: Color {
         if isDark {
-            return Color(red: 0.19, green: 0.19, blue: 0.19)
+            Color(red: 0.19, green: 0.19, blue: 0.19)
         } else {
-            return Color.white
+            Color.white
         }
     }
 
     private var overlayBorderColor: Color {
         if isDark {
-            return Color.white.opacity(0.1)
+            Color.white.opacity(0.1)
         } else {
-            return Color.black.opacity(0.12)
+            Color.black.opacity(0.12)
         }
     }
 
     private var overlayShadowColor: Color {
         if isDark {
-            return Color.black.opacity(0.4)
+            Color.black.opacity(0.4)
         } else {
-            return Color.black.opacity(0.15)
+            Color.black.opacity(0.15)
         }
     }
 
     private var overlayShadowRadius: CGFloat {
         if isDark {
-            return 24
+            24
         } else {
-            return 16
+            16
         }
     }
 
     private var overlayShadowY: CGFloat {
         if isDark {
-            return 12
+            12
         } else {
-            return 8
+            8
         }
     }
 
@@ -407,7 +412,7 @@ struct ComposeModeOverlay: View {
                 .frame(width: 20, height: 20)
                 .background(
                     RoundedRectangle(cornerRadius: 4)
-                        .fill(isDark ? Color.white.opacity(0.1) : Color.black.opacity(0.08))
+                        .fill(isDark ? Color.white.opacity(0.1) : Color.black.opacity(0.08)),
                 )
         }
         .buttonStyle(.borderless)

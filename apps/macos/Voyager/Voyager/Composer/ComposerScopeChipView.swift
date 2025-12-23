@@ -1,9 +1,9 @@
 import ComposableArchitecture
 import SwiftUI
 
-struct ScopeChipView: View {
+struct ComposerScopeChipView: View {
     let paths: [String]
-    let store: StoreOf<FileManagerFeature>
+    let store: StoreOf<ComposerFeature>
     let isDark: Bool
     let favorites: [SidebarUtils.FavoriteItem]
     let backHistory: [String]
@@ -36,11 +36,10 @@ struct ScopeChipView: View {
         .padding(.vertical, 4)
         .background(
             RoundedRectangle(cornerRadius: 6)
-                .fill(isDark ? Color.white.opacity(0.1) : Color.black.opacity(0.08))
+                .fill(isDark ? Color.white.opacity(0.1) : Color.black.opacity(0.08)),
         )
         .popover(isPresented: $isComboBoxPresented, arrowEdge: .bottom) {
-            ScopeComboBoxView(
-                store: store,
+            ComposerScopeComboBoxView(
                 isPresented: $isComboBoxPresented,
                 oldPath: editingPath,
                 onSelect: { selectedPath in
@@ -88,27 +87,27 @@ struct ScopeChipView: View {
         .padding(.vertical, 2)
         .background(
             RoundedRectangle(cornerRadius: 4)
-                .fill(subChipBackgroundColor)
+                .fill(subChipBackgroundColor),
         )
         .overlay(
             RoundedRectangle(cornerRadius: 4)
-                .stroke(subChipBorderColor, lineWidth: 0.5)
+                .stroke(subChipBorderColor, lineWidth: 0.5),
         )
     }
 
     private var subChipBackgroundColor: Color {
         if isDark {
-            return Color.white.opacity(0.15)
+            Color.white.opacity(0.15)
         } else {
-            return Color.black.opacity(0.08)
+            Color.black.opacity(0.08)
         }
     }
 
     private var subChipBorderColor: Color {
         if isDark {
-            return Color.white.opacity(0.2)
+            Color.white.opacity(0.2)
         } else {
-            return Color.black.opacity(0.15)
+            Color.black.opacity(0.15)
         }
     }
 }

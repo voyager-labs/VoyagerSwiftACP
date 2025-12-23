@@ -1,6 +1,6 @@
 import Foundation
 
-enum ScopeComboBoxUtils {
+enum ComposerScopeUtils {
     struct DirectoryItem: Identifiable, Equatable {
         let id: String
         let path: String
@@ -49,7 +49,7 @@ enum ScopeComboBoxUtils {
         at path: String,
         params: SearchParams,
         results: inout [DirectoryItem],
-        currentDepth: Int
+        currentDepth: Int,
     ) {
         if Date().timeIntervalSince(params.startTime) > params.timeout {
             return
@@ -75,7 +75,6 @@ enum ScopeComboBoxUtils {
 
             let fullPath = (path as NSString).appendingPathComponent(item)
             var isDirectory: ObjCBool = false
-
             guard FileManager.default.fileExists(atPath: fullPath, isDirectory: &isDirectory),
                   isDirectory.boolValue
             else { continue }
@@ -84,14 +83,14 @@ enum ScopeComboBoxUtils {
                 at: fullPath,
                 query: params.query,
                 results: &results,
-                maxResults: params.maxResults
+                maxResults: params.maxResults,
             )
 
             searchRecursive(
                 at: fullPath,
                 params: params,
                 results: &results,
-                currentDepth: currentDepth + 1
+                currentDepth: currentDepth + 1,
             )
         }
     }
@@ -100,7 +99,7 @@ enum ScopeComboBoxUtils {
         at fullPath: String,
         query: String,
         results: inout [DirectoryItem],
-        maxResults: Int
+        maxResults: Int,
     ) {
         guard results.count < maxResults else { return }
 
@@ -114,13 +113,13 @@ enum ScopeComboBoxUtils {
             id: fullPath,
             path: fullPath,
             name: displayName,
-            iconName: iconName
+            iconName: iconName,
         ))
     }
 
     private nonisolated static func sortSearchResults(
         _ results: [DirectoryItem],
-        query: String
+        query: String,
     ) -> [DirectoryItem] {
         results.sorted { item1, item2 in
             let name1 = item1.name.lowercased()
@@ -141,7 +140,7 @@ enum ScopeComboBoxUtils {
         query: String,
         maxResults: Int = 50,
         initialMaxDepth: Int = 2,
-        timeout: TimeInterval = 2.0
+        timeout: TimeInterval = 2.0,
     ) async throws -> [DirectoryItem] {
         guard !query.isEmpty else { return [] }
 
@@ -149,7 +148,6 @@ enum ScopeComboBoxUtils {
             let queryLower = query.lowercased()
             var allResults: [DirectoryItem] = []
             let startTime = Date()
-
             let searchPaths = [
                 "/",
                 NSHomeDirectory(),
@@ -168,13 +166,13 @@ enum ScopeComboBoxUtils {
                         maxResults: maxResults,
                         maxDepth: initialMaxDepth,
                         startTime: startTime,
-                        timeout: timeout
+                        timeout: timeout,
                     )
                     searchRecursive(
                         at: searchPath,
                         params: params,
                         results: &results,
-                        currentDepth: 0
+                        currentDepth: 0,
                     )
                     return results
                 }
@@ -200,7 +198,7 @@ enum ScopeComboBoxUtils {
     static func buildCombinedList(
         history: [String],
         favorites: [SidebarUtils.FavoriteItem],
-        maxCount: Int = 10
+        maxCount: Int = 10,
     ) -> [DirectoryItem] {
         var result: [DirectoryItem] = []
         var seenPaths: Set<String> = []
@@ -217,7 +215,7 @@ enum ScopeComboBoxUtils {
                 id: path,
                 path: path,
                 name: displayName,
-                iconName: iconName
+                iconName: iconName,
             ))
 
             seenPaths.insert(path)
@@ -234,7 +232,7 @@ enum ScopeComboBoxUtils {
                     id: path,
                     path: path,
                     name: favorite.name,
-                    iconName: favorite.iconName
+                    iconName: favorite.iconName,
                 ))
 
                 seenPaths.insert(path)
