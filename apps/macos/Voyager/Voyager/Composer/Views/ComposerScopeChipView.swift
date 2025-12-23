@@ -33,7 +33,7 @@ struct ComposerScopeChipView: View {
             }
         }
         .padding(.horizontal, 8)
-        .padding(.vertical, 4)
+        .frame(height: 28)
         .background(
             RoundedRectangle(cornerRadius: 6)
                 .fill(isDark ? Color.white.opacity(0.1) : Color.black.opacity(0.08)),
