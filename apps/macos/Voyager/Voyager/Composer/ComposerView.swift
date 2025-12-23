@@ -129,14 +129,14 @@ struct ComposerView: View {
 
     private enum ChipItemType: Identifiable, Hashable {
         case scope(paths: [String])
-        case filter(text: String)
+        case condition(text: String)
 
         var id: String {
             switch self {
             case let .scope(paths):
                 "scope-\(paths.joined(separator: "-"))"
-            case let .filter(text):
-                "filter-\(text)"
+            case let .condition(text):
+                "condition-\(text)"
             }
         }
     }
@@ -147,7 +147,7 @@ struct ComposerView: View {
     private let chipHorizontalPadding: CGFloat = 16
     private let chipSpacing: CGFloat = 8
     private let chipVerticalPadding: CGFloat = 8
-    private let filterButtonWidth: CGFloat = 20
+    private let conditionButtonWidth: CGFloat = 20
     private let maxChipAreaHeight: CGFloat = 200
     private let defaultChipHeight: CGFloat = 28
     private let defaultChipWidth: CGFloat = 120
@@ -157,24 +157,24 @@ struct ComposerView: View {
             let leadingPadding = store.sidebarVisible ? 0 : trafficLightAreaWidth
             let availableWidth = geometry.size.width - chipHorizontalPadding * 2 - leadingPadding
 
-            // TODO: voy-95에서 백엔드 데이터로 교체 (store.filters)
+            // TODO: voy-95에서 백엔드 데이터로 교체 (store.conditions)
             let allChips: [ChipItemType] =
                 (store.composer.scopes.isEmpty ? [] : [.scope(paths: store.composer.scopes)]) + [
-                    .filter(text: "name contains test"),
-                    .filter(text: "size > 100KB"),
-                    .filter(text: "modified < 7 days"),
-                    .filter(text: "type is image"),
-                    .filter(text: "created > 2024-01-01"),
-                    .filter(text: "tagged with important"),
-                    .filter(text: "size < 1MB"),
-                    .filter(text: "extension is pdf"),
+                    .condition(text: "name contains test"),
+                    .condition(text: "size > 100KB"),
+                    .condition(text: "modified < 7 days"),
+                    .condition(text: "type is image"),
+                    .condition(text: "created > 2024-01-01"),
+                    .condition(text: "tagged with important"),
+                    .condition(text: "size < 1MB"),
+                    .condition(text: "extension is pdf"),
                 ]
 
             let params = RowCalculationParams(
                 availableWidth: availableWidth,
                 spacing: chipSpacing,
                 chipSizes: chipSizes,
-                filterButtonWidth: filterButtonWidth,
+                conditionButtonWidth: conditionButtonWidth,
                 buttonSpacing: chipSpacing,
             )
             let rows = calculateRowsWithButtons(chips: allChips, params: params)
@@ -197,8 +197,8 @@ struct ComposerView: View {
                                         favorites: store.favorites,
                                         backHistory: store.backHistory,
                                     )
-                                case let .filter(text):
-                                    filterChipView(text: text)
+                                case let .condition(text):
+                                    conditionChipView(text: text)
                                 }
                             }
                             .background(
@@ -212,8 +212,8 @@ struct ComposerView: View {
                             )
                         }
 
-                        if isLastRow, let lastChip = rowChips.last, case .filter = lastChip {
-                            filterAddButton
+                        if isLastRow, let lastChip = rowChips.last, case .condition = lastChip {
+                            conditionAddButton
                         }
                     }
                 }
@@ -248,7 +248,7 @@ struct ComposerView: View {
             availableWidth: availableWidth,
             spacing: chipSpacing,
             chipSizes: chipSizes,
-            filterButtonWidth: filterButtonWidth,
+            conditionButtonWidth: conditionButtonWidth,
             buttonSpacing: chipSpacing,
         )
         let updatedRows = calculateRowsWithButtons(chips: chips, params: params)
@@ -285,7 +285,7 @@ struct ComposerView: View {
         let availableWidth: CGFloat
         let spacing: CGFloat
         let chipSizes: [String: CGSize]
-        let filterButtonWidth: CGFloat
+        let conditionButtonWidth: CGFloat
         let buttonSpacing: CGFloat
     }
 
@@ -301,7 +301,7 @@ struct ComposerView: View {
             let chipWidth = params.chipSizes[chip.id]?.width ?? defaultChipWidth
             let chipSpacing = currentRow.isEmpty ? 0 : params.spacing
 
-            let rowButtonSpace = params.filterButtonWidth
+            let rowButtonSpace = params.conditionButtonWidth
 
             let chipsOnlyWidth = currentRowWidth + chipSpacing + chipWidth
 
@@ -324,7 +324,7 @@ struct ComposerView: View {
         return rows
     }
 
-    private func filterChipView(text: String) -> some View {
+    private func conditionChipView(text: String) -> some View {
         Text(text)
             .font(.system(size: 11, weight: .medium))
             .foregroundColor(.primary.opacity(0.8))
@@ -336,9 +336,9 @@ struct ComposerView: View {
             )
     }
 
-    private var filterAddButton: some View {
+    private var conditionAddButton: some View {
         addButton(action: {
-            // TODO: addFilter (voy-95에서 구현)
+            // TODO: addCondition (voy-95에서 구현)
         })
     }
 
