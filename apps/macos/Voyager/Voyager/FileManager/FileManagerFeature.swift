@@ -274,6 +274,7 @@ struct FileManagerFeature {
         case setComposeText(String)
         case addScope(path: String)
         case removeScope(path: String)
+        case updateScope(oldPath: String, newPath: String)
     }
 
     @Dependency(\.fsItemClient)
@@ -705,6 +706,12 @@ struct FileManagerFeature {
 
             case let .removeScope(path):
                 state.scopes.removeAll { $0 == path }
+                return .none
+
+            case let .updateScope(oldPath, newPath):
+                if let index = state.scopes.firstIndex(of: oldPath) {
+                    state.scopes[index] = newPath
+                }
                 return .none
             }
         }

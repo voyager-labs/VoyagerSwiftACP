@@ -9,6 +9,7 @@ struct ScopeChipView: View {
     let backHistory: [String]
 
     @State private var isComboBoxPresented: Bool = false
+    @State private var editingPath: String?
 
     var body: some View {
         HStack(spacing: 4) {
@@ -41,11 +42,17 @@ struct ScopeChipView: View {
             ScopeComboBoxView(
                 store: store,
                 isPresented: $isComboBoxPresented,
+                oldPath: editingPath,
                 onSelect: { selectedPath in
-                    store.send(.addScope(path: selectedPath))
+                    if let oldPath = editingPath {
+                        store.send(.updateScope(oldPath: oldPath, newPath: selectedPath))
+                    } else {
+                        store.send(.addScope(path: selectedPath))
+                    }
+                    editingPath = nil
                 },
                 favorites: favorites,
-                backHistory: backHistory
+                backHistory: backHistory,
             )
         }
     }
@@ -55,12 +62,18 @@ struct ScopeChipView: View {
         let displayName = FileManager.default.displayName(atPath: path)
 
         HStack(spacing: 4) {
-            Text(displayName)
-                .font(.system(size: 11, weight: .medium))
-                .foregroundColor(.primary.opacity(0.8))
-                .lineLimit(1)
-                .truncationMode(.tail)
-                .fixedSize(horizontal: true, vertical: false)
+            Button {
+                editingPath = path
+                isComboBoxPresented = true
+            } label: {
+                Text(displayName)
+                    .font(.system(size: 11, weight: .medium))
+                    .foregroundColor(.primary.opacity(0.8))
+                    .lineLimit(1)
+                    .truncationMode(.tail)
+                    .fixedSize(horizontal: true, vertical: false)
+            }
+            .buttonStyle(.borderless)
 
             Button {
                 store.send(.removeScope(path: path))

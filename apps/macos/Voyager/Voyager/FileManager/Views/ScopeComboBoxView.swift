@@ -4,6 +4,7 @@ import SwiftUI
 struct ScopeComboBoxView: View {
     let store: StoreOf<FileManagerFeature>
     @Binding var isPresented: Bool
+    let oldPath: String?
     let onSelect: (String) -> Void
     let favorites: [SidebarUtils.FavoriteItem]
     let backHistory: [String]
@@ -30,7 +31,7 @@ struct ScopeComboBoxView: View {
         .background(comboBoxBackgroundColor)
         .overlay(
             RoundedRectangle(cornerRadius: 8)
-                .stroke(comboBoxBorderColor, lineWidth: 1)
+                .stroke(comboBoxBorderColor, lineWidth: 1),
         )
         .shadow(color: comboBoxShadowColor, radius: 8, y: 4)
         .onAppear {
