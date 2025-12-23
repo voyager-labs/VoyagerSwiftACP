@@ -74,7 +74,7 @@ struct FSItemListView: View {
         let layout = columnWidths.makeAbsoluteWidths(
             totalWidth: availableWidth,
             padding: ListColumnLayout.outerPadding,
-            spacing: ListColumnLayout.columnSpacing
+            spacing: ListColumnLayout.columnSpacing,
         )
 
         HStack(spacing: 0) {
@@ -94,14 +94,14 @@ struct FSItemListView: View {
                                 TagsEditorView(
                                     fileName: item.name,
                                     currentTags: item.tags ?? [],
-                                    onToggleTag: onToggleTag
+                                    onToggleTag: onToggleTag,
                                 )
                             }
 
                         if isRenaming {
                             TextField("", text: Binding(
                                 get: { renamingText },
-                                set: { onRenameUpdate($0) }
+                                set: { onRenameUpdate($0) },
                             ))
                             .font(.system(size: textSize))
                             .textFieldStyle(.plain)
@@ -132,7 +132,7 @@ struct FSItemListView: View {
                             OverlappingTagsView(
                                 tags: tags,
                                 isSelected: isSelected,
-                                showBorderWhenUnselected: true
+                                showBorderWhenUnselected: true,
                             )
                         }
                     }
@@ -174,13 +174,13 @@ struct FSItemListView: View {
                     let isCommandPressed = currentEvent?.modifierFlags.contains(.command) ?? false
                     let isShiftPressed = currentEvent?.modifierFlags.contains(.shift) ?? false
                     onSelect(isCommandPressed, isShiftPressed)
-                }
+                },
         )
         .simultaneousGesture(
             TapGesture(count: 2)
                 .onEnded { _ in
                     onOpen()
-                }
+                },
         )
         .if(item.isDirectory) { view in
             view.onDrop(
@@ -189,12 +189,12 @@ struct FSItemListView: View {
                     item: item,
                     onDrop: onDrop,
                     isDropTarget: $isDropTarget,
-                    draggingPaths: draggingPaths
-                )
+                    draggingPaths: draggingPaths,
+                ),
             )
             .background(
                 RoundedRectangle(cornerRadius: 6)
-                    .stroke(Color.blue, lineWidth: isDropTarget ? 2 : 0)
+                    .stroke(Color.blue, lineWidth: isDropTarget ? 2 : 0),
             )
         }
         .contextMenu {
@@ -248,7 +248,7 @@ private extension FSItemListView {
             } label: {
                 Label(
                     isOptionPressed ? "Open in New Window" : "Open in New Tab",
-                    systemImage: isOptionPressed ? "macwindow.badge.plus" : "plus.square.on.square"
+                    systemImage: isOptionPressed ? "macwindow.badge.plus" : "plus.square.on.square",
                 )
             }
             .keyboardShortcut(.downArrow, modifiers: [.command, .option])
@@ -296,7 +296,7 @@ private extension FSItemListView {
 
         Divider()
 
-        if let onPutBack = onPutBack {
+        if let onPutBack {
             Button {
                 onPutBack()
             } label: {

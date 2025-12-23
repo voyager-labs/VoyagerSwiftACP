@@ -10,22 +10,22 @@ struct ThemePreviewCard: View {
     private var contentBackgroundColor: Color {
         switch theme {
         case .light:
-            return Color(red: 0.4, green: 0.6, blue: 0.9)
+            Color(red: 0.4, green: 0.6, blue: 0.9)
         case .dark:
-            return Color(red: 0.2, green: 0.3, blue: 0.5)
+            Color(red: 0.2, green: 0.3, blue: 0.5)
         case .system:
-            return Color(white: 0.5)
+            Color(white: 0.5)
         }
     }
 
     private var popupBackgroundColor: Color {
         switch theme {
         case .light:
-            return Color.white
+            Color.white
         case .dark:
-            return Color(white: 0.25)
+            Color(white: 0.25)
         case .system:
-            return Color(white: 0.5)
+            Color(white: 0.5)
         }
     }
 
@@ -45,7 +45,7 @@ struct ThemePreviewCard: View {
                                     .fill(Color(red: 0.2, green: 0.3, blue: 0.5))
                                     .frame(width: 35, height: 42)
                             }
-                            .clipShape(RoundedRectangle(cornerRadius: 8))
+                            .clipShape(RoundedRectangle(cornerRadius: 8)),
                         )
                         .overlay(
                             HStack(spacing: 0) {
@@ -53,21 +53,21 @@ struct ThemePreviewCard: View {
                                     .frame(width: 35, height: 42)
                                 buildPopupWindow(isLight: false, showAllTrafficLights: false)
                                     .frame(width: 35, height: 42)
-                            }
+                            },
                         )
                 } else {
                     RoundedRectangle(cornerRadius: 8)
                         .fill(contentBackgroundColor)
                         .frame(width: 70, height: 42)
                         .overlay(
-                            buildPopupWindow(isLight: theme == .light, showAllTrafficLights: true)
+                            buildPopupWindow(isLight: theme == .light, showAllTrafficLights: true),
                         )
                 }
             }
             .overlay(
                 RoundedRectangle(cornerRadius: 8)
                     .stroke(isSelected ? Color.accentColor : Color.clear, lineWidth: 3)
-                    .frame(width: 70, height: 42)
+                    .frame(width: 70, height: 42),
             )
 
             Text(theme.displayName)
@@ -117,7 +117,7 @@ struct ThemePreviewCard: View {
                     }
                     .padding(.leading, 4)
                     .padding(.top, 2),
-                    alignment: .topLeading
+                    alignment: .topLeading,
                 )
                 .offset(x: startX, y: startY)
         }
@@ -142,21 +142,21 @@ struct AppearanceSettingsView: View {
                     HStack(spacing: 8) {
                         ThemePreviewCard(
                             theme: .system,
-                            isSelected: store.appearanceSettings.theme == .system
+                            isSelected: store.appearanceSettings.theme == .system,
                         ) {
                             store.send(.appearance(.setTheme(.system)))
                         }
 
                         ThemePreviewCard(
                             theme: .light,
-                            isSelected: store.appearanceSettings.theme == .light
+                            isSelected: store.appearanceSettings.theme == .light,
                         ) {
                             store.send(.appearance(.setTheme(.light)))
                         }
 
                         ThemePreviewCard(
                             theme: .dark,
-                            isSelected: store.appearanceSettings.theme == .dark
+                            isSelected: store.appearanceSettings.theme == .dark,
                         ) {
                             store.send(.appearance(.setTheme(.dark)))
                         }
@@ -179,10 +179,10 @@ struct AppearanceSettingsView: View {
                             Slider(
                                 value: Binding(
                                     get: { store.appearanceSettings.listIconSize },
-                                    set: { store.send(.appearance(.setListIconSize($0))) }
+                                    set: { store.send(.appearance(.setListIconSize($0))) },
                                 ),
                                 in: 16 ... 32,
-                                step: 1
+                                step: 1,
                             )
                             .frame(width: 200)
 
@@ -206,10 +206,10 @@ struct AppearanceSettingsView: View {
                             Slider(
                                 value: Binding(
                                     get: { store.appearanceSettings.gridIconSize },
-                                    set: { store.send(.appearance(.setGridIconSize($0))) }
+                                    set: { store.send(.appearance(.setGridIconSize($0))) },
                                 ),
                                 in: 16 ... 512,
-                                step: 4
+                                step: 4,
                             )
                             .frame(width: 200)
 
@@ -238,10 +238,10 @@ struct AppearanceSettingsView: View {
                             Slider(
                                 value: Binding(
                                     get: { store.appearanceSettings.listTextSize },
-                                    set: { store.send(.appearance(.setListTextSize($0))) }
+                                    set: { store.send(.appearance(.setListTextSize($0))) },
                                 ),
                                 in: 10 ... 16,
-                                step: 1
+                                step: 1,
                             )
                             .frame(width: 200)
 
@@ -264,10 +264,10 @@ struct AppearanceSettingsView: View {
                             Slider(
                                 value: Binding(
                                     get: { store.appearanceSettings.gridTextSize },
-                                    set: { store.send(.appearance(.setGridTextSize($0))) }
+                                    set: { store.send(.appearance(.setGridTextSize($0))) },
                                 ),
                                 in: 10 ... 16,
-                                step: 1
+                                step: 1,
                             )
                             .frame(width: 200)
 

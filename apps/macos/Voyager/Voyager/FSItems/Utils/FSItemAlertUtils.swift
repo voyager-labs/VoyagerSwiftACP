@@ -35,7 +35,7 @@ enum FSItemAlertUtils {
     @MainActor
     static func showReplaceAlert(
         itemName: String,
-        context: ReplaceContext
+        context: ReplaceContext,
     ) -> ReplaceAlertResponse {
         let alert = NSAlert()
         alert.alertStyle = .warning

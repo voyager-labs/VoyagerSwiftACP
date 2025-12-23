@@ -49,7 +49,7 @@ struct ToolbarMenuView: View {
                                 Image(systemName: "checkmark")
                             }
                         }
-                    }
+                    },
                 )
 
                 Divider()
@@ -63,7 +63,7 @@ struct ToolbarMenuView: View {
                                 Image(systemName: "checkmark")
                             }
                         }
-                    }
+                    },
                 )
 
                 Button(
@@ -75,7 +75,7 @@ struct ToolbarMenuView: View {
                                 Image(systemName: "checkmark")
                             }
                         }
-                    }
+                    },
                 )
 
                 Button(
@@ -87,7 +87,7 @@ struct ToolbarMenuView: View {
                                 Image(systemName: "checkmark")
                             }
                         }
-                    }
+                    },
                 )
 
                 Button(
@@ -99,7 +99,7 @@ struct ToolbarMenuView: View {
                                 Image(systemName: "checkmark")
                             }
                         }
-                    }
+                    },
                 )
 
                 Button(
@@ -111,7 +111,7 @@ struct ToolbarMenuView: View {
                                 Image(systemName: "checkmark")
                             }
                         }
-                    }
+                    },
                 )
 
                 Button(
@@ -123,7 +123,7 @@ struct ToolbarMenuView: View {
                                 Image(systemName: "checkmark")
                             }
                         }
-                    }
+                    },
                 )
 
                 Button(
@@ -135,7 +135,7 @@ struct ToolbarMenuView: View {
                                 Image(systemName: "checkmark")
                             }
                         }
-                    }
+                    },
                 )
 
                 Button(
@@ -147,7 +147,7 @@ struct ToolbarMenuView: View {
                                 Image(systemName: "checkmark")
                             }
                         }
-                    }
+                    },
                 )
                 Button(
                     action: { store.send(.changeGroupKey(.tags)) },
@@ -158,7 +158,7 @@ struct ToolbarMenuView: View {
                                 Image(systemName: "checkmark")
                             }
                         }
-                    }
+                    },
                 )
             }
 
@@ -172,7 +172,7 @@ struct ToolbarMenuView: View {
                                 Image(systemName: "checkmark")
                             }
                         }
-                    }
+                    },
                 )
                 Button(
                     action: { store.send(.changeSortKey(.kind)) },
@@ -183,7 +183,7 @@ struct ToolbarMenuView: View {
                                 Image(systemName: "checkmark")
                             }
                         }
-                    }
+                    },
                 )
                 Button(
                     action: { store.send(.changeSortKey(.application)) },
@@ -194,7 +194,7 @@ struct ToolbarMenuView: View {
                                 Image(systemName: "checkmark")
                             }
                         }
-                    }
+                    },
                 )
                 Button(
                     action: { store.send(.changeSortKey(.dateLastOpened)) },
@@ -205,7 +205,7 @@ struct ToolbarMenuView: View {
                                 Image(systemName: "checkmark")
                             }
                         }
-                    }
+                    },
                 )
                 Button(
                     action: { store.send(.changeSortKey(.dateAdded)) },
@@ -216,7 +216,7 @@ struct ToolbarMenuView: View {
                                 Image(systemName: "checkmark")
                             }
                         }
-                    }
+                    },
                 )
                 Button(
                     action: { store.send(.changeSortKey(.dateModified)) },
@@ -227,7 +227,7 @@ struct ToolbarMenuView: View {
                                 Image(systemName: "checkmark")
                             }
                         }
-                    }
+                    },
                 )
                 Button(
                     action: { store.send(.changeSortKey(.dateCreated)) },
@@ -238,7 +238,7 @@ struct ToolbarMenuView: View {
                                 Image(systemName: "checkmark")
                             }
                         }
-                    }
+                    },
                 )
                 Button(
                     action: { store.send(.changeSortKey(.size)) },
@@ -249,7 +249,7 @@ struct ToolbarMenuView: View {
                                 Image(systemName: "checkmark")
                             }
                         }
-                    }
+                    },
                 )
                 Button(
                     action: { store.send(.changeSortKey(.tags)) },
@@ -260,7 +260,7 @@ struct ToolbarMenuView: View {
                                 Image(systemName: "checkmark")
                             }
                         }
-                    }
+                    },
                 )
 
                 Divider()
@@ -274,7 +274,7 @@ struct ToolbarMenuView: View {
                                 Image(systemName: "checkmark")
                             }
                         }
-                    }
+                    },
                 )
 
                 Button(
@@ -286,7 +286,7 @@ struct ToolbarMenuView: View {
                                 Image(systemName: "checkmark")
                             }
                         }
-                    }
+                    },
                 )
             }
             .disabled(store.fsItems.groupKey != .none)

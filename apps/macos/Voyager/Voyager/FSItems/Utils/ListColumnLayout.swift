@@ -20,7 +20,7 @@ struct ListColumnLayout {
         let sizeRatio: CGFloat
         let kindRatio: CGFloat
 
-        if let columnWidths = columnWidths {
+        if let columnWidths {
             nameRatio = columnWidths.name
             dateRatio = columnWidths.date
             sizeRatio = columnWidths.size

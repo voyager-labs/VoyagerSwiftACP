@@ -1,3 +1,5 @@
 **/notebooks/test-files/**
 .cspell/*
 .vscode/*
+!.env.example
+!.env.prod

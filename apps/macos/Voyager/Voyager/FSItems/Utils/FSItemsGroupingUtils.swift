@@ -46,7 +46,7 @@ enum FSItemsGroupingUtils {
 
     private static func groupByDate(
         _ files: [FSItem],
-        dateKeyPath: KeyPath<FSItem, Date> = \.modifiedDate
+        dateKeyPath: KeyPath<FSItem, Date> = \.modifiedDate,
     ) -> [GroupedItems] {
         let calendar = Calendar.current
         let now = Date()
@@ -87,7 +87,7 @@ enum FSItemsGroupingUtils {
         _ files: [FSItem],
         dateKeyPath: KeyPath<FSItem, Date>,
         calendar: Calendar,
-        now: Date
+        now: Date,
     ) -> (groups: [GroupedItems], processedFiles: Set<String>) {
         var result: [GroupedItems] = []
         var processedFiles: Set<String> = []
@@ -95,13 +95,13 @@ enum FSItemsGroupingUtils {
         let todayFiles = files.filter { calendar.isDateInToday($0[keyPath: dateKeyPath]) }
         if !todayFiles.isEmpty {
             result.append(GroupedItems(groupName: "Today", items: todayFiles))
-            processedFiles.formUnion(todayFiles.map { $0.id })
+            processedFiles.formUnion(todayFiles.map(\.id))
         }
 
         let yesterdayFiles = files.filter { calendar.isDateInYesterday($0[keyPath: dateKeyPath]) }
         if !yesterdayFiles.isEmpty {
             result.append(GroupedItems(groupName: "Yesterday", items: yesterdayFiles))
-            processedFiles.formUnion(yesterdayFiles.map { $0.id })
+            processedFiles.formUnion(yesterdayFiles.map(\.id))
         }
 
         let weekAgo = calendar.date(byAdding: .day, value: -8, to: now) ?? now
@@ -115,7 +115,7 @@ enum FSItemsGroupingUtils {
         }
         if !previous7DaysFiles.isEmpty {
             result.append(GroupedItems(groupName: "Previous 7 Days", items: previous7DaysFiles))
-            processedFiles.formUnion(previous7DaysFiles.map { $0.id })
+            processedFiles.formUnion(previous7DaysFiles.map(\.id))
         }
 
         let monthAgo = calendar.date(byAdding: .day, value: -37, to: now) ?? now
@@ -127,7 +127,7 @@ enum FSItemsGroupingUtils {
         }
         if !previous30DaysFiles.isEmpty {
             result.append(GroupedItems(groupName: "Previous 30 Days", items: previous30DaysFiles))
-            processedFiles.formUnion(previous30DaysFiles.map { $0.id })
+            processedFiles.formUnion(previous30DaysFiles.map(\.id))
         }
 
         return (groups: result, processedFiles: processedFiles)
@@ -151,11 +151,11 @@ enum FSItemsGroupingUtils {
 
             let lhsDate = calendar.date(from: DateComponents(
                 year: currentYear,
-                month: getMonthNumber(from: lhs.groupName, formatter: formatter)
+                month: getMonthNumber(from: lhs.groupName, formatter: formatter),
             )) ?? Date()
             let rhsDate = calendar.date(from: DateComponents(
                 year: currentYear,
-                month: getMonthNumber(from: rhs.groupName, formatter: formatter)
+                month: getMonthNumber(from: rhs.groupName, formatter: formatter),
             )) ?? Date()
 
             return lhsDate > rhsDate
@@ -213,7 +213,7 @@ enum FSItemsGroupingUtils {
 
     static func groupItems(
         _ items: [FSItem],
-        by groupKey: GroupKey
+        by groupKey: GroupKey,
     ) -> [GroupedItems] {
         guard groupKey != .none else {
             return [GroupedItems(groupName: "", items: items)]
@@ -225,25 +225,25 @@ enum FSItemsGroupingUtils {
     private static func groupItemsByKey(_ items: [FSItem], groupKey: GroupKey) -> [GroupedItems] {
         switch groupKey {
         case .none:
-            return [GroupedItems(groupName: "", items: items)]
+            [GroupedItems(groupName: "", items: items)]
         case .name:
-            return groupItemsByName(items)
+            groupItemsByName(items)
         case .kind:
-            return groupItemsByKind(items)
+            groupItemsByKind(items)
         case .application:
-            return groupItemsByApplication(items)
+            groupItemsByApplication(items)
         case .dateLastOpened:
-            return groupItemsByDateLastOpened(items)
+            groupItemsByDateLastOpened(items)
         case .dateAdded:
-            return groupByDate(items, dateKeyPath: \.addedDate)
+            groupByDate(items, dateKeyPath: \.addedDate)
         case .dateModified:
-            return groupByDate(items)
+            groupByDate(items)
         case .dateCreated:
-            return groupByDate(items, dateKeyPath: \.createdDate)
+            groupByDate(items, dateKeyPath: \.createdDate)
         case .size:
-            return groupItemsBySize(items)
+            groupItemsBySize(items)
         case .tags:
-            return groupItemsByTags(items)
+            groupItemsByTags(items)
         }
     }
 
@@ -254,7 +254,7 @@ enum FSItemsGroupingUtils {
 
     private static func groupItemsByKind(_ items: [FSItem]) -> [GroupedItems] {
         var result: [GroupedItems] = []
-        let folders = items.filter { $0.isDirectory }
+        let folders = items.filter(\.isDirectory)
         if !folders.isEmpty {
             result.append(GroupedItems(groupName: "", items: folders))
         }
@@ -307,7 +307,7 @@ enum FSItemsGroupingUtils {
         var result: [GroupedItems] = []
         let files = items.filter { !$0.isDirectory }
         result.append(contentsOf: groupBySize(files))
-        let folders = items.filter { $0.isDirectory }
+        let folders = items.filter(\.isDirectory)
         if !folders.isEmpty {
             result.append(GroupedItems(groupName: "---", items: folders))
         }
@@ -340,7 +340,7 @@ enum FSItemsGroupingUtils {
                     result.append(GroupedItems(
                         groupName: tagName,
                         items: taggedItems
-                            .sorted { $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending }
+                            .sorted { $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending },
                     ))
                     processedTags.insert(tagName)
                 }
@@ -353,7 +353,7 @@ enum FSItemsGroupingUtils {
             if let taggedItems = tagToItems[tagName] {
                 result.append(GroupedItems(
                     groupName: tagName,
-                    items: taggedItems.sorted { $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending }
+                    items: taggedItems.sorted { $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending },
                 ))
             }
         }
@@ -361,7 +361,8 @@ enum FSItemsGroupingUtils {
         if !itemsWithoutTags.isEmpty {
             result.append(GroupedItems(
                 groupName: "No Tags",
-                items: itemsWithoutTags.sorted { $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending }
+                items: itemsWithoutTags
+                    .sorted { $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending },
             ))
         }
 

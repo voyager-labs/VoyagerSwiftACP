@@ -43,8 +43,12 @@ brew install swiftformat
 
 2. **Scheme 설정**:
 
-    - Run scheme: Voyager (메인 앱)
-    - Helper scheme: VoyagerHelper (백엔드 관리 헬퍼 앱)
+    - Run schemes:
+        - Voyager-Dev (개발 실행)
+        - Voyager-Prod (배포/Archive)
+    - Helper schemes:
+        - VoyagerHelper-Dev (개발용 헬퍼)
+        - VoyagerHelper-Prod (배포/Archive 헬퍼)
     - Test schemes: VoyagerTests, VoyagerUITests
 
 ## 빌드 및 실행
@@ -52,11 +56,14 @@ brew install swiftformat
 ### CLI 빌드
 
 ```bash
-# 프로젝트 빌드
-xcodebuild -workspace Voyager.xcworkspace -scheme Voyager -configuration Debug build
+# 프로젝트 빌드 (개발)
+xcodebuild -workspace Voyager.xcworkspace -scheme Voyager-Dev -configuration Debug build
 
-# 테스트 실행
-xcodebuild -workspace Voyager.xcworkspace -scheme Voyager test
+# 프로젝트 빌드/Archive (배포)
+xcodebuild -workspace Voyager.xcworkspace -scheme Voyager-Prod -configuration Release build
+
+# 테스트 실행 (개발)
+xcodebuild -workspace Voyager.xcworkspace -scheme Voyager-Dev test
 ```
 
 ## 테스트
@@ -64,17 +71,17 @@ xcodebuild -workspace Voyager.xcworkspace -scheme Voyager test
 ### 테스트 실행
 
 ```bash
-# 모든 테스트 실행
-xcodebuild test -workspace Voyager.xcworkspace -scheme Voyager
+# 모든 테스트 실행(개발)
+xcodebuild test -workspace Voyager.xcworkspace -scheme Voyager-Dev
 
 # 단위 테스트 실행
-xcodebuild test -workspace Voyager.xcworkspace -scheme Voyager -only-testing:VoyagerTests
+xcodebuild test -workspace Voyager.xcworkspace -scheme Voyager-Dev -only-testing:VoyagerTests
 
 # UI 테스트 실행
-xcodebuild test -workspace Voyager.xcworkspace -scheme Voyager -only-testing:VoyagerUITests
+xcodebuild test -workspace Voyager.xcworkspace -scheme Voyager-Dev -only-testing:VoyagerUITests
 
 # 헬퍼 앱 테스트 실행
-xcodebuild test -workspace Voyager.xcworkspace -scheme VoyagerHelper
+xcodebuild test -workspace Voyager.xcworkspace -scheme VoyagerHelper-Dev
 ```
 
 ### 로그 확인

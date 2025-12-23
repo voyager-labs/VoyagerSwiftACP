@@ -2,6 +2,61 @@
 
 프로젝트 개요와 실행/문서 진입점을 간단히 제공합니다.
 
+## Monorepo Layout
+
+- `apps/backend`: FastAPI 백엔드 (uv)
+- `apps/macos/Voyager`: macOS SwiftUI + TCA 앱과 Helper
+- `docs/`: AI 에이전트용 PRD/아키텍처 문서 인덱스
+
+## Environment Setup
+
+### 환경 파일
+
+프로젝트 루트에 환경별 `.env` 파일을 생성합니다:
+
+- **`.env.dev`** (Git ignored): 로컬 개발 환경
+  - 모든 설정 포함 (비밀키 포함)
+  - Debug 빌드에서 사용
+  - 생성: `cp .env.example .env.dev`
+- **`.env.prod`** (Git tracked): 프로덕션 환경 템플릿
+  - 비밀키 제외한 기본 설정만 포함
+  - Release 빌드에서 사용
+  - CI/CD에서 GitHub Secrets 주입
+
+### 환경 자동 감지
+
+앱은 빌드 설정에 따라 환경을 자동으로 감지합니다:
+
+- **Debug 빌드** → `dev` 환경 (로컬 `uv` 사용)
+- **Release 빌드** → `prod` 환경 (번들 venv 사용)
+
+`APP_ENV`는 빌드 설정에서 자동으로 설정되므로 `.env` 파일에 명시할 필요가 없습니다.
+
+### 백엔드 실행 방식
+
+스킴에 따라 백엔드 실행 방식이 결정됩니다:
+
+- **`*-Dev` 스킴** (`BACKEND_MODE=source`): 로컬 `uv` 환경 사용
+  - `apps/backend` 디렉토리에서 `uv run dev` 실행
+  - 로컬 개발 시 빠른 반복 가능
+- **`*-Prod` 스킴** (`BACKEND_MODE=bundled`): 번들된 venv 사용
+  - `VoyagerHelper.app/Contents/Resources/backend-venv` 사용
+  - 독립형 앱 번들 (배포용)
+
+### 필수 환경 변수
+
+백엔드 기동에 필요한 기본 키:
+
+- `VOYAGER_HOST=127.0.0.1`
+- `VOYAGER_PORT=8000`
+- `BACKEND_URL=http://${VOYAGER_HOST}:${VOYAGER_PORT}`
+
+### 보안
+
+- 비밀키는 커밋 금지
+- 로컬 개발: `.env.dev` 파일 사용 (Git ignored)
+- CI/CD: GitHub Secrets를 `.env.prod`에 주입
+
 ## Quick Start
 
 * Backend
@@ -14,10 +69,11 @@
   * Xcode에서 시작: `xed apps/macos/Voyager/Voyager.xcodeproj` (열기 후 `Cmd+R` 실행)
   * VSCode 류 IDE(Sweetpad Extension)에서 실행:
     * Xcode 프로젝트 열기: Sweetpad로 `apps/macos/Voyager/Voyager.xcodeproj` 오픈
-    * 스킴 실행: `Voyager` 스킴을 선택하여 Debug 구성으로 실행
+    * 스킴 실행: `Voyager-Dev` 스킴을 선택하여 Debug 구성으로 실행
     * 참고: Sweetpad 환경에 따라 CLI/버튼 동작이 다를 수 있습니다. 스킴/구성은 Xcode 프로젝트와 동기화되어야 합니다.
-  * Build (CLI): `xcodebuild -project apps/macos/Voyager/Voyager.xcodeproj -scheme Voyager -configuration Debug`
-  * Tests (CLI): `xcodebuild test -scheme Voyager -project apps/macos/Voyager/Voyager.xcodeproj`
+  * Build (CLI): `xcodebuild -project apps/macos/Voyager/Voyager.xcodeproj -scheme Voyager-Dev -configuration Debug`
+  * Prod build/archive (CLI): `xcodebuild -project apps/macos/Voyager/Voyager.xcodeproj -scheme Voyager-Prod -configuration Release`
+  * Tests (CLI): `xcodebuild test -scheme Voyager-Dev -project apps/macos/Voyager/Voyager.xcodeproj`
 
 ### Xcode 버전 관리
 

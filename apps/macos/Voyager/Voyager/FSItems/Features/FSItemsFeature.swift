@@ -69,18 +69,18 @@ struct FSItemsFeature {
 
         var displayOrderItems: [FSItem] {
             if groupKey == .none {
-                return Array(items)
+                Array(items)
             } else {
-                return groupedItems.flatMap { $0.items }
+                groupedItems.flatMap(\.items)
             }
         }
 
         var defaultSortOrder: SortOrder {
             switch sortKey {
             case .dateModified, .dateCreated, .dateAdded, .dateLastOpened:
-                return .descending
+                .descending
             case .name, .kind, .application, .size, .tags:
-                return .ascending
+                .ascending
             }
         }
 
@@ -219,7 +219,7 @@ struct FSItemsFeature {
                                 return .send(.loadItems(path: currentPath))
                             }
                             return .none
-                        }()
+                        }(),
                     )
 
                 case (.pasteFile, .success):
@@ -230,7 +230,7 @@ struct FSItemsFeature {
                         let pasteboard = NSPasteboard.general
                         pasteboard.setString(
                             "",
-                            forType: NSPasteboard.PasteboardType("com.voyager.clipboard.operation")
+                            forType: NSPasteboard.PasteboardType("com.voyager.clipboard.operation"),
                         )
                     }
 
@@ -242,7 +242,7 @@ struct FSItemsFeature {
                         .send(.reloadCurrentFolder),
                         .run { _ in
                             await fsItemClient.postFileSystemChanged([filePath])
-                        }
+                        },
                     )
 
                 case (.rename, .success):
@@ -303,7 +303,7 @@ struct FSItemsFeature {
                             await send(.fileSystemChanged(changedPaths))
                         }
                     }
-                    .cancellable(id: CancelID.fsEventsWatcher, cancelInFlight: true)
+                    .cancellable(id: CancelID.fsEventsWatcher, cancelInFlight: true),
                 )
 
             case .reloadItems:
@@ -383,7 +383,7 @@ struct FSItemsFeature {
 
                     let itemsToSelect = state.items.filter { fileNamesToSelect.contains($0.name) }
                     if !itemsToSelect.isEmpty {
-                        state.selectedIds = Set(itemsToSelect.map { $0.id })
+                        state.selectedIds = Set(itemsToSelect.map(\.id))
                         state.lastSelectedId = itemsToSelect.first?.id
                         state.rangeAnchorId = nil
                         state.shouldScrollToSelection = true
@@ -420,7 +420,7 @@ struct FSItemsFeature {
                                 if let thumbnail = await ThumbnailGeneratorUtils.generateThumbnail(
                                     for: url,
                                     size: size,
-                                    scale: scale
+                                    scale: scale,
                                 ) {
                                     await MainActor.run {
                                         FSItemIconUtils.saveThumbnail(thumbnail, for: item.fullPath)
@@ -433,7 +433,7 @@ struct FSItemsFeature {
 
                         var readyPaths: [String] = []
                         for await path in group {
-                            if let path = path {
+                            if let path {
                                 readyPaths.append(path)
 
                                 // 10개마다 일괄 업데이트
@@ -464,13 +464,13 @@ struct FSItemsFeature {
                     if state.isListView {
                         let anchorId = state.rangeAnchorId ?? state.lastSelectedId
 
-                        if let anchorId = anchorId,
+                        if let anchorId,
                            let anchorIndex = Array(state.items).firstIndex(where: { $0.id == anchorId }),
                            let currentIndex = Array(state.items).firstIndex(where: { $0.id == id })
                         {
                             let itemsArray = Array(state.items)
                             let range = min(anchorIndex, currentIndex) ... max(anchorIndex, currentIndex)
-                            let rangeIds = itemsArray[range].map { $0.id }
+                            let rangeIds = itemsArray[range].map(\.id)
                             state.selectedIds.formUnion(rangeIds)
                             state.lastSelectedId = id
                         } else {
@@ -482,8 +482,8 @@ struct FSItemsFeature {
                                 preloadApplicationsEffect(
                                     selectedIds: state.selectedIds,
                                     items: state.items,
-                                    currentItemId: id
-                                )
+                                    currentItemId: id,
+                                ),
                             )
                         }
                     } else {
@@ -511,11 +511,11 @@ struct FSItemsFeature {
 
                 return .merge(
                     renameEffect,
-                    preloadApplicationsEffect(selectedIds: state.selectedIds, items: state.items, currentItemId: id)
+                    preloadApplicationsEffect(selectedIds: state.selectedIds, items: state.items, currentItemId: id),
                 )
 
             case .selectAll:
-                state.selectedIds = Set(state.items.map { $0.id })
+                state.selectedIds = Set(state.items.map(\.id))
                 if let lastItem = state.items.last {
                     state.lastSelectedId = lastItem.id
                 }
@@ -544,7 +544,7 @@ struct FSItemsFeature {
                                 return .none
                             }
                             let range = min(anchorIndex, currentIndex + 1) ... max(anchorIndex, currentIndex + 1)
-                            state.selectedIds = Set(displayItems[range].map { $0.id })
+                            state.selectedIds = Set(displayItems[range].map(\.id))
                             state.rangeAnchorId = anchorId
                         } else {
                             state.selectedIds = [nextItem.id]
@@ -579,7 +579,7 @@ struct FSItemsFeature {
                                 return .none
                             }
                             let range = min(anchorIndex, currentIndex - 1) ... max(anchorIndex, currentIndex - 1)
-                            state.selectedIds = Set(displayItems[range].map { $0.id })
+                            state.selectedIds = Set(displayItems[range].map(\.id))
                             state.rangeAnchorId = anchorId
                         } else {
                             state.selectedIds = [previousItem.id]
@@ -614,7 +614,7 @@ struct FSItemsFeature {
                     return preloadApplicationsEffect(
                         selectedIds: state.selectedIds,
                         items: state.items,
-                        currentItemId: item.id
+                        currentItemId: item.id,
                     )
                 }
 
@@ -650,7 +650,7 @@ struct FSItemsFeature {
                     let anchorId = state.rangeAnchorId ?? currentId
                     guard let anchorIndex = displayItems.firstIndex(where: { $0.id == anchorId }) else { return .none }
                     let range = min(anchorIndex, targetIndex) ... max(anchorIndex, targetIndex)
-                    state.selectedIds = Set(displayItems[range].map { $0.id })
+                    state.selectedIds = Set(displayItems[range].map(\.id))
                     state.rangeAnchorId = anchorId
                 } else {
                     state.selectedIds = [targetItem.id]
@@ -668,7 +668,7 @@ struct FSItemsFeature {
                 let sorted = FSItemsSortingUtils.sortItems(
                     Array(state.items),
                     by: state.sortKey,
-                    order: state.sortOrder
+                    order: state.sortOrder,
                 )
                 state.items = IdentifiedArray(uniqueElements: sorted)
                 state.groupedItems = FSItemsGroupingUtils.groupItems(sorted, by: state.groupKey)
@@ -680,7 +680,7 @@ struct FSItemsFeature {
                 let sorted = FSItemsSortingUtils.sortItems(
                     Array(state.items),
                     by: state.sortKey,
-                    order: state.sortOrder
+                    order: state.sortOrder,
                 )
                 state.items = IdentifiedArray(uniqueElements: sorted)
                 state.groupedItems = FSItemsGroupingUtils.groupItems(sorted, by: state.groupKey)
@@ -700,12 +700,12 @@ struct FSItemsFeature {
                 }
 
                 let selectedItems = getSelectedItems(selectedIds: state.selectedIds, items: state.items)
-                let selectedFolders = selectedItems.filter { $0.isDirectory }
+                let selectedFolders = selectedItems.filter(\.isDirectory)
                 let selectedFiles = selectedItems.filter { !$0.isDirectory }
 
-                if selectedFolders.count == 1 && selectedFiles.isEmpty {
+                if selectedFolders.count == 1, selectedFiles.isEmpty {
                     return .send(.navigateFolder(id: selectedFolders[0].id))
-                } else if selectedFolders.count > 1 && selectedFiles.isEmpty {
+                } else if selectedFolders.count > 1, selectedFiles.isEmpty {
                     for folder in selectedFolders {
                         AppDelegate.shared?.createNewWindow(path: folder.fullPath)
                     }
@@ -742,25 +742,25 @@ struct FSItemsFeature {
                 if selectedFiles.count == 1 {
                     guard let item = selectedFiles.first else { return .none }
 
-                    if let bundleID = bundleID {
+                    if let bundleID {
                         let filePath = item.fullPath
                         let url = URL(fileURLWithPath: filePath)
                         let fileType = UTType(filenameExtension: item.fileExtension)
 
                         var effects: [Effect<Action>] = []
 
-                        if shouldSetAsDefault, let fileType = fileType {
+                        if shouldSetAsDefault, let fileType {
                             effects.append(.send(.operations(.setDefaultAppForFile(
                                 type: fileType,
                                 bundleID: bundleID,
-                                file: item
+                                file: item,
                             ))))
                         }
 
                         effects.append(.send(.operations(.openFileWithAppBundleID(
                             filePath: filePath,
                             bundleID: bundleID,
-                            url: url
+                            url: url,
                         ))))
 
                         return .concatenate(effects)
@@ -772,7 +772,7 @@ struct FSItemsFeature {
                         }
                     }
                 } else {
-                    if let bundleID = bundleID {
+                    if let bundleID {
                         var effects: [Effect<Action>] = []
 
                         for file in selectedFiles {
@@ -780,18 +780,18 @@ struct FSItemsFeature {
                             let url = URL(fileURLWithPath: filePath)
                             let fileType = UTType(filenameExtension: file.fileExtension)
 
-                            if shouldSetAsDefault, let fileType = fileType {
+                            if shouldSetAsDefault, let fileType {
                                 effects.append(.send(.operations(.setDefaultAppForFile(
                                     type: fileType,
                                     bundleID: bundleID,
-                                    file: file
+                                    file: file,
                                 ))))
                             }
 
                             effects.append(.send(.operations(.openFileWithAppBundleID(
                                 filePath: filePath,
                                 bundleID: bundleID,
-                                url: url
+                                url: url,
                             ))))
                         }
 
@@ -799,7 +799,7 @@ struct FSItemsFeature {
                     } else {
                         return .send(.operations(.openFilesWithAppFromOther(
                             files: selectedFiles,
-                            shouldSetAsDefault: shouldSetAsDefault
+                            shouldSetAsDefault: shouldSetAsDefault,
                         )))
                     }
                 }
@@ -810,7 +810,7 @@ struct FSItemsFeature {
                 }
 
                 let selectedItems = getSelectedItems(selectedIds: state.selectedIds, items: state.items)
-                let selectedPaths = selectedItems.map { $0.fullPath }
+                let selectedPaths = selectedItems.map(\.fullPath)
 
                 state.clipboardItems = selectedPaths
                 state.clipboardOperation = .copy
@@ -827,7 +827,7 @@ struct FSItemsFeature {
                 }
 
                 let selectedItems = getSelectedItems(selectedIds: state.selectedIds, items: state.items)
-                let selectedPaths = selectedItems.map { $0.fullPath }
+                let selectedPaths = selectedItems.map(\.fullPath)
 
                 state.clipboardItems = selectedPaths
                 state.clipboardOperation = .cut
@@ -853,7 +853,7 @@ struct FSItemsFeature {
                 return .send(.operations(.pasteItems(
                     sourcePaths: clipboardPaths,
                     destinationPath: destinationPath,
-                    operation: clipboardOp
+                    operation: clipboardOp,
                 )))
 
             case .duplicateSelectedItems:
@@ -866,9 +866,9 @@ struct FSItemsFeature {
                     .deletingLastPathComponent().path
 
                 return .send(.operations(.pasteItems(
-                    sourcePaths: selectedItems.map { $0.fullPath },
+                    sourcePaths: selectedItems.map(\.fullPath),
                     destinationPath: parentPath,
-                    operation: .copy
+                    operation: .copy,
                 )))
 
             case let .startDrag(paths):
@@ -882,7 +882,7 @@ struct FSItemsFeature {
                 let draggedPaths = fsItemClient.loadDragPaths()
                 let hasExternalProviders = !providers.isEmpty
 
-                if !draggedPaths.isEmpty && !hasExternalProviders {
+                if !draggedPaths.isEmpty, !hasExternalProviders {
                     state.draggingPaths = []
                     return .send(.dropToFolder(destinationPath: destinationPath))
                 }
@@ -913,12 +913,12 @@ struct FSItemsFeature {
                     }
 
                     if !urls.isEmpty {
-                        let paths = urls.map { $0.path }
+                        let paths = urls.map(\.path)
                         let isOption = NSEvent.modifierFlags.contains(.option)
                         await send(.dropItems(
                             sourcePaths: paths,
                             destinationPath: destinationPath,
-                            isOptionDrag: isOption
+                            isOptionDrag: isOption,
                         ))
                     }
                 }
@@ -946,7 +946,7 @@ struct FSItemsFeature {
                     }
 
                     for url in urls {
-                        let currentTags = (try? await fsItemClient.getTags(url)) ?? []
+                        let currentTags = await (try? fsItemClient.getTags(url)) ?? []
                         if !currentTags.contains(tagName) {
                             try? await fsItemClient.toggleTag(url, tagName)
                         }
@@ -965,7 +965,7 @@ struct FSItemsFeature {
                 return .send(.dropItems(
                     sourcePaths: sourcePaths,
                     destinationPath: destinationPath,
-                    isOptionDrag: isOptionPressed
+                    isOptionDrag: isOptionPressed,
                 ))
 
             case let .dropItems(sourcePaths, destinationPath, isOptionDrag):
@@ -1003,7 +1003,7 @@ struct FSItemsFeature {
                     .send(.operations(.pasteItems(
                         sourcePaths: sourcePaths,
                         destinationPath: destinationPath,
-                        operation: operation
+                        operation: operation,
                     ))),
 
                     // 윈도우 포커싱 (destinationPath의 윈도우 찾기)
@@ -1019,7 +1019,7 @@ struct FSItemsFeature {
 
                             targetController?.window?.makeKeyAndOrderFront(nil)
                         }
-                    }
+                    },
                 )
 
             case let .startRename(id):
@@ -1087,7 +1087,7 @@ struct FSItemsFeature {
                 guard !selectedItems.isEmpty else { return .none }
 
                 return .run { send in
-                    let itemNames = selectedItems.map { $0.name }
+                    let itemNames = selectedItems.map(\.name)
                     let confirmed = await FSItemAlertUtils.showDeleteConfirmationAlert(itemNames: itemNames)
 
                     if confirmed {
@@ -1124,7 +1124,7 @@ struct FSItemsFeature {
                 return .merge(
                     selectedItems.map { item in
                         .send(.operations(.toggleTagForItem(file: item, tag: tag)))
-                    }
+                    },
                 )
 
             case .emptyTrash:
@@ -1205,7 +1205,7 @@ struct FSItemsFeature {
                     startPoint: startPoint,
                     currentPoint: startPoint,
                     initialSelectedIds: modifierFlags == .none ? [] : state.selectedIds,
-                    modifierFlags: modifierFlags
+                    modifierFlags: modifierFlags,
                 )
                 return .none
 
@@ -1216,14 +1216,14 @@ struct FSItemsFeature {
                 let itemsInLasso = LassoSelectionUtils.calculateItemsInRect(
                     lasso.rect,
                     items: state.items,
-                    itemPositions: state.itemPositions
+                    itemPositions: state.itemPositions,
                 )
 
                 // Modifier에 따라 최종 선택 계산
                 state.selectedIds = LassoSelectionUtils.calculateFinalSelection(
                     itemsInLasso: itemsInLasso,
                     initialSelected: lasso.initialSelectedIds,
-                    modifierFlags: lasso.modifierFlags
+                    modifierFlags: lasso.modifierFlags,
                 )
 
                 if !state.selectedIds.isEmpty {
@@ -1267,7 +1267,7 @@ struct FSItemsFeature {
                     startItemId: startItemId,
                     currentItemId: startItemId,
                     initialSelectedIds: modifierFlags == .none ? [] : state.selectedIds,
-                    modifierFlags: modifierFlags
+                    modifierFlags: modifierFlags,
                 )
                 return .none
 
@@ -1282,7 +1282,7 @@ struct FSItemsFeature {
                 else { return .none }
 
                 let range = min(startIndex, currentIndex) ... max(startIndex, currentIndex)
-                let rangeIds = Set(displayItems[range].map { $0.id })
+                let rangeIds = Set(displayItems[range].map(\.id))
 
                 switch drag.modifierFlags {
                 case .none:
@@ -1322,14 +1322,14 @@ struct FSItemsFeature {
 
     private func getSelectedItems(
         selectedIds: Set<String>,
-        items: IdentifiedArrayOf<FSItem>
+        items: IdentifiedArrayOf<FSItem>,
     ) -> [FSItem] {
         Array(items.filter { selectedIds.contains($0.id) })
     }
 
     private func getSelectedFiles(
         selectedIds: Set<String>,
-        items: IdentifiedArrayOf<FSItem>
+        items: IdentifiedArrayOf<FSItem>,
     ) -> [FSItem] {
         getSelectedItems(selectedIds: selectedIds, items: items).filter { !$0.isDirectory }
     }
@@ -1337,7 +1337,7 @@ struct FSItemsFeature {
     private func preloadApplicationsEffect(
         selectedIds: Set<String>,
         items: IdentifiedArrayOf<FSItem>,
-        currentItemId: String? = nil
+        currentItemId: String? = nil,
     ) -> Effect<Action> {
         let selectedFiles = getSelectedFiles(selectedIds: selectedIds, items: items)
 
@@ -1386,7 +1386,7 @@ struct LassoSelection: Equatable, Sendable {
             x: minX,
             y: minY,
             width: maxX - minX,
-            height: maxY - minY
+            height: maxY - minY,
         )
     }
 }

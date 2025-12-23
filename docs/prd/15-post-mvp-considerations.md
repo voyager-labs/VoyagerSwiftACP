@@ -13,6 +13,11 @@
   - 핀/정렬/메모, 라우팅 개선, 키보드 액션 확장
 - Phase E: 멀티 유저/동기화(장기)
   - 계정/동기화/권한 모델, 충돌 처리
+- Phase F: 자동 업데이트(Sparkle)
+  - Sparkle 2.x 프레임워크 통합
+  - EdDSA 서명 키 생성 및 관리
+  - GitHub Releases 기반 앱캐스트 또는 별도 업데이트 서버
+  - 업데이트 알림 UI 및 백그라운드 체크
 
 ## 15.2 Monitoring & Feedback
 - Logging

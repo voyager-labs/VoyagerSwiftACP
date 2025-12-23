@@ -11,6 +11,8 @@ extension Notification.Name {
 class AppDelegate: NSObject, NSApplicationDelegate, ObservableObject {
     static var shared: AppDelegate?
 
+    private let helperManager = HelperLifecycleManager()
+
     @Published var hasSelectedItems: Bool = false
     @Published var hasClipboardItems: Bool = false
     @Published var hasStore: Bool = false
@@ -29,7 +31,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, ObservableObject {
     }
 
     func updateMenuState(store: StoreOf<FileManagerFeature>?) {
-        guard let store = store else {
+        guard let store else {
             hasStore = false
             hasSelectedItems = false
             hasClipboardItems = false
@@ -54,10 +56,13 @@ class AppDelegate: NSObject, NSApplicationDelegate, ObservableObject {
         }
     }
 
+    @MainActor
+    func applicationWillFinishLaunching(_: Notification) {
+        helperManager.start()
+    }
+
     func applicationDidFinishLaunching(_: Notification) {
         NSWindow.allowsAutomaticWindowTabbing = true
-
-        launchHelperOnce()
         createNewWindow()
     }
 
@@ -138,7 +143,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, ObservableObject {
     }
 
     func updateFocusHistory(window: NSWindow?) {
-        guard let window = window else { return }
+        guard let window else { return }
 
         if isNavigatingFocusHistory {
             isNavigatingFocusHistory = false
@@ -209,23 +214,8 @@ class AppDelegate: NSObject, NSApplicationDelegate, ObservableObject {
         }
     }
 
-    private func launchHelperOnce() {
-        let mainURL = Bundle.main.bundleURL
-        let buildDir = mainURL.deletingLastPathComponent()
-        let helperURL = buildDir.appendingPathComponent("VoyagerHelper.app")
-
-        guard FileManager.default.fileExists(atPath: helperURL.path) else { return }
-
-        let runningApps = NSWorkspace.shared.runningApplications
-        let isHelperRunning = runningApps.contains { app in
-            app.bundleIdentifier == "fm.voyager.VoyagerHelper"
-        }
-
-        if !isHelperRunning {
-            let config = NSWorkspace.OpenConfiguration()
-            config.environment = ProcessInfo.processInfo.environment
-            NSWorkspace.shared.openApplication(at: helperURL, configuration: config) { _, _ in }
-        }
+    func applicationWillTerminate(_: Notification) {
+        helperManager.stop()
     }
 
     private func checkIndexingStatus() -> Bool {

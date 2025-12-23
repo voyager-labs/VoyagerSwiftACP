@@ -1,8 +1,10 @@
 # Custom Dictionary Words
+atexit
 birthtime
 dotenv
 fastapi
 followlinks
+fputs
 Froms
 ipykernel
 nlink

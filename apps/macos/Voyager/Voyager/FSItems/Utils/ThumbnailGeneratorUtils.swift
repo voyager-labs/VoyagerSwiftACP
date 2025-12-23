@@ -28,13 +28,13 @@ enum ThumbnailGeneratorUtils {
     static func generateThumbnail(
         for url: URL,
         size: CGSize,
-        scale: CGFloat = 2.0
+        scale: CGFloat = 2.0,
     ) async -> NSImage? {
         let request = QLThumbnailGenerator.Request(
             fileAt: url,
             size: size,
             scale: scale,
-            representationTypes: .thumbnail
+            representationTypes: .thumbnail,
         )
 
         let representation = try? await QLThumbnailGenerator.shared.generateBestRepresentation(for: request)
@@ -44,7 +44,7 @@ enum ThumbnailGeneratorUtils {
     static func prefetchThumbnails(
         for items: [FSItem],
         size: CGSize,
-        scale: CGFloat = 2.0
+        scale: CGFloat = 2.0,
     ) async {
         let thumbnailItems = items.filter { canGenerateThumbnail(for: $0) }
 

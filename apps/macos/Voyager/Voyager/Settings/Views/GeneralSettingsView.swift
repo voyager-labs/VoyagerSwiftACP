@@ -10,7 +10,7 @@ struct GeneralSettingsView: View {
             Section {
                 Toggle("Launch at Startup", isOn: Binding(
                     get: { store.generalSettings.launchAtStartup },
-                    set: { store.send(.general(.toggleLaunchAtStartup($0))) }
+                    set: { store.send(.general(.toggleLaunchAtStartup($0))) },
                 ))
 
                 if let error = store.generalSettings.launchAtStartupError {
@@ -21,7 +21,7 @@ struct GeneralSettingsView: View {
 
                 Toggle("Automatic Update", isOn: Binding(
                     get: { store.generalSettings.automaticUpdate },
-                    set: { store.send(.general(.toggleAutomaticUpdate($0))) }
+                    set: { store.send(.general(.toggleAutomaticUpdate($0))) },
                 ))
 
                 if let error = store.generalSettings.automaticUpdateError {
@@ -32,7 +32,7 @@ struct GeneralSettingsView: View {
 
                 Toggle("Alert Before App Quit", isOn: Binding(
                     get: { store.generalSettings.alertBeforeQuit },
-                    set: { store.send(.general(.toggleAlertBeforeQuit($0))) }
+                    set: { store.send(.general(.toggleAlertBeforeQuit($0))) },
                 ))
             }
 
@@ -55,7 +55,7 @@ struct GeneralSettingsView: View {
                                             .frame(width: 14, height: 14)
                                         Text("\(selected.displayName) (default)")
                                     }
-                                }
+                                },
                             )
 
                             Divider()
@@ -74,7 +74,7 @@ struct GeneralSettingsView: View {
                                             .frame(width: 14, height: 14)
                                         Text("\(selected.displayName) (default)")
                                     }
-                                }
+                                },
                             )
 
                             Divider()
@@ -91,7 +91,7 @@ struct GeneralSettingsView: View {
                                             .frame(width: 14, height: 14)
                                         Text(option.displayName)
                                     }
-                                }
+                                },
                             )
                         }
 

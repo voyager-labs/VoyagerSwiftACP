@@ -21,18 +21,18 @@ enum LassoSelectionUtils {
 
     static func detectModifierFlags() -> ModifierFlags {
         if NSEvent.modifierFlags.contains(.command) {
-            return .command
+            .command
         } else if NSEvent.modifierFlags.contains(.shift) {
-            return .shift
+            .shift
         } else {
-            return .none
+            .none
         }
     }
 
     static func calculateItemsInRect(
         _ rect: CGRect,
         items: IdentifiedArrayOf<FSItem>,
-        itemPositions: [String: CGRect]
+        itemPositions: [String: CGRect],
     ) -> Set<String> {
         items
             .filter { item in
@@ -40,13 +40,13 @@ enum LassoSelectionUtils {
                 let textRect = itemPositions[item.id + "_text"]
                 let itemRect = itemPositions[item.id]
 
-                if let iconRect = iconRect, rect.intersects(iconRect) {
+                if let iconRect, rect.intersects(iconRect) {
                     return true
                 }
-                if let textRect = textRect, rect.intersects(textRect) {
+                if let textRect, rect.intersects(textRect) {
                     return true
                 }
-                if let itemRect = itemRect, rect.intersects(itemRect) {
+                if let itemRect, rect.intersects(itemRect) {
                     return true
                 }
                 return false
@@ -60,23 +60,23 @@ enum LassoSelectionUtils {
     static func calculateFinalSelection(
         itemsInLasso: Set<String>,
         initialSelected: Set<String>,
-        modifierFlags: ModifierFlags
+        modifierFlags: ModifierFlags,
     ) -> Set<String> {
         switch modifierFlags {
         case .none:
-            return itemsInLasso
+            itemsInLasso
 
         case .command:
-            return initialSelected.symmetricDifference(itemsInLasso)
+            initialSelected.symmetricDifference(itemsInLasso)
 
         case .shift:
-            return initialSelected.union(itemsInLasso)
+            initialSelected.union(itemsInLasso)
         }
     }
 
     static func isPointOverAnyItem(
         _ point: CGPoint,
-        itemPositions: [String: CGRect]
+        itemPositions: [String: CGRect],
     ) -> Bool {
         itemPositions.values.contains { rect in
             rect.contains(point)

@@ -12,7 +12,7 @@ class FileManagerWindowController: NSWindowController, NSWindowDelegate {
         initialPath = path
 
         let state: FileManagerFeature.State
-        if let duplicateState = duplicateState {
+        if let duplicateState {
             var newState = duplicateState
             newState.fsItems = FSItemsFeature.State()
             state = newState
@@ -47,18 +47,16 @@ class FileManagerWindowController: NSWindowController, NSWindowDelegate {
         window.setFrameAutosaveName("VoyagerMainWindow")
 
         if !window.setFrameUsingName("VoyagerMainWindow") {
-            let desiredSize: NSSize
-
-            if let existingWindow = AppDelegate.shared?.windowControllers.first?.window {
-                desiredSize = existingWindow.frame.size
+            let desiredSize: NSSize = if let existingWindow = AppDelegate.shared?.windowControllers.first?.window {
+                existingWindow.frame.size
             } else {
-                desiredSize = NSSize(width: 960, height: 510)
+                NSSize(width: 960, height: 510)
             }
 
             let screenFrame = NSScreen.main?.visibleFrame ?? NSRect.zero
             let origin = NSPoint(
                 x: screenFrame.midX - desiredSize.width / 2,
-                y: screenFrame.midY - desiredSize.height / 2
+                y: screenFrame.midY - desiredSize.height / 2,
             )
             window.setFrame(NSRect(origin: origin, size: desiredSize), display: false)
         }
@@ -81,8 +79,8 @@ class FileManagerWindowController: NSWindowController, NSWindowDelegate {
         cancellables.removeAll()
 
         let updateMenuStateIfKeyWindow: () -> Void = { [weak self] in
-            guard let self = self, self.window?.isKeyWindow == true else { return }
-            AppDelegate.shared?.updateMenuState(store: self.store)
+            guard let self, window?.isKeyWindow == true else { return }
+            AppDelegate.shared?.updateMenuState(store: store)
         }
 
         store.publisher.fsItems.selectedIds

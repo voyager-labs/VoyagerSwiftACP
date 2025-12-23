@@ -1,7 +1,7 @@
 import os
 from pathlib import Path
 
-from dotenv import load_dotenv
+from dotenv import find_dotenv, load_dotenv
 from hydra import compose
 from hydra.initialize import initialize_config_dir
 from omegaconf import DictConfig
@@ -12,8 +12,7 @@ SOURCE_DIR: Path = get_source_path()
 CONF_DIR: Path = SOURCE_DIR / "conf"
 
 
-def load_hydra_config() -> DictConfig:
-    app_env = os.getenv("APP_ENV")
+def load_hydra_config(app_env: str) -> DictConfig:
     overrides = [f"env={app_env}"] if app_env else []
     try:
         with initialize_config_dir(config_dir=str(CONF_DIR), version_base=None):
@@ -29,8 +28,10 @@ def load_hydra_config() -> DictConfig:
 
 
 def load_config() -> DictConfig:
-    load_dotenv(override=False)
-    return load_hydra_config()
+    app_env = os.getenv("APP_ENV", "dev")
+    env_file = find_dotenv(filename=f".env.{app_env}")
+    load_dotenv(dotenv_path=env_file, override=False)
+    return load_hydra_config(app_env)
 
 
 __all__ = [

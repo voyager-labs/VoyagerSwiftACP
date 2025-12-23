@@ -16,7 +16,7 @@ struct FSItemDropDelegate: DropDelegate {
         }
         isDropTarget = Binding(
             get: { fsStore.isDropTargeted },
-            set: { fsStore.send(.setDropTargeted($0)) }
+            set: { fsStore.send(.setDropTargeted($0)) },
         )
         draggingPaths = fsStore.draggingPaths
     }
@@ -25,7 +25,7 @@ struct FSItemDropDelegate: DropDelegate {
         item: FSItem,
         onDrop: @escaping ([NSItemProvider], String) -> Void,
         isDropTarget: Binding<Bool>,
-        draggingPaths: [String]
+        draggingPaths: [String],
     ) {
         destinationPath = item.fullPath
         self.onDrop = onDrop
