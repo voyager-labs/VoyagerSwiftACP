@@ -133,7 +133,7 @@ struct Environment {
         guard let resources = Bundle.main.resourceURL else { return nil }
         let fm = FileManager.default
 
-        let venvPath = resources.appendingPathComponent("backend-venv")
+        let venvPath = resources.appendingPathComponent("helper-runtime")
         if fm.fileExists(atPath: venvPath.path) {
             return venvPath
         }

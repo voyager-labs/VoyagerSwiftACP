@@ -14,13 +14,14 @@ DIST_DIR="${DIST_DIR:-${BACKEND_DIR}/dist}"
 VENV_DIR="${VENV_DIR:-${BACKEND_DIR}/build/helper-runtime}"
 PYTHON_VERSION_FILE="${PYTHON_VERSION_FILE:-${BACKEND_DIR}/.python-version}"
 REQUIRED_UV_VERSION="${REQUIRED_UV_VERSION:-0.8.13}"
+required_python_version=""
 
 log() {
   local level="${1:-INFO}"
   shift
   local timestamp
   timestamp="$(date '+%H:%M:%S')"
-  printf "[%s] [prepare-backend-venv] [%s] %s\n" "${timestamp}" "${level}" "$*" >&2
+  printf "[%s] [prepare-helper-runtime] [%s] %s\n" "${timestamp}" "${level}" "$*" >&2
 }
 
 log_info() {
@@ -44,6 +45,22 @@ if [[ -n "${REQUIRED_UV_VERSION}" ]]; then
     log_error "uv 버전 불일치: 현재 ${uv_version}, 요구 ${REQUIRED_UV_VERSION}"
     log_error "  설치: curl -LsSf https://astral.sh/uv/install.sh | sh"
     log_error "  또는 REQUIRED_UV_VERSION을 맞춰주세요"
+    exit 1
+  fi
+fi
+
+if [[ -f "${PYTHON_VERSION_FILE}" ]]; then
+  required_python_version="$(tr -d ' \t\r\n' < "${PYTHON_VERSION_FILE}")"
+  if [[ -n "${required_python_version}" ]]; then
+    export UV_PYTHON="${required_python_version}"
+  fi
+fi
+
+if [[ -n "${required_python_version}" ]]; then
+  python_version="$("${UV_BIN}" run python -c 'import sys; print(".".join(map(str, sys.version_info[:3])))')"
+  if [[ "${python_version}" != "${required_python_version}" ]]; then
+    log_error "python 버전 불일치: 현재 ${python_version}, 요구 ${required_python_version}"
+    log_error "  ${PYTHON_VERSION_FILE}을 갱신하거나 UV_PYTHON 환경변수를 지정하세요"
     exit 1
   fi
 fi

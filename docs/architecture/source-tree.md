@@ -19,7 +19,7 @@ voyager-app/
 │       ├── VoyagerTests         # Unit tests
 │       └── VoyagerUITests       # UI tests
 ├── scripts/
-│   └── prepare-backend-venv.sh  # Release 빌드용 백엔드 venv 준비 스크립트
+│   └── prepare-helper-runtime.sh  # Release 빌드용 백엔드 venv 준비 스크립트
 └── docs/                        # PRD, architecture
 ```
 

@@ -70,9 +70,9 @@ Voyager 프로젝트는 두 가지 독립적인 축으로 실행 환경을 결�
 
 **bundled 모드:**
 - **설정**: `BACKEND_MODE=bundled` (Prod 스킴에서 자동 주입)
-- **백엔드 디렉토리**: `VoyagerHelper.app/Contents/Resources/backend-venv`
+- **백엔드 디렉토리**: `VoyagerHelper.app/Contents/Resources/helper-runtime`
 - **실행 방식**: 번들된 Python 인터프리터 직접 실행
-- **명령어**: `backend-venv/bin/python -m uvicorn app.main:app`
+- **명령어**: `helper-runtime/bin/python -m uvicorn app.main:app`
 - **요구사항**: Release 빌드 시 venv가 번들에 포함되어 있어야 함
 
 ## 환경 감지 우선순위
@@ -95,7 +95,7 @@ Voyager 프로젝트는 두 가지 독립적인 축으로 실행 환경을 결�
    - Prod 스킴 → `BACKEND_MODE=bundled`
 
 2. **번들 리소스 확인**
-   - `backend-venv` 디렉토리가 번들 리소스에 있으면 → `bundled`
+   - `helper-runtime` 디렉토리가 번들 리소스에 있으면 → `bundled`
    - 없으면 → `source`
 
 ## 스킴과 환경의 매핑
@@ -141,13 +141,13 @@ Voyager 프로젝트는 두 가지 독립적인 축으로 실행 환경을 결�
 
 1. **Sources**: Swift 소스 파일 컴파일
 2. **Prepare Backend Venv**: 실행됨
-   - `scripts/prepare-backend-venv.sh` 실행
+   - `scripts/prepare-helper-runtime.sh` 실행
    - 백엔드 휠 빌드 (`uv build --wheel`)
-   - 번들용 venv 생성 (`apps/backend/build/backend-venv`)
+   - 번들용 venv 생성 (`apps/backend/build/helper-runtime`)
    - uv.lock에서 런타임 의존성 추출 및 설치
    - 빌드된 백엔드 휠을 venv에 설치
 3. **Bundle Backend Venv**: 실행됨
-   - `apps/backend/build/backend-venv` → `VoyagerHelper.app/Contents/Resources/backend-venv` 복사
+   - `apps/backend/build/helper-runtime` → `VoyagerHelper.app/Contents/Resources/helper-runtime` 복사
    - `.env.prod` 파일을 번들 리소스로 복사 (없으면 기본값 생성)
 4. **Run Lint and Format**: SwiftLint 및 SwiftFormat 실행
 5. **Frameworks**: 프레임워크 링크
@@ -166,7 +166,7 @@ Voyager 프로젝트는 두 가지 독립적인 축으로 실행 환경을 결�
 - `APP_ENV=prod` (Info.plist에서 읽음)
 - `BACKEND_MODE=bundled` (스킴 환경변수에서 주입)
 - `.env.prod` 파일 로드 (번들 리소스 우선, 없으면 프로젝트 루트)
-- `VoyagerHelper.app/Contents/Resources/backend-venv/bin/python` 직접 실행
+- `VoyagerHelper.app/Contents/Resources/helper-runtime/bin/python` 직접 실행
 
 ## 환경 파일 로드 우선순위
 

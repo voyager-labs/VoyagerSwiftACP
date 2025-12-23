@@ -19,7 +19,7 @@
 | 스킴 | 빌드 설정 | APP_ENV | BACKEND_MODE | 백엔드 실행 방식 |
 |------|-----------|---------|--------------|------------------|
 | `Voyager-Dev` | Debug | `dev` (자동) | `source` (자동) | 로컬 `uv` (`uv run dev`) |
-| `Voyager-Prod` | Release | `prod` (자동) | `bundled` (자동) | 번들 venv (`backend-venv/bin/python`) |
+| `Voyager-Prod` | Release | `prod` (자동) | `bundled` (자동) | 번들 venv (`helper-runtime/bin/python`) |
 
 ### 환경 자동 감지
 
@@ -37,7 +37,7 @@
 1. **스킴 환경변수 `BACKEND_MODE`** (Xcode Run 시 자동 주입)
    - `*-Dev` 스킴: `BACKEND_MODE=source`
    - `*-Prod` 스킴: `BACKEND_MODE=bundled`
-2. **번들 리소스 확인**: `backend-venv` 존재 여부
+2. **번들 리소스 확인**: `helper-runtime` 존재 여부
 3. **기본값**: `source`
 
 ### 환경 파일
@@ -106,16 +106,16 @@
 2. **APP_ENV**: `prod` (자동 설정)
 3. **BACKEND_MODE**: `bundled` (스킴에서 자동 주입)
 4. **백엔드 venv 준비** (`Prepare Backend Venv` 빌드 단계):
-   - `scripts/prepare-backend-venv.sh` 실행
+   - `scripts/prepare-helper-runtime.sh` 실행
    - 백엔드 휠 빌드 (`uv build --wheel`)
-   - 번들용 venv 생성 (`apps/backend/build/backend-venv`)
+   - 번들용 venv 생성 (`apps/backend/build/helper-runtime`)
    - uv.lock에서 런타임 의존성 추출 및 설치
    - 빌드된 백엔드 휠을 venv에 설치
 5. **백엔드 venv 번들링** (`Bundle Backend Venv` 빌드 단계):
-   - `apps/backend/build/backend-venv` → `VoyagerHelper.app/Contents/Resources/backend-venv`
+   - `apps/backend/build/helper-runtime` → `VoyagerHelper.app/Contents/Resources/helper-runtime`
    - `.env.prod` 파일도 번들에 복사 (없으면 기본값 생성)
 6. **환경 파일**: `.env.prod` 로드 (번들 리소스 우선, 없으면 프로젝트 루트)
-7. **백엔드 실행**: 번들된 `backend-venv/bin/python`으로 직접 실행
+7. **백엔드 실행**: 번들된 `helper-runtime/bin/python`으로 직접 실행
 
 **참고:**
 - Debug 빌드에서는 venv 준비 및 번들링을 모두 스킵하고 로컬 개발 환경(`uv`)을 사용합니다
@@ -155,7 +155,7 @@ Release 빌드 및 DMG 패키징은 GitHub Actions에서 자동화되어 있습�
 ### 빌드 프로세스
 
 1. Python 3.13 + uv 설치
-2. `prepare-backend-venv.sh`로 백엔드 venv 준비
+2. `prepare-helper-runtime.sh`로 백엔드 venv 준비
 3. `.env.prod` 생성 및 GitHub Secrets 주입
    - 기본 설정 (APP_ENV, BACKEND_DIR, etc.) 포함
    - GitHub Secrets (`OPENAI_API_KEY`, `OPENAI_ORG_ID`, `OPENAI_PROJECT`)를 `.env.prod`에 추가

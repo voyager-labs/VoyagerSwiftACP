@@ -8,12 +8,12 @@
 
 - macOS → 백엔드 프로세스 스폰 방식:
   - **Debug 빌드**: `/usr/bin/env` + `uv`로 로컬 개발 환경 사용
-  - **Release 빌드**: 번들된 `backend-venv/bin/python` 사용 (로컬 `uv` 불필요)
+  - **Release 빌드**: 번들된 `helper-runtime/bin/python` 사용 (로컬 `uv` 불필요)
 - 환경변수 예시: `UV_CMD`, `BACKEND_DIR`, `APP_ENV`, `VOYAGER_LOG_FILE`, `VOYAGER_PATH`
 - Release 빌드 시 번들 venv 준비:
-  - `scripts/prepare-backend-venv.sh`가 백엔드 휠 빌드 및 venv 생성
+  - `scripts/prepare-helper-runtime.sh`가 백엔드 휠 빌드 및 venv 생성
   - Xcode 빌드 단계에서 자동 실행 (VoyagerHelper 타겟)
-  - 생성된 venv는 `VoyagerHelper.app/Contents/Resources/backend-venv`로 복사됨
+  - 생성된 venv는 `VoyagerHelper.app/Contents/Resources/helper-runtime`로 복사됨
 
 ## 외부 의존 & 비밀키 관리(가이드)
 
