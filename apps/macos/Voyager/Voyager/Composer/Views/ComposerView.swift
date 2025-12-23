@@ -14,7 +14,6 @@ private struct ChipSizePreferenceKey: PreferenceKey {
 struct ComposerView: View {
     let store: StoreOf<FileManagerFeature>
     @State private var isDark: Bool = isDarkMode()
-    @State private var localComposeText: String = ""
     @FocusState private var isComposeFieldFocused: Bool
     @Environment(\.colorScheme)
     private var colorScheme: ColorScheme
@@ -42,12 +41,16 @@ struct ComposerView: View {
     }
 
     private var mainContent: some View {
-        VStack(spacing: 0) {
-            firstRow
-                .fixedSize(horizontal: false, vertical: true)
-            horizontalSeparator
-            secondRow
-                .fixedSize(horizontal: false, vertical: true)
+        let composerStore = store.scope(state: \.composer, action: \.composer)
+
+        return VStack(spacing: 0) {
+            WithViewStore(composerStore, observe: { $0 }, content: { viewStore in
+                firstRow(viewStore: viewStore)
+                    .fixedSize(horizontal: false, vertical: true)
+                horizontalSeparator
+                secondRow(viewStore: viewStore, composerStore: composerStore)
+                    .fixedSize(horizontal: false, vertical: true)
+            })
         }
         .background(
             RoundedRectangle(cornerRadius: 12)
@@ -60,11 +63,11 @@ struct ComposerView: View {
         )
     }
 
-    private var firstRow: some View {
+    private func firstRow(viewStore: ViewStore<ComposerFeature.State, ComposerFeature.Action>) -> some View {
         HStack(spacing: 12) {
             undoButton
             redoButton
-            textField
+            textField(viewStore: viewStore)
             Spacer()
         }
         .padding(.horizontal, 16)
@@ -95,13 +98,10 @@ struct ComposerView: View {
         .buttonStyle(.borderless)
     }
 
-    private var textField: some View {
+    private func textField(viewStore: ViewStore<ComposerFeature.State, ComposerFeature.Action>) -> some View {
         TextField(
             "Enter your request...",
-            text: Binding(
-                get: { store.composer.text },
-                set: { store.send(.composer(.setText($0))) },
-            ),
+            text: viewStore.binding(get: \.text, send: ComposerFeature.Action.setText)
         )
         .textFieldStyle(.plain)
         .font(.system(size: 13))
@@ -129,14 +129,14 @@ struct ComposerView: View {
 
     private enum ChipItemType: Identifiable, Hashable {
         case scope(paths: [String])
-        case condition(text: String)
+        case condition(propertyLabel: String)
 
         var id: String {
             switch self {
             case let .scope(paths):
                 "scope-\(paths.joined(separator: "-"))"
-            case let .condition(text):
-                "condition-\(text)"
+            case let .condition(propertyLabel):
+                "condition-\(propertyLabel)"
             }
         }
     }
@@ -152,95 +152,110 @@ struct ComposerView: View {
     private let defaultChipHeight: CGFloat = 28
     private let defaultChipWidth: CGFloat = 120
 
-    private var secondRow: some View {
+    private func secondRow(
+        viewStore: ViewStore<ComposerFeature.State, ComposerFeature.Action>,
+        composerStore: StoreOf<ComposerFeature>
+    ) -> some View {
         GeometryReader { geometry in
-            let leadingPadding = store.sidebarVisible ? 0 : trafficLightAreaWidth
-            let availableWidth = geometry.size.width - chipHorizontalPadding * 2 - leadingPadding
-
-            // TODO: voy-95에서 백엔드 데이터로 교체 (store.conditions)
-            let allChips: [ChipItemType] =
-                (store.composer.scopes.isEmpty ? [] : [.scope(paths: store.composer.scopes)]) + [
-                    .condition(text: "name contains test"),
-                    .condition(text: "size > 100KB"),
-                    .condition(text: "modified < 7 days"),
-                    .condition(text: "type is image"),
-                    .condition(text: "created > 2024-01-01"),
-                    .condition(text: "tagged with important"),
-                    .condition(text: "size < 1MB"),
-                    .condition(text: "extension is pdf"),
-                ]
-
-            let params = RowCalculationParams(
-                availableWidth: availableWidth,
-                spacing: chipSpacing,
-                chipSizes: chipSizes,
-                conditionButtonWidth: conditionButtonWidth,
-                buttonSpacing: chipSpacing,
+            secondRowContent(
+                viewStore: viewStore,
+                composerStore: composerStore,
+                geometry: geometry
             )
-            let rows = calculateRowsWithButtons(chips: allChips, params: params)
+        }
+        .frame(height: calculatedHeight)
+    }
 
-            VStack(alignment: .leading, spacing: chipSpacing) {
-                ForEach(Array(rows.enumerated()), id: \.offset) { rowIndex, rowChips in
-                    let isLastRow = rowIndex == rows.count - 1
+    private func secondRowContent(
+        viewStore: ViewStore<ComposerFeature.State, ComposerFeature.Action>,
+        composerStore: StoreOf<ComposerFeature>,
+        geometry: GeometryProxy
+    ) -> some View {
+        let leadingPadding = store.sidebarVisible ? 0 : trafficLightAreaWidth
+        let availableWidth = geometry.size.width - chipHorizontalPadding * 2 - leadingPadding
+        let pickerStore = composerStore.scope(state: \.propertyPicker, action: \.propertyPicker)
 
-                    let composerStore = store.scope(state: \.composer, action: \.composer)
+        let scopeChips: [ChipItemType] = viewStore.scopes.isEmpty
+            ? []
+            : [.scope(paths: viewStore.scopes)]
+        let conditionChips: [ChipItemType] = viewStore.conditions.map { condition in
+            // TODO(voy-95): operator, value 추가 후 포맷팅 로직 구현
+            .condition(propertyLabel: condition.propertyLabel)
+        }
+        let allChips: [ChipItemType] = scopeChips + conditionChips
 
-                    HStack(spacing: chipSpacing) {
-                        ForEach(Array(rowChips.enumerated()), id: \.element.id) { _, chip in
-                            Group {
-                                switch chip {
-                                case let .scope(paths):
-                                    ComposerScopeChipView(
-                                        paths: paths,
-                                        store: composerStore,
-                                        isDark: isDark,
-                                        favorites: store.favorites,
-                                        backHistory: store.backHistory,
-                                    )
-                                case let .condition(text):
-                                    conditionChipView(text: text)
-                                }
-                            }
+        let params = RowCalculationParams(
+            availableWidth: availableWidth,
+            spacing: chipSpacing,
+            chipSizes: chipSizes,
+            conditionButtonWidth: conditionButtonWidth,
+            buttonSpacing: chipSpacing
+        )
+        let rows = calculateRowsWithButtons(chips: allChips, params: params)
+
+        return VStack(alignment: .leading, spacing: chipSpacing) {
+            ForEach(Array(rows.enumerated()), id: \.offset) { rowIndex, rowChips in
+                let isLastRow = rowIndex == rows.count - 1
+
+                HStack(spacing: chipSpacing) {
+                    ForEach(Array(rowChips.enumerated()), id: \.element.id) { _, chip in
+                        chipView(chip: chip, composerStore: composerStore)
                             .background(
                                 GeometryReader { chipGeometry in
                                     Color.clear
                                         .preference(
                                             key: ChipSizePreferenceKey.self,
-                                            value: [AnyHashable(chip.id): chipGeometry.size],
+                                            value: [AnyHashable(chip.id): chipGeometry.size]
                                         )
-                                },
+                                }
                             )
-                        }
+                    }
 
-                        if isLastRow, let lastChip = rowChips.last, case .condition = lastChip {
-                            conditionAddButton
-                        }
+                    if isLastRow {
+                        conditionAddButton(pickerStore: pickerStore)
                     }
                 }
             }
-            .onPreferenceChange(ChipSizePreferenceKey.self) { sizes in
-                for chip in allChips {
-                    let anyId = AnyHashable(chip.id)
-                    if let size = sizes[anyId] {
-                        chipSizes[chip.id] = size
-                    }
-                }
-                updateCalculatedHeight(
-                    chips: allChips,
-                    availableWidth: availableWidth,
-                )
-            }
-            .onAppear {
-                updateCalculatedHeight(
-                    chips: allChips,
-                    availableWidth: availableWidth,
-                )
-            }
-            .padding(.horizontal, chipHorizontalPadding)
-            .padding(.leading, leadingPadding)
-            .padding(.vertical, chipVerticalPadding)
         }
-        .frame(height: calculatedHeight)
+        .onPreferenceChange(ChipSizePreferenceKey.self) { sizes in
+            handleChipSizeChange(sizes: sizes, allChips: allChips, availableWidth: availableWidth)
+        }
+        .onAppear {
+            updateCalculatedHeight(chips: allChips, availableWidth: availableWidth)
+        }
+        .padding(.horizontal, chipHorizontalPadding)
+        .padding(.leading, leadingPadding)
+        .padding(.vertical, chipVerticalPadding)
+    }
+
+    @ViewBuilder
+    private func chipView(chip: ChipItemType, composerStore: StoreOf<ComposerFeature>) -> some View {
+        switch chip {
+        case let .scope(paths):
+            ComposerScopeChipView(
+                paths: paths,
+                store: composerStore,
+                isDark: isDark,
+                favorites: store.favorites,
+                backHistory: store.backHistory
+            )
+        case let .condition(propertyLabel):
+            conditionChipView(propertyLabel: propertyLabel)
+        }
+    }
+
+    private func handleChipSizeChange(
+        sizes: [AnyHashable: CGSize],
+        allChips: [ChipItemType],
+        availableWidth: CGFloat
+    ) {
+        for chip in allChips {
+            let anyId = AnyHashable(chip.id)
+            if let size = sizes[anyId] {
+                chipSizes[chip.id] = size
+            }
+        }
+        updateCalculatedHeight(chips: allChips, availableWidth: availableWidth)
     }
 
     private func updateCalculatedHeight(chips: [ChipItemType], availableWidth: CGFloat) {
@@ -324,33 +339,49 @@ struct ComposerView: View {
         return rows
     }
 
-    private func conditionChipView(text: String) -> some View {
-        Text(text)
-            .font(.system(size: 11, weight: .medium))
-            .foregroundColor(.primary.opacity(0.8))
-            .padding(.horizontal, 8)
-            .padding(.vertical, 4)
-            .background(
-                RoundedRectangle(cornerRadius: 6)
-                    .fill(isDark ? Color.white.opacity(0.1) : Color.black.opacity(0.08)),
-            )
+    private func conditionChipView(propertyLabel: String) -> some View {
+        HStack(spacing: 4) {
+            Text(propertyLabel)
+                .font(.system(size: 11, weight: .medium))
+                .foregroundColor(.primary.opacity(0.8))
+            Text("select operator...")
+                .font(.system(size: 11, weight: .medium))
+                .foregroundColor(.secondary.opacity(0.6))
+        }
+        .padding(.horizontal, 8)
+        .frame(height: defaultChipHeight)
+        .background(
+            RoundedRectangle(cornerRadius: 6)
+                .fill(isDark ? Color.white.opacity(0.1) : Color.black.opacity(0.08)),
+        )
     }
 
-    private var conditionAddButton: some View {
-        addButton(action: {
-            // TODO: addCondition (voy-95에서 구현)
+    private func conditionAddButton(pickerStore: StoreOf<ConditionPropertyPickerFeature>) -> some View {
+        WithViewStore(pickerStore, observe: { $0 }, content: { viewStore in
+            addButton {
+                viewStore.send(.setPresented(true))
+            }
+            .popover(
+                isPresented: viewStore.binding(
+                    get: \.isPresented,
+                    send: ConditionPropertyPickerFeature.Action.setPresented
+                ),
+                arrowEdge: .bottom,
+                content: {
+                    ConditionPropertyPickerView(store: pickerStore)
+                }
+            )
         })
     }
 
     private func setupOnAppear() {
         isDark = isDarkMode()
-        localComposeText = ""
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
             isComposeFieldFocused = true
         }
         escKeyMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { event in
             if event.keyCode == escapeKeyCode {
-                store.send(.hideComposer)
+                store.send(.exitComposer)
                 return nil
             }
             return event
@@ -409,9 +440,9 @@ struct ComposerView: View {
             Image(systemName: "plus")
                 .font(.system(size: 11, weight: .medium))
                 .foregroundColor(.secondary)
-                .frame(width: 20, height: 20)
+                .frame(width: defaultChipHeight, height: defaultChipHeight)
                 .background(
-                    RoundedRectangle(cornerRadius: 4)
+                    RoundedRectangle(cornerRadius: 6)
                         .fill(isDark ? Color.white.opacity(0.1) : Color.black.opacity(0.08)),
                 )
         }
