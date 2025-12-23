@@ -1,6 +1,13 @@
 import ComposableArchitecture
 import Foundation
 
+struct Condition: Equatable, Identifiable {
+    var id: String { propertyKey }
+    let propertyKey: String
+    let propertyLabel: String
+    // TODO(voy-95): operator, value 추가 예정
+}
+
 @Reducer
 struct ComposerFeature {
     @ObservableState
@@ -8,6 +15,8 @@ struct ComposerFeature {
         var isPresented: Bool = false
         var text: String = ""
         var scopes: [String] = []
+        var conditions: [Condition] = []
+        var propertyPicker: ConditionPropertyPickerFeature.State = .init()
     }
 
     enum Action: Sendable {
@@ -16,9 +25,16 @@ struct ComposerFeature {
         case addScope(path: String)
         case removeScope(path: String)
         case updateScope(oldPath: String, newPath: String)
+        case addCondition(property: MDItemProperty)
+        case removeCondition(propertyKey: String)
+        case propertyPicker(ConditionPropertyPickerFeature.Action)
     }
 
     var body: some Reducer<State, Action> {
+        Scope(state: \.propertyPicker, action: \.propertyPicker) {
+            ConditionPropertyPickerFeature()
+        }
+
         Reduce { state, action in
             switch action {
             case let .setPresented(isPresented):
@@ -46,6 +62,27 @@ struct ComposerFeature {
                 if let index = state.scopes.firstIndex(of: oldPath) {
                     state.scopes[index] = newPath
                 }
+                return .none
+
+            case let .addCondition(property):
+                if !state.conditions.contains(where: { $0.propertyKey == property.key }) {
+                    let condition = Condition(
+                        propertyKey: property.key,
+                        propertyLabel: property.label,
+                    )
+                    state.conditions.append(condition)
+                }
+                state.propertyPicker.isPresented = false
+                return .none
+
+            case let .removeCondition(propertyKey):
+                state.conditions.removeAll { $0.propertyKey == propertyKey }
+                return .none
+
+            case let .propertyPicker(.propertyTapped(property)):
+                return .send(.addCondition(property: property))
+
+            case .propertyPicker:
                 return .none
             }
         }
