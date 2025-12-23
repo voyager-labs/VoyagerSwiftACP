@@ -1,3 +1,4 @@
+// swiftlint:disable file_length
 import AppKit
 import Combine
 import ComposableArchitecture
@@ -49,6 +50,7 @@ class FileManagerSplitViewController: NSViewController, NSSplitViewDelegate {
     private var inspectorWidth: CGFloat = 300
     private let contentVerticalMargin: CGFloat = 8
     private var contentLeadingConstraint: NSLayoutConstraint?
+    private var containerLeadingConstraint: NSLayoutConstraint?
     private var contentTrailingConstraint: NSLayoutConstraint?
     private var contentTopConstraint: NSLayoutConstraint?
     private var contentBottomConstraint: NSLayoutConstraint?
@@ -116,12 +118,37 @@ class FileManagerSplitViewController: NSViewController, NSSplitViewDelegate {
         store.send(.fsItems(.onAppear))
 
         observeInspectorState()
+        observeSidebarState()
     }
 
     private func observeInspectorState() {
         observationTask = Task { @MainActor in
             for await inspectorVisible in store.publisher.inspectorVisible.values {
                 updateInspectorPane(visible: inspectorVisible)
+            }
+        }
+    }
+
+    private func observeSidebarState() {
+        Task { @MainActor in
+            for await sidebarVisible in store.publisher.sidebarVisible.values {
+                guard let mainSplitView = mainSplitView,
+                      let sidebarView = sidebarHosting?.view else { continue }
+
+                if sidebarVisible {
+                    let savedWidth = UserDefaults.standard.object(forKey: "sidebarWidth") as? Double ?? 220
+                    mainSplitView.setPosition(CGFloat(savedWidth), ofDividerAt: 0)
+                    containerLeadingConstraint?.constant = 0
+                } else {
+                    let currentWidth = sidebarView.frame.width
+                    if currentWidth > 0 {
+                        UserDefaults.standard.set(currentWidth, forKey: "sidebarWidth")
+                    }
+                    mainSplitView.setPosition(0, ofDividerAt: 0)
+                    containerLeadingConstraint?.constant = contentVerticalMargin
+                }
+
+                contentInspectorContainer?.layoutSubtreeIfNeeded()
             }
         }
     }
@@ -133,7 +160,13 @@ class FileManagerSplitViewController: NSViewController, NSSplitViewDelegate {
               let mainSplitView = view as? NSSplitView,
               mainSplitView.bounds.width > 0 else { return }
 
-        mainSplitView.setPosition(220, ofDividerAt: 0)
+        let savedWidth = UserDefaults.standard.object(forKey: "sidebarWidth") as? Double ?? 220
+        if store.sidebarVisible {
+            mainSplitView.setPosition(CGFloat(savedWidth), ofDividerAt: 0)
+        } else {
+            mainSplitView.setPosition(0, ofDividerAt: 0)
+        }
+
         mainSplitView.adjustSubviews()
         hasSetInitialLayout = true
 
@@ -170,7 +203,7 @@ extension FileManagerSplitViewController {
     private func updateContentPaneColor(for view: NSView) {
         guard let mainSplit = mainSplitView else { return }
         let appearance = mainSplit.effectiveAppearance
-        let isDark = appearance.name == .darkAqua || appearance.name == .vibrantDark
+        let isDark = isDarkMode(appearance: appearance)
 
         appearance.performAsCurrentDrawingAppearance {
             if isDark {
@@ -210,24 +243,41 @@ extension FileManagerSplitViewController {
         wrapper.addSubview(container)
         setupContentPane(in: container)
 
+        let initialLeading: CGFloat = store.sidebarVisible ? 0 : contentVerticalMargin
+        containerLeadingConstraint = container.leadingAnchor.constraint(
+            equalTo: wrapper.leadingAnchor,
+            constant: initialLeading
+        )
+
         NSLayoutConstraint.activate([
             container.topAnchor.constraint(equalTo: wrapper.topAnchor, constant: contentVerticalMargin),
             container.bottomAnchor.constraint(equalTo: wrapper.bottomAnchor, constant: -contentVerticalMargin),
-            container.leadingAnchor.constraint(equalTo: wrapper.leadingAnchor),
+            containerLeadingConstraint,
             container.trailingAnchor.constraint(equalTo: wrapper.trailingAnchor, constant: -contentVerticalMargin),
-        ])
+        ].compactMap { $0 })
 
         mainSplit.addArrangedSubview(wrapper)
         mainSplit.setHoldingPriority(.defaultLow, forSubviewAt: 1)
     }
 
     private func setupContentPane(in container: NSView) {
+        let store = self.store
         let contentHosting = NSHostingController(
-            rootView: VStack(spacing: 0) {
-                ToolbarView(store: store)
-                ContentPaneView(store: store)
+            rootView: WithViewStore(store, observe: \.isComposeMode) { viewStore in
+                ZStack(alignment: .top) {
+                    VStack(spacing: 0) {
+                        ToolbarView(store: store)
+                        ContentPaneView(store: store)
+                    }
+
+                    if viewStore.state {
+                        ComposeModeOverlay(store: store)
+                            .transition(.move(edge: .top).combined(with: .opacity))
+                    }
+                }
+                .ignoresSafeArea(.all, edges: .top)
+                .animation(.spring(response: 0.25, dampingFraction: 0.75), value: viewStore.state)
             }
-            .ignoresSafeArea(.all, edges: .top)
         )
         contentHosting.safeAreaRegions = []
         contentHosting.view.translatesAutoresizingMaskIntoConstraints = false
@@ -459,7 +509,7 @@ extension FileManagerSplitViewController {
         ofSubviewAt dividerIndex: Int
     ) -> CGFloat {
         switch dividerIndex {
-        case 0: return 400
+        case 0: return 280
         default: return proposedMaximumPosition
         }
     }
@@ -476,5 +526,14 @@ extension FileManagerSplitViewController {
 
     func splitViewDidResizeSubviews(_: Notification) {
         updateContentInspectorLayout()
+
+        if let sidebarView = sidebarHosting?.view,
+           store.sidebarVisible,
+           sidebarView.frame.width > 0
+        {
+            UserDefaults.standard.set(sidebarView.frame.width, forKey: "sidebarWidth")
+        }
     }
 }
+
+// swiftlint:enable file_length

@@ -1,12 +1,44 @@
+import AppKit
 import ComposableArchitecture
 import SwiftUI
 
 struct ToolbarView: View {
     let store: StoreOf<FileManagerFeature>
+    @State private var isDark: Bool = isDarkMode()
+    @Environment(\.colorScheme)
+    var colorScheme
 
     private let trafficLightAreaWidth: CGFloat = 80
 
     var body: some View {
+        normalModeContent
+            .frame(maxHeight: .infinity)
+            .padding(0)
+            .padding(.leading, store.sidebarVisible ? 0 : trafficLightAreaWidth)
+            .padding(.horizontal, 16)
+            .frame(height: 48)
+            .frame(maxWidth: .infinity)
+            .background(
+                ZStack {
+                    toolbarBackgroundColor
+
+                    VStack {
+                        Spacer()
+                        Rectangle()
+                            .fill(Color.black.opacity(0.15))
+                            .frame(height: 1.0)
+                    }
+                }
+            )
+            .onAppear {
+                isDark = isDarkMode()
+            }
+            .onChange(of: colorScheme) { newScheme in
+                isDark = newScheme == .dark
+            }
+    }
+
+    private var normalModeContent: some View {
         HStack(spacing: 12) {
             Menu {
                 if store.backHistory.isEmpty {
@@ -62,30 +94,29 @@ struct ToolbarView: View {
             .disabled(!store.canGoForward)
             .buttonStyle(.borderless)
 
-            Text(FileManager.default.displayName(atPath: store.currentPath))
-                .font(.system(size: 15, weight: .semibold))
+            Button {
+                store.send(.enterComposeMode)
+            } label: {
+                HStack(spacing: 4) {
+                    Image(systemName: "folder")
+                        .font(.system(size: 12))
+                    Text(FileManager.default.displayName(atPath: store.currentPath))
+                        .font(.system(size: 15, weight: .semibold))
+                }
+            }
+            .buttonStyle(.plain)
 
             Spacer()
 
             ToolbarMenuView(store: store)
         }
-        .frame(maxHeight: .infinity)
-        .padding(0)
-        .padding(.leading, store.sidebarVisible ? 0 : trafficLightAreaWidth)
-        .padding(.horizontal, 16)
-        .frame(height: 56)
-        .frame(maxWidth: .infinity)
-        .background(
-            ZStack {
-                Color(red: 0.17, green: 0.17, blue: 0.17)
+    }
 
-                VStack {
-                    Spacer()
-                    Rectangle()
-                        .fill(Color.black.opacity(0.15))
-                        .frame(height: 0.5)
-                }
-            }
-        )
+    private var toolbarBackgroundColor: Color {
+        if isDark {
+            return Color(red: 0.17, green: 0.17, blue: 0.17)
+        } else {
+            return Color(nsColor: .controlBackgroundColor)
+        }
     }
 }
