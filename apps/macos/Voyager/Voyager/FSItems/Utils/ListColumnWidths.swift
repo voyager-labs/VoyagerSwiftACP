@@ -17,7 +17,7 @@ struct ListColumnWidths: Equatable, Sendable {
         name: 0.4,
         date: 0.35,
         size: 0.1,
-        kind: 0.15
+        kind: 0.15,
     )
 
     func makeAbsoluteWidths(totalWidth: CGFloat, padding _: CGFloat, spacing _: CGFloat) -> ListColumnLayout {
@@ -29,7 +29,7 @@ struct ListColumnWidths: Equatable, Sendable {
         delta: CGFloat,
         totalWidth: CGFloat,
         padding: CGFloat,
-        spacing: CGFloat
+        spacing: CGFloat,
     ) -> ListColumnWidths {
         let usableWidth = max(totalWidth - padding * 2, 0)
         let widthForColumns = max(usableWidth - spacing * 3, 0)

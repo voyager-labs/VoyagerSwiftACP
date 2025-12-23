@@ -79,7 +79,7 @@ enum DirectoryOption: Equatable, Hashable, Identifiable {
 
         switch self {
         case .home, .desktop, .documents, .downloads:
-            if let path = path {
+            if let path {
                 let originalImage = NSWorkspace.shared.icon(forFile: path)
                 let resizedImage = resizeImage(originalImage, to: NSSize(width: iconSize, height: iconSize))
                 return Image(nsImage: resizedImage)
@@ -320,7 +320,7 @@ struct SettingsFeature {
 
             case let .general(.startingDirectorySelected(path)):
                 state.generalSettings.isSelectingDirectory = false
-                guard let path = path else {
+                guard let path else {
                     return .none
                 }
 

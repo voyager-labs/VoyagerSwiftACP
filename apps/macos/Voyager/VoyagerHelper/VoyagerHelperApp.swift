@@ -2,8 +2,22 @@ import Foundation
 
 @main
 class VoyagerHelperApp {
+    private static var lifecycle: HelperLifecycle?
+
     static func main() {
-        _ = BackendManagerDotenv() // 백엔드 관리자 초기화 및 백엔드 시작
-        RunLoop.current.run() // 헬퍼 앱을 백그라운드에서 계속 실행
+        let environment = Environment()
+
+        fputs(
+            "[VoyagerHelper] Starting (APP_ENV=\(environment.environmentType.rawValue), BACKEND_MODE=\(environment.backendMode.rawValue))\n",
+            stderr,
+        )
+
+        let runner = ProcessRunner(environment: environment)
+        let lifecycle = HelperLifecycle(processRunner: runner)
+        VoyagerHelperApp.lifecycle = lifecycle
+
+        lifecycle.start()
+        RunLoop.current.run()
+        lifecycle.stop()
     }
 }

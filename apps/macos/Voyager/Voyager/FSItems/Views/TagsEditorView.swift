@@ -66,7 +66,7 @@ struct TagButtonStyle: ButtonStyle {
             .background(
                 configuration.isPressed
                     ? Color(nsColor: .selectedContentBackgroundColor).opacity(0.5)
-                    : Color.clear
+                    : Color.clear,
             )
     }
 }

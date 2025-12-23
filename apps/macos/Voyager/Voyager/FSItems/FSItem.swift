@@ -41,7 +41,7 @@ public struct FSItem: Identifiable, Sendable {
         kind: String = "",
         creatorApplication: String? = nil,
         tags: [FileTag]? = nil,
-        additionalInfo: String? = nil
+        additionalInfo: String? = nil,
     ) {
         id = fullPath
         self.name = name
@@ -75,7 +75,7 @@ extension FSItem: Equatable {
             fullPath: id,
             isDirectory: true,
             isHidden: false,
-            kind: "Folder"
+            kind: "Folder",
         )
     }
 }

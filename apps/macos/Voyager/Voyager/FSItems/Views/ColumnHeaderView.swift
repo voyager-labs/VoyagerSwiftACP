@@ -16,7 +16,7 @@ struct ColumnHeaderView: View {
         let layout = columnWidths.makeAbsoluteWidths(
             totalWidth: availableWidth,
             padding: ListColumnLayout.outerPadding,
-            spacing: ListColumnLayout.columnSpacing
+            spacing: ListColumnLayout.columnSpacing,
         )
 
         HStack(alignment: .top, spacing: 0) {
@@ -25,7 +25,7 @@ struct ColumnHeaderView: View {
                 width: layout.name,
                 sortKey: .name,
                 alignment: .leading,
-                showIcon: true
+                showIcon: true,
             )
 
             Spacer().frame(width: layout.columnSpacing)
@@ -36,7 +36,7 @@ struct ColumnHeaderView: View {
                 sortKey: .dateModified,
                 alignment: .leading,
                 showIcon: false,
-                column: .name
+                column: .name,
             )
 
             Spacer().frame(width: layout.columnSpacing)
@@ -47,7 +47,7 @@ struct ColumnHeaderView: View {
                 sortKey: .size,
                 alignment: .leading,
                 showIcon: false,
-                column: .date
+                column: .date,
             )
 
             Spacer().frame(width: layout.columnSpacing)
@@ -58,7 +58,7 @@ struct ColumnHeaderView: View {
                 sortKey: .kind,
                 alignment: .leading,
                 showIcon: false,
-                column: .size
+                column: .size,
             )
         }
         .padding(.horizontal, layout.outerPadding)
@@ -68,13 +68,13 @@ struct ColumnHeaderView: View {
             Rectangle()
                 .frame(height: 1)
                 .foregroundColor(Color(nsColor: .separatorColor)),
-            alignment: .top
+            alignment: .top,
         )
         .overlay(
             Rectangle()
                 .frame(height: 1)
                 .foregroundColor(Color(nsColor: .separatorColor)),
-            alignment: .bottom
+            alignment: .bottom,
         )
         .onChange(of: activeResizeColumn) { newValue in
             if newValue == nil {
@@ -89,7 +89,7 @@ struct ColumnHeaderView: View {
         width: CGFloat,
         sortKey targetSortKey: SortKey,
         alignment: HorizontalAlignment,
-        showIcon: Bool
+        showIcon: Bool,
     ) -> some View {
         HStack(spacing: showIcon ? 8 : 4) {
             if showIcon {
@@ -118,7 +118,7 @@ struct ColumnHeaderView: View {
         sortKey targetSortKey: SortKey,
         alignment: HorizontalAlignment,
         showIcon: Bool,
-        column: ListColumnWidths.Column
+        column: ListColumnWidths.Column,
     ) -> some View {
         HStack(alignment: .center, spacing: 2) {
             resizeHandle(column: column)
@@ -137,9 +137,9 @@ struct ColumnHeaderView: View {
                         width: width - 6,
                         sortKey: targetSortKey,
                         alignment: alignment,
-                        showIcon: showIcon
+                        showIcon: showIcon,
                     )
-                }
+                },
             )
             .buttonStyle(PlainButtonStyle())
         }
@@ -152,7 +152,7 @@ struct ColumnHeaderView: View {
         width: CGFloat,
         sortKey targetSortKey: SortKey,
         alignment: HorizontalAlignment,
-        showIcon: Bool
+        showIcon: Bool,
     ) -> some View {
         Button(
             action: {
@@ -168,9 +168,9 @@ struct ColumnHeaderView: View {
                     width: width,
                     sortKey: targetSortKey,
                     alignment: alignment,
-                    showIcon: showIcon
+                    showIcon: showIcon,
                 )
-            }
+            },
         )
         .buttonStyle(PlainButtonStyle())
     }
@@ -188,9 +188,9 @@ struct ColumnHeaderView: View {
         }
         .contentShape(Rectangle())
         .onHover { isHovering in
-            if isHovering && activeResizeColumn == nil {
+            if isHovering, activeResizeColumn == nil {
                 NSCursor.resizeLeftRight.push()
-            } else if !isHovering && activeResizeColumn == nil {
+            } else if !isHovering, activeResizeColumn == nil {
                 NSCursor.pop()
             }
         }
@@ -208,7 +208,7 @@ struct ColumnHeaderView: View {
                 .onEnded { _ in
                     activeResizeColumn = nil
                     NSCursor.pop()
-                }
+                },
         )
     }
 }
@@ -221,7 +221,7 @@ struct ColumnHeaderView: View {
         columnWidths: .default,
         onSortKeyChange: { _ in },
         onSortOrderToggle: {},
-        onColumnResize: { _, _ in }
+        onColumnResize: { _, _ in },
     )
     .frame(height: 30)
 }

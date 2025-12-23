@@ -29,11 +29,10 @@ enum FSItemIconUtils {
             return cached
         }
 
-        let icon: NSImage
-        if let utType = UTType(filenameExtension: item.fileExtension) {
-            icon = NSWorkspace.shared.icon(for: utType)
+        let icon: NSImage = if let utType = UTType(filenameExtension: item.fileExtension) {
+            NSWorkspace.shared.icon(for: utType)
         } else {
-            icon = NSWorkspace.shared.icon(for: .data)
+            NSWorkspace.shared.icon(for: .data)
         }
 
         iconCache.setObject(icon, forKey: cacheKey as NSString)

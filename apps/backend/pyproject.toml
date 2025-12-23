@@ -54,6 +54,7 @@ package = true
 
 [tool.uv.build-backend]
 module-name = "app"
+packages = ["app", "core", "infra", "utils"]
 
 [project.scripts]
 dev = "app.cli:dev"

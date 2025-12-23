@@ -20,9 +20,9 @@ private struct ItemPosition {
 
     func shouldShowFullName(hasSelectedItem: Bool) -> Bool {
         if hasSelectedItem {
-            return isFirst || isLast
+            isFirst || isLast
         } else {
-            return isFirst || isLast || isSecondLast
+            isFirst || isLast || isSecondLast
         }
     }
 
@@ -170,7 +170,7 @@ struct PathBreadcrumbView: View {
                             item: item,
                             width: calculateDynamicMaxWidth(for: item, at: index),
                             needsFixedSize: position.needsFixedSize(hasSelectedItem: selectedItem != nil),
-                            truncationMode: .tail
+                            truncationMode: .tail,
                         )
                     }
                     .buttonStyle(BreadcrumbButtonStyle())
@@ -202,7 +202,7 @@ struct PathBreadcrumbView: View {
                 }
             }
 
-            if let selectedItem = selectedItem {
+            if let selectedItem {
                 if !breadcrumbItems.isEmpty {
                     Image(systemName: "chevron.right")
                         .font(.system(size: 10))
@@ -213,7 +213,7 @@ struct PathBreadcrumbView: View {
                     item: selectedItem,
                     width: selectedItem.name.width(),
                     needsFixedSize: true,
-                    truncationMode: .middle
+                    truncationMode: .middle,
                 )
                 .foregroundColor(.secondary)
             }

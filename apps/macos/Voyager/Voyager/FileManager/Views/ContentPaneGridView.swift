@@ -22,7 +22,7 @@ struct ContentPaneGridView: View {
         ScrollPositionUtils.saveScrollPosition(
             scrollView: nsScrollView,
             currentPath: store.currentPath,
-            store: store
+            store: store,
         )
     }
 
@@ -39,7 +39,7 @@ struct ContentPaneGridView: View {
         item: FSItem,
         store: StoreOf<FileManagerFeature>,
         fsStore: Store<FSItemsFeature.State, FSItemsFeature.Action>,
-        isTrashFolder: Bool = false
+        isTrashFolder: Bool = false,
     ) -> FSItemGridView {
         let selectedItems = fsStore.items.filter { fsStore.selectedIds.contains($0.id) }
         let (showCompress, showExtract) = FSItemContextMenuUtils
@@ -50,7 +50,7 @@ struct ContentPaneGridView: View {
             fsStore: fsStore,
             saveScrollPosition: saveScrollPositionBeforeOpen,
             isTrashFolder: isTrashFolder,
-            onEmptyTrash: { store.send(.emptyTrash) }
+            onEmptyTrash: { store.send(.emptyTrash) },
         )
 
         return buildGridView(
@@ -59,7 +59,7 @@ struct ContentPaneGridView: View {
             fsStore: fsStore,
             handlers: handlers,
             showCompress: showCompress,
-            showExtract: showExtract
+            showExtract: showExtract,
         )
     }
 
@@ -69,7 +69,7 @@ struct ContentPaneGridView: View {
         fsStore: Store<FSItemsFeature.State, FSItemsFeature.Action>,
         handlers: FSItemContextMenuHandlers,
         showCompress: Bool,
-        showExtract: Bool
+        showExtract: Bool,
     ) -> FSItemGridView {
         let selectedIds = fsStore.selectedIds
         let clipboardItems = fsStore.clipboardItems
@@ -112,7 +112,7 @@ struct ContentPaneGridView: View {
             selectedCount: fsStore.selectedIds.isEmpty ? 1 : fsStore.selectedIds.count,
             showCompress: showCompress,
             showExtract: showExtract,
-            draggingPaths: fsStore.draggingPaths
+            draggingPaths: fsStore.draggingPaths,
         )
     }
 
@@ -146,7 +146,7 @@ struct ContentPaneGridView: View {
                                     gridSections(
                                         fsStore: fsStore,
                                         store: store,
-                                        columns: columns
+                                        columns: columns,
                                     )
                                 }
                             }
@@ -165,7 +165,7 @@ struct ContentPaneGridView: View {
                                 if let lasso = fsStore.lassoSelection {
                                     LassoRectangleView(rect: lasso.rect)
                                 }
-                            }
+                            },
                         )
                         .contextMenu {
                             if store.isTrashFolder {
@@ -191,20 +191,20 @@ struct ContentPaneGridView: View {
                                     } else {
                                         let dragDistance = LassoSelectionUtils.calculateDragDistance(
                                             from: value.startLocation,
-                                            to: value.location
+                                            to: value.location,
                                         )
 
                                         if dragDistance > 15,
                                            !LassoSelectionUtils.isPointOverAnyItem(
                                                value.startLocation,
-                                               itemPositions: fsStore.itemPositions
+                                               itemPositions: fsStore.itemPositions,
                                            )
                                         {
                                             let modifiers = LassoSelectionUtils.detectModifierFlags()
 
                                             fsStore.send(.startLassoSelection(
                                                 startPoint: value.startLocation,
-                                                modifierFlags: modifiers
+                                                modifierFlags: modifiers,
                                             ))
                                         }
                                     }
@@ -213,7 +213,7 @@ struct ContentPaneGridView: View {
                                     if fsStore.lassoSelection != nil {
                                         fsStore.send(.endLassoSelection)
                                     }
-                                }
+                                },
                         )
                     }
                     .onChange(of: fsStore.lastSelectedId) { newId in
@@ -236,7 +236,7 @@ struct ContentPaneGridView: View {
                                 scrollView: nsScrollView,
                                 currentPath: store.currentPath,
                                 scrollPositions: store.scrollPositions,
-                                hasRestored: &hasRestoredScrollPosition
+                                hasRestored: &hasRestoredScrollPosition,
                             )
                         } else {
                             proxy.scrollTo("scrollTop", anchor: .top)
@@ -255,7 +255,7 @@ struct ContentPaneGridView: View {
         .border(fsStore.isDropTargeted ? Color.accentColor : Color.clear, width: 2)
         .onDrop(
             of: [UTType.fileURL],
-            delegate: FSItemDropDelegate(store: store, fsStore: fsStore)
+            delegate: FSItemDropDelegate(store: store, fsStore: fsStore),
         )
     }
 
@@ -263,7 +263,7 @@ struct ContentPaneGridView: View {
     private func gridSections(
         fsStore: Store<FSItemsFeature.State, FSItemsFeature.Action>,
         store: StoreOf<FileManagerFeature>,
-        columns: [GridItem]
+        columns: [GridItem],
     ) -> some View {
         if fsStore.groupKey == .none {
             LazyVGrid(columns: columns, alignment: .leading, spacing: verticalSpacing) {
@@ -272,7 +272,7 @@ struct ContentPaneGridView: View {
                         item: item,
                         store: store,
                         fsStore: fsStore,
-                        isTrashFolder: store.isTrashFolder
+                        isTrashFolder: store.isTrashFolder,
                     )
                 }
             }
@@ -282,7 +282,7 @@ struct ContentPaneGridView: View {
                     Spacer().frame(height: 16)
                 }
 
-                if !group.groupName.isEmpty && fsStore.groupKey != .name {
+                if !group.groupName.isEmpty, fsStore.groupKey != .name {
                     HStack(spacing: 8) {
                         if fsStore.groupKey == .tags,
                            let colorCode = group.items.first?.tags?
@@ -306,7 +306,7 @@ struct ContentPaneGridView: View {
                             item: item,
                             store: store,
                             fsStore: fsStore,
-                            isTrashFolder: store.isTrashFolder
+                            isTrashFolder: store.isTrashFolder,
                         )
                     }
                 }
@@ -337,7 +337,7 @@ extension ContentPaneGridView {
     private func makeColumns(count: Int, spacing: CGFloat) -> [GridItem] {
         Array(
             repeating: GridItem(.fixed(itemWidth), spacing: spacing, alignment: .top),
-            count: max(1, count)
+            count: max(1, count),
         )
     }
 

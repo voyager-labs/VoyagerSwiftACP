@@ -6,6 +6,7 @@
 - macOS Feature (File Manager): `apps/macos/Voyager/Voyager/Features/FileManager/*`
 - Key Commands Hook: `apps/macos/Voyager/Voyager/Features/FileManager/KeyCommandView.swift`
 - Backend Process Management: `apps/macos/Voyager/VoyagerHelper/BackendManager*.swift`
+- Backend Venv Preparation: `scripts/prepare-backend-venv.sh` (Release 빌드용 번들 venv 준비)
 - Backend Main (FastAPI): `apps/backend/src/app/main.py`
 - Backend CLI (uv entry): `apps/backend/src/app/cli.py`
 - Backend Config: `apps/backend/src/conf/config.yaml`, `.env.example`

@@ -35,13 +35,13 @@ func makeContextMenuHandlers(
     fsStore: Store<FSItemsFeature.State, FSItemsFeature.Action>,
     saveScrollPosition: @escaping () -> Void,
     isTrashFolder: Bool,
-    onEmptyTrash: @escaping () -> Void
+    onEmptyTrash: @escaping () -> Void,
 ) -> FSItemContextMenuHandlers {
     let onSelect: (Bool, Bool) -> Void = { isCommandPressed, isShiftPressed in
         fsStore.send(.selectItem(
             id: item.id,
             isCommandPressed: isCommandPressed,
-            isShiftPressed: isShiftPressed
+            isShiftPressed: isShiftPressed,
         ))
         restoreFileManagerFocus()
     }
@@ -91,7 +91,7 @@ func makeContextMenuHandlers(
         let dragPaths = fsStore.selectedIds.isEmpty
             ? [item.fullPath]
             : fsStore.items.filter { fsStore.selectedIds.contains($0.id) }
-            .map { $0.fullPath }
+            .map(\.fullPath)
         fsStore.send(.startDrag(paths: dragPaths))
     }
 
@@ -193,7 +193,7 @@ func makeContextMenuHandlers(
         onExtract: onExtract,
         onCopy: onCopy,
         onCut: onCut,
-        onToggleTag: onToggleTag
+        onToggleTag: onToggleTag,
     )
 }
 

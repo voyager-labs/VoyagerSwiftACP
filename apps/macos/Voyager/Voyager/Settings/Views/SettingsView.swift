@@ -15,7 +15,7 @@ struct SettingsView: View {
     var body: some View {
         TabView(selection: Binding(
             get: { store.selectedSection },
-            set: { store.send(.selectSection($0)) }
+            set: { store.send(.selectSection($0)) },
         )) {
             GeneralSettingsView(store: store)
                 .tabItem {
