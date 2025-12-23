@@ -8,6 +8,8 @@ struct ScopeChipView: View {
     let favorites: [SidebarUtils.FavoriteItem]
     let backHistory: [String]
 
+    @State private var isComboBoxPresented: Bool = false
+
     var body: some View {
         HStack(spacing: 4) {
             Image(systemName: "folder")
@@ -19,9 +21,14 @@ struct ScopeChipView: View {
             }
 
             if !paths.isEmpty {
-                Image(systemName: "chevron.down")
-                    .font(.system(size: 10))
-                    .foregroundColor(.secondary)
+                Button {
+                    isComboBoxPresented = true
+                } label: {
+                    Image(systemName: "chevron.down")
+                        .font(.system(size: 10))
+                        .foregroundColor(.secondary)
+                }
+                .buttonStyle(.borderless)
             }
         }
         .padding(.horizontal, 8)
@@ -30,6 +37,17 @@ struct ScopeChipView: View {
             RoundedRectangle(cornerRadius: 6)
                 .fill(isDark ? Color.white.opacity(0.1) : Color.black.opacity(0.08))
         )
+        .popover(isPresented: $isComboBoxPresented, arrowEdge: .bottom) {
+            ScopeComboBoxView(
+                store: store,
+                isPresented: $isComboBoxPresented,
+                onSelect: { selectedPath in
+                    store.send(.addScope(path: selectedPath))
+                },
+                favorites: favorites,
+                backHistory: backHistory
+            )
+        }
     }
 
     @ViewBuilder
@@ -63,9 +81,6 @@ struct ScopeChipView: View {
             RoundedRectangle(cornerRadius: 4)
                 .stroke(subChipBorderColor, lineWidth: 0.5)
         )
-        .onTapGesture {
-            // TODO: 콤보박스 열기 구현
-        }
     }
 
     private var subChipBackgroundColor: Color {
