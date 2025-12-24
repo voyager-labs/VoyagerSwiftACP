@@ -49,14 +49,14 @@ struct ToolbarView: View {
                     Text("No history")
                         .foregroundColor(.secondary)
                 } else {
-                    ForEach(Array(store.backHistory.enumerated().reversed()), id: \.offset) { index, path in
+                    ForEach(Array(store.backHistory.enumerated().reversed()), id: \.offset) { index, entry in
                         Button(
                             action: {
                                 let originalIndex = store.backHistory.count - 1 - index
                                 store.send(.goToHistoryIndex(originalIndex, isBackHistory: true))
                             },
                             label: {
-                                Text(FileManager.default.displayName(atPath: path))
+                                Text(historyDisplayName(for: entry))
                             },
                         )
                     }
@@ -76,14 +76,14 @@ struct ToolbarView: View {
                     Text("No history")
                         .foregroundColor(.secondary)
                 } else {
-                    ForEach(Array(store.forwardHistory.enumerated().reversed()), id: \.offset) { index, path in
+                    ForEach(Array(store.forwardHistory.enumerated().reversed()), id: \.offset) { index, entry in
                         Button(
                             action: {
                                 let originalIndex = store.forwardHistory.count - 1 - index
                                 store.send(.goToHistoryIndex(originalIndex, isBackHistory: false))
                             },
                             label: {
-                                Text(FileManager.default.displayName(atPath: path))
+                                Text(historyDisplayName(for: entry))
                             },
                         )
                     }
@@ -134,6 +134,19 @@ struct ToolbarView: View {
             Color(red: 0.17, green: 0.17, blue: 0.17)
         } else {
             Color(nsColor: .controlBackgroundColor)
+        }
+    }
+
+    private func historyDisplayName(for entry: FileManagerFeature.HistoryEntry) -> String {
+        switch entry.navigationState {
+        case let .folder(path):
+            FileManager.default.displayName(atPath: path)
+        case .recents:
+            "Recents"
+        case let .tags(tagName):
+            tagName
+        case .computer:
+            SidebarUtils.computerName
         }
     }
 }

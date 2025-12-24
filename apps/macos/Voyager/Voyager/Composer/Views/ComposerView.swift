@@ -101,7 +101,7 @@ struct ComposerView: View {
     private func textField(viewStore: ViewStore<ComposerFeature.State, ComposerFeature.Action>) -> some View {
         TextField(
             "Enter your request...",
-            text: viewStore.binding(get: \.text, send: ComposerFeature.Action.setText)
+            text: viewStore.binding(get: \.text, send: ComposerFeature.Action.setText),
         )
         .textFieldStyle(.plain)
         .font(.system(size: 13))
@@ -154,13 +154,13 @@ struct ComposerView: View {
 
     private func secondRow(
         viewStore: ViewStore<ComposerFeature.State, ComposerFeature.Action>,
-        composerStore: StoreOf<ComposerFeature>
+        composerStore: StoreOf<ComposerFeature>,
     ) -> some View {
         GeometryReader { geometry in
             secondRowContent(
                 viewStore: viewStore,
                 composerStore: composerStore,
-                geometry: geometry
+                geometry: geometry,
             )
         }
         .frame(height: calculatedHeight)
@@ -169,7 +169,7 @@ struct ComposerView: View {
     private func secondRowContent(
         viewStore: ViewStore<ComposerFeature.State, ComposerFeature.Action>,
         composerStore: StoreOf<ComposerFeature>,
-        geometry: GeometryProxy
+        geometry: GeometryProxy,
     ) -> some View {
         let leadingPadding = store.sidebarVisible ? 0 : trafficLightAreaWidth
         let availableWidth = geometry.size.width - chipHorizontalPadding * 2 - leadingPadding
@@ -189,34 +189,23 @@ struct ComposerView: View {
             spacing: chipSpacing,
             chipSizes: chipSizes,
             conditionButtonWidth: conditionButtonWidth,
-            buttonSpacing: chipSpacing
+            buttonSpacing: chipSpacing,
         )
         let rows = calculateRowsWithButtons(chips: allChips, params: params)
-
-        return VStack(alignment: .leading, spacing: chipSpacing) {
-            ForEach(Array(rows.enumerated()), id: \.offset) { rowIndex, rowChips in
-                let isLastRow = rowIndex == rows.count - 1
-
-                HStack(spacing: chipSpacing) {
-                    ForEach(Array(rowChips.enumerated()), id: \.element.id) { _, chip in
-                        chipView(chip: chip, composerStore: composerStore)
-                            .background(
-                                GeometryReader { chipGeometry in
-                                    Color.clear
-                                        .preference(
-                                            key: ChipSizePreferenceKey.self,
-                                            value: [AnyHashable(chip.id): chipGeometry.size]
-                                        )
-                                }
-                            )
-                    }
-
-                    if isLastRow {
-                        conditionAddButton(pickerStore: pickerStore)
-                    }
-                }
+        let historyPaths: [String] = store.backHistory.compactMap { entry in
+            if case let .folder(path) = entry.navigationState {
+                path
+            } else {
+                nil
             }
         }
+
+        return chipRowsView(
+            rows: rows,
+            composerStore: composerStore,
+            pickerStore: pickerStore,
+            historyPaths: historyPaths,
+        )
         .onPreferenceChange(ChipSizePreferenceKey.self) { sizes in
             handleChipSizeChange(sizes: sizes, allChips: allChips, availableWidth: availableWidth)
         }
@@ -229,7 +218,11 @@ struct ComposerView: View {
     }
 
     @ViewBuilder
-    private func chipView(chip: ChipItemType, composerStore: StoreOf<ComposerFeature>) -> some View {
+    private func chipView(
+        chip: ChipItemType,
+        composerStore: StoreOf<ComposerFeature>,
+        historyPaths: [String],
+    ) -> some View {
         switch chip {
         case let .scope(paths):
             ComposerScopeChipView(
@@ -237,17 +230,49 @@ struct ComposerView: View {
                 store: composerStore,
                 isDark: isDark,
                 favorites: store.favorites,
-                backHistory: store.backHistory
+                backHistory: historyPaths,
             )
         case let .condition(propertyLabel):
             conditionChipView(propertyLabel: propertyLabel)
         }
     }
 
+    private func chipRowsView(
+        rows: [[ChipItemType]],
+        composerStore: StoreOf<ComposerFeature>,
+        pickerStore: StoreOf<ConditionPropertyPickerFeature>,
+        historyPaths: [String],
+    ) -> some View {
+        VStack(alignment: .leading, spacing: chipSpacing) {
+            ForEach(Array(rows.enumerated()), id: \.offset) { rowIndex, rowChips in
+                let isLastRow = rowIndex == rows.count - 1
+
+                HStack(spacing: chipSpacing) {
+                    ForEach(Array(rowChips.enumerated()), id: \.element.id) { _, chip in
+                        chipView(chip: chip, composerStore: composerStore, historyPaths: historyPaths)
+                            .background(
+                                GeometryReader { chipGeometry in
+                                    Color.clear
+                                        .preference(
+                                            key: ChipSizePreferenceKey.self,
+                                            value: [AnyHashable(chip.id): chipGeometry.size],
+                                        )
+                                },
+                            )
+                    }
+
+                    if isLastRow {
+                        conditionAddButton(pickerStore: pickerStore)
+                    }
+                }
+            }
+        }
+    }
+
     private func handleChipSizeChange(
         sizes: [AnyHashable: CGSize],
         allChips: [ChipItemType],
-        availableWidth: CGFloat
+        availableWidth: CGFloat,
     ) {
         for chip in allChips {
             let anyId = AnyHashable(chip.id)
@@ -364,12 +389,12 @@ struct ComposerView: View {
             .popover(
                 isPresented: viewStore.binding(
                     get: \.isPresented,
-                    send: ConditionPropertyPickerFeature.Action.setPresented
+                    send: ConditionPropertyPickerFeature.Action.setPresented,
                 ),
                 arrowEdge: .bottom,
                 content: {
                     ConditionPropertyPickerView(store: pickerStore)
-                }
+                },
             )
         })
     }
