@@ -17,7 +17,7 @@ struct ToolbarView: View {
             .padding(0)
             .padding(.leading, store.sidebarVisible ? 0 : trafficLightAreaWidth)
             .padding(.horizontal, 16)
-            .frame(height: 48)
+            .frame(height: 40)
             .frame(maxWidth: .infinity)
             .background(
                 ZStack {
@@ -101,7 +101,8 @@ struct ToolbarView: View {
             Button {
                 store.send(.goToEnclosingDirectory)
             } label: {
-                Image(systemName: "arrow.up")
+                Image(systemName: "chevron.up")
+                    .font(.system(size: 13, weight: .medium))
                     .foregroundColor(store.canGoToEnclosingDirectory ? .primary : .secondary)
             }
             .disabled(!store.canGoToEnclosingDirectory)
