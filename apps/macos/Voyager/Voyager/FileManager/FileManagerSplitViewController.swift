@@ -271,6 +271,14 @@ extension FileManagerSplitViewController {
                     }
 
                     if viewStore.state {
+                        Color.clear
+                            .contentShape(Rectangle())
+                            .onTapGesture {
+                                store.send(.exitComposer)
+                            }
+                    }
+
+                    if viewStore.state {
                         ComposerView(store: store)
                             .transition(.move(edge: .top).combined(with: .opacity))
                     }
