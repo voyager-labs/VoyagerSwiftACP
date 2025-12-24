@@ -168,10 +168,8 @@ struct FileManagerFeature {
             composer.isPresented = false
         }
 
-        mutating func resetComposerIfPresented() {
-            if composer.isPresented {
-                composer = .init()
-            }
+        mutating func resetComposer() {
+            composer = .init()
         }
 
         mutating func matchSidebarToPath(
@@ -193,9 +191,7 @@ struct FileManagerFeature {
             let previousPath = currentPath
             selectedSidebarItem = sidebarItemName
             let snapshot = makeHistoryEntry()
-            if composer.isPresented {
-                composer = .init()
-            }
+            resetComposer()
             backHistory.append(snapshot)
             forwardHistory = []
             navigationState = .folder(path)
@@ -214,9 +210,7 @@ struct FileManagerFeature {
         ) {
             selectedSidebarItem = sidebarItemName
             let snapshot = makeHistoryEntry()
-            if composer.isPresented {
-                composer = .init()
-            }
+            resetComposer()
             backHistory.append(snapshot)
             forwardHistory = []
             self.navigationState = navigationState
@@ -390,9 +384,7 @@ struct FileManagerFeature {
                 }
                 if path != state.currentPath {
                     let previousSnapshot = state.makeHistoryEntry()
-                    if state.composer.isPresented {
-                        state.composer = .init()
-                    }
+                    state.resetComposer()
                     state.backHistory.append(previousSnapshot)
                     state.forwardHistory = []
                 }
@@ -483,7 +475,7 @@ struct FileManagerFeature {
                 guard parentURL.path != state.currentPath else { return .none }
 
                 state.navigateToFolder(parentURL.path, sidebarItemName: parentURL.lastPathComponent)
-                state.resetComposerIfPresented()
+                state.resetComposer()
                 return .send(.fsItems(.loadItems(path: parentURL.path)))
 
             case let .changeLayout(layout):
@@ -550,12 +542,12 @@ struct FileManagerFeature {
 
             case .showRecents:
                 state.navigate(to: .recents, sidebarItemName: "Recents")
-                state.resetComposerIfPresented()
+                state.resetComposer()
                 return .send(.fsItems(.loadRecentItems))
 
             case .showComputer:
                 state.navigate(to: .computer, sidebarItemName: SidebarUtils.computerName)
-                state.resetComposerIfPresented()
+                state.resetComposer()
                 return .send(.fsItems(.loadComputerItems))
 
             case .loadFavorites:
@@ -571,7 +563,7 @@ struct FileManagerFeature {
             case let .openFavorite(favorite):
                 guard state.currentPath != favorite.url.path else { return .none }
                 state.navigateToFolder(favorite.url.path, sidebarItemName: favorite.name)
-                state.resetComposerIfPresented()
+                state.resetComposer()
                 return .send(.fsItems(.loadItems(path: favorite.url.path)))
 
             case let .insertFavorite(url, index):
@@ -629,7 +621,7 @@ struct FileManagerFeature {
             case let .openLocation(location):
                 guard state.currentPath != location.url.path else { return .none }
                 state.navigateToFolder(location.url.path, sidebarItemName: location.name)
-                state.resetComposerIfPresented()
+                state.resetComposer()
                 return .send(.fsItems(.loadItems(path: location.url.path)))
 
             case .loadTags:
@@ -644,7 +636,7 @@ struct FileManagerFeature {
 
             case let .showTag(tagItem):
                 state.navigate(to: .tags(tagItem.name), sidebarItemName: tagItem.name)
-                state.resetComposerIfPresented()
+                state.resetComposer()
                 return .send(.fsItems(.loadTagItems(tagName: tagItem.name)))
 
             case let .changeSortKey(key):
@@ -690,7 +682,7 @@ struct FileManagerFeature {
                         return .none
                     }
                     state.navigateToFolder(item.fullPath, sidebarItemName: item.name)
-                    state.resetComposerIfPresented()
+                    state.resetComposer()
                     return .send(.fsItems(.loadItems(path: item.fullPath)))
 
                 default:
