@@ -39,9 +39,6 @@ struct ComposerFeature {
             switch action {
             case let .setPresented(isPresented):
                 state.isPresented = isPresented
-                if !isPresented {
-                    state.text = ""
-                }
                 return .none
 
             case let .setText(text):

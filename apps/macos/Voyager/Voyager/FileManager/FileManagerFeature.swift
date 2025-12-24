@@ -142,6 +142,12 @@ struct FileManagerFeature {
             FileManagerFeature.makeWindowTitle(for: titlePath)
         }
 
+        mutating func resetComposerIfPresented() {
+            if composer.isPresented {
+                composer = .init()
+            }
+        }
+
         mutating func matchSidebarToPath(
             _ path: String,
             favorites: [SidebarUtils.FavoriteItem],
@@ -373,6 +379,7 @@ struct FileManagerFeature {
                     {
                         state.composer.scopes[0] = path
                     }
+                    state.resetComposerIfPresented()
                 }
                 state.navigationState = .folder(path)
                 state.matchSidebarToPath(path, favorites: state.favorites, locations: state.locations)
@@ -412,11 +419,13 @@ struct FileManagerFeature {
             case .goBack:
                 guard let previousPath = state.backHistory.popLast() else { return .none }
                 state.navigateFromHistory(to: previousPath, addToForward: true, locations: state.locations)
+                state.resetComposerIfPresented()
                 return FileManagerNavigationUtils.navigateToState(state.navigationState)
 
             case .goForward:
                 guard let nextPath = state.forwardHistory.popLast() else { return .none }
                 state.navigateFromHistory(to: nextPath, addToForward: false, locations: state.locations)
+                state.resetComposerIfPresented()
                 return FileManagerNavigationUtils.navigateToState(state.navigationState)
 
             case let .goToHistoryIndex(index, isBackHistory):
@@ -433,6 +442,7 @@ struct FileManagerFeature {
 
                     state.navigationState = FileManagerNavigationUtils.navigationStateFromPath(targetPath)
                     state.matchSidebarToPath(targetPath, favorites: state.favorites, locations: state.locations)
+                    state.resetComposerIfPresented()
                     return FileManagerNavigationUtils.navigateToState(state.navigationState)
                 } else {
                     guard index < state.forwardHistory.count else { return .none }
@@ -447,6 +457,7 @@ struct FileManagerFeature {
 
                     state.navigationState = FileManagerNavigationUtils.navigationStateFromPath(targetPath)
                     state.matchSidebarToPath(targetPath, favorites: state.favorites, locations: state.locations)
+                    state.resetComposerIfPresented()
                     return FileManagerNavigationUtils.navigateToState(state.navigationState)
                 }
 
@@ -457,6 +468,7 @@ struct FileManagerFeature {
                 guard parentURL.path != state.currentPath else { return .none }
 
                 state.navigateToFolder(parentURL.path, sidebarItemName: parentURL.lastPathComponent)
+                state.resetComposerIfPresented()
                 return .send(.fsItems(.loadItems(path: parentURL.path)))
 
             case let .changeLayout(layout):
@@ -523,10 +535,12 @@ struct FileManagerFeature {
 
             case .showRecents:
                 state.navigate(to: .recents, sidebarItemName: "Recents")
+                state.resetComposerIfPresented()
                 return .send(.fsItems(.loadRecentItems))
 
             case .showComputer:
                 state.navigate(to: .computer, sidebarItemName: SidebarUtils.computerName)
+                state.resetComposerIfPresented()
                 return .send(.fsItems(.loadComputerItems))
 
             case .loadFavorites:
@@ -542,6 +556,7 @@ struct FileManagerFeature {
             case let .openFavorite(favorite):
                 guard state.currentPath != favorite.url.path else { return .none }
                 state.navigateToFolder(favorite.url.path, sidebarItemName: favorite.name)
+                state.resetComposerIfPresented()
                 return .send(.fsItems(.loadItems(path: favorite.url.path)))
 
             case let .insertFavorite(url, index):
@@ -599,6 +614,7 @@ struct FileManagerFeature {
             case let .openLocation(location):
                 guard state.currentPath != location.url.path else { return .none }
                 state.navigateToFolder(location.url.path, sidebarItemName: location.name)
+                state.resetComposerIfPresented()
                 return .send(.fsItems(.loadItems(path: location.url.path)))
 
             case .loadTags:
@@ -613,6 +629,7 @@ struct FileManagerFeature {
 
             case let .showTag(tagItem):
                 state.navigate(to: .tags(tagItem.name), sidebarItemName: tagItem.name)
+                state.resetComposerIfPresented()
                 return .send(.fsItems(.loadTagItems(tagName: tagItem.name)))
 
             case let .changeSortKey(key):
@@ -658,6 +675,7 @@ struct FileManagerFeature {
                         return .none
                     }
                     state.navigateToFolder(item.fullPath, sidebarItemName: item.name)
+                    state.resetComposerIfPresented()
                     return .send(.fsItems(.loadItems(path: item.fullPath)))
 
                 default:
@@ -684,13 +702,19 @@ struct FileManagerFeature {
                 return .none
 
             case .enterComposer:
-                state.composer = .init()
+                let isFirstOpen = state.composer.isPresented == false
+                    && state.composer.scopes.isEmpty
+                    && state.composer.conditions.isEmpty
+                    && state.composer.text.isEmpty
+
+                if isFirstOpen {
+                    state.composer.scopes = [state.currentPath]
+                }
                 state.composer.isPresented = true
-                state.composer.scopes = [state.currentPath]
                 return .none
 
             case .exitComposer:
-                state.composer = .init()
+                state.composer.isPresented = false
                 return .none
             }
         }
