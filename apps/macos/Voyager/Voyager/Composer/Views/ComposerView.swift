@@ -17,10 +17,11 @@ struct ComposerView: View {
     @FocusState private var isComposeFieldFocused: Bool
     @Environment(\.colorScheme)
     private var colorScheme: ColorScheme
-    @State private var escKeyMonitor: Any?
+    @State private var keyMonitor: Any?
 
     private let trafficLightAreaWidth: CGFloat = 80
     private let escapeKeyCode: UInt16 = 53
+    private let zKeyCode: UInt16 = 6
 
     var body: some View {
         mainContent
@@ -28,14 +29,14 @@ struct ComposerView: View {
                 setupOnAppear()
             }
             .onDisappear {
-                cleanupEscKeyMonitor()
+                cleanupKeyMonitor()
             }
             .onChange(of: colorScheme) { newScheme in
                 isDark = newScheme == .dark
             }
             .onChange(of: store.composer.isPresented) { isPresented in
                 if !isPresented {
-                    cleanupEscKeyMonitor()
+                    cleanupKeyMonitor()
                 }
             }
     }
@@ -78,23 +79,25 @@ struct ComposerView: View {
 
     private var undoButton: some View {
         Button {
-            // TODO: Undo 기능 추후 구현
+            store.send(.composer(.undo))
         } label: {
             Image(systemName: "arrow.uturn.backward")
                 .font(.system(size: 13))
-                .foregroundColor(.secondary)
+                .foregroundColor(store.composer.canUndo ? .primary : .secondary)
         }
+        .disabled(!store.composer.canUndo)
         .buttonStyle(.borderless)
     }
 
     private var redoButton: some View {
         Button {
-            // TODO: Redo 기능 추후 구현
+            store.send(.composer(.redo))
         } label: {
             Image(systemName: "arrow.uturn.forward")
                 .font(.system(size: 13))
-                .foregroundColor(.secondary)
+                .foregroundColor(store.composer.canRedo ? .primary : .secondary)
         }
+        .disabled(!store.composer.canRedo)
         .buttonStyle(.borderless)
     }
 
@@ -404,9 +407,21 @@ struct ComposerView: View {
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
             isComposeFieldFocused = true
         }
-        escKeyMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { event in
+        keyMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { event in
             if event.keyCode == escapeKeyCode {
                 store.send(.exitComposer)
+                return nil
+            }
+            if event.keyCode == zKeyCode, event.modifierFlags.contains(.command) {
+                if event.modifierFlags.contains(.shift) {
+                    if store.composer.canRedo {
+                        store.send(.composer(.redo))
+                    }
+                } else {
+                    if store.composer.canUndo {
+                        store.send(.composer(.undo))
+                    }
+                }
                 return nil
             }
             return event
@@ -474,10 +489,10 @@ struct ComposerView: View {
         .buttonStyle(.borderless)
     }
 
-    private func cleanupEscKeyMonitor() {
-        if let monitor = escKeyMonitor {
+    private func cleanupKeyMonitor() {
+        if let monitor = keyMonitor {
             NSEvent.removeMonitor(monitor)
-            escKeyMonitor = nil
+            keyMonitor = nil
         }
     }
 }
