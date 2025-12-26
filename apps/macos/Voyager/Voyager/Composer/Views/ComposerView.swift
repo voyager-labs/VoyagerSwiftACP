@@ -19,6 +19,8 @@ struct ComposerView: View {
     private var colorScheme: ColorScheme
     @State private var keyMonitor: Any?
     @State private var isAddButtonHovering: Bool = false
+    @State private var isPropertyHovering: [String: Bool] = [:]
+    @State private var operatorHoverKey: String?
 
     private let trafficLightAreaWidth: CGFloat = 80
     private let escapeKeyCode: UInt16 = 53
@@ -156,6 +158,7 @@ struct ComposerView: View {
     private let maxChipAreaHeight: CGFloat = 200
     private let defaultChipHeight: CGFloat = 28
     private let defaultChipWidth: CGFloat = 120
+    private let hoverFillOpacity: Double = 0.06
     private let stringOperatorOptions: [(code: String, label: String)] = [
         ("eq", "is"),
         ("neq", "is not"),
@@ -420,6 +423,14 @@ struct ComposerView: View {
                     alignment: .center,
                 )
                 .contentShape(Rectangle())
+                .onHover { hovering in
+                    isPropertyHovering[condition.propertyKey] = hovering
+                }
+                .background(
+                    (isPropertyHovering[condition.propertyKey] ?? false)
+                        ? (isDark ? Color.white.opacity(hoverFillOpacity) : Color.black.opacity(hoverFillOpacity))
+                        : Color.clear,
+                )
                 .onTapGesture {
                     store.send(.composer(.propertyPicker(.startEditing(condition.propertyKey))))
                 }
@@ -473,7 +484,9 @@ struct ComposerView: View {
         operatorLabel: String,
         operatorColor: Color,
     ) -> some View {
-        Button {
+        let isHovering = operatorHoverKey == condition.propertyKey
+
+        return Button {
             operatorPopoverKey = condition.propertyKey
         } label: {
             Text(operatorLabel)
@@ -483,11 +496,20 @@ struct ComposerView: View {
                 .padding(.vertical, 2)
                 .background(
                     RoundedRectangle(cornerRadius: 4)
-                        .fill(Color.white.opacity(0.0001)),
+                        .fill(
+                            isHovering
+                                ?
+                                (isDark ? Color.white.opacity(hoverFillOpacity) : Color.black
+                                    .opacity(hoverFillOpacity))
+                                : Color.white.opacity(0.0001),
+                        ),
                     alignment: .center,
                 )
         }
         .contentShape(Rectangle())
+        .onHover { hovering in
+            operatorHoverKey = hovering ? condition.propertyKey : nil
+        }
         .padding(.horizontal, 0)
         .padding(.vertical, 0)
         .frame(minWidth: 28, minHeight: 22, alignment: .center)

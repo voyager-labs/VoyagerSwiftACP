@@ -10,6 +10,9 @@ struct ComposerScopeChipView: View {
 
     @State private var isComboBoxPresented: Bool = false
     @State private var editingPath: String?
+    @State private var deleteHoverPath: String?
+    @State private var dropdownHovering: Bool = false
+    @State private var nameHoverPath: String?
 
     var body: some View {
         HStack(spacing: 4) {
@@ -27,9 +30,20 @@ struct ComposerScopeChipView: View {
                 } label: {
                     Image(systemName: "chevron.down")
                         .font(.system(size: 10))
-                        .foregroundColor(.secondary)
+                        .foregroundColor(dropdownHovering ? .primary : .secondary)
+                        .padding(.horizontal, 6)
+                        .padding(.vertical, 2)
+                        .frame(height: 19)
+                        .background(
+                            RoundedRectangle(cornerRadius: 4)
+                                .fill(dropdownHovering ?
+                                    (isDark ? Color.white.opacity(0.08) : Color.black.opacity(0.06)) : Color.clear),
+                        )
                 }
                 .buttonStyle(.borderless)
+                .onHover { hovering in
+                    dropdownHovering = hovering
+                }
             }
         }
         .padding(.horizontal, 8)
@@ -67,21 +81,27 @@ struct ComposerScopeChipView: View {
             } label: {
                 Text(displayName)
                     .font(.system(size: 11, weight: .medium))
-                    .foregroundColor(.primary.opacity(0.8))
+                    .foregroundColor(nameHoverPath == path ? .primary : .primary.opacity(0.8))
                     .lineLimit(1)
                     .truncationMode(.tail)
                     .fixedSize(horizontal: true, vertical: false)
             }
             .buttonStyle(.borderless)
+            .onHover { hovering in
+                nameHoverPath = hovering ? path : nil
+            }
 
             Button {
                 store.send(.removeScope(path: path))
             } label: {
                 Image(systemName: "xmark")
                     .font(.system(size: 8, weight: .medium))
-                    .foregroundColor(.secondary)
+                    .foregroundColor(deleteHoverPath == path ? .primary : .secondary)
             }
             .buttonStyle(.borderless)
+            .onHover { hovering in
+                deleteHoverPath = hovering ? path : nil
+            }
         }
         .padding(.horizontal, 6)
         .padding(.vertical, 2)
