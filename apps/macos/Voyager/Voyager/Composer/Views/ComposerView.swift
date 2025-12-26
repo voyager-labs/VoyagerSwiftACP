@@ -157,41 +157,41 @@ struct ComposerView: View {
     private let defaultChipHeight: CGFloat = 28
     private let defaultChipWidth: CGFloat = 120
     private let hoverFillOpacity: Double = 0.06
-    private let stringOperatorOptions: [(code: String, label: String)] = [
-        ("eq", "is"),
-        ("neq", "is not"),
-        ("contains", "contains"),
-        ("startsWith", "starts with"),
-        ("endsWith", "ends with"),
-        ("isEmpty", "is empty"),
-        ("isNotEmpty", "is not empty"),
+    private let stringOperatorOptions: [OperatorOption] = [
+        .init(code: "eq", label: "is"),
+        .init(code: "neq", label: "is not"),
+        .init(code: "contains", label: "contains"),
+        .init(code: "startsWith", label: "starts with"),
+        .init(code: "endsWith", label: "ends with"),
+        .init(code: "isEmpty", label: "is empty"),
+        .init(code: "isNotEmpty", label: "is not empty"),
     ]
-    private let numberOperatorOptions: [(code: String, label: String)] = [
-        ("eq", "is"),
-        ("neq", "is not"),
-        ("gt", ">"),
-        ("lt", "<"),
-        ("gte", ">="),
-        ("lte", "<="),
-        ("between", "between"),
+    private let numberOperatorOptions: [OperatorOption] = [
+        .init(code: "eq", label: "is"),
+        .init(code: "neq", label: "is not"),
+        .init(code: "gt", label: ">"),
+        .init(code: "lt", label: "<"),
+        .init(code: "gte", label: ">="),
+        .init(code: "lte", label: "<="),
+        .init(code: "between", label: "between"),
     ]
-    private let dateOperatorOptions: [(code: String, label: String)] = [
-        ("on", "on"),
-        ("before", "before"),
-        ("after", "after"),
-        ("between", "between"),
-        ("isEmpty", "is empty"),
-        ("isNotEmpty", "is not empty"),
+    private let dateOperatorOptions: [OperatorOption] = [
+        .init(code: "on", label: "on"),
+        .init(code: "before", label: "before"),
+        .init(code: "after", label: "after"),
+        .init(code: "between", label: "between"),
+        .init(code: "isEmpty", label: "is empty"),
+        .init(code: "isNotEmpty", label: "is not empty"),
     ]
-    private let boolOperatorOptions: [(code: String, label: String)] = [
-        ("eq", "is"),
-        ("neq", "is not"),
+    private let boolOperatorOptions: [OperatorOption] = [
+        .init(code: "eq", label: "is"),
+        .init(code: "neq", label: "is not"),
     ]
-    private let arrayOperatorOptions: [(code: String, label: String)] = [
-        ("contains", "contains"),
-        ("anyOf", "any of"),
-        ("isEmpty", "is empty"),
-        ("isNotEmpty", "is not empty"),
+    private let arrayOperatorOptions: [OperatorOption] = [
+        .init(code: "contains", label: "contains"),
+        .init(code: "anyOf", label: "any of"),
+        .init(code: "isEmpty", label: "is empty"),
+        .init(code: "isNotEmpty", label: "is not empty"),
     ]
 
     private func secondRow(
@@ -406,17 +406,11 @@ struct ComposerView: View {
             condition: condition,
             isDark: isDark,
             hoverFillOpacity: hoverFillOpacity,
+            operatorPickerStore: store.scope(state: \.composer.operatorPicker, action: \.composer.operatorPicker),
             operatorOptions: operatorOptions(for: condition),
             defaultChipHeight: defaultChipHeight,
             onPropertyTap: {
                 store.send(.composer(.propertyPicker(.startEditing(condition.propertyKey))))
-            },
-            onOperatorSelect: { code, label in
-                store.send(.composer(.setOperator(
-                    propertyKey: condition.propertyKey,
-                    code: code,
-                    label: label,
-                )))
             },
             onRemove: {
                 store.send(.composer(.removeCondition(propertyKey: condition.propertyKey)))
@@ -515,7 +509,7 @@ struct ComposerView: View {
             .frame(height: 20)
     }
 
-    private func operatorOptions(for condition: Condition) -> [(code: String, label: String)] {
+    private func operatorOptions(for condition: Condition) -> [OperatorOption] {
         switch condition.propertyType {
         case "string":
             stringOperatorOptions

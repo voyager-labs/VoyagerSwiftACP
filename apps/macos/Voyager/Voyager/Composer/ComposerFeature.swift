@@ -25,6 +25,7 @@ struct ComposerFeature {
         var scopes: [String] = []
         var conditions: [Condition] = []
         var propertyPicker: ConditionPropertyPickerFeature.State = .init()
+        var operatorPicker: OperatorPickerFeature.State = .init()
         var history: [FilterSnapshot] = []
         var redoHistory: [FilterSnapshot] = []
 
@@ -58,11 +59,15 @@ struct ComposerFeature {
         case undo
         case redo
         case propertyPicker(ConditionPropertyPickerFeature.Action)
+        case operatorPicker(OperatorPickerFeature.Action)
     }
 
     var body: some Reducer<State, Action> {
         Scope(state: \.propertyPicker, action: \.propertyPicker) {
             ConditionPropertyPickerFeature()
+        }
+        Scope(state: \.operatorPicker, action: \.operatorPicker) {
+            OperatorPickerFeature()
         }
 
         Reduce { state, action in
@@ -179,6 +184,29 @@ struct ComposerFeature {
                 }
 
             case .propertyPicker:
+                return .none
+
+            case let .operatorPicker(.setPresented(isPresented)):
+                state.operatorPicker.isPresented = isPresented
+                if !isPresented {
+                    state.operatorPicker.propertyKey = nil
+                    state.operatorPicker.options = []
+                }
+                return .none
+
+            case let .operatorPicker(.prepare(propertyKey, options)):
+                state.operatorPicker.propertyKey = propertyKey
+                state.operatorPicker.options = options
+                state.operatorPicker.isPresented = true
+                return .none
+
+            case let .operatorPicker(.select(option)):
+                guard let propertyKey = state.operatorPicker.propertyKey else {
+                    return .none
+                }
+                return .send(.setOperator(propertyKey: propertyKey, code: option.code, label: option.label))
+
+            case .operatorPicker:
                 return .none
             }
         }
