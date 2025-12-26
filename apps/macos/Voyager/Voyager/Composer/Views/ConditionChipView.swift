@@ -1,3 +1,4 @@
+// swiftlint:disable type_body_length function_body_length
 import ComposableArchitecture
 import SwiftUI
 
@@ -134,47 +135,205 @@ struct ConditionChipView: View {
         valueStore: ViewStore<ValuePickerFeature.State, ValuePickerFeature.Action>,
     ) -> some View {
         if let op = selectedOperator, valueArity != 0 {
-            if isEditingValue {
+            if isEditingValue, valueArity >= 2, let editingIndex = valueStore.editingIndex {
+                rangeEditingView(
+                    operatorOption: op,
+                    editingIndex: editingIndex,
+                    valueStore: valueStore,
+                )
+            } else if isEditingValue {
                 inlineValueInputs(
                     valueViewStore: valueStore,
                     valueArity: valueArity,
                     valueType: condition.valueType,
                     errorMessage: valueStore.errorMessage,
+                    editingIndex: nil,
                 )
+            } else if valueArity >= 2, let values = condition.values, values.count >= 2 {
+                rangeDisplayView(operatorOption: op, values: values)
             } else {
-                Button {
-                    valuePickerStore.send(
-                        .prepare(
-                            propertyKey: condition.propertyKey,
-                            operatorOption: op,
-                            valueType: condition.valueType,
-                        ),
-                    )
-                } label: {
-                    Text(displayValueText())
-                        .font(.system(size: 11, weight: .medium))
-                        .foregroundColor(condition.values == nil ? .secondary.opacity(0.7) : .primary)
-                        .padding(.horizontal, 4)
-                        .padding(.vertical, 2)
-                        .background(
-                            RoundedRectangle(cornerRadius: 4)
-                                .fill(
-                                    isValueHovering
-                                        ? (isDark ? Color.white.opacity(hoverFillOpacity) :
-                                            Color.black.opacity(hoverFillOpacity))
-                                        : Color.white.opacity(0.0001),
-                                ),
-                        )
-                }
-                .contentShape(Rectangle())
-                .frame(minWidth: 32, minHeight: 22, alignment: .center)
-                .buttonStyle(.plain)
-                .onHover { hovering in
-                    isValueHovering = hovering
-                }
+                singleValueButton(operatorOption: op)
             }
         } else {
             EmptyView()
+        }
+    }
+
+    private func rangeEditingView(
+        operatorOption: OperatorOption,
+        editingIndex: Int,
+        valueStore: ViewStore<ValuePickerFeature.State, ValuePickerFeature.Action>,
+    ) -> some View {
+        HStack(spacing: 6) {
+            if editingIndex == 1, let values = condition.values, values.count >= 2 {
+                ValuePillView(
+                    text: values[0],
+                    isDark: isDark,
+                    hoverFillOpacity: hoverFillOpacity,
+                    onTap: {
+                        valuePickerStore.send(
+                            .prepare(
+                                .init(
+                                    propertyKey: condition.propertyKey,
+                                    operatorOption: operatorOption,
+                                    valueType: condition.valueType,
+                                    existingValues: condition.values,
+                                    editingIndex: 0,
+                                ),
+                            ),
+                        )
+                    },
+                )
+                Text("and")
+                    .font(.system(size: 11, weight: .medium))
+                    .foregroundColor(.secondary)
+            }
+
+            inlineValueInputs(
+                valueViewStore: valueStore,
+                valueArity: operatorOption.valueArity,
+                valueType: condition.valueType,
+                errorMessage: valueStore.errorMessage,
+                editingIndex: editingIndex,
+            )
+
+            if editingIndex == 0, let values = condition.values, values.count >= 2 {
+                Text("and")
+                    .font(.system(size: 11, weight: .medium))
+                    .foregroundColor(.secondary)
+                ValuePillView(
+                    text: values[1],
+                    isDark: isDark,
+                    hoverFillOpacity: hoverFillOpacity,
+                    onTap: {
+                        valuePickerStore.send(
+                            .prepare(
+                                .init(
+                                    propertyKey: condition.propertyKey,
+                                    operatorOption: operatorOption,
+                                    valueType: condition.valueType,
+                                    existingValues: condition.values,
+                                    editingIndex: 1,
+                                ),
+                            ),
+                        )
+                    },
+                )
+            }
+        }
+    }
+
+    private func rangeDisplayView(operatorOption: OperatorOption, values: [String]) -> some View {
+        HStack(spacing: 6) {
+            ValuePillView(
+                text: values[0],
+                isDark: isDark,
+                hoverFillOpacity: hoverFillOpacity,
+                onTap: {
+                    valuePickerStore.send(
+                        .prepare(
+                            .init(
+                                propertyKey: condition.propertyKey,
+                                operatorOption: operatorOption,
+                                valueType: condition.valueType,
+                                existingValues: condition.values,
+                                editingIndex: 0,
+                            ),
+                        ),
+                    )
+                },
+            )
+            Text("and")
+                .font(.system(size: 11, weight: .medium))
+                .foregroundColor(.secondary)
+            ValuePillView(
+                text: values[1],
+                isDark: isDark,
+                hoverFillOpacity: hoverFillOpacity,
+                onTap: {
+                    valuePickerStore.send(
+                        .prepare(
+                            .init(
+                                propertyKey: condition.propertyKey,
+                                operatorOption: operatorOption,
+                                valueType: condition.valueType,
+                                existingValues: condition.values,
+                                editingIndex: 1,
+                            ),
+                        ),
+                    )
+                },
+            )
+        }
+    }
+
+    private func singleValueButton(operatorOption: OperatorOption) -> some View {
+        Button {
+            valuePickerStore.send(
+                .prepare(
+                    .init(
+                        propertyKey: condition.propertyKey,
+                        operatorOption: operatorOption,
+                        valueType: condition.valueType,
+                        existingValues: condition.values,
+                        editingIndex: nil,
+                    ),
+                ),
+            )
+        } label: {
+            Text(displayValueText())
+                .font(.system(size: 11, weight: .medium))
+                .foregroundColor(condition.values == nil ? .secondary.opacity(0.7) : .primary)
+                .padding(.horizontal, 4)
+                .padding(.vertical, 2)
+                .background(
+                    RoundedRectangle(cornerRadius: 4)
+                        .fill(
+                            isValueHovering
+                                ? (isDark ? Color.white.opacity(hoverFillOpacity) :
+                                    Color.black.opacity(hoverFillOpacity))
+                                : Color.white.opacity(0.0001),
+                        ),
+                )
+        }
+        .contentShape(Rectangle())
+        .frame(minWidth: 32, minHeight: 22, alignment: .center)
+        .buttonStyle(.plain)
+        .onHover { hovering in
+            isValueHovering = hovering
+        }
+    }
+
+    private struct ValuePillView: View {
+        let text: String
+        let isDark: Bool
+        let hoverFillOpacity: Double
+        let onTap: () -> Void
+
+        @State private var isHovering: Bool = false
+
+        var body: some View {
+            Button(action: onTap) {
+                Text(text.isEmpty ? "Value" : text)
+                    .font(.system(size: 11, weight: .medium))
+                    .foregroundColor(.primary)
+                    .padding(.horizontal, 6)
+                    .padding(.vertical, 3)
+                    .background(
+                        RoundedRectangle(cornerRadius: 4)
+                            .fill(
+                                isHovering
+                                    ? (isDark ? Color.white.opacity(hoverFillOpacity) :
+                                        Color.black.opacity(hoverFillOpacity))
+                                    : Color.white.opacity(0.0001),
+                            ),
+                    )
+            }
+            .buttonStyle(.plain)
+            .contentShape(Rectangle())
+            .onHover { hovering in
+                isHovering = hovering
+            }
         }
     }
 
@@ -183,14 +342,21 @@ struct ConditionChipView: View {
         valueArity: Int,
         valueType: ValueType,
         errorMessage: String?,
+        editingIndex: Int?,
     ) -> some View {
         let hasError = errorMessage != nil
         let fieldCount = max(max(valueArity, valueViewStore.values.count), 1)
+        let indices: [Int] = {
+            if let editingIndex {
+                return [editingIndex]
+            }
+            return Array(0 ..< fieldCount)
+        }()
 
         return HStack(spacing: 6) {
-            ForEach(0 ..< fieldCount, id: \.self) { index in
+            ForEach(indices, id: \.self) { index in
                 let currentText = valueViewStore.values.indices.contains(index) ? valueViewStore.values[index] : ""
-                let placeholderText = errorMessage ?? placeholder(
+                let placeholderText = hasError ? "" : placeholder(
                     for: valueArity,
                     index: index,
                     valueType: valueType,
@@ -207,10 +373,14 @@ struct ConditionChipView: View {
                 )
                 .textFieldStyle(.plain)
                 .font(.system(size: 11))
+                .foregroundColor(Color.primary)
                 .padding(.horizontal, 6)
                 .padding(.vertical, 4)
-                .frame(minWidth: 120, maxWidth: 220, alignment: .leading)
-                .fixedSize(horizontal: true, vertical: false)
+                .frame(
+                    minWidth: hasError ? 120 : 80,
+                    maxWidth: hasError ? 220 : 140,
+                    alignment: .leading,
+                )
                 .background(
                     RoundedRectangle(cornerRadius: 4)
                         .stroke(
@@ -219,6 +389,17 @@ struct ConditionChipView: View {
                             lineWidth: 1,
                         ),
                 )
+                .overlay(alignment: .leading) {
+                    if hasError, currentText.isEmpty, let errorMessage {
+                        Text(errorMessage)
+                            .font(.system(size: 11))
+                            .foregroundColor(.secondary)
+                            .padding(.horizontal, 8)
+                            .padding(.vertical, 6)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .allowsHitTesting(false)
+                    }
+                }
                 .onSubmit {
                     valuePickerStore.send(.commit)
                 }
@@ -255,3 +436,5 @@ struct ConditionChipView: View {
         }
     }
 }
+
+// swiftlint:enable type_body_length function_body_length

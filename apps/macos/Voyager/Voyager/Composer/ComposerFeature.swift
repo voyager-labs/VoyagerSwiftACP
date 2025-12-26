@@ -246,14 +246,26 @@ struct ComposerFeature {
                 }
                 return .none
 
-            case let .valuePicker(.prepare(propertyKey, operatorOption, valueType)):
-                state.valuePicker.propertyKey = propertyKey
-                state.valuePicker.operatorOption = operatorOption
-                state.valuePicker.valueType = valueType
-                state.valuePicker.valueArity = max(0, operatorOption.valueArity)
+            case let .valuePicker(.prepare(payload)):
+                state.valuePicker.propertyKey = payload.propertyKey
+                state.valuePicker.operatorOption = payload.operatorOption
+                state.valuePicker.valueType = payload.valueType
+                state.valuePicker.valueArity = max(0, payload.operatorOption.valueArity)
+                state.valuePicker.editingIndex = payload.editingIndex
 
                 if state.valuePicker.valueArity == 0 {
                     state.valuePicker.values = []
+                } else if let existingValues = payload.existingValues {
+                    let trimmed = existingValues.map {
+                        $0.trimmingCharacters(in: .whitespacesAndNewlines)
+                    }
+                    state.valuePicker.values = Array(trimmed.prefix(state.valuePicker.valueArity))
+                    if state.valuePicker.values.count < state.valuePicker.valueArity {
+                        state.valuePicker.values.append(contentsOf: Array(
+                            repeating: "",
+                            count: state.valuePicker.valueArity - state.valuePicker.values.count,
+                        ))
+                    }
                 } else if state.valuePicker.valueArity == 1 {
                     state.valuePicker.values = [""]
                 } else {
@@ -273,14 +285,15 @@ struct ComposerFeature {
 
                 if state.valuePicker.values.isEmpty, state.valuePicker.valueArity > 0 {
                     state.valuePicker.errorMessage = "Value is required."
-                    state.valuePicker.values = Array(repeating: "", count: state.valuePicker.valueArity)
                     return .none
                 }
 
-                if state.valuePicker.values.count < max(state.valuePicker.valueArity, 1) {
-                    state.valuePicker.values = Array(
-                        repeating: "",
-                        count: max(state.valuePicker.valueArity, 1),
+                if state.valuePicker.values.count < state.valuePicker.valueArity {
+                    state.valuePicker.values.append(
+                        contentsOf: Array(
+                            repeating: "",
+                            count: state.valuePicker.valueArity - state.valuePicker.values.count,
+                        ),
                     )
                 }
 
@@ -289,7 +302,6 @@ struct ComposerFeature {
                     .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
                 if trimmed.contains(where: \.isEmpty) {
                     state.valuePicker.errorMessage = "Value is required."
-                    state.valuePicker.values = Array(repeating: "", count: state.valuePicker.valueArity)
                     return .none
                 }
 
@@ -297,12 +309,23 @@ struct ComposerFeature {
                     let numbers = trimmed.compactMap { Double($0) }
                     guard numbers.count == trimmed.count else {
                         state.valuePicker.errorMessage = "Enter valid numbers."
-                        state.valuePicker.values = Array(repeating: "", count: state.valuePicker.valueArity)
+                        // 숫자 변환 실패 시 잘못된 인덱스만 비우기
+                        for (idx, value) in trimmed.enumerated() {
+                            if Double(value) == nil, state.valuePicker.values.indices.contains(idx) {
+                                state.valuePicker.values[idx] = ""
+                            }
+                        }
                         return .none
                     }
                     if numbers.count >= 2, numbers[0] > numbers[1] {
                         state.valuePicker.errorMessage = "From value must be ≤ To value."
-                        state.valuePicker.values = Array(repeating: "", count: state.valuePicker.valueArity)
+                        if let editIdx = state.valuePicker.editingIndex,
+                           state.valuePicker.values.indices.contains(editIdx)
+                        {
+                            state.valuePicker.values[editIdx] = ""
+                        } else if state.valuePicker.values.indices.contains(0) {
+                            state.valuePicker.values[0] = ""
+                        }
                         return .none
                     }
                 }
@@ -322,6 +345,7 @@ struct ComposerFeature {
                 state.valuePicker.propertyKey = nil
                 state.valuePicker.operatorOption = nil
                 state.valuePicker.errorMessage = nil
+                state.valuePicker.editingIndex = nil
                 return .none
             }
         }

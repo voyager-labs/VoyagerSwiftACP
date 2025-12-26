@@ -21,11 +21,20 @@ struct ValuePickerFeature {
         var valueArity: Int = 1
         var values: [String] = [""]
         var errorMessage: String?
+        var editingIndex: Int?
+    }
+
+    struct PreparePayload: Sendable, Equatable {
+        let propertyKey: String
+        let operatorOption: OperatorOption
+        let valueType: ValueType
+        let existingValues: [String]?
+        let editingIndex: Int?
     }
 
     enum Action: Sendable {
         case setPresented(Bool)
-        case prepare(propertyKey: String, operatorOption: OperatorOption, valueType: ValueType)
+        case prepare(PreparePayload)
         case setValue(index: Int, text: String)
         case commit
     }
@@ -40,18 +49,31 @@ struct ValuePickerFeature {
                     state.operatorOption = nil
                     state.values = [""]
                     state.errorMessage = nil
+                    state.editingIndex = nil
                 }
                 return .none
 
-            case let .prepare(propertyKey, operatorOption, valueType):
-                state.propertyKey = propertyKey
-                state.operatorOption = operatorOption
-                state.valueType = valueType
-                state.valueArity = max(0, operatorOption.valueArity)
+            case let .prepare(payload):
+                state.propertyKey = payload.propertyKey
+                state.operatorOption = payload.operatorOption
+                state.valueType = payload.valueType
+                state.valueArity = max(0, payload.operatorOption.valueArity)
                 state.errorMessage = nil
+                state.editingIndex = payload.editingIndex
 
                 if state.valueArity == 0 {
                     state.values = []
+                } else if let existingValues = payload.existingValues {
+                    let trimmed = existingValues.map {
+                        $0.trimmingCharacters(in: .whitespacesAndNewlines)
+                    }
+                    state.values = Array(trimmed.prefix(state.valueArity))
+                    if state.values.count < state.valueArity {
+                        state.values.append(contentsOf: Array(
+                            repeating: "",
+                            count: state.valueArity - state.values.count,
+                        ))
+                    }
                 } else if state.valueArity == 1 {
                     state.values = [state.values.first ?? ""]
                 } else {
