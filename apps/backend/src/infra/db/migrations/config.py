@@ -1,15 +1,12 @@
 from __future__ import annotations
 
+from pathlib import Path
 from typing import Required, TypedDict, Union
 
 from alembic.config import Config
 from alembic.script import ScriptDirectory
 from alembic.script.revision import ResolutionError, Revision
-from omegaconf import DictConfig
 from sqlalchemy.sql.schema import MetaData
-
-from infra.db.utils import resolve_db_file_path
-from utils.paths import get_root_path
 
 
 class AlembicConfigKwargs(TypedDict, total=False):
@@ -23,6 +20,29 @@ class AlembicConfigKwargs(TypedDict, total=False):
 
 
 ALEMBIC_VERSION_TABLE = "migration_version"
+
+
+def _find_alembic_ini() -> Path:
+    """현재 파일 위치에서 상위 디렉토리를 재귀적으로 탐색하여 alembic.ini를 찾습니다.
+    Returns:
+        alembic.ini 파일 경로
+
+    Raises:
+        FileNotFoundError: alembic.ini를 찾을 수 없을 때
+    """
+    ALEMBIC_INI_NAME = "alembic.ini"
+    MAX_SEARCH_DEPTH = 5
+
+    current = Path(__file__).resolve().parent
+    for _ in range(MAX_SEARCH_DEPTH):
+        candidate = current / ALEMBIC_INI_NAME
+        if candidate.exists():
+            return candidate
+        if current.parent == current:
+            break
+        current = current.parent
+
+    raise FileNotFoundError(f"{ALEMBIC_INI_NAME}를 찾을 수 없습니다. 파일 위치를 확인하세요.")
 
 
 def build_alembic_config(
@@ -39,16 +59,18 @@ def build_alembic_config(
     }
 
 
-def get_alembic_config_from_hydra(cfg: DictConfig) -> Config:
-    """Hydra 설정을 받아 런타임 Alembic Config를 생성합니다."""
+def get_alembic_config(*, db_url: str) -> Config:
+    """DB URL을 받아 런타임 Alembic Config를 생성합니다.
 
-    root = get_root_path()
-    alembic_cfg = Config(str(root / "alembic.ini"))
-    alembic_cfg.set_main_option(
-        "script_location", str(root / "src" / "infra" / "db" / "migrations")
-    )
-    url = f"{cfg.db.protocol}{resolve_db_file_path(cfg)}"
-    alembic_cfg.set_main_option("sqlalchemy.url", url)
+    Args:
+        db_url: SQLAlchemy 형식의 데이터베이스 URL (예: "sqlite:///voyager.db")
+
+    Returns:
+        Alembic Config 객체
+    """
+    alembic_ini = _find_alembic_ini()
+    alembic_cfg = Config(str(alembic_ini))
+    alembic_cfg.set_main_option("sqlalchemy.url", db_url)
     return alembic_cfg
 
 
@@ -102,5 +124,5 @@ __all__ = [
     "AlembicConfigKwargs",
     "build_alembic_config",
     "is_current_at_or_ancestor_of_head",
-    "get_alembic_config_from_hydra",
+    "get_alembic_config",
 ]
