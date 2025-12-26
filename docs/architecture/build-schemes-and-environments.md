@@ -57,7 +57,7 @@ Voyager 프로젝트는 두 가지 독립적인 축으로 실행 환경을 결�
 - **감지 조건**: Info.plist의 `APP_ENV=prod` (빌드 설정에서 자동 설정)
 - **빌드 설정**: Release → `APP_ENV=prod` 자동 설정
 - **환경 파일**: `.env.prod` (프로젝트 루트 또는 번들 리소스)
-- **백엔드 실행**: 번들된 venv 사용 (독립 실행)
+- **백엔드 실행**: 번들된 Nuitka 바이너리 사용 (독립 실행)
 
 ### 백엔드 모드 (BackendMode)
 
@@ -65,15 +65,15 @@ Voyager 프로젝트는 두 가지 독립적인 축으로 실행 환경을 결�
 - **설정**: `BACKEND_MODE=source` (Dev 스킴에서 자동 주입)
 - **백엔드 디렉토리**: `apps/backend` (소스 디렉토리)
 - **실행 방식**: 로컬 `uv` 명령어 사용
-- **명령어**: `uv run dev` 또는 `uv run prod` (APP_ENV에 따라)
+- **명령어**: `uv run dev` (개발) 또는 `uv run serve` (프로덕션 모드 테스트)
 - **요구사항**: 시스템 PATH에 `uv` 설치 필요
 
 **bundled 모드:**
 - **설정**: `BACKEND_MODE=bundled` (Prod 스킴에서 자동 주입)
-- **백엔드 디렉토리**: `VoyagerHelper.app/Contents/Resources/helper-runtime`
-- **실행 방식**: 번들된 Python 인터프리터 직접 실행
-- **명령어**: `helper-runtime/bin/python -m uvicorn app.main:app`
-- **요구사항**: Release 빌드 시 venv가 번들에 포함되어 있어야 함
+- **백엔드 디렉토리**: `VoyagerHelper.app/Contents/Resources/server`
+- **실행 방식**: Nuitka로 컴파일된 바이너리 직접 실행
+- **바이너리 경로**: `server/server.bin`
+- **요구사항**: Release 빌드 시 Nuitka 바이너리가 번들에 포함되어 있어야 함
 
 ## 환경 감지 우선순위
 
@@ -95,7 +95,7 @@ Voyager 프로젝트는 두 가지 독립적인 축으로 실행 환경을 결�
    - Prod 스킴 → `BACKEND_MODE=bundled`
 
 2. **번들 리소스 확인**
-   - `helper-runtime` 디렉토리가 번들 리소스에 있으면 → `bundled`
+   - `server` 디렉토리가 번들 리소스에 있으면 → `bundled`
    - 없으면 → `source`
 
 ## 스킴과 환경의 매핑
@@ -140,18 +140,16 @@ Voyager 프로젝트는 두 가지 독립적인 축으로 실행 환경을 결�
 **VoyagerHelper 빌드 단계:**
 
 1. **Sources**: Swift 소스 파일 컴파일
-2. **Prepare Backend Venv**: 실행됨
-   - `scripts/prepare-helper-runtime.sh` 실행
-   - 백엔드 휠 빌드 (`uv build --wheel`)
-   - 번들용 venv 생성 (`apps/backend/build/helper-runtime`)
-   - uv.lock에서 런타임 의존성 추출 및 설치
-   - 빌드된 백엔드 휠을 venv에 설치
-3. **Bundle Backend Venv**: 실행됨
-   - `apps/backend/build/helper-runtime` → `VoyagerHelper.app/Contents/Resources/helper-runtime` 복사
-   - `.env.prod` 파일을 번들 리소스로 복사 (없으면 기본값 생성)
-4. **Run Lint and Format**: SwiftLint 및 SwiftFormat 실행
-5. **Frameworks**: 프레임워크 링크
-6. **Resources**: 리소스 파일 복사
+2. **Build Backend Binary**: 실행됨
+   - `scripts/build/build-backend-binary.sh` 실행
+   - `scripts/build/prepare-helper-runtime.sh`: 백엔드 venv 준비 (의존성 설치)
+   - `scripts/build/compile-nuitka-binary.sh`: Nuitka로 arm64 바이너리 컴파일
+   - `apps/backend/build/nuitka/server.dist` → `VoyagerHelper.app/Contents/Resources/server` 복사
+   - `.env.prod` 파일을 번들 리소스로 복사
+   - 바이너리 서명 (코드사인)
+3. **Run Lint and Format**: SwiftLint 및 SwiftFormat 실행
+4. **Frameworks**: 프레임워크 링크
+5. **Resources**: 리소스 파일 복사
 
 **Voyager 빌드 단계:**
 
@@ -166,7 +164,7 @@ Voyager 프로젝트는 두 가지 독립적인 축으로 실행 환경을 결�
 - `APP_ENV=prod` (Info.plist에서 읽음)
 - `BACKEND_MODE=bundled` (스킴 환경변수에서 주입)
 - `.env.prod` 파일 로드 (번들 리소스 우선, 없으면 프로젝트 루트)
-- `VoyagerHelper.app/Contents/Resources/helper-runtime/bin/python` 직접 실행
+- `VoyagerHelper.app/Contents/Resources/server/server.bin` 직접 실행
 
 ## 환경 파일 로드 우선순위
 
@@ -187,7 +185,7 @@ Voyager 프로젝트는 두 가지 독립적인 축으로 실행 환경을 결�
 
 ### 스킴 이름의 의미
 - **`-Dev`**: 개발용 스킴 (로컬 `uv` 환경 사용)
-- **`-Prod`**: 프로덕션용 스킴 (번들 venv 사용)
+- **`-Prod`**: 프로덕션용 스킴 (번들 Nuitka 바이너리 사용)
 
 ### 빌드 설정의 의미
 - **Debug**: 개발 및 디버깅용 (최적화 없음, 디버거 연결 가능)
@@ -199,7 +197,7 @@ Voyager 프로젝트는 두 가지 독립적인 축으로 실행 환경을 결�
 
 ### 백엔드 모드의 의미
 - **`source`**: 소스 디렉토리에서 백엔드 실행 (로컬 `uv` 사용)
-- **`bundled`**: 번들된 venv에서 백엔드 실행 (독립 실행)
+- **`bundled`**: 번들된 Nuitka 바이너리에서 백엔드 실행 (독립 실행)
 
 ### 혼동 방지
 - 스킴 이름(`-Dev`, `-Prod`)은 **백엔드 실행 방식**을 나타냅니다

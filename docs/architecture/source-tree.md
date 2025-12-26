@@ -19,7 +19,11 @@ voyager-app/
 │       ├── VoyagerTests         # Unit tests
 │       └── VoyagerUITests       # UI tests
 ├── scripts/
-│   └── prepare-helper-runtime.sh  # Release 빌드용 백엔드 venv 준비 스크립트
+│   └── build/
+│       ├── build-backend-binary.sh    # Backend Nuitka 바이너리 빌드 오케스트레이터
+│       ├── compile-nuitka-binary.sh   # Nuitka 컴파일 실행
+│       ├── handle-backend-mode.sh     # BACKEND_MODE 읽기/주입
+│       └── prepare-helper-runtime.sh  # venv 준비 및 휠 설치
 └── docs/                        # PRD, architecture
 ```
 
