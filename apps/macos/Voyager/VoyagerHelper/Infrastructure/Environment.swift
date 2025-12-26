@@ -3,8 +3,8 @@ import SwiftDotenv
 
 struct Environment {
     enum EnvironmentType: String {
-        case dev // Debug builds configuration
-        case prod // Release builds configuration
+        case dev // 개발 환경 설정
+        case prod // 프로덕션 환경 설정
 
         var envFileName: String {
             switch self {
@@ -16,7 +16,7 @@ struct Environment {
 
     enum BackendMode: String {
         case source // 로컬 uv 사용 (*-Dev 스킴)
-        case bundled // 번들 venv 사용 (*-Prod 스킴)
+        case bundled // Nuitka 바이너리 사용 (*-Prod 스킴)
     }
 
     let envVars: [String: String]
@@ -100,7 +100,11 @@ struct Environment {
         guard let projectRoot = Self.findProjectRoot() else { return nil }
 
         let appsBackend = projectRoot.appendingPathComponent("apps/backend")
-        if Self.hasBackendMarker(in: appsBackend) {
+        let fm = FileManager.default
+
+        if fm.fileExists(atPath: appsBackend.appendingPathComponent("pyproject.toml").path)
+            || fm.fileExists(atPath: appsBackend.appendingPathComponent("uv.lock").path)
+        {
             return appsBackend
         }
         return nil
@@ -123,24 +127,14 @@ struct Environment {
         return nil
     }
 
-    private static func hasBackendMarker(in directory: URL) -> Bool {
-        let fm = FileManager.default
-        return fm.fileExists(atPath: directory.appendingPathComponent("pyproject.toml").path)
-            || fm.fileExists(atPath: directory.appendingPathComponent("uv.lock").path)
-    }
-
     private func detectBundledBackendDirectory() -> URL? {
         guard let resources = Bundle.main.resourceURL else { return nil }
         let fm = FileManager.default
 
-        let venvPath = resources.appendingPathComponent("helper-runtime")
-        if fm.fileExists(atPath: venvPath.path) {
-            return venvPath
-        }
-
-        let backendPath = resources.appendingPathComponent("backend")
-        if fm.fileExists(atPath: backendPath.path) {
-            return backendPath
+        // Nuitka 바이너리 디렉토리 (server/server.bin)
+        let serverPath = resources.appendingPathComponent("server")
+        if fm.fileExists(atPath: serverPath.path) {
+            return serverPath
         }
 
         return nil

@@ -9,17 +9,20 @@ from pathlib import Path
 MAIN_FILE = Path(__file__).parent / "main.py"
 
 
-def _run_fastapi(*args: str, env: dict[str, str] | None = None) -> int:
+def _run_fastapi(*args: str, env: dict[str, str] | None = None) -> None:
     cmd = [sys.executable, "-m", "fastapi", *args]
     proc = subprocess.Popen(cmd, env=env)
     try:
-        return proc.wait()
+        exit_code = proc.wait()
+        raise SystemExit(exit_code)
     except KeyboardInterrupt:
         try:
-            proc.wait(timeout=1)
-        except Exception:
-            pass
-        return 130
+            proc.terminate()
+            proc.wait(timeout=5)
+        except subprocess.TimeoutExpired:
+            proc.kill()
+            proc.wait()
+        raise SystemExit(130)
 
 
 def _with_env(default_env: str) -> dict[str, str]:
@@ -29,13 +32,13 @@ def _with_env(default_env: str) -> dict[str, str]:
 
 
 def dev() -> None:
-    exit_code = _run_fastapi("dev", str(MAIN_FILE), env=_with_env("dev"))
-    raise SystemExit(exit_code)
+    """개발 모드 실행: FastAPI dev 모드"""
+    _run_fastapi("dev", str(MAIN_FILE))
 
 
 def prod() -> None:
-    exit_code = _run_fastapi("run", str(MAIN_FILE), env=_with_env("prod"))
-    raise SystemExit(exit_code)
+    """프로덕션 모드 실행: FastAPI run 모드 (자동 리로드 없음)"""
+    _run_fastapi("run", str(MAIN_FILE), env=_with_env("prod"))
 
 
 def index() -> None:

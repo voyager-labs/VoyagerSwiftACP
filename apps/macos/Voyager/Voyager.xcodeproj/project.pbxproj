@@ -193,19 +193,19 @@
 /* End PBXGroup section */
 
 /* Begin PBXNativeTarget section */
-		7E14EDCB2E86622C005AC834 /* Voyager */ = {
-			isa = PBXNativeTarget;
-			buildConfigurationList = 7E14EDEF2E86622E005AC834 /* Build configuration list for PBXNativeTarget "Voyager" */;
-			buildPhases = (
-				7E14EDC82E86622C005AC834 /* Sources */,
-				7E6AF6B12E8BB003005DC7D3 /* Run Lint and Format */,
-				7E14EDC92E86622C005AC834 /* Frameworks */,
-				7E14EDCA2E86622C005AC834 /* Resources */,
-				AF0F1E7A33B24D3000A1F123 /* Copy Helper into App */,
-			);
-			buildRules = (
-			);
-			dependencies = (
+			7E14EDCB2E86622C005AC834 /* Voyager */ = {
+				isa = PBXNativeTarget;
+				buildConfigurationList = 7E14EDEF2E86622E005AC834 /* Build configuration list for PBXNativeTarget "Voyager" */;
+				buildPhases = (
+					7E14EDC82E86622C005AC834 /* Sources */,
+					7E6AF6B12E8BB003005DC7D3 /* Run Lint and Format */,
+					7E14EDC92E86622C005AC834 /* Frameworks */,
+					7E14EDCA2E86622C005AC834 /* Resources */,
+					AF0F1E7A33B24D3000A1F123 /* Copy Helper into App */,
+				);
+				buildRules = (
+				);
+				dependencies = (
 				AF0F1E7D33B2530900A1F123 /* PBXTargetDependency */,
 			);
 			fileSystemSynchronizedGroups = (
@@ -269,19 +269,19 @@
 			productReference = 7E14EDE52E86622E005AC834 /* VoyagerUITests.xctest */;
 			productType = "com.apple.product-type.bundle.ui-testing";
 		};
-		7E14EE222E866E82005AC834 /* VoyagerHelper */ = {
-			isa = PBXNativeTarget;
-			buildConfigurationList = 7E14EE412E866E86005AC834 /* Build configuration list for PBXNativeTarget "VoyagerHelper" */;
-			buildPhases = (
-				7E14EE1F2E866E82005AC834 /* Sources */,
-				AFB0BEEF33B27A4C00A1F900 /* Build Helper Runtime */,
-				7EC6B03F2E8CE43B00379B56 /* Run Lint and Format */,
-				7E14EE202E866E82005AC834 /* Frameworks */,
-				7E14EE212E866E82005AC834 /* Resources */,
-			);
-			buildRules = (
-			);
-			dependencies = (
+			7E14EE222E866E82005AC834 /* VoyagerHelper */ = {
+				isa = PBXNativeTarget;
+				buildConfigurationList = 7E14EE412E866E86005AC834 /* Build configuration list for PBXNativeTarget "VoyagerHelper" */;
+				buildPhases = (
+					7E14EE1F2E866E82005AC834 /* Sources */,
+					7EC6B03F2E8CE43B00379B56 /* Run Lint and Format */,
+					7E14EE202E866E82005AC834 /* Frameworks */,
+					7E14EE212E866E82005AC834 /* Resources */,
+					AFB0BEEF33B27A4C00A1F900 /* Build Backend Binary */,
+				);
+				buildRules = (
+				);
+				dependencies = (
 			);
 			fileSystemSynchronizedGroups = (
 				7E14EE242E866E82005AC834 /* VoyagerHelper */,
@@ -488,18 +488,17 @@
 			shellPath = /bin/sh;
 			shellScript = "#!/bin/bash\nset -euo pipefail\n\nROOT=\"$SRCROOT\"\n\necho \"================================\"\necho \"🔍 SwiftLint: using system installation...\"\necho \"================================\"\n\n# 시스템에 설치된 SwiftLint 사용\nif command -v swiftlint >/dev/null 2>&1; then\n  echo \"✓ Running SwiftLint at: $(which swiftlint)\"\n  swiftlint --config \"$ROOT/.swiftlint.yml\" --reporter xcode\n  echo \"✓ SwiftLint completed\"\nelse\n  echo \"⚠️ SwiftLint not found in PATH\"\nfi\n\necho \"================================\"\necho \"🔧 SwiftFormat: using system installation...\"\necho \"================================\"\n\n# 시스템에 설치된 SwiftFormat 사용\nif command -v swiftformat >/dev/null 2>&1; then\n  echo \"✓ Running SwiftFormat at: $(which swiftformat)\"\n  swiftformat --config \"$ROOT/.swiftformat\" \"$ROOT\" --verbose || true\n  echo \"✓ SwiftFormat completed\"\nelse\n  echo \"⚠️ SwiftFormat not found in PATH\"\nfi\n\necho \"================================\"\n";
 		};
-		AFB0BEEF33B27A4C00A1F900 /* Build Helper Runtime */ = {
+		AFB0BEEF33B27A4C00A1F900 /* Build Backend Binary */ = {
 			isa = PBXShellScriptBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
 			);
 			inputFileListPaths = (
 			);
-			inputPaths = (
-				"$SRCROOT/../../../scripts/build/build-helper-runtime.sh",
-				$SRCROOT/VoyagerHelper/.backend_mode,
-			);
-			name = "Build Helper Runtime";
+				inputPaths = (
+					"$SRCROOT/../../../scripts/build/build-backend-binary.sh",
+				);
+			name = "Build Backend Binary";
 			outputFileListPaths = (
 			);
 			outputPaths = (
@@ -507,9 +506,9 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 			shellPath = /bin/sh;
-			shellScript = "set -euo pipefail\nREPO_ROOT=\"$(cd \"$SRCROOT/../../..\" && pwd)\"\nSCRIPT=\"${REPO_ROOT}/scripts/build/build-helper-runtime.sh\"\nPATH=\"/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/sbin:$PATH\"\nexport PATH\necho \"[VoyagerHelper] Build Helper Runtime Phase Start\" >&2\n\"${SCRIPT}\" || {\n  EXIT_CODE=$?\n  echo \"[VoyagerHelper] Build Helper Runtime failed (exit: $EXIT_CODE)\" >&2\n  exit 0\n}\necho \"[VoyagerHelper] Build Helper Runtime Phase Complete\" >&2\n";
+			shellScript = "set -euo pipefail\nREPO_ROOT=\"$(cd \"$SRCROOT/../../..\" && pwd)\"\nSCRIPT=\"${REPO_ROOT}/scripts/build/build-backend-binary.sh\"\nif [ ! -x \"${SCRIPT}\" ]; then\n  echo \"[VoyagerHelper] build-backend-binary.sh not found or not executable: ${SCRIPT}\" >&2\n  exit 1\nfi\nPATH=\"/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/sbin:$PATH\"\nexport PATH\necho \"[VoyagerHelper] Build Backend Binary Phase Start\" >&2\n\"${SCRIPT}\" 2>&1\necho \"[VoyagerHelper] Build Backend Binary Phase Complete\" >&2\n";
 		};
-/* End PBXShellScriptBuildPhase section */
+	/* End PBXShellScriptBuildPhase section */
 
 /* Begin PBXSourcesBuildPhase section */
 		7E14EDC82E86622C005AC834 /* Sources */ = {

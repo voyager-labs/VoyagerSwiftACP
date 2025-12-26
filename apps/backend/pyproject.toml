@@ -23,6 +23,7 @@ dependencies = [
 dev = [
   "ipykernel>=6.30.1",
   "nbstripout>=0.8.1",
+  "nuitka>=2.8.9",
   "pandas-stubs>=2.3.2.250827",
   "pre-commit>=4.3.0",
   "pyright>=1.1.375",
@@ -53,8 +54,8 @@ build-backend = "uv_build"
 package = true
 
 [tool.uv.build-backend]
-module-name = "app"
-packages = ["app", "core", "infra", "utils"]
+module-root = "src"
+module-name = ["app", "core", "infra", "utils"]
 
 [project.scripts]
 dev = "app.cli:dev"

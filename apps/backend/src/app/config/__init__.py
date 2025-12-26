@@ -29,7 +29,7 @@ def load_hydra_config(app_env: str) -> DictConfig:
 
 
 def load_config() -> DictConfig:
-    app_env = os.getenv("PUBLIC_APP_ENV", "dev")
+    app_env = os.getenv("APP_ENV", "dev")
     env_file = find_dotenv(filename=f".env.{app_env}")
     load_dotenv(dotenv_path=env_file, override=False)
     return load_hydra_config(app_env)
