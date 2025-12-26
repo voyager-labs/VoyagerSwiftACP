@@ -18,6 +18,7 @@ struct ComposerView: View {
     @Environment(\.colorScheme)
     private var colorScheme: ColorScheme
     @State private var keyMonitor: Any?
+    @State private var isAddButtonHovering: Bool = false
 
     private let trafficLightAreaWidth: CGFloat = 80
     private let escapeKeyCode: UInt16 = 53
@@ -128,6 +129,7 @@ struct ComposerView: View {
         Rectangle()
             .fill(isDark ? Color.white.opacity(0.1) : Color.black.opacity(0.1))
             .frame(height: 1)
+            .padding(.horizontal, 16)
     }
 
     private enum ChipItemType: Identifiable, Hashable {
@@ -402,31 +404,27 @@ struct ComposerView: View {
     }
 
     private func conditionChipView(condition: Condition) -> some View {
-        let operatorLabel = condition.operatorLabel ?? "select operator..."
+        let operatorLabel = condition.operatorLabel ?? "operator"
         let operatorColor: Color = condition.operatorLabel == nil ? .secondary.opacity(0.7) : .primary
 
-        return HStack(spacing: 4) {
+        return HStack(spacing: 2) {
             Text(condition.propertyLabel)
                 .font(.system(size: 11, weight: .medium))
                 .foregroundColor(.primary.opacity(0.8))
-            Button {
-                operatorPopoverKey = condition.propertyKey
-            } label: {
-                Text(operatorLabel)
-                    .font(.system(size: 11, weight: .medium))
-                    .foregroundColor(operatorColor)
-            }
-            .buttonStyle(.plain)
-            .popover(isPresented: Binding(
-                get: { operatorPopoverKey == condition.propertyKey },
-                set: { isPresented in
-                    if !isPresented {
-                        operatorPopoverKey = nil
-                    }
-                },
-            ), arrowEdge: .bottom) {
-                operatorList(condition: condition)
-            }
+                .padding(.leading, 4)
+                .padding(.trailing, 2)
+                .padding(.vertical, 2)
+                .background(
+                    RoundedRectangle(cornerRadius: 4)
+                        .fill(Color.clear),
+                    alignment: .center,
+                )
+                .contentShape(Rectangle())
+            operatorButtonView(
+                condition: condition,
+                operatorLabel: operatorLabel,
+                operatorColor: operatorColor,
+            )
         }
         .padding(.horizontal, 8)
         .frame(height: defaultChipHeight)
@@ -465,6 +463,43 @@ struct ComposerView: View {
             RoundedRectangle(cornerRadius: 8)
                 .fill(isDark ? Color(red: 0.16, green: 0.16, blue: 0.16) : Color.white),
         )
+    }
+
+    private func operatorButtonView(
+        condition: Condition,
+        operatorLabel: String,
+        operatorColor: Color,
+    ) -> some View {
+        Button {
+            operatorPopoverKey = condition.propertyKey
+        } label: {
+            Text(operatorLabel)
+                .font(.system(size: 11, weight: .medium))
+                .foregroundColor(operatorColor)
+                .padding(.horizontal, 4)
+                .padding(.vertical, 2)
+                .background(
+                    RoundedRectangle(cornerRadius: 4)
+                        .fill(Color.white.opacity(0.0001)),
+                    alignment: .center,
+                )
+        }
+        .contentShape(Rectangle())
+        .padding(.horizontal, 0)
+        .padding(.vertical, 0)
+        .frame(minWidth: 28, minHeight: 22, alignment: .center)
+        .background(Color.white.opacity(0.0001))
+        .buttonStyle(.plain)
+        .popover(isPresented: Binding(
+            get: { operatorPopoverKey == condition.propertyKey },
+            set: { isPresented in
+                if !isPresented {
+                    operatorPopoverKey = nil
+                }
+            },
+        ), arrowEdge: .bottom) {
+            operatorList(condition: condition)
+        }
     }
 
     private func conditionAddButton(pickerStore: StoreOf<ConditionPropertyPickerFeature>) -> some View {
@@ -583,10 +618,14 @@ struct ComposerView: View {
                 .frame(width: defaultChipHeight, height: defaultChipHeight)
                 .background(
                     RoundedRectangle(cornerRadius: 6)
-                        .fill(isDark ? Color.white.opacity(0.1) : Color.black.opacity(0.08)),
+                        .fill(isAddButtonHovering ? (isDark ? Color.white.opacity(0.1) : Color.black.opacity(0.08)) :
+                            Color.clear),
                 )
         }
         .buttonStyle(.borderless)
+        .onHover { hovering in
+            isAddButtonHovering = hovering
+        }
     }
 
     private func cleanupKeyMonitor() {
