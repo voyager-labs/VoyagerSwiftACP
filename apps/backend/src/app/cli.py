@@ -6,9 +6,7 @@ import subprocess
 import sys
 from pathlib import Path
 
-from utils.paths import get_source_path
-
-MAIN_FILE = get_source_path() / "app" / "main.py"
+MAIN_FILE = Path(__file__).parent / "main.py"
 
 
 def _run_fastapi(*args: str, env: dict[str, str] | None = None) -> int:
