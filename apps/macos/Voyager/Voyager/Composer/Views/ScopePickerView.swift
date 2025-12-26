@@ -1,6 +1,6 @@
 import SwiftUI
 
-struct ComposerScopeComboBoxView: View {
+struct ScopeComboBoxView: View {
     @Binding var isPresented: Bool
     let oldPath: String?
     let onSelect: (String) -> Void

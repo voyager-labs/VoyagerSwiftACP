@@ -262,7 +262,7 @@ struct ComposerView: View {
     ) -> some View {
         switch chip {
         case let .scope(paths):
-            ComposerScopeChipView(
+            ScopeChipView(
                 paths: paths,
                 store: composerStore,
                 isDark: isDark,

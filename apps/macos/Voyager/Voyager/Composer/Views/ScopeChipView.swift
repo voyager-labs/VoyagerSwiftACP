@@ -1,7 +1,7 @@
 import ComposableArchitecture
 import SwiftUI
 
-struct ComposerScopeChipView: View {
+struct ScopeChipView: View {
     let paths: [String]
     let store: StoreOf<ComposerFeature>
     let isDark: Bool
@@ -76,7 +76,7 @@ struct ComposerScopeChipView: View {
                 .fill(isDark ? Color.white.opacity(0.1) : Color.black.opacity(0.08)),
         )
         .popover(isPresented: $isComboBoxPresented, arrowEdge: .bottom) {
-            ComposerScopeComboBoxView(
+            ScopePickerView(
                 isPresented: $isComboBoxPresented,
                 oldPath: editingPath,
                 onSelect: { selectedPath in
