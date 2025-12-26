@@ -10,7 +10,7 @@ private struct ChipSizePreferenceKey: PreferenceKey {
     }
 }
 
-// swiftlint:disable type_body_length
+// swiftlint:disable type_body_length file_length
 struct ComposerView: View {
     let store: StoreOf<FileManagerFeature>
     @State private var isDark: Bool = isDarkMode()
@@ -132,14 +132,14 @@ struct ComposerView: View {
 
     private enum ChipItemType: Identifiable, Hashable {
         case scope(paths: [String])
-        case condition(propertyLabel: String)
+        case condition(Condition)
 
         var id: String {
             switch self {
             case let .scope(paths):
                 "scope-\(paths.joined(separator: "-"))"
-            case let .condition(propertyLabel):
-                "condition-\(propertyLabel)"
+            case let .condition(condition):
+                "condition-\(condition.propertyKey)"
             }
         }
     }
@@ -154,6 +154,43 @@ struct ComposerView: View {
     private let maxChipAreaHeight: CGFloat = 200
     private let defaultChipHeight: CGFloat = 28
     private let defaultChipWidth: CGFloat = 120
+    private let stringOperatorOptions: [(code: String, label: String)] = [
+        ("eq", "is"),
+        ("neq", "is not"),
+        ("contains", "contains"),
+        ("startsWith", "starts with"),
+        ("endsWith", "ends with"),
+        ("isEmpty", "is empty"),
+        ("isNotEmpty", "is not empty"),
+    ]
+    private let numberOperatorOptions: [(code: String, label: String)] = [
+        ("eq", "is"),
+        ("neq", "is not"),
+        ("gt", ">"),
+        ("lt", "<"),
+        ("gte", ">="),
+        ("lte", "<="),
+        ("between", "between"),
+    ]
+    private let dateOperatorOptions: [(code: String, label: String)] = [
+        ("on", "on"),
+        ("before", "before"),
+        ("after", "after"),
+        ("between", "between"),
+        ("isEmpty", "is empty"),
+        ("isNotEmpty", "is not empty"),
+    ]
+    private let boolOperatorOptions: [(code: String, label: String)] = [
+        ("eq", "is"),
+        ("neq", "is not"),
+    ]
+    private let arrayOperatorOptions: [(code: String, label: String)] = [
+        ("contains", "contains"),
+        ("anyOf", "any of"),
+        ("isEmpty", "is empty"),
+        ("isNotEmpty", "is not empty"),
+    ]
+    @State private var operatorPopoverKey: String?
 
     private func secondRow(
         viewStore: ViewStore<ComposerFeature.State, ComposerFeature.Action>,
@@ -181,10 +218,7 @@ struct ComposerView: View {
         let scopeChips: [ChipItemType] = viewStore.scopes.isEmpty
             ? []
             : [.scope(paths: viewStore.scopes)]
-        let conditionChips: [ChipItemType] = viewStore.conditions.map { condition in
-            // TODO(voy-95): operator, value 추가 후 포맷팅 로직 구현
-            .condition(propertyLabel: condition.propertyLabel)
-        }
+        let conditionChips: [ChipItemType] = viewStore.conditions.map { .condition($0) }
         let allChips: [ChipItemType] = scopeChips + conditionChips
 
         let params = RowCalculationParams(
@@ -235,8 +269,8 @@ struct ComposerView: View {
                 favorites: store.favorites,
                 backHistory: historyPaths,
             )
-        case let .condition(propertyLabel):
-            conditionChipView(propertyLabel: propertyLabel)
+        case let .condition(condition):
+            conditionChipView(condition: condition)
         }
     }
 
@@ -367,20 +401,69 @@ struct ComposerView: View {
         return rows
     }
 
-    private func conditionChipView(propertyLabel: String) -> some View {
-        HStack(spacing: 4) {
-            Text(propertyLabel)
+    private func conditionChipView(condition: Condition) -> some View {
+        let operatorLabel = condition.operatorLabel ?? "select operator..."
+        let operatorColor: Color = condition.operatorLabel == nil ? .secondary.opacity(0.7) : .primary
+
+        return HStack(spacing: 4) {
+            Text(condition.propertyLabel)
                 .font(.system(size: 11, weight: .medium))
                 .foregroundColor(.primary.opacity(0.8))
-            Text("select operator...")
-                .font(.system(size: 11, weight: .medium))
-                .foregroundColor(.secondary.opacity(0.6))
+            Button {
+                operatorPopoverKey = condition.propertyKey
+            } label: {
+                Text(operatorLabel)
+                    .font(.system(size: 11, weight: .medium))
+                    .foregroundColor(operatorColor)
+            }
+            .buttonStyle(.plain)
+            .popover(isPresented: Binding(
+                get: { operatorPopoverKey == condition.propertyKey },
+                set: { isPresented in
+                    if !isPresented {
+                        operatorPopoverKey = nil
+                    }
+                },
+            ), arrowEdge: .bottom) {
+                operatorList(condition: condition)
+            }
         }
         .padding(.horizontal, 8)
         .frame(height: defaultChipHeight)
         .background(
             RoundedRectangle(cornerRadius: 6)
                 .fill(isDark ? Color.white.opacity(0.1) : Color.black.opacity(0.08)),
+        )
+    }
+
+    private func operatorList(condition: Condition) -> some View {
+        let options = operatorOptions(for: condition)
+        return VStack(alignment: .leading, spacing: 0) {
+            ForEach(options, id: \.code) { option in
+                Button {
+                    store.send(.composer(.setOperator(
+                        propertyKey: condition.propertyKey,
+                        code: option.code,
+                        label: option.label,
+                    )))
+                    operatorPopoverKey = nil
+                } label: {
+                    HStack {
+                        Text(option.label)
+                            .foregroundColor(.primary)
+                            .font(.system(size: 12))
+                        Spacer()
+                    }
+                    .padding(.horizontal, 10)
+                    .padding(.vertical, 8)
+                }
+                .buttonStyle(.plain)
+            }
+        }
+        .frame(width: 180)
+        .background(
+            RoundedRectangle(cornerRadius: 8)
+                .fill(isDark ? Color(red: 0.16, green: 0.16, blue: 0.16) : Color.white),
         )
     }
 
@@ -473,6 +556,23 @@ struct ComposerView: View {
             .fill(isDark ? Color.white.opacity(0.1) : Color.black.opacity(0.1))
             .frame(width: 1)
             .frame(height: 20)
+    }
+
+    private func operatorOptions(for condition: Condition) -> [(code: String, label: String)] {
+        switch condition.propertyType {
+        case "string":
+            stringOperatorOptions
+        case "number":
+            numberOperatorOptions
+        case "date":
+            dateOperatorOptions
+        case "boolean":
+            boolOperatorOptions
+        case "array":
+            arrayOperatorOptions
+        default:
+            stringOperatorOptions
+        }
     }
 
     private func addButton(action: @escaping () -> Void) -> some View {

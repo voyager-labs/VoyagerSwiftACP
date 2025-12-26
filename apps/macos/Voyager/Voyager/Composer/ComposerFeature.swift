@@ -1,11 +1,14 @@
 import ComposableArchitecture
 import Foundation
 
-struct Condition: Equatable, Identifiable {
+struct Condition: Equatable, Identifiable, Hashable {
     var id: String { propertyKey }
     let propertyKey: String
     let propertyLabel: String
-    // TODO(voy-95): operator, value 추가 예정
+    let propertyType: String
+    var operatorCode: String?
+    var operatorLabel: String?
+    // TODO(voy-95): value 추가 예정
 }
 
 struct FilterSnapshot: Equatable {
@@ -50,6 +53,7 @@ struct ComposerFeature {
         case updateScope(oldPath: String, newPath: String)
         case addCondition(property: MDItemProperty)
         case removeCondition(propertyKey: String)
+        case setOperator(propertyKey: String, code: String, label: String)
         case undo
         case redo
         case propertyPicker(ConditionPropertyPickerFeature.Action)
@@ -96,6 +100,9 @@ struct ComposerFeature {
                     let condition = Condition(
                         propertyKey: property.key,
                         propertyLabel: property.label,
+                        propertyType: property.type,
+                        operatorCode: nil,
+                        operatorLabel: nil,
                     )
                     state.conditions.append(condition)
                 }
@@ -106,6 +113,14 @@ struct ComposerFeature {
                 if state.conditions.contains(where: { $0.propertyKey == propertyKey }) {
                     state.pushHistory()
                     state.conditions.removeAll { $0.propertyKey == propertyKey }
+                }
+                return .none
+
+            case let .setOperator(propertyKey, code, label):
+                if let idx = state.conditions.firstIndex(where: { $0.propertyKey == propertyKey }) {
+                    state.pushHistory()
+                    state.conditions[idx].operatorCode = code
+                    state.conditions[idx].operatorLabel = label
                 }
                 return .none
 
