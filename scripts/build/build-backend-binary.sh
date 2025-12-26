@@ -28,11 +28,18 @@ BACKEND_MODE="${BACKEND_MODE}" "${MODE_SCRIPT}" inject
 
 echo "[VoyagerHelper] Build Backend Binary start (mode=${BACKEND_MODE})" >&2
 
-# 1. venv 준비
-"${PREPARE_SCRIPT}"
+# 개발 중 스킵 옵션 (환경 변수로 제어)
+SKIP_NUITKA_BUILD="${SKIP_NUITKA_BUILD:-0}"
+if [[ "${SKIP_NUITKA_BUILD}" == "1" ]]; then
+  echo "[VoyagerHelper] SKIP_NUITKA_BUILD=1: Nuitka 빌드 스킵" >&2
+  echo "[VoyagerHelper] 기존 바이너리 사용 (있는 경우)" >&2
+else
+  # 1. venv 준비
+  "${PREPARE_SCRIPT}"
 
-# 2. Nuitka 컴파일
-"${COMPILE_SCRIPT}"
+  # 2. Nuitka 컴파일 (증분 빌드 지원)
+  "${COMPILE_SCRIPT}"
+fi
 
 # 3. 바이너리 번들링 (앱 번들에 복사)
 NUITKA_DIST="${REPO_ROOT}/apps/backend/build/nuitka/server.dist"
