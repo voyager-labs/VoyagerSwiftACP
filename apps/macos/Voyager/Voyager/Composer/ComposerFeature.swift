@@ -8,7 +8,9 @@ struct Condition: Equatable, Identifiable, Hashable {
     var propertyType: String
     var operatorCode: String?
     var operatorLabel: String?
-    // TODO(voy-95): value 추가 예정
+    var operatorValueArity: Int?
+    var valueType: ValueType = .unknown
+    var values: [String]?
 }
 
 struct FilterSnapshot: Equatable {
@@ -26,6 +28,7 @@ struct ComposerFeature {
         var conditions: [Condition] = []
         var propertyPicker: ConditionPropertyPickerFeature.State = .init()
         var operatorPicker: OperatorPickerFeature.State = .init()
+        var valuePicker: ValuePickerFeature.State = .init()
         var history: [FilterSnapshot] = []
         var redoHistory: [FilterSnapshot] = []
 
@@ -54,12 +57,14 @@ struct ComposerFeature {
         case updateScope(oldPath: String, newPath: String)
         case addCondition(property: MDItemProperty)
         case removeCondition(propertyKey: String)
-        case setOperator(propertyKey: String, code: String, label: String)
+        case setOperator(propertyKey: String, option: OperatorOption)
+        case setValue(propertyKey: String, values: [String])
         case replaceConditionProperty(originalKey: String, property: MDItemProperty)
         case undo
         case redo
         case propertyPicker(ConditionPropertyPickerFeature.Action)
         case operatorPicker(OperatorPickerFeature.Action)
+        case valuePicker(ValuePickerFeature.Action)
     }
 
     var body: some Reducer<State, Action> {
@@ -68,6 +73,9 @@ struct ComposerFeature {
         }
         Scope(state: \.operatorPicker, action: \.operatorPicker) {
             OperatorPickerFeature()
+        }
+        Scope(state: \.valuePicker, action: \.valuePicker) {
+            ValuePickerFeature()
         }
 
         Reduce { state, action in
@@ -113,6 +121,9 @@ struct ComposerFeature {
                     propertyType: property.type,
                     operatorCode: nil,
                     operatorLabel: nil,
+                    operatorValueArity: nil,
+                    valueType: valueType(for: property.type),
+                    values: nil,
                 )
                 state.conditions.append(condition)
                 state.propertyPicker.duplicateMessage = nil
@@ -126,11 +137,15 @@ struct ComposerFeature {
                 }
                 return .none
 
-            case let .setOperator(propertyKey, code, label):
+            case let .setOperator(propertyKey, option):
                 if let idx = state.conditions.firstIndex(where: { $0.propertyKey == propertyKey }) {
                     state.pushHistory()
-                    state.conditions[idx].operatorCode = code
-                    state.conditions[idx].operatorLabel = label
+                    state.conditions[idx].operatorCode = option.code
+                    state.conditions[idx].operatorLabel = option.label
+                    state.conditions[idx].operatorValueArity = option.valueArity
+                    state.conditions[idx].valueType = option
+                        .valueType ?? valueType(for: state.conditions[idx].propertyType)
+                    state.conditions[idx].values = nil
                 }
                 return .none
 
@@ -155,6 +170,9 @@ struct ComposerFeature {
                 state.conditions[idx].propertyType = property.type
                 state.conditions[idx].operatorCode = nil
                 state.conditions[idx].operatorLabel = nil
+                state.conditions[idx].operatorValueArity = nil
+                state.conditions[idx].valueType = valueType(for: property.type)
+                state.conditions[idx].values = nil
                 state.propertyPicker.editingConditionKey = nil
                 state.propertyPicker.isPresented = false
                 state.propertyPicker.duplicateMessage = nil
@@ -204,11 +222,77 @@ struct ComposerFeature {
                 guard let propertyKey = state.operatorPicker.propertyKey else {
                     return .none
                 }
-                return .send(.setOperator(propertyKey: propertyKey, code: option.code, label: option.label))
+                return .send(.setOperator(propertyKey: propertyKey, option: option))
 
             case .operatorPicker:
                 return .none
+
+            case let .valuePicker(.setPresented(isPresented)):
+                state.valuePicker.isPresented = isPresented
+                if !isPresented {
+                    state.valuePicker.propertyKey = nil
+                    state.valuePicker.operatorOption = nil
+                }
+                return .none
+
+            case let .valuePicker(.prepare(propertyKey, operatorOption, valueType)):
+                state.valuePicker.propertyKey = propertyKey
+                state.valuePicker.operatorOption = operatorOption
+                state.valuePicker.valueType = valueType
+                state.valuePicker.valueArity = max(0, operatorOption.valueArity)
+
+                if state.valuePicker.valueArity == 0 {
+                    state.valuePicker.values = []
+                } else if state.valuePicker.valueArity == 1 {
+                    state.valuePicker.values = [""]
+                } else {
+                    state.valuePicker.values = Array(repeating: "", count: state.valuePicker.valueArity)
+                }
+                state.valuePicker.isPresented = true
+                return .none
+
+            case let .valuePicker(.setValue(index, text)):
+                if state.valuePicker.values.indices.contains(index) {
+                    state.valuePicker.values[index] = text
+                }
+                return .none
+
+            case .valuePicker(.commit):
+                if let propertyKey = state.valuePicker.propertyKey {
+                    return .send(.setValue(propertyKey: propertyKey, values: state.valuePicker.values))
+                }
+                return .none
+
+            case .valuePicker:
+                return .none
+
+            case let .setValue(propertyKey, values):
+                if let idx = state.conditions.firstIndex(where: { $0.propertyKey == propertyKey }) {
+                    state.pushHistory()
+                    state.conditions[idx].values = values
+                }
+                state.valuePicker.isPresented = false
+                state.valuePicker.propertyKey = nil
+                state.valuePicker.operatorOption = nil
+                return .none
             }
         }
+    }
+}
+
+private func valueType(for propertyType: String) -> ValueType {
+    switch propertyType {
+    case "string":
+        .string
+    case "number":
+        .number
+    case "date":
+        .date
+    case "boolean":
+        .boolean
+    case "array":
+        .array
+    default:
+        .unknown
     }
 }

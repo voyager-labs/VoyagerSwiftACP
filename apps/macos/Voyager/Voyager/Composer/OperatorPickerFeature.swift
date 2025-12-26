@@ -4,6 +4,8 @@ import Foundation
 struct OperatorOption: Equatable, Identifiable {
     let code: String
     let label: String
+    let valueArity: Int
+    let valueType: ValueType?
 
     var id: String { code }
 }
