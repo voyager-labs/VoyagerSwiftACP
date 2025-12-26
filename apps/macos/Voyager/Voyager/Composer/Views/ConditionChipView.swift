@@ -41,6 +41,7 @@ struct ConditionChipView: View {
                 selectedOperator: selectedOperator,
                 valueArity: valueArity,
                 isEditingValue: isEditingValue,
+                valueStore: valueStore,
             )
         }
         .padding(.horizontal, 8)
@@ -130,12 +131,15 @@ struct ConditionChipView: View {
         selectedOperator: OperatorOption?,
         valueArity: Int,
         isEditingValue: Bool,
+        valueStore: ViewStore<ValuePickerFeature.State, ValuePickerFeature.Action>,
     ) -> some View {
         if let op = selectedOperator, valueArity != 0 {
             if isEditingValue {
                 inlineValueInputs(
-                    valueViewStore: ViewStore(valuePickerStore, observe: { $0 }),
+                    valueViewStore: valueStore,
                     valueArity: valueArity,
+                    valueType: condition.valueType,
+                    errorMessage: valueStore.errorMessage,
                 )
             } else {
                 Button {
@@ -177,25 +181,53 @@ struct ConditionChipView: View {
     private func inlineValueInputs(
         valueViewStore: ViewStore<ValuePickerFeature.State, ValuePickerFeature.Action>,
         valueArity: Int,
+        valueType: ValueType,
+        errorMessage: String?,
     ) -> some View {
-        HStack(spacing: 6) {
-            ForEach(Array(valueViewStore.values.enumerated()), id: \.offset) { index, _ in
+        let hasError = errorMessage != nil
+        let fieldCount = max(max(valueArity, valueViewStore.values.count), 1)
+
+        return HStack(spacing: 6) {
+            ForEach(0 ..< fieldCount, id: \.self) { index in
+                let currentText = valueViewStore.values.indices.contains(index) ? valueViewStore.values[index] : ""
+                let placeholderText = errorMessage ?? placeholder(
+                    for: valueArity,
+                    index: index,
+                    valueType: valueType,
+                )
+
                 TextField(
-                    placeholder(for: valueArity, index: index),
+                    placeholderText,
                     text: valueViewStore.binding(
-                        get: { $0.values[index] },
+                        get: { state in
+                            state.values.indices.contains(index) ? state.values[index] : ""
+                        },
                         send: { .setValue(index: index, text: $0) },
                     ),
                 )
-                .textFieldStyle(.roundedBorder)
+                .textFieldStyle(.plain)
                 .font(.system(size: 11))
-                .frame(minWidth: 64, maxWidth: 120)
+                .padding(.horizontal, 6)
+                .padding(.vertical, 4)
+                .frame(minWidth: 120, maxWidth: 220, alignment: .leading)
                 .fixedSize(horizontal: true, vertical: false)
+                .background(
+                    RoundedRectangle(cornerRadius: 4)
+                        .stroke(
+                            hasError ? Color.red.opacity(0.85) :
+                                (isDark ? Color.white.opacity(0.15) : Color.black.opacity(0.15)),
+                            lineWidth: 1,
+                        ),
+                )
                 .onSubmit {
-                    let trimmed = valueViewStore.values
-                        .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
-                    guard !trimmed.contains(where: \.isEmpty) else { return }
                     valuePickerStore.send(.commit)
+                }
+
+                if valueArity >= 2, index == 0 {
+                    Text("and")
+                        .font(.system(size: 11, weight: .medium))
+                        .foregroundColor(.secondary)
+                        .fixedSize()
                 }
             }
         }
@@ -205,15 +237,21 @@ struct ConditionChipView: View {
     private func displayValueText() -> String {
         guard let values = condition.values, !values.isEmpty else { return "value" }
         if values.count >= 2 {
-            return values[0] + " – " + values[1]
+            return values[0] + " and " + values[1]
         }
         return values[0]
     }
 
-    private func placeholder(for arity: Int, index: Int) -> String {
+    private func placeholder(for arity: Int, index: Int, valueType: ValueType) -> String {
         if arity >= 2 {
             return index == 0 ? "From" : "To"
         }
-        return "Value"
+
+        switch valueType {
+        case .number:
+            return "Number Value"
+        default:
+            return "Value"
+        }
     }
 }

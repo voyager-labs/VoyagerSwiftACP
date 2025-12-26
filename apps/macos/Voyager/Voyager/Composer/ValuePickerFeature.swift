@@ -20,6 +20,7 @@ struct ValuePickerFeature {
         var valueType: ValueType = .string
         var valueArity: Int = 1
         var values: [String] = [""]
+        var errorMessage: String?
     }
 
     enum Action: Sendable {
@@ -38,6 +39,7 @@ struct ValuePickerFeature {
                     state.propertyKey = nil
                     state.operatorOption = nil
                     state.values = [""]
+                    state.errorMessage = nil
                 }
                 return .none
 
@@ -46,6 +48,7 @@ struct ValuePickerFeature {
                 state.operatorOption = operatorOption
                 state.valueType = valueType
                 state.valueArity = max(0, operatorOption.valueArity)
+                state.errorMessage = nil
 
                 if state.valueArity == 0 {
                     state.values = []
@@ -60,12 +63,18 @@ struct ValuePickerFeature {
                 return .none
 
             case let .setValue(index, text):
+                // 값 배열이 비어있을 수 있으므로 아리티에 맞춰 길이 보정
+                if state.values.count < max(state.valueArity, 1) {
+                    state.values = Array(
+                        repeating: "",
+                        count: max(state.valueArity, 1),
+                    )
+                }
                 guard state.values.indices.contains(index) else { return .none }
                 state.values[index] = text
                 return .none
 
             case .commit:
-                state.isPresented = false
                 return .none
             }
         }

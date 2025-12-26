@@ -146,6 +146,13 @@ struct ComposerFeature {
                     state.conditions[idx].valueType = option
                         .valueType ?? valueType(for: state.conditions[idx].propertyType)
                     state.conditions[idx].values = nil
+                    if state.valuePicker.propertyKey == propertyKey {
+                        state.valuePicker.isPresented = false
+                        state.valuePicker.propertyKey = nil
+                        state.valuePicker.operatorOption = nil
+                        state.valuePicker.values = Array(repeating: "", count: option.valueArity)
+                        state.valuePicker.errorMessage = nil
+                    }
                 }
                 return .none
 
@@ -232,6 +239,10 @@ struct ComposerFeature {
                 if !isPresented {
                     state.valuePicker.propertyKey = nil
                     state.valuePicker.operatorOption = nil
+                    if state.valuePicker.valueArity > 0 {
+                        state.valuePicker.values = Array(repeating: "", count: state.valuePicker.valueArity)
+                    }
+                    state.valuePicker.errorMessage = nil
                 }
                 return .none
 
@@ -258,10 +269,46 @@ struct ComposerFeature {
                 return .none
 
             case .valuePicker(.commit):
-                if let propertyKey = state.valuePicker.propertyKey {
-                    return .send(.setValue(propertyKey: propertyKey, values: state.valuePicker.values))
+                guard let propertyKey = state.valuePicker.propertyKey else { return .none }
+
+                if state.valuePicker.values.isEmpty, state.valuePicker.valueArity > 0 {
+                    state.valuePicker.errorMessage = "Value is required."
+                    state.valuePicker.values = Array(repeating: "", count: state.valuePicker.valueArity)
+                    return .none
                 }
-                return .none
+
+                if state.valuePicker.values.count < max(state.valuePicker.valueArity, 1) {
+                    state.valuePicker.values = Array(
+                        repeating: "",
+                        count: max(state.valuePicker.valueArity, 1),
+                    )
+                }
+
+                let trimmed = state.valuePicker.values
+                    .prefix(max(state.valuePicker.valueArity, 0))
+                    .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+                if trimmed.contains(where: \.isEmpty) {
+                    state.valuePicker.errorMessage = "Value is required."
+                    state.valuePicker.values = Array(repeating: "", count: state.valuePicker.valueArity)
+                    return .none
+                }
+
+                if state.valuePicker.valueType == .number {
+                    let numbers = trimmed.compactMap { Double($0) }
+                    guard numbers.count == trimmed.count else {
+                        state.valuePicker.errorMessage = "Enter valid numbers."
+                        state.valuePicker.values = Array(repeating: "", count: state.valuePicker.valueArity)
+                        return .none
+                    }
+                    if numbers.count >= 2, numbers[0] > numbers[1] {
+                        state.valuePicker.errorMessage = "From value must be ≤ To value."
+                        state.valuePicker.values = Array(repeating: "", count: state.valuePicker.valueArity)
+                        return .none
+                    }
+                }
+
+                state.valuePicker.errorMessage = nil
+                return .send(.setValue(propertyKey: propertyKey, values: trimmed))
 
             case .valuePicker:
                 return .none
@@ -274,6 +321,7 @@ struct ComposerFeature {
                 state.valuePicker.isPresented = false
                 state.valuePicker.propertyKey = nil
                 state.valuePicker.operatorOption = nil
+                state.valuePicker.errorMessage = nil
                 return .none
             }
         }

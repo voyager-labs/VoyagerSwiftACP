@@ -18,6 +18,7 @@ struct ValuePickerView: View {
                 } else if viewStore.valueArity == 1 {
                     valueField(
                         title: fieldTitle(for: viewStore.valueType),
+                        placeholder: fieldPlaceholder(for: viewStore.valueType),
                         text: viewStore.binding(
                             get: { $0.values.first ?? "" },
                             send: { .setValue(index: 0, text: $0) },
@@ -27,12 +28,19 @@ struct ValuePickerView: View {
                     ForEach(Array(viewStore.values.enumerated()), id: \.offset) { index, _ in
                         valueField(
                             title: fieldTitle(for: viewStore.valueType, index: index),
+                            placeholder: fieldPlaceholder(for: viewStore.valueType),
                             text: viewStore.binding(
                                 get: { $0.values[safe: index] ?? "" },
                                 send: { .setValue(index: index, text: $0) },
                             ),
                         )
                     }
+                }
+
+                if let error = viewStore.errorMessage {
+                    Text(error)
+                        .font(.system(size: 11))
+                        .foregroundColor(.red)
                 }
 
                 HStack {
@@ -52,13 +60,13 @@ struct ValuePickerView: View {
         })
     }
 
-    private func valueField(title: String, text: Binding<String>) -> some View {
+    private func valueField(title: String, placeholder: String, text: Binding<String>) -> some View {
         VStack(alignment: .leading, spacing: 4) {
             Text(title)
                 .font(.system(size: 11, weight: .medium))
                 .foregroundColor(.secondary)
 
-            TextField("Enter value", text: text)
+            TextField(placeholder, text: text)
                 .textFieldStyle(.roundedBorder)
                 .font(.system(size: 12))
         }
@@ -84,6 +92,15 @@ struct ValuePickerView: View {
             return index == 0 ? "\(base) (from)" : "\(base) (to)"
         }
         return base
+    }
+
+    private func fieldPlaceholder(for valueType: ValueType) -> String {
+        switch valueType {
+        case .number:
+            "Number Value"
+        default:
+            "Enter value"
+        }
     }
 }
 

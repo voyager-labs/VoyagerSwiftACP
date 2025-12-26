@@ -173,13 +173,13 @@ struct ComposerView: View {
         .init(code: "lt", label: "<", valueArity: 1, valueType: .number),
         .init(code: "gte", label: ">=", valueArity: 1, valueType: .number),
         .init(code: "lte", label: "<=", valueArity: 1, valueType: .number),
-        .init(code: "between", label: "between", valueArity: 2, valueType: .number),
+        .init(code: "between", label: "is between", valueArity: 2, valueType: .number),
     ]
     private let dateOperatorOptions: [OperatorOption] = [
         .init(code: "on", label: "on", valueArity: 1, valueType: .date),
         .init(code: "before", label: "before", valueArity: 1, valueType: .date),
         .init(code: "after", label: "after", valueArity: 1, valueType: .date),
-        .init(code: "between", label: "between", valueArity: 2, valueType: .date),
+        .init(code: "between", label: "is between", valueArity: 2, valueType: .date),
         .init(code: "isEmpty", label: "is empty", valueArity: 0, valueType: .date),
         .init(code: "isNotEmpty", label: "is not empty", valueArity: 0, valueType: .date),
     ]
