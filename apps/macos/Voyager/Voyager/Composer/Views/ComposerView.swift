@@ -19,8 +19,6 @@ struct ComposerView: View {
     private var colorScheme: ColorScheme
     @State private var keyMonitor: Any?
     @State private var isAddButtonHovering: Bool = false
-    @State private var isPropertyHovering: [String: Bool] = [:]
-    @State private var operatorHoverKey: String?
 
     private let trafficLightAreaWidth: CGFloat = 80
     private let escapeKeyCode: UInt16 = 53
@@ -195,7 +193,6 @@ struct ComposerView: View {
         ("isEmpty", "is empty"),
         ("isNotEmpty", "is not empty"),
     ]
-    @State private var operatorPopoverKey: String?
 
     private func secondRow(
         viewStore: ViewStore<ComposerFeature.State, ComposerFeature.Action>,
@@ -405,136 +402,26 @@ struct ComposerView: View {
     }
 
     private func conditionChipView(condition: Condition) -> some View {
-        let operatorLabel = condition.operatorLabel ?? "operator"
-        let operatorColor: Color = condition.operatorLabel == nil ? .secondary.opacity(0.7) : .primary
-
-        return HStack(spacing: 2) {
-            Text(condition.propertyLabel)
-                .font(.system(size: 11, weight: .medium))
-                .foregroundColor(.primary.opacity(0.8))
-                .padding(.leading, 4)
-                .padding(.trailing, 2)
-                .padding(.vertical, 2)
-                .background(
-                    RoundedRectangle(cornerRadius: 4)
-                        .fill(Color.clear),
-                    alignment: .center,
-                )
-                .contentShape(Rectangle())
-                .onHover { hovering in
-                    isPropertyHovering[condition.propertyKey] = hovering
-                }
-                .background(
-                    (isPropertyHovering[condition.propertyKey] ?? false)
-                        ? (isDark ? Color.white.opacity(hoverFillOpacity) : Color.black.opacity(hoverFillOpacity))
-                        : Color.clear,
-                )
-                .onTapGesture {
-                    store.send(.composer(.propertyPicker(.startEditing(condition.propertyKey))))
-                }
-            operatorButtonView(
-                condition: condition,
-                operatorLabel: operatorLabel,
-                operatorColor: operatorColor,
-            )
-        }
-        .padding(.horizontal, 8)
-        .frame(height: defaultChipHeight)
-        .background(
-            RoundedRectangle(cornerRadius: 6)
-                .fill(isDark ? Color.white.opacity(0.1) : Color.black.opacity(0.08)),
-        )
-        .overlay(alignment: .topTrailing) {
-            Button {
-                store.send(.composer(.removeCondition(propertyKey: condition.propertyKey)))
-            } label: {
-                Image(systemName: "xmark.circle.fill")
-                    .font(.system(size: 10, weight: .bold))
-                    .foregroundColor(.secondary)
-            }
-            .buttonStyle(.borderless)
-            .padding(2)
-            .offset(x: 6, y: -6)
-        }
-    }
-
-    private func operatorList(condition: Condition) -> some View {
-        let options = operatorOptions(for: condition)
-        return VStack(alignment: .leading, spacing: 0) {
-            ForEach(options, id: \.code) { option in
-                Button {
-                    store.send(.composer(.setOperator(
-                        propertyKey: condition.propertyKey,
-                        code: option.code,
-                        label: option.label,
-                    )))
-                    operatorPopoverKey = nil
-                } label: {
-                    HStack {
-                        Text(option.label)
-                            .foregroundColor(.primary)
-                            .font(.system(size: 12))
-                        Spacer()
-                    }
-                    .padding(.horizontal, 10)
-                    .padding(.vertical, 8)
-                }
-                .buttonStyle(.plain)
-            }
-        }
-        .frame(width: 180)
-        .background(
-            RoundedRectangle(cornerRadius: 8)
-                .fill(isDark ? Color(red: 0.16, green: 0.16, blue: 0.16) : Color.white),
-        )
-    }
-
-    private func operatorButtonView(
-        condition: Condition,
-        operatorLabel: String,
-        operatorColor: Color,
-    ) -> some View {
-        let isHovering = operatorHoverKey == condition.propertyKey
-
-        return Button {
-            operatorPopoverKey = condition.propertyKey
-        } label: {
-            Text(operatorLabel)
-                .font(.system(size: 11, weight: .medium))
-                .foregroundColor(operatorColor)
-                .padding(.horizontal, 4)
-                .padding(.vertical, 2)
-                .background(
-                    RoundedRectangle(cornerRadius: 4)
-                        .fill(
-                            isHovering
-                                ?
-                                (isDark ? Color.white.opacity(hoverFillOpacity) : Color.black
-                                    .opacity(hoverFillOpacity))
-                                : Color.white.opacity(0.0001),
-                        ),
-                    alignment: .center,
-                )
-        }
-        .contentShape(Rectangle())
-        .onHover { hovering in
-            operatorHoverKey = hovering ? condition.propertyKey : nil
-        }
-        .padding(.horizontal, 0)
-        .padding(.vertical, 0)
-        .frame(minWidth: 28, minHeight: 22, alignment: .center)
-        .background(Color.white.opacity(0.0001))
-        .buttonStyle(.plain)
-        .popover(isPresented: Binding(
-            get: { operatorPopoverKey == condition.propertyKey },
-            set: { isPresented in
-                if !isPresented {
-                    operatorPopoverKey = nil
-                }
+        ConditionChipView(
+            condition: condition,
+            isDark: isDark,
+            hoverFillOpacity: hoverFillOpacity,
+            operatorOptions: operatorOptions(for: condition),
+            defaultChipHeight: defaultChipHeight,
+            onPropertyTap: {
+                store.send(.composer(.propertyPicker(.startEditing(condition.propertyKey))))
             },
-        ), arrowEdge: .bottom) {
-            operatorList(condition: condition)
-        }
+            onOperatorSelect: { code, label in
+                store.send(.composer(.setOperator(
+                    propertyKey: condition.propertyKey,
+                    code: code,
+                    label: label,
+                )))
+            },
+            onRemove: {
+                store.send(.composer(.removeCondition(propertyKey: condition.propertyKey)))
+            },
+        )
     }
 
     private func conditionAddButton(pickerStore: StoreOf<ConditionPropertyPickerFeature>) -> some View {
