@@ -13,6 +13,7 @@ struct ComposerScopeChipView: View {
     @State private var deleteHoverPath: String?
     @State private var dropdownHovering: Bool = false
     @State private var nameHoverPath: String?
+    @State private var addScopeHovering: Bool = false
 
     var body: some View {
         HStack(spacing: 4) {
@@ -24,7 +25,29 @@ struct ComposerScopeChipView: View {
                 directoryNameChip(path: path, index: index)
             }
 
-            if !paths.isEmpty {
+            if paths.isEmpty {
+                Button {
+                    editingPath = nil
+                    isComboBoxPresented = true
+                } label: {
+                    Text("Add scope")
+                        .font(.system(size: 11, weight: .medium))
+                        .foregroundColor(addScopeHovering ? .primary : .secondary)
+                        .padding(.horizontal, 6)
+                        .padding(.vertical, 2)
+                        .frame(height: 19)
+                        .background(
+                            RoundedRectangle(cornerRadius: 4)
+                                .fill(addScopeHovering ?
+                                    (isDark ? Color.white.opacity(0.08) : Color.black.opacity(0.06)) :
+                                    Color.clear),
+                        )
+                }
+                .buttonStyle(.borderless)
+                .onHover { hovering in
+                    addScopeHovering = hovering
+                }
+            } else {
                 Button {
                     isComboBoxPresented = true
                 } label: {

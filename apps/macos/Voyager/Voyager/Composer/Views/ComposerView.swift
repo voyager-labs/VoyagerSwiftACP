@@ -220,9 +220,7 @@ struct ComposerView: View {
         let availableWidth = geometry.size.width - chipHorizontalPadding * 2 - leadingPadding
         let pickerStore = composerStore.scope(state: \.propertyPicker, action: \.propertyPicker)
 
-        let scopeChips: [ChipItemType] = viewStore.scopes.isEmpty
-            ? []
-            : [.scope(paths: viewStore.scopes)]
+        let scopeChips: [ChipItemType] = [.scope(paths: viewStore.scopes)]
         let conditionChips: [ChipItemType] = viewStore.conditions.map { .condition($0) }
         let allChips: [ChipItemType] = scopeChips + conditionChips
 
@@ -446,6 +444,18 @@ struct ComposerView: View {
             RoundedRectangle(cornerRadius: 6)
                 .fill(isDark ? Color.white.opacity(0.1) : Color.black.opacity(0.08)),
         )
+        .overlay(alignment: .topTrailing) {
+            Button {
+                store.send(.composer(.removeCondition(propertyKey: condition.propertyKey)))
+            } label: {
+                Image(systemName: "xmark.circle.fill")
+                    .font(.system(size: 10, weight: .bold))
+                    .foregroundColor(.secondary)
+            }
+            .buttonStyle(.borderless)
+            .padding(2)
+            .offset(x: 6, y: -6)
+        }
     }
 
     private func operatorList(condition: Condition) -> some View {
