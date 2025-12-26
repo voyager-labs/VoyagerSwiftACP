@@ -3,9 +3,9 @@ import Foundation
 
 struct Condition: Equatable, Identifiable, Hashable {
     var id: String { propertyKey }
-    let propertyKey: String
-    let propertyLabel: String
-    let propertyType: String
+    var propertyKey: String
+    var propertyLabel: String
+    var propertyType: String
     var operatorCode: String?
     var operatorLabel: String?
     // TODO(voy-95): value 추가 예정
@@ -54,6 +54,7 @@ struct ComposerFeature {
         case addCondition(property: MDItemProperty)
         case removeCondition(propertyKey: String)
         case setOperator(propertyKey: String, code: String, label: String)
+        case replaceConditionProperty(originalKey: String, property: MDItemProperty)
         case undo
         case redo
         case propertyPicker(ConditionPropertyPickerFeature.Action)
@@ -95,17 +96,21 @@ struct ComposerFeature {
                 return .none
 
             case let .addCondition(property):
-                if !state.conditions.contains(where: { $0.propertyKey == property.key }) {
-                    state.pushHistory()
-                    let condition = Condition(
-                        propertyKey: property.key,
-                        propertyLabel: property.label,
-                        propertyType: property.type,
-                        operatorCode: nil,
-                        operatorLabel: nil,
-                    )
-                    state.conditions.append(condition)
+                if state.conditions.contains(where: { $0.propertyKey == property.key }) {
+                    state.propertyPicker.duplicateMessage = "\"\(property.label)\" is already added."
+                    return .none
                 }
+
+                state.pushHistory()
+                let condition = Condition(
+                    propertyKey: property.key,
+                    propertyLabel: property.label,
+                    propertyType: property.type,
+                    operatorCode: nil,
+                    operatorLabel: nil,
+                )
+                state.conditions.append(condition)
+                state.propertyPicker.duplicateMessage = nil
                 state.propertyPicker.isPresented = false
                 return .none
 
@@ -122,6 +127,32 @@ struct ComposerFeature {
                     state.conditions[idx].operatorCode = code
                     state.conditions[idx].operatorLabel = label
                 }
+                return .none
+
+            case let .replaceConditionProperty(originalKey, property):
+                guard let idx = state.conditions.firstIndex(where: { $0.propertyKey == originalKey }) else {
+                    state.propertyPicker.editingConditionKey = nil
+                    state.propertyPicker.isPresented = false
+                    return .none
+                }
+
+                // 중복 방지: 다른 조건에 동일 key가 이미 있으면 안내 후 아무 변화 없이 종료
+                if let dupIndex = state.conditions.firstIndex(where: { $0.propertyKey == property.key }),
+                   dupIndex != idx
+                {
+                    state.propertyPicker.duplicateMessage = "\"\(property.label)\" is already added."
+                    return .none
+                }
+
+                state.pushHistory()
+                state.conditions[idx].propertyKey = property.key
+                state.conditions[idx].propertyLabel = property.label
+                state.conditions[idx].propertyType = property.type
+                state.conditions[idx].operatorCode = nil
+                state.conditions[idx].operatorLabel = nil
+                state.propertyPicker.editingConditionKey = nil
+                state.propertyPicker.isPresented = false
+                state.propertyPicker.duplicateMessage = nil
                 return .none
 
             case .undo:
@@ -141,7 +172,11 @@ struct ComposerFeature {
                 return .none
 
             case let .propertyPicker(.propertyTapped(property)):
-                return .send(.addCondition(property: property))
+                if let editingKey = state.propertyPicker.editingConditionKey {
+                    return .send(.replaceConditionProperty(originalKey: editingKey, property: property))
+                } else {
+                    return .send(.addCondition(property: property))
+                }
 
             case .propertyPicker:
                 return .none

@@ -12,6 +12,8 @@ struct ConditionPropertyPickerFeature {
         var searchText: String = ""
         var mode: Mode = .root
         var selectedCategory: String?
+        var editingConditionKey: String?
+        var duplicateMessage: String?
     }
 
     enum Mode: Equatable {
@@ -32,6 +34,8 @@ struct ConditionPropertyPickerFeature {
         case propertyTapped(MDItemProperty)
         case loadProperties
         case propertiesResponse(Result<[MDItemProperty], PropertyError>)
+        case startEditing(String)
+        case clearDuplicateMessage
     }
 
     var body: some Reducer<State, Action> {
@@ -44,6 +48,8 @@ struct ConditionPropertyPickerFeature {
                     state.mode = .root
                     state.selectedCategory = nil
                     state.searchText = ""
+                    state.editingConditionKey = nil
+                    state.duplicateMessage = nil
                 }
                 return .none
 
@@ -86,7 +92,19 @@ struct ConditionPropertyPickerFeature {
                 return .none
 
             case .propertyTapped:
-                state.isPresented = false
+                return .none
+
+            case let .startEditing(conditionKey):
+                state.editingConditionKey = conditionKey
+                state.isPresented = true
+                state.mode = .root
+                state.selectedCategory = nil
+                state.searchText = ""
+                state.duplicateMessage = nil
+                return .none
+
+            case .clearDuplicateMessage:
+                state.duplicateMessage = nil
                 return .none
             }
         }

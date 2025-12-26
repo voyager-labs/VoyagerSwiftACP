@@ -14,6 +14,11 @@ struct ConditionPropertyPickerView: View {
         WithViewStore(store, observe: { $0 }, content: { viewStore in
             VStack(spacing: 0) {
                 searchField(viewStore)
+                if let message = viewStore.duplicateMessage {
+                    duplicateWarning(message)
+                    separatorColor
+                        .frame(height: 1)
+                }
                 content(viewStore)
             }
             .frame(width: 200, height: 320)
@@ -284,5 +289,28 @@ struct ConditionPropertyPickerView: View {
         } else {
             Color.black.opacity(0.1)
         }
+    }
+
+    private func duplicateWarning(_ message: String) -> some View {
+        HStack(spacing: 6) {
+            Image(systemName: "exclamationmark.triangle.fill")
+                .font(.system(size: 12))
+                .foregroundColor(.yellow)
+            Text(message)
+                .font(.system(size: 12))
+                .foregroundColor(.primary)
+            Spacer()
+            Button {
+                store.send(.clearDuplicateMessage)
+            } label: {
+                Image(systemName: "xmark.circle.fill")
+                    .font(.system(size: 12))
+                    .foregroundColor(.secondary)
+            }
+            .buttonStyle(.borderless)
+        }
+        .padding(.horizontal, 12)
+        .padding(.vertical, 6)
+        .background(isDark ? Color.white.opacity(0.05) : Color.black.opacity(0.03))
     }
 }

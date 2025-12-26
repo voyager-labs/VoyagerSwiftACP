@@ -420,6 +420,9 @@ struct ComposerView: View {
                     alignment: .center,
                 )
                 .contentShape(Rectangle())
+                .onTapGesture {
+                    store.send(.composer(.propertyPicker(.startEditing(condition.propertyKey))))
+                }
             operatorButtonView(
                 condition: condition,
                 operatorLabel: operatorLabel,
