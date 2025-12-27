@@ -6,22 +6,25 @@ import subprocess
 import sys
 from pathlib import Path
 
-from utils.paths import get_source_path
-
-MAIN_FILE = get_source_path() / "app" / "main.py"
+MAIN_FILE = Path(__file__).parent / "main.py"
 
 
-def _run_fastapi(*args: str, env: dict[str, str] | None = None) -> int:
-    cmd = [sys.executable, "-m", "fastapi", *args]
+def _run_fastapi(*args: str, env: dict[str, str] | None = None) -> None:
+    host = env["PUBLIC_BACKEND_HOST"]
+    port = env["PUBLIC_BACKEND_PORT"]
+    cmd = [sys.executable, "-m", "fastapi", *args, "--host", host, "--port", port]
     proc = subprocess.Popen(cmd, env=env)
     try:
-        return proc.wait()
+        exit_code = proc.wait()
+        raise SystemExit(exit_code)
     except KeyboardInterrupt:
         try:
-            proc.wait(timeout=1)
-        except Exception:
-            pass
-        return 130
+            proc.terminate()
+            proc.wait(timeout=5)
+        except subprocess.TimeoutExpired:
+            proc.kill()
+            proc.wait()
+        raise SystemExit(130)
 
 
 def _with_env(default_env: str) -> dict[str, str]:
@@ -31,13 +34,15 @@ def _with_env(default_env: str) -> dict[str, str]:
 
 
 def dev() -> None:
-    exit_code = _run_fastapi("dev", str(MAIN_FILE), env=_with_env("dev"))
-    raise SystemExit(exit_code)
+    """개발 모드 실행: fastapi dev (자동 리로드)"""
+    env = _with_env("dev")
+    _run_fastapi("dev", str(MAIN_FILE), env=env)
 
 
 def prod() -> None:
-    exit_code = _run_fastapi("run", str(MAIN_FILE), env=_with_env("prod"))
-    raise SystemExit(exit_code)
+    """프로덕션 모드 실행: fastapi run (자동 리로드 없음)"""
+    env = _with_env("prod")
+    _run_fastapi("run", str(MAIN_FILE), env=env)
 
 
 def index() -> None:

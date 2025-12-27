@@ -40,7 +40,7 @@
   - `apps/backend` 디렉토리에서 `uv run dev` 실행
   - 로컬 개발 시 빠른 반복 가능
 - **`*-Prod` 스킴** (`BACKEND_MODE=bundled`): 번들된 venv 사용
-  - `VoyagerHelper.app/Contents/Resources/backend-venv` 사용
+  - `VoyagerHelper.app/Contents/Resources/helper-runtime` 사용
   - 독립형 앱 번들 (배포용)
 
 ### 필수 환경 변수

@@ -3,7 +3,6 @@ from __future__ import annotations
 import os
 import shutil
 from contextlib import contextmanager, nullcontext
-from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
 from typing import Iterator
@@ -11,31 +10,17 @@ from typing import Iterator
 from alembic import command
 from alembic.config import Config
 from alembic.script import ScriptDirectory
-from omegaconf import DictConfig
 from sqlalchemy.engine import Engine
 
 from infra.db.bootstrap.offline_snapshot import OfflineSnapshot
 from infra.db.engine import EngineManager
 from infra.db.engine import engine_manager as _engine_manager
 from infra.db.migrations.config import (
-    get_alembic_config_from_hydra,
+    get_alembic_config,
     is_current_at_or_ancestor_of_head,
 )
-from infra.db.utils import ensure_parent_dir, resolve_db_file_path, resolve_migration_lock_path
-
-
-@dataclass
-class InitSummary:
-    db_file: Path
-    ensured_dir: bool
-    had_version_table: bool
-    had_existing_tables: bool
-    backup_path: Path | None
-    stamped: bool
-    upgraded: bool
-    created_tables: bool
-    current_rev: str | None
-    head_rev: str | None
+from infra.db.models import DbConfig, InitSummary
+from infra.db.utils import ensure_parent_dir, resolve_migration_lock_path
 
 
 @contextmanager
@@ -116,14 +101,19 @@ def _upgrade_to_head_if_needed(
     return True
 
 
-def initialize_sqlite_db(cfg: DictConfig, manager: EngineManager | None = None) -> InitSummary:
+def initialize_sqlite_db(cfg: DbConfig, manager: EngineManager | None = None) -> InitSummary:
     """SQLite 데이터베이스를 사용 가능한 상태로 맞춥니다(idempotent).
 
-    - TODO: 시나리오별 테스트 추가 필요
+    Args:
+        cfg: DB 초기화 설정 (primitive only)
+        manager: 커스텀 EngineManager (기본: 전역 engine_manager)
+
+    Returns:
+        InitSummary: 초기화 결과 요약
     """
 
-    db_file = resolve_db_file_path(cfg)
-    lock_path = resolve_migration_lock_path(cfg, db_file)
+    db_file = cfg.db_file.expanduser().resolve()
+    lock_path = resolve_migration_lock_path(cfg.migration_lock_name, db_file)
     lock_ctx = _migration_lock(lock_path) if lock_path is not None else nullcontext()
 
     with lock_ctx:
@@ -134,7 +124,7 @@ def initialize_sqlite_db(cfg: DictConfig, manager: EngineManager | None = None) 
         upgraded = False
         created_tables = False
 
-        alembic_cfg = get_alembic_config_from_hydra(cfg)
+        alembic_cfg = get_alembic_config(db_url=cfg.db_url)
         script_dir = ScriptDirectory.from_config(alembic_cfg)
         head_rev = script_dir.get_current_head()
 
@@ -179,4 +169,4 @@ def initialize_sqlite_db(cfg: DictConfig, manager: EngineManager | None = None) 
         )
 
 
-__all__ = ["initialize_sqlite_db", "InitSummary"]
+__all__ = ["initialize_sqlite_db"]

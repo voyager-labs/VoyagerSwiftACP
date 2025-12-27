@@ -193,19 +193,19 @@
 /* End PBXGroup section */
 
 /* Begin PBXNativeTarget section */
-		7E14EDCB2E86622C005AC834 /* Voyager */ = {
-			isa = PBXNativeTarget;
-			buildConfigurationList = 7E14EDEF2E86622E005AC834 /* Build configuration list for PBXNativeTarget "Voyager" */;
-			buildPhases = (
-				7E14EDC82E86622C005AC834 /* Sources */,
-				7E6AF6B12E8BB003005DC7D3 /* Run Lint and Format */,
-				7E14EDC92E86622C005AC834 /* Frameworks */,
-				7E14EDCA2E86622C005AC834 /* Resources */,
-				AF0F1E7A33B24D3000A1F123 /* Copy Helper into App */,
-			);
-			buildRules = (
-			);
-			dependencies = (
+			7E14EDCB2E86622C005AC834 /* Voyager */ = {
+				isa = PBXNativeTarget;
+				buildConfigurationList = 7E14EDEF2E86622E005AC834 /* Build configuration list for PBXNativeTarget "Voyager" */;
+				buildPhases = (
+					7E14EDC82E86622C005AC834 /* Sources */,
+					7E6AF6B12E8BB003005DC7D3 /* Run Lint and Format */,
+					7E14EDC92E86622C005AC834 /* Frameworks */,
+					7E14EDCA2E86622C005AC834 /* Resources */,
+					AF0F1E7A33B24D3000A1F123 /* Copy Helper into App */,
+				);
+				buildRules = (
+				);
+				dependencies = (
 				AF0F1E7D33B2530900A1F123 /* PBXTargetDependency */,
 			);
 			fileSystemSynchronizedGroups = (
@@ -269,20 +269,19 @@
 			productReference = 7E14EDE52E86622E005AC834 /* VoyagerUITests.xctest */;
 			productType = "com.apple.product-type.bundle.ui-testing";
 		};
-		7E14EE222E866E82005AC834 /* VoyagerHelper */ = {
-			isa = PBXNativeTarget;
-			buildConfigurationList = 7E14EE412E866E86005AC834 /* Build configuration list for PBXNativeTarget "VoyagerHelper" */;
-			buildPhases = (
-				7E14EE1F2E866E82005AC834 /* Sources */,
-				AFB0C0DE33B2ABCD00A1F901 /* Prepare Backend Venv */,
-				AFB0BEEF33B27A4C00A1F900 /* Bundle Backend Venv */,
-				7EC6B03F2E8CE43B00379B56 /* Run Lint and Format */,
-				7E14EE202E866E82005AC834 /* Frameworks */,
-				7E14EE212E866E82005AC834 /* Resources */,
-			);
-			buildRules = (
-			);
-			dependencies = (
+			7E14EE222E866E82005AC834 /* VoyagerHelper */ = {
+				isa = PBXNativeTarget;
+				buildConfigurationList = 7E14EE412E866E86005AC834 /* Build configuration list for PBXNativeTarget "VoyagerHelper" */;
+				buildPhases = (
+					7E14EE1F2E866E82005AC834 /* Sources */,
+					7EC6B03F2E8CE43B00379B56 /* Run Lint and Format */,
+					7E14EE202E866E82005AC834 /* Frameworks */,
+					7E14EE212E866E82005AC834 /* Resources */,
+					AFB0BEEF33B27A4C00A1F900 /* Build Backend Binary */,
+				);
+				buildRules = (
+				);
+				dependencies = (
 			);
 			fileSystemSynchronizedGroups = (
 				7E14EE242E866E82005AC834 /* VoyagerHelper */,
@@ -489,47 +488,27 @@
 			shellPath = /bin/sh;
 			shellScript = "#!/bin/bash\nset -euo pipefail\n\nROOT=\"$SRCROOT\"\n\necho \"================================\"\necho \"🔍 SwiftLint: using system installation...\"\necho \"================================\"\n\n# 시스템에 설치된 SwiftLint 사용\nif command -v swiftlint >/dev/null 2>&1; then\n  echo \"✓ Running SwiftLint at: $(which swiftlint)\"\n  swiftlint --config \"$ROOT/.swiftlint.yml\" --reporter xcode\n  echo \"✓ SwiftLint completed\"\nelse\n  echo \"⚠️ SwiftLint not found in PATH\"\nfi\n\necho \"================================\"\necho \"🔧 SwiftFormat: using system installation...\"\necho \"================================\"\n\n# 시스템에 설치된 SwiftFormat 사용\nif command -v swiftformat >/dev/null 2>&1; then\n  echo \"✓ Running SwiftFormat at: $(which swiftformat)\"\n  swiftformat --config \"$ROOT/.swiftformat\" \"$ROOT\" --verbose || true\n  echo \"✓ SwiftFormat completed\"\nelse\n  echo \"⚠️ SwiftFormat not found in PATH\"\nfi\n\necho \"================================\"\n";
 		};
-		AFB0BEEF33B27A4C00A1F900 /* Bundle Backend Venv */ = {
+		AFB0BEEF33B27A4C00A1F900 /* Build Backend Binary */ = {
 			isa = PBXShellScriptBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
 			);
 			inputFileListPaths = (
 			);
-			inputPaths = (
-				"$SRCROOT/../../../apps/backend/build/backend-venv/bin/python",
-			);
-			name = "Bundle Backend Venv";
+				inputPaths = (
+					"$SRCROOT/../../../scripts/build/build-backend-binary.sh",
+				);
+			name = "Build Backend Binary";
 			outputFileListPaths = (
 			);
 			outputPaths = (
-				"$TARGET_BUILD_DIR/$UNLOCALIZED_RESOURCES_FOLDER_PATH/backend-venv/bin/python",
+				"$TARGET_BUILD_DIR/$UNLOCALIZED_RESOURCES_FOLDER_PATH/helper-runtime/bin/python",
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 			shellPath = /bin/sh;
-			shellScript = "set -euo pipefail\nREPO_ROOT=\"$(cd \"$SRCROOT/../../..\" && pwd)\"\nVENV_SRC=\"${VENV_SRC:-$REPO_ROOT/apps/backend/build/backend-venv}\"\nVENV_DST=\"$TARGET_BUILD_DIR/$UNLOCALIZED_RESOURCES_FOLDER_PATH/backend-venv\"\n\n# Debug 빌드에서는 venv 번들링 스킵 (로컬 uv 사용)\nif [ \"${CONFIGURATION}\" = \"Debug\" ]; then\n  echo \"Debug build: skip Bundle Backend Venv (uses local uv)\"\n  exit 0\nfi\n\n# Release 빌드: venv 복사\nif [ ! -x \"$VENV_SRC/bin/python\" ]; then\n  echo \"backend-venv가 없습니다: $VENV_SRC/bin/python\" >&2\n  exit 1\nfi\n\nif [ -d \"$VENV_DST\" ]; then\n  chmod -R u+w \"$VENV_DST\" 2>/dev/null || true\n  rm -rf \"$VENV_DST\" || true\nfi\nmkdir -p \"$(dirname \"$VENV_DST\")\"\nditto \"$VENV_SRC\" \"$VENV_DST\"\n\n# Release 빌드: .env.prod를 번들에 복사\nENV_PROD_SRC=\"${ENV_PROD_SRC:-$REPO_ROOT/.env.prod}\"\nENV_PROD_DST=\"$TARGET_BUILD_DIR/$UNLOCALIZED_RESOURCES_FOLDER_PATH/.env.prod\"\nmkdir -p \"$(dirname \"$ENV_PROD_DST\")\"\nif [ -f \"$ENV_PROD_SRC\" ]; then\n  cp \"$ENV_PROD_SRC\" \"$ENV_PROD_DST\"\n  echo \"Copied .env.prod to bundle: $ENV_PROD_DST\"\nelse\n  echo \"Warning: .env.prod not found at $ENV_PROD_SRC\" >&2\n  # 기본값으로 .env.prod 생성\n  cat >\"$ENV_PROD_DST\" <<'EOF'\nAPP_ENV=prod\nBACKEND_DIR=backend-venv\nVOYAGER_HOST=127.0.0.1\nVOYAGER_PORT=8000\nBACKEND_URL=http://127.0.0.1:8000\nVOYAGER_PATH=/usr/bin:/bin:/usr/sbin:/sbin\nVOYAGER_LOG_FILE=~/Library/Logs/Voyager/voyager.log\nEOF\n  echo \"Created default .env.prod in bundle\"\nfi\n";
+			shellScript = "set -euo pipefail\nREPO_ROOT=\"$(cd \"$SRCROOT/../../..\" && pwd)\"\nSCRIPT=\"${REPO_ROOT}/scripts/build/build-backend-binary.sh\"\nif [ ! -x \"${SCRIPT}\" ]; then\n  echo \"[VoyagerHelper] build-backend-binary.sh not found or not executable: ${SCRIPT}\" >&2\n  exit 1\nfi\nPATH=\"/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/sbin:$PATH\"\nexport PATH\necho \"[VoyagerHelper] Build Backend Binary Phase Start\" >&2\n\"${SCRIPT}\" 2>&1\necho \"[VoyagerHelper] Build Backend Binary Phase Complete\" >&2\n";
 		};
-		AFB0C0DE33B2ABCD00A1F901 /* Prepare Backend Venv */ = {
-			isa = PBXShellScriptBuildPhase;
-			buildActionMask = 2147483647;
-			files = (
-			);
-			inputFileListPaths = (
-			);
-			inputPaths = (
-				"$SRCROOT/../../../scripts/prepare-backend-venv.sh",
-				"$SRCROOT/VoyagerHelper/.backend_mode",
-			);
-			name = "Prepare Backend Venv";
-			outputFileListPaths = (
-			);
-			outputPaths = (
-			);
-			runOnlyForDeploymentPostprocessing = 0;
-			shellPath = /bin/sh;
-			shellScript = "set -euo pipefail\n\n# 스킴의 Pre-action에서 기록한 BACKEND_MODE 파일 읽기\nBACKEND_MODE_FILE=\"$SRCROOT/VoyagerHelper/.backend_mode\"\nif [ -f \"$BACKEND_MODE_FILE\" ]; then\n  BACKEND_MODE=$(cat \"$BACKEND_MODE_FILE\")\n  echo \"[VoyagerHelper] Read BACKEND_MODE=$BACKEND_MODE from Pre-action\"\nelse\n  BACKEND_MODE=\"source\"\n  echo \"[VoyagerHelper] .backend_mode not found, using default: $BACKEND_MODE\"\nfi\n\n# 빌드된 앱 번들의 Info.plist에 BACKEND_MODE 주입\nBUNDLE_PLIST=\"$TARGET_BUILD_DIR/$INFOPLIST_PATH\"\nif [ -f \"$BUNDLE_PLIST\" ]; then\n  /usr/libexec/PlistBuddy -c \"Set :BACKEND_MODE $BACKEND_MODE\" \"$BUNDLE_PLIST\" 2>/dev/null || \\\n  /usr/libexec/PlistBuddy -c \"Add :BACKEND_MODE string $BACKEND_MODE\" \"$BUNDLE_PLIST\"\n  echo \"[VoyagerHelper] Injected BACKEND_MODE=$BACKEND_MODE into $BUNDLE_PLIST\"\nfi\n\n# Debug 빌드에서는 venv 준비 스킵 (로컬 uv 사용)\nif [ \"${CONFIGURATION}\" = \"Debug\" ]; then\n  echo \"Debug build: skip Prepare Backend Venv (uses local uv)\"\n  exit 0\nfi\n\n# Release build: force rebuild to ensure clean venv with latest packages\nexport FORCE_BACKEND_VENV_REBUILD=1\nREPO_ROOT=\"$(cd \"$SRCROOT/../../..\" && pwd)\"\nSCRIPT=\"$REPO_ROOT/scripts/prepare-backend-venv.sh\"\nif [ ! -x \"$SCRIPT\" ]; then\n  echo \"prepare-backend-venv.sh not found or not executable: $SCRIPT\" >&2\n  exit 0\nfi\nPATH=\"/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/sbin:$PATH\"\nexport PATH\nif ! \"$SCRIPT\" 2>&1; then\n  echo \"[VoyagerHelper] Warning: prepare-backend-venv.sh failed, continuing with existing backend-venv\" >&2\nfi\n";
-		};
-/* End PBXShellScriptBuildPhase section */
+	/* End PBXShellScriptBuildPhase section */
 
 /* Begin PBXSourcesBuildPhase section */
 		7E14EDC82E86622C005AC834 /* Sources */ = {
@@ -738,8 +717,8 @@
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
 				ASSETCATALOG_COMPILER_INCLUDE_ALL_APPICON_ASSETS = YES;
-			    AUTOMATION_APPLE_EVENTS = YES;
-			    CODE_SIGN_IDENTITY = "-";
+				AUTOMATION_APPLE_EVENTS = YES;
+				CODE_SIGN_IDENTITY = "-";
 				CODE_SIGN_STYLE = Manual;
 				COMBINE_HIDPI_IMAGES = YES;
 				CURRENT_PROJECT_VERSION = 1;
@@ -815,7 +794,7 @@
 				ENABLE_RESOURCE_ACCESS_PHOTO_LIBRARY = NO;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = Voyager/Info.plist;
-				INFOPLIST_KEY_CFBundleDisplayName = "Voyager";
+				INFOPLIST_KEY_CFBundleDisplayName = Voyager;
 				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.utilities";
 				INFOPLIST_KEY_NSHumanReadableCopyright = "";
 				LD_RUNPATH_SEARCH_PATHS = (

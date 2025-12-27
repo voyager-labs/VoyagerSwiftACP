@@ -6,13 +6,12 @@ from threading import Lock
 from typing import Any, Callable, Iterator
 
 import orjson
-from omegaconf import DictConfig
 from sqlalchemy import text
 from sqlalchemy.engine import Engine
 from sqlalchemy.orm import sessionmaker
 from sqlmodel import Session, SQLModel, create_engine
 
-from infra.db.utils import resolve_db_file_path
+from infra.db.models import DbConfig
 from infra.schemas import SCHEMAS
 
 _LOADED_SCHEMAS = SCHEMAS
@@ -27,10 +26,14 @@ class EngineManager:
         self._max_variables: int | None = None
         self._lock = Lock()
 
-    def initialize(self, cfg: DictConfig) -> None:
-        """Hydra 설정으로 엔진/세션팩토리를 초기화
+    def initialize(self, cfg: DbConfig) -> None:
+        """DbConfig로 엔진/세션팩토리를 초기화합니다.
 
-        - sqlite3 "creator" 콜백으로 새 연결마다 PRAGMA를 적용합니다: foreign_keys=ON, journal_mode=WAL(기존이 아니면 전환), WAL일 때 synchronous=NORMAL.
+        - sqlite3 "creator" 콜백으로 새 연결마다 PRAGMA를 적용합니다:
+          foreign_keys=ON, journal_mode=WAL(기존이 아니면 전환), WAL일 때 synchronous=NORMAL.
+
+        Args:
+            cfg: DB 설정 (primitive 값만 포함)
         """
         if self._engine is not None:
             return
@@ -39,9 +42,9 @@ class EngineManager:
             if self._engine is not None:
                 return
 
-            db_file_path = resolve_db_file_path(cfg)
-            echo: bool = bool(cfg.db.echo)
-            check_same_thread: bool = bool(cfg.db.check_same_thread)
+            db_file_path = cfg.db_file.expanduser().resolve()
+            echo = cfg.echo
+            check_same_thread = cfg.check_same_thread
 
             def _creator() -> Any:  # pragma: no cover
                 conn = sqlite3.connect(db_file_path, check_same_thread=check_same_thread)
@@ -64,7 +67,7 @@ class EngineManager:
             ).decode()
 
             engine: Engine = create_engine(
-                str(cfg.db.protocol),
+                cfg.protocol,
                 echo=echo,
                 creator=_creator,
                 json_serializer=json_serializer,
