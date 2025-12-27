@@ -20,6 +20,8 @@ struct ConditionChipView: View {
     @State private var tempDate: Date = .init()
     @State private var dateHoverIndex: Int?
     @State private var isChipHovering: Bool = false
+    @State private var boolPopoverIndex: Int?
+    @State private var boolHoverIndex: Int?
 
     var body: some View {
         WithViewStore(operatorPickerStore, observe: { $0 }, content: { opStore in
@@ -38,7 +40,9 @@ struct ConditionChipView: View {
         let selectedOperator = operatorOptions.first(where: { $0.code == condition.operatorCode })
         let valueArity = condition.operatorValueArity ?? selectedOperator?.valueArity ?? 0
         let isDateType = condition.valueType == .date
-        let isEditingValue = !isDateType && valueStore.isPresented && valueStore.propertyKey == condition.propertyKey
+        let isBooleanType = condition.valueType == .boolean
+        let isEditingValue = !isDateType && !isBooleanType && valueStore.isPresented &&
+            valueStore.propertyKey == condition.propertyKey
 
         return HStack(spacing: 2) {
             propertyLabelView()
@@ -158,6 +162,7 @@ struct ConditionChipView: View {
                 )
             } else if isEditingValue {
                 inlineValueInputs(
+                    operatorOption: selectedOperator,
                     valueViewStore: valueStore,
                     valueArity: valueArity,
                     valueType: condition.valueType,
@@ -167,7 +172,18 @@ struct ConditionChipView: View {
             } else if valueArity >= 2, let values = condition.values, values.count >= 2 {
                 rangeDisplayView(operatorOption: op, values: values)
             } else {
-                singleValueButton(operatorOption: op)
+                if condition.valueType == .boolean {
+                    let currentText = condition.values?.first ?? ""
+                    booleanValueButton(
+                        placeholderText: "",
+                        currentText: currentText,
+                        index: 0,
+                        valueViewStore: ViewStore(valuePickerStore, observe: { $0 }),
+                        operatorOption: op,
+                    )
+                } else {
+                    singleValueButton(operatorOption: op)
+                }
             }
         } else {
             EmptyView()
@@ -205,6 +221,7 @@ struct ConditionChipView: View {
             }
 
             inlineValueInputs(
+                operatorOption: operatorOption,
                 valueViewStore: valueStore,
                 valueArity: operatorOption.valueArity,
                 valueType: condition.valueType,
@@ -389,6 +406,7 @@ struct ConditionChipView: View {
     }
 
     private func inlineValueInputs(
+        operatorOption: OperatorOption?,
         valueViewStore: ViewStore<ValuePickerFeature.State, ValuePickerFeature.Action>,
         valueArity: Int,
         valueType: ValueType,
@@ -415,6 +433,19 @@ struct ConditionChipView: View {
 
                 if valueType == .date {
                     EmptyView()
+                } else if valueType == .boolean {
+                    booleanValueButton(
+                        placeholderText: placeholderText,
+                        currentText: currentText,
+                        index: index,
+                        valueViewStore: valueViewStore,
+                        operatorOption: operatorOption ?? OperatorOption(
+                            code: condition.operatorCode ?? "eq",
+                            label: condition.operatorLabel ?? "Is",
+                            valueArity: valueArity,
+                            valueType: .boolean,
+                        ),
+                    )
                 } else {
                     TextField(
                         placeholderText,
@@ -570,6 +601,94 @@ struct ConditionChipView: View {
                 .padding(.top, 4)
             }
             .padding(12)
+        }
+    }
+
+    private func booleanValueButton(
+        placeholderText: String,
+        currentText: String,
+        index: Int,
+        valueViewStore: ViewStore<ValuePickerFeature.State, ValuePickerFeature.Action>,
+        operatorOption: OperatorOption,
+    ) -> some View {
+        let isPresented = Binding<Bool>(
+            get: { boolPopoverIndex == index },
+            set: { show in
+                if !show { boolPopoverIndex = nil }
+            },
+        )
+
+        return Button {
+            valuePickerStore.send(
+                .prepare(
+                    .init(
+                        propertyKey: condition.propertyKey,
+                        operatorOption: operatorOption,
+                        valueType: .boolean,
+                        existingValues: condition.values,
+                        editingIndex: index,
+                    ),
+                ),
+            )
+            boolPopoverIndex = index
+        } label: {
+            let isHovering = boolHoverIndex == index
+            let labelText = currentText
+                .isEmpty ? (placeholderText.isEmpty ? "Value" : placeholderText.capitalized) : currentText
+            Text(labelText)
+                .font(.system(size: 11, weight: .medium))
+                .foregroundColor(currentText.isEmpty ? .secondary : .primary)
+                .padding(.horizontal, 6)
+                .padding(.vertical, 4)
+                .frame(minWidth: 50, maxWidth: 70, alignment: .center)
+                .fixedSize(horizontal: true, vertical: true)
+                .background(
+                    RoundedRectangle(cornerRadius: 4)
+                        .fill(
+                            isHovering
+                                ? (isDark ? Color.white.opacity(hoverFillOpacity) :
+                                    Color.black.opacity(hoverFillOpacity))
+                                : Color.white.opacity(0.0001),
+                        ),
+                )
+        }
+        .buttonStyle(.plain)
+        .contentShape(Rectangle())
+        .onHover { hover in
+            if hover {
+                boolHoverIndex = index
+            } else if boolHoverIndex == index {
+                boolHoverIndex = nil
+            }
+        }
+        .popover(isPresented: isPresented, arrowEdge: .bottom) {
+            VStack(alignment: .leading, spacing: 8) {
+                Button {
+                    valueViewStore.send(.setValue(index: 0, text: "True"))
+                    valuePickerStore.send(.commit)
+                    boolPopoverIndex = nil
+                } label: {
+                    HStack {
+                        Text("True")
+                        Spacer()
+                    }
+                }
+                .buttonStyle(.plain)
+
+                Button {
+                    valueViewStore.send(.setValue(index: 0, text: "False"))
+                    valuePickerStore.send(.commit)
+                    boolPopoverIndex = nil
+                } label: {
+                    HStack {
+                        Text("False")
+                        Spacer()
+                    }
+                }
+                .buttonStyle(.plain)
+            }
+            .padding(10)
+            .frame(width: 140)
         }
     }
 

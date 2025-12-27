@@ -335,7 +335,7 @@ struct ComposerFeature {
                         return .none
                     }
                     if numbers.count >= 2, numbers[0] > numbers[1] {
-                        state.valuePicker.errorMessage = "From value must be ≤ To value."
+                        state.valuePicker.errorMessage = "From must be ≤ To."
                         if let editIdx = state.valuePicker.editingIndex,
                            state.valuePicker.values.indices.contains(editIdx)
                         {
@@ -348,7 +348,7 @@ struct ComposerFeature {
                 } else if state.valuePicker.valueType == .date {
                     let dates = trimmed.compactMap { ValuePickerFeature.parseDate($0) }
                     guard dates.count == trimmed.count else {
-                        state.valuePicker.errorMessage = "Enter valid date/time."
+                        state.valuePicker.errorMessage = "Enter valid date."
                         for (idx, value) in trimmed.enumerated() {
                             if ValuePickerFeature.parseDate(value) == nil,
                                state.valuePicker.values.indices.contains(idx)
@@ -359,7 +359,7 @@ struct ComposerFeature {
                         return .none
                     }
                     if dates.count >= 2, dates[0] > dates[1] {
-                        state.valuePicker.errorMessage = "From date/time must be ≤ To date/time."
+                        state.valuePicker.errorMessage = "From must be ≤ To."
                         if let editIdx = state.valuePicker.editingIndex,
                            state.valuePicker.values.indices.contains(editIdx)
                         {
@@ -392,6 +392,7 @@ struct ComposerFeature {
         }
     }
 }
+
 // swiftlint:enable type_body_length
 
 private func valueType(for propertyType: String) -> ValueType {
