@@ -32,6 +32,23 @@ struct ValuePickerFeature {
         let editingIndex: Int?
     }
 
+    // 공용 날짜 포맷터 (날짜만, 로컬 타임존 기준)
+    static let dateFormatter: DateFormatter = {
+        let formatter = DateFormatter()
+        formatter.locale = Locale(identifier: "en_US_POSIX")
+        formatter.timeZone = .current
+        formatter.dateFormat = "yyyy-MM-dd"
+        return formatter
+    }()
+
+    static func formatDate(_ date: Date) -> String {
+        dateFormatter.string(from: date)
+    }
+
+    static func parseDate(_ text: String) -> Date? {
+        dateFormatter.date(from: text)
+    }
+
     enum Action: Sendable {
         case setPresented(Bool)
         case prepare(PreparePayload)

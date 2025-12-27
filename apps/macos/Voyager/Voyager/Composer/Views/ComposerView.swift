@@ -158,40 +158,41 @@ struct ComposerView: View {
     private let defaultChipWidth: CGFloat = 120
     private let hoverFillOpacity: Double = 0.06
     private let stringOperatorOptions: [OperatorOption] = [
-        .init(code: "eq", label: "is", valueArity: 1, valueType: .string),
-        .init(code: "neq", label: "is not", valueArity: 1, valueType: .string),
-        .init(code: "contains", label: "contains", valueArity: 1, valueType: .string),
-        .init(code: "startsWith", label: "starts with", valueArity: 1, valueType: .string),
-        .init(code: "endsWith", label: "ends with", valueArity: 1, valueType: .string),
-        .init(code: "isEmpty", label: "is empty", valueArity: 0, valueType: .string),
-        .init(code: "isNotEmpty", label: "is not empty", valueArity: 0, valueType: .string),
+        .init(code: "eq", label: "Is", valueArity: 1, valueType: .string),
+        .init(code: "neq", label: "Is Not", valueArity: 1, valueType: .string),
+        .init(code: "contains", label: "Contains", valueArity: 1, valueType: .string),
+        .init(code: "startsWith", label: "Starts With", valueArity: 1, valueType: .string),
+        .init(code: "endsWith", label: "Ends With", valueArity: 1, valueType: .string),
+        .init(code: "isEmpty", label: "Is Empty", valueArity: 0, valueType: .string),
+        .init(code: "isNotEmpty", label: "Is Not Empty", valueArity: 0, valueType: .string),
     ]
     private let numberOperatorOptions: [OperatorOption] = [
-        .init(code: "eq", label: "is", valueArity: 1, valueType: .number),
-        .init(code: "neq", label: "is not", valueArity: 1, valueType: .number),
-        .init(code: "gt", label: ">", valueArity: 1, valueType: .number),
-        .init(code: "lt", label: "<", valueArity: 1, valueType: .number),
-        .init(code: "gte", label: ">=", valueArity: 1, valueType: .number),
-        .init(code: "lte", label: "<=", valueArity: 1, valueType: .number),
-        .init(code: "between", label: "is between", valueArity: 2, valueType: .number),
+        .init(code: "eq", label: "Is", valueArity: 1, valueType: .number),
+        .init(code: "neq", label: "Is Not", valueArity: 1, valueType: .number),
+        .init(code: "gt", label: "Is Greater Than", valueArity: 1, valueType: .number),
+        .init(code: "lt", label: "Is Less Than", valueArity: 1, valueType: .number),
+        .init(code: "gte", label: "Is Greater Or Equal", valueArity: 1, valueType: .number),
+        .init(code: "lte", label: "Is Less Or Equal", valueArity: 1, valueType: .number),
+        .init(code: "between", label: "Is Between", valueArity: 2, valueType: .number),
     ]
     private let dateOperatorOptions: [OperatorOption] = [
-        .init(code: "on", label: "on", valueArity: 1, valueType: .date),
-        .init(code: "before", label: "before", valueArity: 1, valueType: .date),
-        .init(code: "after", label: "after", valueArity: 1, valueType: .date),
-        .init(code: "between", label: "is between", valueArity: 2, valueType: .date),
-        .init(code: "isEmpty", label: "is empty", valueArity: 0, valueType: .date),
-        .init(code: "isNotEmpty", label: "is not empty", valueArity: 0, valueType: .date),
+        .init(code: "eq", label: "Is", valueArity: 1, valueType: .date),
+        .init(code: "neq", label: "Is Not", valueArity: 1, valueType: .date),
+        .init(code: "gt", label: "Is After", valueArity: 1, valueType: .date),
+        .init(code: "lt", label: "Is Before", valueArity: 1, valueType: .date),
+        .init(code: "between", label: "Is Between", valueArity: 2, valueType: .date),
+        .init(code: "isEmpty", label: "Is Empty", valueArity: 0, valueType: .date),
+        .init(code: "isNotEmpty", label: "Is Not Empty", valueArity: 0, valueType: .date),
     ]
     private let boolOperatorOptions: [OperatorOption] = [
-        .init(code: "eq", label: "is", valueArity: 1, valueType: .boolean),
-        .init(code: "neq", label: "is not", valueArity: 1, valueType: .boolean),
+        .init(code: "eq", label: "Is", valueArity: 1, valueType: .boolean),
+        .init(code: "neq", label: "Is Not", valueArity: 1, valueType: .boolean),
     ]
     private let arrayOperatorOptions: [OperatorOption] = [
-        .init(code: "contains", label: "contains", valueArity: 1, valueType: .array),
-        .init(code: "anyOf", label: "any of", valueArity: 1, valueType: .array),
-        .init(code: "isEmpty", label: "is empty", valueArity: 0, valueType: .array),
-        .init(code: "isNotEmpty", label: "is not empty", valueArity: 0, valueType: .array),
+        .init(code: "contains", label: "Contains", valueArity: 1, valueType: .array),
+        .init(code: "anyOf", label: "Any Of", valueArity: 1, valueType: .array),
+        .init(code: "isEmpty", label: "Is Empty", valueArity: 0, valueType: .array),
+        .init(code: "isNotEmpty", label: "Is Not Empty", valueArity: 0, valueType: .array),
     ]
 
     private func secondRow(

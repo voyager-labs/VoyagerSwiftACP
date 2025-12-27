@@ -18,6 +18,7 @@ struct FilterSnapshot: Equatable {
     let conditions: [Condition]
 }
 
+// swiftlint:disable type_body_length
 @Reducer
 struct ComposerFeature {
     @ObservableState
@@ -208,6 +209,22 @@ struct ComposerFeature {
                     return .send(.addCondition(property: property))
                 }
 
+            case let .propertyPicker(.setPresented(isPresented)):
+                if isPresented {
+                    state.propertyPicker.existingKeys = Set(state.conditions.map(\.propertyKey))
+                } else {
+                    state.propertyPicker.existingKeys = []
+                }
+                return .none
+
+            case let .propertyPicker(.startEditing(conditionKey)):
+                state.propertyPicker.existingKeys = Set(
+                    state.conditions
+                        .map(\.propertyKey)
+                        .filter { $0 != conditionKey },
+                )
+                return .none
+
             case .propertyPicker:
                 return .none
 
@@ -328,6 +345,30 @@ struct ComposerFeature {
                         }
                         return .none
                     }
+                } else if state.valuePicker.valueType == .date {
+                    let dates = trimmed.compactMap { ValuePickerFeature.parseDate($0) }
+                    guard dates.count == trimmed.count else {
+                        state.valuePicker.errorMessage = "Enter valid date/time."
+                        for (idx, value) in trimmed.enumerated() {
+                            if ValuePickerFeature.parseDate(value) == nil,
+                               state.valuePicker.values.indices.contains(idx)
+                            {
+                                state.valuePicker.values[idx] = ""
+                            }
+                        }
+                        return .none
+                    }
+                    if dates.count >= 2, dates[0] > dates[1] {
+                        state.valuePicker.errorMessage = "From date/time must be ≤ To date/time."
+                        if let editIdx = state.valuePicker.editingIndex,
+                           state.valuePicker.values.indices.contains(editIdx)
+                        {
+                            state.valuePicker.values[editIdx] = ""
+                        } else if state.valuePicker.values.indices.contains(0) {
+                            state.valuePicker.values[0] = ""
+                        }
+                        return .none
+                    }
                 }
 
                 state.valuePicker.errorMessage = nil
@@ -351,6 +392,7 @@ struct ComposerFeature {
         }
     }
 }
+// swiftlint:enable type_body_length
 
 private func valueType(for propertyType: String) -> ValueType {
     switch propertyType {

@@ -14,6 +14,7 @@ struct ConditionPropertyPickerFeature {
         var selectedCategory: String?
         var editingConditionKey: String?
         var duplicateMessage: String?
+        var existingKeys: Set<String> = []
     }
 
     enum Mode: Equatable {
@@ -50,6 +51,7 @@ struct ConditionPropertyPickerFeature {
                     state.searchText = ""
                     state.editingConditionKey = nil
                     state.duplicateMessage = nil
+                    state.existingKeys = []
                 }
                 return .none
 

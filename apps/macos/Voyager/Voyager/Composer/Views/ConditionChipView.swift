@@ -1,4 +1,4 @@
-// swiftlint:disable type_body_length function_body_length
+// swiftlint:disable type_body_length function_body_length file_length
 import ComposableArchitecture
 import SwiftUI
 
@@ -16,6 +16,10 @@ struct ConditionChipView: View {
     @State private var isPropertyHovering: Bool = false
     @State private var isOperatorHovering: Bool = false
     @State private var isValueHovering: Bool = false
+    @State private var datePopoverIndex: Int?
+    @State private var tempDate: Date = .init()
+    @State private var dateHoverIndex: Int?
+    @State private var isChipHovering: Bool = false
 
     var body: some View {
         WithViewStore(operatorPickerStore, observe: { $0 }, content: { opStore in
@@ -29,11 +33,12 @@ struct ConditionChipView: View {
         opStore: ViewStore<OperatorPickerFeature.State, OperatorPickerFeature.Action>,
         valueStore: ViewStore<ValuePickerFeature.State, ValuePickerFeature.Action>,
     ) -> some View {
-        let opLabel = condition.operatorLabel ?? "operator"
+        let opLabel = condition.operatorLabel ?? "Operator"
         let opColor: Color = condition.operatorLabel == nil ? .secondary.opacity(0.7) : .primary
         let selectedOperator = operatorOptions.first(where: { $0.code == condition.operatorCode })
         let valueArity = condition.operatorValueArity ?? selectedOperator?.valueArity ?? 0
-        let isEditingValue = valueStore.isPresented && valueStore.propertyKey == condition.propertyKey
+        let isDateType = condition.valueType == .date
+        let isEditingValue = !isDateType && valueStore.isPresented && valueStore.propertyKey == condition.propertyKey
 
         return HStack(spacing: 2) {
             propertyLabelView()
@@ -42,6 +47,7 @@ struct ConditionChipView: View {
                 selectedOperator: selectedOperator,
                 valueArity: valueArity,
                 isEditingValue: isEditingValue,
+                isDateType: isDateType,
                 valueStore: valueStore,
             )
         }
@@ -60,6 +66,11 @@ struct ConditionChipView: View {
             .buttonStyle(.borderless)
             .padding(2)
             .offset(x: 6, y: -6)
+            .opacity(isChipHovering ? 1 : 0)
+            .allowsHitTesting(isChipHovering)
+        }
+        .onHover { hovering in
+            isChipHovering = hovering
         }
     }
 
@@ -132,9 +143,13 @@ struct ConditionChipView: View {
         selectedOperator: OperatorOption?,
         valueArity: Int,
         isEditingValue: Bool,
+        isDateType: Bool,
         valueStore: ViewStore<ValuePickerFeature.State, ValuePickerFeature.Action>,
     ) -> some View {
         if let op = selectedOperator, valueArity != 0 {
+            if isDateType {
+                dateValueSection(operatorOption: op, valueArity: valueArity)
+            } else
             if isEditingValue, valueArity >= 2, let editingIndex = valueStore.editingIndex {
                 rangeEditingView(
                     operatorOption: op,
@@ -267,6 +282,42 @@ struct ConditionChipView: View {
         }
     }
 
+    @ViewBuilder
+    private func dateValueSection(operatorOption: OperatorOption, valueArity: Int) -> some View {
+        if valueArity >= 2 {
+            HStack(spacing: 6) {
+                dateValueButton(
+                    placeholderText: "From",
+                    currentText: condition.values?.first ?? "",
+                    hasError: false,
+                    index: 0,
+                    valueViewStore: ViewStore(valuePickerStore, observe: { $0 }),
+                    operatorOption: operatorOption,
+                )
+                Text("and")
+                    .font(.system(size: 11, weight: .medium))
+                    .foregroundColor(.secondary)
+                dateValueButton(
+                    placeholderText: "To",
+                    currentText: (condition.values?.count ?? 0) > 1 ? (condition.values?[1] ?? "") : "",
+                    hasError: false,
+                    index: 1,
+                    valueViewStore: ViewStore(valuePickerStore, observe: { $0 }),
+                    operatorOption: operatorOption,
+                )
+            }
+        } else {
+            dateValueButton(
+                placeholderText: "Value",
+                currentText: condition.values?.first ?? "",
+                hasError: false,
+                index: 0,
+                valueViewStore: ViewStore(valuePickerStore, observe: { $0 }),
+                operatorOption: operatorOption,
+            )
+        }
+    }
+
     private func singleValueButton(operatorOption: OperatorOption) -> some View {
         Button {
             valuePickerStore.send(
@@ -362,46 +413,60 @@ struct ConditionChipView: View {
                     valueType: valueType,
                 )
 
-                TextField(
-                    placeholderText,
-                    text: valueViewStore.binding(
-                        get: { state in
-                            state.values.indices.contains(index) ? state.values[index] : ""
-                        },
-                        send: { .setValue(index: index, text: $0) },
-                    ),
-                )
-                .textFieldStyle(.plain)
-                .font(.system(size: 11))
-                .foregroundColor(Color.primary)
-                .padding(.horizontal, 6)
-                .padding(.vertical, 4)
-                .frame(
-                    minWidth: hasError ? 120 : 80,
-                    maxWidth: hasError ? 220 : 140,
-                    alignment: .leading,
-                )
-                .background(
-                    RoundedRectangle(cornerRadius: 4)
-                        .stroke(
-                            hasError ? Color.red.opacity(0.85) :
-                                (isDark ? Color.white.opacity(0.15) : Color.black.opacity(0.15)),
-                            lineWidth: 1,
+                if valueType == .date {
+                    EmptyView()
+                } else {
+                    TextField(
+                        placeholderText,
+                        text: valueViewStore.binding(
+                            get: { state in
+                                state.values.indices.contains(index) ? state.values[index] : ""
+                            },
+                            send: { .setValue(index: index, text: $0) },
                         ),
-                )
-                .overlay(alignment: .leading) {
-                    if hasError, currentText.isEmpty, let errorMessage {
-                        Text(errorMessage)
-                            .font(.system(size: 11))
-                            .foregroundColor(.secondary)
-                            .padding(.horizontal, 8)
-                            .padding(.vertical, 6)
-                            .frame(maxWidth: .infinity, alignment: .leading)
-                            .allowsHitTesting(false)
+                    )
+                    .textFieldStyle(.plain)
+                    .font(.system(size: 11))
+                    .foregroundColor(Color.primary)
+                    .padding(.horizontal, 6)
+                    .padding(.vertical, 4)
+                    .frame(
+                        minWidth: {
+                            if valueType == .number {
+                                return hasError ? 70 : 55
+                            }
+                            return hasError ? 80 : 60
+                        }(),
+                        maxWidth: {
+                            if valueType == .number {
+                                return hasError ? 130 : 95
+                            }
+                            return hasError ? 150 : 110
+                        }(),
+                        alignment: .leading,
+                    )
+                    .background(
+                        RoundedRectangle(cornerRadius: 4)
+                            .stroke(
+                                hasError ? Color.red.opacity(0.85) :
+                                    (isDark ? Color.white.opacity(0.15) : Color.black.opacity(0.15)),
+                                lineWidth: 1,
+                            ),
+                    )
+                    .overlay(alignment: .leading) {
+                        if hasError, currentText.isEmpty, let errorMessage {
+                            Text(errorMessage)
+                                .font(.system(size: 11))
+                                .foregroundColor(.secondary)
+                                .padding(.horizontal, 8)
+                                .padding(.vertical, 6)
+                                .frame(maxWidth: .infinity, alignment: .leading)
+                                .allowsHitTesting(false)
+                        }
                     }
-                }
-                .onSubmit {
-                    valuePickerStore.send(.commit)
+                    .onSubmit {
+                        valuePickerStore.send(.commit)
+                    }
                 }
 
                 if valueArity >= 2, index == 0 {
@@ -415,8 +480,101 @@ struct ConditionChipView: View {
         .padding(.leading, 4)
     }
 
+    private func dateValueButton(
+        placeholderText: String,
+        currentText: String,
+        hasError: Bool,
+        index: Int,
+        valueViewStore: ViewStore<ValuePickerFeature.State, ValuePickerFeature.Action>,
+        operatorOption: OperatorOption,
+    ) -> some View {
+        let isPresented = Binding<Bool>(
+            get: { datePopoverIndex == index },
+            set: { show in
+                if !show { datePopoverIndex = nil }
+            },
+        )
+
+        return Button {
+            valuePickerStore.send(
+                .prepare(
+                    .init(
+                        propertyKey: condition.propertyKey,
+                        operatorOption: operatorOption,
+                        valueType: condition.valueType,
+                        existingValues: condition.values,
+                        editingIndex: index,
+                    ),
+                ),
+            )
+            tempDate = ValuePickerFeature.parseDate(currentText) ?? Date()
+            datePopoverIndex = index
+        } label: {
+            let isHovering = dateHoverIndex == index
+            let labelText = currentText
+                .isEmpty ? (placeholderText.isEmpty ? "Value" : placeholderText.capitalized) : currentText
+            Text(labelText)
+                .font(.system(size: 11, weight: .medium))
+                .foregroundColor(currentText.isEmpty ? .secondary : .primary)
+                .padding(.horizontal, 6)
+                .padding(.vertical, 4)
+                .frame(minWidth: 50, maxWidth: 80, alignment: .center)
+                .fixedSize(horizontal: true, vertical: true)
+                .background(
+                    RoundedRectangle(cornerRadius: 4)
+                        .fill(
+                            isHovering
+                                ? (isDark ? Color.white.opacity(hoverFillOpacity) :
+                                    Color.black.opacity(hoverFillOpacity))
+                                : Color.white.opacity(0.0001),
+                        ),
+                )
+                .overlay(
+                    RoundedRectangle(cornerRadius: 4)
+                        .stroke(
+                            hasError ? Color.red.opacity(0.85) :
+                                Color.clear,
+                            lineWidth: hasError ? 1 : 0,
+                        ),
+                )
+        }
+        .buttonStyle(.plain)
+        .contentShape(Rectangle())
+        .onHover { hover in
+            if hover {
+                dateHoverIndex = index
+            } else if dateHoverIndex == index {
+                dateHoverIndex = nil
+            }
+        }
+        .popover(isPresented: isPresented, arrowEdge: .bottom) {
+            VStack(alignment: .leading, spacing: 12) {
+                DatePicker(
+                    "",
+                    selection: $tempDate,
+                    displayedComponents: [.date],
+                )
+                .datePickerStyle(.graphical)
+                .labelsHidden()
+
+                HStack {
+                    Spacer()
+                    Button("Apply") {
+                        let formatted = ValuePickerFeature.formatDate(tempDate)
+                        valueViewStore.send(.setValue(index: index, text: formatted))
+                        valuePickerStore.send(.commit)
+                        datePopoverIndex = nil
+                    }
+                    .keyboardShortcut(.defaultAction)
+                }
+                .padding(.top, 4)
+            }
+            .padding(12)
+        }
+    }
+
     private func displayValueText() -> String {
-        guard let values = condition.values, !values.isEmpty else { return "value" }
+        guard let values = condition.values, !values.isEmpty else { return "Value" }
         if values.count >= 2 {
             return values[0] + " and " + values[1]
         }

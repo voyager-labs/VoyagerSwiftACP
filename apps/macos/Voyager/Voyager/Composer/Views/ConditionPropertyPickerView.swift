@@ -181,7 +181,14 @@ struct ConditionPropertyPickerView: View {
     private func filteredProperties(
         _ viewStore: ViewStoreOf<ConditionPropertyPickerFeature>,
     ) -> [MDItemProperty] {
-        let props = viewStore.properties
+        let existingKeys = viewStore.existingKeys
+        let editingKey = viewStore.editingConditionKey
+        let props = viewStore.properties.filter { property in
+            if existingKeys.contains(property.key), property.key != editingKey {
+                return false
+            }
+            return true
+        }
         let query = viewStore.searchText.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !query.isEmpty else { return props }
 
