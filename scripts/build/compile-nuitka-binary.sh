@@ -92,12 +92,11 @@ fi
 export SDKROOT="${MACOS_SDK_PATH}"
 log_info "Nuitka 빌드 실행 (Python: ${VENV_PYTHON}, SDK: ${MACOS_SDK_PATH})"
 
-# 백엔드 디렉토리에서 uv run 실행 (pyproject.toml의 nuitka 의존성 사용)
-# NOTE: --include-data-dir은 .py 파일을 제외하므로, Alembic 마이그레이션에 필요한
-# Python 파일들은 --include-data-files로 명시적으로 포함해야 함
+# arm64 전용 빌드 (빌드 시간 단축을 위해 universal 바이너리는 제외)
 MIGRATIONS_DIR="${BACKEND_DIR}/src/infra/db/migrations"
 if ! "${UV_BIN}" run --directory "${BACKEND_DIR}" --python "${VENV_PYTHON}" nuitka \
   --standalone \
+  --target-arch="arm64" \
   --output-dir="${NUITKA_OUTPUT_DIR}" \
   --include-data-dir="${BACKEND_DIR}/src/app/config=app/config" \
   --include-data-dir="${BACKEND_DIR}/src/infra/db=infra/db" \
