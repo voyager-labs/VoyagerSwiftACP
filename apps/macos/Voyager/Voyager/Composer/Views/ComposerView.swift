@@ -66,16 +66,18 @@ struct ComposerView: View {
     }
 
     private func firstRow(viewStore: ViewStore<ComposerFeature.State, ComposerFeature.Action>) -> some View {
-        HStack(spacing: 12) {
+        HStack(spacing: 8) {
             undoButton
             redoButton
             textField(viewStore: viewStore)
+            clearButton
+            saveButton
             Spacer()
         }
         .padding(.horizontal, 16)
         .padding(.leading, store.sidebarVisible ? 0 : trafficLightAreaWidth)
-        .padding(.vertical, 10)
-        .frame(height: 48)
+        .padding(.vertical, 6)
+        .frame(height: 40)
     }
 
     private var undoButton: some View {
@@ -103,26 +105,90 @@ struct ComposerView: View {
     }
 
     private func textField(viewStore: ViewStore<ComposerFeature.State, ComposerFeature.Action>) -> some View {
-        TextField(
-            "Enter your request...",
-            text: viewStore.binding(get: \.text, send: ComposerFeature.Action.setText),
-        )
-        .textFieldStyle(.plain)
-        .font(.system(size: 13))
-        .padding(.horizontal, 10)
-        .padding(.vertical, 6)
-        .background(
-            RoundedRectangle(cornerRadius: 8)
-                .fill(isDark ? Color.white.opacity(0.08) : Color.black.opacity(0.05)),
-        )
-        .overlay(
-            RoundedRectangle(cornerRadius: 8)
-                .stroke(isDark ? Color.white.opacity(0.15) : Color.black.opacity(0.12), lineWidth: 1),
-        )
-        .focused($isComposeFieldFocused)
-        .onSubmit {
-            // TODO: Enter 시 동작 추후 구현
+        ZStack(alignment: .trailing) {
+            let isSubmitDisabled = viewStore.text
+                .trimmingCharacters(in: .whitespacesAndNewlines)
+                .isEmpty
+
+            TextField(
+                "Enter your request...",
+                text: viewStore.binding(get: \.text, send: ComposerFeature.Action.setText),
+            )
+            .textFieldStyle(.plain)
+            .font(.system(size: 13))
+            .padding(.horizontal, 10)
+            .padding(.vertical, 4)
+            .padding(.trailing, 28)
+            .background(
+                RoundedRectangle(cornerRadius: 8)
+                    .fill(isDark ? Color.white.opacity(0.08) : Color.black.opacity(0.05)),
+            )
+            .overlay(
+                RoundedRectangle(cornerRadius: 8)
+                    .stroke(isDark ? Color.white.opacity(0.15) : Color.black.opacity(0.12), lineWidth: 1),
+            )
+            .focused($isComposeFieldFocused)
+            .onSubmit {
+                if !isSubmitDisabled {
+                    viewStore.send(.submit)
+                }
+            }
+
+            Button {
+                viewStore.send(.submit)
+            } label: {
+                Image(systemName: "arrow.right")
+                    .font(.system(size: 9, weight: .regular))
+                    .foregroundColor(isSubmitDisabled ? .secondary : .black)
+                    .frame(width: 16, height: 16)
+                    .background(
+                        Circle()
+                            .fill(Color(red: 0.843, green: 0.714, blue: 0.322)),
+                    )
+            }
+            .buttonStyle(.plain)
+            .disabled(isSubmitDisabled)
+            .padding(.trailing, 8)
         }
+        .frame(minHeight: 30)
+    }
+
+    private var clearButton: some View {
+        Button {
+            store.send(.composer(.clearAll))
+        } label: {
+            HStack(spacing: 4) {
+                Image(systemName: "xmark.square")
+                Text("Clear all")
+            }
+            .font(.system(size: 10, weight: .medium))
+            .padding(.horizontal, 7)
+            .padding(.vertical, 4)
+            .background(
+                RoundedRectangle(cornerRadius: 8)
+                    .fill(isDark ? Color.white.opacity(0.08) : Color.black.opacity(0.08)),
+            )
+        }
+        .buttonStyle(.plain)
+    }
+
+    private var saveButton: some View {
+        Button {
+            store.send(.composer(.saveCollection))
+        } label: {
+            HStack(spacing: 4) {
+                Image(systemName: "tray.and.arrow.down")
+                Text("Save")
+            }
+            .font(.system(size: 10, weight: .medium))
+            .padding(.horizontal, 7)
+            .padding(.vertical, 4)
+            .background(
+                RoundedRectangle(cornerRadius: 8)
+                    .fill(isDark ? Color.white.opacity(0.08) : Color.black.opacity(0.08)),
+            )
+        }
+        .buttonStyle(.plain)
     }
 
     private var horizontalSeparator: some View {

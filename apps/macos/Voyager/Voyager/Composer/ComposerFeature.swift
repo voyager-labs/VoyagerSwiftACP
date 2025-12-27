@@ -58,6 +58,9 @@ struct ComposerFeature {
         case updateScope(oldPath: String, newPath: String)
         case addCondition(property: MDItemProperty)
         case removeCondition(propertyKey: String)
+        case clearAll
+        case submit
+        case saveCollection
         case setOperator(propertyKey: String, option: OperatorOption)
         case setValue(propertyKey: String, values: [String])
         case replaceConditionProperty(originalKey: String, property: MDItemProperty)
@@ -100,6 +103,24 @@ struct ComposerFeature {
                     state.pushHistory()
                     state.scopes.removeAll { $0 == path }
                 }
+                return .none
+
+            case .clearAll:
+                state.pushHistory()
+                state.text = ""
+                state.scopes = []
+                state.conditions = []
+                state.propertyPicker = .init()
+                state.operatorPicker = .init()
+                state.valuePicker = .init()
+                return .none
+
+            case .submit:
+                // TODO: 제출 동작은 백엔드 연동 시 구현
+                return .none
+
+            case .saveCollection:
+                // TODO: 컬렉션 저장 기능 구현 예정
                 return .none
 
             case let .updateScope(oldPath, newPath):
