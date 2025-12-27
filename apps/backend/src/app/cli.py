@@ -10,7 +10,9 @@ MAIN_FILE = Path(__file__).parent / "main.py"
 
 
 def _run_fastapi(*args: str, env: dict[str, str] | None = None) -> None:
-    cmd = [sys.executable, "-m", "fastapi", *args]
+    host = env["PUBLIC_BACKEND_HOST"]
+    port = env["PUBLIC_BACKEND_PORT"]
+    cmd = [sys.executable, "-m", "fastapi", *args, "--host", host, "--port", port]
     proc = subprocess.Popen(cmd, env=env)
     try:
         exit_code = proc.wait()
@@ -32,13 +34,15 @@ def _with_env(default_env: str) -> dict[str, str]:
 
 
 def dev() -> None:
-    """개발 모드 실행: FastAPI dev 모드"""
-    _run_fastapi("dev", str(MAIN_FILE))
+    """개발 모드 실행: fastapi dev (자동 리로드)"""
+    env = _with_env("dev")
+    _run_fastapi("dev", str(MAIN_FILE), env=env)
 
 
 def prod() -> None:
-    """프로덕션 모드 실행: FastAPI run 모드 (자동 리로드 없음)"""
-    _run_fastapi("run", str(MAIN_FILE), env=_with_env("prod"))
+    """프로덕션 모드 실행: fastapi run (자동 리로드 없음)"""
+    env = _with_env("prod")
+    _run_fastapi("run", str(MAIN_FILE), env=env)
 
 
 def index() -> None:

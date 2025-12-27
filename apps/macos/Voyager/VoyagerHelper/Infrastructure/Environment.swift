@@ -22,6 +22,16 @@ struct Environment {
     let envVars: [String: String]
     let environmentType: EnvironmentType
     let backendMode: BackendMode
+    var backendPort: Int?
+    var backendURL: String? {
+        guard let host = value(for: "PUBLIC_BACKEND_HOST") else {
+            return nil
+        }
+        guard let port = backendPort else {
+            return nil
+        }
+        return "http://\(host):\(port)"
+    }
 
     init() {
         environmentType = Self.detectEnvironmentType()
@@ -30,6 +40,13 @@ struct Environment {
         Self.loadEnvFile(environmentType.envFileName, for: backendMode)
 
         envVars = Dotenv.values
+
+        if let portString = envVars["PUBLIC_BACKEND_PORT"],
+           let port = Int(portString),
+           port > 0
+        {
+            backendPort = port
+        }
     }
 
     private static func loadEnvFile(_ envFileName: String, for backendMode: BackendMode) {

@@ -6,17 +6,9 @@ import os
 
 import uvicorn
 
-from app.main import app
-
 os.environ.setdefault("APP_ENV", "prod")
 
 if __name__ == "__main__":
-    backend_host = os.getenv("PUBLIC_BACKEND_HOST", "127.0.0.1")
-    backend_port = int(os.getenv("PUBLIC_VOYAGER_PORT", "8000"))
-
-    uvicorn.run(
-        app,
-        host=backend_host,
-        port=backend_port,
-        log_level="info",
-    )
+    host = os["PUBLIC_BACKEND_HOST"]
+    port = os["PUBLIC_BACKEND_PORT"]
+    uvicorn.run("app.main:app", host=host, port=port, log_level="info")

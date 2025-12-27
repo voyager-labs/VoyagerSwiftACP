@@ -4,19 +4,17 @@ import Foundation
 final class ProcessRunner {
     private let environment: Environment
     private var process: Process?
+    private var stderrPipe: Pipe?
+    private var assignedPort: Int?
+    var onPortAssigned: ((Int) -> Void)?
 
     init(environment: Environment) {
         self.environment = environment
     }
 
     func startIfNeeded() {
-        if let running = process, running.isRunning {
-            return
-        }
-
-        if process != nil {
-            process = nil
-        }
+        guard process == nil || process?.isRunning == false else { return }
+        process = nil
 
         // backend mode에 따라 실행 방식 결정
         switch environment.backendMode {
@@ -28,10 +26,11 @@ final class ProcessRunner {
     }
 
     func stop() {
-        if let proc = process {
-            proc.terminate()
-            process = nil
-        }
+        process?.terminate()
+        process = nil
+        stderrPipe?.fileHandleForReading.readabilityHandler = nil
+        stderrPipe = nil
+        assignedPort = nil
     }
 
     private func startWithUv() {
@@ -41,22 +40,13 @@ final class ProcessRunner {
         }
 
         let appEnv = environment.environmentType.rawValue
-        let proc = Process()
-        proc.environment = ProcessInfo.processInfo.environment
-        proc.currentDirectoryURL = URL(fileURLWithPath: backendDirectory)
-        proc.executableURL = URL(fileURLWithPath: "/usr/bin/env")
-        proc.arguments = ["uv", "run", appEnv]
+        let proc = makeProcess(
+            directory: backendDirectory,
+            executable: "/usr/bin/env",
+            arguments: ["uv", "run", appEnv],
+        )
 
-        do {
-            try proc.run()
-            process = proc
-            fputs(
-                "[VoyagerHelper] Backend started: uv run \(appEnv) (pid: \(proc.processIdentifier))\n",
-                stderr,
-            )
-        } catch {
-            fputs("[VoyagerHelper] ERROR: Failed to start backend: \(error)\n", stderr)
-        }
+        runProcess(proc, description: "uv run \(appEnv)")
     }
 
     private func startWithBundledBinary() {
@@ -72,20 +62,70 @@ final class ProcessRunner {
             return
         }
 
+        let proc = makeProcess(directory: serverDirectory, executable: binaryPath)
+
+        runProcess(proc, description: "Bundled binary")
+    }
+
+    private func makeProcess(
+        directory: String,
+        executable: String,
+        arguments: [String]? = nil,
+    ) -> Process {
         let proc = Process()
         proc.environment = ProcessInfo.processInfo.environment
-        proc.currentDirectoryURL = URL(fileURLWithPath: serverDirectory)
-        proc.executableURL = URL(fileURLWithPath: binaryPath)
+        proc.currentDirectoryURL = URL(fileURLWithPath: directory)
+        proc.executableURL = URL(fileURLWithPath: executable)
+        proc.arguments = arguments ?? []
+        return proc
+    }
+
+    private func runProcess(_ proc: Process, description: String) {
+        let pipe = Pipe()
+        proc.standardError = pipe
+        stderrPipe = pipe
+
+        setupStderrParsing(pipe: pipe)
 
         do {
             try proc.run()
             process = proc
-            fputs(
-                "[VoyagerHelper] Backend started: Nuitka binary (pid: \(proc.processIdentifier))\n",
-                stderr,
-            )
+            fputs("[VoyagerHelper] Backend started: \(description) (pid: \(proc.processIdentifier))\n", stderr)
         } catch {
             fputs("[VoyagerHelper] ERROR: Failed to start backend: \(error)\n", stderr)
         }
+    }
+
+    private func setupStderrParsing(pipe: Pipe) {
+        pipe.fileHandleForReading.readabilityHandler = { [weak self] handle in
+            let data = handle.availableData
+            guard !data.isEmpty else { return }
+
+            FileHandle.standardError.write(data)
+
+            guard let output = String(data: data, encoding: .utf8) else { return }
+
+            for line in output.components(separatedBy: .newlines) {
+                guard let port = Self.parsePort(from: line) else { continue }
+
+                DispatchQueue.main.sync { [weak self] in
+                    self?.assignedPort = port
+                    self?.onPortAssigned?(port)
+                    fputs("[VoyagerHelper] Backend port assigned: \(port)\n", stderr)
+                }
+                return
+            }
+        }
+    }
+
+    private nonisolated static func parsePort(from line: String) -> Int? {
+        // "Uvicorn running on http://{host}:{port}" 형식 파싱
+        guard line.contains("Uvicorn running on"),
+              let match = line.range(of: #"http://[^:]+:(\d+)"#, options: .regularExpression),
+              let portMatch = line.range(of: #":(\d+)"#, options: .regularExpression, range: match)
+        else { return nil }
+
+        let portString = line[portMatch].dropFirst() // ":" 제거
+        return Int(portString)
     }
 }
