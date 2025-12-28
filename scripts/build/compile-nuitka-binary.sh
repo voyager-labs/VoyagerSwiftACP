@@ -96,7 +96,7 @@ log_info "Nuitka 빌드 실행 (Python: ${VENV_PYTHON}, SDK: ${MACOS_SDK_PATH})"
 MIGRATIONS_DIR="${BACKEND_DIR}/src/infra/db/migrations"
 if ! "${UV_BIN}" run --directory "${BACKEND_DIR}" --python "${VENV_PYTHON}" nuitka \
   --standalone \
-  --target-arch="arm64" \
+  --macos-target-arch="arm64" \
   --output-dir="${NUITKA_OUTPUT_DIR}" \
   --include-data-dir="${BACKEND_DIR}/src/app/config=app/config" \
   --include-data-dir="${BACKEND_DIR}/src/infra/db=infra/db" \
