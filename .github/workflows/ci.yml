@@ -1,0 +1,84 @@
+name: ci
+
+on:
+  pull_request:
+    branches: [develop]
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  check-self-hosted-runner:
+    name: Check self-hosted runner online
+    if: contains(vars.CI_MACOS_RUNS_ON || '', 'self-hosted')
+    runs-on: ubuntu-latest
+    permissions:
+      actions: read
+    steps:
+      - name: Fail if self-hosted runner is offline
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+
+          api_url="https://api.github.com/repos/${GITHUB_REPOSITORY}/actions/runners?per_page=100"
+
+          count="$(
+            curl -fsSL \
+              -H "Authorization: Bearer ${GH_TOKEN}" \
+              -H "Accept: application/vnd.github+json" \
+              "${api_url}" \
+            | jq -r '
+              [
+                .runners[]
+                | select(.status == "online")
+                | select(
+                    any(.labels[]; .name == "self-hosted") and
+                    any(.labels[]; .name == "macOS") and
+                    any(.labels[]; .name == "ARM64") and
+                    any(.labels[]; .name == "voyager-app")
+                  )
+              ] | length
+            '
+          )"
+
+          if [[ "${count}" == "0" ]]; then
+            echo "No online self-hosted runner found with labels: self-hosted, macOS, ARM64, voyager-app" >&2
+            exit 1
+          fi
+
+  macos-tests:
+    name: macOS build & test
+    needs: check-self-hosted-runner
+    if: always() && (needs.check-self-hosted-runner.result == 'success' || needs.check-self-hosted-runner.result == 'skipped')
+    runs-on: ${{ fromJSON(vars.CI_MACOS_RUNS_ON || '["macos-15"]') }}
+
+    env:
+      PROJECT_PATH: apps/macos/Voyager/Voyager.xcodeproj
+      SCHEME: Voyager-Dev
+      CONFIGURATION: Debug
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Build
+        shell: bash
+        run: |
+          set -euo pipefail
+          xcodebuild \
+            -project "${PROJECT_PATH}" \
+            -scheme "${SCHEME}" \
+            -configuration "${CONFIGURATION}" \
+            build
+
+      - name: Test
+        shell: bash
+        run: |
+          set -euo pipefail
+          xcodebuild test \
+            -project "${PROJECT_PATH}" \
+            -scheme "${SCHEME}" \
+            -configuration "${CONFIGURATION}"
