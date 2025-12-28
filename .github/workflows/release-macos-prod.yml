@@ -30,7 +30,7 @@ jobs:
         uses: actions/checkout@v4
 
       - name: Setup uv (GitHub-hosted only)
-        if: ${{ !contains(vars.RELEASE_MACOS_RUNS_ON || '', 'self-hosted') }}
+        if: ${{ !contains(vars.RELEASE_MACOS_RUNS_ON || '["self-hosted","macOS","ARM64"]', 'self-hosted') }}
         uses: astral-sh/setup-uv@v7
         with:
           version: "0.8.13"
@@ -98,6 +98,16 @@ jobs:
           path: |
             build/ci/Voyager.dmg
             build/ci/latest.json
+
+      - name: Cleanup temp signing keychain
+        if: always()
+        shell: bash
+        run: |
+          set -euo pipefail
+          security delete-keychain signing_temp.keychain 2>/dev/null || true
+          security delete-keychain "${HOME}/Library/Keychains/signing_temp.keychain-db" 2>/dev/null || true
+          security delete-keychain "${HOME}/Library/Keychains/signing_temp.keychain" 2>/dev/null || true
+          rm -f "${HOME}/Library/Keychains/signing_temp.keychain-db" "${HOME}/Library/Keychains/signing_temp.keychain" || true
 
   upload-prune:
     name: Upload + prune (prod)
