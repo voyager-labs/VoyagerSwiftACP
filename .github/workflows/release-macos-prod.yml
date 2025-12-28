@@ -21,6 +21,7 @@ jobs:
       SCHEME: Voyager-Prod
       CONFIGURATION: Release
       BUILD_DIR: ${{ github.workspace }}/build/ci
+      SIGNING_KEYCHAIN: signing_temp_${{ github.run_id }}_${{ github.run_attempt }}.keychain
 
       RELEASES_PREFIX: releases
       VERSION_PREFIX: releases/versions
@@ -30,7 +31,7 @@ jobs:
         uses: actions/checkout@v4
 
       - name: Setup uv (GitHub-hosted only)
-        if: ${{ !contains(vars.RELEASE_MACOS_RUNS_ON || '', 'self-hosted') }}
+        if: ${{ !contains(vars.RELEASE_MACOS_RUNS_ON || '["self-hosted","macOS","ARM64"]', 'self-hosted') }}
         uses: astral-sh/setup-uv@v7
         with:
           version: "0.8.13"
@@ -48,6 +49,8 @@ jobs:
         with:
           p12-file-base64: ${{ secrets.APPLE_CERTIFICATE_BASE64 }}
           p12-password: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+          keychain: ${{ env.SIGNING_KEYCHAIN }}
+          keychain-password: ${{ github.run_id }}-${{ github.run_attempt }}
 
       - name: Build archive
         shell: bash
@@ -99,8 +102,28 @@ jobs:
             build/ci/Voyager.dmg
             build/ci/latest.json
 
+      - name: Cleanup temp signing keychain
+        if: always()
+        shell: bash
+        run: |
+          set -euo pipefail
+          keychain="${SIGNING_KEYCHAIN}"
+          keychain_db="${keychain%.keychain}.keychain-db"
+
+          security delete-keychain "${keychain}" 2>/dev/null || true
+          security delete-keychain "${keychain_db}" 2>/dev/null || true
+          security delete-keychain "${HOME}/Library/Keychains/${keychain}" 2>/dev/null || true
+          security delete-keychain "${HOME}/Library/Keychains/${keychain_db}" 2>/dev/null || true
+
+          rm -f \
+            "${keychain}" \
+            "${keychain_db}" \
+            "${HOME}/Library/Keychains/${keychain}" \
+            "${HOME}/Library/Keychains/${keychain_db}" \
+            || true
+
   upload-prune:
-    name: Upload + prune (prod)
+    name: Upload (prod)
     needs: build-notarize
     runs-on: ubuntu-latest
     environment: production
@@ -131,5 +154,3 @@ jobs:
             r2 object put ${{ env.R2_BUCKET }}/${{ env.VERSION_PREFIX }}/${{ env.VERSION }}/Voyager.dmg --file ${{ env.BUILD_DIR }}/Voyager.dmg
             r2 object put ${{ env.R2_BUCKET }}/${{ env.RELEASES_PREFIX }}/Voyager.dmg --file ${{ env.BUILD_DIR }}/Voyager.dmg
             r2 object put ${{ env.R2_BUCKET }}/${{ env.RELEASES_PREFIX }}/latest.json --file ${{ env.BUILD_DIR }}/latest.json
-          postCommands: |
-            ./scripts/ci/prune-r2-releases.sh

@@ -21,6 +21,8 @@ xcodebuild \
   -scheme "${SCHEME}" \
   -configuration "${CONFIGURATION}" \
   -archivePath "${BUILD_DIR}/Voyager.xcarchive" \
+  -derivedDataPath "${BUILD_DIR}/DerivedData" \
+  -clonedSourcePackagesDirPath "${BUILD_DIR}/SourcePackages" \
   ENV_PROD_SRC="${ENV_PROD_PATH}" \
   archive
 
