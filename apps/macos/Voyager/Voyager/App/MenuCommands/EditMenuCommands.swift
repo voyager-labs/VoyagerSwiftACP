@@ -12,36 +12,50 @@ struct EditMenuCommands: Commands {
         appDelegate = shared
     }
 
+    private func firstResponderCanHandle(_ selector: Selector) -> Bool {
+        guard let responder = NSApp.keyWindow?.firstResponder as? NSResponder else { return false }
+        return responder.responds(to: selector)
+    }
+
     var body: some Commands {
         CommandGroup(replacing: .pasteboard) {
             Button("Cut") {
-                appDelegate.currentFileManagerStore?.send(.fsItems(.cutSelectedItems))
+                if NSApp.sendAction(#selector(NSText.cut(_:)), to: nil, from: nil) {
+                } else {
+                    appDelegate.currentFileManagerStore?.send(.fsItems(.cutSelectedItems))
+                }
             }
             .keyboardShortcut("x", modifiers: .command)
-            .disabled(!appDelegate.hasSelectedItems)
+            .disabled(false)
 
             Button("Copy") {
-                appDelegate.currentFileManagerStore?.send(.fsItems(.copySelectedItems))
+                if NSApp.sendAction(#selector(NSText.copy(_:)), to: nil, from: nil) {
+                } else {
+                    appDelegate.currentFileManagerStore?.send(.fsItems(.copySelectedItems))
+                }
             }
             .keyboardShortcut("c", modifiers: .command)
-            .disabled(!appDelegate.hasSelectedItems)
+            .disabled(false)
 
             Button("Paste") {
-                if let currentPath = appDelegate.currentFileManagerStore?.currentPath {
-                    appDelegate.currentFileManagerStore?
-                        .send(.fsItems(.pasteItems(destinationPath: currentPath)))
+                if NSApp.sendAction(#selector(NSText.paste(_:)), to: nil, from: nil) {
+                } else if let currentPath = appDelegate.currentFileManagerStore?.currentPath {
+                    appDelegate.currentFileManagerStore?.send(.fsItems(.pasteItems(destinationPath: currentPath)))
                 }
             }
             .keyboardShortcut("v", modifiers: .command)
-            .disabled(!appDelegate.hasClipboardItems)
+            .disabled(false)
         }
 
         CommandGroup(replacing: .textEditing) {
             Button("Select All") {
-                appDelegate.currentFileManagerStore?.send(.fsItems(.selectAll))
+                if NSApp.sendAction(#selector(NSText.selectAll(_:)), to: nil, from: nil) {
+                } else {
+                    appDelegate.currentFileManagerStore?.send(.fsItems(.selectAll))
+                }
             }
             .keyboardShortcut("a", modifiers: .command)
-            .disabled(!appDelegate.hasStore)
+            .disabled(false)
         }
     }
 }

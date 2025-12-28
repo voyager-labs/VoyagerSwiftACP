@@ -14,7 +14,7 @@ private struct ChipSizePreferenceKey: PreferenceKey {
 struct ComposerView: View {
     let store: StoreOf<FileManagerFeature>
     @State private var isDark: Bool = isDarkMode()
-    @FocusState private var isComposeFieldFocused: Bool
+    @State private var isComposeFieldFirstResponder: Bool = true
     @Environment(\.colorScheme)
     private var colorScheme: ColorScheme
     @State private var keyMonitor: Any?
@@ -109,30 +109,7 @@ struct ComposerView: View {
             let isSubmitDisabled = viewStore.text
                 .trimmingCharacters(in: .whitespacesAndNewlines)
                 .isEmpty
-
-            TextField(
-                "Enter your request...",
-                text: viewStore.binding(get: \.text, send: ComposerFeature.Action.setText),
-            )
-            .textFieldStyle(.plain)
-            .font(.system(size: 13))
-            .padding(.horizontal, 10)
-            .padding(.vertical, 4)
-            .padding(.trailing, 28)
-            .background(
-                RoundedRectangle(cornerRadius: 8)
-                    .fill(isDark ? Color.white.opacity(0.08) : Color.black.opacity(0.05)),
-            )
-            .overlay(
-                RoundedRectangle(cornerRadius: 8)
-                    .stroke(isDark ? Color.white.opacity(0.15) : Color.black.opacity(0.12), lineWidth: 1),
-            )
-            .focused($isComposeFieldFocused)
-            .onSubmit {
-                if !isSubmitDisabled {
-                    viewStore.send(.submit)
-                }
-            }
+            queryInputField(viewStore: viewStore, isSubmitDisabled: isSubmitDisabled)
 
             Button {
                 viewStore.send(.submit)
@@ -151,6 +128,57 @@ struct ComposerView: View {
             .padding(.trailing, 8)
         }
         .frame(minHeight: 30)
+    }
+
+    private func queryInputField(
+        viewStore: ViewStore<ComposerFeature.State, ComposerFeature.Action>,
+        isSubmitDisabled: Bool,
+    ) -> some View {
+        let placeholderText = "Enter your request..."
+
+        return ZStack(alignment: .leading) {
+            if viewStore.text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                Text(placeholderText)
+                    .foregroundColor(.secondary)
+                    .font(.system(size: 13))
+                    .padding(.leading, 12)
+            }
+
+            FocusedTextField(
+                text: viewStore.binding(get: \.text, send: ComposerFeature.Action.setText),
+                isFirstResponder: Binding(
+                    get: { isComposeFieldFirstResponder },
+                    set: { isComposeFieldFirstResponder = $0 },
+                ),
+                onCommit: {
+                    if !isSubmitDisabled {
+                        viewStore.send(.submit)
+                    }
+                },
+            )
+            .font(.system(size: 13))
+            .padding(.horizontal, 10)
+            .padding(.vertical, 4)
+            .padding(.trailing, 28)
+        }
+        .background(
+            RoundedRectangle(cornerRadius: 8)
+                .fill(isDark ? Color.white.opacity(0.08) : Color.black.opacity(0.05)),
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: 8)
+                .stroke(isDark ? Color.white.opacity(0.15) : Color.black.opacity(0.12), lineWidth: 1),
+        )
+        .onSubmit {
+            if !isSubmitDisabled {
+                viewStore.send(.submit)
+            }
+        }
+        .onChange(of: viewStore.isPresented) { presented in
+            if presented {
+                isComposeFieldFirstResponder = true
+            }
+        }
     }
 
     private var clearButton: some View {
@@ -506,8 +534,8 @@ struct ComposerView: View {
 
     private func setupOnAppear() {
         isDark = isDarkMode()
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
-            isComposeFieldFocused = true
+        DispatchQueue.main.async {
+            isComposeFieldFirstResponder = true
         }
         keyMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { event in
             if event.keyCode == escapeKeyCode {

@@ -5,6 +5,7 @@ struct ConditionPropertyPickerView: View {
     let store: StoreOf<ConditionPropertyPickerFeature>
     @Environment(\.colorScheme)
     private var colorScheme
+    @FocusState private var isSearchFocused: Bool
 
     private var isDark: Bool {
         colorScheme == .dark
@@ -41,15 +42,26 @@ struct ConditionPropertyPickerView: View {
                     .font(.system(size: 12))
                     .foregroundColor(.secondary)
 
-                TextField(
-                    "Search attributes",
-                    text: viewStore.binding(
-                        get: \.searchText,
-                        send: ConditionPropertyPickerFeature.Action.searchTextChanged,
-                    ),
-                )
-                .textFieldStyle(.plain)
-                .font(.system(size: 13))
+                ZStack(alignment: .leading) {
+                    if viewStore.searchText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                        Text("Search attributes")
+                            .foregroundColor(.secondary)
+                            .font(.system(size: 13))
+                            .padding(.leading, 2)
+                    }
+
+                    FocusedTextField(
+                        text: viewStore.binding(
+                            get: \.searchText,
+                            send: ConditionPropertyPickerFeature.Action.searchTextChanged,
+                        ),
+                        isFirstResponder: Binding(
+                            get: { isSearchFocused },
+                            set: { isSearchFocused = $0 },
+                        ),
+                    )
+                    .font(.system(size: 13))
+                }
 
                 if !viewStore.searchText.isEmpty {
                     Button {
@@ -65,6 +77,9 @@ struct ConditionPropertyPickerView: View {
             .padding(.horizontal, 12)
             .padding(.vertical, 8)
             .background(searchFieldBackgroundColor)
+            .onAppear {
+                isSearchFocused = true
+            }
 
             separatorColor
                 .frame(height: 1)
