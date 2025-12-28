@@ -21,7 +21,7 @@ jobs:
       SCHEME: Voyager-Prod
       CONFIGURATION: Release
       BUILD_DIR: ${{ github.workspace }}/build/ci
-      SIGNING_KEYCHAIN: signing_temp_${{ github.run_id }}_${{ github.run_attempt }}.keychain
+      SIGNING_KEYCHAIN: signing_temp_${{ github.run_id }}_${{ github.run_attempt }}
 
       RELEASES_PREFIX: releases
       VERSION_PREFIX: releases/versions
@@ -108,17 +108,22 @@ jobs:
         run: |
           set -euo pipefail
           keychain="${SIGNING_KEYCHAIN}"
-          keychain_db="${keychain%.keychain}.keychain-db"
+          keychain_file="${keychain}.keychain"
+          keychain_db="${keychain}.keychain-db"
 
           security delete-keychain "${keychain}" 2>/dev/null || true
+          security delete-keychain "${keychain_file}" 2>/dev/null || true
           security delete-keychain "${keychain_db}" 2>/dev/null || true
           security delete-keychain "${HOME}/Library/Keychains/${keychain}" 2>/dev/null || true
+          security delete-keychain "${HOME}/Library/Keychains/${keychain_file}" 2>/dev/null || true
           security delete-keychain "${HOME}/Library/Keychains/${keychain_db}" 2>/dev/null || true
 
           rm -f \
             "${keychain}" \
+            "${keychain_file}" \
             "${keychain_db}" \
             "${HOME}/Library/Keychains/${keychain}" \
+            "${HOME}/Library/Keychains/${keychain_file}" \
             "${HOME}/Library/Keychains/${keychain_db}" \
             || true
 
