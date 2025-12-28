@@ -74,11 +74,16 @@ fi
 
 # 4. 바이너리 서명
 SIGN_IDENTITY="${EXPANDED_CODE_SIGN_IDENTITY:-}"
-if [[ -n "${SIGN_IDENTITY}" ]]; then
+if [[ -n "${SIGN_IDENTITY}" && "${SIGN_IDENTITY}" != "-" ]]; then
   echo "[VoyagerHelper] 바이너리 서명 중 (identity: ${SIGN_IDENTITY})" >&2
   find "${BINARY_DST}" -type f -print0 | while IFS= read -r -d '' candidate; do
     if /usr/bin/file "${candidate}" | /usr/bin/grep -q "Mach-O"; then
-      /usr/bin/codesign --force --sign "${SIGN_IDENTITY}" "${candidate}"
+      /usr/bin/codesign \
+        --force \
+        --sign "${SIGN_IDENTITY}" \
+        --options runtime \
+        --timestamp \
+        "${candidate}"
     fi
   done
   echo "[VoyagerHelper] 바이너리 서명 완료" >&2
@@ -87,4 +92,3 @@ else
 fi
 
 echo "[VoyagerHelper] Build Backend Binary done" >&2
-

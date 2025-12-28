@@ -21,10 +21,10 @@ cat >"${EXPORT_OPTIONS_PLIST}" <<'EOF'
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
+  <key>destination</key>
+  <string>export</string>
   <key>method</key>
   <string>developer-id</string>
-  <key>signingStyle</key>
-  <string>automatic</string>
 </dict>
 </plist>
 EOF
@@ -42,4 +42,3 @@ if [[ ! -d "${EXPORT_DIR}/Voyager.app" ]]; then
 fi
 
 echo "Exported app: ${EXPORT_DIR}/Voyager.app"
-
