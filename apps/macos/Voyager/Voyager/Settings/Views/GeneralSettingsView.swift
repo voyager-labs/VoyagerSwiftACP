@@ -3,36 +3,36 @@ import ComposableArchitecture
 import SwiftUI
 
 struct GeneralSettingsView: View {
-    let store: StoreOf<SettingsFeature>
+    let store: StoreOf<GeneralSettingsFeature>
 
     var body: some View {
         Form {
             Section {
                 Toggle("Launch at Startup", isOn: Binding(
-                    get: { store.generalSettings.launchAtStartup },
-                    set: { store.send(.general(.toggleLaunchAtStartup($0))) },
+                    get: { store.launchAtStartup },
+                    set: { store.send(.toggleLaunchAtStartup($0)) },
                 ))
 
-                if let error = store.generalSettings.launchAtStartupError {
+                if let error = store.launchAtStartupError {
                     Text(error)
                         .font(.caption)
                         .foregroundColor(.red)
                 }
 
                 Toggle("Automatic Update", isOn: Binding(
-                    get: { store.generalSettings.automaticUpdate },
-                    set: { store.send(.general(.toggleAutomaticUpdate($0))) },
+                    get: { store.automaticUpdate },
+                    set: { store.send(.toggleAutomaticUpdate($0)) },
                 ))
 
-                if let error = store.generalSettings.automaticUpdateError {
+                if let error = store.automaticUpdateError {
                     Text(error)
                         .font(.caption)
                         .foregroundColor(.red)
                 }
 
                 Toggle("Alert Before App Quit", isOn: Binding(
-                    get: { store.generalSettings.alertBeforeQuit },
-                    set: { store.send(.general(.toggleAlertBeforeQuit($0))) },
+                    get: { store.alertBeforeQuit },
+                    set: { store.send(.toggleAlertBeforeQuit($0)) },
                 ))
             }
 
@@ -41,13 +41,13 @@ struct GeneralSettingsView: View {
                     Text("Starting Directory")
                     Spacer()
                     Menu {
-                        let selected = store.generalSettings.selectedDirectoryOption
+                        let selected = store.selectedDirectoryOption
                         let standardOptions = DirectoryOption.standardOptions
 
                         if standardOptions.contains(selected) {
                             Button(
                                 action: {
-                                    store.send(.general(.selectDirectoryOption(selected)))
+                                    store.send(.selectDirectoryOption(selected))
                                 },
                                 label: {
                                     HStack {
@@ -66,7 +66,7 @@ struct GeneralSettingsView: View {
                         {
                             Button(
                                 action: {
-                                    store.send(.general(.selectDirectoryOption(selected)))
+                                    store.send(.selectDirectoryOption(selected))
                                 },
                                 label: {
                                     HStack {
@@ -83,7 +83,7 @@ struct GeneralSettingsView: View {
                         ForEach(standardOptions.filter { $0 != selected }, id: \.id) { option in
                             Button(
                                 action: {
-                                    store.send(.general(.selectDirectoryOption(option)))
+                                    store.send(.selectDirectoryOption(option))
                                 },
                                 label: {
                                     HStack {
@@ -98,13 +98,13 @@ struct GeneralSettingsView: View {
                         Divider()
 
                         Button("Other…") {
-                            store.send(.general(.selectDirectoryOption(.other)))
+                            store.send(.selectDirectoryOption(.other))
                         }
                     } label: {
                         HStack(spacing: 4) {
-                            store.generalSettings.selectedDirectoryOption.icon
+                            store.selectedDirectoryOption.icon
                                 .frame(width: 14, height: 14)
-                            Text(store.generalSettings.selectedDirectoryOption.displayName)
+                            Text(store.selectedDirectoryOption.displayName)
                             Image(systemName: "chevron.up.chevron.down")
                                 .font(.caption2)
                                 .foregroundColor(.secondary)
@@ -112,10 +112,10 @@ struct GeneralSettingsView: View {
                     }
                     .buttonStyle(.plain)
                     .fixedSize(horizontal: true, vertical: false)
-                    .disabled(store.generalSettings.isSelectingDirectory)
+                    .disabled(store.isSelectingDirectory)
                 }
 
-                if let error = store.generalSettings.startingDirectoryError {
+                if let error = store.startingDirectoryError {
                     Text(error)
                         .font(.caption)
                         .foregroundColor(.red)

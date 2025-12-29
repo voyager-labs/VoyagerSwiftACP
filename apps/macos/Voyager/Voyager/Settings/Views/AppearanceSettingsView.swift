@@ -127,7 +127,7 @@ struct ThemePreviewCard: View {
 }
 
 struct AppearanceSettingsView: View {
-    let store: StoreOf<SettingsFeature>
+    let store: StoreOf<AppearanceSettingsFeature>
 
     var body: some View {
         Form {
@@ -142,23 +142,23 @@ struct AppearanceSettingsView: View {
                     HStack(spacing: 8) {
                         ThemePreviewCard(
                             theme: .system,
-                            isSelected: store.appearanceSettings.theme == .system,
+                            isSelected: store.theme == .system,
                         ) {
-                            store.send(.appearance(.setTheme(.system)))
+                            store.send(.setTheme(.system))
                         }
 
                         ThemePreviewCard(
                             theme: .light,
-                            isSelected: store.appearanceSettings.theme == .light,
+                            isSelected: store.theme == .light,
                         ) {
-                            store.send(.appearance(.setTheme(.light)))
+                            store.send(.setTheme(.light))
                         }
 
                         ThemePreviewCard(
                             theme: .dark,
-                            isSelected: store.appearanceSettings.theme == .dark,
+                            isSelected: store.theme == .dark,
                         ) {
-                            store.send(.appearance(.setTheme(.dark)))
+                            store.send(.setTheme(.dark))
                         }
                     }
                 }
@@ -178,16 +178,16 @@ struct AppearanceSettingsView: View {
                         HStack(spacing: 12) {
                             Slider(
                                 value: Binding(
-                                    get: { store.appearanceSettings.listIconSize },
-                                    set: { store.send(.appearance(.setListIconSize($0))) },
+                                    get: { store.listIconSize },
+                                    set: { store.send(.setListIconSize($0)) },
                                 ),
                                 in: 16 ... 32,
                                 step: 1,
                             )
                             .frame(width: 200)
 
-                            Text("\(Int(store.appearanceSettings.listIconSize))" +
-                                "x\(Int(store.appearanceSettings.listIconSize))")
+                            Text("\(Int(store.listIconSize))" +
+                                "x\(Int(store.listIconSize))")
                                 .foregroundColor(.secondary)
                                 .fixedSize(horizontal: true, vertical: false)
                                 .frame(minWidth: 70, alignment: .trailing)
@@ -205,16 +205,16 @@ struct AppearanceSettingsView: View {
                         HStack(spacing: 12) {
                             Slider(
                                 value: Binding(
-                                    get: { store.appearanceSettings.gridIconSize },
-                                    set: { store.send(.appearance(.setGridIconSize($0))) },
+                                    get: { store.gridIconSize },
+                                    set: { store.send(.setGridIconSize($0)) },
                                 ),
                                 in: 16 ... 512,
                                 step: 4,
                             )
                             .frame(width: 200)
 
-                            Text("\(Int(store.appearanceSettings.gridIconSize))" +
-                                "x\(Int(store.appearanceSettings.gridIconSize))")
+                            Text("\(Int(store.gridIconSize))" +
+                                "x\(Int(store.gridIconSize))")
                                 .foregroundColor(.secondary)
                                 .fixedSize(horizontal: true, vertical: false)
                                 .frame(minWidth: 70, alignment: .trailing)
@@ -237,15 +237,15 @@ struct AppearanceSettingsView: View {
                         HStack(spacing: 12) {
                             Slider(
                                 value: Binding(
-                                    get: { store.appearanceSettings.listTextSize },
-                                    set: { store.send(.appearance(.setListTextSize($0))) },
+                                    get: { store.listTextSize },
+                                    set: { store.send(.setListTextSize($0)) },
                                 ),
                                 in: 10 ... 16,
                                 step: 1,
                             )
                             .frame(width: 200)
 
-                            Text("\(Int(store.appearanceSettings.listTextSize)) pt")
+                            Text("\(Int(store.listTextSize)) pt")
                                 .foregroundColor(.secondary)
                                 .fixedSize(horizontal: true, vertical: false)
                                 .frame(minWidth: 70, alignment: .trailing)
@@ -263,15 +263,15 @@ struct AppearanceSettingsView: View {
                         HStack(spacing: 12) {
                             Slider(
                                 value: Binding(
-                                    get: { store.appearanceSettings.gridTextSize },
-                                    set: { store.send(.appearance(.setGridTextSize($0))) },
+                                    get: { store.gridTextSize },
+                                    set: { store.send(.setGridTextSize($0)) },
                                 ),
                                 in: 10 ... 16,
                                 step: 1,
                             )
                             .frame(width: 200)
 
-                            Text("\(Int(store.appearanceSettings.gridTextSize)) pt")
+                            Text("\(Int(store.gridTextSize)) pt")
                                 .foregroundColor(.secondary)
                                 .fixedSize(horizontal: true, vertical: false)
                                 .frame(minWidth: 70, alignment: .trailing)
