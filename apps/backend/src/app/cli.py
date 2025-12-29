@@ -6,7 +6,15 @@ import subprocess
 import sys
 from pathlib import Path
 
+from dotenv import find_dotenv, load_dotenv
+
 MAIN_FILE = Path(__file__).parent / "main.py"
+
+
+def _load_env(app_env: str) -> None:
+    """APP_ENV에 맞는 .env 파일 로드"""
+    env_file = find_dotenv(filename=f".env.{app_env}")
+    load_dotenv(dotenv_path=env_file, override=False)
 
 
 def _run_fastapi(*args: str, env: dict[str, str] | None = None) -> None:
@@ -28,6 +36,7 @@ def _run_fastapi(*args: str, env: dict[str, str] | None = None) -> None:
 
 
 def _with_env(default_env: str) -> dict[str, str]:
+    _load_env(default_env)
     merged = os.environ.copy()
     merged.setdefault("APP_ENV", default_env)
     return merged
