@@ -71,7 +71,7 @@ def index() -> None:
     args = parser.parse_args()
 
     # 동적 import (서버 실행 시 불필요한 import 방지)
-    from app.config import load_config
+    from app.config import get_db_config, load_config
     from app.file.file_services import convert_to_file_entry_schema
     from core.file_crawler.extractor import (
         convert_path_stat_osxmetadata,
@@ -82,7 +82,7 @@ def index() -> None:
 
     # 설정 로드 및 DB 초기화
     cfg = load_config()
-    engine_manager.initialize(cfg)
+    engine_manager.initialize(get_db_config(cfg))
     engine_manager.create_tables()
 
     # 경로 처리
