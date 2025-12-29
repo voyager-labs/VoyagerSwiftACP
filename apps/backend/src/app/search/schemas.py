@@ -1,7 +1,5 @@
 """Search API 스키마 정의"""
 
-from typing import Any
-
 from pydantic import BaseModel, Field
 
 
@@ -10,7 +8,9 @@ class SearchCondition(BaseModel):
 
     propertyKey: str = Field(..., description="속성 키 (예: size, extension)")
     operator: str = Field(..., description="연산자 (eq, gt, gte, lt, lte, between, contains, in)")
-    value: Any = Field(..., description="값 (단일값, 배열, [min, max])")
+    value: str | int | float | list[str] | list[int] | list[float] = Field(
+        ..., description="값 (단일값, 배열, [min, max])"
+    )
 
 
 class SearchFilters(BaseModel):
