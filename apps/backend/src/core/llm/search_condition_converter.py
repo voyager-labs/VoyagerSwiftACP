@@ -3,6 +3,7 @@
 LLM이 자연어 쿼리를 Search API conditions 배열로 변환합니다.
 """
 
+from pathlib import Path
 from typing import Any
 
 from pydantic import BaseModel, Field
@@ -38,6 +39,7 @@ class SearchConditionConverter:
 
     def __init__(self, llm_provider: LLMProvider):
         self.client = llm_provider
+        self.home_dir = str(Path.home())
         self.system_prompt = self._build_system_prompt()
 
     def _build_system_prompt(self) -> str:
@@ -77,10 +79,10 @@ class SearchConditionConverter:
 
 === 스코프(폴더) 추출 규칙 ===
 쿼리에서 폴더/경로를 언급하면 scopes에 절대 경로로 추출:
-- "다운로드 폴더" → ["/Users/사용자/Downloads"]
-- "데스크탑에서" → ["/Users/사용자/Desktop"]
-- "문서 폴더" → ["/Users/사용자/Documents"]
-- "홈 폴더" → ["/Users/사용자"]
+- "다운로드 폴더" → ["{self.home_dir}/Downloads"]
+- "데스크탑에서" → ["{self.home_dir}/Desktop"]
+- "문서 폴더" → ["{self.home_dir}/Documents"]
+- "홈 폴더" → ["{self.home_dir}"]
 - ⚠️ 폴더 언급이 없으면 scopes는 null (기존 스코프 유지)
 
 === 지원 속성 (propertyKey) ===
