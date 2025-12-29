@@ -261,7 +261,7 @@ struct GeneralSettingsFeature {
                 state.automaticUpdate = enabled
                 UserDefaults.standard.set(enabled, forKey: SettingsKeys.automaticUpdate)
                 state.automaticUpdateError = nil
-                // TODO: 추후 업데이트 기능 구현 시 여기서 업데이트 체크 로직 연동
+                AppDelegate.shared?.setAutomaticUpdate(enabled: enabled)
                 return .none
 
             case let .toggleAlertBeforeQuit(enabled):

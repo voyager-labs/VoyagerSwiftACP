@@ -1,6 +1,7 @@
 import AppKit
 import Combine
 import ComposableArchitecture
+import Sparkle
 import SwiftUI
 
 extension Notification.Name {
@@ -12,6 +13,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, ObservableObject {
     static var shared: AppDelegate?
 
     private let helperManager = HelperLifecycleManager()
+    private var updaterController: SPUStandardUpdaterController?
 
     @Published var hasSelectedItems: Bool = false
     @Published var hasClipboardItems: Bool = false
@@ -63,7 +65,31 @@ class AppDelegate: NSObject, NSApplicationDelegate, ObservableObject {
 
     func applicationDidFinishLaunching(_: Notification) {
         NSWindow.allowsAutomaticWindowTabbing = true
+        configureUpdater()
         createNewWindow()
+    }
+
+    func checkForUpdates() {
+        DispatchQueue.main.async { [weak self] in
+            self?.updaterController?.checkForUpdates(nil)
+        }
+    }
+
+    func setAutomaticUpdate(enabled: Bool) {
+        DispatchQueue.main.async { [weak self] in
+            self?.updaterController?.updater.automaticallyChecksForUpdates = enabled
+        }
+    }
+
+    private func configureUpdater() {
+        updaterController = SPUStandardUpdaterController(
+            startingUpdater: true,
+            updaterDelegate: nil,
+            userDriverDelegate: nil,
+        )
+
+        let autoCheck = UserDefaults.standard.object(forKey: SettingsKeys.automaticUpdate) as? Bool ?? true
+        updaterController?.updater.automaticallyChecksForUpdates = autoCheck
     }
 
     func applicationSupportsSecureRestorableState(_: NSApplication) -> Bool {
