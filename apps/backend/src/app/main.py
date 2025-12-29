@@ -7,6 +7,7 @@ from fastapi import FastAPI
 
 from app.config import get_db_config, load_config
 from app.file.routes import router as files_router
+from app.search.routes import router as search_router
 from infra.db.bootstrap import initialize_sqlite_db
 from infra.db.engine import engine_manager
 
@@ -49,6 +50,7 @@ app = FastAPI(
 
 # 라우터 등록
 app.include_router(files_router, prefix="/api")
+app.include_router(search_router, prefix="/api")
 
 
 @app.get("/")
