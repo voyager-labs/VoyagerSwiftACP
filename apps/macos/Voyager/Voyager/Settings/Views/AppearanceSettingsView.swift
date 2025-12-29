@@ -165,10 +165,10 @@ struct AppearanceSettingsView: View {
                 .padding(.vertical, 4)
             }
 
-            Section("Icon Size") {
+            Section("Icon size") {
                 VStack(alignment: .leading, spacing: 10) {
                     HStack(alignment: .top, spacing: 20) {
-                        Text("List View")
+                        Text("List view")
                             .foregroundColor(.primary)
                             .fixedSize(horizontal: true, vertical: false)
                             .frame(width: 140, alignment: .leading)
@@ -195,7 +195,7 @@ struct AppearanceSettingsView: View {
                     }
 
                     HStack(alignment: .top, spacing: 20) {
-                        Text("Grid View")
+                        Text("Grid view")
                             .foregroundColor(.primary)
                             .fixedSize(horizontal: true, vertical: false)
                             .frame(width: 140, alignment: .leading)
@@ -224,10 +224,10 @@ struct AppearanceSettingsView: View {
                 .padding(.vertical, 4)
             }
 
-            Section("Text Size") {
+            Section("Text size") {
                 VStack(alignment: .leading, spacing: 10) {
                     HStack(alignment: .top, spacing: 20) {
-                        Text("List View")
+                        Text("List view")
                             .foregroundColor(.primary)
                             .fixedSize(horizontal: true, vertical: false)
                             .frame(width: 140, alignment: .leading)
@@ -253,7 +253,7 @@ struct AppearanceSettingsView: View {
                     }
 
                     HStack(alignment: .top, spacing: 20) {
-                        Text("Grid View")
+                        Text("Grid view")
                             .foregroundColor(.primary)
                             .fixedSize(horizontal: true, vertical: false)
                             .frame(width: 140, alignment: .leading)

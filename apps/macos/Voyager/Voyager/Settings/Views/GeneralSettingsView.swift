@@ -1,4 +1,3 @@
-import AppKit
 import ComposableArchitecture
 import SwiftUI
 
@@ -8,7 +7,7 @@ struct GeneralSettingsView: View {
     var body: some View {
         Form {
             Section {
-                Toggle("Launch at Startup", isOn: Binding(
+                Toggle("Launch at startup", isOn: Binding(
                     get: { store.launchAtStartup },
                     set: { store.send(.toggleLaunchAtStartup($0)) },
                 ))
@@ -19,26 +18,43 @@ struct GeneralSettingsView: View {
                         .foregroundColor(.red)
                 }
 
-                Toggle("Automatic Update", isOn: Binding(
-                    get: { store.automaticUpdate },
-                    set: { store.send(.toggleAutomaticUpdate($0)) },
-                ))
-
-                if let error = store.automaticUpdateError {
-                    Text(error)
-                        .font(.caption)
-                        .foregroundColor(.red)
-                }
-
-                Toggle("Alert Before App Quit", isOn: Binding(
+                Toggle("Alert before app quit", isOn: Binding(
                     get: { store.alertBeforeQuit },
                     set: { store.send(.toggleAlertBeforeQuit($0)) },
                 ))
             }
 
             Section {
+                VStack(alignment: .leading, spacing: 12) {
+                    Toggle("Automatically check for updates", isOn: Binding(
+                        get: { store.automaticUpdate },
+                        set: { store.send(.toggleAutomaticUpdate($0)) },
+                    ))
+
+                    Divider()
+
+                    HStack {
+                        Text("Version: \(AppVersionInfo.displayText)")
+                            .font(.body)
+
+                        Spacer()
+
+                        Button("Check for updates...") {
+                            AppDelegate.shared?.checkForUpdates()
+                        }
+                    }
+                }
+
+                if let error = store.automaticUpdateError {
+                    Text(error)
+                        .font(.caption)
+                        .foregroundColor(.red)
+                }
+            }
+
+            Section {
                 HStack {
-                    Text("Starting Directory")
+                    Text("Starting directory")
                     Spacer()
                     Menu {
                         let selected = store.selectedDirectoryOption
