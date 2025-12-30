@@ -1,3 +1,4 @@
+import AppKit
 import ComposableArchitecture
 import Foundation
 
@@ -17,6 +18,7 @@ struct SettingsFeature {
     enum Action: Sendable {
         case onAppear
         case selectSection(SettingsSection)
+        case closeWindow
         case general(GeneralSettingsFeature.Action)
         case appearance(AppearanceSettingsFeature.Action)
     }
@@ -41,6 +43,14 @@ struct SettingsFeature {
             if case let .selectSection(section) = action {
                 state.selectedSection = section
                 return .none
+            }
+
+            if case .closeWindow = action {
+                return .run { _ in
+                    await MainActor.run {
+                        NSApp.keyWindow?.close()
+                    }
+                }
             }
 
             return .none

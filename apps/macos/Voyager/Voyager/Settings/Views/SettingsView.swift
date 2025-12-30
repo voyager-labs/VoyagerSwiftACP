@@ -33,5 +33,12 @@ struct SettingsView: View {
         .onAppear {
             store.send(.onAppear)
         }
+        .background(
+            Button("") {
+                store.send(.closeWindow)
+            }
+            .keyboardShortcut("w", modifiers: .command)
+            .hidden(),
+        )
     }
 }
