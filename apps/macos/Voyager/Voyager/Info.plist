@@ -4,6 +4,10 @@
 <dict>
 	<key>APP_ENV</key>
 	<string>$(APP_ENV)</string>
+	<key>CFBundleShortVersionString</key>
+	<string>$(MARKETING_VERSION)</string>
+	<key>CFBundleVersion</key>
+	<string>$(CURRENT_PROJECT_VERSION)</string>
 	<key>SUPublicEDKey</key>
 	<string>NomZB47jirICFt7N3J9K+ONptIwZig9UdpEnAiC1JJI=</string>
 	<key>SUFeedURL</key>

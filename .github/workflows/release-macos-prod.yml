@@ -9,8 +9,74 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+  fetch-sparkle-baseline:
+    name: Fetch Sparkle baseline (prod)
+    runs-on: ubuntu-latest
+    environment: production
+    outputs:
+      has_baseline: ${{ steps.baseline-meta.outputs.has_baseline }}
+
+    env:
+      R2_BUCKET: ${{ vars.R2_DOWNLOADS_BUCKET }}
+      SPARKLE_APPCAST_KEY: releases/appcast.xml
+      BUILD_DIR: ${{ github.workspace }}/build/ci
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Prepare Sparkle baseline directory
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p "${BUILD_DIR}"
+
+      - name: Fetch Sparkle appcast from R2
+        uses: cloudflare/wrangler-action@v3
+        continue-on-error: true
+        with:
+          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          command: |
+            r2 object get ${{ env.R2_BUCKET }}/${{ env.SPARKLE_APPCAST_KEY }} --file ${{ env.BUILD_DIR }}/appcast.xml
+
+      - name: Resolve Sparkle baseline metadata
+        id: baseline-meta
+        shell: bash
+        run: |
+          set -euo pipefail
+          ./scripts/ci/resolve-sparkle-baseline.sh "${BUILD_DIR}/appcast.xml"
+
+      - name: Prepare baseline zip directory
+        if: ${{ steps.baseline-meta.outputs.prev_key != '' && steps.baseline-meta.outputs.prev_name != '' }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p "${BUILD_DIR}/baseline"
+
+      - name: Fetch previous Sparkle update from R2
+        if: ${{ steps.baseline-meta.outputs.prev_key != '' && steps.baseline-meta.outputs.prev_name != '' }}
+        uses: cloudflare/wrangler-action@v3
+        continue-on-error: true
+        with:
+          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          command: |
+            r2 object get ${{ env.R2_BUCKET }}/${{ steps.baseline-meta.outputs.prev_key }} --file ${{ env.BUILD_DIR }}/baseline/${{ steps.baseline-meta.outputs.prev_name }}
+
+      - name: Upload Sparkle baseline artifacts
+        if: ${{ steps.baseline-meta.outputs.has_baseline == 'true' }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: sparkle-baseline
+          if-no-files-found: warn
+          path: |
+            build/ci/appcast.xml
+            build/ci/baseline/*.zip
+
   build-notarize:
     name: Build, notarize (prod)
+    needs: fetch-sparkle-baseline
     runs-on: ${{ fromJSON(vars.RELEASE_MACOS_RUNS_ON || '["self-hosted","macOS","ARM64"]') }}
     environment: production
     outputs:
@@ -21,10 +87,13 @@ jobs:
       SCHEME: Voyager-Prod
       CONFIGURATION: Release
       BUILD_DIR: ${{ github.workspace }}/build/ci
+      CURRENT_PROJECT_VERSION_OVERRIDE: ${{ github.run_number }}
       SIGNING_KEYCHAIN: signing_temp_${{ github.run_id }}_${{ github.run_attempt }}
 
       RELEASES_PREFIX: releases
       VERSION_PREFIX: releases/versions
+      SPARKLE_APPCAST_KEY: releases/appcast.xml
+      DOWNLOADS_BASE_URL: ${{ vars.DOWNLOADS_BASE_URL }}
 
     steps:
       - name: Checkout
@@ -82,16 +151,26 @@ jobs:
           set -euo pipefail
           ./scripts/ci/notarize-and-staple-dmg.sh "${BUILD_DIR}/Voyager.dmg"
 
-      - name: Generate latest.json
+      - name: Download Sparkle baseline artifacts
+        if: ${{ needs.fetch-sparkle-baseline.outputs.has_baseline == 'true' }}
+        uses: actions/download-artifact@v4
+        with:
+          name: sparkle-baseline
+          path: .
+
+      - name: Create Sparkle update zip
         shell: bash
         run: |
           set -euo pipefail
-          ./scripts/ci/generate-latest-json.sh \
-            "${BUILD_DIR}/Voyager.dmg" \
-            "${VERSION}" \
-            "${VERSION_PREFIX}/${VERSION}/Voyager.dmg" \
-            "${RELEASES_PREFIX}/Voyager.dmg" \
-            "${BUILD_DIR}/latest.json"
+          ./scripts/ci/create-sparkle-zip.sh
+
+      - name: Generate Sparkle appcast
+        shell: bash
+        env:
+          SPARKLE_PRIVATE_KEY: ${{ secrets.SPARKLE_PRIVATE_KEY }}
+        run: |
+          set -euo pipefail
+          ./scripts/ci/generate-sparkle-appcast.sh
 
       - name: Upload artifacts
         uses: actions/upload-artifact@v4
@@ -99,8 +178,9 @@ jobs:
           name: prod-release
           if-no-files-found: error
           path: |
-            build/ci/Voyager.dmg
-            build/ci/latest.json
+            ${{ env.BUILD_DIR }}/Voyager.dmg
+            ${{ env.BUILD_DIR }}/Voyager-${{ steps.version.outputs.version }}.zip
+            ${{ env.BUILD_DIR }}/appcast.xml
 
       - name: Cleanup temp signing keychain
         if: always()
@@ -127,8 +207,8 @@ jobs:
             "${HOME}/Library/Keychains/${keychain_db}" \
             || true
 
-  upload-prune:
-    name: Upload (prod)
+  upload-release:
+    name: Upload release artifacts (prod)
     needs: build-notarize
     runs-on: ubuntu-latest
     environment: production
@@ -137,6 +217,7 @@ jobs:
       R2_BUCKET: ${{ vars.R2_DOWNLOADS_BUCKET }}
       RELEASES_PREFIX: releases
       VERSION_PREFIX: releases/versions
+      SPARKLE_APPCAST_KEY: releases/appcast.xml
       VERSION: ${{ needs.build-notarize.outputs.version }}
       BUILD_DIR: ${{ github.workspace }}/build/ci
 
@@ -148,7 +229,18 @@ jobs:
         uses: actions/download-artifact@v4
         with:
           name: prod-release
-          path: build/ci
+          path: .
+
+      - name: Generate latest.json
+        shell: bash
+        run: |
+          set -euo pipefail
+          ./scripts/ci/generate-latest-json.sh \
+            "${BUILD_DIR}/Voyager.dmg" \
+            "${VERSION}" \
+            "${VERSION_PREFIX}/${VERSION}/Voyager.dmg" \
+            "${RELEASES_PREFIX}/Voyager.dmg" \
+            "${BUILD_DIR}/latest.json"
 
       - name: Upload to R2 (version + latest)
         uses: cloudflare/wrangler-action@v3
@@ -159,3 +251,5 @@ jobs:
             r2 object put ${{ env.R2_BUCKET }}/${{ env.VERSION_PREFIX }}/${{ env.VERSION }}/Voyager.dmg --file ${{ env.BUILD_DIR }}/Voyager.dmg
             r2 object put ${{ env.R2_BUCKET }}/${{ env.RELEASES_PREFIX }}/Voyager.dmg --file ${{ env.BUILD_DIR }}/Voyager.dmg
             r2 object put ${{ env.R2_BUCKET }}/${{ env.RELEASES_PREFIX }}/latest.json --file ${{ env.BUILD_DIR }}/latest.json
+            r2 object put ${{ env.R2_BUCKET }}/${{ env.VERSION_PREFIX }}/${{ env.VERSION }}/Voyager-${{ env.VERSION }}.zip --file ${{ env.BUILD_DIR }}/Voyager-${{ env.VERSION }}.zip
+            r2 object put ${{ env.R2_BUCKET }}/${{ env.SPARKLE_APPCAST_KEY }} --file ${{ env.BUILD_DIR }}/appcast.xml
