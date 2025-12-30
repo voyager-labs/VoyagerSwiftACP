@@ -22,7 +22,7 @@ voyager-app/
 │   └── build/
 │       ├── build-backend-binary.sh    # Backend Nuitka 바이너리 빌드 오케스트레이터
 │       ├── compile-nuitka-binary.sh   # Nuitka 컴파일 실행
-│       ├── handle-backend-mode.sh     # BACKEND_MODE 읽기/주입
+│       ├── handle-backend-mode.sh     # backend mode 읽기/주입
 │       └── prepare-helper-runtime.sh  # venv 준비 및 휠 설치
 └── docs/                        # PRD, architecture
 ```
@@ -34,7 +34,9 @@ voyager-app/
   - `AppDelegate.swift`, `FileManagerWindowController.swift`: 라이프사이클/윈도우 관리
   - `Features/FileManager/*`: 파일 관리자 UI용 View/State/Reducer(TCA)
   - `KeyCommandView.swift`: 키다운 처리(NSViewRepresentable) — Dock 트리거 후보
-  - `VoyagerHelper/BackendManager*.swift`: `uv` 통해 백엔드 프로세스 실행, `.env` 로드
+  - `VoyagerHelper/VoyagerHelperApp.swift`: 백엔드 런너 프로세스(Helper) 엔트리
+  - `VoyagerHelper/Infrastructure/Environment.swift`: `.env.{dev|prod}` 로드 + 실행 모드 감지
+  - `VoyagerHelper/Infrastructure/ProcessRunner.swift`: `uv run ...` 또는 `server.bin` 실행
 - Backend
   - `app/main.py`: lifespan에서 설정/DB 초기화 및 Alembic 리비전 로그 출력
   - `infra/db/engine.py`, `infra/db/bootstrap/*`: DB 엔진/마이그레이션 부트스트랩
@@ -52,4 +54,4 @@ voyager-app/
   - macOS: `apps/macos/Voyager`의 Xcode project/workspace
 - 특이사항:
   - `apps/backend`에 로컬 SQLite DB 아티팩트(예: `voyager.dev.db`) 존재
-  - macOS의 백엔드 매니저가 3종(`BackendManager*`)으로 중복된 책임 소지가 있음
+  - 백엔드 실행 책임은 `VoyagerHelper`(별도 앱 타겟)에 집중됨

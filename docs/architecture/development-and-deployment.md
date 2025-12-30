@@ -4,7 +4,7 @@
 
 - Backend 설치: `cd apps/backend && uv sync && uv run pre-commit install`
 - Backend 개발 서버: `uv run dev`
-- Backend 프로덕션 모드 테스트: `uv run serve`
+- Backend 프로덕션 모드 테스트: `uv run prod`
 - macOS 앱:
   - GUI: `apps/macos/Voyager/Voyager.xcodeproj` 열기
   - CLI 빌드: `xcodebuild -project apps/macos/Voyager/Voyager.xcodeproj -scheme Voyager-Dev -configuration Debug`
@@ -20,6 +20,22 @@
 |------|-----------|---------|--------------|------------------|
 | `Voyager-Dev` | Debug | `dev` (자동) | `source` (자동) | 로컬 `uv` (`uv run dev`) |
 | `Voyager-Prod` | Release | `prod` (자동) | `bundled` (자동) | 번들 바이너리 (`server/server.bin`) |
+
+### 스킴 × 빌드 설정 매트릭스
+
+공유 스킴 기본값은 아래 2개 조합입니다:
+
+- `Voyager-Dev` + Debug
+- `Voyager-Prod` + Release
+
+하지만 스킴(backend mode)과 빌드 설정(APP_ENV)은 독립 축이라, 아래 4가지 조합으로도 설명할 수 있습니다.
+
+| 스킴 | 빌드 설정 | APP_ENV | BACKEND_MODE | 백엔드 실행 |
+|------|-----------|---------|---------------------|-------------|
+| Dev  | Debug     | dev     | source              | `uv run dev` |
+| Dev  | Release   | prod    | source              | `uv run prod` |
+| Prod | Debug     | dev     | bundled             | `server/server.bin` |
+| Prod | Release   | prod    | bundled             | `server/server.bin` |
 
 ### 환경 자동 감지
 
@@ -52,11 +68,8 @@
 
 ### 예시 환경변수 (로컬 `.env.dev`)
 
-- `VOYAGER_HOST=127.0.0.1`
-- `VOYAGER_PORT=8000`
-- `BACKEND_URL=http://127.0.0.1:8000`
-- `VOYAGER_PATH=/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/sbin`
-- `VOYAGER_LOG_FILE=apps/macos/logs/voyager.log`
+- `PUBLIC_BACKEND_HOST=127.0.0.1`
+- `PUBLIC_BACKEND_PORT=0` (0이면 동적 할당)
 - `OPENAI_API_KEY=...` (로컬 개발용)
 
 ## Local Run Guide (End-to-End)
@@ -75,7 +88,7 @@
 3) 연동 확인
 
 - 앱에서 Dock 호출 → 간단한 질의 입력 → 백엔드 로그에서 `/search` 요청/응답 확인
-- 실패 시: `BackendManager*.swift` 로그 확인
+- 실패 시: VoyagerHelper(stderr) 로그 및 `ProcessRunner` 실행 로그 확인
 
 1) 기본 트러블슈팅
 
@@ -97,7 +110,7 @@
 3. **BACKEND_MODE**: `source` (스킴에서 자동 주입)
 4. **백엔드 venv 준비**: 스킵 (로컬 `uv` 사용)
 5. **백엔드 바이너리 빌드**: 스킵
-6. **환경 파일**: `.env.dev` 로드 (프로젝트 루트 또는 번들 리소스)
+6. **환경 파일**: `.env.dev` 로드 (프로젝트 루트)
 7. **백엔드 실행**: `apps/backend`에서 `uv run dev` 실행
 
 #### Release 빌드 (Prod 스킴)
@@ -160,9 +173,10 @@ Release 빌드 및 DMG 패키징은 GitHub Actions에서 자동화되어 있습�
 2. `build-backend-binary.sh`로 백엔드 Nuitka 바이너리 빌드
    - `prepare-helper-runtime.sh`: 백엔드 venv 준비 (의존성 설치)
    - `compile-nuitka-binary.sh`: Nuitka로 arm64 바이너리 컴파일
-3. `.env.prod` 생성 및 GitHub Secrets 주입
-   - 기본 설정 (APP_ENV, BACKEND_DIR, etc.) 포함
-   - GitHub Secrets (`OPENAI_API_KEY`, `OPENAI_ORG_ID`, `OPENAI_PROJECT`)를 `.env.prod`에 추가
+3. `.env.prod` 복사 (secrets 없음)
+   - Git에 추적된 `.env.prod` 파일을 빌드 디렉토리로 복사
+   - Secrets는 파일에 포함하지 않음 (앱 번들에 노출 방지)
+   - Secrets는 환경 변수나 다른 보안 메커니즘으로 전달 필요
 4. Apple 인증서 설치 (임시 키체인)
 5. `xcodebuild`로 Release 빌드
 6. DMG 생성 및 서명

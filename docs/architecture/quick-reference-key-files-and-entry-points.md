@@ -5,7 +5,7 @@
 - macOS Window Controller: `apps/macos/Voyager/Voyager/App/FileManagerWindowController.swift`
 - macOS Feature (File Manager): `apps/macos/Voyager/Voyager/Features/FileManager/*`
 - Key Commands Hook: `apps/macos/Voyager/Voyager/Features/FileManager/KeyCommandView.swift`
-- Backend Process Management: `apps/macos/Voyager/VoyagerHelper/BackendManager*.swift`
+- Backend Process Management: `apps/macos/Voyager/VoyagerHelper/{VoyagerHelperApp.swift,Infrastructure/Environment.swift,Infrastructure/ProcessRunner.swift}`
 - Backend Binary Build: `scripts/build/build-backend-binary.sh` (Release 빌드용 Nuitka 바이너리 빌드)
 - Backend Server Entry: `apps/backend/src/app/server.py` (Nuitka 빌드용 엔트리포인트)
 - Backend Main (FastAPI): `apps/backend/src/app/main.py`
