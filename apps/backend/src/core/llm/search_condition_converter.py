@@ -83,6 +83,7 @@ class SearchConditionConverter:
 - "데스크탑에서" → ["{self.home_dir}/Desktop"]
 - "문서 폴더" → ["{self.home_dir}/Documents"]
 - "홈 폴더" → ["{self.home_dir}"]
+- ⚠️ 복수의 폴더가 언급되면 배열에 모두 포함
 - ⚠️ 폴더 언급이 없으면 scopes는 null (기존 스코프 유지)
 
 === 지원 속성 (propertyKey) ===
