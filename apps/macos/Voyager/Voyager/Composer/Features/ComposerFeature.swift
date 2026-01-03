@@ -1,8 +1,7 @@
 @preconcurrency import ComposableArchitecture
 import Foundation
 
-// swiftlint:disable type_body_length
-
+// swiftlint:disable file_length type_body_length
 struct Condition: Equatable, Identifiable, Hashable {
     var id: String { propertyKey }
     var propertyKey: String
@@ -19,7 +18,6 @@ struct FilterSnapshot: Equatable {
     let scopes: [String]
     let conditions: [Condition]
 }
-
 @Reducer
 struct ComposerFeature {
     @Dependency(\.searchClient)
@@ -239,19 +237,29 @@ struct ComposerFeature {
                 return .none
 
             case .undo:
+                let before = buildFilters(from: state)
                 guard let previous = state.history.popLast() else { return .none }
                 let current = FilterSnapshot(scopes: state.scopes, conditions: state.conditions)
                 state.redoHistory.append(current)
                 state.scopes = previous.scopes
                 state.conditions = previous.conditions
+                let after = buildFilters(from: state)
+                if before != after {
+                    return applyFiltersIfNeeded(state: &state, searchClient: searchClient)
+                }
                 return .none
 
             case .redo:
+                let before = buildFilters(from: state)
                 guard let next = state.redoHistory.popLast() else { return .none }
                 let current = FilterSnapshot(scopes: state.scopes, conditions: state.conditions)
                 state.history.append(current)
                 state.scopes = next.scopes
                 state.conditions = next.conditions
+                let after = buildFilters(from: state)
+                if before != after {
+                    return applyFiltersIfNeeded(state: &state, searchClient: searchClient)
+                }
                 return .none
 
             case let .propertyPicker(.propertyTapped(property)):
