@@ -30,6 +30,16 @@ enum ConditionOperatorMapping {
     private static let propertyKeyToType: [String: PropertyType] = [
         // 숫자
         "size": .number,
+        "pixelHeight": .number,
+        "pixelWidth": .number,
+        "duration": .number,
+        "videoBitRate": .number,
+        "audioBitRate": .number,
+        "audioSampleRate": .number,
+        "audioChannelCount": .number,
+        "numberOfPages": .number,
+        "latitude": .number,
+        "longitude": .number,
 
         // 날짜/시간
         "createdAt": .datetime,
@@ -41,60 +51,90 @@ enum ConditionOperatorMapping {
 
         // 불린
         "isInvisible": .boolean,
+        "hasAlphaChannel": .boolean,
 
-        // 문자열 기본
+        // 문자열
         "name": .string,
         "extension": .string,
-        "fileKind": .string,
+        "kind": .string,
         "contentType": .string,
-        "contentTypeTree": .string,
-        "parentDirName": .string,
-        "relativePathFromHome": .string,
+        "colorSpace": .string,
+        "title": .string,
+        "creator": .string,
     ]
 
-    /// 타입별 허용 오퍼레이터 세트
+    private static let propertyKeyToSupported: [String: [String]] = [
+        "size": ["eq", "gt", "gte", "lt", "lte", "between"],
+        "contentType": ["eq", "contains", "in"],
+        "kind": ["eq", "contains"],
+        "name": ["eq", "contains"],
+        "extension": ["eq", "in"],
+        "isInvisible": ["eq"],
+        "createdAt": ["eq", "gt", "gte", "lt", "lte", "between"],
+        "modifiedAt": ["eq", "gt", "gte", "lt", "lte", "between"],
+        "addedAt": ["eq", "gt", "gte", "lt", "lte", "between"],
+        "lastUsedAt": ["eq", "gt", "gte", "lt", "lte", "between"],
+        "contentCreatedAt": ["eq", "gt", "gte", "lt", "lte", "between"],
+        "contentModifiedAt": ["eq", "gt", "gte", "lt", "lte", "between"],
+        "pixelHeight": ["eq", "gt", "gte", "lt", "lte", "between"],
+        "pixelWidth": ["eq", "gt", "gte", "lt", "lte", "between"],
+        "colorSpace": ["eq", "in"],
+        "hasAlphaChannel": ["eq"],
+        "duration": ["eq", "gt", "gte", "lt", "lte", "between"],
+        "videoBitRate": ["eq", "gt", "gte", "lt", "lte"],
+        "audioBitRate": ["eq", "gt", "gte", "lt", "lte"],
+        "audioSampleRate": ["eq", "gt", "gte", "lt", "lte"],
+        "audioChannelCount": ["eq", "in"],
+        "title": ["eq", "contains"],
+        "numberOfPages": ["eq", "gt", "gte", "lt", "lte", "between"],
+        "creator": ["eq", "contains"],
+        "latitude": ["eq", "gt", "gte", "lt", "lte", "between"],
+        "longitude": ["eq", "gt", "gte", "lt", "lte", "between"],
+    ]
+
+    /// 타입별 오퍼레이터 템플릿
     private static func operators(for type: PropertyType) -> [OperatorUIOption] {
         switch type {
         case .string:
             [
                 .init(code: "eq", label: "Is", valueUI: .singleText),
-                .init(code: "neq", label: "Is not", valueUI: .singleText),
+                .init(code: "neq", label: "Is Not", valueUI: .singleText),
                 .init(code: "contains", label: "Contains", valueUI: .singleText),
-                .init(code: "in", label: "In list", valueUI: .listText),
-                .init(code: "empty", label: "Is empty", valueUI: .none),
-                .init(code: "not_empty", label: "Is not empty", valueUI: .none),
+                .init(code: "in", label: "In List", valueUI: .listText),
+                .init(code: "empty", label: "Is Empty", valueUI: .none),
+                .init(code: "not_empty", label: "Is Not Empty", valueUI: .none),
             ]
         case .number:
             [
                 .init(code: "eq", label: "Is", valueUI: .singleNumber),
-                .init(code: "neq", label: "Is not", valueUI: .singleNumber),
-                .init(code: "gt", label: "Greater than", valueUI: .singleNumber),
-                .init(code: "gte", label: "Greater or equal", valueUI: .singleNumber),
-                .init(code: "lt", label: "Less than", valueUI: .singleNumber),
-                .init(code: "lte", label: "Less or equal", valueUI: .singleNumber),
-                .init(code: "between", label: "Is between", valueUI: .rangeNumber),
+                .init(code: "neq", label: "Is Not", valueUI: .singleNumber),
+                .init(code: "gt", label: "Is Greater Than", valueUI: .singleNumber),
+                .init(code: "gte", label: "Is Greater Or Equal", valueUI: .singleNumber),
+                .init(code: "lt", label: "Is Less Than", valueUI: .singleNumber),
+                .init(code: "lte", label: "Is Less Or Equal", valueUI: .singleNumber),
+                .init(code: "between", label: "Is Between", valueUI: .rangeNumber),
             ]
         case .datetime:
             [
                 .init(code: "eq", label: "Is", valueUI: .singleDate),
-                .init(code: "neq", label: "Is not", valueUI: .singleDate),
-                .init(code: "gt", label: "After", valueUI: .singleDate),
-                .init(code: "gte", label: "On or after", valueUI: .singleDate),
-                .init(code: "lt", label: "Before", valueUI: .singleDate),
-                .init(code: "lte", label: "On or before", valueUI: .singleDate),
-                .init(code: "between", label: "Is between", valueUI: .rangeDate),
+                .init(code: "neq", label: "Is Not", valueUI: .singleDate),
+                .init(code: "gt", label: "Is After", valueUI: .singleDate),
+                .init(code: "gte", label: "Is On Or After", valueUI: .singleDate),
+                .init(code: "lt", label: "Is Before", valueUI: .singleDate),
+                .init(code: "lte", label: "Is On Or Before", valueUI: .singleDate),
+                .init(code: "between", label: "Is Between", valueUI: .rangeDate),
             ]
         case .boolean:
             [
                 .init(code: "eq", label: "Is", valueUI: .toggle),
-                .init(code: "neq", label: "Is not", valueUI: .toggle),
+                .init(code: "neq", label: "Is Not", valueUI: .toggle),
             ]
         case .array:
             [
                 .init(code: "contains", label: "Contains", valueUI: .listText),
-                .init(code: "in", label: "In list", valueUI: .listText),
-                .init(code: "empty", label: "Is empty", valueUI: .none),
-                .init(code: "not_empty", label: "Is not empty", valueUI: .none),
+                .init(code: "in", label: "In List", valueUI: .listText),
+                .init(code: "empty", label: "Is Empty", valueUI: .none),
+                .init(code: "not_empty", label: "Is Not Empty", valueUI: .none),
             ]
         }
     }
@@ -102,7 +142,12 @@ enum ConditionOperatorMapping {
     /// propertyKey로 타입을 찾고 허용 오퍼레이터 목록을 반환
     static func operatorOptions(for propertyKey: String) -> [OperatorUIOption] {
         let type = propertyKeyToType[propertyKey] ?? .string
-        return operators(for: type)
+        let supported = propertyKeyToSupported[propertyKey]
+        let options = operators(for: type)
+        if let supported {
+            return options.filter { supported.contains($0.code) }
+        }
+        return options
     }
 
     /// propertyKey에 대응하는 타입을 노출 (외부에서 모델 생성 시 사용).

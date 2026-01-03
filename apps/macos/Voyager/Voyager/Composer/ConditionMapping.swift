@@ -4,12 +4,14 @@ import Foundation
 /// 프론트에서 선택한 라벨을 그대로 넘기지 말고 이 매핑을 통해 정규화해 사용한다.
 enum ConditionMapping {
     enum Category: String {
-        case fileInfo = "Custom Metadata" // 파일 이름/타입/크기 등 사용자 친화 메타
-        case system = "System Metadata" // 시스템 속성/숨김 여부
+        case system = "System Metadata"
+        case content = "Content"
+        case image = "Image"
         case video = "Video"
         case audio = "Audio"
-        case dateTime = "Date/Time"
-        case other = "Other"
+        case document = "Document"
+        case download = "Download"
+        case location = "Location"
     }
 
     struct PropertyInfo {
@@ -20,61 +22,86 @@ enum ConditionMapping {
 
     /// 프로퍼티 라벨 -> propertyKey (search_api_spec + file_entries 컬럼 기반)
     private static let propertyLabelToKey: [String: String] = [
-        // 기본/파일
-        "File Name": "name",
-        "File Type": "extension",
+        // System Metadata (filesystem)
         "File Size": "size",
-        "File Kind": "fileKind",
-        "Content Type": "contentType",
-        "Content Type Tree": "contentTypeTree",
-        "Parent Folder": "parentDirName",
-        "Relative Path": "relativePathFromHome",
-
-        // 날짜
+        "File Type": "contentType",
+        "File Kind": "kind",
+        "File Name": "name",
+        "Extension": "extension",
+        "Invisible": "isInvisible",
         "Date Created": "createdAt",
         "Date Modified": "modifiedAt",
         "Date Added": "addedAt",
         "Last Used": "lastUsedAt",
+
+        // Content
         "Content Created": "contentCreatedAt",
         "Content Modified": "contentModifiedAt",
 
-        // 시스템
-        "Invisible": "isInvisible",
+        // Image
+        "Pixel Height": "pixelHeight",
+        "Pixel Width": "pixelWidth",
+        "Color Space": "colorSpace",
+        "Has Alpha Channel": "hasAlphaChannel",
+
+        // Video/Audio
+        "Duration (Sec)": "duration",
+        "Video Bitrate": "videoBitRate",
+        "Audio Bitrate": "audioBitRate",
+        "Audio Sample Rate": "audioSampleRate",
+        "Audio Channels": "audioChannelCount",
+
+        // Document
+        "Title": "title",
+        "Page Count": "numberOfPages",
+        "Creator": "creator",
+
+        // Location
+        "Latitude": "latitude",
+        "Longitude": "longitude",
     ]
 
     /// propertyKey -> 카테고리
     private static let propertyKeyToCategory: [String: Category] = [
-        // Custom Metadata (파일 기본/사용자 친화)
-        "name": .fileInfo,
-        "extension": .fileInfo,
-        "size": .fileInfo,
-        "fileKind": .fileInfo,
-        "contentType": .fileInfo,
-        "contentTypeTree": .fileInfo,
-        "parentDirName": .fileInfo,
-        "relativePathFromHome": .fileInfo,
-
         // System Metadata
+        "size": .system,
+        "contentType": .system,
+        "kind": .system,
+        "name": .system,
+        "extension": .system,
         "isInvisible": .system,
+        "createdAt": .system,
+        "modifiedAt": .system,
+        "addedAt": .system,
+        "lastUsedAt": .system,
 
-        // Date/Time
-        "createdAt": .dateTime,
-        "modifiedAt": .dateTime,
-        "addedAt": .dateTime,
-        "lastUsedAt": .dateTime,
-        "contentCreatedAt": .dateTime,
-        "contentModifiedAt": .dateTime,
+        // Content
+        "contentCreatedAt": .content,
+        "contentModifiedAt": .content,
 
-        // Video (추가 확장 시 사용)
-        "durationSeconds": .video,
+        // Image
+        "pixelHeight": .image,
+        "pixelWidth": .image,
+        "colorSpace": .image,
+        "hasAlphaChannel": .image,
+
+        // Video
+        "duration": .video,
         "videoBitRate": .video,
-        "totalBitRate": .video,
-        "pixelWidth": .video,
-        "pixelHeight": .video,
 
-        // Audio (추가 확장 시 사용)
+        // Audio
         "audioBitRate": .audio,
+        "audioSampleRate": .audio,
         "audioChannelCount": .audio,
+
+        // Document
+        "title": .document,
+        "numberOfPages": .document,
+        "creator": .document,
+
+        // Location
+        "latitude": .location,
+        "longitude": .location,
     ]
 
     /// 오퍼레이터 라벨 -> operator 코드
