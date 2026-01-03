@@ -6,6 +6,7 @@ struct OperatorOption: Equatable, Identifiable {
     let label: String
     let valueArity: Int
     let valueType: ValueType?
+    let valueUIKind: ValueUIKind
 
     var id: String { code }
 }

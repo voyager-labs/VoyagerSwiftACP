@@ -251,43 +251,6 @@ struct ComposerView: View {
     private let defaultChipHeight: CGFloat = 28
     private let defaultChipWidth: CGFloat = 120
     private let hoverFillOpacity: Double = 0.06
-    private let stringOperatorOptions: [OperatorOption] = [
-        .init(code: "eq", label: "Is", valueArity: 1, valueType: .string),
-        .init(code: "neq", label: "Is Not", valueArity: 1, valueType: .string),
-        .init(code: "contains", label: "Contains", valueArity: 1, valueType: .string),
-        .init(code: "startsWith", label: "Starts With", valueArity: 1, valueType: .string),
-        .init(code: "endsWith", label: "Ends With", valueArity: 1, valueType: .string),
-        .init(code: "isEmpty", label: "Is Empty", valueArity: 0, valueType: .string),
-        .init(code: "isNotEmpty", label: "Is Not Empty", valueArity: 0, valueType: .string),
-    ]
-    private let numberOperatorOptions: [OperatorOption] = [
-        .init(code: "eq", label: "Is", valueArity: 1, valueType: .number),
-        .init(code: "neq", label: "Is Not", valueArity: 1, valueType: .number),
-        .init(code: "gt", label: "Is Greater Than", valueArity: 1, valueType: .number),
-        .init(code: "lt", label: "Is Less Than", valueArity: 1, valueType: .number),
-        .init(code: "gte", label: "Is Greater Or Equal", valueArity: 1, valueType: .number),
-        .init(code: "lte", label: "Is Less Or Equal", valueArity: 1, valueType: .number),
-        .init(code: "between", label: "Is Between", valueArity: 2, valueType: .number),
-    ]
-    private let dateOperatorOptions: [OperatorOption] = [
-        .init(code: "eq", label: "Is", valueArity: 1, valueType: .date),
-        .init(code: "neq", label: "Is Not", valueArity: 1, valueType: .date),
-        .init(code: "gt", label: "Is After", valueArity: 1, valueType: .date),
-        .init(code: "lt", label: "Is Before", valueArity: 1, valueType: .date),
-        .init(code: "between", label: "Is Between", valueArity: 2, valueType: .date),
-        .init(code: "isEmpty", label: "Is Empty", valueArity: 0, valueType: .date),
-        .init(code: "isNotEmpty", label: "Is Not Empty", valueArity: 0, valueType: .date),
-    ]
-    private let boolOperatorOptions: [OperatorOption] = [
-        .init(code: "eq", label: "Is", valueArity: 1, valueType: .boolean),
-        .init(code: "neq", label: "Is Not", valueArity: 1, valueType: .boolean),
-    ]
-    private let arrayOperatorOptions: [OperatorOption] = [
-        .init(code: "contains", label: "Contains", valueArity: 1, valueType: .array),
-        .init(code: "anyOf", label: "Any Of", valueArity: 1, valueType: .array),
-        .init(code: "isEmpty", label: "Is Empty", valueArity: 0, valueType: .array),
-        .init(code: "isNotEmpty", label: "Is Not Empty", valueArity: 0, valueType: .array),
-    ]
 
     private func secondRow(
         viewStore: ViewStore<ComposerFeature.State, ComposerFeature.Action>,
@@ -498,6 +461,7 @@ struct ComposerView: View {
 
     private func conditionChipView(condition: Condition) -> some View {
         ConditionChipView(
+            propertyPickerStore: store.scope(state: \.composer.propertyPicker, action: \.composer.propertyPicker),
             condition: condition,
             isDark: isDark,
             hoverFillOpacity: hoverFillOpacity,
@@ -521,14 +485,13 @@ struct ComposerView: View {
             }
             .popover(
                 isPresented: viewStore.binding(
-                    get: \.isPresented,
+                    get: { $0.isPresented && $0.editingConditionKey == nil },
                     send: ConditionPropertyPickerFeature.Action.setPresented,
                 ),
                 arrowEdge: .bottom,
-                content: {
-                    ConditionPropertyPickerView(store: pickerStore)
-                },
-            )
+            ) {
+                ConditionPropertyPickerView(store: pickerStore)
+            }
         })
     }
 
@@ -610,19 +573,38 @@ struct ComposerView: View {
     }
 
     private func operatorOptions(for condition: Condition) -> [OperatorOption] {
-        switch condition.propertyType {
-        case "string":
-            stringOperatorOptions
-        case "number":
-            numberOperatorOptions
-        case "date":
-            dateOperatorOptions
-        case "boolean":
-            boolOperatorOptions
-        case "array":
-            arrayOperatorOptions
-        default:
-            stringOperatorOptions
+        ConditionOperatorMapping.operatorOptions(for: condition.propertyKey).map { op in
+            let valueArity: Int = {
+                switch op.valueUI {
+                case .rangeNumber, .rangeDate:
+                    2
+                case .none:
+                    0
+                default:
+                    1
+                }
+            }()
+
+            let valueType: ValueType = {
+                switch op.valueUI {
+                case .singleNumber, .rangeNumber, .listNumber:
+                    .number
+                case .singleDate, .rangeDate:
+                    .date
+                case .toggle:
+                    .boolean
+                case .listText, .singleText, .none:
+                    .string
+                }
+            }()
+
+            return OperatorOption(
+                code: op.code,
+                label: op.label,
+                valueArity: valueArity,
+                valueType: valueType,
+                valueUIKind: op.valueUI,
+            )
         }
     }
 

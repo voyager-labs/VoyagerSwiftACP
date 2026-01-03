@@ -91,7 +91,7 @@ enum ConditionOperatorMapping {
             ]
         case .array:
             [
-                .init(code: "contains", label: "Contains", valueUI: .singleText),
+                .init(code: "contains", label: "Contains", valueUI: .listText),
                 .init(code: "in", label: "In list", valueUI: .listText),
                 .init(code: "empty", label: "Is empty", valueUI: .none),
                 .init(code: "not_empty", label: "Is not empty", valueUI: .none),

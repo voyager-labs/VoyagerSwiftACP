@@ -18,6 +18,7 @@ struct ValuePickerFeature {
         var propertyKey: String?
         var operatorOption: OperatorOption?
         var valueType: ValueType = .string
+        var valueUIKind: ValueUIKind = .singleText
         var valueArity: Int = 1
         var values: [String] = [""]
         var errorMessage: String?
@@ -28,25 +29,9 @@ struct ValuePickerFeature {
         let propertyKey: String
         let operatorOption: OperatorOption
         let valueType: ValueType
+        let valueUIKind: ValueUIKind
         let existingValues: [String]?
         let editingIndex: Int?
-    }
-
-    // 공용 날짜 포맷터 (날짜만, 로컬 타임존 기준)
-    static let dateFormatter: DateFormatter = {
-        let formatter = DateFormatter()
-        formatter.locale = Locale(identifier: "en_US_POSIX")
-        formatter.timeZone = .current
-        formatter.dateFormat = "yyyy-MM-dd"
-        return formatter
-    }()
-
-    static func formatDate(_ date: Date) -> String {
-        dateFormatter.string(from: date)
-    }
-
-    static func parseDate(_ text: String) -> Date? {
-        dateFormatter.date(from: text)
     }
 
     enum Action: Sendable {
@@ -54,6 +39,7 @@ struct ValuePickerFeature {
         case prepare(PreparePayload)
         case setValue(index: Int, text: String)
         case commit
+        case commitResult(propertyKey: String, values: [String])
     }
 
     var body: some Reducer<State, Action> {
@@ -67,6 +53,8 @@ struct ValuePickerFeature {
                     state.values = [""]
                     state.errorMessage = nil
                     state.editingIndex = nil
+                    state.valueUIKind = .singleText
+                    state.valueArity = 1
                 }
                 return .none
 
@@ -75,26 +63,29 @@ struct ValuePickerFeature {
                 state.operatorOption = payload.operatorOption
                 state.valueType = payload.valueType
                 state.valueArity = max(0, payload.operatorOption.valueArity)
+                state.valueUIKind = payload.valueUIKind
                 state.errorMessage = nil
                 state.editingIndex = payload.editingIndex
 
                 if state.valueArity == 0 {
                     state.values = []
                 } else if let existingValues = payload.existingValues {
-                    let trimmed = existingValues.map {
+                    var trimmed = existingValues.map {
                         $0.trimmingCharacters(in: .whitespacesAndNewlines)
                     }
+                    state.valueArity = max(state.valueArity, trimmed.count)
                     state.values = Array(trimmed.prefix(state.valueArity))
                     if state.values.count < state.valueArity {
-                        state.values.append(contentsOf: Array(
-                            repeating: "",
-                            count: state.valueArity - state.values.count,
-                        ))
+                        state.values.append(
+                            contentsOf: Array(
+                                repeating: "",
+                                count: state.valueArity - state.values.count,
+                            ),
+                        )
                     }
                 } else if state.valueArity == 1 {
                     state.values = [state.values.first ?? ""]
                 } else {
-                    // arity 2 이상은 최소 2칸 확보
                     state.values = Array(repeating: "", count: state.valueArity)
                 }
 
@@ -102,7 +93,6 @@ struct ValuePickerFeature {
                 return .none
 
             case let .setValue(index, text):
-                // 값 배열이 비어있을 수 있으므로 아리티에 맞춰 길이 보정
                 if state.values.count < max(state.valueArity, 1) {
                     state.values = Array(
                         repeating: "",
@@ -114,6 +104,44 @@ struct ValuePickerFeature {
                 return .none
 
             case .commit:
+                guard let propertyKey = state.propertyKey,
+                      let operatorOption = state.operatorOption
+                else {
+                    return .none
+                }
+
+                let expected = max(state.valueArity, ValueNormalizer.expectedArity(for: state.valueUIKind))
+                var paddedValues = state.values
+                if expected > 0, paddedValues.count < expected {
+                    paddedValues.append(contentsOf: Array(repeating: "", count: expected - paddedValues.count))
+                }
+
+                let result = ValueNormalizer.normalize(
+                    kind: state.valueUIKind,
+                    rawValues: paddedValues,
+                    editingIndex: state.editingIndex,
+                )
+
+                if let error = result.errorMessage {
+                    state.errorMessage = error
+                    result.resetIndices
+                        .filter { state.values.indices.contains($0) }
+                        .forEach { state.values[$0] = "" }
+                    if expected > 0, state.values.count < expected {
+                        state.values.append(contentsOf: Array(repeating: "", count: expected - state.values.count))
+                    }
+                    return .none
+                }
+
+                state.errorMessage = nil
+                return .send(
+                    .commitResult(
+                        propertyKey: propertyKey,
+                        values: result.values ?? [],
+                    ),
+                )
+
+            case .commitResult:
                 return .none
             }
         }

@@ -37,6 +37,9 @@ enum ConditionMapping {
         "Last Used": "lastUsedAt",
         "Content Created": "contentCreatedAt",
         "Content Modified": "contentModifiedAt",
+
+        // 시스템
+        "Invisible": "isInvisible",
     ]
 
     /// propertyKey -> 카테고리

@@ -23,7 +23,7 @@ extension MDItemPropertyClient: DependencyKey, TestDependencyKey {
                     let typeString = switch type {
                     case .string: "string"
                     case .number: "number"
-                    case .datetime: "datetime"
+                    case .datetime: "date"
                     case .boolean: "boolean"
                     case .array: "array"
                     }

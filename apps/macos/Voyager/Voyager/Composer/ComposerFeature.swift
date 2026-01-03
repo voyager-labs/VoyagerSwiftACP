@@ -18,7 +18,6 @@ struct FilterSnapshot: Equatable {
     let conditions: [Condition]
 }
 
-// swiftlint:disable type_body_length
 @Reducer
 struct ComposerFeature {
     @ObservableState
@@ -289,6 +288,7 @@ struct ComposerFeature {
                 state.valuePicker.operatorOption = payload.operatorOption
                 state.valuePicker.valueType = payload.valueType
                 state.valuePicker.valueArity = max(0, payload.operatorOption.valueArity)
+                state.valuePicker.valueUIKind = payload.valueUIKind
                 state.valuePicker.editingIndex = payload.editingIndex
 
                 if state.valuePicker.valueArity == 0 {
@@ -319,81 +319,19 @@ struct ComposerFeature {
                 return .none
 
             case .valuePicker(.commit):
-                guard let propertyKey = state.valuePicker.propertyKey else { return .none }
+                return .none
 
-                if state.valuePicker.values.isEmpty, state.valuePicker.valueArity > 0 {
-                    state.valuePicker.errorMessage = "Value is required."
-                    return .none
+            case let .valuePicker(.commitResult(propertyKey, values)):
+                if let idx = state.conditions.firstIndex(where: { $0.propertyKey == propertyKey }) {
+                    state.pushHistory()
+                    state.conditions[idx].values = values
                 }
-
-                if state.valuePicker.values.count < state.valuePicker.valueArity {
-                    state.valuePicker.values.append(
-                        contentsOf: Array(
-                            repeating: "",
-                            count: state.valuePicker.valueArity - state.valuePicker.values.count,
-                        ),
-                    )
-                }
-
-                let trimmed = state.valuePicker.values
-                    .prefix(max(state.valuePicker.valueArity, 0))
-                    .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
-                if trimmed.contains(where: \.isEmpty) {
-                    state.valuePicker.errorMessage = "Value is required."
-                    return .none
-                }
-
-                if state.valuePicker.valueType == .number {
-                    let numbers = trimmed.compactMap { Double($0) }
-                    guard numbers.count == trimmed.count else {
-                        state.valuePicker.errorMessage = "Enter valid numbers."
-                        // 숫자 변환 실패 시 잘못된 인덱스만 비우기
-                        for (idx, value) in trimmed.enumerated() {
-                            if Double(value) == nil, state.valuePicker.values.indices.contains(idx) {
-                                state.valuePicker.values[idx] = ""
-                            }
-                        }
-                        return .none
-                    }
-                    if numbers.count >= 2, numbers[0] > numbers[1] {
-                        state.valuePicker.errorMessage = "From must be ≤ To."
-                        if let editIdx = state.valuePicker.editingIndex,
-                           state.valuePicker.values.indices.contains(editIdx)
-                        {
-                            state.valuePicker.values[editIdx] = ""
-                        } else if state.valuePicker.values.indices.contains(0) {
-                            state.valuePicker.values[0] = ""
-                        }
-                        return .none
-                    }
-                } else if state.valuePicker.valueType == .date {
-                    let dates = trimmed.compactMap { ValuePickerFeature.parseDate($0) }
-                    guard dates.count == trimmed.count else {
-                        state.valuePicker.errorMessage = "Enter valid date."
-                        for (idx, value) in trimmed.enumerated() {
-                            if ValuePickerFeature.parseDate(value) == nil,
-                               state.valuePicker.values.indices.contains(idx)
-                            {
-                                state.valuePicker.values[idx] = ""
-                            }
-                        }
-                        return .none
-                    }
-                    if dates.count >= 2, dates[0] > dates[1] {
-                        state.valuePicker.errorMessage = "From must be ≤ To."
-                        if let editIdx = state.valuePicker.editingIndex,
-                           state.valuePicker.values.indices.contains(editIdx)
-                        {
-                            state.valuePicker.values[editIdx] = ""
-                        } else if state.valuePicker.values.indices.contains(0) {
-                            state.valuePicker.values[0] = ""
-                        }
-                        return .none
-                    }
-                }
-
+                state.valuePicker.isPresented = false
+                state.valuePicker.propertyKey = nil
+                state.valuePicker.operatorOption = nil
                 state.valuePicker.errorMessage = nil
-                return .send(.setValue(propertyKey: propertyKey, values: trimmed))
+                state.valuePicker.editingIndex = nil
+                return .none
 
             case .valuePicker:
                 return .none
@@ -414,15 +352,13 @@ struct ComposerFeature {
     }
 }
 
-// swiftlint:enable type_body_length
-
 private func valueType(for propertyType: String) -> ValueType {
     switch propertyType {
     case "string":
         .string
     case "number":
         .number
-    case "date":
+    case "date", "datetime":
         .date
     case "boolean":
         .boolean

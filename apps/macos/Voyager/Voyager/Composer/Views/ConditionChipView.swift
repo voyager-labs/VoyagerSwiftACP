@@ -3,6 +3,7 @@ import ComposableArchitecture
 import SwiftUI
 
 struct ConditionChipView: View {
+    let propertyPickerStore: StoreOf<ConditionPropertyPickerFeature>
     let condition: Condition
     let isDark: Bool
     let hoverFillOpacity: Double
@@ -79,24 +80,38 @@ struct ConditionChipView: View {
     }
 
     private func propertyLabelView() -> some View {
-        Text(condition.propertyLabel)
-            .font(.system(size: 11, weight: .medium))
-            .foregroundColor(.primary.opacity(0.8))
-            .padding(.leading, 4)
-            .padding(.trailing, 2)
-            .padding(.vertical, 2)
-            .contentShape(Rectangle())
-            .onHover { hovering in
-                isPropertyHovering = hovering
-            }
-            .background(
-                isPropertyHovering
-                    ? (isDark ? Color.white.opacity(hoverFillOpacity) : Color.black.opacity(hoverFillOpacity))
-                    : Color.clear,
-            )
-            .onTapGesture {
-                onPropertyTap()
-            }
+        WithViewStore(propertyPickerStore, observe: { $0 }, content: { propertyStore in
+            Text(condition.propertyLabel)
+                .font(.system(size: 11, weight: .medium))
+                .foregroundColor(.primary.opacity(0.8))
+                .padding(.leading, 4)
+                .padding(.trailing, 2)
+                .padding(.vertical, 2)
+                .contentShape(Rectangle())
+                .onHover { hovering in
+                    isPropertyHovering = hovering
+                }
+                .background(
+                    isPropertyHovering
+                        ? (isDark ? Color.white.opacity(hoverFillOpacity) : Color.black.opacity(hoverFillOpacity))
+                        : Color.clear,
+                )
+                .onTapGesture {
+                    onPropertyTap()
+                    propertyStore.send(.startEditing(condition.propertyKey))
+                    propertyStore.send(.setPresented(true))
+                }
+                .popover(
+                    isPresented: propertyStore.binding(
+                        get: { $0.isPresented && $0.editingConditionKey == condition.propertyKey },
+                        send: ConditionPropertyPickerFeature.Action.setPresented,
+                    ),
+                    arrowEdge: .bottom,
+                    content: {
+                        ConditionPropertyPickerView(store: propertyPickerStore)
+                    },
+                )
+        })
     }
 
     private func operatorButtonView(
@@ -137,11 +152,13 @@ struct ConditionChipView: View {
                 },
             ),
             arrowEdge: .bottom,
-        ) {
-            OperatorPickerView(store: operatorPickerStore)
-        }
+            content: {
+                OperatorPickerView(store: operatorPickerStore)
+            },
+        )
     }
 
+    // swiftlint:disable cyclomatic_complexity
     @ViewBuilder
     private func valueSection(
         selectedOperator: OperatorOption?,
@@ -151,8 +168,73 @@ struct ConditionChipView: View {
         valueStore: ViewStore<ValuePickerFeature.State, ValuePickerFeature.Action>,
     ) -> some View {
         if let op = selectedOperator, valueArity != 0 {
+            if op.valueUIKind == .rangeNumber {
+                let isActive = valueStore.isPresented && valueStore.propertyKey == condition.propertyKey
+                let isEditingThis = isActive && valueStore.editingIndex != nil
+                let hasCommittedValues = (condition.values?.count ?? 0) >= 2
+                let needsPrepare = valueStore.propertyKey != condition.propertyKey ||
+                    valueStore.operatorOption?.code != op.code ||
+                    valueStore.valueArity != valueArity
+                let sendPrepare = {
+                    valuePickerStore.send(
+                        .prepare(
+                            .init(
+                                propertyKey: condition.propertyKey,
+                                operatorOption: op,
+                                valueType: condition.valueType,
+                                valueUIKind: op.valueUIKind,
+                                existingValues: condition.values,
+                                editingIndex: nil,
+                            ),
+                        ),
+                    )
+                }
+
+                if isEditingThis && hasCommittedValues {
+                    rangeEditingView(
+                        operatorOption: op,
+                        editingIndex: valueStore.editingIndex ?? 0,
+                        valueStore: valueStore,
+                    )
+                    .onAppear {
+                        if needsPrepare {
+                            sendPrepare()
+                        }
+                    }
+                    .onChange(of: needsPrepare) { newValue in
+                        if newValue {
+                            sendPrepare()
+                        }
+                    }
+                } else if isActive || !hasCommittedValues {
+                    inlineValueInputs(
+                        operatorOption: op,
+                        valueViewStore: valueStore,
+                        valueArity: valueArity,
+                        valueType: condition.valueType,
+                        errorMessage: valueStore.errorMessage,
+                        editingIndex: nil,
+                    )
+                    .onAppear {
+                        if needsPrepare {
+                            sendPrepare()
+                        }
+                    }
+                    .onChange(of: needsPrepare) { newValue in
+                        if newValue {
+                            sendPrepare()
+                        }
+                    }
+                } else if let values = condition.values, values.count >= 2 {
+                    rangeDisplayView(operatorOption: op, values: values)
+                }
+            } else
             if isDateType {
-                dateValueSection(operatorOption: op, valueArity: valueArity)
+                dateValueSection(
+                    operatorOption: op,
+                    valueArity: valueArity,
+                    valueViewStore: valueStore,
+                )
             } else
             if isEditingValue, valueArity >= 2, let editingIndex = valueStore.editingIndex {
                 rangeEditingView(
@@ -190,6 +272,8 @@ struct ConditionChipView: View {
         }
     }
 
+    // swiftlint:enable cyclomatic_complexity
+
     private func rangeEditingView(
         operatorOption: OperatorOption,
         editingIndex: Int,
@@ -208,6 +292,7 @@ struct ConditionChipView: View {
                                     propertyKey: condition.propertyKey,
                                     operatorOption: operatorOption,
                                     valueType: condition.valueType,
+                                    valueUIKind: operatorOption.valueUIKind,
                                     existingValues: condition.values,
                                     editingIndex: 0,
                                 ),
@@ -244,6 +329,7 @@ struct ConditionChipView: View {
                                     propertyKey: condition.propertyKey,
                                     operatorOption: operatorOption,
                                     valueType: condition.valueType,
+                                    valueUIKind: operatorOption.valueUIKind,
                                     existingValues: condition.values,
                                     editingIndex: 1,
                                 ),
@@ -268,6 +354,7 @@ struct ConditionChipView: View {
                                 propertyKey: condition.propertyKey,
                                 operatorOption: operatorOption,
                                 valueType: condition.valueType,
+                                valueUIKind: operatorOption.valueUIKind,
                                 existingValues: condition.values,
                                 editingIndex: 0,
                             ),
@@ -289,6 +376,7 @@ struct ConditionChipView: View {
                                 propertyKey: condition.propertyKey,
                                 operatorOption: operatorOption,
                                 valueType: condition.valueType,
+                                valueUIKind: operatorOption.valueUIKind,
                                 existingValues: condition.values,
                                 editingIndex: 1,
                             ),
@@ -300,15 +388,20 @@ struct ConditionChipView: View {
     }
 
     @ViewBuilder
-    private func dateValueSection(operatorOption: OperatorOption, valueArity: Int) -> some View {
+    private func dateValueSection(
+        operatorOption: OperatorOption,
+        valueArity: Int,
+        valueViewStore: ViewStore<ValuePickerFeature.State, ValuePickerFeature.Action>,
+    ) -> some View {
+        let hasError = valueViewStore.errorMessage != nil
         if valueArity >= 2 {
             HStack(spacing: 6) {
                 dateValueButton(
                     placeholderText: "From",
                     currentText: condition.values?.first ?? "",
-                    hasError: false,
+                    hasError: hasError,
                     index: 0,
-                    valueViewStore: ViewStore(valuePickerStore, observe: { $0 }),
+                    valueViewStore: valueViewStore,
                     operatorOption: operatorOption,
                 )
                 Text("and")
@@ -317,9 +410,9 @@ struct ConditionChipView: View {
                 dateValueButton(
                     placeholderText: "To",
                     currentText: (condition.values?.count ?? 0) > 1 ? (condition.values?[1] ?? "") : "",
-                    hasError: false,
+                    hasError: hasError,
                     index: 1,
-                    valueViewStore: ViewStore(valuePickerStore, observe: { $0 }),
+                    valueViewStore: valueViewStore,
                     operatorOption: operatorOption,
                 )
             }
@@ -327,9 +420,9 @@ struct ConditionChipView: View {
             dateValueButton(
                 placeholderText: "Value",
                 currentText: condition.values?.first ?? "",
-                hasError: false,
+                hasError: hasError,
                 index: 0,
-                valueViewStore: ViewStore(valuePickerStore, observe: { $0 }),
+                valueViewStore: valueViewStore,
                 operatorOption: operatorOption,
             )
         }
@@ -343,6 +436,7 @@ struct ConditionChipView: View {
                         propertyKey: condition.propertyKey,
                         operatorOption: operatorOption,
                         valueType: condition.valueType,
+                        valueUIKind: operatorOption.valueUIKind,
                         existingValues: condition.values,
                         editingIndex: nil,
                     ),
@@ -444,6 +538,7 @@ struct ConditionChipView: View {
                             label: condition.operatorLabel ?? "Is",
                             valueArity: valueArity,
                             valueType: .boolean,
+                            valueUIKind: .toggle,
                         ),
                     )
                 } else {
@@ -527,18 +622,25 @@ struct ConditionChipView: View {
         )
 
         return Button {
+            let currentValues: [String]? = {
+                if valueViewStore.propertyKey == condition.propertyKey {
+                    return valueViewStore.values
+                }
+                return condition.values
+            }()
             valuePickerStore.send(
                 .prepare(
                     .init(
                         propertyKey: condition.propertyKey,
                         operatorOption: operatorOption,
                         valueType: condition.valueType,
-                        existingValues: condition.values,
+                        valueUIKind: operatorOption.valueUIKind,
+                        existingValues: currentValues,
                         editingIndex: index,
                     ),
                 ),
             )
-            tempDate = ValuePickerFeature.parseDate(currentText) ?? Date()
+            tempDate = ValueNormalizer.parseDate(currentText) ?? Date()
             datePopoverIndex = index
         } label: {
             let isHovering = dateHoverIndex == index
@@ -591,10 +693,14 @@ struct ConditionChipView: View {
                 HStack {
                     Spacer()
                     Button("Apply") {
-                        let formatted = ValuePickerFeature.formatDate(tempDate)
+                        let formatted = ValueNormalizer.formatDate(tempDate)
                         valueViewStore.send(.setValue(index: index, text: formatted))
                         valuePickerStore.send(.commit)
-                        datePopoverIndex = nil
+                        DispatchQueue.main.async {
+                            if valueViewStore.errorMessage == nil {
+                                datePopoverIndex = nil
+                            }
+                        }
                     }
                     .keyboardShortcut(.defaultAction)
                 }
@@ -625,6 +731,7 @@ struct ConditionChipView: View {
                         propertyKey: condition.propertyKey,
                         operatorOption: operatorOption,
                         valueType: .boolean,
+                        valueUIKind: .toggle,
                         existingValues: condition.values,
                         editingIndex: index,
                     ),
@@ -634,7 +741,7 @@ struct ConditionChipView: View {
         } label: {
             let isHovering = boolHoverIndex == index
             let labelText = currentText
-                .isEmpty ? (placeholderText.isEmpty ? "Value" : placeholderText.capitalized) : currentText
+                .isEmpty ? (placeholderText.isEmpty ? "Value" : placeholderText.capitalized) : currentText.capitalized
             Text(labelText)
                 .font(.system(size: 11, weight: .medium))
                 .foregroundColor(currentText.isEmpty ? .secondary : .primary)

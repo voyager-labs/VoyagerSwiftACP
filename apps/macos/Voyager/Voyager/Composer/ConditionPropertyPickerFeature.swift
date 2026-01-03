@@ -3,12 +3,39 @@ import Foundation
 
 @Reducer
 struct ConditionPropertyPickerFeature {
-    @Dependency(\.mdItemPropertyClient)
-    var mdItemPropertyClient
     @ObservableState
     struct State: Equatable {
         var isPresented: Bool = false
-        var properties: [MDItemProperty] = []
+        var properties: [MDItemProperty] = {
+            let defaultKeys: Set<String> = [
+                "name",
+                "extension",
+                "size",
+                "modifiedAt",
+                "createdAt",
+                "addedAt",
+            ]
+            return ConditionMapping.allProperties.map { info in
+                let typeString = ConditionOperatorMapping.propertyType(for: info.key).flatMap { type in
+                    switch type {
+                    case .string: "string"
+                    case .number: "number"
+                    case .datetime: "datetime"
+                    case .boolean: "boolean"
+                    case .array: "array"
+                    }
+                } ?? "string"
+
+                return MDItemProperty(
+                    key: info.key,
+                    label: info.label,
+                    category: info.category.rawValue,
+                    type: typeString,
+                    isDefault: defaultKeys.contains(info.key),
+                )
+            }
+        }()
+
         var searchText: String = ""
         var mode: Mode = .root
         var selectedCategory: String?
@@ -22,10 +49,6 @@ struct ConditionPropertyPickerFeature {
         case category(String)
     }
 
-    enum PropertyError: Error, Sendable {
-        case loadFailed
-    }
-
     enum Action: Sendable {
         case setPresented(Bool)
         case onAppear
@@ -33,8 +56,6 @@ struct ConditionPropertyPickerFeature {
         case categoryTapped(String)
         case backFromCategory
         case propertyTapped(MDItemProperty)
-        case loadProperties
-        case propertiesResponse(Result<[MDItemProperty], PropertyError>)
         case startEditing(String)
         case clearDuplicateMessage
     }
@@ -56,27 +77,6 @@ struct ConditionPropertyPickerFeature {
                 return .none
 
             case .onAppear:
-                if state.properties.isEmpty {
-                    return .send(.loadProperties)
-                }
-                return .none
-
-            case .loadProperties:
-                return .run { send in
-                    do {
-                        let items = try await mdItemPropertyClient.fetchAll()
-                        await send(.propertiesResponse(.success(items)))
-                    } catch {
-                        await send(.propertiesResponse(.failure(.loadFailed)))
-                    }
-                }
-
-            case let .propertiesResponse(.success(items)):
-                state.properties = items
-                return .none
-
-            case .propertiesResponse(.failure):
-                // TODO(voy-95): 필요 시 에러 상태/토스트 추가.
                 return .none
 
             case let .searchTextChanged(text):
