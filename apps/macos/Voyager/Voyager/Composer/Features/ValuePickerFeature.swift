@@ -70,7 +70,7 @@ struct ValuePickerFeature {
                 if state.valueArity == 0 {
                     state.values = []
                 } else if let existingValues = payload.existingValues {
-                    var trimmed = existingValues.map {
+                    let trimmed = existingValues.map {
                         $0.trimmingCharacters(in: .whitespacesAndNewlines)
                     }
                     state.valueArity = max(state.valueArity, trimmed.count)
@@ -105,7 +105,7 @@ struct ValuePickerFeature {
 
             case .commit:
                 guard let propertyKey = state.propertyKey,
-                      let operatorOption = state.operatorOption
+                      state.operatorOption != nil
                 else {
                     return .none
                 }

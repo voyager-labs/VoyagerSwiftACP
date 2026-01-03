@@ -94,172 +94,217 @@ enum ValueNormalizer {
         }
     }
 
-    // swiftlint:disable cyclomatic_complexity function_body_length
     static func normalize(
         kind: ValueUIKind,
         rawValues: [String],
         editingIndex: Int?,
     ) -> ValueNormalizeResult {
-        func requireNonEmpty(_ texts: [String]) -> [String]? {
-            let trimmed = texts.map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
-            return trimmed.contains(where: \.isEmpty) ? nil : trimmed
-        }
-
-        func splitList(_ text: String) -> [String] {
-            text
-                .split(whereSeparator: { $0 == "," || $0.isNewline })
-                .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
-                .filter { !$0.isEmpty }
-        }
-
         switch kind {
         case .none:
-            return .init(values: [], errorMessage: nil, resetIndices: [])
+            .init(values: [], errorMessage: nil, resetIndices: [])
 
         case .singleText:
-            guard let trimmed = requireNonEmpty([rawValues.first ?? ""]) else {
-                return .init(values: nil, errorMessage: "Value is required.", resetIndices: [0])
-            }
-            return .init(values: trimmed, errorMessage: nil, resetIndices: [])
+            normalizeSingleText(rawValues: rawValues)
 
         case .listText:
-            let parts: [String] = rawValues
-                .flatMap { splitList($0) }
-            let empties = rawValues.enumerated()
-                .compactMap { $0.element.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? $0.offset : nil }
-            guard !parts.isEmpty else {
-                return .init(
-                    values: nil,
-                    errorMessage: "Value is required.",
-                    resetIndices: empties.isEmpty ? [0] : empties,
-                )
-            }
-            return .init(values: parts, errorMessage: nil, resetIndices: [])
+            normalizeListText(rawValues: rawValues)
 
         case .singleNumber:
-            guard let trimmed = requireNonEmpty([rawValues.first ?? ""]) else {
-                return .init(values: nil, errorMessage: "Value is required.", resetIndices: [0])
-            }
-            guard Double(trimmed[0]) != nil else {
-                return .init(values: nil, errorMessage: "Enter valid number.", resetIndices: [0])
-            }
-            return .init(values: trimmed, errorMessage: nil, resetIndices: [])
+            normalizeSingleNumber(rawValues: rawValues)
 
         case .rangeNumber:
-            let vals = Array(rawValues.prefix(2))
-            let trimmed = vals.map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
-            let empties = trimmed.enumerated()
-                .compactMap { $0.element.isEmpty ? $0.offset : nil }
-            guard empties.isEmpty else {
-                return .init(values: nil, errorMessage: "Value is required.", resetIndices: empties)
-            }
-            let numbers = trimmed.compactMap { Double($0) }
-            guard numbers.count == trimmed.count else {
-                let bad = trimmed.enumerated()
-                    .compactMap { Double($0.element) == nil ? $0.offset : nil }
-                return .init(
-                    values: nil,
-                    errorMessage: "Enter valid numbers.",
-                    resetIndices: bad.isEmpty ? [0, 1] : bad,
-                )
-            }
-            if numbers.count >= 2, numbers[0] > numbers[1] {
-                let idx = editingIndex ?? 0
-                return .init(values: nil, errorMessage: "From must be ≤ To.", resetIndices: [idx])
-            }
-            return .init(values: trimmed, errorMessage: nil, resetIndices: [])
+            normalizeRangeNumber(rawValues: rawValues, editingIndex: editingIndex)
 
         case .listNumber:
-            let parts = splitList(rawValues.first ?? "")
-            guard !parts.isEmpty else {
-                return .init(values: nil, errorMessage: "Value is required.", resetIndices: [0])
-            }
-            let numbers = parts.compactMap { Double($0) }
-            guard numbers.count == parts.count else {
-                return .init(values: nil, errorMessage: "Enter valid numbers.", resetIndices: [0])
-            }
-            return .init(values: parts, errorMessage: nil, resetIndices: [])
+            normalizeListNumber(rawValues: rawValues)
 
         case .singleDate:
-            guard let trimmed = requireNonEmpty([rawValues.first ?? ""]) else {
-                return .init(values: nil, errorMessage: "Value is required.", resetIndices: [0])
-            }
-            guard parseDate(trimmed[0]) != nil else {
-                return .init(values: nil, errorMessage: "Enter valid date.", resetIndices: [0])
-            }
-            return .init(values: trimmed, errorMessage: nil, resetIndices: [])
+            normalizeSingleDate(rawValues: rawValues)
 
         case .rangeDate:
-            let vals = Array(rawValues.prefix(2))
-            let trimmed = vals.map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
-            let empties = trimmed.enumerated()
-                .compactMap { $0.element.isEmpty ? $0.offset : nil }
-
-            if let editingIndex {
-                if editingIndex == 0 {
-                    guard !trimmed[0].isEmpty else {
-                        return .init(values: nil, errorMessage: "Value is required.", resetIndices: [0])
-                    }
-                    guard let fromDate = parseDate(trimmed[0]) else {
-                        return .init(values: nil, errorMessage: "Enter valid date.", resetIndices: [0])
-                    }
-
-                    if !trimmed[1].isEmpty {
-                        guard let toDate = parseDate(trimmed[1]) else {
-                            return .init(values: nil, errorMessage: "Enter valid date.", resetIndices: [1])
-                        }
-                        if fromDate > toDate {
-                            return .init(values: nil, errorMessage: "From must be ≤ To.", resetIndices: [0])
-                        }
-                    }
-
-                    return .init(values: trimmed, errorMessage: nil, resetIndices: [])
-                } else {
-                    guard !trimmed[1].isEmpty else {
-                        return .init(values: nil, errorMessage: "Value is required.", resetIndices: [1])
-                    }
-                    guard let toDate = parseDate(trimmed[1]) else {
-                        return .init(values: nil, errorMessage: "Enter valid date.", resetIndices: [1])
-                    }
-                    if !trimmed[0].isEmpty, let fromDate = parseDate(trimmed[0]) {
-                        if fromDate > toDate {
-                            return .init(values: nil, errorMessage: "From must be ≤ To.", resetIndices: [editingIndex])
-                        }
-                    } else if trimmed[0].isEmpty {
-                        // From 없으면 To만 반영 (추후 From 입력 대비)
-                        return .init(values: trimmed, errorMessage: nil, resetIndices: [])
-                    }
-                    return .init(values: trimmed, errorMessage: nil, resetIndices: [])
-                }
-            }
-
-            if !empties.isEmpty {
-                return .init(values: nil, errorMessage: "Value is required.", resetIndices: empties)
-            }
-
-            let dates = trimmed.compactMap { parseDate($0) }
-            guard dates.count == trimmed.count else {
-                let bad = trimmed.enumerated()
-                    .compactMap { parseDate($0.element) == nil ? $0.offset : nil }
-                return .init(values: nil, errorMessage: "Enter valid date.", resetIndices: bad.isEmpty ? [0, 1] : bad)
-            }
-            if dates.count >= 2, dates[0] > dates[1] {
-                let idx = editingIndex ?? 0
-                return .init(values: nil, errorMessage: "From must be ≤ To.", resetIndices: [idx])
-            }
-            return .init(values: trimmed, errorMessage: nil, resetIndices: [])
+            normalizeRangeDate(rawValues: rawValues, editingIndex: editingIndex)
 
         case .toggle:
-            guard let trimmed = requireNonEmpty([rawValues.first ?? ""]) else {
-                return .init(values: nil, errorMessage: "Value is required.", resetIndices: [0])
-            }
-            let lowered = trimmed[0].lowercased()
-            guard lowered == "true" || lowered == "false" else {
-                return .init(values: nil, errorMessage: "Select true/false.", resetIndices: [0])
-            }
-            let normalized = lowered == "true" ? "True" : "False"
-            return .init(values: [normalized], errorMessage: nil, resetIndices: [])
+            normalizeToggle(rawValues: rawValues)
         }
     }
-    // swiftlint:enable cyclomatic_complexity function_body_length
+
+    private static func requireNonEmpty(_ texts: [String]) -> [String]? {
+        let trimmed = texts.map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+        return trimmed.contains(where: \.isEmpty) ? nil : trimmed
+    }
+
+    private static func splitList(_ text: String) -> [String] {
+        text
+            .split(whereSeparator: { $0 == "," || $0.isNewline })
+            .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+            .filter { !$0.isEmpty }
+    }
+
+    private static func normalizeSingleText(rawValues: [String]) -> ValueNormalizeResult {
+        guard let trimmed = requireNonEmpty([rawValues.first ?? ""]) else {
+            return .init(values: nil, errorMessage: "Value is required.", resetIndices: [0])
+        }
+        return .init(values: trimmed, errorMessage: nil, resetIndices: [])
+    }
+
+    private static func normalizeListText(rawValues: [String]) -> ValueNormalizeResult {
+        let parts: [String] = rawValues.flatMap { splitList($0) }
+        let empties = rawValues.enumerated()
+            .compactMap { $0.element.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? $0.offset : nil }
+        guard !parts.isEmpty else {
+            return .init(
+                values: nil,
+                errorMessage: "Value is required.",
+                resetIndices: empties.isEmpty ? [0] : empties,
+            )
+        }
+        return .init(values: parts, errorMessage: nil, resetIndices: [])
+    }
+
+    private static func normalizeSingleNumber(rawValues: [String]) -> ValueNormalizeResult {
+        guard let trimmed = requireNonEmpty([rawValues.first ?? ""]) else {
+            return .init(values: nil, errorMessage: "Value is required.", resetIndices: [0])
+        }
+        guard Double(trimmed[0]) != nil else {
+            return .init(values: nil, errorMessage: "Enter valid number.", resetIndices: [0])
+        }
+        return .init(values: trimmed, errorMessage: nil, resetIndices: [])
+    }
+
+    private static func normalizeRangeNumber(
+        rawValues: [String],
+        editingIndex: Int?,
+    ) -> ValueNormalizeResult {
+        let vals = Array(rawValues.prefix(2))
+        let trimmed = vals.map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+        let empties = trimmed.enumerated().compactMap { $0.element.isEmpty ? $0.offset : nil }
+        guard empties.isEmpty else {
+            return .init(values: nil, errorMessage: "Value is required.", resetIndices: empties)
+        }
+
+        let numbers = trimmed.compactMap { Double($0) }
+        guard numbers.count == trimmed.count else {
+            let bad = trimmed.enumerated()
+                .compactMap { Double($0.element) == nil ? $0.offset : nil }
+            return .init(
+                values: nil,
+                errorMessage: "Enter valid numbers.",
+                resetIndices: bad.isEmpty ? [0, 1] : bad,
+            )
+        }
+
+        if numbers.count >= 2, numbers[0] > numbers[1] {
+            let idx = editingIndex ?? 0
+            return .init(values: nil, errorMessage: "From must be ≤ To.", resetIndices: [idx])
+        }
+        return .init(values: trimmed, errorMessage: nil, resetIndices: [])
+    }
+
+    private static func normalizeListNumber(rawValues: [String]) -> ValueNormalizeResult {
+        let parts = splitList(rawValues.first ?? "")
+        guard !parts.isEmpty else {
+            return .init(values: nil, errorMessage: "Value is required.", resetIndices: [0])
+        }
+        let numbers = parts.compactMap { Double($0) }
+        guard numbers.count == parts.count else {
+            return .init(values: nil, errorMessage: "Enter valid numbers.", resetIndices: [0])
+        }
+        return .init(values: parts, errorMessage: nil, resetIndices: [])
+    }
+
+    private static func normalizeSingleDate(rawValues: [String]) -> ValueNormalizeResult {
+        guard let trimmed = requireNonEmpty([rawValues.first ?? ""]) else {
+            return .init(values: nil, errorMessage: "Value is required.", resetIndices: [0])
+        }
+        guard parseDate(trimmed[0]) != nil else {
+            return .init(values: nil, errorMessage: "Enter valid date.", resetIndices: [0])
+        }
+        return .init(values: trimmed, errorMessage: nil, resetIndices: [])
+    }
+
+    private static func normalizeRangeDate(
+        rawValues: [String],
+        editingIndex: Int?,
+    ) -> ValueNormalizeResult {
+        let vals = Array(rawValues.prefix(2))
+        let trimmed = vals.map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+        let empties = trimmed.enumerated().compactMap { $0.element.isEmpty ? $0.offset : nil }
+
+        if let editingIndex {
+            return validateRangeDateWhileEditing(trimmed: trimmed, editingIndex: editingIndex)
+        }
+
+        guard empties.isEmpty else {
+            return .init(values: nil, errorMessage: "Value is required.", resetIndices: empties)
+        }
+
+        let dates = trimmed.compactMap { parseDate($0) }
+        guard dates.count == trimmed.count else {
+            let bad = trimmed.enumerated()
+                .compactMap { parseDate($0.element) == nil ? $0.offset : nil }
+            return .init(values: nil, errorMessage: "Enter valid date.", resetIndices: bad.isEmpty ? [0, 1] : bad)
+        }
+
+        if dates.count >= 2, dates[0] > dates[1] {
+            return .init(values: nil, errorMessage: "From must be ≤ To.", resetIndices: [0])
+        }
+        return .init(values: trimmed, errorMessage: nil, resetIndices: [])
+    }
+
+    private static func validateRangeDateWhileEditing(
+        trimmed: [String],
+        editingIndex: Int,
+    ) -> ValueNormalizeResult {
+        let fromText = trimmed[safe: 0] ?? ""
+        let toText = trimmed[safe: 1] ?? ""
+
+        if editingIndex == 0 {
+            guard !fromText.isEmpty else {
+                return .init(values: nil, errorMessage: "Value is required.", resetIndices: [0])
+            }
+            guard let fromDate = parseDate(fromText) else {
+                return .init(values: nil, errorMessage: "Enter valid date.", resetIndices: [0])
+            }
+            if !toText.isEmpty {
+                guard let toDate = parseDate(toText) else {
+                    return .init(values: nil, errorMessage: "Enter valid date.", resetIndices: [1])
+                }
+                if fromDate > toDate {
+                    return .init(values: nil, errorMessage: "From must be ≤ To.", resetIndices: [0])
+                }
+            }
+            return .init(values: trimmed, errorMessage: nil, resetIndices: [])
+        } else {
+            guard !toText.isEmpty else {
+                return .init(values: nil, errorMessage: "Value is required.", resetIndices: [1])
+            }
+            guard let toDate = parseDate(toText) else {
+                return .init(values: nil, errorMessage: "Enter valid date.", resetIndices: [1])
+            }
+            if !fromText.isEmpty, let fromDate = parseDate(fromText), fromDate > toDate {
+                return .init(values: nil, errorMessage: "From must be ≤ To.", resetIndices: [editingIndex])
+            }
+            // From 비어 있으면 To만 반영(추후 From 입력 대비)
+            return .init(values: trimmed, errorMessage: nil, resetIndices: [])
+        }
+    }
+
+    private static func normalizeToggle(rawValues: [String]) -> ValueNormalizeResult {
+        guard let trimmed = requireNonEmpty([rawValues.first ?? ""]) else {
+            return .init(values: nil, errorMessage: "Value is required.", resetIndices: [0])
+        }
+        let lowered = trimmed[0].lowercased()
+        guard lowered == "true" || lowered == "false" else {
+            return .init(values: nil, errorMessage: "Select true/false.", resetIndices: [0])
+        }
+        let normalized = lowered == "true" ? "True" : "False"
+        return .init(values: [normalized], errorMessage: nil, resetIndices: [])
+    }
+}
+
+private extension Array {
+    subscript(safe index: Int) -> Element? {
+        indices.contains(index) ? self[index] : nil
+    }
 }

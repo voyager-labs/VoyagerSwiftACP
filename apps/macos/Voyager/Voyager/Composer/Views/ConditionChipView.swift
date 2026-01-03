@@ -25,11 +25,19 @@ struct ConditionChipView: View {
     @State private var boolHoverIndex: Int?
 
     var body: some View {
-        WithViewStore(operatorPickerStore, observe: { $0 }, content: { opStore in
-            WithViewStore(valuePickerStore, observe: { $0 }, content: { valueStore in
-                chipContent(opStore: opStore, valueStore: valueStore)
-            })
-        })
+        WithViewStore(
+            operatorPickerStore,
+            observe: { $0 },
+            content: { opStore in
+                WithViewStore(
+                    valuePickerStore,
+                    observe: { $0 },
+                    content: { valueStore in
+                        chipContent(opStore: opStore, valueStore: valueStore)
+                    },
+                )
+            },
+        )
     }
 
     private func chipContent(
@@ -175,8 +183,8 @@ struct ConditionChipView: View {
                 let needsPrepare = valueStore.propertyKey != condition.propertyKey ||
                     valueStore.operatorOption?.code != op.code ||
                     valueStore.valueArity != valueArity
-                let sendPrepare = {
-                    valuePickerStore.send(
+                let sendPrepare: () -> Void = {
+                    _ = valuePickerStore.send(
                         .prepare(
                             .init(
                                 propertyKey: condition.propertyKey,
@@ -201,11 +209,9 @@ struct ConditionChipView: View {
                             sendPrepare()
                         }
                     }
-                    .onChange(of: needsPrepare) { newValue in
-                        if newValue {
-                            sendPrepare()
-                        }
-                    }
+                    .onChange(of: needsPrepare, perform: { newValue in
+                        if newValue { sendPrepare() }
+                    })
                 } else if isActive || !hasCommittedValues {
                     inlineValueInputs(
                         operatorOption: op,
@@ -220,11 +226,9 @@ struct ConditionChipView: View {
                             sendPrepare()
                         }
                     }
-                    .onChange(of: needsPrepare) { newValue in
-                        if newValue {
-                            sendPrepare()
-                        }
-                    }
+                    .onChange(of: needsPrepare, perform: { newValue in
+                        if newValue { sendPrepare() }
+                    })
                 } else if let values = condition.values, values.count >= 2 {
                     rangeDisplayView(operatorOption: op, values: values)
                 }

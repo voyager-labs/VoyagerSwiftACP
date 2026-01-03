@@ -395,7 +395,7 @@ struct ComposerFeature {
                 state.lastFiltersResponse = nil
                 return .none
 
-            case let .searchResponse(.failure(error)):
+            case .searchResponse(.failure):
                 state.isLoadingSearch = false
                 return .none
 
