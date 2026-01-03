@@ -109,14 +109,14 @@ struct ComposerFeature {
                 guard !state.scopes.contains(path) else { return .none }
                 state.pushHistory()
                 state.scopes.append(path)
-                return .none
+                return applyFiltersIfNeeded(state: &state, searchClient: searchClient)
 
             case let .removeScope(path):
                 if state.scopes.contains(path) {
                     state.pushHistory()
                     state.scopes.removeAll { $0 == path }
                 }
-                return .none
+                return applyFiltersIfNeeded(state: &state, searchClient: searchClient)
 
             case .clearAll:
                 state.pushHistory()
@@ -159,7 +159,7 @@ struct ComposerFeature {
                     state.pushHistory()
                     state.scopes[index] = newPath
                 }
-                return .none
+                return applyFiltersIfNeeded(state: &state, searchClient: searchClient)
 
             case let .addCondition(property):
                 if state.conditions.contains(where: { $0.propertyKey == property.key }) {
@@ -363,16 +363,7 @@ struct ComposerFeature {
                 state.valuePicker.operatorOption = nil
                 state.valuePicker.errorMessage = nil
                 state.valuePicker.editingIndex = nil
-                let filters = buildFilters(from: state)
-                state.isLoadingFilters = true
-                return .run { send in
-                    do {
-                        let response = try await searchClient.applyFilters(.init(filters: filters))
-                        await send(.filtersResponse(.success(response)))
-                    } catch {
-                        await send(.filtersResponse(.failure(error)))
-                    }
-                }
+                return applyFiltersIfNeeded(state: &state, searchClient: searchClient)
 
             case .valuePicker:
                 return .none
@@ -408,6 +399,26 @@ struct ComposerFeature {
                 state.isLoadingFilters = false
                 return .none
             }
+        }
+    }
+}
+
+private func applyFiltersIfNeeded(
+    state: inout ComposerFeature.State,
+    searchClient: SearchClient,
+) -> Effect<ComposerFeature.Action> {
+    let filters = buildFilters(from: state)
+    guard !filters.conditions.isEmpty else {
+        state.isLoadingFilters = false
+        return .none
+    }
+    state.isLoadingFilters = true
+    return .run { send in
+        do {
+            let response = try await searchClient.applyFilters(.init(filters: filters))
+            await send(.filtersResponse(.success(response)))
+        } catch {
+            await send(.filtersResponse(.failure(error)))
         }
     }
 }
