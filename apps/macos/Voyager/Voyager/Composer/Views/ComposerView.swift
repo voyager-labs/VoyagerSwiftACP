@@ -111,28 +111,40 @@ struct ComposerView: View {
                 .isEmpty
             queryInputField(viewStore: viewStore, isSubmitDisabled: isSubmitDisabled)
 
-            Button {
-                viewStore.send(.submit)
-            } label: {
-                Image(systemName: "arrow.right")
-                    .font(.system(size: 9, weight: .regular))
-                    .foregroundColor(isSubmitDisabled ? .secondary : .black)
-                    .frame(width: 16, height: 16)
-                    .background(
-                        Circle()
-                            .fill(Color(red: 0.843, green: 0.714, blue: 0.322)),
-                    )
+            let buttonBackground = Circle().fill(Color(red: 0.843, green: 0.714, blue: 0.322))
+            if viewStore.isLoadingSearch {
+                Button {
+                    viewStore.send(.cancelSearch)
+                } label: {
+                    Image(systemName: "stop.fill")
+                        .font(.system(size: 9, weight: .regular))
+                        .foregroundColor(.black)
+                        .frame(width: 16, height: 16)
+                        .background(buttonBackground)
+                }
+                .buttonStyle(.plain)
+                .padding(.trailing, 8)
+            } else {
+                Button {
+                    viewStore.send(.submit)
+                } label: {
+                    Image(systemName: "arrow.right")
+                        .font(.system(size: 9, weight: .regular))
+                        .foregroundColor(isSubmitDisabled ? .secondary : .black)
+                        .frame(width: 16, height: 16)
+                        .background(buttonBackground)
+                }
+                .buttonStyle(.plain)
+                .disabled(isSubmitDisabled)
+                .padding(.trailing, 8)
             }
-            .buttonStyle(.plain)
-            .disabled(isSubmitDisabled)
-            .padding(.trailing, 8)
         }
         .frame(minHeight: 30)
     }
 
     private func queryInputField(
         viewStore: ViewStore<ComposerFeature.State, ComposerFeature.Action>,
-        isSubmitDisabled: Bool,
+        isSubmitDisabled _: Bool,
     ) -> some View {
         let placeholderText = "Enter your request..."
 
@@ -151,9 +163,8 @@ struct ComposerView: View {
                     set: { isComposeFieldFirstResponder = $0 },
                 ),
                 onCommit: {
-                    if !isSubmitDisabled {
-                        viewStore.send(.submit)
-                    }
+                    let trimmed = viewStore.text.trimmingCharacters(in: .whitespacesAndNewlines)
+                    if !trimmed.isEmpty { viewStore.send(.submit) }
                 },
             )
             .font(.system(size: 13))
@@ -170,9 +181,8 @@ struct ComposerView: View {
                 .stroke(isDark ? Color.white.opacity(0.15) : Color.black.opacity(0.12), lineWidth: 1),
         )
         .onSubmit {
-            if !isSubmitDisabled {
-                viewStore.send(.submit)
-            }
+            let trimmed = viewStore.text.trimmingCharacters(in: .whitespacesAndNewlines)
+            if !trimmed.isEmpty { viewStore.send(.submit) }
         }
         .onChange(of: viewStore.isPresented) { presented in
             if presented {

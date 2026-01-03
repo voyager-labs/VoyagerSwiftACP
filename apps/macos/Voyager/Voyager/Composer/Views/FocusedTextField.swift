@@ -20,6 +20,7 @@ struct FocusedTextField: NSViewRepresentable {
         field.delegate = context.coordinator
         field.target = context.coordinator
         field.action = #selector(Coordinator.commit)
+        field.cell?.sendsActionOnEndEditing = true
 
         DispatchQueue.main.async { [weak field] in
             guard let field, isFirstResponder else { return }
@@ -64,6 +65,28 @@ struct FocusedTextField: NSViewRepresentable {
             if let field = obj.object as? NSTextField {
                 text = field.stringValue
             }
+        }
+
+        func control(
+            _: NSControl,
+            textView _: NSTextView,
+            doCommandBy commandSelector: Selector,
+        ) -> Bool {
+            if commandSelector == #selector(NSResponder.insertNewline(_:)) ||
+                commandSelector == #selector(NSResponder.insertLineBreak(_:))
+            {
+                onCommit()
+                return true
+            }
+            return false
+        }
+
+        func controlTextDidEndEditing(_ obj: Notification) {
+            guard
+                let movement = obj.userInfo?["NSTextMovement"] as? Int,
+                movement == NSReturnTextMovement
+            else { return }
+            onCommit()
         }
 
         @objc
