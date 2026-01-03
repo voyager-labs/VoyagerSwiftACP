@@ -14,6 +14,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, ObservableObject {
 
     private let helperManager = HelperLifecycleManager()
     private var updaterController: SPUStandardUpdaterController?
+    private var appLifecycleStore: StoreOf<AppLifecycleFeature>?
 
     @Published var hasSelectedItems: Bool = false
     @Published var hasClipboardItems: Bool = false
@@ -66,6 +67,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, ObservableObject {
     func applicationDidFinishLaunching(_: Notification) {
         NSWindow.allowsAutomaticWindowTabbing = true
         configureUpdater()
+        startAppLifecycle()
         createNewWindow()
     }
 
@@ -77,7 +79,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, ObservableObject {
 
     func setAutomaticUpdate(enabled: Bool) {
         DispatchQueue.main.async { [weak self] in
-            self?.updaterController?.updater.automaticallyChecksForUpdates = enabled
+            self?.updaterController?.updater.automaticallyDownloadsUpdates = enabled
         }
     }
 
@@ -88,8 +90,23 @@ class AppDelegate: NSObject, NSApplicationDelegate, ObservableObject {
             userDriverDelegate: nil,
         )
 
-        let autoCheck = UserDefaults.standard.object(forKey: SettingsKeys.automaticUpdate) as? Bool ?? true
-        updaterController?.updater.automaticallyChecksForUpdates = autoCheck
+        updaterController?.updater.automaticallyChecksForUpdates = true
+
+        let automaticUpdates = UserDefaults.standard.object(forKey: SettingsKeys.automaticUpdate) as? Bool ?? false
+        updaterController?.updater.automaticallyDownloadsUpdates = automaticUpdates
+    }
+
+    private func startAppLifecycle() {
+        guard let updater = updaterController?.updater else { return }
+        let store = withDependencies {
+            $0.updateCheckClient = UpdateCheckClient.live(updater: updater)
+        } operation: {
+            Store(initialState: AppLifecycleFeature.State()) {
+                AppLifecycleFeature()
+            }
+        }
+        appLifecycleStore = store
+        store.send(.didFinishLaunching)
     }
 
     func applicationSupportsSecureRestorableState(_: NSApplication) -> Bool {

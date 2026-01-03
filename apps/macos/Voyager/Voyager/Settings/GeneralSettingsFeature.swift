@@ -142,7 +142,7 @@ struct GeneralSettingsFeature {
         var startingDirectoryError: String?
         var launchAtStartup: Bool = false
         var launchAtStartupError: String?
-        var automaticUpdate: Bool = true
+        var automaticUpdate: Bool = false
         var automaticUpdateError: String?
         var alertBeforeQuit: Bool = false
     }
@@ -187,7 +187,7 @@ struct GeneralSettingsFeature {
 
                 // 자동 업데이트 및 종료 알림 설정
                 state.automaticUpdate = UserDefaults.standard
-                    .object(forKey: SettingsKeys.automaticUpdate) as? Bool ?? true
+                    .object(forKey: SettingsKeys.automaticUpdate) as? Bool ?? false
                 state.alertBeforeQuit = UserDefaults.standard.bool(forKey: SettingsKeys.alertBeforeQuit)
 
                 return .none

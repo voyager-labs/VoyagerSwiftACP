@@ -1,4 +1,5 @@
 import ComposableArchitecture
+import Foundation
 import SwiftUI
 
 struct GeneralSettingsView: View {
@@ -26,7 +27,7 @@ struct GeneralSettingsView: View {
 
             Section {
                 VStack(alignment: .leading, spacing: 12) {
-                    Toggle("Automatically check for updates", isOn: Binding(
+                    Toggle("Automatically download and install updates", isOn: Binding(
                         get: { store.automaticUpdate },
                         set: { store.send(.toggleAutomaticUpdate($0)) },
                     ))
@@ -141,5 +142,8 @@ struct GeneralSettingsView: View {
         .formStyle(.grouped)
         .scrollContentBackground(.hidden)
         .background(Color(NSColor.controlBackgroundColor))
+        .onReceive(NotificationCenter.default.publisher(for: UserDefaults.didChangeNotification)) { _ in
+            store.send(.loadSettings)
+        }
     }
 }
