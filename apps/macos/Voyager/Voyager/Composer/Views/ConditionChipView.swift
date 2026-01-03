@@ -644,8 +644,9 @@ struct ConditionChipView: View {
             datePopoverIndex = index
         } label: {
             let isHovering = dateHoverIndex == index
-            let labelText = currentText
-                .isEmpty ? (placeholderText.isEmpty ? "Value" : placeholderText.capitalized) : currentText
+            let labelText = currentText.isEmpty
+                ? (placeholderText.isEmpty ? "Value" : placeholderText.capitalized)
+                : (ValueNormalizer.formatDateOnlyString(currentText) ?? currentText)
             Text(labelText)
                 .font(.system(size: 11, weight: .medium))
                 .foregroundColor(currentText.isEmpty ? .secondary : .primary)
@@ -801,6 +802,17 @@ struct ConditionChipView: View {
 
     private func displayValueText() -> String {
         guard let values = condition.values, !values.isEmpty else { return "Value" }
+        if condition.valueType == .date {
+            let first = ValueNormalizer.formatDateOnlyString(values[0]) ?? values[0]
+            if values.count >= 2 {
+                let second = ValueNormalizer.formatDateOnlyString(values[1]) ?? values[1]
+                if first == second {
+                    return first
+                }
+                return first + " ~ " + second
+            }
+            return first
+        }
         if values.count >= 2 {
             return values[0] + " and " + values[1]
         }

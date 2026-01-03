@@ -10,21 +10,80 @@ struct ValueNormalizeResult: Equatable {
 }
 
 enum ValueNormalizer {
-    // 공용 날짜 포맷터 (날짜만, 로컬 타임존)
-    private static let dateFormatter: DateFormatter = {
+    // 공용 날짜 포맷터 (ISO 8601, 초까지, UTC, Z 표기)
+    private static let isoFormatter: ISO8601DateFormatter = {
+        let formatter = ISO8601DateFormatter()
+        formatter.timeZone = TimeZone(secondsFromGMT: 0)
+        formatter.formatOptions = [.withInternetDateTime]
+        return formatter
+    }()
+
+    // 날짜만 있는 경우 파싱용
+    private static let dateOnlyFormatter: DateFormatter = {
         let formatter = DateFormatter()
         formatter.locale = Locale(identifier: "en_US_POSIX")
-        formatter.timeZone = .current
+        formatter.timeZone = TimeZone(secondsFromGMT: 0)
         formatter.dateFormat = "yyyy-MM-dd"
         return formatter
     }()
 
     static func formatDate(_ date: Date) -> String {
-        dateFormatter.string(from: date)
+        isoFormatter.string(from: normalizedDay(date))
+    }
+
+    static func formatDateOnly(_ date: Date) -> String {
+        dateOnlyFormatter.string(from: normalizedDay(date))
+    }
+
+    static func formatDateOnlyString(_ text: String) -> String? {
+        guard let date = parseDate(text) else { return nil }
+        return formatDateOnly(date)
     }
 
     static func parseDate(_ text: String) -> Date? {
-        dateFormatter.date(from: text)
+        if let date = isoFormatter.date(from: text) {
+            return normalizedDay(date)
+        }
+        if let date = dateOnlyFormatter.date(from: text) {
+            return normalizedDay(date)
+        }
+        return nil
+    }
+
+    private static func normalizedDay(_ date: Date) -> Date {
+        // 캘린더 컴포넌트는 사용자의 현지 시간대를 기준으로 뽑고,
+        // 최종 Date는 UTC 자정으로 고정해 날짜가 하루 당겨지지 않도록 맞춤.
+        var localCalendar = Calendar(identifier: .gregorian)
+        localCalendar.timeZone = .current
+        let comps = localCalendar.dateComponents([.year, .month, .day], from: date)
+
+        var utcCalendar = Calendar(identifier: .gregorian)
+        if let utc = TimeZone(secondsFromGMT: 0) {
+            utcCalendar.timeZone = utc
+        }
+        return utcCalendar.date(from: comps) ?? date
+    }
+
+    static func startOfDayString(for date: Date) -> String {
+        let calendar = Calendar(identifier: .gregorian)
+        let utc = TimeZone(secondsFromGMT: 0) ?? .current
+        var components = calendar.dateComponents(in: utc, from: date)
+        components.hour = 0
+        components.minute = 0
+        components.second = 0
+        let start = calendar.date(from: components) ?? date
+        return formatDate(start)
+    }
+
+    static func endOfDayString(for date: Date) -> String {
+        let calendar = Calendar(identifier: .gregorian)
+        let utc = TimeZone(secondsFromGMT: 0) ?? .current
+        var components = calendar.dateComponents(in: utc, from: date)
+        components.hour = 23
+        components.minute = 59
+        components.second = 59
+        let end = calendar.date(from: components) ?? date
+        return formatDate(end)
     }
 
     static func expectedArity(for kind: ValueUIKind) -> Int {
