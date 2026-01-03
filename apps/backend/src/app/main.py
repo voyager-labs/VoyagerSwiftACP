@@ -5,8 +5,9 @@ from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
 
-from app.config import load_config
+from app.config import get_db_config, load_config
 from app.file.routes import router as files_router
+from app.search.routes import router as search_router
 from infra.db.bootstrap import initialize_sqlite_db
 from infra.db.engine import engine_manager
 
@@ -18,7 +19,7 @@ async def lifespan(app: FastAPI):
     app.state.config = cfg
 
     # DB 엔진 초기화 및 Alembic 기반 마이그레이션 적용
-    init_summary = initialize_sqlite_db(cfg)
+    init_summary = initialize_sqlite_db(get_db_config(cfg))
 
     logger = logging.getLogger("uvicorn.error")
     # api_key_set = bool(cfg.llm.api_key) and str(cfg.llm.api_key).strip() != ""
@@ -49,6 +50,7 @@ app = FastAPI(
 
 # 라우터 등록
 app.include_router(files_router, prefix="/api")
+app.include_router(search_router, prefix="/api")
 
 
 @app.get("/")

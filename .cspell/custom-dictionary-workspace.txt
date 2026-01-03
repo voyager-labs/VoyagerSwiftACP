@@ -1,14 +1,18 @@
 # Custom Dictionary Words
 atexit
 birthtime
+codesign
 dotenv
 fastapi
 followlinks
 fputs
 Froms
 ipykernel
+langchain
 nlink
+Nuitka
 osxmetadata
+pipefail
 pydantic
 pyproject
 pyright
@@ -18,3 +22,5 @@ sqlalchemy
 sqlmodel
 uvicorn
 venv
+xcarchive
+xcodeproj

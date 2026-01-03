@@ -24,8 +24,6 @@ wheels/
 # Virtual environments
 .venv/
 venv/
-ENV/
-env/
 
 # IDE
 .vscode/
@@ -108,3 +106,5 @@ apps/macos/logs/
 apps/backend/alembic.ini.bak
 
 .serena/*
+
+!scripts/build

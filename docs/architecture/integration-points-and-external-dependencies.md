@@ -8,12 +8,13 @@
 
 - macOS → 백엔드 프로세스 스폰 방식:
   - **Debug 빌드**: `/usr/bin/env` + `uv`로 로컬 개발 환경 사용
-  - **Release 빌드**: 번들된 `backend-venv/bin/python` 사용 (로컬 `uv` 불필요)
+  - **Release 빌드**: 번들된 Nuitka 바이너리 (`server/server.bin`) 직접 실행 (로컬 `uv` 불필요)
 - 환경변수 예시: `UV_CMD`, `BACKEND_DIR`, `APP_ENV`, `VOYAGER_LOG_FILE`, `VOYAGER_PATH`
-- Release 빌드 시 번들 venv 준비:
-  - `scripts/prepare-backend-venv.sh`가 백엔드 휠 빌드 및 venv 생성
-  - Xcode 빌드 단계에서 자동 실행 (VoyagerHelper 타겟)
-  - 생성된 venv는 `VoyagerHelper.app/Contents/Resources/backend-venv`로 복사됨
+- Release 빌드 시 Nuitka 바이너리 빌드:
+  - `scripts/build/build-backend-binary.sh`가 Nuitka 바이너리 빌드/번들링을 처리
+  - Xcode 빌드 단계에서 자동 실행 (VoyagerHelper 타겟, Build Backend Binary)
+  - 생성된 바이너리는 `VoyagerHelper.app/Contents/Resources/server`로 복사됨
+  - arm64 전용 빌드 (빌드 시간 단축을 위해 universal 바이너리 제외)
 
 ## 외부 의존 & 비밀키 관리(가이드)
 

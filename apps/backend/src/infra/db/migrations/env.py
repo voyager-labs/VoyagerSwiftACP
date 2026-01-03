@@ -1,13 +1,11 @@
 from __future__ import annotations
 
 from alembic import context
-from sqlalchemy.engine import Connection, Engine
+from sqlalchemy import create_engine
+from sqlalchemy.engine import Engine
 from sqlmodel import SQLModel
 
-from app.config import load_config
-from infra.db.engine import engine_manager
 from infra.db.migrations.config import AlembicConfigKwargs, build_alembic_config
-from infra.db.utils import resolve_db_file_path
 from infra.schemas import SCHEMAS
 
 _LOADED_SCHEMAS = SCHEMAS
@@ -18,13 +16,8 @@ target_metadata = SQLModel.metadata
 ALEMBIC_CONFIG: AlembicConfigKwargs = build_alembic_config(target_metadata=target_metadata)
 
 
-def run_migrations_offline() -> None:
-    cfg = load_config()
-    protocol: str = str(cfg.db.protocol)
-    db_file_path = resolve_db_file_path(cfg)
-    url = f"{protocol}{db_file_path}"
-
-    config.set_main_option("sqlalchemy.url", url)
+def run_migrations_offline(url: str) -> None:
+    """Offline 모드: 실제 DB 연결 없이 SQL만 생성"""
 
     context.configure(
         url=url,
@@ -37,35 +30,30 @@ def run_migrations_offline() -> None:
         context.run_migrations()
 
 
-def run_migrations_online() -> None:
-    """Run migrations in 'online' mode' using the **application's Engine only**.
+def run_migrations_online(url: str) -> None:
+    """Online 모드: 실제 DB에 연결하여 마이그레이션 실행"""
 
-    This ensures PRAGMA/serializer settings match the runtime exactly.
-    """
-    provided_conn: Connection | None = config.attributes.get("connection")
-
-    if provided_conn is not None:
-        context.configure(
-            connection=provided_conn,
-            **ALEMBIC_CONFIG,
-        )
-        with context.begin_transaction():
-            context.run_migrations()
-        return
-
-    hydra_cfg = load_config()
-    engine_manager.initialize(hydra_cfg)
-    engine: Engine = engine_manager.engine
-    with engine.connect() as connectable:
-        context.configure(
-            connection=connectable,
-            **ALEMBIC_CONFIG,
-        )
+    engine: Engine = create_engine(url, echo=False)
+    with engine.connect() as conn:
+        context.configure(connection=conn, **ALEMBIC_CONFIG)
         with context.begin_transaction():
             context.run_migrations()
 
 
-if context.is_offline_mode():
-    run_migrations_offline()
+# Alembic 진입점
+provided_conn = config.attributes.get("connection")
+
+if provided_conn:
+    # Bootstrap 경로: Hydra config에서 connection 주입됨
+    context.configure(connection=provided_conn, **ALEMBIC_CONFIG)
+    with context.begin_transaction():
+        context.run_migrations()
 else:
-    run_migrations_online()
+    # CLI 경로: alembic.ini의 URL 사용 (dev 전용)
+    url = config.get_main_option("sqlalchemy.url")
+    if not url:
+        raise RuntimeError("alembic.ini에 sqlalchemy.url이 설정되지 않았습니다.")
+    if context.is_offline_mode():
+        run_migrations_offline(url)
+    else:
+        run_migrations_online(url)

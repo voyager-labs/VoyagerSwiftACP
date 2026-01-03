@@ -4,10 +4,9 @@ from fastapi import APIRouter, HTTPException, Query
 from pydantic import BaseModel
 from sqlmodel import select, text
 
-from app.config import load_config
-from core.llm.langchain_provider import LangChainProvider
+from app.config import get_db_config, load_config
 from core.llm.cached_llm_converter import CachedLLMConverter
-
+from core.llm.langchain_provider import LangChainProvider
 from infra.db.engine import engine_manager
 from infra.repositories.file_entries import FileEntriesRepository
 from infra.schemas.file_entry_schema import FileEntrySchema
@@ -21,10 +20,11 @@ class NaturalQueryRequest(BaseModel):
     query: str
     limit: int = 50
 
+
 # 앱 시작 시 DB 초기화 (이미 main.py에서 수행됨)
 cfg = load_config()
 if not engine_manager.is_initialized:
-    engine_manager.initialize(cfg)
+    engine_manager.initialize(get_db_config(cfg))
 
 
 def create_llm_provider() -> LangChainProvider:
@@ -141,7 +141,9 @@ async def get_stats():
             "total_files": total,
             "total_size_bytes": total_size,
             "total_size_mb": round(total_size / (1024 * 1024), 2),
-            "extension_stats": [{"extension": ext, "count": count} for ext, count in top_extensions],
+            "extension_stats": [
+                {"extension": ext, "count": count} for ext, count in top_extensions
+            ],
         }
 
 
@@ -276,5 +278,3 @@ async def query_files(request: NaturalQueryRequest):
             "error": str(e)[:200],
             "execution_time": round(time.time() - start_time, 3),
         }
-
-

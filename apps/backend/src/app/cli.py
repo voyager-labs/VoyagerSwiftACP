@@ -6,38 +6,52 @@ import subprocess
 import sys
 from pathlib import Path
 
-from utils.paths import get_source_path
+from dotenv import find_dotenv, load_dotenv
 
-MAIN_FILE = get_source_path() / "app" / "main.py"
+MAIN_FILE = Path(__file__).parent / "main.py"
 
 
-def _run_fastapi(*args: str, env: dict[str, str] | None = None) -> int:
-    cmd = [sys.executable, "-m", "fastapi", *args]
+def _load_env(app_env: str) -> None:
+    """APP_ENV에 맞는 .env 파일 로드"""
+    env_file = find_dotenv(filename=f".env.{app_env}")
+    load_dotenv(dotenv_path=env_file, override=False)
+
+
+def _run_fastapi(*args: str, env: dict[str, str] | None = None) -> None:
+    host = env["PUBLIC_BACKEND_HOST"]
+    port = env["PUBLIC_BACKEND_PORT"]
+    cmd = [sys.executable, "-m", "fastapi", *args, "--host", host, "--port", port]
     proc = subprocess.Popen(cmd, env=env)
     try:
-        return proc.wait()
+        exit_code = proc.wait()
+        raise SystemExit(exit_code)
     except KeyboardInterrupt:
         try:
-            proc.wait(timeout=1)
-        except Exception:
-            pass
-        return 130
+            proc.terminate()
+            proc.wait(timeout=5)
+        except subprocess.TimeoutExpired:
+            proc.kill()
+            proc.wait()
+        raise SystemExit(130)
 
 
 def _with_env(default_env: str) -> dict[str, str]:
+    _load_env(default_env)
     merged = os.environ.copy()
     merged.setdefault("APP_ENV", default_env)
     return merged
 
 
 def dev() -> None:
-    exit_code = _run_fastapi("dev", str(MAIN_FILE), env=_with_env("dev"))
-    raise SystemExit(exit_code)
+    """개발 모드 실행: fastapi dev (자동 리로드)"""
+    env = _with_env("dev")
+    _run_fastapi("dev", str(MAIN_FILE), env=env)
 
 
 def prod() -> None:
-    exit_code = _run_fastapi("run", str(MAIN_FILE), env=_with_env("prod"))
-    raise SystemExit(exit_code)
+    """프로덕션 모드 실행: fastapi run (자동 리로드 없음)"""
+    env = _with_env("prod")
+    _run_fastapi("run", str(MAIN_FILE), env=env)
 
 
 def index() -> None:
@@ -66,7 +80,7 @@ def index() -> None:
     args = parser.parse_args()
 
     # 동적 import (서버 실행 시 불필요한 import 방지)
-    from app.config import load_config
+    from app.config import get_db_config, load_config
     from app.file.file_services import convert_to_file_entry_schema
     from core.file_crawler.extractor import (
         convert_path_stat_osxmetadata,
@@ -77,7 +91,7 @@ def index() -> None:
 
     # 설정 로드 및 DB 초기화
     cfg = load_config()
-    engine_manager.initialize(cfg)
+    engine_manager.initialize(get_db_config(cfg))
     engine_manager.create_tables()
 
     # 경로 처리

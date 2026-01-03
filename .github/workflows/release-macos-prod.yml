@@ -1,0 +1,161 @@
+name: release-macos-prod
+
+on:
+  release:
+    types: [published]
+
+concurrency:
+  group: release-macos-prod-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  build-notarize:
+    name: Build, notarize (prod)
+    runs-on: ${{ fromJSON(vars.RELEASE_MACOS_RUNS_ON || '["self-hosted","macOS","ARM64"]') }}
+    environment: production
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+
+    env:
+      PROJECT_PATH: apps/macos/Voyager/Voyager.xcodeproj
+      SCHEME: Voyager-Prod
+      CONFIGURATION: Release
+      BUILD_DIR: ${{ github.workspace }}/build/ci
+      SIGNING_KEYCHAIN: signing_temp_${{ github.run_id }}_${{ github.run_attempt }}
+
+      RELEASES_PREFIX: releases
+      VERSION_PREFIX: releases/versions
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup uv (GitHub-hosted only)
+        if: ${{ !contains(vars.RELEASE_MACOS_RUNS_ON || '["self-hosted","macOS","ARM64"]', 'self-hosted') }}
+        uses: astral-sh/setup-uv@v7
+        with:
+          version: "0.8.13"
+          enable-cache: "false"
+
+      - name: Resolve version from tag
+        id: version
+        shell: bash
+        run: |
+          set -euo pipefail
+          ./scripts/ci/resolve-version-from-tag.sh
+
+      - name: Import macOS signing certificate
+        uses: apple-actions/import-codesign-certs@v3
+        with:
+          p12-file-base64: ${{ secrets.APPLE_CERTIFICATE_BASE64 }}
+          p12-password: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+          keychain: ${{ env.SIGNING_KEYCHAIN }}
+          keychain-password: ${{ github.run_id }}-${{ github.run_attempt }}
+
+      - name: Build archive
+        shell: bash
+        run: |
+          set -euo pipefail
+          ./scripts/ci/build-archive.sh
+
+      - name: Export app
+        shell: bash
+        run: |
+          set -euo pipefail
+          ./scripts/ci/export-macos-app.sh "${BUILD_DIR}/Voyager.xcarchive" "${BUILD_DIR}/export"
+
+      - name: Create DMG
+        shell: bash
+        run: |
+          set -euo pipefail
+          APP_PATH="${BUILD_DIR}/export/Voyager.app"
+          DMG_PATH="${BUILD_DIR}/Voyager.dmg"
+          ./scripts/ci/create-dmg.sh "${APP_PATH}" "${DMG_PATH}"
+
+      - name: Notarize + staple (App Store Connect API Key)
+        shell: bash
+        env:
+          ASC_ISSUER_ID: ${{ secrets.ASC_ISSUER_ID }}
+          ASC_KEY_ID: ${{ secrets.ASC_KEY_ID }}
+          ASC_PRIVATE_KEY_P8: ${{ secrets.ASC_PRIVATE_KEY_P8 }}
+        run: |
+          set -euo pipefail
+          ./scripts/ci/notarize-and-staple-dmg.sh "${BUILD_DIR}/Voyager.dmg"
+
+      - name: Generate latest.json
+        shell: bash
+        run: |
+          set -euo pipefail
+          ./scripts/ci/generate-latest-json.sh \
+            "${BUILD_DIR}/Voyager.dmg" \
+            "${VERSION}" \
+            "${VERSION_PREFIX}/${VERSION}/Voyager.dmg" \
+            "${RELEASES_PREFIX}/Voyager.dmg" \
+            "${BUILD_DIR}/latest.json"
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: prod-release
+          if-no-files-found: error
+          path: |
+            build/ci/Voyager.dmg
+            build/ci/latest.json
+
+      - name: Cleanup temp signing keychain
+        if: always()
+        shell: bash
+        run: |
+          set -euo pipefail
+          keychain="${SIGNING_KEYCHAIN}"
+          keychain_file="${keychain}.keychain"
+          keychain_db="${keychain}.keychain-db"
+
+          security delete-keychain "${keychain}" 2>/dev/null || true
+          security delete-keychain "${keychain_file}" 2>/dev/null || true
+          security delete-keychain "${keychain_db}" 2>/dev/null || true
+          security delete-keychain "${HOME}/Library/Keychains/${keychain}" 2>/dev/null || true
+          security delete-keychain "${HOME}/Library/Keychains/${keychain_file}" 2>/dev/null || true
+          security delete-keychain "${HOME}/Library/Keychains/${keychain_db}" 2>/dev/null || true
+
+          rm -f \
+            "${keychain}" \
+            "${keychain_file}" \
+            "${keychain_db}" \
+            "${HOME}/Library/Keychains/${keychain}" \
+            "${HOME}/Library/Keychains/${keychain_file}" \
+            "${HOME}/Library/Keychains/${keychain_db}" \
+            || true
+
+  upload-prune:
+    name: Upload (prod)
+    needs: build-notarize
+    runs-on: ubuntu-latest
+    environment: production
+
+    env:
+      R2_BUCKET: ${{ vars.R2_DOWNLOADS_BUCKET }}
+      RELEASES_PREFIX: releases
+      VERSION_PREFIX: releases/versions
+      VERSION: ${{ needs.build-notarize.outputs.version }}
+      BUILD_DIR: ${{ github.workspace }}/build/ci
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Download artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: prod-release
+          path: build/ci
+
+      - name: Upload to R2 (version + latest)
+        uses: cloudflare/wrangler-action@v3
+        with:
+          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          command: |
+            r2 object put ${{ env.R2_BUCKET }}/${{ env.VERSION_PREFIX }}/${{ env.VERSION }}/Voyager.dmg --file ${{ env.BUILD_DIR }}/Voyager.dmg
+            r2 object put ${{ env.R2_BUCKET }}/${{ env.RELEASES_PREFIX }}/Voyager.dmg --file ${{ env.BUILD_DIR }}/Voyager.dmg
+            r2 object put ${{ env.R2_BUCKET }}/${{ env.RELEASES_PREFIX }}/latest.json --file ${{ env.BUILD_DIR }}/latest.json

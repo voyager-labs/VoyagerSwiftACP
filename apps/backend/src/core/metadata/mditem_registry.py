@@ -42,6 +42,25 @@ class MDItemAttribute:
     category: str = "general"
 
 
+@dataclass
+class PropertyKeyMapping:
+    """Search API용 propertyKey 매핑
+
+    Attributes:
+        property_key: API에서 사용하는 키 (예: "size", "contentType")
+        db_field: DB 컬럼명 (None이면 JSON 쿼리)
+        json_path: JSON 추출 경로 (예: "$.kMDItemPixelHeight")
+        value_type: 값 타입 (검증/변환용)
+        supported_operators: 지원하는 연산자 목록
+    """
+
+    property_key: str
+    db_field: str | None
+    json_path: str | None
+    value_type: MDItemType
+    supported_operators: list[str]
+
+
 # Apple MDItem 속성 레지스트리
 MDITEM_REGISTRY: dict[str, MDItemAttribute] = {
     # ============================================
@@ -440,6 +459,211 @@ MDITEM_REGISTRY: dict[str, MDItemAttribute] = {
 }
 
 
+# ============================================
+# Search API용 PropertyKey 레지스트리
+# ============================================
+PROPERTY_KEY_REGISTRY: dict[str, PropertyKeyMapping] = {
+    # 파일 시스템 속성
+    "size": PropertyKeyMapping(
+        property_key="size",
+        db_field="size",
+        json_path=None,
+        value_type=MDItemType.NUMBER,
+        supported_operators=["eq", "gt", "gte", "lt", "lte", "between"],
+    ),
+    "contentType": PropertyKeyMapping(
+        property_key="contentType",
+        db_field="uniform_type_identifier",
+        json_path=None,
+        value_type=MDItemType.STRING,
+        supported_operators=["eq", "contains", "in"],
+    ),
+    "kind": PropertyKeyMapping(
+        property_key="kind",
+        db_field="file_kind",
+        json_path=None,
+        value_type=MDItemType.STRING,
+        supported_operators=["eq", "contains"],
+    ),
+    "name": PropertyKeyMapping(
+        property_key="name",
+        db_field="name_full",
+        json_path=None,
+        value_type=MDItemType.STRING,
+        supported_operators=["eq", "contains"],
+    ),
+    "extension": PropertyKeyMapping(
+        property_key="extension",
+        db_field="extension",
+        json_path=None,
+        value_type=MDItemType.STRING,
+        supported_operators=["eq", "in"],
+    ),
+    "isInvisible": PropertyKeyMapping(
+        property_key="isInvisible",
+        db_field="is_invisible",
+        json_path=None,
+        value_type=MDItemType.BOOLEAN,
+        supported_operators=["eq"],
+    ),
+    # 날짜 속성
+    "createdAt": PropertyKeyMapping(
+        property_key="createdAt",
+        db_field="creation_date",
+        json_path=None,
+        value_type=MDItemType.DATE,
+        supported_operators=["eq", "gt", "gte", "lt", "lte", "between"],
+    ),
+    "modifiedAt": PropertyKeyMapping(
+        property_key="modifiedAt",
+        db_field="modification_date",
+        json_path=None,
+        value_type=MDItemType.DATE,
+        supported_operators=["eq", "gt", "gte", "lt", "lte", "between"],
+    ),
+    "addedAt": PropertyKeyMapping(
+        property_key="addedAt",
+        db_field="added_date",
+        json_path=None,
+        value_type=MDItemType.DATE,
+        supported_operators=["eq", "gt", "gte", "lt", "lte", "between"],
+    ),
+    "lastUsedAt": PropertyKeyMapping(
+        property_key="lastUsedAt",
+        db_field="last_used_date",
+        json_path=None,
+        value_type=MDItemType.DATE,
+        supported_operators=["eq", "gt", "gte", "lt", "lte", "between"],
+    ),
+    "contentCreatedAt": PropertyKeyMapping(
+        property_key="contentCreatedAt",
+        db_field="content_creation_date",
+        json_path=None,
+        value_type=MDItemType.DATE,
+        supported_operators=["eq", "gt", "gte", "lt", "lte", "between"],
+    ),
+    "contentModifiedAt": PropertyKeyMapping(
+        property_key="contentModifiedAt",
+        db_field="content_modification_date",
+        json_path=None,
+        value_type=MDItemType.DATE,
+        supported_operators=["eq", "gt", "gte", "lt", "lte", "between"],
+    ),
+    # 이미지 속성 (JSON)
+    "pixelHeight": PropertyKeyMapping(
+        property_key="pixelHeight",
+        db_field=None,
+        json_path="$.kMDItemPixelHeight",
+        value_type=MDItemType.NUMBER,
+        supported_operators=["eq", "gt", "gte", "lt", "lte", "between"],
+    ),
+    "pixelWidth": PropertyKeyMapping(
+        property_key="pixelWidth",
+        db_field=None,
+        json_path="$.kMDItemPixelWidth",
+        value_type=MDItemType.NUMBER,
+        supported_operators=["eq", "gt", "gte", "lt", "lte", "between"],
+    ),
+    "colorSpace": PropertyKeyMapping(
+        property_key="colorSpace",
+        db_field=None,
+        json_path="$.kMDItemColorSpace",
+        value_type=MDItemType.STRING,
+        supported_operators=["eq", "in"],
+    ),
+    "hasAlphaChannel": PropertyKeyMapping(
+        property_key="hasAlphaChannel",
+        db_field=None,
+        json_path="$.kMDItemHasAlphaChannel",
+        value_type=MDItemType.BOOLEAN,
+        supported_operators=["eq"],
+    ),
+    # 비디오/오디오 속성 (JSON)
+    "duration": PropertyKeyMapping(
+        property_key="duration",
+        db_field=None,
+        json_path="$.kMDItemDurationSeconds",
+        value_type=MDItemType.NUMBER,
+        supported_operators=["eq", "gt", "gte", "lt", "lte", "between"],
+    ),
+    "videoBitRate": PropertyKeyMapping(
+        property_key="videoBitRate",
+        db_field=None,
+        json_path="$.kMDItemVideoBitRate",
+        value_type=MDItemType.NUMBER,
+        supported_operators=["eq", "gt", "gte", "lt", "lte"],
+    ),
+    "audioBitRate": PropertyKeyMapping(
+        property_key="audioBitRate",
+        db_field=None,
+        json_path="$.kMDItemAudioBitRate",
+        value_type=MDItemType.NUMBER,
+        supported_operators=["eq", "gt", "gte", "lt", "lte"],
+    ),
+    "audioSampleRate": PropertyKeyMapping(
+        property_key="audioSampleRate",
+        db_field=None,
+        json_path="$.kMDItemAudioSampleRate",
+        value_type=MDItemType.NUMBER,
+        supported_operators=["eq", "gt", "gte", "lt", "lte"],
+    ),
+    "audioChannelCount": PropertyKeyMapping(
+        property_key="audioChannelCount",
+        db_field=None,
+        json_path="$.kMDItemAudioChannelCount",
+        value_type=MDItemType.NUMBER,
+        supported_operators=["eq", "in"],
+    ),
+    # 문서 속성 (JSON)
+    "title": PropertyKeyMapping(
+        property_key="title",
+        db_field=None,
+        json_path="$.kMDItemTitle",
+        value_type=MDItemType.STRING,
+        supported_operators=["eq", "contains"],
+    ),
+    "numberOfPages": PropertyKeyMapping(
+        property_key="numberOfPages",
+        db_field=None,
+        json_path="$.kMDItemNumberOfPages",
+        value_type=MDItemType.NUMBER,
+        supported_operators=["eq", "gt", "gte", "lt", "lte", "between"],
+    ),
+    "creator": PropertyKeyMapping(
+        property_key="creator",
+        db_field=None,
+        json_path="$.kMDItemCreator",
+        value_type=MDItemType.STRING,
+        supported_operators=["eq", "contains"],
+    ),
+    # 위치 속성 (JSON)
+    "latitude": PropertyKeyMapping(
+        property_key="latitude",
+        db_field=None,
+        json_path="$.kMDItemLatitude",
+        value_type=MDItemType.NUMBER,
+        supported_operators=["eq", "gt", "gte", "lt", "lte", "between"],
+    ),
+    "longitude": PropertyKeyMapping(
+        property_key="longitude",
+        db_field=None,
+        json_path="$.kMDItemLongitude",
+        value_type=MDItemType.NUMBER,
+        supported_operators=["eq", "gt", "gte", "lt", "lte", "between"],
+    ),
+}
+
+
+def get_property_key_mapping(property_key: str) -> PropertyKeyMapping | None:
+    """propertyKey로 매핑 정보 조회"""
+    return PROPERTY_KEY_REGISTRY.get(property_key)
+
+
+def get_all_property_keys() -> list[str]:
+    """모든 지원 propertyKey 목록 반환"""
+    return list(PROPERTY_KEY_REGISTRY.keys())
+
+
 def get_attributes_by_category(category: str) -> dict[str, MDItemAttribute]:
     """카테고리별 속성 필터링"""
     return {k: v for k, v in MDITEM_REGISTRY.items() if v.category == category}
@@ -459,7 +683,11 @@ __all__ = [
     "MDITEM_REGISTRY",
     "MDItemAttribute",
     "MDItemType",
+    "PropertyKeyMapping",
+    "PROPERTY_KEY_REGISTRY",
     "get_attributes_by_category",
     "get_indexed_attributes",
     "get_json_attributes",
+    "get_property_key_mapping",
+    "get_all_property_keys",
 ]
