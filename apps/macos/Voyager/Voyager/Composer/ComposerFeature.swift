@@ -1,5 +1,7 @@
-import ComposableArchitecture
+@preconcurrency import ComposableArchitecture
 import Foundation
+
+// swiftlint:disable type_body_length
 
 struct Condition: Equatable, Identifiable, Hashable {
     var id: String { propertyKey }
@@ -20,6 +22,9 @@ struct FilterSnapshot: Equatable {
 
 @Reducer
 struct ComposerFeature {
+    @Dependency(\.searchClient)
+    var searchClient
+
     @ObservableState
     struct State: Equatable {
         var isPresented: Bool = false
@@ -31,6 +36,10 @@ struct ComposerFeature {
         var valuePicker: ValuePickerFeature.State = .init()
         var history: [FilterSnapshot] = []
         var redoHistory: [FilterSnapshot] = []
+        var isLoadingSearch: Bool = false
+        var isLoadingFilters: Bool = false
+        var lastSearchResponse: SearchResponsePayload?
+        var lastFiltersResponse: SearchResponsePayload?
 
         var canUndo: Bool { !history.isEmpty }
         var canRedo: Bool { !redoHistory.isEmpty }
@@ -59,6 +68,7 @@ struct ComposerFeature {
         case removeCondition(propertyKey: String)
         case clearAll
         case submit
+        case cancelSearch
         case saveCollection
         case setOperator(propertyKey: String, option: OperatorOption)
         case setValue(propertyKey: String, values: [String])
@@ -68,7 +78,11 @@ struct ComposerFeature {
         case propertyPicker(ConditionPropertyPickerFeature.Action)
         case operatorPicker(OperatorPickerFeature.Action)
         case valuePicker(ValuePickerFeature.Action)
+        case searchResponse(Result<SearchResponsePayload, Error>)
+        case filtersResponse(Result<SearchResponsePayload, Error>)
     }
+
+    private static let searchID: String = "search"
 
     var body: some Reducer<State, Action> {
         Scope(state: \.propertyPicker, action: \.propertyPicker) {
@@ -115,8 +129,26 @@ struct ComposerFeature {
                 return .none
 
             case .submit:
-                // TODO: 제출 동작은 백엔드 연동 시 구현
-                return .none
+                let query = state.text.trimmingCharacters(in: .whitespacesAndNewlines)
+                guard !query.isEmpty else { return .none }
+                let filters = buildFilters(from: state)
+                state.isLoadingSearch = true
+                state.text = ""
+                return .run { send in
+                    do {
+                        let response = try await searchClient.search(
+                            .init(query: query, filters: filters),
+                        )
+                        await send(.searchResponse(.success(response)))
+                    } catch {
+                        await send(.searchResponse(.failure(error)))
+                    }
+                }
+                .cancellable(id: Self.searchID, cancelInFlight: true)
+
+            case .cancelSearch:
+                state.isLoadingSearch = false
+                return .cancel(id: Self.searchID)
 
             case .saveCollection:
                 // TODO: 컬렉션 저장 기능 구현 예정
@@ -331,7 +363,16 @@ struct ComposerFeature {
                 state.valuePicker.operatorOption = nil
                 state.valuePicker.errorMessage = nil
                 state.valuePicker.editingIndex = nil
-                return .none
+                let filters = buildFilters(from: state)
+                state.isLoadingFilters = true
+                return .run { send in
+                    do {
+                        let response = try await searchClient.applyFilters(.init(filters: filters))
+                        await send(.filtersResponse(.success(response)))
+                    } catch {
+                        await send(.filtersResponse(.failure(error)))
+                    }
+                }
 
             case .valuePicker:
                 return .none
@@ -347,8 +388,81 @@ struct ComposerFeature {
                 state.valuePicker.errorMessage = nil
                 state.valuePicker.editingIndex = nil
                 return .none
+
+            case let .searchResponse(.success(response)):
+                state.isLoadingSearch = false
+                state.lastSearchResponse = response
+                state.lastFiltersResponse = nil
+                return .none
+
+            case let .searchResponse(.failure(error)):
+                state.isLoadingSearch = false
+                return .none
+
+            case let .filtersResponse(.success(response)):
+                state.isLoadingFilters = false
+                state.lastFiltersResponse = response
+                return .none
+
+            case .filtersResponse(.failure):
+                state.isLoadingFilters = false
+                return .none
             }
         }
+    }
+}
+
+private func buildFilters(from state: ComposerFeature.State) -> SearchFiltersPayload {
+    let conditionPayloads: [SearchConditionPayload] = state.conditions.compactMap { condition in
+        guard let op = condition.operatorCode else { return nil }
+        if let arity = condition.operatorValueArity, arity == 0 {
+            return SearchConditionPayload(propertyKey: condition.propertyKey, operator: op, value: nil)
+        }
+        guard let values = condition.values, !values.isEmpty else { return nil }
+        guard let encoded = encodeValue(condition: condition, values: values) else { return nil }
+        return SearchConditionPayload(propertyKey: condition.propertyKey, operator: op, value: encoded)
+    }
+    return SearchFiltersPayload(
+        scopes: state.scopes,
+        conditions: conditionPayloads,
+    )
+}
+
+// swiftlint:disable:next cyclomatic_complexity
+private func encodeValue(condition: Condition, values: [String]) -> JSONValue? {
+    let op = condition.operatorCode?.lowercased()
+    switch condition.valueType {
+    case .number:
+        let numbers = values.compactMap(Double.init)
+        guard numbers.count == values.count else { return nil }
+        if numbers.count == 1 {
+            return .number(numbers[0])
+        }
+        return .array(numbers.map(JSONValue.number))
+
+    case .boolean:
+        guard let first = values.first?.lowercased() else { return nil }
+        if first == "true" {
+            return .bool(true)
+        } else if first == "false" {
+            return .bool(false)
+        }
+        return nil
+
+    case .date:
+        if values.count == 1 {
+            return .string(values[0])
+        }
+        return .array(values.map(JSONValue.string))
+
+    case .array, .string, .unknown:
+        if op == "in" || op == "anyof" {
+            return .array(values.map(JSONValue.string))
+        }
+        if values.count == 1 {
+            return .string(values[0])
+        }
+        return .array(values.map(JSONValue.string))
     }
 }
 
@@ -368,3 +482,5 @@ private func valueType(for propertyType: String) -> ValueType {
         .unknown
     }
 }
+
+// swiftlint:enable type_body_length
