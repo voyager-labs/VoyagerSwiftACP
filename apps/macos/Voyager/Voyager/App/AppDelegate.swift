@@ -1,7 +1,6 @@
 import AppKit
 import Combine
 import ComposableArchitecture
-import Sparkle
 import SwiftUI
 
 extension Notification.Name {
@@ -11,10 +10,13 @@ extension Notification.Name {
 
 class AppDelegate: NSObject, NSApplicationDelegate, ObservableObject {
     static var shared: AppDelegate?
+    private lazy var appLifecycleStore = Store(initialState: AppLifecycleFeature.State()) {
+        AppLifecycleFeature()
+    }
 
-    private let helperManager = HelperLifecycleManager()
-    private var updaterController: SPUStandardUpdaterController?
-    private var appLifecycleStore: StoreOf<AppLifecycleFeature>?
+    private lazy var updaterStore = Store(initialState: UpdaterFeature.State()) {
+        UpdaterFeature()
+    }
 
     @Published var hasSelectedItems: Bool = false
     @Published var hasClipboardItems: Bool = false
@@ -59,54 +61,23 @@ class AppDelegate: NSObject, NSApplicationDelegate, ObservableObject {
         }
     }
 
-    @MainActor
     func applicationWillFinishLaunching(_: Notification) {
-        helperManager.start()
+        appLifecycleStore.send(.willFinishLaunching)
+        updaterStore.send(.configureAtLaunch)
     }
 
     func applicationDidFinishLaunching(_: Notification) {
         NSWindow.allowsAutomaticWindowTabbing = true
-        configureUpdater()
-        startAppLifecycle()
+        updaterStore.send(.startAtLaunch)
         createNewWindow()
     }
 
     func checkForUpdates() {
-        DispatchQueue.main.async { [weak self] in
-            self?.updaterController?.checkForUpdates(nil)
-        }
+        updaterStore.send(.checkForUpdates)
     }
 
     func setAutomaticUpdate(enabled: Bool) {
-        DispatchQueue.main.async { [weak self] in
-            self?.updaterController?.updater.automaticallyDownloadsUpdates = enabled
-        }
-    }
-
-    private func configureUpdater() {
-        updaterController = SPUStandardUpdaterController(
-            startingUpdater: true,
-            updaterDelegate: nil,
-            userDriverDelegate: nil,
-        )
-
-        updaterController?.updater.automaticallyChecksForUpdates = true
-
-        let automaticUpdates = UserDefaults.standard.object(forKey: SettingsKeys.automaticUpdate) as? Bool ?? false
-        updaterController?.updater.automaticallyDownloadsUpdates = automaticUpdates
-    }
-
-    private func startAppLifecycle() {
-        guard let updater = updaterController?.updater else { return }
-        let store = withDependencies {
-            $0.updateCheckClient = UpdateCheckClient.live(updater: updater)
-        } operation: {
-            Store(initialState: AppLifecycleFeature.State()) {
-                AppLifecycleFeature()
-            }
-        }
-        appLifecycleStore = store
-        store.send(.didFinishLaunching)
+        updaterStore.send(.setAutomaticUpdate(enabled))
     }
 
     func applicationSupportsSecureRestorableState(_: NSApplication) -> Bool {
@@ -258,7 +229,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, ObservableObject {
     }
 
     func applicationWillTerminate(_: Notification) {
-        helperManager.stop()
+        appLifecycleStore.send(.willTerminate)
     }
 
     private func checkIndexingStatus() -> Bool {
