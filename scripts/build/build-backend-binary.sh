@@ -18,13 +18,13 @@ COMPILE_SCRIPT="${SCRIPT_DIR}/compile-nuitka-binary.sh"
 BACKEND_MODE="$("${MODE_SCRIPT}" read)"
 echo "[VoyagerHelper] Detected BACKEND_MODE=${BACKEND_MODE}" >&2
 
+# BACKEND_MODE를 Info.plist에 주입
+BACKEND_MODE="${BACKEND_MODE}" "${MODE_SCRIPT}" inject
+
 if [[ "${BACKEND_MODE}" != "bundled" ]]; then
   echo "[VoyagerHelper] BACKEND_MODE=${BACKEND_MODE}: skip Backend Binary" >&2
   exit 0
 fi
-
-# BACKEND_MODE를 Info.plist에 주입
-BACKEND_MODE="${BACKEND_MODE}" "${MODE_SCRIPT}" inject
 
 echo "[VoyagerHelper] Build Backend Binary start (mode=${BACKEND_MODE})" >&2
 
