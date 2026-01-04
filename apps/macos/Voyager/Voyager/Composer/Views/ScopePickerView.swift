@@ -10,6 +10,7 @@ struct ScopePickerView: View {
     @State private var searchText: String = ""
     @State private var searchResults: [ComposerScopeUtils.DirectoryItem] = []
     @State private var searchTask: Task<Void, Never>?
+    @State private var hoveredPath: String?
     @FocusState private var isSearchFocused: Bool
     @Environment(\.colorScheme)
     private var colorScheme
@@ -134,6 +135,7 @@ struct ScopePickerView: View {
             onSelect(item.path)
             isPresented = false
         } label: {
+            let isHovering = hoveredPath == item.path
             HStack(spacing: 8) {
                 Image(systemName: item.iconName)
                     .font(.system(size: 12))
@@ -151,8 +153,15 @@ struct ScopePickerView: View {
             .padding(.horizontal, 12)
             .padding(.vertical, 8)
             .contentShape(Rectangle())
+            .background(
+                RoundedRectangle(cornerRadius: 6)
+                    .fill(isHovering ? rowHoverFillColor : Color.clear),
+            )
         }
         .buttonStyle(.plain)
+        .onHover { hovering in
+            hoveredPath = hovering ? item.path : nil
+        }
     }
 
     private var comboBoxBackgroundColor: Color {
@@ -192,6 +201,14 @@ struct ScopePickerView: View {
             Color.white.opacity(0.1)
         } else {
             Color.black.opacity(0.1)
+        }
+    }
+
+    private var rowHoverFillColor: Color {
+        if isDark {
+            Color.white.opacity(0.08)
+        } else {
+            Color.black.opacity(0.06)
         }
     }
 }

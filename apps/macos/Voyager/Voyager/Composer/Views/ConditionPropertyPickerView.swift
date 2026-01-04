@@ -6,6 +6,8 @@ struct ConditionPropertyPickerView: View {
     @Environment(\.colorScheme)
     private var colorScheme
     @FocusState private var isSearchFocused: Bool
+    @State private var hoveredPropertyKey: String?
+    @State private var hoveredCategoryKey: String?
 
     private var isDark: Bool {
         colorScheme == .dark
@@ -101,49 +103,13 @@ struct ConditionPropertyPickerView: View {
         let filtered = filteredProperties(viewStore)
         let recommended = filtered.filter(\.isDefault)
         let grouped = Dictionary(grouping: filtered, by: { $0.category })
+        let hasRecommended = !recommended.isEmpty
 
         return ScrollView {
             VStack(spacing: 0) {
-                if !recommended.isEmpty {
-                    ForEach(recommended) { property in
-                        propertyRow(property, viewStore: viewStore, showIcon: false)
-                    }
-                }
-
-                if !grouped.isEmpty {
-                    if !recommended.isEmpty {
-                        separatorColor
-                            .frame(height: 1)
-                    }
-
-                    ForEach(grouped.keys.sorted(), id: \.self) { key in
-                        let items = grouped[key] ?? []
-                        Button {
-                            viewStore.send(.categoryTapped(key))
-                        } label: {
-                            HStack(spacing: 8) {
-                                Text(categoryTitle(for: key))
-                                    .font(.system(size: 13))
-                                    .foregroundColor(.primary)
-                                Spacer()
-                                Text("\(items.count)")
-                                    .font(.system(size: 12))
-                                    .foregroundColor(.secondary)
-                            }
-                            .padding(.horizontal, 12)
-                            .padding(.vertical, 8)
-                            .contentShape(Rectangle())
-                        }
-                        .buttonStyle(.plain)
-                    }
-                }
-
-                if filtered.isEmpty, !viewStore.searchText.isEmpty {
-                    Text("No properties found")
-                        .font(.system(size: 12))
-                        .foregroundColor(.secondary)
-                        .padding(.vertical, 16)
-                }
+                recommendedSection(recommended, viewStore: viewStore)
+                categorySection(grouped, hasRecommended: hasRecommended, viewStore: viewStore)
+                emptyStateIfNeeded(filtered: filtered, query: viewStore.searchText)
             }
         }
     }
@@ -193,6 +159,82 @@ struct ConditionPropertyPickerView: View {
         }
     }
 
+    @ViewBuilder
+    private func recommendedSection(
+        _ recommended: [MDItemProperty],
+        viewStore: ViewStoreOf<ConditionPropertyPickerFeature>,
+    ) -> some View {
+        if !recommended.isEmpty {
+            ForEach(recommended) { property in
+                propertyRow(property, viewStore: viewStore, showIcon: false)
+            }
+        }
+    }
+
+    @ViewBuilder
+    private func categorySection(
+        _ grouped: [String: [MDItemProperty]],
+        hasRecommended: Bool,
+        viewStore: ViewStoreOf<ConditionPropertyPickerFeature>,
+    ) -> some View {
+        if !grouped.isEmpty {
+            if hasRecommended {
+                separatorColor
+                    .frame(height: 1)
+            }
+
+            ForEach(grouped.keys.sorted(), id: \.self) { key in
+                categoryRow(
+                    categoryKey: key,
+                    items: grouped[key] ?? [],
+                    viewStore: viewStore,
+                )
+            }
+        }
+    }
+
+    @ViewBuilder
+    private func emptyStateIfNeeded(filtered: [MDItemProperty], query: String) -> some View {
+        if filtered.isEmpty, !query.isEmpty {
+            Text("No properties found")
+                .font(.system(size: 12))
+                .foregroundColor(.secondary)
+                .padding(.vertical, 16)
+        }
+    }
+
+    private func categoryRow(
+        categoryKey: String,
+        items: [MDItemProperty],
+        viewStore: ViewStoreOf<ConditionPropertyPickerFeature>,
+    ) -> some View {
+        Button {
+            viewStore.send(.categoryTapped(categoryKey))
+        } label: {
+            let isHovering = hoveredCategoryKey == categoryKey
+            HStack(spacing: 8) {
+                Text(categoryTitle(for: categoryKey))
+                    .font(.system(size: 13))
+                    .foregroundColor(.primary)
+                Spacer()
+                Text("\(items.count)")
+                    .font(.system(size: 12))
+                    .foregroundColor(.secondary)
+            }
+            .padding(.horizontal, 12)
+            .padding(.vertical, 8)
+            .contentShape(Rectangle())
+            .background(
+                RoundedRectangle(cornerRadius: 6)
+                    .fill(isHovering ? rowHoverFillColor : Color.clear),
+            )
+        }
+        .buttonStyle(.plain)
+        .onHover { hovering in
+            hoveredCategoryKey = hovering ? categoryKey : nil
+        }
+    }
+
     private func filteredProperties(
         _ viewStore: ViewStoreOf<ConditionPropertyPickerFeature>,
     ) -> [MDItemProperty] {
@@ -220,6 +262,7 @@ struct ConditionPropertyPickerView: View {
         Button {
             viewStore.send(.propertyTapped(property))
         } label: {
+            let isHovering = hoveredPropertyKey == property.key
             HStack(spacing: 8) {
                 if showIcon {
                     Image(systemName: iconName(for: property.category))
@@ -239,8 +282,15 @@ struct ConditionPropertyPickerView: View {
             .padding(.horizontal, 12)
             .padding(.vertical, 8)
             .contentShape(Rectangle())
+            .background(
+                RoundedRectangle(cornerRadius: 6)
+                    .fill(isHovering ? rowHoverFillColor : Color.clear),
+            )
         }
         .buttonStyle(.plain)
+        .onHover { hovering in
+            hoveredPropertyKey = hovering ? property.key : nil
+        }
     }
 
     private func categoryTitle(for key: String) -> String {
@@ -270,10 +320,12 @@ struct ConditionPropertyPickerView: View {
         default: "questionmark.circle"
         }
     }
+}
 
-    // MARK: - Style Helpers
+// MARK: - Style Helpers
 
-    private var comboBoxBackgroundColor: Color {
+private extension ConditionPropertyPickerView {
+    var comboBoxBackgroundColor: Color {
         if isDark {
             Color(red: 0.19, green: 0.19, blue: 0.19)
         } else {
@@ -281,7 +333,7 @@ struct ConditionPropertyPickerView: View {
         }
     }
 
-    private var comboBoxBorderColor: Color {
+    var comboBoxBorderColor: Color {
         if isDark {
             Color.white.opacity(0.1)
         } else {
@@ -289,7 +341,7 @@ struct ConditionPropertyPickerView: View {
         }
     }
 
-    private var comboBoxShadowColor: Color {
+    var comboBoxShadowColor: Color {
         if isDark {
             Color.black.opacity(0.4)
         } else {
@@ -297,7 +349,7 @@ struct ConditionPropertyPickerView: View {
         }
     }
 
-    private var searchFieldBackgroundColor: Color {
+    var searchFieldBackgroundColor: Color {
         if isDark {
             Color.white.opacity(0.05)
         } else {
@@ -305,7 +357,7 @@ struct ConditionPropertyPickerView: View {
         }
     }
 
-    private var separatorColor: Color {
+    var separatorColor: Color {
         if isDark {
             Color.white.opacity(0.1)
         } else {
@@ -313,7 +365,15 @@ struct ConditionPropertyPickerView: View {
         }
     }
 
-    private func duplicateWarning(_ message: String) -> some View {
+    var rowHoverFillColor: Color {
+        if isDark {
+            Color.white.opacity(0.08)
+        } else {
+            Color.black.opacity(0.06)
+        }
+    }
+
+    func duplicateWarning(_ message: String) -> some View {
         HStack(spacing: 6) {
             Image(systemName: "exclamationmark.triangle.fill")
                 .font(.system(size: 12))

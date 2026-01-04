@@ -5,6 +5,7 @@ struct OperatorPickerView: View {
     let store: StoreOf<OperatorPickerFeature>
     @Environment(\.colorScheme)
     private var colorScheme
+    @State private var hoveredOptionCode: String?
 
     private var isDark: Bool { colorScheme == .dark }
 
@@ -17,6 +18,7 @@ struct OperatorPickerView: View {
                             Button {
                                 viewStore.send(.select(option))
                             } label: {
+                                let isHovering = hoveredOptionCode == option.code
                                 HStack {
                                     Text(option.label)
                                         .foregroundColor(.primary)
@@ -25,8 +27,16 @@ struct OperatorPickerView: View {
                                 }
                                 .padding(.horizontal, 10)
                                 .padding(.vertical, 8)
+                                .contentShape(Rectangle())
+                                .background(
+                                    RoundedRectangle(cornerRadius: 6)
+                                        .fill(isHovering ? rowHoverFillColor : Color.clear),
+                                )
                             }
                             .buttonStyle(.plain)
+                            .onHover { hovering in
+                                hoveredOptionCode = hovering ? option.code : nil
+                            }
                         }
                     }
                 }
@@ -37,5 +47,13 @@ struct OperatorPickerView: View {
                     .fill(isDark ? Color(red: 0.16, green: 0.16, blue: 0.16) : Color.white),
             )
         })
+    }
+
+    private var rowHoverFillColor: Color {
+        if isDark {
+            Color.white.opacity(0.08)
+        } else {
+            Color.black.opacity(0.06)
+        }
     }
 }

@@ -1,4 +1,5 @@
 // swiftlint:disable type_body_length function_body_length file_length
+import AppKit
 import ComposableArchitecture
 import SwiftUI
 
@@ -23,6 +24,7 @@ struct ConditionChipView: View {
     @State private var isChipHovering: Bool = false
     @State private var boolPopoverIndex: Int?
     @State private var boolHoverIndex: Int?
+    @State private var boolOptionHoverValue: String?
 
     var body: some View {
         WithViewStore(
@@ -687,13 +689,7 @@ struct ConditionChipView: View {
         }
         .popover(isPresented: isPresented, arrowEdge: .bottom) {
             VStack(alignment: .leading, spacing: 12) {
-                DatePicker(
-                    "",
-                    selection: $tempDate,
-                    displayedComponents: [.date],
-                )
-                .datePickerStyle(.graphical)
-                .labelsHidden()
+                CalendarDatePicker(selection: $tempDate)
 
                 HStack {
                     Spacer()
@@ -774,7 +770,8 @@ struct ConditionChipView: View {
             }
         }
         .popover(isPresented: isPresented, arrowEdge: .bottom) {
-            VStack(alignment: .leading, spacing: 8) {
+            VStack(alignment: .leading, spacing: 6) {
+                let trueHovering = boolOptionHoverValue == "True"
                 Button {
                     valueViewStore.send(.setValue(index: 0, text: "True"))
                     valuePickerStore.send(.commit)
@@ -784,9 +781,27 @@ struct ConditionChipView: View {
                         Text("True")
                         Spacer()
                     }
+                    .padding(.horizontal, 6)
+                    .padding(.vertical, 4)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .background(
+                        RoundedRectangle(cornerRadius: 4)
+                            .fill(
+                                trueHovering
+                                    ? (isDark ? Color.white.opacity(hoverFillOpacity) :
+                                        Color.black.opacity(hoverFillOpacity))
+                                    : Color.clear,
+                            ),
+                    )
                 }
                 .buttonStyle(.plain)
+                .contentShape(Rectangle())
+                .onHover { hovering in
+                    boolOptionHoverValue = hovering ? "True" :
+                        (boolOptionHoverValue == "True" ? nil : boolOptionHoverValue)
+                }
 
+                let falseHovering = boolOptionHoverValue == "False"
                 Button {
                     valueViewStore.send(.setValue(index: 0, text: "False"))
                     valuePickerStore.send(.commit)
@@ -796,11 +811,32 @@ struct ConditionChipView: View {
                         Text("False")
                         Spacer()
                     }
+                    .padding(.horizontal, 6)
+                    .padding(.vertical, 4)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .background(
+                        RoundedRectangle(cornerRadius: 4)
+                            .fill(
+                                falseHovering
+                                    ? (isDark ? Color.white.opacity(hoverFillOpacity) :
+                                        Color.black.opacity(hoverFillOpacity))
+                                    : Color.clear,
+                            ),
+                    )
                 }
                 .buttonStyle(.plain)
+                .contentShape(Rectangle())
+                .onHover { hovering in
+                    boolOptionHoverValue = hovering ? "False" :
+                        (boolOptionHoverValue == "False" ? nil : boolOptionHoverValue)
+                }
             }
             .padding(10)
-            .frame(width: 140)
+            .frame(width: 150)
+            .background(
+                RoundedRectangle(cornerRadius: 8)
+                    .fill(isDark ? Color(red: 0.16, green: 0.16, blue: 0.16) : Color.white),
+            )
         }
     }
 
@@ -833,6 +869,46 @@ struct ConditionChipView: View {
             return "Number Value"
         default:
             return "Value"
+        }
+    }
+}
+
+private struct CalendarDatePicker: NSViewRepresentable {
+    @Binding var selection: Date
+
+    func makeCoordinator() -> Coordinator {
+        Coordinator(selection: $selection)
+    }
+
+    func makeNSView(context: Context) -> NSDatePicker {
+        let picker = NSDatePicker()
+        picker.datePickerStyle = .clockAndCalendar
+        picker.datePickerElements = [.yearMonthDay]
+        picker.isBordered = false
+        picker.drawsBackground = false
+        picker.focusRingType = .none
+        picker.target = context.coordinator
+        picker.action = #selector(Coordinator.dateChanged(_:))
+        picker.dateValue = selection
+        return picker
+    }
+
+    func updateNSView(_ nsView: NSDatePicker, context _: Context) {
+        if nsView.dateValue != selection {
+            nsView.dateValue = selection
+        }
+    }
+
+    final class Coordinator: NSObject {
+        @Binding var selection: Date
+
+        init(selection: Binding<Date>) {
+            _selection = selection
+        }
+
+        @objc
+        func dateChanged(_ sender: NSDatePicker) {
+            selection = sender.dateValue
         }
     }
 }

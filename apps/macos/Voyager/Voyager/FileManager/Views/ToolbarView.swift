@@ -6,6 +6,7 @@ struct ToolbarView: View {
     let store: StoreOf<FileManagerFeature>
     @State private var isDark: Bool = isDarkMode()
     @State private var isHovered: Bool = false
+    @State private var isTitleHovered: Bool = false
     @Environment(\.colorScheme)
     var colorScheme
 
@@ -116,9 +117,19 @@ struct ToolbarView: View {
                         .font(.system(size: 12))
                     Text(FileManager.default.displayName(atPath: store.currentPath))
                         .font(.system(size: 15, weight: .semibold))
+                    if isTitleHovered {
+                        Text("/ Compose a filter")
+                            .font(.system(size: 12))
+                            .foregroundColor(.secondary)
+                            .lineLimit(1)
+                            .fixedSize(horizontal: true, vertical: false)
+                    }
                 }
             }
             .buttonStyle(.plain)
+            .onHover { hovering in
+                isTitleHovered = hovering
+            }
 
             Spacer()
 
