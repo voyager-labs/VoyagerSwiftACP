@@ -17,8 +17,19 @@ if [[ ! -f "${DMG_PATH}" ]]; then
   exit 1
 fi
 
-SHA256="$(shasum -a 256 "${DMG_PATH}" | awk '{print $1}')"
-SIZE_BYTES="$(stat -f%z "${DMG_PATH}")"
+if command -v sha256sum >/dev/null 2>&1; then
+  SHA256="$(sha256sum "${DMG_PATH}" | awk '{print $1}')"
+else
+  SHA256="$(shasum -a 256 "${DMG_PATH}" | awk '{print $1}')"
+fi
+SIZE_BYTES="$(python3 - "${DMG_PATH}" <<'PY'
+import os
+import sys
+
+path = sys.argv[1]
+print(os.path.getsize(path))
+PY
+)"
 PUBLISHED_AT="$(date -u +"%Y-%m-%dT%H:%M:%SZ")"
 
 mkdir -p "$(dirname "${OUT_PATH}")"
@@ -35,4 +46,3 @@ cat >"${OUT_PATH}" <<EOF
 EOF
 
 echo "Wrote latest.json: ${OUT_PATH}"
-
