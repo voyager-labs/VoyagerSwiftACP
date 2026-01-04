@@ -67,11 +67,11 @@ struct ComposerView: View {
 
     private func firstRow(viewStore: ViewStore<ComposerFeature.State, ComposerFeature.Action>) -> some View {
         HStack(spacing: 8) {
-            undoButton
-            redoButton
+            undoButton(viewStore: viewStore)
+            redoButton(viewStore: viewStore)
             textField(viewStore: viewStore)
-            clearButton
-            saveButton
+            clearButton(viewStore: viewStore)
+            saveButton(viewStore: viewStore)
             Spacer()
         }
         .padding(.horizontal, 16)
@@ -80,27 +80,31 @@ struct ComposerView: View {
         .frame(height: 40)
     }
 
-    private var undoButton: some View {
+    @ViewBuilder
+    private func undoButton(viewStore: ViewStore<ComposerFeature.State, ComposerFeature.Action>) -> some View {
+        let isEnabled = viewStore.canUndo && !viewStore.isLoadingSearch
         Button {
             store.send(.composer(.undo))
         } label: {
             Image(systemName: "arrow.uturn.backward")
                 .font(.system(size: 13))
-                .foregroundColor(store.composer.canUndo ? .primary : .secondary)
+                .foregroundColor(isEnabled ? .primary : .secondary)
         }
-        .disabled(!store.composer.canUndo)
+        .disabled(!isEnabled)
         .buttonStyle(.borderless)
     }
 
-    private var redoButton: some View {
+    @ViewBuilder
+    private func redoButton(viewStore: ViewStore<ComposerFeature.State, ComposerFeature.Action>) -> some View {
+        let isEnabled = viewStore.canRedo && !viewStore.isLoadingSearch
         Button {
             store.send(.composer(.redo))
         } label: {
             Image(systemName: "arrow.uturn.forward")
                 .font(.system(size: 13))
-                .foregroundColor(store.composer.canRedo ? .primary : .secondary)
+                .foregroundColor(isEnabled ? .primary : .secondary)
         }
-        .disabled(!store.composer.canRedo)
+        .disabled(!isEnabled)
         .buttonStyle(.borderless)
     }
 
@@ -191,7 +195,7 @@ struct ComposerView: View {
         }
     }
 
-    private var clearButton: some View {
+    private func clearButton(viewStore: ViewStore<ComposerFeature.State, ComposerFeature.Action>) -> some View {
         Button {
             store.send(.composer(.clearAll))
         } label: {
@@ -208,9 +212,10 @@ struct ComposerView: View {
             )
         }
         .buttonStyle(.plain)
+        .disabled(viewStore.isLoadingSearch)
     }
 
-    private var saveButton: some View {
+    private func saveButton(viewStore: ViewStore<ComposerFeature.State, ComposerFeature.Action>) -> some View {
         Button {
             store.send(.composer(.saveCollection))
         } label: {
@@ -227,6 +232,7 @@ struct ComposerView: View {
             )
         }
         .buttonStyle(.plain)
+        .disabled(viewStore.isLoadingSearch)
     }
 
     private var horizontalSeparator: some View {
@@ -311,6 +317,8 @@ struct ComposerView: View {
             pickerStore: pickerStore,
             historyPaths: historyPaths,
         )
+        .allowsHitTesting(!viewStore.isLoadingSearch)
+        .opacity(viewStore.isLoadingSearch ? 0.6 : 1)
         .onPreferenceChange(ChipSizePreferenceKey.self) { sizes in
             handleChipSizeChange(sizes: sizes, allChips: allChips, availableWidth: availableWidth)
         }

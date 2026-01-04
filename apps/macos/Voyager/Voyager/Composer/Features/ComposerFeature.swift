@@ -18,6 +18,7 @@ struct FilterSnapshot: Equatable {
     let scopes: [String]
     let conditions: [Condition]
 }
+
 @Reducer
 struct ComposerFeature {
     @Dependency(\.searchClient)
@@ -104,12 +105,14 @@ struct ComposerFeature {
                 return .none
 
             case let .addScope(path):
+                guard !state.isLoadingSearch else { return .none }
                 guard !state.scopes.contains(path) else { return .none }
                 state.pushHistory()
                 state.scopes.append(path)
                 return applyFiltersIfNeeded(state: &state, searchClient: searchClient)
 
             case let .removeScope(path):
+                guard !state.isLoadingSearch else { return .none }
                 if state.scopes.contains(path) {
                     state.pushHistory()
                     state.scopes.removeAll { $0 == path }
@@ -117,6 +120,7 @@ struct ComposerFeature {
                 return applyFiltersIfNeeded(state: &state, searchClient: searchClient)
 
             case .clearAll:
+                guard !state.isLoadingSearch else { return .none }
                 state.pushHistory()
                 state.text = ""
                 state.scopes = []
@@ -153,6 +157,7 @@ struct ComposerFeature {
                 return .none
 
             case let .updateScope(oldPath, newPath):
+                guard !state.isLoadingSearch else { return .none }
                 if let index = state.scopes.firstIndex(of: oldPath), oldPath != newPath {
                     state.pushHistory()
                     state.scopes[index] = newPath
@@ -160,6 +165,7 @@ struct ComposerFeature {
                 return applyFiltersIfNeeded(state: &state, searchClient: searchClient)
 
             case let .addCondition(property):
+                guard !state.isLoadingSearch else { return .none }
                 if state.conditions.contains(where: { $0.propertyKey == property.key }) {
                     state.propertyPicker.duplicateMessage = "\"\(property.label)\" is already added."
                     return .none
@@ -182,6 +188,7 @@ struct ComposerFeature {
                 return .none
 
             case let .removeCondition(propertyKey):
+                guard !state.isLoadingSearch else { return .none }
                 if state.conditions.contains(where: { $0.propertyKey == propertyKey }) {
                     state.pushHistory()
                     state.conditions.removeAll { $0.propertyKey == propertyKey }
@@ -189,6 +196,7 @@ struct ComposerFeature {
                 return .none
 
             case let .setOperator(propertyKey, option):
+                guard !state.isLoadingSearch else { return .none }
                 if let idx = state.conditions.firstIndex(where: { $0.propertyKey == propertyKey }) {
                     state.pushHistory()
                     state.conditions[idx].operatorCode = option.code
@@ -208,6 +216,7 @@ struct ComposerFeature {
                 return .none
 
             case let .replaceConditionProperty(originalKey, property):
+                guard !state.isLoadingSearch else { return .none }
                 guard let idx = state.conditions.firstIndex(where: { $0.propertyKey == originalKey }) else {
                     state.propertyPicker.editingConditionKey = nil
                     state.propertyPicker.isPresented = false
@@ -237,6 +246,7 @@ struct ComposerFeature {
                 return .none
 
             case .undo:
+                guard !state.isLoadingSearch else { return .none }
                 let before = buildFilters(from: state)
                 guard let previous = state.history.popLast() else { return .none }
                 let current = FilterSnapshot(scopes: state.scopes, conditions: state.conditions)
@@ -250,6 +260,7 @@ struct ComposerFeature {
                 return .none
 
             case .redo:
+                guard !state.isLoadingSearch else { return .none }
                 let before = buildFilters(from: state)
                 guard let next = state.redoHistory.popLast() else { return .none }
                 let current = FilterSnapshot(scopes: state.scopes, conditions: state.conditions)
@@ -297,6 +308,7 @@ struct ComposerFeature {
                 return .none
 
             case let .operatorPicker(.prepare(propertyKey, options)):
+                guard !state.isLoadingSearch else { return .none }
                 state.operatorPicker.propertyKey = propertyKey
                 state.operatorPicker.options = options
                 state.operatorPicker.isPresented = true
@@ -324,6 +336,7 @@ struct ComposerFeature {
                 return .none
 
             case let .valuePicker(.prepare(payload)):
+                guard !state.isLoadingSearch else { return .none }
                 state.valuePicker.propertyKey = payload.propertyKey
                 state.valuePicker.operatorOption = payload.operatorOption
                 state.valuePicker.valueType = payload.valueType
@@ -353,6 +366,7 @@ struct ComposerFeature {
                 return .none
 
             case let .valuePicker(.setValue(index, text)):
+                guard !state.isLoadingSearch else { return .none }
                 if state.valuePicker.values.indices.contains(index) {
                     state.valuePicker.values[index] = text
                 }
@@ -362,6 +376,7 @@ struct ComposerFeature {
                 return .none
 
             case let .valuePicker(.commitResult(propertyKey, values)):
+                guard !state.isLoadingSearch else { return .none }
                 if let idx = state.conditions.firstIndex(where: { $0.propertyKey == propertyKey }) {
                     state.pushHistory()
                     state.conditions[idx].values = values
@@ -377,6 +392,7 @@ struct ComposerFeature {
                 return .none
 
             case let .setValue(propertyKey, values):
+                guard !state.isLoadingSearch else { return .none }
                 if let idx = state.conditions.firstIndex(where: { $0.propertyKey == propertyKey }) {
                     state.pushHistory()
                     state.conditions[idx].values = values
