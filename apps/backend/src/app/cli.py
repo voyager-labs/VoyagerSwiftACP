@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import argparse
 import os
+import shlex
 import subprocess
 import sys
 from pathlib import Path
@@ -21,6 +22,10 @@ def _run_fastapi(*args: str, env: dict[str, str] | None = None) -> None:
     host = env["PUBLIC_BACKEND_HOST"]
     port = env["PUBLIC_BACKEND_PORT"]
     cmd = [sys.executable, "-m", "fastapi", *args, "--host", host, "--port", port]
+    app_env = env.get("APP_ENV", "") if env else os.getenv("APP_ENV", "")
+    process_title = "Voyager Backend (Dev)" if app_env == "dev" else "Voyager Backend"
+    quoted_cmd = " ".join(shlex.quote(part) for part in cmd)
+    cmd = ["/bin/bash", "-c", f"exec -a {shlex.quote(process_title)} {quoted_cmd}"]
     proc = subprocess.Popen(cmd, env=env)
     try:
         exit_code = proc.wait()

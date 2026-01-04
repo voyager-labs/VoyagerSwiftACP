@@ -55,10 +55,10 @@ final class ProcessRunner {
             return
         }
 
-        // Nuitka 바이너리 경로: server/server.bin
-        let binaryPath = URL(fileURLWithPath: serverDirectory).appendingPathComponent("server.bin").path
+        // Nuitka 바이너리 경로: server/Voyager Backend
+        let binaryPath = URL(fileURLWithPath: serverDirectory).appendingPathComponent("Voyager Backend").path
         guard FileManager.default.fileExists(atPath: binaryPath) else {
-            fputs("[VoyagerHelper] ERROR: server.bin not found at \(binaryPath)\n", stderr)
+            fputs("[VoyagerHelper] ERROR: backend binary not found at \(binaryPath)\n", stderr)
             return
         }
 

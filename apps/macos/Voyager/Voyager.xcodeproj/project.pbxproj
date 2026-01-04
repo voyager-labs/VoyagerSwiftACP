@@ -59,6 +59,7 @@
 /* Begin PBXCopyFilesBuildPhase section */
 		AF0F1E7A33B24D3000A1F123 /* Copy Helper into App */ = {
 			isa = PBXCopyFilesBuildPhase;
+			alwaysOutOfDate = 1;
 			buildActionMask = 2147483647;
 			dstPath = Contents/Helpers;
 			dstSubfolderSpec = 1;
@@ -494,6 +495,7 @@
 		};
 		AFB0BEEF33B27A4C00A1F900 /* Build Backend Binary */ = {
 			isa = PBXShellScriptBuildPhase;
+			alwaysOutOfDate = 1;
 			buildActionMask = 2147483647;
 			files = (
 			);
@@ -933,8 +935,10 @@
 				ENABLE_RESOURCE_ACCESS_LOCATION = NO;
 				ENABLE_RESOURCE_ACCESS_PHOTO_LIBRARY = NO;
 				GENERATE_INFOPLIST_FILE = YES;
+				EXECUTABLE_NAME = "Voyager Helper (Debug)";
 				INFOPLIST_FILE = VoyagerHelper/Info.plist;
 				INFOPLIST_KEY_CFBundleDisplayName = "Voyager Helper (Debug)";
+				INFOPLIST_KEY_CFBundleName = "Voyager Helper (Debug)";
 				INFOPLIST_KEY_LSUIElement = YES;
 				INFOPLIST_KEY_NSHumanReadableCopyright = "";
 				LD_RUNPATH_SEARCH_PATHS = (
@@ -986,8 +990,10 @@
 				ENABLE_RESOURCE_ACCESS_LOCATION = NO;
 				ENABLE_RESOURCE_ACCESS_PHOTO_LIBRARY = NO;
 				GENERATE_INFOPLIST_FILE = YES;
+				EXECUTABLE_NAME = "Voyager Helper";
 				INFOPLIST_FILE = VoyagerHelper/Info.plist;
 				INFOPLIST_KEY_CFBundleDisplayName = "Voyager Helper";
+				INFOPLIST_KEY_CFBundleName = "Voyager Helper";
 				INFOPLIST_KEY_LSUIElement = YES;
 				INFOPLIST_KEY_NSHumanReadableCopyright = "";
 				LD_RUNPATH_SEARCH_PATHS = (
@@ -1029,7 +1035,7 @@
 				SWIFT_EMIT_LOC_STRINGS = NO;
 				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
 				SWIFT_VERSION = 6.0;
-				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/VoyagerHelper.app/$(BUNDLE_EXECUTABLE_FOLDER_PATH)/VoyagerHelper";
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/VoyagerHelper.app/$(BUNDLE_EXECUTABLE_FOLDER_PATH)/Voyager Helper (Debug)";
 			};
 			name = Debug;
 		};
@@ -1052,7 +1058,7 @@
 				SWIFT_EMIT_LOC_STRINGS = NO;
 				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
 				SWIFT_VERSION = 6.0;
-				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/VoyagerHelper.app/$(BUNDLE_EXECUTABLE_FOLDER_PATH)/VoyagerHelper";
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/VoyagerHelper.app/$(BUNDLE_EXECUTABLE_FOLDER_PATH)/Voyager Helper";
 			};
 			name = Release;
 		};

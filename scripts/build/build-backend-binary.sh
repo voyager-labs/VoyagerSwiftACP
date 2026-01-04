@@ -54,7 +54,14 @@ if [[ ! -d "${NUITKA_DIST}" ]]; then
   exit 1
 fi
 
-echo "[VoyagerHelper] 바이너리 번들링: ${NUITKA_DIST} -> ${BINARY_DST}" >&2
+BINARY_NAME="Voyager Backend"
+RAW_BINARY_PATH="${NUITKA_DIST}/server.bin"
+RENAMED_BINARY_PATH="${NUITKA_DIST}/${BINARY_NAME}"
+if [[ -f "${RAW_BINARY_PATH}" && ! -f "${RENAMED_BINARY_PATH}" ]]; then
+  mv -f "${RAW_BINARY_PATH}" "${RENAMED_BINARY_PATH}"
+fi
+
+echo "note: [VoyagerHelper] 바이너리 번들링: ${NUITKA_DIST} -> ${BINARY_DST}" >&2
 if [[ -d "${BINARY_DST}" ]]; then
   chmod -R u+w "${BINARY_DST}" 2>/dev/null || true
   rm -rf "${BINARY_DST}" || true

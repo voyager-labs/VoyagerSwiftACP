@@ -148,7 +148,7 @@ struct Environment {
         guard let resources = Bundle.main.resourceURL else { return nil }
         let fm = FileManager.default
 
-        // Nuitka 바이너리 디렉토리 (server/server.bin)
+        // Nuitka 바이너리 디렉토리 (server/Voyager Backend)
         let serverPath = resources.appendingPathComponent("server")
         if fm.fileExists(atPath: serverPath.path) {
             return serverPath
