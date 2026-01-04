@@ -12,6 +12,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, ObservableObject {
     static var shared: AppDelegate?
 
     private let helperManager = HelperLifecycleManager()
+    private var onboardingWindowController: OnboardingWindowController?
 
     @Published var hasSelectedItems: Bool = false
     @Published var hasClipboardItems: Bool = false
@@ -28,6 +29,10 @@ class AppDelegate: NSObject, NSApplicationDelegate, ObservableObject {
             window != NSApp.keyWindow && windowControllers.contains(where: { $0.window == window })
         }
         return !validWindows.isEmpty
+    }
+
+    private var isOnboardingRequired: Bool {
+        !UserDefaults.standard.bool(forKey: SettingsKeys.onboardingCompleted)
     }
 
     func updateMenuState(store: StoreOf<FileManagerFeature>?) {
@@ -63,6 +68,9 @@ class AppDelegate: NSObject, NSApplicationDelegate, ObservableObject {
 
     func applicationDidFinishLaunching(_: Notification) {
         NSWindow.allowsAutomaticWindowTabbing = true
+        if showOnboardingWindowIfNeeded() {
+            return
+        }
         createNewWindow()
     }
 
@@ -71,6 +79,9 @@ class AppDelegate: NSObject, NSApplicationDelegate, ObservableObject {
     }
 
     func applicationShouldHandleReopen(_: NSApplication, hasVisibleWindows flag: Bool) -> Bool {
+        if showOnboardingWindowIfNeeded() {
+            return true
+        }
         if !flag {
             createNewWindow()
         }
@@ -99,12 +110,18 @@ class AppDelegate: NSObject, NSApplicationDelegate, ObservableObject {
 
     @objc
     func createNewWindow(path: String? = nil) {
+        if showOnboardingWindowIfNeeded() {
+            return
+        }
         let controller = FileManagerWindowController(path: path, asTab: false)
         windowControllers.append(controller)
         controller.showWindow(nil)
     }
 
     func createNewTab(path: String? = nil, duplicateState: FileManagerFeature.State? = nil) {
+        if showOnboardingWindowIfNeeded() {
+            return
+        }
         guard let keyWindow = NSApp.keyWindow else {
             createNewWindow(path: path)
             return
@@ -216,6 +233,22 @@ class AppDelegate: NSObject, NSApplicationDelegate, ObservableObject {
 
     func applicationWillTerminate(_: Notification) {
         helperManager.stop()
+    }
+
+    private func showOnboardingWindowIfNeeded() -> Bool {
+        guard isOnboardingRequired else { return false }
+        showOnboardingWindow()
+        return true
+    }
+
+    private func showOnboardingWindow() {
+        if onboardingWindowController == nil {
+            onboardingWindowController = OnboardingWindowController()
+        }
+
+        onboardingWindowController?.showWindow(nil)
+        onboardingWindowController?.window?.makeKeyAndOrderFront(nil)
+        NSApp.activate(ignoringOtherApps: true)
     }
 
     private func checkIndexingStatus() -> Bool {
