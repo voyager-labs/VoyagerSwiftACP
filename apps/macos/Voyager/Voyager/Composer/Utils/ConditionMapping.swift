@@ -23,37 +23,37 @@ enum ConditionMapping {
     /// 프로퍼티 라벨 -> propertyKey (search_api_spec + file_entries 컬럼 기반)
     private static let propertyLabelToKey: [String: String] = [
         // System Metadata (filesystem)
-        "File Size": "size",
-        "File Type": "contentType",
-        "File Kind": "kind",
-        "File Name": "name",
+        "File size": "size",
+        "File type": "contentType",
+        "File kind": "kind",
+        "File name": "name",
         "Extension": "extension",
         "Invisible": "isInvisible",
-        "Date Created": "createdAt",
-        "Date Modified": "modifiedAt",
-        "Date Added": "addedAt",
-        "Last Used": "lastUsedAt",
+        "Date created": "createdAt",
+        "Date modified": "modifiedAt",
+        "Date added": "addedAt",
+        "Last used": "lastUsedAt",
 
         // Content
-        "Content Created": "contentCreatedAt",
-        "Content Modified": "contentModifiedAt",
+        "Content created": "contentCreatedAt",
+        "Content modified": "contentModifiedAt",
 
         // Image
-        "Pixel Height": "pixelHeight",
-        "Pixel Width": "pixelWidth",
-        "Color Space": "colorSpace",
-        "Has Alpha Channel": "hasAlphaChannel",
+        "Pixel height": "pixelHeight",
+        "Pixel width": "pixelWidth",
+        "Color space": "colorSpace",
+        "Has alpha channel": "hasAlphaChannel",
 
         // Video/Audio
-        "Duration (Sec)": "duration",
-        "Video Bitrate": "videoBitRate",
-        "Audio Bitrate": "audioBitRate",
-        "Audio Sample Rate": "audioSampleRate",
-        "Audio Channels": "audioChannelCount",
+        "Duration (sec)": "duration",
+        "Video bitrate": "videoBitRate",
+        "Audio bitrate": "audioBitRate",
+        "Audio sample rate": "audioSampleRate",
+        "Audio channels": "audioChannelCount",
 
         // Document
         "Title": "title",
-        "Page Count": "numberOfPages",
+        "Page count": "numberOfPages",
         "Creator": "creator",
 
         // Location
@@ -108,10 +108,10 @@ enum ConditionMapping {
     private static let operatorLabelToCode: [String: String] = [
         "Is": "eq",
         "Is not": "neq",
-        "Greater than": "gt",
-        "Greater or equal": "gte",
-        "Less than": "lt",
-        "Less or equal": "lte",
+        "Is greater than": "gt",
+        "Is greater or equal": "gte",
+        "Is less than": "lt",
+        "Is less or equal": "lte",
         "Is between": "between",
         "Contains": "contains",
         "In list": "in",

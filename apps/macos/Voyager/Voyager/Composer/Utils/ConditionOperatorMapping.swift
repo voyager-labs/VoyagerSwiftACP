@@ -98,43 +98,43 @@ enum ConditionOperatorMapping {
         case .string:
             [
                 .init(code: "eq", label: "Is", valueUI: .singleText),
-                .init(code: "neq", label: "Is Not", valueUI: .singleText),
+                .init(code: "neq", label: "Is not", valueUI: .singleText),
                 .init(code: "contains", label: "Contains", valueUI: .singleText),
-                .init(code: "in", label: "In List", valueUI: .listText),
-                .init(code: "empty", label: "Is Empty", valueUI: .none),
-                .init(code: "not_empty", label: "Is Not Empty", valueUI: .none),
+                .init(code: "in", label: "In list", valueUI: .listText),
+                .init(code: "empty", label: "Is empty", valueUI: .none),
+                .init(code: "not_empty", label: "Is not empty", valueUI: .none),
             ]
         case .number:
             [
                 .init(code: "eq", label: "Is", valueUI: .singleNumber),
-                .init(code: "neq", label: "Is Not", valueUI: .singleNumber),
-                .init(code: "gt", label: "Is Greater Than", valueUI: .singleNumber),
-                .init(code: "gte", label: "Is Greater Or Equal", valueUI: .singleNumber),
-                .init(code: "lt", label: "Is Less Than", valueUI: .singleNumber),
-                .init(code: "lte", label: "Is Less Or Equal", valueUI: .singleNumber),
-                .init(code: "between", label: "Is Between", valueUI: .rangeNumber),
+                .init(code: "neq", label: "Is not", valueUI: .singleNumber),
+                .init(code: "gt", label: "Is greater than", valueUI: .singleNumber),
+                .init(code: "gte", label: "Is greater or equal", valueUI: .singleNumber),
+                .init(code: "lt", label: "Is less than", valueUI: .singleNumber),
+                .init(code: "lte", label: "Is less or equal", valueUI: .singleNumber),
+                .init(code: "between", label: "Is between", valueUI: .rangeNumber),
             ]
         case .datetime:
             [
                 .init(code: "eq", label: "Is", valueUI: .singleDate),
-                .init(code: "neq", label: "Is Not", valueUI: .singleDate),
-                .init(code: "gt", label: "Is After", valueUI: .singleDate),
-                .init(code: "gte", label: "Is On Or After", valueUI: .singleDate),
-                .init(code: "lt", label: "Is Before", valueUI: .singleDate),
-                .init(code: "lte", label: "Is On Or Before", valueUI: .singleDate),
-                .init(code: "between", label: "Is Between", valueUI: .rangeDate),
+                .init(code: "neq", label: "Is not", valueUI: .singleDate),
+                .init(code: "gt", label: "Is after", valueUI: .singleDate),
+                .init(code: "gte", label: "Is on or after", valueUI: .singleDate),
+                .init(code: "lt", label: "Is before", valueUI: .singleDate),
+                .init(code: "lte", label: "Is on or before", valueUI: .singleDate),
+                .init(code: "between", label: "Is between", valueUI: .rangeDate),
             ]
         case .boolean:
             [
                 .init(code: "eq", label: "Is", valueUI: .toggle),
-                .init(code: "neq", label: "Is Not", valueUI: .toggle),
+                .init(code: "neq", label: "Is not", valueUI: .toggle),
             ]
         case .array:
             [
                 .init(code: "contains", label: "Contains", valueUI: .listText),
-                .init(code: "in", label: "In List", valueUI: .listText),
-                .init(code: "empty", label: "Is Empty", valueUI: .none),
-                .init(code: "not_empty", label: "Is Not Empty", valueUI: .none),
+                .init(code: "in", label: "In list", valueUI: .listText),
+                .init(code: "empty", label: "Is empty", valueUI: .none),
+                .init(code: "not_empty", label: "Is not empty", valueUI: .none),
             ]
         }
     }
