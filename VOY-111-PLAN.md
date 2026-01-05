@@ -14,7 +14,7 @@
 
 - `apps/macos/Voyager/Voyager/App/AppDelegate.swift`
 - `apps/macos/Voyager/Voyager/App/OnboardingWindowController.swift` (new)
-- `apps/macos/Voyager/Voyager/Onboarding/OnboardingFeature.swift` (new)
+- `apps/macos/Voyager/Voyager/Onboarding/Features/OnboardingFeature.swift` (new)
 - `apps/macos/Voyager/Voyager/Onboarding/Views` (new)
 - `apps/macos/Voyager/Voyager/Settings/SettingsKeys.swift`
 - `apps/macos/Voyager/VoyagerTests` (필요 시 추가)
