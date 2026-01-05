@@ -40,13 +40,6 @@
 			remoteGlobalIDString = 7E14EE222E866E82005AC834;
 			remoteInfo = VoyagerHelper;
 		};
-		7E14EE3A2E866E86005AC834 /* PBXContainerItemProxy */ = {
-			isa = PBXContainerItemProxy;
-			containerPortal = 7E14EDC42E86622C005AC834 /* Project object */;
-			proxyType = 1;
-			remoteGlobalIDString = 7E14EE222E866E82005AC834;
-			remoteInfo = VoyagerHelper;
-		};
 		AF0F1E7C33B2530900A1F123 /* PBXContainerItemProxy */ = {
 			isa = PBXContainerItemProxy;
 			containerPortal = 7E14EDC42E86622C005AC834 /* Project object */;
@@ -77,7 +70,6 @@
 		7E14EDE52E86622E005AC834 /* VoyagerUITests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = VoyagerUITests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		7E14EE232E866E82005AC834 /* VoyagerHelper.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = VoyagerHelper.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		7E14EE2F2E866E85005AC834 /* VoyagerHelperTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = VoyagerHelperTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
-		7E14EE392E866E86005AC834 /* VoyagerHelperUITests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = VoyagerHelperUITests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedRootGroup section */
@@ -104,11 +96,6 @@
 		7E14EE322E866E85005AC834 /* VoyagerHelperTests */ = {
 			isa = PBXFileSystemSynchronizedRootGroup;
 			path = VoyagerHelperTests;
-			sourceTree = "<group>";
-		};
-		7E14EE3C2E866E86005AC834 /* VoyagerHelperUITests */ = {
-			isa = PBXFileSystemSynchronizedRootGroup;
-			path = VoyagerHelperUITests;
 			sourceTree = "<group>";
 		};
 /* End PBXFileSystemSynchronizedRootGroup section */
@@ -157,13 +144,6 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
-		7E14EE362E866E86005AC834 /* Frameworks */ = {
-			isa = PBXFrameworksBuildPhase;
-			buildActionMask = 2147483647;
-			files = (
-			);
-			runOnlyForDeploymentPostprocessing = 0;
-		};
 /* End PBXFrameworksBuildPhase section */
 
 /* Begin PBXGroup section */
@@ -175,7 +155,6 @@
 				7E14EDE82E86622E005AC834 /* VoyagerUITests */,
 				7E14EE242E866E82005AC834 /* VoyagerHelper */,
 				7E14EE322E866E85005AC834 /* VoyagerHelperTests */,
-				7E14EE3C2E866E86005AC834 /* VoyagerHelperUITests */,
 				7E14EDCD2E86622C005AC834 /* Products */,
 			);
 			sourceTree = "<group>";
@@ -188,7 +167,6 @@
 				7E14EDE52E86622E005AC834 /* VoyagerUITests.xctest */,
 				7E14EE232E866E82005AC834 /* VoyagerHelper.app */,
 				7E14EE2F2E866E85005AC834 /* VoyagerHelperTests.xctest */,
-				7E14EE392E866E86005AC834 /* VoyagerHelperUITests.xctest */,
 			);
 			name = Products;
 			sourceTree = "<group>";
@@ -322,29 +300,6 @@
 			productReference = 7E14EE2F2E866E85005AC834 /* VoyagerHelperTests.xctest */;
 			productType = "com.apple.product-type.bundle.unit-test";
 		};
-		7E14EE382E866E86005AC834 /* VoyagerHelperUITests */ = {
-			isa = PBXNativeTarget;
-			buildConfigurationList = 7E14EE472E866E86005AC834 /* Build configuration list for PBXNativeTarget "VoyagerHelperUITests" */;
-			buildPhases = (
-				7E14EE352E866E86005AC834 /* Sources */,
-				7E14EE362E866E86005AC834 /* Frameworks */,
-				7E14EE372E866E86005AC834 /* Resources */,
-			);
-			buildRules = (
-			);
-			dependencies = (
-				7E14EE3B2E866E86005AC834 /* PBXTargetDependency */,
-			);
-			fileSystemSynchronizedGroups = (
-				7E14EE3C2E866E86005AC834 /* VoyagerHelperUITests */,
-			);
-			name = VoyagerHelperUITests;
-			packageProductDependencies = (
-			);
-			productName = VoyagerHelperUITests;
-			productReference = 7E14EE392E866E86005AC834 /* VoyagerHelperUITests.xctest */;
-			productType = "com.apple.product-type.bundle.ui-testing";
-		};
 /* End PBXNativeTarget section */
 
 /* Begin PBXProject section */
@@ -370,10 +325,6 @@
 						CreatedOnToolsVersion = 26.0.1;
 					};
 					7E14EE2E2E866E85005AC834 = {
-						CreatedOnToolsVersion = 26.0.1;
-						TestTargetID = 7E14EE222E866E82005AC834;
-					};
-					7E14EE382E866E86005AC834 = {
 						CreatedOnToolsVersion = 26.0.1;
 						TestTargetID = 7E14EE222E866E82005AC834;
 					};
@@ -406,7 +357,6 @@
 				7E14EDE42E86622E005AC834 /* VoyagerUITests */,
 				7E14EE222E866E82005AC834 /* VoyagerHelper */,
 				7E14EE2E2E866E85005AC834 /* VoyagerHelperTests */,
-				7E14EE382E866E86005AC834 /* VoyagerHelperUITests */,
 			);
 		};
 /* End PBXProject section */
@@ -441,13 +391,6 @@
 			runOnlyForDeploymentPostprocessing = 0;
 		};
 		7E14EE2D2E866E85005AC834 /* Resources */ = {
-			isa = PBXResourcesBuildPhase;
-			buildActionMask = 2147483647;
-			files = (
-			);
-			runOnlyForDeploymentPostprocessing = 0;
-		};
-		7E14EE372E866E86005AC834 /* Resources */ = {
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
@@ -552,13 +495,6 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
-		7E14EE352E866E86005AC834 /* Sources */ = {
-			isa = PBXSourcesBuildPhase;
-			buildActionMask = 2147483647;
-			files = (
-			);
-			runOnlyForDeploymentPostprocessing = 0;
-		};
 /* End PBXSourcesBuildPhase section */
 
 /* Begin PBXTargetDependency section */
@@ -576,11 +512,6 @@
 			isa = PBXTargetDependency;
 			target = 7E14EE222E866E82005AC834 /* VoyagerHelper */;
 			targetProxy = 7E14EE302E866E85005AC834 /* PBXContainerItemProxy */;
-		};
-		7E14EE3B2E866E86005AC834 /* PBXTargetDependency */ = {
-			isa = PBXTargetDependency;
-			target = 7E14EE222E866E82005AC834 /* VoyagerHelper */;
-			targetProxy = 7E14EE3A2E866E86005AC834 /* PBXContainerItemProxy */;
 		};
 		AF0F1E7D33B2530900A1F123 /* PBXTargetDependency */ = {
 			isa = PBXTargetDependency;
@@ -1062,48 +993,6 @@
 			};
 			name = Release;
 		};
-		7E14EE482E866E86005AC834 /* Debug */ = {
-			isa = XCBuildConfiguration;
-			buildSettings = {
-				CODE_SIGN_STYLE = Manual;
-				CURRENT_PROJECT_VERSION = 0;
-				DEAD_CODE_STRIPPING = YES;
-				DEVELOPMENT_TEAM = "";
-				GENERATE_INFOPLIST_FILE = YES;
-				MARKETING_VERSION = 0.0.0;
-				PRODUCT_BUNDLE_IDENTIFIER = fm.voyager.VoyagerHelperUITests;
-				PRODUCT_NAME = "$(TARGET_NAME)";
-				PROVISIONING_PROFILE_SPECIFIER = "";
-				STRING_CATALOG_GENERATE_SYMBOLS = NO;
-				SWIFT_APPROACHABLE_CONCURRENCY = YES;
-				SWIFT_EMIT_LOC_STRINGS = NO;
-				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
-				SWIFT_VERSION = 6.0;
-				TEST_TARGET_NAME = VoyagerHelper;
-			};
-			name = Debug;
-		};
-		7E14EE492E866E86005AC834 /* Release */ = {
-			isa = XCBuildConfiguration;
-			buildSettings = {
-				CODE_SIGN_STYLE = Manual;
-				CURRENT_PROJECT_VERSION = 0;
-				DEAD_CODE_STRIPPING = YES;
-				DEVELOPMENT_TEAM = "";
-				GENERATE_INFOPLIST_FILE = YES;
-				MARKETING_VERSION = 0.0.0;
-				PRODUCT_BUNDLE_IDENTIFIER = fm.voyager.VoyagerHelperUITests;
-				PRODUCT_NAME = "$(TARGET_NAME)";
-				PROVISIONING_PROFILE_SPECIFIER = "";
-				STRING_CATALOG_GENERATE_SYMBOLS = NO;
-				SWIFT_APPROACHABLE_CONCURRENCY = YES;
-				SWIFT_EMIT_LOC_STRINGS = NO;
-				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
-				SWIFT_VERSION = 6.0;
-				TEST_TARGET_NAME = VoyagerHelper;
-			};
-			name = Release;
-		};
 /* End XCBuildConfiguration section */
 
 /* Begin XCConfigurationList section */
@@ -1157,15 +1046,6 @@
 			buildConfigurations = (
 				7E14EE452E866E86005AC834 /* Debug */,
 				7E14EE462E866E86005AC834 /* Release */,
-			);
-			defaultConfigurationIsVisible = 0;
-			defaultConfigurationName = Release;
-		};
-		7E14EE472E866E86005AC834 /* Build configuration list for PBXNativeTarget "VoyagerHelperUITests" */ = {
-			isa = XCConfigurationList;
-			buildConfigurations = (
-				7E14EE482E866E86005AC834 /* Debug */,
-				7E14EE492E866E86005AC834 /* Release */,
 			);
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Release;
