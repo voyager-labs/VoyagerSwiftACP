@@ -408,6 +408,7 @@ struct ComposerFeature {
                 state.isLoadingSearch = false
                 state.lastSearchResponse = response
                 state.lastFiltersResponse = nil
+                applyAppliedFilters(response.appliedFilters, state: &state)
                 return .none
 
             case .searchResponse(.failure):
@@ -417,6 +418,7 @@ struct ComposerFeature {
             case let .filtersResponse(.success(response)):
                 state.isLoadingFilters = false
                 state.lastFiltersResponse = response
+                applyAppliedFilters(response.appliedFilters, state: &state)
                 return .none
 
             case .filtersResponse(.failure):
@@ -425,6 +427,19 @@ struct ComposerFeature {
             }
         }
     }
+}
+
+private func applyAppliedFilters(
+    _ appliedFilters: AppliedFiltersPayload?,
+    state: inout ComposerFeature.State,
+) {
+    let resolved = AppliedFiltersUtils.resolve(
+        appliedFilters,
+        fallbackScopes: state.scopes,
+        fallbackConditions: state.conditions,
+    )
+    state.scopes = resolved.scopes
+    state.conditions = resolved.conditions
 }
 
 private func applyFiltersIfNeeded(

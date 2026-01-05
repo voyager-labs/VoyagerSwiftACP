@@ -16,15 +16,7 @@ struct ConditionPropertyPickerFeature {
                 "addedAt",
             ]
             return ConditionMapping.allProperties.map { info in
-                let typeString = ConditionOperatorMapping.propertyType(for: info.key).flatMap { type in
-                    switch type {
-                    case .string: "string"
-                    case .number: "number"
-                    case .datetime: "datetime"
-                    case .boolean: "boolean"
-                    case .array: "array"
-                    }
-                } ?? "string"
+                let typeString = ConditionOperatorMapping.propertyTypeString(for: info.key)
 
                 return MDItemProperty(
                     key: info.key,

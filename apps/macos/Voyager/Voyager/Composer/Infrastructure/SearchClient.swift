@@ -1,12 +1,12 @@
 import ComposableArchitecture
 import Foundation
 
-struct SearchFiltersPayload: Codable, Equatable {
+struct SearchFiltersPayload: Codable, Equatable, Sendable {
     let scopes: [String]
     let conditions: [SearchConditionPayload]
 }
 
-struct SearchConditionPayload: Codable, Equatable {
+struct SearchConditionPayload: Codable, Equatable, Sendable {
     let propertyKey: String
     let `operator`: String
     let value: JSONValue?
@@ -18,27 +18,27 @@ struct SearchConditionPayload: Codable, Equatable {
     }
 }
 
-struct SearchRequestPayload: Codable, Equatable {
+struct SearchRequestPayload: Codable, Equatable, Sendable {
     let query: String
     let filters: SearchFiltersPayload
 }
 
-struct FiltersOnlyRequestPayload: Codable, Equatable {
+struct FiltersOnlyRequestPayload: Codable, Equatable, Sendable {
     let filters: SearchFiltersPayload
 }
 
-struct SearchResponsePayload: Codable, Equatable {
+struct SearchResponsePayload: Codable, Equatable, Sendable {
     let itemCount: Int
     let appliedFilters: AppliedFiltersPayload?
     let items: [JSONValue]?
 }
 
-struct AppliedFiltersPayload: Codable, Equatable {
+struct AppliedFiltersPayload: Codable, Equatable, Sendable {
     let scopes: [String]?
     let conditions: [SearchConditionPayload]?
 }
 
-enum JSONValue: Codable, Equatable {
+enum JSONValue: Codable, Equatable, Sendable {
     case string(String)
     case number(Double)
     case bool(Bool)
@@ -93,7 +93,7 @@ extension SearchClient: DependencyKey {
     // TODO: VoyagerHelper가 찾은 port를 주입 필요
     static let liveValue: SearchClient = {
         let host = ProcessInfo.processInfo.environment["PUBLIC_BACKEND_HOST"] ?? "127.0.0.1"
-        let port = ProcessInfo.processInfo.environment["PUBLIC_BACKEND_PORT"] ?? "64787"
+        let port = ProcessInfo.processInfo.environment["PUBLIC_BACKEND_PORT"] ?? "61297"
         guard let baseURL = URL(string: "http://\(host):\(port)") else {
             fatalError("Invalid backend base URL")
         }

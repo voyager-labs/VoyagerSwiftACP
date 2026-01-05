@@ -155,6 +155,26 @@ enum ConditionOperatorMapping {
         propertyKeyToType[propertyKey]
     }
 
+    /// propertyKey에 대응하는 타입 문자열을 반환 (UI 모델용).
+    static func propertyTypeString(for propertyKey: String) -> String {
+        guard let type = propertyKeyToType[propertyKey] else {
+            return "string"
+        }
+
+        switch type {
+        case .string:
+            return "string"
+        case .number:
+            return "number"
+        case .datetime:
+            return "datetime"
+        case .boolean:
+            return "boolean"
+        case .array:
+            return "array"
+        }
+    }
+
     /// operator 코드와 타입 조합으로 값 UI 힌트를 반환
     static func valueUI(for operatorCode: String, propertyKey: String) -> ValueUIKind {
         let type = propertyKeyToType[propertyKey] ?? .string
