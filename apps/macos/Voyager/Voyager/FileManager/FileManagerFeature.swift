@@ -12,6 +12,12 @@ struct FileManagerFeature {
         let composerState: ComposerFeature.State
     }
 
+    struct CollectionContext: Equatable {
+        var query: String
+        var scopes: [String]
+        var conditions: [Condition]
+    }
+
     static func makeWindowTitle(for path: String) -> String {
         if path == "/" {
             return FileManager.default.displayName(atPath: "/")
@@ -62,6 +68,8 @@ struct FileManagerFeature {
         var columnWidths: ListColumnWidths = .default
 
         var composer: ComposerFeature.State = .init()
+        var pendingSearchQuery: String?
+        var collectionContext: CollectionContext?
 
         var sortKey: SortKey = .name
         var sortOrder: SortOrder = .ascending
@@ -89,7 +97,7 @@ struct FileManagerFeature {
             guard !fsItems.selectedIds.isEmpty else {
                 return false
             }
-            return fsItems.items.contains { fsItems.selectedIds.contains($0.id) }
+            return fsItems.displayItems.contains { fsItems.selectedIds.contains($0.id) }
         }
 
         var canQuickLookSelectedItem: Bool {
@@ -99,7 +107,7 @@ struct FileManagerFeature {
             guard let selectedId = fsItems.selectedIds.first else {
                 return false
             }
-            return fsItems.items.contains(where: { $0.id == selectedId })
+            return fsItems.displayItems.contains(where: { $0.id == selectedId })
         }
 
         var hasSelectedItems: Bool {
@@ -116,7 +124,7 @@ struct FileManagerFeature {
                 return []
             case .computer:
                 if fsItems.selectedIds.count == 1,
-                   let selectedItem = fsItems.items.first(where: { $0.id == fsItems.selectedIds.first }),
+                   let selectedItem = fsItems.displayItems.first(where: { $0.id == fsItems.selectedIds.first }),
                    selectedItem.fullPath == "/"
                 {
                     return []
@@ -132,7 +140,7 @@ struct FileManagerFeature {
 
         var selectedBreadcrumbItem: BreadcrumbUtils.Item? {
             guard fsItems.selectedIds.count == 1,
-                  let selectedItem = fsItems.items.first(where: { $0.id == fsItems.selectedIds.first })
+                  let selectedItem = fsItems.displayItems.first(where: { $0.id == fsItems.selectedIds.first })
             else { return nil }
 
             let selectedBreadcrumb = BreadcrumbUtils.Item(fsItem: selectedItem)
@@ -390,7 +398,11 @@ struct FileManagerFeature {
                 }
                 state.navigationState = .folder(path)
                 state.matchSidebarToPath(path, favorites: state.favorites, locations: state.locations)
-                return .send(.fsItems(.loadItems(path: path)))
+                let exitEffect = Self.exitCollectionMode(state: &state)
+                return .concatenate(
+                    exitEffect,
+                    .send(.fsItems(.loadItems(path: path))),
+                )
 
             case .openSelectedItem:
                 return .send(.fsItems(.openSelectedItem))
@@ -428,14 +440,22 @@ struct FileManagerFeature {
                 let currentSnapshot = state.makeHistoryEntry()
                 state.forwardHistory.append(currentSnapshot)
                 state.applyHistoryEntry(entry, favorites: state.favorites, locations: state.locations)
-                return FileManagerNavigationUtils.navigateToState(state.navigationState)
+                let exitEffect = Self.exitCollectionMode(state: &state)
+                return .concatenate(
+                    exitEffect,
+                    FileManagerNavigationUtils.navigateToState(state.navigationState),
+                )
 
             case .goForward:
                 guard let entry = state.forwardHistory.popLast() else { return .none }
                 let currentSnapshot = state.makeHistoryEntry()
                 state.backHistory.append(currentSnapshot)
                 state.applyHistoryEntry(entry, favorites: state.favorites, locations: state.locations)
-                return FileManagerNavigationUtils.navigateToState(state.navigationState)
+                let exitEffect = Self.exitCollectionMode(state: &state)
+                return .concatenate(
+                    exitEffect,
+                    FileManagerNavigationUtils.navigateToState(state.navigationState),
+                )
 
             case let .goToHistoryIndex(index, isBackHistory):
                 if isBackHistory {
@@ -451,7 +471,11 @@ struct FileManagerFeature {
                     state.forwardHistory.append(contentsOf: trailing.reversed())
 
                     state.applyHistoryEntry(targetEntry, favorites: state.favorites, locations: state.locations)
-                    return FileManagerNavigationUtils.navigateToState(state.navigationState)
+                    let exitEffect = Self.exitCollectionMode(state: &state)
+                    return .concatenate(
+                        exitEffect,
+                        FileManagerNavigationUtils.navigateToState(state.navigationState),
+                    )
                 } else {
                     guard index < state.forwardHistory.count else { return .none }
                     let targetIndex = state.forwardHistory.count - 1 - index
@@ -465,7 +489,11 @@ struct FileManagerFeature {
                     state.backHistory.append(contentsOf: trailing.reversed())
 
                     state.applyHistoryEntry(targetEntry, favorites: state.favorites, locations: state.locations)
-                    return FileManagerNavigationUtils.navigateToState(state.navigationState)
+                    let exitEffect = Self.exitCollectionMode(state: &state)
+                    return .concatenate(
+                        exitEffect,
+                        FileManagerNavigationUtils.navigateToState(state.navigationState),
+                    )
                 }
 
             case .goToEnclosingDirectory:
@@ -476,7 +504,11 @@ struct FileManagerFeature {
 
                 state.navigateToFolder(parentURL.path, sidebarItemName: parentURL.lastPathComponent)
                 state.resetComposer()
-                return .send(.fsItems(.loadItems(path: parentURL.path)))
+                let exitEffect = Self.exitCollectionMode(state: &state)
+                return .concatenate(
+                    exitEffect,
+                    .send(.fsItems(.loadItems(path: parentURL.path))),
+                )
 
             case let .changeLayout(layout):
                 state.viewLayout = layout
@@ -543,12 +575,20 @@ struct FileManagerFeature {
             case .showRecents:
                 state.navigate(to: .recents, sidebarItemName: "Recents")
                 state.resetComposer()
-                return .send(.fsItems(.loadRecentItems))
+                let exitEffect = Self.exitCollectionMode(state: &state)
+                return .concatenate(
+                    exitEffect,
+                    .send(.fsItems(.loadRecentItems)),
+                )
 
             case .showComputer:
                 state.navigate(to: .computer, sidebarItemName: SidebarUtils.computerName)
                 state.resetComposer()
-                return .send(.fsItems(.loadComputerItems))
+                let exitEffect = Self.exitCollectionMode(state: &state)
+                return .concatenate(
+                    exitEffect,
+                    .send(.fsItems(.loadComputerItems)),
+                )
 
             case .loadFavorites:
                 return .run { send in
@@ -564,7 +604,11 @@ struct FileManagerFeature {
                 guard state.currentPath != favorite.url.path else { return .none }
                 state.navigateToFolder(favorite.url.path, sidebarItemName: favorite.name)
                 state.resetComposer()
-                return .send(.fsItems(.loadItems(path: favorite.url.path)))
+                let exitEffect = Self.exitCollectionMode(state: &state)
+                return .concatenate(
+                    exitEffect,
+                    .send(.fsItems(.loadItems(path: favorite.url.path))),
+                )
 
             case let .insertFavorite(url, index):
                 if state.favorites.contains(where: { $0.url.path == url.path }) {
@@ -622,7 +666,11 @@ struct FileManagerFeature {
                 guard state.currentPath != location.url.path else { return .none }
                 state.navigateToFolder(location.url.path, sidebarItemName: location.name)
                 state.resetComposer()
-                return .send(.fsItems(.loadItems(path: location.url.path)))
+                let exitEffect = Self.exitCollectionMode(state: &state)
+                return .concatenate(
+                    exitEffect,
+                    .send(.fsItems(.loadItems(path: location.url.path))),
+                )
 
             case .loadTags:
                 return .run { send in
@@ -637,7 +685,11 @@ struct FileManagerFeature {
             case let .showTag(tagItem):
                 state.navigate(to: .tags(tagItem.name), sidebarItemName: tagItem.name)
                 state.resetComposer()
-                return .send(.fsItems(.loadTagItems(tagName: tagItem.name)))
+                let exitEffect = Self.exitCollectionMode(state: &state)
+                return .concatenate(
+                    exitEffect,
+                    .send(.fsItems(.loadTagItems(tagName: tagItem.name))),
+                )
 
             case let .changeSortKey(key):
                 state.sortKey = key
@@ -678,12 +730,16 @@ struct FileManagerFeature {
                     return .none
 
                 case let .navigateFolder(id):
-                    guard let item = state.fsItems.items.first(where: { $0.id == id }) else {
+                    guard let item = state.fsItems.displayItems.first(where: { $0.id == id }) else {
                         return .none
                     }
                     state.navigateToFolder(item.fullPath, sidebarItemName: item.name)
                     state.resetComposer()
-                    return .send(.fsItems(.loadItems(path: item.fullPath)))
+                    let exitEffect = Self.exitCollectionMode(state: &state)
+                    return .concatenate(
+                        exitEffect,
+                        .send(.fsItems(.loadItems(path: item.fullPath))),
+                    )
 
                 default:
                     return .none
@@ -705,8 +761,60 @@ struct FileManagerFeature {
                 state.gridTextSize = size
                 return .none
 
-            case .composer:
-                return .none
+            case let .composer(action):
+                switch action {
+                case let .setText(text):
+                    let query = text.trimmingCharacters(in: .whitespacesAndNewlines)
+                    state.pendingSearchQuery = query.isEmpty ? nil : query
+                    if query.isEmpty, state.composer.conditions.isEmpty, state.composer.scopes.isEmpty {
+                        return Self.exitCollectionMode(state: &state)
+                    }
+                    return .none
+
+                case let .searchResponse(.success(response)):
+                    let items = response.items ?? []
+                    let query = state.pendingSearchQuery ?? ""
+                    state.pendingSearchQuery = nil
+                    state.collectionContext = CollectionContext(
+                        query: query,
+                        scopes: state.composer.scopes,
+                        conditions: state.composer.conditions,
+                    )
+                    return .concatenate(
+                        .send(.fsItems(.setCollectionMode(true))),
+                        .send(.fsItems(.collectionItemsLoadedFromSearch(items))),
+                    )
+
+                case let .filtersResponse(.success(response)):
+                    let items = response.items ?? []
+                    state.pendingSearchQuery = nil
+                    state.collectionContext = CollectionContext(
+                        query: "",
+                        scopes: state.composer.scopes,
+                        conditions: state.composer.conditions,
+                    )
+                    return .concatenate(
+                        .send(.fsItems(.setCollectionMode(true))),
+                        .send(.fsItems(.collectionItemsLoadedFromSearch(items))),
+                    )
+
+                case .searchResponse(.failure):
+                    state.pendingSearchQuery = nil
+                    return .none
+
+                case .filtersResponse(.failure):
+                    return .none
+
+                case .cancelSearch:
+                    state.pendingSearchQuery = nil
+                    return .none
+
+                case .clearAll:
+                    return Self.exitCollectionMode(state: &state)
+
+                default:
+                    return .none
+                }
 
             case .enterComposer:
                 let isFirstOpen = state.composer.isPresented == false
@@ -725,6 +833,13 @@ struct FileManagerFeature {
                 return .none
             }
         }
+    }
+
+    private static func exitCollectionMode(state: inout State) -> Effect<Action> {
+        state.collectionContext = nil
+        state.pendingSearchQuery = nil
+        state.fsItems.collectionItems = []
+        return .send(.fsItems(.setCollectionMode(false)))
     }
 }
 

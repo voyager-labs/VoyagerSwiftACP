@@ -18,9 +18,6 @@ struct FocusedTextField: NSViewRepresentable {
         field.usesSingleLineMode = true
         field.lineBreakMode = .byClipping
         field.delegate = context.coordinator
-        field.target = context.coordinator
-        field.action = #selector(Coordinator.commit)
-        field.cell?.sendsActionOnEndEditing = true
 
         DispatchQueue.main.async { [weak field] in
             guard let field, isFirstResponder else { return }
@@ -86,11 +83,6 @@ struct FocusedTextField: NSViewRepresentable {
                 let movement = obj.userInfo?["NSTextMovement"] as? Int,
                 movement == NSReturnTextMovement
             else { return }
-            onCommit()
-        }
-
-        @objc
-        func commit() {
             onCommit()
         }
     }

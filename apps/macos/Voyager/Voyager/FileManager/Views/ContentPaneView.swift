@@ -7,7 +7,7 @@ struct ContentPaneView: View {
     @FocusState private var isKeyCommandFocused: Bool
 
     private var statusText: String {
-        let total = store.fsItems.items.count
+        let total = store.fsItems.displayItems.count
         let selected = store.fsItems.selectedIds.count
 
         if selected == 0 {
@@ -17,13 +17,28 @@ struct ContentPaneView: View {
         }
     }
 
+    private var isCollectionSearching: Bool {
+        let isSearching = store.composer.isLoadingSearch || store.composer.isLoadingFilters
+        let hasContext = store.fsItems.isCollectionMode
+            || store.pendingSearchQuery != nil
+            || !store.composer.scopes.isEmpty
+            || !store.composer.conditions.isEmpty
+        return isSearching && hasContext
+    }
+
     var body: some View {
         ZStack(alignment: .bottomTrailing) {
-            switch store.viewLayout {
-            case .list:
-                ContentPaneListView(store: store)
-            case .grid:
-                ContentPaneGridView(store: store)
+            VStack(spacing: 0) {
+                if isCollectionSearching {
+                    collectionLoadingView
+                } else {
+                    switch store.viewLayout {
+                    case .list:
+                        ContentPaneListView(store: store)
+                    case .grid:
+                        ContentPaneGridView(store: store)
+                    }
+                }
             }
 
             KeyCommandView { event in
@@ -36,7 +51,7 @@ struct ContentPaneView: View {
             if !store.inspectorPaneExists {
                 StatusBarButton(
                     text: statusText,
-                    action: { store.send(.toggleInspector) }
+                    action: { store.send(.toggleInspector) },
                 )
                 .padding(.trailing, 24)
                 .padding(.bottom, 20)
@@ -62,8 +77,22 @@ struct ContentPaneView: View {
                 .contentShape(Rectangle())
                 .onTapGesture {
                     restoreKeyCommandFocus()
-                }
+                },
         )
+    }
+
+    private var collectionLoadingView: some View {
+        GeometryReader { _ in
+            ZStack {
+                Color.clear
+
+                ProgressView()
+                    .progressViewStyle(.circular)
+                    .controlSize(.large)
+            }
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+            .allowsHitTesting(false)
+        }
     }
 
     private func restoreKeyCommandFocus() {
@@ -124,7 +153,7 @@ struct ContentPaneView: View {
         if event.keyCode == 125 {
             if store.fsItems.selectedIds.count == 1,
                let selectedId = store.fsItems.selectedIds.first,
-               let selectedItem = store.fsItems.items.first(where: { $0.id == selectedId }),
+               let selectedItem = store.fsItems.displayItems.first(where: { $0.id == selectedId }),
                selectedItem.isDirectory
             {
                 AppDelegate.shared?.createNewTab(path: selectedItem.fullPath)

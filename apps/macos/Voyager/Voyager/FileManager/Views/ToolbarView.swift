@@ -115,7 +115,9 @@ struct ToolbarView: View {
                 HStack(spacing: 4) {
                     Image(systemName: "folder")
                         .font(.system(size: 12))
-                    Text(FileManager.default.displayName(atPath: store.currentPath))
+                    Text(store.fsItems.isCollectionMode
+                        ? "Temporary Collection"
+                        : FileManager.default.displayName(atPath: store.currentPath))
                         .font(.system(size: 15, weight: .semibold))
                     if isTitleHovered {
                         Text("/ Compose a filter")

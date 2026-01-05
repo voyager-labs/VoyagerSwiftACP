@@ -41,7 +41,7 @@ struct ContentPaneGridView: View {
         fsStore: Store<FSItemsFeature.State, FSItemsFeature.Action>,
         isTrashFolder: Bool = false,
     ) -> FSItemGridView {
-        let selectedItems = fsStore.items.filter { fsStore.selectedIds.contains($0.id) }
+        let selectedItems = fsStore.displayItems.filter { fsStore.selectedIds.contains($0.id) }
         let (showCompress, showExtract) = FSItemContextMenuUtils
             .calculateCompressExtractOptions(selectedItems: selectedItems)
 
@@ -228,7 +228,7 @@ struct ContentPaneGridView: View {
                     .onChange(of: store.currentPath) { _ in
                         hasRestoredScrollPosition = false
                     }
-                    .onChange(of: fsStore.items.count) { itemCount in
+                    .onChange(of: fsStore.displayItems.count) { itemCount in
                         guard itemCount != 0 else { return }
 
                         if store.scrollPositions[store.currentPath] != nil {
@@ -267,7 +267,7 @@ struct ContentPaneGridView: View {
     ) -> some View {
         if fsStore.groupKey == .none {
             LazyVGrid(columns: columns, alignment: .leading, spacing: verticalSpacing) {
-                ForEach(fsStore.items) { item in
+                ForEach(fsStore.displayItems) { item in
                     itemGrid(
                         item: item,
                         store: store,

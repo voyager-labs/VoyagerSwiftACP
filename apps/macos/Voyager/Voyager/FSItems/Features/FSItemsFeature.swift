@@ -21,6 +21,8 @@ struct FSItemsFeature {
     @ObservableState
     struct State: Equatable {
         var items: IdentifiedArrayOf<FSItem> = []
+        var collectionItems: IdentifiedArrayOf<FSItem> = []
+        var isCollectionMode: Bool = false
         var selectedIds: Set<String> = []
         var lastSelectedId: String?
         var rangeAnchorId: String?
@@ -67,9 +69,13 @@ struct FSItemsFeature {
             renamingItemId != nil
         }
 
+        var displayItems: IdentifiedArrayOf<FSItem> {
+            isCollectionMode ? collectionItems : items
+        }
+
         var displayOrderItems: [FSItem] {
             if groupKey == .none {
-                Array(items)
+                Array(displayItems)
             } else {
                 groupedItems.flatMap(\.items)
             }
@@ -111,9 +117,11 @@ struct FSItemsFeature {
         case loadTagItems(tagName: String)
         case loadComputerItems
         case itemsLoaded([FSItem])
+        case collectionItemsLoadedFromSearch([JSONValue])
         case fileSystemChanged([String])
         case setShowHidden(Bool)
         case setGroupKey(GroupKey)
+        case setCollectionMode(Bool)
         case setDropTargeted(Bool)
         case selectItem(id: String, isCommandPressed: Bool, isShiftPressed: Bool)
         case selectAll
@@ -358,7 +366,15 @@ struct FSItemsFeature {
 
             case let .setGroupKey(key):
                 state.groupKey = key
-                state.groupedItems = FSItemsGroupingUtils.groupItems(Array(state.items), by: key)
+                state.groupedItems = FSItemsGroupingUtils.groupItems(Array(state.displayItems), by: key)
+                return .none
+
+            case let .setCollectionMode(isCollectionMode):
+                guard state.isCollectionMode != isCollectionMode else { return .none }
+                state.isCollectionMode = isCollectionMode
+                state.clearSelection()
+                state.operations.commonApplicationsForSelectedFiles = []
+                state.groupedItems = FSItemsGroupingUtils.groupItems(Array(state.displayItems), by: state.groupKey)
                 return .none
 
             case let .setDropTargeted(isTargeted):
@@ -375,7 +391,13 @@ struct FSItemsFeature {
             case let .itemsLoaded(items):
                 let sorted = FSItemsSortingUtils.sortItems(items, by: state.sortKey, order: state.sortOrder)
                 state.items = IdentifiedArray(uniqueElements: sorted)
-                state.groupedItems = FSItemsGroupingUtils.groupItems(Array(state.items), by: state.groupKey)
+
+                guard !state.isCollectionMode else {
+                    state.isReloading = false
+                    return .none
+                }
+
+                state.groupedItems = FSItemsGroupingUtils.groupItems(sorted, by: state.groupKey)
 
                 if !state.selectAfterLoadFileNames.isEmpty {
                     let fileNamesToSelect = state.selectAfterLoadFileNames
@@ -389,70 +411,32 @@ struct FSItemsFeature {
                         state.shouldScrollToSelection = true
                     }
                 } else if state.isReloading {
-                    let validIds = Set(state.items.map { $0.id })
+                    let validIds = Set(state.items.map(\.id))
                     state.selectedIds = state.selectedIds.intersection(validIds)
                     state.isReloading = false
                 } else {
                     state.clearSelection()
                 }
 
-                return .run { send in
-                    let scale = await MainActor.run { NSScreen.main?.backingScaleFactor ?? 2.0 }
-                    let baseSize: CGFloat = 64
-                    let size = CGSize(width: baseSize * scale, height: baseSize * scale)
+                return generateThumbnailsEffect(for: sorted)
 
-                    await withTaskGroup(of: String?.self) { group in
-                        for item in sorted {
-                            group.addTask {
-                                let canGenerate = await MainActor.run {
-                                    ThumbnailGeneratorUtils.canGenerateThumbnail(for: item)
-                                }
-                                guard canGenerate else { return nil }
+            case let .collectionItemsLoadedFromSearch(items):
+                let converted = FSItemSearchUtils.convertCollectionItems(items, showHidden: state.showHiddenFiles)
+                let sorted = FSItemsSortingUtils.sortItems(converted, by: state.sortKey, order: state.sortOrder)
+                state.collectionItems = IdentifiedArray(uniqueElements: sorted)
 
-                                let hasCached = await MainActor.run {
-                                    FSItemIconUtils.getThumbnail(for: item.fullPath) != nil
-                                }
-                                if hasCached {
-                                    return item.fullPath
-                                }
-
-                                let url = URL(fileURLWithPath: item.fullPath)
-                                if let thumbnail = await ThumbnailGeneratorUtils.generateThumbnail(
-                                    for: url,
-                                    size: size,
-                                    scale: scale,
-                                ) {
-                                    await MainActor.run {
-                                        FSItemIconUtils.saveThumbnail(thumbnail, for: item.fullPath)
-                                    }
-                                    return item.fullPath
-                                }
-                                return nil
-                            }
-                        }
-
-                        var readyPaths: [String] = []
-                        for await path in group {
-                            if let path {
-                                readyPaths.append(path)
-
-                                // 10개마다 일괄 업데이트
-                                if readyPaths.count >= 10 {
-                                    await send(.thumbnailsReady(paths: readyPaths))
-                                    readyPaths = []
-                                }
-                            }
-                        }
-
-                        // 남은 항목 처리
-                        if !readyPaths.isEmpty {
-                            await send(.thumbnailsReady(paths: readyPaths))
-                        }
-                    }
+                guard state.isCollectionMode else {
+                    return .none
                 }
+
+                state.groupedItems = FSItemsGroupingUtils.groupItems(sorted, by: state.groupKey)
+                state.clearSelection()
+                state.operations.commonApplicationsForSelectedFiles = []
+                return generateThumbnailsEffect(for: sorted)
 
             case let .selectItem(id, isCommandPressed, isShiftPressed):
                 var renameEffect: Effect<Action> = .none
+                let displayItems = state.displayItems
 
                 if state.isRenaming {
                     renameEffect = .send(.commitRename)
@@ -465,10 +449,10 @@ struct FSItemsFeature {
                         let anchorId = state.rangeAnchorId ?? state.lastSelectedId
 
                         if let anchorId,
-                           let anchorIndex = Array(state.items).firstIndex(where: { $0.id == anchorId }),
-                           let currentIndex = Array(state.items).firstIndex(where: { $0.id == id })
+                           let anchorIndex = Array(displayItems).firstIndex(where: { $0.id == anchorId }),
+                           let currentIndex = Array(displayItems).firstIndex(where: { $0.id == id })
                         {
-                            let itemsArray = Array(state.items)
+                            let itemsArray = Array(displayItems)
                             let range = min(anchorIndex, currentIndex) ... max(anchorIndex, currentIndex)
                             let rangeIds = itemsArray[range].map(\.id)
                             state.selectedIds.formUnion(rangeIds)
@@ -481,7 +465,7 @@ struct FSItemsFeature {
                                 renameEffect,
                                 preloadApplicationsEffect(
                                     selectedIds: state.selectedIds,
-                                    items: state.items,
+                                    items: displayItems,
                                     currentItemId: id,
                                 ),
                             )
@@ -511,16 +495,16 @@ struct FSItemsFeature {
 
                 return .merge(
                     renameEffect,
-                    preloadApplicationsEffect(selectedIds: state.selectedIds, items: state.items, currentItemId: id),
+                    preloadApplicationsEffect(selectedIds: state.selectedIds, items: displayItems, currentItemId: id),
                 )
 
             case .selectAll:
-                state.selectedIds = Set(state.items.map(\.id))
-                if let lastItem = state.items.last {
+                state.selectedIds = Set(state.displayItems.map(\.id))
+                if let lastItem = state.displayItems.last {
                     state.lastSelectedId = lastItem.id
                 }
 
-                return preloadApplicationsEffect(selectedIds: state.selectedIds, items: state.items)
+                return preloadApplicationsEffect(selectedIds: state.selectedIds, items: state.displayItems)
 
             case .clearSelection:
                 state.clearSelection()
@@ -560,7 +544,7 @@ struct FSItemsFeature {
                     state.rangeAnchorId = nil
                     state.shouldScrollToSelection = true
                 }
-                return preloadApplicationsEffect(selectedIds: state.selectedIds, items: state.items)
+                return preloadApplicationsEffect(selectedIds: state.selectedIds, items: state.displayItems)
 
             case let .selectPreviousItem(isShiftPressed):
                 let displayItems = state.displayOrderItems
@@ -595,7 +579,7 @@ struct FSItemsFeature {
                     state.rangeAnchorId = nil
                     state.shouldScrollToSelection = true
                 }
-                return preloadApplicationsEffect(selectedIds: state.selectedIds, items: state.items)
+                return preloadApplicationsEffect(selectedIds: state.selectedIds, items: state.displayItems)
 
             case let .selectByOffset(offset, isShiftPressed):
                 let displayItems = state.displayOrderItems
@@ -613,7 +597,7 @@ struct FSItemsFeature {
                     state.shouldScrollToSelection = true
                     return preloadApplicationsEffect(
                         selectedIds: state.selectedIds,
-                        items: state.items,
+                        items: state.displayItems,
                         currentItemId: item.id,
                     )
                 }
@@ -658,32 +642,44 @@ struct FSItemsFeature {
                 }
                 state.lastSelectedId = targetItem.id
                 state.shouldScrollToSelection = true
-                return preloadApplicationsEffect(selectedIds: state.selectedIds, items: state.items)
+                return preloadApplicationsEffect(selectedIds: state.selectedIds, items: state.displayItems)
 
             case let .setSortKey(key):
                 state.sortKey = key
                 if !state.hasUserSetSortOrder {
                     state.sortOrder = state.defaultSortOrder
                 }
-                let sorted = FSItemsSortingUtils.sortItems(
+                let sortedItems = FSItemsSortingUtils.sortItems(
                     Array(state.items),
                     by: state.sortKey,
                     order: state.sortOrder,
                 )
-                state.items = IdentifiedArray(uniqueElements: sorted)
-                state.groupedItems = FSItemsGroupingUtils.groupItems(sorted, by: state.groupKey)
+                state.items = IdentifiedArray(uniqueElements: sortedItems)
+                let sortedCollection = FSItemsSortingUtils.sortItems(
+                    Array(state.collectionItems),
+                    by: state.sortKey,
+                    order: state.sortOrder,
+                )
+                state.collectionItems = IdentifiedArray(uniqueElements: sortedCollection)
+                state.groupedItems = FSItemsGroupingUtils.groupItems(Array(state.displayItems), by: state.groupKey)
                 return .none
 
             case let .setSortOrder(order):
                 state.sortOrder = order
                 state.hasUserSetSortOrder = true
-                let sorted = FSItemsSortingUtils.sortItems(
+                let sortedItems = FSItemsSortingUtils.sortItems(
                     Array(state.items),
                     by: state.sortKey,
                     order: state.sortOrder,
                 )
-                state.items = IdentifiedArray(uniqueElements: sorted)
-                state.groupedItems = FSItemsGroupingUtils.groupItems(sorted, by: state.groupKey)
+                state.items = IdentifiedArray(uniqueElements: sortedItems)
+                let sortedCollection = FSItemsSortingUtils.sortItems(
+                    Array(state.collectionItems),
+                    by: state.sortKey,
+                    order: state.sortOrder,
+                )
+                state.collectionItems = IdentifiedArray(uniqueElements: sortedCollection)
+                state.groupedItems = FSItemsGroupingUtils.groupItems(Array(state.displayItems), by: state.groupKey)
                 return .none
 
             case .resetScrollFlag:
@@ -699,7 +695,7 @@ struct FSItemsFeature {
                     return .none
                 }
 
-                let selectedItems = getSelectedItems(selectedIds: state.selectedIds, items: state.items)
+                let selectedItems = getSelectedItems(selectedIds: state.selectedIds, items: state.displayItems)
                 let selectedFolders = selectedItems.filter(\.isDirectory)
                 let selectedFiles = selectedItems.filter { !$0.isDirectory }
 
@@ -725,7 +721,7 @@ struct FSItemsFeature {
             case .quickLookSelectedItem:
                 guard state.selectedIds.count == 1,
                       let selectedId = state.selectedIds.first,
-                      let item = state.items.first(where: { $0.id == selectedId })
+                      let item = state.displayItems.first(where: { $0.id == selectedId })
                 else {
                     return .none
                 }
@@ -733,7 +729,7 @@ struct FSItemsFeature {
                 return .send(.operations(.quickLookFile(file: item)))
 
             case let .openWithSelectedItem(bundleID, shouldSetAsDefault):
-                let selectedFiles = getSelectedFiles(selectedIds: state.selectedIds, items: state.items)
+                let selectedFiles = getSelectedFiles(selectedIds: state.selectedIds, items: state.displayItems)
 
                 guard !selectedFiles.isEmpty else {
                     return .none
@@ -809,7 +805,7 @@ struct FSItemsFeature {
                     return .none
                 }
 
-                let selectedItems = getSelectedItems(selectedIds: state.selectedIds, items: state.items)
+                let selectedItems = getSelectedItems(selectedIds: state.selectedIds, items: state.displayItems)
                 let selectedPaths = selectedItems.map(\.fullPath)
 
                 state.clipboardItems = selectedPaths
@@ -826,7 +822,7 @@ struct FSItemsFeature {
                     return .none
                 }
 
-                let selectedItems = getSelectedItems(selectedIds: state.selectedIds, items: state.items)
+                let selectedItems = getSelectedItems(selectedIds: state.selectedIds, items: state.displayItems)
                 let selectedPaths = selectedItems.map(\.fullPath)
 
                 state.clipboardItems = selectedPaths
@@ -857,7 +853,7 @@ struct FSItemsFeature {
                 )))
 
             case .duplicateSelectedItems:
-                let selectedItems = getSelectedItems(selectedIds: state.selectedIds, items: state.items)
+                let selectedItems = getSelectedItems(selectedIds: state.selectedIds, items: state.displayItems)
                 guard !selectedItems.isEmpty else {
                     return .none
                 }
@@ -1023,7 +1019,7 @@ struct FSItemsFeature {
                 )
 
             case let .startRename(id):
-                guard let item = state.items.first(where: { $0.id == id }) else {
+                guard let item = state.displayItems.first(where: { $0.id == id }) else {
                     return .none
                 }
 
@@ -1077,13 +1073,13 @@ struct FSItemsFeature {
                 }
 
             case .moveSelectedItemsToTrash:
-                let selectedItems = getSelectedItems(selectedIds: state.selectedIds, items: state.items)
+                let selectedItems = getSelectedItems(selectedIds: state.selectedIds, items: state.displayItems)
                 guard !selectedItems.isEmpty else { return .none }
 
                 return .send(.operations(.moveToTrash(items: selectedItems)))
 
             case .deleteSelectedItemsImmediately:
-                let selectedItems = getSelectedItems(selectedIds: state.selectedIds, items: state.items)
+                let selectedItems = getSelectedItems(selectedIds: state.selectedIds, items: state.displayItems)
                 guard !selectedItems.isEmpty else { return .none }
 
                 return .run { send in
@@ -1099,26 +1095,26 @@ struct FSItemsFeature {
                 return .send(.operations(.deleteImmediately(items: items)))
 
             case .putBackSelectedItems:
-                let selectedItems = getSelectedItems(selectedIds: state.selectedIds, items: state.items)
+                let selectedItems = getSelectedItems(selectedIds: state.selectedIds, items: state.displayItems)
                 guard !selectedItems.isEmpty else { return .none }
 
                 return .send(.operations(.putBackFromTrash(items: selectedItems)))
 
             case .compressSelectedItems:
-                let selectedItems = getSelectedItems(selectedIds: state.selectedIds, items: state.items)
+                let selectedItems = getSelectedItems(selectedIds: state.selectedIds, items: state.displayItems)
                 guard !selectedItems.isEmpty else { return .none }
 
                 return .send(.operations(.compressItems(items: selectedItems)))
 
             case .extractSelectedItem:
-                guard let selectedItem = state.items.first(where: { state.selectedIds.contains($0.id) }),
+                guard let selectedItem = state.displayItems.first(where: { state.selectedIds.contains($0.id) }),
                       selectedItem.fileExtension.lowercased() == "zip"
                 else { return .none }
 
                 return .send(.operations(.extractCompressedFile(file: selectedItem)))
 
             case let .toggleTagForSelectedItem(tag):
-                let selectedItems = getSelectedItems(selectedIds: state.selectedIds, items: state.items)
+                let selectedItems = getSelectedItems(selectedIds: state.selectedIds, items: state.displayItems)
                 guard !selectedItems.isEmpty else { return .none }
 
                 return .merge(
@@ -1145,7 +1141,7 @@ struct FSItemsFeature {
 
             case .commitRename:
                 guard let itemId = state.renamingItemId,
-                      let item = state.items.first(where: { $0.id == itemId })
+                      let item = state.displayItems.first(where: { $0.id == itemId })
                 else {
                     return .send(.cancelRename)
                 }
@@ -1215,7 +1211,7 @@ struct FSItemsFeature {
 
                 let itemsInLasso = LassoSelectionUtils.calculateItemsInRect(
                     lasso.rect,
-                    items: state.items,
+                    items: state.displayItems,
                     itemPositions: state.itemPositions,
                 )
 
@@ -1316,6 +1312,63 @@ struct FSItemsFeature {
                 }
                 state.listRowDragSelection = nil
                 return .none
+            }
+        }
+    }
+
+    private func generateThumbnailsEffect(for items: [FSItem]) -> Effect<Action> {
+        .run { send in
+            let scale = await MainActor.run { NSScreen.main?.backingScaleFactor ?? 2.0 }
+            let baseSize: CGFloat = 64
+            let size = CGSize(width: baseSize * scale, height: baseSize * scale)
+
+            await withTaskGroup(of: String?.self) { group in
+                for item in items {
+                    group.addTask {
+                        let canGenerate = await MainActor.run {
+                            ThumbnailGeneratorUtils.canGenerateThumbnail(for: item)
+                        }
+                        guard canGenerate else { return nil }
+
+                        let hasCached = await MainActor.run {
+                            FSItemIconUtils.getThumbnail(for: item.fullPath) != nil
+                        }
+                        if hasCached {
+                            return item.fullPath
+                        }
+
+                        let url = URL(fileURLWithPath: item.fullPath)
+                        if let thumbnail = await ThumbnailGeneratorUtils.generateThumbnail(
+                            for: url,
+                            size: size,
+                            scale: scale,
+                        ) {
+                            await MainActor.run {
+                                FSItemIconUtils.saveThumbnail(thumbnail, for: item.fullPath)
+                            }
+                            return item.fullPath
+                        }
+                        return nil
+                    }
+                }
+
+                var readyPaths: [String] = []
+                for await path in group {
+                    if let path {
+                        readyPaths.append(path)
+
+                        // 10개마다 일괄 업데이트
+                        if readyPaths.count >= 10 {
+                            await send(.thumbnailsReady(paths: readyPaths))
+                            readyPaths = []
+                        }
+                    }
+                }
+
+                // 남은 항목 처리
+                if !readyPaths.isEmpty {
+                    await send(.thumbnailsReady(paths: readyPaths))
+                }
             }
         }
     }
