@@ -34,6 +34,23 @@ final class OnboardingWindowController: NSWindowController, NSWindowDelegate {
         }
     }
 
+    func windowShouldClose(_ sender: NSWindow) -> Bool {
+        let alert = NSAlert()
+        alert.messageText = "Quit Voyager?"
+        alert.informativeText = "Onboarding is still in progress. Quitting will resume next time."
+        alert.addButton(withTitle: "Quit")
+        alert.addButton(withTitle: "Cancel")
+        alert.alertStyle = .warning
+
+        alert.beginSheetModal(for: sender) { response in
+            if response == .alertFirstButtonReturn {
+                NSApp.terminate(nil)
+            }
+        }
+
+        return false
+    }
+
     @available(*, unavailable)
     required init?(coder _: NSCoder) {
         fatalError("init(coder:) has not been implemented")

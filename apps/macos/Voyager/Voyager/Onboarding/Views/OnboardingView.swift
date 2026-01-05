@@ -13,17 +13,74 @@ struct OnboardingView: View {
                     Text("Onboarding in progress")
                         .font(.system(size: 15))
                         .foregroundStyle(.secondary)
+                    Text("Step \(viewStore.currentStepIndex)/\(viewStore.totalSteps) · \(viewStore.currentStep.title)")
+                        .font(.system(size: 13, weight: .medium))
+                        .foregroundStyle(.secondary)
+                    ProgressView(
+                        value: Double(viewStore.currentStepIndex),
+                        total: Double(viewStore.totalSteps),
+                    )
+                    .progressViewStyle(.linear)
+                    .frame(maxWidth: 320)
                 }
 
-                Text("Step \(viewStore.stepIndex)/\(viewStore.totalSteps)")
-                    .font(.system(size: 13, weight: .medium))
-                    .foregroundStyle(.secondary)
+                if viewStore.showResumeBanner {
+                    HStack(spacing: 12) {
+                        Image(systemName: "clock.arrow.circlepath")
+                            .foregroundStyle(.secondary)
+                        Text("Resuming your onboarding from where you left off.")
+                            .font(.system(size: 13))
+                            .foregroundStyle(.secondary)
+                        Spacer()
+                        Button("Dismiss") {
+                            viewStore.send(.dismissResumeBanner)
+                        }
+                        .buttonStyle(.plain)
+                    }
+                    .padding(12)
+                    .background(.ultraThinMaterial)
+                    .cornerRadius(8)
+                }
+
+                stepContent(for: viewStore.currentStep)
+
+                Spacer()
+
+                HStack {
+                    Button("Back") {
+                        viewStore.send(.backTapped)
+                    }
+                    .disabled(!viewStore.canGoBack)
+
+                    Spacer()
+
+                    Button("Next") {
+                        viewStore.send(.nextTapped)
+                    }
+                    .disabled(!viewStore.canGoNext)
+                }
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
             .padding(40)
             .onAppear {
                 viewStore.send(.onAppear)
             }
+        }
+    }
+
+    @ViewBuilder
+    private func stepContent(for step: OnboardingStep) -> some View {
+        switch step {
+        case .welcome:
+            WelcomeStepView(store: store.scope(state: \.welcome, action: \.welcome))
+        case .betaAccess:
+            BetaAccessStepView(store: store.scope(state: \.betaAccess, action: \.betaAccess))
+        case .permissions:
+            PermissionsStepView(store: store.scope(state: \.permissions, action: \.permissions))
+        case .indexingPreset:
+            IndexingPresetStepView(store: store.scope(state: \.indexingPreset, action: \.indexingPreset))
+        case .complete:
+            CompleteStepView(store: store.scope(state: \.complete, action: \.complete))
         }
     }
 }
