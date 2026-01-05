@@ -12,7 +12,7 @@ struct FileManagerFeature {
         let composerState: ComposerFeature.State
     }
 
-    struct CollectionContext: Equatable {
+    struct CollectionContext: Equatable, Sendable {
         var query: String
         var scopes: [String]
         var conditions: [Condition]
@@ -70,6 +70,7 @@ struct FileManagerFeature {
         var composer: ComposerFeature.State = .init()
         var pendingSearchQuery: String?
         var collectionContext: CollectionContext?
+        var collection: CollectionFeature.State = .init()
 
         var sortKey: SortKey = .name
         var sortOrder: SortOrder = .ascending
@@ -298,6 +299,7 @@ struct FileManagerFeature {
         case enterComposer
         case exitComposer
         case composer(ComposerFeature.Action)
+        case collection(CollectionFeature.Action)
     }
 
     @Dependency(\.fsItemClient)
@@ -306,6 +308,10 @@ struct FileManagerFeature {
     var body: some Reducer<State, Action> {
         Scope(state: \.composer, action: \.composer) {
             ComposerFeature()
+        }
+
+        Scope(state: \.collection, action: \.collection) {
+            CollectionFeature()
         }
 
         Scope(state: \.fsItems, action: \.fsItems) {
@@ -812,9 +818,22 @@ struct FileManagerFeature {
                 case .clearAll:
                     return Self.exitCollectionMode(state: &state)
 
+                case .saveCollection:
+                    return .send(.collection(.saveRequested(.init(
+                        context: state.collectionContext,
+                        sortKey: state.sortKey.rawValue,
+                        sortOrder: state.sortOrder.rawValue,
+                        viewLayout: state.viewLayout.rawValue,
+                        isSearchLoading: state.composer.isLoadingSearch,
+                        isFiltersLoading: state.composer.isLoadingFilters,
+                    ))))
+
                 default:
                     return .none
                 }
+
+            case .collection:
+                return .none
 
             case .enterComposer:
                 let isFirstOpen = state.composer.isPresented == false

@@ -2,7 +2,7 @@
 import Foundation
 
 // swiftlint:disable file_length type_body_length
-struct Condition: Equatable, Identifiable, Hashable {
+struct Condition: Equatable, Identifiable, Hashable, Sendable {
     var id: String { propertyKey }
     var propertyKey: String
     var propertyLabel: String
