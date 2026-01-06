@@ -128,19 +128,31 @@ xcodebuild -version
 
 - Git Flow
 
-  - 기본: `main` (현재 개발 브랜치). 추후 `dev`/`staging` 분기 도입 가능.
-  - Linear Project 브랜치: `proj/{project_slug}`
+  - **브랜치 구조**
+    - `main`: 운영/배포 브랜치 (태그: `vX.Y.Z`)
+    - `develop`: 개발 통합 브랜치
+    - `release/v<X.Y.Z>`: 릴리즈 준비/안정화 브랜치
+    - `<type>/<linear-issue>`: 이슈별 개발 브랜치
+      - `type`: `feature`, `fix`, `chore`, `refactor`, `docs`, `test`, `ci`
+      - 예: `feature/voy-123`, `fix/voy-456`
+    - `hotfix/<linear-issue>`: 운영 긴급 수정 브랜치
 
-    - `main`에서 분기해 프로젝트 단위 작업 집약
-    - 예) proj/files
-  - Linear Issue 브랜치: `{project_slug}/{linear_issue_id}`
+  - **일반 개발 워크플로우**
+    1. `develop`에서 `<type>/<linear-issue>` 브랜치 생성
+    2. 개발 완료 후 `develop`으로 PR 생성 및 머지
+    3. 머지 후 작업 브랜치 삭제
 
-    - 해당 `proj/{project_slug}`에서 분기
-    - 예) files/voy-1
-  - PR 흐름:
+  - **릴리즈 워크플로우**
+    1. `develop`에서 `release/v<X.Y.Z>` 브랜치 생성
+    2. 릴리즈 브랜치에서 버그 수정이 필요한 경우 `fix/<linear-issue>` 분기 후 `release/v<X.Y.Z>`로 PR 머지
+    3. 릴리즈 준비 완료 후 `release/v<X.Y.Z> -> main` PR 머지 및 `vX.Y.Z` 태그 생성
+    4. `main -> develop` (또는 `release/v<X.Y.Z> -> develop`)로 back-merge
 
-    - 이슈 처리 시: `{project_slug}/{linear_issue_id}` → `proj/{project_slug}` 로 PR
-    - 프로젝트 마감: `proj/{project_slug}` → `main` 으로 PR
+  - **Hotfix 워크플로우**
+    1. `main`에서 `hotfix/<linear-issue>` 브랜치 생성
+    2. 수정 후 `main`으로 PR 머지
+    3. 동일 변경사항을 `develop` 및 진행 중인 `release/*` 브랜치에도 반영
+
 - Conventional Commits
 
   - Subject: `<type>(<scope>): <short description>` (명령형, ≲ 50자)
