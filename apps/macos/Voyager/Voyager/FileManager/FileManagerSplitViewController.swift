@@ -292,7 +292,7 @@ extension FileManagerSplitViewController {
                 ZStack(alignment: .top) {
                     VStack(spacing: 0) {
                         ToolbarView(store: store)
-                        breadcrumbView(viewStore: viewStore, store: store)
+                        self.breadcrumbView(viewStore: viewStore, store: store)
                         ContentPaneView(store: store)
                     }
 
