@@ -118,7 +118,7 @@ struct FileManagerFeature {
                 guard parent.path != path, path != "/" else { return nil }
                 return parent.path
 
-            case .collection(let navigation):
+            case let .collection(navigation):
                 guard case let .file(url, _) = navigation.kind else { return nil }
                 return url.deletingLastPathComponent().path
 
@@ -1095,8 +1095,29 @@ struct FileManagerFeature {
                     return .none
                 }
 
-            case .collection:
-                return .none
+            case let .collection(action):
+                switch action {
+                case let .saveCompleted(.success(url)):
+                    state.openedCollectionURL = url
+                    state.openedCollectionName = url.deletingPathExtension().lastPathComponent
+
+                    if let context = state.collectionContext {
+                        state.openedCollectionBaseline = CollectionBaseline(
+                            context: context,
+                            sortKey: state.sortKey,
+                            sortOrder: state.sortOrder,
+                            viewLayout: state.viewLayout,
+                        )
+                    } else {
+                        state.openedCollectionBaseline = nil
+                    }
+
+                    state.navigationState = .collection(makeCollectionNavigation(state: state))
+                    return .none
+
+                default:
+                    return .none
+                }
 
             case .enterComposer:
                 let isFirstOpen = state.composer.isPresented == false
