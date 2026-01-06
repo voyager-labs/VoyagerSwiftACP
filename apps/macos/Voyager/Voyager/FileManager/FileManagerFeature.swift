@@ -70,6 +70,8 @@ struct FileManagerFeature {
         var composer: ComposerFeature.State = .init()
         var pendingSearchQuery: String?
         var collectionContext: CollectionContext?
+        var isOpeningCollectionFile: Bool = false
+        var openedCollectionName: String?
         var collection: CollectionFeature.State = .init()
 
         var sortKey: SortKey = .name
@@ -242,6 +244,8 @@ struct FileManagerFeature {
     enum Action: Sendable {
         case onAppear
         case navigateTo(String)
+        case openCollectionFile(URL)
+        case collectionFileLoaded(Result<VoyagerCollectionFile, Error>)
         case openSelectedItem
         case quickLookSelectedItem
         case duplicateSelectedItems
@@ -304,6 +308,13 @@ struct FileManagerFeature {
 
     @Dependency(\.fsItemClient)
     var fsItemClient
+
+    @Dependency(\.collectionFileClient)
+    var collectionFileClient
+
+    private nonisolated enum CancelID: Hashable, Sendable {
+        case openCollectionFile
+    }
 
     var body: some Reducer<State, Action> {
         Scope(state: \.composer, action: \.composer) {
@@ -409,6 +420,83 @@ struct FileManagerFeature {
                     exitEffect,
                     .send(.fsItems(.loadItems(path: path))),
                 )
+
+            case let .openCollectionFile(url):
+                let exitEffect = Self.exitCollectionMode(state: &state)
+                state.isOpeningCollectionFile = true
+                state.openedCollectionName = url.deletingPathExtension().lastPathComponent
+                let loadEffect: Effect<Action> = .run { [collectionFileClient, url] send in
+                    do {
+                        let file = try await collectionFileClient.load(url)
+                        try Task.checkCancellation()
+                        await send(.collectionFileLoaded(.success(file)))
+                    } catch is CancellationError {
+                        return
+                    } catch {
+                        await send(.collectionFileLoaded(.failure(error)))
+                    }
+                }
+                .cancellable(id: CancelID.openCollectionFile, cancelInFlight: true)
+
+                return .concatenate(
+                    exitEffect,
+                    loadEffect,
+                )
+
+            case let .collectionFileLoaded(result):
+                switch result {
+                case let .success(file):
+                    let trimmedQuery = file.query.trimmingCharacters(in: .whitespacesAndNewlines)
+                    state.pendingSearchQuery = trimmedQuery.isEmpty ? nil : trimmedQuery
+
+                    let resolved = resolveCollectionFilters(from: file)
+                    if trimmedQuery.isEmpty, resolved.scopes.isEmpty, resolved.conditions.isEmpty {
+                        state.isOpeningCollectionFile = false
+                        state.openedCollectionName = nil
+                        return .run { _ in
+                            await showCollectionOpenErrorAlert(
+                                title: "Empty Collection",
+                                message: "This collection file has no query, scope, or filters.",
+                            )
+                        }
+                    }
+
+                    state.composer.text = trimmedQuery
+                    state.composer.scopes = resolved.scopes
+                    state.composer.conditions = resolved.conditions
+                    state.composer.propertyPicker = .init()
+                    state.composer.operatorPicker = .init()
+                    state.composer.valuePicker = .init()
+                    state.composer.clearHistory()
+
+                    var effects: [Effect<Action>] = []
+                    if let sortKey = sortKey(from: file), sortKey != state.sortKey {
+                        effects.append(.send(.changeSortKey(sortKey)))
+                    }
+                    if let sortOrder = sortOrder(from: file), sortOrder != state.sortOrder {
+                        effects.append(.send(.changeSortOrder(sortOrder)))
+                    }
+                    if let viewLayout = viewLayout(from: file), viewLayout != state.viewLayout {
+                        effects.append(.send(.changeLayout(viewLayout)))
+                    }
+
+                    let searchEffect: Effect<Action> = trimmedQuery.isEmpty
+                        ? .send(.composer(.applyFilters))
+                        : .send(.composer(.submit))
+                    effects.append(searchEffect)
+
+                    return .concatenate(effects)
+
+                case let .failure(error):
+                    state.isOpeningCollectionFile = false
+                    state.openedCollectionName = nil
+                    return .run { _ in
+                        await showCollectionOpenErrorAlert(
+                            title: "Unable to Open Collection",
+                            message: error.localizedDescription,
+                        )
+                    }
+                }
 
             case .openSelectedItem:
                 return .send(.fsItems(.openSelectedItem))
@@ -778,6 +866,7 @@ struct FileManagerFeature {
                     return .none
 
                 case let .searchResponse(.success(response)):
+                    state.isOpeningCollectionFile = false
                     let items = response.items ?? []
                     let query = state.pendingSearchQuery ?? ""
                     state.pendingSearchQuery = nil
@@ -792,6 +881,7 @@ struct FileManagerFeature {
                     )
 
                 case let .filtersResponse(.success(response)):
+                    state.isOpeningCollectionFile = false
                     let items = response.items ?? []
                     state.pendingSearchQuery = nil
                     state.collectionContext = CollectionContext(
@@ -804,15 +894,43 @@ struct FileManagerFeature {
                         .send(.fsItems(.collectionItemsLoadedFromSearch(items))),
                     )
 
-                case .searchResponse(.failure):
+                case let .searchResponse(.failure(error)):
                     state.pendingSearchQuery = nil
+                    if state.isOpeningCollectionFile {
+                        state.isOpeningCollectionFile = false
+                        return .run { _ in
+                            await showCollectionOpenErrorAlert(
+                                title: "Unable to Run Collection Search",
+                                message: """
+                                \(error.localizedDescription)
+
+                                Make sure the backend is running and try again.
+                                """,
+                            )
+                        }
+                    }
                     return .none
 
-                case .filtersResponse(.failure):
+                case let .filtersResponse(.failure(error)):
+                    if state.isOpeningCollectionFile {
+                        state.isOpeningCollectionFile = false
+                        return .run { _ in
+                            await showCollectionOpenErrorAlert(
+                                title: "Unable to Apply Collection Filters",
+                                message: """
+                                \(error.localizedDescription)
+
+                                Make sure the backend is running and try again.
+                                """,
+                            )
+                        }
+                    }
                     return .none
 
                 case .cancelSearch:
                     state.pendingSearchQuery = nil
+                    state.isOpeningCollectionFile = false
+                    state.openedCollectionName = nil
                     return .none
 
                 case .clearAll:
@@ -857,9 +975,57 @@ struct FileManagerFeature {
     private static func exitCollectionMode(state: inout State) -> Effect<Action> {
         state.collectionContext = nil
         state.pendingSearchQuery = nil
+        state.isOpeningCollectionFile = false
+        state.openedCollectionName = nil
         state.fsItems.collectionItems = []
-        return .send(.fsItems(.setCollectionMode(false)))
+        return .merge(
+            .cancel(id: CancelID.openCollectionFile),
+            .cancel(id: ComposerFeature.CancelID.search),
+            .cancel(id: ComposerFeature.CancelID.filters),
+            .send(.fsItems(.setCollectionMode(false))),
+        )
     }
+}
+
+private func resolveCollectionFilters(from file: VoyagerCollectionFile) -> (scopes: [String], conditions: [Condition]) {
+    let conditionPayloads = file.conditions.map { condition in
+        SearchConditionPayload(
+            propertyKey: condition.propertyKey,
+            operator: condition.operatorCode,
+            value: condition.value,
+        )
+    }
+    let appliedFilters = AppliedFiltersPayload(scopes: file.scopes, conditions: conditionPayloads)
+    return AppliedFiltersUtils.resolve(
+        appliedFilters,
+        fallbackScopes: file.scopes,
+        fallbackConditions: [],
+    )
+}
+
+private func sortKey(from file: VoyagerCollectionFile) -> SortKey? {
+    guard let rawValue = file.sortKey else { return nil }
+    return SortKey(rawValue: rawValue)
+}
+
+private func sortOrder(from file: VoyagerCollectionFile) -> SortOrder? {
+    guard let rawValue = file.sortOrder else { return nil }
+    return SortOrder(rawValue: rawValue)
+}
+
+private func viewLayout(from file: VoyagerCollectionFile) -> FileManagerFeature.ViewLayout? {
+    guard let rawValue = file.viewLayout else { return nil }
+    return FileManagerFeature.ViewLayout(rawValue: rawValue)
+}
+
+@MainActor
+private func showCollectionOpenErrorAlert(title: String, message: String) {
+    let alert = NSAlert()
+    alert.alertStyle = .warning
+    alert.messageText = title
+    alert.informativeText = message
+    alert.addButton(withTitle: "OK")
+    alert.runModal()
 }
 
 // swiftlint:enable type_body_length

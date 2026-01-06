@@ -329,7 +329,7 @@ private func showCollectionSavePanel(initialDirectory: URL?) -> URL? {
     panel.prompt = "Save"
     panel.canCreateDirectories = true
     panel.allowsOtherFileTypes = false
-    panel.allowedFileTypes = ["voyager"]
+    panel.allowedFileTypes = ["voycoll"]
     panel.isExtensionHidden = false
     panel.nameFieldStringValue = ""
     panel.directoryURL = initialDirectory
@@ -340,10 +340,10 @@ private func showCollectionSavePanel(initialDirectory: URL?) -> URL? {
 }
 
 private func ensureCollectionFileExtension(_ url: URL) -> URL {
-    if url.pathExtension.lowercased() == "voyager" {
+    if url.pathExtension.lowercased() == "voycoll" {
         return url
     }
-    return url.appendingPathExtension("voyager")
+    return url.appendingPathExtension("voycoll")
 }
 
 private func makeCollectionFile(

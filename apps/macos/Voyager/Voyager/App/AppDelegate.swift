@@ -63,7 +63,9 @@ class AppDelegate: NSObject, NSApplicationDelegate, ObservableObject {
 
     func applicationDidFinishLaunching(_: Notification) {
         NSWindow.allowsAutomaticWindowTabbing = true
-        createNewWindow()
+        if windowControllers.isEmpty {
+            createNewWindow()
+        }
     }
 
     func applicationSupportsSecureRestorableState(_: NSApplication) -> Bool {
@@ -97,11 +99,13 @@ class AppDelegate: NSObject, NSApplicationDelegate, ObservableObject {
         return .terminateLater
     }
 
+    @discardableResult
     @objc
-    func createNewWindow(path: String? = nil) {
+    func createNewWindow(path: String? = nil) -> FileManagerWindowController {
         let controller = FileManagerWindowController(path: path, asTab: false)
         windowControllers.append(controller)
         controller.showWindow(nil)
+        return controller
     }
 
     func createNewTab(path: String? = nil, duplicateState: FileManagerFeature.State? = nil) {
@@ -218,6 +222,33 @@ class AppDelegate: NSObject, NSApplicationDelegate, ObservableObject {
         helperManager.stop()
     }
 
+    func application(_: NSApplication, openFile filename: String) -> Bool {
+        let url = URL(fileURLWithPath: filename)
+        guard isVoyagerCollectionURL(url) else { return false }
+        Task { @MainActor in
+            openCollectionFiles(urls: [url])
+        }
+        return true
+    }
+
+    func application(_ sender: NSApplication, openFiles filenames: [String]) {
+        let urls = filenames.map { URL(fileURLWithPath: $0) }.filter(isVoyagerCollectionURL)
+
+        Task { @MainActor in
+            openCollectionFiles(urls: urls)
+            sender.reply(toOpenOrPrint: .success)
+        }
+    }
+
+    func application(_: NSApplication, open urls: [URL]) {
+        let voyagerURLs = urls.filter(isVoyagerCollectionURL)
+        guard !voyagerURLs.isEmpty else { return }
+
+        Task { @MainActor in
+            openCollectionFiles(urls: voyagerURLs)
+        }
+    }
+
     private func checkIndexingStatus() -> Bool {
         // TODO: 추후 인덱싱 기능 구현 시 실제 상태 확인
         false
@@ -238,5 +269,31 @@ class AppDelegate: NSObject, NSApplicationDelegate, ObservableObject {
 
         let response = alert.runModal()
         completion(response == .alertFirstButtonReturn)
+    }
+
+    private func isVoyagerCollectionURL(_ url: URL) -> Bool {
+        url.pathExtension.lowercased() == "voycoll"
+    }
+
+    @MainActor
+    private func openCollectionFile(url: URL) {
+        let controller = activeWindowController() ?? createNewWindow()
+        controller.window?.makeKeyAndOrderFront(nil)
+        controller.store.send(.openCollectionFile(url))
+    }
+
+    @MainActor
+    private func openCollectionFiles(urls: [URL]) {
+        for url in urls {
+            openCollectionFile(url: url)
+        }
+    }
+
+    @MainActor
+    private func activeWindowController() -> FileManagerWindowController? {
+        guard let keyWindow = NSApp.keyWindow else {
+            return windowControllers.first
+        }
+        return windowControllers.first { $0.window == keyWindow } ?? windowControllers.first
     }
 }

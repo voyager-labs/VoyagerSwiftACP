@@ -68,6 +68,7 @@ struct ComposerFeature {
         case clearAll
         case submit
         case cancelSearch
+        case applyFilters
         case saveCollection
         case setOperator(propertyKey: String, option: OperatorOption)
         case setValue(propertyKey: String, values: [String])
@@ -81,7 +82,10 @@ struct ComposerFeature {
         case filtersResponse(Result<SearchResponsePayload, Error>)
     }
 
-    private static let searchID: String = "search"
+    nonisolated enum CancelID: Hashable, Sendable {
+        case search
+        case filters
+    }
 
     var body: some Reducer<State, Action> {
         Scope(state: \.propertyPicker, action: \.propertyPicker) {
@@ -128,15 +132,19 @@ struct ComposerFeature {
                 state.propertyPicker = .init()
                 state.operatorPicker = .init()
                 state.valuePicker = .init()
-                return .none
+                state.isLoadingFilters = false
+                state.lastFiltersResponse = nil
+                return .cancel(id: CancelID.filters)
 
             case .submit:
                 let query = state.text.trimmingCharacters(in: .whitespacesAndNewlines)
                 guard !query.isEmpty else { return .none }
                 let filters = buildFilters(from: state)
                 state.isLoadingSearch = true
+                state.isLoadingFilters = false
+                state.lastFiltersResponse = nil
                 state.text = ""
-                return .run { send in
+                let searchEffect: Effect<Action> = .run { send in
                     do {
                         let response = try await searchClient.search(
                             .init(query: query, filters: filters),
@@ -146,11 +154,23 @@ struct ComposerFeature {
                         await send(.searchResponse(.failure(error)))
                     }
                 }
-                .cancellable(id: Self.searchID, cancelInFlight: true)
+                .cancellable(id: CancelID.search, cancelInFlight: true)
+                return .concatenate(
+                    .cancel(id: CancelID.filters),
+                    searchEffect,
+                )
 
             case .cancelSearch:
                 state.isLoadingSearch = false
-                return .cancel(id: Self.searchID)
+                return .cancel(id: CancelID.search)
+
+            case .applyFilters:
+                state.isLoadingSearch = false
+                state.lastSearchResponse = nil
+                return .concatenate(
+                    .cancel(id: CancelID.search),
+                    applyFiltersIfNeeded(state: &state, searchClient: searchClient),
+                )
 
             case .saveCollection:
                 // TODO: 컬렉션 저장 기능 구현 예정
@@ -447,9 +467,9 @@ private func applyFiltersIfNeeded(
     searchClient: SearchClient,
 ) -> Effect<ComposerFeature.Action> {
     let filters = buildFilters(from: state)
-    guard !filters.conditions.isEmpty else {
+    guard !filters.conditions.isEmpty || !filters.scopes.isEmpty else {
         state.isLoadingFilters = false
-        return .none
+        return .cancel(id: ComposerFeature.CancelID.filters)
     }
     state.isLoadingFilters = true
     return .run { send in
@@ -460,6 +480,7 @@ private func applyFiltersIfNeeded(
             await send(.filtersResponse(.failure(error)))
         }
     }
+    .cancellable(id: ComposerFeature.CancelID.filters, cancelInFlight: true)
 }
 
 private func buildFilters(from state: ComposerFeature.State) -> SearchFiltersPayload {

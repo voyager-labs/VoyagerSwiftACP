@@ -11,13 +11,18 @@ class FileManagerWindowController: NSWindowController, NSWindowDelegate {
     init(path: String? = nil, duplicateState: FileManagerFeature.State? = nil, asTab: Bool = true) {
         initialPath = path
 
-        let state: FileManagerFeature.State
+        var state: FileManagerFeature.State
         if let duplicateState {
             var newState = duplicateState
             newState.fsItems = FSItemsFeature.State()
             state = newState
         } else {
             state = FileManagerFeature.State()
+        }
+
+        if duplicateState == nil, let path {
+            state.navigationState = .folder(path)
+            state.titlePath = path
         }
 
         store = Store(initialState: state) {
@@ -82,6 +87,37 @@ class FileManagerWindowController: NSWindowController, NSWindowDelegate {
             guard let self, window?.isKeyWindow == true else { return }
             AppDelegate.shared?.updateMenuState(store: store)
         }
+
+        let makeTitle: (String?, Bool, String) -> String = { openedCollectionName, isCollectionMode, titlePath in
+            if let openedCollectionName {
+                return openedCollectionName
+            }
+            if isCollectionMode {
+                return "Temporary Collection"
+            }
+            return FileManagerFeature.makeWindowTitle(for: titlePath)
+        }
+
+        let initialTitle = makeTitle(
+            store.state.openedCollectionName,
+            store.state.fsItems.isCollectionMode,
+            store.state.titlePath,
+        )
+
+        let titlePublisher = Publishers.CombineLatest3(
+            store.publisher.openedCollectionName.removeDuplicates(),
+            store.publisher.fsItems.isCollectionMode.removeDuplicates(),
+            store.publisher.titlePath.removeDuplicates(),
+        )
+        .map(makeTitle)
+        .prepend(initialTitle)
+        .removeDuplicates()
+
+        titlePublisher
+            .sink { [weak self] title in
+                self?.window?.title = title
+            }
+            .store(in: &cancellables)
 
         store.publisher.fsItems.selectedIds
             .removeDuplicates()

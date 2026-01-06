@@ -36,6 +36,12 @@ class AppearanceAwareSplitView: NSSplitView {
 }
 
 class FileManagerSplitViewController: NSViewController, NSSplitViewDelegate {
+    private struct ContentPaneViewState: Equatable {
+        let isComposerPresented: Bool
+        let breadcrumbItems: [BreadcrumbUtils.Item]
+        let selectedBreadcrumbItem: BreadcrumbUtils.Item?
+    }
+
     let store: StoreOf<FileManagerFeature>
     let initialPath: String?
     private var hasSetInitialLayout = false
@@ -261,32 +267,7 @@ extension FileManagerSplitViewController {
     }
 
     private func setupContentPane(in container: NSView) {
-        let store = store
-        let contentHosting = NSHostingController(
-            rootView: WithViewStore(store, observe: \.composer.isPresented) { viewStore in
-                ZStack(alignment: .top) {
-                    VStack(spacing: 0) {
-                        ToolbarView(store: store)
-                        ContentPaneView(store: store)
-                    }
-
-                    if viewStore.state {
-                        Color.clear
-                            .contentShape(Rectangle())
-                            .onTapGesture {
-                                store.send(.exitComposer)
-                            }
-                    }
-
-                    if viewStore.state {
-                        ComposerView(store: store)
-                            .transition(.move(edge: .top).combined(with: .opacity))
-                    }
-                }
-                .ignoresSafeArea(.all, edges: .top)
-                .animation(.spring(response: 0.25, dampingFraction: 0.75), value: viewStore.state)
-            },
-        )
+        let contentHosting = NSHostingController(rootView: makeContentRootView())
         contentHosting.safeAreaRegions = []
         contentHosting.view.translatesAutoresizingMaskIntoConstraints = false
         container.addSubview(contentHosting.view)
@@ -294,6 +275,65 @@ extension FileManagerSplitViewController {
         self.contentHosting = contentHosting
         setupElevatedLayer(for: contentHosting.view)
         setupContentPaneConstraints(container: container, contentView: contentHosting.view)
+    }
+
+    private func makeContentRootView() -> some View {
+        let store = store
+        return WithViewStore(
+            store,
+            observe: {
+                ContentPaneViewState(
+                    isComposerPresented: $0.composer.isPresented,
+                    breadcrumbItems: $0.breadcrumbItems,
+                    selectedBreadcrumbItem: $0.selectedBreadcrumbItem,
+                )
+            },
+            content: { viewStore in
+                ZStack(alignment: .top) {
+                    VStack(spacing: 0) {
+                        ToolbarView(store: store)
+                        breadcrumbView(viewStore: viewStore, store: store)
+                        ContentPaneView(store: store)
+                    }
+
+                    if viewStore.isComposerPresented {
+                        Color.clear
+                            .contentShape(Rectangle())
+                            .onTapGesture { store.send(.exitComposer) }
+                    }
+
+                    if viewStore.isComposerPresented {
+                        ComposerView(store: store)
+                            .transition(.move(edge: .top).combined(with: .opacity))
+                    }
+                }
+                .ignoresSafeArea(.all, edges: .top)
+                .animation(
+                    .spring(response: 0.25, dampingFraction: 0.75),
+                    value: viewStore.isComposerPresented,
+                )
+            },
+        )
+    }
+
+    @ViewBuilder
+    private func breadcrumbView(
+        viewStore: ViewStore<ContentPaneViewState, FileManagerFeature.Action>,
+        store: StoreOf<FileManagerFeature>,
+    ) -> some View {
+        if !viewStore.breadcrumbItems.isEmpty || viewStore.selectedBreadcrumbItem != nil {
+            GeometryReader { proxy in
+                PathBreadcrumbView(
+                    breadcrumbItems: viewStore.breadcrumbItems,
+                    selectedItem: viewStore.selectedBreadcrumbItem,
+                    availableWidth: max(proxy.size.width - 32, 0),
+                    onNavigate: { path in store.send(.navigateTo(path)) },
+                )
+            }
+            .frame(height: 24)
+            .padding(.horizontal, 16)
+            .padding(.vertical, 4)
+        }
     }
 
     private func setupContentPaneConstraints(container: NSView, contentView: NSView) {
