@@ -67,6 +67,29 @@ struct AppMenuCommands: Commands {
         }
 
         CommandGroup(replacing: .saveItem) {
+            Button("Save Collection Filter Changes") {
+                AppDelegate.shared?.currentFileManagerStore?.send(.composer(.saveCollection))
+            }
+            .keyboardShortcut("s", modifiers: .command)
+            .disabled({
+                guard let store = AppDelegate.shared?.currentFileManagerStore else { return true }
+                guard store.fsItems.isCollectionMode, store.openedCollectionURL != nil else { return true }
+                return !store.isOpenedCollectionDirty
+            }())
+
+            Button("Save Current Filter As New Collection") {
+                AppDelegate.shared?.currentFileManagerStore?.send(.composer(.saveCollectionAs))
+            }
+            .keyboardShortcut("s", modifiers: [.command, .shift])
+            .disabled({
+                guard let store = AppDelegate.shared?.currentFileManagerStore else { return true }
+                guard store.fsItems.isCollectionMode, store.collectionContext != nil else { return true }
+                if store.openedCollectionURL == nil { return false }
+                return !store.isOpenedCollectionDirty
+            }())
+
+            Divider()
+
             Button("Close Tab") {
                 NSApp.keyWindow?.close()
             }

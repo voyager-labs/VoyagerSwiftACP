@@ -188,11 +188,14 @@ struct ComposerView: View {
             let trimmed = viewStore.text.trimmingCharacters(in: .whitespacesAndNewlines)
             if !trimmed.isEmpty { viewStore.send(.submit) }
         }
-        .onChange(of: viewStore.isPresented) { presented in
-            if presented {
+            .onChange(of: viewStore.isPresented) { presented in
+                if presented {
+                    isComposeFieldFirstResponder = true
+                }
+            }
+            .onChange(of: viewStore.focusRequestID) { _ in
                 isComposeFieldFirstResponder = true
             }
-        }
     }
 
     private func clearButton(viewStore: ViewStore<ComposerFeature.State, ComposerFeature.Action>) -> some View {

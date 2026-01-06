@@ -18,6 +18,19 @@ struct EditMenuCommands: Commands {
     }
 
     var body: some Commands {
+        CommandGroup(after: .undoRedo) {
+            Button("Open Collection Filter Composer") {
+                guard let store = appDelegate.currentFileManagerStore else { return }
+                if store.composer.isPresented {
+                    store.send(.composer(.focusQueryField))
+                } else {
+                    store.send(.enterComposer)
+                }
+            }
+            .keyboardShortcut("f", modifiers: .command)
+            .disabled(appDelegate.currentFileManagerStore == nil)
+        }
+
         CommandGroup(replacing: .pasteboard) {
             Button("Cut") {
                 if NSApp.sendAction(#selector(NSText.cut(_:)), to: nil, from: nil) {

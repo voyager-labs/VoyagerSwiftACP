@@ -30,6 +30,7 @@ struct ComposerFeature {
         var text: String = ""
         var scopes: [String] = []
         var conditions: [Condition] = []
+        var focusRequestID: Int = 0
         var propertyPicker: ConditionPropertyPickerFeature.State = .init()
         var operatorPicker: OperatorPickerFeature.State = .init()
         var valuePicker: ValuePickerFeature.State = .init()
@@ -71,6 +72,7 @@ struct ComposerFeature {
         case applyFilters
         case saveCollection
         case saveCollectionAs
+        case focusQueryField
         case setOperator(propertyKey: String, option: OperatorOption)
         case setValue(propertyKey: String, values: [String])
         case replaceConditionProperty(originalKey: String, property: MDItemProperty)
@@ -179,6 +181,10 @@ struct ComposerFeature {
 
             case .saveCollectionAs:
                 // TODO: 컬렉션 저장 기능 구현 예정
+                return .none
+
+            case .focusQueryField:
+                state.focusRequestID += 1
                 return .none
 
             case let .updateScope(oldPath, newPath):
