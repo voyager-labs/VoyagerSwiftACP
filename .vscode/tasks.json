@@ -1,0 +1,76 @@
+{
+  "version": "2.0.0",
+  "tasks": [
+    {
+      "type": "sweetpad",
+      "action": "debugging-launch",
+      "problemMatcher": [
+        "$sweetpad-watch",
+        "$sweetpad-xcodebuild-default",
+        "$sweetpad-xcbeautify-errors",
+        "$sweetpad-xcbeautify-warnings"
+      ],
+      "label": "Voyager Dev: Launch (Debug)",
+      "detail": "Build and Run the Development environment on Debug mode",
+      "isBackground": true,
+      "scheme": "Voyager-Dev",
+      "configuration": "Debug",
+      "launchEnv": {
+        "BACKEND_MODE": "source",
+        "VOYAGER_PROJECT_ROOT": "${workspaceFolder}"
+      },
+    },
+    {
+      "type": "sweetpad",
+      "action": "launch",
+      "problemMatcher": [
+        "$sweetpad-watch",
+        "$sweetpad-xcodebuild-default",
+        "$sweetpad-xcbeautify-errors",
+        "$sweetpad-xcbeautify-warnings"
+      ],
+      "label": "Voyager Dev: Launch (Release)",
+      "detail": "Build and Run the Development environment on Release mode",
+      "scheme": "Voyager-Dev",
+      "configuration": "Release",
+      "launchEnv": {
+        "BACKEND_MODE": "source",
+        "VOYAGER_PROJECT_ROOT": "${workspaceFolder}"
+      },
+    },
+    {
+      "type": "sweetpad",
+      "action": "launch",
+      "problemMatcher": [
+        "$sweetpad-watch",
+        "$sweetpad-xcodebuild-default",
+        "$sweetpad-xcbeautify-errors",
+        "$sweetpad-xcbeautify-warnings"
+      ],
+      "label": "Voyager Prod: Launch (Debug)",
+      "detail": "Build and Run the Production environment on Debug mode",
+      "scheme": "Voyager-Prod",
+      "configuration": "Debug",
+      "launchEnv": {
+        "BACKEND_MODE": "bundled",
+      },
+    },
+    {
+      "type": "sweetpad",
+      "action": "launch",
+      "problemMatcher": [
+        "$sweetpad-watch",
+        "$sweetpad-xcodebuild-default",
+        "$sweetpad-xcbeautify-errors",
+        "$sweetpad-xcbeautify-warnings"
+      ],
+      "label": "Voyager Prod: Launch (Release)",
+      "detail": "Build and Run the Production environment on Release mode",
+      "scheme": "Voyager-Prod",
+      "configuration": "Release",
+      "launchEnv": {
+        "BACKEND_MODE": "bundled",
+      },
+    },
+  ]
+}

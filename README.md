@@ -68,8 +68,14 @@
   * Xcode에서 시작: `xed apps/macos/Voyager/Voyager.xcodeproj` (열기 후 `Cmd+R` 실행)
   * VSCode 류 IDE(Sweetpad Extension)에서 실행:
     * Xcode 프로젝트 열기: Sweetpad로 `apps/macos/Voyager/Voyager.xcodeproj` 오픈
-    * 스킴 실행: `Voyager-Dev` 스킴을 선택하여 Debug 구성으로 실행
-    * 참고: Sweetpad 환경에 따라 CLI/버튼 동작이 다를 수 있습니다. 스킴/구성은 Xcode 프로젝트와 동기화되어야 합니다.
+    * 태스크로 실행 (권장):
+      * `Cmd+Shift+P` (또는 `Ctrl+Shift+P`)로 Command Palette 열기
+      * "Tasks: Run Task" 입력 후 다음 태스크 중 선택:
+        - `Voyager Dev: Launch (Debug)` - 개발 환경 Debug 모드로 빌드 및 실행
+        - `Voyager Dev: Launch (Release)` - 개발 환경 Release 모드로 빌드 및 실행
+        - `Voyager Prod: Launch (Debug)` - 프로덕션 환경 Debug 모드로 빌드 및 실행
+        - `Voyager Prod: Launch (Release)` - 프로덕션 환경 Release 모드로 빌드 및 실행
+      * 참고: 버튼을 통한 직접 실행은 비권장합니다. xcscheme의 환경변수가 제대로 주입되지 않을 수 있습니다. 태스크를 통한 실행을 사용하세요.
   * Build (CLI): `xcodebuild -project apps/macos/Voyager/Voyager.xcodeproj -scheme Voyager-Dev -configuration Debug`
   * Prod build/archive (CLI): `xcodebuild -project apps/macos/Voyager/Voyager.xcodeproj -scheme Voyager-Prod -configuration Release`
   * Tests (CLI): `xcodebuild test -scheme Voyager-Dev -project apps/macos/Voyager/Voyager.xcodeproj`
