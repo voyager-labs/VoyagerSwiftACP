@@ -137,6 +137,7 @@ struct FSItemsFeature {
         case openSelectedItem
         case quickLookSelectedItem
         case openWithSelectedItem(bundleID: String?, shouldSetAsDefault: Bool)
+        case openCollectionFile(URL)
         case navigateFolder(id: String)
         case copySelectedItems
         case cutSelectedItems
@@ -690,6 +691,10 @@ struct FSItemsFeature {
                 // 폴더 이동은 부모 Feature에서 처리
                 return .none
 
+            case .openCollectionFile:
+                // 콜렉션 파일 열기는 부모 Feature에서 처리
+                return .none
+
             case .openSelectedItem:
                 guard !state.selectedIds.isEmpty else {
                     return .none
@@ -714,6 +719,14 @@ struct FSItemsFeature {
 
                 guard !selectedFiles.isEmpty else {
                     return .none
+                }
+
+                if selectedFolders.isEmpty,
+                   selectedFiles.count == 1,
+                   let file = selectedFiles.first,
+                   URL(fileURLWithPath: file.fullPath).pathExtension.lowercased() == "voycoll"
+                {
+                    return .send(.openCollectionFile(URL(fileURLWithPath: file.fullPath)))
                 }
 
                 return .send(.operations(.openFiles(files: selectedFiles)))

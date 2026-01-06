@@ -44,6 +44,13 @@ struct FileManagerFeature {
             case .recents: "Recents"
             case let .tags(tagName): tagName
             case .computer: SidebarUtils.computerName
+            case let .collection(navigation):
+                switch navigation.kind {
+                case .temporary:
+                    "Temporary Collection"
+                case let .file(_, name):
+                    name
+                }
             }
         }
 
@@ -79,6 +86,7 @@ struct FileManagerFeature {
         var collectionContext: CollectionContext?
         var isOpeningCollectionFile: Bool = false
         var openedCollectionName: String?
+        var openedCollectionURL: URL?
         var openedCollectionBaseline: CollectionBaseline?
         var collection: CollectionFeature.State = .init()
 
@@ -146,6 +154,8 @@ struct FileManagerFeature {
                     return BreadcrumbUtils.buildBreadcrumbs(from: rootPath, to: path)
                 }
                 return BreadcrumbUtils.buildBreadcrumbsForStandardPath(path)
+            case .collection:
+                return []
             }
         }
 
@@ -198,8 +208,13 @@ struct FileManagerFeature {
             locations: [SidebarUtils.LocationItem],
         ) {
             navigationState = entry.navigationState
-            selectedSidebarItem = entry.sidebarItemName
-            matchSidebarToPath(currentPath, favorites: favorites, locations: locations)
+            switch entry.navigationState {
+            case .collection:
+                selectedSidebarItem = nil
+            default:
+                selectedSidebarItem = entry.sidebarItemName
+                matchSidebarToPath(currentPath, favorites: favorites, locations: locations)
+            }
             composer = entry.composerState
             composer.isPresented = false
         }
@@ -271,6 +286,7 @@ struct FileManagerFeature {
         case navigateTo(String)
         case openCollectionFile(URL)
         case collectionFileLoaded(Result<VoyagerCollectionFile, Error>)
+        case navigateToCollection(FileManagerNavigationUtils.CollectionNavigation)
         case openSelectedItem
         case quickLookSelectedItem
         case duplicateSelectedItems
@@ -447,9 +463,23 @@ struct FileManagerFeature {
                 )
 
             case let .openCollectionFile(url):
-                let exitEffect = Self.exitCollectionMode(state: &state)
+                let exitEffect = Self.clearCollectionMode(state: &state)
+                if case .collection = state.navigationState {
+                    // 이미 콜렉션 상태면 히스토리에는 중복 추가하지 않음
+                } else {
+                    let directoryPath = url.deletingLastPathComponent().path
+                    var previousSnapshot = state.makeHistoryEntry()
+                    previousSnapshot = HistoryEntry(
+                        navigationState: .folder(directoryPath),
+                        sidebarItemName: nil,
+                        composerState: previousSnapshot.composerState,
+                    )
+                    state.backHistory.append(previousSnapshot)
+                    state.forwardHistory = []
+                }
                 state.isOpeningCollectionFile = true
                 state.openedCollectionName = url.deletingPathExtension().lastPathComponent
+                state.openedCollectionURL = url
                 state.openedCollectionBaseline = nil
                 let loadEffect: Effect<Action> = .run { [collectionFileClient, url] send in
                     do {
@@ -468,6 +498,37 @@ struct FileManagerFeature {
                     exitEffect,
                     loadEffect,
                 )
+
+            case let .navigateToCollection(navigation):
+                state.collectionContext = navigation.context
+                state.pendingSearchQuery = navigation.context.query.isEmpty ? nil : navigation.context.query
+                state.sortKey = navigation.sortKey
+                state.sortOrder = navigation.sortOrder
+                state.viewLayout = navigation.viewLayout
+                state.fsItems.isListView = navigation.viewLayout == .list
+                state.selectedSidebarItem = nil
+
+                switch navigation.kind {
+                case .temporary:
+                    state.openedCollectionName = nil
+                    state.openedCollectionURL = nil
+                case let .file(url, name):
+                    state.openedCollectionName = name
+                    state.openedCollectionURL = url
+                }
+
+                state.composer.text = navigation.context.query
+                state.composer.scopes = navigation.context.scopes
+                state.composer.conditions = navigation.context.conditions
+                state.composer.propertyPicker = .init()
+                state.composer.operatorPicker = .init()
+                state.composer.valuePicker = .init()
+                state.composer.clearHistory()
+
+                let trimmedQuery = navigation.context.query.trimmingCharacters(in: .whitespacesAndNewlines)
+                return trimmedQuery.isEmpty
+                    ? .send(.composer(.applyFilters))
+                    : .send(.composer(.submit))
 
             case let .collectionFileLoaded(result):
                 switch result {
@@ -576,7 +637,7 @@ struct FileManagerFeature {
                 let currentSnapshot = state.makeHistoryEntry()
                 state.forwardHistory.append(currentSnapshot)
                 state.applyHistoryEntry(entry, favorites: state.favorites, locations: state.locations)
-                let exitEffect = Self.exitCollectionMode(state: &state)
+                let exitEffect = Self.clearCollectionMode(state: &state)
                 return .concatenate(
                     exitEffect,
                     FileManagerNavigationUtils.navigateToState(state.navigationState),
@@ -587,7 +648,7 @@ struct FileManagerFeature {
                 let currentSnapshot = state.makeHistoryEntry()
                 state.backHistory.append(currentSnapshot)
                 state.applyHistoryEntry(entry, favorites: state.favorites, locations: state.locations)
-                let exitEffect = Self.exitCollectionMode(state: &state)
+                let exitEffect = Self.clearCollectionMode(state: &state)
                 return .concatenate(
                     exitEffect,
                     FileManagerNavigationUtils.navigateToState(state.navigationState),
@@ -607,7 +668,7 @@ struct FileManagerFeature {
                     state.forwardHistory.append(contentsOf: trailing.reversed())
 
                     state.applyHistoryEntry(targetEntry, favorites: state.favorites, locations: state.locations)
-                    let exitEffect = Self.exitCollectionMode(state: &state)
+                    let exitEffect = Self.clearCollectionMode(state: &state)
                     return .concatenate(
                         exitEffect,
                         FileManagerNavigationUtils.navigateToState(state.navigationState),
@@ -625,7 +686,7 @@ struct FileManagerFeature {
                     state.backHistory.append(contentsOf: trailing.reversed())
 
                     state.applyHistoryEntry(targetEntry, favorites: state.favorites, locations: state.locations)
-                    let exitEffect = Self.exitCollectionMode(state: &state)
+                    let exitEffect = Self.clearCollectionMode(state: &state)
                     return .concatenate(
                         exitEffect,
                         FileManagerNavigationUtils.navigateToState(state.navigationState),
@@ -877,6 +938,9 @@ struct FileManagerFeature {
                         .send(.fsItems(.loadItems(path: item.fullPath))),
                     )
 
+                case let .openCollectionFile(url):
+                    return .send(.openCollectionFile(url))
+
                 default:
                     return .none
                 }
@@ -908,7 +972,10 @@ struct FileManagerFeature {
                     return .none
 
                 case let .searchResponse(.success(response)):
+                    let wasOpeningCollectionFile = state.isOpeningCollectionFile
                     state.isOpeningCollectionFile = false
+                    let previousSnapshot = state.makeHistoryEntry()
+                    let previousNavigationState = state.navigationState
                     let items = response.items ?? []
                     let query = state.pendingSearchQuery ?? ""
                     state.pendingSearchQuery = nil
@@ -917,13 +984,25 @@ struct FileManagerFeature {
                         scopes: state.composer.scopes,
                         conditions: state.composer.conditions,
                     )
+                    state.selectedSidebarItem = nil
+                    let nextNavigationState = FileManagerNavigationUtils.NavigationState.collection(
+                        makeCollectionNavigation(state: state),
+                    )
+                    if !wasOpeningCollectionFile, previousNavigationState != nextNavigationState {
+                        state.backHistory.append(previousSnapshot)
+                        state.forwardHistory = []
+                    }
+                    state.navigationState = nextNavigationState
                     return .concatenate(
                         .send(.fsItems(.setCollectionMode(true))),
                         .send(.fsItems(.collectionItemsLoadedFromSearch(items))),
                     )
 
                 case let .filtersResponse(.success(response)):
+                    let wasOpeningCollectionFile = state.isOpeningCollectionFile
                     state.isOpeningCollectionFile = false
+                    let previousSnapshot = state.makeHistoryEntry()
+                    let previousNavigationState = state.navigationState
                     let items = response.items ?? []
                     state.pendingSearchQuery = nil
                     state.collectionContext = CollectionContext(
@@ -931,6 +1010,15 @@ struct FileManagerFeature {
                         scopes: state.composer.scopes,
                         conditions: state.composer.conditions,
                     )
+                    state.selectedSidebarItem = nil
+                    let nextNavigationState = FileManagerNavigationUtils.NavigationState.collection(
+                        makeCollectionNavigation(state: state),
+                    )
+                    if !wasOpeningCollectionFile, previousNavigationState != nextNavigationState {
+                        state.backHistory.append(previousSnapshot)
+                        state.forwardHistory = []
+                    }
+                    state.navigationState = nextNavigationState
                     return .concatenate(
                         .send(.fsItems(.setCollectionMode(true))),
                         .send(.fsItems(.collectionItemsLoadedFromSearch(items))),
@@ -1018,10 +1106,24 @@ struct FileManagerFeature {
     }
 
     private static func exitCollectionMode(state: inout State) -> Effect<Action> {
+        let wasCollection = if case .collection = state.navigationState { true } else { false }
+        let clearEffect = clearCollectionMode(state: &state)
+
+        guard wasCollection else {
+            return clearEffect
+        }
+
+        state.navigationState = FileManagerNavigationUtils.navigationStateFromPath(state.titlePath)
+        state.matchSidebarToPath(state.currentPath, favorites: state.favorites, locations: state.locations)
+        return clearEffect
+    }
+
+    private static func clearCollectionMode(state: inout State) -> Effect<Action> {
         state.collectionContext = nil
         state.pendingSearchQuery = nil
         state.isOpeningCollectionFile = false
         state.openedCollectionName = nil
+        state.openedCollectionURL = nil
         state.openedCollectionBaseline = nil
         state.fsItems.collectionItems = []
         return .merge(
@@ -1031,6 +1133,26 @@ struct FileManagerFeature {
             .send(.fsItems(.setCollectionMode(false))),
         )
     }
+}
+
+private func makeCollectionNavigation(
+    state: FileManagerFeature.State,
+) -> FileManagerNavigationUtils.CollectionNavigation {
+    let context = state.collectionContext ?? .init(query: "", scopes: [], conditions: [])
+    let kind: FileManagerNavigationUtils.CollectionKind = if let url = state.openedCollectionURL,
+                                                             let name = state.openedCollectionName
+    {
+        .file(url: url, name: name)
+    } else {
+        .temporary
+    }
+    return .init(
+        kind: kind,
+        context: context,
+        sortKey: state.sortKey,
+        sortOrder: state.sortOrder,
+        viewLayout: state.viewLayout,
+    )
 }
 
 private func resolveCollectionFilters(from file: VoyagerCollectionFile) -> (scopes: [String], conditions: [Condition]) {

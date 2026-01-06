@@ -74,7 +74,11 @@ class AppDelegate: NSObject, NSApplicationDelegate, ObservableObject {
 
     func applicationShouldHandleReopen(_: NSApplication, hasVisibleWindows flag: Bool) -> Bool {
         if !flag {
-            createNewWindow()
+            if windowControllers.isEmpty {
+                createNewWindow()
+            } else {
+                activeWindowController()?.window?.makeKeyAndOrderFront(nil)
+            }
         }
         return true
     }
