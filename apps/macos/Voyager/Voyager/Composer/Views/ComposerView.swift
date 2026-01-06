@@ -216,7 +216,8 @@ struct ComposerView: View {
     }
 
     private func saveButton(viewStore: ViewStore<ComposerFeature.State, ComposerFeature.Action>) -> some View {
-        Button {
+        let isEnabled = store.canSaveCollection && !viewStore.isLoadingSearch
+        return Button {
             store.send(.composer(.saveCollection))
         } label: {
             HStack(spacing: 4) {
@@ -232,7 +233,7 @@ struct ComposerView: View {
             )
         }
         .buttonStyle(.plain)
-        .disabled(viewStore.isLoadingSearch)
+        .disabled(!isEnabled)
     }
 
     private var horizontalSeparator: some View {

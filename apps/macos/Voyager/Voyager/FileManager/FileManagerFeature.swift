@@ -18,6 +18,13 @@ struct FileManagerFeature {
         var conditions: [Condition]
     }
 
+    struct CollectionBaseline: Equatable, Sendable {
+        var context: CollectionContext
+        var sortKey: SortKey
+        var sortOrder: SortOrder
+        var viewLayout: ViewLayout
+    }
+
     static func makeWindowTitle(for path: String) -> String {
         if path == "/" {
             return FileManager.default.displayName(atPath: "/")
@@ -72,6 +79,7 @@ struct FileManagerFeature {
         var collectionContext: CollectionContext?
         var isOpeningCollectionFile: Bool = false
         var openedCollectionName: String?
+        var openedCollectionBaseline: CollectionBaseline?
         var collection: CollectionFeature.State = .init()
 
         var sortKey: SortKey = .name
@@ -157,6 +165,23 @@ struct FileManagerFeature {
 
         var windowTitle: String {
             FileManagerFeature.makeWindowTitle(for: titlePath)
+        }
+
+        var canSaveCollection: Bool {
+            guard fsItems.isCollectionMode, collectionContext != nil else { return false }
+            if openedCollectionBaseline == nil {
+                return true
+            }
+            return isOpenedCollectionDirty
+        }
+
+        var isOpenedCollectionDirty: Bool {
+            guard let baseline = openedCollectionBaseline, let context = collectionContext else { return false }
+            if baseline.context != context { return true }
+            if baseline.sortKey != sortKey { return true }
+            if baseline.sortOrder != sortOrder { return true }
+            if baseline.viewLayout != viewLayout { return true }
+            return false
         }
 
         func makeHistoryEntry() -> HistoryEntry {
@@ -425,6 +450,7 @@ struct FileManagerFeature {
                 let exitEffect = Self.exitCollectionMode(state: &state)
                 state.isOpeningCollectionFile = true
                 state.openedCollectionName = url.deletingPathExtension().lastPathComponent
+                state.openedCollectionBaseline = nil
                 let loadEffect: Effect<Action> = .run { [collectionFileClient, url] send in
                     do {
                         let file = try await collectionFileClient.load(url)
@@ -453,6 +479,7 @@ struct FileManagerFeature {
                     if trimmedQuery.isEmpty, resolved.scopes.isEmpty, resolved.conditions.isEmpty {
                         state.isOpeningCollectionFile = false
                         state.openedCollectionName = nil
+                        state.openedCollectionBaseline = nil
                         return .run { _ in
                             await showCollectionOpenErrorAlert(
                                 title: "Empty Collection",
@@ -468,6 +495,20 @@ struct FileManagerFeature {
                     state.composer.operatorPicker = .init()
                     state.composer.valuePicker = .init()
                     state.composer.clearHistory()
+
+                    let baselineSortKey = sortKey(from: file) ?? state.sortKey
+                    let baselineSortOrder = sortOrder(from: file) ?? state.sortOrder
+                    let baselineViewLayout = viewLayout(from: file) ?? state.viewLayout
+                    state.openedCollectionBaseline = CollectionBaseline(
+                        context: CollectionContext(
+                            query: trimmedQuery,
+                            scopes: resolved.scopes,
+                            conditions: resolved.conditions,
+                        ),
+                        sortKey: baselineSortKey,
+                        sortOrder: baselineSortOrder,
+                        viewLayout: baselineViewLayout,
+                    )
 
                     var effects: [Effect<Action>] = []
                     if let sortKey = sortKey(from: file), sortKey != state.sortKey {
@@ -490,6 +531,7 @@ struct FileManagerFeature {
                 case let .failure(error):
                     state.isOpeningCollectionFile = false
                     state.openedCollectionName = nil
+                    state.openedCollectionBaseline = nil
                     return .run { _ in
                         await showCollectionOpenErrorAlert(
                             title: "Unable to Open Collection",
@@ -937,6 +979,9 @@ struct FileManagerFeature {
                     return Self.exitCollectionMode(state: &state)
 
                 case .saveCollection:
+                    guard state.canSaveCollection else {
+                        return .none
+                    }
                     return .send(.collection(.saveRequested(.init(
                         context: state.collectionContext,
                         sortKey: state.sortKey.rawValue,
@@ -977,6 +1022,7 @@ struct FileManagerFeature {
         state.pendingSearchQuery = nil
         state.isOpeningCollectionFile = false
         state.openedCollectionName = nil
+        state.openedCollectionBaseline = nil
         state.fsItems.collectionItems = []
         return .merge(
             .cancel(id: CancelID.openCollectionFile),

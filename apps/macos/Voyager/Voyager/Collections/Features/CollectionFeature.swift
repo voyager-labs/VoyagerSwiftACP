@@ -1,6 +1,7 @@
 import AppKit
 import ComposableArchitecture
 import Foundation
+import UniformTypeIdentifiers
 
 @Reducer
 struct CollectionFeature {
@@ -293,7 +294,11 @@ private func showCollectionSavePanel(initialDirectory: URL?) -> URL? {
     panel.prompt = "Save"
     panel.canCreateDirectories = true
     panel.allowsOtherFileTypes = false
-    panel.allowedFileTypes = ["voycoll"]
+    panel.allowedContentTypes = [
+        UTType("fm.voyager.collection")
+            ?? UTType(filenameExtension: "voycoll")
+            ?? .data,
+    ]
     panel.isExtensionHidden = false
     panel.nameFieldStringValue = ""
     panel.directoryURL = initialDirectory
