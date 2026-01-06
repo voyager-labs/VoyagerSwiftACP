@@ -31,6 +31,7 @@ struct CollectionFeature {
 
     enum Action: Sendable {
         case saveRequested(SaveRequestPayload)
+        case saveToExisting(SaveRequestPayload, URL)
         case savePanelResponse(URL?)
         case saveCompleted(Result<URL, Error>)
     }
@@ -78,6 +79,55 @@ struct CollectionFeature {
                     return .run { send in
                         let url = await showCollectionSavePanel(initialDirectory: initialDirectory)
                         await send(.savePanelResponse(url))
+                    }
+                }
+
+            case let .saveToExisting(payload, url):
+                guard !state.isSaving else { return .none }
+                guard !payload.isSearchLoading, !payload.isFiltersLoading else { return .none }
+                guard let context = payload.context else {
+                    return .run { _ in
+                        await showCollectionSaveErrorAlert(
+                            title: "No Temporary Collection",
+                            message: "There is no active temporary collection to save.",
+                        )
+                    }
+                }
+
+                let trimmedQuery = context.query.trimmingCharacters(in: .whitespacesAndNewlines)
+                let validation = validateCollectionContext(
+                    context,
+                    query: trimmedQuery,
+                    sortKey: payload.sortKey,
+                    sortOrder: payload.sortOrder,
+                    viewLayout: payload.viewLayout,
+                )
+
+                switch validation {
+                case let .failure(error):
+                    return .run { _ in
+                        await showCollectionSaveErrorAlert(
+                            title: "Unable to Save Collection",
+                            message: error.localizedDescription,
+                        )
+                    }
+
+                case let .success(snapshot):
+                    state.isSaving = true
+                    let finalURL = ensureCollectionFileExtension(url)
+                    let file = makeCollectionFile(
+                        name: finalURL.deletingPathExtension().lastPathComponent,
+                        snapshot: snapshot,
+                        appVersion: currentAppVersion(),
+                    )
+
+                    return .run { send in
+                        do {
+                            try await collectionFileClient.save(file, finalURL)
+                            await send(.saveCompleted(.success(finalURL)))
+                        } catch {
+                            await send(.saveCompleted(.failure(error)))
+                        }
                     }
                 }
 

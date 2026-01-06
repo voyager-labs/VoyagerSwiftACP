@@ -217,23 +217,45 @@ struct ComposerView: View {
 
     private func saveButton(viewStore: ViewStore<ComposerFeature.State, ComposerFeature.Action>) -> some View {
         let isEnabled = store.canSaveCollection && !viewStore.isLoadingSearch
-        return Button {
-            store.send(.composer(.saveCollection))
-        } label: {
-            HStack(spacing: 4) {
-                Image(systemName: "tray.and.arrow.down")
-                Text("Save")
+        return HStack(spacing: 8) {
+            Button {
+                store.send(.composer(.saveCollection))
+            } label: {
+                HStack(spacing: 4) {
+                    Image(systemName: "tray.and.arrow.down")
+                    Text("Save")
+                }
+                .font(.system(size: 10, weight: .medium))
+                .padding(.horizontal, 7)
+                .padding(.vertical, 4)
+                .background(
+                    RoundedRectangle(cornerRadius: 8)
+                        .fill(isDark ? Color.white.opacity(0.08) : Color.black.opacity(0.08)),
+                )
             }
-            .font(.system(size: 10, weight: .medium))
-            .padding(.horizontal, 7)
-            .padding(.vertical, 4)
-            .background(
-                RoundedRectangle(cornerRadius: 8)
-                    .fill(isDark ? Color.white.opacity(0.08) : Color.black.opacity(0.08)),
-            )
+            .buttonStyle(.plain)
+            .disabled(!isEnabled)
+
+            if store.openedCollectionURL != nil {
+                Button {
+                    store.send(.composer(.saveCollectionAs))
+                } label: {
+                    HStack(spacing: 4) {
+                        Image(systemName: "square.and.arrow.down")
+                        Text("Save As")
+                    }
+                    .font(.system(size: 10, weight: .medium))
+                    .padding(.horizontal, 7)
+                    .padding(.vertical, 4)
+                    .background(
+                        RoundedRectangle(cornerRadius: 8)
+                            .fill(isDark ? Color.white.opacity(0.08) : Color.black.opacity(0.08)),
+                    )
+                }
+                .buttonStyle(.plain)
+                .disabled(!isEnabled)
+            }
         }
-        .buttonStyle(.plain)
-        .disabled(!isEnabled)
     }
 
     private var horizontalSeparator: some View {

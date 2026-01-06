@@ -70,6 +70,7 @@ struct ComposerFeature {
         case cancelSearch
         case applyFilters
         case saveCollection
+        case saveCollectionAs
         case setOperator(propertyKey: String, option: OperatorOption)
         case setValue(propertyKey: String, values: [String])
         case replaceConditionProperty(originalKey: String, property: MDItemProperty)
@@ -173,6 +174,10 @@ struct ComposerFeature {
                 )
 
             case .saveCollection:
+                // TODO: 컬렉션 저장 기능 구현 예정
+                return .none
+
+            case .saveCollectionAs:
                 // TODO: 컬렉션 저장 기능 구현 예정
                 return .none
 

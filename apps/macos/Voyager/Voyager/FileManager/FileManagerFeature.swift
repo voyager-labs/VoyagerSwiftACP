@@ -1082,6 +1082,23 @@ struct FileManagerFeature {
                     guard state.canSaveCollection else {
                         return .none
                     }
+                    let payload = CollectionFeature.SaveRequestPayload(
+                        context: state.collectionContext,
+                        sortKey: state.sortKey.rawValue,
+                        sortOrder: state.sortOrder.rawValue,
+                        viewLayout: state.viewLayout.rawValue,
+                        isSearchLoading: state.composer.isLoadingSearch,
+                        isFiltersLoading: state.composer.isLoadingFilters,
+                    )
+                    if let url = state.openedCollectionURL {
+                        return .send(.collection(.saveToExisting(payload, url)))
+                    }
+                    return .send(.collection(.saveRequested(payload)))
+
+                case .saveCollectionAs:
+                    guard state.canSaveCollection else {
+                        return .none
+                    }
                     return .send(.collection(.saveRequested(.init(
                         context: state.collectionContext,
                         sortKey: state.sortKey.rawValue,
