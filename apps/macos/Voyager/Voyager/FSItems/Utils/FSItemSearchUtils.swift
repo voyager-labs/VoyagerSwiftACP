@@ -73,6 +73,30 @@ private enum SearchItemDateParser {
         return formatter
     }()
 
+    private static let fallbackFormatterWithFractional: DateFormatter = {
+        let formatter = DateFormatter()
+        formatter.locale = Locale(identifier: "en_US_POSIX")
+        formatter.timeZone = .current
+        formatter.dateFormat = "yyyy-MM-dd HH:mm:ss.SSSSSS"
+        return formatter
+    }()
+
+    private static let fallbackFormatterWithOffset: DateFormatter = {
+        let formatter = DateFormatter()
+        formatter.locale = Locale(identifier: "en_US_POSIX")
+        formatter.timeZone = .current
+        formatter.dateFormat = "yyyy-MM-dd HH:mm:ssXXXXX"
+        return formatter
+    }()
+
+    private static let fallbackFormatterWithFractionalAndOffset: DateFormatter = {
+        let formatter = DateFormatter()
+        formatter.locale = Locale(identifier: "en_US_POSIX")
+        formatter.timeZone = .current
+        formatter.dateFormat = "yyyy-MM-dd HH:mm:ss.SSSSSSXXXXX"
+        return formatter
+    }()
+
     private static let dateOnlyFormatter: DateFormatter = {
         let formatter = DateFormatter()
         formatter.locale = Locale(identifier: "en_US_POSIX")
@@ -92,6 +116,15 @@ private enum SearchItemDateParser {
             return date
         }
         if let date = isoFormatter.date(from: value) {
+            return date
+        }
+        if let date = fallbackFormatterWithFractionalAndOffset.date(from: value) {
+            return date
+        }
+        if let date = fallbackFormatterWithOffset.date(from: value) {
+            return date
+        }
+        if let date = fallbackFormatterWithFractional.date(from: value) {
             return date
         }
         if let date = fallbackFormatter.date(from: value) {
