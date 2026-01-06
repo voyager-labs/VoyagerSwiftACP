@@ -25,6 +25,8 @@ struct ToolbarView: View {
         let currentPath: String
         let isCollectionMode: Bool
         let openedCollectionName: String?
+        let openedCollectionURLExists: Bool
+        let isOpenedCollectionDirty: Bool
     }
 
     let store: StoreOf<FileManagerFeature>
@@ -50,6 +52,8 @@ struct ToolbarView: View {
                     currentPath: $0.currentPath,
                     isCollectionMode: $0.fsItems.isCollectionMode,
                     openedCollectionName: $0.openedCollectionName,
+                    openedCollectionURLExists: $0.openedCollectionURL != nil,
+                    isOpenedCollectionDirty: $0.isOpenedCollectionDirty,
                 )
             },
             content: { viewStore in
@@ -168,6 +172,9 @@ struct ToolbarView: View {
                 ? "New Collection"
                 : FileManager.default.displayName(atPath: viewStore.currentPath))
         let isNewCollection = viewStore.isCollectionMode && viewStore.openedCollectionName == nil
+        let isDirtySavedCollection = viewStore.isCollectionMode
+            && viewStore.openedCollectionURLExists
+            && viewStore.isOpenedCollectionDirty
         let suffix = isTitleHovered ? "/ Compose a filter" : "/ Complete saving the filter"
 
         return Button(
@@ -186,6 +193,18 @@ struct ToolbarView: View {
 
                     if isNewCollection {
                         Text(suffix)
+                            .font(.system(size: 12))
+                            .foregroundColor(.secondary)
+                            .lineLimit(1)
+                            .fixedSize(horizontal: true, vertical: false)
+                    } else if isDirtySavedCollection {
+                        Text(suffix)
+                            .font(.system(size: 12))
+                            .foregroundColor(.secondary)
+                            .lineLimit(1)
+                            .fixedSize(horizontal: true, vertical: false)
+                    } else if isTitleHovered {
+                        Text("/ Compose a filter")
                             .font(.system(size: 12))
                             .foregroundColor(.secondary)
                             .lineLimit(1)
