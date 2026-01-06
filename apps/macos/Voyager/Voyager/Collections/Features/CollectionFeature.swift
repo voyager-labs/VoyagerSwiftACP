@@ -73,7 +73,7 @@ struct CollectionFeature {
                 case let .success(snapshot):
                     state.pendingSave = snapshot
                     state.isSaving = true
-                    let initialDirectory = defaultCollectionSaveDirectory(scopes: context.scopes)
+                    let initialDirectory = defaultCollectionSaveDirectory()
                     return .run { send in
                         let url = await showCollectionSavePanel(initialDirectory: initialDirectory)
                         await send(.savePanelResponse(url))
@@ -266,19 +266,8 @@ private func resetPendingSave(_ state: inout CollectionFeature.State) {
     state.pendingSave = nil
 }
 
-private func defaultCollectionSaveDirectory(scopes: [String]) -> URL? {
+private func defaultCollectionSaveDirectory() -> URL? {
     let fileManager = FileManager.default
-
-    if scopes.count == 1, let url = validDirectoryURL(scopes[0]) {
-        return url
-    }
-
-    if scopes.count > 1,
-       let commonPath = commonAncestorPath(for: scopes),
-       let url = validDirectoryURL(commonPath)
-    {
-        return url
-    }
 
     if let saved = UserDefaults.standard.string(forKey: SettingsKeys.lastCollectionSaveDirectory),
        let url = validDirectoryURL(saved)
@@ -295,31 +284,6 @@ private func validDirectoryURL(_ path: String) -> URL? {
         return nil
     }
     return URL(fileURLWithPath: path)
-}
-
-private func commonAncestorPath(for paths: [String]) -> String? {
-    guard let first = paths.first else { return nil }
-    let standardized = paths.map { URL(fileURLWithPath: $0).standardized.path }
-    let firstPath = standardized.first ?? first
-    var common = (firstPath as NSString).pathComponents
-
-    for path in standardized.dropFirst() {
-        let components = (path as NSString).pathComponents
-        var next: [String] = []
-        for index in 0 ..< min(common.count, components.count) {
-            if common[index] == components[index] {
-                next.append(common[index])
-            } else {
-                break
-            }
-        }
-        common = next
-        if common.isEmpty {
-            return nil
-        }
-    }
-
-    return NSString.path(withComponents: common)
 }
 
 @MainActor
