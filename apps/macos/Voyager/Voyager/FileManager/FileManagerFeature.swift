@@ -107,9 +107,24 @@ struct FileManagerFeature {
         }
 
         var canGoToEnclosingDirectory: Bool {
-            let url = URL(fileURLWithPath: currentPath)
-            let parent = url.deletingLastPathComponent()
-            return parent.path != currentPath && currentPath != "/"
+            enclosingDirectoryPath != nil
+        }
+
+        var enclosingDirectoryPath: String? {
+            switch navigationState {
+            case let .folder(path):
+                let url = URL(fileURLWithPath: path)
+                let parent = url.deletingLastPathComponent()
+                guard parent.path != path, path != "/" else { return nil }
+                return parent.path
+
+            case .collection(let navigation):
+                guard case let .file(url, _) = navigation.kind else { return nil }
+                return url.deletingLastPathComponent().path
+
+            case .recents, .tags, .computer:
+                return nil
+            }
         }
 
         var canOpenSelectedItem: Bool {
@@ -694,11 +709,8 @@ struct FileManagerFeature {
                 }
 
             case .goToEnclosingDirectory:
-                let url = URL(fileURLWithPath: state.currentPath)
-                let parentURL = url.deletingLastPathComponent()
-
-                guard parentURL.path != state.currentPath else { return .none }
-
+                guard let parentPath = state.enclosingDirectoryPath else { return .none }
+                let parentURL = URL(fileURLWithPath: parentPath)
                 state.navigateToFolder(parentURL.path, sidebarItemName: parentURL.lastPathComponent)
                 state.resetComposer()
                 let exitEffect = Self.exitCollectionMode(state: &state)
