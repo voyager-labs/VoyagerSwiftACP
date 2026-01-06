@@ -168,7 +168,7 @@ struct ToolbarView: View {
                 ? "New Collection"
                 : FileManager.default.displayName(atPath: viewStore.currentPath))
         let isNewCollection = viewStore.isCollectionMode && viewStore.openedCollectionName == nil
-        let hoverSuffix = isNewCollection ? "/ Complete saving the filter" : "/ Compose a filter"
+        let suffix = isTitleHovered ? "/ Compose a filter" : "/ Complete saving the filter"
 
         return Button(
             action: { store.send(.enterComposer) },
@@ -184,8 +184,8 @@ struct ToolbarView: View {
                     Text(titleText)
                         .font(.system(size: 15, weight: .semibold))
 
-                    if isTitleHovered {
-                        Text(hoverSuffix)
+                    if isNewCollection {
+                        Text(suffix)
                             .font(.system(size: 12))
                             .foregroundColor(.secondary)
                             .lineLimit(1)
