@@ -1,0 +1,13 @@
+schema: 1
+story: "117.1"
+story_title: "VOYAGER_PROJECT_ROOT 전달"
+gate: FAIL
+status_reason: "필수 수동 QA와 fallback/bundled 동작 검증이 완료되지 않아 AC 충족 여부를 확인할 수 없다."
+reviewer: "Quinn"
+updated: "2026-01-06T20:19:44Z"
+top_issues:
+  - id: "REQ-001"
+    severity: high
+    finding: "AC 3/5/6/7 검증 미완료 (fallback, bundled 모드, 로컬 dev/회귀 QA)"
+    suggested_action: "스토리 Testing 항목의 수동 QA를 수행하고 결과를 기록한다."
+waiver: { active: false }

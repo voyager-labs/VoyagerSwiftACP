@@ -8,6 +8,12 @@ Voyager 프로젝트는 두 가지 독립적인 축으로 실행 환경을 결�
 
 이 두 축의 조합에 따라 환경 변수와 백엔드 실행 방식이 자동으로 결정됩니다.
 
+## 런처 환경 변수 주입
+
+- `VOYAGER_PROJECT_ROOT`는 런처가 주입한다.
+  - Xcode 스킴 LaunchAction
+  - VSCode tasks (`launchEnv`)
+
 ## 스킴 (Schemes)
 
 ### Voyager-Dev
