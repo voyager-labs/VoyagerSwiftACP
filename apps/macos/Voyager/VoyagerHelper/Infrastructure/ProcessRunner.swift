@@ -44,6 +44,7 @@ final class ProcessRunner {
             directory: backendDirectory,
             executable: "/usr/bin/env",
             arguments: ["uv", "run", appEnv],
+            environment: resolvedProcessEnvironment(),
         )
 
         runProcess(proc, description: "uv run \(appEnv)")
@@ -71,13 +72,25 @@ final class ProcessRunner {
         directory: String,
         executable: String,
         arguments: [String]? = nil,
+        environment: [String: String] = ProcessInfo.processInfo.environment,
     ) -> Process {
         let proc = Process()
-        proc.environment = ProcessInfo.processInfo.environment
+        proc.environment = environment
         proc.currentDirectoryURL = URL(fileURLWithPath: directory)
         proc.executableURL = URL(fileURLWithPath: executable)
         proc.arguments = arguments ?? []
         return proc
+    }
+
+    private func resolvedProcessEnvironment() -> [String: String] {
+        var env: [String: String] = ProcessInfo.processInfo.environment
+        let prefix = "/opt/homebrew/bin:/usr/local/bin"
+        if let currentPath = env["PATH"], !currentPath.isEmpty {
+            env["PATH"] = "\(prefix):\(currentPath)"
+        } else {
+            env["PATH"] = prefix
+        }
+        return env
     }
 
     private func runProcess(_ proc: Process, description: String) {
