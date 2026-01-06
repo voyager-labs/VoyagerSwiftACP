@@ -17,7 +17,9 @@ struct ComposerView: View {
     @State private var isComposeFieldFirstResponder: Bool = true
     @Environment(\.colorScheme)
     private var colorScheme: ColorScheme
-    @State private var keyMonitor: Any?
+    @State private var keyDownMonitor: Any?
+    @State private var flagsChangedMonitor: Any?
+    @State private var isOptionKeyPressed: Bool = false
     @State private var isAddButtonHovering: Bool = false
 
     private let trafficLightAreaWidth: CGFloat = 80
@@ -188,14 +190,14 @@ struct ComposerView: View {
             let trimmed = viewStore.text.trimmingCharacters(in: .whitespacesAndNewlines)
             if !trimmed.isEmpty { viewStore.send(.submit) }
         }
-            .onChange(of: viewStore.isPresented) { presented in
-                if presented {
-                    isComposeFieldFirstResponder = true
-                }
-            }
-            .onChange(of: viewStore.focusRequestID) { _ in
+        .onChange(of: viewStore.isPresented) { presented in
+            if presented {
                 isComposeFieldFirstResponder = true
             }
+        }
+        .onChange(of: viewStore.focusRequestID) { _ in
+            isComposeFieldFirstResponder = true
+        }
     }
 
     private func clearButton(viewStore: ViewStore<ComposerFeature.State, ComposerFeature.Action>) -> some View {
@@ -220,45 +222,25 @@ struct ComposerView: View {
 
     private func saveButton(viewStore: ViewStore<ComposerFeature.State, ComposerFeature.Action>) -> some View {
         let isEnabled = store.canSaveCollection && !viewStore.isLoadingSearch
-        return HStack(spacing: 8) {
-            Button {
-                store.send(.composer(.saveCollection))
-            } label: {
-                HStack(spacing: 4) {
-                    Image(systemName: "tray.and.arrow.down")
-                    Text("Save")
-                }
-                .font(.system(size: 10, weight: .medium))
-                .padding(.horizontal, 7)
-                .padding(.vertical, 4)
-                .background(
-                    RoundedRectangle(cornerRadius: 8)
-                        .fill(isDark ? Color.white.opacity(0.08) : Color.black.opacity(0.08)),
-                )
+        let isTemporaryCollection = store.openedCollectionURL == nil
+        let isSaveAs = !isTemporaryCollection && isOptionKeyPressed
+        return Button {
+            store.send(.composer(isSaveAs ? .saveCollectionAs : .saveCollection))
+        } label: {
+            HStack(spacing: 4) {
+                Image(systemName: isSaveAs ? "square.and.arrow.down" : "tray.and.arrow.down")
+                Text(isSaveAs ? "Save As" : "Save")
             }
-            .buttonStyle(.plain)
-            .disabled(!isEnabled)
-
-            if store.openedCollectionURL != nil {
-                Button {
-                    store.send(.composer(.saveCollectionAs))
-                } label: {
-                    HStack(spacing: 4) {
-                        Image(systemName: "square.and.arrow.down")
-                        Text("Save As")
-                    }
-                    .font(.system(size: 10, weight: .medium))
-                    .padding(.horizontal, 7)
-                    .padding(.vertical, 4)
-                    .background(
-                        RoundedRectangle(cornerRadius: 8)
-                            .fill(isDark ? Color.white.opacity(0.08) : Color.black.opacity(0.08)),
-                    )
-                }
-                .buttonStyle(.plain)
-                .disabled(!isEnabled)
-            }
+            .font(.system(size: 10, weight: .medium))
+            .padding(.horizontal, 7)
+            .padding(.vertical, 4)
+            .background(
+                RoundedRectangle(cornerRadius: 8)
+                    .fill(isDark ? Color.white.opacity(0.08) : Color.black.opacity(0.08)),
+            )
         }
+        .buttonStyle(.plain)
+        .disabled(!isEnabled)
     }
 
     private var horizontalSeparator: some View {
@@ -544,7 +526,9 @@ struct ComposerView: View {
         DispatchQueue.main.async {
             isComposeFieldFirstResponder = true
         }
-        keyMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { event in
+        isOptionKeyPressed = NSEvent.modifierFlags.contains(.option)
+
+        keyDownMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { event in
             if event.keyCode == escapeKeyCode {
                 if store.composer.valuePicker.isPresented {
                     store.send(.composer(.valuePicker(.setPresented(false))))
@@ -565,6 +549,11 @@ struct ComposerView: View {
                 }
                 return nil
             }
+            return event
+        }
+
+        flagsChangedMonitor = NSEvent.addLocalMonitorForEvents(matching: .flagsChanged) { event in
+            isOptionKeyPressed = event.modifierFlags.contains(.option)
             return event
         }
     }
@@ -671,9 +660,13 @@ struct ComposerView: View {
     }
 
     private func cleanupKeyMonitor() {
-        if let monitor = keyMonitor {
+        if let monitor = keyDownMonitor {
             NSEvent.removeMonitor(monitor)
-            keyMonitor = nil
+            keyDownMonitor = nil
+        }
+        if let monitor = flagsChangedMonitor {
+            NSEvent.removeMonitor(monitor)
+            flagsChangedMonitor = nil
         }
     }
 }
