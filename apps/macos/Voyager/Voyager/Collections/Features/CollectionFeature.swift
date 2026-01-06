@@ -74,7 +74,7 @@ struct CollectionFeature {
                 case let .success(snapshot):
                     state.pendingSave = snapshot
                     state.isSaving = true
-                    let initialDirectory = defaultCollectionSaveDirectory()
+                    let initialDirectory = defaultCollectionSaveDirectory(preferredScopes: context.scopes)
                     return .run { send in
                         let url = await showCollectionSavePanel(initialDirectory: initialDirectory)
                         await send(.savePanelResponse(url))
@@ -267,8 +267,15 @@ private func resetPendingSave(_ state: inout CollectionFeature.State) {
     state.pendingSave = nil
 }
 
-private func defaultCollectionSaveDirectory() -> URL? {
+private func defaultCollectionSaveDirectory(preferredScopes: [String]) -> URL? {
     let fileManager = FileManager.default
+
+    if preferredScopes.count == 1,
+       let scope = preferredScopes.first,
+       let url = validDirectoryURL(scope)
+    {
+        return url
+    }
 
     if let saved = UserDefaults.standard.string(forKey: SettingsKeys.lastCollectionSaveDirectory),
        let url = validDirectoryURL(saved)
