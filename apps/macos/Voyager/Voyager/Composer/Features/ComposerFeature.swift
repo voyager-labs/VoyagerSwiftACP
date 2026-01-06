@@ -467,7 +467,7 @@ private func applyFiltersIfNeeded(
     searchClient: SearchClient,
 ) -> Effect<ComposerFeature.Action> {
     let filters = buildFilters(from: state)
-    guard !filters.conditions.isEmpty || !filters.scopes.isEmpty else {
+    guard !filters.conditions.isEmpty else {
         state.isLoadingFilters = false
         return .cancel(id: ComposerFeature.CancelID.filters)
     }
