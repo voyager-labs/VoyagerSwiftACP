@@ -93,7 +93,7 @@ class FileManagerWindowController: NSWindowController, NSWindowDelegate {
                 return openedCollectionName
             }
             if isCollectionMode {
-                return "Temporary Collection"
+                return "New Collection"
             }
             return FileManagerFeature.makeWindowTitle(for: titlePath)
         }

@@ -3,6 +3,18 @@ import ComposableArchitecture
 import SwiftUI
 
 struct ToolbarView: View {
+    private struct CollectionTitleIcon: View {
+        var body: some View {
+            Image("rectangle.stack")
+                .renderingMode(.template)
+                .resizable()
+                .scaledToFit()
+                .frame(width: 14, height: 14)
+                .foregroundColor(.secondary)
+                .accessibilityHidden(true)
+        }
+    }
+
     private struct ViewState: Equatable {
         let backHistory: [FileManagerFeature.HistoryEntry]
         let forwardHistory: [FileManagerFeature.HistoryEntry]
@@ -151,22 +163,29 @@ struct ToolbarView: View {
     }
 
     private func titleButton(viewStore: ViewStore<ViewState, FileManagerFeature.Action>) -> some View {
-        Button(
+        let titleText = viewStore.openedCollectionName
+            ?? (viewStore.isCollectionMode
+                ? "New Collection"
+                : FileManager.default.displayName(atPath: viewStore.currentPath))
+        let isNewCollection = viewStore.isCollectionMode && viewStore.openedCollectionName == nil
+        let hoverSuffix = isNewCollection ? "/ Complete saving the filter" : "/ Compose a filter"
+
+        return Button(
             action: { store.send(.enterComposer) },
             label: {
                 HStack(spacing: 4) {
-                    Image(systemName: "folder")
-                        .font(.system(size: 12))
-                    Text(
-                        viewStore.openedCollectionName
-                            ?? (viewStore.isCollectionMode
-                                ? "Temporary Collection"
-                                : FileManager.default.displayName(atPath: viewStore.currentPath)),
-                    )
-                    .font(.system(size: 15, weight: .semibold))
+                    if viewStore.isCollectionMode {
+                        CollectionTitleIcon()
+                    } else {
+                        Image(systemName: "folder")
+                            .font(.system(size: 12))
+                    }
+
+                    Text(titleText)
+                        .font(.system(size: 15, weight: .semibold))
 
                     if isTitleHovered {
-                        Text("/ Compose a filter")
+                        Text(hoverSuffix)
                             .font(.system(size: 12))
                             .foregroundColor(.secondary)
                             .lineLimit(1)
@@ -202,7 +221,7 @@ struct ToolbarView: View {
         case let .collection(navigation):
             switch navigation.kind {
             case .temporary:
-                "Temporary Collection"
+                "New Collection"
             case let .file(_, name):
                 name
             }

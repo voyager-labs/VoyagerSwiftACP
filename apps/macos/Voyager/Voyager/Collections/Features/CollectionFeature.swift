@@ -48,8 +48,8 @@ struct CollectionFeature {
                 guard let context = payload.context else {
                     return .run { _ in
                         await showCollectionSaveErrorAlert(
-                            title: "No Temporary Collection",
-                            message: "There is no active temporary collection to save.",
+                            title: "No New Collection",
+                            message: "There is no active new collection to save.",
                         )
                     }
                 }
@@ -88,8 +88,8 @@ struct CollectionFeature {
                 guard let context = payload.context else {
                     return .run { _ in
                         await showCollectionSaveErrorAlert(
-                            title: "No Temporary Collection",
-                            message: "There is no active temporary collection to save.",
+                            title: "No New Collection",
+                            message: "There is no active new collection to save.",
                         )
                     }
                 }

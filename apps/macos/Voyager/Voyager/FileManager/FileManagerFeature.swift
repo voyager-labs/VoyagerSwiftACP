@@ -47,7 +47,7 @@ struct FileManagerFeature {
             case let .collection(navigation):
                 switch navigation.kind {
                 case .temporary:
-                    "Temporary Collection"
+                    "New Collection"
                 case let .file(_, name):
                     name
                 }
