@@ -312,7 +312,7 @@ private func ensureCollectionFileExtension(_ url: URL) -> URL {
     if url.pathExtension.lowercased() == "voycoll" {
         return url
     }
-    return url.appendingPathExtension("voycoll")
+    return url.deletingPathExtension().appendingPathExtension("voycoll")
 }
 
 private func makeCollectionFile(
