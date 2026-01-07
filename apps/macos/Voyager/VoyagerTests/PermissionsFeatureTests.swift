@@ -25,6 +25,38 @@ final class PermissionsFeatureTests: XCTestCase {
         await store.finish()
     }
 
+    func testFullDiskAccessDeniedAfterAttempt() async {
+        let store = TestStore(initialState: PermissionsFeature.State()) {
+            PermissionsFeature()
+        }
+
+        await store.send(.systemSettingsOpenResult(true)) { state in
+            state.systemSettingsError = nil
+            state.hasAttemptedFullDiskAccessEnable = true
+        }
+
+        await store.send(.fullDiskAccessStatusResponse(.needsAction)) { state in
+            state.fullDiskAccessStatus = .denied
+            state.isComplete = false
+        }
+
+        XCTAssertEqual(store.state.fullDiskAccessStatus, .denied)
+        await store.finish()
+    }
+
+    func testOpenSystemSettingsFailureShowsError() async {
+        let store = TestStore(initialState: PermissionsFeature.State()) {
+            PermissionsFeature()
+        }
+
+        await store.send(.systemSettingsOpenResult(false)) { state in
+            state.systemSettingsError = "We couldn't open System Settings. Please open it manually."
+            state.hasAttemptedFullDiskAccessEnable = false
+        }
+
+        await store.finish()
+    }
+
     func testLaunchAtLoginToggleSuccess() async {
         let store = TestStore(initialState: PermissionsFeature.State()) {
             PermissionsFeature()

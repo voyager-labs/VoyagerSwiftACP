@@ -39,6 +39,7 @@ struct PermissionsFeature {
         var isRequestingFilesAndFolders: Bool = false
         var launchAtLoginEnabled: Bool = false
         var launchAtLoginError: String?
+        var hasAttemptedFullDiskAccessEnable: Bool = false
 
         var fullDiskAccessStatusMessage: String {
             fullDiskAccessStatus.message
@@ -99,8 +100,12 @@ struct PermissionsFeature {
                 return refreshFullDiskAccess()
 
             case let .fullDiskAccessStatusResponse(status):
-                state.fullDiskAccessStatus = status
-                state.isComplete = status == .granted
+                let resolvedStatus = resolveFullDiskAccessStatus(
+                    status,
+                    hasAttempted: state.hasAttemptedFullDiskAccessEnable,
+                )
+                state.fullDiskAccessStatus = resolvedStatus
+                state.isComplete = resolvedStatus == .granted
                 return .none
 
             case .openSystemSettingsTapped:
@@ -113,6 +118,8 @@ struct PermissionsFeature {
             case let .systemSettingsOpenResult(opened):
                 if !opened {
                     state.systemSettingsError = "We couldn't open System Settings. Please open it manually."
+                } else {
+                    state.hasAttemptedFullDiskAccessEnable = true
                 }
                 return .none
 
@@ -175,5 +182,15 @@ struct PermissionsFeature {
             let status = fullDiskAccessClient.status()
             await send(.fullDiskAccessStatusResponse(status))
         }
+    }
+
+    private func resolveFullDiskAccessStatus(
+        _ status: FullDiskAccessStatus,
+        hasAttempted: Bool,
+    ) -> FullDiskAccessStatus {
+        if status == .needsAction, hasAttempted {
+            return .denied
+        }
+        return status
     }
 }
