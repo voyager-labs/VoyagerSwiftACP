@@ -4,6 +4,8 @@ import SwiftUI
 
 struct EditMenuCommands: Commands {
     @ObservedObject private var appDelegate: AppDelegate
+    private let undoSelector = Selector(("undo:"))
+    private let redoSelector = Selector(("redo:"))
 
     init() {
         guard let shared = AppDelegate.shared else {
@@ -12,12 +14,55 @@ struct EditMenuCommands: Commands {
         appDelegate = shared
     }
 
-    private func firstResponderCanHandle(_ selector: Selector) -> Bool {
-        guard let responder = NSApp.keyWindow?.firstResponder as? NSResponder else { return false }
-        return responder.responds(to: selector)
+    private func isTextEditingResponder() -> Bool {
+        guard let responder = NSApp.keyWindow?.firstResponder else { return false }
+        return responder is NSTextView || responder is NSTextField
+    }
+
+    private func textResponderUndoManager() -> UndoManager? {
+        (NSApp.keyWindow?.firstResponder as? NSResponder)?.undoManager
+    }
+
+    private func canUndoInTextResponder() -> Bool {
+        guard isTextEditingResponder() else { return false }
+        return textResponderUndoManager()?.canUndo == true
+    }
+
+    private func canRedoInTextResponder() -> Bool {
+        guard isTextEditingResponder() else { return false }
+        return textResponderUndoManager()?.canRedo == true
     }
 
     var body: some Commands {
+        let canUndoResponder = canUndoInTextResponder()
+        let canRedoResponder = canRedoInTextResponder()
+        let canUndo = canUndoResponder || appDelegate.canUndo
+        let canRedo = canRedoResponder || appDelegate.canRedo
+
+        CommandGroup(replacing: .undoRedo) {
+            Button("Undo") {
+                if canUndoInTextResponder(),
+                   NSApp.sendAction(undoSelector, to: nil, from: nil)
+                {
+                    return
+                }
+                appDelegate.currentFileManagerStore?.send(.fsItems(.requestUndo))
+            }
+            .keyboardShortcut("z", modifiers: .command)
+            .disabled(!canUndo)
+
+            Button("Redo") {
+                if canRedoInTextResponder(),
+                   NSApp.sendAction(redoSelector, to: nil, from: nil)
+                {
+                    return
+                }
+                appDelegate.currentFileManagerStore?.send(.fsItems(.requestRedo))
+            }
+            .keyboardShortcut("z", modifiers: [.command, .shift])
+            .disabled(!canRedo)
+        }
+
         CommandGroup(after: .undoRedo) {
             Button("Open Collection Filter Composer") {
                 guard let store = appDelegate.currentFileManagerStore else { return }

@@ -3,6 +3,7 @@ import AppKit
 import ComposableArchitecture
 import Foundation
 import IdentifiedCollections
+import OSLog
 import UniformTypeIdentifiers
 
 public enum ClipboardOperation: Equatable, Sendable {
@@ -16,6 +17,14 @@ public enum ClipboardOperation: Equatable, Sendable {
 struct FSItemsFeature {
     private enum CancelID {
         static let fsEventsWatcher = "fsEventsWatcher"
+    }
+
+    // TODO: swift-log로 변경
+    private nonisolated static let entryActionLogger = Logger(subsystem: "com.voyager", category: "entry-actions")
+
+    enum EntryActionDirection: Sendable {
+        case undo
+        case redo
     }
 
     @ObservableState
@@ -39,6 +48,8 @@ struct FSItemsFeature {
         var groupedItems: [GroupedItems] = []
 
         var operations: FSItemsOperationsFeature.State = .init()
+        var undoRecords: [EntryActionRecord] = []
+        var redoRecords: [EntryActionRecord] = []
 
         var clipboardItems: [String] = []
         var clipboardOperation: ClipboardOperation = .copy
@@ -105,6 +116,36 @@ struct FSItemsFeature {
             creatingNewFolderId = nil
             creatingNewFolderPath = nil
             creatingNewFolderOriginalName = nil
+        }
+
+        mutating func appendUndoRecord(_ record: EntryActionRecord) {
+            undoRecords.append(record)
+            redoRecords.removeAll()
+        }
+
+        var latestUndoRecord: EntryActionRecord? {
+            undoRecords.last
+        }
+
+        var latestRedoRecord: EntryActionRecord? {
+            redoRecords.last
+        }
+
+        var canUndoEntryAction: Bool {
+            guard let record = latestUndoRecord else { return false }
+            return !isEntryActionBusy(record)
+        }
+
+        var canRedoEntryAction: Bool {
+            guard let record = latestRedoRecord else { return false }
+            return !isEntryActionBusy(record)
+        }
+
+        func isEntryActionBusy(_ record: EntryActionRecord) -> Bool {
+            let paths = record.targets
+                .flatMap { [$0.beforePath, $0.afterPath] }
+                .compactMap(\.self)
+            return paths.contains { operations.itemStates[$0]?.isBusy == true }
         }
     }
 
@@ -176,11 +217,18 @@ struct FSItemsFeature {
         case endListRowDrag
         case cancelListRowDrag
 
+        case requestUndo
+        case requestRedo
+        case undoEntryAction(EntryActionRecord)
+        case redoEntryAction(EntryActionRecord)
+        case entryActionApplied(direction: EntryActionDirection, record: EntryActionRecord)
         case operations(FSItemsOperationsFeature.Action)
     }
 
     @Dependency(\.fsItemClient)
     var fsItemClient
+    @Dependency(\.undoManagerClient)
+    var undoManagerClient
 
     var body: some Reducer<State, Action> {
         Scope(state: \.operations, action: \.operations) {
@@ -212,6 +260,47 @@ struct FSItemsFeature {
                     }
                 } else {
                     return .send(.reloadItems)
+                }
+
+            case let .operations(.entryActionCompleted(record)):
+                state.appendUndoRecord(record)
+
+                return .run { [record] send in
+                    await undoManagerClient.registerUndo(
+                        record,
+                        { record in
+                            await send(.undoEntryAction(record))
+                        },
+                        { record in
+                            await send(.redoEntryAction(record))
+                        },
+                    )
+                }
+
+            case .requestUndo:
+                guard let record = state.latestUndoRecord else {
+                    logClientError("Undo 불가: 기록 없음")
+                    return .none
+                }
+                guard !state.isEntryActionBusy(record) else {
+                    logClientError("Undo 불가: 대상이 작업 중")
+                    return .none
+                }
+                return .run { _ in
+                    await undoManagerClient.undo()
+                }
+
+            case .requestRedo:
+                guard let record = state.latestRedoRecord else {
+                    logClientError("Redo 불가: 기록 없음")
+                    return .none
+                }
+                guard !state.isEntryActionBusy(record) else {
+                    logClientError("Redo 불가: 대상이 작업 중")
+                    return .none
+                }
+                return .run { _ in
+                    await undoManagerClient.redo()
                 }
 
             case let .operations(.operationFinished(filePath, kind, result)):
@@ -277,6 +366,50 @@ struct FSItemsFeature {
                     return .none
 
                 default:
+                    return .none
+                }
+
+            case let .undoEntryAction(record):
+                guard let latestRecord = state.latestUndoRecord, latestRecord.id == record.id else {
+                    logClientError("Undo 불가: 최신 기록 불일치")
+                    return .none
+                }
+                guard !state.isEntryActionBusy(record) else {
+                    logClientError("Undo 불가: 대상이 작업 중")
+                    return .none
+                }
+                _ = state.undoRecords.popLast()
+                state.redoRecords.append(latestRecord)
+                return applyEntryAction(latestRecord, direction: .undo)
+
+            case let .redoEntryAction(record):
+                guard let latestRecord = state.latestRedoRecord, latestRecord.id == record.id else {
+                    logClientError("Redo 불가: 최신 기록 불일치")
+                    return .none
+                }
+                guard !state.isEntryActionBusy(record) else {
+                    logClientError("Redo 불가: 대상이 작업 중")
+                    return .none
+                }
+                _ = state.redoRecords.popLast()
+                state.undoRecords.append(latestRecord)
+                return applyEntryAction(latestRecord, direction: .redo)
+
+            case let .entryActionApplied(direction, record):
+                switch direction {
+                case .undo:
+                    guard let recordIndex = state.redoRecords.firstIndex(where: { $0.id == record.id }) else {
+                        logClientError("Undo 불가: 스택 갱신 실패")
+                        return .none
+                    }
+                    state.redoRecords[recordIndex] = record
+                    return .none
+                case .redo:
+                    guard let recordIndex = state.undoRecords.firstIndex(where: { $0.id == record.id }) else {
+                        logClientError("Redo 불가: 스택 갱신 실패")
+                        return .none
+                    }
+                    state.undoRecords[recordIndex] = record
                     return .none
                 }
 
@@ -858,11 +991,13 @@ struct FSItemsFeature {
 
                 state.clipboardItems = clipboardPaths
                 state.clipboardOperation = clipboardOp
+                let actionKind: EntryActionRecord.ActionKind = clipboardOp == .cut ? .move : .paste
 
                 return .send(.operations(.pasteItems(
                     sourcePaths: clipboardPaths,
                     destinationPath: destinationPath,
                     operation: clipboardOp,
+                    actionKind: actionKind,
                 )))
 
             case .duplicateSelectedItems:
@@ -878,6 +1013,7 @@ struct FSItemsFeature {
                     sourcePaths: selectedItems.map(\.fullPath),
                     destinationPath: parentPath,
                     operation: .copy,
+                    actionKind: .duplicate,
                 )))
 
             case let .startDrag(paths):
@@ -1007,12 +1143,14 @@ struct FSItemsFeature {
 
                 // Option 키에 따라 Copy 또는 Move
                 let operation: ClipboardOperation = isOptionDrag ? .copy : .cut
+                let actionKind: EntryActionRecord.ActionKind = isOptionDrag ? .paste : .move
 
                 return .merge(
                     .send(.operations(.pasteItems(
                         sourcePaths: sourcePaths,
                         destinationPath: destinationPath,
                         operation: operation,
+                        actionKind: actionKind,
                     ))),
 
                     // 윈도우 포커싱 (destinationPath의 윈도우 찾기)
@@ -1327,6 +1465,325 @@ struct FSItemsFeature {
                 return .none
             }
         }
+    }
+
+    private struct EntryActionOperation {
+        let operationPath: String
+        let operationKind: OperationKind
+        let perform: @Sendable () async throws -> EntryActionRecord.Target
+    }
+
+    private func logClientError(_ message: String) {
+        Self.entryActionLogger.info("ClientError: \(message, privacy: .public)")
+    }
+
+    private func applyEntryAction(
+        _ record: EntryActionRecord,
+        direction: EntryActionDirection,
+    ) -> Effect<Action> {
+        let fsItemClient = fsItemClient
+
+        return .run { send in
+            do {
+                let targets = try await applyEntryActionTargets(
+                    record: record,
+                    direction: direction,
+                    fsItemClient: fsItemClient,
+                    send: send,
+                )
+                let updatedRecord = EntryActionRecord(
+                    actionKind: record.actionKind,
+                    targets: targets,
+                    id: record.id,
+                    timestamp: record.timestamp,
+                )
+                await send(.entryActionApplied(direction: direction, record: updatedRecord))
+            } catch {
+                let message = (error as? FileOpError)?.message ?? error.localizedDescription
+                Self.entryActionLogger.info(
+                    "ClientError: \(String(describing: direction)) 실패 - \(message, privacy: .public)",
+                )
+            }
+        }
+    }
+
+    private func applyEntryActionTargets(
+        record: EntryActionRecord,
+        direction: EntryActionDirection,
+        fsItemClient: FSItemClient,
+        send: Send<Action>,
+    ) async throws -> [EntryActionRecord.Target] {
+        guard !record.targets.isEmpty else {
+            throw FileOpError.system(message: "Entry action targets missing")
+        }
+
+        var updatedTargets: [EntryActionRecord.Target] = []
+
+        for target in record.targets {
+            let operation = try makeEntryActionOperation(
+                record: record,
+                target: target,
+                direction: direction,
+                fsItemClient: fsItemClient,
+            )
+
+            await send(.operations(.operationStarted(operation.operationPath, operation.operationKind)))
+            do {
+                let updatedTarget = try await operation.perform()
+                await send(.operations(.operationFinished(
+                    operation.operationPath,
+                    operation.operationKind,
+                    .success(()),
+                )))
+                updatedTargets.append(updatedTarget)
+            } catch {
+                let fileError = error.fileOpError
+                await send(.operations(.operationFinished(
+                    operation.operationPath,
+                    operation.operationKind,
+                    .failure(fileError),
+                )))
+                throw fileError
+            }
+        }
+
+        return updatedTargets
+    }
+
+    private func makeEntryActionOperation(
+        record: EntryActionRecord,
+        target: EntryActionRecord.Target,
+        direction: EntryActionDirection,
+        fsItemClient: FSItemClient,
+    ) throws -> EntryActionOperation {
+        switch record.actionKind {
+        case .rename:
+            try makeRenameOperation(target: target, direction: direction, fsItemClient: fsItemClient)
+
+        case .move:
+            try makeMoveOperation(target: target, direction: direction, fsItemClient: fsItemClient)
+
+        case .paste, .duplicate:
+            try makeCopyOperation(target: target, direction: direction, fsItemClient: fsItemClient)
+
+        case .createFolder:
+            try makeCreateFolderOperation(target: target, direction: direction, fsItemClient: fsItemClient)
+
+        case .moveToTrash:
+            try makeMoveToTrashOperation(target: target, direction: direction, fsItemClient: fsItemClient)
+
+        case .putBack:
+            try makePutBackOperation(target: target, direction: direction, fsItemClient: fsItemClient)
+        }
+    }
+
+    private func makeRenameOperation(
+        target: EntryActionRecord.Target,
+        direction: EntryActionDirection,
+        fsItemClient: FSItemClient,
+    ) throws -> EntryActionOperation {
+        let fromPath = try Self.requiredPath(
+            direction == .undo ? target.afterPath : target.beforePath,
+            context: "rename source",
+        )
+        let toPath = try Self.requiredPath(
+            direction == .undo ? target.beforePath : target.afterPath,
+            context: "rename destination",
+        )
+        return EntryActionOperation(
+            operationPath: fromPath,
+            operationKind: .rename,
+            perform: {
+                try await fsItemClient.renameFile(
+                    URL(fileURLWithPath: fromPath),
+                    URL(fileURLWithPath: toPath),
+                )
+                return target
+            },
+        )
+    }
+
+    private func makeMoveOperation(
+        target: EntryActionRecord.Target,
+        direction: EntryActionDirection,
+        fsItemClient: FSItemClient,
+    ) throws -> EntryActionOperation {
+        let fromPath = try Self.requiredPath(
+            direction == .undo ? target.afterPath : target.beforePath,
+            context: "move source",
+        )
+        let toPath = try Self.requiredPath(
+            direction == .undo ? target.beforePath : target.afterPath,
+            context: "move destination",
+        )
+        return EntryActionOperation(
+            operationPath: fromPath,
+            operationKind: .pasteFile,
+            perform: {
+                try await fsItemClient.moveFile(
+                    URL(fileURLWithPath: fromPath),
+                    URL(fileURLWithPath: toPath),
+                )
+                return target
+            },
+        )
+    }
+
+    private func makeCopyOperation(
+        target: EntryActionRecord.Target,
+        direction: EntryActionDirection,
+        fsItemClient: FSItemClient,
+    ) throws -> EntryActionOperation {
+        switch direction {
+        case .undo:
+            let targetPath = try Self.requiredPath(target.afterPath, context: "undo copy target")
+            return EntryActionOperation(
+                operationPath: targetPath,
+                operationKind: .deleteImmediately,
+                perform: {
+                    try await fsItemClient.deleteImmediately(URL(fileURLWithPath: targetPath))
+                    return target
+                },
+            )
+        case .redo:
+            let sourcePath = try Self.requiredPath(target.beforePath, context: "redo copy source")
+            let targetPath = try Self.requiredPath(target.afterPath, context: "redo copy target")
+            return EntryActionOperation(
+                operationPath: sourcePath,
+                operationKind: .pasteFile,
+                perform: {
+                    try await fsItemClient.pasteFile(
+                        URL(fileURLWithPath: sourcePath),
+                        URL(fileURLWithPath: targetPath),
+                    )
+                    return target
+                },
+            )
+        }
+    }
+
+    private func makeCreateFolderOperation(
+        target: EntryActionRecord.Target,
+        direction: EntryActionDirection,
+        fsItemClient: FSItemClient,
+    ) throws -> EntryActionOperation {
+        switch direction {
+        case .undo:
+            let targetPath = try Self.requiredPath(target.afterPath, context: "undo create folder")
+            return EntryActionOperation(
+                operationPath: targetPath,
+                operationKind: .deleteImmediately,
+                perform: {
+                    try await fsItemClient.deleteImmediately(URL(fileURLWithPath: targetPath))
+                    return target
+                },
+            )
+        case .redo:
+            let targetPath = try Self.requiredPath(target.afterPath, context: "redo create folder")
+            let targetURL = URL(fileURLWithPath: targetPath)
+            let parentURL = targetURL.deletingLastPathComponent()
+            let folderName = targetURL.lastPathComponent
+            return EntryActionOperation(
+                operationPath: parentURL.path,
+                operationKind: .createFolder,
+                perform: {
+                    try await fsItemClient.createFolder(parentURL, folderName)
+                    return target
+                },
+            )
+        }
+    }
+
+    private func makeMoveToTrashOperation(
+        target: EntryActionRecord.Target,
+        direction: EntryActionDirection,
+        fsItemClient: FSItemClient,
+    ) throws -> EntryActionOperation {
+        switch direction {
+        case .undo:
+            let trashPath = try Self.requiredPath(target.afterPath, context: "undo moveToTrash source")
+            let originalPath = try Self.requiredPath(target.beforePath, context: "undo moveToTrash destination")
+            return EntryActionOperation(
+                operationPath: trashPath,
+                operationKind: .putBack,
+                perform: {
+                    try await fsItemClient.putBackFromTrash(
+                        URL(fileURLWithPath: trashPath),
+                        originalPath,
+                    )
+                    return target
+                },
+            )
+        case .redo:
+            let originalPath = try Self.requiredPath(target.beforePath, context: "redo moveToTrash source")
+            return EntryActionOperation(
+                operationPath: originalPath,
+                operationKind: .moveToTrash,
+                perform: {
+                    let trashPath = try await Self.moveItemToTrash(path: originalPath)
+                    return EntryActionRecord.Target(beforePath: originalPath, afterPath: trashPath)
+                },
+            )
+        }
+    }
+
+    private func makePutBackOperation(
+        target: EntryActionRecord.Target,
+        direction: EntryActionDirection,
+        fsItemClient: FSItemClient,
+    ) throws -> EntryActionOperation {
+        switch direction {
+        case .undo:
+            let originalPath = try Self.requiredPath(target.afterPath, context: "undo putBack source")
+            return EntryActionOperation(
+                operationPath: originalPath,
+                operationKind: .moveToTrash,
+                perform: {
+                    let trashPath = try await Self.moveItemToTrash(path: originalPath)
+                    return EntryActionRecord.Target(beforePath: trashPath, afterPath: originalPath)
+                },
+            )
+        case .redo:
+            let trashPath = try Self.requiredPath(target.beforePath, context: "redo putBack source")
+            let originalPath = try Self.requiredPath(target.afterPath, context: "redo putBack destination")
+            return EntryActionOperation(
+                operationPath: trashPath,
+                operationKind: .putBack,
+                perform: {
+                    try await fsItemClient.putBackFromTrash(
+                        URL(fileURLWithPath: trashPath),
+                        originalPath,
+                    )
+                    return target
+                },
+            )
+        }
+    }
+
+    private static func requiredPath(_ path: String?, context: String) throws -> String {
+        guard let path else {
+            throw FileOpError.system(message: "Entry action path missing (\(context))")
+        }
+        return path
+    }
+
+    private static func moveItemToTrash(path: String) async throws -> String {
+        let sourceURL = URL(fileURLWithPath: path)
+        let trashURL = try await MainActor.run {
+            var result: NSURL?
+            try FileManager.default.trashItem(at: sourceURL, resultingItemURL: &result)
+            guard let trashURL = result as URL? else {
+                throw FileOpError.system(message: "Trash URL not found")
+            }
+            return trashURL
+        }
+        let metadata = TrashMetadata(
+            trashPath: trashURL.path,
+            originalPath: path,
+            deletedDate: Date(),
+        )
+        await TrashMetadataStore.shared.save(metadata)
+        return trashURL.path
     }
 
     private func generateThumbnailsEffect(for items: [FSItem]) -> Effect<Action> {

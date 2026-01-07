@@ -5,6 +5,8 @@ import SwiftUI
 struct ContentPaneView: View {
     let store: StoreOf<FileManagerFeature>
     @FocusState private var isKeyCommandFocused: Bool
+    private static let undoSelector = Selector(("undo:"))
+    private static let redoSelector = Selector(("redo:"))
 
     private var statusText: String {
         let total = store.fsItems.displayItems.count
@@ -217,6 +219,8 @@ struct ContentPaneView: View {
     private func handleCommandKeys(_ event: NSEvent) {
         guard event.modifierFlags.contains(.command) else { return }
 
+        if handleUndoRedoKeys(event) { return }
+
         if event.characters == ".", event.modifierFlags.contains(.shift) {
             store.send(.toggleShowHiddenFiles)
         } else if let number = Int(event.characters ?? ""), (1 ... 9).contains(number) {
@@ -224,5 +228,48 @@ struct ContentPaneView: View {
         } else if event.characters == "0" {
             AppDelegate.shared?.selectTab(at: 9)
         }
+    }
+
+    private func handleUndoRedoKeys(_ event: NSEvent) -> Bool {
+        guard event.modifierFlags.isDisjoint(with: [.option, .control]),
+              event.charactersIgnoringModifiers == "z"
+        else { return false }
+
+        if store.composer.isPresented {
+            return false
+        }
+
+        if event.modifierFlags.contains(.shift) {
+            if canRedoInTextResponder(),
+               NSApp.sendAction(Self.redoSelector, to: nil, from: nil)
+            {
+                return true
+            }
+            store.send(.fsItems(.requestRedo))
+            return true
+        }
+
+        if canUndoInTextResponder(),
+           NSApp.sendAction(Self.undoSelector, to: nil, from: nil)
+        {
+            return true
+        }
+        store.send(.fsItems(.requestUndo))
+        return true
+    }
+
+    private func isTextEditingResponder() -> Bool {
+        guard let responder = NSApp.keyWindow?.firstResponder else { return false }
+        return responder is NSTextView || responder is NSTextField
+    }
+
+    private func canUndoInTextResponder() -> Bool {
+        guard isTextEditingResponder() else { return false }
+        return (NSApp.keyWindow?.firstResponder as? NSResponder)?.undoManager?.canUndo == true
+    }
+
+    private func canRedoInTextResponder() -> Bool {
+        guard isTextEditingResponder() else { return false }
+        return (NSApp.keyWindow?.firstResponder as? NSResponder)?.undoManager?.canRedo == true
     }
 }

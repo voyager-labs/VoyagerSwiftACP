@@ -124,6 +124,7 @@ struct ToolbarView: View {
         } primaryAction: {
             store.send(.goBack)
         }
+        .fixedSize()
         .menuIndicator(.hidden)
         .disabled(!viewStore.canGoBack)
         .buttonStyle(.borderless)
@@ -148,6 +149,7 @@ struct ToolbarView: View {
         } primaryAction: {
             store.send(.goForward)
         }
+        .fixedSize()
         .menuIndicator(.hidden)
         .disabled(!viewStore.canGoForward)
         .buttonStyle(.borderless)
@@ -162,6 +164,7 @@ struct ToolbarView: View {
                     .foregroundColor(viewStore.canGoToEnclosingDirectory ? .primary : .secondary)
             },
         )
+        .fixedSize()
         .disabled(!viewStore.canGoToEnclosingDirectory)
         .buttonStyle(.borderless)
     }

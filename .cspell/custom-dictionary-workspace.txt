@@ -1,6 +1,7 @@
 # Custom Dictionary Words
 atexit
 birthtime
+borderless
 codesign
 dotenv
 fastapi

@@ -35,7 +35,12 @@ struct FSItemsOperationsFeature {
         case loadApplicationsForFile(file: FSItem)
         case createNewFolder(name: String, parentPath: String)
         case copySelectedItems(files: [FSItem])
-        case pasteItems(sourcePaths: [String], destinationPath: String, operation: ClipboardOperation)
+        case pasteItems(
+            sourcePaths: [String],
+            destinationPath: String,
+            operation: ClipboardOperation,
+            actionKind: EntryActionRecord.ActionKind,
+        )
         case renameItem(oldPath: String, newPath: String)
         case moveToTrash(items: [FSItem])
         case deleteImmediately(items: [FSItem])
@@ -49,6 +54,7 @@ struct FSItemsOperationsFeature {
         case commonApplicationsLoaded([ApplicationInfo])
         case operationStarted(String, OperationKind)
         case operationFinished(String, OperationKind, Result<Void, FileOpError>)
+        case entryActionCompleted(EntryActionRecord)
         case clearError(String)
     }
 
@@ -88,6 +94,9 @@ struct FSItemsOperationsFeature {
                 case let .failure(error):
                     state.itemStates[filePath]?.lastError = error
                 }
+                return .none
+
+            case .entryActionCompleted:
                 return .none
 
             case let .openFiles(files):
@@ -205,8 +214,21 @@ struct FSItemsOperationsFeature {
 
             case let .createNewFolder(name, parentPath):
                 let parentURL = URL(fileURLWithPath: parentPath)
-                return run(for: parentPath, kind: .createFolder) {
-                    try await fsItemClient.createFolder(parentURL, name)
+                let targetPath = parentURL.appendingPathComponent(name).path
+
+                return .run { send in
+                    await send(.operationStarted(parentPath, .createFolder))
+                    do {
+                        try await fsItemClient.createFolder(parentURL, name)
+                        await send(.operationFinished(parentPath, .createFolder, .success(())))
+                        let record = EntryActionRecord(
+                            actionKind: .createFolder,
+                            targets: [.init(beforePath: nil, afterPath: targetPath)],
+                        )
+                        await send(.entryActionCompleted(record))
+                    } catch {
+                        await send(.operationFinished(parentPath, .createFolder, .failure(error.fileOpError)))
+                    }
                 }
 
             case let .copySelectedItems(files):
@@ -218,7 +240,7 @@ struct FSItemsOperationsFeature {
 
                 return .none
 
-            case let .pasteItems(sourcePaths, destinationPath, operation):
+            case let .pasteItems(sourcePaths, destinationPath, operation, actionKind):
                 let destinationURL = URL(fileURLWithPath: destinationPath)
                 let destinations = avoidNameCollisions(
                     sourcePaths: sourcePaths,
@@ -238,6 +260,8 @@ struct FSItemsOperationsFeature {
                 let isCopy = operation == .copy
 
                 return .run { [fsItemClient] send in
+                    var targets: [EntryActionRecord.Target] = []
+
                     for (sourceURL, destURL) in destinations {
                         let sourcePath = sourceURL.path
                         let kind: OperationKind = .pasteFile
@@ -250,6 +274,7 @@ struct FSItemsOperationsFeature {
                             } else {
                                 try await fsItemClient.moveFile(sourceURL, destURL)
                             }
+                            targets.append(.init(beforePath: sourcePath, afterPath: destURL.path))
                             await send(.operationFinished(sourcePath, kind, .success(())))
                         } catch let error as FileOpError where error.isFileExists {
                             guard let itemName = error.itemName else {
@@ -271,6 +296,7 @@ struct FSItemsOperationsFeature {
                                     }
 
                                     let destinationFolder = destURL.deletingLastPathComponent().path
+                                    targets.append(.init(beforePath: sourcePath, afterPath: destURL.path))
                                     await send(.operationFinished(destinationFolder, kind, .success(())))
                                 } catch {
                                     await send(.operationFinished(sourcePath, kind, .failure(error.fileOpError)))
@@ -281,6 +307,11 @@ struct FSItemsOperationsFeature {
                         } catch {
                             await send(.operationFinished(sourcePath, kind, .failure(error.fileOpError)))
                         }
+                    }
+
+                    if !targets.isEmpty {
+                        let record = EntryActionRecord(actionKind: actionKind, targets: targets)
+                        await send(.entryActionCompleted(record))
                     }
                 }
 
@@ -293,6 +324,11 @@ struct FSItemsOperationsFeature {
                     do {
                         try await fsItemClient.renameFile(sourceURL, destURL)
                         await send(.operationFinished(oldPath, .rename, .success(())))
+                        let record = EntryActionRecord(
+                            actionKind: .rename,
+                            targets: [.init(beforePath: oldPath, afterPath: newPath)],
+                        )
+                        await send(.entryActionCompleted(record))
                     } catch let error as FileOpError where error.isFileExists {
                         guard let itemName = error.itemName else {
                             await send(.operationFinished(oldPath, .rename, .failure(error)))
@@ -308,7 +344,11 @@ struct FSItemsOperationsFeature {
                 }
 
             case let .moveToTrash(items):
-                return runParallel(items: items, kind: .moveToTrash) { url in
+                return runParallelWithTargets(
+                    items: items,
+                    kind: .moveToTrash,
+                    actionKind: .moveToTrash,
+                ) { url in
                     var result: NSURL?
                     try await MainActor.run {
                         try FileManager.default.trashItem(at: url, resultingItemURL: &result)
@@ -321,7 +361,12 @@ struct FSItemsOperationsFeature {
                             deletedDate: Date(),
                         )
                         await TrashMetadataStore.shared.save(metadata)
+                        return EntryActionRecord.Target(
+                            beforePath: url.path,
+                            afterPath: trashURL.path,
+                        )
                     }
+                    return nil
                 }
 
             case let .deleteImmediately(items):
@@ -343,6 +388,8 @@ struct FSItemsOperationsFeature {
 
             case let .putBackFromTrash(items):
                 return .run { [fsItemClient] send in
+                    var targets: [EntryActionRecord.Target] = []
+
                     for item in items {
                         await send(.operationStarted(item.fullPath, .putBack))
 
@@ -364,6 +411,7 @@ struct FSItemsOperationsFeature {
                                 originalPath,
                             )
                             await send(.operationFinished(item.fullPath, .putBack, .success(())))
+                            targets.append(.init(beforePath: item.fullPath, afterPath: originalPath))
                         } catch let error as FileOpError where error.isFileExists {
                             guard let itemName = error.itemName else {
                                 await send(.operationFinished(item.fullPath, .putBack, .failure(error)))
@@ -383,6 +431,7 @@ struct FSItemsOperationsFeature {
                                         originalPath,
                                     )
                                     await send(.operationFinished(item.fullPath, .putBack, .success(())))
+                                    targets.append(.init(beforePath: item.fullPath, afterPath: originalPath))
                                 } catch {
                                     await send(.operationFinished(item.fullPath, .putBack, .failure(error.fileOpError)))
                                 }
@@ -392,6 +441,11 @@ struct FSItemsOperationsFeature {
                         } catch {
                             await send(.operationFinished(item.fullPath, .putBack, .failure(error.fileOpError)))
                         }
+                    }
+
+                    if !targets.isEmpty {
+                        let record = EntryActionRecord(actionKind: .putBack, targets: targets)
+                        await send(.entryActionCompleted(record))
                     }
                 }
 
@@ -540,6 +594,57 @@ struct FSItemsOperationsFeature {
             }
 
             await onComplete?()
+        }
+    }
+
+    private func runParallelWithTargets(
+        items: [FSItem],
+        kind: OperationKind,
+        actionKind: EntryActionRecord.ActionKind,
+        operation: @escaping @Sendable (URL) async throws -> EntryActionRecord.Target?,
+    ) -> Effect<Action> {
+        .run { send in
+            let accumulator = EntryActionTargetAccumulator()
+
+            await withTaskGroup(of: Void.self) { group in
+                for item in items {
+                    group.addTask {
+                        await send(.operationStarted(item.fullPath, kind))
+
+                        do {
+                            let url = URL(fileURLWithPath: item.fullPath)
+                            let target = try await operation(url)
+                            if let target {
+                                await accumulator.append(target)
+                            }
+                            await send(.operationFinished(item.fullPath, kind, .success(())))
+                        } catch {
+                            await send(.operationFinished(
+                                item.fullPath,
+                                kind,
+                                .failure(error.fileOpError),
+                            ))
+                        }
+                    }
+                }
+            }
+
+            let targets = await accumulator.targets
+            guard !targets.isEmpty else { return }
+            let record = EntryActionRecord(actionKind: actionKind, targets: targets)
+            await send(.entryActionCompleted(record))
+        }
+    }
+
+    private actor EntryActionTargetAccumulator {
+        private var storage: [EntryActionRecord.Target] = []
+
+        func append(_ target: EntryActionRecord.Target) {
+            storage.append(target)
+        }
+
+        var targets: [EntryActionRecord.Target] {
+            storage
         }
     }
 

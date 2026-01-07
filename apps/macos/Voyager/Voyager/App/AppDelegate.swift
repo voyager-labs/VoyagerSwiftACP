@@ -16,6 +16,8 @@ class AppDelegate: NSObject, NSApplicationDelegate, ObservableObject {
     @Published var hasSelectedItems: Bool = false
     @Published var hasClipboardItems: Bool = false
     @Published var hasStore: Bool = false
+    @Published var canUndo: Bool = false
+    @Published var canRedo: Bool = false
     @Published var currentFileManagerStore: StoreOf<FileManagerFeature>?
 
     var windowControllers: [FileManagerWindowController] = []
@@ -35,6 +37,8 @@ class AppDelegate: NSObject, NSApplicationDelegate, ObservableObject {
             hasStore = false
             hasSelectedItems = false
             hasClipboardItems = false
+            canUndo = false
+            canRedo = false
             currentFileManagerStore = nil
             return
         }
@@ -42,6 +46,8 @@ class AppDelegate: NSObject, NSApplicationDelegate, ObservableObject {
         hasStore = true
         hasSelectedItems = store.hasSelectedItems
         hasClipboardItems = store.hasClipboardItems
+        canUndo = store.fsItems.canUndoEntryAction
+        canRedo = store.fsItems.canRedoEntryAction
         currentFileManagerStore = store
     }
 
