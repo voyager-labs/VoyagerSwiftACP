@@ -11,12 +11,16 @@
 			<array>
 				<string>voycoll</string>
 			</array>
+			<key>CFBundleTypeIconFile</key>
+			<string>VoycollIcon</string>
 			<key>CFBundleTypeName</key>
 			<string>Voyager Collection</string>
-			<key>CFBundleTypeRole</key>
-			<string>Editor</string>
-			<key>LSHandlerRank</key>
+            <key>CFBundleTypeRole</key>
+            <string>Editor</string>
+            <key>LSHandlerRank</key>
 			<string>Owner</string>
+            <key>CFBundleTypeIsPackage</key>
+            <true/>
 			<key>LSItemContentTypes</key>
 			<array>
 				<string>fm.voyager.collection</string>
@@ -29,10 +33,13 @@
 			<key>UTTypeConformsTo</key>
 			<array>
 				<string>public.data</string>
-				<string>com.apple.property-list</string>
+				<string>public.content</string>
+				<string>com.apple.package</string>
 			</array>
 			<key>UTTypeDescription</key>
 			<string>Voyager Collection</string>
+			<key>UTTypeIconName</key>
+			<string>VoycollIcon</string>
 			<key>UTTypeIdentifier</key>
 			<string>fm.voyager.collection</string>
 			<key>UTTypeTagSpecification</key>
