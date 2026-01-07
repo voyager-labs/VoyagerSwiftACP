@@ -19,6 +19,8 @@ struct AppLifecycleFeature {
 
     @Dependency(\.helperAppClient)
     var helperAppClient
+    @Dependency(\.backendEndpointClient)
+    var backendEndpointClient
 
     var body: some Reducer<State, Action> {
         Reduce { state, action in
@@ -29,14 +31,17 @@ struct AppLifecycleFeature {
                 }
                 state.didStartHelper = true
                 let helperClient = helperAppClient
+                let endpointClient = backendEndpointClient
                 return .run { _ in
                     async let monitor: Void = {
                         for await _ in helperClient.terminationEvents() {
                             await helperClient.start()
+                            _ = await endpointClient.resolve()
                         }
                     }()
 
                     await helperClient.start()
+                    _ = await endpointClient.resolve()
                     _ = await monitor
                 }
                 .cancellable(id: CancelID.helperMonitor, cancelInFlight: true)
