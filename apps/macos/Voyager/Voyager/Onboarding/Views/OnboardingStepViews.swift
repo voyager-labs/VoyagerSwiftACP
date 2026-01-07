@@ -26,18 +26,70 @@ struct BetaAccessStepView: View {
             VStack(alignment: .leading, spacing: 12) {
                 Text("Beta Access")
                     .font(.system(size: 20, weight: .semibold))
-                Text("Beta access flow will be implemented in Story 1.3.")
-                    .font(.system(size: 13))
-                    .foregroundStyle(.secondary)
-                Toggle(
-                    "Mark step as complete (placeholder)",
-                    isOn: viewStore.binding(
-                        get: { $0.isComplete },
-                        send: { .setCompleted($0) },
-                    ),
-                )
+
+                VStack(alignment: .leading, spacing: 8) {
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text("Email")
+                            .font(.system(size: 11, weight: .semibold))
+                            .foregroundStyle(.secondary)
+                        TextField(
+                            "email@example.com",
+                            text: viewStore.binding(
+                                get: \.email,
+                                send: { .emailChanged($0) },
+                            ),
+                        )
+                        .textFieldStyle(.roundedBorder)
+                    }
+
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text("Token")
+                            .font(.system(size: 11, weight: .semibold))
+                            .foregroundStyle(.secondary)
+                        SecureField(
+                            "Paste your token here",
+                            text: viewStore.binding(
+                                get: \.token,
+                                send: { .tokenChanged($0) },
+                            ),
+                        )
+                        .textFieldStyle(.roundedBorder)
+                    }
+
+                    Text("Enter the email and token from your invitation email.")
+                        .font(.system(size: 12))
+                        .foregroundStyle(.secondary)
+                }
+
+                VStack(alignment: .leading, spacing: 6) {
+                    Text(viewStore.statusTitle)
+                        .font(.system(size: 13, weight: .semibold))
+                    if let message = viewStore.statusMessage {
+                        Text(message)
+                            .font(.system(size: 13))
+                            .foregroundStyle(.secondary)
+                    }
+                }
+                .padding(12)
+                .background(.ultraThinMaterial)
+                .cornerRadius(8)
+
+                HStack(spacing: 8) {
+                    Button(viewStore.showsRetry ? "Retry" : "Check") {
+                        viewStore.send(viewStore.showsRetry ? .retryTapped : .checkTapped)
+                    }
+                    .disabled(!viewStore.canSubmit)
+
+                    if viewStore.isVerifying {
+                        ProgressView()
+                            .controlSize(.small)
+                    }
+                }
             }
             .frame(maxWidth: .infinity, alignment: .leading)
+            .onAppear {
+                viewStore.send(.onAppear)
+            }
         }
     }
 }

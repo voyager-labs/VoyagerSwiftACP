@@ -65,6 +65,14 @@ struct OnboardingFeature {
         mutating func applyStepState(_ stepState: OnboardingStepState) {
             welcome.isComplete = stepState.welcomeComplete
             betaAccess.isComplete = stepState.betaAccessComplete
+            betaAccess.isVerifying = false
+            if betaAccess.isComplete {
+                betaAccess.status = .active
+                betaAccess.reason = .none
+            } else {
+                betaAccess.status = .notActive
+                betaAccess.reason = .missingInput
+            }
             permissions.isComplete = stepState.permissionsComplete
             indexingPreset.isComplete = stepState.indexingPresetComplete
             complete.isComplete = stepState.completeComplete

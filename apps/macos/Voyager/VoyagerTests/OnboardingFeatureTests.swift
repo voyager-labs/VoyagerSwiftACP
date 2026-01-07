@@ -23,7 +23,9 @@ final class OnboardingFeatureTests: XCTestCase {
 
         await store.send(.nextTapped)
 
-        await store.send(.betaAccess(.setCompleted(true))) { state in
+        await store.send(.betaAccess(.verificationResponse(BetaAccessVerificationResult(status: .active)))) { state in
+            state.betaAccess.status = .active
+            state.betaAccess.reason = .none
             state.betaAccess.isComplete = true
         }
 
@@ -64,6 +66,8 @@ final class OnboardingFeatureTests: XCTestCase {
             state.currentStep = .betaAccess
             state.showResumeBanner = true
             state.welcome.isComplete = true
+            state.betaAccess.status = .active
+            state.betaAccess.reason = .none
             state.betaAccess.isComplete = true
             state.permissions.isComplete = false
             state.indexingPreset.isComplete = false
