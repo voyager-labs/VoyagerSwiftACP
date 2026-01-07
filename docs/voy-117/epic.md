@@ -27,11 +27,16 @@ VoyagerHelper와 Backend의 생명주기 정책을 일관되게 정의하고, �
 
 1. **Story 1:** VOYAGER_PROJECT_ROOT 전달 및 source 모드 경로 탐지 안정화. (`docs/voy-117/stories/117.1.voyager-project-root.md`)
 2. **Story 6:** SwiftLog 도입 및 로그 교체. (실행 순서: 1.5, Story 2 이전) (`docs/voy-117/stories/117.6.swift-log-logging.md`)
-3. **Story 2:** 앱에서 Helper 생명주기 정책 구현(시작/감시/재시도/강제 종료 처리). (`docs/voy-117/stories/117.2.helper-restart-policy.md`)
-4. **Story 4:** UI 엔드포인트 탐지 로직 정리(`pgrep` + `lsof`) 및 runtime config 제거. (Story 3 선행) (`docs/voy-117/stories/117.4.ui-endpoint-discovery.md`)
-5. **Story 3:** Helper에서 backend 생명주기 관리 강화(실행/종료/재기동/포트 확보). (선행: Story 4) (`docs/voy-117/stories/117.3.backend-restart-management.md`)
+3. **Story 4:** UI 엔드포인트 탐지 로직 정리(`pgrep` + `lsof`) 및 runtime config 제거. (Story 3 연계) (`docs/voy-117/stories/117.4.ui-endpoint-discovery.md`)
+4. **Story 3:** Helper에서 backend 생명주기 관리 강화(실행/종료/재기동/포트 확보). (선행: Story 4) (`docs/voy-117/stories/117.3.backend-restart-management.md`)
+5. **Story 2:** 앱에서 Helper 생명주기 정책 구현(시작/감시/재시도/강제 종료 처리). (보류: Story 4 완료 후 재개) (`docs/voy-117/stories/117.2.helper-restart-policy.md`)
 6. **Story 5:** BACKEND_MODE 기반 DB 경로 분리 및 관계 문서 정리. (`docs/voy-117/stories/117.5.backend-mode-db-path.md`)
 7. **Story 7:** Python 백엔드 실행 프로세스 정리. (`docs/voy-117/stories/117.7.python-backend-execution-process.md`)
+
+#### 우선순위 변경 사유
+
+- UI 엔드포인트 탐지가 확정되지 않으면 backend 재기동/헬퍼 정책의 수동 QA가 막히므로 Story 4를 선행한다.
+- Story 2는 Story 4 완료 후 재개해 검증 흐름을 단순화한다.
 
 #### Compatibility Requirements
 
