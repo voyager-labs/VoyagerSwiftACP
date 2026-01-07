@@ -44,7 +44,7 @@ final class ProcessRunner {
             directory: backendDirectory,
             executable: "/usr/bin/env",
             arguments: ["uv", "run", appEnv],
-            environment: resolvedProcessEnvironment(),
+            environment: resolvedSourceProcessEnvironment(),
         )
 
         runProcess(proc, description: "uv run \(appEnv)")
@@ -63,7 +63,11 @@ final class ProcessRunner {
             return
         }
 
-        let proc = makeProcess(directory: serverDirectory, executable: binaryPath)
+        let proc = makeProcess(
+            directory: serverDirectory,
+            executable: binaryPath,
+            environment: resolvedBackendEnvironment(),
+        )
 
         runProcess(proc, description: "Bundled binary")
     }
@@ -82,8 +86,23 @@ final class ProcessRunner {
         return proc
     }
 
-    private func resolvedProcessEnvironment() -> [String: String] {
+    private func resolvedBackendEnvironment() -> [String: String] {
         var env: [String: String] = ProcessInfo.processInfo.environment
+        for (key, value) in environment.envVars {
+            if let current = env[key], !current.isEmpty {
+                continue
+            }
+            env[key] = value
+        }
+        if let current = env["APP_ENV"], !current.isEmpty {
+            return env
+        }
+        env["APP_ENV"] = environment.environmentType.rawValue
+        return env
+    }
+
+    private func resolvedSourceProcessEnvironment() -> [String: String] {
+        var env = resolvedBackendEnvironment()
         let prefix = "/opt/homebrew/bin:/usr/local/bin"
         if let currentPath = env["PATH"], !currentPath.isEmpty {
             env["PATH"] = "\(prefix):\(currentPath)"

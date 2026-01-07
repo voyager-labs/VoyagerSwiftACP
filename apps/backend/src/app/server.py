@@ -9,6 +9,6 @@ import uvicorn
 os.environ.setdefault("APP_ENV", "prod")
 
 if __name__ == "__main__":
-    host = os["PUBLIC_BACKEND_HOST"]
-    port = os["PUBLIC_BACKEND_PORT"]
+    host = os.environ["PUBLIC_BACKEND_HOST"]
+    port = int(os.environ["PUBLIC_BACKEND_PORT"])
     uvicorn.run("app.main:app", host=host, port=port, log_level="info")
