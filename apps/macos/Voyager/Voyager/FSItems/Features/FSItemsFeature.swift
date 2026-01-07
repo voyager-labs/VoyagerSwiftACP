@@ -15,6 +15,18 @@ public enum ClipboardOperation: Equatable, Sendable {
 /// 파일 시스템 아이템 목록 및 선택 관리 (FSV 영역)
 @Reducer
 struct FSItemsFeature {
+    private static func deduplicateById(_ items: [FSItem]) -> [FSItem] {
+        var seen: Set<String> = []
+        var unique: [FSItem] = []
+        unique.reserveCapacity(items.count)
+
+        for item in items where seen.insert(item.id).inserted {
+            unique.append(item)
+        }
+
+        return unique
+    }
+
     private enum CancelID {
         static let fsEventsWatcher = "fsEventsWatcher"
     }
@@ -523,7 +535,8 @@ struct FSItemsFeature {
                 return .none
 
             case let .itemsLoaded(items):
-                let sorted = FSItemsSortingUtils.sortItems(items, by: state.sortKey, order: state.sortOrder)
+                let uniqueItems = Self.deduplicateById(items)
+                let sorted = FSItemsSortingUtils.sortItems(uniqueItems, by: state.sortKey, order: state.sortOrder)
                 state.items = IdentifiedArray(uniqueElements: sorted)
 
                 guard !state.isCollectionMode else {
@@ -556,7 +569,8 @@ struct FSItemsFeature {
 
             case let .collectionItemsLoadedFromSearch(items):
                 let converted = FSItemSearchUtils.convertCollectionItems(items, showHidden: state.showHiddenFiles)
-                let sorted = FSItemsSortingUtils.sortItems(converted, by: state.sortKey, order: state.sortOrder)
+                let uniqueItems = Self.deduplicateById(converted)
+                let sorted = FSItemsSortingUtils.sortItems(uniqueItems, by: state.sortKey, order: state.sortOrder)
                 state.collectionItems = IdentifiedArray(uniqueElements: sorted)
 
                 guard state.isCollectionMode else {
