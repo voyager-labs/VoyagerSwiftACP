@@ -1,3 +1,4 @@
+import AppKit
 import ComposableArchitecture
 import SwiftUI
 
@@ -99,21 +100,133 @@ struct PermissionsStepView: View {
 
     var body: some View {
         WithViewStore(store, observe: { $0 }) { viewStore in
-            VStack(alignment: .leading, spacing: 12) {
+            let statusColor: Color = viewStore.fullDiskAccessStatus == .granted ? .green : .secondary
+
+            VStack(alignment: .leading, spacing: 16) {
                 Text("Permissions")
                     .font(.system(size: 20, weight: .semibold))
-                Text("Permission requests will be implemented in Story 1.4.")
-                    .font(.system(size: 13))
+
+                VStack(alignment: .leading, spacing: 8) {
+                    HStack(spacing: 8) {
+                        Text("Full Disk Access")
+                            .font(.system(size: 13, weight: .semibold))
+                        Text(viewStore.fullDiskAccessStatus.rawValue)
+                            .font(.system(size: 11, weight: .semibold))
+                            .foregroundStyle(statusColor)
+                        Spacer()
+                    }
+
+                    Text(viewStore.fullDiskAccessStatusMessage)
+                        .font(.system(size: 12))
+                        .foregroundStyle(.secondary)
+
+                    if viewStore.showsFullDiskAccessAction {
+                        Button("Open System Settings") {
+                            viewStore.send(.openSystemSettingsTapped)
+                        }
+                    }
+
+                    Text("System Settings > Privacy & Security > Full Disk Access")
+                        .font(.system(size: 11))
+                        .foregroundStyle(.secondary)
+
+                    if let error = viewStore.systemSettingsError {
+                        Text(error)
+                            .font(.caption)
+                            .foregroundStyle(.red)
+                    }
+                }
+                .padding(12)
+                .background(.ultraThinMaterial)
+                .cornerRadius(8)
+
+                VStack(alignment: .leading, spacing: 8) {
+                    Text("Files & Folders")
+                        .font(.system(size: 13, weight: .semibold))
+                    Text("Allow access to Desktop, Documents, and Downloads.")
+                        .font(.system(size: 12))
+                        .foregroundStyle(.secondary)
+
+                    HStack(spacing: 8) {
+                        Button("Grant Access") {
+                            viewStore.send(.requestFilesAndFoldersTapped)
+                        }
+                        .disabled(viewStore.isRequestingFilesAndFolders)
+
+                        if viewStore.isRequestingFilesAndFolders {
+                            ProgressView()
+                                .controlSize(.small)
+                        }
+                    }
+
+                    if let message = viewStore.filesAndFoldersMessage {
+                        Text(message)
+                            .font(.system(size: 12))
+                            .foregroundStyle(.secondary)
+                    }
+
+                    if !viewStore.folderAccessItems.isEmpty {
+                        VStack(alignment: .leading, spacing: 4) {
+                            ForEach(viewStore.folderAccessItems) { item in
+                                HStack {
+                                    Text(item.title)
+                                        .font(.system(size: 12))
+                                    Spacer()
+                                    Text(item.status.rawValue)
+                                        .font(.system(size: 12, weight: .semibold))
+                                        .foregroundStyle(.secondary)
+                                }
+                            }
+                        }
+                    }
+                }
+                .padding(12)
+                .background(.ultraThinMaterial)
+                .cornerRadius(8)
+
+                VStack(alignment: .leading, spacing: 8) {
+                    Toggle(
+                        "Launch at Login",
+                        isOn: viewStore.binding(
+                            get: { $0.launchAtLoginEnabled },
+                            send: { .launchAtLoginToggled($0) },
+                        ),
+                    )
+                    Text("Start Voyager automatically when you log in.")
+                        .font(.system(size: 12))
+                        .foregroundStyle(.secondary)
+
+                    if let error = viewStore.launchAtLoginError {
+                        Text(error)
+                            .font(.caption)
+                            .foregroundStyle(.red)
+                        Text("System Settings > Login Items")
+                            .font(.system(size: 11))
+                            .foregroundStyle(.secondary)
+                    }
+                }
+                .padding(12)
+                .background(.ultraThinMaterial)
+                .cornerRadius(8)
+
+                VStack(alignment: .leading, spacing: 6) {
+                    Text("Indexing will run in the background from `/` (coming soon).")
+                        .font(.system(size: 12))
+                    Text(
+                        "Indexing runs via the backend binary launched by VoyagerHelper. "
+                            + "Full Disk Access can't be delegated by Voyager.",
+                    )
+                    .font(.system(size: 11))
                     .foregroundStyle(.secondary)
-                Toggle(
-                    "Mark step as complete (placeholder)",
-                    isOn: viewStore.binding(
-                        get: { $0.isComplete },
-                        send: { .setCompleted($0) },
-                    ),
-                )
+                }
             }
             .frame(maxWidth: .infinity, alignment: .leading)
+            .onAppear {
+                viewStore.send(.onAppear)
+            }
+            .onReceive(NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)) { _ in
+                viewStore.send(.appDidBecomeActive)
+            }
         }
     }
 }

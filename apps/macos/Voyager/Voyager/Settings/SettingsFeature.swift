@@ -1,7 +1,6 @@
 import AppKit
 import ComposableArchitecture
 import Foundation
-import ServiceManagement
 import SwiftUI
 
 enum DirectoryOption: Equatable, Hashable, Identifiable {
@@ -234,6 +233,8 @@ struct SettingsFeature {
 
     @Dependency(\.appearanceSettingsClient)
     var appearanceSettingsClient: AppearanceSettingsClient
+    @Dependency(\.launchAtLoginClient)
+    var launchAtLoginClient: LaunchAtLoginClient
 
     var body: some Reducer<State, Action> {
         Reduce { state, action in
@@ -251,9 +252,7 @@ struct SettingsFeature {
                 state.generalSettings.startingDirectory = startingDir
                 state.generalSettings.selectedDirectoryOption = DirectoryOption.from(path: startingDir)
 
-                let appService = SMAppService.mainApp
-                let actualStatus = appService.status
-                let isActuallyRegistered = (actualStatus == .enabled)
+                let isActuallyRegistered = launchAtLoginClient.isEnabled()
 
                 let savedValue = UserDefaults.standard.bool(forKey: SettingsKeys.launchAtStartup)
                 if savedValue != isActuallyRegistered {
@@ -341,12 +340,7 @@ struct SettingsFeature {
 
             case let .general(.toggleLaunchAtStartup(enabled)):
                 do {
-                    let appService = SMAppService.mainApp
-                    if enabled {
-                        try appService.register()
-                    } else {
-                        try appService.unregister()
-                    }
+                    try launchAtLoginClient.setEnabled(enabled)
                     state.generalSettings.launchAtStartup = enabled
                     UserDefaults.standard.set(enabled, forKey: SettingsKeys.launchAtStartup)
                     state.generalSettings.launchAtStartupError = nil

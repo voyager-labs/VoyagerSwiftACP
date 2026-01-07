@@ -54,10 +54,21 @@ struct OnboardingView: View {
 
                     Spacer()
 
-                    Button("Next") {
-                        viewStore.send(.nextTapped)
+                    VStack(alignment: .trailing, spacing: 4) {
+                        Button("Next") {
+                            viewStore.send(.nextTapped)
+                        }
+                        .disabled(!viewStore.canGoNext)
+
+                        if viewStore.currentStep == .permissions,
+                           !viewStore.canGoNext,
+                           let message = viewStore.permissions.nextDisabledMessage
+                        {
+                            Text(message)
+                                .font(.system(size: 11))
+                                .foregroundStyle(.secondary)
+                        }
                     }
-                    .disabled(!viewStore.canGoNext)
                 }
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
