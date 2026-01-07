@@ -1,5 +1,6 @@
 import Darwin
 import Foundation
+import Logging
 
 final class ProcessRunner {
     private let environment: Environment
@@ -7,6 +8,7 @@ final class ProcessRunner {
     private var stderrPipe: Pipe?
     private var assignedPort: Int?
     var onPortAssigned: ((Int) -> Void)?
+    private let logger = Logger(label: "VoyagerHelper")
 
     init(environment: Environment) {
         self.environment = environment
@@ -35,7 +37,7 @@ final class ProcessRunner {
 
     private func startWithUv() {
         guard let backendDirectory = environment.backendDirectory() else {
-            fputs("[VoyagerHelper] ERROR: backendDirectory not found\n", stderr)
+            logger.error("backendDirectory not found")
             return
         }
 
@@ -52,14 +54,14 @@ final class ProcessRunner {
 
     private func startWithBundledBinary() {
         guard let serverDirectory = environment.backendDirectory() else {
-            fputs("[VoyagerHelper] ERROR: server directory not found\n", stderr)
+            logger.error("server directory not found")
             return
         }
 
         // Nuitka 바이너리 경로: server/Voyager Backend
         let binaryPath = URL(fileURLWithPath: serverDirectory).appendingPathComponent("Voyager Backend").path
         guard FileManager.default.fileExists(atPath: binaryPath) else {
-            fputs("[VoyagerHelper] ERROR: backend binary not found at \(binaryPath)\n", stderr)
+            logger.error("backend binary not found at \(binaryPath)")
             return
         }
 
@@ -122,9 +124,9 @@ final class ProcessRunner {
         do {
             try proc.run()
             process = proc
-            fputs("[VoyagerHelper] Backend started: \(description) (pid: \(proc.processIdentifier))\n", stderr)
+            logger.info("Backend started: \(description) (pid: \(proc.processIdentifier))")
         } catch {
-            fputs("[VoyagerHelper] ERROR: Failed to start backend: \(error)\n", stderr)
+            logger.error("Failed to start backend: \(error)")
         }
     }
 
@@ -143,7 +145,7 @@ final class ProcessRunner {
                 DispatchQueue.main.sync { [weak self] in
                     self?.assignedPort = port
                     self?.onPortAssigned?(port)
-                    fputs("[VoyagerHelper] Backend port assigned: \(port)\n", stderr)
+                    self?.logger.info("Backend port assigned: \(port)")
                 }
                 return
             }

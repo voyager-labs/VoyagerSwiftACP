@@ -1,15 +1,19 @@
 import Foundation
+import Logging
 
 @main
 class VoyagerHelperApp {
     private static var lifecycle: HelperLifecycle?
 
     static func main() {
+        LoggingSystem.bootstrap { label in
+            StreamLogHandler.standardError(label: label)
+        }
+        let logger = Logger(label: "VoyagerHelper")
         var environment = Environment()
 
-        fputs(
-            "[VoyagerHelper] Starting (APP_ENV=\(environment.environmentType.rawValue), BACKEND_MODE=\(environment.backendMode.rawValue))\n",
-            stderr,
+        logger.info(
+            "Starting (APP_ENV=\(environment.environmentType.rawValue), BACKEND_MODE=\(environment.backendMode.rawValue))",
         )
 
         let runner = ProcessRunner(environment: environment)
@@ -18,7 +22,7 @@ class VoyagerHelperApp {
         runner.onPortAssigned = { port in
             environment.backendPort = port
             if let url = environment.backendURL {
-                fputs("[VoyagerHelper] Backend URL: \(url)\n", stderr)
+                logger.info("Backend URL: \(url)")
             }
         }
 

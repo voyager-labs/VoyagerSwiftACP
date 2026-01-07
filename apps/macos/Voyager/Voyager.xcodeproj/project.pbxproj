@@ -8,6 +8,8 @@
 
 /* Begin PBXBuildFile section */
 		6C57FBA92F02111500D85C72 /* Sparkle in Frameworks */ = {isa = PBXBuildFile; productRef = 6C57FBA82F02111500D85C72 /* Sparkle */; };
+		6C727A2D2F0DF4A10012D44A /* Logging in Frameworks */ = {isa = PBXBuildFile; productRef = 6C727A2C2F0DF4A10012D44A /* Logging */; };
+		6C727A2F2F0DF4AA0012D44A /* Logging in Frameworks */ = {isa = PBXBuildFile; productRef = 6C727A2E2F0DF4AA0012D44A /* Logging */; };
 		6CFB7B382E9D48B40005FDF6 /* ComposableArchitecture in Frameworks */ = {isa = PBXBuildFile; productRef = 6CFB7B372E9D48B40005FDF6 /* ComposableArchitecture */; };
 		7E1724A12EC5BA6600385F6E /* SwiftUIIntrospect in Frameworks */ = {isa = PBXBuildFile; productRef = 7E1724A02EC5BA6600385F6E /* SwiftUIIntrospect */; };
 		7E1974712E8BDC0700D041D3 /* InjectionNext in Frameworks */ = {isa = PBXBuildFile; productRef = 7E1974702E8BDC0700D041D3 /* InjectionNext */; };
@@ -52,7 +54,6 @@
 /* Begin PBXCopyFilesBuildPhase section */
 		AF0F1E7A33B24D3000A1F123 /* Copy Helper into App */ = {
 			isa = PBXCopyFilesBuildPhase;
-			alwaysOutOfDate = 1;
 			buildActionMask = 2147483647;
 			dstPath = Contents/Helpers;
 			dstSubfolderSpec = 1;
@@ -107,6 +108,7 @@
 			files = (
 				7E6AF6AD2E8BABD8005DC7D3 /* Inject in Frameworks */,
 				7EEC64512E8CE684004ACEA5 /* SwiftDotenv in Frameworks */,
+				6C727A2D2F0DF4A10012D44A /* Logging in Frameworks */,
 				6CFB7B382E9D48B40005FDF6 /* ComposableArchitecture in Frameworks */,
 				6C57FBA92F02111500D85C72 /* Sparkle in Frameworks */,
 				7E1724A12EC5BA6600385F6E /* SwiftUIIntrospect in Frameworks */,
@@ -132,6 +134,7 @@
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				6C727A2F2F0DF4AA0012D44A /* Logging in Frameworks */,
 				7E9D64952E8CDDC8006CB69F /* SwiftDotenv in Frameworks */,
 				7EEC64532E8CE6E3004ACEA5 /* InjectionNext in Frameworks */,
 			);
@@ -200,6 +203,7 @@
 				6CFB7B372E9D48B40005FDF6 /* ComposableArchitecture */,
 				7E1724A02EC5BA6600385F6E /* SwiftUIIntrospect */,
 				6C57FBA82F02111500D85C72 /* Sparkle */,
+				6C727A2C2F0DF4A10012D44A /* Logging */,
 			);
 			productName = Voyager;
 			productReference = 7E14EDCC2E86622C005AC834 /* Voyager.app */;
@@ -272,6 +276,7 @@
 			packageProductDependencies = (
 				7E9D64942E8CDDC8006CB69F /* SwiftDotenv */,
 				7EEC64522E8CE6E3004ACEA5 /* InjectionNext */,
+				6C727A2E2F0DF4AA0012D44A /* Logging */,
 			);
 			productName = VoyagerHelper;
 			productReference = 7E14EE232E866E82005AC834 /* VoyagerHelper.app */;
@@ -346,6 +351,7 @@
 				6CFB7B362E9D48B40005FDF6 /* XCRemoteSwiftPackageReference "swift-composable-architecture" */,
 				7E17249F2EC5B91C00385F6E /* XCRemoteSwiftPackageReference "SwiftUI-Introspect" */,
 				6C57FBA72F02111500D85C72 /* XCRemoteSwiftPackageReference "Sparkle" */,
+				6C727A2B2F0DF4A10012D44A /* XCRemoteSwiftPackageReference "swift-log" */,
 			);
 			preferredProjectObjectVersion = 77;
 			productRefGroup = 7E14EDCD2E86622C005AC834 /* Products */;
@@ -864,8 +870,8 @@
 				ENABLE_RESOURCE_ACCESS_CONTACTS = NO;
 				ENABLE_RESOURCE_ACCESS_LOCATION = NO;
 				ENABLE_RESOURCE_ACCESS_PHOTO_LIBRARY = NO;
-				GENERATE_INFOPLIST_FILE = YES;
 				EXECUTABLE_NAME = "Voyager Helper (Debug)";
+				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = VoyagerHelper/Info.plist;
 				INFOPLIST_KEY_CFBundleDisplayName = "Voyager Helper (Debug)";
 				INFOPLIST_KEY_CFBundleName = "Voyager Helper (Debug)";
@@ -919,8 +925,8 @@
 				ENABLE_RESOURCE_ACCESS_CONTACTS = NO;
 				ENABLE_RESOURCE_ACCESS_LOCATION = NO;
 				ENABLE_RESOURCE_ACCESS_PHOTO_LIBRARY = NO;
-				GENERATE_INFOPLIST_FILE = YES;
 				EXECUTABLE_NAME = "Voyager Helper";
+				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = VoyagerHelper/Info.plist;
 				INFOPLIST_KEY_CFBundleDisplayName = "Voyager Helper";
 				INFOPLIST_KEY_CFBundleName = "Voyager Helper";
@@ -1060,6 +1066,14 @@
 				version = 2.8.1;
 			};
 		};
+		6C727A2B2F0DF4A10012D44A /* XCRemoteSwiftPackageReference "swift-log" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/apple/swift-log";
+			requirement = {
+				kind = upToNextMajorVersion;
+				minimumVersion = 1.8.0;
+			};
+		};
 		6CFB7B362E9D48B40005FDF6 /* XCRemoteSwiftPackageReference "swift-composable-architecture" */ = {
 			isa = XCRemoteSwiftPackageReference;
 			repositoryURL = "https://github.com/pointfreeco/swift-composable-architecture";
@@ -1107,6 +1121,16 @@
 			isa = XCSwiftPackageProductDependency;
 			package = 6C57FBA72F02111500D85C72 /* XCRemoteSwiftPackageReference "Sparkle" */;
 			productName = Sparkle;
+		};
+		6C727A2C2F0DF4A10012D44A /* Logging */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 6C727A2B2F0DF4A10012D44A /* XCRemoteSwiftPackageReference "swift-log" */;
+			productName = Logging;
+		};
+		6C727A2E2F0DF4AA0012D44A /* Logging */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 6C727A2B2F0DF4A10012D44A /* XCRemoteSwiftPackageReference "swift-log" */;
+			productName = Logging;
 		};
 		6CFB7B372E9D48B40005FDF6 /* ComposableArchitecture */ = {
 			isa = XCSwiftPackageProductDependency;
