@@ -93,7 +93,7 @@ extension SearchClient: DependencyKey {
     // TODO: VoyagerHelper가 찾은 port를 주입 필요
     static let liveValue: SearchClient = {
         let host = ProcessInfo.processInfo.environment["PUBLIC_BACKEND_HOST"] ?? "127.0.0.1"
-        let port = ProcessInfo.processInfo.environment["PUBLIC_BACKEND_PORT"] ?? "61297"
+        let port = ProcessInfo.processInfo.environment["PUBLIC_BACKEND_PORT"] ?? "53651"
         guard let baseURL = URL(string: "http://\(host):\(port)") else {
             fatalError("Invalid backend base URL")
         }
@@ -116,10 +116,10 @@ extension SearchClient: DependencyKey {
 
         return SearchClient(
             search: { request in
-                try await post(path: "api/search", body: request)
+                try await post(path: "api/collection", body: request)
             },
             applyFilters: { request in
-                try await post(path: "api/search/filters", body: request)
+                try await post(path: "api/collection/filters", body: request)
             },
         )
     }()
