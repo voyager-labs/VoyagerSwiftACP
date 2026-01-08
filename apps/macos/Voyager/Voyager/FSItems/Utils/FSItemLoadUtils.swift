@@ -104,6 +104,10 @@ enum FSItemLoadUtils {
 
     private nonisolated static func calculateAdditionalInfo(url: URL, isDirectory: Bool) -> String? {
         if isDirectory {
+            let ext = url.pathExtension.lowercased()
+            if ext == "voycoll" {
+                return nil
+            }
             return getFolderItemCount(url)
         }
 
