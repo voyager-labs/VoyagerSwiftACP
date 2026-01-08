@@ -23,6 +23,7 @@ struct ToolbarView: View {
         let sidebarVisible: Bool
         let currentPath: String
         let isCollectionMode: Bool
+        let isOpeningCollectionFile: Bool
         let openedCollectionName: String?
         let openedCollectionURLExists: Bool
         let isOpenedCollectionDirty: Bool
@@ -50,6 +51,7 @@ struct ToolbarView: View {
                     sidebarVisible: $0.sidebarVisible,
                     currentPath: $0.currentPath,
                     isCollectionMode: $0.fsItems.isCollectionMode,
+                    isOpeningCollectionFile: $0.isOpeningCollectionFile,
                     openedCollectionName: $0.openedCollectionName,
                     openedCollectionURLExists: $0.openedCollectionURL != nil,
                     isOpenedCollectionDirty: $0.isOpenedCollectionDirty,
@@ -169,6 +171,8 @@ struct ToolbarView: View {
     }
 
     private func titleButton(viewStore: ViewStore<ViewState, FileManagerFeature.Action>) -> some View {
+        let isShowingCollection = viewStore
+            .isCollectionMode || (viewStore.isOpeningCollectionFile && viewStore.openedCollectionName != nil)
         let titleText = viewStore.openedCollectionName
             ?? (viewStore.isCollectionMode
                 ? "New Collection"
@@ -183,7 +187,7 @@ struct ToolbarView: View {
             action: { store.send(.enterComposer) },
             label: {
                 HStack(spacing: 4) {
-                    if viewStore.isCollectionMode {
+                    if isShowingCollection {
                         CollectionTitleIcon()
                     } else {
                         Image(systemName: "folder")

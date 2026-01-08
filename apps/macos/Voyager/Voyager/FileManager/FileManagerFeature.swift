@@ -608,6 +608,9 @@ struct FileManagerFeature {
                     state.isOpeningCollectionFile = false
                     state.openedCollectionName = nil
                     state.openedCollectionBaseline = nil
+                    if !state.backHistory.isEmpty {
+                        state.backHistory.removeLast()
+                    }
                     return .run { _ in
                         await showCollectionOpenErrorAlert(
                             title: "Unable to Open Collection",
