@@ -69,14 +69,12 @@ fi
 mkdir -p "$(dirname "${BINARY_DST}")"
 ditto "${NUITKA_DIST}" "${BINARY_DST}"
 
-# .env.prod 복사
-ENV_PROD_SRC="${REPO_ROOT}/.env.prod"
-ENV_PROD_DST="${TARGET_BUILD_DIR}/${UNLOCALIZED_RESOURCES_FOLDER_PATH}/.env.prod"
-if [[ -f "${ENV_PROD_SRC}" ]]; then
-  cp "${ENV_PROD_SRC}" "${ENV_PROD_DST}"
-  echo "[VoyagerHelper] .env.prod 복사 완료: ${ENV_PROD_DST}" >&2
+# .env.bundled/.env.prod 복사
+COPY_ENV_SCRIPT="${SCRIPT_DIR}/copy-bundled-env-files.sh"
+if [[ -x "${COPY_ENV_SCRIPT}" ]]; then
+  "${COPY_ENV_SCRIPT}"
 else
-  echo "[VoyagerHelper] 경고: .env.prod를 찾을 수 없습니다: ${ENV_PROD_SRC}" >&2
+  echo "[VoyagerHelper] copy-bundled-env-files.sh not found: ${COPY_ENV_SCRIPT}" >&2
 fi
 
 # 4. 바이너리 서명

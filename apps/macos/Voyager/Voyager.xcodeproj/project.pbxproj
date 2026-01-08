@@ -74,14 +74,14 @@
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedRootGroup section */
-		7E14EDCE2E86622C005AC834 /* Voyager */ = {
-			isa = PBXFileSystemSynchronizedRootGroup;
-			path = Voyager;
-			sourceTree = "<group>";
-		};
 		24DD04D6008045F2B081D402 /* Shared */ = {
 			isa = PBXFileSystemSynchronizedRootGroup;
 			path = Shared;
+			sourceTree = "<group>";
+		};
+		7E14EDCE2E86622C005AC834 /* Voyager */ = {
+			isa = PBXFileSystemSynchronizedRootGroup;
+			path = Voyager;
 			sourceTree = "<group>";
 		};
 		7E14EDDE2E86622E005AC834 /* VoyagerTests */ = {
@@ -191,6 +191,7 @@
 				7E6AF6B12E8BB003005DC7D3 /* Run Lint and Format */,
 				7E14EDC92E86622C005AC834 /* Frameworks */,
 				7E14EDCA2E86622C005AC834 /* Resources */,
+				AFB0BEF033B7C0F100A1F901 /* Copy Bundled Env */,
 				AF0F1E7A33B24D3000A1F123 /* Copy Helper into App */,
 			);
 			buildRules = (
@@ -199,8 +200,8 @@
 				AF0F1E7D33B2530900A1F123 /* PBXTargetDependency */,
 			);
 			fileSystemSynchronizedGroups = (
-				7E14EDCE2E86622C005AC834 /* Voyager */,
 				24DD04D6008045F2B081D402 /* Shared */,
+				7E14EDCE2E86622C005AC834 /* Voyager */,
 			);
 			name = Voyager;
 			packageProductDependencies = (
@@ -277,8 +278,8 @@
 			dependencies = (
 			);
 			fileSystemSynchronizedGroups = (
-				7E14EE242E866E82005AC834 /* VoyagerHelper */,
 				24DD04D6008045F2B081D402 /* Shared */,
+				7E14EE242E866E82005AC834 /* VoyagerHelper */,
 			);
 			name = VoyagerHelper;
 			packageProductDependencies = (
@@ -469,6 +470,27 @@
 			runOnlyForDeploymentPostprocessing = 0;
 			shellPath = /bin/sh;
 			shellScript = "set -euo pipefail\nREPO_ROOT=\"$(cd \"$SRCROOT/../../..\" && pwd)\"\nSCRIPT=\"${REPO_ROOT}/scripts/build/build-backend-binary.sh\"\nif [ ! -x \"${SCRIPT}\" ]; then\n  echo \"[VoyagerHelper] build-backend-binary.sh not found or not executable: ${SCRIPT}\" >&2\n  exit 1\nfi\nPATH=\"/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/sbin:$PATH\"\nexport PATH\necho \"[VoyagerHelper] Build Backend Binary Phase Start\" >&2\n\"${SCRIPT}\" 2>&1\necho \"[VoyagerHelper] Build Backend Binary Phase Complete\" >&2\n";
+		};
+		AFB0BEF033B7C0F100A1F901 /* Copy Bundled Env */ = {
+			isa = PBXShellScriptBuildPhase;
+			alwaysOutOfDate = 1;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			inputFileListPaths = (
+			);
+			inputPaths = (
+			);
+			name = "Copy Bundled Env";
+			outputFileListPaths = (
+			);
+			outputPaths = (
+				"$(TARGET_BUILD_DIR)/$(UNLOCALIZED_RESOURCES_FOLDER_PATH)/.env.bundled",
+				"$(TARGET_BUILD_DIR)/$(UNLOCALIZED_RESOURCES_FOLDER_PATH)/.env.prod",
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+			shellPath = /bin/sh;
+			shellScript = "set -euo pipefail\nREPO_ROOT=\"$(cd \"$SRCROOT/../../..\" && pwd)\"\nSCRIPT=\"${REPO_ROOT}/scripts/build/copy-bundled-env-files.sh\"\nif [ ! -x \"${SCRIPT}\" ]; then\n  echo \"[Voyager] copy-bundled-env-files.sh not found: ${SCRIPT}\" >&2\n  exit 1\nfi\n\"${SCRIPT}\"\n";
 		};
 /* End PBXShellScriptBuildPhase section */
 
