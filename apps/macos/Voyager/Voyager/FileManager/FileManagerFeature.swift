@@ -6,6 +6,12 @@ import SwiftUI
 // swiftlint:disable type_body_length file_length
 @Reducer
 struct FileManagerFeature {
+    struct HistoryEntry: Equatable {
+        let navigationState: FileManagerNavigationUtils.NavigationState
+        let sidebarItemName: String?
+        let composerState: ComposerFeature.State
+    }
+
     static func makeWindowTitle(for path: String) -> String {
         if path == "/" {
             return FileManager.default.displayName(atPath: "/")
@@ -38,8 +44,8 @@ struct FileManagerFeature {
 
         var scrollPositions: [String: CGPoint] = [:]
 
-        var backHistory: [String] = []
-        var forwardHistory: [String] = []
+        var backHistory: [HistoryEntry] = []
+        var forwardHistory: [HistoryEntry] = []
         var fsItems: FSItemsFeature.State = .init()
         var viewLayout: ViewLayout = .list
         var showHiddenFiles: Bool = false
@@ -55,8 +61,7 @@ struct FileManagerFeature {
         var isTagsCollapsed: Bool = false
         var columnWidths: ListColumnWidths = .default
 
-        var isComposeMode: Bool = false
-        var composeText: String = ""
+        var composer: ComposerFeature.State = .init()
 
         var sortKey: SortKey = .name
         var sortOrder: SortOrder = .ascending
@@ -143,6 +148,30 @@ struct FileManagerFeature {
             FileManagerFeature.makeWindowTitle(for: titlePath)
         }
 
+        func makeHistoryEntry() -> HistoryEntry {
+            HistoryEntry(
+                navigationState: navigationState,
+                sidebarItemName: selectedSidebarItem,
+                composerState: composer,
+            )
+        }
+
+        mutating func applyHistoryEntry(
+            _ entry: HistoryEntry,
+            favorites: [SidebarUtils.FavoriteItem],
+            locations: [SidebarUtils.LocationItem],
+        ) {
+            navigationState = entry.navigationState
+            selectedSidebarItem = entry.sidebarItemName
+            matchSidebarToPath(currentPath, favorites: favorites, locations: locations)
+            composer = entry.composerState
+            composer.isPresented = false
+        }
+
+        mutating func resetComposer() {
+            composer = .init()
+        }
+
         mutating func matchSidebarToPath(
             _ path: String,
             favorites: [SidebarUtils.FavoriteItem],
@@ -159,10 +188,20 @@ struct FileManagerFeature {
         }
 
         mutating func navigateToFolder(_ path: String, sidebarItemName: String) {
+            let previousPath = currentPath
             selectedSidebarItem = sidebarItemName
-            backHistory.append(currentPath)
+            let snapshot = makeHistoryEntry()
+            resetComposer()
+            backHistory.append(snapshot)
             forwardHistory = []
             navigationState = .folder(path)
+
+            if composer.isPresented,
+               !composer.scopes.isEmpty,
+               composer.scopes[0] == previousPath
+            {
+                composer.scopes[0] = path
+            }
         }
 
         mutating func navigate(
@@ -170,23 +209,11 @@ struct FileManagerFeature {
             sidebarItemName: String,
         ) {
             selectedSidebarItem = sidebarItemName
-            backHistory.append(currentPath)
+            let snapshot = makeHistoryEntry()
+            resetComposer()
+            backHistory.append(snapshot)
             forwardHistory = []
             self.navigationState = navigationState
-        }
-
-        mutating func navigateFromHistory(
-            to path: String,
-            addToForward: Bool,
-            locations: [SidebarUtils.LocationItem],
-        ) {
-            if addToForward {
-                forwardHistory.append(currentPath)
-            } else {
-                backHistory.append(currentPath)
-            }
-            navigationState = FileManagerNavigationUtils.navigationStateFromPath(path)
-            matchSidebarToPath(path, favorites: favorites, locations: locations)
         }
     }
 
@@ -260,15 +287,19 @@ struct FileManagerFeature {
         case updateGridTextSize(CGFloat)
         case setSidebarWidth(CGFloat)
 
-        case enterComposeMode
-        case exitComposeMode
-        case setComposeText(String)
+        case enterComposer
+        case exitComposer
+        case composer(ComposerFeature.Action)
     }
 
     @Dependency(\.fsItemClient)
     var fsItemClient
 
     var body: some Reducer<State, Action> {
+        Scope(state: \.composer, action: \.composer) {
+            ComposerFeature()
+        }
+
         Scope(state: \.fsItems, action: \.fsItems) {
             FSItemsFeature()
         }
@@ -352,7 +383,9 @@ struct FileManagerFeature {
                     return .none
                 }
                 if path != state.currentPath {
-                    state.backHistory.append(state.currentPath)
+                    let previousSnapshot = state.makeHistoryEntry()
+                    state.resetComposer()
+                    state.backHistory.append(previousSnapshot)
                     state.forwardHistory = []
                 }
                 state.navigationState = .folder(path)
@@ -391,43 +424,47 @@ struct FileManagerFeature {
                 }
 
             case .goBack:
-                guard let previousPath = state.backHistory.popLast() else { return .none }
-                state.navigateFromHistory(to: previousPath, addToForward: true, locations: state.locations)
+                guard let entry = state.backHistory.popLast() else { return .none }
+                let currentSnapshot = state.makeHistoryEntry()
+                state.forwardHistory.append(currentSnapshot)
+                state.applyHistoryEntry(entry, favorites: state.favorites, locations: state.locations)
                 return FileManagerNavigationUtils.navigateToState(state.navigationState)
 
             case .goForward:
-                guard let nextPath = state.forwardHistory.popLast() else { return .none }
-                state.navigateFromHistory(to: nextPath, addToForward: false, locations: state.locations)
+                guard let entry = state.forwardHistory.popLast() else { return .none }
+                let currentSnapshot = state.makeHistoryEntry()
+                state.backHistory.append(currentSnapshot)
+                state.applyHistoryEntry(entry, favorites: state.favorites, locations: state.locations)
                 return FileManagerNavigationUtils.navigateToState(state.navigationState)
 
             case let .goToHistoryIndex(index, isBackHistory):
                 if isBackHistory {
                     guard index < state.backHistory.count else { return .none }
-                    let targetPath = state.backHistory[state.backHistory.count - 1 - index]
+                    let targetIndex = state.backHistory.count - 1 - index
+                    let targetEntry = state.backHistory[targetIndex]
+                    let trailing = Array(state.backHistory[(targetIndex + 1)...])
 
-                    for idx in (state.backHistory.count - index) ..< state.backHistory.count {
-                        state.forwardHistory.append(state.backHistory[idx])
-                    }
-                    state.forwardHistory.append(state.currentPath)
+                    state.backHistory.removeLast(state.backHistory.count - targetIndex)
 
-                    state.backHistory.removeLast(index + 1)
+                    let currentSnapshot = state.makeHistoryEntry()
+                    state.forwardHistory.append(currentSnapshot)
+                    state.forwardHistory.append(contentsOf: trailing.reversed())
 
-                    state.navigationState = FileManagerNavigationUtils.navigationStateFromPath(targetPath)
-                    state.matchSidebarToPath(targetPath, favorites: state.favorites, locations: state.locations)
+                    state.applyHistoryEntry(targetEntry, favorites: state.favorites, locations: state.locations)
                     return FileManagerNavigationUtils.navigateToState(state.navigationState)
                 } else {
                     guard index < state.forwardHistory.count else { return .none }
-                    let targetPath = state.forwardHistory[state.forwardHistory.count - 1 - index]
+                    let targetIndex = state.forwardHistory.count - 1 - index
+                    let targetEntry = state.forwardHistory[targetIndex]
+                    let trailing = Array(state.forwardHistory[(targetIndex + 1)...])
 
-                    for idx in (state.forwardHistory.count - index) ..< state.forwardHistory.count {
-                        state.backHistory.append(state.forwardHistory[idx])
-                    }
-                    state.backHistory.append(state.currentPath)
+                    state.forwardHistory.removeLast(state.forwardHistory.count - targetIndex)
 
-                    state.forwardHistory.removeLast(index + 1)
+                    let currentSnapshot = state.makeHistoryEntry()
+                    state.backHistory.append(currentSnapshot)
+                    state.backHistory.append(contentsOf: trailing.reversed())
 
-                    state.navigationState = FileManagerNavigationUtils.navigationStateFromPath(targetPath)
-                    state.matchSidebarToPath(targetPath, favorites: state.favorites, locations: state.locations)
+                    state.applyHistoryEntry(targetEntry, favorites: state.favorites, locations: state.locations)
                     return FileManagerNavigationUtils.navigateToState(state.navigationState)
                 }
 
@@ -438,6 +475,7 @@ struct FileManagerFeature {
                 guard parentURL.path != state.currentPath else { return .none }
 
                 state.navigateToFolder(parentURL.path, sidebarItemName: parentURL.lastPathComponent)
+                state.resetComposer()
                 return .send(.fsItems(.loadItems(path: parentURL.path)))
 
             case let .changeLayout(layout):
@@ -504,10 +542,12 @@ struct FileManagerFeature {
 
             case .showRecents:
                 state.navigate(to: .recents, sidebarItemName: "Recents")
+                state.resetComposer()
                 return .send(.fsItems(.loadRecentItems))
 
             case .showComputer:
                 state.navigate(to: .computer, sidebarItemName: SidebarUtils.computerName)
+                state.resetComposer()
                 return .send(.fsItems(.loadComputerItems))
 
             case .loadFavorites:
@@ -523,6 +563,7 @@ struct FileManagerFeature {
             case let .openFavorite(favorite):
                 guard state.currentPath != favorite.url.path else { return .none }
                 state.navigateToFolder(favorite.url.path, sidebarItemName: favorite.name)
+                state.resetComposer()
                 return .send(.fsItems(.loadItems(path: favorite.url.path)))
 
             case let .insertFavorite(url, index):
@@ -580,6 +621,7 @@ struct FileManagerFeature {
             case let .openLocation(location):
                 guard state.currentPath != location.url.path else { return .none }
                 state.navigateToFolder(location.url.path, sidebarItemName: location.name)
+                state.resetComposer()
                 return .send(.fsItems(.loadItems(path: location.url.path)))
 
             case .loadTags:
@@ -594,6 +636,7 @@ struct FileManagerFeature {
 
             case let .showTag(tagItem):
                 state.navigate(to: .tags(tagItem.name), sidebarItemName: tagItem.name)
+                state.resetComposer()
                 return .send(.fsItems(.loadTagItems(tagName: tagItem.name)))
 
             case let .changeSortKey(key):
@@ -639,6 +682,7 @@ struct FileManagerFeature {
                         return .none
                     }
                     state.navigateToFolder(item.fullPath, sidebarItemName: item.name)
+                    state.resetComposer()
                     return .send(.fsItems(.loadItems(path: item.fullPath)))
 
                 default:
@@ -661,18 +705,23 @@ struct FileManagerFeature {
                 state.gridTextSize = size
                 return .none
 
-            case .enterComposeMode:
-                state.isComposeMode = true
-                state.composeText = ""
+            case .composer:
                 return .none
 
-            case .exitComposeMode:
-                state.isComposeMode = false
-                state.composeText = ""
+            case .enterComposer:
+                let isFirstOpen = state.composer.isPresented == false
+                    && state.composer.scopes.isEmpty
+                    && state.composer.conditions.isEmpty
+                    && state.composer.text.isEmpty
+
+                if isFirstOpen {
+                    state.composer.scopes = [state.currentPath]
+                }
+                state.composer.isPresented = true
                 return .none
 
-            case let .setComposeText(text):
-                state.composeText = text
+            case .exitComposer:
+                state.composer.isPresented = false
                 return .none
             }
         }

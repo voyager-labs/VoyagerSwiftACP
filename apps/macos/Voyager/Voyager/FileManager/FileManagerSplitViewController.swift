@@ -132,7 +132,7 @@ class FileManagerSplitViewController: NSViewController, NSSplitViewDelegate {
     private func observeSidebarState() {
         Task { @MainActor in
             for await sidebarVisible in store.publisher.sidebarVisible.values {
-                guard let mainSplitView = mainSplitView,
+                guard let mainSplitView,
                       let sidebarView = sidebarHosting?.view else { continue }
 
                 if sidebarVisible {
@@ -216,7 +216,7 @@ extension FileManagerSplitViewController {
 
     private func setupSidebar(in mainSplit: NSSplitView) {
         let sidebarHosting = NSHostingController(
-            rootView: SidebarView(store: store).ignoresSafeArea(.all, edges: .top)
+            rootView: SidebarView(store: store).ignoresSafeArea(.all, edges: .top),
         )
         sidebarHosting.safeAreaRegions = []
 
@@ -246,7 +246,7 @@ extension FileManagerSplitViewController {
         let initialLeading: CGFloat = store.sidebarVisible ? 0 : contentVerticalMargin
         containerLeadingConstraint = container.leadingAnchor.constraint(
             equalTo: wrapper.leadingAnchor,
-            constant: initialLeading
+            constant: initialLeading,
         )
 
         NSLayoutConstraint.activate([
@@ -254,16 +254,16 @@ extension FileManagerSplitViewController {
             container.bottomAnchor.constraint(equalTo: wrapper.bottomAnchor, constant: -contentVerticalMargin),
             containerLeadingConstraint,
             container.trailingAnchor.constraint(equalTo: wrapper.trailingAnchor, constant: -contentVerticalMargin),
-        ].compactMap { $0 })
+        ].compactMap(\.self))
 
         mainSplit.addArrangedSubview(wrapper)
         mainSplit.setHoldingPriority(.defaultLow, forSubviewAt: 1)
     }
 
     private func setupContentPane(in container: NSView) {
-        let store = self.store
+        let store = store
         let contentHosting = NSHostingController(
-            rootView: WithViewStore(store, observe: \.isComposeMode) { viewStore in
+            rootView: WithViewStore(store, observe: \.composer.isPresented) { viewStore in
                 ZStack(alignment: .top) {
                     VStack(spacing: 0) {
                         ToolbarView(store: store)
@@ -271,13 +271,21 @@ extension FileManagerSplitViewController {
                     }
 
                     if viewStore.state {
-                        ComposeModeOverlay(store: store)
+                        Color.clear
+                            .contentShape(Rectangle())
+                            .onTapGesture {
+                                store.send(.exitComposer)
+                            }
+                    }
+
+                    if viewStore.state {
+                        ComposerView(store: store)
                             .transition(.move(edge: .top).combined(with: .opacity))
                     }
                 }
                 .ignoresSafeArea(.all, edges: .top)
                 .animation(.spring(response: 0.25, dampingFraction: 0.75), value: viewStore.state)
-            }
+            },
         )
         contentHosting.safeAreaRegions = []
         contentHosting.view.translatesAutoresizingMaskIntoConstraints = false
@@ -290,16 +298,16 @@ extension FileManagerSplitViewController {
 
     private func setupContentPaneConstraints(container: NSView, contentView: NSView) {
         contentLeadingConstraint = contentView.leadingAnchor.constraint(
-            equalTo: container.leadingAnchor
+            equalTo: container.leadingAnchor,
         )
         contentTopConstraint = contentView.topAnchor.constraint(
-            equalTo: container.topAnchor
+            equalTo: container.topAnchor,
         )
         contentBottomConstraint = contentView.bottomAnchor.constraint(
-            equalTo: container.bottomAnchor
+            equalTo: container.bottomAnchor,
         )
         contentTrailingConstraint = contentView.trailingAnchor.constraint(
-            equalTo: container.trailingAnchor
+            equalTo: container.trailingAnchor,
         )
         NSLayoutConstraint.activate(
             [
@@ -307,7 +315,7 @@ extension FileManagerSplitViewController {
                 contentTopConstraint,
                 contentBottomConstraint,
                 contentTrailingConstraint,
-            ].compactMap { $0 }
+            ].compactMap(\.self),
         )
     }
 
@@ -341,7 +349,7 @@ extension FileManagerSplitViewController {
                     red: 245 / 255.0,
                     green: 245 / 255.0,
                     blue: 245 / 255.0,
-                    alpha: 1.0
+                    alpha: 1.0,
                 ).cgColor
             }
         }
@@ -397,16 +405,16 @@ extension FileManagerSplitViewController {
     private func createDivider() -> ContentInspectorDivider {
         let divider = ContentInspectorDivider()
         divider.onResize = { [weak self] deltaX in
-            guard let self = self,
-                  let container = self.contentInspectorContainer else { return }
+            guard let self,
+                  let container = contentInspectorContainer else { return }
 
-            let newInspectorWidth = self.inspectorWidth + deltaX
+            let newInspectorWidth = inspectorWidth + deltaX
             let minInspectorWidth: CGFloat = 200
             let maxInspectorWidth: CGFloat = container.bounds.width - 400
 
-            if newInspectorWidth >= minInspectorWidth && newInspectorWidth <= maxInspectorWidth {
-                self.inspectorWidth = newInspectorWidth
-                self.inspectorWidthConstraint?.constant = self.inspectorWidth
+            if newInspectorWidth >= minInspectorWidth, newInspectorWidth <= maxInspectorWidth {
+                inspectorWidth = newInspectorWidth
+                inspectorWidthConstraint?.constant = inspectorWidth
             }
         }
         return divider
@@ -419,7 +427,7 @@ extension FileManagerSplitViewController {
             contentTrailing.isActive = false
         }
         contentTrailingConstraint = contentView.trailingAnchor.constraint(
-            equalTo: inspectorView.leadingAnchor
+            equalTo: inspectorView.leadingAnchor,
         )
         contentTrailingConstraint?.isActive = true
 
@@ -430,13 +438,13 @@ extension FileManagerSplitViewController {
             constraint?.isActive = false
         }
         inspectorTrailingConstraint = inspectorView.trailingAnchor.constraint(
-            equalTo: container.trailingAnchor
+            equalTo: container.trailingAnchor,
         )
         inspectorTopConstraint = inspectorView.topAnchor.constraint(
-            equalTo: container.topAnchor
+            equalTo: container.topAnchor,
         )
         inspectorBottomConstraint = inspectorView.bottomAnchor.constraint(
-            equalTo: container.bottomAnchor
+            equalTo: container.bottomAnchor,
         )
         inspectorWidthConstraint = inspectorView.widthAnchor.constraint(equalToConstant: inspectorWidth)
 
@@ -446,7 +454,7 @@ extension FileManagerSplitViewController {
                 inspectorTopConstraint,
                 inspectorBottomConstraint,
                 inspectorWidthConstraint,
-            ].compactMap { $0 }
+            ].compactMap(\.self),
         )
 
         setupDividerConstraints(container: container, inspectorView: inspectorView)
@@ -460,7 +468,7 @@ extension FileManagerSplitViewController {
         ].forEach { $0?.isActive = false }
         dividerLeadingConstraint = divider.leadingAnchor.constraint(
             equalTo: inspectorView.leadingAnchor,
-            constant: -1
+            constant: -1,
         )
         dividerTopConstraint = divider.topAnchor.constraint(equalTo: container.topAnchor)
         dividerBottomConstraint = divider.bottomAnchor.constraint(equalTo: container.bottomAnchor)
@@ -471,7 +479,7 @@ extension FileManagerSplitViewController {
                 dividerTopConstraint,
                 dividerBottomConstraint,
                 divider.widthAnchor.constraint(equalToConstant: 2),
-            ].compactMap { $0 }
+            ].compactMap(\.self),
         )
     }
 
@@ -480,7 +488,7 @@ extension FileManagerSplitViewController {
             contentTrailing.isActive = false
         }
         contentTrailingConstraint = contentView.trailingAnchor.constraint(
-            equalTo: container.trailingAnchor
+            equalTo: container.trailingAnchor,
         )
         contentTrailingConstraint?.isActive = true
 
@@ -495,22 +503,22 @@ extension FileManagerSplitViewController {
     func splitView(
         _: NSSplitView,
         constrainMinCoordinate proposedMinimumPosition: CGFloat,
-        ofSubviewAt dividerIndex: Int
+        ofSubviewAt dividerIndex: Int,
     ) -> CGFloat {
         switch dividerIndex {
-        case 0: return 150
-        default: return proposedMinimumPosition
+        case 0: 150
+        default: proposedMinimumPosition
         }
     }
 
     func splitView(
         _: NSSplitView,
         constrainMaxCoordinate proposedMaximumPosition: CGFloat,
-        ofSubviewAt dividerIndex: Int
+        ofSubviewAt dividerIndex: Int,
     ) -> CGFloat {
         switch dividerIndex {
-        case 0: return 280
-        default: return proposedMaximumPosition
+        case 0: 280
+        default: proposedMaximumPosition
         }
     }
 
