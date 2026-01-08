@@ -4,7 +4,6 @@ enum OnboardingStep: String, CaseIterable, Codable, Sendable {
     case welcome
     case betaAccess
     case permissions
-    case indexingPreset
     case complete
 
     var index: Int {
@@ -19,8 +18,6 @@ enum OnboardingStep: String, CaseIterable, Codable, Sendable {
             "Beta Access"
         case .permissions:
             "Permissions"
-        case .indexingPreset:
-            "Indexing Preset"
         case .complete:
             "Complete"
         }

@@ -88,8 +88,6 @@ struct OnboardingView: View {
             BetaAccessStepView(store: store.scope(state: \.betaAccess, action: \.betaAccess))
         case .permissions:
             PermissionsStepView(store: store.scope(state: \.permissions, action: \.permissions))
-        case .indexingPreset:
-            IndexingPresetStepView(store: store.scope(state: \.indexingPreset, action: \.indexingPreset))
         case .complete:
             CompleteStepView(store: store.scope(state: \.complete, action: \.complete))
         }

@@ -19,3 +19,5 @@
 - `1.4.permissions-fda-launch-at-login.md` — FDA 권한 스텝 + (선택) Launch at Login
 - `1.5.obt-preview-and-complete.md` — OBT 프리셋 프리뷰 + 완료 처리 + 파일 관리자 창 오픈
 - `1.6.beta-access-server-verification.md` — Beta Access 서버 검증 스텝
+- `1.7.onboarding-modern-style.md` — 온보딩 UI 현대화(Raycast 스타일) + 상단 인셋 바 내비게이션
+- `1.7.onboarding-modern-style.md` — 온보딩 UI 현대화(Raycast 스타일) + 상단 인셋 바 내비게이션

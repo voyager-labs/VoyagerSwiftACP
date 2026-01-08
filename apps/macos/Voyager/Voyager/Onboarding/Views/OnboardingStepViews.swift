@@ -210,7 +210,7 @@ struct PermissionsStepView: View {
                 .cornerRadius(8)
 
                 VStack(alignment: .leading, spacing: 6) {
-                    Text("Indexing will run in the background from `/` (coming soon).")
+                    Text("Indexing is running in the background from `/`.")
                         .font(.system(size: 12))
                     Text(
                         "Indexing runs via the backend binary launched by VoyagerHelper. "
@@ -218,6 +218,46 @@ struct PermissionsStepView: View {
                     )
                     .font(.system(size: 11))
                     .foregroundStyle(.secondary)
+                }
+
+                if viewStore.showsIndexingPresetPreview {
+                    VStack(alignment: .leading, spacing: 8) {
+                        HStack(spacing: 8) {
+                            Text("Indexing Preset (OBT)")
+                                .font(.system(size: 13, weight: .semibold))
+                            Text(viewStore.indexingPresetStatusLabel)
+                                .font(.system(size: 11, weight: .semibold))
+                                .foregroundStyle(.secondary)
+                            Spacer()
+                        }
+
+                        Text("Editing will be available later (OBT).")
+                            .font(.system(size: 12))
+                            .foregroundStyle(.secondary)
+
+                        VStack(alignment: .leading, spacing: 4) {
+                            Text("Included Paths")
+                                .font(.system(size: 11, weight: .semibold))
+                                .foregroundStyle(.secondary)
+                            ForEach(["~/", "/Applications"], id: \.self) { path in
+                                Text("• \(path)")
+                                    .font(.system(size: 11))
+                            }
+                        }
+
+                        VStack(alignment: .leading, spacing: 4) {
+                            Text("Excluded Paths")
+                                .font(.system(size: 11, weight: .semibold))
+                                .foregroundStyle(.secondary)
+                            ForEach(["~/Library", "/System"], id: \.self) { path in
+                                Text("• \(path)")
+                                    .font(.system(size: 11))
+                            }
+                        }
+                    }
+                    .padding(12)
+                    .background(.ultraThinMaterial)
+                    .cornerRadius(8)
                 }
             }
             .frame(maxWidth: .infinity, alignment: .leading)
@@ -231,30 +271,6 @@ struct PermissionsStepView: View {
     }
 }
 
-struct IndexingPresetStepView: View {
-    let store: StoreOf<IndexingPresetFeature>
-
-    var body: some View {
-        WithViewStore(store, observe: { $0 }) { viewStore in
-            VStack(alignment: .leading, spacing: 12) {
-                Text("Indexing Preset")
-                    .font(.system(size: 20, weight: .semibold))
-                Text("Indexing preset UI will be implemented in Story 1.5.")
-                    .font(.system(size: 13))
-                    .foregroundStyle(.secondary)
-                Toggle(
-                    "Mark step as complete (placeholder)",
-                    isOn: viewStore.binding(
-                        get: { $0.isComplete },
-                        send: { .setCompleted($0) },
-                    ),
-                )
-            }
-            .frame(maxWidth: .infinity, alignment: .leading)
-        }
-    }
-}
-
 struct CompleteStepView: View {
     let store: StoreOf<CompleteFeature>
 
@@ -263,16 +279,30 @@ struct CompleteStepView: View {
             VStack(alignment: .leading, spacing: 12) {
                 Text("Complete")
                     .font(.system(size: 20, weight: .semibold))
-                Text("Final confirmation and post-onboarding actions land in Story 1.5.")
+                Text("You're all set. We'll open a file manager window next.")
                     .font(.system(size: 13))
                     .foregroundStyle(.secondary)
-                Toggle(
-                    "Mark step as complete (placeholder)",
-                    isOn: viewStore.binding(
-                        get: { $0.isComplete },
-                        send: { .setCompleted($0) },
-                    ),
-                )
+
+                HStack(spacing: 8) {
+                    Button("Start using Voyager") {
+                        viewStore.send(.startUsingTapped)
+                    }
+                    .disabled(viewStore.isOpeningWindow)
+
+                    if viewStore.isOpeningWindow {
+                        ProgressView()
+                            .controlSize(.small)
+                    }
+                }
+
+                if let error = viewStore.openWindowError {
+                    Text(error)
+                        .font(.system(size: 12))
+                        .foregroundStyle(.red)
+                    Button("Retry") {
+                        viewStore.send(.retryTapped)
+                    }
+                }
             }
             .frame(maxWidth: .infinity, alignment: .leading)
         }

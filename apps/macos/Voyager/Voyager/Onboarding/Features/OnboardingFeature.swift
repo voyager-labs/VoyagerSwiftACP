@@ -11,7 +11,6 @@ struct OnboardingFeature {
         var welcome = WelcomeFeature.State()
         var betaAccess = BetaAccessFeature.State()
         var permissions = PermissionsFeature.State()
-        var indexingPreset = IndexingPresetFeature.State()
         var complete = CompleteFeature.State()
 
         var totalSteps: Int {
@@ -41,7 +40,6 @@ struct OnboardingFeature {
                     welcomeComplete: welcome.isComplete,
                     betaAccessComplete: betaAccess.isComplete,
                     permissionsComplete: permissions.isComplete,
-                    indexingPresetComplete: indexingPreset.isComplete,
                     completeComplete: complete.isComplete,
                 ),
             )
@@ -55,8 +53,6 @@ struct OnboardingFeature {
                 betaAccess.isComplete
             case .permissions:
                 permissions.isComplete
-            case .indexingPreset:
-                indexingPreset.isComplete
             case .complete:
                 complete.isComplete
             }
@@ -74,7 +70,6 @@ struct OnboardingFeature {
                 betaAccess.reason = .missingInput
             }
             permissions.isComplete = stepState.permissionsComplete
-            indexingPreset.isComplete = stepState.indexingPresetComplete
             complete.isComplete = stepState.completeComplete
         }
 
@@ -99,7 +94,6 @@ struct OnboardingFeature {
         case welcome(WelcomeFeature.Action)
         case betaAccess(BetaAccessFeature.Action)
         case permissions(PermissionsFeature.Action)
-        case indexingPreset(IndexingPresetFeature.Action)
         case complete(CompleteFeature.Action)
     }
 
@@ -115,9 +109,6 @@ struct OnboardingFeature {
         }
         Scope(state: \.permissions, action: \.permissions) {
             PermissionsFeature()
-        }
-        Scope(state: \.indexingPreset, action: \.indexingPreset) {
-            IndexingPresetFeature()
         }
         Scope(state: \.complete, action: \.complete) {
             CompleteFeature()
@@ -176,7 +167,25 @@ struct OnboardingFeature {
                 state.showResumeBanner = false
                 return .none
 
-            case .welcome, .betaAccess, .permissions, .indexingPreset, .complete:
+            case .complete(.startUsingTapped), .complete(.retryTapped):
+                let snapshot = state.progressSnapshot
+                state.complete.openWindowError = nil
+                return .run { [onboardingProgressStore] send in
+                    onboardingProgressStore.save(snapshot)
+                    let path = await MainActor.run {
+                        SettingsFeature.getDefaultTabPath()
+                    }
+                    let opened = await MainActor.run {
+                        // TODO: Replace direct AppDelegate usage with a dedicated window client
+                        // once FileManagerWindow management is addressed.
+                        guard let delegate = AppDelegate.shared else { return false }
+                        delegate.createNewWindow(path: path)
+                        return true
+                    }
+                    await send(.complete(.openWindowResponse(opened)))
+                }
+
+            case .welcome, .betaAccess, .permissions, .complete:
                 let snapshot = state.progressSnapshot
                 return .run { _ in
                     progressStore.save(snapshot)

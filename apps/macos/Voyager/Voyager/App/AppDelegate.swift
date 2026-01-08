@@ -32,7 +32,12 @@ class AppDelegate: NSObject, NSApplicationDelegate, ObservableObject {
     }
 
     private var isOnboardingRequired: Bool {
-        !UserDefaults.standard.bool(forKey: SettingsKeys.onboardingCompleted)
+        switch OnboardingProgressStore.liveValue.load() {
+        case let .success(snapshot):
+            !snapshot.stepState.completeComplete
+        case .empty, .resetRequired:
+            true
+        }
     }
 
     func updateMenuState(store: StoreOf<FileManagerFeature>?) {

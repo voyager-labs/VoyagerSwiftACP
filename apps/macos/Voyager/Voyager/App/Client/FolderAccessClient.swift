@@ -57,46 +57,14 @@ extension FolderAccessClient: DependencyKey {
     nonisolated static var liveValue: FolderAccessClient {
         FolderAccessClient(requestAccess: {
             await MainActor.run {
-                let panel = NSOpenPanel()
-                panel.canChooseDirectories = true
-                panel.canChooseFiles = false
-                panel.allowsMultipleSelection = true
-                panel.directoryURL = FileManager.default.homeDirectoryForCurrentUser
-                panel.message = "Select Desktop, Documents, and Downloads."
-                panel.prompt = "Grant Access"
+                let fileManager = FileManager.default
+                let desktopURL = fileManager.urls(for: .desktopDirectory, in: .userDomainMask).first
+                let documentsURL = fileManager.urls(for: .documentDirectory, in: .userDomainMask).first
+                let downloadsURL = fileManager.urls(for: .downloadsDirectory, in: .userDomainMask).first
 
-                guard panel.runModal() == .OK else {
-                    return FolderAccessResult(
-                        desktop: .notGranted,
-                        documents: .notGranted,
-                        downloads: .notGranted,
-                    )
-                }
-
-                let selectedPaths = Set(panel.urls.map(\.standardizedFileURL.path))
-
-                let desktopPath = FileManager.default.urls(for: .desktopDirectory, in: .userDomainMask).first?.path
-                let documentsPath = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first?.path
-                let downloadsPath = FileManager.default.urls(for: .downloadsDirectory, in: .userDomainMask).first?.path
-
-                let desktopStatus = desktopPath
-                    .map {
-                        selectedPaths.contains($0)
-                            ? FolderAccessPermission.granted
-                            : FolderAccessPermission.notGranted
-                    } ?? FolderAccessPermission.notGranted
-                let documentsStatus = documentsPath
-                    .map {
-                        selectedPaths.contains($0)
-                            ? FolderAccessPermission.granted
-                            : FolderAccessPermission.notGranted
-                    } ?? FolderAccessPermission.notGranted
-                let downloadsStatus = downloadsPath
-                    .map {
-                        selectedPaths.contains($0)
-                            ? FolderAccessPermission.granted
-                            : FolderAccessPermission.notGranted
-                    } ?? FolderAccessPermission.notGranted
+                let desktopStatus = requestFolderAccess(desktopURL)
+                let documentsStatus = requestFolderAccess(documentsURL)
+                let downloadsStatus = requestFolderAccess(downloadsURL)
 
                 return FolderAccessResult(
                     desktop: desktopStatus,
@@ -132,5 +100,19 @@ extension DependencyValues {
     nonisolated var folderAccessClient: FolderAccessClient {
         get { self[FolderAccessClient.self] }
         set { self[FolderAccessClient.self] = newValue }
+    }
+}
+
+private func requestFolderAccess(_ url: URL?) -> FolderAccessPermission {
+    guard let url else { return .notGranted }
+    do {
+        _ = try FileManager.default.contentsOfDirectory(
+            at: url,
+            includingPropertiesForKeys: nil,
+            options: [.skipsHiddenFiles],
+        )
+        return .granted
+    } catch {
+        return .notGranted
     }
 }

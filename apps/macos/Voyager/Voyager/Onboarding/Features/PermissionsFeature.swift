@@ -65,6 +65,14 @@ struct PermissionsFeature {
                 FolderAccessItem(id: "downloads", title: "Downloads", status: result.downloads),
             ]
         }
+
+        var showsIndexingPresetPreview: Bool {
+            fullDiskAccessStatus == .granted
+        }
+
+        var indexingPresetStatusLabel: String {
+            "Not applied"
+        }
     }
 
     enum Action: Sendable {
@@ -106,6 +114,9 @@ struct PermissionsFeature {
                 )
                 state.fullDiskAccessStatus = resolvedStatus
                 state.isComplete = resolvedStatus == .granted
+                if resolvedStatus == .granted {
+                    // TODO(VOY-117, VOY-88): 인덱싱 포트 연동 및 엔드포인트 완료 후, FDA 승인 직후 인덱싱 트리거를 연결해야 함.
+                }
                 return .none
 
             case .openSystemSettingsTapped:

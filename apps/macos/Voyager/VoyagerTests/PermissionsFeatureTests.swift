@@ -189,4 +189,14 @@ final class PermissionsFeatureTests: XCTestCase {
         XCTAssertEqual(store.state.filesAndFoldersMessage, "You can grant access later in System Settings.")
         await store.finish()
     }
+
+    func testIndexingPresetPreviewVisibility() {
+        var state = PermissionsFeature.State()
+
+        XCTAssertFalse(state.showsIndexingPresetPreview)
+
+        state.fullDiskAccessStatus = .granted
+
+        XCTAssertTrue(state.showsIndexingPresetPreview)
+    }
 }

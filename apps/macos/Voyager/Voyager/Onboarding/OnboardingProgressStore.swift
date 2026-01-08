@@ -5,20 +5,17 @@ nonisolated struct OnboardingStepState: Codable, Equatable, Sendable {
     var welcomeComplete: Bool
     var betaAccessComplete: Bool
     var permissionsComplete: Bool
-    var indexingPresetComplete: Bool
     var completeComplete: Bool
 
     init(
         welcomeComplete: Bool = true,
         betaAccessComplete: Bool = false,
         permissionsComplete: Bool = false,
-        indexingPresetComplete: Bool = false,
         completeComplete: Bool = false,
     ) {
         self.welcomeComplete = welcomeComplete
         self.betaAccessComplete = betaAccessComplete
         self.permissionsComplete = permissionsComplete
-        self.indexingPresetComplete = indexingPresetComplete
         self.completeComplete = completeComplete
     }
 }
