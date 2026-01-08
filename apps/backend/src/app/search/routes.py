@@ -9,7 +9,7 @@ from app.search.schemas import (
 )
 from app.search.services import SearchService, get_search_service
 
-router = APIRouter(prefix="/search", tags=["search"])
+router = APIRouter(prefix="/collection", tags=["collection"])
 
 
 @router.post("", response_model=SearchResponse)
@@ -28,7 +28,6 @@ async def query_search(
     return await service.query_search(
         query=request.query,
         filters=request.filters,
-        limit=50,
     )
 
 
@@ -47,5 +46,4 @@ async def filter_search(
     """
     return await service.filter_search(
         filters=request.filters,
-        limit=50,
     )
