@@ -7,7 +7,7 @@ struct VisualEffectBackgroundView: NSViewRepresentable {
 
     init(
         material: NSVisualEffectView.Material,
-        blendingMode: NSVisualEffectView.BlendingMode = .behindWindow
+        blendingMode: NSVisualEffectView.BlendingMode = .behindWindow,
     ) {
         self.material = material
         self.blendingMode = blendingMode

@@ -17,12 +17,12 @@ struct ViewMenuCommands: Commands {
             Button(
                 appDelegate.currentFileManagerStore?.sidebarVisible == true
                     ? "Hide Sidebar"
-                    : "Show Sidebar"
+                    : "Show Sidebar",
             ) {
                 let newValue = !(appDelegate.currentFileManagerStore?.sidebarVisible ?? true)
                 appDelegate.currentFileManagerStore?.send(.setSidebarVisible(newValue))
             }
-            .keyboardShortcut("s", modifiers: .command)
+            .keyboardShortcut("s", modifiers: [.command, .control])
             .disabled(appDelegate.currentFileManagerStore == nil)
         }
 
@@ -42,7 +42,7 @@ struct ViewMenuCommands: Commands {
             Button(
                 appDelegate.currentFileManagerStore?.showHiddenFiles == true
                     ? "Hide Hidden Files"
-                    : "Show Hidden Files"
+                    : "Show Hidden Files",
             ) {
                 appDelegate.currentFileManagerStore?.send(.toggleShowHiddenFiles)
             }

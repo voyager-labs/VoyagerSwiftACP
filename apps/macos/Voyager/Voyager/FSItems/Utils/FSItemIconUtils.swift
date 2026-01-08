@@ -5,10 +5,22 @@ import UniformTypeIdentifiers
 enum FSItemIconUtils {
     private static let iconCache = NSCache<NSString, NSImage>()
     private static let thumbnailCache = NSCache<NSString, NSImage>()
+    private static let voycollIconName = "voycollFileIcon"
 
     static func icon(for item: FSItem) -> NSImage {
         if item.fullPath == "/" {
             return NSWorkspace.shared.icon(forFile: "/")
+        }
+
+        if item.fileExtension.lowercased() == "voycoll" {
+            let cacheKey = "asset:\(voycollIconName)"
+            if let cached = iconCache.object(forKey: cacheKey as NSString) {
+                return cached
+            }
+            if let icon = NSImage(named: voycollIconName) {
+                iconCache.setObject(icon, forKey: cacheKey as NSString)
+                return icon
+            }
         }
 
         if item.isDirectory {

@@ -84,8 +84,8 @@ struct InspectorPaneView: View {
                 .fill(chatInputBackgroundColor)
                 .overlay(
                     RoundedRectangle(cornerRadius: 8)
-                        .strokeBorder(Color.white.opacity(0.1), lineWidth: 1)
-                )
+                        .strokeBorder(Color.white.opacity(0.1), lineWidth: 1),
+                ),
         )
         .padding(.horizontal, 8)
     }
@@ -98,7 +98,7 @@ struct InspectorPaneView: View {
                 .frame(width: 24, height: 24)
                 .background(
                     Circle()
-                        .fill(Color(red: 0.843, green: 0.714, blue: 0.322))
+                        .fill(Color(red: 0.843, green: 0.714, blue: 0.322)),
                 )
         }
         .buttonStyle(.plain)
@@ -127,8 +127,8 @@ struct InspectorPaneView: View {
                 .fill(folderChipBackgroundColor)
                 .overlay(
                     RoundedRectangle(cornerRadius: 4)
-                        .strokeBorder(folderChipBorderColor, lineWidth: 1)
-                )
+                        .strokeBorder(folderChipBorderColor, lineWidth: 1),
+                ),
         )
     }
 
@@ -148,33 +148,33 @@ struct InspectorPaneView: View {
 
     private var chatInputBackgroundColor: Color {
         if colorScheme == .dark {
-            return Color(red: 44 / 255.0, green: 43 / 255.0, blue: 40 / 255.0)
+            Color(red: 44 / 255.0, green: 43 / 255.0, blue: 40 / 255.0)
         } else {
-            return Color(nsColor: .controlBackgroundColor)
+            Color(nsColor: .controlBackgroundColor)
         }
     }
 
     private var folderChipBackgroundColor: Color {
         if colorScheme == .dark {
-            return Color(red: 0x37 / 255.0, green: 0x34 / 255.0, blue: 0x30 / 255.0)
+            Color(red: 0x37 / 255.0, green: 0x34 / 255.0, blue: 0x30 / 255.0)
         } else {
-            return Color(red: 0xFB / 255.0, green: 0xFB / 255.0, blue: 0xFB / 255.0)
+            Color(red: 0xFB / 255.0, green: 0xFB / 255.0, blue: 0xFB / 255.0)
         }
     }
 
     private var folderChipBorderColor: Color {
         if colorScheme == .dark {
-            return Color(red: 0x4D / 255.0, green: 0x49 / 255.0, blue: 0x43 / 255.0)
+            Color(red: 0x4D / 255.0, green: 0x49 / 255.0, blue: 0x43 / 255.0)
         } else {
-            return Color.black.opacity(0.06)
+            Color.black.opacity(0.06)
         }
     }
 
     private var folderChipTextColor: Color {
         if colorScheme == .dark {
-            return Color(red: 218 / 255.0, green: 215 / 255.0, blue: 210 / 255.0)
+            Color(red: 218 / 255.0, green: 215 / 255.0, blue: 210 / 255.0)
         } else {
-            return Color(red: 50 / 255.0, green: 50 / 255.0, blue: 50 / 255.0)
+            Color(red: 50 / 255.0, green: 50 / 255.0, blue: 50 / 255.0)
         }
     }
 }

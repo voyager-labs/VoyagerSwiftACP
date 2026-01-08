@@ -3,7 +3,7 @@ import SwiftUI
 
 final class KeyCommandHostingView: NSView {
     var onKeyDown: ((NSEvent) -> Void)?
-    static weak var currentFirstResponder: KeyCommandHostingView?
+    weak static var currentFirstResponder: KeyCommandHostingView?
 
     override func keyDown(with event: NSEvent) {
         onKeyDown?(event)

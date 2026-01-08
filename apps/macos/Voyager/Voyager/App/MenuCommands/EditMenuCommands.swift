@@ -4,6 +4,8 @@ import SwiftUI
 
 struct EditMenuCommands: Commands {
     @ObservedObject private var appDelegate: AppDelegate
+    private let undoSelector = Selector(("undo:"))
+    private let redoSelector = Selector(("redo:"))
 
     init() {
         guard let shared = AppDelegate.shared else {
@@ -12,36 +14,106 @@ struct EditMenuCommands: Commands {
         appDelegate = shared
     }
 
+    private func isTextEditingResponder() -> Bool {
+        guard let responder = NSApp.keyWindow?.firstResponder else { return false }
+        return responder is NSTextView || responder is NSTextField
+    }
+
+    private func textResponderUndoManager() -> UndoManager? {
+        (NSApp.keyWindow?.firstResponder as? NSResponder)?.undoManager
+    }
+
+    private func canUndoInTextResponder() -> Bool {
+        guard isTextEditingResponder() else { return false }
+        return textResponderUndoManager()?.canUndo == true
+    }
+
+    private func canRedoInTextResponder() -> Bool {
+        guard isTextEditingResponder() else { return false }
+        return textResponderUndoManager()?.canRedo == true
+    }
+
     var body: some Commands {
+        let canUndoResponder = canUndoInTextResponder()
+        let canRedoResponder = canRedoInTextResponder()
+        let canUndo = canUndoResponder || appDelegate.canUndo
+        let canRedo = canRedoResponder || appDelegate.canRedo
+
+        CommandGroup(replacing: .undoRedo) {
+            Button("Undo") {
+                if canUndoInTextResponder(),
+                   NSApp.sendAction(undoSelector, to: nil, from: nil)
+                {
+                    return
+                }
+                appDelegate.currentFileManagerStore?.send(.fsItems(.requestUndo))
+            }
+            .keyboardShortcut("z", modifiers: .command)
+            .disabled(!canUndo)
+
+            Button("Redo") {
+                if canRedoInTextResponder(),
+                   NSApp.sendAction(redoSelector, to: nil, from: nil)
+                {
+                    return
+                }
+                appDelegate.currentFileManagerStore?.send(.fsItems(.requestRedo))
+            }
+            .keyboardShortcut("z", modifiers: [.command, .shift])
+            .disabled(!canRedo)
+        }
+
+        CommandGroup(after: .undoRedo) {
+            Button("Open Collection Filter Composer") {
+                guard let store = appDelegate.currentFileManagerStore else { return }
+                if store.composer.isPresented {
+                    store.send(.composer(.focusQueryField))
+                } else {
+                    store.send(.enterComposer)
+                }
+            }
+            .keyboardShortcut("f", modifiers: .command)
+            .disabled(appDelegate.currentFileManagerStore == nil)
+        }
+
         CommandGroup(replacing: .pasteboard) {
             Button("Cut") {
-                appDelegate.currentFileManagerStore?.send(.fsItems(.cutSelectedItems))
+                if NSApp.sendAction(#selector(NSText.cut(_:)), to: nil, from: nil) {
+                } else {
+                    appDelegate.currentFileManagerStore?.send(.fsItems(.cutSelectedItems))
+                }
             }
             .keyboardShortcut("x", modifiers: .command)
-            .disabled(!appDelegate.hasSelectedItems)
+            .disabled(false)
 
             Button("Copy") {
-                appDelegate.currentFileManagerStore?.send(.fsItems(.copySelectedItems))
+                if NSApp.sendAction(#selector(NSText.copy(_:)), to: nil, from: nil) {
+                } else {
+                    appDelegate.currentFileManagerStore?.send(.fsItems(.copySelectedItems))
+                }
             }
             .keyboardShortcut("c", modifiers: .command)
-            .disabled(!appDelegate.hasSelectedItems)
+            .disabled(false)
 
             Button("Paste") {
-                if let currentPath = appDelegate.currentFileManagerStore?.currentPath {
-                    appDelegate.currentFileManagerStore?
-                        .send(.fsItems(.pasteItems(destinationPath: currentPath)))
+                if NSApp.sendAction(#selector(NSText.paste(_:)), to: nil, from: nil) {
+                } else if let currentPath = appDelegate.currentFileManagerStore?.currentPath {
+                    appDelegate.currentFileManagerStore?.send(.fsItems(.pasteItems(destinationPath: currentPath)))
                 }
             }
             .keyboardShortcut("v", modifiers: .command)
-            .disabled(!appDelegate.hasClipboardItems)
+            .disabled(false)
         }
 
         CommandGroup(replacing: .textEditing) {
             Button("Select All") {
-                appDelegate.currentFileManagerStore?.send(.fsItems(.selectAll))
+                if NSApp.sendAction(#selector(NSText.selectAll(_:)), to: nil, from: nil) {
+                } else {
+                    appDelegate.currentFileManagerStore?.send(.fsItems(.selectAll))
+                }
             }
             .keyboardShortcut("a", modifiers: .command)
-            .disabled(!appDelegate.hasStore)
+            .disabled(false)
         }
     }
 }

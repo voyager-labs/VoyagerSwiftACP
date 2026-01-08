@@ -5,9 +5,11 @@ import SwiftUI
 struct ContentPaneView: View {
     let store: StoreOf<FileManagerFeature>
     @FocusState private var isKeyCommandFocused: Bool
+    private static let undoSelector = Selector(("undo:"))
+    private static let redoSelector = Selector(("redo:"))
 
     private var statusText: String {
-        let total = store.fsItems.items.count
+        let total = store.fsItems.displayItems.count
         let selected = store.fsItems.selectedIds.count
 
         if selected == 0 {
@@ -17,13 +19,28 @@ struct ContentPaneView: View {
         }
     }
 
+    private var isCollectionSearching: Bool {
+        let isSearching = store.composer.isLoadingSearch || store.composer.isLoadingFilters
+        let hasContext = store.fsItems.isCollectionMode
+            || store.pendingSearchQuery != nil
+            || !store.composer.scopes.isEmpty
+            || !store.composer.conditions.isEmpty
+        return isSearching && hasContext
+    }
+
     var body: some View {
         ZStack(alignment: .bottomTrailing) {
-            switch store.viewLayout {
-            case .list:
-                ContentPaneListView(store: store)
-            case .grid:
-                ContentPaneGridView(store: store)
+            VStack(spacing: 0) {
+                if isCollectionSearching {
+                    collectionLoadingView
+                } else {
+                    switch store.viewLayout {
+                    case .list:
+                        ContentPaneListView(store: store)
+                    case .grid:
+                        ContentPaneGridView(store: store)
+                    }
+                }
             }
 
             KeyCommandView { event in
@@ -36,7 +53,7 @@ struct ContentPaneView: View {
             if !store.inspectorPaneExists {
                 StatusBarButton(
                     text: statusText,
-                    action: { store.send(.toggleInspector) }
+                    action: { store.send(.toggleInspector) },
                 )
                 .padding(.trailing, 24)
                 .padding(.bottom, 20)
@@ -62,8 +79,22 @@ struct ContentPaneView: View {
                 .contentShape(Rectangle())
                 .onTapGesture {
                     restoreKeyCommandFocus()
-                }
+                },
         )
+    }
+
+    private var collectionLoadingView: some View {
+        GeometryReader { _ in
+            ZStack {
+                Color.clear
+
+                ProgressView()
+                    .progressViewStyle(.circular)
+                    .controlSize(.large)
+            }
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+            .allowsHitTesting(false)
+        }
     }
 
     private func restoreKeyCommandFocus() {
@@ -124,7 +155,7 @@ struct ContentPaneView: View {
         if event.keyCode == 125 {
             if store.fsItems.selectedIds.count == 1,
                let selectedId = store.fsItems.selectedIds.first,
-               let selectedItem = store.fsItems.items.first(where: { $0.id == selectedId }),
+               let selectedItem = store.fsItems.displayItems.first(where: { $0.id == selectedId }),
                selectedItem.isDirectory
             {
                 AppDelegate.shared?.createNewTab(path: selectedItem.fullPath)
@@ -188,6 +219,8 @@ struct ContentPaneView: View {
     private func handleCommandKeys(_ event: NSEvent) {
         guard event.modifierFlags.contains(.command) else { return }
 
+        if handleUndoRedoKeys(event) { return }
+
         if event.characters == ".", event.modifierFlags.contains(.shift) {
             store.send(.toggleShowHiddenFiles)
         } else if let number = Int(event.characters ?? ""), (1 ... 9).contains(number) {
@@ -195,5 +228,48 @@ struct ContentPaneView: View {
         } else if event.characters == "0" {
             AppDelegate.shared?.selectTab(at: 9)
         }
+    }
+
+    private func handleUndoRedoKeys(_ event: NSEvent) -> Bool {
+        guard event.modifierFlags.isDisjoint(with: [.option, .control]),
+              event.charactersIgnoringModifiers == "z"
+        else { return false }
+
+        if store.composer.isPresented {
+            return false
+        }
+
+        if event.modifierFlags.contains(.shift) {
+            if canRedoInTextResponder(),
+               NSApp.sendAction(Self.redoSelector, to: nil, from: nil)
+            {
+                return true
+            }
+            store.send(.fsItems(.requestRedo))
+            return true
+        }
+
+        if canUndoInTextResponder(),
+           NSApp.sendAction(Self.undoSelector, to: nil, from: nil)
+        {
+            return true
+        }
+        store.send(.fsItems(.requestUndo))
+        return true
+    }
+
+    private func isTextEditingResponder() -> Bool {
+        guard let responder = NSApp.keyWindow?.firstResponder else { return false }
+        return responder is NSTextView || responder is NSTextField
+    }
+
+    private func canUndoInTextResponder() -> Bool {
+        guard isTextEditingResponder() else { return false }
+        return (NSApp.keyWindow?.firstResponder as? NSResponder)?.undoManager?.canUndo == true
+    }
+
+    private func canRedoInTextResponder() -> Bool {
+        guard isTextEditingResponder() else { return false }
+        return (NSApp.keyWindow?.firstResponder as? NSResponder)?.undoManager?.canRedo == true
     }
 }
