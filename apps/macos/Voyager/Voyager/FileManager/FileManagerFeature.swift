@@ -605,18 +605,24 @@ struct FileManagerFeature {
                     return .concatenate(effects)
 
                 case let .failure(error):
-                    state.isOpeningCollectionFile = false
-                    state.openedCollectionName = nil
-                    state.openedCollectionBaseline = nil
                     if !state.backHistory.isEmpty {
                         state.backHistory.removeLast()
                     }
-                    return .run { _ in
-                        await showCollectionOpenErrorAlert(
-                            title: "Unable to Open Collection",
-                            message: error.localizedDescription,
-                        )
-                    }
+                    state.isOpeningCollectionFile = false
+                    state.openedCollectionName = nil
+                    state.openedCollectionURL = nil
+                    state.openedCollectionBaseline = nil
+                    state.resetComposer()
+                    let exitEffect = Self.exitCollectionMode(state: &state)
+                    return .merge(
+                        exitEffect,
+                        .run { _ in
+                            await showCollectionOpenErrorAlert(
+                                title: "Unable to Open Collection",
+                                message: error.localizedDescription,
+                            )
+                        },
+                    )
                 }
 
             case .openSelectedItem:
@@ -1042,33 +1048,55 @@ struct FileManagerFeature {
                 case let .searchResponse(.failure(error)):
                     state.pendingSearchQuery = nil
                     if state.isOpeningCollectionFile {
-                        state.isOpeningCollectionFile = false
-                        return .run { _ in
-                            await showCollectionOpenErrorAlert(
-                                title: "Unable to Run Collection Search",
-                                message: """
-                                \(error.localizedDescription)
-
-                                Make sure the backend is running and try again.
-                                """,
-                            )
+                        if !state.backHistory.isEmpty {
+                            state.backHistory.removeLast()
                         }
+                        state.isOpeningCollectionFile = false
+                        state.openedCollectionName = nil
+                        state.openedCollectionURL = nil
+                        state.openedCollectionBaseline = nil
+                        state.resetComposer()
+                        let exitEffect = Self.exitCollectionMode(state: &state)
+                        return .merge(
+                            exitEffect,
+                            .run { _ in
+                                await showCollectionOpenErrorAlert(
+                                    title: "Unable to Run Collection Search",
+                                    message: """
+                                    \(error.localizedDescription)
+
+                                    Make sure the backend is running and try again.
+                                    """,
+                                )
+                            },
+                        )
                     }
                     return .none
 
                 case let .filtersResponse(.failure(error)):
                     if state.isOpeningCollectionFile {
-                        state.isOpeningCollectionFile = false
-                        return .run { _ in
-                            await showCollectionOpenErrorAlert(
-                                title: "Unable to Apply Collection Filters",
-                                message: """
-                                \(error.localizedDescription)
-
-                                Make sure the backend is running and try again.
-                                """,
-                            )
+                        if !state.backHistory.isEmpty {
+                            state.backHistory.removeLast()
                         }
+                        state.isOpeningCollectionFile = false
+                        state.openedCollectionName = nil
+                        state.openedCollectionURL = nil
+                        state.openedCollectionBaseline = nil
+                        state.resetComposer()
+                        let exitEffect = Self.exitCollectionMode(state: &state)
+                        return .merge(
+                            exitEffect,
+                            .run { _ in
+                                await showCollectionOpenErrorAlert(
+                                    title: "Unable to Apply Collection Filters",
+                                    message: """
+                                    \(error.localizedDescription)
+
+                                    Make sure the backend is running and try again.
+                                    """,
+                                )
+                            },
+                        )
                     }
                     return .none
 
