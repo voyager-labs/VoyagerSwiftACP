@@ -79,6 +79,11 @@
 			path = Voyager;
 			sourceTree = "<group>";
 		};
+		24DD04D6008045F2B081D402 /* Shared */ = {
+			isa = PBXFileSystemSynchronizedRootGroup;
+			path = Shared;
+			sourceTree = "<group>";
+		};
 		7E14EDDE2E86622E005AC834 /* VoyagerTests */ = {
 			isa = PBXFileSystemSynchronizedRootGroup;
 			path = VoyagerTests;
@@ -154,6 +159,7 @@
 			isa = PBXGroup;
 			children = (
 				7E14EDCE2E86622C005AC834 /* Voyager */,
+				24DD04D6008045F2B081D402 /* Shared */,
 				7E14EDDE2E86622E005AC834 /* VoyagerTests */,
 				7E14EDE82E86622E005AC834 /* VoyagerUITests */,
 				7E14EE242E866E82005AC834 /* VoyagerHelper */,
@@ -194,6 +200,7 @@
 			);
 			fileSystemSynchronizedGroups = (
 				7E14EDCE2E86622C005AC834 /* Voyager */,
+				24DD04D6008045F2B081D402 /* Shared */,
 			);
 			name = Voyager;
 			packageProductDependencies = (
@@ -271,6 +278,7 @@
 			);
 			fileSystemSynchronizedGroups = (
 				7E14EE242E866E82005AC834 /* VoyagerHelper */,
+				24DD04D6008045F2B081D402 /* Shared */,
 			);
 			name = VoyagerHelper;
 			packageProductDependencies = (

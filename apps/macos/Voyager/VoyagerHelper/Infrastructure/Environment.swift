@@ -2,99 +2,26 @@ import Foundation
 import SwiftDotenv
 
 struct Environment {
-    enum EnvironmentType: String {
-        case dev // 개발 환경 설정
-        case prod // 프로덕션 환경 설정
+    typealias AppEnv = EnvironmentLoader.AppEnv
+    typealias BackendMode = EnvironmentLoader.BackendMode
 
-        var envFileName: String {
-            switch self {
-            case .dev: ".env.dev"
-            case .prod: ".env.prod"
-            }
-        }
-    }
-
-    enum BackendMode: String {
-        case source // 로컬 uv 사용 (*-Dev 스킴)
-        case bundled // Nuitka 바이너리 사용 (*-Prod 스킴)
+    enum BackendDirectoryError: Error, Equatable {
+        case projectRootNotFound
+        case resourceURLNotFound
+        case backendDirectoryNotFound(path: String)
     }
 
     let envVars: [String: String]
-    let environmentType: EnvironmentType
+    let appEnv: AppEnv
     let backendMode: BackendMode
-    var backendPort: Int?
-    var backendURL: String? {
-        guard let host = value(for: "PUBLIC_BACKEND_HOST") else {
-            return nil
-        }
-        guard let port = backendPort else {
-            return nil
-        }
-        return "http://\(host):\(port)"
-    }
 
     init() {
-        environmentType = Self.detectEnvironmentType()
-        backendMode = Self.detectBackendMode()
+        appEnv = EnvironmentLoader.detectAppEnv()
+        backendMode = EnvironmentLoader.detectBackendMode()
 
-        Self.loadEnvFile(environmentType.envFileName, for: backendMode)
+        try? EnvironmentLoader.loadEnvFiles()
 
         envVars = Dotenv.values
-
-        if let portString = envVars["PUBLIC_BACKEND_PORT"],
-           let port = Int(portString),
-           port > 0
-        {
-            backendPort = port
-        }
-    }
-
-    private static func loadEnvFile(_ envFileName: String, for backendMode: BackendMode) {
-        switch backendMode {
-        case .source:
-            if let projectRoot = findProjectRoot() {
-                let projectEnv = projectRoot.appendingPathComponent(envFileName)
-                if FileManager.default.fileExists(atPath: projectEnv.path) {
-                    try? Dotenv.configure(atPath: projectEnv.path, overwrite: true)
-                    return
-                }
-            }
-        case .bundled:
-            if let resources = Bundle.main.resourceURL {
-                let bundledEnv = resources.appendingPathComponent(envFileName)
-                if FileManager.default.fileExists(atPath: bundledEnv.path) {
-                    try? Dotenv.configure(atPath: bundledEnv.path, overwrite: true)
-                    return
-                }
-            }
-        }
-    }
-
-    private static func detectEnvironmentType() -> EnvironmentType {
-        if let infoEnv = Bundle.main.infoDictionary?["APP_ENV"] as? String,
-           let envType = EnvironmentType(rawValue: infoEnv)
-        {
-            return envType
-        }
-        return .dev
-    }
-
-    private static func detectBackendMode() -> BackendMode {
-        // 스킴에서 주입된 환경변수 (Xcode Run 시)
-        if let envMode = ProcessInfo.processInfo.environment["BACKEND_MODE"],
-           let mode = BackendMode(rawValue: envMode)
-        {
-            return mode
-        }
-
-        // Info.plist에서 읽기 (빌드 스크립트에서 주입)
-        if let infoMode = Bundle.main.infoDictionary?["BACKEND_MODE"] as? String,
-           let mode = BackendMode(rawValue: infoMode)
-        {
-            return mode
-        }
-
-        return .source
     }
 
     func value(for key: String) -> String? {
@@ -104,56 +31,44 @@ struct Environment {
         return nil
     }
 
-    func backendDirectory() -> String? {
+    func backendDirectory() throws -> String {
         switch backendMode {
         case .bundled:
-            detectBundledBackendDirectory()?.path
+            try detectBundledBackendDirectory().path
         case .source:
-            detectSourceBackendDirectory()?.path
+            try detectSourceBackendDirectory().path
         }
     }
 
-    private func detectSourceBackendDirectory() -> URL? {
-        guard let projectRoot = Self.findProjectRoot() else { return nil }
+    private func detectSourceBackendDirectory() throws -> URL {
+        guard let projectRoot = backendMode.projectRoot else {
+            throw BackendDirectoryError.projectRootNotFound
+        }
 
         let appsBackend = projectRoot.appendingPathComponent("apps/backend")
         let fm = FileManager.default
 
-        if fm.fileExists(atPath: appsBackend.appendingPathComponent("pyproject.toml").path)
+        guard fm.fileExists(atPath: appsBackend.appendingPathComponent("pyproject.toml").path)
             || fm.fileExists(atPath: appsBackend.appendingPathComponent("uv.lock").path)
-        {
-            return appsBackend
+        else {
+            throw BackendDirectoryError.backendDirectoryNotFound(path: appsBackend.path)
         }
-        return nil
+
+        return appsBackend
     }
 
-    private static func findProjectRoot() -> URL? {
-        // 환경 변수에서 프로젝트 루트 읽기 (Xcode 스킴에서 설정)
-        if let envRoot = ProcessInfo.processInfo.environment["VOYAGER_PROJECT_ROOT"],
-           !envRoot.isEmpty
-        {
-            return URL(fileURLWithPath: envRoot)
+    private func detectBundledBackendDirectory() throws -> URL {
+        guard let resources = Bundle.main.resourceURL else {
+            throw BackendDirectoryError.resourceURLNotFound
         }
-
-        // 현재 디렉토리에서 프로젝트 루트 찾기
-        let cwd = FileManager.default.currentDirectoryPath
-        if !cwd.isEmpty, cwd != "/" {
-            return URL(fileURLWithPath: cwd)
-        }
-
-        return nil
-    }
-
-    private func detectBundledBackendDirectory() -> URL? {
-        guard let resources = Bundle.main.resourceURL else { return nil }
-        let fm = FileManager.default
 
         // Nuitka 바이너리 디렉토리 (server/Voyager Backend)
         let serverPath = resources.appendingPathComponent("server")
-        if fm.fileExists(atPath: serverPath.path) {
-            return serverPath
+
+        guard FileManager.default.fileExists(atPath: serverPath.path) else {
+            throw BackendDirectoryError.backendDirectoryNotFound(path: serverPath.path)
         }
 
-        return nil
+        return serverPath
     }
 }

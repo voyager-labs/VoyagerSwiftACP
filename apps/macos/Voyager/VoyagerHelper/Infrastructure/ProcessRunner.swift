@@ -36,25 +36,31 @@ final class ProcessRunner {
     }
 
     private func startWithUv() {
-        guard let backendDirectory = environment.backendDirectory() else {
-            logger.error("backendDirectory not found")
+        let backendDirectory: String
+        do {
+            backendDirectory = try environment.backendDirectory()
+        } catch {
+            logger.error("backendDirectory not found: \(error)")
             return
         }
 
-        let appEnv = environment.environmentType.rawValue
+        let appEnv = EnvironmentLoader.detectAppEnv()
         let proc = makeProcess(
             directory: backendDirectory,
             executable: "/usr/bin/env",
-            arguments: ["uv", "run", appEnv],
+            arguments: ["uv", "run", appEnv.rawValue],
             environment: resolvedSourceProcessEnvironment(),
         )
 
-        runProcess(proc, description: "uv run \(appEnv)")
+        runProcess(proc, description: "uv run \(appEnv.rawValue)")
     }
 
     private func startWithBundledBinary() {
-        guard let serverDirectory = environment.backendDirectory() else {
-            logger.error("server directory not found")
+        let serverDirectory: String
+        do {
+            serverDirectory = try environment.backendDirectory()
+        } catch {
+            logger.error("server directory not found: \(error)")
             return
         }
 
@@ -99,7 +105,7 @@ final class ProcessRunner {
         if let current = env["APP_ENV"], !current.isEmpty {
             return env
         }
-        env["APP_ENV"] = environment.environmentType.rawValue
+        env["APP_ENV"] = EnvironmentLoader.detectAppEnv().rawValue
         return env
     }
 
