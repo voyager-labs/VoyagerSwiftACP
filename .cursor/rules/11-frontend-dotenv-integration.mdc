@@ -35,12 +35,11 @@ private func loadEnvConfig() {
 
 ## Integration with existing systems
 
-- **Backend launcher**: Use `BackendManagerDotenv.swift` for dotenv-based backend management
+- **Backend launcher**: Use VoyagerHelper's `Environment.swift` + `ProcessRunner.swift` for dotenv-based backend management
 - **Logging**: Resolve log file paths relative to project root
 - **Environment management**: Single source of truth via `.env` file
-- **Keychain merge**: When extra secrets live in macOS Keychain, invoke `scripts/load-secrets-from-keychain.sh` (or the same logic from Swift) to export required keys, then inject them into the helper/backend process environment. Nothing should write those values back to disk or UI; they only exist in-memory while the process runs.
+- **Keychain merge**: (선택) 필요 시 Keychain 기반 시크릿 로딩을 추가하되, 디스크/로그에 쓰지 않고 프로세스 환경으로만 주입합니다.
 
 References
-- Implementation: [BackendManagerDotenv.swift](mdc:apps/macos/Voyager/VoyagerHelper/BackendManagerDotenv.swift)
-- Keychain script: [scripts/load-secrets-from-keychain.sh](mdc:scripts/load-secrets-from-keychain.sh)
+- Implementation: [Environment.swift](mdc:apps/macos/Voyager/VoyagerHelper/Infrastructure/Environment.swift)
 - Overview: [10-frontend-overview.mdc](mdc:.cursor/rules/10-frontend-overview.mdc)

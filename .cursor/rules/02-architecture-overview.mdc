@@ -40,9 +40,9 @@ See [20-backend-overview.mdc](mdc:.cursor/rules/20-backend-overview.mdc) for det
 ## Cross-cutting Concerns
 
 ### Configuration Management
-- **Frontend**: Swift-dotenv for environment variables, `.env` at repo root
+- **Frontend**: Swift-dotenv for environment variables, `.env.{dev|prod}` at repo root (또는 번들 리소스)
 - **Backend**: Hydra configuration with environment-specific overrides
-- **Shared**: Common environment keys for integration (`BACKEND_URL`, `APP_ENV`)
+- **Shared**: Common environment keys for integration (`PUBLIC_BACKEND_HOST`, `PUBLIC_BACKEND_PORT`, `APP_ENV`)
 
 ### Error Handling
 - See [03-error-handling-policy.mdc](mdc:.cursor/rules/03-error-handling-policy.mdc) for detailed error handling guidelines

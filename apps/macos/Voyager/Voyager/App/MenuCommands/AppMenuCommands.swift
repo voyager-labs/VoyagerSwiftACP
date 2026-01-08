@@ -7,6 +7,12 @@ struct AppMenuCommands: Commands {
     @State private var hasFocusHistory: Bool = false
 
     var body: some Commands {
+        CommandGroup(after: .appInfo) {
+            Button("Check for Updates...") {
+                AppDelegate.shared?.checkForUpdates()
+            }
+        }
+
         CommandGroup(replacing: .newItem) {
             Button("New Window") {
                 AppDelegate.shared?.createNewWindow()

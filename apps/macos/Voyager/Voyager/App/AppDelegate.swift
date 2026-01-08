@@ -10,8 +10,13 @@ extension Notification.Name {
 
 class AppDelegate: NSObject, NSApplicationDelegate, ObservableObject {
     static var shared: AppDelegate?
+    private lazy var appLifecycleStore = Store(initialState: AppLifecycleFeature.State()) {
+        AppLifecycleFeature()
+    }
 
-    private let helperManager = HelperLifecycleManager()
+    private lazy var updaterStore = Store(initialState: UpdaterFeature.State()) {
+        UpdaterFeature()
+    }
 
     @Published var hasSelectedItems: Bool = false
     @Published var hasClipboardItems: Bool = false
@@ -62,9 +67,9 @@ class AppDelegate: NSObject, NSApplicationDelegate, ObservableObject {
         }
     }
 
-    @MainActor
     func applicationWillFinishLaunching(_: Notification) {
-        helperManager.start()
+        appLifecycleStore.send(.willFinishLaunching)
+        updaterStore.send(.configureAtLaunch)
     }
 
     func applicationDidFinishLaunching(_: Notification) {
@@ -72,6 +77,14 @@ class AppDelegate: NSObject, NSApplicationDelegate, ObservableObject {
         if windowControllers.isEmpty {
             createNewWindow()
         }
+    }
+
+    func checkForUpdates() {
+        updaterStore.send(.checkForUpdates)
+    }
+
+    func setAutomaticUpdate(enabled: Bool) {
+        updaterStore.send(.setAutomaticUpdate(enabled))
     }
 
     func applicationSupportsSecureRestorableState(_: NSApplication) -> Bool {
@@ -229,7 +242,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, ObservableObject {
     }
 
     func applicationWillTerminate(_: Notification) {
-        helperManager.stop()
+        appLifecycleStore.send(.willTerminate)
     }
 
     func application(_: NSApplication, openFile filename: String) -> Bool {

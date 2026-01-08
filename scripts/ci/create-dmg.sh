@@ -19,7 +19,10 @@ trap 'rm -rf "${STAGE_DIR}"' EXIT
 mkdir -p "$(dirname "${DMG_PATH}")"
 rm -f "${DMG_PATH}"
 
-cp -R "${APP_PATH}" "${STAGE_DIR}/Voyager.app"
+CONTENTS_DIR="${STAGE_DIR}/contents"
+mkdir -p "${CONTENTS_DIR}"
+
+cp -R "${APP_PATH}" "${CONTENTS_DIR}/Voyager.app"
 
 CREATE_DMG_BIN=""
 if command -v create-dmg >/dev/null 2>&1; then
@@ -55,7 +58,7 @@ if [[ -n "${CREATE_DMG_BIN}" ]]; then
     --format UDZO
     --app-drop-link 470 190
     "${DMG_PATH}"
-    "${STAGE_DIR}"
+    "${CONTENTS_DIR}"
   )
 
   if [[ "${DMG_PRETTIFY}" == "1" ]]; then
@@ -68,7 +71,7 @@ if [[ -n "${CREATE_DMG_BIN}" ]]; then
       --hide-extension "Voyager.app"
       --app-drop-link 470 190
       "${DMG_PATH}"
-      "${STAGE_DIR}"
+      "${CONTENTS_DIR}"
     )
   else
     CREATE_DMG_ARGS=(--skip-jenkins "${CREATE_DMG_ARGS[@]}")
@@ -76,10 +79,10 @@ if [[ -n "${CREATE_DMG_BIN}" ]]; then
 
   "${CREATE_DMG_BIN}" "${CREATE_DMG_ARGS[@]}"
 else
-  ln -s /Applications "${STAGE_DIR}/Applications"
+  ln -s /Applications "${CONTENTS_DIR}/Applications"
   hdiutil create \
     -volname "Voyager" \
-    -srcfolder "${STAGE_DIR}" \
+    -srcfolder "${CONTENTS_DIR}" \
     -ov \
     -format UDZO \
     "${DMG_PATH}"
