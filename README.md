@@ -21,7 +21,7 @@
 - **`.env.prod`** (Git tracked): 프로덕션 환경 템플릿
   - 비밀키 제외한 기본 설정만 포함
   - Release 빌드에서 사용
-  - CI/CD에서 GitHub Secrets 주입
+  - Secrets는 파일에 포함하지 않음 (앱 번들 노출 방지)
 
 ### 환경 자동 감지
 
@@ -39,23 +39,22 @@
 - **`*-Dev` 스킴** (`BACKEND_MODE=source`): 로컬 `uv` 환경 사용
   - `apps/backend` 디렉토리에서 `uv run dev` 실행
   - 로컬 개발 시 빠른 반복 가능
-- **`*-Prod` 스킴** (`BACKEND_MODE=bundled`): 번들된 venv 사용
-  - `VoyagerHelper.app/Contents/Resources/helper-runtime` 사용
+- **`*-Prod` 스킴** (`BACKEND_MODE=bundled`): 번들된 서버 바이너리 사용
+  - `VoyagerHelper.app/Contents/Resources/server/server.bin` 실행
   - 독립형 앱 번들 (배포용)
 
 ### 필수 환경 변수
 
 백엔드 기동에 필요한 기본 키:
 
-- `VOYAGER_HOST=127.0.0.1`
-- `VOYAGER_PORT=8000`
-- `BACKEND_URL=http://${VOYAGER_HOST}:${VOYAGER_PORT}`
+- `PUBLIC_BACKEND_HOST=127.0.0.1`
+- `PUBLIC_BACKEND_PORT=0` (0이면 동적 할당)
 
 ### 보안
 
 - 비밀키는 커밋 금지
 - 로컬 개발: `.env.dev` 파일 사용 (Git ignored)
-- CI/CD: GitHub Secrets를 `.env.prod`에 주입
+- CI/CD: `.env.prod`는 secrets 없이 복사 (앱 번들 노출 방지)
 
 ## Quick Start
 

@@ -126,12 +126,12 @@ class SearchConditionConverter:
    - 문서 → extension: ["pdf", "doc", "docx", "ppt", "pptx", "xls", "xlsx"]
    - 압축파일 → extension: ["zip", "rar", "7z", "tar", "gz"]
 
-3. 날짜 (⚠️ ISO 8601 형식):
-   - 오늘: 현재 날짜의 시작 (예: "2025-12-25T00:00:00")
-   - 어제: 현재-1일
-   - 최근 7일: 현재-7일
+3. 날짜 (⚠️ YYYY-MM-DD 형식):
+   - 오늘: 현재 날짜 (예: "2025-12-25")
+   - 어제: 현재-1일 (예: "2025-12-24")
+   - 최근 7일: 현재-7일 (예: "2025-12-18")
    - 최근 30일: 현재-30일
-   - ⚠️ 날짜 값은 반드시 ISO 8601 문자열!
+   - ⚠️ 날짜 값은 반드시 YYYY-MM-DD 문자열! (시간 포함 금지)
 
 4. "다운로드" 관련 (⚠️ 중요):
    - "다운로드한 파일" → addedAt 사용
@@ -152,12 +152,12 @@ class SearchConditionConverter:
 
 입력: "어제 다운로드한 파일"
 출력: [
-  {{"propertyKey": "addedAt", "operator": "gt", "value": "2025-12-24T00:00:00"}}
+  {{"propertyKey": "addedAt", "operator": "gt", "value": "2025-12-24"}}
 ]
 
 입력: "최근 7일 1080p 이상 영상"
 출력: [
-  {{"propertyKey": "modifiedAt", "operator": "gt", "value": "2025-12-18T00:00:00"}},
+  {{"propertyKey": "modifiedAt", "operator": "gt", "value": "2025-12-18"}},
   {{"propertyKey": "pixelHeight", "operator": "gte", "value": 1080}},
   {{"propertyKey": "extension", "operator": "in", "value": ["mp4", "mov", "avi"]}}
 ]
@@ -195,7 +195,7 @@ class SearchConditionConverter:
   {{\"propertyKey\": \"pixelHeight\", \"operator\": \"gte\", \"value\": 2160}},
   {{\"propertyKey\": \"duration\", \"operator\": \"gte\", \"value\": 600}},
   {{\"propertyKey\": \"extension\", \"operator\": \"eq\", \"value\": \"mp4\"}},
-  {{\"propertyKey\": \"modifiedAt\", \"operator\": \"gt\", \"value\": \"2025-12-18T00:00:00\"}}
+  {{\"propertyKey\": \"modifiedAt\", \"operator\": \"gt\", \"value\": \"2025-12-18\"}}
 ]
 
 === 잘못된 예시 (이렇게 하지 마세요!) ===

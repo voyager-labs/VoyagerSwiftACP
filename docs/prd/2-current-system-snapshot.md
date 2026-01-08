@@ -4,7 +4,7 @@
   - 진입점: `apps/macos/Voyager/Voyager/App/VoyagerApp.swift`
   - AppDelegate/윈도우 관리: `AppDelegate.swift`, `FileManagerWindowController.swift`
   - 파일 관리자 기능 스켈레톤: `Features/FileManager/*` (뷰, 상태, 키입력 훅)
-  - 백엔드 프로세스 관리: `VoyagerHelper/BackendManager*.swift` (`uv run dev` 등 호출)
+  - 백엔드 프로세스 관리: `VoyagerHelper` 앱 타겟(`ProcessRunner`가 `uv run ...` 또는 `server.bin` 실행)
 - 백엔드 서비스: `apps/backend`
   - 진입점: `src/app/main.py` (FastAPI, lifespan에서 설정/DB 초기화)
   - DB 및 마이그레이션: SQLModel + Alembic (`infra/db/**`, `alembic.ini`)

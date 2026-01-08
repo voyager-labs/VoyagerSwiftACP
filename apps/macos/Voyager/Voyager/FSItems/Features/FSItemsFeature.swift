@@ -834,6 +834,14 @@ struct FSItemsFeature {
                 state.shouldScrollToSelection = false
                 return .none
 
+            case .navigateFolder:
+                // 폴더 이동은 부모 Feature에서 처리
+                return .none
+
+            case .openCollectionFile:
+                // 콜렉션 파일 열기는 부모 Feature에서 처리
+                return .none
+
             case .openSelectedItem:
                 guard !state.selectedIds.isEmpty else {
                     return .none

@@ -18,7 +18,6 @@ class NaturalQueryRequest(BaseModel):
     """자연어 검색 요청"""
 
     query: str
-    limit: int = 50
 
 
 # 앱 시작 시 DB 초기화 (이미 main.py에서 수행됨)
@@ -147,17 +146,15 @@ async def get_stats():
         }
 
 
-@router.get("/search")
+@router.get("/collection")
 async def search_files(
     q: str = Query(..., min_length=1, description="검색 키워드"),
-    limit: int = Query(default=50, ge=1, le=500),
 ):
     """파일 이름으로 검색"""
     with engine_manager.session(autocommit=False) as session:
         stmt = (
             select(FileEntrySchema)
             .where(FileEntrySchema.name_full.contains(q))
-            .limit(limit)
             .order_by(FileEntrySchema.modification_date.desc())
         )
 
@@ -251,7 +248,6 @@ async def query_files(request: NaturalQueryRequest):
                 FROM file_entries
                 WHERE {generated_sql}
                 ORDER BY modification_date DESC
-                LIMIT {request.limit}
             """
 
             stmt = text(sql)

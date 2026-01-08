@@ -11,12 +11,12 @@ This repository is a monorepo that contains a macOS SwiftUI app (frontend) and a
 
 - macOS app root: [apps/macos/Voyager/](mdc:apps/macos/Voyager)
 - Frontend entry: [apps/macos/Voyager/Voyager/VoyagerApp.swift](mdc:apps/macos/Voyager/Voyager/VoyagerApp.swift)
-- Helper/launcher: [apps/macos/Voyager/VoyagerHelper/BackendManagerDotenv.swift](mdc:apps/macos/Voyager/VoyagerHelper/BackendManagerDotenv.swift)
+- Helper/launcher: [apps/macos/Voyager/VoyagerHelper/VoyagerHelperApp.swift](mdc:apps/macos/Voyager/VoyagerHelper/VoyagerHelperApp.swift)
 
 - Backend root: [apps/backend/](mdc:apps/backend)
 - Backend entry: [apps/backend/src/app/main.py](mdc:apps/backend/src/app/main.py)
 - Backend CLI: [apps/backend/src/app/cli.py](mdc:apps/backend/src/app/cli.py)
-- Backend config loader: [apps/backend/src/app/config.py](mdc:apps/backend/src/app/config.py)
+- Backend config loader: [apps/backend/src/app/config/__init__.py](mdc:apps/backend/src/app/config/__init__.py)
 - Hydra configs: [apps/backend/src/conf/config.yaml](mdc:apps/backend/src/conf/config.yaml), [apps/backend/src/conf/env/dev.yaml](mdc:apps/backend/src/conf/env/dev.yaml), [apps/backend/src/conf/env/prod.yaml](mdc:apps/backend/src/conf/env/prod.yaml)
 
 ## How to run (high-level)
@@ -40,4 +40,3 @@ See [01-dev-run-and-env.mdc](mdc:.cursor/rules/01-dev-run-and-env.mdc) for detai
 
 - Paths in rules and examples use absolute-style monorepo paths (e.g., `apps/backend/...`, `apps/macos/...`).
 - See [04-security-and-secrets.mdc](mdc:.cursor/rules/04-security-and-secrets.mdc) for secrets management guidelines.
-
