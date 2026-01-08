@@ -834,20 +834,23 @@ struct FSItemsFeature {
                 state.shouldScrollToSelection = false
                 return .none
 
-            case .navigateFolder:
-                // 폴더 이동은 부모 Feature에서 처리
-                return .none
-
-            case .openCollectionFile:
-                // 콜렉션 파일 열기는 부모 Feature에서 처리
-                return .none
-
             case .openSelectedItem:
                 guard !state.selectedIds.isEmpty else {
                     return .none
                 }
 
                 let selectedItems = getSelectedItems(selectedIds: state.selectedIds, items: state.displayItems)
+                let selectedCollections = selectedItems.filter {
+                    $0.fileExtension.lowercased() == "voycoll"
+                }
+                if !selectedCollections.isEmpty, selectedCollections.count == selectedItems.count {
+                    if selectedCollections.count == 1, let item = selectedCollections.first {
+                        return .send(.openCollectionFile(URL(fileURLWithPath: item.fullPath)))
+                    }
+                    return .concatenate(selectedCollections.map {
+                        .send(.openCollectionFile(URL(fileURLWithPath: $0.fullPath)))
+                    })
+                }
                 let selectedFolders = selectedItems.filter(\.isDirectory)
                 let selectedFiles = selectedItems.filter { !$0.isDirectory }
 
