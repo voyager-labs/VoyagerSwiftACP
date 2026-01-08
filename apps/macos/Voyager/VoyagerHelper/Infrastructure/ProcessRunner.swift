@@ -2,15 +2,26 @@ import Darwin
 import Foundation
 import Logging
 
-final class ProcessRunner {
-    private let environment: Environment
-    private var process: Process?
-    private var stderrPipe: Pipe?
-    private var assignedPort: Int?
-    var onPortAssigned: ((Int) -> Void)?
-    private let logger = Logger(label: "VoyagerHelper")
+struct BackendProcessConfig {
+    let directory: String
+    let executable: String
+    let arguments: [String]?
+    let environment: [String: String]
+    let description: String
+}
 
-    init(environment: Environment) {
+final class ProcessRunner {
+    enum Error: Swift.Error, Equatable {
+        case backendDirectoryError(Environment.BackendDirectoryError)
+        case processNameNotConfigured
+        case binaryNotFound(path: String)
+    }
+
+    private var process: Process?
+    private let logger = Logger(label: "VoyagerHelper")
+    private let environment: Environment
+
+    init(environment: Environment = Environment()) {
         self.environment = environment
     }
 
@@ -18,115 +29,102 @@ final class ProcessRunner {
         guard process == nil || process?.isRunning == false else { return }
         process = nil
 
-        // backend mode에 따라 실행 방식 결정
-        switch environment.backendMode {
-        case .bundled:
-            startWithBundledBinary()
-        case .source:
-            startWithUv()
+        let config: BackendProcessConfig
+        do {
+            config = try makeProcessConfig()
+        } catch {
+            logger.error("Failed to create process config: \(error)")
+            return
         }
+
+        let proc = makeProcess(from: config)
+        runProcess(proc, description: config.description)
     }
 
     func stop() {
         process?.terminate()
         process = nil
-        stderrPipe?.fileHandleForReading.readabilityHandler = nil
-        stderrPipe = nil
-        assignedPort = nil
     }
 
-    private func startWithUv() {
-        let backendDirectory: String
+    private func makeProcessConfig() throws -> BackendProcessConfig {
+        let directory: String
         do {
-            backendDirectory = try environment.backendDirectory()
-        } catch {
-            logger.error("backendDirectory not found: \(error)")
-            return
+            directory = try environment.backendDirectory()
+        } catch let error as Environment.BackendDirectoryError {
+            throw Error.backendDirectoryError(error)
         }
 
-        let appEnv = EnvironmentLoader.detectAppEnv()
-        let proc = makeProcess(
-            directory: backendDirectory,
-            executable: "/usr/bin/env",
-            arguments: ["uv", "run", appEnv.rawValue],
-            environment: resolvedSourceProcessEnvironment(),
-        )
+        let executable = try executablePath(in: directory)
+        let processEnv = resolveProcessEnvironment()
 
-        runProcess(proc, description: "uv run \(appEnv.rawValue)")
+        let (arguments, description): ([String]?, String) = switch environment.backendMode {
+        case .source: (["uv", "run", environment.appEnv.rawValue], "uv run \(environment.appEnv.rawValue)")
+        case .bundled: (nil, "Bundled binary")
+        }
+
+        return BackendProcessConfig(
+            directory: directory,
+            executable: executable,
+            arguments: arguments,
+            environment: processEnv,
+            description: description,
+        )
     }
 
-    private func startWithBundledBinary() {
-        let serverDirectory: String
-        do {
-            serverDirectory = try environment.backendDirectory()
-        } catch {
-            logger.error("server directory not found: \(error)")
-            return
+    private func executablePath(in directory: String) throws -> String {
+        switch environment.backendMode {
+        case .source:
+            return "/usr/bin/env"
+        case .bundled:
+            guard let processName = environment.value(for: "PUBLIC_BACKEND_PROCESS_NAME") else {
+                throw Error.processNameNotConfigured
+            }
+            let binaryPath = URL(fileURLWithPath: directory).appendingPathComponent(processName).path
+            guard FileManager.default.fileExists(atPath: binaryPath) else {
+                throw Error.binaryNotFound(path: binaryPath)
+            }
+            return binaryPath
         }
-
-        // Nuitka 바이너리 경로: server/Voyager Backend
-        let binaryPath = URL(fileURLWithPath: serverDirectory).appendingPathComponent("Voyager Backend").path
-        guard FileManager.default.fileExists(atPath: binaryPath) else {
-            logger.error("backend binary not found at \(binaryPath)")
-            return
-        }
-
-        let proc = makeProcess(
-            directory: serverDirectory,
-            executable: binaryPath,
-            environment: resolvedBackendEnvironment(),
-        )
-
-        runProcess(proc, description: "Bundled binary")
     }
 
-    private func makeProcess(
-        directory: String,
-        executable: String,
-        arguments: [String]? = nil,
-        environment: [String: String] = ProcessInfo.processInfo.environment,
-    ) -> Process {
+    /// 백엔드 프로세스에 필요한 최소한의 환경 변수만 설정합니다.
+    ///
+    /// Python 백엔드의 `load_config()`가 `APP_ENV`를 기반으로 `.env.{app_env}` 파일을
+    /// 자체적으로 로드하므로, 모든 dotenv 값을 주입할 필요가 없습니다.
+    ///
+    /// 주입되는 환경 변수:
+    /// - `APP_ENV`: Python이 올바른 `.env` 파일을 로드하도록 설정
+    /// - `BACKEND_MODE`: 백엔드 실행 모드 (source/bundled)
+    /// - `PATH` (source 모드만): `uv` 실행을 위해 homebrew 경로 추가
+    private func resolveProcessEnvironment() -> [String: String] {
+        var env: [String: String] = ProcessInfo.processInfo.environment
+
+        env["APP_ENV"] = environment.appEnv.rawValue
+        env["BACKEND_MODE"] = environment.backendMode.rawValue
+
+        // source 모드에서만 PATH에 homebrew 경로 추가 (uv 실행용)
+        if case .source = environment.backendMode {
+            let prefix = "/opt/homebrew/bin:/usr/local/bin"
+            if let currentPath = env["PATH"], !currentPath.isEmpty {
+                env["PATH"] = "\(prefix):\(currentPath)"
+            } else {
+                env["PATH"] = prefix
+            }
+        }
+
+        return env
+    }
+
+    private func makeProcess(from config: BackendProcessConfig) -> Process {
         let proc = Process()
-        proc.environment = environment
-        proc.currentDirectoryURL = URL(fileURLWithPath: directory)
-        proc.executableURL = URL(fileURLWithPath: executable)
-        proc.arguments = arguments ?? []
+        proc.environment = config.environment
+        proc.currentDirectoryURL = URL(fileURLWithPath: config.directory)
+        proc.executableURL = URL(fileURLWithPath: config.executable)
+        proc.arguments = config.arguments ?? []
         return proc
     }
 
-    private func resolvedBackendEnvironment() -> [String: String] {
-        var env: [String: String] = ProcessInfo.processInfo.environment
-        for (key, value) in environment.envVars {
-            if let current = env[key], !current.isEmpty {
-                continue
-            }
-            env[key] = value
-        }
-        if let current = env["APP_ENV"], !current.isEmpty {
-            return env
-        }
-        env["APP_ENV"] = EnvironmentLoader.detectAppEnv().rawValue
-        return env
-    }
-
-    private func resolvedSourceProcessEnvironment() -> [String: String] {
-        var env = resolvedBackendEnvironment()
-        let prefix = "/opt/homebrew/bin:/usr/local/bin"
-        if let currentPath = env["PATH"], !currentPath.isEmpty {
-            env["PATH"] = "\(prefix):\(currentPath)"
-        } else {
-            env["PATH"] = prefix
-        }
-        return env
-    }
-
     private func runProcess(_ proc: Process, description: String) {
-        let pipe = Pipe()
-        proc.standardError = pipe
-        stderrPipe = pipe
-
-        setupStderrParsing(pipe: pipe)
-
         do {
             try proc.run()
             process = proc
@@ -134,38 +132,5 @@ final class ProcessRunner {
         } catch {
             logger.error("Failed to start backend: \(error)")
         }
-    }
-
-    private func setupStderrParsing(pipe: Pipe) {
-        pipe.fileHandleForReading.readabilityHandler = { [weak self] handle in
-            let data = handle.availableData
-            guard !data.isEmpty else { return }
-
-            FileHandle.standardError.write(data)
-
-            guard let output = String(data: data, encoding: .utf8) else { return }
-
-            for line in output.components(separatedBy: .newlines) {
-                guard let port = Self.parsePort(from: line) else { continue }
-
-                DispatchQueue.main.sync { [weak self] in
-                    self?.assignedPort = port
-                    self?.onPortAssigned?(port)
-                    self?.logger.info("Backend port assigned: \(port)")
-                }
-                return
-            }
-        }
-    }
-
-    private nonisolated static func parsePort(from line: String) -> Int? {
-        // "Uvicorn running on http://{host}:{port}" 형식 파싱
-        guard line.contains("Uvicorn running on"),
-              let match = line.range(of: #"http://[^:]+:(\d+)"#, options: .regularExpression),
-              let portMatch = line.range(of: #":(\d+)"#, options: .regularExpression, range: match)
-        else { return nil }
-
-        let portString = line[portMatch].dropFirst() // ":" 제거
-        return Int(portString)
     }
 }
