@@ -1,5 +1,0 @@
-# @package _global_
-
-app:
-  env: prod
-  debug: false

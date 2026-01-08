@@ -12,15 +12,31 @@ MAIN_FILE = Path(__file__).parent / "main.py"
 
 
 def _load_env(app_env: str) -> None:
-    """APP_ENV에 맞는 .env 파일 로드"""
-    env_file = find_dotenv(filename=f".env.{app_env}")
-    load_dotenv(dotenv_path=env_file, override=False)
+    """환경 변수 파일 로드
+
+    로딩 순서 (override=False이므로 먼저 로드된 값 우선):
+    1. 프로세스 환경 변수 (이미 설정됨, 최우선)
+    2. .env.{BACKEND_MODE} (존재 시)
+    3. .env.{APP_ENV} (존재 시)
+    """
+    backend_mode = os.getenv("BACKEND_MODE", "source")
+
+    # BACKEND_MODE 파일 먼저 로드 (source/bundled)
+    backend_env_file = find_dotenv(filename=f".env.{backend_mode}")
+    if backend_env_file:
+        load_dotenv(dotenv_path=backend_env_file, override=False)
+
+    # APP_ENV 파일 로드 (dev/prod)
+    app_env_file = find_dotenv(filename=f".env.{app_env}")
+    if app_env_file:
+        load_dotenv(dotenv_path=app_env_file, override=False)
 
 
 def _with_env(default_env: str) -> dict[str, str]:
     _load_env(default_env)
     merged = os.environ.copy()
     merged.setdefault("APP_ENV", default_env)
+    merged.setdefault("BACKEND_MODE", "source")
     return merged
 
 

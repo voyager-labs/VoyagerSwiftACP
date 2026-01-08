@@ -16,7 +16,7 @@ from infra.db.engine import engine_manager
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    # Hydra config 로드
+    # 환경 변수 기반 설정 로드
     cfg = load_config()
     app.state.config = cfg
 
@@ -27,14 +27,12 @@ async def lifespan(app: FastAPI):
     init_summary = initialize_sqlite_db(get_db_config(cfg))
 
     logger = logging.getLogger("uvicorn.error")
-    # api_key_set = bool(cfg.llm.api_key) and str(cfg.llm.api_key).strip() != ""
     py_ver = platform.python_version()
     sqlite_ver = getattr(sqlite3, "sqlite_version", "")
     message = (
         "Environment initialized: "
-        f"app={cfg.app.name} env={cfg.app.env} "
+        f"app={cfg.app_name} env={cfg.app_env} "
         f"python={py_ver} sqlite={sqlite_ver or 'unknown'} "
-        # f"api_key_set={api_key_set} "
         f"db_rev={init_summary.current_rev}/{init_summary.head_rev}"
     )
     bar = "=" * max(60, len(message))
