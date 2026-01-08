@@ -62,7 +62,7 @@ enum SidebarUtils {
                 throw DecodingError.dataCorruptedError(
                     forKey: .url,
                     in: container,
-                    debugDescription: "Invalid URL string"
+                    debugDescription: "Invalid URL string",
                 )
             }
             url = decodedURL

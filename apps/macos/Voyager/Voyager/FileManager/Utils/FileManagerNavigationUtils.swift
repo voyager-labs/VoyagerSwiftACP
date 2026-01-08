@@ -7,6 +7,20 @@ enum FileManagerNavigationUtils {
         case recents
         case tags(String)
         case computer
+        case collection(CollectionNavigation)
+    }
+
+    enum CollectionKind: Equatable, Sendable {
+        case temporary
+        case file(url: URL, name: String)
+    }
+
+    struct CollectionNavigation: Equatable, Sendable {
+        var kind: CollectionKind
+        var context: FileManagerFeature.CollectionContext
+        var sortKey: SortKey
+        var sortOrder: SortOrder
+        var viewLayout: FileManagerFeature.ViewLayout
     }
 
     static func navigateToState(_ navigationState: NavigationState) -> Effect<FileManagerFeature.Action> {
@@ -22,6 +36,8 @@ enum FileManagerNavigationUtils {
             }
         case .computer:
             .send(.fsItems(.loadComputerItems))
+        case let .collection(navigation):
+            .send(.navigateToCollection(navigation))
         }
     }
 

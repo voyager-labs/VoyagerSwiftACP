@@ -5,13 +5,19 @@ import SwiftUI
 
 class FileManagerWindowController: NSWindowController, NSWindowDelegate {
     private let initialPath: String?
+    private let windowUndoManager: UndoManager
     let store: StoreOf<FileManagerFeature>
     private var cancellables: Set<AnyCancellable> = []
 
-    init(path: String? = nil, duplicateState: FileManagerFeature.State? = nil, asTab: Bool = true) {
+    init(
+        path: String? = nil,
+        duplicateState: FileManagerFeature.State? = nil,
+        asTab: Bool = true,
+        makeContentViewController: ((StoreOf<FileManagerFeature>, String?) -> NSViewController)? = nil,
+    ) {
         initialPath = path
 
-        let state: FileManagerFeature.State
+        var state: FileManagerFeature.State
         if let duplicateState {
             var newState = duplicateState
             newState.fsItems = FSItemsFeature.State()
@@ -20,12 +26,23 @@ class FileManagerWindowController: NSWindowController, NSWindowDelegate {
             state = FileManagerFeature.State()
         }
 
-        store = Store(initialState: state) {
-            FileManagerFeature()
+        if duplicateState == nil, let path {
+            state.navigationState = .folder(path)
+            state.titlePath = path
         }
 
-        let splitViewController = FileManagerSplitViewController(store: store, initialPath: path)
-        let window = NSWindow(contentViewController: splitViewController)
+        let undoManager = UndoManager()
+        windowUndoManager = undoManager
+
+        store = Store(initialState: state) {
+            FileManagerFeature()
+        } withDependencies: {
+            $0.undoManagerClient = .live(undoManager: undoManager)
+        }
+
+        let contentViewController = makeContentViewController?(store, path)
+            ?? FileManagerSplitViewController(store: store, initialPath: path)
+        let window = NSWindow(contentViewController: contentViewController)
         window.styleMask = [.titled, .closable, .miniaturizable, .resizable, .fullSizeContentView]
         window.minSize = NSSize(width: 600, height: 350)
 
@@ -83,12 +100,58 @@ class FileManagerWindowController: NSWindowController, NSWindowDelegate {
             AppDelegate.shared?.updateMenuState(store: store)
         }
 
+        let makeTitle: (String?, Bool, String) -> String = { openedCollectionName, isCollectionMode, titlePath in
+            if let openedCollectionName {
+                return openedCollectionName
+            }
+            if isCollectionMode {
+                return "New Collection"
+            }
+            return FileManagerFeature.makeWindowTitle(for: titlePath)
+        }
+
+        let initialTitle = makeTitle(
+            store.state.openedCollectionName,
+            store.state.fsItems.isCollectionMode,
+            store.state.titlePath,
+        )
+
+        let titlePublisher = Publishers.CombineLatest3(
+            store.publisher.openedCollectionName.removeDuplicates(),
+            store.publisher.fsItems.isCollectionMode.removeDuplicates(),
+            store.publisher.titlePath.removeDuplicates(),
+        )
+        .map(makeTitle)
+        .prepend(initialTitle)
+        .removeDuplicates()
+
+        titlePublisher
+            .sink { [weak self] title in
+                self?.window?.title = title
+            }
+            .store(in: &cancellables)
+
         store.publisher.fsItems.selectedIds
             .removeDuplicates()
             .sink { _ in updateMenuStateIfKeyWindow() }
             .store(in: &cancellables)
 
         store.publisher.fsItems.clipboardItems
+            .removeDuplicates()
+            .sink { _ in updateMenuStateIfKeyWindow() }
+            .store(in: &cancellables)
+
+        store.publisher.fsItems.undoRecords
+            .removeDuplicates()
+            .sink { _ in updateMenuStateIfKeyWindow() }
+            .store(in: &cancellables)
+
+        store.publisher.fsItems.redoRecords
+            .removeDuplicates()
+            .sink { _ in updateMenuStateIfKeyWindow() }
+            .store(in: &cancellables)
+
+        store.publisher.fsItems.operations.itemStates
             .removeDuplicates()
             .sink { _ in updateMenuStateIfKeyWindow() }
             .store(in: &cancellables)
@@ -102,5 +165,9 @@ class FileManagerWindowController: NSWindowController, NSWindowDelegate {
 
     func windowShouldClose(_: NSWindow) -> Bool {
         true
+    }
+
+    func windowWillReturnUndoManager(_: NSWindow) -> UndoManager? {
+        windowUndoManager
     }
 }

@@ -10,4 +10,5 @@ public enum SettingsKeys {
     static let gridIconSize = "gridIconSize"
     static let listTextSize = "listTextSize"
     static let gridTextSize = "gridTextSize"
+    static let lastCollectionSaveDirectory = "lastCollectionSaveDirectory"
 }

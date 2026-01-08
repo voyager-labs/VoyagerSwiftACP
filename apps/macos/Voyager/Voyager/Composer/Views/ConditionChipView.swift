@@ -548,56 +548,65 @@ struct ConditionChipView: View {
                         ),
                     )
                 } else {
-                    TextField(
-                        placeholderText,
-                        text: valueViewStore.binding(
-                            get: { state in
-                                state.values.indices.contains(index) ? state.values[index] : ""
-                            },
-                            send: { .setValue(index: index, text: $0) },
-                        ),
-                    )
-                    .textFieldStyle(.plain)
-                    .font(.system(size: 11))
-                    .foregroundColor(Color.primary)
-                    .padding(.horizontal, 6)
-                    .padding(.vertical, 4)
-                    .frame(
-                        minWidth: {
-                            if valueType == .number {
-                                return hasError ? 70 : 55
-                            }
-                            return hasError ? 80 : 60
-                        }(),
-                        maxWidth: {
-                            if valueType == .number {
-                                return hasError ? 130 : 95
-                            }
-                            return hasError ? 150 : 110
-                        }(),
-                        alignment: .leading,
-                    )
-                    .background(
-                        RoundedRectangle(cornerRadius: 4)
-                            .stroke(
-                                hasError ? Color.red.opacity(0.85) :
-                                    (isDark ? Color.white.opacity(0.15) : Color.black.opacity(0.15)),
-                                lineWidth: 1,
+                    HStack(spacing: 4) {
+                        TextField(
+                            placeholderText,
+                            text: valueViewStore.binding(
+                                get: { state in
+                                    state.values.indices.contains(index) ? state.values[index] : ""
+                                },
+                                send: { .setValue(index: index, text: $0) },
                             ),
-                    )
-                    .overlay(alignment: .leading) {
-                        if hasError, currentText.isEmpty, let errorMessage {
-                            Text(errorMessage)
-                                .font(.system(size: 11))
-                                .foregroundColor(.secondary)
-                                .padding(.horizontal, 8)
-                                .padding(.vertical, 6)
-                                .frame(maxWidth: .infinity, alignment: .leading)
-                                .allowsHitTesting(false)
+                        )
+                        .textFieldStyle(.plain)
+                        .font(.system(size: 11))
+                        .foregroundColor(Color.primary)
+                        .padding(.horizontal, 6)
+                        .padding(.vertical, 4)
+                        .frame(
+                            minWidth: {
+                                if valueType == .number {
+                                    return hasError ? 70 : 55
+                                }
+                                return hasError ? 80 : 60
+                            }(),
+                            maxWidth: {
+                                if valueType == .number {
+                                    return hasError ? 130 : 95
+                                }
+                                return hasError ? 150 : 110
+                            }(),
+                            alignment: .leading,
+                        )
+                        .background(
+                            RoundedRectangle(cornerRadius: 4)
+                                .stroke(
+                                    hasError ? Color.red.opacity(0.85) :
+                                        (isDark ? Color.white.opacity(0.15) : Color.black.opacity(0.15)),
+                                    lineWidth: 1,
+                                ),
+                        )
+                        .overlay(alignment: .leading) {
+                            if hasError, currentText.isEmpty, let errorMessage {
+                                Text(errorMessage)
+                                    .font(.system(size: 11))
+                                    .foregroundColor(.secondary)
+                                    .padding(.horizontal, 8)
+                                    .padding(.vertical, 6)
+                                    .frame(maxWidth: .infinity, alignment: .leading)
+                                    .allowsHitTesting(false)
+                            }
                         }
-                    }
-                    .onSubmit {
-                        valuePickerStore.send(.commit)
+                        .onSubmit {
+                            valuePickerStore.send(.commit)
+                        }
+
+                        if valueType == .number, condition.propertyKey == "size" {
+                            Text("bytes")
+                                .font(.system(size: 11))
+                                .foregroundColor(.primary)
+                                .fixedSize()
+                        }
                     }
                 }
 
@@ -842,21 +851,26 @@ struct ConditionChipView: View {
 
     private func displayValueText() -> String {
         guard let values = condition.values, !values.isEmpty else { return "Value" }
+        let suffix = if condition.propertyKey == "size", condition.valueType == .number {
+            " bytes"
+        } else {
+            ""
+        }
         if condition.valueType == .date {
             let first = ValueNormalizer.formatDateOnlyString(values[0]) ?? values[0]
             if values.count >= 2 {
                 let second = ValueNormalizer.formatDateOnlyString(values[1]) ?? values[1]
                 if first == second {
-                    return first
+                    return first + suffix
                 }
-                return first + " ~ " + second
+                return first + " ~ " + second + suffix
             }
-            return first
+            return first + suffix
         }
         if values.count >= 2 {
-            return values[0] + " and " + values[1]
+            return values[0] + " and " + values[1] + suffix
         }
-        return values[0]
+        return values[0] + suffix
     }
 
     private func placeholder(for arity: Int, index: Int, valueType: ValueType) -> String {

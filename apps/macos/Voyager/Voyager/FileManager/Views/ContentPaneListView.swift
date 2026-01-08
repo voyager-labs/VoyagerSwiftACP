@@ -80,7 +80,7 @@ struct ContentPaneListView: View {
         isTrashFolder: Bool,
     ) -> ItemRowProps {
         let selectedIds = fsStore.selectedIds
-        let selectedItems = fsStore.items.filter { selectedIds.contains($0.id) }
+        let selectedItems = fsStore.displayItems.filter { selectedIds.contains($0.id) }
         let options = FSItemContextMenuUtils
             .calculateCompressExtractOptions(selectedItems: selectedItems)
         let showCompress = options.showCompress
@@ -124,7 +124,7 @@ struct ContentPaneListView: View {
             item: item,
             fsStore: fsStore,
             store: store,
-            props: props
+            props: props,
         )
     }
 
@@ -132,7 +132,7 @@ struct ContentPaneListView: View {
         item: FSItem,
         fsStore: Store<FSItemsFeature.State, FSItemsFeature.Action>,
         store: StoreOf<FileManagerFeature>,
-        props: ItemRowProps
+        props: ItemRowProps,
     ) -> FSItemListView {
         let selectedIds = fsStore.selectedIds
         let clipboardItems = fsStore.clipboardItems
@@ -280,14 +280,14 @@ struct ContentPaneListView: View {
         Color.clear.frame(height: 0).id("scrollTop")
 
         if fsStore.groupKey == .none {
-            ForEach(Array(fsStore.items.enumerated()), id: \.element.id) { index, item in
+            ForEach(Array(fsStore.displayItems.enumerated()), id: \.element.id) { index, item in
                 styledItemRow(item: item, index: index, fsStore: fsStore, geometry: geometry, store: store)
             }
         } else {
             groupedItemsContent(fsStore: fsStore, geometry: geometry, store: store)
         }
 
-        emptyRowsView(itemsCount: fsStore.items.count, scrollHeight: scrollViewHeight, fsStore: fsStore)
+        emptyRowsView(itemsCount: fsStore.displayItems.count, scrollHeight: scrollViewHeight, fsStore: fsStore)
     }
 
     private func emptyRowTapAction(fsStore: Store<FSItemsFeature.State, FSItemsFeature.Action>) {
@@ -415,16 +415,17 @@ struct ContentPaneListView: View {
 
                                     ScrollPositionUtils.performAutoScroll(scrollView: nsScrollView)
                                 } else {
-                                    if !fsStore.items.isEmpty {
+                                    if !fsStore.displayItems.isEmpty {
                                         let startItemId: String?
                                         if let nearestItemId = findNearestItemAtY(value.startLocation.y) {
                                             startItemId = nearestItemId
                                         } else {
                                             let itemIndex = max(0, min(
                                                 Int(value.startLocation.y / rowHeight),
-                                                fsStore.items.count - 1,
+                                                fsStore.displayItems.count - 1,
                                             ))
-                                            startItemId = itemIndex < fsStore.items.count ? fsStore.items[itemIndex]
+                                            startItemId = itemIndex < fsStore.displayItems.count
+                                                ? fsStore.displayItems[itemIndex]
                                                 .id : nil
                                         }
 
@@ -468,7 +469,7 @@ struct ContentPaneListView: View {
                     .onChange(of: store.currentPath) { _ in
                         hasRestoredScrollPosition = false
                     }
-                    .onChange(of: fsStore.items.count) { itemCount in
+                    .onChange(of: fsStore.displayItems.count) { itemCount in
                         guard itemCount != 0 else { return }
 
                         if store.scrollPositions[store.currentPath] != nil {

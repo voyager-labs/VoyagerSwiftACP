@@ -2,6 +2,7 @@
 appcast
 atexit
 birthtime
+borderless
 codesign
 dotenv
 fastapi

@@ -27,6 +27,23 @@ enum ValueNormalizer {
         return formatter
     }()
 
+    // 시간까지 포함된 경우 (타임존 없음)
+    private static let dateTimeFormatter: DateFormatter = {
+        let formatter = DateFormatter()
+        formatter.locale = Locale(identifier: "en_US_POSIX")
+        formatter.timeZone = TimeZone(secondsFromGMT: 0)
+        formatter.dateFormat = "yyyy-MM-dd'T'HH:mm:ss"
+        return formatter
+    }()
+
+    private static let dateTimeSpaceFormatter: DateFormatter = {
+        let formatter = DateFormatter()
+        formatter.locale = Locale(identifier: "en_US_POSIX")
+        formatter.timeZone = TimeZone(secondsFromGMT: 0)
+        formatter.dateFormat = "yyyy-MM-dd HH:mm:ss"
+        return formatter
+    }()
+
     static func formatDate(_ date: Date) -> String {
         isoFormatter.string(from: normalizedDay(date))
     }
@@ -42,6 +59,12 @@ enum ValueNormalizer {
 
     static func parseDate(_ text: String) -> Date? {
         if let date = isoFormatter.date(from: text) {
+            return normalizedDay(date)
+        }
+        if let date = dateTimeFormatter.date(from: text) {
+            return normalizedDay(date)
+        }
+        if let date = dateTimeSpaceFormatter.date(from: text) {
             return normalizedDay(date)
         }
         if let date = dateOnlyFormatter.date(from: text) {

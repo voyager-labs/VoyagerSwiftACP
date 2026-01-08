@@ -2,7 +2,7 @@
 import Foundation
 
 // swiftlint:disable file_length type_body_length
-struct Condition: Equatable, Identifiable, Hashable {
+struct Condition: Equatable, Identifiable, Hashable, Sendable {
     var id: String { propertyKey }
     var propertyKey: String
     var propertyLabel: String
@@ -30,6 +30,7 @@ struct ComposerFeature {
         var text: String = ""
         var scopes: [String] = []
         var conditions: [Condition] = []
+        var focusRequestID: Int = 0
         var propertyPicker: ConditionPropertyPickerFeature.State = .init()
         var operatorPicker: OperatorPickerFeature.State = .init()
         var valuePicker: ValuePickerFeature.State = .init()
@@ -68,7 +69,10 @@ struct ComposerFeature {
         case clearAll
         case submit
         case cancelSearch
+        case applyFilters
         case saveCollection
+        case saveCollectionAs
+        case focusQueryField
         case setOperator(propertyKey: String, option: OperatorOption)
         case setValue(propertyKey: String, values: [String])
         case replaceConditionProperty(originalKey: String, property: MDItemProperty)
@@ -81,7 +85,10 @@ struct ComposerFeature {
         case filtersResponse(Result<SearchResponsePayload, Error>)
     }
 
-    private static let searchID: String = "search"
+    nonisolated enum CancelID: Hashable, Sendable {
+        case search
+        case filters
+    }
 
     var body: some Reducer<State, Action> {
         Scope(state: \.propertyPicker, action: \.propertyPicker) {
@@ -128,15 +135,19 @@ struct ComposerFeature {
                 state.propertyPicker = .init()
                 state.operatorPicker = .init()
                 state.valuePicker = .init()
-                return .none
+                state.isLoadingFilters = false
+                state.lastFiltersResponse = nil
+                return .cancel(id: CancelID.filters)
 
             case .submit:
                 let query = state.text.trimmingCharacters(in: .whitespacesAndNewlines)
                 guard !query.isEmpty else { return .none }
                 let filters = buildFilters(from: state)
                 state.isLoadingSearch = true
+                state.isLoadingFilters = false
+                state.lastFiltersResponse = nil
                 state.text = ""
-                return .run { send in
+                let searchEffect: Effect<Action> = .run { send in
                     do {
                         let response = try await searchClient.search(
                             .init(query: query, filters: filters),
@@ -146,14 +157,34 @@ struct ComposerFeature {
                         await send(.searchResponse(.failure(error)))
                     }
                 }
-                .cancellable(id: Self.searchID, cancelInFlight: true)
+                .cancellable(id: CancelID.search, cancelInFlight: true)
+                return .concatenate(
+                    .cancel(id: CancelID.filters),
+                    searchEffect,
+                )
 
             case .cancelSearch:
                 state.isLoadingSearch = false
-                return .cancel(id: Self.searchID)
+                return .cancel(id: CancelID.search)
+
+            case .applyFilters:
+                state.isLoadingSearch = false
+                state.lastSearchResponse = nil
+                return .concatenate(
+                    .cancel(id: CancelID.search),
+                    applyFiltersIfNeeded(state: &state, searchClient: searchClient),
+                )
 
             case .saveCollection:
                 // TODO: 컬렉션 저장 기능 구현 예정
+                return .none
+
+            case .saveCollectionAs:
+                // TODO: 컬렉션 저장 기능 구현 예정
+                return .none
+
+            case .focusQueryField:
+                state.focusRequestID += 1
                 return .none
 
             case let .updateScope(oldPath, newPath):
@@ -408,6 +439,7 @@ struct ComposerFeature {
                 state.isLoadingSearch = false
                 state.lastSearchResponse = response
                 state.lastFiltersResponse = nil
+                applyAppliedFilters(response.appliedFilters, state: &state)
                 return .none
 
             case .searchResponse(.failure):
@@ -417,6 +449,7 @@ struct ComposerFeature {
             case let .filtersResponse(.success(response)):
                 state.isLoadingFilters = false
                 state.lastFiltersResponse = response
+                applyAppliedFilters(response.appliedFilters, state: &state)
                 return .none
 
             case .filtersResponse(.failure):
@@ -427,6 +460,19 @@ struct ComposerFeature {
     }
 }
 
+private func applyAppliedFilters(
+    _ appliedFilters: AppliedFiltersPayload?,
+    state: inout ComposerFeature.State,
+) {
+    let resolved = AppliedFiltersUtils.resolve(
+        appliedFilters,
+        fallbackScopes: state.scopes,
+        fallbackConditions: state.conditions,
+    )
+    state.scopes = resolved.scopes
+    state.conditions = resolved.conditions
+}
+
 private func applyFiltersIfNeeded(
     state: inout ComposerFeature.State,
     searchClient: SearchClient,
@@ -434,7 +480,7 @@ private func applyFiltersIfNeeded(
     let filters = buildFilters(from: state)
     guard !filters.conditions.isEmpty else {
         state.isLoadingFilters = false
-        return .none
+        return .cancel(id: ComposerFeature.CancelID.filters)
     }
     state.isLoadingFilters = true
     return .run { send in
@@ -445,6 +491,7 @@ private func applyFiltersIfNeeded(
             await send(.filtersResponse(.failure(error)))
         }
     }
+    .cancellable(id: ComposerFeature.CancelID.filters, cancelInFlight: true)
 }
 
 private func buildFilters(from state: ComposerFeature.State) -> SearchFiltersPayload {

@@ -267,7 +267,7 @@ struct SortGroupButton: View {
                 .frame(width: 32, height: 32)
                 .background(
                     RoundedRectangle(cornerRadius: 5)
-                        .fill(toolbarMenuButtonBackgroundColor)
+                        .fill(toolbarMenuButtonBackgroundColor),
                 )
         }
         .menuIndicator(.hidden)
@@ -276,9 +276,9 @@ struct SortGroupButton: View {
 
     private var toolbarMenuButtonBackgroundColor: Color {
         if colorScheme == .dark {
-            return Color(nsColor: .controlBackgroundColor)
+            Color(nsColor: .controlBackgroundColor)
         } else {
-            return Color(red: 245 / 255.0, green: 245 / 255.0, blue: 245 / 255.0)
+            Color(red: 245 / 255.0, green: 245 / 255.0, blue: 245 / 255.0)
         }
     }
 }
