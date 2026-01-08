@@ -5,12 +5,11 @@ import SwiftUI
 struct ToolbarView: View {
     private struct CollectionTitleIcon: View {
         var body: some View {
-            Image("rectangle.stack")
-                .renderingMode(.template)
+            Image(systemName: "rectangle.stack")
                 .resizable()
                 .scaledToFit()
                 .frame(width: 14, height: 14)
-                .foregroundColor(.secondary)
+                .foregroundColor(Color.secondary)
                 .accessibilityHidden(true)
         }
     }
