@@ -218,7 +218,9 @@ struct ComposerView: View {
     }
 
     private func clearButton(viewStore: ViewStore<ComposerFeature.State, ComposerFeature.Action>) -> some View {
-        Button {
+        let isAllEmpty = viewStore.text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && viewStore.scopes
+            .isEmpty && viewStore.conditions.isEmpty
+        return Button {
             store.send(.composer(.clearAll))
         } label: {
             HStack(spacing: 4) {
@@ -226,7 +228,7 @@ struct ComposerView: View {
                 Text("Clear all")
             }
             .font(.system(size: 10, weight: .medium))
-            .foregroundColor(.primary)
+            .foregroundColor(isAllEmpty ? .secondary : .primary)
             .padding(.horizontal, 7)
             .padding(.vertical, 4)
             .background(
@@ -236,7 +238,7 @@ struct ComposerView: View {
             )
         }
         .buttonStyle(.borderless)
-        .disabled(viewStore.isLoadingSearch)
+        .disabled(viewStore.isLoadingSearch || isAllEmpty)
         .background(
             RoundedRectangle(cornerRadius: 8)
                 .fill(isDark ? Color.white.opacity(0.08) : Color.black.opacity(0.08))
