@@ -300,11 +300,13 @@ extension FileManagerSplitViewController {
                         Color.clear
                             .contentShape(Rectangle())
                             .onTapGesture { store.send(.exitComposer) }
+                            .zIndex(1)
                     }
 
                     if viewStore.isComposerPresented {
                         ComposerView(store: store)
                             .transition(.move(edge: .top).combined(with: .opacity))
+                            .zIndex(10)
                     }
                 }
                 .ignoresSafeArea(.all, edges: .top)

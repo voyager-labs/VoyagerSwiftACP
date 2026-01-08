@@ -63,8 +63,10 @@ struct ComposerView: View {
                     RoundedRectangle(cornerRadius: 12)
                         .stroke(overlayBorderColor, lineWidth: 1),
                 )
-                .shadow(color: overlayShadowColor, radius: overlayShadowRadius, y: overlayShadowY),
+                .shadow(color: overlayShadowColor, radius: overlayShadowRadius, y: overlayShadowY)
+                .allowsHitTesting(false),
         )
+        .allowsHitTesting(true)
     }
 
     private func firstRow(viewStore: ViewStore<ComposerFeature.State, ComposerFeature.Action>) -> some View {
@@ -128,9 +130,14 @@ struct ComposerView: View {
                         .frame(width: 16, height: 16)
                         .background(buttonBackground)
                 }
-                .buttonStyle(.plain)
+                .buttonStyle(.borderless)
                 .padding(.trailing, 8)
             } else {
+                let submitButtonBackground = Circle().fill(
+                    isSubmitDisabled
+                        ? Color(red: 0.843, green: 0.714, blue: 0.322).opacity(0.5)
+                        : Color(red: 0.843, green: 0.714, blue: 0.322),
+                )
                 Button {
                     viewStore.send(.submit)
                 } label: {
@@ -138,10 +145,19 @@ struct ComposerView: View {
                         .font(.system(size: 9, weight: .regular))
                         .foregroundColor(isSubmitDisabled ? .secondary : .black)
                         .frame(width: 16, height: 16)
-                        .background(buttonBackground)
+                        .background(submitButtonBackground)
                 }
-                .buttonStyle(.plain)
+                .buttonStyle(.borderless)
                 .disabled(isSubmitDisabled)
+                .background(
+                    Circle()
+                        .fill(
+                            isSubmitDisabled
+                                ? Color(red: 0.843, green: 0.714, blue: 0.322).opacity(0.5)
+                                : Color(red: 0.843, green: 0.714, blue: 0.322),
+                        )
+                        .allowsHitTesting(false),
+                )
                 .padding(.trailing, 8)
             }
         }
@@ -209,15 +225,22 @@ struct ComposerView: View {
                 Text("Clear all")
             }
             .font(.system(size: 10, weight: .medium))
+            .foregroundColor(.primary)
             .padding(.horizontal, 7)
             .padding(.vertical, 4)
             .background(
                 RoundedRectangle(cornerRadius: 8)
-                    .fill(isDark ? Color.white.opacity(0.08) : Color.black.opacity(0.08)),
+                    .fill(isDark ? Color.white.opacity(0.08) : Color.black.opacity(0.08))
+                    .allowsHitTesting(false),
             )
         }
-        .buttonStyle(.plain)
+        .buttonStyle(.borderless)
         .disabled(viewStore.isLoadingSearch)
+        .background(
+            RoundedRectangle(cornerRadius: 8)
+                .fill(isDark ? Color.white.opacity(0.08) : Color.black.opacity(0.08))
+                .allowsHitTesting(false),
+        )
     }
 
     private func saveButton(viewStore: ViewStore<ComposerFeature.State, ComposerFeature.Action>) -> some View {
@@ -232,15 +255,22 @@ struct ComposerView: View {
                 Text(isSaveAs ? "Save As" : "Save")
             }
             .font(.system(size: 10, weight: .medium))
+            .foregroundColor(isEnabled ? .primary : .secondary)
             .padding(.horizontal, 7)
             .padding(.vertical, 4)
             .background(
                 RoundedRectangle(cornerRadius: 8)
-                    .fill(isDark ? Color.white.opacity(0.08) : Color.black.opacity(0.08)),
+                    .fill(isDark ? Color.white.opacity(0.08) : Color.black.opacity(0.08))
+                    .allowsHitTesting(false),
             )
         }
-        .buttonStyle(.plain)
+        .buttonStyle(.borderless)
         .disabled(!isEnabled)
+        .background(
+            RoundedRectangle(cornerRadius: 8)
+                .fill(isDark ? Color.white.opacity(0.08) : Color.black.opacity(0.08))
+                .allowsHitTesting(false),
+        )
     }
 
     private var horizontalSeparator: some View {
