@@ -1,8 +1,10 @@
 import logging
+import os
 import platform
 import sqlite3
 from contextlib import asynccontextmanager
 
+import setproctitle
 from fastapi import FastAPI
 
 from app.config import get_db_config, load_config
@@ -17,6 +19,9 @@ async def lifespan(app: FastAPI):
     # Hydra config 로드
     cfg = load_config()
     app.state.config = cfg
+
+    process_title = os.getenv("PUBLIC_BACKEND_PROCESS_NAME")
+    setproctitle.setproctitle(process_title)
 
     # DB 엔진 초기화 및 Alembic 기반 마이그레이션 적용
     init_summary = initialize_sqlite_db(get_db_config(cfg))
