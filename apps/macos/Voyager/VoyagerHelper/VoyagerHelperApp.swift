@@ -1,5 +1,6 @@
 import Foundation
 import Logging
+import SwiftDotenv
 
 @main
 class VoyagerHelperApp {
@@ -13,7 +14,7 @@ class VoyagerHelperApp {
         let environment = Environment()
 
         logger.info(
-            "Starting (APP_ENV=\(environment.appEnv.rawValue), BACKEND_MODE=\(environment.backendMode.rawValue))",
+            "Starting (APP_ENV=\(Dotenv.appEnv?.rawValue ?? "nil"), BACKEND_MODE=\(Dotenv.backendMode?.rawValue ?? "nil"))",
         )
 
         let runner = ProcessRunner(environment: environment)

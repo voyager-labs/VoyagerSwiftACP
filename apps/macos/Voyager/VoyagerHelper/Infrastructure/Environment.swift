@@ -9,39 +9,27 @@ struct Environment {
         case projectRootNotFound
         case resourceURLNotFound
         case backendDirectoryNotFound(path: String)
+        case backendModeNotSet
     }
-
-    let envVars: [String: String]
-    let appEnv: AppEnv
-    let backendMode: BackendMode
 
     init() {
-        appEnv = EnvironmentLoader.detectAppEnv()
-        backendMode = EnvironmentLoader.detectBackendMode()
-
         try? EnvironmentLoader.loadEnvFiles()
-
-        envVars = Dotenv.values
-    }
-
-    func value(for key: String) -> String? {
-        if let raw = envVars[key], !raw.isEmpty {
-            return raw
-        }
-        return nil
     }
 
     func backendDirectory() throws -> String {
+        guard let backendMode = Dotenv.backendMode else {
+            throw BackendDirectoryError.backendModeNotSet
+        }
         switch backendMode {
         case .bundled:
-            try detectBundledBackendDirectory().path
+            return try detectBundledBackendDirectory().path
         case .source:
-            try detectSourceBackendDirectory().path
+            return try detectSourceBackendDirectory().path
         }
     }
 
     private func detectSourceBackendDirectory() throws -> URL {
-        guard let projectRoot = backendMode.projectRoot else {
+        guard let projectRoot = Dotenv.backendMode?.projectRoot else {
             throw BackendDirectoryError.projectRootNotFound
         }
 

@@ -1,6 +1,7 @@
 import Darwin
 import Foundation
 import Logging
+import SwiftDotenv
 
 struct BackendProcessConfig {
     let directory: String
@@ -57,9 +58,10 @@ final class ProcessRunner {
         let executable = try executablePath(in: directory)
         let processEnv = resolveProcessEnvironment()
 
-        let (arguments, description): ([String]?, String) = switch environment.backendMode {
-        case .source: (["uv", "run", environment.appEnv.rawValue], "uv run \(environment.appEnv.rawValue)")
+        let (arguments, description): ([String]?, String) = switch Dotenv.backendMode {
+        case .source: (["uv", "run", Dotenv.appEnv?.rawValue ?? "dev"], "uv run \(Dotenv.appEnv?.rawValue ?? "dev")")
         case .bundled: (nil, "Bundled binary")
+        case .none: throw Error.backendDirectoryError(.backendModeNotSet)
         }
 
         return BackendProcessConfig(
@@ -72,11 +74,11 @@ final class ProcessRunner {
     }
 
     private func executablePath(in directory: String) throws -> String {
-        switch environment.backendMode {
+        switch Dotenv.backendMode {
         case .source:
             return "/usr/bin/env"
         case .bundled:
-            guard let processName = environment.value(for: "PUBLIC_BACKEND_PROCESS_NAME") else {
+            guard let processName = Dotenv["PUBLIC_BACKEND_PROCESS_NAME"]?.stringValue else {
                 throw Error.processNameNotConfigured
             }
             let binaryPath = URL(fileURLWithPath: directory).appendingPathComponent(processName).path
@@ -84,6 +86,7 @@ final class ProcessRunner {
                 throw Error.binaryNotFound(path: binaryPath)
             }
             return binaryPath
+        case .none: throw Error.backendDirectoryError(.backendModeNotSet)
         }
     }
 
@@ -99,11 +102,8 @@ final class ProcessRunner {
     private func resolveProcessEnvironment() -> [String: String] {
         var env: [String: String] = ProcessInfo.processInfo.environment
 
-        env["APP_ENV"] = environment.appEnv.rawValue
-        env["BACKEND_MODE"] = environment.backendMode.rawValue
-
         // source 모드에서만 PATH에 homebrew 경로 추가 (uv 실행용)
-        if case .source = environment.backendMode {
+        if case .source = Dotenv.backendMode {
             let prefix = "/opt/homebrew/bin:/usr/local/bin"
             if let currentPath = env["PATH"], !currentPath.isEmpty {
                 env["PATH"] = "\(prefix):\(currentPath)"
