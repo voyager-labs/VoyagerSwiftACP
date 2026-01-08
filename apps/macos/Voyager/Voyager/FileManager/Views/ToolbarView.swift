@@ -196,6 +196,7 @@ struct ToolbarView: View {
 
                     Text(titleText)
                         .font(.system(size: 15, weight: .semibold))
+                        .foregroundColor(.primary)
 
                     if isNewCollection {
                         Text(suffix)
@@ -219,7 +220,7 @@ struct ToolbarView: View {
                 }
             },
         )
-        .buttonStyle(.plain)
+        .buttonStyle(.borderless)
         .onHover { hovering in
             isTitleHovered = hovering
         }

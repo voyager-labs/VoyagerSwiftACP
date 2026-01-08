@@ -265,13 +265,15 @@ struct SortGroupButton: View {
                 .font(.system(size: 12))
                 .foregroundColor(.secondary)
                 .frame(width: 32, height: 32)
-                .background(
-                    RoundedRectangle(cornerRadius: 5)
-                        .fill(toolbarMenuButtonBackgroundColor),
-                )
         }
         .menuIndicator(.hidden)
-        .buttonStyle(.plain)
+        .buttonStyle(.borderless)
+        .frame(width: 30, height: 30)
+        .background(
+            RoundedRectangle(cornerRadius: 5)
+                .fill(toolbarMenuButtonBackgroundColor)
+                .allowsHitTesting(false),
+        )
     }
 
     private var toolbarMenuButtonBackgroundColor: Color {
