@@ -703,7 +703,7 @@ struct ConditionChipView: View {
                 HStack {
                     Spacer()
                     Button("Apply") {
-                        let formatted = ValueNormalizer.formatDate(tempDate)
+                        let formatted = ValueNormalizer.formatDateOnly(tempDate)
                         valueViewStore.send(.setValue(index: index, text: formatted))
                         valuePickerStore.send(.commit)
                         DispatchQueue.main.async {
