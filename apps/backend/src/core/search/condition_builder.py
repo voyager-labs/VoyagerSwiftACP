@@ -86,6 +86,9 @@ class ConditionBuilder:
     ) -> tuple[str, list[Any]]:
         """DB 컬럼 조건 생성"""
         field = mapping.db_field
+        # DATE 타입이면 DATE() 함수로 날짜만 비교
+        if mapping.value_type == MDItemType.DATE:
+            field = f"DATE({field})"
         return self._build_operator_clause(field, operator, value)
 
     def _build_json_clause(

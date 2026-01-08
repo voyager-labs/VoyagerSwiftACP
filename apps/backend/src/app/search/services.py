@@ -53,14 +53,12 @@ class SearchService:
         self,
         query: str,
         filters: SearchFilters | None = None,
-        limit: int = 50,
     ) -> SearchResponse:
         """쿼리 기반 검색 (LLM 해석)
 
         Args:
             query: 자연어 검색 쿼리
             filters: 선택적 필터 (scopes, conditions)
-            limit: 결과 제한
 
         Returns:
             SearchResponse
@@ -95,7 +93,6 @@ class SearchService:
         items = await self._execute_search(
             scopes=applied_scopes,
             conditions=[c.model_dump() for c in applied_conditions],
-            limit=limit,
         )
 
         return SearchResponse(
@@ -110,13 +107,11 @@ class SearchService:
     async def filter_search(
         self,
         filters: SearchFilters,
-        limit: int = 50,
     ) -> SearchResponse:
         """필터 기반 검색 (LLM 없음)
 
         Args:
             filters: 필수 필터 (scopes, conditions)
-            limit: 결과 제한
 
         Returns:
             SearchResponse
@@ -125,7 +120,6 @@ class SearchService:
         items = await self._execute_search(
             scopes=filters.scopes,
             conditions=[c.model_dump() for c in filters.conditions],
-            limit=limit,
         )
 
         return SearchResponse(
@@ -141,7 +135,6 @@ class SearchService:
         self,
         scopes: list[str],
         conditions: list[dict[str, Any]],
-        limit: int,
     ) -> list[SearchItem]:
         """SQL 실행 및 결과 반환"""
         try:
@@ -165,11 +158,10 @@ class SearchService:
                 FROM file_entries
                 WHERE {where_clause}
                 ORDER BY modification_date DESC
-                LIMIT :limit
             """
 
             # 파라미터를 positional에서 named로 변환
-            param_dict = {"limit": limit}
+            param_dict: dict[str, Any] = {}
             for i, param in enumerate(all_params):
                 param_name = f"p{i}"
                 sql = sql.replace("?", f":{param_name}", 1)
