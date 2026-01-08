@@ -7,8 +7,7 @@ struct ScopeChipView: View {
     let isDark: Bool
     let favorites: [SidebarUtils.FavoriteItem]
     let backHistory: [String]
-
-    @State private var isComboBoxPresented: Bool = false
+    @Binding var isComboBoxPresented: Bool
     @State private var editingPath: String?
     @State private var deleteHoverPath: String?
     @State private var dropdownHovering: Bool = false

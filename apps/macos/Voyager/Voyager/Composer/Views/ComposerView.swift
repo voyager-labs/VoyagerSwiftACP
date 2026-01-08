@@ -21,6 +21,7 @@ struct ComposerView: View {
     @State private var flagsChangedMonitor: Any?
     @State private var isOptionKeyPressed: Bool = false
     @State private var isAddButtonHovering: Bool = false
+    @State private var isScopePickerPresented: Bool = false
 
     private let trafficLightAreaWidth: CGFloat = 80
     private let escapeKeyCode: UInt16 = 53
@@ -382,6 +383,7 @@ struct ComposerView: View {
                 isDark: isDark,
                 favorites: store.favorites,
                 backHistory: historyPaths,
+                isComboBoxPresented: $isScopePickerPresented,
             )
         case let .condition(condition):
             conditionChipView(condition: condition)
@@ -560,6 +562,18 @@ struct ComposerView: View {
 
         keyDownMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { event in
             if event.keyCode == escapeKeyCode {
+                if isScopePickerPresented {
+                    isScopePickerPresented = false
+                    return nil
+                }
+                if store.composer.propertyPicker.isPresented {
+                    store.send(.composer(.propertyPicker(.setPresented(false))))
+                    return nil
+                }
+                if store.composer.operatorPicker.isPresented {
+                    store.send(.composer(.operatorPicker(.setPresented(false))))
+                    return nil
+                }
                 if store.composer.valuePicker.isPresented {
                     store.send(.composer(.valuePicker(.setPresented(false))))
                     return nil
