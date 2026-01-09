@@ -42,10 +42,19 @@ enum VoyagerDS {
 
     enum Radius {
         static let overlayCard: CGFloat = 12
+        static let composer: CGFloat = 18
+        static let contentPane: CGFloat = 23
         static let control: CGFloat = 8
         static let chipContainer: CGFloat = 6
         static let chipItem: CGFloat = 4
         static let toolbarButton: CGFloat = 5
+    }
+
+    enum Spacing {
+        // MARK: - Composer
+
+        static let composerHorizontalPadding: CGFloat = 7
+        static let composerTopPadding: CGFloat = 5
     }
 
     enum Typography {
@@ -83,6 +92,10 @@ enum VoyagerDS {
         }
 
         static let overlayBorder = SystemColor.separator
+
+        // MARK: - Composer (피그마: Materials + Stroke 검정 50%)
+
+        static let composerBorder = Color.black.opacity(0.5)
 
         static func popoverBackground(for scheme: ColorScheme) -> Color {
             scheme == .dark ? SystemColor.underPageBackground : SystemColor.windowBackground
@@ -217,5 +230,22 @@ enum VoyagerDS {
                 ? .controlBackgroundColor
                 : NSColor(hex: 0xF5F5F5)
         }
+
+        // MARK: - Content Pane Overlay (피그마: Materials/Ultrathick 근사치)
+
+        /// Content pane 배경 오버레이 (블러 위에 반투명 레이어)
+        static func contentPaneOverlay(isDark: Bool) -> NSColor {
+            if isDark {
+                NSColor(white: 0.1, alpha: 0.75)
+            } else {
+                NSColor(white: 0.95, alpha: 0.85)
+            }
+        }
     }
+
+    // MARK: - Material 참조 (문서화용)
+
+    // 피그마 Materials → AppKit NSVisualEffectView.Material 매핑:
+    // - thin-dark → .hudWindow (가장 유사)
+    // - ultrathick → 직접 매핑 없음, 반투명 색상으로 대체
 }

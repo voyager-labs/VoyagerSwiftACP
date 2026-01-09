@@ -93,6 +93,10 @@ class FileManagerWindowController: NSWindowController, NSWindowDelegate {
         }
         window.isMovableByWindowBackground = true
 
+        // 창을 투명하게 설정 (바탕화면이 블러되어 보이도록)
+        window.isOpaque = false
+        window.backgroundColor = .clear
+
         if asTab {
             window.tabbingMode = .preferred
             window.tabbingIdentifier = "file-manager"

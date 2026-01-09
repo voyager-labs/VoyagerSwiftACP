@@ -44,7 +44,7 @@ class FileManagerSplitViewController: NSViewController, NSSplitViewDelegate {
     private var contentInspectorDivider: ContentInspectorDivider?
     private var mainSplitView: NSSplitView?
     private var inspectorWidth: CGFloat = 300
-    private let contentVerticalMargin: CGFloat = 8
+    private let contentVerticalMargin: CGFloat = 4
     private var contentLeadingConstraint: NSLayoutConstraint?
     private var containerLeadingConstraint: NSLayoutConstraint?
     private var contentTrailingConstraint: NSLayoutConstraint?
@@ -76,7 +76,7 @@ class FileManagerSplitViewController: NSViewController, NSSplitViewDelegate {
     override func loadView() {
         // 전체 창을 감싸는 NSVisualEffectView
         let backgroundEffect = NSVisualEffectView()
-        backgroundEffect.material = .underWindowBackground
+        backgroundEffect.material = .hudWindow
         backgroundEffect.blendingMode = .behindWindow
         backgroundEffect.state = .active
         backgroundEffect.wantsLayer = true
@@ -213,16 +213,23 @@ extension FileManagerSplitViewController {
         if let inspectorView = inspectorHosting?.view {
             updateInspectorPaneColor(for: inspectorView)
         }
+        updateContentInspectorContainerColor()
     }
 
-    private func updateContentPaneColor(for view: NSView) {
-        guard let mainSplit = mainSplitView else { return }
+    private func updateContentInspectorContainerColor() {
+        guard let mainSplit = mainSplitView,
+              let container = contentInspectorContainer else { return }
         let appearance = mainSplit.effectiveAppearance
         let isDark = isDarkMode(appearance: appearance)
 
         appearance.performAsCurrentDrawingAppearance {
-            view.layer?.backgroundColor = VoyagerDS.AppKitSurface.contentPaneBackground(isDark: isDark).cgColor
+            container.layer?.backgroundColor = VoyagerDS.AppKitSurface.contentPaneOverlay(isDark: isDark).cgColor
         }
+    }
+
+    private func updateContentPaneColor(for view: NSView) {
+        // container의 검정색 50% 배경이 보이도록 투명하게 설정
+        view.layer?.backgroundColor = NSColor.clear.cgColor
     }
 
     private func setupSidebar(in mainSplit: NSSplitView) {
@@ -250,8 +257,9 @@ extension FileManagerSplitViewController {
         let container = NSView()
         container.wantsLayer = true
         container.layer?.zPosition = 5
-        container.layer?.cornerRadius = 16
+        container.layer?.cornerRadius = VoyagerDS.Radius.contentPane
         container.layer?.masksToBounds = true
+        container.layer?.backgroundColor = VoyagerDS.AppKitSurface.contentPaneOverlay(isDark: true).cgColor
         container.translatesAutoresizingMaskIntoConstraints = false
         contentInspectorContainer = container
 
@@ -314,6 +322,8 @@ extension FileManagerSplitViewController {
 
                     if viewStore.isComposerPresented {
                         ComposerView(store: store)
+                            .padding(.horizontal, VoyagerDS.Spacing.composerHorizontalPadding)
+                            .padding(.top, VoyagerDS.Spacing.composerTopPadding)
                             .contentShape(Rectangle())
                             .onTapGesture {}
                             .transition(.move(edge: .top).combined(with: .opacity))

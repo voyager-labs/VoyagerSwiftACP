@@ -124,7 +124,7 @@ struct ContentPaneGridView: View {
             let columns = makeColumns(count: layout.columns, spacing: layout.spacing)
 
             VStack(spacing: 0) {
-                Color.clear.frame(height: 28)
+                Color.clear.frame(height: 4)
 
                 ScrollViewReader { proxy in
                     ScrollView {
@@ -152,7 +152,7 @@ struct ContentPaneGridView: View {
                             }
                             .padding(.horizontal, layout.edgePadding)
                             .padding(.bottom, horizontalPadding)
-                            .frame(maxWidth: .infinity, minHeight: geometry.size.height - 28, alignment: .topLeading)
+                            .frame(maxWidth: .infinity, minHeight: geometry.size.height - 4, alignment: .topLeading)
                         }
                         .coordinateSpace(name: "scrollView")
                         .coordinateSpace(name: "contentPane")

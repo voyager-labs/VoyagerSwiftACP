@@ -32,8 +32,6 @@ struct ToolbarView: View {
     let store: StoreOf<FileManagerFeature>
     @State private var isHovered: Bool = false
     @State private var isTitleHovered: Bool = false
-    @Environment(\.colorScheme)
-    var colorScheme
 
     private let trafficLightAreaWidth: CGFloat = 80
 
@@ -57,28 +55,22 @@ struct ToolbarView: View {
                 )
             },
             content: { viewStore in
-                normalModeContent(viewStore: viewStore)
-                    .frame(maxHeight: .infinity)
-                    .padding(0)
-                    .padding(.leading, viewStore.sidebarVisible ? 0 : trafficLightAreaWidth)
-                    .padding(.horizontal, 16)
-                    .frame(height: 40)
-                    .frame(maxWidth: .infinity)
-                    .background(
-                        ZStack {
-                            VoyagerDS.Surface.toolbarBackground(for: colorScheme)
-
-                            VStack {
-                                Spacer()
-                                Rectangle()
-                                    .fill(VoyagerDS.Surface.toolbarDivider)
-                                    .frame(height: 1.0)
-                            }
-                        },
-                    )
-                    .onHover { hovering in
-                        isHovered = hovering
-                    }
+                VStack(spacing: 0) {
+                    normalModeContent(viewStore: viewStore)
+                        .frame(maxHeight: .infinity)
+                        .padding(0)
+                        .padding(.leading, viewStore.sidebarVisible ? 0 : trafficLightAreaWidth)
+                        .padding(.horizontal, 16)
+                        .frame(height: 40)
+                        .frame(maxWidth: .infinity)
+                        .onHover { hovering in
+                            isHovered = hovering
+                        }
+                    Rectangle()
+                        .fill(.ultraThinMaterial)
+                        .frame(height: 1)
+                }
+                .background(Color.clear)
             },
         )
     }
@@ -88,14 +80,28 @@ struct ToolbarView: View {
             backButton(viewStore: viewStore)
             forwardButton(viewStore: viewStore)
             enclosingDirectoryButton(viewStore: viewStore)
-            titleButton(viewStore: viewStore)
 
-            Spacer()
+            HStack(spacing: 8) {
+                titleButton(viewStore: viewStore)
 
-            if isHovered {
-                ViewToggleButton(store: store)
-                SortGroupButton(store: store)
+                Spacer()
+
+                if isHovered {
+                    ViewToggleButton(store: store)
+                    SortGroupButton(store: store)
+                }
             }
+            .padding(.horizontal, 6)
+            .padding(.vertical, 6)
+            .frame(height: 32)
+            .background(
+                Group {
+                    if isHovered {
+                        RoundedRectangle(cornerRadius: 8)
+                            .fill(.thickMaterial)
+                    }
+                },
+            )
         }
     }
 

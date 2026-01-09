@@ -56,17 +56,8 @@ struct ComposerView: View {
             })
         }
         .background(
-            RoundedRectangle(cornerRadius: VoyagerDS.Radius.overlayCard)
-                .fill(VoyagerDS.Surface.overlayBackground(for: colorScheme))
-                .overlay(
-                    RoundedRectangle(cornerRadius: VoyagerDS.Radius.overlayCard)
-                        .stroke(VoyagerDS.Surface.overlayBorder, lineWidth: 1),
-                )
-                .shadow(
-                    color: VoyagerDS.Shadow.overlayColor(for: colorScheme),
-                    radius: VoyagerDS.Shadow.overlayRadius(for: colorScheme),
-                    y: VoyagerDS.Shadow.overlayYOffset(for: colorScheme),
-                )
+            RoundedRectangle(cornerRadius: VoyagerDS.Radius.composer)
+                .fill(.ultraThickMaterial)
                 .allowsHitTesting(false),
         )
         .allowsHitTesting(true)
