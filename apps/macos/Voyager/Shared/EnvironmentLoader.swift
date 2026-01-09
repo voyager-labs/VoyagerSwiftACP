@@ -86,28 +86,33 @@ struct EnvironmentLoader {
         environment: [String: String] = ProcessInfo.processInfo.environment,
         bundle: Bundle = .main,
     ) -> BackendMode {
+        var backendMode: BackendMode = .source
         if let envMode = environment["BACKEND_MODE"],
            let mode = BackendMode(rawValue: envMode)
         {
-            return mode
+            backendMode = mode
         }
 
         if let infoMode = bundle.infoDictionary?["BACKEND_MODE"] as? String,
            let mode = BackendMode(rawValue: infoMode)
         {
-            return mode
+            backendMode = mode
         }
 
-        return .source
+        Dotenv.set(value: backendMode.rawValue, forKey: "BACKEND_MODE", overwrite: true)
+        return backendMode
     }
 
     nonisolated static func detectAppEnv(bundle: Bundle = .main) -> AppEnv {
+        var appEnv: AppEnv = .dev
         if let infoEnv = bundle.infoDictionary?["APP_ENV"] as? String,
            let envType = AppEnv(rawValue: infoEnv)
         {
-            return envType
+            appEnv = envType
         }
-        return .dev
+
+        Dotenv.set(value: appEnv.rawValue, forKey: "APP_ENV", overwrite: true)
+        return appEnv
     }
 
     /// `appEnv`와 `backendMode`를 자동으로 감지한 후 해당하는 환경 파일들을 로드합니다.
@@ -144,5 +149,21 @@ struct EnvironmentLoader {
         }
 
         try? Dotenv.configure(atPath: url.path, overwrite: true)
+    }
+}
+
+extension Dotenv {
+    static var appEnv: EnvironmentLoader.AppEnv? {
+        guard let value = self["APP_ENV"]?.stringValue else {
+            return nil
+        }
+        return EnvironmentLoader.AppEnv(rawValue: value)
+    }
+
+    static var backendMode: EnvironmentLoader.BackendMode? {
+        guard let value = self["BACKEND_MODE"]?.stringValue else {
+            return nil
+        }
+        return EnvironmentLoader.BackendMode(rawValue: value)
     }
 }

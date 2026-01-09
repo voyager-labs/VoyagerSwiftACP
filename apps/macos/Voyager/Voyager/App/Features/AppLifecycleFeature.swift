@@ -26,6 +26,8 @@ struct AppLifecycleFeature {
         Reduce { state, action in
             switch action {
             case .willFinishLaunching:
+                try? EnvironmentLoader.loadEnvFiles()
+
                 if state.didStartHelper {
                     return .none
                 }
