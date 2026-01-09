@@ -442,7 +442,10 @@ private extension FSItemListView {
     }
 
     func kindText(_ item: FSItem) -> String {
-        item.kind
+        if item.fileExtension.lowercased() == "voycoll" {
+            return "Voyager Collection"
+        }
+        return item.kind
     }
 
     @ViewBuilder

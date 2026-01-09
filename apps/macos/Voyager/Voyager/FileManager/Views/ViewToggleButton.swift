@@ -41,6 +41,12 @@ struct ViewToggleButton: View {
                 )
         }
         .menuIndicator(.hidden)
-        .buttonStyle(.plain)
+        .buttonStyle(.borderless)
+        .frame(width: 30, height: 30)
+        .background(
+            RoundedRectangle(cornerRadius: 5)
+                .fill(toolbarMenuButtonBackgroundColor)
+                .allowsHitTesting(false),
+        )
     }
 }

@@ -307,12 +307,15 @@ extension FileManagerSplitViewController {
 
                     if viewStore.isComposerPresented {
                         Color.clear
+                            .frame(maxWidth: .infinity, maxHeight: .infinity)
                             .contentShape(Rectangle())
                             .onTapGesture { store.send(.exitComposer) }
                     }
 
                     if viewStore.isComposerPresented {
                         ComposerView(store: store)
+                            .contentShape(Rectangle())
+                            .onTapGesture {}
                             .transition(.move(edge: .top).combined(with: .opacity))
                     }
                 }

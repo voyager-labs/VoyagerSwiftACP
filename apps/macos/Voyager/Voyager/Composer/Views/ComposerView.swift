@@ -20,6 +20,7 @@ struct ComposerView: View {
     @State private var flagsChangedMonitor: Any?
     @State private var isOptionKeyPressed: Bool = false
     @State private var isAddButtonHovering: Bool = false
+    @State private var isScopePickerPresented: Bool = false
 
     private let trafficLightAreaWidth: CGFloat = 80
     private let escapeKeyCode: UInt16 = 53
@@ -68,6 +69,7 @@ struct ComposerView: View {
                 )
                 .allowsHitTesting(false),
         )
+        .allowsHitTesting(true)
     }
 
     private func firstRow(viewStore: ViewStore<ComposerFeature.State, ComposerFeature.Action>) -> some View {
@@ -131,7 +133,7 @@ struct ComposerView: View {
                         .frame(width: 16, height: 16)
                         .background(buttonBackground)
                 }
-                .buttonStyle(.plain)
+                .buttonStyle(.borderless)
                 .padding(.trailing, 8)
             } else {
                 let submitButtonBackground = Circle().fill(
@@ -148,8 +150,17 @@ struct ComposerView: View {
                         .frame(width: 16, height: 16)
                         .background(submitButtonBackground)
                 }
-                .buttonStyle(.plain)
+                .buttonStyle(.borderless)
                 .disabled(isSubmitDisabled)
+                .background(
+                    Circle()
+                        .fill(
+                            isSubmitDisabled
+                                ? Color(red: 0.843, green: 0.714, blue: 0.322).opacity(0.5)
+                                : Color(red: 0.843, green: 0.714, blue: 0.322),
+                        )
+                        .allowsHitTesting(false),
+                )
                 .padding(.trailing, 8)
             }
         }
@@ -209,7 +220,9 @@ struct ComposerView: View {
     }
 
     private func clearButton(viewStore: ViewStore<ComposerFeature.State, ComposerFeature.Action>) -> some View {
-        Button {
+        let isAllEmpty = viewStore.text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && viewStore.scopes
+            .isEmpty && viewStore.conditions.isEmpty
+        return Button {
             store.send(.composer(.clearAll))
         } label: {
             HStack(spacing: 4) {
@@ -217,15 +230,22 @@ struct ComposerView: View {
                 Text("Clear all")
             }
             .font(.system(size: 10, weight: .medium))
+            .foregroundColor(isAllEmpty ? .secondary : .primary)
             .padding(.horizontal, 7)
             .padding(.vertical, 4)
             .background(
                 RoundedRectangle(cornerRadius: 8)
-                    .fill(isDark ? Color.white.opacity(0.08) : Color.black.opacity(0.08)),
+                    .fill(isDark ? Color.white.opacity(0.08) : Color.black.opacity(0.08))
+                    .allowsHitTesting(false),
             )
         }
-        .buttonStyle(.plain)
-        .disabled(viewStore.isLoadingSearch)
+        .buttonStyle(.borderless)
+        .disabled(viewStore.isLoadingSearch || isAllEmpty)
+        .background(
+            RoundedRectangle(cornerRadius: 8)
+                .fill(isDark ? Color.white.opacity(0.08) : Color.black.opacity(0.08))
+                .allowsHitTesting(false),
+        )
     }
 
     private func saveButton(viewStore: ViewStore<ComposerFeature.State, ComposerFeature.Action>) -> some View {
@@ -240,15 +260,22 @@ struct ComposerView: View {
                 Text(isSaveAs ? "Save As" : "Save")
             }
             .font(.system(size: 10, weight: .medium))
+            .foregroundColor(isEnabled ? .primary : .secondary)
             .padding(.horizontal, 7)
             .padding(.vertical, 4)
             .background(
                 RoundedRectangle(cornerRadius: 8)
-                    .fill(isDark ? Color.white.opacity(0.08) : Color.black.opacity(0.08)),
+                    .fill(isDark ? Color.white.opacity(0.08) : Color.black.opacity(0.08))
+                    .allowsHitTesting(false),
             )
         }
-        .buttonStyle(.plain)
+        .buttonStyle(.borderless)
         .disabled(!isEnabled)
+        .background(
+            RoundedRectangle(cornerRadius: 8)
+                .fill(isDark ? Color.white.opacity(0.08) : Color.black.opacity(0.08))
+                .allowsHitTesting(false),
+        )
     }
 
     private var horizontalSeparator: some View {
@@ -359,6 +386,7 @@ struct ComposerView: View {
                 store: composerStore,
                 favorites: store.favorites,
                 backHistory: historyPaths,
+                isComboBoxPresented: $isScopePickerPresented,
             )
         case let .condition(condition):
             conditionChipView(condition: condition)
@@ -536,6 +564,18 @@ struct ComposerView: View {
 
         keyDownMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { event in
             if event.keyCode == escapeKeyCode {
+                if isScopePickerPresented {
+                    isScopePickerPresented = false
+                    return nil
+                }
+                if store.composer.propertyPicker.isPresented {
+                    store.send(.composer(.propertyPicker(.setPresented(false))))
+                    return nil
+                }
+                if store.composer.operatorPicker.isPresented {
+                    store.send(.composer(.operatorPicker(.setPresented(false))))
+                    return nil
+                }
                 if store.composer.valuePicker.isPresented {
                     store.send(.composer(.valuePicker(.setPresented(false))))
                     return nil
