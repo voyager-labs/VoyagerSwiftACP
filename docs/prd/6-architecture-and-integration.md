@@ -3,7 +3,7 @@
 ## 6.1 기술 스택(현황)
 
 - macOS: SwiftUI, TCA(ComposableArchitecture), AppKit 브릿지 일부
-- Backend: FastAPI, SQLModel, Alembic, SQLite(개발), uv 런타임, Hydra
+- Backend: FastAPI, SQLModel, Alembic, SQLite(개발), uv 런타임, python-dotenv (환경 변수 기반 설정)
 
 ## 6.2 소스 트리 현실(요약)
 

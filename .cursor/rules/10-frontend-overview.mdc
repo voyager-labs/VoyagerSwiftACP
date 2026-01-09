@@ -16,16 +16,23 @@ description: 'SwiftUI + TCA frontend overview and backend bootstrap'
 
 - **Swift-dotenv approach**: Environment variables loaded from `.env.{dev|prod}` (repo root 또는 번들 리소스)
 - **Implementation**:
-  - Env 로딩: [Environment.swift](mdc:apps/macos/Voyager/VoyagerHelper/Infrastructure/Environment.swift)
+  - Env 로딩 및 캡슐화: [Environment.swift](mdc:apps/macos/Voyager/VoyagerHelper/Infrastructure/Environment.swift)
   - 프로세스 스폰: [ProcessRunner.swift](mdc:apps/macos/Voyager/VoyagerHelper/Infrastructure/ProcessRunner.swift)
+    - `Environment` 의존성 주입으로 설정 관리
+    - `BackendProcessConfig` 구조체로 프로세스 설정 캡슐화
 - **Environment keys**:
   - `PUBLIC_BACKEND_HOST`, `PUBLIC_BACKEND_PORT`
+  - `PUBLIC_BACKEND_PROCESS_NAME` (bundled 모드에서 바이너리 파일명)
   - `BACKEND_MODE` (Xcode Run 시, `source|bundled`)
 - **Backend execution modes**:
-  - **Debug builds**: Uses local `uv` to launch backend (`uv run dev|prod`)
-  - **Bundled mode**: Uses bundled Nuitka binary (`server/server.bin`) from app resources
+  - **Debug builds (source)**: Uses local `uv` to launch backend (`uv run dev|prod`)
+    - Python 프로세스에 전달되는 환경 변수: `APP_ENV`, `BACKEND_MODE`, `PATH` (homebrew 경로 포함)
+  - **Bundled mode**: Uses bundled Nuitka binary from app resources
+    - Binary path: `{bundle.resourceURL}/server/{PUBLIC_BACKEND_PROCESS_NAME}`
     - Built via [scripts/build/build-backend-binary.sh](mdc:scripts/build/build-backend-binary.sh)
     - Self-contained app bundle without requiring local `uv` installation
+    - Python 프로세스에 전달되는 환경 변수: `APP_ENV`, `BACKEND_MODE`
+- **Python dotenv loading**: Python 백엔드의 `load_config()`가 `APP_ENV`를 기반으로 `.env.{app_env}` 파일을 자체적으로 로드하므로, Swift에서 모든 dotenv 값을 주입할 필요 없음
 
 ## Notes
 

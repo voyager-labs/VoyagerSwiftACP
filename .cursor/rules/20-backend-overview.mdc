@@ -9,7 +9,7 @@ description: 'Backend (FastAPI + Python) overview: structure, entry points, and 
 
 - **Entry point**: [apps/backend/src/app/main.py](mdc:apps/backend/src/app/main.py)
 - **CLI**: [apps/backend/src/app/cli.py](mdc:apps/backend/src/app/cli.py)
-- **Configuration**: Hydra-based config with environment-specific overrides
+- **Configuration**: Environment variable-based config with `.env` file support
 - **Package management**: uv (Python 3.13+)
 
 ## How to run (high-level)
