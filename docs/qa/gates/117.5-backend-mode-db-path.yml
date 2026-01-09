@@ -1,0 +1,53 @@
+schema: 1
+story: '117.5'
+story_title: 'BACKEND_MODE 기반 DB 경로 분리 및 관계 문서 정리'
+gate: CONCERNS
+status_reason: 'Env 기반 DB 경로는 구현됐으나 문서 정합화와 QA 증빙이 미확인입니다.'
+reviewer: 'Quinn (Test Architect)'
+updated: '2026-01-08T15:32:11Z'
+
+waiver: { active: false }
+
+top_issues:
+  - id: 'DOC-1175-01'
+    severity: medium
+    finding: '스킴/환경 문서에 DB 경로와 BACKEND_MODE 관계가 아직 반영되지 않음.'
+    suggested_action: 'docs/architecture/build-schemes-and-environments.md 및 development-and-deployment.md 업데이트'
+  - id: 'QA-1175-01'
+    severity: medium
+    finding: '수동 QA 결과/로그 증빙이 문서에 없음.'
+    suggested_action: 'QA 실행 로그 또는 체크 결과를 스토리에 기록'
+
+risk_summary:
+  totals: { critical: 0, high: 0, medium: 2, low: 0 }
+  recommendations:
+    must_fix:
+      - '문서 정합화 및 오타 수정 완료 후 재검토'
+    monitor:
+      - '수동 QA 증빙 추가'
+
+quality_score: 70
+expires: '2026-01-22T15:32:11Z'
+
+evidence:
+  tests_reviewed: 0
+  risks_identified: 2
+  trace:
+    ac_covered: [1, 2, 3, 4, 5]
+    ac_gaps: [6, 7, 8, 9, 10, 11]
+
+nfr_validation:
+  security: { status: PASS, notes: '보안 관련 변경 없음.' }
+  performance: { status: PASS, notes: '런타임 성능 영향 없음.' }
+  reliability: { status: PASS, notes: '실행 경로 변경 없음.' }
+  maintainability: { status: CONCERNS, notes: '문서 정합화 미완료.' }
+
+recommendations:
+  immediate:
+    - action: 'BACKEND_MDOE 오타 발생 문서 위치를 찾아 수정'
+      refs: ['docs/architecture/build-schemes-and-environments.md', 'docs/architecture/development-and-deployment.md']
+    - action: 'DB 경로/ENV 관계 표를 문서에 반영'
+      refs: ['docs/architecture/build-schemes-and-environments.md', 'docs/architecture/development-and-deployment.md']
+  future:
+    - action: '수동 QA 증빙 추가 (로그/스크린샷)'
+      refs: ['docs/voy-117/stories/117.5.backend-mode-db-path.md']
