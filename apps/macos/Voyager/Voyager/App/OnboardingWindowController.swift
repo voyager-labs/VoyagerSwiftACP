@@ -1,5 +1,6 @@
 import AppKit
 import ComposableArchitecture
+import QuartzCore
 import SwiftUI
 
 final class OnboardingWindowController: NSWindowController, NSWindowDelegate {
@@ -13,10 +14,24 @@ final class OnboardingWindowController: NSWindowController, NSWindowDelegate {
         let rootView = OnboardingView(store: store)
         let hostingController = NSHostingController(rootView: rootView)
         let window = NSWindow(contentViewController: hostingController)
-        window.styleMask = [.titled, .closable, .miniaturizable, .resizable]
-        window.minSize = NSSize(width: 520, height: 360)
-        window.title = "Voyager Onboarding"
+        window.styleMask = [.titled, .closable, .fullSizeContentView]
+        window.minSize = NSSize(width: 900, height: 600)
+        window.maxSize = NSSize(width: 1200, height: 800)
+        window.title = ""
+        window.titleVisibility = .hidden
+        window.titlebarAppearsTransparent = true
+        window.isMovableByWindowBackground = true
+        window.level = .floating
         window.tabbingMode = .disallowed
+        window.alphaValue = 0
+
+        if let button = window.standardWindowButton(.miniaturizeButton) {
+            button.isEnabled = false
+        }
+
+        if let button = window.standardWindowButton(.zoomButton) {
+            button.isEnabled = false
+        }
 
         super.init(window: window)
         window.delegate = self
@@ -24,31 +39,37 @@ final class OnboardingWindowController: NSWindowController, NSWindowDelegate {
         window.setFrameAutosaveName("VoyagerOnboardingWindow")
 
         if !window.setFrameUsingName("VoyagerOnboardingWindow") {
-            let desiredSize = NSSize(width: 720, height: 480)
             let screenFrame = NSScreen.main?.visibleFrame ?? NSRect.zero
+            let desiredWidth = min(max(screenFrame.width * 0.6, 900), 1200)
+            let desiredHeight = min(max(screenFrame.height * 0.6, 600), 800)
+            let desiredSize = NSSize(width: desiredWidth, height: desiredHeight)
             let origin = NSPoint(
                 x: screenFrame.midX - desiredSize.width / 2,
                 y: screenFrame.midY - desiredSize.height / 2,
             )
             window.setFrame(NSRect(origin: origin, size: desiredSize), display: false)
+        } else {
+            var frame = window.frame
+            frame.size.width = min(max(frame.size.width, 900), 1200)
+            frame.size.height = min(max(frame.size.height, 600), 800)
+            window.setFrame(frame, display: false)
         }
     }
 
-    func windowShouldClose(_ sender: NSWindow) -> Bool {
-        let alert = NSAlert()
-        alert.messageText = "Quit Voyager?"
-        alert.informativeText = "Onboarding is still in progress. Quitting will resume next time."
-        alert.addButton(withTitle: "Quit")
-        alert.addButton(withTitle: "Cancel")
-        alert.alertStyle = .warning
-
-        alert.beginSheetModal(for: sender) { response in
-            if response == .alertFirstButtonReturn {
-                NSApp.terminate(nil)
-            }
+    override func showWindow(_ sender: Any?) {
+        super.showWindow(sender)
+        guard let window else { return }
+        window.alphaValue = 0
+        NSAnimationContext.runAnimationGroup { context in
+            context.duration = 0.22
+            context.timingFunction = CAMediaTimingFunction(name: .easeOut)
+            window.animator().alphaValue = 1
         }
+    }
 
-        return false
+    func windowShouldClose(_: NSWindow) -> Bool {
+        NSApp.terminate(nil)
+        return true
     }
 
     @available(*, unavailable)

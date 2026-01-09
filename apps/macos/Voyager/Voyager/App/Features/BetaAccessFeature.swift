@@ -28,17 +28,17 @@ struct BetaAccessFeature {
         var statusMessage: String? {
             switch status {
             case .active:
-                "Your beta access is confirmed. You can continue to the next step."
+                "Your invite is verified and beta access is enabled. You can proceed."
             case .checkFailed:
-                "We couldn't verify right now. Check your connection and try again."
+                "Verification failed. Check your network and try again."
             case .notActive:
                 switch reason {
                 case .missingInput:
-                    "Please enter both your email and token. Check your invitation email for the details."
+                    "Beta access isn't active yet. Enter both your email and token, then click Check."
                 case .mismatch:
-                    "That email and token don't match. Please double-check the invitation email."
+                    "That email and token don't match. Check your invite and try again."
                 case .tokenAlreadyRegistered:
-                    "Each token can be registered to one device only. If you want to switch devices, please contact the invite owner."
+                    "This token is already registered to another device. Contact the invite owner to reset it."
                 case .none:
                     nil
                 }

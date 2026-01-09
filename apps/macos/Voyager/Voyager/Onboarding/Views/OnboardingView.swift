@@ -1,95 +1,295 @@
+import AppKit
 import ComposableArchitecture
 import SwiftUI
 
 struct OnboardingView: View {
     let store: StoreOf<OnboardingFeature>
 
+    private let accentColor = Color(
+        red: 252 / 255,
+        green: 154 / 255,
+        blue: 48 / 255,
+    )
+
     var body: some View {
         WithViewStore(store, observe: { $0 }) { viewStore in
-            VStack(spacing: 24) {
-                VStack(spacing: 8) {
-                    Text("Welcome to Voyager")
-                        .font(.system(size: 28, weight: .semibold))
-                    Text("Onboarding in progress")
-                        .font(.system(size: 15))
-                        .foregroundStyle(.secondary)
-                    Text("Step \(viewStore.currentStepIndex)/\(viewStore.totalSteps) · \(viewStore.currentStep.title)")
-                        .font(.system(size: 13, weight: .medium))
-                        .foregroundStyle(.secondary)
-                    ProgressView(
-                        value: Double(viewStore.currentStepIndex),
-                        total: Double(viewStore.totalSteps),
-                    )
-                    .progressViewStyle(.linear)
-                    .frame(maxWidth: 320)
-                }
+            GeometryReader { proxy in
+                let isWideLayout = proxy.size.width >= 900
+                let horizontalPadding: CGFloat = 24
+                let availableWidth = proxy.size.width - horizontalPadding * 2
+                let contentWidth = min(availableWidth, 1040)
+                let columnSpacing: CGFloat = 24
+                let availableColumnWidth = max(contentWidth - columnSpacing, 0)
+                let leftColumnWidth = availableColumnWidth * 0.4
+                let rightColumnWidth = availableColumnWidth * 0.6
+                let isCenteredLayout = viewStore.currentStep == .welcome || viewStore.currentStep == .complete
+                let centeredContentWidth = min(max(contentWidth * 0.7, 560), min(contentWidth, 720))
+                let contentSpacing: CGFloat = isCenteredLayout ? 16 : 16
+                let topInsetPadding: CGFloat = 26
+                let topBarWidth = contentWidth
 
-                if viewStore.showResumeBanner {
-                    HStack(spacing: 12) {
-                        Image(systemName: "clock.arrow.circlepath")
-                            .foregroundStyle(.secondary)
-                        Text("Resuming your onboarding from where you left off.")
-                            .font(.system(size: 13))
-                            .foregroundStyle(.secondary)
-                        Spacer()
-                        Button("Dismiss") {
-                            viewStore.send(.dismissResumeBanner)
+                ZStack {
+                    backgroundView
+
+                    VStack(spacing: 12) {
+                        topInsetBar(viewStore: viewStore)
+                            .frame(width: topBarWidth)
+
+                        if viewStore.showResumeBanner {
+                            resumeBanner(viewStore: viewStore)
+                                .frame(width: topBarWidth)
                         }
-                        .buttonStyle(.plain)
-                    }
-                    .padding(12)
-                    .background(.ultraThinMaterial)
-                    .cornerRadius(8)
-                }
 
-                stepContent(for: viewStore.currentStep)
-
-                Spacer()
-
-                HStack {
-                    Button("Back") {
-                        viewStore.send(.backTapped)
-                    }
-                    .disabled(!viewStore.canGoBack)
-
-                    Spacer()
-
-                    VStack(alignment: .trailing, spacing: 4) {
-                        Button("Next") {
-                            viewStore.send(.nextTapped)
+                        if let message = nextDisabledMessage(from: viewStore) {
+                            HStack {
+                                Spacer()
+                                Text(message)
+                                    .font(.system(size: 11))
+                                    .foregroundStyle(.secondary)
+                            }
+                            .frame(width: contentWidth)
                         }
-                        .disabled(!viewStore.canGoNext)
 
-                        if viewStore.currentStep == .permissions,
-                           !viewStore.canGoNext,
-                           let message = viewStore.permissions.nextDisabledMessage
-                        {
-                            Text(message)
-                                .font(.system(size: 11))
-                                .foregroundStyle(.secondary)
+                        Group {
+                            if isCenteredLayout {
+                                VStack(spacing: 0) {
+                                    Spacer(minLength: 0)
+                                    VStack(spacing: contentSpacing) {
+                                        stepSummaryView(viewStore: viewStore, isCentered: true)
+                                        stepContent(for: viewStore.currentStep, isCentered: true)
+                                            .frame(maxWidth: .infinity, alignment: .center)
+                                            .multilineTextAlignment(.center)
+                                    }
+                                    .frame(width: centeredContentWidth, alignment: .center)
+                                    .frame(maxWidth: .infinity, alignment: .center)
+                                    Spacer(minLength: 0)
+                                }
+                            } else if isWideLayout {
+                                HStack(alignment: .center, spacing: columnSpacing) {
+                                    stepSummaryView(viewStore: viewStore, isCentered: false)
+                                        .frame(width: leftColumnWidth, alignment: .leading)
+                                    stepContent(for: viewStore.currentStep, isCentered: false)
+                                        .frame(width: rightColumnWidth, alignment: .leading)
+                                }
+                                .frame(width: contentWidth, alignment: .center)
+                                .frame(maxHeight: .infinity, alignment: .center)
+                            } else {
+                                VStack(alignment: .leading, spacing: 16) {
+                                    stepSummaryView(viewStore: viewStore, isCentered: false)
+                                        .frame(maxWidth: .infinity, alignment: .leading)
+                                    stepContent(for: viewStore.currentStep, isCentered: false)
+                                        .frame(maxWidth: .infinity, alignment: .leading)
+                                }
+                                .frame(width: contentWidth, alignment: .center)
+                            }
+                        }
+
+                        if !isCenteredLayout {
+                            Spacer(minLength: 0)
                         }
                     }
+                    .padding(.horizontal, horizontalPadding)
+                    .padding(.top, topInsetPadding)
+                    .padding(.bottom, 16)
                 }
+                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+                .ignoresSafeArea(.container, edges: .top)
             }
-            .frame(maxWidth: .infinity, maxHeight: .infinity)
-            .padding(40)
             .onAppear {
                 viewStore.send(.onAppear)
             }
         }
     }
 
+    private var backgroundView: some View {
+        LinearGradient(
+            colors: [
+                Color(nsColor: .windowBackgroundColor),
+                Color(nsColor: .windowBackgroundColor).opacity(0.94),
+            ],
+            startPoint: .top,
+            endPoint: .bottom,
+        )
+    }
+
+    private func topInsetBar(viewStore: ViewStore<OnboardingFeature.State, OnboardingFeature.Action>) -> some View {
+        let sideSlotWidth: CGFloat = 200
+
+        return HStack(spacing: 0) {
+            Button {
+                viewStore.send(.backTapped)
+            } label: {
+                topBarLabel("Back")
+            }
+            .buttonStyle(.plain)
+            .disabled(!viewStore.canGoBack)
+            .frame(width: sideSlotWidth, alignment: .leading)
+
+            stepDots(viewStore: viewStore)
+                .frame(maxWidth: .infinity, alignment: .center)
+
+            trailingActionButton(viewStore: viewStore)
+                .frame(width: sideSlotWidth, alignment: .trailing)
+        }
+        .frame(height: 40)
+        .padding(.horizontal, 12)
+        .background(
+            RoundedRectangle(cornerRadius: 12, style: .continuous)
+                .fill(.ultraThinMaterial)
+                .opacity(0.9),
+        )
+    }
+
     @ViewBuilder
-    private func stepContent(for step: OnboardingStep) -> some View {
+    private func trailingActionButton(
+        viewStore: ViewStore<OnboardingFeature.State, OnboardingFeature.Action>,
+    ) -> some View {
+        switch viewStore.currentStep {
+        case .betaAccess:
+            if viewStore.betaAccess.isComplete {
+                nextButton(viewStore: viewStore)
+            } else {
+                let isRetry = viewStore.betaAccess.showsRetry
+                Button {
+                    viewStore.send(isRetry ? .betaAccess(.retryTapped) : .betaAccess(.checkTapped))
+                } label: {
+                    topBarLabel(isRetry ? "Retry (Enter)" : "Check (Enter)")
+                }
+                .buttonStyle(.borderedProminent)
+                .tint(accentColor)
+                .keyboardShortcut(.return, modifiers: [])
+                .disabled(!viewStore.betaAccess.canSubmit || viewStore.betaAccess.isVerifying)
+            }
+        case .complete:
+            Button {
+                viewStore.send(.complete(.startUsingTapped))
+            } label: {
+                topBarLabel("Start using Voyager")
+            }
+            .buttonStyle(.borderedProminent)
+            .tint(accentColor)
+            .keyboardShortcut(.return, modifiers: [])
+            .disabled(viewStore.complete.isOpeningWindow)
+        case .welcome, .permissions:
+            nextButton(viewStore: viewStore)
+        }
+    }
+
+    private func nextButton(viewStore: ViewStore<OnboardingFeature.State, OnboardingFeature.Action>) -> some View {
+        Button {
+            viewStore.send(.nextTapped)
+        } label: {
+            topBarLabel("Next (Enter)")
+        }
+        .buttonStyle(.borderedProminent)
+        .tint(accentColor)
+        .keyboardShortcut(.return, modifiers: [])
+        .disabled(!viewStore.canGoNext)
+    }
+
+    private func topBarLabel(_ text: String) -> some View {
+        Text(text)
+            .lineLimit(1)
+            .minimumScaleFactor(0.85)
+    }
+
+    private func stepDots(viewStore: ViewStore<OnboardingFeature.State, OnboardingFeature.Action>) -> some View {
+        HStack(spacing: 8) {
+            ForEach(0 ..< viewStore.totalSteps, id: \.self) { index in
+                let isActive = index == viewStore.currentStepIndex - 1
+                Circle()
+                    .fill(isActive ? accentColor : accentColor.opacity(0.3))
+                    .frame(width: 8, height: 8)
+            }
+        }
+        .accessibilityLabel("Onboarding progress")
+    }
+
+    private func resumeBanner(viewStore: ViewStore<OnboardingFeature.State, OnboardingFeature.Action>) -> some View {
+        HStack(spacing: 12) {
+            Image(systemName: "clock.arrow.circlepath")
+                .foregroundStyle(.secondary)
+            Text("Resuming your onboarding from where you left off.")
+                .font(.system(size: 13))
+                .foregroundStyle(.secondary)
+            Spacer()
+            Button("Dismiss") {
+                viewStore.send(.dismissResumeBanner)
+            }
+            .buttonStyle(.plain)
+        }
+        .padding(12)
+        .background(.ultraThinMaterial)
+        .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+    }
+
+    private func nextDisabledMessage(
+        from viewStore: ViewStore<OnboardingFeature.State, OnboardingFeature.Action>,
+    ) -> String? {
+        guard viewStore.currentStep == .permissions, !viewStore.canGoNext else { return nil }
+        return viewStore.permissions.nextDisabledMessage
+    }
+
+    private func stepSummaryView(
+        viewStore: ViewStore<OnboardingFeature.State, OnboardingFeature.Action>,
+        isCentered: Bool,
+    ) -> some View {
+        let alignment: Alignment = isCentered ? .center : .leading
+        let textAlignment: TextAlignment = isCentered ? .center : .leading
+        let titleSize: CGFloat = isCentered ? 40 : 30
+        let subtitleSize: CGFloat = isCentered ? 17 : 13
+
+        return VStack(alignment: isCentered ? .center : .leading, spacing: 12) {
+            Text("Voyager")
+                .font(.system(size: 12, weight: .semibold))
+                .foregroundStyle(.secondary)
+                .frame(maxWidth: .infinity, alignment: alignment)
+                .multilineTextAlignment(textAlignment)
+
+            Text(viewStore.currentStep.title)
+                .font(.system(size: titleSize, weight: .semibold))
+                .frame(maxWidth: .infinity, alignment: alignment)
+                .multilineTextAlignment(textAlignment)
+
+            Text(stepSubtitle(for: viewStore.currentStep))
+                .font(.system(size: subtitleSize))
+                .foregroundStyle(.secondary)
+                .frame(maxWidth: .infinity, alignment: alignment)
+                .multilineTextAlignment(textAlignment)
+        }
+        .frame(maxWidth: .infinity, alignment: alignment)
+    }
+
+    private func stepSubtitle(for step: OnboardingStep) -> String {
         switch step {
         case .welcome:
-            WelcomeStepView(store: store.scope(state: \.welcome, action: \.welcome))
+            "This setup is required before you can open Voyager's file manager."
+        case .betaAccess:
+            "Validate your invite with email and token before you can continue."
+        case .permissions:
+            "Enable macOS permissions so Voyager can index locally."
+        case .complete:
+            "All steps are complete. Start Voyager to open your first window."
+        }
+    }
+
+    @ViewBuilder
+    private func stepContent(for step: OnboardingStep, isCentered: Bool) -> some View {
+        switch step {
+        case .welcome:
+            WelcomeStepView(
+                store: store.scope(state: \.welcome, action: \.welcome),
+                isCentered: isCentered,
+            )
         case .betaAccess:
             BetaAccessStepView(store: store.scope(state: \.betaAccess, action: \.betaAccess))
         case .permissions:
             PermissionsStepView(store: store.scope(state: \.permissions, action: \.permissions))
         case .complete:
-            CompleteStepView(store: store.scope(state: \.complete, action: \.complete))
+            CompleteStepView(
+                store: store.scope(state: \.complete, action: \.complete),
+                isCentered: isCentered,
+            )
         }
     }
 }

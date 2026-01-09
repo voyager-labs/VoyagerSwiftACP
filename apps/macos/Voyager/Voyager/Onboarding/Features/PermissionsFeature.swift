@@ -10,13 +10,13 @@ enum FullDiskAccessStatus: String, Equatable, Sendable {
     var message: String {
         switch self {
         case .granted:
-            "Full Disk Access is granted. You can continue."
+            "Full Disk Access is enabled. You can continue."
         case .needsAction:
-            "Full Disk Access is required to continue. Please enable it in System Settings."
+            "Full Disk Access is required. Enable it in System Settings to continue."
         case .denied:
-            "Full Disk Access was denied. You can change this in System Settings."
+            "Full Disk Access is off. Turn it on in System Settings to continue."
         case .unknown:
-            "We couldn't confirm your Full Disk Access status yet."
+            "Full Disk Access status is unknown. Open System Settings to confirm."
         }
     }
 }
@@ -50,7 +50,7 @@ struct PermissionsFeature {
         }
 
         var nextDisabledMessage: String? {
-            fullDiskAccessStatus == .granted ? nil : "Full Disk Access is required to continue."
+            fullDiskAccessStatus == .granted ? nil : "Next unlocks after macOS reports Full Disk Access as granted."
         }
 
         var filesAndFoldersMessage: String? {
@@ -128,7 +128,7 @@ struct PermissionsFeature {
 
             case let .systemSettingsOpenResult(opened):
                 if !opened {
-                    state.systemSettingsError = "We couldn't open System Settings. Please open it manually."
+                    state.systemSettingsError = "We couldn't open System Settings. Open it manually."
                 } else {
                     state.hasAttemptedFullDiskAccessEnable = true
                 }
@@ -169,7 +169,7 @@ struct PermissionsFeature {
             case let .launchAtLoginUpdateFailed(previousValue):
                 state.launchAtLoginEnabled = previousValue
                 state.launchAtLoginError =
-                    "We couldn't update your Login Items. You can manage this in System Settings."
+                    "We couldn't update your Login Items. Manage this in System Settings."
                 return .none
 
             case let .launchAtLoginStateLoaded(isEnabled):

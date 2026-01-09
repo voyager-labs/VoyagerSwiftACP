@@ -4,17 +4,25 @@ import SwiftUI
 
 struct WelcomeStepView: View {
     let store: StoreOf<WelcomeFeature>
+    var isCentered: Bool = false
 
     var body: some View {
         WithViewStore(store, observe: { $0 }) { _ in
-            VStack(alignment: .leading, spacing: 12) {
-                Text("Welcome")
-                    .font(.system(size: 20, weight: .semibold))
-                Text("Let's get Voyager ready for your first run.")
-                    .font(.system(size: 13))
+            VStack(alignment: isCentered ? .center : .leading, spacing: 12) {
+                Text("Voyager runs a four-step setup. You can move forward only after each step is complete.")
+                    .font(.system(size: 15))
                     .foregroundStyle(.secondary)
+                    .multilineTextAlignment(isCentered ? .center : .leading)
+                Text("Your files stay on your Mac; nothing is uploaded during onboarding.")
+                    .font(.system(size: 15))
+                    .foregroundStyle(.secondary)
+                    .multilineTextAlignment(isCentered ? .center : .leading)
+                Text("If you quit and reopen Voyager, it resumes at the last saved step.")
+                    .font(.system(size: 15))
+                    .foregroundStyle(.secondary)
+                    .multilineTextAlignment(isCentered ? .center : .leading)
             }
-            .frame(maxWidth: .infinity, alignment: .leading)
+            .frame(maxWidth: .infinity, alignment: isCentered ? .center : .leading)
         }
     }
 }
@@ -25,13 +33,10 @@ struct BetaAccessStepView: View {
     var body: some View {
         WithViewStore(store, observe: { $0 }) { viewStore in
             VStack(alignment: .leading, spacing: 12) {
-                Text("Beta Access")
-                    .font(.system(size: 20, weight: .semibold))
-
                 VStack(alignment: .leading, spacing: 8) {
                     VStack(alignment: .leading, spacing: 4) {
                         Text("Email")
-                            .font(.system(size: 11, weight: .semibold))
+                            .font(.system(size: 12, weight: .semibold))
                             .foregroundStyle(.secondary)
                         TextField(
                             "email@example.com",
@@ -41,11 +46,14 @@ struct BetaAccessStepView: View {
                             ),
                         )
                         .textFieldStyle(.roundedBorder)
+                        .frame(maxWidth: .infinity)
+                        .controlSize(.large)
                     }
+                    .frame(maxWidth: .infinity, alignment: .leading)
 
                     VStack(alignment: .leading, spacing: 4) {
                         Text("Token")
-                            .font(.system(size: 11, weight: .semibold))
+                            .font(.system(size: 12, weight: .semibold))
                             .foregroundStyle(.secondary)
                         SecureField(
                             "Paste your token here",
@@ -55,16 +63,25 @@ struct BetaAccessStepView: View {
                             ),
                         )
                         .textFieldStyle(.roundedBorder)
+                        .frame(maxWidth: .infinity)
+                        .controlSize(.large)
                     }
+                    .frame(maxWidth: .infinity, alignment: .leading)
 
-                    Text("Enter the email and token from your invitation email.")
-                        .font(.system(size: 12))
-                        .foregroundStyle(.secondary)
+                    VStack(alignment: .leading, spacing: 6) {
+                        Text("Enter the email and token from your invite.")
+                        Text("Click Check to verify with the server. Until verification succeeds, Next stays disabled.")
+                        Text("Verification can fail due to input errors, expired tokens, or network/server issues.")
+                        Text("If it fails, correct the input and Retry/Check.")
+                    }
+                    .font(.system(size: 13))
+                    .foregroundStyle(.secondary)
                 }
+                .frame(maxWidth: .infinity, alignment: .leading)
 
                 VStack(alignment: .leading, spacing: 6) {
                     Text(viewStore.statusTitle)
-                        .font(.system(size: 13, weight: .semibold))
+                        .font(.system(size: 14, weight: .semibold))
                     if let message = viewStore.statusMessage {
                         Text(message)
                             .font(.system(size: 13))
@@ -74,16 +91,15 @@ struct BetaAccessStepView: View {
                 .padding(12)
                 .background(.ultraThinMaterial)
                 .cornerRadius(8)
+                .frame(maxWidth: .infinity, alignment: .leading)
 
-                HStack(spacing: 8) {
-                    Button(viewStore.showsRetry ? "Retry" : "Check") {
-                        viewStore.send(viewStore.showsRetry ? .retryTapped : .checkTapped)
-                    }
-                    .disabled(!viewStore.canSubmit)
-
-                    if viewStore.isVerifying {
+                if viewStore.isVerifying {
+                    HStack(spacing: 8) {
                         ProgressView()
                             .controlSize(.small)
+                        Text("Checking…")
+                            .font(.system(size: 12))
+                            .foregroundStyle(.secondary)
                     }
                 }
             }
@@ -103,22 +119,26 @@ struct PermissionsStepView: View {
             let statusColor: Color = viewStore.fullDiskAccessStatus == .granted ? .green : .secondary
 
             VStack(alignment: .leading, spacing: 16) {
-                Text("Permissions")
-                    .font(.system(size: 20, weight: .semibold))
-
                 VStack(alignment: .leading, spacing: 8) {
                     HStack(spacing: 8) {
                         Text("Full Disk Access")
-                            .font(.system(size: 13, weight: .semibold))
+                            .font(.system(size: 14, weight: .semibold))
                         Text(viewStore.fullDiskAccessStatus.rawValue)
-                            .font(.system(size: 11, weight: .semibold))
+                            .font(.system(size: 12, weight: .semibold))
                             .foregroundStyle(statusColor)
                         Spacer()
                     }
 
                     Text(viewStore.fullDiskAccessStatusMessage)
-                        .font(.system(size: 12))
+                        .font(.system(size: 13))
                         .foregroundStyle(.secondary)
+
+                    Text(
+                        "Enable it manually in System Settings > Privacy & Security > Full Disk Access. "
+                            + "Voyager cannot add itself or change this toggle.",
+                    )
+                    .font(.system(size: 12))
+                    .foregroundStyle(.secondary)
 
                     if viewStore.showsFullDiskAccessAction {
                         Button("Open System Settings") {
@@ -126,24 +146,24 @@ struct PermissionsStepView: View {
                         }
                     }
 
-                    Text("System Settings > Privacy & Security > Full Disk Access")
-                        .font(.system(size: 11))
-                        .foregroundStyle(.secondary)
-
                     if let error = viewStore.systemSettingsError {
                         Text(error)
-                            .font(.caption)
+                            .font(.system(size: 12))
                             .foregroundStyle(.red)
                     }
                 }
                 .padding(12)
                 .background(.ultraThinMaterial)
                 .cornerRadius(8)
+                .frame(maxWidth: .infinity, alignment: .leading)
 
                 VStack(alignment: .leading, spacing: 8) {
                     Text("Files & Folders")
-                        .font(.system(size: 13, weight: .semibold))
-                    Text("Allow access to Desktop, Documents, and Downloads.")
+                        .font(.system(size: 14, weight: .semibold))
+                    Text("Click Grant Access to request Desktop, Documents, and Downloads.")
+                        .font(.system(size: 13))
+                        .foregroundStyle(.secondary)
+                    Text("macOS will show a permission prompt. Choose Allow to grant access.")
                         .font(.system(size: 12))
                         .foregroundStyle(.secondary)
 
@@ -161,7 +181,7 @@ struct PermissionsStepView: View {
 
                     if let message = viewStore.filesAndFoldersMessage {
                         Text(message)
-                            .font(.system(size: 12))
+                            .font(.system(size: 13))
                             .foregroundStyle(.secondary)
                     }
 
@@ -170,10 +190,10 @@ struct PermissionsStepView: View {
                             ForEach(viewStore.folderAccessItems) { item in
                                 HStack {
                                     Text(item.title)
-                                        .font(.system(size: 12))
+                                        .font(.system(size: 13))
                                     Spacer()
                                     Text(item.status.rawValue)
-                                        .font(.system(size: 12, weight: .semibold))
+                                        .font(.system(size: 13, weight: .semibold))
                                         .foregroundStyle(.secondary)
                                 }
                             }
@@ -183,6 +203,7 @@ struct PermissionsStepView: View {
                 .padding(12)
                 .background(.ultraThinMaterial)
                 .cornerRadius(8)
+                .frame(maxWidth: .infinity, alignment: .leading)
 
                 VStack(alignment: .leading, spacing: 8) {
                     Toggle(
@@ -192,72 +213,51 @@ struct PermissionsStepView: View {
                             send: { .launchAtLoginToggled($0) },
                         ),
                     )
-                    Text("Start Voyager automatically when you log in.")
-                        .font(.system(size: 12))
+                    Text("Optional. It does not affect onboarding completion.")
+                        .font(.system(size: 13))
                         .foregroundStyle(.secondary)
 
                     if let error = viewStore.launchAtLoginError {
                         Text(error)
-                            .font(.caption)
+                            .font(.system(size: 12))
                             .foregroundStyle(.red)
                         Text("System Settings > Login Items")
-                            .font(.system(size: 11))
+                            .font(.system(size: 12))
                             .foregroundStyle(.secondary)
                     }
                 }
                 .padding(12)
                 .background(.ultraThinMaterial)
                 .cornerRadius(8)
-
-                VStack(alignment: .leading, spacing: 6) {
-                    Text("Indexing is running in the background from `/`.")
-                        .font(.system(size: 12))
-                    Text(
-                        "Indexing runs via the backend binary launched by VoyagerHelper. "
-                            + "Full Disk Access can't be delegated by Voyager.",
-                    )
-                    .font(.system(size: 11))
-                    .foregroundStyle(.secondary)
-                }
+                .frame(maxWidth: .infinity, alignment: .leading)
 
                 if viewStore.showsIndexingPresetPreview {
                     VStack(alignment: .leading, spacing: 8) {
                         HStack(spacing: 8) {
                             Text("Indexing Preset (OBT)")
-                                .font(.system(size: 13, weight: .semibold))
+                                .font(.system(size: 14, weight: .semibold))
                             Text(viewStore.indexingPresetStatusLabel)
-                                .font(.system(size: 11, weight: .semibold))
+                                .font(.system(size: 12, weight: .semibold))
                                 .foregroundStyle(.secondary)
                             Spacer()
                         }
 
-                        Text("Editing will be available later (OBT).")
+                        Text("Indexing runs in the background and continues after onboarding.")
+                            .font(.system(size: 13))
+                            .foregroundStyle(.secondary)
+
+                        Text("You will not see a single \"indexing complete\" message.")
                             .font(.system(size: 12))
                             .foregroundStyle(.secondary)
 
-                        VStack(alignment: .leading, spacing: 4) {
-                            Text("Included Paths")
-                                .font(.system(size: 11, weight: .semibold))
-                                .foregroundStyle(.secondary)
-                            ForEach(["~/", "/Applications"], id: \.self) { path in
-                                Text("• \(path)")
-                                    .font(.system(size: 11))
-                            }
-                        }
-
-                        VStack(alignment: .leading, spacing: 4) {
-                            Text("Excluded Paths")
-                                .font(.system(size: 11, weight: .semibold))
-                                .foregroundStyle(.secondary)
-                            ForEach(["~/Library", "/System"], id: \.self) { path in
-                                Text("• \(path)")
-                                    .font(.system(size: 11))
-                            }
-                        }
+                        Text("This is a read-only summary of what will be included and excluded.")
+                            .font(.system(size: 12))
+                            .foregroundStyle(.secondary)
                     }
                     .padding(12)
                     .background(.ultraThinMaterial)
                     .cornerRadius(8)
+                    .frame(maxWidth: .infinity, alignment: .leading)
                 }
             }
             .frame(maxWidth: .infinity, alignment: .leading)
@@ -273,38 +273,40 @@ struct PermissionsStepView: View {
 
 struct CompleteStepView: View {
     let store: StoreOf<CompleteFeature>
+    var isCentered: Bool = false
 
     var body: some View {
         WithViewStore(store, observe: { $0 }) { viewStore in
-            VStack(alignment: .leading, spacing: 12) {
-                Text("Complete")
-                    .font(.system(size: 20, weight: .semibold))
-                Text("You're all set. We'll open a file manager window next.")
-                    .font(.system(size: 13))
+            VStack(alignment: isCentered ? .center : .leading, spacing: 12) {
+                Text("Setup is finished and Voyager is ready to use.")
+                    .font(.system(size: 15))
                     .foregroundStyle(.secondary)
+                    .multilineTextAlignment(isCentered ? .center : .leading)
+                Text("Click Start using Voyager to open your first file manager window.")
+                    .font(.system(size: 15))
+                    .foregroundStyle(.secondary)
+                    .multilineTextAlignment(isCentered ? .center : .leading)
 
-                HStack(spacing: 8) {
-                    Button("Start using Voyager") {
-                        viewStore.send(.startUsingTapped)
-                    }
-                    .disabled(viewStore.isOpeningWindow)
-
-                    if viewStore.isOpeningWindow {
-                        ProgressView()
-                            .controlSize(.small)
-                    }
+                if viewStore.isOpeningWindow {
+                    ProgressView()
+                        .controlSize(.small)
                 }
 
                 if let error = viewStore.openWindowError {
                     Text(error)
-                        .font(.system(size: 12))
+                        .font(.system(size: 13))
                         .foregroundStyle(.red)
                     Button("Retry") {
                         viewStore.send(.retryTapped)
                     }
+                } else {
+                    Text("If it fails, you'll see Retry to try again.")
+                        .font(.system(size: 13))
+                        .foregroundStyle(.secondary)
+                        .multilineTextAlignment(isCentered ? .center : .leading)
                 }
             }
-            .frame(maxWidth: .infinity, alignment: .leading)
+            .frame(maxWidth: .infinity, alignment: isCentered ? .center : .leading)
         }
     }
 }

@@ -39,6 +39,7 @@
 | 2026-01-03 | v0.3 | Add initial indexing kick-off after FDA is granted | po |
 | 2026-01-03 | v0.4 | Move indexing kick-off to Permissions (CBT); keep preset editing for OBT | po |
 | 2026-01-03 | v0.5 | Make indexing non-blocking + placeholder only (target `/`) | po |
+| 2026-01-07 | v0.6 | Inline OBT preset preview in Permissions; remove preset step | po |
 
 ---
 
@@ -53,17 +54,15 @@ graph TD
   B -->|Yes| OW[Onboarding Window]
   OW --> S1[Welcome]
   S1 --> S2[Beta Access]
-  S2 --> S3[Permissions: Full Disk Access]
-  S3 --> S4[Indexing Preset (OBT)]
-  S4 --> S5[Complete]
-  S5 --> FM
+  S2 --> S3[Permissions: Full Disk Access + OBT Preview]
+  S3 --> S4[Complete]
+  S4 --> FM
 ```
 
 **Screen Inventory (Onboarding Window):**
 - `Welcome`
 - `Beta Access`
-- `Permission (Full Disk Access)`
-- `Indexing Preset (OBT) — read-only preview`
+- `Permissions (Full Disk Access + OBT preset preview)`
 - `Complete`
 
 ### Navigation Structure
@@ -80,7 +79,7 @@ graph TD
 
 ### UF1 — 최초 실행: 온보딩 완료 후 파일 관리자 창 자동 오픈
 
-**User goal:** 권한·베타 접근·인덱싱 프리셋을 설정하고, 파일 관리자 창으로 진입한다.
+**User goal:** 권한·베타 접근을 완료하고, Permissions 단계에서 OBT 프리셋 프리뷰를 확인한 뒤 파일 관리자 창으로 진입한다.
 
 ```mermaid
 flowchart TD
@@ -88,11 +87,10 @@ flowchart TD
   B -->|Yes| C[Show Onboarding Window]
   C --> D[Welcome]
   D --> E[Beta Access]
-  E --> F[Permissions]
-  F --> G[Start Initial Indexing (placeholder; target `/`)]
-  G --> H[Indexing Preset Preview]
-  H --> I[Complete]
-  I --> J[Open 1 File Manager Window]
+  E --> F[Permissions (FDA + OBT Preview)]
+  F --> G[Start Initial Indexing (background; target `/`)]
+  G --> H[Complete]
+  H --> I[Open 1 File Manager Window]
 ```
 
 **Edge Cases & Error Handling:**
@@ -200,6 +198,10 @@ flowchart TD
 - (결정) 실제 인덱싱 실행 주체는 **backend 바이너리**이며, `VoyagerHelper`가 백그라운드에서 이를 실행한다. FDA는 “권한을 가진 프로세스가 직접 파일에 접근”할 때만 유효하므로, Voyager가 FDA를 “받아서 위임”하는 방식은 불가능하다.
 - 권한 요청 UX:
   - macOS의 `Full Disk Access`는 시스템 “허용(Allow)” 팝업이 뜨는 방식이 아니라, 사용자가 **System Settings에서 직접 토글**해야 한다.
+  - 공식 문서 기준으로 `Full Disk Access`는 PPPC의 `System Policy All Files` 항목에 해당하며 **사용자 승인 필요**로 정의된다. MDM 프로파일로 사전 허용 가능하지만, 일반 앱에서 자동 추가/승인은 불가하다.
+    - 참고: https://support.apple.com/guide/deployment/privacy-preferences-policy-control-payload-dep38df53c2a/web
+    - 참고: https://developer.apple.com/documentation/devicemanagement/privacypreferencespolicycontrol
+    - 참고: https://support.apple.com/guide/mac-help/change-privacy-security-settings-on-mac-mh32356/mac
   - CTA `Open System Settings`는 `Privacy & Security > Full Disk Access` 화면으로 이동시킨다.
   - 기본 안내: 목록에서 `Voyager`를 켠다. (목록에 없으면 `+`로 `Voyager.app` 추가)
   - 고급(연동 후 검증 결과에 따라): backend가 `VoyagerHelper` 실행 체인으로 동작하므로, 필요 시 `VoyagerHelper.app`도 Full Disk Access에 추가/활성화해야 할 수 있다.
@@ -208,7 +210,7 @@ flowchart TD
 
 **Design File Reference:** TBD
 
-#### Indexing Preset (OBT) — read-only preview
+#### Permissions — Indexing Preset (OBT) — read-only preview
 
 **Purpose:** 인덱싱 프리셋이 무엇을 하는지 보여주고, “왜 필요한지”를 연결한다.
 
@@ -218,7 +220,8 @@ flowchart TD
 - 안내: “편집은 추후 제공됩니다(현재는 읽기 전용)”
 
 **Interaction Notes:**
-- 이 스텝은 “인덱싱 범위(프리셋) 설정”을 위한 UI 자리이며, 실제 편집/적용 기능은 OBT에서 제공한다.
+- 이 프리뷰는 별도 스텝이 아니라 `Permissions` 스텝 내부에 표시한다.
+- 이 프리뷰는 “인덱싱 범위(프리셋) 설정”을 위한 UI 자리이며, 실제 편집/적용 기능은 OBT에서 제공한다.
 - 프리셋 편집 UI는 비활성화(“편집은 추후 제공” 안내).
 
 **Design File Reference:** TBD
@@ -342,7 +345,7 @@ flowchart TD
 ## Decisions (Locked for VOY-111)
 
 - `Beta Access`는 **서버 검증(Server verification)** 으로 판정한다. 검증 실패/네트워크 오류 시 `Retry` 및 가이드만 제공하고, 메인 윈도우는 표시하지 않는다(완전 블로킹).
-- `Indexing Preset (OBT)`의 “Open OBT” 버튼은 **MVP에서 제거**한다(읽기 전용 프리뷰 + “편집은 추후 제공” 안내만).
+- `Indexing Preset (OBT)` 프리뷰는 `Permissions` 스텝에 표시하며, “Open OBT” 버튼은 **MVP에서 제거**한다(읽기 전용 프리뷰 + “편집은 추후 제공” 안내만).
 - 초기 인덱싱은 **CBT 범위**이며 백그라운드에서 `/`부터 실행될 예정이다. 단, **VOY-111에서는 엔드포인트 호출은 플레이스홀더만** 두고 실제 인덱싱 요청은 후속 이슈로 분리한다.
 - 온보딩 윈도우 닫기(빨간 버튼/⌘W)는 **앱 종료 확인 모달**을 표시한다. `Quit` 선택 시 앱이 종료되고, 다음 실행에서 온보딩이 재개된다.
 - 완료 후 파일 관리자 첫 오픈 경로는 `SettingsFeature.getDefaultTabPath()` 정책을 따른다(기본값은 `NSHomeDirectory()`).
@@ -351,14 +354,14 @@ flowchart TD
 
 - 앱 실행 직후 온보딩이 필요한 상태라면 `Onboarding Window`만 표시되고 `File Manager Window`는 생성되지 않는다.
 - 온보딩이 필요 없으면 기존처럼 `File Manager Window`가 열린다.
-- 온보딩은 `Welcome → Beta Access → Permissions(FDA) → Indexing Preset(OBT) → Complete` 순서로 진행된다.
+- 온보딩은 `Welcome → Beta Access → Permissions(FDA + OBT Preview) → Complete` 순서로 진행된다.
 - `Beta Access` 스텝은 서버 검증으로 `Active`/`Not Active`/`Check failed`를 표시한다.
   - `Active`가 되기 전까지 `Next`는 비활성화된다.
   - 네트워크/서버 오류로 `Check failed`가 되면 `Retry`로 재시도할 수 있고, 가이드만 제공한다(스킵/우회 없음).
 - `Permissions` 스텝에서 FDA가 `Granted`일 때만 `Next`가 활성화된다.
 - `Permissions` 스텝에서 (선택) `Launch at Login` 토글을 제공하며, 온보딩 진행을 막지 않는다.
 - 앱 재실행 시 미완료 세션이 있으면 마지막 유효 스텝에서 재개되고 “이전에 중단된 온보딩을 이어서 진행합니다.” 안내가 표시된다.
-- `Indexing Preset(OBT)`은 읽기 전용이며 편집 UI는 제공하지 않는다(“Open OBT” 버튼 없음).
+- 프리셋 프리뷰는 읽기 전용이며 편집 UI는 제공하지 않는다(“Open OBT” 버튼 없음).
 - (플레이스홀더) FDA 승인 후 백그라운드 인덱싱이 `/`부터 실행될 예정임을 안내한다. 이 안내는 온보딩 진행을 막지 않는다.
 - 온보딩 윈도우 닫기(빨간 버튼/⌘W) 시 “앱 종료 확인” 모달이 표시된다.
   - `Cancel`을 선택하면 온보딩이 유지된다.

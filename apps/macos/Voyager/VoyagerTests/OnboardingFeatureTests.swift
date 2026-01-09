@@ -182,7 +182,8 @@ private actor SnapshotRecorder {
     }
 }
 
-private final class TestAppDelegate: AppDelegate {
+@MainActor
+private final class TestAppDelegate: AppDelegate, @unchecked Sendable {
     var openedPaths: [String?] = []
 
     override func createNewWindow(path: String? = nil) {

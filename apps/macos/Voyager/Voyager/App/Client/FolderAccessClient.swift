@@ -20,9 +20,9 @@ enum FilesAndFoldersStatus: Equatable, Sendable {
         case .granted:
             "Access granted for Desktop, Documents, and Downloads."
         case .partial:
-            "Some folders weren't granted. You can retry or grant them later in System Settings."
+            "Some folders weren't granted. You can allow them later in System Settings."
         case .notGranted:
-            "You can grant access later in System Settings."
+            "You can allow access later in System Settings."
         }
     }
 }
