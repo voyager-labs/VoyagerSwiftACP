@@ -24,9 +24,7 @@ class AppearanceAwareSplitView: NSSplitView {
         let isDark = isDarkMode(appearance: appearance)
 
         appearance.performAsCurrentDrawingAppearance {
-            layer?.backgroundColor = isDark
-                ? NSColor.controlBackgroundColor.cgColor
-                : NSColor(red: 245 / 255.0, green: 245 / 255.0, blue: 245 / 255.0, alpha: 1.0).cgColor
+            layer?.backgroundColor = VoyagerDS.AppKitSurface.shellBackground(isDark: isDark).cgColor
         }
     }
 
@@ -212,11 +210,7 @@ extension FileManagerSplitViewController {
         let isDark = isDarkMode(appearance: appearance)
 
         appearance.performAsCurrentDrawingAppearance {
-            if isDark {
-                view.layer?.backgroundColor = NSColor(red: 0.16, green: 0.16, blue: 0.16, alpha: 1.0).cgColor
-            } else {
-                view.layer?.backgroundColor = NSColor.controlBackgroundColor.cgColor
-            }
+            view.layer?.backgroundColor = VoyagerDS.AppKitSurface.contentPaneBackground(isDark: isDark).cgColor
         }
     }
 
@@ -382,16 +376,7 @@ extension FileManagerSplitViewController {
         let isDark = isDarkMode(appearance: appearance)
 
         appearance.performAsCurrentDrawingAppearance {
-            if isDark {
-                view.layer?.backgroundColor = NSColor.controlBackgroundColor.cgColor
-            } else {
-                view.layer?.backgroundColor = NSColor(
-                    red: 245 / 255.0,
-                    green: 245 / 255.0,
-                    blue: 245 / 255.0,
-                    alpha: 1.0,
-                ).cgColor
-            }
+            view.layer?.backgroundColor = VoyagerDS.AppKitSurface.inspectorPaneBackground(isDark: isDark).cgColor
         }
     }
 

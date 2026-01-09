@@ -2,8 +2,6 @@ import AppKit
 import SwiftUI
 
 enum VoyagerDS {
-    // Figma_DesignSystem/Color.png 기반 (Primary/Secondary scale)
-    // SwiftLint(nesting) 규칙 때문에 1단계 중첩까지만 사용합니다.
     enum BrandPrimaryColor {
         static let c900 = Color(hex: 0x754006)
         static let c800 = Color(hex: 0xA55A09)
@@ -123,6 +121,34 @@ enum VoyagerDS {
         static func popoverSearchFieldBackground(for scheme: ColorScheme) -> Color {
             scheme == .dark ? Color.white.opacity(0.05) : Color.black.opacity(0.03)
         }
+
+        // MARK: - Shell (Toolbar / Sidebar / SplitView)
+
+        static func shellBackground(for scheme: ColorScheme) -> Color {
+            scheme == .dark
+                ? SystemColor.controlBackground
+                : Color(hex: 0xF5F5F5)
+        }
+
+        static func toolbarBackground(for scheme: ColorScheme) -> Color {
+            scheme == .dark
+                ? Color(hex: 0x2B2B2B)
+                : SystemColor.controlBackground
+        }
+
+        static func contentPaneBackground(for scheme: ColorScheme) -> Color {
+            scheme == .dark
+                ? Color(hex: 0x292929)
+                : SystemColor.controlBackground
+        }
+
+        static func inspectorPaneBackground(for scheme: ColorScheme) -> Color {
+            scheme == .dark
+                ? SystemColor.controlBackground
+                : Color(hex: 0xF5F5F5)
+        }
+
+        static let toolbarDivider = Color.black.opacity(0.15)
     }
 
     enum Interaction {
@@ -132,6 +158,36 @@ enum VoyagerDS {
 
         static func controlHoverFill(for scheme: ColorScheme) -> Color {
             scheme == .dark ? Color.white.opacity(0.1) : Color.black.opacity(0.08)
+        }
+    }
+
+    // MARK: - AppKit (NSColor) 토큰
+
+    /// AppKit 레이어에서 사용하는 NSColor 기반 토큰
+    /// NSAppearance.performAsCurrentDrawingAppearance 블록 내에서 사용
+    enum AppKitSurface {
+        static func shellBackground(isDark: Bool) -> NSColor {
+            isDark
+                ? .controlBackgroundColor
+                : NSColor(hex: 0xF5F5F5)
+        }
+
+        static func toolbarBackground(isDark: Bool) -> NSColor {
+            isDark
+                ? NSColor(hex: 0x2B2B2B)
+                : .controlBackgroundColor
+        }
+
+        static func contentPaneBackground(isDark: Bool) -> NSColor {
+            isDark
+                ? NSColor(hex: 0x292929)
+                : .controlBackgroundColor
+        }
+
+        static func inspectorPaneBackground(isDark: Bool) -> NSColor {
+            isDark
+                ? .controlBackgroundColor
+                : NSColor(hex: 0xF5F5F5)
         }
     }
 }

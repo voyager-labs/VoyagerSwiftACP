@@ -29,7 +29,6 @@ struct ToolbarView: View {
     }
 
     let store: StoreOf<FileManagerFeature>
-    @State private var isDark: Bool = isDarkMode()
     @State private var isHovered: Bool = false
     @State private var isTitleHovered: Bool = false
     @Environment(\.colorScheme)
@@ -65,24 +64,18 @@ struct ToolbarView: View {
                     .frame(maxWidth: .infinity)
                     .background(
                         ZStack {
-                            toolbarBackgroundColor
+                            VoyagerDS.Surface.toolbarBackground(for: colorScheme)
 
                             VStack {
                                 Spacer()
                                 Rectangle()
-                                    .fill(Color.black.opacity(0.15))
+                                    .fill(VoyagerDS.Surface.toolbarDivider)
                                     .frame(height: 1.0)
                             }
                         },
                     )
                     .onHover { hovering in
                         isHovered = hovering
-                    }
-                    .onAppear {
-                        isDark = isDarkMode()
-                    }
-                    .onChange(of: colorScheme) { newScheme in
-                        isDark = newScheme == .dark
                     }
             },
         )
@@ -218,14 +211,6 @@ struct ToolbarView: View {
         .buttonStyle(.plain)
         .onHover { hovering in
             isTitleHovered = hovering
-        }
-    }
-
-    private var toolbarBackgroundColor: Color {
-        if isDark {
-            Color(red: 0.17, green: 0.17, blue: 0.17)
-        } else {
-            Color(nsColor: .controlBackgroundColor)
         }
     }
 

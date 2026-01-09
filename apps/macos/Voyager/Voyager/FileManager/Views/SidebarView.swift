@@ -144,14 +144,13 @@ private struct SidebarSectionHeader: View {
 
 struct SidebarView: View {
     let store: StoreOf<FileManagerFeature>
-    @State private var isDark: Bool = isDarkMode()
     @State private var dropTargetIndex: Int?
     @Environment(\.colorScheme)
     var colorScheme
 
     var body: some View {
         VStack(spacing: 0) {
-            sidebarBackgroundColor
+            VoyagerDS.Surface.shellBackground(for: colorScheme)
                 .frame(height: 50)
 
             ScrollView {
@@ -190,7 +189,7 @@ struct SidebarView: View {
             .clipped()
         }
         .frame(minWidth: 150)
-        .background(sidebarBackgroundColor)
+        .background(VoyagerDS.Surface.shellBackground(for: colorScheme))
         .navigationSplitViewColumnWidth(ideal: {
             if let savedWidth = UserDefaults.standard.object(forKey: "sidebarWidth") as? Double,
                savedWidth > 0
@@ -207,12 +206,6 @@ struct SidebarView: View {
                     }
             },
         )
-        .onAppear {
-            isDark = isDarkMode()
-        }
-        .onChange(of: colorScheme) { newScheme in
-            isDark = newScheme == .dark
-        }
     }
 
     private var favoritesSection: some View {
@@ -383,14 +376,6 @@ struct SidebarView: View {
                     }
                 }
             }
-        }
-    }
-
-    private var sidebarBackgroundColor: Color {
-        if isDark {
-            Color(nsColor: .controlBackgroundColor)
-        } else {
-            Color(red: 245 / 255.0, green: 245 / 255.0, blue: 245 / 255.0)
         }
     }
 }
