@@ -31,7 +31,7 @@ VoyagerHelper와 Backend의 생명주기 정책을 일관되게 정의하고, �
 4. [x] **Story 5:** BACKEND_MODE 기반 DB 경로 분리 및 관계 문서 정리. (Status: Done) (`docs/voy-117/stories/117.5.backend-mode-db-path.md`)
 5. [x] **Story 7:** Python 백엔드 실행 프로세스 정리. (Status: Done) (`docs/voy-117/stories/117.7.python-backend-execution-process.md`)
 6. [x] **Story 9:** Helper ProcessRunner async 전환 및 동시성 정리. (Status: Done) (`docs/voy-117/stories/117.9.helper-async-processrunner.md`)
-7. [ ] **Story 8:** Helper 포트 선점 및 endpoint 전달. (Status: Draft, Story 4 대체) (`docs/voy-117/stories/117.8.helper-port-reservation-endpoint-delivery.md`)
+7. [x] **Story 8:** Helper 포트 선점 및 endpoint 전달. (Status: Done, Story 4 대체) (`docs/voy-117/stories/117.8.helper-port-reservation-endpoint-delivery.md`)
 8. [ ] **Story 3:** Helper에서 backend 생명주기 관리 강화(실행/종료/재기동/포트 확보). (Status: Review, 선행: Story 9) (`docs/voy-117/stories/117.3.backend-restart-management.md`)
 9. [ ] **Story 2:** 앱에서 Helper 생명주기 정책 구현(시작/감시/재시도/강제 종료 처리). (Status: Review, 보류: Story 9 완료 후 재개) (`docs/voy-117/stories/117.2.helper-restart-policy.md`)
 

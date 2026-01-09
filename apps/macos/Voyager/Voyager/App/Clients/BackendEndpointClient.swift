@@ -1,4 +1,3 @@
-import AppKit
 import ComposableArchitecture
 import Foundation
 import Logging
@@ -38,276 +37,135 @@ public extension DependencyValues {
 
 private actor BackendEndpointResolver {
     private let logger = Logger(label: "Voyager")
+    private var cachedEndpoint: URL?
+    private var waiters: [CheckedContinuation<URL?, Never>] = []
+    private var observer: NotificationObserver?
+    private var warningTask: Task<Void, Never>?
 
-    func resolveEndpoint() async -> URL? {
-        while true {
-            for attempt in 1 ... 3 {
-                if let endpoint = await resolveOnce() {
-                    return endpoint
-                }
-
-                if attempt < 3 {
-                    try? await Task.sleep(nanoseconds: 1_000_000_000)
-                }
-            }
-
-            let shouldRetry = await MainActor.run {
-                showBackendNotFoundAlert()
-            }
-
-            if shouldRetry {
-                continue
-            }
-
-            await MainActor.run {
-                NSApp.terminate(nil)
-            }
-            return nil
+    deinit {
+        guard let observer else { return }
+        Task { @MainActor in
+            DistributedNotificationCenter.default().removeObserver(observer.token)
         }
     }
 
-    private func resolveOnce() async -> URL? {
-        let environment = BackendEndpointEnvironment()
+    func resolveEndpoint() async -> URL? {
+        await ensureObserver()
+        if let cachedEndpoint {
+            return cachedEndpoint
+        }
+        scheduleMissingNotificationWarning()
 
-        guard let processName = environment.processName else {
-            logger.error("Missing PUBLIC_BACKEND_PROCESS_NAME in .env")
-            return nil
+        return await withCheckedContinuation { continuation in
+            waiters.append(continuation)
+        }
+    }
+
+    private func handle(endpoint: URL?) async {
+        guard let endpoint else {
+            logger.error("Failed to parse backend endpoint notification")
+            return
         }
 
-        guard let host = environment.host else {
-            logger.error("Missing PUBLIC_BACKEND_HOST in .env")
-            return nil
+        cachedEndpoint = endpoint
+        cancelMissingNotificationWarning()
+        updateDotenv(endpoint: endpoint)
+
+        if !waiters.isEmpty {
+            let currentWaiters = waiters
+            waiters.removeAll()
+            currentWaiters.forEach { $0.resume(returning: endpoint) }
+        }
+    }
+
+    private func scheduleMissingNotificationWarning() {
+        guard warningTask == nil else { return }
+        warningTask = Task { [weak self] in
+            try? await Task.sleep(nanoseconds: 10_000_000_000)
+            await self?.logMissingNotificationWarningIfNeeded()
+        }
+    }
+
+    private func cancelMissingNotificationWarning() {
+        warningTask?.cancel()
+        warningTask = nil
+    }
+
+    private func logMissingNotificationWarningIfNeeded() async {
+        guard cachedEndpoint == nil else {
+            warningTask = nil
+            return
+        }
+        if Task.isCancelled {
+            warningTask = nil
+            return
+        }
+        logger.warning("Backend endpoint notification not received yet; waiting.")
+        warningTask = nil
+    }
+
+    private func ensureObserver() async {
+        guard observer == nil else { return }
+        let token = await MainActor.run {
+            let observer = DistributedNotificationCenter.default().addObserver(
+                forName: .backendEndpointDidUpdate,
+                object: nil,
+                queue: .main,
+            ) { [weak self] notification in
+                guard let self else { return }
+                let endpoint = Self.parseEndpoint(from: notification.userInfo)
+                Task { await self.handle(endpoint: endpoint) }
+            }
+            return NotificationObserver(token: observer)
+        }
+        observer = token
+    }
+
+    private nonisolated static func parseEndpoint(from info: [AnyHashable: Any]?) -> URL? {
+        let info = info ?? [:]
+
+        if let urlString = info["url"] as? String,
+           let url = URL(string: urlString)
+        {
+            return url
         }
 
-        let pids = await findPids(matching: processName)
-        guard !pids.isEmpty else {
-            return nil
-        }
+        let host = info["host"] as? String
+        let port = parsePort(from: info["port"])
 
-        guard let port = await findListenPort(pids: pids) else {
+        guard let host, let port else {
             return nil
         }
 
         return URL(string: "http://\(host):\(port)")
     }
 
-    private func findPids(matching processName: String) async -> [Int] {
-        let result = await runCommand(
-            launchPath: "/usr/bin/pgrep",
-            arguments: ["-f", processName],
-        )
-
-        guard let result, result.exitCode == 0 else {
-            return []
+    private nonisolated static func parsePort(from value: Any?) -> Int? {
+        if let port = value as? Int {
+            return port
         }
 
-        return result.output
-            .split(whereSeparator: \.isNewline)
-            .compactMap { Int($0.trimmingCharacters(in: .whitespacesAndNewlines)) }
-            .sorted(by: >)
-    }
-
-    private func findListenPort(pids: [Int]) async -> Int? {
-        for pid in pids {
-            if let port = await findListenPort(pid: pid) {
-                return port
-            }
-        }
-        return nil
-    }
-
-    private func findListenPort(pid: Int) async -> Int? {
-        let result = await runCommand(
-            launchPath: "/usr/sbin/lsof",
-            arguments: ["-n", "-P", "-a", "-iTCP", "-sTCP:LISTEN", "-p", "\(pid)"],
-        )
-
-        guard let result, result.exitCode == 0 else {
-            return nil
-        }
-
-        return extractListenPort(from: result.output)
-    }
-
-    private func extractListenPort(from output: String) -> Int? {
-        let lines = output.split(whereSeparator: \.isNewline)
-        for line in lines.dropFirst() {
-            if let port = parseListenPort(line: String(line)) {
-                return port
-            }
-        }
-        return nil
-    }
-
-    private func parseListenPort(line: String) -> Int? {
-        guard line.contains("(LISTEN)") else { return nil }
-
-        let pattern = #":(\d+)\s*\(LISTEN\)"#
-        guard let regex = try? NSRegularExpression(pattern: pattern) else {
-            return nil
-        }
-
-        let range = NSRange(line.startIndex..., in: line)
-        guard let match = regex.firstMatch(in: line, range: range),
-              let portRange = Range(match.range(at: 1), in: line)
-        else {
-            return nil
-        }
-
-        return Int(line[portRange])
-    }
-
-    private func runCommand(
-        launchPath: String,
-        arguments: [String],
-    ) async -> CommandResult? {
-        await Task.detached(priority: .utility) {
-            let process = Process()
-            process.executableURL = URL(fileURLWithPath: launchPath)
-            process.arguments = arguments
-
-            let stdout = Pipe()
-            process.standardOutput = stdout
-            process.standardError = Pipe()
-
-            do {
-                try process.run()
-            } catch {
-                return nil
-            }
-
-            process.waitUntilExit()
-
-            let data = stdout.fileHandleForReading.readDataToEndOfFile()
-            let output = String(data: data, encoding: .utf8) ?? ""
-            return CommandResult(exitCode: process.terminationStatus, output: output)
-        }.value
-    }
-}
-
-private struct CommandResult: Sendable {
-    let exitCode: Int32
-    let output: String
-}
-
-private struct BackendEndpointEnvironment {
-    enum EnvironmentType: String {
-        case dev
-        case prod
-
-        nonisolated var envFileName: String {
-            switch self {
-            case .dev: ".env.dev"
-            case .prod: ".env.prod"
-            }
-        }
-    }
-
-    enum BackendMode: String {
-        case source
-        case bundled
-    }
-
-    let processName: String?
-    let host: String?
-
-    nonisolated init() {
-        let environmentType = Self.detectEnvironmentType()
-        let backendMode = Self.detectBackendMode()
-        Self.loadEnvFile(environmentType.envFileName, for: backendMode)
-
-        let values = Dotenv.values
-        processName = Self.nonEmpty(values["PUBLIC_BACKEND_PROCESS_NAME"])
-        host = Self.nonEmpty(values["PUBLIC_BACKEND_HOST"])
-    }
-
-    private nonisolated static func detectEnvironmentType() -> EnvironmentType {
-        if let infoEnv = Bundle.main.infoDictionary?["APP_ENV"] as? String,
-           let envType = EnvironmentType(rawValue: infoEnv)
-        {
-            return envType
-        }
-        return .dev
-    }
-
-    private nonisolated static func detectBackendMode() -> BackendMode {
-        if let envMode = ProcessInfo.processInfo.environment["BACKEND_MODE"],
-           let mode = BackendMode(rawValue: envMode)
-        {
-            return mode
-        }
-
-        if let infoMode = Bundle.main.infoDictionary?["BACKEND_MODE"] as? String,
-           let mode = BackendMode(rawValue: infoMode)
-        {
-            return mode
-        }
-
-        return .source
-    }
-
-    private nonisolated static func loadEnvFile(_ envFileName: String, for backendMode: BackendMode) {
-        switch backendMode {
-        case .source:
-            if let projectRoot = findProjectRoot() {
-                let projectEnv = projectRoot.appendingPathComponent(envFileName)
-                if FileManager.default.fileExists(atPath: projectEnv.path) {
-                    try? Dotenv.configure(atPath: projectEnv.path, overwrite: true)
-                }
-            }
-        case .bundled:
-            if let resources = Bundle.main.resourceURL {
-                let bundledEnv = resources.appendingPathComponent(envFileName)
-                if FileManager.default.fileExists(atPath: bundledEnv.path) {
-                    try? Dotenv.configure(atPath: bundledEnv.path, overwrite: true)
-                }
-            }
-        }
-    }
-
-    private nonisolated static func findProjectRoot() -> URL? {
-        if let envRoot = ProcessInfo.processInfo.environment["VOYAGER_PROJECT_ROOT"],
-           !envRoot.isEmpty
-        {
-            return URL(fileURLWithPath: envRoot)
-        }
-
-        return inferProjectRoot(from: Bundle.main.bundleURL)
-    }
-
-    private nonisolated static func inferProjectRoot(from start: URL) -> URL? {
-        let fm = FileManager.default
-        var current = start
-
-        for _ in 0 ..< 8 {
-            let backendPath = current.appendingPathComponent("apps/backend")
-            let macosPath = current.appendingPathComponent("apps/macos/Voyager")
-            if fm.fileExists(atPath: backendPath.path) || fm.fileExists(atPath: macosPath.path) {
-                return current
-            }
-            current.deleteLastPathComponent()
+        if let portString = value as? String {
+            return Int(portString)
         }
 
         return nil
     }
 
-    private nonisolated static func nonEmpty(_ value: String?) -> String? {
-        guard let value, !value.isEmpty else {
-            return nil
+    private func updateDotenv(endpoint: URL) {
+        if let host = endpoint.host, !host.isEmpty {
+            Dotenv.set(value: host, forKey: "PUBLIC_BACKEND_HOST", overwrite: true)
         }
-        return value
+
+        if let port = endpoint.port {
+            Dotenv.set(value: String(port), forKey: "PUBLIC_BACKEND_PORT", overwrite: true)
+        }
+
+        Dotenv.set(value: endpoint.absoluteString, forKey: "PUBLIC_BACKEND_URL", overwrite: true)
+        logger.info("Backend endpoint updated: \(endpoint.absoluteString)")
     }
 }
 
-@MainActor
-private func showBackendNotFoundAlert() -> Bool {
-    let alert = NSAlert()
-    alert.messageText = "Cannot connect to Voyager Backend"
-    alert.informativeText = "Voyager couldn't find a running backend. Please wait a few seconds and retry."
-    alert.addButton(withTitle: "Retry")
-    alert.addButton(withTitle: "Quit")
-    alert.alertStyle = .warning
-
-    let response = alert.runModal()
-    return response == .alertFirstButtonReturn
+private struct NotificationObserver: @unchecked Sendable {
+    let token: NSObjectProtocol
 }
