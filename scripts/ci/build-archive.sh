@@ -5,6 +5,7 @@ BUILD_DIR="${BUILD_DIR:-${PWD}/build/ci}"
 PROJECT_PATH="${PROJECT_PATH:-}"
 SCHEME="${SCHEME:-}"
 CONFIGURATION="${CONFIGURATION:-Release}"
+CURRENT_PROJECT_VERSION_OVERRIDE="${CURRENT_PROJECT_VERSION_OVERRIDE:-}"
 
 if [[ -z "${PROJECT_PATH}" || -z "${SCHEME}" ]]; then
   echo "Missing PROJECT_PATH or SCHEME." >&2
@@ -13,9 +14,6 @@ fi
 
 mkdir -p "${BUILD_DIR}"
 
-ENV_PROD_PATH="${BUILD_DIR}/.env.prod"
-./scripts/ci/write-env-prod.sh "${ENV_PROD_PATH}"
-
 xcodebuild \
   -project "${PROJECT_PATH}" \
   -scheme "${SCHEME}" \
@@ -23,6 +21,5 @@ xcodebuild \
   -archivePath "${BUILD_DIR}/Voyager.xcarchive" \
   -derivedDataPath "${BUILD_DIR}/DerivedData" \
   -clonedSourcePackagesDirPath "${BUILD_DIR}/SourcePackages" \
-  ENV_PROD_SRC="${ENV_PROD_PATH}" \
+  ${CURRENT_PROJECT_VERSION_OVERRIDE:+CURRENT_PROJECT_VERSION=${CURRENT_PROJECT_VERSION_OVERRIDE}} \
   archive
-

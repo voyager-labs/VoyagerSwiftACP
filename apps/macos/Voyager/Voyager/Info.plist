@@ -4,5 +4,54 @@
 <dict>
 	<key>APP_ENV</key>
 	<string>$(APP_ENV)</string>
+	<key>CFBundleDocumentTypes</key>
+	<array>
+		<dict>
+			<key>CFBundleTypeExtensions</key>
+			<array>
+				<string>voycoll</string>
+			</array>
+			<key>CFBundleTypeIconFile</key>
+			<string>VoycollIcon</string>
+			<key>CFBundleTypeName</key>
+			<string>Voyager Collection</string>
+            <key>CFBundleTypeRole</key>
+            <string>Editor</string>
+            <key>LSHandlerRank</key>
+			<string>Owner</string>
+            <key>CFBundleTypeIsPackage</key>
+            <true/>
+			<key>LSItemContentTypes</key>
+			<array>
+				<string>fm.voyager.collection</string>
+			</array>
+		</dict>
+	</array>
+	<key>UTExportedTypeDeclarations</key>
+	<array>
+		<dict>
+			<key>UTTypeConformsTo</key>
+			<array>
+				<string>public.data</string>
+				<string>public.content</string>
+				<string>com.apple.package</string>
+			</array>
+			<key>UTTypeDescription</key>
+			<string>Voyager Collection</string>
+			<key>UTTypeIconName</key>
+			<string>VoycollIcon</string>
+			<key>UTTypeIdentifier</key>
+			<string>fm.voyager.collection</string>
+			<key>UTTypeTagSpecification</key>
+			<dict>
+				<key>public.filename-extension</key>
+				<array>
+					<string>voycoll</string>
+				</array>
+				<key>public.mime-type</key>
+				<string>application/x-voycoll-collection</string>
+			</dict>
+		</dict>
+	</array>
 </dict>
 </plist>

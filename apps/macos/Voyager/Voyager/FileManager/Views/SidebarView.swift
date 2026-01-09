@@ -244,9 +244,9 @@ struct SidebarView: View {
                                 onDrop: { providers, targetURL in
                                     store.send(.dropItemsToSidebarFolder(
                                         providers: providers,
-                                        targetURL: targetURL
+                                        targetURL: targetURL,
                                     ))
-                                }
+                                },
                             )
                             .contextMenu {
                                 Button("Remove from Sidebar") {
@@ -277,7 +277,7 @@ struct SidebarView: View {
                             .fill(Color.accentColor)
                             .frame(height: 2)
                     }
-                }
+                },
             )
             .padding(.horizontal, 8)
             .contentShape(Rectangle())
@@ -289,7 +289,7 @@ struct SidebarView: View {
                     } else if dropTargetIndex == index {
                         dropTargetIndex = nil
                     }
-                }
+                },
             )) { providers in
                 handleFavoriteInsert(providers: providers, at: index)
             }
@@ -388,9 +388,9 @@ struct SidebarView: View {
 
     private var sidebarBackgroundColor: Color {
         if isDark {
-            return Color(nsColor: .controlBackgroundColor)
+            Color(nsColor: .controlBackgroundColor)
         } else {
-            return Color(red: 245 / 255.0, green: 245 / 255.0, blue: 245 / 255.0)
+            Color(red: 245 / 255.0, green: 245 / 255.0, blue: 245 / 255.0)
         }
     }
 }

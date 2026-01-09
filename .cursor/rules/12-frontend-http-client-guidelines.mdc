@@ -7,7 +7,7 @@ description: 'HTTP client guidelines for macOS app (URLSession, base URL, errors
 
 ## Base URL
 
-- Derive from `BACKEND_URL` provided via Swift-dotenv environment loading.
+- Derive from `{PUBLIC_BACKEND_HOST}:{assignedPort}` provided by helper/backend bootstrap.
 - Avoid hardcoding `http://localhost:...` in code.
 
 ## Requests

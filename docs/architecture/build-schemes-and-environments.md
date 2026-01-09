@@ -65,7 +65,7 @@ Voyager 프로젝트는 두 가지 독립적인 축으로 실행 환경을 결�
 - **설정**: `BACKEND_MODE=source` (Dev 스킴에서 자동 주입)
 - **백엔드 디렉토리**: `apps/backend` (소스 디렉토리)
 - **실행 방식**: 로컬 `uv` 명령어 사용
-- **명령어**: `uv run dev` (개발) 또는 `uv run serve` (프로덕션 모드 테스트)
+- **명령어**: `uv run dev` (개발) 또는 `uv run prod` (프로덕션 모드 테스트)
 - **요구사항**: 시스템 PATH에 `uv` 설치 필요
 
 **bundled 모드:**
@@ -93,6 +93,7 @@ Voyager 프로젝트는 두 가지 독립적인 축으로 실행 환경을 결�
    - 스킴의 LaunchAction에서 자동 주입됨
    - Dev 스킴 → `BACKEND_MODE=source`
    - Prod 스킴 → `BACKEND_MODE=bundled`
+   - (호환) 레거시 키 `BACKEND_MODE`도 인식
 
 2. **번들 리소스 확인**
    - `server` 디렉토리가 번들 리소스에 있으면 → `bundled`
@@ -103,9 +104,9 @@ Voyager 프로젝트는 두 가지 독립적인 축으로 실행 환경을 결�
 | 스킴 | 빌드 설정 | APP_ENV | BACKEND_MODE | 백엔드 실행 방식 | 환경 파일 |
 |------|-----------|---------|--------------|------------------|-----------|
 | Voyager-Dev | Debug | dev | source | 로컬 `uv run dev` | `.env.dev` |
-| Voyager-Prod | Release | prod | bundled | 번들 Python 직접 실행 | `.env.prod` |
+| Voyager-Prod | Release | prod | bundled | `server/server.bin` 직접 실행 | `.env.prod` |
 | VoyagerHelper-Dev | Debug | dev | source | 로컬 `uv run dev` | `.env.dev` |
-| VoyagerHelper-Prod | Release | prod | bundled | 번들 Python 직접 실행 | `.env.prod` |
+| VoyagerHelper-Prod | Release | prod | bundled | `server/server.bin` 직접 실행 | `.env.prod` |
 
 ## 빌드 프로세스
 
@@ -132,7 +133,7 @@ Voyager 프로젝트는 두 가지 독립적인 축으로 실행 환경을 결�
 
 - `APP_ENV=dev` (Info.plist에서 읽음)
 - `BACKEND_MODE=source` (스킴 환경변수에서 주입)
-- `.env.dev` 파일 로드 (번들 리소스 또는 프로젝트 루트)
+- `.env.dev` 파일 로드 (프로젝트 루트)
 - `apps/backend` 디렉토리에서 `uv run dev` 실행
 
 ### Release 빌드 (Prod 환경)
@@ -166,20 +167,12 @@ Voyager 프로젝트는 두 가지 독립적인 축으로 실행 환경을 결�
 - `.env.prod` 파일 로드 (번들 리소스 우선, 없으면 프로젝트 루트)
 - `VoyagerHelper.app/Contents/Resources/server/server.bin` 직접 실행
 
-## 환경 파일 로드 우선순위
+## 환경 파일 로드 방식
 
-`Environment.swift`의 `loadEnvFile()` 메서드는 다음 순서로 환경 파일을 로드합니다:
+`Environment.swift`의 `loadEnvFile()` 메서드는 backend mode에 따라 로드 경로가 다릅니다:
 
-1. **번들 리소스** (최우선)
-   - `VoyagerHelper.app/Contents/Resources/.env.dev` 또는 `.env.prod`
-   - Release 빌드 시 자동으로 복사됨
-
-2. **프로젝트 루트**
-   - `.env.dev` 또는 `.env.prod` (환경 타입에 따라)
-   - 프로젝트 루트는 `.env`, `.env.dev`, `.env.prod` 파일 중 하나를 찾아서 결정
-
-3. **기본 .env 파일** (fallback)
-   - 위의 파일들을 찾을 수 없으면 기본 `.env` 파일 사용
+1. **source 모드**: 프로젝트 루트의 `.env.{dev|prod}`
+2. **bundled 모드**: 번들 리소스의 `.env.{dev|prod}`
 
 ## 명확화 사항
 
@@ -210,4 +203,3 @@ Voyager 프로젝트는 두 가지 독립적인 축으로 실행 환경을 결�
 - 환경 감지 로직: [apps/macos/Voyager/VoyagerHelper/Infrastructure/Environment.swift](../../apps/macos/Voyager/VoyagerHelper/Infrastructure/Environment.swift)
 - 백엔드 실행 로직: [apps/macos/Voyager/VoyagerHelper/Infrastructure/ProcessRunner.swift](../../apps/macos/Voyager/VoyagerHelper/Infrastructure/ProcessRunner.swift)
 - 빌드 스크립트: [apps/macos/Voyager/Voyager.xcodeproj/project.pbxproj](../../apps/macos/Voyager/Voyager.xcodeproj/project.pbxproj)
-

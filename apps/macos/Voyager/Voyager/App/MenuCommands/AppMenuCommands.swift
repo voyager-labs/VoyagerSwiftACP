@@ -7,6 +7,12 @@ struct AppMenuCommands: Commands {
     @State private var hasFocusHistory: Bool = false
 
     var body: some Commands {
+        CommandGroup(after: .appInfo) {
+            Button("Check for Updates...") {
+                AppDelegate.shared?.checkForUpdates()
+            }
+        }
+
         CommandGroup(replacing: .newItem) {
             Button("New Window") {
                 AppDelegate.shared?.createNewWindow()
@@ -67,6 +73,29 @@ struct AppMenuCommands: Commands {
         }
 
         CommandGroup(replacing: .saveItem) {
+            Button("Save Collection Filter Changes") {
+                AppDelegate.shared?.currentFileManagerStore?.send(.composer(.saveCollection))
+            }
+            .keyboardShortcut("s", modifiers: .command)
+            .disabled({
+                guard let store = AppDelegate.shared?.currentFileManagerStore else { return true }
+                guard store.fsItems.isCollectionMode, store.openedCollectionURL != nil else { return true }
+                return !store.isOpenedCollectionDirty
+            }())
+
+            Button("Save Current Filter As New Collection") {
+                AppDelegate.shared?.currentFileManagerStore?.send(.composer(.saveCollectionAs))
+            }
+            .keyboardShortcut("s", modifiers: [.command, .shift])
+            .disabled({
+                guard let store = AppDelegate.shared?.currentFileManagerStore else { return true }
+                guard store.fsItems.isCollectionMode, store.collectionContext != nil else { return true }
+                if store.openedCollectionURL == nil { return false }
+                return !store.isOpenedCollectionDirty
+            }())
+
+            Divider()
+
             Button("Close Tab") {
                 NSApp.keyWindow?.close()
             }

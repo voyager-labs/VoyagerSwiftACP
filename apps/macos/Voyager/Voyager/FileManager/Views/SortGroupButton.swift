@@ -2,43 +2,13 @@ import AppKit
 import ComposableArchitecture
 import SwiftUI
 
-struct ToolbarMenuView: View {
+struct SortGroupButton: View {
     let store: StoreOf<FileManagerFeature>
-    @State private var isDark: Bool = isDarkMode()
     @Environment(\.colorScheme)
     var colorScheme
 
     var body: some View {
         Menu {
-            Button(
-                action: { store.send(.changeLayout(.list)) },
-                label: {
-                    HStack {
-                        Image(systemName: "list.bullet")
-                        Text("List")
-                    }
-                }
-            )
-
-            Button(
-                action: { store.send(.changeLayout(.grid)) },
-                label: {
-                    HStack {
-                        Image(systemName: "square.grid.2x2")
-                        Text("Grid")
-                    }
-                }
-            )
-
-            Divider()
-
-            Button("New Folder") {
-                store.send(.fsItems(.createNewFolder(currentPath: store.currentPath)))
-            }
-            .keyboardShortcut("n", modifiers: [.command, .shift])
-
-            Divider()
-
             Menu("Group By") {
                 Button(
                     action: { store.send(.changeGroupKey(.none)) },
@@ -291,30 +261,24 @@ struct ToolbarMenuView: View {
             }
             .disabled(store.fsItems.groupKey != .none)
         } label: {
-            Image(systemName: "chevron.down")
+            Image(systemName: "arrow.up.arrow.down")
                 .font(.system(size: 12))
                 .foregroundColor(.secondary)
                 .frame(width: 32, height: 32)
                 .background(
                     RoundedRectangle(cornerRadius: 5)
-                        .fill(toolbarMenuButtonBackgroundColor)
+                        .fill(toolbarMenuButtonBackgroundColor),
                 )
         }
         .menuIndicator(.hidden)
         .buttonStyle(.plain)
-        .onAppear {
-            isDark = isDarkMode()
-        }
-        .onChange(of: colorScheme) { newScheme in
-            isDark = newScheme == .dark
-        }
     }
 
     private var toolbarMenuButtonBackgroundColor: Color {
-        if isDark {
-            return Color(nsColor: .controlBackgroundColor)
+        if colorScheme == .dark {
+            Color(nsColor: .controlBackgroundColor)
         } else {
-            return Color(red: 245 / 255.0, green: 245 / 255.0, blue: 245 / 255.0)
+            Color(red: 245 / 255.0, green: 245 / 255.0, blue: 245 / 255.0)
         }
     }
 }

@@ -17,13 +17,13 @@ struct SettingsView: View {
             get: { store.selectedSection },
             set: { store.send(.selectSection($0)) },
         )) {
-            GeneralSettingsView(store: store)
+            GeneralSettingsView(store: store.scope(state: \.generalSettings, action: \.general))
                 .tabItem {
                     Label("General", systemImage: "gear")
                 }
                 .tag(SettingsSection.general)
 
-            AppearanceSettingsView(store: store)
+            AppearanceSettingsView(store: store.scope(state: \.appearanceSettings, action: \.appearance))
                 .tabItem {
                     Label("Appearance", systemImage: SettingsSection.appearance.iconName)
                 }
@@ -33,5 +33,12 @@ struct SettingsView: View {
         .onAppear {
             store.send(.onAppear)
         }
+        .background(
+            Button("") {
+                store.send(.closeWindow)
+            }
+            .keyboardShortcut("w", modifiers: .command)
+            .hidden(),
+        )
     }
 }

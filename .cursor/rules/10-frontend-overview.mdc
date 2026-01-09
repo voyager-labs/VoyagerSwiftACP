@@ -14,18 +14,22 @@ description: 'SwiftUI + TCA frontend overview and backend bootstrap'
 
 ## Backend bootstrap from app
 
-- **Swift-dotenv approach**: Environment variables loaded from `.env` at repo root
-- **Implementation**: [BackendManagerDotenv.swift](mdc:apps/macos/Voyager/VoyagerHelper/BackendManagerDotenv.swift)
-- **Environment keys**: `BACKEND_DIR`, `VOYAGER_PATH`, `VOYAGER_HOST`, `VOYAGER_PORT`, `BACKEND_URL`, `VOYAGER_LOG_FILE`
+- **Swift-dotenv approach**: Environment variables loaded from `.env.{dev|prod}` (repo root 또는 번들 리소스)
+- **Implementation**:
+  - Env 로딩: [Environment.swift](mdc:apps/macos/Voyager/VoyagerHelper/Infrastructure/Environment.swift)
+  - 프로세스 스폰: [ProcessRunner.swift](mdc:apps/macos/Voyager/VoyagerHelper/Infrastructure/ProcessRunner.swift)
+- **Environment keys**:
+  - `PUBLIC_BACKEND_HOST`, `PUBLIC_BACKEND_PORT`
+  - `BACKEND_MODE` (Xcode Run 시, `source|bundled`)
 - **Backend execution modes**:
   - **Debug builds**: Uses local `uv` to launch backend (`uv run dev|prod`)
-  - **Release builds**: Uses bundled `backend-venv/bin/python` from app resources
-    - Venv prepared by [scripts/prepare-backend-venv.sh](mdc:scripts/prepare-backend-venv.sh) during build
+  - **Bundled mode**: Uses bundled Nuitka binary (`server/server.bin`) from app resources
+    - Built via [scripts/build/build-backend-binary.sh](mdc:scripts/build/build-backend-binary.sh)
     - Self-contained app bundle without requiring local `uv` installation
 
 ## Notes
 
-- Prefer deriving API base from `BACKEND_URL`.
+- Prefer deriving API base from `{PUBLIC_BACKEND_HOST}:{assignedPort}` (port는 런타임에 동적 할당될 수 있음).
 - Ensure helper launches backend before issuing API calls.
 - See [12-frontend-http-client-guidelines.mdc](mdc:.cursor/rules/12-frontend-http-client-guidelines.mdc) for HTTP client patterns.
 - See [13-frontend-tca-conventions.mdc](mdc:.cursor/rules/13-frontend-tca-conventions.mdc) for TCA conventions.
