@@ -149,6 +149,34 @@ enum VoyagerDS {
         }
 
         static let toolbarDivider = Color.black.opacity(0.15)
+
+        // MARK: - Status Button / Folder Chip
+
+        static func statusButtonBackground(for scheme: ColorScheme) -> Color {
+            scheme == .dark
+                ? Color(hex: 0x373430)
+                : Color(hex: 0xFBFBFB)
+        }
+
+        static func statusButtonBorder(for scheme: ColorScheme) -> Color {
+            scheme == .dark
+                ? Color(hex: 0x4D4943)
+                : Color.black.opacity(0.06)
+        }
+
+        static func statusButtonText(for scheme: ColorScheme) -> Color {
+            scheme == .dark
+                ? Color(hex: 0xDAD7D2)
+                : Color(hex: 0x323232)
+        }
+
+        // MARK: - Chat Input
+
+        static func chatInputBackground(for scheme: ColorScheme) -> Color {
+            scheme == .dark
+                ? Color(hex: 0x2C2B28)
+                : SystemColor.controlBackground
+        }
     }
 
     enum Interaction {

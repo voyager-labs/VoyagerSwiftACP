@@ -36,19 +36,11 @@ struct ViewToggleButton: View {
                 .foregroundColor(.secondary)
                 .frame(width: 32, height: 32)
                 .background(
-                    RoundedRectangle(cornerRadius: 5)
-                        .fill(toolbarMenuButtonBackgroundColor),
+                    RoundedRectangle(cornerRadius: VoyagerDS.Radius.toolbarButton)
+                        .fill(VoyagerDS.Surface.toolbarMenuButtonBackground(for: colorScheme)),
                 )
         }
         .menuIndicator(.hidden)
         .buttonStyle(.plain)
-    }
-
-    private var toolbarMenuButtonBackgroundColor: Color {
-        if colorScheme == .dark {
-            Color(nsColor: .controlBackgroundColor)
-        } else {
-            Color(red: 245 / 255.0, green: 245 / 255.0, blue: 245 / 255.0)
-        }
     }
 }
