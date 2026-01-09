@@ -13,7 +13,6 @@ private struct ChipSizePreferenceKey: PreferenceKey {
 // swiftlint:disable type_body_length file_length
 struct ComposerView: View {
     let store: StoreOf<FileManagerFeature>
-    @State private var isDark: Bool = isDarkMode()
     @State private var isComposeFieldFirstResponder: Bool = true
     @Environment(\.colorScheme)
     private var colorScheme: ColorScheme
@@ -26,6 +25,8 @@ struct ComposerView: View {
     private let escapeKeyCode: UInt16 = 53
     private let zKeyCode: UInt16 = 6
 
+    private var isDark: Bool { colorScheme == .dark }
+
     var body: some View {
         mainContent
             .onAppear {
@@ -33,9 +34,6 @@ struct ComposerView: View {
             }
             .onDisappear {
                 cleanupKeyMonitor()
-            }
-            .onChange(of: colorScheme) { newScheme in
-                isDark = newScheme == .dark
             }
             .onChange(of: store.composer.isPresented) { isPresented in
                 if !isPresented {
@@ -57,13 +55,18 @@ struct ComposerView: View {
             })
         }
         .background(
-            RoundedRectangle(cornerRadius: 12)
-                .fill(overlayBackground)
+            RoundedRectangle(cornerRadius: VoyagerDS.Radius.overlayCard)
+                .fill(VoyagerDS.Surface.overlayBackground(for: colorScheme))
                 .overlay(
-                    RoundedRectangle(cornerRadius: 12)
-                        .stroke(overlayBorderColor, lineWidth: 1),
+                    RoundedRectangle(cornerRadius: VoyagerDS.Radius.overlayCard)
+                        .stroke(VoyagerDS.Surface.overlayBorder, lineWidth: 1),
                 )
-                .shadow(color: overlayShadowColor, radius: overlayShadowRadius, y: overlayShadowY),
+                .shadow(
+                    color: VoyagerDS.Shadow.overlayColor(for: colorScheme),
+                    radius: VoyagerDS.Shadow.overlayRadius(for: colorScheme),
+                    y: VoyagerDS.Shadow.overlayYOffset(for: colorScheme),
+                )
+                .allowsHitTesting(false),
         )
     }
 
@@ -117,7 +120,7 @@ struct ComposerView: View {
                 .isEmpty
             queryInputField(viewStore: viewStore, isSubmitDisabled: isSubmitDisabled)
 
-            let buttonBackground = Circle().fill(Color(red: 0.843, green: 0.714, blue: 0.322))
+            let buttonBackground = Circle().fill(VoyagerDS.BrandSecondaryColor.c500)
             if viewStore.isLoadingSearch {
                 Button {
                     viewStore.send(.cancelSearch)
@@ -131,6 +134,11 @@ struct ComposerView: View {
                 .buttonStyle(.plain)
                 .padding(.trailing, 8)
             } else {
+                let submitButtonBackground = Circle().fill(
+                    isSubmitDisabled
+                        ? VoyagerDS.BrandSecondaryColor.c500.opacity(0.5)
+                        : VoyagerDS.BrandSecondaryColor.c500,
+                )
                 Button {
                     viewStore.send(.submit)
                 } label: {
@@ -138,7 +146,7 @@ struct ComposerView: View {
                         .font(.system(size: 9, weight: .regular))
                         .foregroundColor(isSubmitDisabled ? .secondary : .black)
                         .frame(width: 16, height: 16)
-                        .background(buttonBackground)
+                        .background(submitButtonBackground)
                 }
                 .buttonStyle(.plain)
                 .disabled(isSubmitDisabled)
@@ -180,11 +188,11 @@ struct ComposerView: View {
         }
         .background(
             RoundedRectangle(cornerRadius: 8)
-                .fill(isDark ? Color.white.opacity(0.08) : Color.black.opacity(0.05)),
+                .fill(VoyagerDS.Surface.inputBackground(for: colorScheme)),
         )
         .overlay(
             RoundedRectangle(cornerRadius: 8)
-                .stroke(isDark ? Color.white.opacity(0.15) : Color.black.opacity(0.12), lineWidth: 1),
+                .stroke(VoyagerDS.Surface.inputBorder(for: colorScheme), lineWidth: 1),
         )
         .onSubmit {
             let trimmed = viewStore.text.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -245,7 +253,7 @@ struct ComposerView: View {
 
     private var horizontalSeparator: some View {
         Rectangle()
-            .fill(isDark ? Color.white.opacity(0.1) : Color.black.opacity(0.1))
+            .fill(VoyagerDS.SystemColor.separator)
             .frame(height: 1)
             .padding(.horizontal, 16)
     }
@@ -349,7 +357,6 @@ struct ComposerView: View {
             ScopeChipView(
                 paths: paths,
                 store: composerStore,
-                isDark: isDark,
                 favorites: store.favorites,
                 backHistory: historyPaths,
             )
@@ -522,7 +529,6 @@ struct ComposerView: View {
     }
 
     private func setupOnAppear() {
-        isDark = isDarkMode()
         DispatchQueue.main.async {
             isComposeFieldFirstResponder = true
         }
@@ -556,53 +562,6 @@ struct ComposerView: View {
             isOptionKeyPressed = event.modifierFlags.contains(.option)
             return event
         }
-    }
-
-    private var overlayBackground: Color {
-        if isDark {
-            Color(red: 0.19, green: 0.19, blue: 0.19)
-        } else {
-            Color.white
-        }
-    }
-
-    private var overlayBorderColor: Color {
-        if isDark {
-            Color.white.opacity(0.1)
-        } else {
-            Color.black.opacity(0.12)
-        }
-    }
-
-    private var overlayShadowColor: Color {
-        if isDark {
-            Color.black.opacity(0.4)
-        } else {
-            Color.black.opacity(0.15)
-        }
-    }
-
-    private var overlayShadowRadius: CGFloat {
-        if isDark {
-            24
-        } else {
-            16
-        }
-    }
-
-    private var overlayShadowY: CGFloat {
-        if isDark {
-            12
-        } else {
-            8
-        }
-    }
-
-    private var verticalSeparator: some View {
-        Rectangle()
-            .fill(isDark ? Color.white.opacity(0.1) : Color.black.opacity(0.1))
-            .frame(width: 1)
-            .frame(height: 20)
     }
 
     private func operatorOptions(for condition: Condition) -> [OperatorOption] {
@@ -648,9 +607,8 @@ struct ComposerView: View {
                 .foregroundColor(.secondary)
                 .frame(width: defaultChipHeight, height: defaultChipHeight)
                 .background(
-                    RoundedRectangle(cornerRadius: 6)
-                        .fill(isAddButtonHovering ? (isDark ? Color.white.opacity(0.1) : Color.black.opacity(0.08)) :
-                            Color.clear),
+                    RoundedRectangle(cornerRadius: VoyagerDS.Radius.chipContainer)
+                        .fill(isAddButtonHovering ? VoyagerDS.Interaction.controlHoverFill(for: colorScheme) : .clear),
                 )
         }
         .buttonStyle(.borderless)

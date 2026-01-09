@@ -9,28 +9,28 @@ struct ConditionPropertyPickerView: View {
     @State private var hoveredPropertyKey: String?
     @State private var hoveredCategoryKey: String?
 
-    private var isDark: Bool {
-        colorScheme == .dark
-    }
-
     var body: some View {
         WithViewStore(store, observe: { $0 }, content: { viewStore in
             VStack(spacing: 0) {
                 searchField(viewStore)
                 if let message = viewStore.duplicateMessage {
                     duplicateWarning(message)
-                    separatorColor
+                    VoyagerDS.SystemColor.separator
                         .frame(height: 1)
                 }
                 content(viewStore)
             }
             .frame(width: 200, height: 320)
-            .background(comboBoxBackgroundColor)
+            .background(VoyagerDS.Surface.popoverBackground(for: colorScheme))
             .overlay(
                 RoundedRectangle(cornerRadius: 8)
-                    .stroke(comboBoxBorderColor, lineWidth: 1),
+                    .stroke(VoyagerDS.Surface.popoverBorder, lineWidth: 1),
             )
-            .shadow(color: comboBoxShadowColor, radius: 8, y: 4)
+            .shadow(
+                color: VoyagerDS.Shadow.popoverColor(for: colorScheme),
+                radius: VoyagerDS.Shadow.popoverRadius,
+                y: VoyagerDS.Shadow.popoverYOffset,
+            )
             .onAppear {
                 viewStore.send(.onAppear)
             }
@@ -78,12 +78,12 @@ struct ConditionPropertyPickerView: View {
             }
             .padding(.horizontal, 12)
             .padding(.vertical, 8)
-            .background(searchFieldBackgroundColor)
+            .background(VoyagerDS.Surface.popoverSearchFieldBackground(for: colorScheme))
             .onAppear {
                 isSearchFocused = true
             }
 
-            separatorColor
+            VoyagerDS.SystemColor.separator
                 .frame(height: 1)
         }
     }
@@ -179,7 +179,7 @@ struct ConditionPropertyPickerView: View {
     ) -> some View {
         if !grouped.isEmpty {
             if hasRecommended {
-                separatorColor
+                VoyagerDS.SystemColor.separator
                     .frame(height: 1)
             }
 
@@ -226,7 +226,7 @@ struct ConditionPropertyPickerView: View {
             .contentShape(Rectangle())
             .background(
                 RoundedRectangle(cornerRadius: 6)
-                    .fill(isHovering ? rowHoverFillColor : Color.clear),
+                    .fill(isHovering ? VoyagerDS.Interaction.hoverFill(for: colorScheme) : .clear),
             )
         }
         .buttonStyle(.plain)
@@ -284,7 +284,7 @@ struct ConditionPropertyPickerView: View {
             .contentShape(Rectangle())
             .background(
                 RoundedRectangle(cornerRadius: 6)
-                    .fill(isHovering ? rowHoverFillColor : Color.clear),
+                    .fill(isHovering ? VoyagerDS.Interaction.hoverFill(for: colorScheme) : .clear),
             )
         }
         .buttonStyle(.plain)
@@ -322,57 +322,7 @@ struct ConditionPropertyPickerView: View {
     }
 }
 
-// MARK: - Style Helpers
-
 private extension ConditionPropertyPickerView {
-    var comboBoxBackgroundColor: Color {
-        if isDark {
-            Color(red: 0.19, green: 0.19, blue: 0.19)
-        } else {
-            Color.white
-        }
-    }
-
-    var comboBoxBorderColor: Color {
-        if isDark {
-            Color.white.opacity(0.1)
-        } else {
-            Color.black.opacity(0.12)
-        }
-    }
-
-    var comboBoxShadowColor: Color {
-        if isDark {
-            Color.black.opacity(0.4)
-        } else {
-            Color.black.opacity(0.15)
-        }
-    }
-
-    var searchFieldBackgroundColor: Color {
-        if isDark {
-            Color.white.opacity(0.05)
-        } else {
-            Color.black.opacity(0.03)
-        }
-    }
-
-    var separatorColor: Color {
-        if isDark {
-            Color.white.opacity(0.1)
-        } else {
-            Color.black.opacity(0.1)
-        }
-    }
-
-    var rowHoverFillColor: Color {
-        if isDark {
-            Color.white.opacity(0.08)
-        } else {
-            Color.black.opacity(0.06)
-        }
-    }
-
     func duplicateWarning(_ message: String) -> some View {
         HStack(spacing: 6) {
             Image(systemName: "exclamationmark.triangle.fill")
@@ -393,6 +343,6 @@ private extension ConditionPropertyPickerView {
         }
         .padding(.horizontal, 12)
         .padding(.vertical, 6)
-        .background(isDark ? Color.white.opacity(0.05) : Color.black.opacity(0.03))
+        .background(VoyagerDS.Surface.popoverSearchFieldBackground(for: colorScheme))
     }
 }

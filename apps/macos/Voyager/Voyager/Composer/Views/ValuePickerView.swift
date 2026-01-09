@@ -6,8 +6,6 @@ struct ValuePickerView: View {
     @Environment(\.colorScheme)
     private var colorScheme
 
-    private var isDark: Bool { colorScheme == .dark }
-
     var body: some View {
         WithViewStore(store, observe: { $0 }, content: { viewStore in
             VStack(alignment: .leading, spacing: 8) {
@@ -55,7 +53,7 @@ struct ValuePickerView: View {
             .frame(width: 240)
             .background(
                 RoundedRectangle(cornerRadius: 8)
-                    .fill(isDark ? Color(red: 0.16, green: 0.16, blue: 0.16) : Color.white),
+                    .fill(VoyagerDS.Surface.popoverBackground(for: colorScheme)),
             )
         })
     }

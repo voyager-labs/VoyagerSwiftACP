@@ -7,8 +7,6 @@ struct OperatorPickerView: View {
     private var colorScheme
     @State private var hoveredOptionCode: String?
 
-    private var isDark: Bool { colorScheme == .dark }
-
     var body: some View {
         WithViewStore(store, observe: { $0 }, content: { viewStore in
             VStack(spacing: 0) {
@@ -30,7 +28,7 @@ struct OperatorPickerView: View {
                                 .contentShape(Rectangle())
                                 .background(
                                     RoundedRectangle(cornerRadius: 6)
-                                        .fill(isHovering ? rowHoverFillColor : Color.clear),
+                                        .fill(isHovering ? VoyagerDS.Interaction.hoverFill(for: colorScheme) : .clear),
                                 )
                             }
                             .buttonStyle(.plain)
@@ -44,16 +42,8 @@ struct OperatorPickerView: View {
             .frame(width: 180)
             .background(
                 RoundedRectangle(cornerRadius: 8)
-                    .fill(isDark ? Color(red: 0.16, green: 0.16, blue: 0.16) : Color.white),
+                    .fill(VoyagerDS.Surface.popoverBackground(for: colorScheme)),
             )
         })
-    }
-
-    private var rowHoverFillColor: Color {
-        if isDark {
-            Color.white.opacity(0.08)
-        } else {
-            Color.black.opacity(0.06)
-        }
     }
 }
