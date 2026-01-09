@@ -29,9 +29,8 @@ struct EnvironmentLoader {
         ///
         /// **source 모드**:
         /// - 프로젝트 루트가 필요한 이유: `.env.dev` 또는 `.env.prod` 파일을 프로젝트 루트에서 찾기 위함
-        /// - 우선순위:
-        ///   1. 환경 변수 `VOYAGER_PROJECT_ROOT` (Xcode 스킴에서 주입되거나 런타임에 설정)
-        ///   2. Bundle 경로에서 상위 디렉토리로 탐색하여 `apps/backend` 또는 `apps/macos/Voyager` 디렉토리를 찾음
+        /// - 환경 변수 `VOYAGER_PROJECT_ROOT` (Xcode 스킴에서 주입되거나 런타임에 설정)
+        /// - 보조 탐색은 사용하지 않으며, 값이 없으면 `nil`을 반환합니다.
         ///
         /// **bundled 모드**:
         /// - 프로젝트 루트가 필요 없는 이유: `.env.prod` 파일이 앱 번들 리소스(`Bundle.main.resourceURL`)에 포함되어 있음
@@ -45,7 +44,7 @@ struct EnvironmentLoader {
                 {
                     return URL(fileURLWithPath: envRoot)
                 }
-                return BackendMode.inferProjectRoot(from: Bundle.main.bundleURL)
+                return nil
             case .bundled:
                 return nil
             }

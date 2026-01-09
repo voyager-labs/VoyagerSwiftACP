@@ -72,5 +72,42 @@
         "BACKEND_MODE": "bundled",
       },
     },
+    {
+      "type": "sweetpad",
+      "action": "debugging-launch",
+      "problemMatcher": [
+        "$sweetpad-watch",
+        "$sweetpad-xcodebuild-default",
+        "$sweetpad-xcbeautify-errors",
+        "$sweetpad-xcbeautify-warnings"
+      ],
+      "label": "VoyagerHelper Dev: Launch (Debug)",
+      "detail": "Build and Run the Development environment on Debug mode",
+      "isBackground": true,
+      "scheme": "VoyagerHelper-Dev",
+      "configuration": "Debug",
+      "launchEnv": {
+        "BACKEND_MODE": "source",
+        "VOYAGER_PROJECT_ROOT": "${workspaceFolder}"
+      },
+    },
+    {
+      "type": "sweetpad",
+      "action": "launch",
+      "problemMatcher": [
+        "$sweetpad-watch",
+        "$sweetpad-xcodebuild-default",
+        "$sweetpad-xcbeautify-errors",
+        "$sweetpad-xcbeautify-warnings"
+      ],
+      "label": "VoyagerHelper Dev: Launch (Release)",
+      "detail": "Build and Run the Development environment on Release mode",
+      "scheme": "VoyagerHelper-Dev",
+      "configuration": "Release",
+      "launchEnv": {
+        "BACKEND_MODE": "source",
+        "VOYAGER_PROJECT_ROOT": "${workspaceFolder}"
+      },
+    },
   ]
 }
