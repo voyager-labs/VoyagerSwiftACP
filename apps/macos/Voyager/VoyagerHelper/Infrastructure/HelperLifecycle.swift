@@ -10,13 +10,13 @@ final class HelperLifecycle {
         self.processRunner = processRunner
     }
 
-    func start() {
+    func start() async {
         installSignalHandlers()
-        processRunner.startIfNeeded()
+        await processRunner.startIfNeeded()
     }
 
-    func stop() {
-        processRunner.stop()
+    func stop() async {
+        await processRunner.stop()
     }
 
     private func installSignalHandlers() {
@@ -25,8 +25,10 @@ final class HelperLifecycle {
             signal(sig, SIG_IGN)
             let source = DispatchSource.makeSignalSource(signal: sig, queue: .main)
             source.setEventHandler { [weak self] in
-                self?.processRunner.stop()
-                CFRunLoopStop(CFRunLoopGetMain())
+                Task { @MainActor in
+                    await self?.processRunner.stop()
+                    CFRunLoopStop(CFRunLoopGetMain())
+                }
             }
             source.resume()
             signalSources.append(source)

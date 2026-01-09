@@ -11,7 +11,7 @@ struct BackendProcessConfig {
     let description: String
 }
 
-final class ProcessRunner {
+actor ProcessRunner {
     enum Error: Swift.Error, Equatable {
         case backendDirectoryError(Environment.BackendDirectoryError)
         case processNameNotConfigured
@@ -19,22 +19,41 @@ final class ProcessRunner {
     }
 
     private var process: Process?
+    private var isStarting = false
+    private var stopRequested = false
     private let logger = Logger(label: "VoyagerHelper")
     private let environment: Environment
 
-    init(environment: Environment = Environment()) {
+    init(environment: Environment) {
         self.environment = environment
     }
 
-    func startIfNeeded() {
-        guard process == nil || process?.isRunning == false else { return }
+    func startIfNeeded() async {
+        if let process, process.isRunning {
+            return
+        }
+        if isStarting {
+            return
+        }
+
+        stopRequested = false
+        isStarting = true
+        defer { isStarting = false }
+
+        if stopRequested || Task.isCancelled {
+            return
+        }
         process = nil
 
         let config: BackendProcessConfig
         do {
-            config = try makeProcessConfig()
+            config = try await resolveProcessConfig()
         } catch {
             logger.error("Failed to create process config: \(error)")
+            return
+        }
+
+        if stopRequested || Task.isCancelled {
             return
         }
 
@@ -42,43 +61,59 @@ final class ProcessRunner {
         runProcess(proc, description: config.description)
     }
 
-    func stop() {
+    func stop() async {
+        stopRequested = true
         process?.terminate()
         process = nil
     }
 
-    private func makeProcessConfig() throws -> BackendProcessConfig {
-        let directory: String
-        do {
-            directory = try environment.backendDirectory()
-        } catch let error as Environment.BackendDirectoryError {
-            throw Error.backendDirectoryError(error)
+    private func resolveProcessConfig() async throws -> BackendProcessConfig {
+        try await MainActor.run {
+            let directory: String
+            do {
+                directory = try environment.backendDirectory()
+            } catch let error as Environment.BackendDirectoryError {
+                throw Error.backendDirectoryError(error)
+            }
+
+            guard let backendMode = Dotenv.backendMode else {
+                throw Error.backendDirectoryError(.backendModeNotSet)
+            }
+
+            let appEnv = Dotenv.appEnv
+            let processName = Dotenv["PUBLIC_BACKEND_PROCESS_NAME"]?.stringValue
+            let executable = try executablePath(
+                in: directory,
+                backendMode: backendMode,
+                processName: processName,
+            )
+            let processEnv = resolveProcessEnvironment(backendMode: backendMode)
+
+            let (arguments, description): ([String]?, String) = switch backendMode {
+            case .source: (["uv", "run", appEnv?.rawValue ?? "dev"], "uv run \(appEnv?.rawValue ?? "dev")")
+            case .bundled: (nil, "Bundled binary")
+            }
+
+            return BackendProcessConfig(
+                directory: directory,
+                executable: executable,
+                arguments: arguments,
+                environment: processEnv,
+                description: description,
+            )
         }
-
-        let executable = try executablePath(in: directory)
-        let processEnv = resolveProcessEnvironment()
-
-        let (arguments, description): ([String]?, String) = switch Dotenv.backendMode {
-        case .source: (["uv", "run", Dotenv.appEnv?.rawValue ?? "dev"], "uv run \(Dotenv.appEnv?.rawValue ?? "dev")")
-        case .bundled: (nil, "Bundled binary")
-        case .none: throw Error.backendDirectoryError(.backendModeNotSet)
-        }
-
-        return BackendProcessConfig(
-            directory: directory,
-            executable: executable,
-            arguments: arguments,
-            environment: processEnv,
-            description: description,
-        )
     }
 
-    private func executablePath(in directory: String) throws -> String {
-        switch Dotenv.backendMode {
+    private nonisolated func executablePath(
+        in directory: String,
+        backendMode: Environment.BackendMode,
+        processName: String?,
+    ) throws -> String {
+        switch backendMode {
         case .source:
             return "/usr/bin/env"
         case .bundled:
-            guard let processName = Dotenv["PUBLIC_BACKEND_PROCESS_NAME"]?.stringValue else {
+            guard let processName, !processName.isEmpty else {
                 throw Error.processNameNotConfigured
             }
             let binaryPath = URL(fileURLWithPath: directory).appendingPathComponent(processName).path
@@ -86,7 +121,6 @@ final class ProcessRunner {
                 throw Error.binaryNotFound(path: binaryPath)
             }
             return binaryPath
-        case .none: throw Error.backendDirectoryError(.backendModeNotSet)
         }
     }
 
@@ -99,11 +133,13 @@ final class ProcessRunner {
     /// - `APP_ENV`: Python이 올바른 `.env` 파일을 로드하도록 설정
     /// - `BACKEND_MODE`: 백엔드 실행 모드 (source/bundled)
     /// - `PATH` (source 모드만): `uv` 실행을 위해 homebrew 경로 추가
-    private func resolveProcessEnvironment() -> [String: String] {
+    private nonisolated func resolveProcessEnvironment(
+        backendMode: Environment.BackendMode,
+    ) -> [String: String] {
         var env: [String: String] = ProcessInfo.processInfo.environment
 
         // source 모드에서만 PATH에 homebrew 경로 추가 (uv 실행용)
-        if case .source = Dotenv.backendMode {
+        if case .source = backendMode {
             let prefix = "/opt/homebrew/bin:/usr/local/bin"
             if let currentPath = env["PATH"], !currentPath.isEmpty {
                 env["PATH"] = "\(prefix):\(currentPath)"

@@ -21,8 +21,12 @@ class VoyagerHelperApp {
         let lifecycle = HelperLifecycle(processRunner: runner)
         VoyagerHelperApp.lifecycle = lifecycle
 
-        lifecycle.start()
+        Task {
+            await lifecycle.start()
+        }
         RunLoop.current.run()
-        lifecycle.stop()
+        Task {
+            await lifecycle.stop()
+        }
     }
 }
