@@ -145,12 +145,10 @@ private struct SidebarSectionHeader: View {
 struct SidebarView: View {
     let store: StoreOf<FileManagerFeature>
     @State private var dropTargetIndex: Int?
-    @Environment(\.colorScheme)
-    var colorScheme
 
     var body: some View {
         VStack(spacing: 0) {
-            VoyagerDS.Surface.shellBackground(for: colorScheme)
+            Color.clear
                 .frame(height: 50)
 
             ScrollView {
@@ -189,7 +187,7 @@ struct SidebarView: View {
             .clipped()
         }
         .frame(minWidth: 150)
-        .background(VoyagerDS.Surface.shellBackground(for: colorScheme))
+        .background(Color.clear)
         .navigationSplitViewColumnWidth(ideal: {
             if let savedWidth = UserDefaults.standard.object(forKey: "sidebarWidth") as? Double,
                savedWidth > 0

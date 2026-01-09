@@ -20,16 +20,8 @@ class AppearanceAwareSplitView: NSSplitView {
 
     func updateBackgroundColor() {
         wantsLayer = true
-        let appearance = effectiveAppearance
-        let isDark = isDarkMode(appearance: appearance)
-
-        appearance.performAsCurrentDrawingAppearance {
-            layer?.backgroundColor = VoyagerDS.AppKitSurface.shellBackground(isDark: isDark).cgColor
-        }
-    }
-
-    private func isDarkMode(appearance: NSAppearance) -> Bool {
-        appearance.name == .darkAqua || appearance.name == .vibrantDark
+        // 투명하게 설정 (뒤의 블러가 보이도록)
+        layer?.backgroundColor = NSColor.clear.cgColor
     }
 }
 
@@ -82,11 +74,29 @@ class FileManagerSplitViewController: NSViewController, NSSplitViewDelegate {
     }
 
     override func loadView() {
+        // 전체 창을 감싸는 NSVisualEffectView
+        let backgroundEffect = NSVisualEffectView()
+        backgroundEffect.material = .underWindowBackground
+        backgroundEffect.blendingMode = .behindWindow
+        backgroundEffect.state = .active
+        backgroundEffect.wantsLayer = true
+
         let mainSplit = createMainSplitView()
         mainSplitView = mainSplit
         setupSidebar(in: mainSplit)
         setupContentContainer(in: mainSplit)
-        view = mainSplit
+
+        // Split view를 블러 배경 위에 배치
+        mainSplit.translatesAutoresizingMaskIntoConstraints = false
+        backgroundEffect.addSubview(mainSplit)
+        NSLayoutConstraint.activate([
+            mainSplit.topAnchor.constraint(equalTo: backgroundEffect.topAnchor),
+            mainSplit.bottomAnchor.constraint(equalTo: backgroundEffect.bottomAnchor),
+            mainSplit.leadingAnchor.constraint(equalTo: backgroundEffect.leadingAnchor),
+            mainSplit.trailingAnchor.constraint(equalTo: backgroundEffect.trailingAnchor),
+        ])
+
+        view = backgroundEffect
     }
 
     private func updateContentInspectorLayout() {
@@ -186,7 +196,8 @@ extension FileManagerSplitViewController {
         mainSplit.setValue(NSColor.clear, forKey: "dividerColor")
         mainSplit.delegate = self
         mainSplit.wantsLayer = true
-        mainSplit.updateBackgroundColor()
+        // 배경을 투명하게 설정 (뒤의 블러가 보이도록)
+        mainSplit.layer?.backgroundColor = NSColor.clear.cgColor
 
         mainSplit.onAppearanceChanged = { [weak self] in
             self?.updateAllPaneColors()
@@ -220,17 +231,21 @@ extension FileManagerSplitViewController {
         )
         sidebarHosting.safeAreaRegions = []
 
+        // SwiftUI 뷰를 투명하게 설정 (뒤의 블러가 보이도록)
         sidebarHosting.view.wantsLayer = true
+        sidebarHosting.view.layer?.backgroundColor = NSColor.clear.cgColor
 
         mainSplit.addArrangedSubview(sidebarHosting.view)
         mainSplit.setHoldingPriority(.defaultLow - 1, forSubviewAt: 0)
         addChild(sidebarHosting)
         self.sidebarHosting = sidebarHosting
-        setupSidebarLayer(for: sidebarHosting.view)
     }
 
     private func setupContentContainer(in mainSplit: NSSplitView) {
+        // wrapper를 투명하게 설정 (뒤의 블러가 보이도록)
         let wrapper = NSView()
+        wrapper.wantsLayer = true
+        wrapper.layer?.backgroundColor = NSColor.clear.cgColor
 
         let container = NSView()
         container.wantsLayer = true
@@ -351,11 +366,6 @@ extension FileManagerSplitViewController {
                 contentTrailingConstraint,
             ].compactMap(\.self),
         )
-    }
-
-    private func setupSidebarLayer(for view: NSView) {
-        view.wantsLayer = true
-        view.layer?.zPosition = 0
     }
 
     private func setupElevatedLayer(for view: NSView) {
