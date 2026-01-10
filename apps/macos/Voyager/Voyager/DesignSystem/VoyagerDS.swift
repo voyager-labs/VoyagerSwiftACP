@@ -200,6 +200,10 @@ enum VoyagerDS {
         static func controlHoverFill(for scheme: ColorScheme) -> Color {
             scheme == .dark ? Color.white.opacity(0.1) : Color.black.opacity(0.08)
         }
+
+        static func toolbarButtonHoverFill(for scheme: ColorScheme) -> Color {
+            controlHoverFill(for: scheme)
+        }
     }
 
     // MARK: - AppKit (NSColor) 토큰

@@ -30,7 +30,7 @@ struct ToolbarView: View {
     }
 
     let store: StoreOf<FileManagerFeature>
-    @State private var isHovered: Bool = false
+    @State private var isTitleAreaHovered: Bool = false
     @State private var isTitleHovered: Bool = false
 
     private let trafficLightAreaWidth: CGFloat = 80
@@ -63,9 +63,6 @@ struct ToolbarView: View {
                         .padding(.horizontal, 16)
                         .frame(height: 40)
                         .frame(maxWidth: .infinity)
-                        .onHover { hovering in
-                            isHovered = hovering
-                        }
                     Rectangle()
                         .fill(.ultraThinMaterial)
                         .frame(height: 1)
@@ -86,7 +83,7 @@ struct ToolbarView: View {
 
                 Spacer()
 
-                if isHovered {
+                if isTitleAreaHovered {
                     ViewToggleButton(store: store)
                     SortGroupButton(store: store)
                 }
@@ -94,9 +91,14 @@ struct ToolbarView: View {
             .padding(.horizontal, 6)
             .padding(.vertical, 6)
             .frame(height: 32)
+            .frame(maxWidth: .infinity)
+            .contentShape(Rectangle())
+            .onHover { hovering in
+                isTitleAreaHovered = hovering
+            }
             .background(
                 Group {
-                    if isHovered {
+                    if isTitleAreaHovered {
                         RoundedRectangle(cornerRadius: 8)
                             .fill(.thickMaterial)
                     }
@@ -106,62 +108,60 @@ struct ToolbarView: View {
     }
 
     private func backButton(viewStore: ViewStore<ViewState, FileManagerFeature.Action>) -> some View {
-        Menu {
-            if viewStore.backHistory.isEmpty {
-                Text("No history")
-                    .foregroundColor(.secondary)
-            } else {
-                ForEach(Array(viewStore.backHistory.enumerated().reversed()), id: \.offset) { index, entry in
-                    Button(
-                        action: { store.send(.goToHistoryIndex(index, isBackHistory: true)) },
-                        label: { Text(historyDisplayName(for: entry)) },
-                    )
+        ToolbarNavigationMenuButton(
+            systemName: "chevron.left",
+            isEnabled: viewStore.canGoBack,
+            font: nil,
+            primaryAction: { store.send(.goBack) },
+            menuContent: {
+                if viewStore.backHistory.isEmpty {
+                    Text("No history")
+                        .foregroundColor(.secondary)
+                } else {
+                    ForEach(Array(viewStore.backHistory.enumerated().reversed()), id: \.offset) { index, entry in
+                        Button(
+                            action: { store.send(.goToHistoryIndex(index, isBackHistory: true)) },
+                            label: { Text(historyDisplayName(for: entry)) },
+                        )
+                    }
                 }
-            }
-        } label: {
-            Image(systemName: "chevron.left")
-                .foregroundColor(viewStore.canGoBack ? .primary : .secondary)
-        } primaryAction: {
-            store.send(.goBack)
-        }
+            },
+        )
         .fixedSize()
-        .menuIndicator(.hidden)
-        .disabled(!viewStore.canGoBack)
-        .buttonStyle(.borderless)
     }
 
     private func forwardButton(viewStore: ViewStore<ViewState, FileManagerFeature.Action>) -> some View {
-        Menu {
-            if viewStore.forwardHistory.isEmpty {
-                Text("No history")
-                    .foregroundColor(.secondary)
-            } else {
-                ForEach(Array(viewStore.forwardHistory.enumerated().reversed()), id: \.offset) { index, entry in
-                    Button(
-                        action: { store.send(.goToHistoryIndex(index, isBackHistory: false)) },
-                        label: { Text(historyDisplayName(for: entry)) },
-                    )
+        ToolbarNavigationMenuButton(
+            systemName: "chevron.right",
+            isEnabled: viewStore.canGoForward,
+            font: nil,
+            primaryAction: { store.send(.goForward) },
+            menuContent: {
+                if viewStore.forwardHistory.isEmpty {
+                    Text("No history")
+                        .foregroundColor(.secondary)
+                } else {
+                    ForEach(Array(viewStore.forwardHistory.enumerated().reversed()), id: \.offset) { index, entry in
+                        Button(
+                            action: { store.send(.goToHistoryIndex(index, isBackHistory: false)) },
+                            label: { Text(historyDisplayName(for: entry)) },
+                        )
+                    }
                 }
-            }
-        } label: {
-            Image(systemName: "chevron.right")
-                .foregroundColor(viewStore.canGoForward ? .primary : .secondary)
-        } primaryAction: {
-            store.send(.goForward)
-        }
+            },
+        )
         .fixedSize()
-        .menuIndicator(.hidden)
-        .disabled(!viewStore.canGoForward)
-        .buttonStyle(.borderless)
     }
 
     private func enclosingDirectoryButton(viewStore: ViewStore<ViewState, FileManagerFeature.Action>) -> some View {
         Button(
             action: { store.send(.goToEnclosingDirectory) },
             label: {
-                Image(systemName: "chevron.up")
-                    .font(.system(size: 13, weight: .medium))
-                    .foregroundColor(viewStore.canGoToEnclosingDirectory ? .primary : .secondary)
+                ToolbarNavigationButtonLabel(
+                    systemName: "chevron.up",
+                    isEnabled: viewStore.canGoToEnclosingDirectory,
+                    font: .system(size: 13, weight: .medium),
+                )
             },
         )
         .fixedSize()
