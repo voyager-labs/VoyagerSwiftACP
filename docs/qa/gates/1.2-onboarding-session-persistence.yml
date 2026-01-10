@@ -1,0 +1,39 @@
+schema: 1
+story: "1.2"
+story_title: "Onboarding Step State Machine + Persistence/Resume"
+gate: PASS
+status_reason: "Full suite rerun after enabling UI testing authorization shows green results; AC5 confirmed via manual QA."
+reviewer: "Quinn (Test Architect)"
+updated: "2026-01-05T02:20:00+09:00"
+
+waiver: { active: false }
+
+top_issues: []
+
+risk_summary:
+  totals: { critical: 0, high: 0, medium: 0, low: 0 }
+  recommendations:
+    must_fix: []
+    monitor: []
+
+quality_score: 90
+expires: "2026-01-18T00:00:00+09:00"
+
+evidence:
+  tests_reviewed: 4
+  risks_identified: 0
+  trace:
+    ac_covered: [1, 2, 3, 4, 5]
+    ac_gaps: []
+
+nfr_validation:
+  security: { status: PASS, notes: "No new sensitive data access." }
+  performance: { status: PASS, notes: "UserDefaults persistence is minimal." }
+  reliability: { status: PASS, notes: "UI tests authorized; close-to-quit behavior verified manually." }
+  maintainability: { status: PASS, notes: "TCA structure consistent with project patterns." }
+
+recommendations:
+  immediate: []
+  future:
+    - action: "Add automated coverage for onboarding close confirmation"
+      refs: ["apps/macos/Voyager/Voyager/App/OnboardingWindowController.swift"]

@@ -24,7 +24,6 @@ struct SettingsFeature {
     }
 
     var body: some Reducer<State, Action> {
-        // Child reducers 스코핑
         Scope(state: \.generalSettings, action: \.general) {
             GeneralSettingsFeature()
         }
