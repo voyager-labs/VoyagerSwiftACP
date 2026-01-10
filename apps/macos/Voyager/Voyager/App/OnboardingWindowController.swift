@@ -5,6 +5,7 @@ import SwiftUI
 
 final class OnboardingWindowController: NSWindowController, NSWindowDelegate {
     let store: StoreOf<OnboardingFeature>
+    private var shouldTerminateOnClose = true
 
     init() {
         store = Store(initialState: OnboardingFeature.State()) {
@@ -38,7 +39,7 @@ final class OnboardingWindowController: NSWindowController, NSWindowDelegate {
 
         window.setFrameAutosaveName("VoyagerOnboardingWindow")
 
-        let screenFrame = NSScreen.main?.visibleFrame ?? NSRect.zero
+        let screenFrame = activeScreenVisibleFrame()
         let desiredWidth = min(max(screenFrame.width * 0.6, 900), 1200)
         let desiredHeight = min(max(screenFrame.height * 0.6, 600), 800)
         let desiredSize = NSSize(width: desiredWidth, height: desiredHeight)
@@ -51,6 +52,7 @@ final class OnboardingWindowController: NSWindowController, NSWindowDelegate {
 
     override func showWindow(_ sender: Any?) {
         super.showWindow(sender)
+        shouldTerminateOnClose = true
         guard let window else { return }
         window.alphaValue = 0
         NSAnimationContext.runAnimationGroup { context in
@@ -60,13 +62,27 @@ final class OnboardingWindowController: NSWindowController, NSWindowDelegate {
         }
     }
 
+    func dismissWithoutTerminate() {
+        shouldTerminateOnClose = false
+        window?.close()
+    }
+
     func windowShouldClose(_: NSWindow) -> Bool {
-        NSApp.terminate(nil)
+        if shouldTerminateOnClose {
+            NSApp.terminate(nil)
+        }
         return true
     }
 
     @available(*, unavailable)
     required init?(coder _: NSCoder) {
         fatalError("init(coder:) has not been implemented")
+    }
+
+    private func activeScreenVisibleFrame() -> NSRect {
+        if let screen = NSScreen.screens.first(where: { $0.frame.contains(NSEvent.mouseLocation) }) {
+            return screen.visibleFrame
+        }
+        return NSScreen.main?.visibleFrame ?? NSScreen.screens.first?.visibleFrame ?? .zero
     }
 }

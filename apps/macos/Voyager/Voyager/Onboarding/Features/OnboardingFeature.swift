@@ -99,6 +99,8 @@ struct OnboardingFeature {
     var onboardingProgressStore
     @Dependency(\.fileManagerWindowClient)
     var fileManagerWindowClient
+    @Dependency(\.onboardingWindowClient)
+    var onboardingWindowClient
 
     var body: some Reducer<State, Action> {
         Scope(state: \.welcome, action: \.welcome) {
@@ -171,6 +173,20 @@ struct OnboardingFeature {
                     let opened = await fileManagerWindowClient.openWindow(path)
                     await send(.complete(.openWindowResponse(opened)))
                 }
+
+            case let .complete(.openWindowResponse(opened)):
+                let snapshot = state.progressSnapshot
+                let saveEffect: Effect<Action> = .run { _ in
+                    progressStore.save(snapshot)
+                }
+                let closeEffect: Effect<Action> = if opened {
+                    .run { [onboardingWindowClient] _ in
+                        await onboardingWindowClient.closeWindow()
+                    }
+                } else {
+                    .none
+                }
+                return .merge(saveEffect, closeEffect)
 
             case .welcome, .betaAccess, .permissions, .complete:
                 let snapshot = state.progressSnapshot
