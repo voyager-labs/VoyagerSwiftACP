@@ -820,6 +820,9 @@ struct FileManagerFeature {
 
             case let .openFavorite(favorite):
                 guard state.currentPath != favorite.url.path else { return .none }
+                if favorite.url.pathExtension.lowercased() == "voycoll" {
+                    return .send(.openCollectionFile(favorite.url))
+                }
                 state.navigateToFolder(favorite.url.path, sidebarItemName: favorite.name)
                 state.resetComposer()
                 let exitEffect = Self.exitCollectionMode(state: &state)
@@ -835,6 +838,10 @@ struct FileManagerFeature {
 
                 var isDirectory: ObjCBool = false
                 guard FileManager.default.fileExists(atPath: url.path, isDirectory: &isDirectory) else {
+                    return .none
+                }
+                let isVoycoll = url.pathExtension.lowercased() == "voycoll"
+                guard isDirectory.boolValue || isVoycoll else {
                     return .none
                 }
 

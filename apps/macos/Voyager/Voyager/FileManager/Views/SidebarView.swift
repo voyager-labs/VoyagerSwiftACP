@@ -272,18 +272,17 @@ struct SidebarView: View {
             )
             .padding(.horizontal, 8)
             .contentShape(Rectangle())
-            .onDrop(of: [UTType.fileURL], isTargeted: Binding(
-                get: { dropTargetIndex == index },
-                set: { isTargeted in
-                    if isTargeted {
-                        dropTargetIndex = index
-                    } else if dropTargetIndex == index {
-                        dropTargetIndex = nil
-                    }
-                },
-            )) { providers in
-                handleFavoriteInsert(providers: providers, at: index)
-            }
+            .onDrop(
+                of: [UTType.fileURL],
+                delegate: FavoriteDropDelegate(
+                    index: index,
+                    dropTargetIndex: $dropTargetIndex,
+                    resolveURL: { providers, completion in
+                        resolveFirstDropURL(from: providers, completion: completion)
+                    },
+                    onDrop: handleFavoriteInsert(providers:at:),
+                ),
+            )
     }
 
     private func handleFavoriteInsert(providers: [NSItemProvider], at index: Int) -> Bool {
@@ -298,12 +297,86 @@ struct SidebarView: View {
                    let url = URL(string: urlString)
                 {
                     Task { @MainActor in
+                        var isDirectory: ObjCBool = false
+                        guard FileManager.default.fileExists(atPath: url.path, isDirectory: &isDirectory),
+                              isDirectory.boolValue || url.pathExtension.lowercased() == "voycoll"
+                        else {
+                            return
+                        }
                         store.send(.insertFavorite(url: url, at: index))
                     }
                 }
             }
         }
         return hasProvider
+    }
+
+    private func resolveFirstDropURL(
+        from providers: [NSItemProvider],
+        completion: @escaping (URL?) -> Void,
+    ) {
+        for provider in providers where provider.hasItemConformingToTypeIdentifier(UTType.fileURL.identifier) {
+            provider.loadItem(forTypeIdentifier: UTType.fileURL.identifier, options: nil) { data, _ in
+                guard let data = data as? Data,
+                      let urlString = String(data: data, encoding: .utf8),
+                      let url = URL(string: urlString)
+                else {
+                    completion(nil)
+                    return
+                }
+                completion(url)
+            }
+            return
+        }
+        completion(nil)
+    }
+
+    private struct FavoriteDropDelegate: DropDelegate {
+        let index: Int
+        @Binding var dropTargetIndex: Int?
+        let resolveURL: (_ providers: [NSItemProvider], _ completion: @escaping (URL?) -> Void) -> Void
+        let onDrop: (_ providers: [NSItemProvider], _ index: Int) -> Bool
+
+        func dropEntered(info: DropInfo) {
+            updateTargetIndicator(with: info)
+        }
+
+        func dropUpdated(info _: DropInfo) -> DropProposal? {
+            DropProposal(operation: .copy)
+        }
+
+        func dropExited(info _: DropInfo) {
+            if dropTargetIndex == index {
+                dropTargetIndex = nil
+            }
+        }
+
+        func performDrop(info: DropInfo) -> Bool {
+            dropTargetIndex = nil
+            return onDrop(info.itemProviders(for: [UTType.fileURL]), index)
+        }
+
+        private func updateTargetIndicator(with info: DropInfo) {
+            let providers = info.itemProviders(for: [UTType.fileURL])
+            resolveURL(providers) { url in
+                guard let url else {
+                    return
+                }
+
+                var isDirectory: ObjCBool = false
+                let isVoycoll = url.pathExtension.lowercased() == "voycoll"
+                let exists = FileManager.default.fileExists(atPath: url.path, isDirectory: &isDirectory)
+                let canDrop = exists && (isDirectory.boolValue || isVoycoll)
+
+                DispatchQueue.main.async {
+                    if canDrop {
+                        dropTargetIndex = index
+                    } else if dropTargetIndex == index {
+                        dropTargetIndex = nil
+                    }
+                }
+            }
+        }
     }
 
     private var locationsSection: some View {
