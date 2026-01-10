@@ -597,9 +597,11 @@ struct FileManagerFeature {
                         effects.append(.send(.changeLayout(viewLayout)))
                     }
 
-                    let searchEffect: Effect<Action> = trimmedQuery.isEmpty
+                    let searchEffect: Effect<Action> = state.isOpeningCollectionFile
                         ? .send(.composer(.applyFilters))
-                        : .send(.composer(.submit))
+                        : (trimmedQuery.isEmpty
+                            ? .send(.composer(.applyFilters))
+                            : .send(.composer(.submit)))
                     effects.append(searchEffect)
 
                     return .concatenate(effects)
@@ -821,6 +823,7 @@ struct FileManagerFeature {
             case let .openFavorite(favorite):
                 guard state.currentPath != favorite.url.path else { return .none }
                 if favorite.url.pathExtension.lowercased() == "voycoll" {
+                    state.selectedSidebarItem = favorite.name
                     return .send(.openCollectionFile(favorite.url))
                 }
                 state.navigateToFolder(favorite.url.path, sidebarItemName: favorite.name)
