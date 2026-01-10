@@ -18,7 +18,9 @@ class AppDelegate: NSObject, NSApplicationDelegate, ObservableObject {
         UpdaterFeature()
     }
 
-    private var onboardingWindowController: OnboardingWindowController?
+    @Dependency(\.onboardingWindowClient)
+    private var onboardingWindowClient
+    // TODO: 온보딩 게이트 판단/표시 호출을 전용 경로로 모아 중복 체크를 제거한다.
 
     @Published var hasSelectedItems: Bool = false
     @Published var hasClipboardItems: Bool = false
@@ -37,15 +39,6 @@ class AppDelegate: NSObject, NSApplicationDelegate, ObservableObject {
             window != NSApp.keyWindow && windowControllers.contains(where: { $0.window == window })
         }
         return !validWindows.isEmpty
-    }
-
-    private var isOnboardingRequired: Bool {
-        switch OnboardingProgressStore.liveValue.load() {
-        case let .success(snapshot):
-            !snapshot.stepState.completeComplete
-        case .empty, .resetRequired:
-            true
-        }
     }
 
     func updateMenuState(store: StoreOf<FileManagerFeature>?) {
@@ -84,8 +77,9 @@ class AppDelegate: NSObject, NSApplicationDelegate, ObservableObject {
     }
 
     func applicationDidFinishLaunching(_: Notification) {
+        appLifecycleStore.send(.didFinishLaunching)
         NSWindow.allowsAutomaticWindowTabbing = true
-        if showOnboardingWindowIfNeeded() {
+        if onboardingWindowClient.showIfNeeded() {
             return
         }
         if windowControllers.isEmpty {
@@ -106,7 +100,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, ObservableObject {
     }
 
     func applicationShouldHandleReopen(_: NSApplication, hasVisibleWindows flag: Bool) -> Bool {
-        if showOnboardingWindowIfNeeded() {
+        if onboardingWindowClient.showIfNeeded() {
             return true
         }
         if !flag {
@@ -142,6 +136,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, ObservableObject {
     @discardableResult
     @objc
     func createNewWindow(path: String? = nil) -> FileManagerWindowController {
+        // TODO: 모든 윈도우 생성 경로를 여기로 통합해 게이트 적용 지점을 단일화한다.
         let controller = FileManagerWindowController(path: path, asTab: false)
         windowControllers.append(controller)
         controller.showWindow(nil)
@@ -149,7 +144,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, ObservableObject {
     }
 
     func createNewTab(path: String? = nil, duplicateState: FileManagerFeature.State? = nil) {
-        if showOnboardingWindowIfNeeded() {
+        if onboardingWindowClient.showIfNeeded() {
             return
         }
         guard let keyWindow = NSApp.keyWindow else {
@@ -292,22 +287,6 @@ class AppDelegate: NSObject, NSApplicationDelegate, ObservableObject {
         }
     }
 
-    private func showOnboardingWindowIfNeeded() -> Bool {
-        guard isOnboardingRequired else { return false }
-        showOnboardingWindow()
-        return true
-    }
-
-    private func showOnboardingWindow() {
-        if onboardingWindowController == nil {
-            onboardingWindowController = OnboardingWindowController()
-        }
-
-        onboardingWindowController?.showWindow(nil)
-        onboardingWindowController?.window?.makeKeyAndOrderFront(nil)
-        NSApp.activate(ignoringOtherApps: true)
-    }
-
     private func checkIndexingStatus() -> Bool {
         // TODO: 추후 인덱싱 기능 구현 시 실제 상태 확인
         false
@@ -336,7 +315,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, ObservableObject {
 
     @MainActor
     private func openCollectionFile(url: URL) {
-        if showOnboardingWindowIfNeeded() {
+        if onboardingWindowClient.showIfNeeded() {
             return
         }
         let controller = activeWindowController() ?? createNewWindow()

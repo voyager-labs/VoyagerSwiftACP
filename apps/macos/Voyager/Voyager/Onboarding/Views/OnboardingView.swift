@@ -35,11 +35,6 @@ struct OnboardingView: View {
                         topInsetBar(viewStore: viewStore)
                             .frame(width: topBarWidth)
 
-                        if viewStore.showResumeBanner {
-                            resumeBanner(viewStore: viewStore)
-                                .frame(width: topBarWidth)
-                        }
-
                         if let message = nextDisabledMessage(from: viewStore) {
                             HStack {
                                 Spacer()
@@ -203,24 +198,6 @@ struct OnboardingView: View {
             }
         }
         .accessibilityLabel("Onboarding progress")
-    }
-
-    private func resumeBanner(viewStore: ViewStore<OnboardingFeature.State, OnboardingFeature.Action>) -> some View {
-        HStack(spacing: 12) {
-            Image(systemName: "clock.arrow.circlepath")
-                .foregroundStyle(.secondary)
-            Text("Resuming your onboarding from where you left off.")
-                .font(.system(size: 13))
-                .foregroundStyle(.secondary)
-            Spacer()
-            Button("Dismiss") {
-                viewStore.send(.dismissResumeBanner)
-            }
-            .buttonStyle(.plain)
-        }
-        .padding(12)
-        .background(.ultraThinMaterial)
-        .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
     }
 
     private func nextDisabledMessage(

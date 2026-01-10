@@ -38,22 +38,15 @@ final class OnboardingWindowController: NSWindowController, NSWindowDelegate {
 
         window.setFrameAutosaveName("VoyagerOnboardingWindow")
 
-        if !window.setFrameUsingName("VoyagerOnboardingWindow") {
-            let screenFrame = NSScreen.main?.visibleFrame ?? NSRect.zero
-            let desiredWidth = min(max(screenFrame.width * 0.6, 900), 1200)
-            let desiredHeight = min(max(screenFrame.height * 0.6, 600), 800)
-            let desiredSize = NSSize(width: desiredWidth, height: desiredHeight)
-            let origin = NSPoint(
-                x: screenFrame.midX - desiredSize.width / 2,
-                y: screenFrame.midY - desiredSize.height / 2,
-            )
-            window.setFrame(NSRect(origin: origin, size: desiredSize), display: false)
-        } else {
-            var frame = window.frame
-            frame.size.width = min(max(frame.size.width, 900), 1200)
-            frame.size.height = min(max(frame.size.height, 600), 800)
-            window.setFrame(frame, display: false)
-        }
+        let screenFrame = NSScreen.main?.visibleFrame ?? NSRect.zero
+        let desiredWidth = min(max(screenFrame.width * 0.6, 900), 1200)
+        let desiredHeight = min(max(screenFrame.height * 0.6, 600), 800)
+        let desiredSize = NSSize(width: desiredWidth, height: desiredHeight)
+        let origin = NSPoint(
+            x: screenFrame.midX - desiredSize.width / 2,
+            y: screenFrame.midY - desiredSize.height / 2,
+        )
+        window.setFrame(NSRect(origin: origin, size: desiredSize), display: false)
     }
 
     override func showWindow(_ sender: Any?) {

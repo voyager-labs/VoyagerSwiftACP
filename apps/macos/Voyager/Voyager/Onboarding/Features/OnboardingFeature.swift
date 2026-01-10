@@ -6,7 +6,6 @@ struct OnboardingFeature {
     @ObservableState
     struct State: Equatable {
         var currentStep: OnboardingStep = .welcome
-        var showResumeBanner: Bool = false
 
         var welcome = WelcomeFeature.State()
         var betaAccess = BetaAccessFeature.State()
@@ -89,7 +88,6 @@ struct OnboardingFeature {
         case onAppear
         case backTapped
         case nextTapped
-        case dismissResumeBanner
 
         case welcome(WelcomeFeature.Action)
         case betaAccess(BetaAccessFeature.Action)
@@ -99,6 +97,8 @@ struct OnboardingFeature {
 
     @Dependency(\.onboardingProgressStore)
     var onboardingProgressStore
+    @Dependency(\.fileManagerWindowClient)
+    var fileManagerWindowClient
 
     var body: some Reducer<State, Action> {
         Scope(state: \.welcome, action: \.welcome) {
@@ -122,7 +122,6 @@ struct OnboardingFeature {
                 switch progressStore.load() {
                 case .empty:
                     state = State()
-                    state.showResumeBanner = false
                     let snapshot = state.progressSnapshot
                     return .run { _ in
                         progressStore.save(snapshot)
@@ -130,7 +129,6 @@ struct OnboardingFeature {
 
                 case .resetRequired:
                     state = State()
-                    state.showResumeBanner = false
                     let snapshot = state.progressSnapshot
                     return .run { _ in
                         progressStore.reset()
@@ -140,7 +138,6 @@ struct OnboardingFeature {
                 case let .success(snapshot):
                     state.applyStepState(snapshot.stepState)
                     state.currentStep = state.lastValidStep(from: snapshot.currentStep)
-                    state.showResumeBanner = !state.isSessionComplete
                     let updatedSnapshot = state.progressSnapshot
                     return .run { _ in
                         progressStore.save(updatedSnapshot)
@@ -163,25 +160,15 @@ struct OnboardingFeature {
                     progressStore.save(snapshot)
                 }
 
-            case .dismissResumeBanner:
-                state.showResumeBanner = false
-                return .none
-
             case .complete(.startUsingTapped), .complete(.retryTapped):
                 let snapshot = state.progressSnapshot
                 state.complete.openWindowError = nil
-                return .run { [onboardingProgressStore] send in
+                return .run { [onboardingProgressStore, fileManagerWindowClient] send in
                     onboardingProgressStore.save(snapshot)
                     let path = await MainActor.run {
                         SettingsFeature.getDefaultTabPath()
                     }
-                    let opened = await MainActor.run {
-                        // TODO: Replace direct AppDelegate usage with a dedicated window client
-                        // once FileManagerWindow management is addressed.
-                        guard let delegate = AppDelegate.shared else { return false }
-                        delegate.createNewWindow(path: path)
-                        return true
-                    }
+                    let opened = await fileManagerWindowClient.openWindow(path)
                     await send(.complete(.openWindowResponse(opened)))
                 }
 
