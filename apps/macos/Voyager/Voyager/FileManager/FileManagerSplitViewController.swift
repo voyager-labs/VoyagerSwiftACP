@@ -171,7 +171,7 @@ class FileManagerSplitViewController: NSViewController, NSSplitViewDelegate {
         super.viewDidAppear()
 
         guard !hasSetInitialLayout,
-              let mainSplitView = view as? NSSplitView,
+              let mainSplitView,
               mainSplitView.bounds.width > 0 else { return }
 
         let savedWidth = UserDefaults.standard.object(forKey: "sidebarWidth") as? Double ?? 220
@@ -582,12 +582,28 @@ extension FileManagerSplitViewController {
 
     func splitViewDidResizeSubviews(_: Notification) {
         updateContentInspectorLayout()
+        syncSidebarVisibilityWithWidth()
+    }
 
-        if let sidebarView = sidebarHosting?.view,
-           store.sidebarVisible,
-           sidebarView.frame.width > 0
-        {
-            UserDefaults.standard.set(sidebarView.frame.width, forKey: "sidebarWidth")
+    private func syncSidebarVisibilityWithWidth() {
+        guard hasSetInitialLayout else { return }
+        guard let sidebarView = sidebarHosting?.view,
+              let mainSplitView else { return }
+
+        let sidebarWidth = sidebarView.frame.width
+        let isCollapsed = mainSplitView.isSubviewCollapsed(sidebarView)
+        let collapseThreshold: CGFloat = 2
+
+        if !isCollapsed, sidebarWidth > collapseThreshold {
+            UserDefaults.standard.set(sidebarWidth, forKey: "sidebarWidth")
+        }
+
+        let shouldBeVisible = !isCollapsed
+        if store.sidebarVisible != shouldBeVisible {
+            store.send(.setSidebarVisible(shouldBeVisible))
+
+            containerLeadingConstraint?.constant = shouldBeVisible ? 0 : contentVerticalMargin
+            contentInspectorContainer?.layoutSubtreeIfNeeded()
         }
     }
 }
