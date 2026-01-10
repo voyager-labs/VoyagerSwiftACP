@@ -1,9 +1,56 @@
 import AppKit
 import ComposableArchitecture
+import IdentifiedCollections
 import SwiftUI
 @_spi(Advanced)
 import SwiftUIIntrospect
 import UniformTypeIdentifiers
+
+private struct RightClickMonitorView: NSViewRepresentable {
+    let onRightMouseDown: (CGPoint) -> Void
+
+    func makeNSView(context _: Context) -> MonitorView {
+        let view = MonitorView()
+        view.onRightMouseDown = onRightMouseDown
+        return view
+    }
+
+    func updateNSView(_ nsView: MonitorView, context _: Context) {
+        nsView.onRightMouseDown = onRightMouseDown
+    }
+
+    @MainActor
+    final class MonitorView: NSView {
+        var onRightMouseDown: ((CGPoint) -> Void)?
+        private var monitor: Any?
+
+        override func viewDidMoveToWindow() {
+            super.viewDidMoveToWindow()
+            if let monitor {
+                NSEvent.removeMonitor(monitor)
+                self.monitor = nil
+            }
+            guard window != nil else { return }
+
+            monitor = NSEvent.addLocalMonitorForEvents(matching: [.rightMouseDown]) { [weak self] event in
+                guard let self, let window else { return event }
+                let location = convert(event.locationInWindow, from: nil)
+                if bounds.contains(location) {
+                    onRightMouseDown?(event.locationInWindow)
+                }
+                return event
+            }
+        }
+
+        deinit {
+            MainActor.assumeIsolated {
+                if let monitor {
+                    NSEvent.removeMonitor(monitor)
+                }
+            }
+        }
+    }
+}
 
 private struct GridLayoutConfig {
     let columns: Int
@@ -11,6 +58,7 @@ private struct GridLayoutConfig {
     let edgePadding: CGFloat
 }
 
+// swiftlint:disable type_body_length
 struct ContentPaneGridView: View {
     let store: StoreOf<FileManagerFeature>
 
@@ -24,6 +72,29 @@ struct ContentPaneGridView: View {
             currentPath: store.currentPath,
             store: store,
         )
+    }
+
+    private func findGridItemId(
+        at point: CGPoint,
+        itemPositions: [String: CGRect],
+        items: IdentifiedArrayOf<FSItem>,
+    ) -> String? {
+        for item in items {
+            let iconRect = itemPositions[item.id + "_icon"]
+            let textRect = itemPositions[item.id + "_text"]
+            let itemRect = itemPositions[item.id]
+
+            if let iconRect, iconRect.contains(point) {
+                return item.id
+            }
+            if let textRect, textRect.contains(point) {
+                return item.id
+            }
+            if let itemRect, itemRect.contains(point) {
+                return item.id
+            }
+        }
+        return nil
     }
 
     private var itemWidth: CGFloat {
@@ -179,6 +250,23 @@ struct ContentPaneGridView: View {
                                 .keyboardShortcut("n", modifiers: [.command, .shift])
                             }
                         }
+                        .background(
+                            RightClickMonitorView(onRightMouseDown: { windowPoint in
+                                guard let nsScrollView else { return }
+                                let pointInClip = nsScrollView.contentView.convert(windowPoint, from: nil)
+                                let targetId = findGridItemId(
+                                    at: pointInClip,
+                                    itemPositions: fsStore.itemPositions,
+                                    items: fsStore.displayItems,
+                                )
+                                guard let targetId, !fsStore.selectedIds.contains(targetId) else { return }
+                                fsStore.send(.selectItem(
+                                    id: targetId,
+                                    isCommandPressed: false,
+                                    isShiftPressed: false,
+                                ))
+                            }),
+                        )
                         .simultaneousGesture(
                             DragGesture(minimumDistance: 10, coordinateSpace: .named("contentPane"))
                                 .onChanged { value in
@@ -314,6 +402,8 @@ struct ContentPaneGridView: View {
         }
     }
 }
+
+// swiftlint:enable type_body_length
 
 extension ContentPaneGridView {
     private func resolveLayout(for width: CGFloat) -> GridLayoutConfig {
