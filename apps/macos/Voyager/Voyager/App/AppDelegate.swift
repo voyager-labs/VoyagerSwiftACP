@@ -13,9 +13,11 @@ class AppDelegate: NSObject, NSApplicationDelegate, ObservableObject {
     private lazy var appLifecycleStore = Store(initialState: AppLifecycleFeature.State()) {
         AppLifecycleFeature()
     }
+
     private lazy var updaterStore = Store(initialState: UpdaterFeature.State()) {
         UpdaterFeature()
     }
+
     private var onboardingWindowController: OnboardingWindowController?
 
     @Published var hasSelectedItems: Bool = false
