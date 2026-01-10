@@ -1,3 +1,4 @@
+// swiftlint:disable file_length
 import AppKit
 import SwiftUI
 import UniformTypeIdentifiers
@@ -38,6 +39,9 @@ struct FSItemListView: View {
     let onCopy: () -> Void
     let onCut: () -> Void
     let onToggleTag: (String) -> Void
+    let isContextMenuTarget: Bool
+    let contextMenuTargetWasSelected: Bool
+    let onContextMenuOpen: () -> Void
     let selectedCount: Int
     let showCompress: Bool
     let showExtract: Bool
@@ -164,6 +168,15 @@ struct FSItemListView: View {
             }
             .background(isSelected ? Color(nsColor: .selectedContentBackgroundColor) : Color.clear)
             .clipShape(RoundedRectangle(cornerRadius: 6))
+            .overlay(
+                RoundedRectangle(cornerRadius: 6)
+                    .stroke(
+                        isContextMenuTarget
+                            ? (contextMenuTargetWasSelected ? Color.white : Color.accentColor)
+                            : Color.clear,
+                        lineWidth: isContextMenuTarget ? 1 : 0,
+                    ),
+            )
 
             Color.clear
                 .frame(width: layout.outerPadding / 2)
@@ -201,6 +214,10 @@ struct FSItemListView: View {
         .contextMenu {
             contextMenuContent
         }
+        .overlay(
+            RightClickCaptureView(onRightClick: onContextMenuOpen)
+                .allowsHitTesting(false),
+        )
         .onHover { isHovering in
             guard isHovering, !hasPrefetchedApplications else { return }
             guard !item.isDirectory, applications == nil else { return }
@@ -228,6 +245,52 @@ struct FSItemListView: View {
     private func stopOptionKeyMonitoring() {
         optionKeyTimer?.invalidate()
         optionKeyTimer = nil
+    }
+}
+
+private struct RightClickCaptureView: NSViewRepresentable {
+    let onRightClick: () -> Void
+
+    func makeNSView(context _: Context) -> CaptureView {
+        let view = CaptureView()
+        view.onRightClick = onRightClick
+        return view
+    }
+
+    func updateNSView(_ nsView: CaptureView, context _: Context) {
+        nsView.onRightClick = onRightClick
+    }
+
+    @MainActor
+    final class CaptureView: NSView {
+        var onRightClick: (() -> Void)?
+        private var monitor: Any?
+
+        override func viewDidMoveToWindow() {
+            super.viewDidMoveToWindow()
+            if let monitor {
+                NSEvent.removeMonitor(monitor)
+                self.monitor = nil
+            }
+            guard window != nil else { return }
+
+            monitor = NSEvent.addLocalMonitorForEvents(matching: [.rightMouseDown]) { [weak self] event in
+                guard let self, let window else { return event }
+                let location = convert(event.locationInWindow, from: nil)
+                if bounds.contains(location) {
+                    onRightClick?()
+                }
+                return event
+            }
+        }
+
+        deinit {
+            MainActor.assumeIsolated {
+                if let monitor {
+                    NSEvent.removeMonitor(monitor)
+                }
+            }
+        }
     }
 }
 
