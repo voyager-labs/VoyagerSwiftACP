@@ -97,14 +97,18 @@ struct OnboardingView: View {
     }
 
     private var backgroundView: some View {
-        LinearGradient(
-            colors: [
-                Color(nsColor: .windowBackgroundColor),
-                Color(nsColor: .windowBackgroundColor).opacity(0.94),
-            ],
-            startPoint: .top,
-            endPoint: .bottom,
-        )
+        ZStack {
+            VisualEffectBackgroundView(material: .hudWindow, blendingMode: .behindWindow)
+            LinearGradient(
+                colors: [
+                    accentColor.opacity(0.18),
+                    Color(nsColor: .windowBackgroundColor).opacity(0.18),
+                    Color.clear,
+                ],
+                startPoint: .topLeading,
+                endPoint: .bottomTrailing,
+            )
+        }
     }
 
     private func topInsetBar(viewStore: ViewStore<OnboardingFeature.State, OnboardingFeature.Action>) -> some View {
