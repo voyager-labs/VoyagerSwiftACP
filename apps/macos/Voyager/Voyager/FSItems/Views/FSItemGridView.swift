@@ -1,3 +1,4 @@
+// swiftlint:disable file_length
 import AppKit
 import SwiftUI
 import UniformTypeIdentifiers
@@ -46,6 +47,7 @@ struct FSItemGridView: View {
     @State private var isOptionPressed = false
     @State private var optionKeyTimer: Timer?
     @State private var showTagsEditor = false
+    @State private var hasPrefetchedApplications = false
 
     var body: some View {
         VStack(spacing: 1) {
@@ -189,6 +191,12 @@ struct FSItemGridView: View {
         .contextMenu {
             contextMenuContent
         }
+        .onHover { isHovering in
+            guard isHovering, !hasPrefetchedApplications else { return }
+            guard !item.isDirectory, applications == nil else { return }
+            hasPrefetchedApplications = true
+            onLoadApplications?()
+        }
         .onAppear {
             startOptionKeyMonitoring()
         }
@@ -246,8 +254,8 @@ private extension FSItemGridView {
         if !item.isDirectory, let onOpenWithApp {
             let appsToShow = selectedCount > 1 ? commonApplications : applications
 
-            if let apps = appsToShow, !apps.isEmpty {
-                Menu {
+            Menu {
+                if let apps = appsToShow, !apps.isEmpty {
                     let regularApps = apps.filter { $0.id != "other" }
 
                     ForEach(Array(regularApps.enumerated()), id: \.element.id) { _, app in
@@ -266,19 +274,25 @@ private extension FSItemGridView {
                             Divider()
                         }
                     }
-
-                    Divider()
-                    Button("Other…") {
-                        onOpenWithApp(nil, isOptionPressed)
-                    }
-                } label: {
-                    Label(isOptionPressed ? "Always Open With" : "Open With", systemImage: "app.badge")
+                } else {
+                    Button("Loading…") {}
+                        .disabled(true)
                 }
-            } else {
-                Button {
+
+                Divider()
+                Button("Other…") {
                     onOpenWithApp(nil, isOptionPressed)
-                } label: {
-                    Label(isOptionPressed ? "Always Open With…" : "Open With…", systemImage: "app.badge")
+                }
+            } label: {
+                Label(isOptionPressed ? "Always Open With" : "Open With", systemImage: "app.badge")
+            }
+            .onAppear {
+                if appsToShow == nil {
+                    if selectedCount > 1 {
+                        onLoadCommonApplications?()
+                    } else {
+                        onLoadApplications?()
+                    }
                 }
             }
         }
@@ -465,7 +479,6 @@ extension View {
         guard let appURL = NSWorkspace.shared.urlForApplication(withBundleIdentifier: bundleID) else {
             return nil
         }
-
         let originalIcon = NSWorkspace.shared.icon(forFile: appURL.path)
 
         // 원본 이미지를 지정된 크기로 리사이즈
@@ -487,3 +500,5 @@ extension View {
         return image
     }
 }
+
+// swiftlint:enable file_length

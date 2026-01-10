@@ -48,6 +48,7 @@ struct FSItemListView: View {
     @State private var isOptionPressed = false
     @State private var optionKeyTimer: Timer?
     @State private var showTagsEditor = false
+    @State private var hasPrefetchedApplications = false
 
     private static let dateFormatter: DateFormatter = {
         let formatter = DateFormatter()
@@ -200,6 +201,12 @@ struct FSItemListView: View {
         .contextMenu {
             contextMenuContent
         }
+        .onHover { isHovering in
+            guard isHovering, !hasPrefetchedApplications else { return }
+            guard !item.isDirectory, applications == nil else { return }
+            hasPrefetchedApplications = true
+            onLoadApplications()
+        }
         .onAppear {
             startOptionKeyMonitoring()
         }
@@ -257,8 +264,8 @@ private extension FSItemListView {
         if !item.isDirectory {
             let appsToShow = selectedCount > 1 ? commonApplications : applications
 
-            if let apps = appsToShow, !apps.isEmpty {
-                Menu {
+            Menu {
+                if let apps = appsToShow, !apps.isEmpty {
                     let regularApps = apps.filter { $0.id != "other" }
 
                     ForEach(Array(regularApps.enumerated()), id: \.element.id) { _, app in
@@ -277,19 +284,25 @@ private extension FSItemListView {
                             Divider()
                         }
                     }
-
-                    Divider()
-                    Button("Other…") {
-                        onOpenWithApp(nil, isOptionPressed)
-                    }
-                } label: {
-                    Label(isOptionPressed ? "Always Open With" : "Open With", systemImage: "app.badge")
+                } else {
+                    Button("Loading…") {}
+                        .disabled(true)
                 }
-            } else {
-                Button {
+
+                Divider()
+                Button("Other…") {
                     onOpenWithApp(nil, isOptionPressed)
-                } label: {
-                    Label(isOptionPressed ? "Always Open With…" : "Open With…", systemImage: "app.badge")
+                }
+            } label: {
+                Label(isOptionPressed ? "Always Open With" : "Open With", systemImage: "app.badge")
+            }
+            .onAppear {
+                if appsToShow == nil {
+                    if selectedCount > 1 {
+                        onLoadCommonApplications?()
+                    } else {
+                        onLoadApplications()
+                    }
                 }
             }
         }
