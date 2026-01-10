@@ -496,6 +496,9 @@ struct FileManagerFeature {
                 state.openedCollectionName = url.deletingPathExtension().lastPathComponent
                 state.openedCollectionURL = url
                 state.openedCollectionBaseline = nil
+                state.selectedSidebarItem = state.favorites
+                    .first(where: { $0.url.path == url.path })
+                    .map(\.displayName)
                 let loadEffect: Effect<Action> = .run { [collectionFileClient, url] send in
                     do {
                         let file = try await collectionFileClient.load(url)
@@ -521,18 +524,25 @@ struct FileManagerFeature {
                 state.sortOrder = navigation.sortOrder
                 state.viewLayout = navigation.viewLayout
                 state.fsItems.isListView = navigation.viewLayout == .list
-                state.selectedSidebarItem = nil
 
                 switch navigation.kind {
                 case .temporary:
                     state.openedCollectionName = nil
                     state.openedCollectionURL = nil
+                    state.selectedSidebarItem = nil
                 case let .file(url, name):
                     state.openedCollectionName = name
                     state.openedCollectionURL = url
+                    state.selectedSidebarItem = state.favorites
+                        .first(where: { $0.url.path == url.path })
+                        .map(\.displayName) ?? name
                 }
 
-                state.composer.text = navigation.context.query
+                if case .file = navigation.kind {
+                    state.composer.text = ""
+                } else {
+                    state.composer.text = navigation.context.query
+                }
                 state.composer.scopes = navigation.context.scopes
                 state.composer.conditions = navigation.context.conditions
                 state.composer.propertyPicker = .init()
@@ -564,7 +574,7 @@ struct FileManagerFeature {
                         }
                     }
 
-                    state.composer.text = trimmedQuery
+                    state.composer.text = ""
                     state.composer.scopes = resolved.scopes
                     state.composer.conditions = resolved.conditions
                     state.composer.propertyPicker = .init()
@@ -823,7 +833,7 @@ struct FileManagerFeature {
             case let .openFavorite(favorite):
                 guard state.currentPath != favorite.url.path else { return .none }
                 if favorite.url.pathExtension.lowercased() == "voycoll" {
-                    state.selectedSidebarItem = favorite.name
+                    state.selectedSidebarItem = favorite.displayName
                     return .send(.openCollectionFile(favorite.url))
                 }
                 state.navigateToFolder(favorite.url.path, sidebarItemName: favorite.name)
@@ -848,7 +858,9 @@ struct FileManagerFeature {
                     return .none
                 }
 
-                let name = FileManager.default.displayName(atPath: url.path)
+                let name = isVoycoll
+                    ? url.deletingPathExtension().lastPathComponent
+                    : FileManager.default.displayName(atPath: url.path)
                 let iconName = SidebarUtils.iconNameForURL(url, isDirectory: isDirectory.boolValue)
                 let newFavorite = SidebarUtils.FavoriteItem(name: name, url: url, iconName: iconName)
 
@@ -1015,7 +1027,19 @@ struct FileManagerFeature {
                         scopes: state.composer.scopes,
                         conditions: state.composer.conditions,
                     )
-                    state.selectedSidebarItem = nil
+                    if wasOpeningCollectionFile, state.openedCollectionURL != nil {
+                        state.openedCollectionBaseline = CollectionBaseline(
+                            context: state.collectionContext ?? .init(query: "", scopes: [], conditions: []),
+                            sortKey: state.sortKey,
+                            sortOrder: state.sortOrder,
+                            viewLayout: state.viewLayout,
+                        )
+                    }
+                    state.selectedSidebarItem = state.openedCollectionURL.map { url in
+                        state.favorites
+                            .first(where: { $0.url.path == url.path })
+                            .map(\.displayName) ?? state.openedCollectionName
+                    }
                     let nextNavigationState = FileManagerNavigationUtils.NavigationState.collection(
                         makeCollectionNavigation(state: state),
                     )
@@ -1041,7 +1065,19 @@ struct FileManagerFeature {
                         scopes: state.composer.scopes,
                         conditions: state.composer.conditions,
                     )
-                    state.selectedSidebarItem = nil
+                    if wasOpeningCollectionFile, state.openedCollectionURL != nil {
+                        state.openedCollectionBaseline = CollectionBaseline(
+                            context: state.collectionContext ?? .init(query: "", scopes: [], conditions: []),
+                            sortKey: state.sortKey,
+                            sortOrder: state.sortOrder,
+                            viewLayout: state.viewLayout,
+                        )
+                    }
+                    state.selectedSidebarItem = state.openedCollectionURL.map { url in
+                        state.favorites
+                            .first(where: { $0.url.path == url.path })
+                            .map(\.displayName) ?? state.openedCollectionName
+                    }
                     let nextNavigationState = FileManagerNavigationUtils.NavigationState.collection(
                         makeCollectionNavigation(state: state),
                     )

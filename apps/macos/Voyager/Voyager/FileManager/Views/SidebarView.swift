@@ -8,6 +8,7 @@ struct SidebarItemView: View {
     let title: String
     let isSelected: Bool
     let isFavorite: Bool
+    let iconColor: Color?
     let targetURL: URL?
     let action: () -> Void
     let onDrop: (([NSItemProvider], URL) -> Void)?
@@ -33,7 +34,7 @@ struct SidebarItemView: View {
         HStack(spacing: 8) {
             Image(systemName: iconName)
                 .symbolRenderingMode(.hierarchical)
-                .foregroundColor(isDropTarget ? .white : .accentColor)
+                .foregroundColor(isDropTarget ? .white : (iconColor ?? .accentColor))
                 .frame(width: 16)
             Text(title)
                 .foregroundColor(isDropTarget ? .white : .primary)
@@ -158,6 +159,7 @@ struct SidebarView: View {
                         title: "Recents",
                         isSelected: store.selectedSidebarItem == "Recents",
                         isFavorite: true,
+                        iconColor: nil,
                         targetURL: nil,
                         action: {
                             store.send(.showRecents)
@@ -225,9 +227,12 @@ struct SidebarView: View {
                         ForEach(Array(store.favorites.enumerated()), id: \.element.url) { index, favorite in
                             SidebarItemView(
                                 iconName: favorite.iconName,
-                                title: favorite.name,
-                                isSelected: store.selectedSidebarItem == favorite.name,
+                                title: favorite.displayName,
+                                isSelected: store.selectedSidebarItem == favorite.displayName,
                                 isFavorite: true,
+                                iconColor: favorite.url.pathExtension.lowercased() == "voycoll"
+                                    ? VoyagerDS.BrandSecondaryColor.c600
+                                    : nil,
                                 targetURL: favorite.url,
                                 action: {
                                     store.send(.openFavorite(favorite))
@@ -399,6 +404,7 @@ struct SidebarView: View {
                                 title: location.name,
                                 isSelected: store.selectedSidebarItem == location.name,
                                 isFavorite: false,
+                                iconColor: nil,
                                 targetURL: location.isComputer ? nil : location.url,
                                 action: {
                                     if location.isComputer {

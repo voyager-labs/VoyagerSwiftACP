@@ -75,6 +75,10 @@ enum SidebarUtils {
             try container.encode(url.absoluteString, forKey: .url)
             try container.encode(iconName, forKey: .iconName)
         }
+
+        var displayName: String {
+            SidebarUtils.favoriteDisplayName(for: self)
+        }
     }
 
     @MainActor
@@ -111,6 +115,13 @@ enum SidebarUtils {
         }
 
         return "folder"
+    }
+
+    static func favoriteDisplayName(for favorite: FavoriteItem) -> String {
+        if favorite.url.pathExtension.lowercased() == "voycoll" {
+            return favorite.url.deletingPathExtension().lastPathComponent
+        }
+        return favorite.name
     }
 
     @MainActor
