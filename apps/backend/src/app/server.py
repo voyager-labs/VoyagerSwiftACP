@@ -6,7 +6,12 @@ import os
 
 import uvicorn
 
+from app.config import load_env
+
 os.environ.setdefault("APP_ENV", "prod")
+os.environ.setdefault("BACKEND_MODE", "bundled")
+
+load_env()
 
 if __name__ == "__main__":
     host = os.getenv("PUBLIC_BACKEND_HOST")

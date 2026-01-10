@@ -5,39 +5,25 @@ import os
 import sys
 from pathlib import Path
 
-from dotenv import find_dotenv, load_dotenv
+import setproctitle
 from fastapi.cli import main as fastapi_main
+
+from app.config import load_env
 
 MAIN_FILE = Path(__file__).parent / "main.py"
 
 
-def _load_env(app_env: str) -> None:
-    """환경 변수 파일 로드
-
-    로딩 순서 (override=False이므로 먼저 로드된 값 우선):
-    1. 프로세스 환경 변수 (이미 설정됨, 최우선)
-    2. .env.{BACKEND_MODE} (존재 시)
-    3. .env.{APP_ENV} (존재 시)
-    """
-    backend_mode = os.getenv("BACKEND_MODE", "source")
-
-    # BACKEND_MODE 파일 먼저 로드 (source/bundled)
-    backend_env_file = find_dotenv(filename=f".env.{backend_mode}")
-    if backend_env_file:
-        load_dotenv(dotenv_path=backend_env_file, override=False)
-
-    # APP_ENV 파일 로드 (dev/prod)
-    app_env_file = find_dotenv(filename=f".env.{app_env}")
-    if app_env_file:
-        load_dotenv(dotenv_path=app_env_file, override=False)
-
-
 def _with_env(default_env: str) -> dict[str, str]:
-    _load_env(default_env)
-    merged = os.environ.copy()
-    merged.setdefault("APP_ENV", default_env)
-    merged.setdefault("BACKEND_MODE", "source")
-    return merged
+    os.environ.setdefault("APP_ENV", default_env)
+    os.environ.setdefault("BACKEND_MODE", "source")
+    load_env()
+    return os.environ.copy()
+
+
+def _set_supervisor_title(env: dict[str, str]) -> None:
+    process_title = env.get("PUBLIC_BACKEND_PROCESS_NAME")
+    if process_title:
+        setproctitle.setproctitle(f"{process_title} (Supervisor)")
 
 
 def dev() -> None:
@@ -46,6 +32,8 @@ def dev() -> None:
     # 환경변수 설정
     for key, value in env.items():
         os.environ[key] = value
+
+    _set_supervisor_title(env)
 
     host = env["PUBLIC_BACKEND_HOST"]
     port = env["PUBLIC_BACKEND_PORT"]
@@ -65,6 +53,8 @@ def prod() -> None:
     # 환경변수 설정
     for key, value in env.items():
         os.environ[key] = value
+
+    _set_supervisor_title(env)
 
     host = env["PUBLIC_BACKEND_HOST"]
     port = env["PUBLIC_BACKEND_PORT"]
