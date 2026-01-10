@@ -18,6 +18,14 @@ private struct BackendLaunchContext: Sendable {
     let directory: String
 }
 
+struct BackendTerminationEvent: Sendable {
+    let reason: Process.TerminationReason?
+    let status: Int32?
+    let uptime: TimeInterval
+    let wasReady: Bool
+    let didStart: Bool
+}
+
 actor ProcessRunner {
     enum Error: Swift.Error, Equatable {
         case backendHostNotConfigured
@@ -26,6 +34,11 @@ actor ProcessRunner {
         case processNameNotConfigured
         case backendDirectoryNotFound
         case binaryNotFound(path: String)
+        // 시작 단계 에러
+        case alreadyStarting
+        case cancelled
+        case portReservationFailed
+        case processConfigFailed
     }
 
     private var process: Process?
@@ -43,53 +56,69 @@ actor ProcessRunner {
         self.portReservation = portReservation
     }
 
-    func startIfNeeded() async {
+    func startAndMonitor() async -> BackendTerminationEvent {
         if let process, process.isRunning {
-            return
-        }
-        if isStarting {
-            return
+            let startDate = Date()
+            let (reason, status) = await waitForTermination(process)
+            return BackendTerminationEvent(
+                reason: reason,
+                status: status,
+                uptime: Date().timeIntervalSince(startDate),
+                wasReady: true,
+                didStart: true,
+            )
         }
 
-        stopRequested = false
-        isStarting = true
-        defer { isStarting = false }
-
-        if stopRequested || Task.isCancelled {
-            return
-        }
-        process = nil
-
-        let context: BackendLaunchContext
         do {
-            context = try await resolveLaunchContext()
+            guard !isStarting else { throw Error.alreadyStarting }
+
+            stopRequested = false
+            isStarting = true
+            defer { isStarting = false }
+
+            guard !stopRequested, !Task.isCancelled else { throw Error.cancelled }
+            process = nil
+
+            let context = try await resolveLaunchContext()
+
+            guard let reservedPort = try? portReservation.reserve() else {
+                throw Error.portReservationFailed
+            }
+
+            let config = try makeProcessConfig(
+                reservedPort: reservedPort,
+                backendMode: context.backendMode,
+                appEnv: context.appEnv,
+                processName: context.processName,
+                directory: context.directory,
+            )
+
+            let startDate = Date()
+            let result = await runProcess(
+                config: config,
+                host: context.host,
+                port: reservedPort,
+            )
+            if !result.wasReady {
+                logger.error("Backend start flow failed")
+            }
+
+            return BackendTerminationEvent(
+                reason: result.reason,
+                status: result.status,
+                uptime: Date().timeIntervalSince(startDate),
+                wasReady: result.wasReady,
+                didStart: result.didStart,
+            )
         } catch {
-            logger.error("Failed to resolve launch context: \(error)")
-            return
-        }
-        guard let reservedPort = try? portReservation.reserve() else {
-            logger.error("Failed to reserve backend port")
-            return
-        }
-
-        guard let config = try? makeProcessConfig(
-            reservedPort: reservedPort,
-            backendMode: context.backendMode,
-            appEnv: context.appEnv,
-            processName: context.processName,
-            directory: context.directory,
-        ) else {
-            logger.error("Failed to create process config")
-            return
-        }
-
-        let didStart = await runProcess(
-            config: config,
-            host: context.host,
-            port: reservedPort,
-        )
-        if !didStart {
-            logger.error("Backend start flow failed")
+            logger.error("Backend startup failed: \(error)")
+            return BackendTerminationEvent(
+                reason: nil,
+                status: nil,
+                uptime: 0,
+                wasReady: false,
+                didStart: false,
+            )
         }
     }
 
@@ -218,26 +247,28 @@ actor ProcessRunner {
         }
     }
 
-    private func makeProcess(from config: BackendProcessConfig) -> Process {
+    private func runProcess(
+        config: BackendProcessConfig,
+        host: String,
+        port: Int,
+    ) async -> BackendTerminationEvent {
         let proc = Process()
         proc.environment = config.environment
         proc.currentDirectoryURL = URL(fileURLWithPath: config.directory)
         proc.executableURL = URL(fileURLWithPath: config.executable)
         proc.arguments = config.arguments ?? []
-        return proc
-    }
 
-    private func runProcess(
-        config: BackendProcessConfig,
-        host: String,
-        port: Int,
-    ) async -> Bool {
-        let proc = makeProcess(from: config)
         do {
             try proc.run()
         } catch {
             logger.error("Failed to start backend: \(error)")
-            return false
+            return BackendTerminationEvent(
+                reason: nil,
+                status: nil,
+                uptime: 0,
+                wasReady: false,
+                didStart: false,
+            )
         }
 
         let isReady = await portReservation.verifyListening(
@@ -251,7 +282,13 @@ actor ProcessRunner {
             if stopRequested || Task.isCancelled {
                 proc.terminate()
                 process = nil
-                return false
+                return BackendTerminationEvent(
+                    reason: nil,
+                    status: nil,
+                    uptime: 0,
+                    wasReady: false,
+                    didStart: false,
+                )
             }
             process = proc
             logger.info("Backend started: \(config.description) (pid: \(proc.processIdentifier))")
@@ -265,12 +302,37 @@ actor ProcessRunner {
                 )
             }
 
-            return true
+            let (reason, status) = await waitForTermination(proc)
+            process = nil
+            return BackendTerminationEvent(
+                reason: reason,
+                status: status,
+                uptime: 0,
+                wasReady: true,
+                didStart: true,
+            )
         }
 
         logger.error("Backend port verification failed")
         proc.terminate()
         process = nil
-        return false
+        return BackendTerminationEvent(
+            reason: nil,
+            status: nil,
+            uptime: 0,
+            wasReady: false,
+            didStart: true,
+        )
+    }
+
+    private func waitForTermination(_ proc: Process) async -> (Process.TerminationReason?, Int32?) {
+        if !proc.isRunning {
+            return (proc.terminationReason, proc.terminationStatus)
+        }
+        return await withCheckedContinuation { continuation in
+            proc.terminationHandler = { process in
+                continuation.resume(returning: (process.terminationReason, process.terminationStatus))
+            }
+        }
     }
 }
