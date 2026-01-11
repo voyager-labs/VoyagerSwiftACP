@@ -33,7 +33,8 @@ VoyagerHelper와 Backend의 생명주기 정책을 일관되게 정의하고, �
 6. [x] **Story 9:** Helper ProcessRunner async 전환 및 동시성 정리. (Status: Done) (`docs/voy-117/stories/117.9.helper-async-processrunner.md`)
 7. [x] **Story 8:** Helper 포트 선점 및 endpoint 전달. (Status: Done, Story 4 대체) (`docs/voy-117/stories/117.8.helper-port-reservation-endpoint-delivery.md`)
 8. [x] **Story 3:** Helper에서 backend 생명주기 관리 강화(실행/종료/재기동/포트 확보). (Status: Done, 선행: Story 9) (`docs/voy-117/stories/117.3.backend-restart-management.md`)
-9. [ ] **Story 2:** 앱에서 Helper 생명주기 정책 구현(시작/감시/재시도/강제 종료 처리). (Status: Review, 보류: Story 9 완료 후 재개) (`docs/voy-117/stories/117.2.helper-restart-policy.md`)
+9. [-] **Story 2 (Superseded):** Helper 재시작 정책(이전안). (Status: Superseded, 대체: Story 10) (`docs/voy-117/stories/117.2.helper-restart-policy.md`)
+10. [ ] **Story 10:** Helper 재시작 감시(backendEndpoint 타임아웃 기반) 정책 재정의. (Status: Draft) (`docs/voy-117/stories/117.10.helper-restart-watchdog.md`)
 
 #### 우선순위 변경 사유
 
@@ -41,6 +42,7 @@ VoyagerHelper와 Backend의 생명주기 정책을 일관되게 정의하고, �
 - ProcessRunner async 전환(Story 9)을 선행해 포트 검증/재시도 흐름을 안정화한다.
 - Story 3/2는 Story 9 완료 후 재개해 검증 흐름을 단순화한다.
 - Story 4는 Story 8으로 대체되어 Superseded 처리한다.
+- Story 2는 정책 재정의로 폐기하고 Story 10으로 대체한다.
 
 #### Compatibility Requirements
 
@@ -80,7 +82,8 @@ UI 엔드포인트 탐지 일관성.
 
 - Voyager 실행 → Helper 실행 → backend 실행 → UI 요청 성공
 - Voyager 종료 후 Helper/Backend 지속 동작
-- Helper 강제 종료 시 backoff 재시작, 최대 재시도 초과 시 Voyager 종료
+- Helper 강제 종료 시 backoff 재시작, backendEndpointDidUpdate 5초 타임아웃 기준으로 성공/실패 판단
+- 최대 재시도 초과 시 Voyager 종료
 - backend 강제 종료 시 Helper 재기동 + endpoint 재전달(필요 시 fallback 탐지)
 - `PUBLIC_BACKEND_PORT=0`에서도 포트 탐지 정상
 - Launch at startup 활성화 후 로그인 시 UI 자동 실행, Helper는 Voyager 시작 시 실행
