@@ -18,6 +18,10 @@ class AppDelegate: NSObject, NSApplicationDelegate, ObservableObject {
         UpdaterFeature()
     }
 
+    @Dependency(\.onboardingWindowClient)
+    private var onboardingWindowClient
+    // TODO: 온보딩 게이트 판단/표시 호출을 전용 경로로 모아 중복 체크를 제거한다.
+
     @Published var hasSelectedItems: Bool = false
     @Published var hasClipboardItems: Bool = false
     @Published var hasStore: Bool = false
@@ -73,7 +77,11 @@ class AppDelegate: NSObject, NSApplicationDelegate, ObservableObject {
     }
 
     func applicationDidFinishLaunching(_: Notification) {
+        appLifecycleStore.send(.didFinishLaunching)
         NSWindow.allowsAutomaticWindowTabbing = true
+        if onboardingWindowClient.showIfNeeded() {
+            return
+        }
         if windowControllers.isEmpty {
             createNewWindow()
         }
@@ -92,6 +100,9 @@ class AppDelegate: NSObject, NSApplicationDelegate, ObservableObject {
     }
 
     func applicationShouldHandleReopen(_: NSApplication, hasVisibleWindows flag: Bool) -> Bool {
+        if onboardingWindowClient.showIfNeeded() {
+            return true
+        }
         if !flag {
             if windowControllers.isEmpty {
                 createNewWindow()
@@ -125,6 +136,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, ObservableObject {
     @discardableResult
     @objc
     func createNewWindow(path: String? = nil) -> FileManagerWindowController {
+        // TODO: 모든 윈도우 생성 경로를 여기로 통합해 게이트 적용 지점을 단일화한다.
         let controller = FileManagerWindowController(path: path, asTab: false)
         windowControllers.append(controller)
         controller.showWindow(nil)
@@ -132,6 +144,9 @@ class AppDelegate: NSObject, NSApplicationDelegate, ObservableObject {
     }
 
     func createNewTab(path: String? = nil, duplicateState: FileManagerFeature.State? = nil) {
+        if onboardingWindowClient.showIfNeeded() {
+            return
+        }
         guard let keyWindow = NSApp.keyWindow else {
             createNewWindow(path: path)
             return
@@ -300,6 +315,9 @@ class AppDelegate: NSObject, NSApplicationDelegate, ObservableObject {
 
     @MainActor
     private func openCollectionFile(url: URL) {
+        if onboardingWindowClient.showIfNeeded() {
+            return
+        }
         let controller = activeWindowController() ?? createNewWindow()
         controller.window?.makeKeyAndOrderFront(nil)
         controller.store.send(.openCollectionFile(url))

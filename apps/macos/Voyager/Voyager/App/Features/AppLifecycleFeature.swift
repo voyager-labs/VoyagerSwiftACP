@@ -14,6 +14,7 @@ struct AppLifecycleFeature {
 
     enum Action: Sendable {
         case willFinishLaunching
+        case didFinishLaunching
         case willTerminate
     }
 
@@ -21,6 +22,9 @@ struct AppLifecycleFeature {
     var helperAppClient
     @Dependency(\.backendEndpointClient)
     var backendEndpointClient
+
+    @Dependency(\.onboardingWindowClient)
+    var onboardingWindowClient
 
     var body: some Reducer<State, Action> {
         Reduce { state, action in
@@ -47,6 +51,10 @@ struct AppLifecycleFeature {
                     _ = await monitor
                 }
                 .cancellable(id: CancelID.helperMonitor, cancelInFlight: true)
+            case .didFinishLaunching:
+                return .run { [onboardingWindowClient] _ in
+                    _ = onboardingWindowClient.showIfNeeded()
+                }
             case .willTerminate:
                 let helperClient = helperAppClient
                 return .merge(

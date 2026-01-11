@@ -1,0 +1,118 @@
+import AppKit
+import ComposableArchitecture
+import Foundation
+
+enum FolderAccessPermission: String, Equatable, Sendable {
+    case granted = "Granted"
+    case notGranted = "Not Granted"
+}
+
+enum FilesAndFoldersStatus: Equatable, Sendable {
+    case idle
+    case granted
+    case partial
+    case notGranted
+
+    var message: String? {
+        switch self {
+        case .idle:
+            nil
+        case .granted:
+            "Access granted for Desktop, Documents, and Downloads."
+        case .partial:
+            "Some folders weren't granted. You can allow them later in System Settings."
+        case .notGranted:
+            "You can allow access later in System Settings."
+        }
+    }
+}
+
+struct FolderAccessResult: Equatable, Sendable {
+    var desktop: FolderAccessPermission
+    var documents: FolderAccessPermission
+    var downloads: FolderAccessPermission
+
+    var status: FilesAndFoldersStatus {
+        let grantedCount = [desktop, documents, downloads].count(where: { $0 == .granted })
+        switch grantedCount {
+        case 3:
+            return .granted
+        case 0:
+            return .notGranted
+        default:
+            return .partial
+        }
+    }
+}
+
+struct FolderAccessClient: Sendable {
+    var requestAccess: @Sendable () async -> FolderAccessResult
+
+    nonisolated init(requestAccess: @escaping @Sendable () async -> FolderAccessResult) {
+        self.requestAccess = requestAccess
+    }
+}
+
+extension FolderAccessClient: DependencyKey {
+    nonisolated static var liveValue: FolderAccessClient {
+        FolderAccessClient(requestAccess: {
+            await MainActor.run {
+                let fileManager = FileManager.default
+                let desktopURL = fileManager.urls(for: .desktopDirectory, in: .userDomainMask).first
+                let documentsURL = fileManager.urls(for: .documentDirectory, in: .userDomainMask).first
+                let downloadsURL = fileManager.urls(for: .downloadsDirectory, in: .userDomainMask).first
+
+                let desktopStatus = requestFolderAccess(desktopURL)
+                let documentsStatus = requestFolderAccess(documentsURL)
+                let downloadsStatus = requestFolderAccess(downloadsURL)
+
+                return FolderAccessResult(
+                    desktop: desktopStatus,
+                    documents: documentsStatus,
+                    downloads: downloadsStatus,
+                )
+            }
+        })
+    }
+
+    nonisolated static var testValue: FolderAccessClient {
+        FolderAccessClient(requestAccess: {
+            FolderAccessResult(
+                desktop: .notGranted,
+                documents: .notGranted,
+                downloads: .notGranted,
+            )
+        })
+    }
+
+    nonisolated static var previewValue: FolderAccessClient {
+        FolderAccessClient(requestAccess: {
+            FolderAccessResult(
+                desktop: .notGranted,
+                documents: .notGranted,
+                downloads: .notGranted,
+            )
+        })
+    }
+}
+
+extension DependencyValues {
+    nonisolated var folderAccessClient: FolderAccessClient {
+        get { self[FolderAccessClient.self] }
+        set { self[FolderAccessClient.self] = newValue }
+    }
+}
+
+private func requestFolderAccess(_ url: URL?) -> FolderAccessPermission {
+    guard let url else { return .notGranted }
+    do {
+        _ = try FileManager.default.contentsOfDirectory(
+            at: url,
+            includingPropertiesForKeys: nil,
+            options: [.skipsHiddenFiles],
+        )
+        return .granted
+    } catch {
+        return .notGranted
+    }
+}
