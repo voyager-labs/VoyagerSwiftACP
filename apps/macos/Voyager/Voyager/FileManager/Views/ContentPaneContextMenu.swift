@@ -1,0 +1,112 @@
+import ComposableArchitecture
+import SwiftUI
+
+struct ContentPaneContextMenu: View {
+    let store: StoreOf<FileManagerFeature>
+
+    var body: some View {
+        if store.isTrashFolder {
+            Button("Empty Trash") {
+                store.send(.emptyTrash)
+            }
+        } else {
+            Button("New Folder") {
+                store.send(.fsItems(.createNewFolder(currentPath: store.currentPath)))
+            }
+            .keyboardShortcut("n", modifiers: [.command, .shift])
+        }
+
+        Divider()
+
+        Menu("View") {
+            viewLayoutToggle("List", layout: .list)
+            viewLayoutToggle("Grid", layout: .grid)
+        }
+
+        Menu("Sort By") {
+            sortKeyToggle("Name", key: .name)
+            sortKeyToggle("Kind", key: .kind)
+            sortKeyToggle("Application", key: .application)
+            sortKeyToggle("Date Last Opened", key: .dateLastOpened)
+            sortKeyToggle("Date Added", key: .dateAdded)
+            sortKeyToggle("Date Modified", key: .dateModified)
+            sortKeyToggle("Date Created", key: .dateCreated)
+            sortKeyToggle("Size", key: .size)
+            sortKeyToggle("Tags", key: .tags)
+
+            Divider()
+
+            sortOrderToggle("Ascending", order: .ascending)
+            sortOrderToggle("Descending", order: .descending)
+        }
+
+        Menu("Group By") {
+            groupKeyToggle("None", key: .none)
+            groupKeyToggle("Name", key: .name)
+            groupKeyToggle("Kind", key: .kind)
+            groupKeyToggle("Application", key: .application)
+            groupKeyToggle("Date Last Opened", key: .dateLastOpened)
+            groupKeyToggle("Date Added", key: .dateAdded)
+            groupKeyToggle("Date Modified", key: .dateModified)
+            groupKeyToggle("Date Created", key: .dateCreated)
+            groupKeyToggle("Size", key: .size)
+            groupKeyToggle("Tags", key: .tags)
+        }
+    }
+
+    private func viewLayoutToggle(_ title: String, layout: FileManagerFeature.ViewLayout) -> some View {
+        Toggle(
+            title,
+            isOn: Binding(
+                get: { store.viewLayout == layout },
+                set: { isOn in
+                    if isOn {
+                        store.send(.changeLayout(layout))
+                    }
+                },
+            ),
+        )
+    }
+
+    private func sortKeyToggle(_ title: String, key: SortKey) -> some View {
+        Toggle(
+            title,
+            isOn: Binding(
+                get: { store.sortKey == key },
+                set: { isOn in
+                    if isOn {
+                        store.send(.changeSortKey(key))
+                    }
+                },
+            ),
+        )
+    }
+
+    private func sortOrderToggle(_ title: String, order: SortOrder) -> some View {
+        Toggle(
+            title,
+            isOn: Binding(
+                get: { store.sortOrder == order },
+                set: { isOn in
+                    if isOn {
+                        store.send(.changeSortOrder(order))
+                    }
+                },
+            ),
+        )
+    }
+
+    private func groupKeyToggle(_ title: String, key: GroupKey) -> some View {
+        Toggle(
+            title,
+            isOn: Binding(
+                get: { store.fsItems.groupKey == key },
+                set: { isOn in
+                    if isOn {
+                        store.send(.changeGroupKey(key))
+                    }
+                },
+            ),
+        )
+    }
+}

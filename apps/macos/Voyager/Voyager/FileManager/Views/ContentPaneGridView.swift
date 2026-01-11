@@ -239,16 +239,7 @@ struct ContentPaneGridView: View {
                             },
                         )
                         .contextMenu {
-                            if store.isTrashFolder {
-                                Button("Empty Trash") {
-                                    store.send(.emptyTrash)
-                                }
-                            } else {
-                                Button("New Folder") {
-                                    store.send(.fsItems(.createNewFolder(currentPath: store.currentPath)))
-                                }
-                                .keyboardShortcut("n", modifiers: [.command, .shift])
-                            }
+                            ContentPaneContextMenu(store: store)
                         }
                         .background(
                             RightClickMonitorView(onRightMouseDown: { windowPoint in
