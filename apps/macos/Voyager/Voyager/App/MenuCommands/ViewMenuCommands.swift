@@ -24,8 +24,15 @@ struct ViewMenuCommands: Commands {
             }
             .keyboardShortcut("s", modifiers: [.command, .control])
             .disabled(appDelegate.currentFileManagerStore == nil)
-            Toggle("Show Hidden Files", isOn: showHiddenFilesToggleBinding())
-                .keyboardShortcut(".", modifiers: [.command, .shift])
+            Button(
+                appDelegate.currentFileManagerStore?.showHiddenFiles == true
+                    ? "Hide Hidden Files"
+                    : "Show Hidden Files",
+            ) {
+                appDelegate.currentFileManagerStore?.send(.toggleShowHiddenFiles)
+            }
+            .keyboardShortcut(".", modifiers: [.command, .shift])
+            .disabled(appDelegate.currentFileManagerStore == nil)
             Divider()
         }
 
@@ -35,7 +42,7 @@ struct ViewMenuCommands: Commands {
                 Label("as List", systemImage: "list.bullet")
             }
             Toggle(isOn: viewLayoutToggleBinding(.grid)) {
-                Label("as Icons", systemImage: "square.grid.2x2")
+                Label("as Grid", systemImage: "square.grid.2x2")
             }
 
             Divider()
@@ -82,15 +89,6 @@ struct ViewMenuCommands: Commands {
             set: { isOn in
                 guard isOn else { return }
                 appDelegate.currentFileManagerStore?.send(.changeLayout(layout))
-            },
-        )
-    }
-
-    private func showHiddenFilesToggleBinding() -> Binding<Bool> {
-        Binding(
-            get: { appDelegate.currentFileManagerStore?.showHiddenFiles == true },
-            set: { _ in
-                appDelegate.currentFileManagerStore?.send(.toggleShowHiddenFiles)
             },
         )
     }
