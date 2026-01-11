@@ -79,15 +79,6 @@ struct FSItemGridView: View {
                                 showBorderWhenUnselected: false,
                             )
                             .padding(.top, 2)
-                            .popover(isPresented: $showTagsEditor, arrowEdge: .bottom) {
-                                TagsEditorView(
-                                    fileName: item.name,
-                                    currentTags: item.tags ?? [],
-                                    onToggleTag: { tag in
-                                        onToggleTag?(tag)
-                                    },
-                                )
-                            }
                         }
 
                         if isRenaming {
@@ -122,6 +113,15 @@ struct FSItemGridView: View {
                                 .opacity(item.isHidden || isCut ? 0.5 : 1.0)
                                 .fixedSize(horizontal: false, vertical: true)
                         }
+                    }
+                    .popover(isPresented: $showTagsEditor, arrowEdge: .bottom) {
+                        TagsEditorView(
+                            fileName: item.name,
+                            currentTags: item.tags ?? [],
+                            onToggleTag: { tag in
+                                onToggleTag?(tag)
+                            },
+                        )
                     }
                     .padding(.horizontal, 4)
                     .padding(.vertical, 2)
