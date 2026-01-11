@@ -1027,6 +1027,7 @@ private func selectApplication(
     panel.canChooseDirectories = false
     panel.canChooseFiles = true
     panel.allowsMultipleSelection = false
+    panel.directoryURL = URL(fileURLWithPath: "/Applications")
     if #available(macOS 13.0, *) {
         panel.allowedContentTypes = [.application]
     } else {
