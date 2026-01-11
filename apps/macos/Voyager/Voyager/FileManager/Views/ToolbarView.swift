@@ -62,7 +62,7 @@ struct ToolbarView: View {
                         .frame(height: 40)
                         .frame(maxWidth: .infinity)
                     Rectangle()
-                        .fill(.ultraThinMaterial)
+                        .fill(separatorColor)
                         .frame(height: 1)
                 }
                 .background(Color.clear)
@@ -103,6 +103,10 @@ struct ToolbarView: View {
                 },
             )
         }
+    }
+
+    private var separatorColor: Color {
+        Color.primary.opacity(0.12)
     }
 
     private func backButton(viewStore: ViewStore<ViewState, FileManagerFeature.Action>) -> some View {

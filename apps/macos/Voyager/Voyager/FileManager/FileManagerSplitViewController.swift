@@ -28,8 +28,6 @@ class AppearanceAwareSplitView: NSSplitView {
 class FileManagerSplitViewController: NSViewController, NSSplitViewDelegate {
     private struct ContentPaneViewState: Equatable {
         let isComposerPresented: Bool
-        let breadcrumbItems: [BreadcrumbUtils.Item]
-        let selectedBreadcrumbItem: BreadcrumbUtils.Item?
     }
 
     let store: StoreOf<FileManagerFeature>
@@ -309,18 +307,11 @@ extension FileManagerSplitViewController {
         let store = store
         return WithViewStore(
             store,
-            observe: {
-                ContentPaneViewState(
-                    isComposerPresented: $0.composer.isPresented,
-                    breadcrumbItems: $0.breadcrumbItems,
-                    selectedBreadcrumbItem: $0.selectedBreadcrumbItem,
-                )
-            },
+            observe: { ContentPaneViewState(isComposerPresented: $0.composer.isPresented) },
             content: { viewStore in
                 ZStack(alignment: .top) {
                     VStack(spacing: 0) {
                         ToolbarView(store: store)
-                        self.breadcrumbView(viewStore: viewStore, store: store)
                         ContentPaneView(store: store)
                     }
 
@@ -348,26 +339,6 @@ extension FileManagerSplitViewController {
                 )
             },
         )
-    }
-
-    @ViewBuilder
-    private func breadcrumbView(
-        viewStore: ViewStore<ContentPaneViewState, FileManagerFeature.Action>,
-        store: StoreOf<FileManagerFeature>,
-    ) -> some View {
-        if !viewStore.breadcrumbItems.isEmpty || viewStore.selectedBreadcrumbItem != nil {
-            GeometryReader { proxy in
-                PathBreadcrumbView(
-                    breadcrumbItems: viewStore.breadcrumbItems,
-                    selectedItem: viewStore.selectedBreadcrumbItem,
-                    availableWidth: max(proxy.size.width - 32, 0),
-                    onNavigate: { path in store.send(.navigateTo(path)) },
-                )
-            }
-            .frame(height: 24)
-            .padding(.horizontal, 16)
-            .padding(.vertical, 4)
-        }
     }
 
     private func setupContentPaneConstraints(container: NSView, contentView: NSView) {

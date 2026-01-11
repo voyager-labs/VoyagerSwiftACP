@@ -13,9 +13,9 @@ struct ContentPaneView: View {
         let selected = store.fsItems.selectedIds.count
 
         if selected == 0 {
-            return "@ \(total) Items"
+            return "\(total) items"
         } else {
-            return "@ \(selected) of \(total) items selected"
+            return "\(selected) of \(total) selected"
         }
     }
 
@@ -29,7 +29,7 @@ struct ContentPaneView: View {
     }
 
     var body: some View {
-        ZStack(alignment: .bottomTrailing) {
+        ZStack {
             VStack(spacing: 0) {
                 if isCollectionSearching {
                     collectionLoadingView
@@ -41,6 +41,11 @@ struct ContentPaneView: View {
                         ContentPaneGridView(store: store)
                     }
                 }
+
+                Rectangle()
+                    .fill(separatorColor)
+                    .frame(height: 1)
+                breadcrumbStatusBar
             }
 
             KeyCommandView { event in
@@ -49,15 +54,6 @@ struct ContentPaneView: View {
             .focusable()
             .focused($isKeyCommandFocused)
             .allowsHitTesting(false)
-
-            if !store.inspectorPaneExists {
-                StatusBarButton(
-                    text: statusText,
-                    action: { store.send(.toggleInspector) },
-                )
-                .padding(.trailing, 24)
-                .padding(.bottom, 20)
-            }
         }
         .onChange(of: store.fsItems.selectedIds) { _ in
             restoreKeyCommandFocus()
@@ -81,6 +77,41 @@ struct ContentPaneView: View {
                     restoreKeyCommandFocus()
                 },
         )
+    }
+
+    @ViewBuilder private var breadcrumbStatusBar: some View {
+        GeometryReader { proxy in
+            let totalWidth = max(proxy.size.width - 32, 0)
+            let leftWidth = max(totalWidth * 0.5, 0)
+
+            HStack(spacing: 0) {
+                if !store.breadcrumbItems.isEmpty || store.selectedBreadcrumbItem != nil {
+                    PathBreadcrumbView(
+                        breadcrumbItems: store.breadcrumbItems,
+                        selectedItem: nil,
+                        availableWidth: leftWidth,
+                        onNavigate: { path in store.send(.navigateTo(path)) },
+                    )
+                    .frame(width: leftWidth, alignment: .leading)
+                } else {
+                    Color.clear
+                        .frame(width: leftWidth)
+                }
+
+                Text(statusText)
+                    .font(.system(size: 12, weight: .medium))
+                    .foregroundColor(.secondary)
+                    .frame(maxWidth: .infinity, alignment: .center)
+            }
+            .frame(height: 20)
+            .padding(.horizontal, 16)
+            .padding(.vertical, 2)
+        }
+        .frame(height: 24)
+    }
+
+    private var separatorColor: Color {
+        Color.primary.opacity(0.12)
     }
 
     private var collectionLoadingView: some View {
