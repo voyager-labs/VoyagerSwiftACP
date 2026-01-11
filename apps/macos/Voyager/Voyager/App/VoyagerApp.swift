@@ -9,7 +9,13 @@ struct VoyagerApp: App {
 
     init() {
         LoggingSystem.bootstrap { label in
-            StreamLogHandler.standardError(label: label)
+            let oslogHandler = VoyagerOSLogHandler(label: label)
+            #if DEBUG
+            let stderrHandler = StreamLogHandler.standardError(label: label)
+            return MultiplexLogHandler([oslogHandler, stderrHandler])
+            #else
+            return oslogHandler
+            #endif
         }
     }
 
