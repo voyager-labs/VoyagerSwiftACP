@@ -104,6 +104,9 @@ enum FSItemLoadUtils {
 
     private nonisolated static func calculateAdditionalInfo(url: URL, isDirectory: Bool) -> String? {
         if isDirectory {
+            if isPackageDirectory(url) {
+                return nil
+            }
             let ext = url.pathExtension.lowercased()
             if ext == "voycoll" {
                 return nil
@@ -122,6 +125,27 @@ enum FSItemLoadUtils {
         }
 
         return nil
+    }
+
+    private nonisolated static func isPackageDirectory(_ url: URL) -> Bool {
+        if let values = try? url.resourceValues(forKeys: [.isPackageKey]),
+           values.isPackage == true
+        {
+            return true
+        }
+
+        let ext = url.pathExtension.lowercased()
+        if ["app", "icon"].contains(ext) {
+            return true
+        }
+
+        if let type = UTType(filenameExtension: url.pathExtension),
+           type.conforms(to: .package)
+        {
+            return true
+        }
+
+        return false
     }
 
     private nonisolated static func getFolderItemCount(_ url: URL) -> String? {

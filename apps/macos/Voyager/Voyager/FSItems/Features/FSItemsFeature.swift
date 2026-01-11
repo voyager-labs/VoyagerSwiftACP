@@ -859,8 +859,9 @@ struct FSItemsFeature {
                         .send(.openCollectionFile(URL(fileURLWithPath: $0.fullPath)))
                     })
                 }
-                let selectedFolders = selectedItems.filter(\.isDirectory)
-                let selectedFiles = selectedItems.filter { !$0.isDirectory }
+                let selectedPackages = selectedItems.filter { isPackageItem($0) }
+                let selectedFolders = selectedItems.filter { $0.isDirectory && !isPackageItem($0) }
+                let selectedFiles = selectedItems.filter { !$0.isDirectory } + selectedPackages
 
                 if selectedFolders.count == 1, selectedFiles.isEmpty {
                     return .send(.navigateFolder(id: selectedFolders[0].id))
@@ -1922,6 +1923,30 @@ struct FSItemsFeature {
         items: IdentifiedArrayOf<FSItem>,
     ) -> [FSItem] {
         getSelectedItems(selectedIds: selectedIds, items: items).filter { !$0.isDirectory }
+    }
+
+    private func isPackageItem(_ item: FSItem) -> Bool {
+        guard item.isDirectory else { return false }
+
+        let url = URL(fileURLWithPath: item.fullPath)
+        if let values = try? url.resourceValues(forKeys: [.isPackageKey]),
+           values.isPackage == true
+        {
+            return true
+        }
+
+        let ext = item.fileExtension.lowercased()
+        if ["app", "icon"].contains(ext) {
+            return true
+        }
+
+        if let type = UTType(filenameExtension: item.fileExtension),
+           type.conforms(to: .package)
+        {
+            return true
+        }
+
+        return false
     }
 
     private func preloadApplicationsEffect(
