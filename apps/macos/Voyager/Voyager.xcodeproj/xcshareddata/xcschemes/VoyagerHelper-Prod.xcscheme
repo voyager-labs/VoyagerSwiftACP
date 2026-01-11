@@ -59,17 +59,6 @@
                ReferencedContainer = "container:Voyager.xcodeproj">
             </BuildableReference>
          </TestableReference>
-         <TestableReference
-            skipped = "NO"
-            parallelizable = "YES">
-            <BuildableReference
-               BuildableIdentifier = "primary"
-               BlueprintIdentifier = "7E14EE382E866E86005AC834"
-               BuildableName = "VoyagerHelperUITests.xctest"
-               BlueprintName = "VoyagerHelperUITests"
-               ReferencedContainer = "container:Voyager.xcodeproj">
-            </BuildableReference>
-         </TestableReference>
       </Testables>
    </TestAction>
    <LaunchAction

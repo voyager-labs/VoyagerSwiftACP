@@ -125,9 +125,20 @@ private func launchHelperOnce(_ info: HelperLifecycleInfo) {
 
     if !isHelperRunning {
         let config = NSWorkspace.OpenConfiguration()
-        config.environment = ProcessInfo.processInfo.environment
+        if let helperEnvironment = resolveHelperEnvironment() {
+            config.environment = helperEnvironment
+        }
         NSWorkspace.shared.openApplication(at: info.url, configuration: config) { _, _ in }
     }
+}
+
+@MainActor
+private func resolveHelperEnvironment() -> [String: String]? {
+    let environment = ProcessInfo.processInfo.environment
+    if let projectRoot = environment["VOYAGER_PROJECT_ROOT"], !projectRoot.isEmpty {
+        return environment
+    }
+    return nil
 }
 
 @MainActor

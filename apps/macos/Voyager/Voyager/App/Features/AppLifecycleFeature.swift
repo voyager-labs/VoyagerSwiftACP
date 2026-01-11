@@ -20,6 +20,8 @@ struct AppLifecycleFeature {
 
     @Dependency(\.helperAppClient)
     var helperAppClient
+    @Dependency(\.backendEndpointClient)
+    var backendEndpointClient
 
     @Dependency(\.onboardingWindowClient)
     var onboardingWindowClient
@@ -28,19 +30,24 @@ struct AppLifecycleFeature {
         Reduce { state, action in
             switch action {
             case .willFinishLaunching:
+                try? EnvironmentLoader.loadEnvFiles()
+
                 if state.didStartHelper {
                     return .none
                 }
                 state.didStartHelper = true
                 let helperClient = helperAppClient
+                let endpointClient = backendEndpointClient
                 return .run { _ in
                     async let monitor: Void = {
                         for await _ in helperClient.terminationEvents() {
                             await helperClient.start()
+                            _ = await endpointClient.resolve()
                         }
                     }()
 
                     await helperClient.start()
+                    _ = await endpointClient.resolve()
                     _ = await monitor
                 }
                 .cancellable(id: CancelID.helperMonitor, cancelInFlight: true)

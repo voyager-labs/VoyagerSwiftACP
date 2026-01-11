@@ -2,56 +2,70 @@ from __future__ import annotations
 
 import argparse
 import os
-import subprocess
 import sys
 from pathlib import Path
 
-from dotenv import find_dotenv, load_dotenv
+import setproctitle
+from fastapi.cli import main as fastapi_main
+
+from app.config import load_env
 
 MAIN_FILE = Path(__file__).parent / "main.py"
 
 
-def _load_env(app_env: str) -> None:
-    """APP_ENV에 맞는 .env 파일 로드"""
-    env_file = find_dotenv(filename=f".env.{app_env}")
-    load_dotenv(dotenv_path=env_file, override=False)
-
-
-def _run_fastapi(*args: str, env: dict[str, str] | None = None) -> None:
-    host = env["PUBLIC_BACKEND_HOST"]
-    port = env["PUBLIC_BACKEND_PORT"]
-    cmd = [sys.executable, "-m", "fastapi", *args, "--host", host, "--port", port]
-    proc = subprocess.Popen(cmd, env=env)
-    try:
-        exit_code = proc.wait()
-        raise SystemExit(exit_code)
-    except KeyboardInterrupt:
-        try:
-            proc.terminate()
-            proc.wait(timeout=5)
-        except subprocess.TimeoutExpired:
-            proc.kill()
-            proc.wait()
-        raise SystemExit(130)
-
-
 def _with_env(default_env: str) -> dict[str, str]:
-    _load_env(default_env)
-    merged = os.environ.copy()
-    merged.setdefault("APP_ENV", default_env)
-    return merged
+    os.environ.setdefault("APP_ENV", default_env)
+    os.environ.setdefault("BACKEND_MODE", "source")
+    load_env()
+    return os.environ.copy()
+
+
+def _set_supervisor_title(env: dict[str, str]) -> None:
+    process_title = env.get("PUBLIC_BACKEND_PROCESS_NAME")
+    if process_title:
+        setproctitle.setproctitle(f"{process_title} (Supervisor)")
 
 
 def dev() -> None:
     """개발 모드 실행: fastapi dev (자동 리로드)"""
     env = _with_env("dev")
-    _run_fastapi("dev", str(MAIN_FILE), env=env)
+    # 환경변수 설정
+    for key, value in env.items():
+        os.environ[key] = value
+
+    _set_supervisor_title(env)
+
+    host = env["PUBLIC_BACKEND_HOST"]
+    port = env["PUBLIC_BACKEND_PORT"]
+
+    # sys.argv 조작하여 FastAPI CLI 호출
+    original_argv = sys.argv.copy()
+    try:
+        sys.argv = ["fastapi", "dev", str(MAIN_FILE), "--host", host, "--port", port]
+        fastapi_main()
+    finally:
+        sys.argv = original_argv
 
 
 def prod() -> None:
     """프로덕션 모드 실행: fastapi run (자동 리로드 없음)"""
     env = _with_env("prod")
-    _run_fastapi("run", str(MAIN_FILE), env=env)
+    # 환경변수 설정
+    for key, value in env.items():
+        os.environ[key] = value
+
+    _set_supervisor_title(env)
+
+    host = env["PUBLIC_BACKEND_HOST"]
+    port = env["PUBLIC_BACKEND_PORT"]
+
+    # sys.argv 조작하여 FastAPI CLI 호출
+    original_argv = sys.argv.copy()
+    try:
+        sys.argv = ["fastapi", "run", str(MAIN_FILE), "--host", host, "--port", port]
+        fastapi_main()
+    finally:
+        sys.argv = original_argv
 
 
 def index() -> None:

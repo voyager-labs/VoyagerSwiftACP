@@ -68,8 +68,14 @@
   * Xcode에서 시작: `xed apps/macos/Voyager/Voyager.xcodeproj` (열기 후 `Cmd+R` 실행)
   * VSCode 류 IDE(Sweetpad Extension)에서 실행:
     * Xcode 프로젝트 열기: Sweetpad로 `apps/macos/Voyager/Voyager.xcodeproj` 오픈
-    * 스킴 실행: `Voyager-Dev` 스킴을 선택하여 Debug 구성으로 실행
-    * 참고: Sweetpad 환경에 따라 CLI/버튼 동작이 다를 수 있습니다. 스킴/구성은 Xcode 프로젝트와 동기화되어야 합니다.
+    * 태스크로 실행 (권장):
+      * `Cmd+Shift+P` (또는 `Ctrl+Shift+P`)로 Command Palette 열기
+      * "Tasks: Run Task" 입력 후 다음 태스크 중 선택:
+        - `Voyager Dev: Launch (Debug)` - 개발 환경 Debug 모드로 빌드 및 실행
+        - `Voyager Dev: Launch (Release)` - 개발 환경 Release 모드로 빌드 및 실행
+        - `Voyager Prod: Launch (Debug)` - 프로덕션 환경 Debug 모드로 빌드 및 실행
+        - `Voyager Prod: Launch (Release)` - 프로덕션 환경 Release 모드로 빌드 및 실행
+      * 참고: 버튼을 통한 직접 실행은 비권장합니다. xcscheme의 환경변수가 제대로 주입되지 않을 수 있습니다. 태스크를 통한 실행을 사용하세요.
   * Build (CLI): `xcodebuild -project apps/macos/Voyager/Voyager.xcodeproj -scheme Voyager-Dev -configuration Debug`
   * Prod build/archive (CLI): `xcodebuild -project apps/macos/Voyager/Voyager.xcodeproj -scheme Voyager-Prod -configuration Release`
   * Tests (CLI): `xcodebuild test -scheme Voyager-Dev -project apps/macos/Voyager/Voyager.xcodeproj`
@@ -122,19 +128,31 @@ xcodebuild -version
 
 - Git Flow
 
-  - 기본: `main` (현재 개발 브랜치). 추후 `dev`/`staging` 분기 도입 가능.
-  - Linear Project 브랜치: `proj/{project_slug}`
+  - **브랜치 구조**
+    - `main`: 운영/배포 브랜치 (태그: `vX.Y.Z`)
+    - `develop`: 개발 통합 브랜치
+    - `release/v<X.Y.Z>`: 릴리즈 준비/안정화 브랜치
+    - `<type>/<linear-issue>`: 이슈별 개발 브랜치
+      - `type`: `feature`, `fix`, `chore`, `refactor`, `docs`, `test`, `ci`
+      - 예: `feature/voy-123`, `fix/voy-456`
+    - `hotfix/<linear-issue>`: 운영 긴급 수정 브랜치
 
-    - `main`에서 분기해 프로젝트 단위 작업 집약
-    - 예) proj/files
-  - Linear Issue 브랜치: `{project_slug}/{linear_issue_id}`
+  - **일반 개발 워크플로우**
+    1. `develop`에서 `<type>/<linear-issue>` 브랜치 생성
+    2. 개발 완료 후 `develop`으로 PR 생성 및 머지
+    3. 머지 후 작업 브랜치 삭제
 
-    - 해당 `proj/{project_slug}`에서 분기
-    - 예) files/voy-1
-  - PR 흐름:
+  - **릴리즈 워크플로우**
+    1. `develop`에서 `release/v<X.Y.Z>` 브랜치 생성
+    2. 릴리즈 브랜치에서 버그 수정이 필요한 경우 `fix/<linear-issue>` 분기 후 `release/v<X.Y.Z>`로 PR 머지
+    3. 릴리즈 준비 완료 후 `release/v<X.Y.Z> -> main` PR 머지 및 `vX.Y.Z` 태그 생성
+    4. `main -> develop` (또는 `release/v<X.Y.Z> -> develop`)로 back-merge
 
-    - 이슈 처리 시: `{project_slug}/{linear_issue_id}` → `proj/{project_slug}` 로 PR
-    - 프로젝트 마감: `proj/{project_slug}` → `main` 으로 PR
+  - **Hotfix 워크플로우**
+    1. `main`에서 `hotfix/<linear-issue>` 브랜치 생성
+    2. 수정 후 `main`으로 PR 머지
+    3. 동일 변경사항을 `develop` 및 진행 중인 `release/*` 브랜치에도 반영
+
 - Conventional Commits
 
   - Subject: `<type>(<scope>): <short description>` (명령형, ≲ 50자)

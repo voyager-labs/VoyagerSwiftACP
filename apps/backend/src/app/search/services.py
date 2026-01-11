@@ -20,16 +20,19 @@ from infra.db.engine import engine_manager
 
 
 def _create_llm_provider() -> LangChainProvider:
-    """config.yaml 설정으로 LLM Provider 생성"""
+    """VoyagerConfig 설정으로 LLM Provider 생성"""
     cfg = load_config()
-    llm_config = cfg.llm
-    provider_config = getattr(llm_config, llm_config.provider, {})
+
+    # LLM provider 설정 (openai만 지원)
+    provider_kwargs = {}
+    if cfg.llm_provider == "openai" and cfg.openai_api_key:
+        provider_kwargs["api_key"] = cfg.openai_api_key
 
     return LangChainProvider(
-        provider=llm_config.provider,
-        model=llm_config.model,
-        temperature=llm_config.get("temperature", 0.7),
-        **provider_config,
+        provider=cfg.llm_provider,
+        model=cfg.llm_model,
+        temperature=cfg.llm_temperature,
+        **provider_kwargs,
     )
 
 

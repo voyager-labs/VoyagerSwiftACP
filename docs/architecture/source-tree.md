@@ -35,8 +35,8 @@ voyager-app/
   - `Features/FileManager/*`: 파일 관리자 UI용 View/State/Reducer(TCA)
   - `KeyCommandView.swift`: 키다운 처리(NSViewRepresentable) — Dock 트리거 후보
   - `VoyagerHelper/VoyagerHelperApp.swift`: 백엔드 런너 프로세스(Helper) 엔트리
-  - `VoyagerHelper/Infrastructure/Environment.swift`: `.env.{dev|prod}` 로드 + 실행 모드 감지
-  - `VoyagerHelper/Infrastructure/ProcessRunner.swift`: `uv run ...` 또는 `server.bin` 실행
+  - `VoyagerHelper/Infrastructure/Environment.swift`: `.env.{dev|prod}` 로드 + 실행 모드 감지 + 설정 캡슐화
+  - `VoyagerHelper/Infrastructure/ProcessRunner.swift`: `Environment` 기반으로 `uv run ...` 또는 번들 바이너리 실행
 - Backend
   - `app/main.py`: lifespan에서 설정/DB 초기화 및 Alembic 리비전 로그 출력
   - `infra/db/engine.py`, `infra/db/bootstrap/*`: DB 엔진/마이그레이션 부트스트랩

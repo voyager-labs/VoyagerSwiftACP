@@ -36,6 +36,10 @@ private func loadEnvConfig() {
 ## Integration with existing systems
 
 - **Backend launcher**: Use VoyagerHelper's `Environment.swift` + `ProcessRunner.swift` for dotenv-based backend management
+  - `Environment` 구조체가 dotenv 로딩과 설정 캡슐화 담당
+  - `ProcessRunner`는 `Environment` 의존성 주입으로 설정 접근
+  - Python 프로세스에는 최소 환경 변수만 주입 (`APP_ENV`, `BACKEND_MODE`, `PATH`)
+  - Python 백엔드가 `APP_ENV` 기반으로 `.env.{app_env}` 파일을 자체 로드
 - **Logging**: Resolve log file paths relative to project root
 - **Environment management**: Single source of truth via `.env` file
 - **Keychain merge**: (선택) 필요 시 Keychain 기반 시크릿 로딩을 추가하되, 디스크/로그에 쓰지 않고 프로세스 환경으로만 주입합니다.

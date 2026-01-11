@@ -66,6 +66,21 @@
   - Release 빌드에서 사용
   - 비밀키 제외, CI/CD에서 주입
 
+### BACKEND_MODE별 DB 경로
+
+백엔드 설정 로더(`apps/backend/src/app/config.py`)는 다음 순서로 env를 로드합니다:
+
+1. 프로세스 환경 변수 (최우선)
+2. `.env.{BACKEND_MODE}` (존재 시)
+3. `.env.{APP_ENV}` (존재 시)
+
+`BACKEND_MODE` 기본값은 `source`이며, DB 경로는 `.env.{BACKEND_MODE}`의 `PUBLIC_SQLITE_*` 조합으로 결정됩니다.
+
+| BACKEND_MODE | .env 파일 | DB 경로 예시 | 비고 |
+| --- | --- | --- | --- |
+| `source` | `.env.source` | `./voyager.dev.db` | 작업 디렉터리 기준(보통 `apps/backend`) |
+| `bundled` | `.env.bundled` | `~/Library/Application Support/Voyager/voyager.db` | 절대 경로 |
+
 ### 예시 환경변수 (로컬 `.env.dev`)
 
 - `PUBLIC_BACKEND_HOST=127.0.0.1`
