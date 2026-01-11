@@ -1035,7 +1035,7 @@ struct FileManagerFeature {
                             viewLayout: state.viewLayout,
                         )
                     }
-                    state.selectedSidebarItem = state.openedCollectionURL.map { url in
+                    state.selectedSidebarItem = state.openedCollectionURL.flatMap { url in
                         state.favorites
                             .first(where: { $0.url.path == url.path })
                             .map(\.displayName) ?? state.openedCollectionName
@@ -1073,7 +1073,7 @@ struct FileManagerFeature {
                             viewLayout: state.viewLayout,
                         )
                     }
-                    state.selectedSidebarItem = state.openedCollectionURL.map { url in
+                    state.selectedSidebarItem = state.openedCollectionURL.flatMap { url in
                         state.favorites
                             .first(where: { $0.url.path == url.path })
                             .map(\.displayName) ?? state.openedCollectionName
