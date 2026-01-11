@@ -22,7 +22,6 @@ struct ComposerView: View {
     @State private var isAddButtonHovering: Bool = false
     @State private var isScopePickerPresented: Bool = false
 
-    private let trafficLightAreaWidth: CGFloat = 80
     private let escapeKeyCode: UInt16 = 53
     private let zKeyCode: UInt16 = 6
 
@@ -73,7 +72,6 @@ struct ComposerView: View {
             Spacer()
         }
         .padding(.horizontal, 16)
-        .padding(.leading, store.sidebarVisible ? 0 : trafficLightAreaWidth)
         .padding(.vertical, 6)
         .frame(height: 40)
     }
@@ -321,8 +319,7 @@ struct ComposerView: View {
         composerStore: StoreOf<ComposerFeature>,
         geometry: GeometryProxy,
     ) -> some View {
-        let leadingPadding = store.sidebarVisible ? 0 : trafficLightAreaWidth
-        let availableWidth = geometry.size.width - chipHorizontalPadding * 2 - leadingPadding
+        let availableWidth = geometry.size.width - chipHorizontalPadding * 2
         let pickerStore = composerStore.scope(state: \.propertyPicker, action: \.propertyPicker)
 
         let scopeChips: [ChipItemType] = [.scope(paths: viewStore.scopes)]
@@ -360,7 +357,6 @@ struct ComposerView: View {
             updateCalculatedHeight(chips: allChips, availableWidth: availableWidth)
         }
         .padding(.horizontal, chipHorizontalPadding)
-        .padding(.leading, leadingPadding)
         .padding(.vertical, chipVerticalPadding)
     }
 

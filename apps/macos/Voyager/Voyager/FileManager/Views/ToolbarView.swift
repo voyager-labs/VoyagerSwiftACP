@@ -33,8 +33,6 @@ struct ToolbarView: View {
     @State private var isTitleAreaHovered: Bool = false
     @State private var isTitleHovered: Bool = false
 
-    private let trafficLightAreaWidth: CGFloat = 80
-
     var body: some View {
         WithViewStore(
             store,
@@ -59,7 +57,7 @@ struct ToolbarView: View {
                     normalModeContent(viewStore: viewStore)
                         .frame(maxHeight: .infinity)
                         .padding(0)
-                        .padding(.leading, viewStore.sidebarVisible ? 0 : trafficLightAreaWidth)
+                        .padding(.leading, 0)
                         .padding(.horizontal, 16)
                         .frame(height: 40)
                         .frame(maxWidth: .infinity)

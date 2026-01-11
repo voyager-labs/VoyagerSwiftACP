@@ -76,7 +76,7 @@ class FileManagerSplitViewController: NSViewController, NSSplitViewDelegate {
     override func loadView() {
         // 전체 창을 감싸는 NSVisualEffectView
         let backgroundEffect = NSVisualEffectView()
-        backgroundEffect.material = .hudWindow
+        backgroundEffect.material = .sidebar
         backgroundEffect.blendingMode = .behindWindow
         backgroundEffect.state = .active
         backgroundEffect.wantsLayer = true
@@ -162,6 +162,7 @@ class FileManagerSplitViewController: NSViewController, NSSplitViewDelegate {
                     containerLeadingConstraint?.constant = contentVerticalMargin
                 }
 
+                updateTrafficLightVisibility(isSidebarVisible: sidebarVisible)
                 contentInspectorContainer?.layoutSubtreeIfNeeded()
             }
         }
@@ -184,7 +185,17 @@ class FileManagerSplitViewController: NSViewController, NSSplitViewDelegate {
         mainSplitView.adjustSubviews()
         hasSetInitialLayout = true
 
+        updateTrafficLightVisibility(isSidebarVisible: store.sidebarVisible)
         updateAllPaneColors()
+    }
+
+    private func updateTrafficLightVisibility(isSidebarVisible: Bool) {
+        guard let window = view.window else { return }
+        let shouldHide = !isSidebarVisible
+        // 사이드바 숨김 상태에서는 트래픽 라이트 버튼을 감춥니다.
+        window.standardWindowButton(.closeButton)?.isHidden = shouldHide
+        window.standardWindowButton(.miniaturizeButton)?.isHidden = shouldHide
+        window.standardWindowButton(.zoomButton)?.isHidden = shouldHide
     }
 }
 
@@ -329,6 +340,7 @@ extension FileManagerSplitViewController {
                             .transition(.move(edge: .top).combined(with: .opacity))
                     }
                 }
+                .background(.thickMaterial)
                 .ignoresSafeArea(.all, edges: .top)
                 .animation(
                     .spring(response: 0.25, dampingFraction: 0.75),
