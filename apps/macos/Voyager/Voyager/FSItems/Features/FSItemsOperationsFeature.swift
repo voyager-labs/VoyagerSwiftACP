@@ -7,6 +7,12 @@ import UniformTypeIdentifiers
 /// FSItems의 파일 시스템 작업 관리
 @Reducer
 struct FSItemsOperationsFeature {
+    struct TagChangeTarget: Equatable, Sendable {
+        let file: FSItem
+        let beforeTags: [String]
+        let afterTags: [String]
+    }
+
     @ObservableState
     struct State: Equatable {
         var itemStates: [String: ItemOperationState] = [:]
@@ -48,7 +54,7 @@ struct FSItemsOperationsFeature {
         case emptyTrash(items: [FSItem])
         case compressItems(items: [FSItem])
         case extractCompressedFile(file: FSItem)
-        case toggleTagForItem(file: FSItem, tag: String)
+        case setTagsForItems(targets: [TagChangeTarget])
         case applicationsLoaded(String, [ApplicationInfo])
         case loadCommonApplicationsForFiles(files: [FSItem])
         case commonApplicationsLoaded([ApplicationInfo])
@@ -482,12 +488,32 @@ struct FSItemsOperationsFeature {
                     }
                 }
 
-            case let .toggleTagForItem(file, tag):
-                let filePath = file.fullPath
-                let url = URL(fileURLWithPath: filePath)
+            case let .setTagsForItems(targets):
+                return .run { [fsItemClient] send in
+                    var completedTargets: [EntryActionRecord.Target] = []
 
-                return run(for: filePath, kind: .setTags) {
-                    try await fsItemClient.toggleTag(url, tag)
+                    for target in targets {
+                        let filePath = target.file.fullPath
+                        let url = URL(fileURLWithPath: filePath)
+
+                        await send(.operationStarted(filePath, .setTags))
+                        do {
+                            try await fsItemClient.setTags(url, target.afterTags)
+                            await send(.operationFinished(filePath, .setTags, .success(())))
+                            completedTargets.append(EntryActionRecord.Target(
+                                beforePath: filePath,
+                                afterPath: filePath,
+                                beforeTags: target.beforeTags,
+                                afterTags: target.afterTags,
+                            ))
+                        } catch {
+                            await send(.operationFinished(filePath, .setTags, .failure(error.fileOpError)))
+                        }
+                    }
+
+                    guard !completedTargets.isEmpty else { return }
+                    let record = EntryActionRecord(actionKind: .setTags, targets: completedTargets)
+                    await send(.entryActionCompleted(record))
                 }
             }
         }

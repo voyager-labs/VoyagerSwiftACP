@@ -1293,11 +1293,22 @@ struct FSItemsFeature {
                 let selectedItems = getSelectedItems(selectedIds: state.selectedIds, items: state.displayItems)
                 guard !selectedItems.isEmpty else { return .none }
 
-                return .merge(
-                    selectedItems.map { item in
-                        .send(.operations(.toggleTagForItem(file: item, tag: tag)))
-                    },
-                )
+                let targets = selectedItems.map { item in
+                    let beforeTags = (item.tags ?? []).map(\.name)
+                    let afterTags: [String] = if beforeTags.contains(tag) {
+                        beforeTags.filter { $0 != tag }
+                    } else {
+                        beforeTags + [tag]
+                    }
+
+                    return FSItemsOperationsFeature.TagChangeTarget(
+                        file: item,
+                        beforeTags: beforeTags,
+                        afterTags: afterTags,
+                    )
+                }
+
+                return .send(.operations(.setTagsForItems(targets: targets)))
 
             case .emptyTrash:
                 let allItems = Array(state.items)
@@ -1599,6 +1610,9 @@ struct FSItemsFeature {
 
         case .putBack:
             try makePutBackOperation(target: target, direction: direction, fsItemClient: fsItemClient)
+
+        case .setTags:
+            try makeSetTagsOperation(target: target, direction: direction, fsItemClient: fsItemClient)
         }
     }
 
@@ -1785,11 +1799,39 @@ struct FSItemsFeature {
         }
     }
 
+    private func makeSetTagsOperation(
+        target: EntryActionRecord.Target,
+        direction: EntryActionDirection,
+        fsItemClient: FSItemClient,
+    ) throws -> EntryActionOperation {
+        let filePath = try Self.requiredPath(target.beforePath, context: "setTags target")
+        let tags = try Self.requiredTags(
+            direction == .undo ? target.beforeTags : target.afterTags,
+            context: "setTags tags",
+        )
+        return EntryActionOperation(
+            operationPath: filePath,
+            operationKind: .setTags,
+            perform: {
+                let url = URL(fileURLWithPath: filePath)
+                try await fsItemClient.setTags(url, tags)
+                return target
+            },
+        )
+    }
+
     private static func requiredPath(_ path: String?, context: String) throws -> String {
         guard let path else {
             throw FileOpError.system(message: "Entry action path missing (\(context))")
         }
         return path
+    }
+
+    private static func requiredTags(_ tags: [String]?, context: String) throws -> [String] {
+        guard let tags else {
+            throw FileOpError.system(message: "Entry action tags missing (\(context))")
+        }
+        return tags
     }
 
     private static func moveItemToTrash(path: String) async throws -> String {

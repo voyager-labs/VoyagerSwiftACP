@@ -9,16 +9,25 @@ struct EntryActionRecord: Equatable, Identifiable, Sendable {
         case createFolder
         case moveToTrash
         case putBack
+        case setTags
     }
 
     struct Target: Equatable, Sendable {
         let beforePath: String?
         let afterPath: String?
+        let beforeTags: [String]?
+        let afterTags: [String]?
 
-        // swiftlint:disable:next unneeded_synthesized_initializer
-        nonisolated init(beforePath: String?, afterPath: String?) {
+        nonisolated init(
+            beforePath: String?,
+            afterPath: String?,
+            beforeTags: [String]? = nil,
+            afterTags: [String]? = nil,
+        ) {
             self.beforePath = beforePath
             self.afterPath = afterPath
+            self.beforeTags = beforeTags
+            self.afterTags = afterTags
         }
     }
 
