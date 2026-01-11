@@ -101,9 +101,8 @@ struct ContentPaneGridView: View {
         max(120, max(store.gridIconSize + 16, 112))
     }
 
-    private let horizontalPadding: CGFloat = 16
-    private let minSpacing: CGFloat = 4
-    private let maxSpacing: CGFloat = 8
+    private let horizontalPadding: CGFloat = 12
+    private let minSpacing: CGFloat = 2
     private let verticalSpacing: CGFloat = 8
 
     private func itemGrid(
@@ -389,6 +388,7 @@ struct ContentPaneGridView: View {
                         )
                     }
                 }
+                .frame(maxWidth: .infinity, alignment: .center)
             }
         }
     }
@@ -407,10 +407,15 @@ extension ContentPaneGridView {
         }
 
         let occupiedWidth = CGFloat(candidateColumns) * itemWidth
-        let remainingWidth = max(0, usableWidth - occupiedWidth)
-        let spacing = min(maxSpacing, max(minSpacing, remainingWidth / CGFloat(candidateColumns - 1)))
-        let usedWidth = occupiedWidth + spacing * CGFloat(candidateColumns - 1)
-        let edgePadding = max(horizontalPadding, (width - usedWidth) / 2)
+        let baseSpacing = max(minSpacing, (width - occupiedWidth) / CGFloat(candidateColumns + 1))
+        let edgePadding = max(horizontalPadding, baseSpacing)
+        let spacing: CGFloat
+        if edgePadding > baseSpacing {
+            let remainingWidth = max(0, width - occupiedWidth - (edgePadding * 2))
+            spacing = max(minSpacing, remainingWidth / CGFloat(candidateColumns - 1))
+        } else {
+            spacing = baseSpacing
+        }
 
         return GridLayoutConfig(columns: candidateColumns, spacing: spacing, edgePadding: edgePadding)
     }
