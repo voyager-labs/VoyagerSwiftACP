@@ -300,6 +300,13 @@ struct ContentPaneGridView: View {
                             fsStore.send(.resetScrollFlag)
                         }
                     }
+                    .onChange(of: store.showHiddenFiles) { _ in
+                        ScrollPositionUtils.saveScrollPosition(
+                            scrollView: nsScrollView,
+                            currentPath: store.currentPath,
+                            store: store,
+                        )
+                    }
                     .introspect(.scrollView, on: .macOS(.v13...)) { scrollView in
                         nsScrollView = scrollView
                     }

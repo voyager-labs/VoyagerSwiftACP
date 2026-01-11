@@ -26,12 +26,12 @@ enum FileManagerNavigationUtils {
     static func navigateToState(_ navigationState: NavigationState) -> Effect<FileManagerFeature.Action> {
         switch navigationState {
         case .recents:
-            .send(.fsItems(.loadRecentItems))
+            .send(.fsItems(.loadRecentItems(showHidden: false)))
         case let .folder(path):
             .send(.fsItems(.loadItems(path: path)))
         case let .tags(tagName):
             .run { send in
-                let taggedItems = await SidebarUtils.loadFilesWithTag(tagName)
+                let taggedItems = await SidebarUtils.loadFilesWithTag(tagName, showHidden: false)
                 await send(.fsItems(.itemsLoaded(taggedItems)))
             }
         case .computer:

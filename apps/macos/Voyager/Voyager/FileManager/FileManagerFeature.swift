@@ -749,10 +749,28 @@ struct FileManagerFeature {
             case .toggleShowHiddenFiles:
                 state.showHiddenFiles.toggle()
                 UserDefaults.standard.set(state.showHiddenFiles, forKey: "showHiddenFiles")
-                return .merge(
-                    .send(.fsItems(.setShowHidden(state.showHiddenFiles))),
-                    .send(.fsItems(.loadItems(path: state.currentPath))),
-                )
+                switch state.navigationState {
+                case .recents:
+                    return .merge(
+                        .send(.fsItems(.setShowHidden(state.showHiddenFiles))),
+                        .send(.fsItems(.loadRecentItems(showHidden: state.showHiddenFiles))),
+                    )
+                case let .tags(tagName):
+                    return .merge(
+                        .send(.fsItems(.setShowHidden(state.showHiddenFiles))),
+                        .send(.fsItems(.loadTagItems(tagName: tagName, showHidden: state.showHiddenFiles))),
+                    )
+                case .computer:
+                    return .merge(
+                        .send(.fsItems(.setShowHidden(state.showHiddenFiles))),
+                        .send(.fsItems(.loadComputerItems)),
+                    )
+                case .folder, .collection:
+                    return .merge(
+                        .send(.fsItems(.setShowHidden(state.showHiddenFiles))),
+                        .send(.fsItems(.loadItems(path: state.currentPath))),
+                    )
+                }
 
             case .toggleInspector:
                 state.inspectorVisible.toggle()
@@ -808,7 +826,7 @@ struct FileManagerFeature {
                 let exitEffect = Self.exitCollectionMode(state: &state)
                 return .concatenate(
                     exitEffect,
-                    .send(.fsItems(.loadRecentItems)),
+                    .send(.fsItems(.loadRecentItems(showHidden: state.showHiddenFiles))),
                 )
 
             case .showComputer:
@@ -928,7 +946,7 @@ struct FileManagerFeature {
                 let exitEffect = Self.exitCollectionMode(state: &state)
                 return .concatenate(
                     exitEffect,
-                    .send(.fsItems(.loadTagItems(tagName: tagItem.name))),
+                    .send(.fsItems(.loadTagItems(tagName: tagItem.name, showHidden: state.showHiddenFiles))),
                 )
 
             case let .changeSortKey(key):

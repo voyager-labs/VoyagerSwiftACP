@@ -166,8 +166,8 @@ struct FSItemsFeature {
         case reloadCurrentFolder
         case loadItems(path: String)
         case reloadItems
-        case loadRecentItems
-        case loadTagItems(tagName: String)
+        case loadRecentItems(showHidden: Bool)
+        case loadTagItems(tagName: String, showHidden: Bool)
         case loadComputerItems
         case itemsLoaded([FSItem])
         case collectionItemsLoadedFromSearch([JSONValue])
@@ -266,9 +266,9 @@ struct FSItemsFeature {
                     if state.currentFolderPath == SidebarUtils.computerName {
                         return .send(.loadComputerItems)
                     } else if let tagName = state.currentFolderPath {
-                        return .send(.loadTagItems(tagName: tagName))
+                        return .send(.loadTagItems(tagName: tagName, showHidden: state.showHiddenFiles))
                     } else {
-                        return .send(.loadRecentItems)
+                        return .send(.loadRecentItems(showHidden: state.showHiddenFiles))
                     }
                 } else {
                     return .send(.reloadItems)
@@ -475,22 +475,22 @@ struct FSItemsFeature {
                     }
                 }
 
-            case .loadRecentItems:
+            case let .loadRecentItems(showHidden):
                 state.currentFolderPath = nil
                 state.isVirtualFolder = true
 
                 return .run { send in
-                    let recentItems = await SidebarUtils.loadRecentItems()
+                    let recentItems = await SidebarUtils.loadRecentItems(showHidden: showHidden)
                     await send(.itemsLoaded(recentItems))
                 }
 
-            case let .loadTagItems(tagName):
+            case let .loadTagItems(tagName, showHidden):
                 state.currentFolderPath = tagName
                 state.isVirtualFolder = true
 
                 return .run { send in
                     try await Task.sleep(for: .milliseconds(500))
-                    let taggedItems = await SidebarUtils.loadFilesWithTag(tagName)
+                    let taggedItems = await SidebarUtils.loadFilesWithTag(tagName, showHidden: showHidden)
                     await send(.itemsLoaded(taggedItems))
                 }
 
