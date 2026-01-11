@@ -317,6 +317,7 @@ struct FileManagerFeature {
         case goToEnclosingDirectory
         case changeLayout(ViewLayout)
         case toggleShowHiddenFiles
+        case setShowHiddenFiles(Bool)
         case setSidebarVisible(Bool)
         case toggleInspector
         case setInspectorPaneExists(Bool)
@@ -388,7 +389,7 @@ struct FileManagerFeature {
         Reduce { state, action in
             switch action {
             case .onAppear:
-                state.showHiddenFiles = UserDefaults.standard.bool(forKey: "showHiddenFiles")
+                state.showHiddenFiles = UserDefaults.standard.bool(forKey: SettingsKeys.showHiddenFiles)
                 state.sidebarVisible = UserDefaults.standard.object(forKey: "sidebarVisible") as? Bool ?? true
                 state.sortKey = SortKey(rawValue: UserDefaults.standard.string(forKey: "sortKey") ?? "") ?? .name
                 state
@@ -440,6 +441,7 @@ struct FileManagerFeature {
                         let gridIconSizeKey = "gridIconSize"
                         let listTextSizeKey = "listTextSize"
                         let gridTextSizeKey = "gridTextSize"
+                        let showHiddenFilesKey = "showHiddenFiles"
                         for await _ in NotificationCenter.default.notifications(
                             named: UserDefaults.didChangeNotification,
                         ) {
@@ -455,6 +457,8 @@ struct FileManagerFeature {
                             if let gridTextSize = UserDefaults.standard.object(forKey: gridTextSizeKey) as? CGFloat {
                                 await send(.updateGridTextSize(gridTextSize))
                             }
+                            let showHiddenFiles = UserDefaults.standard.bool(forKey: showHiddenFilesKey)
+                            await send(.setShowHiddenFiles(showHiddenFiles))
                         }
                     },
                 )
@@ -748,29 +752,13 @@ struct FileManagerFeature {
 
             case .toggleShowHiddenFiles:
                 state.showHiddenFiles.toggle()
-                UserDefaults.standard.set(state.showHiddenFiles, forKey: "showHiddenFiles")
-                switch state.navigationState {
-                case .recents:
-                    return .merge(
-                        .send(.fsItems(.setShowHidden(state.showHiddenFiles))),
-                        .send(.fsItems(.loadRecentItems(showHidden: state.showHiddenFiles))),
-                    )
-                case let .tags(tagName):
-                    return .merge(
-                        .send(.fsItems(.setShowHidden(state.showHiddenFiles))),
-                        .send(.fsItems(.loadTagItems(tagName: tagName, showHidden: state.showHiddenFiles))),
-                    )
-                case .computer:
-                    return .merge(
-                        .send(.fsItems(.setShowHidden(state.showHiddenFiles))),
-                        .send(.fsItems(.loadComputerItems)),
-                    )
-                case .folder, .collection:
-                    return .merge(
-                        .send(.fsItems(.setShowHidden(state.showHiddenFiles))),
-                        .send(.fsItems(.loadItems(path: state.currentPath))),
-                    )
-                }
+                UserDefaults.standard.set(state.showHiddenFiles, forKey: SettingsKeys.showHiddenFiles)
+                return Self.applyShowHiddenFilesChange(state: &state)
+
+            case let .setShowHiddenFiles(isEnabled):
+                guard state.showHiddenFiles != isEnabled else { return .none }
+                state.showHiddenFiles = isEnabled
+                return Self.applyShowHiddenFilesChange(state: &state)
 
             case .toggleInspector:
                 state.inspectorVisible.toggle()
@@ -1261,6 +1249,31 @@ struct FileManagerFeature {
         state.navigationState = FileManagerNavigationUtils.navigationStateFromPath(state.titlePath)
         state.matchSidebarToPath(state.currentPath, favorites: state.favorites, locations: state.locations)
         return clearEffect
+    }
+
+    private static func applyShowHiddenFilesChange(state: inout State) -> Effect<Action> {
+        switch state.navigationState {
+        case .recents:
+            .merge(
+                .send(.fsItems(.setShowHidden(state.showHiddenFiles))),
+                .send(.fsItems(.loadRecentItems(showHidden: state.showHiddenFiles))),
+            )
+        case let .tags(tagName):
+            .merge(
+                .send(.fsItems(.setShowHidden(state.showHiddenFiles))),
+                .send(.fsItems(.loadTagItems(tagName: tagName, showHidden: state.showHiddenFiles))),
+            )
+        case .computer:
+            .merge(
+                .send(.fsItems(.setShowHidden(state.showHiddenFiles))),
+                .send(.fsItems(.loadComputerItems)),
+            )
+        case .folder, .collection:
+            .merge(
+                .send(.fsItems(.setShowHidden(state.showHiddenFiles))),
+                .send(.fsItems(.loadItems(path: state.currentPath))),
+            )
+        }
     }
 
     private static func clearCollectionMode(state: inout State) -> Effect<Action> {

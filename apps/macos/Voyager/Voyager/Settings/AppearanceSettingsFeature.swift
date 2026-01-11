@@ -11,6 +11,7 @@ struct AppearanceSettingsFeature {
         var gridIconSize: CGFloat = 64
         var listTextSize: CGFloat = 13
         var gridTextSize: CGFloat = 12
+        var showHiddenFiles: Bool = false
     }
 
     enum Action: Sendable {
@@ -21,6 +22,7 @@ struct AppearanceSettingsFeature {
         case setGridIconSize(CGFloat)
         case setListTextSize(CGFloat)
         case setGridTextSize(CGFloat)
+        case setShowHiddenFiles(Bool)
     }
 
     @Dependency(\.appearanceSettingsClient)
@@ -58,6 +60,8 @@ struct AppearanceSettingsFeature {
                     state.gridTextSize = gridTextSize
                 }
 
+                state.showHiddenFiles = UserDefaults.standard.bool(forKey: SettingsKeys.showHiddenFiles)
+
                 return .none
 
             case let .setTheme(theme):
@@ -85,6 +89,11 @@ struct AppearanceSettingsFeature {
             case let .setGridTextSize(size):
                 state.gridTextSize = size
                 UserDefaults.standard.set(size, forKey: SettingsKeys.gridTextSize)
+                return .none
+
+            case let .setShowHiddenFiles(isEnabled):
+                state.showHiddenFiles = isEnabled
+                UserDefaults.standard.set(isEnabled, forKey: SettingsKeys.showHiddenFiles)
                 return .none
             }
         }
