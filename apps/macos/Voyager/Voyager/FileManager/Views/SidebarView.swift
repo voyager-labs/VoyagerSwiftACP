@@ -30,12 +30,31 @@ struct SidebarItemView: View {
         }
     }
 
+    private func applicationsIcon() -> NSImage? {
+        var appIcon = NSImage(
+            contentsOfFile: "/System/Library/CoreServices/CoreTypes.bundle/Contents/Resources/SidebarApplicationsFolder.icns",
+        )
+        appIcon?.isTemplate = true
+        return appIcon
+    }
+
     var body: some View {
         HStack(spacing: 8) {
-            Image(systemName: iconName)
-                .symbolRenderingMode(.hierarchical)
-                .foregroundColor(isDropTarget ? .white : (iconColor ?? .accentColor))
-                .frame(width: 16)
+            if targetURL?.path == "/Applications",
+               let appIcon = applicationsIcon()
+            {
+                // Applications는 시스템 사이드바 아이콘을 사용
+                Image(nsImage: appIcon)
+                    .resizable()
+                    .scaledToFit()
+                    .foregroundColor(isDropTarget ? .white : (iconColor ?? .accentColor))
+                    .frame(width: 16, height: 16)
+            } else {
+                Image(systemName: iconName)
+                    .symbolRenderingMode(.hierarchical)
+                    .foregroundColor(isDropTarget ? .white : (iconColor ?? .accentColor))
+                    .frame(width: 16)
+            }
             Text(title)
                 .foregroundColor(isDropTarget ? .white : .primary)
                 .lineLimit(1)
