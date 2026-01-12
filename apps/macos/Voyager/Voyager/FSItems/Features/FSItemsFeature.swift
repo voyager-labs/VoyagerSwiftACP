@@ -1072,9 +1072,7 @@ struct FSItemsFeature {
 
             case let .handleDrop(providers, destinationPath):
                 let draggedPaths = fsItemClient.loadDragPaths()
-                let hasExternalProviders = !providers.isEmpty
-
-                if !draggedPaths.isEmpty, !hasExternalProviders {
+                if !draggedPaths.isEmpty {
                     state.draggingPaths = []
                     return .send(.dropToFolder(destinationPath: destinationPath))
                 }
