@@ -253,12 +253,8 @@ private extension FSItemGridView {
             Button {
                 onOpenInNewTab(isOptionPressed)
             } label: {
-                Label(
-                    isOptionPressed ? "Open in New Window" : "Open in New Tab",
-                    systemImage: isOptionPressed ? "macwindow.badge.plus" : "plus.square.on.square",
-                )
+                Label("Open in New Window", systemImage: "macwindow.badge.plus")
             }
-            .keyboardShortcut(.downArrow, modifiers: [.command, .option])
         }
 
         if !item.isDirectory, let onOpenWithApp {
