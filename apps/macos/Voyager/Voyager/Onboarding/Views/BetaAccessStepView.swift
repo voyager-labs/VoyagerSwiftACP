@@ -29,7 +29,7 @@ struct BetaAccessStepView: View {
                         Text("Token")
                             .font(.system(size: 12, weight: .semibold))
                             .foregroundStyle(.secondary)
-                        SecureField(
+                        TextField(
                             "Paste your token here",
                             text: viewStore.binding(
                                 get: \.token,
