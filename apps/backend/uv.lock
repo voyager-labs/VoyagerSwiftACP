@@ -2524,7 +2524,7 @@ wheels = [
 
 [[package]]
 name = "voyager-app-backend"
-version = "0.0.0"
+version = "0.0.1"
 source = { editable = "." }
 dependencies = [
     { name = "alembic" },
