@@ -67,9 +67,9 @@ struct ComposerView: View {
             undoButton(viewStore: viewStore)
             redoButton(viewStore: viewStore)
             textField(viewStore: viewStore)
+                .frame(maxWidth: .infinity, alignment: .leading)
             clearButton(viewStore: viewStore)
             saveButton(viewStore: viewStore)
-            Spacer()
         }
         .padding(.horizontal, 16)
         .padding(.vertical, 6)
@@ -222,6 +222,7 @@ struct ComposerView: View {
             .foregroundColor(isAllEmpty ? .secondary : .primary)
             .padding(.horizontal, 7)
             .padding(.vertical, 4)
+            .frame(height: 22)
             .background(
                 RoundedRectangle(cornerRadius: 8)
                     .fill(isDark ? Color.white.opacity(0.08) : Color.black.opacity(0.08))
@@ -252,6 +253,7 @@ struct ComposerView: View {
             .foregroundColor(isEnabled ? .primary : .secondary)
             .padding(.horizontal, 7)
             .padding(.vertical, 4)
+            .frame(height: 22)
             .background(
                 RoundedRectangle(cornerRadius: 8)
                     .fill(isDark ? Color.white.opacity(0.08) : Color.black.opacity(0.08))
