@@ -615,20 +615,20 @@ struct FSItemsFeature {
 
                 if isShiftPressed {
                     if state.isListView {
-                        let anchorId = state.rangeAnchorId ?? state.lastSelectedId
-
-                        if let anchorId,
-                           let anchorIndex = Array(displayItems).firstIndex(where: { $0.id == anchorId }),
+                        let anchorId = state.rangeAnchorId ?? state.lastSelectedId ?? id
+                        if let anchorIndex = Array(displayItems).firstIndex(where: { $0.id == anchorId }),
                            let currentIndex = Array(displayItems).firstIndex(where: { $0.id == id })
                         {
                             let itemsArray = Array(displayItems)
                             let range = min(anchorIndex, currentIndex) ... max(anchorIndex, currentIndex)
                             let rangeIds = itemsArray[range].map(\.id)
-                            state.selectedIds.formUnion(rangeIds)
+                            state.selectedIds = Set(rangeIds)
                             state.lastSelectedId = id
+                            state.rangeAnchorId = anchorId
                         } else {
-                            state.selectedIds.insert(id)
+                            state.selectedIds = [id]
                             state.lastSelectedId = id
+                            state.rangeAnchorId = id
 
                             return .merge(
                                 renameEffect,
