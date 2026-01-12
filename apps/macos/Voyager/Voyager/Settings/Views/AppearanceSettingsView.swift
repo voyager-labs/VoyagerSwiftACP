@@ -132,6 +132,16 @@ struct AppearanceSettingsView: View {
     var body: some View {
         Form {
             Section {
+                Toggle(
+                    "Show Hidden Files",
+                    isOn: Binding(
+                        get: { store.showHiddenFiles },
+                        set: { store.send(.setShowHiddenFiles($0)) },
+                    ),
+                )
+            }
+
+            Section {
                 HStack(alignment: .top, spacing: 20) {
                     Text("Theme")
                         .foregroundColor(.primary)

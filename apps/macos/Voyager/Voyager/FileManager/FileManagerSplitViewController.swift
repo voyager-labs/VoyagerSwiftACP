@@ -20,26 +20,14 @@ class AppearanceAwareSplitView: NSSplitView {
 
     func updateBackgroundColor() {
         wantsLayer = true
-        let appearance = effectiveAppearance
-        let isDark = isDarkMode(appearance: appearance)
-
-        appearance.performAsCurrentDrawingAppearance {
-            layer?.backgroundColor = isDark
-                ? NSColor.controlBackgroundColor.cgColor
-                : NSColor(red: 245 / 255.0, green: 245 / 255.0, blue: 245 / 255.0, alpha: 1.0).cgColor
-        }
-    }
-
-    private func isDarkMode(appearance: NSAppearance) -> Bool {
-        appearance.name == .darkAqua || appearance.name == .vibrantDark
+        // 투명하게 설정 (뒤의 블러가 보이도록)
+        layer?.backgroundColor = NSColor.clear.cgColor
     }
 }
 
 class FileManagerSplitViewController: NSViewController, NSSplitViewDelegate {
     private struct ContentPaneViewState: Equatable {
         let isComposerPresented: Bool
-        let breadcrumbItems: [BreadcrumbUtils.Item]
-        let selectedBreadcrumbItem: BreadcrumbUtils.Item?
     }
 
     let store: StoreOf<FileManagerFeature>
@@ -54,7 +42,7 @@ class FileManagerSplitViewController: NSViewController, NSSplitViewDelegate {
     private var contentInspectorDivider: ContentInspectorDivider?
     private var mainSplitView: NSSplitView?
     private var inspectorWidth: CGFloat = 300
-    private let contentVerticalMargin: CGFloat = 8
+    private let contentVerticalMargin: CGFloat = 4
     private var contentLeadingConstraint: NSLayoutConstraint?
     private var containerLeadingConstraint: NSLayoutConstraint?
     private var contentTrailingConstraint: NSLayoutConstraint?
@@ -84,11 +72,29 @@ class FileManagerSplitViewController: NSViewController, NSSplitViewDelegate {
     }
 
     override func loadView() {
+        // 전체 창을 감싸는 NSVisualEffectView
+        let backgroundEffect = NSVisualEffectView()
+        backgroundEffect.material = .sidebar
+        backgroundEffect.blendingMode = .behindWindow
+        backgroundEffect.state = .active
+        backgroundEffect.wantsLayer = true
+
         let mainSplit = createMainSplitView()
         mainSplitView = mainSplit
         setupSidebar(in: mainSplit)
         setupContentContainer(in: mainSplit)
-        view = mainSplit
+
+        // Split view를 블러 배경 위에 배치
+        mainSplit.translatesAutoresizingMaskIntoConstraints = false
+        backgroundEffect.addSubview(mainSplit)
+        NSLayoutConstraint.activate([
+            mainSplit.topAnchor.constraint(equalTo: backgroundEffect.topAnchor),
+            mainSplit.bottomAnchor.constraint(equalTo: backgroundEffect.bottomAnchor),
+            mainSplit.leadingAnchor.constraint(equalTo: backgroundEffect.leadingAnchor),
+            mainSplit.trailingAnchor.constraint(equalTo: backgroundEffect.trailingAnchor),
+        ])
+
+        view = backgroundEffect
     }
 
     private func updateContentInspectorLayout() {
@@ -154,6 +160,7 @@ class FileManagerSplitViewController: NSViewController, NSSplitViewDelegate {
                     containerLeadingConstraint?.constant = contentVerticalMargin
                 }
 
+                updateTrafficLightVisibility(isSidebarVisible: sidebarVisible)
                 contentInspectorContainer?.layoutSubtreeIfNeeded()
             }
         }
@@ -163,7 +170,7 @@ class FileManagerSplitViewController: NSViewController, NSSplitViewDelegate {
         super.viewDidAppear()
 
         guard !hasSetInitialLayout,
-              let mainSplitView = view as? NSSplitView,
+              let mainSplitView,
               mainSplitView.bounds.width > 0 else { return }
 
         let savedWidth = UserDefaults.standard.object(forKey: "sidebarWidth") as? Double ?? 220
@@ -176,7 +183,17 @@ class FileManagerSplitViewController: NSViewController, NSSplitViewDelegate {
         mainSplitView.adjustSubviews()
         hasSetInitialLayout = true
 
+        updateTrafficLightVisibility(isSidebarVisible: store.sidebarVisible)
         updateAllPaneColors()
+    }
+
+    private func updateTrafficLightVisibility(isSidebarVisible: Bool) {
+        guard let window = view.window else { return }
+        let shouldHide = !isSidebarVisible
+        // 사이드바 숨김 상태에서는 트래픽 라이트 버튼을 감춥니다.
+        window.standardWindowButton(.closeButton)?.isHidden = shouldHide
+        window.standardWindowButton(.miniaturizeButton)?.isHidden = shouldHide
+        window.standardWindowButton(.zoomButton)?.isHidden = shouldHide
     }
 }
 
@@ -188,7 +205,8 @@ extension FileManagerSplitViewController {
         mainSplit.setValue(NSColor.clear, forKey: "dividerColor")
         mainSplit.delegate = self
         mainSplit.wantsLayer = true
-        mainSplit.updateBackgroundColor()
+        // 배경을 투명하게 설정 (뒤의 블러가 보이도록)
+        mainSplit.layer?.backgroundColor = NSColor.clear.cgColor
 
         mainSplit.onAppearanceChanged = { [weak self] in
             self?.updateAllPaneColors()
@@ -204,20 +222,23 @@ extension FileManagerSplitViewController {
         if let inspectorView = inspectorHosting?.view {
             updateInspectorPaneColor(for: inspectorView)
         }
+        updateContentInspectorContainerColor()
     }
 
-    private func updateContentPaneColor(for view: NSView) {
-        guard let mainSplit = mainSplitView else { return }
+    private func updateContentInspectorContainerColor() {
+        guard let mainSplit = mainSplitView,
+              let container = contentInspectorContainer else { return }
         let appearance = mainSplit.effectiveAppearance
         let isDark = isDarkMode(appearance: appearance)
 
         appearance.performAsCurrentDrawingAppearance {
-            if isDark {
-                view.layer?.backgroundColor = NSColor(red: 0.16, green: 0.16, blue: 0.16, alpha: 1.0).cgColor
-            } else {
-                view.layer?.backgroundColor = NSColor.controlBackgroundColor.cgColor
-            }
+            container.layer?.backgroundColor = VoyagerDS.AppKitSurface.contentPaneOverlay(isDark: isDark).cgColor
         }
+    }
+
+    private func updateContentPaneColor(for view: NSView) {
+        // container의 검정색 50% 배경이 보이도록 투명하게 설정
+        view.layer?.backgroundColor = NSColor.clear.cgColor
     }
 
     private func setupSidebar(in mainSplit: NSSplitView) {
@@ -226,23 +247,28 @@ extension FileManagerSplitViewController {
         )
         sidebarHosting.safeAreaRegions = []
 
+        // SwiftUI 뷰를 투명하게 설정 (뒤의 블러가 보이도록)
         sidebarHosting.view.wantsLayer = true
+        sidebarHosting.view.layer?.backgroundColor = NSColor.clear.cgColor
 
         mainSplit.addArrangedSubview(sidebarHosting.view)
         mainSplit.setHoldingPriority(.defaultLow - 1, forSubviewAt: 0)
         addChild(sidebarHosting)
         self.sidebarHosting = sidebarHosting
-        setupSidebarLayer(for: sidebarHosting.view)
     }
 
     private func setupContentContainer(in mainSplit: NSSplitView) {
+        // wrapper를 투명하게 설정 (뒤의 블러가 보이도록)
         let wrapper = NSView()
+        wrapper.wantsLayer = true
+        wrapper.layer?.backgroundColor = NSColor.clear.cgColor
 
         let container = NSView()
         container.wantsLayer = true
         container.layer?.zPosition = 5
-        container.layer?.cornerRadius = 16
+        container.layer?.cornerRadius = VoyagerDS.Radius.contentPane
         container.layer?.masksToBounds = true
+        container.layer?.backgroundColor = VoyagerDS.AppKitSurface.contentPaneOverlay(isDark: true).cgColor
         container.translatesAutoresizingMaskIntoConstraints = false
         contentInspectorContainer = container
 
@@ -281,32 +307,35 @@ extension FileManagerSplitViewController {
         let store = store
         return WithViewStore(
             store,
-            observe: {
-                ContentPaneViewState(
-                    isComposerPresented: $0.composer.isPresented,
-                    breadcrumbItems: $0.breadcrumbItems,
-                    selectedBreadcrumbItem: $0.selectedBreadcrumbItem,
-                )
-            },
+            observe: { ContentPaneViewState(isComposerPresented: $0.composer.isPresented) },
             content: { viewStore in
                 ZStack(alignment: .top) {
                     VStack(spacing: 0) {
                         ToolbarView(store: store)
-                        self.breadcrumbView(viewStore: viewStore, store: store)
                         ContentPaneView(store: store)
                     }
+                    .overlay(
+                        RoundedRectangle(cornerRadius: VoyagerDS.Radius.contentPane, style: .continuous)
+                            .strokeBorder(Color.primary.opacity(0.12), lineWidth: 1),
+                    )
 
                     if viewStore.isComposerPresented {
                         Color.clear
+                            .frame(maxWidth: .infinity, maxHeight: .infinity)
                             .contentShape(Rectangle())
                             .onTapGesture { store.send(.exitComposer) }
                     }
 
                     if viewStore.isComposerPresented {
                         ComposerView(store: store)
+                            .padding(.horizontal, VoyagerDS.Spacing.composerHorizontalPadding)
+                            .padding(.top, VoyagerDS.Spacing.composerTopPadding)
+                            .contentShape(Rectangle())
+                            .onTapGesture {}
                             .transition(.move(edge: .top).combined(with: .opacity))
                     }
                 }
+                .background(.thickMaterial)
                 .ignoresSafeArea(.all, edges: .top)
                 .animation(
                     .spring(response: 0.25, dampingFraction: 0.75),
@@ -314,26 +343,6 @@ extension FileManagerSplitViewController {
                 )
             },
         )
-    }
-
-    @ViewBuilder
-    private func breadcrumbView(
-        viewStore: ViewStore<ContentPaneViewState, FileManagerFeature.Action>,
-        store: StoreOf<FileManagerFeature>,
-    ) -> some View {
-        if !viewStore.breadcrumbItems.isEmpty || viewStore.selectedBreadcrumbItem != nil {
-            GeometryReader { proxy in
-                PathBreadcrumbView(
-                    breadcrumbItems: viewStore.breadcrumbItems,
-                    selectedItem: viewStore.selectedBreadcrumbItem,
-                    availableWidth: max(proxy.size.width - 32, 0),
-                    onNavigate: { path in store.send(.navigateTo(path)) },
-                )
-            }
-            .frame(height: 24)
-            .padding(.horizontal, 16)
-            .padding(.vertical, 4)
-        }
     }
 
     private func setupContentPaneConstraints(container: NSView, contentView: NSView) {
@@ -359,11 +368,6 @@ extension FileManagerSplitViewController {
         )
     }
 
-    private func setupSidebarLayer(for view: NSView) {
-        view.wantsLayer = true
-        view.layer?.zPosition = 0
-    }
-
     private func setupElevatedLayer(for view: NSView) {
         view.wantsLayer = true
         view.layer?.zPosition = 10
@@ -382,16 +386,7 @@ extension FileManagerSplitViewController {
         let isDark = isDarkMode(appearance: appearance)
 
         appearance.performAsCurrentDrawingAppearance {
-            if isDark {
-                view.layer?.backgroundColor = NSColor.controlBackgroundColor.cgColor
-            } else {
-                view.layer?.backgroundColor = NSColor(
-                    red: 245 / 255.0,
-                    green: 245 / 255.0,
-                    blue: 245 / 255.0,
-                    alpha: 1.0,
-                ).cgColor
-            }
+            view.layer?.backgroundColor = VoyagerDS.AppKitSurface.inspectorPaneBackground(isDark: isDark).cgColor
         }
     }
 
@@ -574,12 +569,28 @@ extension FileManagerSplitViewController {
 
     func splitViewDidResizeSubviews(_: Notification) {
         updateContentInspectorLayout()
+        syncSidebarVisibilityWithWidth()
+    }
 
-        if let sidebarView = sidebarHosting?.view,
-           store.sidebarVisible,
-           sidebarView.frame.width > 0
-        {
-            UserDefaults.standard.set(sidebarView.frame.width, forKey: "sidebarWidth")
+    private func syncSidebarVisibilityWithWidth() {
+        guard hasSetInitialLayout else { return }
+        guard let sidebarView = sidebarHosting?.view,
+              let mainSplitView else { return }
+
+        let sidebarWidth = sidebarView.frame.width
+        let isCollapsed = mainSplitView.isSubviewCollapsed(sidebarView)
+        let collapseThreshold: CGFloat = 2
+
+        if !isCollapsed, sidebarWidth > collapseThreshold {
+            UserDefaults.standard.set(sidebarWidth, forKey: "sidebarWidth")
+        }
+
+        let shouldBeVisible = !isCollapsed
+        if store.sidebarVisible != shouldBeVisible {
+            store.send(.setSidebarVisible(shouldBeVisible))
+
+            containerLeadingConstraint?.constant = shouldBeVisible ? 0 : contentVerticalMargin
+            contentInspectorContainer?.layoutSubtreeIfNeeded()
         }
     }
 }

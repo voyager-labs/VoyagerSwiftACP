@@ -4,16 +4,16 @@ import SwiftUI
 struct ScopeChipView: View {
     let paths: [String]
     let store: StoreOf<ComposerFeature>
-    let isDark: Bool
     let favorites: [SidebarUtils.FavoriteItem]
     let backHistory: [String]
-
-    @State private var isComboBoxPresented: Bool = false
+    @Binding var isComboBoxPresented: Bool
     @State private var editingPath: String?
     @State private var deleteHoverPath: String?
     @State private var dropdownHovering: Bool = false
     @State private var nameHoverPath: String?
     @State private var addScopeHovering: Bool = false
+    @Environment(\.colorScheme)
+    private var colorScheme: ColorScheme
 
     var body: some View {
         HStack(spacing: 4) {
@@ -38,9 +38,7 @@ struct ScopeChipView: View {
                         .frame(height: 19)
                         .background(
                             RoundedRectangle(cornerRadius: 4)
-                                .fill(addScopeHovering ?
-                                    (isDark ? Color.white.opacity(0.08) : Color.black.opacity(0.06)) :
-                                    Color.clear),
+                                .fill(addScopeHovering ? VoyagerDS.Interaction.hoverFill(for: colorScheme) : .clear),
                         )
                 }
                 .buttonStyle(.borderless)
@@ -59,8 +57,7 @@ struct ScopeChipView: View {
                         .frame(height: 19)
                         .background(
                             RoundedRectangle(cornerRadius: 4)
-                                .fill(dropdownHovering ?
-                                    (isDark ? Color.white.opacity(0.08) : Color.black.opacity(0.06)) : Color.clear),
+                                .fill(dropdownHovering ? VoyagerDS.Interaction.hoverFill(for: colorScheme) : .clear),
                         )
                 }
                 .buttonStyle(.borderless)
@@ -73,7 +70,7 @@ struct ScopeChipView: View {
         .frame(height: 28)
         .background(
             RoundedRectangle(cornerRadius: 6)
-                .fill(isDark ? Color.white.opacity(0.1) : Color.black.opacity(0.08)),
+                .fill(VoyagerDS.Surface.chipContainerBackground(for: colorScheme)),
         )
         .popover(isPresented: $isComboBoxPresented, arrowEdge: .bottom) {
             ScopePickerView(
@@ -130,27 +127,11 @@ struct ScopeChipView: View {
         .padding(.vertical, 2)
         .background(
             RoundedRectangle(cornerRadius: 4)
-                .fill(subChipBackgroundColor),
+                .fill(VoyagerDS.Surface.chipItemBackground(for: colorScheme)),
         )
         .overlay(
             RoundedRectangle(cornerRadius: 4)
-                .stroke(subChipBorderColor, lineWidth: 0.5),
+                .stroke(VoyagerDS.Surface.chipItemBorder(for: colorScheme), lineWidth: 0.5),
         )
-    }
-
-    private var subChipBackgroundColor: Color {
-        if isDark {
-            Color.white.opacity(0.15)
-        } else {
-            Color.black.opacity(0.08)
-        }
-    }
-
-    private var subChipBorderColor: Color {
-        if isDark {
-            Color.white.opacity(0.2)
-        } else {
-            Color.black.opacity(0.15)
-        }
     }
 }

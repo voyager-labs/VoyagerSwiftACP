@@ -22,7 +22,7 @@ private struct ItemPosition {
         if hasSelectedItem {
             isFirst || isLast
         } else {
-            isFirst || isLast || isSecondLast
+            isFirst || isLast
         }
     }
 
@@ -107,15 +107,10 @@ struct PathBreadcrumbView: View {
             space += iconSize + selected.name.width()
         }
 
-        if selectedItem == nil, breadcrumbItems.count >= 2 {
-            let secondLast = breadcrumbItems[breadcrumbItems.count - 2]
-            space += iconSize + secondLast.name.width()
-        }
-
         let chevronCount = breadcrumbItems.count - 1 + (selectedItem != nil ? 1 : 0)
         space += CGFloat(chevronCount) * chevronSize
 
-        let fixedItemCount = selectedItem != nil ? 2 : 3
+        let fixedItemCount = selectedItem != nil ? 2 : 2
         let fixedElementsCount = fixedItemCount + chevronCount
         space += CGFloat(fixedElementsCount - 1) * itemSpacing
 
@@ -138,14 +133,14 @@ struct PathBreadcrumbView: View {
             return itemTextWidth
         }
 
-        let minRequiredCount = selectedItem != nil ? 2 : 3
+        let minRequiredCount = selectedItem != nil ? 2 : 2
         guard breadcrumbItems.count > minRequiredCount else {
             return itemTextWidth
         }
 
         let fixedSpace = calculateFixedItemsSpace()
         let remainingSpace = availableWidth - fixedSpace
-        let middleCount = selectedItem != nil ? breadcrumbItems.count - 2 : breadcrumbItems.count - 3
+        let middleCount = selectedItem != nil ? breadcrumbItems.count - 2 : breadcrumbItems.count - 2
 
         guard middleCount > 0 else {
             return itemTextWidth

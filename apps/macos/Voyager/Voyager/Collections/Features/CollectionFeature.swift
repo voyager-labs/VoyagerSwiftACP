@@ -295,10 +295,13 @@ private func encodeBooleanValues(_ values: [String]) -> JSONValue? {
 }
 
 private func encodeDateValues(_ values: [String]) -> JSONValue? {
-    if values.count == 1 {
-        return .string(values[0])
+    let formattedValues = values.map { value in
+        ValueNormalizer.formatDateOnlyString(value) ?? value
     }
-    return .array(values.map(JSONValue.string))
+    if formattedValues.count == 1 {
+        return .string(formattedValues[0])
+    }
+    return .array(formattedValues.map(JSONValue.string))
 }
 
 private func encodeStringValues(_ values: [String], operatorCode: String?) -> JSONValue? {

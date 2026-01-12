@@ -23,19 +23,15 @@ struct ToolbarView: View {
         let sidebarVisible: Bool
         let currentPath: String
         let isCollectionMode: Bool
+        let isOpeningCollectionFile: Bool
         let openedCollectionName: String?
         let openedCollectionURLExists: Bool
         let isOpenedCollectionDirty: Bool
     }
 
     let store: StoreOf<FileManagerFeature>
-    @State private var isDark: Bool = isDarkMode()
-    @State private var isHovered: Bool = false
+    @State private var isTitleAreaHovered: Bool = false
     @State private var isTitleHovered: Bool = false
-    @Environment(\.colorScheme)
-    var colorScheme
-
-    private let trafficLightAreaWidth: CGFloat = 80
 
     var body: some View {
         WithViewStore(
@@ -50,40 +46,26 @@ struct ToolbarView: View {
                     sidebarVisible: $0.sidebarVisible,
                     currentPath: $0.currentPath,
                     isCollectionMode: $0.fsItems.isCollectionMode,
+                    isOpeningCollectionFile: $0.isOpeningCollectionFile,
                     openedCollectionName: $0.openedCollectionName,
                     openedCollectionURLExists: $0.openedCollectionURL != nil,
                     isOpenedCollectionDirty: $0.isOpenedCollectionDirty,
                 )
             },
             content: { viewStore in
-                normalModeContent(viewStore: viewStore)
-                    .frame(maxHeight: .infinity)
-                    .padding(0)
-                    .padding(.leading, viewStore.sidebarVisible ? 0 : trafficLightAreaWidth)
-                    .padding(.horizontal, 16)
-                    .frame(height: 40)
-                    .frame(maxWidth: .infinity)
-                    .background(
-                        ZStack {
-                            toolbarBackgroundColor
-
-                            VStack {
-                                Spacer()
-                                Rectangle()
-                                    .fill(Color.black.opacity(0.15))
-                                    .frame(height: 1.0)
-                            }
-                        },
-                    )
-                    .onHover { hovering in
-                        isHovered = hovering
-                    }
-                    .onAppear {
-                        isDark = isDarkMode()
-                    }
-                    .onChange(of: colorScheme) { newScheme in
-                        isDark = newScheme == .dark
-                    }
+                VStack(spacing: 0) {
+                    normalModeContent(viewStore: viewStore)
+                        .frame(maxHeight: .infinity)
+                        .padding(0)
+                        .padding(.leading, 0)
+                        .padding(.horizontal, 16)
+                        .frame(height: 40)
+                        .frame(maxWidth: .infinity)
+                    Rectangle()
+                        .fill(separatorColor)
+                        .frame(height: 1)
+                }
+                .background(Color.clear)
             },
         )
     }
@@ -93,74 +75,95 @@ struct ToolbarView: View {
             backButton(viewStore: viewStore)
             forwardButton(viewStore: viewStore)
             enclosingDirectoryButton(viewStore: viewStore)
-            titleButton(viewStore: viewStore)
 
-            Spacer()
+            HStack(spacing: 8) {
+                titleButton(viewStore: viewStore)
 
-            if isHovered {
-                ViewToggleButton(store: store)
-                SortGroupButton(store: store)
+                Spacer()
+
+                if isTitleAreaHovered {
+                    ViewToggleButton(store: store)
+                    SortGroupButton(store: store)
+                }
             }
+            .padding(.horizontal, 6)
+            .padding(.vertical, 6)
+            .frame(height: 32)
+            .frame(maxWidth: .infinity)
+            .contentShape(Rectangle())
+            .onHover { hovering in
+                isTitleAreaHovered = hovering
+            }
+            .background(
+                Group {
+                    if isTitleAreaHovered {
+                        RoundedRectangle(cornerRadius: 8)
+                            .fill(.thickMaterial)
+                    }
+                },
+            )
         }
+    }
+
+    private var separatorColor: Color {
+        Color.primary.opacity(0.12)
     }
 
     private func backButton(viewStore: ViewStore<ViewState, FileManagerFeature.Action>) -> some View {
-        Menu {
-            if viewStore.backHistory.isEmpty {
-                Text("No history")
-                    .foregroundColor(.secondary)
-            } else {
-                ForEach(Array(viewStore.backHistory.enumerated().reversed()), id: \.offset) { index, entry in
-                    Button(
-                        action: { store.send(.goToHistoryIndex(index, isBackHistory: true)) },
-                        label: { Text(historyDisplayName(for: entry)) },
-                    )
+        ToolbarNavigationMenuButton(
+            systemName: "chevron.left",
+            isEnabled: viewStore.canGoBack,
+            font: nil,
+            primaryAction: { store.send(.goBack) },
+            menuContent: {
+                if viewStore.backHistory.isEmpty {
+                    Text("No history")
+                        .foregroundColor(.secondary)
+                } else {
+                    ForEach(Array(viewStore.backHistory.enumerated().reversed()), id: \.offset) { index, entry in
+                        Button(
+                            action: { store.send(.goToHistoryIndex(index, isBackHistory: true)) },
+                            label: { Text(historyDisplayName(for: entry)) },
+                        )
+                    }
                 }
-            }
-        } label: {
-            Image(systemName: "chevron.left")
-                .foregroundColor(viewStore.canGoBack ? .primary : .secondary)
-        } primaryAction: {
-            store.send(.goBack)
-        }
+            },
+        )
         .fixedSize()
-        .menuIndicator(.hidden)
-        .disabled(!viewStore.canGoBack)
-        .buttonStyle(.borderless)
     }
 
     private func forwardButton(viewStore: ViewStore<ViewState, FileManagerFeature.Action>) -> some View {
-        Menu {
-            if viewStore.forwardHistory.isEmpty {
-                Text("No history")
-                    .foregroundColor(.secondary)
-            } else {
-                ForEach(Array(viewStore.forwardHistory.enumerated().reversed()), id: \.offset) { index, entry in
-                    Button(
-                        action: { store.send(.goToHistoryIndex(index, isBackHistory: false)) },
-                        label: { Text(historyDisplayName(for: entry)) },
-                    )
+        ToolbarNavigationMenuButton(
+            systemName: "chevron.right",
+            isEnabled: viewStore.canGoForward,
+            font: nil,
+            primaryAction: { store.send(.goForward) },
+            menuContent: {
+                if viewStore.forwardHistory.isEmpty {
+                    Text("No history")
+                        .foregroundColor(.secondary)
+                } else {
+                    ForEach(Array(viewStore.forwardHistory.enumerated().reversed()), id: \.offset) { index, entry in
+                        Button(
+                            action: { store.send(.goToHistoryIndex(index, isBackHistory: false)) },
+                            label: { Text(historyDisplayName(for: entry)) },
+                        )
+                    }
                 }
-            }
-        } label: {
-            Image(systemName: "chevron.right")
-                .foregroundColor(viewStore.canGoForward ? .primary : .secondary)
-        } primaryAction: {
-            store.send(.goForward)
-        }
+            },
+        )
         .fixedSize()
-        .menuIndicator(.hidden)
-        .disabled(!viewStore.canGoForward)
-        .buttonStyle(.borderless)
     }
 
     private func enclosingDirectoryButton(viewStore: ViewStore<ViewState, FileManagerFeature.Action>) -> some View {
         Button(
             action: { store.send(.goToEnclosingDirectory) },
             label: {
-                Image(systemName: "chevron.up")
-                    .font(.system(size: 13, weight: .medium))
-                    .foregroundColor(viewStore.canGoToEnclosingDirectory ? .primary : .secondary)
+                ToolbarNavigationButtonLabel(
+                    systemName: "chevron.up",
+                    isEnabled: viewStore.canGoToEnclosingDirectory,
+                    font: .system(size: 13, weight: .medium),
+                )
             },
         )
         .fixedSize()
@@ -169,6 +172,8 @@ struct ToolbarView: View {
     }
 
     private func titleButton(viewStore: ViewStore<ViewState, FileManagerFeature.Action>) -> some View {
+        let isShowingCollection = viewStore
+            .isCollectionMode || (viewStore.isOpeningCollectionFile && viewStore.openedCollectionName != nil)
         let titleText = viewStore.openedCollectionName
             ?? (viewStore.isCollectionMode
                 ? "New Collection"
@@ -183,7 +188,7 @@ struct ToolbarView: View {
             action: { store.send(.enterComposer) },
             label: {
                 HStack(spacing: 4) {
-                    if viewStore.isCollectionMode {
+                    if isShowingCollection {
                         CollectionTitleIcon()
                     } else {
                         Image(systemName: "folder")
@@ -192,6 +197,7 @@ struct ToolbarView: View {
 
                     Text(titleText)
                         .font(.system(size: 15, weight: .semibold))
+                        .foregroundColor(.primary)
 
                     if isNewCollection {
                         Text(suffix)
@@ -215,17 +221,9 @@ struct ToolbarView: View {
                 }
             },
         )
-        .buttonStyle(.plain)
+        .buttonStyle(.borderless)
         .onHover { hovering in
             isTitleHovered = hovering
-        }
-    }
-
-    private var toolbarBackgroundColor: Color {
-        if isDark {
-            Color(red: 0.17, green: 0.17, blue: 0.17)
-        } else {
-            Color(nsColor: .controlBackgroundColor)
         }
     }
 

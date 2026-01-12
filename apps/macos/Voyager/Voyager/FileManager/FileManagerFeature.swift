@@ -317,6 +317,7 @@ struct FileManagerFeature {
         case goToEnclosingDirectory
         case changeLayout(ViewLayout)
         case toggleShowHiddenFiles
+        case setShowHiddenFiles(Bool)
         case setSidebarVisible(Bool)
         case toggleInspector
         case setInspectorPaneExists(Bool)
@@ -388,7 +389,7 @@ struct FileManagerFeature {
         Reduce { state, action in
             switch action {
             case .onAppear:
-                state.showHiddenFiles = UserDefaults.standard.bool(forKey: "showHiddenFiles")
+                state.showHiddenFiles = UserDefaults.standard.bool(forKey: SettingsKeys.showHiddenFiles)
                 state.sidebarVisible = UserDefaults.standard.object(forKey: "sidebarVisible") as? Bool ?? true
                 state.sortKey = SortKey(rawValue: UserDefaults.standard.string(forKey: "sortKey") ?? "") ?? .name
                 state
@@ -440,6 +441,7 @@ struct FileManagerFeature {
                         let gridIconSizeKey = "gridIconSize"
                         let listTextSizeKey = "listTextSize"
                         let gridTextSizeKey = "gridTextSize"
+                        let showHiddenFilesKey = "showHiddenFiles"
                         for await _ in NotificationCenter.default.notifications(
                             named: UserDefaults.didChangeNotification,
                         ) {
@@ -455,6 +457,8 @@ struct FileManagerFeature {
                             if let gridTextSize = UserDefaults.standard.object(forKey: gridTextSizeKey) as? CGFloat {
                                 await send(.updateGridTextSize(gridTextSize))
                             }
+                            let showHiddenFiles = UserDefaults.standard.bool(forKey: showHiddenFilesKey)
+                            await send(.setShowHiddenFiles(showHiddenFiles))
                         }
                     },
                 )
@@ -496,6 +500,9 @@ struct FileManagerFeature {
                 state.openedCollectionName = url.deletingPathExtension().lastPathComponent
                 state.openedCollectionURL = url
                 state.openedCollectionBaseline = nil
+                state.selectedSidebarItem = state.favorites
+                    .first(where: { $0.url.path == url.path })
+                    .map(\.displayName)
                 let loadEffect: Effect<Action> = .run { [collectionFileClient, url] send in
                     do {
                         let file = try await collectionFileClient.load(url)
@@ -521,18 +528,25 @@ struct FileManagerFeature {
                 state.sortOrder = navigation.sortOrder
                 state.viewLayout = navigation.viewLayout
                 state.fsItems.isListView = navigation.viewLayout == .list
-                state.selectedSidebarItem = nil
 
                 switch navigation.kind {
                 case .temporary:
                     state.openedCollectionName = nil
                     state.openedCollectionURL = nil
+                    state.selectedSidebarItem = nil
                 case let .file(url, name):
                     state.openedCollectionName = name
                     state.openedCollectionURL = url
+                    state.selectedSidebarItem = state.favorites
+                        .first(where: { $0.url.path == url.path })
+                        .map(\.displayName) ?? name
                 }
 
-                state.composer.text = navigation.context.query
+                if case .file = navigation.kind {
+                    state.composer.text = ""
+                } else {
+                    state.composer.text = navigation.context.query
+                }
                 state.composer.scopes = navigation.context.scopes
                 state.composer.conditions = navigation.context.conditions
                 state.composer.propertyPicker = .init()
@@ -564,7 +578,7 @@ struct FileManagerFeature {
                         }
                     }
 
-                    state.composer.text = trimmedQuery
+                    state.composer.text = ""
                     state.composer.scopes = resolved.scopes
                     state.composer.conditions = resolved.conditions
                     state.composer.propertyPicker = .init()
@@ -597,23 +611,34 @@ struct FileManagerFeature {
                         effects.append(.send(.changeLayout(viewLayout)))
                     }
 
-                    let searchEffect: Effect<Action> = trimmedQuery.isEmpty
+                    let searchEffect: Effect<Action> = state.isOpeningCollectionFile
                         ? .send(.composer(.applyFilters))
-                        : .send(.composer(.submit))
+                        : (trimmedQuery.isEmpty
+                            ? .send(.composer(.applyFilters))
+                            : .send(.composer(.submit)))
                     effects.append(searchEffect)
 
                     return .concatenate(effects)
 
                 case let .failure(error):
+                    if !state.backHistory.isEmpty {
+                        state.backHistory.removeLast()
+                    }
                     state.isOpeningCollectionFile = false
                     state.openedCollectionName = nil
+                    state.openedCollectionURL = nil
                     state.openedCollectionBaseline = nil
-                    return .run { _ in
-                        await showCollectionOpenErrorAlert(
-                            title: "Unable to Open Collection",
-                            message: error.localizedDescription,
-                        )
-                    }
+                    state.resetComposer()
+                    let exitEffect = Self.exitCollectionMode(state: &state)
+                    return .merge(
+                        exitEffect,
+                        .run { _ in
+                            await showCollectionOpenErrorAlert(
+                                title: "Unable to Open Collection",
+                                message: error.localizedDescription,
+                            )
+                        },
+                    )
                 }
 
             case .openSelectedItem:
@@ -727,11 +752,13 @@ struct FileManagerFeature {
 
             case .toggleShowHiddenFiles:
                 state.showHiddenFiles.toggle()
-                UserDefaults.standard.set(state.showHiddenFiles, forKey: "showHiddenFiles")
-                return .merge(
-                    .send(.fsItems(.setShowHidden(state.showHiddenFiles))),
-                    .send(.fsItems(.loadItems(path: state.currentPath))),
-                )
+                UserDefaults.standard.set(state.showHiddenFiles, forKey: SettingsKeys.showHiddenFiles)
+                return Self.applyShowHiddenFilesChange(state: &state)
+
+            case let .setShowHiddenFiles(isEnabled):
+                guard state.showHiddenFiles != isEnabled else { return .none }
+                state.showHiddenFiles = isEnabled
+                return Self.applyShowHiddenFilesChange(state: &state)
 
             case .toggleInspector:
                 state.inspectorVisible.toggle()
@@ -787,7 +814,7 @@ struct FileManagerFeature {
                 let exitEffect = Self.exitCollectionMode(state: &state)
                 return .concatenate(
                     exitEffect,
-                    .send(.fsItems(.loadRecentItems)),
+                    .send(.fsItems(.loadRecentItems(showHidden: state.showHiddenFiles))),
                 )
 
             case .showComputer:
@@ -811,6 +838,10 @@ struct FileManagerFeature {
 
             case let .openFavorite(favorite):
                 guard state.currentPath != favorite.url.path else { return .none }
+                if favorite.url.pathExtension.lowercased() == "voycoll" {
+                    state.selectedSidebarItem = favorite.displayName
+                    return .send(.openCollectionFile(favorite.url))
+                }
                 state.navigateToFolder(favorite.url.path, sidebarItemName: favorite.name)
                 state.resetComposer()
                 let exitEffect = Self.exitCollectionMode(state: &state)
@@ -828,8 +859,14 @@ struct FileManagerFeature {
                 guard FileManager.default.fileExists(atPath: url.path, isDirectory: &isDirectory) else {
                     return .none
                 }
+                let isVoycoll = url.pathExtension.lowercased() == "voycoll"
+                guard isDirectory.boolValue || isVoycoll else {
+                    return .none
+                }
 
-                let name = FileManager.default.displayName(atPath: url.path)
+                let name = isVoycoll
+                    ? url.deletingPathExtension().lastPathComponent
+                    : FileManager.default.displayName(atPath: url.path)
                 let iconName = SidebarUtils.iconNameForURL(url, isDirectory: isDirectory.boolValue)
                 let newFavorite = SidebarUtils.FavoriteItem(name: name, url: url, iconName: iconName)
 
@@ -897,7 +934,7 @@ struct FileManagerFeature {
                 let exitEffect = Self.exitCollectionMode(state: &state)
                 return .concatenate(
                     exitEffect,
-                    .send(.fsItems(.loadTagItems(tagName: tagItem.name))),
+                    .send(.fsItems(.loadTagItems(tagName: tagItem.name, showHidden: state.showHiddenFiles))),
                 )
 
             case let .changeSortKey(key):
@@ -996,7 +1033,19 @@ struct FileManagerFeature {
                         scopes: state.composer.scopes,
                         conditions: state.composer.conditions,
                     )
-                    state.selectedSidebarItem = nil
+                    if wasOpeningCollectionFile, state.openedCollectionURL != nil {
+                        state.openedCollectionBaseline = CollectionBaseline(
+                            context: state.collectionContext ?? .init(query: "", scopes: [], conditions: []),
+                            sortKey: state.sortKey,
+                            sortOrder: state.sortOrder,
+                            viewLayout: state.viewLayout,
+                        )
+                    }
+                    state.selectedSidebarItem = state.openedCollectionURL.flatMap { url in
+                        state.favorites
+                            .first(where: { $0.url.path == url.path })
+                            .map(\.displayName) ?? state.openedCollectionName
+                    }
                     let nextNavigationState = FileManagerNavigationUtils.NavigationState.collection(
                         makeCollectionNavigation(state: state),
                     )
@@ -1022,7 +1071,19 @@ struct FileManagerFeature {
                         scopes: state.composer.scopes,
                         conditions: state.composer.conditions,
                     )
-                    state.selectedSidebarItem = nil
+                    if wasOpeningCollectionFile, state.openedCollectionURL != nil {
+                        state.openedCollectionBaseline = CollectionBaseline(
+                            context: state.collectionContext ?? .init(query: "", scopes: [], conditions: []),
+                            sortKey: state.sortKey,
+                            sortOrder: state.sortOrder,
+                            viewLayout: state.viewLayout,
+                        )
+                    }
+                    state.selectedSidebarItem = state.openedCollectionURL.flatMap { url in
+                        state.favorites
+                            .first(where: { $0.url.path == url.path })
+                            .map(\.displayName) ?? state.openedCollectionName
+                    }
                     let nextNavigationState = FileManagerNavigationUtils.NavigationState.collection(
                         makeCollectionNavigation(state: state),
                     )
@@ -1039,33 +1100,55 @@ struct FileManagerFeature {
                 case let .searchResponse(.failure(error)):
                     state.pendingSearchQuery = nil
                     if state.isOpeningCollectionFile {
-                        state.isOpeningCollectionFile = false
-                        return .run { _ in
-                            await showCollectionOpenErrorAlert(
-                                title: "Unable to Run Collection Search",
-                                message: """
-                                \(error.localizedDescription)
-
-                                Make sure the backend is running and try again.
-                                """,
-                            )
+                        if !state.backHistory.isEmpty {
+                            state.backHistory.removeLast()
                         }
+                        state.isOpeningCollectionFile = false
+                        state.openedCollectionName = nil
+                        state.openedCollectionURL = nil
+                        state.openedCollectionBaseline = nil
+                        state.resetComposer()
+                        let exitEffect = Self.exitCollectionMode(state: &state)
+                        return .merge(
+                            exitEffect,
+                            .run { _ in
+                                await showCollectionOpenErrorAlert(
+                                    title: "Unable to Run Collection Search",
+                                    message: """
+                                    \(error.localizedDescription)
+
+                                    Make sure the backend is running and try again.
+                                    """,
+                                )
+                            },
+                        )
                     }
                     return .none
 
                 case let .filtersResponse(.failure(error)):
                     if state.isOpeningCollectionFile {
-                        state.isOpeningCollectionFile = false
-                        return .run { _ in
-                            await showCollectionOpenErrorAlert(
-                                title: "Unable to Apply Collection Filters",
-                                message: """
-                                \(error.localizedDescription)
-
-                                Make sure the backend is running and try again.
-                                """,
-                            )
+                        if !state.backHistory.isEmpty {
+                            state.backHistory.removeLast()
                         }
+                        state.isOpeningCollectionFile = false
+                        state.openedCollectionName = nil
+                        state.openedCollectionURL = nil
+                        state.openedCollectionBaseline = nil
+                        state.resetComposer()
+                        let exitEffect = Self.exitCollectionMode(state: &state)
+                        return .merge(
+                            exitEffect,
+                            .run { _ in
+                                await showCollectionOpenErrorAlert(
+                                    title: "Unable to Apply Collection Filters",
+                                    message: """
+                                    \(error.localizedDescription)
+
+                                    Make sure the backend is running and try again.
+                                    """,
+                                )
+                            },
+                        )
                     }
                     return .none
 
@@ -1166,6 +1249,31 @@ struct FileManagerFeature {
         state.navigationState = FileManagerNavigationUtils.navigationStateFromPath(state.titlePath)
         state.matchSidebarToPath(state.currentPath, favorites: state.favorites, locations: state.locations)
         return clearEffect
+    }
+
+    private static func applyShowHiddenFilesChange(state: inout State) -> Effect<Action> {
+        switch state.navigationState {
+        case .recents:
+            .merge(
+                .send(.fsItems(.setShowHidden(state.showHiddenFiles))),
+                .send(.fsItems(.loadRecentItems(showHidden: state.showHiddenFiles))),
+            )
+        case let .tags(tagName):
+            .merge(
+                .send(.fsItems(.setShowHidden(state.showHiddenFiles))),
+                .send(.fsItems(.loadTagItems(tagName: tagName, showHidden: state.showHiddenFiles))),
+            )
+        case .computer:
+            .merge(
+                .send(.fsItems(.setShowHidden(state.showHiddenFiles))),
+                .send(.fsItems(.loadComputerItems)),
+            )
+        case .folder, .collection:
+            .merge(
+                .send(.fsItems(.setShowHidden(state.showHiddenFiles))),
+                .send(.fsItems(.loadItems(path: state.currentPath))),
+            )
+        }
     }
 
     private static func clearCollectionMode(state: inout State) -> Effect<Action> {

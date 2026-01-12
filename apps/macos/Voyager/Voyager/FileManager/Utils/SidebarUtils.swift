@@ -75,6 +75,10 @@ enum SidebarUtils {
             try container.encode(url.absoluteString, forKey: .url)
             try container.encode(iconName, forKey: .iconName)
         }
+
+        var displayName: String {
+            SidebarUtils.favoriteDisplayName(for: self)
+        }
     }
 
     @MainActor
@@ -111,6 +115,13 @@ enum SidebarUtils {
         }
 
         return "folder"
+    }
+
+    static func favoriteDisplayName(for favorite: FavoriteItem) -> String {
+        if favorite.url.pathExtension.lowercased() == "voycoll" {
+            return favorite.url.deletingPathExtension().lastPathComponent
+        }
+        return favorite.name
     }
 
     @MainActor
@@ -405,7 +416,7 @@ enum SidebarUtils {
     }
 
     @MainActor
-    static func loadRecentItems() async -> [FSItem] {
+    static func loadRecentItems(showHidden: Bool) async -> [FSItem] {
         let predicate = NSPredicate(format: "kMDItemLastUsedDate > %@", Date.distantPast as NSDate)
         let sortDescriptors = [NSSortDescriptor(key: "kMDItemLastUsedDate", ascending: false)]
 
@@ -415,11 +426,12 @@ enum SidebarUtils {
             filterFiles: true,
         )
 
-        return recentFiles.compactMap { FSItemLoadUtils.convertURLToFSItem($0) }
+        let items = recentFiles.compactMap { FSItemLoadUtils.convertURLToFSItem($0) }
+        return showHidden ? items : items.filter { !$0.isHidden }
     }
 
     @MainActor
-    static func loadFilesWithTag(_ tag: String) async -> [FSItem] {
+    static func loadFilesWithTag(_ tag: String, showHidden: Bool) async -> [FSItem] {
         let predicate = NSPredicate(format: "kMDItemUserTags CONTAINS %@", tag)
         let sortDescriptors = [NSSortDescriptor(key: "kMDItemLastUsedDate", ascending: false)]
 
@@ -428,12 +440,13 @@ enum SidebarUtils {
             sortDescriptors: sortDescriptors,
         )
 
-        return taggedFiles.compactMap { url in
+        let items: [FSItem] = taggedFiles.compactMap { url in
             guard let item = FSItemLoadUtils.convertURLToFSItem(url) else { return nil }
 
             let hasTags = item.tags?.contains(where: { $0.name == tag }) ?? false
             return hasTags ? item : nil
         }
+        return showHidden ? items : items.filter { !$0.isHidden }
     }
 }
 

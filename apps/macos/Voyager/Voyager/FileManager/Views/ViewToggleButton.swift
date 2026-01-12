@@ -6,49 +6,61 @@ struct ViewToggleButton: View {
     let store: StoreOf<FileManagerFeature>
     @Environment(\.colorScheme)
     var colorScheme
+    @State private var isHovered: Bool = false
 
     var body: some View {
-        Menu {
-            Button(
-                action: { store.send(.changeLayout(.list)) },
-                label: {
-                    HStack {
-                        Image(systemName: "list.bullet")
-                        Text("List")
-                    }
-                },
-            )
-            .disabled(store.viewLayout == .list)
-
-            Button(
-                action: { store.send(.changeLayout(.grid)) },
-                label: {
-                    HStack {
-                        Image(systemName: "square.grid.2x2")
-                        Text("Grid")
-                    }
-                },
-            )
-            .disabled(store.viewLayout == .grid)
-        } label: {
+        ZStack {
             Image(systemName: store.viewLayout == .list ? "list.bullet" : "square.grid.2x2")
                 .font(.system(size: 12))
                 .foregroundColor(.secondary)
-                .frame(width: 32, height: 32)
+                .frame(width: 24, height: 24)
                 .background(
-                    RoundedRectangle(cornerRadius: 5)
-                        .fill(toolbarMenuButtonBackgroundColor),
+                    Group {
+                        if isHovered {
+                            ZStack {
+                                RoundedRectangle(cornerRadius: VoyagerDS.Radius.toolbarButton)
+                                    .fill(VoyagerDS.Surface.toolbarMenuButtonBackground(for: colorScheme))
+                                RoundedRectangle(cornerRadius: VoyagerDS.Radius.toolbarButton)
+                                    .fill(VoyagerDS.Interaction.toolbarButtonHoverFill(for: colorScheme))
+                            }
+                        }
+                    }
+                    .allowsHitTesting(false),
                 )
         }
-        .menuIndicator(.hidden)
-        .buttonStyle(.plain)
-    }
+        .contentShape(RoundedRectangle(cornerRadius: VoyagerDS.Radius.toolbarButton))
+        .overlay(
+            Menu {
+                Button(
+                    action: { store.send(.changeLayout(.list)) },
+                    label: {
+                        HStack {
+                            Image(systemName: "list.bullet")
+                            Text("List")
+                        }
+                    },
+                )
+                .disabled(store.viewLayout == .list)
 
-    private var toolbarMenuButtonBackgroundColor: Color {
-        if colorScheme == .dark {
-            Color(nsColor: .controlBackgroundColor)
-        } else {
-            Color(red: 245 / 255.0, green: 245 / 255.0, blue: 245 / 255.0)
-        }
+                Button(
+                    action: { store.send(.changeLayout(.grid)) },
+                    label: {
+                        HStack {
+                            Image(systemName: "square.grid.2x2")
+                            Text("Grid")
+                        }
+                    },
+                )
+                .disabled(store.viewLayout == .grid)
+            } label: {
+                Color.clear
+                    .frame(width: 24, height: 24)
+            }
+            .menuIndicator(.hidden)
+            .buttonStyle(.borderless),
+        )
+        .overlay(
+            HoverTrackingOverlay(isHovered: $isHovered),
+        )
     }
 }

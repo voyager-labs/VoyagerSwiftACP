@@ -13,7 +13,6 @@ private struct ChipSizePreferenceKey: PreferenceKey {
 // swiftlint:disable type_body_length file_length
 struct ComposerView: View {
     let store: StoreOf<FileManagerFeature>
-    @State private var isDark: Bool = isDarkMode()
     @State private var isComposeFieldFirstResponder: Bool = true
     @Environment(\.colorScheme)
     private var colorScheme: ColorScheme
@@ -21,10 +20,12 @@ struct ComposerView: View {
     @State private var flagsChangedMonitor: Any?
     @State private var isOptionKeyPressed: Bool = false
     @State private var isAddButtonHovering: Bool = false
+    @State private var isScopePickerPresented: Bool = false
 
-    private let trafficLightAreaWidth: CGFloat = 80
     private let escapeKeyCode: UInt16 = 53
     private let zKeyCode: UInt16 = 6
+
+    private var isDark: Bool { colorScheme == .dark }
 
     var body: some View {
         mainContent
@@ -33,9 +34,6 @@ struct ComposerView: View {
             }
             .onDisappear {
                 cleanupKeyMonitor()
-            }
-            .onChange(of: colorScheme) { newScheme in
-                isDark = newScheme == .dark
             }
             .onChange(of: store.composer.isPresented) { isPresented in
                 if !isPresented {
@@ -57,14 +55,11 @@ struct ComposerView: View {
             })
         }
         .background(
-            RoundedRectangle(cornerRadius: 12)
-                .fill(overlayBackground)
-                .overlay(
-                    RoundedRectangle(cornerRadius: 12)
-                        .stroke(overlayBorderColor, lineWidth: 1),
-                )
-                .shadow(color: overlayShadowColor, radius: overlayShadowRadius, y: overlayShadowY),
+            RoundedRectangle(cornerRadius: VoyagerDS.Radius.composer)
+                .fill(.ultraThickMaterial)
+                .allowsHitTesting(false),
         )
+        .allowsHitTesting(true)
     }
 
     private func firstRow(viewStore: ViewStore<ComposerFeature.State, ComposerFeature.Action>) -> some View {
@@ -77,7 +72,6 @@ struct ComposerView: View {
             Spacer()
         }
         .padding(.horizontal, 16)
-        .padding(.leading, store.sidebarVisible ? 0 : trafficLightAreaWidth)
         .padding(.vertical, 6)
         .frame(height: 40)
     }
@@ -117,7 +111,7 @@ struct ComposerView: View {
                 .isEmpty
             queryInputField(viewStore: viewStore, isSubmitDisabled: isSubmitDisabled)
 
-            let buttonBackground = Circle().fill(Color(red: 0.843, green: 0.714, blue: 0.322))
+            let buttonBackground = Circle().fill(VoyagerDS.BrandSecondaryColor.c500)
             if viewStore.isLoadingSearch {
                 Button {
                     viewStore.send(.cancelSearch)
@@ -128,9 +122,14 @@ struct ComposerView: View {
                         .frame(width: 16, height: 16)
                         .background(buttonBackground)
                 }
-                .buttonStyle(.plain)
+                .buttonStyle(.borderless)
                 .padding(.trailing, 8)
             } else {
+                let submitButtonBackground = Circle().fill(
+                    isSubmitDisabled
+                        ? VoyagerDS.BrandSecondaryColor.c500.opacity(0.5)
+                        : VoyagerDS.BrandSecondaryColor.c500,
+                )
                 Button {
                     viewStore.send(.submit)
                 } label: {
@@ -138,10 +137,19 @@ struct ComposerView: View {
                         .font(.system(size: 9, weight: .regular))
                         .foregroundColor(isSubmitDisabled ? .secondary : .black)
                         .frame(width: 16, height: 16)
-                        .background(buttonBackground)
+                        .background(submitButtonBackground)
                 }
-                .buttonStyle(.plain)
+                .buttonStyle(.borderless)
                 .disabled(isSubmitDisabled)
+                .background(
+                    Circle()
+                        .fill(
+                            isSubmitDisabled
+                                ? Color(red: 0.843, green: 0.714, blue: 0.322).opacity(0.5)
+                                : Color(red: 0.843, green: 0.714, blue: 0.322),
+                        )
+                        .allowsHitTesting(false),
+                )
                 .padding(.trailing, 8)
             }
         }
@@ -180,11 +188,11 @@ struct ComposerView: View {
         }
         .background(
             RoundedRectangle(cornerRadius: 8)
-                .fill(isDark ? Color.white.opacity(0.08) : Color.black.opacity(0.05)),
+                .fill(VoyagerDS.Surface.inputBackground(for: colorScheme)),
         )
         .overlay(
             RoundedRectangle(cornerRadius: 8)
-                .stroke(isDark ? Color.white.opacity(0.15) : Color.black.opacity(0.12), lineWidth: 1),
+                .stroke(VoyagerDS.Surface.inputBorder(for: colorScheme), lineWidth: 1),
         )
         .onSubmit {
             let trimmed = viewStore.text.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -201,7 +209,9 @@ struct ComposerView: View {
     }
 
     private func clearButton(viewStore: ViewStore<ComposerFeature.State, ComposerFeature.Action>) -> some View {
-        Button {
+        let isAllEmpty = viewStore.text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && viewStore.scopes
+            .isEmpty && viewStore.conditions.isEmpty
+        return Button {
             store.send(.composer(.clearAll))
         } label: {
             HStack(spacing: 4) {
@@ -209,15 +219,22 @@ struct ComposerView: View {
                 Text("Clear all")
             }
             .font(.system(size: 10, weight: .medium))
+            .foregroundColor(isAllEmpty ? .secondary : .primary)
             .padding(.horizontal, 7)
             .padding(.vertical, 4)
             .background(
                 RoundedRectangle(cornerRadius: 8)
-                    .fill(isDark ? Color.white.opacity(0.08) : Color.black.opacity(0.08)),
+                    .fill(isDark ? Color.white.opacity(0.08) : Color.black.opacity(0.08))
+                    .allowsHitTesting(false),
             )
         }
-        .buttonStyle(.plain)
-        .disabled(viewStore.isLoadingSearch)
+        .buttonStyle(.borderless)
+        .disabled(viewStore.isLoadingSearch || isAllEmpty)
+        .background(
+            RoundedRectangle(cornerRadius: 8)
+                .fill(isDark ? Color.white.opacity(0.08) : Color.black.opacity(0.08))
+                .allowsHitTesting(false),
+        )
     }
 
     private func saveButton(viewStore: ViewStore<ComposerFeature.State, ComposerFeature.Action>) -> some View {
@@ -232,20 +249,27 @@ struct ComposerView: View {
                 Text(isSaveAs ? "Save As" : "Save")
             }
             .font(.system(size: 10, weight: .medium))
+            .foregroundColor(isEnabled ? .primary : .secondary)
             .padding(.horizontal, 7)
             .padding(.vertical, 4)
             .background(
                 RoundedRectangle(cornerRadius: 8)
-                    .fill(isDark ? Color.white.opacity(0.08) : Color.black.opacity(0.08)),
+                    .fill(isDark ? Color.white.opacity(0.08) : Color.black.opacity(0.08))
+                    .allowsHitTesting(false),
             )
         }
-        .buttonStyle(.plain)
+        .buttonStyle(.borderless)
         .disabled(!isEnabled)
+        .background(
+            RoundedRectangle(cornerRadius: 8)
+                .fill(isDark ? Color.white.opacity(0.08) : Color.black.opacity(0.08))
+                .allowsHitTesting(false),
+        )
     }
 
     private var horizontalSeparator: some View {
         Rectangle()
-            .fill(isDark ? Color.white.opacity(0.1) : Color.black.opacity(0.1))
+            .fill(VoyagerDS.SystemColor.separator)
             .frame(height: 1)
             .padding(.horizontal, 16)
     }
@@ -295,8 +319,7 @@ struct ComposerView: View {
         composerStore: StoreOf<ComposerFeature>,
         geometry: GeometryProxy,
     ) -> some View {
-        let leadingPadding = store.sidebarVisible ? 0 : trafficLightAreaWidth
-        let availableWidth = geometry.size.width - chipHorizontalPadding * 2 - leadingPadding
+        let availableWidth = geometry.size.width - chipHorizontalPadding * 2
         let pickerStore = composerStore.scope(state: \.propertyPicker, action: \.propertyPicker)
 
         let scopeChips: [ChipItemType] = [.scope(paths: viewStore.scopes)]
@@ -334,7 +357,6 @@ struct ComposerView: View {
             updateCalculatedHeight(chips: allChips, availableWidth: availableWidth)
         }
         .padding(.horizontal, chipHorizontalPadding)
-        .padding(.leading, leadingPadding)
         .padding(.vertical, chipVerticalPadding)
     }
 
@@ -349,9 +371,9 @@ struct ComposerView: View {
             ScopeChipView(
                 paths: paths,
                 store: composerStore,
-                isDark: isDark,
                 favorites: store.favorites,
                 backHistory: historyPaths,
+                isComboBoxPresented: $isScopePickerPresented,
             )
         case let .condition(condition):
             conditionChipView(condition: condition)
@@ -522,7 +544,6 @@ struct ComposerView: View {
     }
 
     private func setupOnAppear() {
-        isDark = isDarkMode()
         DispatchQueue.main.async {
             isComposeFieldFirstResponder = true
         }
@@ -530,6 +551,18 @@ struct ComposerView: View {
 
         keyDownMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { event in
             if event.keyCode == escapeKeyCode {
+                if isScopePickerPresented {
+                    isScopePickerPresented = false
+                    return nil
+                }
+                if store.composer.propertyPicker.isPresented {
+                    store.send(.composer(.propertyPicker(.setPresented(false))))
+                    return nil
+                }
+                if store.composer.operatorPicker.isPresented {
+                    store.send(.composer(.operatorPicker(.setPresented(false))))
+                    return nil
+                }
                 if store.composer.valuePicker.isPresented {
                     store.send(.composer(.valuePicker(.setPresented(false))))
                     return nil
@@ -556,53 +589,6 @@ struct ComposerView: View {
             isOptionKeyPressed = event.modifierFlags.contains(.option)
             return event
         }
-    }
-
-    private var overlayBackground: Color {
-        if isDark {
-            Color(red: 0.19, green: 0.19, blue: 0.19)
-        } else {
-            Color.white
-        }
-    }
-
-    private var overlayBorderColor: Color {
-        if isDark {
-            Color.white.opacity(0.1)
-        } else {
-            Color.black.opacity(0.12)
-        }
-    }
-
-    private var overlayShadowColor: Color {
-        if isDark {
-            Color.black.opacity(0.4)
-        } else {
-            Color.black.opacity(0.15)
-        }
-    }
-
-    private var overlayShadowRadius: CGFloat {
-        if isDark {
-            24
-        } else {
-            16
-        }
-    }
-
-    private var overlayShadowY: CGFloat {
-        if isDark {
-            12
-        } else {
-            8
-        }
-    }
-
-    private var verticalSeparator: some View {
-        Rectangle()
-            .fill(isDark ? Color.white.opacity(0.1) : Color.black.opacity(0.1))
-            .frame(width: 1)
-            .frame(height: 20)
     }
 
     private func operatorOptions(for condition: Condition) -> [OperatorOption] {
@@ -648,9 +634,8 @@ struct ComposerView: View {
                 .foregroundColor(.secondary)
                 .frame(width: defaultChipHeight, height: defaultChipHeight)
                 .background(
-                    RoundedRectangle(cornerRadius: 6)
-                        .fill(isAddButtonHovering ? (isDark ? Color.white.opacity(0.1) : Color.black.opacity(0.08)) :
-                            Color.clear),
+                    RoundedRectangle(cornerRadius: VoyagerDS.Radius.chipContainer)
+                        .fill(isAddButtonHovering ? VoyagerDS.Interaction.controlHoverFill(for: colorScheme) : .clear),
                 )
         }
         .buttonStyle(.borderless)

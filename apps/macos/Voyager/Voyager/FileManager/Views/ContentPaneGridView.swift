@@ -1,9 +1,56 @@
 import AppKit
 import ComposableArchitecture
+import IdentifiedCollections
 import SwiftUI
 @_spi(Advanced)
 import SwiftUIIntrospect
 import UniformTypeIdentifiers
+
+private struct RightClickMonitorView: NSViewRepresentable {
+    let onRightMouseDown: (CGPoint) -> Void
+
+    func makeNSView(context _: Context) -> MonitorView {
+        let view = MonitorView()
+        view.onRightMouseDown = onRightMouseDown
+        return view
+    }
+
+    func updateNSView(_ nsView: MonitorView, context _: Context) {
+        nsView.onRightMouseDown = onRightMouseDown
+    }
+
+    @MainActor
+    final class MonitorView: NSView {
+        var onRightMouseDown: ((CGPoint) -> Void)?
+        private var monitor: Any?
+
+        override func viewDidMoveToWindow() {
+            super.viewDidMoveToWindow()
+            if let monitor {
+                NSEvent.removeMonitor(monitor)
+                self.monitor = nil
+            }
+            guard window != nil else { return }
+
+            monitor = NSEvent.addLocalMonitorForEvents(matching: [.rightMouseDown]) { [weak self] event in
+                guard let self, let window else { return event }
+                let location = convert(event.locationInWindow, from: nil)
+                if bounds.contains(location) {
+                    onRightMouseDown?(event.locationInWindow)
+                }
+                return event
+            }
+        }
+
+        deinit {
+            MainActor.assumeIsolated {
+                if let monitor {
+                    NSEvent.removeMonitor(monitor)
+                }
+            }
+        }
+    }
+}
 
 private struct GridLayoutConfig {
     let columns: Int
@@ -11,6 +58,7 @@ private struct GridLayoutConfig {
     let edgePadding: CGFloat
 }
 
+// swiftlint:disable type_body_length
 struct ContentPaneGridView: View {
     let store: StoreOf<FileManagerFeature>
 
@@ -26,13 +74,35 @@ struct ContentPaneGridView: View {
         )
     }
 
+    private func findGridItemId(
+        at point: CGPoint,
+        itemPositions: [String: CGRect],
+        items: IdentifiedArrayOf<FSItem>,
+    ) -> String? {
+        for item in items {
+            let iconRect = itemPositions[item.id + "_icon"]
+            let textRect = itemPositions[item.id + "_text"]
+            let itemRect = itemPositions[item.id]
+
+            if let iconRect, iconRect.contains(point) {
+                return item.id
+            }
+            if let textRect, textRect.contains(point) {
+                return item.id
+            }
+            if let itemRect, itemRect.contains(point) {
+                return item.id
+            }
+        }
+        return nil
+    }
+
     private var itemWidth: CGFloat {
         max(120, max(store.gridIconSize + 16, 112))
     }
 
-    private let horizontalPadding: CGFloat = 16
-    private let minSpacing: CGFloat = 4
-    private let maxSpacing: CGFloat = 8
+    private let horizontalPadding: CGFloat = 12
+    private let minSpacing: CGFloat = 2
     private let verticalSpacing: CGFloat = 8
 
     private func itemGrid(
@@ -124,7 +194,7 @@ struct ContentPaneGridView: View {
             let columns = makeColumns(count: layout.columns, spacing: layout.spacing)
 
             VStack(spacing: 0) {
-                Color.clear.frame(height: 28)
+                Color.clear.frame(height: 4)
 
                 ScrollViewReader { proxy in
                     ScrollView {
@@ -152,7 +222,7 @@ struct ContentPaneGridView: View {
                             }
                             .padding(.horizontal, layout.edgePadding)
                             .padding(.bottom, horizontalPadding)
-                            .frame(maxWidth: .infinity, minHeight: geometry.size.height - 28, alignment: .topLeading)
+                            .frame(maxWidth: .infinity, minHeight: geometry.size.height - 4, alignment: .topLeading)
                         }
                         .coordinateSpace(name: "scrollView")
                         .coordinateSpace(name: "contentPane")
@@ -168,17 +238,25 @@ struct ContentPaneGridView: View {
                             },
                         )
                         .contextMenu {
-                            if store.isTrashFolder {
-                                Button("Empty Trash") {
-                                    store.send(.emptyTrash)
-                                }
-                            } else {
-                                Button("New Folder") {
-                                    store.send(.fsItems(.createNewFolder(currentPath: store.currentPath)))
-                                }
-                                .keyboardShortcut("n", modifiers: [.command, .shift])
-                            }
+                            ContentPaneContextMenu(store: store)
                         }
+                        .background(
+                            RightClickMonitorView(onRightMouseDown: { windowPoint in
+                                guard let nsScrollView else { return }
+                                let pointInClip = nsScrollView.contentView.convert(windowPoint, from: nil)
+                                let targetId = findGridItemId(
+                                    at: pointInClip,
+                                    itemPositions: fsStore.itemPositions,
+                                    items: fsStore.displayItems,
+                                )
+                                guard let targetId, !fsStore.selectedIds.contains(targetId) else { return }
+                                fsStore.send(.selectItem(
+                                    id: targetId,
+                                    isCommandPressed: false,
+                                    isShiftPressed: false,
+                                ))
+                            }),
+                        )
                         .simultaneousGesture(
                             DragGesture(minimumDistance: 10, coordinateSpace: .named("contentPane"))
                                 .onChanged { value in
@@ -221,6 +299,13 @@ struct ContentPaneGridView: View {
                             proxy.scrollTo(id, anchor: nil)
                             fsStore.send(.resetScrollFlag)
                         }
+                    }
+                    .onChange(of: store.showHiddenFiles) { _ in
+                        ScrollPositionUtils.saveScrollPosition(
+                            scrollView: nsScrollView,
+                            currentPath: store.currentPath,
+                            store: store,
+                        )
                     }
                     .introspect(.scrollView, on: .macOS(.v13...)) { scrollView in
                         nsScrollView = scrollView
@@ -310,10 +395,13 @@ struct ContentPaneGridView: View {
                         )
                     }
                 }
+                .frame(maxWidth: .infinity, alignment: .center)
             }
         }
     }
 }
+
+// swiftlint:enable type_body_length
 
 extension ContentPaneGridView {
     private func resolveLayout(for width: CGFloat) -> GridLayoutConfig {
@@ -326,10 +414,15 @@ extension ContentPaneGridView {
         }
 
         let occupiedWidth = CGFloat(candidateColumns) * itemWidth
-        let remainingWidth = max(0, usableWidth - occupiedWidth)
-        let spacing = min(maxSpacing, max(minSpacing, remainingWidth / CGFloat(candidateColumns - 1)))
-        let usedWidth = occupiedWidth + spacing * CGFloat(candidateColumns - 1)
-        let edgePadding = max(horizontalPadding, (width - usedWidth) / 2)
+        let baseSpacing = max(minSpacing, (width - occupiedWidth) / CGFloat(candidateColumns + 1))
+        let edgePadding = max(horizontalPadding, baseSpacing)
+        let spacing: CGFloat
+        if edgePadding > baseSpacing {
+            let remainingWidth = max(0, width - occupiedWidth - (edgePadding * 2))
+            spacing = max(minSpacing, remainingWidth / CGFloat(candidateColumns - 1))
+        } else {
+            spacing = baseSpacing
+        }
 
         return GridLayoutConfig(columns: candidateColumns, spacing: spacing, edgePadding: edgePadding)
     }

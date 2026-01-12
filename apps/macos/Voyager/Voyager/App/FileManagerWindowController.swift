@@ -16,7 +16,29 @@ class FileManagerWindowController: NSWindowController, NSWindowDelegate {
         makeContentViewController: ((StoreOf<FileManagerFeature>, String?) -> NSViewController)? = nil,
     ) {
         initialPath = path
+        let state = Self.createInitialState(path: path, duplicateState: duplicateState)
+        let undoManager = UndoManager()
+        windowUndoManager = undoManager
+        store = Self.createStore(state: state, undoManager: undoManager)
 
+        let window = Self.createWindow(
+            store: store,
+            path: path,
+            state: state,
+            asTab: asTab,
+            makeContentViewController: makeContentViewController,
+        )
+
+        super.init(window: window)
+        window.delegate = self
+        Self.setupWindowFrame(window, path ?? state.currentPath)
+        window.title = FileManagerFeature.makeWindowTitle(for: path ?? state.currentPath)
+    }
+
+    private static func createInitialState(
+        path: String?,
+        duplicateState: FileManagerFeature.State?,
+    ) -> FileManagerFeature.State {
         var state: FileManagerFeature.State
         if let duplicateState {
             var newState = duplicateState
@@ -31,15 +53,27 @@ class FileManagerWindowController: NSWindowController, NSWindowDelegate {
             state.titlePath = path
         }
 
-        let undoManager = UndoManager()
-        windowUndoManager = undoManager
+        return state
+    }
 
-        store = Store(initialState: state) {
+    private static func createStore(
+        state: FileManagerFeature.State,
+        undoManager: UndoManager,
+    ) -> StoreOf<FileManagerFeature> {
+        Store(initialState: state) {
             FileManagerFeature()
         } withDependencies: {
             $0.undoManagerClient = .live(undoManager: undoManager)
         }
+    }
 
+    private static func createWindow(
+        store: StoreOf<FileManagerFeature>,
+        path: String?,
+        state _: FileManagerFeature.State,
+        asTab: Bool,
+        makeContentViewController: ((StoreOf<FileManagerFeature>, String?) -> NSViewController)?,
+    ) -> NSWindow {
         let contentViewController = makeContentViewController?(store, path)
             ?? FileManagerSplitViewController(store: store, initialPath: path)
         let window = NSWindow(contentViewController: contentViewController)
@@ -48,8 +82,20 @@ class FileManagerWindowController: NSWindowController, NSWindowDelegate {
 
         window.titlebarAppearsTransparent = true
         window.titleVisibility = .hidden
-        window.toolbar = nil
+        let toolbar = NSToolbar(identifier: "VoyagerMainToolbar")
+        toolbar.showsBaselineSeparator = false
+        toolbar.displayMode = .iconOnly
+        toolbar.allowsUserCustomization = false
+        toolbar.autosavesConfiguration = false
+        window.toolbar = toolbar
+        if #available(macOS 13.0, *) {
+            window.toolbarStyle = .unifiedCompact
+        }
         window.isMovableByWindowBackground = true
+
+        // 창을 투명하게 설정 (바탕화면이 블러되어 보이도록)
+        window.isOpaque = false
+        window.backgroundColor = .clear
 
         if asTab {
             window.tabbingMode = .preferred
@@ -58,9 +104,10 @@ class FileManagerWindowController: NSWindowController, NSWindowDelegate {
             window.tabbingMode = .disallowed
         }
 
-        super.init(window: window)
-        window.delegate = self
+        return window
+    }
 
+    private static func setupWindowFrame(_ window: NSWindow, _: String) {
         window.setFrameAutosaveName("VoyagerMainWindow")
 
         if !window.setFrameUsingName("VoyagerMainWindow") {
@@ -77,8 +124,6 @@ class FileManagerWindowController: NSWindowController, NSWindowDelegate {
             )
             window.setFrame(NSRect(origin: origin, size: desiredSize), display: false)
         }
-
-        window.title = FileManagerFeature.makeWindowTitle(for: path ?? state.currentPath)
     }
 
     @available(*, unavailable)
@@ -94,12 +139,11 @@ class FileManagerWindowController: NSWindowController, NSWindowDelegate {
 
     private func observeStoreChanges() {
         cancellables.removeAll()
+        setupTitlePublisher()
+        setupMenuStatePublishers()
+    }
 
-        let updateMenuStateIfKeyWindow: () -> Void = { [weak self] in
-            guard let self, window?.isKeyWindow == true else { return }
-            AppDelegate.shared?.updateMenuState(store: store)
-        }
-
+    private func setupTitlePublisher() {
         let makeTitle: (String?, Bool, String) -> String = { openedCollectionName, isCollectionMode, titlePath in
             if let openedCollectionName {
                 return openedCollectionName
@@ -130,6 +174,13 @@ class FileManagerWindowController: NSWindowController, NSWindowDelegate {
                 self?.window?.title = title
             }
             .store(in: &cancellables)
+    }
+
+    private func setupMenuStatePublishers() {
+        let updateMenuStateIfKeyWindow: () -> Void = { [weak self] in
+            guard let self, window?.isKeyWindow == true else { return }
+            AppDelegate.shared?.updateMenuState(store: store)
+        }
 
         store.publisher.fsItems.selectedIds
             .removeDuplicates()

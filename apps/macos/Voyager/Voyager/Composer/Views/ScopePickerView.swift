@@ -15,10 +15,6 @@ struct ScopePickerView: View {
     @Environment(\.colorScheme)
     private var colorScheme
 
-    private var isDark: Bool {
-        colorScheme == .dark
-    }
-
     var body: some View {
         VStack(spacing: 0) {
             searchField
@@ -27,12 +23,16 @@ struct ScopePickerView: View {
         }
         .frame(width: 200)
         .frame(maxHeight: 400)
-        .background(comboBoxBackgroundColor)
+        .background(VoyagerDS.Surface.popoverBackground(for: colorScheme))
         .overlay(
             RoundedRectangle(cornerRadius: 8)
-                .stroke(comboBoxBorderColor, lineWidth: 1),
+                .stroke(VoyagerDS.Surface.popoverBorder, lineWidth: 1),
         )
-        .shadow(color: comboBoxShadowColor, radius: 8, y: 4)
+        .shadow(
+            color: VoyagerDS.Shadow.popoverColor(for: colorScheme),
+            radius: VoyagerDS.Shadow.popoverRadius,
+            y: VoyagerDS.Shadow.popoverYOffset,
+        )
         .onAppear {
             isSearchFocused = true
         }
@@ -95,9 +95,9 @@ struct ScopePickerView: View {
             }
             .padding(.horizontal, 12)
             .padding(.vertical, 8)
-            .background(searchFieldBackgroundColor)
+            .background(VoyagerDS.Surface.popoverSearchFieldBackground(for: colorScheme))
 
-            separatorColor
+            VoyagerDS.SystemColor.separator
                 .frame(height: 1)
         }
     }
@@ -155,60 +155,12 @@ struct ScopePickerView: View {
             .contentShape(Rectangle())
             .background(
                 RoundedRectangle(cornerRadius: 6)
-                    .fill(isHovering ? rowHoverFillColor : Color.clear),
+                    .fill(isHovering ? VoyagerDS.Interaction.hoverFill(for: colorScheme) : .clear),
             )
         }
         .buttonStyle(.plain)
         .onHover { hovering in
             hoveredPath = hovering ? item.path : nil
-        }
-    }
-
-    private var comboBoxBackgroundColor: Color {
-        if isDark {
-            Color(red: 0.19, green: 0.19, blue: 0.19)
-        } else {
-            Color.white
-        }
-    }
-
-    private var comboBoxBorderColor: Color {
-        if isDark {
-            Color.white.opacity(0.1)
-        } else {
-            Color.black.opacity(0.12)
-        }
-    }
-
-    private var comboBoxShadowColor: Color {
-        if isDark {
-            Color.black.opacity(0.4)
-        } else {
-            Color.black.opacity(0.15)
-        }
-    }
-
-    private var searchFieldBackgroundColor: Color {
-        if isDark {
-            Color.white.opacity(0.05)
-        } else {
-            Color.black.opacity(0.03)
-        }
-    }
-
-    private var separatorColor: Color {
-        if isDark {
-            Color.white.opacity(0.1)
-        } else {
-            Color.black.opacity(0.1)
-        }
-    }
-
-    private var rowHoverFillColor: Color {
-        if isDark {
-            Color.white.opacity(0.08)
-        } else {
-            Color.black.opacity(0.06)
         }
     }
 }

@@ -166,8 +166,8 @@ struct FSItemsFeature {
         case reloadCurrentFolder
         case loadItems(path: String)
         case reloadItems
-        case loadRecentItems
-        case loadTagItems(tagName: String)
+        case loadRecentItems(showHidden: Bool)
+        case loadTagItems(tagName: String, showHidden: Bool)
         case loadComputerItems
         case itemsLoaded([FSItem])
         case collectionItemsLoadedFromSearch([JSONValue])
@@ -266,9 +266,9 @@ struct FSItemsFeature {
                     if state.currentFolderPath == SidebarUtils.computerName {
                         return .send(.loadComputerItems)
                     } else if let tagName = state.currentFolderPath {
-                        return .send(.loadTagItems(tagName: tagName))
+                        return .send(.loadTagItems(tagName: tagName, showHidden: state.showHiddenFiles))
                     } else {
-                        return .send(.loadRecentItems)
+                        return .send(.loadRecentItems(showHidden: state.showHiddenFiles))
                     }
                 } else {
                     return .send(.reloadItems)
@@ -475,22 +475,22 @@ struct FSItemsFeature {
                     }
                 }
 
-            case .loadRecentItems:
+            case let .loadRecentItems(showHidden):
                 state.currentFolderPath = nil
                 state.isVirtualFolder = true
 
                 return .run { send in
-                    let recentItems = await SidebarUtils.loadRecentItems()
+                    let recentItems = await SidebarUtils.loadRecentItems(showHidden: showHidden)
                     await send(.itemsLoaded(recentItems))
                 }
 
-            case let .loadTagItems(tagName):
+            case let .loadTagItems(tagName, showHidden):
                 state.currentFolderPath = tagName
                 state.isVirtualFolder = true
 
                 return .run { send in
                     try await Task.sleep(for: .milliseconds(500))
-                    let taggedItems = await SidebarUtils.loadFilesWithTag(tagName)
+                    let taggedItems = await SidebarUtils.loadFilesWithTag(tagName, showHidden: showHidden)
                     await send(.itemsLoaded(taggedItems))
                 }
 
@@ -859,8 +859,9 @@ struct FSItemsFeature {
                         .send(.openCollectionFile(URL(fileURLWithPath: $0.fullPath)))
                     })
                 }
-                let selectedFolders = selectedItems.filter(\.isDirectory)
-                let selectedFiles = selectedItems.filter { !$0.isDirectory }
+                let selectedPackages = selectedItems.filter { isPackageItem($0) }
+                let selectedFolders = selectedItems.filter { $0.isDirectory && !isPackageItem($0) }
+                let selectedFiles = selectedItems.filter { !$0.isDirectory } + selectedPackages
 
                 if selectedFolders.count == 1, selectedFiles.isEmpty {
                     return .send(.navigateFolder(id: selectedFolders[0].id))
@@ -1293,11 +1294,22 @@ struct FSItemsFeature {
                 let selectedItems = getSelectedItems(selectedIds: state.selectedIds, items: state.displayItems)
                 guard !selectedItems.isEmpty else { return .none }
 
-                return .merge(
-                    selectedItems.map { item in
-                        .send(.operations(.toggleTagForItem(file: item, tag: tag)))
-                    },
-                )
+                let targets = selectedItems.map { item in
+                    let beforeTags = (item.tags ?? []).map(\.name)
+                    let afterTags: [String] = if beforeTags.contains(tag) {
+                        beforeTags.filter { $0 != tag }
+                    } else {
+                        beforeTags + [tag]
+                    }
+
+                    return FSItemsOperationsFeature.TagChangeTarget(
+                        file: item,
+                        beforeTags: beforeTags,
+                        afterTags: afterTags,
+                    )
+                }
+
+                return .send(.operations(.setTagsForItems(targets: targets)))
 
             case .emptyTrash:
                 let allItems = Array(state.items)
@@ -1599,6 +1611,9 @@ struct FSItemsFeature {
 
         case .putBack:
             try makePutBackOperation(target: target, direction: direction, fsItemClient: fsItemClient)
+
+        case .setTags:
+            try makeSetTagsOperation(target: target, direction: direction, fsItemClient: fsItemClient)
         }
     }
 
@@ -1785,11 +1800,39 @@ struct FSItemsFeature {
         }
     }
 
+    private func makeSetTagsOperation(
+        target: EntryActionRecord.Target,
+        direction: EntryActionDirection,
+        fsItemClient: FSItemClient,
+    ) throws -> EntryActionOperation {
+        let filePath = try Self.requiredPath(target.beforePath, context: "setTags target")
+        let tags = try Self.requiredTags(
+            direction == .undo ? target.beforeTags : target.afterTags,
+            context: "setTags tags",
+        )
+        return EntryActionOperation(
+            operationPath: filePath,
+            operationKind: .setTags,
+            perform: {
+                let url = URL(fileURLWithPath: filePath)
+                try await fsItemClient.setTags(url, tags)
+                return target
+            },
+        )
+    }
+
     private static func requiredPath(_ path: String?, context: String) throws -> String {
         guard let path else {
             throw FileOpError.system(message: "Entry action path missing (\(context))")
         }
         return path
+    }
+
+    private static func requiredTags(_ tags: [String]?, context: String) throws -> [String] {
+        guard let tags else {
+            throw FileOpError.system(message: "Entry action tags missing (\(context))")
+        }
+        return tags
     }
 
     private static func moveItemToTrash(path: String) async throws -> String {
@@ -1880,6 +1923,30 @@ struct FSItemsFeature {
         items: IdentifiedArrayOf<FSItem>,
     ) -> [FSItem] {
         getSelectedItems(selectedIds: selectedIds, items: items).filter { !$0.isDirectory }
+    }
+
+    private func isPackageItem(_ item: FSItem) -> Bool {
+        guard item.isDirectory else { return false }
+
+        let url = URL(fileURLWithPath: item.fullPath)
+        if let values = try? url.resourceValues(forKeys: [.isPackageKey]),
+           values.isPackage == true
+        {
+            return true
+        }
+
+        let ext = item.fileExtension.lowercased()
+        if ["app", "icon"].contains(ext) {
+            return true
+        }
+
+        if let type = UTType(filenameExtension: item.fileExtension),
+           type.conforms(to: .package)
+        {
+            return true
+        }
+
+        return false
     }
 
     private func preloadApplicationsEffect(

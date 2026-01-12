@@ -8,6 +8,7 @@ struct SidebarItemView: View {
     let title: String
     let isSelected: Bool
     let isFavorite: Bool
+    let iconColor: Color?
     let targetURL: URL?
     let action: () -> Void
     let onDrop: (([NSItemProvider], URL) -> Void)?
@@ -33,7 +34,7 @@ struct SidebarItemView: View {
         HStack(spacing: 8) {
             Image(systemName: iconName)
                 .symbolRenderingMode(.hierarchical)
-                .foregroundColor(isDropTarget ? .white : .accentColor)
+                .foregroundColor(isDropTarget ? .white : (iconColor ?? .accentColor))
                 .frame(width: 16)
             Text(title)
                 .foregroundColor(isDropTarget ? .white : .primary)
@@ -144,14 +145,11 @@ private struct SidebarSectionHeader: View {
 
 struct SidebarView: View {
     let store: StoreOf<FileManagerFeature>
-    @State private var isDark: Bool = isDarkMode()
     @State private var dropTargetIndex: Int?
-    @Environment(\.colorScheme)
-    var colorScheme
 
     var body: some View {
         VStack(spacing: 0) {
-            sidebarBackgroundColor
+            Color.clear
                 .frame(height: 50)
 
             ScrollView {
@@ -161,6 +159,7 @@ struct SidebarView: View {
                         title: "Recents",
                         isSelected: store.selectedSidebarItem == "Recents",
                         isFavorite: true,
+                        iconColor: nil,
                         targetURL: nil,
                         action: {
                             store.send(.showRecents)
@@ -190,7 +189,7 @@ struct SidebarView: View {
             .clipped()
         }
         .frame(minWidth: 150)
-        .background(sidebarBackgroundColor)
+        .background(Color.clear)
         .navigationSplitViewColumnWidth(ideal: {
             if let savedWidth = UserDefaults.standard.object(forKey: "sidebarWidth") as? Double,
                savedWidth > 0
@@ -207,12 +206,6 @@ struct SidebarView: View {
                     }
             },
         )
-        .onAppear {
-            isDark = isDarkMode()
-        }
-        .onChange(of: colorScheme) { newScheme in
-            isDark = newScheme == .dark
-        }
     }
 
     private var favoritesSection: some View {
@@ -234,9 +227,12 @@ struct SidebarView: View {
                         ForEach(Array(store.favorites.enumerated()), id: \.element.url) { index, favorite in
                             SidebarItemView(
                                 iconName: favorite.iconName,
-                                title: favorite.name,
-                                isSelected: store.selectedSidebarItem == favorite.name,
+                                title: favorite.displayName,
+                                isSelected: store.selectedSidebarItem == favorite.displayName,
                                 isFavorite: true,
+                                iconColor: favorite.url.pathExtension.lowercased() == "voycoll"
+                                    ? VoyagerDS.BrandSecondaryColor.c600
+                                    : nil,
                                 targetURL: favorite.url,
                                 action: {
                                     store.send(.openFavorite(favorite))
@@ -281,18 +277,17 @@ struct SidebarView: View {
             )
             .padding(.horizontal, 8)
             .contentShape(Rectangle())
-            .onDrop(of: [UTType.fileURL], isTargeted: Binding(
-                get: { dropTargetIndex == index },
-                set: { isTargeted in
-                    if isTargeted {
-                        dropTargetIndex = index
-                    } else if dropTargetIndex == index {
-                        dropTargetIndex = nil
-                    }
-                },
-            )) { providers in
-                handleFavoriteInsert(providers: providers, at: index)
-            }
+            .onDrop(
+                of: [UTType.fileURL],
+                delegate: FavoriteDropDelegate(
+                    index: index,
+                    dropTargetIndex: $dropTargetIndex,
+                    resolveURL: { providers, completion in
+                        resolveFirstDropURL(from: providers, completion: completion)
+                    },
+                    onDrop: handleFavoriteInsert(providers:at:),
+                ),
+            )
     }
 
     private func handleFavoriteInsert(providers: [NSItemProvider], at index: Int) -> Bool {
@@ -307,12 +302,86 @@ struct SidebarView: View {
                    let url = URL(string: urlString)
                 {
                     Task { @MainActor in
+                        var isDirectory: ObjCBool = false
+                        guard FileManager.default.fileExists(atPath: url.path, isDirectory: &isDirectory),
+                              isDirectory.boolValue || url.pathExtension.lowercased() == "voycoll"
+                        else {
+                            return
+                        }
                         store.send(.insertFavorite(url: url, at: index))
                     }
                 }
             }
         }
         return hasProvider
+    }
+
+    private func resolveFirstDropURL(
+        from providers: [NSItemProvider],
+        completion: @escaping (URL?) -> Void,
+    ) {
+        for provider in providers where provider.hasItemConformingToTypeIdentifier(UTType.fileURL.identifier) {
+            provider.loadItem(forTypeIdentifier: UTType.fileURL.identifier, options: nil) { data, _ in
+                guard let data = data as? Data,
+                      let urlString = String(data: data, encoding: .utf8),
+                      let url = URL(string: urlString)
+                else {
+                    completion(nil)
+                    return
+                }
+                completion(url)
+            }
+            return
+        }
+        completion(nil)
+    }
+
+    private struct FavoriteDropDelegate: DropDelegate {
+        let index: Int
+        @Binding var dropTargetIndex: Int?
+        let resolveURL: (_ providers: [NSItemProvider], _ completion: @escaping (URL?) -> Void) -> Void
+        let onDrop: (_ providers: [NSItemProvider], _ index: Int) -> Bool
+
+        func dropEntered(info: DropInfo) {
+            updateTargetIndicator(with: info)
+        }
+
+        func dropUpdated(info _: DropInfo) -> DropProposal? {
+            DropProposal(operation: .copy)
+        }
+
+        func dropExited(info _: DropInfo) {
+            if dropTargetIndex == index {
+                dropTargetIndex = nil
+            }
+        }
+
+        func performDrop(info: DropInfo) -> Bool {
+            dropTargetIndex = nil
+            return onDrop(info.itemProviders(for: [UTType.fileURL]), index)
+        }
+
+        private func updateTargetIndicator(with info: DropInfo) {
+            let providers = info.itemProviders(for: [UTType.fileURL])
+            resolveURL(providers) { url in
+                guard let url else {
+                    return
+                }
+
+                var isDirectory: ObjCBool = false
+                let isVoycoll = url.pathExtension.lowercased() == "voycoll"
+                let exists = FileManager.default.fileExists(atPath: url.path, isDirectory: &isDirectory)
+                let canDrop = exists && (isDirectory.boolValue || isVoycoll)
+
+                DispatchQueue.main.async {
+                    if canDrop {
+                        dropTargetIndex = index
+                    } else if dropTargetIndex == index {
+                        dropTargetIndex = nil
+                    }
+                }
+            }
+        }
     }
 
     private var locationsSection: some View {
@@ -335,6 +404,7 @@ struct SidebarView: View {
                                 title: location.name,
                                 isSelected: store.selectedSidebarItem == location.name,
                                 isFavorite: false,
+                                iconColor: nil,
                                 targetURL: location.isComputer ? nil : location.url,
                                 action: {
                                     if location.isComputer {
@@ -383,14 +453,6 @@ struct SidebarView: View {
                     }
                 }
             }
-        }
-    }
-
-    private var sidebarBackgroundColor: Color {
-        if isDark {
-            Color(nsColor: .controlBackgroundColor)
-        } else {
-            Color(red: 245 / 255.0, green: 245 / 255.0, blue: 245 / 255.0)
         }
     }
 }

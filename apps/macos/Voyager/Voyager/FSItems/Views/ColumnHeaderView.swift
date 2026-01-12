@@ -68,12 +68,6 @@ struct ColumnHeaderView: View {
             Rectangle()
                 .frame(height: 1)
                 .foregroundColor(Color(nsColor: .separatorColor)),
-            alignment: .top,
-        )
-        .overlay(
-            Rectangle()
-                .frame(height: 1)
-                .foregroundColor(Color(nsColor: .separatorColor)),
             alignment: .bottom,
         )
         .onChange(of: activeResizeColumn) { newValue in

@@ -703,7 +703,7 @@ struct ConditionChipView: View {
                 HStack {
                     Spacer()
                     Button("Apply") {
-                        let formatted = ValueNormalizer.formatDate(tempDate)
+                        let formatted = ValueNormalizer.formatDateOnly(tempDate)
                         valueViewStore.send(.setValue(index: index, text: formatted))
                         valuePickerStore.send(.commit)
                         DispatchQueue.main.async {
@@ -844,7 +844,7 @@ struct ConditionChipView: View {
             .frame(width: 150)
             .background(
                 RoundedRectangle(cornerRadius: 8)
-                    .fill(isDark ? Color(red: 0.16, green: 0.16, blue: 0.16) : Color.white),
+                    .fill(VoyagerDS.Surface.popoverBackground(for: isDark ? .dark : .light)),
             )
         }
     }

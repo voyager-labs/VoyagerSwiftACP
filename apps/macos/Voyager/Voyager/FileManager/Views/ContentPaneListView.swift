@@ -1,3 +1,4 @@
+// swiftlint:disable file_length
 import AppKit
 import ComposableArchitecture
 import SwiftUI
@@ -21,6 +22,8 @@ struct ContentPaneListView: View {
     @State private var scrollViewHeight: CGFloat = 0
     @State private var nsScrollView: NSScrollView?
     @State private var hasRestoredScrollPosition: Bool = false
+    @State private var contextMenuTargetId: String?
+    @State private var contextMenuTargetWasSelected = false
 
     private var rowHeight: CGFloat {
         max(24, store.listIconSize + 4)
@@ -128,6 +131,7 @@ struct ContentPaneListView: View {
         )
     }
 
+    // swiftlint:disable function_body_length
     private func buildFSItemListView(
         item: FSItem,
         fsStore: Store<FSItemsFeature.State, FSItemsFeature.Action>,
@@ -137,6 +141,7 @@ struct ContentPaneListView: View {
         let selectedIds = fsStore.selectedIds
         let clipboardItems = fsStore.clipboardItems
         let thumbnailsReady = fsStore.thumbnailsReady
+        let isContextMenuTarget = contextMenuTargetId == item.id
 
         return FSItemListView(
             item: item,
@@ -175,12 +180,20 @@ struct ContentPaneListView: View {
             onCopy: props.handlers.onCopy,
             onCut: props.handlers.onCut,
             onToggleTag: props.handlers.onToggleTag,
+            isContextMenuTarget: isContextMenuTarget,
+            contextMenuTargetWasSelected: isContextMenuTarget ? contextMenuTargetWasSelected : false,
+            onContextMenuOpen: {
+                contextMenuTargetId = item.id
+                contextMenuTargetWasSelected = selectedIds.contains(item.id)
+            },
             selectedCount: fsStore.selectedIds.isEmpty ? 1 : fsStore.selectedIds.count,
             showCompress: props.showCompress,
             showExtract: props.showExtract,
             draggingPaths: fsStore.draggingPaths,
         )
     }
+
+    // swiftlint:enable function_body_length
 
     private func zebraBackgroundColor(for index: Int) -> Color {
         index % 2 == 0 ? Color.clear : Color.primary.opacity(0.05)
@@ -446,22 +459,20 @@ struct ContentPaneListView: View {
                             },
                     )
                     .contextMenu {
-                        if store.isTrashFolder {
-                            Button("Empty Trash") {
-                                store.send(.emptyTrash)
-                            }
-                        } else {
-                            Button("New Folder") {
-                                store.send(.fsItems(.createNewFolder(currentPath: store.currentPath)))
-                            }
-                            .keyboardShortcut("n", modifiers: [.command, .shift])
-                        }
+                        ContentPaneContextMenu(store: store)
                     }
                     .onChange(of: fsStore.lastSelectedId) { newId in
                         if fsStore.shouldScrollToSelection, let id = newId {
                             proxy.scrollTo(id, anchor: nil)
                             fsStore.send(.resetScrollFlag)
                         }
+                    }
+                    .onChange(of: store.showHiddenFiles) { _ in
+                        ScrollPositionUtils.saveScrollPosition(
+                            scrollView: nsScrollView,
+                            currentPath: store.currentPath,
+                            store: store,
+                        )
                     }
                     .introspect(.scrollView, on: .macOS(.v13...)) { scrollView in
                         nsScrollView = scrollView
@@ -483,6 +494,10 @@ struct ContentPaneListView: View {
                             proxy.scrollTo("scrollTop", anchor: .top)
                         }
                     }
+                    .onReceive(NotificationCenter.default.publisher(for: NSMenu.didEndTrackingNotification)) { _ in
+                        contextMenuTargetId = nil
+                        contextMenuTargetWasSelected = false
+                    }
                 }
                 .border(fsStore.isDropTargeted ? Color.accentColor : Color.clear, width: 2)
                 .onDrop(
@@ -495,3 +510,4 @@ struct ContentPaneListView: View {
 }
 
 // swiftlint:enable type_body_length
+// swiftlint:enable file_length
