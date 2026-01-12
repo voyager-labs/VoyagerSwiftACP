@@ -165,4 +165,14 @@ extension Dotenv {
         }
         return EnvironmentLoader.BackendMode(rawValue: value)
     }
+
+    static var publicBackendURL: URL {
+        guard let url = self["PUBLIC_BACKEND_URL"]?.stringValue else {
+            fatalError("Missing PUBLIC_BACKEND_URL in .env")
+        }
+        guard let url = URL(string: url) else {
+            fatalError("Invalid PUBLIC_BACKEND_URL: \(url)")
+        }
+        return url
+    }
 }
