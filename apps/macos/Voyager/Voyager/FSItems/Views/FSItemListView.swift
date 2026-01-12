@@ -71,7 +71,9 @@ struct FSItemListView: View {
     private func styledText(_ text: String, fontSize: CGFloat, isPrimary: Bool = true) -> some View {
         Text(text)
             .font(.system(size: fontSize))
-            .foregroundColor(isSelected ? .white : (isPrimary ? .primary : .secondary))
+            .foregroundColor(
+                (isSelected && !isRenaming) ? .white : (isPrimary ? .primary : .secondary),
+            )
             .opacity(item.isHidden || isCut ? 0.5 : 1.0)
     }
 
@@ -109,10 +111,20 @@ struct FSItemListView: View {
                                 set: { onRenameUpdate($0) },
                             ))
                             .font(.system(size: textSize))
+                            .lineLimit(1)
+                            .truncationMode(.middle)
                             .textFieldStyle(.plain)
-                            .background(Color(nsColor: .textBackgroundColor))
-                            .cornerRadius(4)
-                            .frame(maxWidth: max(layout.name - 32, 40), alignment: .leading)
+                            .padding(.horizontal, 0)
+                            .padding(.vertical, 0)
+                            .background(
+                                RoundedRectangle(cornerRadius: 4)
+                                    .fill(Color(nsColor: .textBackgroundColor)),
+                            )
+                            .overlay(
+                                RoundedRectangle(cornerRadius: 4)
+                                    .stroke(Color(nsColor: .keyboardFocusIndicatorColor), lineWidth: 1),
+                            )
+                            .fixedSize(horizontal: true, vertical: false)
                             .focused($isTextFieldFocused)
                             .onSubmit {
                                 onRenameCommit()
@@ -136,7 +148,7 @@ struct FSItemListView: View {
                         if let tags = item.tags, !tags.isEmpty {
                             OverlappingTagsView(
                                 tags: tags,
-                                isSelected: isSelected,
+                                isSelected: isSelected && !isRenaming,
                                 showBorderWhenUnselected: true,
                             )
                         }
@@ -166,7 +178,7 @@ struct FSItemListView: View {
                 Color.clear
                     .frame(width: layout.outerPadding / 2)
             }
-            .background(isSelected ? Color(nsColor: .selectedContentBackgroundColor) : Color.clear)
+            .background((isSelected && !isRenaming) ? Color(nsColor: .selectedContentBackgroundColor) : Color.clear)
             .clipShape(RoundedRectangle(cornerRadius: 6))
             .overlay(
                 RoundedRectangle(cornerRadius: 6)

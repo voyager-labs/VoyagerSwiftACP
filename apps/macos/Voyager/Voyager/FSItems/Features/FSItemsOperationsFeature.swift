@@ -231,17 +231,17 @@ struct FSItemsOperationsFeature {
                 let targetPath = parentURL.appendingPathComponent(name).path
 
                 return .run { send in
-                    await send(.operationStarted(parentPath, .createFolder))
+                    await send(.operationStarted(targetPath, .createFolder))
                     do {
                         try await fsItemClient.createFolder(parentURL, name)
-                        await send(.operationFinished(parentPath, .createFolder, .success(())))
+                        await send(.operationFinished(targetPath, .createFolder, .success(())))
                         let record = EntryActionRecord(
                             actionKind: .createFolder,
                             targets: [.init(beforePath: nil, afterPath: targetPath)],
                         )
                         await send(.entryActionCompleted(record))
                     } catch {
-                        await send(.operationFinished(parentPath, .createFolder, .failure(error.fileOpError)))
+                        await send(.operationFinished(targetPath, .createFolder, .failure(error.fileOpError)))
                     }
                 }
 

@@ -318,19 +318,40 @@ struct FSItemsFeature {
             case let .operations(.operationFinished(filePath, kind, result)):
                 switch (kind, result) {
                 case (.createFolder, .success):
-                    let isNewFolderFlow = !state.selectAfterLoadFileNames.isEmpty
+                    let createdURL = URL(fileURLWithPath: filePath)
+                    if let createdItem = FSItemLoadUtils.convertURLToFSItem(createdURL) {
+                        if let creatingId = state.creatingNewFolderId,
+                           let index = state.items.index(id: creatingId)
+                        {
+                            state.items.remove(id: creatingId)
+                            state.items.insert(createdItem, at: index)
+                        } else {
+                            state.items.insert(createdItem, at: 0)
+                        }
+                        state.groupedItems = FSItemsGroupingUtils.groupItems(
+                            Array(state.displayItems),
+                            by: state.groupKey,
+                        )
+                        state.creatingNewFolderId = createdItem.id
+                        state.selectedIds = [createdItem.id]
+                        state.lastSelectedId = createdItem.id
+                        state.rangeAnchorId = nil
+                        state.renamingItemId = createdItem.id
+                        state.renamingText = createdItem.name
+                        state.shouldScrollToSelection = true
+                        state.selectAfterLoadFileNames = [createdItem.name]
+                    }
 
                     return .merge(
                         .run { _ in
                             await fsItemClient.postFileSystemChanged([filePath])
                         },
-                        {
-                            if isNewFolderFlow, let currentPath = state.currentFolderPath {
-                                return .send(.loadItems(path: currentPath))
-                            }
-                            return .none
-                        }(),
+                        .none,
                     )
+
+                case (.createFolder, .failure):
+                    state.clearCreatingFolder()
+                    return .none
 
                 case (.pasteFile, .success):
                     if state.clipboardOperation == .cut {
@@ -1217,26 +1238,25 @@ struct FSItemsFeature {
                     counter += 1
                 }
 
-                let tempId = "temp-\(UUID().uuidString)"
-                let tempItem = FSItem.temporaryFolder(id: tempId, name: folderName)
-
-                state.items.insert(tempItem, at: 0)
-                state.creatingNewFolderId = tempId
+                state.creatingNewFolderId = nil
                 state.creatingNewFolderPath = currentPath
                 state.creatingNewFolderOriginalName = folderName
-                state.renamingItemId = tempId
-                state.renamingText = folderName
-                state.shouldScrollToSelection = true
+                state.renamingItemId = nil
+                state.renamingText = ""
 
-                return .none
+                return .send(.operations(.createNewFolder(name: folderName, parentPath: currentPath)))
 
             case let .confirmNewFolder(name, path, originalName):
+                guard let creatingId = state.creatingNewFolderId else { return .none }
+                let oldPath = creatingId
+                state.clearCreatingFolder()
+
                 return .run { send in
                     let parentURL = URL(fileURLWithPath: path)
                     let targetPath = parentURL.appendingPathComponent(name).path
 
                     let folderName: String
-                    if FileManager.default.fileExists(atPath: targetPath) {
+                    if targetPath != oldPath, FileManager.default.fileExists(atPath: targetPath) {
                         await MainActor.run {
                             FSItemAlertUtils.showRenameConflictAlert(itemName: name)
                         }
@@ -1245,8 +1265,11 @@ struct FSItemsFeature {
                         folderName = name
                     }
 
-                    await send(.setSelectAfterLoad(fileNames: [folderName]))
-                    await send(.operations(.createNewFolder(name: folderName, parentPath: path)))
+                    if folderName == originalName {
+                        return
+                    }
+
+                    await send(.operations(.renameItem(oldPath: oldPath, newPath: targetPath)))
                 }
 
             case .moveSelectedItemsToTrash:
@@ -1348,8 +1371,6 @@ struct FSItemsFeature {
                    let originalName = state.creatingNewFolderOriginalName
                 {
                     state.clearRenaming()
-                    state.clearCreatingFolder()
-                    state.items.remove(id: itemId)
 
                     return .send(.confirmNewFolder(name: finalName, path: parentPath, originalName: originalName))
                 }
@@ -1369,10 +1390,8 @@ struct FSItemsFeature {
 
             case .cancelRename:
                 if let creatingId = state.creatingNewFolderId, creatingId == state.renamingItemId {
-                    state.items.remove(id: creatingId)
                     state.clearCreatingFolder()
                 }
-
                 state.clearRenaming()
                 return .none
 

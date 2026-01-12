@@ -75,7 +75,7 @@ struct FSItemGridView: View {
                         if let tags = item.tags, !tags.isEmpty {
                             OverlappingTagsView(
                                 tags: tags,
-                                isSelected: isSelected,
+                                isSelected: isSelected && !isRenaming,
                                 showBorderWhenUnselected: false,
                             )
                             .padding(.top, 2)
@@ -87,11 +87,21 @@ struct FSItemGridView: View {
                                 set: { onRenameUpdate($0) },
                             ))
                             .font(.system(size: textSize))
+                            .lineLimit(1)
+                            .truncationMode(.middle)
                             .multilineTextAlignment(.center)
                             .textFieldStyle(.plain)
-                            .background(Color(nsColor: .textBackgroundColor))
-                            .cornerRadius(4)
-                            .frame(maxWidth: 112)
+                            .padding(.horizontal, 0)
+                            .padding(.vertical, 0)
+                            .background(
+                                RoundedRectangle(cornerRadius: 4)
+                                    .fill(Color(nsColor: .textBackgroundColor)),
+                            )
+                            .overlay(
+                                RoundedRectangle(cornerRadius: 4)
+                                    .stroke(Color(nsColor: .keyboardFocusIndicatorColor), lineWidth: 1),
+                            )
+                            .fixedSize(horizontal: true, vertical: false)
                             .focused($isTextFieldFocused)
                             .onSubmit {
                                 onRenameCommit()
@@ -127,9 +137,10 @@ struct FSItemGridView: View {
                     .padding(.vertical, 2)
                     .background(
                         RoundedRectangle(cornerRadius: 4)
-                            .fill(isSelected ? Color(nsColor: .selectedContentBackgroundColor) : Color.clear),
+                            .fill((isSelected && !isRenaming) ? Color(nsColor: .selectedContentBackgroundColor) : Color
+                                .clear),
                     )
-                    .foregroundColor(isSelected ? .white : .primary)
+                    .foregroundColor((isSelected && !isRenaming) ? .white : .primary)
                     .contentShape(RoundedRectangle(cornerRadius: 4))
 
                     if let additionalInfo = item.additionalInfo {
