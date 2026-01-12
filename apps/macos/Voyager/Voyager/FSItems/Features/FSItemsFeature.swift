@@ -891,14 +891,14 @@ struct FSItemsFeature {
                 return .send(.operations(.openFiles(files: selectedFiles)))
 
             case .quickLookSelectedItem:
-                guard state.selectedIds.count == 1,
-                      let selectedId = state.selectedIds.first,
-                      let item = state.displayItems.first(where: { $0.id == selectedId })
-                else {
-                    return .none
+                let selectedItems = getSelectedItems(selectedIds: state.selectedIds, items: state.displayItems)
+                guard !selectedItems.isEmpty else { return .none }
+
+                if selectedItems.count == 1, let item = selectedItems.first {
+                    return .send(.operations(.quickLookFile(file: item)))
                 }
 
-                return .send(.operations(.quickLookFile(file: item)))
+                return .send(.operations(.quickLookFiles(files: selectedItems)))
 
             case let .openWithSelectedItem(bundleID, shouldSetAsDefault):
                 let selectedFiles = getSelectedFiles(selectedIds: state.selectedIds, items: state.displayItems)

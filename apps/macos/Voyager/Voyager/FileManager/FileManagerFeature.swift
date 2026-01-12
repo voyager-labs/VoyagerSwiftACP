@@ -135,13 +135,10 @@ struct FileManagerFeature {
         }
 
         var canQuickLookSelectedItem: Bool {
-            guard fsItems.selectedIds.count == 1 else {
+            guard !fsItems.selectedIds.isEmpty else {
                 return false
             }
-            guard let selectedId = fsItems.selectedIds.first else {
-                return false
-            }
-            return fsItems.displayItems.contains(where: { $0.id == selectedId })
+            return fsItems.displayItems.contains { fsItems.selectedIds.contains($0.id) }
         }
 
         var hasSelectedItems: Bool {
