@@ -32,6 +32,7 @@ struct ToolbarNavigationMenuButton<Content: View>: View {
     let systemName: String
     let isEnabled: Bool
     let font: Font?
+    let menuID: Int?
     let primaryAction: () -> Void
     let menuContent: () -> Content
     @Environment(\.colorScheme)
@@ -42,12 +43,14 @@ struct ToolbarNavigationMenuButton<Content: View>: View {
         systemName: String,
         isEnabled: Bool,
         font: Font?,
+        menuID: Int? = nil,
         primaryAction: @escaping () -> Void,
         @ViewBuilder menuContent: @escaping () -> Content,
     ) {
         self.systemName = systemName
         self.isEnabled = isEnabled
         self.font = font
+        self.menuID = menuID
         self.primaryAction = primaryAction
         self.menuContent = menuContent
     }
@@ -79,7 +82,8 @@ struct ToolbarNavigationMenuButton<Content: View>: View {
             }
             .menuIndicator(.hidden)
             .buttonStyle(.borderless)
-            .disabled(!isEnabled),
+            .disabled(!isEnabled)
+            .id(menuID ?? 0),
         )
         .overlay(
             HoverTrackingOverlay(
