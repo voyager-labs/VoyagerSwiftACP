@@ -72,7 +72,7 @@ struct FSItemListView: View {
         Text(text)
             .font(.system(size: fontSize))
             .foregroundColor(
-                (isSelected && !isRenaming) ? .white : (isPrimary ? .primary : .secondary),
+                ((isSelected || isDropTarget) && !isRenaming) ? .white : (isPrimary ? .primary : .secondary),
             )
             .opacity(item.isHidden || isCut ? 0.5 : 1.0)
     }
@@ -148,7 +148,7 @@ struct FSItemListView: View {
                         if let tags = item.tags, !tags.isEmpty {
                             OverlappingTagsView(
                                 tags: tags,
-                                isSelected: isSelected && !isRenaming,
+                                isSelected: (isSelected || isDropTarget) && !isRenaming,
                                 showBorderWhenUnselected: true,
                             )
                         }
@@ -178,7 +178,11 @@ struct FSItemListView: View {
                 Color.clear
                     .frame(width: layout.outerPadding / 2)
             }
-            .background((isSelected && !isRenaming) ? Color(nsColor: .selectedContentBackgroundColor) : Color.clear)
+            .background(
+                ((isSelected || isDropTarget) && !isRenaming)
+                    ? Color(nsColor: .selectedContentBackgroundColor)
+                    : Color.clear,
+            )
             .clipShape(RoundedRectangle(cornerRadius: 6))
             .overlay(
                 RoundedRectangle(cornerRadius: 6)
@@ -220,7 +224,7 @@ struct FSItemListView: View {
             )
             .background(
                 RoundedRectangle(cornerRadius: 6)
-                    .stroke(Color.blue, lineWidth: isDropTarget ? 2 : 0),
+                    .fill(isDropTarget ? Color(nsColor: .selectedContentBackgroundColor) : Color.clear),
             )
         }
         .contextMenu {

@@ -57,7 +57,7 @@ struct FSItemGridView: View {
                 .padding(8)
                 .background(
                     RoundedRectangle(cornerRadius: 8)
-                        .fill(isSelected ? Color.gray.opacity(0.2) : Color.clear),
+                        .fill((isSelected || isDropTarget) ? Color.gray.opacity(0.2) : Color.clear),
                 )
                 .contentShape(RoundedRectangle(cornerRadius: 8))
                 .background(
@@ -75,7 +75,7 @@ struct FSItemGridView: View {
                         if let tags = item.tags, !tags.isEmpty {
                             OverlappingTagsView(
                                 tags: tags,
-                                isSelected: isSelected && !isRenaming,
+                                isSelected: (isSelected || isDropTarget) && !isRenaming,
                                 showBorderWhenUnselected: false,
                             )
                             .padding(.top, 2)
@@ -137,10 +137,13 @@ struct FSItemGridView: View {
                     .padding(.vertical, 2)
                     .background(
                         RoundedRectangle(cornerRadius: 4)
-                            .fill((isSelected && !isRenaming) ? Color(nsColor: .selectedContentBackgroundColor) : Color
-                                .clear),
+                            .fill(
+                                ((isSelected || isDropTarget) && !isRenaming)
+                                    ? Color(nsColor: .selectedContentBackgroundColor)
+                                    : Color.clear,
+                            ),
                     )
-                    .foregroundColor((isSelected && !isRenaming) ? .white : .primary)
+                    .foregroundColor(((isSelected || isDropTarget) && !isRenaming) ? .white : .primary)
                     .contentShape(RoundedRectangle(cornerRadius: 4))
 
                     if let additionalInfo = item.additionalInfo {
@@ -193,10 +196,6 @@ struct FSItemGridView: View {
                     isDropTarget: $isDropTarget,
                     draggingPaths: draggingPaths,
                 ),
-            )
-            .overlay(
-                RoundedRectangle(cornerRadius: 8)
-                    .stroke(Color.blue, lineWidth: isDropTarget ? 2 : 0),
             )
         }
         .contextMenu {
