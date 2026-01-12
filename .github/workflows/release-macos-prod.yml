@@ -229,7 +229,7 @@ jobs:
         uses: actions/download-artifact@v4
         with:
           name: prod-release
-          path: .
+          path: ${{ env.BUILD_DIR }}
 
       - name: Generate latest.json
         shell: bash

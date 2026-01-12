@@ -1,5 +1,6 @@
 import ComposableArchitecture
 import Foundation
+import SwiftDotenv
 
 struct SearchFiltersPayload: Codable, Equatable, Sendable {
     let scopes: [String]
@@ -90,17 +91,12 @@ struct SearchClient: Sendable {
 }
 
 extension SearchClient: DependencyKey {
-    // TODO: VoyagerHelper가 찾은 port를 주입 필요
     static let liveValue: SearchClient = {
-        let host = ProcessInfo.processInfo.environment["PUBLIC_BACKEND_HOST"] ?? "127.0.0.1"
-        let port = ProcessInfo.processInfo.environment["PUBLIC_BACKEND_PORT"] ?? "53651"
-        guard let baseURL = URL(string: "http://\(host):\(port)") else {
-            fatalError("Invalid backend base URL")
-        }
         @Sendable
         func post<U: Decodable>(path: String, body: some Encodable) async throws -> U {
             let encoder = JSONEncoder()
             let decoder = JSONDecoder()
+            let baseURL = await MainActor.run { Dotenv.publicBackendURL }
             let url = baseURL.appendingPathComponent(path)
             var request = URLRequest(url: url)
             request.httpMethod = "POST"
