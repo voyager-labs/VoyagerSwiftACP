@@ -107,7 +107,6 @@ if ! "${UV_BIN}" run --directory "${BACKEND_DIR}" --python "${VENV_PYTHON}" nuit
   --standalone \
   --macos-target-arch="arm64" \
   --output-dir="${NUITKA_OUTPUT_DIR}" \
-  --include-data-dir="${BACKEND_DIR}/src/app/config=app/config" \
   --include-data-dir="${BACKEND_DIR}/src/infra/db=infra/db" \
   --include-data-files="${MIGRATIONS_DIR}/env.py=infra/db/migrations/env.py" \
   --include-data-files="${MIGRATIONS_DIR}/config.py=infra/db/migrations/config.py" \
