@@ -640,13 +640,21 @@ struct FSItemsFeature {
                             )
                         }
                     } else {
-                        if state.selectedIds.contains(id) {
-                            state.selectedIds.remove(id)
-                        } else {
-                            state.selectedIds.insert(id)
+                        let anchorId = state.rangeAnchorId ?? state.lastSelectedId ?? id
+                        if let anchorIndex = Array(displayItems).firstIndex(where: { $0.id == anchorId }),
+                           let currentIndex = Array(displayItems).firstIndex(where: { $0.id == id })
+                        {
+                            let itemsArray = Array(displayItems)
+                            let range = min(anchorIndex, currentIndex) ... max(anchorIndex, currentIndex)
+                            let rangeIds = itemsArray[range].map(\.id)
+                            state.selectedIds = Set(rangeIds)
                             state.lastSelectedId = id
+                            state.rangeAnchorId = anchorId
+                        } else {
+                            state.selectedIds = [id]
+                            state.lastSelectedId = id
+                            state.rangeAnchorId = id
                         }
-                        state.rangeAnchorId = nil
                     }
                 } else if isCommandPressed {
                     if state.selectedIds.contains(id) {
