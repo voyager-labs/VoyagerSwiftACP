@@ -1,10 +1,10 @@
 """파일 메타데이터 관련 API 라우트"""
 
-from fastapi import APIRouter, HTTPException, Query
+from fastapi import APIRouter, Query
 from pydantic import BaseModel
 from sqlmodel import select, text
 
-from app.config import get_db_config, load_config
+from app.config import config
 from core.llm.cached_llm_converter import CachedLLMConverter
 from core.llm.langchain_provider import LangChainProvider
 from infra.db.engine import engine_manager
@@ -20,27 +20,6 @@ class NaturalQueryRequest(BaseModel):
     query: str
 
 
-# 앱 시작 시 DB 초기화 (이미 main.py에서 수행됨)
-cfg = load_config()
-if not engine_manager.is_initialized:
-    engine_manager.initialize(get_db_config(cfg))
-
-
-def create_llm_provider() -> LangChainProvider:
-    """VoyagerConfig 설정으로 LLM Provider 생성"""
-    # LLM provider 설정 (openai만 지원)
-    provider_kwargs = {}
-    if cfg.llm_provider == "openai" and cfg.openai_api_key:
-        provider_kwargs["api_key"] = cfg.openai_api_key
-
-    return LangChainProvider(
-        provider=cfg.llm_provider,
-        model=cfg.llm_model,
-        temperature=cfg.llm_temperature,
-        **provider_kwargs,
-    )
-
-
 # 캐시 컨버터 싱글톤 (서버 재시작 전까지 캐시 유지)
 _cached_converter: CachedLLMConverter | None = None
 
@@ -49,7 +28,7 @@ def get_cached_converter() -> CachedLLMConverter:
     """캐시 컨버터 싱글톤 반환"""
     global _cached_converter
     if _cached_converter is None:
-        llm = create_llm_provider()
+        llm = LangChainProvider(provider="openai", base_url=config.gateway_url)
         _cached_converter = CachedLLMConverter(llm, cache_size=100)
     return _cached_converter
 

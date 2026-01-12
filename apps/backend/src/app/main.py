@@ -7,7 +7,7 @@ from contextlib import asynccontextmanager
 import setproctitle
 from fastapi import FastAPI
 
-from app.config import get_db_config, load_config
+from app.config import VoyagerConfig, get_db_config, load_config
 from app.file.routes import router as files_router
 from app.search.routes import router as search_router
 from infra.db.bootstrap import initialize_sqlite_db
@@ -34,6 +34,15 @@ async def lifespan(app: FastAPI):
         f"app={cfg.app_name} env={cfg.app_env} "
         f"python={py_ver} sqlite={sqlite_ver or 'unknown'} "
         f"db_rev={init_summary.current_rev}/{init_summary.head_rev}"
+        f"gateway_url={cfg.gateway_url}"
+        f"backend_host={cfg.backend_host}"
+        f"backend_port={cfg.backend_port}"
+        f"backend_process_name={cfg.backend_process_name}"
+        f"sqlite_protocol={cfg.sqlite_protocol}"
+        f"sqlite_echo={cfg.sqlite_echo}"
+        f"sqlite_check_same_thread={cfg.sqlite_check_same_thread}"
+        f"sqlite_file_location={cfg.sqlite_file_location}"
+        f"sqlite_file_name={cfg.sqlite_file_name}"
     )
     bar = "=" * max(60, len(message))
     logger.warning(f"\n{bar}\n{message}\n{bar}")
