@@ -24,7 +24,7 @@ struct SidebarItemView: View {
         if isDropTarget {
             Color.accentColor
         } else if isSelected {
-            Color(nsColor: .unemphasizedSelectedContentBackgroundColor)
+            Color.white.opacity(0.12)
         } else {
             Color.clear
         }
@@ -95,7 +95,7 @@ struct TagItemView: View {
         if isDropTarget {
             Color.accentColor
         } else if isSelected {
-            Color(nsColor: .unemphasizedSelectedContentBackgroundColor)
+            Color.white.opacity(0.12)
         } else {
             Color.clear
         }
