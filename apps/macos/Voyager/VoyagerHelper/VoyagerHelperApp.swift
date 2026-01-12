@@ -1,32 +1,38 @@
 import Foundation
+import Logging
+import SwiftDotenv
 
 @main
 class VoyagerHelperApp {
     private static var lifecycle: HelperLifecycle?
 
     static func main() {
-        var environment = Environment()
+        LoggingSystem.bootstrap { label in
+            let oslogHandler = VoyagerOSLogHandler(label: label)
+            #if DEBUG
+            let stderrHandler = StreamLogHandler.standardError(label: label)
+            return MultiplexLogHandler([oslogHandler, stderrHandler])
+            #else
+            return oslogHandler
+            #endif
+        }
+        let logger = Logger(label: "VoyagerHelper")
+        let environment = Environment()
 
-        fputs(
-            "[VoyagerHelper] Starting (APP_ENV=\(environment.environmentType.rawValue), BACKEND_MODE=\(environment.backendMode.rawValue))\n",
-            stderr,
+        logger.info(
+            "Starting (APP_ENV=\(Dotenv.appEnv?.rawValue ?? "nil"), BACKEND_MODE=\(Dotenv.backendMode?.rawValue ?? "nil"))",
         )
 
         let runner = ProcessRunner(environment: environment)
-
-        // 포트 할당 시 Environment에 저장
-        runner.onPortAssigned = { port in
-            environment.backendPort = port
-            if let url = environment.backendURL {
-                fputs("[VoyagerHelper] Backend URL: \(url)\n", stderr)
-            }
-        }
-
         let lifecycle = HelperLifecycle(processRunner: runner)
         VoyagerHelperApp.lifecycle = lifecycle
 
-        lifecycle.start()
+        Task {
+            await lifecycle.start()
+        }
         RunLoop.current.run()
-        lifecycle.stop()
+        Task {
+            await lifecycle.stop()
+        }
     }
 }

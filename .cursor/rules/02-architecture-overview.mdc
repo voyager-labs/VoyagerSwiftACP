@@ -41,7 +41,7 @@ See [20-backend-overview.mdc](mdc:.cursor/rules/20-backend-overview.mdc) for det
 
 ### Configuration Management
 - **Frontend**: Swift-dotenv for environment variables, `.env.{dev|prod}` at repo root (또는 번들 리소스)
-- **Backend**: Hydra configuration with environment-specific overrides
+- **Backend**: Environment variable-based configuration with `.env` file support
 - **Shared**: Common environment keys for integration (`PUBLIC_BACKEND_HOST`, `PUBLIC_BACKEND_PORT`, `APP_ENV`)
 
 ### Error Handling

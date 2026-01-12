@@ -9,7 +9,7 @@ description: 'Database schema and migrations (Alembic)'
 
 - **SQLite**: Development database at [apps/backend/voyager.dev.db](mdc:apps/backend/voyager.dev.db)
 - **Alembic**: Migration management for SQLite schema changes
-- **DB 경로 SSOT**: [apps/backend/src/app/config/db/sqlite.yaml](mdc:apps/backend/src/app/config/db/sqlite.yaml)
+- **DB 경로 SSOT**: 환경 변수 (`PUBLIC_SQLITE_FILE_LOCATION`, `PUBLIC_SQLITE_FILE_NAME`)
 - **Limitations**: SQLite doesn't support some advanced features (ALTER COLUMN, DROP COLUMN in older versions)
 
 ## Locations
@@ -35,7 +35,7 @@ description: 'Database schema and migrations (Alembic)'
 | 환경 | 경로 | URL 출처 |
 |------|------|----------|
 | Dev | CLI | alembic.ini의 `sqlalchemy.url` |
-| Prod | Bootstrap (앱 시작) | Hydra config → connection 주입 |
+| Prod | Bootstrap (앱 시작) | 환경 변수 기반 설정 → connection 주입 |
 
 ## SQLite-specific considerations
 

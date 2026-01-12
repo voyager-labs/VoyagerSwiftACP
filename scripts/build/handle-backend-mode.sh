@@ -36,7 +36,7 @@ if [[ -z "${TARGET_BUILD_DIR:-}" || -z "${INFOPLIST_PATH:-}" ]]; then
   exit 0
 fi
 
-bundle_plist="${TARGET_BUILD_DIR}/${INFOPLIST_PATH}"
+bundle_plist="${TARGET_BUILD_DIR}/${CONTENTS_FOLDER_PATH}/Info.plist"
 if [[ -f "${bundle_plist}" ]]; then
   /usr/libexec/PlistBuddy -c "Set :BACKEND_MODE ${BACKEND_MODE}" "${bundle_plist}" 2>/dev/null || \
   /usr/libexec/PlistBuddy -c "Add :BACKEND_MODE string ${BACKEND_MODE}" "${bundle_plist}"

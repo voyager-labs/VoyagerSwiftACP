@@ -7,7 +7,7 @@
 | POST `/search` | `CommandDockView` → `DockReducer.submit` | `DockState.query`, `DockState.filters` | `ResultsList`(items), `ThreadHeader`(summary chips) | Loading → Results / Empty / Error | 디바운스(≈250–300ms). `timeout`/`500`는 `DockError.timeout/server`로 매핑 |
 | GET `/collections` | `ThreadSidebar` → onAppear/refresh | n/a | `ThreadSidebar`(saved threads) | Loading → List / Error | 핀 고정은 클라 정렬 우선(서버 확장 여지) |
 | POST `/collections` | `ThreadHeader.saveTapped`, `ThreadSidebar.newFromActive/rename` | name, query, filters[, id] | `ThreadSidebar`(insert/update), `ThreadHeader`(title/isSaved) | Busy → Success / Error | 정의만 저장(name/query/filters). id 없으면 생성, 있으면 업데이트 |
-| POST `/index` | App-level Indexing Flow (Settings/Paths 패널 또는 명령) | paths, recursive, follow_symlinks | HUD/Toast(요약), Active Thread(후속 검색 결과) | Busy/Progress → Success / Error | 초기엔 동기 요약, 후속 비동기/상태조회 고려 |
+| POST `/index` | App-level Indexing Flow (Settings/Paths 패널 또는 명령) | paths, recursive, follow_symlinks | HUD/Toast(요약), Active Thread(후속 검색 결과) | Busy/Progress → Success / Error | 온보딩에서는 인덱싱 안내만 제공(VOY-111: placeholder). 실제 `/` kick-off 연동은 후속 이슈에서 수행 |
 
 ## Model Mapping
 

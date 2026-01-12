@@ -44,7 +44,7 @@ def run_migrations_online(url: str) -> None:
 provided_conn = config.attributes.get("connection")
 
 if provided_conn:
-    # Bootstrap 경로: Hydra config에서 connection 주입됨
+    # Bootstrap 경로: 환경 변수 기반 설정에서 connection 주입됨
     context.configure(connection=provided_conn, **ALEMBIC_CONFIG)
     with context.begin_transaction():
         context.run_migrations()

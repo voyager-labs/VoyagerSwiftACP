@@ -49,22 +49,31 @@ if [[ ! -f "${SERVER_SCRIPT}" ]]; then
   exit 1
 fi
 
-BINARY_PATH="${NUITKA_OUTPUT_DIR}/server.dist/server.bin"
+BINARY_NAME="Voyager Backend"
+RAW_BINARY_PATH="${NUITKA_OUTPUT_DIR}/server.dist/server.bin"
+BINARY_PATH="${NUITKA_OUTPUT_DIR}/server.dist/${BINARY_NAME}"
 BUILD_CACHE_FILE="${NUITKA_OUTPUT_DIR}/.build_cache"
+
+EXISTING_BINARY_PATH=""
+if [[ -f "${BINARY_PATH}" ]]; then
+  EXISTING_BINARY_PATH="${BINARY_PATH}"
+elif [[ -f "${RAW_BINARY_PATH}" ]]; then
+  EXISTING_BINARY_PATH="${RAW_BINARY_PATH}"
+fi
 
 # 증분 빌드 체크: 환경 변수로 강제 재빌드 가능
 FORCE_REBUILD="${FORCE_REBUILD:-0}"
 if [[ "${FORCE_REBUILD}" == "1" ]]; then
   log_info "강제 재빌드 모드 (FORCE_REBUILD=1)"
   rm -rf "${NUITKA_OUTPUT_DIR}"
-elif [[ -f "${BINARY_PATH}" ]]; then
+elif [[ -n "${EXISTING_BINARY_PATH}" ]]; then
   # 바이너리가 존재하면 소스 변경 여부 확인
   log_info "기존 바이너리 발견, 소스 변경 여부 확인 중..."
   
   # 소스 디렉토리의 최신 수정 시간 확인
   SOURCE_DIR="${BACKEND_DIR}/src"
   LATEST_SOURCE_TIME=$(find "${SOURCE_DIR}" -type f -name "*.py" -exec stat -f "%m" {} \; 2>/dev/null | sort -n | tail -1)
-  BINARY_TIME=$(stat -f "%m" "${BINARY_PATH}" 2>/dev/null || echo "0")
+  BINARY_TIME=$(stat -f "%m" "${EXISTING_BINARY_PATH}" 2>/dev/null || echo "0")
   CACHE_TIME=$(stat -f "%m" "${BUILD_CACHE_FILE}" 2>/dev/null || echo "0")
   
   # pyproject.toml도 확인 (의존성 변경 시)
@@ -73,7 +82,7 @@ elif [[ -f "${BINARY_PATH}" ]]; then
   
   if [[ -n "${LATEST_SOURCE_TIME}" ]] && [[ "${LATEST_SOURCE_TIME}" -le "${BINARY_TIME}" ]] && [[ "${LATEST_SOURCE_TIME}" -le "${CACHE_TIME}" ]]; then
     log_info "소스 변경 없음, 기존 바이너리 사용 (스킵)"
-    log_info "바이너리 경로: ${BINARY_PATH}"
+    log_info "바이너리 경로: ${EXISTING_BINARY_PATH}"
     exit 0
   else
     log_info "소스 변경 감지, 재빌드 필요"
@@ -115,6 +124,10 @@ if ! "${UV_BIN}" run --directory "${BACKEND_DIR}" --python "${VENV_PYTHON}" nuit
   exit 1
 fi
 
+if [[ -f "${RAW_BINARY_PATH}" ]]; then
+  mv -f "${RAW_BINARY_PATH}" "${BINARY_PATH}"
+fi
+
 if [[ -f "${BINARY_PATH}" ]]; then
   log_info "빌드 완료: ${BINARY_PATH}"
   ls -lh "${BINARY_PATH}"
@@ -128,4 +141,3 @@ else
 fi
 
 log_info "완료. 바이너리 경로: ${BINARY_PATH}"
-

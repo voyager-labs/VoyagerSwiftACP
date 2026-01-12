@@ -123,6 +123,13 @@ if ! "${UV_BIN}" pip install --python "${VENV_DIR}/bin/python" --no-build-isolat
 fi
 rm -f "${req_file}"
 
+# Nuitka는 빌드 단계에서 필요하므로 venv에 설치
+log_info "Nuitka 설치 (빌드용 도구)"
+if ! "${UV_BIN}" pip install --python "${VENV_DIR}/bin/python" --no-build-isolation nuitka; then
+  log_error "Nuitka 설치 실패"
+  exit 1
+fi
+
 # 휠은 항상 재설치 (최신 코드 반영)
 log_info "venv에 백엔드 휠 설치/업데이트"
 "${UV_BIN}" pip install --python "${VENV_DIR}/bin/python" --no-deps --reinstall "${wheel_path}"
