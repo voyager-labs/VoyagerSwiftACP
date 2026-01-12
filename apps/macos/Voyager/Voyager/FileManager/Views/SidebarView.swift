@@ -165,6 +165,7 @@ private struct SidebarSectionHeader: View {
 struct SidebarView: View {
     let store: StoreOf<FileManagerFeature>
     @State private var dropTargetIndex: Int?
+    @State private var draggingFavoriteURL: URL?
 
     var body: some View {
         VStack(spacing: 0) {
@@ -268,6 +269,10 @@ struct SidebarView: View {
                                     store.send(.removeFavorite(favorite))
                                 }
                             }
+                            .onDrag {
+                                draggingFavoriteURL = favorite.url
+                                return NSItemProvider(object: favorite.url as NSURL)
+                            }
 
                             favoriteDropIndicator(at: index + 1)
                         }
@@ -321,6 +326,13 @@ struct SidebarView: View {
                    let url = URL(string: urlString)
                 {
                     Task { @MainActor in
+                        if let existingIndex = store.favorites.firstIndex(where: { $0.url.path == url.path }) {
+                            if existingIndex != index {
+                                store.send(.reorderFavorites(from: IndexSet(integer: existingIndex), to: index))
+                            }
+                            draggingFavoriteURL = nil
+                            return
+                        }
                         var isDirectory: ObjCBool = false
                         guard FileManager.default.fileExists(atPath: url.path, isDirectory: &isDirectory),
                               isDirectory.boolValue || url.pathExtension.lowercased() == "voycoll"
@@ -328,6 +340,7 @@ struct SidebarView: View {
                             return
                         }
                         store.send(.insertFavorite(url: url, at: index))
+                        draggingFavoriteURL = nil
                     }
                 }
             }
