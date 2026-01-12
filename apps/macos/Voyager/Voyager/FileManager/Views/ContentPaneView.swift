@@ -101,7 +101,7 @@ struct ContentPaneView: View {
                 Text(statusText)
                     .font(.system(size: 12, weight: .medium))
                     .foregroundColor(.secondary)
-                    .frame(maxWidth: .infinity, alignment: .center)
+                    .frame(maxWidth: .infinity, alignment: .trailing)
             }
             .frame(height: 20)
             .padding(.horizontal, 16)
