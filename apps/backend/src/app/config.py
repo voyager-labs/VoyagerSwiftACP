@@ -35,14 +35,6 @@ class VoyagerConfig:
     sqlite_file_location: str  # PUBLIC_SQLITE_FILE_LOCATION
     sqlite_file_name: str  # PUBLIC_SQLITE_FILE_NAME
 
-    # LLM 설정 (임시: 상수)
-    # TODO: gateway 연결 시 삭제
-    llm_provider: Literal["openai", "ollama", "anthropic"] = "openai"
-    llm_model: str = "gpt-5-mini-2025-08-07"
-    llm_temperature: float = 0.3
-    openai_api_key: str | None = None  # OPENAI_API_KEY
-    anthropic_api_key: str | None = None  # ANTHROPIC_API_KEY
-
     def get_db_config(self) -> DbConfig:
         """DbConfig 인스턴스 생성"""
         location = Path(self.sqlite_file_location).expanduser()
@@ -114,13 +106,6 @@ def load_config() -> VoyagerConfig:
         == "true",
         sqlite_file_location=os.getenv("PUBLIC_SQLITE_FILE_LOCATION") or "",
         sqlite_file_name=os.getenv("PUBLIC_SQLITE_FILE_NAME") or "",
-        # LLM 설정 (임시: 상수)
-        # TODO: gateway 연결 시 삭제
-        llm_provider="openai",  # type: ignore[arg-type]
-        llm_model="gpt-5-mini-2025-08-07",
-        llm_temperature=0.3,
-        openai_api_key=os.getenv("OPENAI_API_KEY"),
-        anthropic_api_key=os.getenv("ANTHROPIC_API_KEY"),
     )
 
     return _config
@@ -138,4 +123,6 @@ def get_db_config(cfg: VoyagerConfig) -> DbConfig:
     return cfg.get_db_config()
 
 
-__all__ = ["load_config", "get_db_config", "VoyagerConfig"]
+config = load_config()
+
+__all__ = ["load_config", "get_db_config", "VoyagerConfig", "config"]
