@@ -335,6 +335,7 @@ struct FileManagerFeature {
         case toggleShowHiddenFiles
         case setShowHiddenFiles(Bool)
         case setSidebarVisible(Bool)
+        case discardCollectionChanges
         case toggleInspector
         case setInspectorPaneExists(Bool)
         case saveScrollOffset(CGPoint, forPath: String)
@@ -1030,6 +1031,36 @@ struct FileManagerFeature {
                 state.gridTextSize = size
                 return .none
 
+            case .discardCollectionChanges:
+                guard let baseline = state.openedCollectionBaseline,
+                      state.fsItems.isCollectionMode,
+                      state.isOpenedCollectionDirty
+                else {
+                    return .none
+                }
+
+                let trimmedQuery = baseline.context.query.trimmingCharacters(in: .whitespacesAndNewlines)
+                state.pendingSearchQuery = trimmedQuery.isEmpty ? nil : trimmedQuery
+                state.collectionContext = baseline.context
+                state.sortKey = baseline.sortKey
+                state.sortOrder = baseline.sortOrder
+                state.viewLayout = baseline.viewLayout
+                state.fsItems.isListView = baseline.viewLayout == .list
+
+                if state.openedCollectionURL == nil {
+                    state.composer.text = baseline.context.query
+                } else {
+                    state.composer.text = ""
+                }
+                state.composer.scopes = baseline.context.scopes
+                state.composer.conditions = baseline.context.conditions
+                state.composer.propertyPicker = .init()
+                state.composer.operatorPicker = .init()
+                state.composer.valuePicker = .init()
+                state.composer.clearHistory()
+
+                return .none
+
             case let .composer(action):
                 switch action {
                 case let .setText(text):
@@ -1179,6 +1210,15 @@ struct FileManagerFeature {
                     return .none
 
                 case .clearAll:
+                    if state.fsItems.isCollectionMode {
+                        state.pendingSearchQuery = nil
+                        state.collectionContext = CollectionContext(
+                            query: "",
+                            scopes: [ComposerScopeUtils.rootScopePath],
+                            conditions: [],
+                        )
+                        return .none
+                    }
                     return Self.exitCollectionMode(state: &state)
 
                 case .saveCollection:

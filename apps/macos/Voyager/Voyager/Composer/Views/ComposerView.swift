@@ -213,15 +213,25 @@ struct ComposerView: View {
         let isRootScopeOnly = viewStore.scopes == [ComposerScopeUtils.rootScopePath]
         let isAllEmpty = trimmedText.isEmpty && viewStore.conditions.isEmpty
             && (viewStore.scopes.isEmpty || isRootScopeOnly)
+        let isDiscard = store.fsItems.isCollectionMode
+            && store.openedCollectionBaseline != nil
+            && store.isOpenedCollectionDirty
+        let isEnabled = isDiscard
+            ? (!viewStore.isLoadingSearch && !viewStore.isLoadingFilters)
+            : (!viewStore.isLoadingSearch && !isAllEmpty)
         return Button {
-            store.send(.composer(.clearAll))
+            if isDiscard {
+                store.send(.discardCollectionChanges)
+            } else {
+                store.send(.composer(.clearAll))
+            }
         } label: {
             HStack(spacing: 4) {
                 Image(systemName: "xmark.square")
-                Text("Clear")
+                Text(isDiscard ? "Discard" : "Clear")
             }
             .font(.system(size: 10, weight: .medium))
-            .foregroundColor(isAllEmpty ? .secondary : .primary)
+            .foregroundColor(isEnabled ? .primary : .secondary)
             .padding(.horizontal, 7)
             .padding(.vertical, 4)
             .frame(height: 22)
@@ -232,7 +242,7 @@ struct ComposerView: View {
             )
         }
         .buttonStyle(.borderless)
-        .disabled(viewStore.isLoadingSearch || isAllEmpty)
+        .disabled(!isEnabled)
         .background(
             RoundedRectangle(cornerRadius: 8)
                 .fill(isDark ? Color.white.opacity(0.08) : Color.black.opacity(0.08))
