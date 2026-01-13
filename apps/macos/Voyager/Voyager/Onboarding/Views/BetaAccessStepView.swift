@@ -43,7 +43,7 @@ struct BetaAccessStepView: View {
                     .frame(maxWidth: .infinity, alignment: .leading)
 
                     VStack(alignment: .leading, spacing: 6) {
-                        Text("Use the email and token from your invite.")
+                        Text("Enter the email and token from your invite.")
                     }
                     .font(.system(size: 13))
                     .foregroundStyle(.secondary)

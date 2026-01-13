@@ -19,7 +19,7 @@ enum OnboardingStep: String, CaseIterable, Codable, Sendable {
         case .permissions:
             "Permissions"
         case .complete:
-            "Complete"
+            "Start your voyage"
         }
     }
 

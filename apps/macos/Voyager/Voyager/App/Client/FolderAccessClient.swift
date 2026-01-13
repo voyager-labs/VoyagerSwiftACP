@@ -13,16 +13,16 @@ enum FilesAndFoldersStatus: Equatable, Sendable {
     case partial
     case notGranted
 
-    var message: String? {
+    var message: String {
         switch self {
         case .idle:
-            nil
+            "Tap Grant Access when you're ready."
         case .granted:
             "Access granted for Desktop, Documents, and Downloads."
         case .partial:
-            "Some folders weren't granted. You can allow them later in System Settings."
+            "Some folders are still off. You can enable them later in System Settings."
         case .notGranted:
-            "You can allow access later in System Settings."
+            "No folders were granted. You can enable them later in System Settings."
         }
     }
 }
