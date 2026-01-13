@@ -1,10 +1,16 @@
 """파일 메타데이터 관련 API 라우트"""
 
-from fastapi import APIRouter, HTTPException, Query
-from pydantic import BaseModel
+import json
+import threading
+from collections.abc import Generator, Iterable
+
+from fastapi import APIRouter, Query
+from fastapi.responses import JSONResponse, StreamingResponse
 from sqlmodel import select, text
 
 from app.config import get_db_config, load_config
+from app.file.indexing_service import stream_indexing_events
+from app.file.schemas import IndexFilesRequest, NaturalQueryRequest
 from core.llm.cached_llm_converter import CachedLLMConverter
 from core.llm.langchain_provider import LangChainProvider
 from infra.db.engine import engine_manager
@@ -12,12 +18,6 @@ from infra.repositories.file_entries import FileEntriesRepository
 from infra.schemas.file_entry_schema import FileEntrySchema
 
 router = APIRouter(prefix="/files", tags=["files"])
-
-
-class NaturalQueryRequest(BaseModel):
-    """자연어 검색 요청"""
-
-    query: str
 
 
 # 앱 시작 시 DB 초기화 (이미 main.py에서 수행됨)
@@ -52,6 +52,31 @@ def get_cached_converter() -> CachedLLMConverter:
         llm = create_llm_provider()
         _cached_converter = CachedLLMConverter(llm, cache_size=100)
     return _cached_converter
+
+
+_indexing_lock = threading.Lock()
+_indexing_running = False
+
+
+def _try_start_indexing() -> bool:
+    global _indexing_running
+    with _indexing_lock:
+        if _indexing_running:
+            return False
+        _indexing_running = True
+        return True
+
+
+def _finish_indexing() -> None:
+    global _indexing_running
+    with _indexing_lock:
+        _indexing_running = False
+
+
+def _to_ndjson_lines(events: Iterable[dict[str, object]]) -> Generator[bytes, None, None]:
+    for event in events:
+        payload = {"data": event}
+        yield (json.dumps(payload) + "\n").encode("utf-8")
 
 
 @router.get("/")
@@ -276,3 +301,45 @@ async def query_files(request: NaturalQueryRequest):
             "error": str(e)[:200],
             "execution_time": round(time.time() - start_time, 3),
         }
+
+
+# 내부 테스트용 임시 인덱싱 엔드포인트입니다. 정식 API로 승격 전까지 계약이 변경될 수 있습니다.
+@router.post("/indexing")
+def index_files(request: IndexFilesRequest):
+    """내부 테스트용 임시 인덱싱 (NDJSON 스트리밍)"""
+    if not _try_start_indexing():
+        return JSONResponse(
+            status_code=409,
+            content={
+                "error": {
+                    "code": "INDEXING_ALREADY_RUNNING",
+                    "details": "이미 인덱싱이 진행 중입니다.",
+                }
+            },
+        )
+
+    events = stream_indexing_events(
+        paths=request.paths,
+        batch_size=request.batch_size,
+        exclude=request.exclude,
+    )
+
+    def stream() -> Generator[bytes, None, None]:
+        try:
+            yield from _to_ndjson_lines(events)
+        except Exception as exc:
+            error_payload = {
+                "error": {
+                    "code": "INDEXING_FAILED",
+                    "details": exc.__class__.__name__,
+                }
+            }
+            yield (json.dumps(error_payload) + "\n").encode("utf-8")
+        finally:
+            _finish_indexing()
+
+    return StreamingResponse(
+        stream(),
+        media_type="application/x-ndjson",
+        status_code=202,
+    )
