@@ -64,10 +64,14 @@ struct EditMenuCommands: Commands {
         }
 
         CommandGroup(after: .undoRedo) {
-            Button("Open Collection Filter Composer") {
+            let isComposerPresented = appDelegate.currentFileManagerStore?.composer.isPresented == true
+            let composerTitle = isComposerPresented
+                ? "Close Collection Filter Composer"
+                : "Open Collection Filter Composer"
+            Button(composerTitle) {
                 guard let store = appDelegate.currentFileManagerStore else { return }
                 if store.composer.isPresented {
-                    store.send(.composer(.focusQueryField))
+                    store.send(.exitComposer)
                 } else {
                     store.send(.enterComposer)
                 }
