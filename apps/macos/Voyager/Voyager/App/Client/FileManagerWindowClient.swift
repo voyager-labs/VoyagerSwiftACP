@@ -14,8 +14,7 @@ extension FileManagerWindowClient: DependencyKey {
         FileManagerWindowClient(openWindow: { path in
             await MainActor.run {
                 guard let delegate = AppDelegate.shared else { return false }
-                delegate.createNewWindow(path: path)
-                return true
+                return delegate.createNewWindow(path: path) != nil
             }
         })
     }
