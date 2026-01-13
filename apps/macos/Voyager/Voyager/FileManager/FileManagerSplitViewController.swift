@@ -316,7 +316,7 @@ extension FileManagerSplitViewController {
                     }
                     .overlay(
                         RoundedRectangle(cornerRadius: VoyagerDS.Radius.contentPane, style: .continuous)
-                            .strokeBorder(Color.primary.opacity(0.12), lineWidth: 1),
+                            .strokeBorder(Color.primary.opacity(0.03), lineWidth: 1),
                     )
 
                     if viewStore.isComposerPresented {

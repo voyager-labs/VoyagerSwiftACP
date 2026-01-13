@@ -30,6 +30,8 @@ struct ToolbarView: View {
     }
 
     let store: StoreOf<FileManagerFeature>
+    @Environment(\.colorScheme)
+    private var colorScheme
     @State private var isTitleAreaHovered: Bool = false
     @State private var isTitleHovered: Bool = false
 
@@ -98,7 +100,7 @@ struct ToolbarView: View {
                 Group {
                     if isTitleAreaHovered {
                         RoundedRectangle(cornerRadius: 8)
-                            .fill(.thickMaterial)
+                            .fill(VoyagerDS.Interaction.toolbarTitleHoverFill(for: colorScheme))
                     }
                 },
             )

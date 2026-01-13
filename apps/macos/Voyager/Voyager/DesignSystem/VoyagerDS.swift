@@ -161,6 +161,12 @@ enum VoyagerDS {
                 : Color(hex: 0xF5F5F5)
         }
 
+        static func sidebarSelectionBackground(for scheme: ColorScheme) -> Color {
+            scheme == .dark
+                ? Color.white.opacity(0.12)
+                : Color.black.opacity(0.12)
+        }
+
         static let toolbarDivider = Color.black.opacity(0.15)
 
         // MARK: - Status Button / Folder Chip
@@ -204,6 +210,10 @@ enum VoyagerDS {
         static func toolbarButtonHoverFill(for scheme: ColorScheme) -> Color {
             controlHoverFill(for: scheme)
         }
+
+        static func toolbarTitleHoverFill(for scheme: ColorScheme) -> Color {
+            scheme == .dark ? Color.black.opacity(0.35) : Color.black.opacity(0.08)
+        }
     }
 
     // MARK: - AppKit (NSColor) 토큰
@@ -240,7 +250,7 @@ enum VoyagerDS {
         /// Content pane 배경 오버레이 (블러 위에 반투명 레이어)
         static func contentPaneOverlay(isDark: Bool) -> NSColor {
             if isDark {
-                NSColor(white: 0.1, alpha: 0.75)
+                NSColor(white: 0.2, alpha: 0.75)
             } else {
                 NSColor(white: 0.95, alpha: 0.85)
             }
