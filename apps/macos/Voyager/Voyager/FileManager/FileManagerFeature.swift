@@ -204,8 +204,6 @@ struct FileManagerFeature {
         var isOpenedCollectionDirty: Bool {
             guard let baseline = openedCollectionBaseline, let context = collectionContext else { return false }
             if baseline.context != context { return true }
-            if baseline.sortKey != sortKey { return true }
-            if baseline.sortOrder != sortOrder { return true }
             if baseline.viewLayout != viewLayout { return true }
             return false
         }
@@ -1412,16 +1410,16 @@ struct FileManagerFeature {
     ) -> Effect<Action> {
         switch pending {
         case .back:
-            return Self.performBackNavigation(state: &state)
+            performBackNavigation(state: &state)
 
         case .forward:
-            return Self.performForwardNavigation(state: &state)
+            performForwardNavigation(state: &state)
 
         case let .history(index, isBackHistory):
-            return Self.performHistoryNavigation(index: index, isBackHistory: isBackHistory, state: &state)
+            Self.performHistoryNavigation(index: index, isBackHistory: isBackHistory, state: &state)
 
         case .enclosingDirectory:
-            return Self.performEnclosingDirectoryNavigation(state: &state)
+            performEnclosingDirectoryNavigation(state: &state)
         }
     }
 
