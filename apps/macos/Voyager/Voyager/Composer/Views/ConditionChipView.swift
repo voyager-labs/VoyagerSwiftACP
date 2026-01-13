@@ -22,6 +22,7 @@ struct ConditionChipView: View {
     @State private var tempDate: Date = .init()
     @State private var dateHoverIndex: Int?
     @State private var isChipHovering: Bool = false
+    @State private var isRemoveHovering: Bool = false
     @State private var boolPopoverIndex: Int?
     @State private var boolHoverIndex: Int?
     @State private var boolOptionHoverValue: String?
@@ -77,12 +78,22 @@ struct ConditionChipView: View {
                 Image(systemName: "xmark.circle.fill")
                     .font(.system(size: 10, weight: .bold))
                     .foregroundColor(.secondary)
+                    .background(
+                        Circle()
+                            .fill(isRemoveHovering
+                                ? VoyagerDS.Interaction.controlHoverFill(for: isDark ? .dark : .light)
+                                : .clear)
+                            .frame(width: 14, height: 14),
+                    )
             }
             .buttonStyle(.borderless)
             .padding(2)
             .offset(x: 6, y: -6)
             .opacity(isChipHovering ? 1 : 0)
             .allowsHitTesting(isChipHovering)
+            .onHover { hovering in
+                isRemoveHovering = hovering
+            }
         }
         .onHover { hovering in
             isChipHovering = hovering

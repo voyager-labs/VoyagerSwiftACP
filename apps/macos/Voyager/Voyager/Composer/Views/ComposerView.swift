@@ -21,6 +21,12 @@ struct ComposerView: View {
     @State private var isOptionKeyPressed: Bool = false
     @State private var isAddButtonHovering: Bool = false
     @State private var isScopePickerPresented: Bool = false
+    @State private var isUndoHovering: Bool = false
+    @State private var isRedoHovering: Bool = false
+    @State private var isStopHovering: Bool = false
+    @State private var isSubmitHovering: Bool = false
+    @State private var isClearHovering: Bool = false
+    @State private var isSaveHovering: Bool = false
 
     private let escapeKeyCode: UInt16 = 53
     private let zKeyCode: UInt16 = 6
@@ -90,9 +96,18 @@ struct ComposerView: View {
             Image(systemName: "arrow.uturn.backward")
                 .font(.system(size: 13))
                 .foregroundColor(isEnabled ? .primary : .secondary)
+                .padding(4)
+                .background(
+                    RoundedRectangle(cornerRadius: 4)
+                        .fill(isEnabled && isUndoHovering ? VoyagerDS.Interaction
+                            .controlHoverFill(for: colorScheme) : .clear),
+                )
         }
         .disabled(!isEnabled)
         .buttonStyle(.borderless)
+        .onHover { hovering in
+            isUndoHovering = hovering
+        }
     }
 
     @ViewBuilder
@@ -107,9 +122,18 @@ struct ComposerView: View {
             Image(systemName: "arrow.uturn.forward")
                 .font(.system(size: 13))
                 .foregroundColor(isEnabled ? .primary : .secondary)
+                .padding(4)
+                .background(
+                    RoundedRectangle(cornerRadius: 4)
+                        .fill(isEnabled && isRedoHovering ? VoyagerDS.Interaction
+                            .controlHoverFill(for: colorScheme) : .clear),
+                )
         }
         .disabled(!isEnabled)
         .buttonStyle(.borderless)
+        .onHover { hovering in
+            isRedoHovering = hovering
+        }
     }
 
     private func textField(
@@ -122,49 +146,81 @@ struct ComposerView: View {
                 .isEmpty
             queryInputField(viewStore: viewStore, isSubmitDisabled: isSubmitDisabled, isLocked: isLocked)
 
-            let buttonBackground = Circle().fill(VoyagerDS.BrandSecondaryColor.c500)
             if viewStore.isLoadingSearch {
-                Button {
-                    viewStore.send(.cancelSearch)
-                } label: {
-                    Image(systemName: "stop.fill")
-                        .font(.system(size: 9, weight: .regular))
-                        .foregroundColor(.black)
-                        .frame(width: 16, height: 16)
-                        .background(buttonBackground)
-                }
-                .buttonStyle(.borderless)
-                .padding(.trailing, 8)
+                stopButton(viewStore: viewStore)
             } else {
-                let submitButtonBackground = Circle().fill(
-                    isSubmitDisabled
-                        ? VoyagerDS.BrandSecondaryColor.c500.opacity(0.5)
-                        : VoyagerDS.BrandSecondaryColor.c500,
-                )
-                Button {
-                    viewStore.send(.submit)
-                } label: {
-                    Image(systemName: "arrow.right")
-                        .font(.system(size: 9, weight: .regular))
-                        .foregroundColor(isSubmitDisabled ? .secondary : .black)
-                        .frame(width: 16, height: 16)
-                        .background(submitButtonBackground)
-                }
-                .buttonStyle(.borderless)
-                .disabled(isSubmitDisabled || isLocked)
-                .background(
-                    Circle()
-                        .fill(
-                            isSubmitDisabled
-                                ? Color(red: 0.843, green: 0.714, blue: 0.322).opacity(0.5)
-                                : Color(red: 0.843, green: 0.714, blue: 0.322),
-                        )
-                        .allowsHitTesting(false),
-                )
-                .padding(.trailing, 8)
+                submitButton(viewStore: viewStore, isLocked: isLocked, isSubmitDisabled: isSubmitDisabled)
             }
         }
         .frame(minHeight: 30)
+    }
+
+    @ViewBuilder
+    private func stopButton(viewStore: ViewStore<ComposerFeature.State, ComposerFeature.Action>) -> some View {
+        let buttonBackground = Circle().fill(VoyagerDS.BrandSecondaryColor.c500)
+        Button {
+            viewStore.send(.cancelSearch)
+        } label: {
+            Image(systemName: "stop.fill")
+                .font(.system(size: 9, weight: .regular))
+                .foregroundColor(.black)
+                .frame(width: 16, height: 16)
+                .background(buttonBackground)
+        }
+        .buttonStyle(.borderless)
+        .background(
+            Circle()
+                .fill(isStopHovering ? VoyagerDS.Interaction.controlHoverFill(for: colorScheme) : .clear)
+                .frame(width: 20, height: 20),
+        )
+        .padding(.trailing, 8)
+        .onHover { hovering in
+            isStopHovering = hovering
+        }
+    }
+
+    @ViewBuilder
+    private func submitButton(
+        viewStore: ViewStore<ComposerFeature.State, ComposerFeature.Action>,
+        isLocked: Bool,
+        isSubmitDisabled: Bool,
+    ) -> some View {
+        let submitButtonBackground = Circle().fill(
+            isSubmitDisabled
+                ? VoyagerDS.BrandSecondaryColor.c500.opacity(0.5)
+                : VoyagerDS.BrandSecondaryColor.c500,
+        )
+        Button {
+            viewStore.send(.submit)
+        } label: {
+            Image(systemName: "arrow.right")
+                .font(.system(size: 9, weight: .regular))
+                .foregroundColor(isSubmitDisabled ? .secondary : .black)
+                .frame(width: 16, height: 16)
+                .background(submitButtonBackground)
+        }
+        .buttonStyle(.borderless)
+        .disabled(isSubmitDisabled || isLocked)
+        .background(
+            Circle()
+                .fill(!isSubmitDisabled && !isLocked && isSubmitHovering
+                    ? VoyagerDS.Interaction.controlHoverFill(for: colorScheme)
+                    : .clear)
+                .frame(width: 20, height: 20),
+        )
+        .background(
+            Circle()
+                .fill(
+                    isSubmitDisabled
+                        ? Color(red: 0.843, green: 0.714, blue: 0.322).opacity(0.5)
+                        : Color(red: 0.843, green: 0.714, blue: 0.322),
+                )
+                .allowsHitTesting(false),
+        )
+        .padding(.trailing, 8)
+        .onHover { hovering in
+            isSubmitHovering = hovering
+        }
     }
 
     private func queryInputField(
@@ -261,9 +317,17 @@ struct ComposerView: View {
         .disabled(!isEnabled)
         .background(
             RoundedRectangle(cornerRadius: 8)
+                .fill(isEnabled && isClearHovering ? VoyagerDS.Interaction.controlHoverFill(for: colorScheme) : .clear)
+                .allowsHitTesting(false),
+        )
+        .background(
+            RoundedRectangle(cornerRadius: 8)
                 .fill(isDark ? Color.white.opacity(0.08) : Color.black.opacity(0.08))
                 .allowsHitTesting(false),
         )
+        .onHover { hovering in
+            isClearHovering = hovering
+        }
     }
 
     private func saveButton(
@@ -295,9 +359,17 @@ struct ComposerView: View {
         .disabled(!isEnabled)
         .background(
             RoundedRectangle(cornerRadius: 8)
+                .fill(isEnabled && isSaveHovering ? VoyagerDS.Interaction.controlHoverFill(for: colorScheme) : .clear)
+                .allowsHitTesting(false),
+        )
+        .background(
+            RoundedRectangle(cornerRadius: 8)
                 .fill(isDark ? Color.white.opacity(0.08) : Color.black.opacity(0.08))
                 .allowsHitTesting(false),
         )
+        .onHover { hovering in
+            isSaveHovering = hovering
+        }
     }
 
     private var horizontalSeparator: some View {
