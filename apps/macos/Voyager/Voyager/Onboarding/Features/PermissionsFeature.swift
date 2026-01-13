@@ -1,5 +1,6 @@
 import ComposableArchitecture
 import Foundation
+import Logging
 
 enum FullDiskAccessStatus: String, Equatable, Sendable {
     case granted = "Granted"
@@ -71,6 +72,7 @@ struct PermissionsFeature {
         }
     }
 
+    // TODO: VOY-88 정식 인덱싱 엔드포인트 구현 이후 요청 경로와 인덱싱 패스를 수정한다.
     enum Action: Sendable {
         case onAppear
         case appDidBecomeActive
@@ -93,6 +95,9 @@ struct PermissionsFeature {
     var launchAtLoginClient
     @Dependency(\.systemSettingsClient)
     var systemSettingsClient
+    @Dependency(\.indexingClient)
+    var indexingClient
+    private let logger = Logger(label: "Voyager")
 
     var body: some Reducer<State, Action> {
         Reduce { state, action in
@@ -110,13 +115,7 @@ struct PermissionsFeature {
                 )
                 state.fullDiskAccessStatus = resolvedStatus
                 state.isComplete = resolvedStatus == .granted
-                if resolvedStatus == .granted,
-                   state.filesAndFoldersStatus == .granted,
-                   !state.isIndexingInBackground
-                {
-                    state.isIndexingInBackground = true
-                }
-                return .none
+                return startIndexingIfReady(state: &state)
 
             case .openSystemSettingsTapped:
                 state.systemSettingsError = nil
@@ -146,13 +145,7 @@ struct PermissionsFeature {
                 state.isRequestingFilesAndFolders = false
                 state.folderAccessResult = result
                 state.filesAndFoldersStatus = result.status
-                if result.status == .granted,
-                   state.fullDiskAccessStatus == .granted,
-                   !state.isIndexingInBackground
-                {
-                    state.isIndexingInBackground = true
-                }
-                return .none
+                return startIndexingIfReady(state: &state)
 
             case let .launchAtLoginToggled(enabled):
                 let previousValue = state.launchAtLoginEnabled
@@ -208,5 +201,21 @@ struct PermissionsFeature {
             return .denied
         }
         return status
+    }
+
+    private func startIndexingIfReady(state: inout State) -> Effect<Action> {
+        guard state.fullDiskAccessStatus == .granted,
+              state.filesAndFoldersStatus == .granted,
+              !state.isIndexingInBackground
+        else {
+            return .none
+        }
+
+        state.isIndexingInBackground = true
+        let paths = ["~/Desktop", "~/Documents", "~/Downloads"]
+        return .run { [indexingClient] _ in
+            logger.info("Onboarding indexing triggered.")
+            await indexingClient.start(paths)
+        }
     }
 }

@@ -58,7 +58,7 @@ struct PermissionsStepView: View {
                             viewStore.send(.requestFilesAndFoldersTapped)
                         }
                         .disabled(
-                            viewStore.isRequestingFilesAndFolders || viewStore.filesAndFoldersStatus == .granted
+                            viewStore.isRequestingFilesAndFolders || viewStore.filesAndFoldersStatus == .granted,
                         )
 
                         if viewStore.isRequestingFilesAndFolders {
