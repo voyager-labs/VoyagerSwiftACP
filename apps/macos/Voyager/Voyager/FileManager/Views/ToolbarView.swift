@@ -74,9 +74,14 @@ struct ToolbarView: View {
 
     private func normalModeContent(viewStore: ViewStore<ViewState, FileManagerFeature.Action>) -> some View {
         HStack(spacing: 0) {
-            backButton(viewStore: viewStore)
-            forwardButton(viewStore: viewStore)
-            enclosingDirectoryButton(viewStore: viewStore)
+            ToolbarNavigationButtons(
+                store: store,
+                backHistory: viewStore.backHistory,
+                forwardHistory: viewStore.forwardHistory,
+                canGoBack: viewStore.canGoBack,
+                canGoForward: viewStore.canGoForward,
+                canGoToEnclosingDirectory: viewStore.canGoToEnclosingDirectory,
+            )
 
             HStack(spacing: 8) {
                 titleButton(viewStore: viewStore)
@@ -109,70 +114,6 @@ struct ToolbarView: View {
 
     private var separatorColor: Color {
         Color.primary.opacity(0.12)
-    }
-
-    private func backButton(viewStore: ViewStore<ViewState, FileManagerFeature.Action>) -> some View {
-        ToolbarNavigationMenuButton(
-            systemName: "chevron.left",
-            isEnabled: viewStore.canGoBack,
-            font: .system(size: 13, weight: .medium),
-            menuID: viewStore.backHistory.count,
-            primaryAction: { store.send(.goBack) },
-            menuContent: {
-                if viewStore.backHistory.isEmpty {
-                    Text("No history")
-                        .foregroundColor(.secondary)
-                } else {
-                    ForEach(Array(viewStore.backHistory.enumerated().reversed()), id: \.offset) { index, entry in
-                        Button(
-                            action: { store.send(.goToHistoryIndex(index, isBackHistory: true)) },
-                            label: { historyMenuLabel(for: entry) },
-                        )
-                    }
-                }
-            },
-        )
-        .fixedSize()
-    }
-
-    private func forwardButton(viewStore: ViewStore<ViewState, FileManagerFeature.Action>) -> some View {
-        ToolbarNavigationMenuButton(
-            systemName: "chevron.right",
-            isEnabled: viewStore.canGoForward,
-            font: .system(size: 13, weight: .medium),
-            menuID: viewStore.forwardHistory.count,
-            primaryAction: { store.send(.goForward) },
-            menuContent: {
-                if viewStore.forwardHistory.isEmpty {
-                    Text("No history")
-                        .foregroundColor(.secondary)
-                } else {
-                    ForEach(Array(viewStore.forwardHistory.enumerated().reversed()), id: \.offset) { index, entry in
-                        Button(
-                            action: { store.send(.goToHistoryIndex(index, isBackHistory: false)) },
-                            label: { historyMenuLabel(for: entry) },
-                        )
-                    }
-                }
-            },
-        )
-        .fixedSize()
-    }
-
-    private func enclosingDirectoryButton(viewStore: ViewStore<ViewState, FileManagerFeature.Action>) -> some View {
-        Button(
-            action: { store.send(.goToEnclosingDirectory) },
-            label: {
-                ToolbarNavigationButtonLabel(
-                    systemName: "chevron.up",
-                    isEnabled: viewStore.canGoToEnclosingDirectory,
-                    font: .system(size: 13, weight: .medium),
-                )
-            },
-        )
-        .fixedSize()
-        .disabled(!viewStore.canGoToEnclosingDirectory)
-        .buttonStyle(.borderless)
     }
 
     private func titleButton(viewStore: ViewStore<ViewState, FileManagerFeature.Action>) -> some View {
@@ -229,63 +170,5 @@ struct ToolbarView: View {
         .onHover { hovering in
             isTitleHovered = hovering
         }
-    }
-
-    private func historyDisplayName(for entry: FileManagerFeature.HistoryEntry) -> String {
-        switch entry.navigationState {
-        case let .folder(path):
-            FileManager.default.displayName(atPath: path)
-        case .recents:
-            "Recents"
-        case let .tags(tagName):
-            tagName
-        case .computer:
-            SidebarUtils.computerName
-        case let .collection(navigation):
-            switch navigation.kind {
-            case .temporary:
-                "New Collection"
-            case let .file(_, name):
-                name
-            }
-        }
-    }
-
-    private func historyMenuLabel(for entry: FileManagerFeature.HistoryEntry) -> some View {
-        HStack(spacing: 6) {
-            if let icon = historyIcon(for: entry) {
-                Image(nsImage: resizedHistoryIcon(from: icon))
-                    .frame(width: 10, height: 10)
-            }
-            Text(historyDisplayName(for: entry))
-        }
-    }
-
-    private func historyIcon(for entry: FileManagerFeature.HistoryEntry) -> NSImage? {
-        switch entry.navigationState {
-        case let .folder(path):
-            return NSWorkspace.shared.icon(forFile: path)
-        case let .collection(navigation):
-            if case let .file(url, _) = navigation.kind {
-                return NSWorkspace.shared.icon(forFile: url.path)
-            }
-            return nil
-        case .recents:
-            return NSImage(systemSymbolName: "clock.arrow.circlepath", accessibilityDescription: nil)
-        case .tags:
-            return NSImage(systemSymbolName: "tag", accessibilityDescription: nil)
-        case .computer:
-            return NSImage(systemSymbolName: "desktopcomputer", accessibilityDescription: nil)
-        }
-    }
-
-    private func resizedHistoryIcon(from icon: NSImage) -> NSImage {
-        let targetSize = NSSize(width: 10, height: 10)
-        let resized = NSImage(size: targetSize)
-        resized.lockFocus()
-        icon.draw(in: NSRect(origin: .zero, size: targetSize))
-        resized.unlockFocus()
-        resized.isTemplate = icon.isTemplate
-        return resized
     }
 }

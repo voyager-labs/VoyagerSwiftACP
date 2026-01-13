@@ -4,33 +4,13 @@ import SwiftUI
 
 struct SortGroupButton: View {
     let store: StoreOf<FileManagerFeature>
-    @Environment(\.colorScheme)
-    var colorScheme
-    @State private var isHovered: Bool = false
 
     var body: some View {
-        ZStack {
-            Image(systemName: "arrow.up.arrow.down")
-                .font(.system(size: 13, weight: .medium))
-                .foregroundColor(.secondary)
-                .frame(width: 24, height: 24)
-                .background(
-                    Group {
-                        if isHovered {
-                            ZStack {
-                                RoundedRectangle(cornerRadius: VoyagerDS.Radius.toolbarButton)
-                                    .fill(VoyagerDS.Surface.toolbarMenuButtonBackground(for: colorScheme))
-                                RoundedRectangle(cornerRadius: VoyagerDS.Radius.toolbarButton)
-                                    .fill(VoyagerDS.Interaction.toolbarButtonHoverFill(for: colorScheme))
-                            }
-                        }
-                    }
-                    .allowsHitTesting(false),
-                )
-        }
-        .contentShape(RoundedRectangle(cornerRadius: VoyagerDS.Radius.toolbarButton))
-        .overlay(
-            Menu {
+        ToolbarMenuButton(
+            systemName: "arrow.up.arrow.down",
+            isEnabled: true,
+            font: ToolbarButtonLabel.Metrics.iconFont,
+            menuContent: {
                 Menu("Group By") {
                     groupKeyToggle("None", key: .none)
 
@@ -64,16 +44,7 @@ struct SortGroupButton: View {
                     sortOrderToggle("Descending", order: .descending)
                 }
                 .disabled(store.fsItems.groupKey != .none)
-            } label: {
-                Color.clear
-                    .frame(width: 24, height: 24)
-            }
-            .menuIndicator(.hidden)
-            .buttonStyle(.borderless),
-        )
-        .overlay(
-            HoverTrackingOverlay(isHovered: $isHovered)
-                .frame(width: 24, height: 24),
+            },
         )
     }
 
