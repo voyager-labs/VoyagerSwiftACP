@@ -538,6 +538,7 @@ struct FileManagerFeature {
                 )
 
             case let .navigateToCollection(navigation):
+                state.composer.isPresented = false
                 state.collectionContext = navigation.context
                 state.pendingSearchQuery = navigation.context.query.isEmpty ? nil : navigation.context.query
                 state.sortKey = navigation.sortKey
@@ -578,6 +579,7 @@ struct FileManagerFeature {
             case let .collectionFileLoaded(result):
                 switch result {
                 case let .success(file):
+                    state.composer.isPresented = false
                     let trimmedQuery = file.query.trimmingCharacters(in: .whitespacesAndNewlines)
                     state.pendingSearchQuery = trimmedQuery.isEmpty ? nil : trimmedQuery
 
