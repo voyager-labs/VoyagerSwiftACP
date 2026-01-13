@@ -62,14 +62,16 @@ struct ComposerView: View {
         .allowsHitTesting(true)
     }
 
+    @ViewBuilder
     private func firstRow(viewStore: ViewStore<ComposerFeature.State, ComposerFeature.Action>) -> some View {
-        HStack(spacing: 8) {
-            undoButton(viewStore: viewStore)
-            redoButton(viewStore: viewStore)
-            textField(viewStore: viewStore)
+        let isLocked = viewStore.isLoadingSearch || viewStore.isLoadingFilters
+        return HStack(spacing: 8) {
+            undoButton(viewStore: viewStore, isLocked: isLocked)
+            redoButton(viewStore: viewStore, isLocked: isLocked)
+            textField(viewStore: viewStore, isLocked: isLocked)
                 .frame(maxWidth: .infinity, alignment: .leading)
-            clearButton(viewStore: viewStore)
-            saveButton(viewStore: viewStore)
+            clearButton(viewStore: viewStore, isLocked: isLocked)
+            saveButton(viewStore: viewStore, isLocked: isLocked)
         }
         .padding(.horizontal, 16)
         .padding(.vertical, 6)
@@ -77,8 +79,11 @@ struct ComposerView: View {
     }
 
     @ViewBuilder
-    private func undoButton(viewStore: ViewStore<ComposerFeature.State, ComposerFeature.Action>) -> some View {
-        let isEnabled = viewStore.canUndo && !viewStore.isLoadingSearch
+    private func undoButton(
+        viewStore: ViewStore<ComposerFeature.State, ComposerFeature.Action>,
+        isLocked: Bool,
+    ) -> some View {
+        let isEnabled = viewStore.canUndo && !isLocked
         Button {
             store.send(.composer(.undo))
         } label: {
@@ -91,8 +96,11 @@ struct ComposerView: View {
     }
 
     @ViewBuilder
-    private func redoButton(viewStore: ViewStore<ComposerFeature.State, ComposerFeature.Action>) -> some View {
-        let isEnabled = viewStore.canRedo && !viewStore.isLoadingSearch
+    private func redoButton(
+        viewStore: ViewStore<ComposerFeature.State, ComposerFeature.Action>,
+        isLocked: Bool,
+    ) -> some View {
+        let isEnabled = viewStore.canRedo && !isLocked
         Button {
             store.send(.composer(.redo))
         } label: {
@@ -104,12 +112,15 @@ struct ComposerView: View {
         .buttonStyle(.borderless)
     }
 
-    private func textField(viewStore: ViewStore<ComposerFeature.State, ComposerFeature.Action>) -> some View {
+    private func textField(
+        viewStore: ViewStore<ComposerFeature.State, ComposerFeature.Action>,
+        isLocked: Bool,
+    ) -> some View {
         ZStack(alignment: .trailing) {
             let isSubmitDisabled = viewStore.text
                 .trimmingCharacters(in: .whitespacesAndNewlines)
                 .isEmpty
-            queryInputField(viewStore: viewStore, isSubmitDisabled: isSubmitDisabled)
+            queryInputField(viewStore: viewStore, isSubmitDisabled: isSubmitDisabled, isLocked: isLocked)
 
             let buttonBackground = Circle().fill(VoyagerDS.BrandSecondaryColor.c500)
             if viewStore.isLoadingSearch {
@@ -140,7 +151,7 @@ struct ComposerView: View {
                         .background(submitButtonBackground)
                 }
                 .buttonStyle(.borderless)
-                .disabled(isSubmitDisabled)
+                .disabled(isSubmitDisabled || isLocked)
                 .background(
                     Circle()
                         .fill(
@@ -159,6 +170,7 @@ struct ComposerView: View {
     private func queryInputField(
         viewStore: ViewStore<ComposerFeature.State, ComposerFeature.Action>,
         isSubmitDisabled _: Bool,
+        isLocked: Bool,
     ) -> some View {
         let placeholderText = "Enter your request..."
 
@@ -185,6 +197,7 @@ struct ComposerView: View {
             .padding(.horizontal, 10)
             .padding(.vertical, 4)
             .padding(.trailing, 28)
+            .disabled(isLocked)
         }
         .background(
             RoundedRectangle(cornerRadius: 8)
@@ -208,7 +221,10 @@ struct ComposerView: View {
         }
     }
 
-    private func clearButton(viewStore: ViewStore<ComposerFeature.State, ComposerFeature.Action>) -> some View {
+    private func clearButton(
+        viewStore: ViewStore<ComposerFeature.State, ComposerFeature.Action>,
+        isLocked: Bool,
+    ) -> some View {
         let trimmedText = viewStore.text.trimmingCharacters(in: .whitespacesAndNewlines)
         let isRootScopeOnly = viewStore.scopes == [ComposerScopeUtils.rootScopePath]
         let isAllEmpty = trimmedText.isEmpty && viewStore.conditions.isEmpty
@@ -217,8 +233,8 @@ struct ComposerView: View {
             && store.openedCollectionBaseline != nil
             && store.isOpenedCollectionDirty
         let isEnabled = isDiscard
-            ? (!viewStore.isLoadingSearch && !viewStore.isLoadingFilters)
-            : (!viewStore.isLoadingSearch && !isAllEmpty)
+            ? !isLocked
+            : (!isLocked && !isAllEmpty)
         return Button {
             if isDiscard {
                 store.send(.discardCollectionChanges)
@@ -250,8 +266,11 @@ struct ComposerView: View {
         )
     }
 
-    private func saveButton(viewStore: ViewStore<ComposerFeature.State, ComposerFeature.Action>) -> some View {
-        let isEnabled = store.canSaveCollection && !viewStore.isLoadingSearch
+    private func saveButton(
+        viewStore _: ViewStore<ComposerFeature.State, ComposerFeature.Action>,
+        isLocked: Bool,
+    ) -> some View {
+        let isEnabled = store.canSaveCollection && !isLocked
         let isTemporaryCollection = store.openedCollectionURL == nil
         let isSaveAs = !isTemporaryCollection && isOptionKeyPressed
         return Button {
@@ -333,6 +352,7 @@ struct ComposerView: View {
         composerStore: StoreOf<ComposerFeature>,
         geometry: GeometryProxy,
     ) -> some View {
+        let isLocked = viewStore.isLoadingSearch || viewStore.isLoadingFilters
         let availableWidth = geometry.size.width - chipHorizontalPadding * 2
         let pickerStore = composerStore.scope(state: \.propertyPicker, action: \.propertyPicker)
 
@@ -362,8 +382,8 @@ struct ComposerView: View {
             pickerStore: pickerStore,
             historyPaths: historyPaths,
         )
-        .allowsHitTesting(!viewStore.isLoadingSearch)
-        .opacity(viewStore.isLoadingSearch ? 0.6 : 1)
+        .allowsHitTesting(!isLocked)
+        .opacity(isLocked ? 0.6 : 1)
         .onPreferenceChange(ChipSizePreferenceKey.self) { sizes in
             handleChipSizeChange(sizes: sizes, allChips: allChips, availableWidth: availableWidth)
         }
