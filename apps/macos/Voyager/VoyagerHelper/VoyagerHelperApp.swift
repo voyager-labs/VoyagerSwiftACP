@@ -6,6 +6,7 @@ import SwiftDotenv
 class VoyagerHelperApp {
     private static var lifecycle: HelperLifecycle?
 
+    @MainActor
     static func main() {
         LoggingSystem.bootstrap { label in
             let oslogHandler = VoyagerOSLogHandler(label: label)
@@ -18,16 +19,19 @@ class VoyagerHelperApp {
         }
         let logger = Logger(label: "VoyagerHelper")
         let environment = Environment()
+        let stateBroadcaster = HelperStateBroadcaster()
 
         logger.info(
             "Starting (APP_ENV=\(Dotenv.appEnv?.rawValue ?? "nil"), BACKEND_MODE=\(Dotenv.backendMode?.rawValue ?? "nil"))",
         )
 
-        let runner = ProcessRunner(environment: environment)
+        let runner = ProcessRunner(environment: environment, stateBroadcaster: stateBroadcaster)
         let lifecycle = HelperLifecycle(processRunner: runner)
         VoyagerHelperApp.lifecycle = lifecycle
 
         Task {
+            await stateBroadcaster.startObservingRequests()
+            await stateBroadcaster.postCurrentState()
             await lifecycle.start()
         }
         RunLoop.current.run()

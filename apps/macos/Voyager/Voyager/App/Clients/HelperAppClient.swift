@@ -5,15 +5,19 @@ import Foundation
 public struct HelperAppClient: Sendable {
     public var start: @Sendable () async -> Void
     public var stop: @Sendable () async -> Void
+    // Helper 실행 여부 확인
+    public var isRunning: @Sendable () async -> Bool
     public var terminationEvents: @Sendable () -> AsyncStream<Void>
 
     public nonisolated init(
         start: @escaping @Sendable () async -> Void,
         stop: @escaping @Sendable () async -> Void,
+        isRunning: @escaping @Sendable () async -> Bool,
         terminationEvents: @escaping @Sendable () -> AsyncStream<Void>,
     ) {
         self.start = start
         self.stop = stop
+        self.isRunning = isRunning
         self.terminationEvents = terminationEvents
     }
 }
@@ -29,6 +33,14 @@ extension HelperAppClient: DependencyKey {
             stop: {
                 await MainActor.run {
                     terminateHelper(resolveHelperInfo())
+                }
+            },
+            isRunning: {
+                await MainActor.run {
+                    let info = resolveHelperInfo()
+                    return NSWorkspace.shared.runningApplications.contains { app in
+                        app.bundleIdentifier == info.bundleId
+                    }
                 }
             },
             terminationEvents: {
@@ -64,6 +76,7 @@ extension HelperAppClient: DependencyKey {
         HelperAppClient(
             start: {},
             stop: {},
+            isRunning: { false },
             terminationEvents: { AsyncStream { $0.finish() } },
         )
     }
@@ -72,6 +85,7 @@ extension HelperAppClient: DependencyKey {
         HelperAppClient(
             start: {},
             stop: {},
+            isRunning: { false },
             terminationEvents: { AsyncStream { $0.finish() } },
         )
     }

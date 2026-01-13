@@ -47,12 +47,15 @@ actor ProcessRunner {
     private let logger = Logger(label: "VoyagerHelper")
     private let environment: Environment
     private let portReservation: PortReservationService
+    private let stateBroadcaster: HelperStateBroadcaster
 
     init(
         environment: Environment,
+        stateBroadcaster: HelperStateBroadcaster,
         portReservation: PortReservationService = PortReservationService(),
     ) {
         self.environment = environment
+        self.stateBroadcaster = stateBroadcaster
         self.portReservation = portReservation
     }
 
@@ -258,6 +261,7 @@ actor ProcessRunner {
         proc.executableURL = URL(fileURLWithPath: config.executable)
         proc.arguments = config.arguments ?? []
 
+        let startDate = Date()
         do {
             try proc.run()
         } catch {
@@ -293,17 +297,18 @@ actor ProcessRunner {
             process = proc
             logger.info("Backend started: \(config.description) (pid: \(proc.processIdentifier))")
 
-            let urlString = "http://\(host):\(port)"
-            Task { @MainActor in
-                DistributedNotificationCenter.default().post(
-                    name: .backendEndpointDidUpdate,
-                    object: nil,
-                    userInfo: ["host": host, "port": port, "url": urlString],
-                )
-            }
+            await stateBroadcaster.updateBackendReady(
+                host: host,
+                port: port,
+                pid: Int(proc.processIdentifier),
+                startDate: startDate,
+            )
+            await stateBroadcaster.postCurrentState()
 
             let (reason, status) = await waitForTermination(proc)
             process = nil
+            await stateBroadcaster.markBackendStopped()
+            await stateBroadcaster.postCurrentState()
             return BackendTerminationEvent(
                 reason: reason,
                 status: status,
