@@ -163,7 +163,7 @@ struct OnboardingView: View {
             Button {
                 viewStore.send(.complete(.startUsingTapped))
             } label: {
-                topBarLabel("Start using Voyager")
+                topBarLabel("Complete (Enter)")
             }
             .buttonStyle(.borderedProminent)
             .tint(accentColor)
@@ -244,13 +244,13 @@ struct OnboardingView: View {
     private func stepSubtitle(for step: OnboardingStep) -> String {
         switch step {
         case .welcome:
-            "This setup is required before you can open Voyager's file manager."
+            "A quick setup before you dive in."
         case .betaAccess:
-            "Validate your invite with email and token before you can continue."
+            "Confirm your invite to continue."
         case .permissions:
-            "Enable macOS permissions so Voyager can index locally."
+            "Just a couple of permissions to get you going."
         case .complete:
-            "All steps are complete. Start Voyager to open your first window."
+            "All set. You're ready to start."
         }
     }
 
