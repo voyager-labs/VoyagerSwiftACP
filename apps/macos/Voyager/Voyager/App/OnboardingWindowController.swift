@@ -24,7 +24,6 @@ final class OnboardingWindowController: NSWindowController, NSWindowDelegate {
         window.isOpaque = false
         window.backgroundColor = .clear
         window.isMovableByWindowBackground = true
-        window.level = .floating
         window.tabbingMode = .disallowed
         window.alphaValue = 0
 

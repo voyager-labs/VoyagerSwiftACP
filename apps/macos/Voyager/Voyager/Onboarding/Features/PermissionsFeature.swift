@@ -10,13 +10,13 @@ enum FullDiskAccessStatus: String, Equatable, Sendable {
     var message: String {
         switch self {
         case .granted:
-            "Full Disk Access is enabled. You can continue."
+            "You're all set for Full Disk Access."
         case .needsAction:
-            "Full Disk Access is required. Enable it in System Settings to continue."
+            "Turn on Full Disk Access to keep going."
         case .denied:
-            "Full Disk Access is off. Turn it on in System Settings to continue."
+            "Full Disk Access is off. You can enable it anytime."
         case .unknown:
-            "Full Disk Access status is unknown. Open System Settings to confirm."
+            "Check Full Disk Access in System Settings."
         }
     }
 }
@@ -37,6 +37,7 @@ struct PermissionsFeature {
         var filesAndFoldersStatus: FilesAndFoldersStatus = .idle
         var folderAccessResult: FolderAccessResult?
         var isRequestingFilesAndFolders: Bool = false
+        var isIndexingInBackground: Bool = false
         var launchAtLoginEnabled: Bool = false
         var launchAtLoginError: String?
         var hasAttemptedFullDiskAccessEnable: Bool = false
@@ -50,11 +51,14 @@ struct PermissionsFeature {
         }
 
         var nextDisabledMessage: String? {
-            fullDiskAccessStatus == .granted ? nil : "Next unlocks after macOS reports Full Disk Access as granted."
+            fullDiskAccessStatus == .granted ? nil : "Turn on Full Disk Access to continue."
         }
 
-        var filesAndFoldersMessage: String? {
-            filesAndFoldersStatus.message
+        var filesAndFoldersMessage: String {
+            if isRequestingFilesAndFolders {
+                return "Requesting access…"
+            }
+            return filesAndFoldersStatus.message
         }
 
         var folderAccessItems: [FolderAccessItem] {
@@ -64,14 +68,6 @@ struct PermissionsFeature {
                 FolderAccessItem(id: "documents", title: "Documents", status: result.documents),
                 FolderAccessItem(id: "downloads", title: "Downloads", status: result.downloads),
             ]
-        }
-
-        var showsIndexingPresetPreview: Bool {
-            fullDiskAccessStatus == .granted
-        }
-
-        var indexingPresetStatusLabel: String {
-            "Not applied"
         }
     }
 
@@ -114,8 +110,11 @@ struct PermissionsFeature {
                 )
                 state.fullDiskAccessStatus = resolvedStatus
                 state.isComplete = resolvedStatus == .granted
-                if resolvedStatus == .granted {
-                    // TODO(VOY-117, VOY-88): 인덱싱 포트 연동 및 엔드포인트 완료 후, FDA 승인 직후 인덱싱 트리거를 연결해야 함.
+                if resolvedStatus == .granted,
+                   state.filesAndFoldersStatus == .granted,
+                   !state.isIndexingInBackground
+                {
+                    state.isIndexingInBackground = true
                 }
                 return .none
 
@@ -128,7 +127,7 @@ struct PermissionsFeature {
 
             case let .systemSettingsOpenResult(opened):
                 if !opened {
-                    state.systemSettingsError = "We couldn't open System Settings. Open it manually."
+                    state.systemSettingsError = "We couldn't open System Settings. Please open it manually."
                 } else {
                     state.hasAttemptedFullDiskAccessEnable = true
                 }
@@ -147,6 +146,12 @@ struct PermissionsFeature {
                 state.isRequestingFilesAndFolders = false
                 state.folderAccessResult = result
                 state.filesAndFoldersStatus = result.status
+                if result.status == .granted,
+                   state.fullDiskAccessStatus == .granted,
+                   !state.isIndexingInBackground
+                {
+                    state.isIndexingInBackground = true
+                }
                 return .none
 
             case let .launchAtLoginToggled(enabled):

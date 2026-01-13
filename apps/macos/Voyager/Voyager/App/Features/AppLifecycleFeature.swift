@@ -20,8 +20,8 @@ struct AppLifecycleFeature {
 
     @Dependency(\.helperAppClient)
     var helperAppClient
-    @Dependency(\.backendEndpointClient)
-    var backendEndpointClient
+    @Dependency(\.helperStateClient)
+    var helperStateClient
 
     @Dependency(\.onboardingWindowClient)
     var onboardingWindowClient
@@ -37,17 +37,32 @@ struct AppLifecycleFeature {
                 }
                 state.didStartHelper = true
                 let helperClient = helperAppClient
-                let endpointClient = backendEndpointClient
+                let stateClient = helperStateClient
                 return .run { _ in
+                    // Helper 상태 요청 및 fallback 처리
+                    @Sendable
+                    func requestHelperState() async {
+                        let state = await stateClient.resolve()
+                        if state != nil {
+                            return
+                        }
+
+                        let isRunning = await helperClient.isRunning()
+                        if !isRunning {
+                            await helperClient.start()
+                            _ = await stateClient.resolve()
+                        }
+                    }
+
                     async let monitor: Void = {
                         for await _ in helperClient.terminationEvents() {
                             await helperClient.start()
-                            _ = await endpointClient.resolve()
+                            await requestHelperState()
                         }
                     }()
 
                     await helperClient.start()
-                    _ = await endpointClient.resolve()
+                    await requestHelperState()
                     _ = await monitor
                 }
                 .cancellable(id: CancelID.helperMonitor, cancelInFlight: true)

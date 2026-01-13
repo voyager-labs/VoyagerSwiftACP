@@ -57,7 +57,7 @@ struct FSItemGridView: View {
                 .padding(8)
                 .background(
                     RoundedRectangle(cornerRadius: 8)
-                        .fill(isSelected ? Color.gray.opacity(0.2) : Color.clear),
+                        .fill((isSelected || isDropTarget) ? Color.gray.opacity(0.2) : Color.clear),
                 )
                 .contentShape(RoundedRectangle(cornerRadius: 8))
                 .background(
@@ -75,7 +75,7 @@ struct FSItemGridView: View {
                         if let tags = item.tags, !tags.isEmpty {
                             OverlappingTagsView(
                                 tags: tags,
-                                isSelected: isSelected,
+                                isSelected: (isSelected || isDropTarget) && !isRenaming,
                                 showBorderWhenUnselected: false,
                             )
                             .padding(.top, 2)
@@ -87,11 +87,21 @@ struct FSItemGridView: View {
                                 set: { onRenameUpdate($0) },
                             ))
                             .font(.system(size: textSize))
+                            .lineLimit(1)
+                            .truncationMode(.middle)
                             .multilineTextAlignment(.center)
                             .textFieldStyle(.plain)
-                            .background(Color(nsColor: .textBackgroundColor))
-                            .cornerRadius(4)
-                            .frame(maxWidth: 112)
+                            .padding(.horizontal, 0)
+                            .padding(.vertical, 0)
+                            .background(
+                                RoundedRectangle(cornerRadius: 4)
+                                    .fill(Color(nsColor: .textBackgroundColor)),
+                            )
+                            .overlay(
+                                RoundedRectangle(cornerRadius: 4)
+                                    .stroke(Color(nsColor: .keyboardFocusIndicatorColor), lineWidth: 1),
+                            )
+                            .fixedSize(horizontal: true, vertical: false)
                             .focused($isTextFieldFocused)
                             .onSubmit {
                                 onRenameCommit()
@@ -127,9 +137,13 @@ struct FSItemGridView: View {
                     .padding(.vertical, 2)
                     .background(
                         RoundedRectangle(cornerRadius: 4)
-                            .fill(isSelected ? Color(nsColor: .selectedContentBackgroundColor) : Color.clear),
+                            .fill(
+                                ((isSelected || isDropTarget) && !isRenaming)
+                                    ? Color(nsColor: .selectedContentBackgroundColor)
+                                    : Color.clear,
+                            ),
                     )
-                    .foregroundColor(isSelected ? .white : .primary)
+                    .foregroundColor(((isSelected || isDropTarget) && !isRenaming) ? .white : .primary)
                     .contentShape(RoundedRectangle(cornerRadius: 4))
 
                     if let additionalInfo = item.additionalInfo {
@@ -182,10 +196,6 @@ struct FSItemGridView: View {
                     isDropTarget: $isDropTarget,
                     draggingPaths: draggingPaths,
                 ),
-            )
-            .overlay(
-                RoundedRectangle(cornerRadius: 8)
-                    .stroke(Color.blue, lineWidth: isDropTarget ? 2 : 0),
             )
         }
         .contextMenu {
@@ -243,12 +253,8 @@ private extension FSItemGridView {
             Button {
                 onOpenInNewTab(isOptionPressed)
             } label: {
-                Label(
-                    isOptionPressed ? "Open in New Window" : "Open in New Tab",
-                    systemImage: isOptionPressed ? "macwindow.badge.plus" : "plus.square.on.square",
-                )
+                Label("Open in New Window", systemImage: "macwindow.badge.plus")
             }
-            .keyboardShortcut(.downArrow, modifiers: [.command, .option])
         }
 
         if !item.isDirectory, let onOpenWithApp {
@@ -300,12 +306,6 @@ private extension FSItemGridView {
         Divider()
 
         if let onPutBack {
-            Button {
-                onPutBack()
-            } label: {
-                Label("Put Back", systemImage: "trash.slash")
-            }
-
             if let onDeleteImmediately {
                 Button {
                     onDeleteImmediately()

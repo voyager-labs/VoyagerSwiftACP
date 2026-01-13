@@ -18,7 +18,7 @@ enum SidebarUtils {
     }
 
     static var computerName: String {
-        Host.current().localizedName ?? FileManager.default.displayName(atPath: "/")
+        FileManager.default.displayName(atPath: "/")
     }
 
     static var iCloudDrivePath: String {
@@ -140,7 +140,7 @@ enum SidebarUtils {
             makeFavorite(
                 name: "Applications",
                 directory: .applicationDirectory,
-                iconName: "folder",
+                iconName: "appstore",
                 domain: .localDomainMask,
             ),
             makeFavorite(name: "Desktop", directory: .desktopDirectory, iconName: "desktopcomputer"),
@@ -155,7 +155,20 @@ enum SidebarUtils {
            let favorites = try? JSONDecoder().decode([FavoriteItem].self, from: data),
            !favorites.isEmpty
         {
-            return favorites
+            let updatedFavorites = favorites.map { favorite in
+                if favorite.url.path == "/Applications" {
+                    return FavoriteItem(
+                        name: favorite.name,
+                        url: favorite.url,
+                        iconName: "appstore",
+                    )
+                }
+                return favorite
+            }
+            if updatedFavorites != favorites {
+                saveFavorites(updatedFavorites)
+            }
+            return updatedFavorites
         }
 
         let defaultFavorites = initializeDefaultFavorites()
@@ -185,10 +198,12 @@ enum SidebarUtils {
             let isEjectable = resourceValues?.volumeIsEjectable ?? false
 
             let systemPrefixes = ["com.apple", "VM", "Preboot", "Update", "xarts", "iSCPreboot", "Hardware", "mnt"]
+            let simulatorPrefixes = ["SimRuntimeBundle-", "iOS_", "watchOS_", "tvOS_", "xrOS_"]
             let isSystemMount = systemPrefixes
                 .contains { volumeName.hasPrefix($0) } || volumeName == "/" || volumeName == "home"
+            let isSimulatorMount = simulatorPrefixes.contains { volumeName.hasPrefix($0) }
 
-            if isRemovable || isEjectable, !isSystemMount {
+            if isRemovable || isEjectable, !isSystemMount, !isSimulatorMount {
                 volumes.append(LocationItem(
                     name: volumeName,
                     url: volumeURL,
@@ -248,8 +263,8 @@ enum SidebarUtils {
 
         locations.append(LocationItem(
             name: computerName,
-            url: URL(string: "computer://") ?? URL(fileURLWithPath: "/"),
-            iconName: "laptopcomputer",
+            url: URL(fileURLWithPath: "/"),
+            iconName: "internaldrive",
         ))
 
         if let trashURL = FileManager.default.urls(for: .trashDirectory, in: .userDomainMask).first {

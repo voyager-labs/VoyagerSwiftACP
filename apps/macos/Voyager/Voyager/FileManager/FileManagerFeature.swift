@@ -135,13 +135,10 @@ struct FileManagerFeature {
         }
 
         var canQuickLookSelectedItem: Bool {
-            guard fsItems.selectedIds.count == 1 else {
+            guard !fsItems.selectedIds.isEmpty else {
                 return false
             }
-            guard let selectedId = fsItems.selectedIds.first else {
-                return false
-            }
-            return fsItems.displayItems.contains(where: { $0.id == selectedId })
+            return fsItems.displayItems.contains { fsItems.selectedIds.contains($0.id) }
         }
 
         var hasSelectedItems: Bool {
@@ -258,7 +255,7 @@ struct FileManagerFeature {
             selectedSidebarItem = sidebarItemName
             let snapshot = makeHistoryEntry()
             resetComposer()
-            backHistory.append(snapshot)
+            appendBackHistory(snapshot)
             forwardHistory = []
             navigationState = .folder(path)
 
@@ -277,9 +274,28 @@ struct FileManagerFeature {
             selectedSidebarItem = sidebarItemName
             let snapshot = makeHistoryEntry()
             resetComposer()
-            backHistory.append(snapshot)
+            appendBackHistory(snapshot)
             forwardHistory = []
             self.navigationState = navigationState
+        }
+
+        mutating func appendBackHistory(_ entry: HistoryEntry) {
+            backHistory.append(entry)
+            trimHistory()
+        }
+
+        mutating func appendForwardHistory(_ entry: HistoryEntry) {
+            forwardHistory.append(entry)
+            trimHistory()
+        }
+
+        mutating func trimHistory() {
+            if backHistory.count > 10 {
+                backHistory.removeFirst(backHistory.count - 10)
+            }
+            if forwardHistory.count > 10 {
+                forwardHistory.removeFirst(forwardHistory.count - 10)
+            }
         }
     }
 
@@ -470,7 +486,7 @@ struct FileManagerFeature {
                 if path != state.currentPath {
                     let previousSnapshot = state.makeHistoryEntry()
                     state.resetComposer()
-                    state.backHistory.append(previousSnapshot)
+                    state.appendBackHistory(previousSnapshot)
                     state.forwardHistory = []
                 }
                 state.navigationState = .folder(path)
@@ -493,7 +509,7 @@ struct FileManagerFeature {
                         sidebarItemName: nil,
                         composerState: previousSnapshot.composerState,
                     )
-                    state.backHistory.append(previousSnapshot)
+                    state.appendBackHistory(previousSnapshot)
                     state.forwardHistory = []
                 }
                 state.isOpeningCollectionFile = true
@@ -675,7 +691,7 @@ struct FileManagerFeature {
             case .goBack:
                 guard let entry = state.backHistory.popLast() else { return .none }
                 let currentSnapshot = state.makeHistoryEntry()
-                state.forwardHistory.append(currentSnapshot)
+                state.appendForwardHistory(currentSnapshot)
                 state.applyHistoryEntry(entry, favorites: state.favorites, locations: state.locations)
                 let exitEffect = Self.clearCollectionMode(state: &state)
                 return .concatenate(
@@ -686,7 +702,7 @@ struct FileManagerFeature {
             case .goForward:
                 guard let entry = state.forwardHistory.popLast() else { return .none }
                 let currentSnapshot = state.makeHistoryEntry()
-                state.backHistory.append(currentSnapshot)
+                state.appendBackHistory(currentSnapshot)
                 state.applyHistoryEntry(entry, favorites: state.favorites, locations: state.locations)
                 let exitEffect = Self.clearCollectionMode(state: &state)
                 return .concatenate(
@@ -704,8 +720,9 @@ struct FileManagerFeature {
                     state.backHistory.removeLast(state.backHistory.count - targetIndex)
 
                     let currentSnapshot = state.makeHistoryEntry()
-                    state.forwardHistory.append(currentSnapshot)
+                    state.appendForwardHistory(currentSnapshot)
                     state.forwardHistory.append(contentsOf: trailing.reversed())
+                    state.trimHistory()
 
                     state.applyHistoryEntry(targetEntry, favorites: state.favorites, locations: state.locations)
                     let exitEffect = Self.clearCollectionMode(state: &state)
@@ -722,8 +739,9 @@ struct FileManagerFeature {
                     state.forwardHistory.removeLast(state.forwardHistory.count - targetIndex)
 
                     let currentSnapshot = state.makeHistoryEntry()
-                    state.backHistory.append(currentSnapshot)
+                    state.appendBackHistory(currentSnapshot)
                     state.backHistory.append(contentsOf: trailing.reversed())
+                    state.trimHistory()
 
                     state.applyHistoryEntry(targetEntry, favorites: state.favorites, locations: state.locations)
                     let exitEffect = Self.clearCollectionMode(state: &state)
@@ -1050,7 +1068,7 @@ struct FileManagerFeature {
                         makeCollectionNavigation(state: state),
                     )
                     if !wasOpeningCollectionFile, previousNavigationState != nextNavigationState {
-                        state.backHistory.append(previousSnapshot)
+                        state.appendBackHistory(previousSnapshot)
                         state.forwardHistory = []
                     }
                     state.navigationState = nextNavigationState
@@ -1088,7 +1106,7 @@ struct FileManagerFeature {
                         makeCollectionNavigation(state: state),
                     )
                     if !wasOpeningCollectionFile, previousNavigationState != nextNavigationState {
-                        state.backHistory.append(previousSnapshot)
+                        state.appendBackHistory(previousSnapshot)
                         state.forwardHistory = []
                     }
                     state.navigationState = nextNavigationState

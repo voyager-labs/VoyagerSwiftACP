@@ -1,6 +1,7 @@
 import ComposableArchitecture
 import Foundation
 import IOKit
+import Logging
 import SwiftDotenv
 
 struct BetaAccessClient: Sendable {
@@ -53,6 +54,7 @@ private func verifyBetaAccess(email: String, token: String) async throws -> Beta
     let url = baseURL.appendingPathComponent("auth/verify-cbt")
     var request = URLRequest(url: url)
     request.httpMethod = "POST"
+    request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
     request.setValue("application/json", forHTTPHeaderField: "Content-Type")
 
     let deviceId: String
@@ -64,7 +66,6 @@ private func verifyBetaAccess(email: String, token: String) async throws -> Beta
 
     let payload = BetaAccessVerifyRequest(
         email: email,
-        token: token,
         deviceId: deviceId,
         appVersion: AppVersionInfo.shortVersion,
         osVersion: ProcessInfo.processInfo.operatingSystemVersionString,
