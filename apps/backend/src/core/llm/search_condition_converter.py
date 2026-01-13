@@ -25,12 +25,8 @@ class SearchCondition(BaseModel):
 class SearchConditionsOutput(BaseModel):
     """LLM 출력 스키마"""
 
-    conditions: list[SearchCondition] = Field(
-        default_factory=list, description="검색 조건 배열"
-    )
-    scopes: list[str] | None = Field(
-        None, description="쿼리에서 추출한 폴더 경로 (언급된 경우만)"
-    )
+    conditions: list[SearchCondition] = Field(default_factory=list, description="검색 조건 배열")
+    scopes: list[str] | None = Field(None, description="쿼리에서 추출한 폴더 경로 (언급된 경우만)")
     error: str | None = Field(None, description="에러 메시지")
 
 
@@ -43,7 +39,7 @@ class SearchConditionConverter:
         self.system_prompt = self._build_system_prompt()
 
     def _build_system_prompt(self) -> str:
-        """LLM 시스템 프롬프트 생성 """
+        """LLM 시스템 프롬프트 생성"""
         # PropertyKey 정보 생성
         property_info: list[str] = []
         for key, mapping in PROPERTY_KEY_REGISTRY.items():

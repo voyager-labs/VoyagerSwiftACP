@@ -232,7 +232,7 @@ extension FileManagerSplitViewController {
         let isDark = isDarkMode(appearance: appearance)
 
         appearance.performAsCurrentDrawingAppearance {
-            container.layer?.backgroundColor = VoyagerDS.AppKitSurface.contentPaneOverlay(isDark: isDark).cgColor
+            container.layer?.backgroundColor = NSColor.clear.cgColor
         }
     }
 
@@ -268,7 +268,7 @@ extension FileManagerSplitViewController {
         container.layer?.zPosition = 5
         container.layer?.cornerRadius = VoyagerDS.Radius.contentPane
         container.layer?.masksToBounds = true
-        container.layer?.backgroundColor = VoyagerDS.AppKitSurface.contentPaneOverlay(isDark: true).cgColor
+        container.layer?.backgroundColor = NSColor.clear.cgColor
         container.translatesAutoresizingMaskIntoConstraints = false
         contentInspectorContainer = container
 
@@ -336,6 +336,7 @@ extension FileManagerSplitViewController {
                     }
                 }
                 .background(.thickMaterial)
+                .overlay(ContentPaneMaterialTint())
                 .ignoresSafeArea(.all, edges: .top)
                 .animation(
                     .spring(response: 0.25, dampingFraction: 0.75),
@@ -343,6 +344,22 @@ extension FileManagerSplitViewController {
                 )
             },
         )
+    }
+
+    private struct ContentPaneMaterialTint: View {
+        @Environment(\.colorScheme)
+        private var colorScheme
+
+        var body: some View {
+            // 다크 모드에서만 머티리얼 대비를 살리는 얇은 틴트
+            if colorScheme == .dark {
+                Color.white.opacity(0.06)
+                    .allowsHitTesting(false)
+            } else {
+                Color.clear
+                    .allowsHitTesting(false)
+            }
+        }
     }
 
     private func setupContentPaneConstraints(container: NSView, contentView: NSView) {

@@ -7,7 +7,6 @@ from typing import Any
 
 from langchain_community.llms import Ollama
 from langchain_core.language_models import BaseLLM
-from langchain_core.messages import HumanMessage, SystemMessage
 from langchain_core.prompts import ChatPromptTemplate
 from langchain_openai import ChatOpenAI
 from pydantic import BaseModel
@@ -26,43 +25,40 @@ class LangChainProvider(LLMProvider):
 
     def __init__(
         self,
-        provider: str = "ollama",
-        model: str = "qwen2.5:7b",
+        provider: str,
+        base_url: str | None = None,
         **kwargs: Any,
     ):
         """LangChain Provider 초기화
 
         Args:
-            provider: LLM 제공자 (ollama, openai, anthropic)
-            model: 모델 이름
+            provider: LLM 제공자 (ollama, openai)
             **kwargs: 제공자별 추가 설정
                 - base_url: Ollama URL (기본: http://localhost:11434)
                 - api_key: OpenAI/Anthropic API 키
                 - temperature: 온도 (기본: 0.7)
         """
         self.provider = provider
-        self.model = model
+        self.base_url = base_url
         self.kwargs = kwargs
         self.llm = self._create_llm()
 
-    def _create_llm(self) -> BaseLLM:
+    def _create_llm(self) -> BaseLLM | None:
         """LLM 인스턴스 생성"""
         if self.provider == "ollama":
-            base_url = self.kwargs.get("base_url", "http://localhost:11434")
             return Ollama(
-                model=self.model,
-                base_url=base_url,
+                model=self.kwargs.get("model", "qwen2.5:7b"),
+                base_url=self.base_url or "http://localhost:11434",
                 temperature=self.kwargs.get("temperature", 0),
             )
 
         elif self.provider == "openai":
-            api_key = self.kwargs.get("api_key")
             return ChatOpenAI(
-                model=self.model,
-                api_key=api_key,
+                api_key="gateway",
+                model=self.kwargs.get("model", "gpt-5-mini-2025-08-07"),
+                base_url=f"{self.base_url.rstrip('/')}/gateway/openai/v1",
                 temperature=self.kwargs.get("temperature", 0),
             )
-
         else:
             raise ValueError(f"지원하지 않는 provider: {self.provider}")
 

@@ -9,8 +9,18 @@ nonisolated enum BetaAccessStatus: String, Equatable, Sendable {
 nonisolated enum BetaAccessReason: Equatable, Sendable {
     case none
     case missingInput
-    case mismatch
-    case tokenAlreadyRegistered
+    case missingToken
+    case invalidToken
+    case invalidRequest
+    case invalidCredentials
+    case emailMismatch
+    case alreadyUsed
+    case deviceMismatch
+    case deviceIdUnavailable
+    case authBackendError
+    case networkError
+    case invalidGatewayUrl
+    case internalError
 }
 
 nonisolated struct BetaAccessVerificationResult: Equatable, Sendable {

@@ -186,7 +186,8 @@ private actor SnapshotRecorder {
 private final class TestAppDelegate: AppDelegate, @unchecked Sendable {
     var openedPaths: [String?] = []
 
-    override func createNewWindow(path: String? = nil) {
+    override func createNewWindow(path: String? = nil) -> FileManagerWindowController? {
         openedPaths.append(path)
+        return nil
     }
 }

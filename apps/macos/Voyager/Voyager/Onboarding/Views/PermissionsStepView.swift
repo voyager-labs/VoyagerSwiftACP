@@ -24,12 +24,9 @@ struct PermissionsStepView: View {
                         .font(.system(size: 13))
                         .foregroundStyle(.secondary)
 
-                    Text(
-                        "Enable it manually in System Settings > Privacy & Security > Full Disk Access. "
-                            + "Voyager cannot add itself or change this toggle.",
-                    )
-                    .font(.system(size: 12))
-                    .foregroundStyle(.secondary)
+                    Text("Go to System Settings > Privacy & Security > Full Disk Access.")
+                        .font(.system(size: 12))
+                        .foregroundStyle(.secondary)
 
                     if viewStore.showsFullDiskAccessAction {
                         Button("Open System Settings") {
@@ -44,25 +41,25 @@ struct PermissionsStepView: View {
                     }
                 }
                 .padding(12)
-                .background(.ultraThinMaterial)
-                .cornerRadius(8)
                 .frame(maxWidth: .infinity, alignment: .leading)
 
                 VStack(alignment: .leading, spacing: 8) {
                     Text("Files & Folders")
                         .font(.system(size: 14, weight: .semibold))
-                    Text("Click Grant Access to request Desktop, Documents, and Downloads.")
+                    Text("Let Voyager access Desktop, Documents, and Downloads.")
                         .font(.system(size: 13))
                         .foregroundStyle(.secondary)
-                    Text("macOS will show a permission prompt. Choose Allow to grant access.")
+                    Text("macOS will ask. Choose Allow.")
                         .font(.system(size: 12))
                         .foregroundStyle(.secondary)
 
                     HStack(spacing: 8) {
-                        Button("Grant Access") {
+                        Button(viewStore.filesAndFoldersStatus == .granted ? "Done" : "Grant Access") {
                             viewStore.send(.requestFilesAndFoldersTapped)
                         }
-                        .disabled(viewStore.isRequestingFilesAndFolders)
+                        .disabled(
+                            viewStore.isRequestingFilesAndFolders || viewStore.filesAndFoldersStatus == .granted,
+                        )
 
                         if viewStore.isRequestingFilesAndFolders {
                             ProgressView()
@@ -70,13 +67,13 @@ struct PermissionsStepView: View {
                         }
                     }
 
-                    if let message = viewStore.filesAndFoldersMessage {
-                        Text(message)
-                            .font(.system(size: 13))
-                            .foregroundStyle(.secondary)
-                    }
+                    Text(viewStore.filesAndFoldersMessage)
+                        .font(.system(size: 12))
+                        .foregroundStyle(.secondary)
 
-                    if !viewStore.folderAccessItems.isEmpty {
+                    if !viewStore.folderAccessItems.isEmpty,
+                       viewStore.filesAndFoldersStatus != .granted
+                    {
                         VStack(alignment: .leading, spacing: 4) {
                             ForEach(viewStore.folderAccessItems) { item in
                                 HStack {
@@ -92,21 +89,23 @@ struct PermissionsStepView: View {
                     }
                 }
                 .padding(12)
-                .background(.ultraThinMaterial)
-                .cornerRadius(8)
                 .frame(maxWidth: .infinity, alignment: .leading)
 
                 VStack(alignment: .leading, spacing: 8) {
-                    Toggle(
-                        "Launch at Login",
-                        isOn: viewStore.binding(
-                            get: { $0.launchAtLoginEnabled },
-                            send: { .launchAtLoginToggled($0) },
-                        ),
-                    )
-                    Text("Optional. It does not affect onboarding completion.")
-                        .font(.system(size: 13))
-                        .foregroundStyle(.secondary)
+                    HStack(spacing: 8) {
+                        Text("Launch at Login")
+                            .font(.system(size: 14, weight: .semibold))
+                        Spacer()
+                        Toggle(
+                            "",
+                            isOn: viewStore.binding(
+                                get: { $0.launchAtLoginEnabled },
+                                send: { .launchAtLoginToggled($0) },
+                            ),
+                        )
+                        .labelsHidden()
+                        .toggleStyle(.switch)
+                    }
 
                     if let error = viewStore.launchAtLoginError {
                         Text(error)
@@ -118,40 +117,8 @@ struct PermissionsStepView: View {
                     }
                 }
                 .padding(12)
-                .background(.ultraThinMaterial)
-                .cornerRadius(8)
                 .frame(maxWidth: .infinity, alignment: .leading)
-
-                if viewStore.showsIndexingPresetPreview {
-                    VStack(alignment: .leading, spacing: 8) {
-                        HStack(spacing: 8) {
-                            Text("Indexing Preset (OBT)")
-                                .font(.system(size: 14, weight: .semibold))
-                            Text(viewStore.indexingPresetStatusLabel)
-                                .font(.system(size: 12, weight: .semibold))
-                                .foregroundStyle(.secondary)
-                            Spacer()
-                        }
-
-                        Text("Indexing runs in the background and continues after onboarding.")
-                            .font(.system(size: 13))
-                            .foregroundStyle(.secondary)
-
-                        Text("You will not see a single \"indexing complete\" message.")
-                            .font(.system(size: 12))
-                            .foregroundStyle(.secondary)
-
-                        Text("This is a read-only summary of what will be included and excluded.")
-                            .font(.system(size: 12))
-                            .foregroundStyle(.secondary)
-                    }
-                    .padding(12)
-                    .background(.ultraThinMaterial)
-                    .cornerRadius(8)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                }
             }
-            .frame(maxWidth: .infinity, alignment: .leading)
             .onAppear {
                 viewStore.send(.onAppear)
             }

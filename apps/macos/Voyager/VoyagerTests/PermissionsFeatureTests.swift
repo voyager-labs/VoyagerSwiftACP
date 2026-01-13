@@ -14,7 +14,7 @@ final class PermissionsFeatureTests: XCTestCase {
             state.isComplete = false
         }
 
-        XCTAssertEqual(store.state.nextDisabledMessage, "Full Disk Access is required to continue.")
+        XCTAssertEqual(store.state.nextDisabledMessage, "Turn on Full Disk Access to continue.")
 
         await store.send(.fullDiskAccessStatusResponse(.granted)) { state in
             state.fullDiskAccessStatus = .granted
@@ -94,7 +94,7 @@ final class PermissionsFeatureTests: XCTestCase {
         await store.receive(\.launchAtLoginUpdateFailed) { state in
             state.launchAtLoginEnabled = false
             state.launchAtLoginError =
-                "We couldn't update your Login Items. You can manage this in System Settings."
+                "We couldn't update your Login Items. Manage this in System Settings."
         }
 
         await store.finish()
@@ -156,7 +156,7 @@ final class PermissionsFeatureTests: XCTestCase {
 
         XCTAssertEqual(
             store.state.filesAndFoldersMessage,
-            "Some folders weren't granted. You can retry or grant them later in System Settings.",
+            "Some folders are still off. You can enable them later in System Settings.",
         )
         await store.finish()
     }
@@ -186,17 +186,44 @@ final class PermissionsFeatureTests: XCTestCase {
             state.filesAndFoldersStatus = .notGranted
         }
 
-        XCTAssertEqual(store.state.filesAndFoldersMessage, "You can grant access later in System Settings.")
+        XCTAssertEqual(
+            store.state.filesAndFoldersMessage,
+            "No folders were granted. You can enable them later in System Settings.",
+        )
         await store.finish()
     }
 
-    func testIndexingPresetPreviewVisibility() {
-        var state = PermissionsFeature.State()
+    func testIndexingStartsAfterPermissionsGranted() async {
+        let result = FolderAccessResult(
+            desktop: .granted,
+            documents: .granted,
+            downloads: .granted,
+        )
 
-        XCTAssertFalse(state.showsIndexingPresetPreview)
+        let store = TestStore(initialState: PermissionsFeature.State()) {
+            PermissionsFeature()
+        } withDependencies: {
+            $0.folderAccessClient = FolderAccessClient(requestAccess: { result })
+        }
 
-        state.fullDiskAccessStatus = .granted
+        await store.send(.fullDiskAccessStatusResponse(.granted)) { state in
+            state.fullDiskAccessStatus = .granted
+            state.isComplete = true
+        }
 
-        XCTAssertTrue(state.showsIndexingPresetPreview)
+        await store.send(.requestFilesAndFoldersTapped) { state in
+            state.isRequestingFilesAndFolders = true
+            state.filesAndFoldersStatus = .idle
+            state.folderAccessResult = nil
+        }
+
+        await store.receive(\.filesAndFoldersResponse) { state in
+            state.isRequestingFilesAndFolders = false
+            state.folderAccessResult = result
+            state.filesAndFoldersStatus = .granted
+            state.isIndexingInBackground = true
+        }
+
+        await store.finish()
     }
 }

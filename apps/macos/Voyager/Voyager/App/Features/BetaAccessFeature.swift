@@ -9,7 +9,6 @@ struct BetaAccessFeature {
         var token: String = ""
         var status: BetaAccessStatus = .notActive
         var reason: BetaAccessReason = .missingInput
-        var scenarioIndex: Int = 0
         var isVerifying: Bool = false
         var isComplete: Bool = false
 
@@ -30,16 +29,41 @@ struct BetaAccessFeature {
             case .active:
                 "Your invite is verified and beta access is enabled. You can proceed."
             case .checkFailed:
-                "Verification failed. Check your network and try again."
+                switch reason {
+                case .missingToken:
+                    "Missing authorization token. Re-enter your invite and try again."
+                case .invalidToken:
+                    "That token is invalid. Check your invite and try again."
+                case .invalidRequest:
+                    "Verification request is invalid. Check your input and try again."
+                case .deviceIdUnavailable:
+                    "Couldn't access the device ID. Check system access and retry."
+                case .internalError:
+                    "We hit an internal error. Try again shortly."
+                case .networkError:
+                    "Network error. Check your connection and try again."
+                case .authBackendError:
+                    "Verification service is unavailable. Try again shortly."
+                default:
+                    "Verification failed. Check your input and try again."
+                }
             case .notActive:
                 switch reason {
                 case .missingInput:
-                    "Beta access isn't active yet. Enter both your email and token, then click Check."
-                case .mismatch:
-                    "That email and token don't match. Check your invite and try again."
-                case .tokenAlreadyRegistered:
-                    "This token is already registered to another device. Contact the invite owner to reset it."
-                case .none:
+                    "Beta access isn't active yet. Enter your email and token, then click Check."
+                case .missingToken:
+                    "Missing authorization token. Re-enter your invite and try again."
+                case .invalidToken:
+                    "That token is invalid. Check your invite and try again."
+                case .emailMismatch:
+                    "That email doesn't match this token. Check your invite and try again."
+                case .deviceMismatch:
+                    "This token is registered to another device. Request a reissue."
+                case .invalidRequest:
+                    "Check your input and try again."
+                case .authBackendError:
+                    "Verification service is unavailable. Try again shortly."
+                default:
                     nil
                 }
             }
@@ -110,15 +134,70 @@ struct BetaAccessFeature {
         }
 
         state.isVerifying = true
-        let scenarioIndex = state.scenarioIndex
-        state.scenarioIndex = (state.scenarioIndex + 1) % 4
         let email = state.email
         let token = state.token
 
         return .run { [betaAccessClient] send in
-            let result = await betaAccessClient.verify(email, token, scenarioIndex)
+            let outcome: Result<BetaAccessVerifyResponse, BetaAccessVerificationError>
+            do {
+                let response = try await betaAccessClient.verify(email, token)
+                outcome = .success(response)
+            } catch {
+                let mappedError = error as? BetaAccessVerificationError ?? .networkError
+                outcome = .failure(mappedError)
+            }
+            let result = await MainActor.run {
+                mapVerificationOutcome(outcome)
+            }
             await send(.verificationResponse(result))
         }
         .cancellable(id: CancelID.verification, cancelInFlight: true)
+    }
+}
+
+private func mapVerificationOutcome(
+    _ outcome: Result<BetaAccessVerifyResponse, BetaAccessVerificationError>,
+) -> BetaAccessVerificationResult {
+    switch outcome {
+    case let .success(response):
+        response.ok
+            ? BetaAccessVerificationResult(status: .active)
+            : BetaAccessVerificationResult(status: .checkFailed, reason: .internalError)
+    case let .failure(error):
+        mapVerificationError(error)
+    }
+}
+
+private func mapVerificationError(_ error: BetaAccessVerificationError) -> BetaAccessVerificationResult {
+    switch error {
+    case .invalidRequest:
+        BetaAccessVerificationResult(status: .checkFailed, reason: .invalidRequest)
+    case .deviceIdUnavailable:
+        BetaAccessVerificationResult(status: .checkFailed, reason: .deviceIdUnavailable)
+    case .decodingError:
+        BetaAccessVerificationResult(status: .checkFailed, reason: .internalError)
+    case .networkError:
+        BetaAccessVerificationResult(status: .checkFailed, reason: .networkError)
+    case let .gatewayError(code):
+        mapGatewayError(code)
+    }
+}
+
+private func mapGatewayError(_ code: String) -> BetaAccessVerificationResult {
+    switch code {
+    case "missing_token":
+        BetaAccessVerificationResult(status: .checkFailed, reason: .missingToken)
+    case "invalid_token":
+        BetaAccessVerificationResult(status: .notActive, reason: .invalidToken)
+    case "invalid_request":
+        BetaAccessVerificationResult(status: .notActive, reason: .invalidRequest)
+    case "email_mismatch":
+        BetaAccessVerificationResult(status: .notActive, reason: .emailMismatch)
+    case "device_mismatch":
+        BetaAccessVerificationResult(status: .notActive, reason: .deviceMismatch)
+    case "auth_backend_error":
+        BetaAccessVerificationResult(status: .checkFailed, reason: .authBackendError)
+    default:
+        BetaAccessVerificationResult(status: .checkFailed, reason: .networkError)
     }
 }
