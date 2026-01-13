@@ -6,9 +6,10 @@ from collections.abc import Generator, Iterable
 
 from fastapi import APIRouter, Query
 from fastapi.responses import JSONResponse, StreamingResponse
+from pydantic import BaseModel
 from sqlmodel import select, text
 
-from app.config import get_db_config, load_config
+from app.config import config
 from app.file.indexing_service import stream_indexing_events
 from app.file.schemas import IndexFilesRequest, NaturalQueryRequest
 from core.llm.cached_llm_converter import CachedLLMConverter
@@ -20,25 +21,10 @@ from infra.schemas.file_entry_schema import FileEntrySchema
 router = APIRouter(prefix="/files", tags=["files"])
 
 
-# 앱 시작 시 DB 초기화 (이미 main.py에서 수행됨)
-cfg = load_config()
-if not engine_manager.is_initialized:
-    engine_manager.initialize(get_db_config(cfg))
+class NaturalQueryRequest(BaseModel):
+    """자연어 검색 요청"""
 
-
-def create_llm_provider() -> LangChainProvider:
-    """VoyagerConfig 설정으로 LLM Provider 생성"""
-    # LLM provider 설정 (openai만 지원)
-    provider_kwargs = {}
-    if cfg.llm_provider == "openai" and cfg.openai_api_key:
-        provider_kwargs["api_key"] = cfg.openai_api_key
-
-    return LangChainProvider(
-        provider=cfg.llm_provider,
-        model=cfg.llm_model,
-        temperature=cfg.llm_temperature,
-        **provider_kwargs,
-    )
+    query: str
 
 
 # 캐시 컨버터 싱글톤 (서버 재시작 전까지 캐시 유지)
@@ -49,7 +35,7 @@ def get_cached_converter() -> CachedLLMConverter:
     """캐시 컨버터 싱글톤 반환"""
     global _cached_converter
     if _cached_converter is None:
-        llm = create_llm_provider()
+        llm = LangChainProvider(provider="openai", base_url=config.gateway_url)
         _cached_converter = CachedLLMConverter(llm, cache_size=100)
     return _cached_converter
 
