@@ -175,9 +175,9 @@ struct PathBreadcrumbView: View {
                     }
                     .contextMenu {
                         Button {
-                            AppDelegate.shared?.createNewTab(path: item.fullPath)
+                            AppDelegate.shared?.createNewWindow(path: item.fullPath)
                         } label: {
-                            Text("Open in New Tab")
+                            Text("Open in New Window")
                         }
 
                         Button {

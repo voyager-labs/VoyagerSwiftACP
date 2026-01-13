@@ -101,7 +101,7 @@ struct ContentPaneView: View {
                 Text(statusText)
                     .font(.system(size: 12, weight: .medium))
                     .foregroundColor(.secondary)
-                    .frame(maxWidth: .infinity, alignment: .center)
+                    .frame(maxWidth: .infinity, alignment: .trailing)
             }
             .frame(height: 20)
             .padding(.horizontal, 16)
@@ -179,21 +179,7 @@ struct ContentPaneView: View {
     }
 
     private func handleCommandOptionKeys(_ event: NSEvent) -> Bool {
-        guard event.modifierFlags.contains(.command),
-              event.modifierFlags.contains(.option)
-        else { return false }
-
-        if event.keyCode == 125 {
-            if store.fsItems.selectedIds.count == 1,
-               let selectedId = store.fsItems.selectedIds.first,
-               let selectedItem = store.fsItems.displayItems.first(where: { $0.id == selectedId }),
-               selectedItem.isDirectory
-            {
-                AppDelegate.shared?.createNewTab(path: selectedItem.fullPath)
-            }
-            return true
-        }
-
+        _ = event
         return false
     }
 
@@ -254,10 +240,6 @@ struct ContentPaneView: View {
 
         if event.characters == ".", event.modifierFlags.contains(.shift) {
             store.send(.toggleShowHiddenFiles)
-        } else if let number = Int(event.characters ?? ""), (1 ... 9).contains(number) {
-            AppDelegate.shared?.selectTab(at: number - 1)
-        } else if event.characters == "0" {
-            AppDelegate.shared?.selectTab(at: 9)
         }
     }
 

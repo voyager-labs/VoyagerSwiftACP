@@ -23,6 +23,7 @@ public struct FSItemClient: Sendable {
     public var open: @Sendable (URL, OpenKind) async throws -> Void
     public var setDefaultApp: @Sendable (UTType, String) async throws -> Void
     public var quickLook: @Sendable (URL) async throws -> Void
+    public var quickLookFiles: @Sendable ([URL]) async throws -> Void
     public var applicationsForFile: @Sendable (URL) async -> [ApplicationInfo]
     public var defaultApplication: @Sendable (UTType) async -> ApplicationInfo?
     public var createFolder: @Sendable (URL, String) async throws -> Void
@@ -54,6 +55,7 @@ public struct FSItemClient: Sendable {
         open: @escaping @Sendable (URL, OpenKind) async throws -> Void,
         setDefaultApp: @escaping @Sendable (UTType, String) async throws -> Void,
         quickLook: @escaping @Sendable (URL) async throws -> Void,
+        quickLookFiles: @escaping @Sendable ([URL]) async throws -> Void,
         applicationsForFile: @escaping @Sendable (URL) async -> [ApplicationInfo],
         defaultApplication: @escaping @Sendable (UTType) async -> ApplicationInfo?,
         createFolder: @escaping @Sendable (URL, String) async throws -> Void,
@@ -84,6 +86,7 @@ public struct FSItemClient: Sendable {
         self.open = open
         self.setDefaultApp = setDefaultApp
         self.quickLook = quickLook
+        self.quickLookFiles = quickLookFiles
         self.applicationsForFile = applicationsForFile
         self.defaultApplication = defaultApplication
         self.createFolder = createFolder
@@ -249,6 +252,12 @@ extension FSItemClient: DependencyKey {
                 try await withScopedAccess(url) {
                     let token = await MainActor.run { SecurityScopedURLToken(url: url) }
                     await FSItemQuickLookCoordinator.shared.present(url: url, scopeToken: token)
+                }
+            },
+            quickLookFiles: { urls in
+                try await withScopedAccess(urls) {
+                    let tokens = await MainActor.run { urls.map(SecurityScopedURLToken.init) }
+                    await FSItemQuickLookCoordinator.shared.present(urls: urls, scopeTokens: tokens, initialIndex: 0)
                 }
             },
             applicationsForFile: { url in
@@ -680,6 +689,7 @@ extension FSItemClient: DependencyKey {
             open: { _, _ in unimplemented() },
             setDefaultApp: { _, _ in unimplemented() },
             quickLook: { _ in unimplemented() },
+            quickLookFiles: { _ in unimplemented() },
             applicationsForFile: { _ in unimplemented() },
             defaultApplication: { _ in unimplemented() },
             createFolder: { _, _ in unimplemented() },
@@ -722,6 +732,7 @@ extension FSItemClient: DependencyKey {
             open: { _, _ in },
             setDefaultApp: { _, _ in },
             quickLook: { _ in },
+            quickLookFiles: { _ in },
             applicationsForFile: { _ async in
                 [previewInfo, chromeInfo, otherInfo]
             },
@@ -766,5 +777,15 @@ public extension DependencyValues {
 func withScopedAccess<T>(_ url: URL, perform: @escaping () async throws -> T) async throws -> T {
     let scoped = url.startAccessingSecurityScopedResource()
     defer { if scoped { url.stopAccessingSecurityScopedResource() } }
+    return try await perform()
+}
+
+func withScopedAccess<T>(_ urls: [URL], perform: @escaping () async throws -> T) async throws -> T {
+    let scoped = urls.map { $0.startAccessingSecurityScopedResource() }
+    defer {
+        for (url, isScoped) in zip(urls, scoped) where isScoped {
+            url.stopAccessingSecurityScopedResource()
+        }
+    }
     return try await perform()
 }
