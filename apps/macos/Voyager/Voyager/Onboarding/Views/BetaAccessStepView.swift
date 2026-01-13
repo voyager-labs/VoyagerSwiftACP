@@ -43,28 +43,19 @@ struct BetaAccessStepView: View {
                     .frame(maxWidth: .infinity, alignment: .leading)
 
                     VStack(alignment: .leading, spacing: 6) {
-                        Text("Enter the email and token from your invite.")
-                        Text("Click Check to verify with the server. Until verification succeeds, Next stays disabled.")
-                        Text("Verification can fail due to input errors, expired tokens, or network/server issues.")
-                        Text("If it fails, correct the input and Retry/Check.")
+                        Text("Use the email and token from your invite.")
                     }
                     .font(.system(size: 13))
                     .foregroundStyle(.secondary)
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
 
-                VStack(alignment: .leading, spacing: 6) {
-                    Text(viewStore.statusTitle)
-                        .font(.system(size: 14, weight: .semibold))
+                HStack(spacing: 8) {
+                    statusChip(viewStore.statusTitle, tone: statusTone(for: viewStore.status))
                     if let message = viewStore.statusMessage {
-                        Text(message)
-                            .font(.system(size: 13))
-                            .foregroundStyle(.secondary)
+                        statusChip(message, tone: .neutral)
                     }
                 }
-                .padding(12)
-                .background(.ultraThinMaterial)
-                .cornerRadius(8)
                 .frame(maxWidth: .infinity, alignment: .leading)
 
                 if viewStore.isVerifying {
@@ -81,6 +72,49 @@ struct BetaAccessStepView: View {
             .onAppear {
                 viewStore.send(.onAppear)
             }
+        }
+    }
+
+    private enum ChipTone {
+        case success
+        case error
+        case neutral
+    }
+
+    private func statusTone(for status: BetaAccessStatus) -> ChipTone {
+        switch status {
+        case .active:
+            .success
+        case .checkFailed:
+            .error
+        case .notActive:
+            .neutral
+        }
+    }
+
+    private func statusChip(_ text: String, tone: ChipTone) -> some View {
+        let colors = chipColors(for: tone)
+        return Text(text)
+            .font(.system(size: 12, weight: .semibold))
+            .foregroundStyle(colors.foreground)
+            .lineLimit(1)
+            .truncationMode(.tail)
+            .padding(.horizontal, 10)
+            .padding(.vertical, 4)
+            .background(
+                Capsule(style: .continuous)
+                    .fill(colors.background),
+            )
+    }
+
+    private func chipColors(for tone: ChipTone) -> (foreground: Color, background: Color) {
+        switch tone {
+        case .success:
+            (foreground: .green, background: .green.opacity(0.18))
+        case .error:
+            (foreground: .red, background: .red.opacity(0.18))
+        case .neutral:
+            (foreground: .secondary, background: .primary.opacity(0.08))
         }
     }
 }

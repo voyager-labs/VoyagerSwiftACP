@@ -135,7 +135,10 @@ class AppDelegate: NSObject, NSApplicationDelegate, ObservableObject {
 
     @discardableResult
     @objc
-    func createNewWindow(path: String? = nil) -> FileManagerWindowController {
+    func createNewWindow(path: String? = nil) -> FileManagerWindowController? {
+        if onboardingWindowClient.showIfNeeded() {
+            return nil
+        }
         // TODO: 모든 윈도우 생성 경로를 여기로 통합해 게이트 적용 지점을 단일화한다.
         let controller = FileManagerWindowController(path: path, asTab: false)
         windowControllers.append(controller)
@@ -327,7 +330,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, ObservableObject {
         if onboardingWindowClient.showIfNeeded() {
             return
         }
-        let controller = activeWindowController() ?? createNewWindow()
+        guard let controller = activeWindowController() ?? createNewWindow() else { return }
         controller.window?.makeKeyAndOrderFront(nil)
         controller.store.send(.openCollectionFile(url))
     }
