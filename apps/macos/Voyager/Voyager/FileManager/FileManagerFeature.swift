@@ -858,11 +858,14 @@ struct FileManagerFeature {
                 return .none
 
             case let .openFavorite(favorite):
-                guard state.currentPath != favorite.url.path else { return .none }
                 if favorite.url.pathExtension.lowercased() == "voycoll" {
+                    if state.openedCollectionURL?.path == favorite.url.path {
+                        return .none
+                    }
                     state.selectedSidebarItem = favorite.displayName
                     return .send(.openCollectionFile(favorite.url))
                 }
+                guard state.currentPath != favorite.url.path else { return .none }
                 state.navigateToFolder(favorite.url.path, sidebarItemName: favorite.name)
                 state.resetComposer()
                 let exitEffect = Self.exitCollectionMode(state: &state)
