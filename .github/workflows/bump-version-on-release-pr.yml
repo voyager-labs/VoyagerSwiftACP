@@ -138,6 +138,21 @@ jobs:
 
           echo "::notice::Updated backend package version to ${VERSION} in pyproject.toml"
 
+      - name: Setup uv
+        if: steps.version.outputs.version != ''
+        uses: astral-sh/setup-uv@v7
+        with:
+          version: "0.8.13"
+          enable-cache: "false"
+
+      - name: Sync backend lockfile
+        if: steps.version.outputs.version != ''
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd apps/backend
+          uv sync
+
       - name: Commit & push (if changed)
         if: steps.version.outputs.version != ''
         shell: bash
@@ -156,6 +171,7 @@ jobs:
 
           git add \
             apps/backend/pyproject.toml \
+            apps/backend/uv.lock \
             apps/macos/Voyager/Voyager.xcodeproj/project.pbxproj
           git commit -m "chore(release): set version to ${VERSION}"
           git push origin HEAD
