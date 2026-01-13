@@ -127,7 +127,9 @@ struct ToolbarView: View {
         let isDirtySavedCollection = viewStore.isCollectionMode
             && viewStore.openedCollectionURLExists
             && viewStore.isOpenedCollectionDirty
-        let suffix = isTitleHovered ? "/ Compose a filter" : "/ Complete saving the filter"
+        let composeSuffix = "/ Compose a filter"
+        let showUnsavedIndicator = viewStore.isCollectionMode
+            && (!viewStore.openedCollectionURLExists || viewStore.isOpenedCollectionDirty)
 
         return Button(
             action: { store.send(.enterComposer) },
@@ -144,20 +146,14 @@ struct ToolbarView: View {
                         .font(.system(size: 15, weight: .semibold))
                         .foregroundColor(.primary)
 
-                    if isNewCollection {
-                        Text(suffix)
-                            .font(.system(size: 12))
-                            .foregroundColor(.secondary)
-                            .lineLimit(1)
-                            .fixedSize(horizontal: true, vertical: false)
-                    } else if isDirtySavedCollection {
-                        Text(suffix)
-                            .font(.system(size: 12))
-                            .foregroundColor(.secondary)
-                            .lineLimit(1)
-                            .fixedSize(horizontal: true, vertical: false)
-                    } else if isTitleHovered {
-                        Text("/ Compose a filter")
+                    if showUnsavedIndicator, !isTitleHovered {
+                        Image(systemName: "circle.fill")
+                            .font(.system(size: 6, weight: .semibold))
+                            .foregroundColor(VoyagerDS.BrandSecondaryColor.c600)
+                    }
+
+                    if isTitleHovered {
+                        Text(composeSuffix)
                             .font(.system(size: 12))
                             .foregroundColor(.secondary)
                             .lineLimit(1)
