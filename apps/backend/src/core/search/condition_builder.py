@@ -6,8 +6,8 @@ Search API의 conditions를 SQL WHERE절로 변환합니다.
 from typing import Any
 
 from core.metadata.mditem_registry import (
-    MDItemType,
     PROPERTY_KEY_REGISTRY,
+    MDItemType,
     PropertyKeyMapping,
 )
 
@@ -50,9 +50,7 @@ class ConditionBuilder:
         """
         self.registry = registry or PROPERTY_KEY_REGISTRY
 
-    def build_clause(
-        self, property_key: str, operator: str, value: Any
-    ) -> tuple[str, list[Any]]:
+    def build_clause(self, property_key: str, operator: str, value: Any) -> tuple[str, list[Any]]:
         """단일 조건을 SQL 절로 변환
 
         Args:
@@ -125,9 +123,7 @@ class ConditionBuilder:
             sql_op = self.OPERATOR_MAP.get(operator, "=")
             return f"{field} {sql_op} ?", [value]
 
-    def build_where(
-        self, conditions: list[dict[str, Any]]
-    ) -> tuple[str, list[Any]]:
+    def build_where(self, conditions: list[dict[str, Any]]) -> tuple[str, list[Any]]:
         """여러 조건을 AND로 결합한 WHERE절 생성
 
         Args:

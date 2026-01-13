@@ -4,7 +4,7 @@ from typing import Any
 
 from sqlalchemy import text
 
-from app.config import load_config
+from app.config import config
 from app.search.schemas import (
     AppliedFilters,
     SearchCondition,
@@ -19,23 +19,6 @@ from core.search.scope_builder import ScopeBuilder
 from infra.db.engine import engine_manager
 
 
-def _create_llm_provider() -> LangChainProvider:
-    """VoyagerConfig 설정으로 LLM Provider 생성"""
-    cfg = load_config()
-
-    # LLM provider 설정 (openai만 지원)
-    provider_kwargs = {}
-    if cfg.llm_provider == "openai" and cfg.openai_api_key:
-        provider_kwargs["api_key"] = cfg.openai_api_key
-
-    return LangChainProvider(
-        provider=cfg.llm_provider,
-        model=cfg.llm_model,
-        temperature=cfg.llm_temperature,
-        **provider_kwargs,
-    )
-
-
 class SearchService:
     """검색 서비스"""
 
@@ -48,7 +31,10 @@ class SearchService:
     def converter(self) -> CachedSearchConditionConverter:
         """Lazy initialization of converter"""
         if self._converter is None:
-            llm_provider = _create_llm_provider()
+            llm_provider = LangChainProvider(
+                provider="openai",
+                base_url=config.gateway_url,
+            )
             self._converter = CachedSearchConditionConverter(llm_provider)
         return self._converter
 
@@ -76,20 +62,14 @@ class SearchService:
                 existing_scopes = filters.scopes
 
         # 2. LLM으로 query + 기존 조건/스코프 → 최적 결과 생성
-        llm_result = await self.converter.convert(
-            query, existing_conditions, existing_scopes
-        )
+        llm_result = await self.converter.convert(query, existing_conditions, existing_scopes)
 
         # 3. 결과 조건 생성
-        applied_conditions = [
-            SearchCondition(**c) for c in llm_result["conditions"]
-        ]
+        applied_conditions = [SearchCondition(**c) for c in llm_result["conditions"]]
 
         # 4. Scopes 설정: LLM이 새 스코프를 반환하면 사용, 아니면 기존 스코프 유지
         applied_scopes = (
-            llm_result["scopes"]
-            if llm_result["scopes"] is not None
-            else (existing_scopes or [])
+            llm_result["scopes"] if llm_result["scopes"] is not None else (existing_scopes or [])
         )
 
         # 5. SQL 생성 및 실행
@@ -145,9 +125,7 @@ class SearchService:
             scope_clause, scope_params = self.scope_builder.build_scope_clause(scopes)
 
             # Condition 조건 생성
-            condition_clause, condition_params = self.condition_builder.build_where(
-                conditions
-            )
+            condition_clause, condition_params = self.condition_builder.build_where(conditions)
 
             # WHERE절 결합
             where_clause = f"{scope_clause} AND {condition_clause}"
