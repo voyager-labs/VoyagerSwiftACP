@@ -115,7 +115,11 @@ struct ComposerFeature {
                 guard !state.isLoadingSearch else { return .none }
                 guard !state.scopes.contains(path) else { return .none }
                 state.pushHistory()
-                state.scopes.append(path)
+                if state.scopes.isEmpty || state.scopes == [ComposerScopeUtils.rootScopePath] {
+                    state.scopes = [path]
+                } else {
+                    state.scopes.append(path)
+                }
                 return applyFiltersIfNeeded(state: &state, searchClient: searchClient)
 
             case let .removeScope(path):
@@ -123,6 +127,9 @@ struct ComposerFeature {
                 if state.scopes.contains(path) {
                     state.pushHistory()
                     state.scopes.removeAll { $0 == path }
+                    if state.scopes.isEmpty {
+                        state.scopes = [ComposerScopeUtils.rootScopePath]
+                    }
                 }
                 return applyFiltersIfNeeded(state: &state, searchClient: searchClient)
 
@@ -130,7 +137,7 @@ struct ComposerFeature {
                 guard !state.isLoadingSearch else { return .none }
                 state.pushHistory()
                 state.text = ""
-                state.scopes = []
+                state.scopes = [ComposerScopeUtils.rootScopePath]
                 state.conditions = []
                 state.propertyPicker = .init()
                 state.operatorPicker = .init()

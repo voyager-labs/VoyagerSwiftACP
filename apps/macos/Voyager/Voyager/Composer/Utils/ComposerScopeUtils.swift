@@ -1,6 +1,8 @@
 import Foundation
 
 enum ComposerScopeUtils {
+    static let rootScopePath = "/"
+
     struct DirectoryItem: Identifiable, Equatable {
         let id: String
         let path: String

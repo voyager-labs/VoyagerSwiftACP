@@ -209,14 +209,16 @@ struct ComposerView: View {
     }
 
     private func clearButton(viewStore: ViewStore<ComposerFeature.State, ComposerFeature.Action>) -> some View {
-        let isAllEmpty = viewStore.text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && viewStore.scopes
-            .isEmpty && viewStore.conditions.isEmpty
+        let trimmedText = viewStore.text.trimmingCharacters(in: .whitespacesAndNewlines)
+        let isRootScopeOnly = viewStore.scopes == [ComposerScopeUtils.rootScopePath]
+        let isAllEmpty = trimmedText.isEmpty && viewStore.conditions.isEmpty
+            && (viewStore.scopes.isEmpty || isRootScopeOnly)
         return Button {
             store.send(.composer(.clearAll))
         } label: {
             HStack(spacing: 4) {
                 Image(systemName: "xmark.square")
-                Text("Clear all")
+                Text("Clear")
             }
             .font(.system(size: 10, weight: .medium))
             .foregroundColor(isAllEmpty ? .secondary : .primary)
