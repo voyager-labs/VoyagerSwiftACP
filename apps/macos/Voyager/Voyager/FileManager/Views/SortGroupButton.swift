@@ -9,68 +9,72 @@ struct SortGroupButton: View {
     @State private var isHovered: Bool = false
 
     var body: some View {
-        Menu {
-            Menu("Group By") {
-                groupKeyToggle("None", key: .none)
-
-                Divider()
-
-                groupKeyToggle("Name", key: .name)
-                groupKeyToggle("Kind", key: .kind)
-                groupKeyToggle("Application", key: .application)
-                groupKeyToggle("Date Last Opened", key: .dateLastOpened)
-                groupKeyToggle("Date Added", key: .dateAdded)
-                groupKeyToggle("Date Modified", key: .dateModified)
-                groupKeyToggle("Date Created", key: .dateCreated)
-                groupKeyToggle("Size", key: .size)
-                groupKeyToggle("Tags", key: .tags)
-            }
-
-            Menu("Sort By") {
-                sortKeyToggle("Name", key: .name)
-                sortKeyToggle("Kind", key: .kind)
-                sortKeyToggle("Application", key: .application)
-                sortKeyToggle("Date Last Opened", key: .dateLastOpened)
-                sortKeyToggle("Date Added", key: .dateAdded)
-                sortKeyToggle("Date Modified", key: .dateModified)
-                sortKeyToggle("Date Created", key: .dateCreated)
-                sortKeyToggle("Size", key: .size)
-                sortKeyToggle("Tags", key: .tags)
-
-                Divider()
-
-                sortOrderToggle("Ascending", order: .ascending)
-                sortOrderToggle("Descending", order: .descending)
-            }
-            .disabled(store.fsItems.groupKey != .none)
-        } label: {
-            ZStack {
-                Image(systemName: "arrow.up.arrow.down")
-                    .font(.system(size: 12))
-                    .foregroundColor(.secondary)
-                    .frame(width: 24, height: 24)
-                    .background(
-                        Group {
-                            if isHovered {
-                                ZStack {
-                                    RoundedRectangle(cornerRadius: VoyagerDS.Radius.toolbarButton)
-                                        .fill(VoyagerDS.Surface.toolbarMenuButtonBackground(for: colorScheme))
-                                    RoundedRectangle(cornerRadius: VoyagerDS.Radius.toolbarButton)
-                                        .fill(VoyagerDS.Interaction.toolbarButtonHoverFill(for: colorScheme))
-                                }
+        ZStack {
+            Image(systemName: "arrow.up.arrow.down")
+                .font(.system(size: 13, weight: .medium))
+                .foregroundColor(.secondary)
+                .frame(width: 24, height: 24)
+                .background(
+                    Group {
+                        if isHovered {
+                            ZStack {
+                                RoundedRectangle(cornerRadius: VoyagerDS.Radius.toolbarButton)
+                                    .fill(VoyagerDS.Surface.toolbarMenuButtonBackground(for: colorScheme))
+                                RoundedRectangle(cornerRadius: VoyagerDS.Radius.toolbarButton)
+                                    .fill(VoyagerDS.Interaction.toolbarButtonHoverFill(for: colorScheme))
                             }
                         }
-                        .allowsHitTesting(false),
-                    )
-            }
-            .frame(width: 24, height: 24)
-            .contentShape(Rectangle())
-            .background(
-                HoverTrackingOverlay(isHovered: $isHovered),
-            )
+                    }
+                    .allowsHitTesting(false),
+                )
         }
-        .menuIndicator(.hidden)
-        .buttonStyle(.borderless)
+        .contentShape(RoundedRectangle(cornerRadius: VoyagerDS.Radius.toolbarButton))
+        .overlay(
+            Menu {
+                Menu("Group By") {
+                    groupKeyToggle("None", key: .none)
+
+                    Divider()
+
+                    groupKeyToggle("Name", key: .name)
+                    groupKeyToggle("Kind", key: .kind)
+                    groupKeyToggle("Application", key: .application)
+                    groupKeyToggle("Date Last Opened", key: .dateLastOpened)
+                    groupKeyToggle("Date Added", key: .dateAdded)
+                    groupKeyToggle("Date Modified", key: .dateModified)
+                    groupKeyToggle("Date Created", key: .dateCreated)
+                    groupKeyToggle("Size", key: .size)
+                    groupKeyToggle("Tags", key: .tags)
+                }
+
+                Menu("Sort By") {
+                    sortKeyToggle("Name", key: .name)
+                    sortKeyToggle("Kind", key: .kind)
+                    sortKeyToggle("Application", key: .application)
+                    sortKeyToggle("Date Last Opened", key: .dateLastOpened)
+                    sortKeyToggle("Date Added", key: .dateAdded)
+                    sortKeyToggle("Date Modified", key: .dateModified)
+                    sortKeyToggle("Date Created", key: .dateCreated)
+                    sortKeyToggle("Size", key: .size)
+                    sortKeyToggle("Tags", key: .tags)
+
+                    Divider()
+
+                    sortOrderToggle("Ascending", order: .ascending)
+                    sortOrderToggle("Descending", order: .descending)
+                }
+                .disabled(store.fsItems.groupKey != .none)
+            } label: {
+                Color.clear
+                    .frame(width: 24, height: 24)
+            }
+            .menuIndicator(.hidden)
+            .buttonStyle(.borderless),
+        )
+        .overlay(
+            HoverTrackingOverlay(isHovered: $isHovered)
+                .frame(width: 24, height: 24),
+        )
     }
 
     private func groupKeyToggle(_ title: String, key: GroupKey) -> some View {

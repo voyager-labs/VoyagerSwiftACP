@@ -73,7 +73,7 @@ struct ToolbarView: View {
     }
 
     private func normalModeContent(viewStore: ViewStore<ViewState, FileManagerFeature.Action>) -> some View {
-        HStack(spacing: 12) {
+        HStack(spacing: 0) {
             backButton(viewStore: viewStore)
             forwardButton(viewStore: viewStore)
             enclosingDirectoryButton(viewStore: viewStore)
@@ -115,7 +115,7 @@ struct ToolbarView: View {
         ToolbarNavigationMenuButton(
             systemName: "chevron.left",
             isEnabled: viewStore.canGoBack,
-            font: nil,
+            font: .system(size: 13, weight: .medium),
             menuID: viewStore.backHistory.count,
             primaryAction: { store.send(.goBack) },
             menuContent: {
@@ -139,7 +139,7 @@ struct ToolbarView: View {
         ToolbarNavigationMenuButton(
             systemName: "chevron.right",
             isEnabled: viewStore.canGoForward,
-            font: nil,
+            font: .system(size: 13, weight: .medium),
             menuID: viewStore.forwardHistory.count,
             primaryAction: { store.send(.goForward) },
             menuContent: {

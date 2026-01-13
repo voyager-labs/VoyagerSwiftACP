@@ -11,7 +11,7 @@ struct ViewToggleButton: View {
     var body: some View {
         ZStack {
             Image(systemName: store.viewLayout == .list ? "list.bullet" : "square.grid.2x2")
-                .font(.system(size: 12))
+                .font(.system(size: 13, weight: .medium))
                 .foregroundColor(.secondary)
                 .frame(width: 24, height: 24)
                 .background(
@@ -60,7 +60,8 @@ struct ViewToggleButton: View {
             .buttonStyle(.borderless),
         )
         .overlay(
-            HoverTrackingOverlay(isHovered: $isHovered),
+            HoverTrackingOverlay(isHovered: $isHovered)
+                .frame(width: 24, height: 24),
         )
     }
 }

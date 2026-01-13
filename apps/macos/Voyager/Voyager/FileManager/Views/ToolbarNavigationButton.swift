@@ -9,22 +9,42 @@ struct ToolbarNavigationButtonLabel: View {
     @State private var isHovered: Bool = false
 
     var body: some View {
-        Image(systemName: systemName)
-            .font(font)
-            .foregroundColor(isEnabled ? .primary : .secondary)
-            .frame(width: 24, height: 24)
+        ZStack {
+            Image(systemName: systemName)
+                .font(font)
+                .foregroundColor(isEnabled ? .primary : .secondary)
+                .frame(width: 24, height: 24)
+            RoundedRectangle(cornerRadius: VoyagerDS.Radius.toolbarButton)
+                .fill(
+                    isEnabled && isHovered
+                        ? VoyagerDS.Interaction.toolbarButtonHoverFill(for: colorScheme)
+                        : .clear,
+                )
+                .frame(width: 24, height: 24)
+        }
+        .frame(width: 24, height: 24)
+        .onHover { hovering in
+            isHovered = hovering
+        }
+    }
+}
+
+struct ToolbarNavigationButtonStyle: ButtonStyle {
+    let isEnabled: Bool
+    @Environment(\.colorScheme)
+    private var colorScheme
+
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
             .background(
                 RoundedRectangle(cornerRadius: VoyagerDS.Radius.toolbarButton)
                     .fill(
-                        isEnabled && isHovered
+                        isEnabled && configuration.isPressed
                             ? VoyagerDS.Interaction.toolbarButtonHoverFill(for: colorScheme)
                             : .clear,
-                    ),
+                    )
+                    .frame(width: 20, height: 20),
             )
-            .contentShape(RoundedRectangle(cornerRadius: VoyagerDS.Radius.toolbarButton))
-            .onHover { hovering in
-                isHovered = hovering
-            }
     }
 }
 
@@ -56,48 +76,33 @@ struct ToolbarNavigationMenuButton<Content: View>: View {
     }
 
     var body: some View {
-        ZStack {
-            Image(systemName: systemName)
-                .font(font)
-                .foregroundColor(isEnabled ? .primary : .secondary)
-                .frame(width: 24, height: 24)
-                .background(
-                    RoundedRectangle(cornerRadius: VoyagerDS.Radius.toolbarButton)
-                        .fill(
-                            isEnabled && isHovered
-                                ? VoyagerDS.Interaction.toolbarButtonHoverFill(for: colorScheme)
-                                : .clear,
-                        ),
-                )
+        Menu {
+            menuContent()
+        } label: {
+            ToolbarNavigationButtonLabel(
+                systemName: systemName,
+                isEnabled: isEnabled,
+                font: font,
+            )
+        } primaryAction: {
+            primaryAction()
         }
-        .contentShape(RoundedRectangle(cornerRadius: VoyagerDS.Radius.toolbarButton))
-        .overlay(
-            Menu {
-                menuContent()
-            } label: {
-                Color.clear
-                    .frame(width: 24, height: 24)
-            } primaryAction: {
-                primaryAction()
-            }
-            .menuIndicator(.hidden)
-            .buttonStyle(.borderless)
-            .disabled(!isEnabled)
-            .id(menuID ?? 0),
+        .frame(width: 24, height: 24)
+        .menuIndicator(.hidden)
+        .background(
+            RoundedRectangle(cornerRadius: VoyagerDS.Radius.toolbarButton)
+                .fill(
+                    isEnabled && isHovered
+                        ? VoyagerDS.Interaction.toolbarButtonHoverFill(for: colorScheme)
+                        : .clear,
+                )
+                .frame(width: 24, height: 24),
         )
-        .overlay(
-            HoverTrackingOverlay(
-                isHovered: Binding(
-                    get: { isHovered },
-                    set: { newValue in
-                        if isEnabled {
-                            isHovered = newValue
-                        } else {
-                            isHovered = false
-                        }
-                    },
-                ),
-            ),
-        )
+        .buttonStyle(.borderless)
+        .disabled(!isEnabled)
+        .id(menuID ?? 0)
+        .onHover { hovering in
+            isHovered = hovering
+        }
     }
 }
