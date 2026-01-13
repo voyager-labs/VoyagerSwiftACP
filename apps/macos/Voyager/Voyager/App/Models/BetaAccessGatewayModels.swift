@@ -2,14 +2,12 @@ import Foundation
 
 struct BetaAccessVerifyRequest: Encodable, Sendable {
     let email: String
-    let token: String
     let deviceId: String
     let appVersion: String?
     let osVersion: String?
 
     enum CodingKeys: String, CodingKey {
         case email
-        case token
         case deviceId = "device_id"
         case appVersion = "app_version"
         case osVersion = "os_version"
