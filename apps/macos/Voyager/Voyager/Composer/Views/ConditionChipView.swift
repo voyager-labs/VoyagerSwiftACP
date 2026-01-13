@@ -698,19 +698,23 @@ struct ConditionChipView: View {
         }
         .popover(isPresented: isPresented, arrowEdge: .bottom) {
             VStack(alignment: .leading, spacing: 12) {
-                CalendarDatePicker(selection: $tempDate)
+                let applySelection = {
+                    let formatted = ValueNormalizer.formatDateOnly(tempDate)
+                    valueViewStore.send(.setValue(index: index, text: formatted))
+                    valuePickerStore.send(.commit)
+                    DispatchQueue.main.async {
+                        if valueViewStore.errorMessage == nil {
+                            datePopoverIndex = nil
+                        }
+                    }
+                }
+
+                CalendarDatePicker(selection: $tempDate, onCommit: applySelection)
 
                 HStack {
                     Spacer()
                     Button("Apply") {
-                        let formatted = ValueNormalizer.formatDateOnly(tempDate)
-                        valueViewStore.send(.setValue(index: index, text: formatted))
-                        valuePickerStore.send(.commit)
-                        DispatchQueue.main.async {
-                            if valueViewStore.errorMessage == nil {
-                                datePopoverIndex = nil
-                            }
-                        }
+                        applySelection()
                     }
                     .keyboardShortcut(.defaultAction)
                 }
@@ -889,9 +893,10 @@ struct ConditionChipView: View {
 
 private struct CalendarDatePicker: NSViewRepresentable {
     @Binding var selection: Date
+    let onCommit: () -> Void
 
     func makeCoordinator() -> Coordinator {
-        Coordinator(selection: $selection)
+        Coordinator(selection: $selection, onCommit: onCommit)
     }
 
     func makeNSView(context: Context) -> NSDatePicker {
@@ -915,14 +920,19 @@ private struct CalendarDatePicker: NSViewRepresentable {
 
     final class Coordinator: NSObject {
         @Binding var selection: Date
+        let onCommit: () -> Void
 
-        init(selection: Binding<Date>) {
+        init(selection: Binding<Date>, onCommit: @escaping () -> Void) {
             _selection = selection
+            self.onCommit = onCommit
         }
 
         @objc
         func dateChanged(_ sender: NSDatePicker) {
             selection = sender.dateValue
+            if NSApp.currentEvent?.clickCount == 2 {
+                onCommit()
+            }
         }
     }
 }
