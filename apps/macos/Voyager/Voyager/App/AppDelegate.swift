@@ -304,8 +304,17 @@ class AppDelegate: NSObject, NSApplicationDelegate, ObservableObject {
         alert.addButton(withTitle: "Quit")
         alert.addButton(withTitle: "Cancel")
         alert.alertStyle = .warning
+        alert.showsSuppressionButton = true
+        if let suppressionButton = alert.suppressionButton {
+            suppressionButton.title = "Alert before app quit"
+            suppressionButton.state = UserDefaults.standard.bool(forKey: SettingsKeys.alertBeforeQuit) ? .on : .off
+        }
 
         let response = alert.runModal()
+        if let suppressionButton = alert.suppressionButton {
+            let shouldAlert = suppressionButton.state == .on
+            UserDefaults.standard.set(shouldAlert, forKey: SettingsKeys.alertBeforeQuit)
+        }
         completion(response == .alertFirstButtonReturn)
     }
 

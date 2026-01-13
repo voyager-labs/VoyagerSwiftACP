@@ -53,13 +53,9 @@ func makeContextMenuHandlers(
         })
     }
 
-    let onOpenInNewTab: (Bool) -> Void = { shouldOpenInNewWindow in
+    let onOpenInNewTab: (Bool) -> Void = { _ in
         if item.isDirectory {
-            if shouldOpenInNewWindow {
-                AppDelegate.shared?.createNewWindow(path: item.fullPath)
-            } else {
-                AppDelegate.shared?.createNewTab(path: item.fullPath)
-            }
+            AppDelegate.shared?.createNewWindow(path: item.fullPath)
         }
     }
 

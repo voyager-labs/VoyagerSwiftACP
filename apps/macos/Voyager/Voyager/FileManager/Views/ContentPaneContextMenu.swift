@@ -42,6 +42,9 @@ struct ContentPaneContextMenu: View {
 
         Menu("Group By") {
             groupKeyToggle("None", key: .none)
+
+            Divider()
+
             groupKeyToggle("Name", key: .name)
             groupKeyToggle("Kind", key: .kind)
             groupKeyToggle("Application", key: .application)

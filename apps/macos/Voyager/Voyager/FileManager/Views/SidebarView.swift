@@ -24,18 +24,37 @@ struct SidebarItemView: View {
         if isDropTarget {
             Color.accentColor
         } else if isSelected {
-            Color(nsColor: .unemphasizedSelectedContentBackgroundColor)
+            Color.white.opacity(0.12)
         } else {
             Color.clear
         }
     }
 
+    private func applicationsIcon() -> NSImage? {
+        var appIcon = NSImage(
+            contentsOfFile: "/System/Library/CoreServices/CoreTypes.bundle/Contents/Resources/SidebarApplicationsFolder.icns",
+        )
+        appIcon?.isTemplate = true
+        return appIcon
+    }
+
     var body: some View {
         HStack(spacing: 8) {
-            Image(systemName: iconName)
-                .symbolRenderingMode(.hierarchical)
-                .foregroundColor(isDropTarget ? .white : (iconColor ?? .accentColor))
-                .frame(width: 16)
+            if targetURL?.path == "/Applications",
+               let appIcon = applicationsIcon()
+            {
+                // Applications는 시스템 사이드바 아이콘을 사용
+                Image(nsImage: appIcon)
+                    .resizable()
+                    .scaledToFit()
+                    .foregroundColor(isDropTarget ? .white : (iconColor ?? .accentColor))
+                    .frame(width: 16, height: 16)
+            } else {
+                Image(systemName: iconName)
+                    .symbolRenderingMode(.hierarchical)
+                    .foregroundColor(isDropTarget ? .white : (iconColor ?? .accentColor))
+                    .frame(width: 16)
+            }
             Text(title)
                 .foregroundColor(isDropTarget ? .white : .primary)
                 .lineLimit(1)
@@ -76,7 +95,7 @@ struct TagItemView: View {
         if isDropTarget {
             Color.accentColor
         } else if isSelected {
-            Color(nsColor: .unemphasizedSelectedContentBackgroundColor)
+            Color.white.opacity(0.12)
         } else {
             Color.clear
         }
@@ -146,6 +165,7 @@ private struct SidebarSectionHeader: View {
 struct SidebarView: View {
     let store: StoreOf<FileManagerFeature>
     @State private var dropTargetIndex: Int?
+    @State private var draggingFavoriteURL: URL?
 
     var body: some View {
         VStack(spacing: 0) {
@@ -249,6 +269,10 @@ struct SidebarView: View {
                                     store.send(.removeFavorite(favorite))
                                 }
                             }
+                            .onDrag {
+                                draggingFavoriteURL = favorite.url
+                                return NSItemProvider(object: favorite.url as NSURL)
+                            }
 
                             favoriteDropIndicator(at: index + 1)
                         }
@@ -302,6 +326,13 @@ struct SidebarView: View {
                    let url = URL(string: urlString)
                 {
                     Task { @MainActor in
+                        if let existingIndex = store.favorites.firstIndex(where: { $0.url.path == url.path }) {
+                            if existingIndex != index {
+                                store.send(.reorderFavorites(from: IndexSet(integer: existingIndex), to: index))
+                            }
+                            draggingFavoriteURL = nil
+                            return
+                        }
                         var isDirectory: ObjCBool = false
                         guard FileManager.default.fileExists(atPath: url.path, isDirectory: &isDirectory),
                               isDirectory.boolValue || url.pathExtension.lowercased() == "voycoll"
@@ -309,6 +340,7 @@ struct SidebarView: View {
                             return
                         }
                         store.send(.insertFavorite(url: url, at: index))
+                        draggingFavoriteURL = nil
                     }
                 }
             }

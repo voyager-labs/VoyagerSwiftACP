@@ -33,6 +33,7 @@ struct FSItemsOperationsFeature {
     enum Action: Sendable {
         case openFiles(files: [FSItem])
         case quickLookFile(file: FSItem)
+        case quickLookFiles(files: [FSItem])
         case openFileWithApp(file: FSItem)
         case openFileWithAppBundleID(filePath: String, bundleID: String, url: URL)
         case setDefaultAppForFile(type: UTType?, bundleID: String, file: FSItem)
@@ -143,6 +144,13 @@ struct FSItemsOperationsFeature {
                     try await fsItemClient.quickLook(url)
                 }
 
+            case let .quickLookFiles(files):
+                let urls = files.map { URL(fileURLWithPath: $0.fullPath) }
+                let keyPath = files.first?.fullPath ?? "quicklook"
+                return run(for: keyPath, kind: .quickLook) {
+                    try await fsItemClient.quickLookFiles(urls)
+                }
+
             case let .openFileWithApp(file):
                 return selectApplicationAndOpenFile(for: file, defaultChecked: false)
 
@@ -223,17 +231,17 @@ struct FSItemsOperationsFeature {
                 let targetPath = parentURL.appendingPathComponent(name).path
 
                 return .run { send in
-                    await send(.operationStarted(parentPath, .createFolder))
+                    await send(.operationStarted(targetPath, .createFolder))
                     do {
                         try await fsItemClient.createFolder(parentURL, name)
-                        await send(.operationFinished(parentPath, .createFolder, .success(())))
+                        await send(.operationFinished(targetPath, .createFolder, .success(())))
                         let record = EntryActionRecord(
                             actionKind: .createFolder,
                             targets: [.init(beforePath: nil, afterPath: targetPath)],
                         )
                         await send(.entryActionCompleted(record))
                     } catch {
-                        await send(.operationFinished(parentPath, .createFolder, .failure(error.fileOpError)))
+                        await send(.operationFinished(targetPath, .createFolder, .failure(error.fileOpError)))
                     }
                 }
 

@@ -114,6 +114,7 @@ struct ToolbarView: View {
             systemName: "chevron.left",
             isEnabled: viewStore.canGoBack,
             font: nil,
+            menuID: viewStore.backHistory.count,
             primaryAction: { store.send(.goBack) },
             menuContent: {
                 if viewStore.backHistory.isEmpty {
@@ -123,7 +124,7 @@ struct ToolbarView: View {
                     ForEach(Array(viewStore.backHistory.enumerated().reversed()), id: \.offset) { index, entry in
                         Button(
                             action: { store.send(.goToHistoryIndex(index, isBackHistory: true)) },
-                            label: { Text(historyDisplayName(for: entry)) },
+                            label: { historyMenuLabel(for: entry) },
                         )
                     }
                 }
@@ -137,6 +138,7 @@ struct ToolbarView: View {
             systemName: "chevron.right",
             isEnabled: viewStore.canGoForward,
             font: nil,
+            menuID: viewStore.forwardHistory.count,
             primaryAction: { store.send(.goForward) },
             menuContent: {
                 if viewStore.forwardHistory.isEmpty {
@@ -146,7 +148,7 @@ struct ToolbarView: View {
                     ForEach(Array(viewStore.forwardHistory.enumerated().reversed()), id: \.offset) { index, entry in
                         Button(
                             action: { store.send(.goToHistoryIndex(index, isBackHistory: false)) },
-                            label: { Text(historyDisplayName(for: entry)) },
+                            label: { historyMenuLabel(for: entry) },
                         )
                     }
                 }
@@ -245,5 +247,43 @@ struct ToolbarView: View {
                 name
             }
         }
+    }
+
+    private func historyMenuLabel(for entry: FileManagerFeature.HistoryEntry) -> some View {
+        HStack(spacing: 6) {
+            if let icon = historyIcon(for: entry) {
+                Image(nsImage: resizedHistoryIcon(from: icon))
+                    .frame(width: 10, height: 10)
+            }
+            Text(historyDisplayName(for: entry))
+        }
+    }
+
+    private func historyIcon(for entry: FileManagerFeature.HistoryEntry) -> NSImage? {
+        switch entry.navigationState {
+        case let .folder(path):
+            return NSWorkspace.shared.icon(forFile: path)
+        case let .collection(navigation):
+            if case let .file(url, _) = navigation.kind {
+                return NSWorkspace.shared.icon(forFile: url.path)
+            }
+            return nil
+        case .recents:
+            return NSImage(systemSymbolName: "clock.arrow.circlepath", accessibilityDescription: nil)
+        case .tags:
+            return NSImage(systemSymbolName: "tag", accessibilityDescription: nil)
+        case .computer:
+            return NSImage(systemSymbolName: "desktopcomputer", accessibilityDescription: nil)
+        }
+    }
+
+    private func resizedHistoryIcon(from icon: NSImage) -> NSImage {
+        let targetSize = NSSize(width: 10, height: 10)
+        let resized = NSImage(size: targetSize)
+        resized.lockFocus()
+        icon.draw(in: NSRect(origin: .zero, size: targetSize))
+        resized.unlockFocus()
+        resized.isTemplate = icon.isTemplate
+        return resized
     }
 }

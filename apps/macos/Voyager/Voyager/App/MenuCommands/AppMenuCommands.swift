@@ -3,9 +3,6 @@ import ComposableArchitecture
 import SwiftUI
 
 struct AppMenuCommands: Commands {
-    @State private var hasClosedTabs: Bool = false
-    @State private var hasFocusHistory: Bool = false
-
     var body: some Commands {
         CommandGroup(after: .appInfo) {
             Button("Check for Updates...") {
@@ -27,24 +24,6 @@ struct AppMenuCommands: Commands {
             }
             .keyboardShortcut("n", modifiers: [.command, .shift])
 
-            Button("New Tab") {
-                AppDelegate.shared?.createNewTab()
-            }
-            .keyboardShortcut("t", modifiers: .command)
-
-            Button("Duplicate Tab") {
-                if let fileManagerStore = AppDelegate.shared?.currentFileManagerStore,
-                   !fileManagerStore.fsItems.selectedIds.isEmpty
-                {
-                    fileManagerStore.send(.duplicateSelectedItems)
-                } else {
-                    AppDelegate.shared?.duplicateCurrentTab()
-                }
-            }
-            .keyboardShortcut("d", modifiers: .command)
-
-            Divider()
-
             Button("Open") {
                 AppDelegate.shared?.currentFileManagerStore?.send(.openSelectedItem)
             }
@@ -56,20 +35,6 @@ struct AppMenuCommands: Commands {
             }
             .keyboardShortcut(.space, modifiers: [])
             .disabled(AppDelegate.shared?.currentFileManagerStore?.canQuickLookSelectedItem == false)
-
-            Button("Reopen Recently Closed Tab") {
-                AppDelegate.shared?.reopenLastClosedTab()
-            }
-            .keyboardShortcut("t", modifiers: [.command, .shift])
-            .disabled(!hasClosedTabs)
-            .onReceive(NotificationCenter.default.publisher(for: .closedTabsChanged)) { _ in
-                hasClosedTabs = !(AppDelegate.shared?.closedTabHistory.isEmpty ?? true)
-            }
-            .onAppear {
-                hasClosedTabs = !(AppDelegate.shared?.closedTabHistory.isEmpty ?? true)
-            }
-
-            Divider()
         }
 
         CommandGroup(replacing: .saveItem) {
@@ -96,29 +61,10 @@ struct AppMenuCommands: Commands {
 
             Divider()
 
-            Button("Close Tab") {
+            Button("Close Window") {
                 NSApp.keyWindow?.close()
             }
             .keyboardShortcut("w", modifiers: .command)
-            .disabled({
-                guard let window = NSApp.keyWindow,
-                      let tabGroup = window.tabGroup
-                else { return true }
-                return tabGroup.windows.count <= 1
-            }())
-
-            Button("Close Window") {
-                if let window = NSApp.keyWindow,
-                   let tabGroup = window.tabGroup
-                {
-                    for tabWindow in tabGroup.windows {
-                        tabWindow.close()
-                    }
-                } else {
-                    NSApp.keyWindow?.close()
-                }
-            }
-            .keyboardShortcut("w", modifiers: [.command, .shift])
 
             Button("Close All") {
                 var processedTabGroups = Set<NSWindow>()
@@ -158,20 +104,6 @@ struct AppMenuCommands: Commands {
             }
             .keyboardShortcut(.upArrow, modifiers: .command)
             .disabled(AppDelegate.shared?.currentFileManagerStore?.canGoToEnclosingDirectory == false)
-        }
-
-        CommandGroup(after: .windowList) {
-            Button("Switch Focus to Last Focused Tab") {
-                AppDelegate.shared?.switchToLastFocusedTab()
-            }
-            .keyboardShortcut(.tab, modifiers: .control)
-            .disabled(!hasFocusHistory)
-            .onReceive(NotificationCenter.default.publisher(for: .focusHistoryChanged)) { _ in
-                hasFocusHistory = AppDelegate.shared?.hasValidFocusHistory ?? false
-            }
-            .onAppear {
-                hasFocusHistory = AppDelegate.shared?.hasValidFocusHistory ?? false
-            }
         }
     }
 }
