@@ -214,6 +214,10 @@ enum VoyagerDS {
         static func toolbarTitleHoverFill(for scheme: ColorScheme) -> Color {
             scheme == .dark ? Color.black.opacity(0.35) : Color.black.opacity(0.08)
         }
+
+        static func composerBackground(for scheme: ColorScheme) -> Color {
+            scheme == .dark ? Color(white: 0.12) : Color(white: 0.94)
+        }
     }
 
     // MARK: - AppKit (NSColor) 토큰

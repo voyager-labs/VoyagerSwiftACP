@@ -56,7 +56,7 @@ struct ComposerView: View {
         }
         .background(
             RoundedRectangle(cornerRadius: VoyagerDS.Radius.composer)
-                .fill(.ultraThickMaterial)
+                .fill(VoyagerDS.Interaction.composerBackground(for: colorScheme))
                 .allowsHitTesting(false),
         )
         .allowsHitTesting(true)
