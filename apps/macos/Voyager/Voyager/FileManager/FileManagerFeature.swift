@@ -757,6 +757,10 @@ struct FileManagerFeature {
             case .goToEnclosingDirectory:
                 guard let parentPath = state.enclosingDirectoryPath else { return .none }
                 let parentURL = URL(fileURLWithPath: parentPath)
+                let childName = URL(fileURLWithPath: state.currentPath).lastPathComponent
+                if !childName.isEmpty {
+                    state.fsItems.selectAfterLoadFileNames = [childName]
+                }
                 state.navigateToFolder(parentURL.path, sidebarItemName: parentURL.lastPathComponent)
                 state.resetComposer()
                 let exitEffect = Self.exitCollectionMode(state: &state)
