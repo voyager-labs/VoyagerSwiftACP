@@ -386,12 +386,6 @@ private extension FSItemListView {
 
         if let onPutBack {
             Button {
-                onPutBack()
-            } label: {
-                Label("Put Back", systemImage: "trash.slash")
-            }
-
-            Button {
                 onDeleteImmediately()
             } label: {
                 Label("Delete Immediately...", systemImage: "trash")

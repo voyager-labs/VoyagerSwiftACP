@@ -306,12 +306,6 @@ private extension FSItemGridView {
         Divider()
 
         if let onPutBack {
-            Button {
-                onPutBack()
-            } label: {
-                Label("Put Back", systemImage: "trash.slash")
-            }
-
             if let onDeleteImmediately {
                 Button {
                     onDeleteImmediately()
