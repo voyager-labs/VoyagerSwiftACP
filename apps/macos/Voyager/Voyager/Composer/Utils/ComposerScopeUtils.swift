@@ -204,9 +204,11 @@ enum ComposerScopeUtils {
     ) -> [DirectoryItem] {
         var result: [DirectoryItem] = []
         var seenPaths: Set<String> = []
+        let collectionsExtension = "voycoll"
 
         let historyItems = history.reversed().prefix(maxCount)
         for path in historyItems {
+            if (path as NSString).pathExtension.lowercased() == collectionsExtension { continue }
             guard !seenPaths.contains(path) else { continue }
             guard FileManager.default.fileExists(atPath: path) else { continue }
 
@@ -227,6 +229,7 @@ enum ComposerScopeUtils {
         if remainingSlots > 0 {
             for favorite in favorites.prefix(remainingSlots) {
                 let path = favorite.url.path
+                if favorite.url.pathExtension.lowercased() == collectionsExtension { continue }
                 guard !seenPaths.contains(path) else { continue }
                 guard FileManager.default.fileExists(atPath: path) else { continue }
 
