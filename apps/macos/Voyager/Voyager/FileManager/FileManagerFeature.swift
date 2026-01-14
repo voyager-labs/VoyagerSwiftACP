@@ -1076,6 +1076,10 @@ struct FileManagerFeature {
 
             case let .composer(action):
                 switch action {
+                case .applyFilters:
+                    state.composer.isLoadingFilters = true
+                    return .none
+
                 case let .setText(text):
                     let query = text.trimmingCharacters(in: .whitespacesAndNewlines)
                     state.pendingSearchQuery = query.isEmpty ? nil : query

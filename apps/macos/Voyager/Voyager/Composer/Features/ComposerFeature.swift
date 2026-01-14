@@ -38,6 +38,7 @@ struct ComposerFeature {
         var redoHistory: [FilterSnapshot] = []
         var isLoadingSearch: Bool = false
         var isLoadingFilters: Bool = false
+        var isFilteringInFlight: Bool = false
         var lastSearchResponse: SearchResponsePayload?
         var lastFiltersResponse: SearchResponsePayload?
 
@@ -69,6 +70,7 @@ struct ComposerFeature {
         case clearAll
         case submit
         case cancelSearch
+        case cancelFilters
         case applyFilters
         case saveCollection
         case saveCollectionAs
@@ -174,9 +176,16 @@ struct ComposerFeature {
                 state.isLoadingSearch = false
                 return .cancel(id: CancelID.search)
 
+            case .cancelFilters:
+                state.isLoadingFilters = false
+                state.isFilteringInFlight = false
+                return .cancel(id: CancelID.filters)
+
             case .applyFilters:
                 state.isLoadingSearch = false
                 state.lastSearchResponse = nil
+                state.isLoadingFilters = true
+                state.isFilteringInFlight = true
                 return .concatenate(
                     .cancel(id: CancelID.search),
                     applyFiltersIfNeeded(state: &state, searchClient: searchClient),
@@ -455,12 +464,14 @@ struct ComposerFeature {
 
             case let .filtersResponse(.success(response)):
                 state.isLoadingFilters = false
+                state.isFilteringInFlight = false
                 state.lastFiltersResponse = response
                 applyAppliedFilters(response.appliedFilters, state: &state)
                 return .none
 
             case .filtersResponse(.failure):
                 state.isLoadingFilters = false
+                state.isFilteringInFlight = false
                 return .none
             }
         }
@@ -484,12 +495,14 @@ private func applyFiltersIfNeeded(
     state: inout ComposerFeature.State,
     searchClient: SearchClient,
 ) -> Effect<ComposerFeature.Action> {
+    state.isLoadingFilters = true
+    state.isFilteringInFlight = true
     let filters = buildFilters(from: state)
     guard !filters.conditions.isEmpty else {
         state.isLoadingFilters = false
+        state.isFilteringInFlight = false
         return .cancel(id: ComposerFeature.CancelID.filters)
     }
-    state.isLoadingFilters = true
     return .run { send in
         do {
             let response = try await searchClient.applyFilters(.init(filters: filters))

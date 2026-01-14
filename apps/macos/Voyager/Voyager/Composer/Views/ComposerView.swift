@@ -70,7 +70,7 @@ struct ComposerView: View {
 
     @ViewBuilder
     private func firstRow(viewStore: ViewStore<ComposerFeature.State, ComposerFeature.Action>) -> some View {
-        let isLocked = viewStore.isLoadingSearch || viewStore.isLoadingFilters
+        let isLocked = viewStore.isLoadingSearch || viewStore.isFilteringInFlight
         return HStack(spacing: 8) {
             undoButton(viewStore: viewStore, isLocked: isLocked)
             redoButton(viewStore: viewStore, isLocked: isLocked)
@@ -146,7 +146,7 @@ struct ComposerView: View {
                 .isEmpty
             queryInputField(viewStore: viewStore, isSubmitDisabled: isSubmitDisabled, isLocked: isLocked)
 
-            if viewStore.isLoadingSearch {
+            if viewStore.isLoadingSearch || viewStore.isFilteringInFlight {
                 stopButton(viewStore: viewStore)
             } else {
                 submitButton(viewStore: viewStore, isLocked: isLocked, isSubmitDisabled: isSubmitDisabled)
@@ -159,7 +159,11 @@ struct ComposerView: View {
     private func stopButton(viewStore: ViewStore<ComposerFeature.State, ComposerFeature.Action>) -> some View {
         let buttonBackground = Circle().fill(VoyagerDS.BrandSecondaryColor.c500)
         Button {
-            viewStore.send(.cancelSearch)
+            if viewStore.isLoadingSearch {
+                viewStore.send(.cancelSearch)
+            } else {
+                viewStore.send(.cancelFilters)
+            }
         } label: {
             Image(systemName: "stop.fill")
                 .font(.system(size: 9, weight: .regular))
@@ -424,7 +428,7 @@ struct ComposerView: View {
         composerStore: StoreOf<ComposerFeature>,
         geometry: GeometryProxy,
     ) -> some View {
-        let isLocked = viewStore.isLoadingSearch || viewStore.isLoadingFilters
+        let isLocked = viewStore.isLoadingSearch || viewStore.isFilteringInFlight
         let availableWidth = geometry.size.width - chipHorizontalPadding * 2
         let pickerStore = composerStore.scope(state: \.propertyPicker, action: \.propertyPicker)
 
