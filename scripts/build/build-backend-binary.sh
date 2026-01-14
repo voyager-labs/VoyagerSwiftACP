@@ -96,4 +96,17 @@ else
   echo "[VoyagerHelper] 경고: EXPANDED_CODE_SIGN_IDENTITY가 없습니다. 서명 생략" >&2
 fi
 
+# 번들에 남아있는 helper-runtime 제거 (빌드 산출물 정리)
+if [[ -z "${TARGET_BUILD_DIR:-}" || -z "${UNLOCALIZED_RESOURCES_FOLDER_PATH:-}" ]]; then
+  return 0
+fi
+
+local helper_runtime_path
+helper_runtime_path="${TARGET_BUILD_DIR}/${UNLOCALIZED_RESOURCES_FOLDER_PATH}/helper-runtime"
+if [[ -d "${helper_runtime_path}" ]]; then
+  echo "[VoyagerHelper] helper-runtime 제거: ${helper_runtime_path}" >&2
+  chmod -R u+w "${helper_runtime_path}" 2>/dev/null || true
+  rm -rf "${helper_runtime_path}"
+fi
+
 echo "[VoyagerHelper] Build Backend Binary done" >&2
