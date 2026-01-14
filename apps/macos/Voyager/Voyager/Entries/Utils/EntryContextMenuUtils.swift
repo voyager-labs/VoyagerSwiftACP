@@ -2,10 +2,10 @@ import ComposableArchitecture
 import Foundation
 import IdentifiedCollections
 
-enum FSItemContextMenuUtils {
+enum EntryContextMenuUtils {
     static func sendWithSelection(
-        _ item: FSItem,
-        fsStore: Store<FSItemsFeature.State, FSItemsFeature.Action>,
+        _ item: Entry,
+        fsStore: Store<EntriesFeature.State, EntriesFeature.Action>,
         action: @escaping () -> Void,
     ) {
         if !fsStore.selectedIds.contains(item.id) {
@@ -15,7 +15,7 @@ enum FSItemContextMenuUtils {
     }
 
     static func calculateCompressExtractOptions(
-        selectedItems: IdentifiedArrayOf<FSItem>,
+        selectedItems: IdentifiedArrayOf<Entry>,
     ) -> (showCompress: Bool, showExtract: Bool) {
         let containsZipFiles = selectedItems.contains { $0.fileExtension.lowercased() == "zip" }
         let containsNonZipFiles = selectedItems.contains { $0.fileExtension.lowercased() != "zip" }

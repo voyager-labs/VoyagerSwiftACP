@@ -2,14 +2,14 @@ import ComposableArchitecture
 import SwiftUI
 import UniformTypeIdentifiers
 
-/// FSItem 드롭 동작을 제어하는 DropDelegate
-struct FSItemDropDelegate: DropDelegate {
+/// Entry 드롭 동작을 제어하는 DropDelegate
+struct EntryDropDelegate: DropDelegate {
     let destinationPath: String
     let onDrop: ([NSItemProvider], String) -> Void
     let isDropTarget: Binding<Bool>?
     let draggingPaths: [String]
 
-    init(store: StoreOf<FileManagerFeature>, fsStore: StoreOf<FSItemsFeature>) {
+    init(store: StoreOf<FileManagerFeature>, fsStore: StoreOf<EntriesFeature>) {
         destinationPath = store.currentPath
         onDrop = { providers, path in
             fsStore.send(.handleDrop(providers: providers, destinationPath: path))
@@ -22,7 +22,7 @@ struct FSItemDropDelegate: DropDelegate {
     }
 
     init(
-        item: FSItem,
+        item: Entry,
         onDrop: @escaping ([NSItemProvider], String) -> Void,
         isDropTarget: Binding<Bool>,
         draggingPaths: [String],

@@ -11,7 +11,7 @@ struct ContentPaneContextMenu: View {
             }
         } else {
             Button("New Folder") {
-                store.send(.fsItems(.createNewFolder(currentPath: store.currentPath)))
+                store.send(.entries(.createNewFolder(currentPath: store.currentPath)))
             }
             .keyboardShortcut("n", modifiers: [.command, .shift])
         }
@@ -103,7 +103,7 @@ struct ContentPaneContextMenu: View {
         Toggle(
             title,
             isOn: Binding(
-                get: { store.fsItems.groupKey == key },
+                get: { store.entries.groupKey == key },
                 set: { isOn in
                     if isOn {
                         store.send(.changeGroupKey(key))

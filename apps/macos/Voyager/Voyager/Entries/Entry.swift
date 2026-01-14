@@ -10,7 +10,7 @@ public struct FileTag: Equatable, Sendable, Hashable {
     }
 }
 
-public struct FSItem: Identifiable, Sendable {
+public struct Entry: Identifiable, Sendable {
     public let id: String // fullPath를 ID로 사용
     public let name: String
     public let fullPath: String
@@ -61,16 +61,16 @@ public struct FSItem: Identifiable, Sendable {
     }
 }
 
-extension FSItem: Equatable {
-    public static func == (lhs: FSItem, rhs: FSItem) -> Bool {
+extension Entry: Equatable {
+    public static func == (lhs: Entry, rhs: Entry) -> Bool {
         lhs.id == rhs.id &&
             lhs.modifiedDate == rhs.modifiedDate &&
             lhs.size == rhs.size &&
             lhs.tags == rhs.tags
     }
 
-    public static func temporaryFolder(id: String, name: String) -> FSItem {
-        FSItem(
+    public static func temporaryFolder(id: String, name: String) -> Entry {
+        Entry(
             name: name,
             fullPath: id,
             isDirectory: true,

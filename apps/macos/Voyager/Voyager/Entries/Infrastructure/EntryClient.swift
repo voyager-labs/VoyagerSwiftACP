@@ -19,7 +19,7 @@ public struct ApplicationInfo: Identifiable, Equatable, Sendable {
     }
 }
 
-public struct FSItemClient: Sendable {
+public struct EntryClient: Sendable {
     public var open: @Sendable (URL, OpenKind) async throws -> Void
     public var setDefaultApp: @Sendable (UTType, String) async throws -> Void
     public var quickLook: @Sendable (URL) async throws -> Void
@@ -38,8 +38,8 @@ public struct FSItemClient: Sendable {
     public var getTags: @Sendable (URL) async throws -> [String]
     public var setTags: @Sendable (URL, [String]) async throws -> Void
     public var toggleTag: @Sendable (URL, String) async throws -> Void
-    public var loadItems: @Sendable (URL, Bool) async throws -> [FSItem]
-    public var loadComputerItems: @Sendable () async throws -> [FSItem]
+    public var loadItems: @Sendable (URL, Bool) async throws -> [Entry]
+    public var loadComputerItems: @Sendable () async throws -> [Entry]
     public var fileExists: @Sendable (String) -> Bool
     public var saveDragPaths: @Sendable ([String]) -> Void
     public var loadDragPaths: @Sendable () -> [String]
@@ -70,8 +70,8 @@ public struct FSItemClient: Sendable {
         getTags: @escaping @Sendable (URL) async throws -> [String],
         setTags: @escaping @Sendable (URL, [String]) async throws -> Void,
         toggleTag: @escaping @Sendable (URL, String) async throws -> Void,
-        loadItems: @escaping @Sendable (URL, Bool) async throws -> [FSItem],
-        loadComputerItems: @escaping @Sendable () async throws -> [FSItem],
+        loadItems: @escaping @Sendable (URL, Bool) async throws -> [Entry],
+        loadComputerItems: @escaping @Sendable () async throws -> [Entry],
         fileExists: @escaping @Sendable (String) -> Bool,
         saveDragPaths: @escaping @Sendable ([String]) -> Void,
         loadDragPaths: @escaping @Sendable () -> [String],
@@ -199,8 +199,8 @@ private nonisolated func setFileTags(url: URL, tags: [String]) throws {
     }
 }
 
-extension FSItemClient: DependencyKey {
-    public nonisolated static var liveValue: FSItemClient {
+extension EntryClient: DependencyKey {
+    public nonisolated static var liveValue: EntryClient {
         final class FSEventsWatcher: @unchecked Sendable {
             var eventStream: FSEventStreamRef?
             let lock = NSLock()
@@ -220,7 +220,7 @@ extension FSItemClient: DependencyKey {
 
         let watcher = FSEventsWatcher()
 
-        return FSItemClient(
+        return EntryClient(
             open: { url, kind in
                 try await withScopedAccess(url) {
                     let workspace = NSWorkspace.shared
@@ -251,13 +251,13 @@ extension FSItemClient: DependencyKey {
             quickLook: { url in
                 try await withScopedAccess(url) {
                     let token = await MainActor.run { SecurityScopedURLToken(url: url) }
-                    await FSItemQuickLookCoordinator.shared.present(url: url, scopeToken: token)
+                    await EntryQuickLookCoordinator.shared.present(url: url, scopeToken: token)
                 }
             },
             quickLookFiles: { urls in
                 try await withScopedAccess(urls) {
                     let tokens = await MainActor.run { urls.map(SecurityScopedURLToken.init) }
-                    await FSItemQuickLookCoordinator.shared.present(urls: urls, scopeTokens: tokens, initialIndex: 0)
+                    await EntryQuickLookCoordinator.shared.present(urls: urls, scopeTokens: tokens, initialIndex: 0)
                 }
             },
             applicationsForFile: { url in
@@ -506,14 +506,14 @@ extension FSItemClient: DependencyKey {
                         options: options,
                     )
 
-                    return contents.compactMap { FSItemLoadUtils.convertURLToFSItem($0) }
+                    return contents.compactMap { EntryLoadUtils.convertURLToEntry($0) }
                 }.value
             },
             loadComputerItems: {
                 await Task.detached {
                     let rootName = FileManager.default.displayName(atPath: "/")
                     return [
-                        FSItem(
+                        Entry(
                             name: rootName,
                             fullPath: "/",
                             isDirectory: true,
@@ -681,11 +681,11 @@ extension FSItemClient: DependencyKey {
         )
     }
 
-    public nonisolated static var testValue: FSItemClient {
+    public nonisolated static var testValue: EntryClient {
         let unimplemented = { @Sendable (_: Any...) -> Never in
-            fatalError("FSItemClient test dependency not set.")
+            fatalError("EntryClient test dependency not set.")
         }
-        return FSItemClient(
+        return EntryClient(
             open: { _, _ in unimplemented() },
             setDefaultApp: { _, _ in unimplemented() },
             quickLook: { _ in unimplemented() },
@@ -719,7 +719,7 @@ extension FSItemClient: DependencyKey {
         )
     }
 
-    public nonisolated static var previewValue: FSItemClient {
+    public nonisolated static var previewValue: EntryClient {
         let previewInfo = ApplicationInfo(
             id: "com.apple.preview",
             name: "Preview",
@@ -728,7 +728,7 @@ extension FSItemClient: DependencyKey {
         let chromeInfo = ApplicationInfo(id: "com.google.Chrome", name: "Google Chrome", bundleID: "com.google.Chrome")
         let otherInfo = ApplicationInfo(id: "other", name: "Other…", bundleID: nil)
 
-        return FSItemClient(
+        return EntryClient(
             open: { _, _ in },
             setDefaultApp: { _, _ in },
             quickLook: { _ in },
@@ -768,9 +768,9 @@ extension FSItemClient: DependencyKey {
 }
 
 public extension DependencyValues {
-    nonisolated var fsItemClient: FSItemClient {
-        get { self[FSItemClient.self] }
-        set { self[FSItemClient.self] = newValue }
+    nonisolated var entryClient: EntryClient {
+        get { self[EntryClient.self] }
+        set { self[EntryClient.self] = newValue }
     }
 }
 

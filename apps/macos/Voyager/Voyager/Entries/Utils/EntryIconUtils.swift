@@ -2,12 +2,12 @@ import AppKit
 import Foundation
 import UniformTypeIdentifiers
 
-enum FSItemIconUtils {
+enum EntryIconUtils {
     private static let iconCache = NSCache<NSString, NSImage>()
     private static let thumbnailCache = NSCache<NSString, NSImage>()
     private static let voycollIconName = "voycollFileIcon"
 
-    static func icon(for item: FSItem) -> NSImage {
+    static func icon(for item: Entry) -> NSImage {
         if item.fullPath == "/" {
             return NSWorkspace.shared.icon(forFile: "/")
         }

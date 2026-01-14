@@ -3,8 +3,8 @@ import AppKit
 import SwiftUI
 import UniformTypeIdentifiers
 
-struct FSItemListView: View {
-    let item: FSItem
+struct EntryListView: View {
+    let item: Entry
     let isSelected: Bool
     let isCut: Bool
     let isRenaming: Bool
@@ -215,7 +215,7 @@ struct FSItemListView: View {
         .if(item.isDirectory) { view in
             view.onDrop(
                 of: [UTType.fileURL],
-                delegate: FSItemDropDelegate(
+                delegate: EntryDropDelegate(
                     item: item,
                     onDrop: onDrop,
                     isDropTarget: $isDropTarget,
@@ -310,7 +310,7 @@ private struct RightClickCaptureView: NSViewRepresentable {
     }
 }
 
-private extension FSItemListView {
+private extension EntryListView {
     @ViewBuilder var contextMenuContent: some View {
         Group {
             Button {
@@ -489,9 +489,9 @@ private extension FSItemListView {
         Divider()
 
         Menu {
-            ForEach(FSItemTagUtils.getFavoriteTagNames().filter { !$0.isEmpty }.prefix(7), id: \.self) { tag in
-                let colorCode = FSItemTagUtils.getTagNameToColorCodeMapping()[tag] ?? 0
-                let tagColor = FSItemTagUtils.getTagColor(colorCode: colorCode)
+            ForEach(EntryTagUtils.getFavoriteTagNames().filter { !$0.isEmpty }.prefix(7), id: \.self) { tag in
+                let colorCode = EntryTagUtils.getTagNameToColorCodeMapping()[tag] ?? 0
+                let tagColor = EntryTagUtils.getTagColor(colorCode: colorCode)
                 let isTagged = item.tags?.contains(where: { $0.name == tag }) ?? false
 
                 Button {
@@ -514,7 +514,7 @@ private extension FSItemListView {
         }
     }
 
-    func sizeText(_ item: FSItem) -> String {
+    func sizeText(_ item: Entry) -> String {
         if item.isDirectory { return "--" }
         return Self.byteFormatter.string(fromByteCount: item.size)
     }
@@ -523,7 +523,7 @@ private extension FSItemListView {
         Self.dateFormatter.string(from: date)
     }
 
-    func kindText(_ item: FSItem) -> String {
+    func kindText(_ item: Entry) -> String {
         if item.fileExtension.lowercased() == "voycoll" {
             return "Voyager Collection"
         }

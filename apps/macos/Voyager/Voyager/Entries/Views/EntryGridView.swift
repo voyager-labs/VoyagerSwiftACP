@@ -3,8 +3,8 @@ import AppKit
 import SwiftUI
 import UniformTypeIdentifiers
 
-struct FSItemGridView: View {
-    let item: FSItem
+struct EntryGridView: View {
+    let item: Entry
     let isSelected: Bool
     let isCut: Bool
     let isRenaming: Bool
@@ -190,7 +190,7 @@ struct FSItemGridView: View {
         .if(item.isDirectory) { view in
             view.onDrop(
                 of: [UTType.fileURL],
-                delegate: FSItemDropDelegate(
+                delegate: EntryDropDelegate(
                     item: item,
                     onDrop: onDrop,
                     isDropTarget: $isDropTarget,
@@ -231,7 +231,7 @@ struct FSItemGridView: View {
     }
 }
 
-private extension FSItemGridView {
+private extension EntryGridView {
     @ViewBuilder var contextMenuContent: some View {
         Group {
             Button {
@@ -432,9 +432,9 @@ private extension FSItemGridView {
         Divider()
 
         Menu {
-            ForEach(FSItemTagUtils.getFavoriteTagNames().filter { !$0.isEmpty }.prefix(7), id: \.self) { tag in
-                let colorCode = FSItemTagUtils.getTagNameToColorCodeMapping()[tag] ?? 0
-                let tagColor = FSItemTagUtils.getTagColor(colorCode: colorCode)
+            ForEach(EntryTagUtils.getFavoriteTagNames().filter { !$0.isEmpty }.prefix(7), id: \.self) { tag in
+                let colorCode = EntryTagUtils.getTagNameToColorCodeMapping()[tag] ?? 0
+                let tagColor = EntryTagUtils.getTagColor(colorCode: colorCode)
                 let isTagged = item.tags?.contains(where: { $0.name == tag }) ?? false
 
                 Button {

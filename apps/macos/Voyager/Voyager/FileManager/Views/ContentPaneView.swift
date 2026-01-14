@@ -9,8 +9,8 @@ struct ContentPaneView: View {
     private static let redoSelector = Selector(("redo:"))
 
     private var statusText: String {
-        let total = store.fsItems.displayItems.count
-        let selected = store.fsItems.selectedIds.count
+        let total = store.entries.displayItems.count
+        let selected = store.entries.selectedIds.count
 
         if selected == 0 {
             return "\(total) items"
@@ -21,7 +21,7 @@ struct ContentPaneView: View {
 
     private var isCollectionSearching: Bool {
         let isSearching = store.composer.isLoadingSearch || store.composer.isLoadingFilters
-        let hasContext = store.fsItems.isCollectionMode
+        let hasContext = store.entries.isCollectionMode
             || store.pendingSearchQuery != nil
             || !store.composer.scopes.isEmpty
             || !store.composer.conditions.isEmpty
@@ -55,10 +55,10 @@ struct ContentPaneView: View {
             .focused($isKeyCommandFocused)
             .allowsHitTesting(false)
         }
-        .onChange(of: store.fsItems.selectedIds) { _ in
+        .onChange(of: store.entries.selectedIds) { _ in
             restoreKeyCommandFocus()
         }
-        .onChange(of: store.fsItems.isRenaming) { isRenaming in
+        .onChange(of: store.entries.isRenaming) { isRenaming in
             if !isRenaming {
                 DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
                     restoreKeyCommandFocus()
@@ -144,8 +144,8 @@ struct ContentPaneView: View {
     }
 
     private func handleEscapeKey(_ event: NSEvent) -> Bool {
-        guard event.keyCode == 53, store.fsItems.isRenaming else { return false }
-        store.send(.fsItems(.cancelRename))
+        guard event.keyCode == 53, store.entries.isRenaming else { return false }
+        store.send(.entries(.cancelRename))
         return true
     }
 
@@ -154,15 +154,15 @@ struct ContentPaneView: View {
               event.modifierFlags.isDisjoint(with: [.command, .option, .control, .shift])
         else { return false }
 
-        if store.fsItems.isRenaming {
-            store.send(.fsItems(.commitRename))
+        if store.entries.isRenaming {
+            store.send(.entries(.commitRename))
             return true
         }
 
-        if store.fsItems.selectedIds.count == 1,
-           let selectedId = store.fsItems.selectedIds.first
+        if store.entries.selectedIds.count == 1,
+           let selectedId = store.entries.selectedIds.first
         {
-            store.send(.fsItems(.startRename(id: selectedId)))
+            store.send(.entries(.startRename(id: selectedId)))
         }
         return true
     }
@@ -189,12 +189,12 @@ struct ContentPaneView: View {
         else { return false }
 
         if event.modifierFlags.contains(.option) {
-            if !store.fsItems.selectedIds.isEmpty {
+            if !store.entries.selectedIds.isEmpty {
                 store.send(.deleteSelectedItemsImmediately)
             }
             return true
         } else {
-            if !store.fsItems.selectedIds.isEmpty {
+            if !store.entries.selectedIds.isEmpty {
                 store.send(.moveSelectedItemsToTrash)
             }
             return true
@@ -209,11 +209,11 @@ struct ContentPaneView: View {
         @MainActor
         func move(_ offset: Int) {
             if offset == 1 {
-                store.send(.fsItems(.selectNextItem(isShiftPressed: isShiftPressed)))
+                store.send(.entries(.selectNextItem(isShiftPressed: isShiftPressed)))
             } else if offset == -1 {
-                store.send(.fsItems(.selectPreviousItem(isShiftPressed: isShiftPressed)))
+                store.send(.entries(.selectPreviousItem(isShiftPressed: isShiftPressed)))
             } else {
-                store.send(.fsItems(.selectByOffset(offset: offset, isShiftPressed: isShiftPressed)))
+                store.send(.entries(.selectByOffset(offset: offset, isShiftPressed: isShiftPressed)))
             }
         }
 
@@ -221,10 +221,10 @@ struct ContentPaneView: View {
         case 123 where store.viewLayout == .grid: move(-1)
         case 124 where store.viewLayout == .grid: move(+1)
         case 126 where store.viewLayout == .grid:
-            let columnCount = store.fsItems.gridColumnCount
+            let columnCount = store.entries.gridColumnCount
             move(-columnCount)
         case 125 where store.viewLayout == .grid:
-            let columnCount = store.fsItems.gridColumnCount
+            let columnCount = store.entries.gridColumnCount
             move(+columnCount)
         case 126: move(-1)
         case 125: move(+1)
@@ -258,7 +258,7 @@ struct ContentPaneView: View {
             {
                 return true
             }
-            store.send(.fsItems(.requestRedo))
+            store.send(.entries(.requestRedo))
             return true
         }
 
@@ -267,7 +267,7 @@ struct ContentPaneView: View {
         {
             return true
         }
-        store.send(.fsItems(.requestUndo))
+        store.send(.entries(.requestUndo))
         return true
     }
 

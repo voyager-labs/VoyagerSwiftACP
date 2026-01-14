@@ -69,22 +69,22 @@ struct ContentPaneListView: View {
     }
 
     private struct ItemRowProps {
-        let handlers: FSItemContextMenuHandlers
+        let handlers: EntryContextMenuHandlers
         let width: CGFloat
         let showCompress: Bool
         let showExtract: Bool
     }
 
     private func buildItemRowProps(
-        item: FSItem,
-        fsStore: Store<FSItemsFeature.State, FSItemsFeature.Action>,
+        item: Entry,
+        fsStore: Store<EntriesFeature.State, EntriesFeature.Action>,
         geometry: GeometryProxy,
         store: StoreOf<FileManagerFeature>,
         isTrashFolder: Bool,
     ) -> ItemRowProps {
         let selectedIds = fsStore.selectedIds
         let selectedItems = fsStore.displayItems.filter { selectedIds.contains($0.id) }
-        let options = FSItemContextMenuUtils
+        let options = EntryContextMenuUtils
             .calculateCompressExtractOptions(selectedItems: selectedItems)
         let showCompress = options.showCompress
         let showExtract = options.showExtract
@@ -109,12 +109,12 @@ struct ContentPaneListView: View {
 
     @ViewBuilder
     private func itemRow(
-        item: FSItem,
-        fsStore: Store<FSItemsFeature.State, FSItemsFeature.Action>,
+        item: Entry,
+        fsStore: Store<EntriesFeature.State, EntriesFeature.Action>,
         geometry: GeometryProxy,
         store: StoreOf<FileManagerFeature>,
         isTrashFolder: Bool = false,
-    ) -> FSItemListView {
+    ) -> EntryListView {
         let props = buildItemRowProps(
             item: item,
             fsStore: fsStore,
@@ -123,7 +123,7 @@ struct ContentPaneListView: View {
             isTrashFolder: isTrashFolder,
         )
 
-        buildFSItemListView(
+        buildEntryListView(
             item: item,
             fsStore: fsStore,
             store: store,
@@ -132,18 +132,18 @@ struct ContentPaneListView: View {
     }
 
     // swiftlint:disable function_body_length
-    private func buildFSItemListView(
-        item: FSItem,
-        fsStore: Store<FSItemsFeature.State, FSItemsFeature.Action>,
+    private func buildEntryListView(
+        item: Entry,
+        fsStore: Store<EntriesFeature.State, EntriesFeature.Action>,
         store: StoreOf<FileManagerFeature>,
         props: ItemRowProps,
-    ) -> FSItemListView {
+    ) -> EntryListView {
         let selectedIds = fsStore.selectedIds
         let clipboardItems = fsStore.clipboardItems
         let thumbnailsReady = fsStore.thumbnailsReady
         let isContextMenuTarget = contextMenuTargetId == item.id
 
-        return FSItemListView(
+        return EntryListView(
             item: item,
             isSelected: selectedIds.contains(item.id),
             isCut: clipboardItems.contains(item.fullPath) && fsStore.clipboardOperation == .cut,
@@ -201,9 +201,9 @@ struct ContentPaneListView: View {
 
     @ViewBuilder
     private func styledItemRow(
-        item: FSItem,
+        item: Entry,
         index: Int,
-        fsStore: Store<FSItemsFeature.State, FSItemsFeature.Action>,
+        fsStore: Store<EntriesFeature.State, EntriesFeature.Action>,
         geometry: GeometryProxy,
         store: StoreOf<FileManagerFeature>,
     ) -> some View {
@@ -236,7 +236,7 @@ struct ContentPaneListView: View {
     @ViewBuilder
     private func groupHeader(
         group: GroupedItems,
-        fsStore: Store<FSItemsFeature.State, FSItemsFeature.Action>,
+        fsStore: Store<EntriesFeature.State, EntriesFeature.Action>,
     ) -> some View {
         HStack(spacing: 8) {
             Spacer().frame(width: 28)
@@ -246,7 +246,7 @@ struct ContentPaneListView: View {
                .first(where: { $0.name == group.groupName })?.colorCode
             {
                 Circle()
-                    .fill(FSItemTagUtils.getTagColor(colorCode: colorCode))
+                    .fill(EntryTagUtils.getTagColor(colorCode: colorCode))
                     .frame(width: 8, height: 8)
                     .overlay(
                         Circle()
@@ -265,7 +265,7 @@ struct ContentPaneListView: View {
 
     @ViewBuilder
     private func groupedItemsContent(
-        fsStore: Store<FSItemsFeature.State, FSItemsFeature.Action>,
+        fsStore: Store<EntriesFeature.State, EntriesFeature.Action>,
         geometry: GeometryProxy,
         store: StoreOf<FileManagerFeature>,
     ) -> some View {
@@ -286,7 +286,7 @@ struct ContentPaneListView: View {
 
     @ViewBuilder
     private func listContent(
-        fsStore: Store<FSItemsFeature.State, FSItemsFeature.Action>,
+        fsStore: Store<EntriesFeature.State, EntriesFeature.Action>,
         geometry: GeometryProxy,
         store: StoreOf<FileManagerFeature>,
     ) -> some View {
@@ -303,7 +303,7 @@ struct ContentPaneListView: View {
         emptyRowsView(itemsCount: fsStore.displayItems.count, scrollHeight: scrollViewHeight, fsStore: fsStore)
     }
 
-    private func emptyRowTapAction(fsStore: Store<FSItemsFeature.State, FSItemsFeature.Action>) {
+    private func emptyRowTapAction(fsStore: Store<EntriesFeature.State, EntriesFeature.Action>) {
         if fsStore.isRenaming {
             fsStore.send(.commitRename)
         }
@@ -315,7 +315,7 @@ struct ContentPaneListView: View {
     private func emptyRowsView(
         itemsCount: Int,
         scrollHeight: CGFloat,
-        fsStore: Store<FSItemsFeature.State, FSItemsFeature.Action>,
+        fsStore: Store<EntriesFeature.State, EntriesFeature.Action>,
     ) -> some View {
         let currentHeight = CGFloat(itemsCount) * rowHeight
         let remainingHeight = scrollHeight - currentHeight
@@ -347,7 +347,7 @@ struct ContentPaneListView: View {
     }
 
     var body: some View {
-        let fsStore = store.scope(state: \.fsItems, action: \.fsItems)
+        let fsStore = store.scope(state: \.entries, action: \.entries)
 
         GeometryReader { geometry in
             VStack(spacing: 0) {
@@ -502,7 +502,7 @@ struct ContentPaneListView: View {
                 .border(fsStore.isDropTargeted ? Color.accentColor : Color.clear, width: 2)
                 .onDrop(
                     of: [UTType.fileURL],
-                    delegate: FSItemDropDelegate(store: store, fsStore: fsStore),
+                    delegate: EntryDropDelegate(store: store, fsStore: fsStore),
                 )
             }
         }

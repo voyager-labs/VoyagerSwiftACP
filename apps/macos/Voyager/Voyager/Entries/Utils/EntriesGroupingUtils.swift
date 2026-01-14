@@ -15,15 +15,15 @@ enum GroupKey: String, Equatable, CaseIterable {
 
 struct GroupedItems: Equatable {
     let groupName: String
-    let items: [FSItem]
+    let items: [Entry]
 
     var count: Int {
         items.count
     }
 }
 
-enum FSItemsGroupingUtils {
-    private static func groupByName(_ items: [FSItem]) -> [GroupedItems] {
+enum EntriesGroupingUtils {
+    private static func groupByName(_ items: [Entry]) -> [GroupedItems] {
         let dictionary = Dictionary(grouping: items) { item -> String in
             guard let firstChar = item.name.uppercased().first else { return "#" }
             if firstChar.isLetter {
@@ -45,8 +45,8 @@ enum FSItemsGroupingUtils {
     }
 
     private static func groupByDate(
-        _ files: [FSItem],
-        dateKeyPath: KeyPath<FSItem, Date> = \.modifiedDate,
+        _ files: [Entry],
+        dateKeyPath: KeyPath<Entry, Date> = \.modifiedDate,
     ) -> [GroupedItems] {
         let calendar = Calendar.current
         let now = Date()
@@ -84,8 +84,8 @@ enum FSItemsGroupingUtils {
     }
 
     private static func groupRecentDateFiles(
-        _ files: [FSItem],
-        dateKeyPath: KeyPath<FSItem, Date>,
+        _ files: [Entry],
+        dateKeyPath: KeyPath<Entry, Date>,
         calendar: Calendar,
         now: Date,
     ) -> (groups: [GroupedItems], processedFiles: Set<String>) {
@@ -176,7 +176,7 @@ enum FSItemsGroupingUtils {
         return 1
     }
 
-    private static func groupBySize(_ files: [FSItem]) -> [GroupedItems] {
+    private static func groupBySize(_ files: [Entry]) -> [GroupedItems] {
         let dictionary = Dictionary(grouping: files) { item -> String in
             let size = item.size
             switch size {
@@ -205,14 +205,14 @@ enum FSItemsGroupingUtils {
         }
     }
 
-    private static func groupByKind(_ files: [FSItem]) -> [GroupedItems] {
+    private static func groupByKind(_ files: [Entry]) -> [GroupedItems] {
         Dictionary(grouping: files) { $0.kind }
             .map { GroupedItems(groupName: $0.key, items: $0.value) }
             .sorted { $0.groupName < $1.groupName }
     }
 
     static func groupItems(
-        _ items: [FSItem],
+        _ items: [Entry],
         by groupKey: GroupKey,
     ) -> [GroupedItems] {
         guard groupKey != .none else {
@@ -222,7 +222,7 @@ enum FSItemsGroupingUtils {
         return groupItemsByKey(items, groupKey: groupKey)
     }
 
-    private static func groupItemsByKey(_ items: [FSItem], groupKey: GroupKey) -> [GroupedItems] {
+    private static func groupItemsByKey(_ items: [Entry], groupKey: GroupKey) -> [GroupedItems] {
         switch groupKey {
         case .none:
             [GroupedItems(groupName: "", items: items)]
@@ -247,12 +247,12 @@ enum FSItemsGroupingUtils {
         }
     }
 
-    private static func groupItemsByName(_ items: [FSItem]) -> [GroupedItems] {
+    private static func groupItemsByName(_ items: [Entry]) -> [GroupedItems] {
         let sortedItems = items.sorted { $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending }
         return [GroupedItems(groupName: "", items: sortedItems)]
     }
 
-    private static func groupItemsByKind(_ items: [FSItem]) -> [GroupedItems] {
+    private static func groupItemsByKind(_ items: [Entry]) -> [GroupedItems] {
         var result: [GroupedItems] = []
         let folders = items.filter(\.isDirectory)
         if !folders.isEmpty {
@@ -263,9 +263,9 @@ enum FSItemsGroupingUtils {
         return result
     }
 
-    private static func groupItemsByDateLastOpened(_ items: [FSItem]) -> [GroupedItems] {
+    private static func groupItemsByDateLastOpened(_ items: [Entry]) -> [GroupedItems] {
         var result: [GroupedItems] = []
-        let itemsWithDates = items.compactMap { item -> FSItem? in
+        let itemsWithDates = items.compactMap { item -> Entry? in
             guard item.lastOpenedDate != nil else { return nil }
             return item
         }
@@ -280,7 +280,7 @@ enum FSItemsGroupingUtils {
         return result
     }
 
-    private static func groupItemsByApplication(_ items: [FSItem]) -> [GroupedItems] {
+    private static func groupItemsByApplication(_ items: [Entry]) -> [GroupedItems] {
         let grouped = Dictionary(grouping: items) { item -> String in
             if item.isDirectory || item.creatorApplication == nil {
                 return "Other"
@@ -303,7 +303,7 @@ enum FSItemsGroupingUtils {
         return result
     }
 
-    private static func groupItemsBySize(_ items: [FSItem]) -> [GroupedItems] {
+    private static func groupItemsBySize(_ items: [Entry]) -> [GroupedItems] {
         var result: [GroupedItems] = []
         let files = items.filter { !$0.isDirectory }
         result.append(contentsOf: groupBySize(files))
@@ -314,11 +314,11 @@ enum FSItemsGroupingUtils {
         return result
     }
 
-    private static func groupItemsByTags(_ items: [FSItem]) -> [GroupedItems] {
+    private static func groupItemsByTags(_ items: [Entry]) -> [GroupedItems] {
         var result: [GroupedItems] = []
 
-        var tagToItems: [String: [FSItem]] = [:]
-        var itemsWithoutTags: [FSItem] = []
+        var tagToItems: [String: [Entry]] = [:]
+        var itemsWithoutTags: [Entry] = []
 
         for item in items {
             if let itemTags = item.tags, !itemTags.isEmpty {
@@ -332,7 +332,7 @@ enum FSItemsGroupingUtils {
 
         var processedTags = Set<String>()
 
-        for colorCode in FSItemTagUtils.colorCodeOrder {
+        for colorCode in EntryTagUtils.colorCodeOrder {
             for (tagName, taggedItems) in tagToItems {
                 if let firstTag = taggedItems.first?.tags?.first(where: { $0.name == tagName }),
                    firstTag.colorCode == colorCode

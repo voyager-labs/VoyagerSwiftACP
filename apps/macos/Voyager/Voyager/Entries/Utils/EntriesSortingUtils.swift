@@ -17,19 +17,19 @@ enum SortOrder: String, Equatable {
     case descending
 }
 
-enum FSItemsSortingUtils {
+enum EntriesSortingUtils {
     static func sortItems(
-        _ items: [FSItem],
+        _ items: [Entry],
         by sortKey: SortKey,
         order: SortOrder,
-    ) -> [FSItem] {
+    ) -> [Entry] {
         items.sorted { item1, item2 in
             let comparison = compareItems(item1, item2, by: sortKey)
             return order == .ascending ? comparison == .orderedAscending : comparison == .orderedDescending
         }
     }
 
-    private static func compareItems(_ item1: FSItem, _ item2: FSItem, by sortKey: SortKey) -> ComparisonResult {
+    private static func compareItems(_ item1: Entry, _ item2: Entry, by sortKey: SortKey) -> ComparisonResult {
         switch sortKey {
         case .name:
             return item1.name.localizedCaseInsensitiveCompare(item2.name)

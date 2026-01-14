@@ -14,10 +14,10 @@ public enum ClipboardOperation: Equatable, Sendable {
 // swiftlint:disable type_body_length
 /// 파일 시스템 아이템 목록 및 선택 관리 (FSV 영역)
 @Reducer
-struct FSItemsFeature {
-    private static func deduplicateById(_ items: [FSItem]) -> [FSItem] {
+struct EntriesFeature {
+    private static func deduplicateById(_ items: [Entry]) -> [Entry] {
         var seen: Set<String> = []
-        var unique: [FSItem] = []
+        var unique: [Entry] = []
         unique.reserveCapacity(items.count)
 
         for item in items where seen.insert(item.id).inserted {
@@ -41,8 +41,8 @@ struct FSItemsFeature {
 
     @ObservableState
     struct State: Equatable {
-        var items: IdentifiedArrayOf<FSItem> = []
-        var collectionItems: IdentifiedArrayOf<FSItem> = []
+        var items: IdentifiedArrayOf<Entry> = []
+        var collectionItems: IdentifiedArrayOf<Entry> = []
         var isCollectionMode: Bool = false
         var selectedIds: Set<String> = []
         var lastSelectedId: String?
@@ -59,7 +59,7 @@ struct FSItemsFeature {
         var groupKey: GroupKey = .none
         var groupedItems: [GroupedItems] = []
 
-        var operations: FSItemsOperationsFeature.State = .init()
+        var operations: EntriesOperationsFeature.State = .init()
         var undoRecords: [EntryActionRecord] = []
         var redoRecords: [EntryActionRecord] = []
 
@@ -92,11 +92,11 @@ struct FSItemsFeature {
             renamingItemId != nil
         }
 
-        var displayItems: IdentifiedArrayOf<FSItem> {
+        var displayItems: IdentifiedArrayOf<Entry> {
             isCollectionMode ? collectionItems : items
         }
 
-        var displayOrderItems: [FSItem] {
+        var displayOrderItems: [Entry] {
             if groupKey == .none {
                 Array(displayItems)
             } else {
@@ -169,7 +169,7 @@ struct FSItemsFeature {
         case loadRecentItems(showHidden: Bool)
         case loadTagItems(tagName: String, showHidden: Bool)
         case loadComputerItems
-        case itemsLoaded([FSItem])
+        case itemsLoaded([Entry])
         case collectionItemsLoadedFromSearch([JSONValue])
         case fileSystemChanged([String])
         case setShowHidden(Bool)
@@ -205,7 +205,7 @@ struct FSItemsFeature {
         case confirmNewFolder(name: String, path: String, originalName: String)
         case moveSelectedItemsToTrash
         case deleteSelectedItemsImmediately
-        case confirmDeleteImmediately(items: [FSItem])
+        case confirmDeleteImmediately(items: [Entry])
         case putBackSelectedItems
         case compressSelectedItems
         case extractSelectedItem
@@ -234,31 +234,31 @@ struct FSItemsFeature {
         case undoEntryAction(EntryActionRecord)
         case redoEntryAction(EntryActionRecord)
         case entryActionApplied(direction: EntryActionDirection, record: EntryActionRecord)
-        case operations(FSItemsOperationsFeature.Action)
+        case operations(EntriesOperationsFeature.Action)
     }
 
-    @Dependency(\.fsItemClient)
-    var fsItemClient
+    @Dependency(\.entryClient)
+    var entryClient
     @Dependency(\.undoManagerClient)
     var undoManagerClient
 
     var body: some Reducer<State, Action> {
         Scope(state: \.operations, action: \.operations) {
-            FSItemsOperationsFeature()
+            EntriesOperationsFeature()
         }
 
         Reduce { state, action in
             switch action {
             case .onAppear:
                 return .run { send in
-                    for await _ in await fsItemClient.observeFileSystemChanged() {
+                    for await _ in await entryClient.observeFileSystemChanged() {
                         await send(.reloadCurrentFolder)
                     }
                 }
                 .cancellable(id: "FileSystemObserver", cancelInFlight: true)
 
             case .reloadCurrentFolder:
-                let (clipboardPaths, clipboardOp) = fsItemClient.loadClipboardPaths()
+                let (clipboardPaths, clipboardOp) = entryClient.loadClipboardPaths()
                 state.clipboardItems = clipboardPaths
                 state.clipboardOperation = clipboardOp
 
@@ -319,7 +319,7 @@ struct FSItemsFeature {
                 switch (kind, result) {
                 case (.createFolder, .success):
                     let createdURL = URL(fileURLWithPath: filePath)
-                    if let createdItem = FSItemLoadUtils.convertURLToFSItem(createdURL) {
+                    if let createdItem = EntryLoadUtils.convertURLToEntry(createdURL) {
                         if let creatingId = state.creatingNewFolderId,
                            let index = state.items.index(id: creatingId)
                         {
@@ -328,7 +328,7 @@ struct FSItemsFeature {
                         } else {
                             state.items.insert(createdItem, at: 0)
                         }
-                        state.groupedItems = FSItemsGroupingUtils.groupItems(
+                        state.groupedItems = EntriesGroupingUtils.groupItems(
                             Array(state.displayItems),
                             by: state.groupKey,
                         )
@@ -344,7 +344,7 @@ struct FSItemsFeature {
 
                     return .merge(
                         .run { _ in
-                            await fsItemClient.postFileSystemChanged([filePath])
+                            await entryClient.postFileSystemChanged([filePath])
                         },
                         .none,
                     )
@@ -372,13 +372,13 @@ struct FSItemsFeature {
                     return .merge(
                         .send(.reloadCurrentFolder),
                         .run { _ in
-                            await fsItemClient.postFileSystemChanged([filePath])
+                            await entryClient.postFileSystemChanged([filePath])
                         },
                     )
 
                 case (.rename, .success):
                     return .run { _ in
-                        await fsItemClient.postFileSystemChanged([filePath])
+                        await entryClient.postFileSystemChanged([filePath])
                     }
 
                 case (.moveToTrash, .success),
@@ -459,20 +459,20 @@ struct FSItemsFeature {
                 return .merge(
                     .cancel(id: CancelID.fsEventsWatcher),
 
-                    .run { [fsItemClient, showHidden = state.showHiddenFiles, path] send in
+                    .run { [entryClient, showHidden = state.showHiddenFiles, path] send in
                         let url = URL(fileURLWithPath: (path as NSString).expandingTildeInPath)
 
                         do {
-                            let items = try await fsItemClient.loadItems(url, showHidden)
+                            let items = try await entryClient.loadItems(url, showHidden)
                             await send(.itemsLoaded(items))
                         } catch {
                             await send(.itemsLoaded([]))
                         }
                     },
 
-                    .run { [fsItemClient, path] send in
+                    .run { [entryClient, path] send in
                         let url = URL(fileURLWithPath: (path as NSString).expandingTildeInPath)
-                        let stream = fsItemClient.startWatchingDirectory(url)
+                        let stream = entryClient.startWatchingDirectory(url)
 
                         for await changedPaths in stream {
                             await send(.fileSystemChanged(changedPaths))
@@ -485,11 +485,11 @@ struct FSItemsFeature {
                 guard let path = state.currentFolderPath else { return .none }
                 state.isReloading = true
 
-                return .run { [fsItemClient, showHidden = state.showHiddenFiles, path] send in
+                return .run { [entryClient, showHidden = state.showHiddenFiles, path] send in
                     let url = URL(fileURLWithPath: (path as NSString).expandingTildeInPath)
 
                     do {
-                        let items = try await fsItemClient.loadItems(url, showHidden)
+                        let items = try await entryClient.loadItems(url, showHidden)
                         await send(.itemsLoaded(items))
                     } catch {
                         await send(.itemsLoaded([]))
@@ -520,7 +520,7 @@ struct FSItemsFeature {
                 state.isVirtualFolder = true
 
                 return .run { send in
-                    let computerItems = try await fsItemClient.loadComputerItems()
+                    let computerItems = try await entryClient.loadComputerItems()
                     await send(.itemsLoaded(computerItems))
                 }
 
@@ -533,7 +533,7 @@ struct FSItemsFeature {
 
             case let .setGroupKey(key):
                 state.groupKey = key
-                state.groupedItems = FSItemsGroupingUtils.groupItems(Array(state.displayItems), by: key)
+                state.groupedItems = EntriesGroupingUtils.groupItems(Array(state.displayItems), by: key)
                 return .none
 
             case let .setCollectionMode(isCollectionMode):
@@ -541,11 +541,11 @@ struct FSItemsFeature {
                 state.isCollectionMode = isCollectionMode
                 state.clearSelection()
                 state.operations.commonApplicationsForSelectedFiles = []
-                state.groupedItems = FSItemsGroupingUtils.groupItems(Array(state.displayItems), by: state.groupKey)
+                state.groupedItems = EntriesGroupingUtils.groupItems(Array(state.displayItems), by: state.groupKey)
                 return .none
 
             case let .setDropTargeted(isTargeted):
-                let draggedPaths = fsItemClient.loadDragPaths()
+                let draggedPaths = entryClient.loadDragPaths()
 
                 if !draggedPaths.isEmpty, let currentFolder = state.currentFolderPath {
                     let sourceParent = URL(fileURLWithPath: draggedPaths[0]).deletingLastPathComponent().path
@@ -557,7 +557,7 @@ struct FSItemsFeature {
 
             case let .itemsLoaded(items):
                 let uniqueItems = Self.deduplicateById(items)
-                let sorted = FSItemsSortingUtils.sortItems(uniqueItems, by: state.sortKey, order: state.sortOrder)
+                let sorted = EntriesSortingUtils.sortItems(uniqueItems, by: state.sortKey, order: state.sortOrder)
                 state.items = IdentifiedArray(uniqueElements: sorted)
 
                 guard !state.isCollectionMode else {
@@ -565,7 +565,7 @@ struct FSItemsFeature {
                     return .none
                 }
 
-                state.groupedItems = FSItemsGroupingUtils.groupItems(sorted, by: state.groupKey)
+                state.groupedItems = EntriesGroupingUtils.groupItems(sorted, by: state.groupKey)
 
                 if !state.selectAfterLoadFileNames.isEmpty {
                     let fileNamesToSelect = state.selectAfterLoadFileNames
@@ -589,16 +589,16 @@ struct FSItemsFeature {
                 return generateThumbnailsEffect(for: sorted)
 
             case let .collectionItemsLoadedFromSearch(items):
-                let converted = FSItemSearchUtils.convertCollectionItems(items, showHidden: state.showHiddenFiles)
+                let converted = EntrySearchUtils.convertCollectionItems(items, showHidden: state.showHiddenFiles)
                 let uniqueItems = Self.deduplicateById(converted)
-                let sorted = FSItemsSortingUtils.sortItems(uniqueItems, by: state.sortKey, order: state.sortOrder)
+                let sorted = EntriesSortingUtils.sortItems(uniqueItems, by: state.sortKey, order: state.sortOrder)
                 state.collectionItems = IdentifiedArray(uniqueElements: sorted)
 
                 guard state.isCollectionMode else {
                     return .none
                 }
 
-                state.groupedItems = FSItemsGroupingUtils.groupItems(sorted, by: state.groupKey)
+                state.groupedItems = EntriesGroupingUtils.groupItems(sorted, by: state.groupKey)
                 state.clearSelection()
                 state.operations.commonApplicationsForSelectedFiles = []
                 return generateThumbnailsEffect(for: sorted)
@@ -826,37 +826,37 @@ struct FSItemsFeature {
                 if !state.hasUserSetSortOrder {
                     state.sortOrder = state.defaultSortOrder
                 }
-                let sortedItems = FSItemsSortingUtils.sortItems(
+                let sortedItems = EntriesSortingUtils.sortItems(
                     Array(state.items),
                     by: state.sortKey,
                     order: state.sortOrder,
                 )
                 state.items = IdentifiedArray(uniqueElements: sortedItems)
-                let sortedCollection = FSItemsSortingUtils.sortItems(
+                let sortedCollection = EntriesSortingUtils.sortItems(
                     Array(state.collectionItems),
                     by: state.sortKey,
                     order: state.sortOrder,
                 )
                 state.collectionItems = IdentifiedArray(uniqueElements: sortedCollection)
-                state.groupedItems = FSItemsGroupingUtils.groupItems(Array(state.displayItems), by: state.groupKey)
+                state.groupedItems = EntriesGroupingUtils.groupItems(Array(state.displayItems), by: state.groupKey)
                 return .none
 
             case let .setSortOrder(order):
                 state.sortOrder = order
                 state.hasUserSetSortOrder = true
-                let sortedItems = FSItemsSortingUtils.sortItems(
+                let sortedItems = EntriesSortingUtils.sortItems(
                     Array(state.items),
                     by: state.sortKey,
                     order: state.sortOrder,
                 )
                 state.items = IdentifiedArray(uniqueElements: sortedItems)
-                let sortedCollection = FSItemsSortingUtils.sortItems(
+                let sortedCollection = EntriesSortingUtils.sortItems(
                     Array(state.collectionItems),
                     by: state.sortKey,
                     order: state.sortOrder,
                 )
                 state.collectionItems = IdentifiedArray(uniqueElements: sortedCollection)
-                state.groupedItems = FSItemsGroupingUtils.groupItems(Array(state.displayItems), by: state.groupKey)
+                state.groupedItems = EntriesGroupingUtils.groupItems(Array(state.displayItems), by: state.groupKey)
                 return .none
 
             case .resetScrollFlag:
@@ -1012,10 +1012,10 @@ struct FSItemsFeature {
                 state.clipboardItems = selectedPaths
                 state.clipboardOperation = .copy
 
-                return .run { [fsItemClient] send in
+                return .run { [entryClient] send in
                     await send(.operations(.copySelectedItems(files: selectedItems)))
 
-                    fsItemClient.postFileSystemChanged([])
+                    entryClient.postFileSystemChanged([])
                 }
 
             case .cutSelectedItems:
@@ -1029,17 +1029,17 @@ struct FSItemsFeature {
                 state.clipboardItems = selectedPaths
                 state.clipboardOperation = .cut
 
-                return .run { [fsItemClient] send in
+                return .run { [entryClient] send in
                     await send(.operations(.copySelectedItems(files: selectedItems)))
 
                     let pasteboard = NSPasteboard.general
                     pasteboard.setString("cut", forType: NSPasteboard.PasteboardType("com.voyager.clipboard.operation"))
 
-                    fsItemClient.postFileSystemChanged([])
+                    entryClient.postFileSystemChanged([])
                 }
 
             case let .pasteItems(destinationPath):
-                let (clipboardPaths, clipboardOp) = fsItemClient.loadClipboardPaths()
+                let (clipboardPaths, clipboardOp) = entryClient.loadClipboardPaths()
                 guard !clipboardPaths.isEmpty else {
                     return .none
                 }
@@ -1073,20 +1073,20 @@ struct FSItemsFeature {
 
             case let .startDrag(paths):
                 state.draggingPaths = paths
-                fsItemClient.saveDragPaths(paths)
+                entryClient.saveDragPaths(paths)
                 let isOptionPressed = NSEvent.modifierFlags.contains(.option)
-                fsItemClient.saveDragWithOption(isOptionPressed)
+                entryClient.saveDragWithOption(isOptionPressed)
                 return .none
 
             case let .handleDrop(providers, destinationPath):
-                let draggedPaths = fsItemClient.loadDragPaths()
+                let draggedPaths = entryClient.loadDragPaths()
                 if !draggedPaths.isEmpty {
                     state.draggingPaths = []
                     return .send(.dropToFolder(destinationPath: destinationPath))
                 }
 
                 state.draggingPaths = []
-                fsItemClient.saveDragPaths([])
+                entryClient.saveDragPaths([])
 
                 return .run { @MainActor send in
                     var urls: [URL] = []
@@ -1122,7 +1122,7 @@ struct FSItemsFeature {
                 }
 
             case let .handleDropToTag(providers, tagName):
-                return .run { @MainActor [fsItemClient] _ in
+                return .run { @MainActor [entryClient] _ in
                     var urls: [URL] = []
                     for provider in providers
                         where provider.hasItemConformingToTypeIdentifier(UTType.fileURL.identifier)
@@ -1144,18 +1144,18 @@ struct FSItemsFeature {
                     }
 
                     for url in urls {
-                        let currentTags = await (try? fsItemClient.getTags(url)) ?? []
+                        let currentTags = await (try? entryClient.getTags(url)) ?? []
                         if !currentTags.contains(tagName) {
-                            try? await fsItemClient.toggleTag(url, tagName)
+                            try? await entryClient.toggleTag(url, tagName)
                         }
                     }
                 }
 
             case let .dropToFolder(destinationPath):
-                let sourcePaths = fsItemClient.loadDragPaths()
-                let isOptionPressed = fsItemClient.loadDragWithOption()
+                let sourcePaths = entryClient.loadDragPaths()
+                let isOptionPressed = entryClient.loadDragWithOption()
 
-                fsItemClient.saveDragPaths([])
+                entryClient.saveDragPaths([])
 
                 guard !sourcePaths.isEmpty else {
                     return .none
@@ -1264,7 +1264,7 @@ struct FSItemsFeature {
                     let folderName: String
                     if targetPath != oldPath, FileManager.default.fileExists(atPath: targetPath) {
                         await MainActor.run {
-                            FSItemAlertUtils.showRenameConflictAlert(itemName: name)
+                            EntryAlertUtils.showRenameConflictAlert(itemName: name)
                         }
                         folderName = originalName
                     } else {
@@ -1290,7 +1290,7 @@ struct FSItemsFeature {
 
                 return .run { send in
                     let itemNames = selectedItems.map(\.name)
-                    let confirmed = await FSItemAlertUtils.showDeleteConfirmationAlert(itemNames: itemNames)
+                    let confirmed = await EntryAlertUtils.showDeleteConfirmationAlert(itemNames: itemNames)
 
                     if confirmed {
                         await send(.confirmDeleteImmediately(items: selectedItems))
@@ -1331,7 +1331,7 @@ struct FSItemsFeature {
                         beforeTags + [tag]
                     }
 
-                    return FSItemsOperationsFeature.TagChangeTarget(
+                    return EntriesOperationsFeature.TagChangeTarget(
                         file: item,
                         beforeTags: beforeTags,
                         afterTags: afterTags,
@@ -1343,7 +1343,7 @@ struct FSItemsFeature {
             case .emptyTrash:
                 let allItems = Array(state.items)
                 return .run { send in
-                    let shouldEmpty = await FSItemAlertUtils.showEmptyTrashConfirmationAlert(itemCount: allItems.count)
+                    let shouldEmpty = await EntryAlertUtils.showEmptyTrashConfirmationAlert(itemCount: allItems.count)
                     guard shouldEmpty else { return }
                     await send(.operations(.emptyTrash(items: allItems)))
                 }
@@ -1543,14 +1543,14 @@ struct FSItemsFeature {
         _ record: EntryActionRecord,
         direction: EntryActionDirection,
     ) -> Effect<Action> {
-        let fsItemClient = fsItemClient
+        let entryClient = entryClient
 
         return .run { send in
             do {
                 let targets = try await applyEntryActionTargets(
                     record: record,
                     direction: direction,
-                    fsItemClient: fsItemClient,
+                    entryClient: entryClient,
                     send: send,
                 )
                 let updatedRecord = EntryActionRecord(
@@ -1572,7 +1572,7 @@ struct FSItemsFeature {
     private func applyEntryActionTargets(
         record: EntryActionRecord,
         direction: EntryActionDirection,
-        fsItemClient: FSItemClient,
+        entryClient: EntryClient,
         send: Send<Action>,
     ) async throws -> [EntryActionRecord.Target] {
         guard !record.targets.isEmpty else {
@@ -1586,7 +1586,7 @@ struct FSItemsFeature {
                 record: record,
                 target: target,
                 direction: direction,
-                fsItemClient: fsItemClient,
+                entryClient: entryClient,
             )
 
             await send(.operations(.operationStarted(operation.operationPath, operation.operationKind)))
@@ -1616,36 +1616,36 @@ struct FSItemsFeature {
         record: EntryActionRecord,
         target: EntryActionRecord.Target,
         direction: EntryActionDirection,
-        fsItemClient: FSItemClient,
+        entryClient: EntryClient,
     ) throws -> EntryActionOperation {
         switch record.actionKind {
         case .rename:
-            try makeRenameOperation(target: target, direction: direction, fsItemClient: fsItemClient)
+            try makeRenameOperation(target: target, direction: direction, entryClient: entryClient)
 
         case .move:
-            try makeMoveOperation(target: target, direction: direction, fsItemClient: fsItemClient)
+            try makeMoveOperation(target: target, direction: direction, entryClient: entryClient)
 
         case .paste, .duplicate:
-            try makeCopyOperation(target: target, direction: direction, fsItemClient: fsItemClient)
+            try makeCopyOperation(target: target, direction: direction, entryClient: entryClient)
 
         case .createFolder:
-            try makeCreateFolderOperation(target: target, direction: direction, fsItemClient: fsItemClient)
+            try makeCreateFolderOperation(target: target, direction: direction, entryClient: entryClient)
 
         case .moveToTrash:
-            try makeMoveToTrashOperation(target: target, direction: direction, fsItemClient: fsItemClient)
+            try makeMoveToTrashOperation(target: target, direction: direction, entryClient: entryClient)
 
         case .putBack:
-            try makePutBackOperation(target: target, direction: direction, fsItemClient: fsItemClient)
+            try makePutBackOperation(target: target, direction: direction, entryClient: entryClient)
 
         case .setTags:
-            try makeSetTagsOperation(target: target, direction: direction, fsItemClient: fsItemClient)
+            try makeSetTagsOperation(target: target, direction: direction, entryClient: entryClient)
         }
     }
 
     private func makeRenameOperation(
         target: EntryActionRecord.Target,
         direction: EntryActionDirection,
-        fsItemClient: FSItemClient,
+        entryClient: EntryClient,
     ) throws -> EntryActionOperation {
         let fromPath = try Self.requiredPath(
             direction == .undo ? target.afterPath : target.beforePath,
@@ -1659,7 +1659,7 @@ struct FSItemsFeature {
             operationPath: fromPath,
             operationKind: .rename,
             perform: {
-                try await fsItemClient.renameFile(
+                try await entryClient.renameFile(
                     URL(fileURLWithPath: fromPath),
                     URL(fileURLWithPath: toPath),
                 )
@@ -1671,7 +1671,7 @@ struct FSItemsFeature {
     private func makeMoveOperation(
         target: EntryActionRecord.Target,
         direction: EntryActionDirection,
-        fsItemClient: FSItemClient,
+        entryClient: EntryClient,
     ) throws -> EntryActionOperation {
         let fromPath = try Self.requiredPath(
             direction == .undo ? target.afterPath : target.beforePath,
@@ -1685,7 +1685,7 @@ struct FSItemsFeature {
             operationPath: fromPath,
             operationKind: .pasteFile,
             perform: {
-                try await fsItemClient.moveFile(
+                try await entryClient.moveFile(
                     URL(fileURLWithPath: fromPath),
                     URL(fileURLWithPath: toPath),
                 )
@@ -1697,7 +1697,7 @@ struct FSItemsFeature {
     private func makeCopyOperation(
         target: EntryActionRecord.Target,
         direction: EntryActionDirection,
-        fsItemClient: FSItemClient,
+        entryClient: EntryClient,
     ) throws -> EntryActionOperation {
         switch direction {
         case .undo:
@@ -1706,7 +1706,7 @@ struct FSItemsFeature {
                 operationPath: targetPath,
                 operationKind: .deleteImmediately,
                 perform: {
-                    try await fsItemClient.deleteImmediately(URL(fileURLWithPath: targetPath))
+                    try await entryClient.deleteImmediately(URL(fileURLWithPath: targetPath))
                     return target
                 },
             )
@@ -1717,7 +1717,7 @@ struct FSItemsFeature {
                 operationPath: sourcePath,
                 operationKind: .pasteFile,
                 perform: {
-                    try await fsItemClient.pasteFile(
+                    try await entryClient.pasteFile(
                         URL(fileURLWithPath: sourcePath),
                         URL(fileURLWithPath: targetPath),
                     )
@@ -1730,7 +1730,7 @@ struct FSItemsFeature {
     private func makeCreateFolderOperation(
         target: EntryActionRecord.Target,
         direction: EntryActionDirection,
-        fsItemClient: FSItemClient,
+        entryClient: EntryClient,
     ) throws -> EntryActionOperation {
         switch direction {
         case .undo:
@@ -1739,7 +1739,7 @@ struct FSItemsFeature {
                 operationPath: targetPath,
                 operationKind: .deleteImmediately,
                 perform: {
-                    try await fsItemClient.deleteImmediately(URL(fileURLWithPath: targetPath))
+                    try await entryClient.deleteImmediately(URL(fileURLWithPath: targetPath))
                     return target
                 },
             )
@@ -1752,7 +1752,7 @@ struct FSItemsFeature {
                 operationPath: parentURL.path,
                 operationKind: .createFolder,
                 perform: {
-                    try await fsItemClient.createFolder(parentURL, folderName)
+                    try await entryClient.createFolder(parentURL, folderName)
                     return target
                 },
             )
@@ -1762,7 +1762,7 @@ struct FSItemsFeature {
     private func makeMoveToTrashOperation(
         target: EntryActionRecord.Target,
         direction: EntryActionDirection,
-        fsItemClient: FSItemClient,
+        entryClient: EntryClient,
     ) throws -> EntryActionOperation {
         switch direction {
         case .undo:
@@ -1772,7 +1772,7 @@ struct FSItemsFeature {
                 operationPath: trashPath,
                 operationKind: .putBack,
                 perform: {
-                    try await fsItemClient.putBackFromTrash(
+                    try await entryClient.putBackFromTrash(
                         URL(fileURLWithPath: trashPath),
                         originalPath,
                     )
@@ -1795,7 +1795,7 @@ struct FSItemsFeature {
     private func makePutBackOperation(
         target: EntryActionRecord.Target,
         direction: EntryActionDirection,
-        fsItemClient: FSItemClient,
+        entryClient: EntryClient,
     ) throws -> EntryActionOperation {
         switch direction {
         case .undo:
@@ -1815,7 +1815,7 @@ struct FSItemsFeature {
                 operationPath: trashPath,
                 operationKind: .putBack,
                 perform: {
-                    try await fsItemClient.putBackFromTrash(
+                    try await entryClient.putBackFromTrash(
                         URL(fileURLWithPath: trashPath),
                         originalPath,
                     )
@@ -1828,7 +1828,7 @@ struct FSItemsFeature {
     private func makeSetTagsOperation(
         target: EntryActionRecord.Target,
         direction: EntryActionDirection,
-        fsItemClient: FSItemClient,
+        entryClient: EntryClient,
     ) throws -> EntryActionOperation {
         let filePath = try Self.requiredPath(target.beforePath, context: "setTags target")
         let tags = try Self.requiredTags(
@@ -1840,7 +1840,7 @@ struct FSItemsFeature {
             operationKind: .setTags,
             perform: {
                 let url = URL(fileURLWithPath: filePath)
-                try await fsItemClient.setTags(url, tags)
+                try await entryClient.setTags(url, tags)
                 return target
             },
         )
@@ -1879,7 +1879,7 @@ struct FSItemsFeature {
         return trashURL.path
     }
 
-    private func generateThumbnailsEffect(for items: [FSItem]) -> Effect<Action> {
+    private func generateThumbnailsEffect(for items: [Entry]) -> Effect<Action> {
         .run { send in
             let scale = await MainActor.run { NSScreen.main?.backingScaleFactor ?? 2.0 }
             let baseSize: CGFloat = 64
@@ -1894,7 +1894,7 @@ struct FSItemsFeature {
                         guard canGenerate else { return nil }
 
                         let hasCached = await MainActor.run {
-                            FSItemIconUtils.getThumbnail(for: item.fullPath) != nil
+                            EntryIconUtils.getThumbnail(for: item.fullPath) != nil
                         }
                         if hasCached {
                             return item.fullPath
@@ -1907,7 +1907,7 @@ struct FSItemsFeature {
                             scale: scale,
                         ) {
                             await MainActor.run {
-                                FSItemIconUtils.saveThumbnail(thumbnail, for: item.fullPath)
+                                EntryIconUtils.saveThumbnail(thumbnail, for: item.fullPath)
                             }
                             return item.fullPath
                         }
@@ -1938,19 +1938,19 @@ struct FSItemsFeature {
 
     private func getSelectedItems(
         selectedIds: Set<String>,
-        items: IdentifiedArrayOf<FSItem>,
-    ) -> [FSItem] {
+        items: IdentifiedArrayOf<Entry>,
+    ) -> [Entry] {
         Array(items.filter { selectedIds.contains($0.id) })
     }
 
     private func getSelectedFiles(
         selectedIds: Set<String>,
-        items: IdentifiedArrayOf<FSItem>,
-    ) -> [FSItem] {
+        items: IdentifiedArrayOf<Entry>,
+    ) -> [Entry] {
         getSelectedItems(selectedIds: selectedIds, items: items).filter { !$0.isDirectory }
     }
 
-    private func isPackageItem(_ item: FSItem) -> Bool {
+    private func isPackageItem(_ item: Entry) -> Bool {
         guard item.isDirectory else { return false }
 
         let url = URL(fileURLWithPath: item.fullPath)
@@ -1976,7 +1976,7 @@ struct FSItemsFeature {
 
     private func preloadApplicationsEffect(
         selectedIds: Set<String>,
-        items: IdentifiedArrayOf<FSItem>,
+        items: IdentifiedArrayOf<Entry>,
         currentItemId: String? = nil,
     ) -> Effect<Action> {
         let selectedFiles = getSelectedFiles(selectedIds: selectedIds, items: items)

@@ -4,11 +4,11 @@ import Foundation
 import UniformTypeIdentifiers
 
 // swiftlint:disable type_body_length file_length
-/// FSItems의 파일 시스템 작업 관리
+/// Entries의 파일 시스템 작업 관리
 @Reducer
-struct FSItemsOperationsFeature {
+struct EntriesOperationsFeature {
     struct TagChangeTarget: Equatable, Sendable {
-        let file: FSItem
+        let file: Entry
         let beforeTags: [String]
         let afterTags: [String]
     }
@@ -31,17 +31,17 @@ struct FSItemsOperationsFeature {
     }
 
     enum Action: Sendable {
-        case openFiles(files: [FSItem])
-        case quickLookFile(file: FSItem)
-        case quickLookFiles(files: [FSItem])
-        case openFileWithApp(file: FSItem)
+        case openFiles(files: [Entry])
+        case quickLookFile(file: Entry)
+        case quickLookFiles(files: [Entry])
+        case openFileWithApp(file: Entry)
         case openFileWithAppBundleID(filePath: String, bundleID: String, url: URL)
-        case setDefaultAppForFile(type: UTType?, bundleID: String, file: FSItem)
-        case setDefaultAppWithOther(file: FSItem)
-        case openFilesWithAppFromOther(files: [FSItem], shouldSetAsDefault: Bool)
-        case loadApplicationsForFile(file: FSItem)
+        case setDefaultAppForFile(type: UTType?, bundleID: String, file: Entry)
+        case setDefaultAppWithOther(file: Entry)
+        case openFilesWithAppFromOther(files: [Entry], shouldSetAsDefault: Bool)
+        case loadApplicationsForFile(file: Entry)
         case createNewFolder(name: String, parentPath: String)
-        case copySelectedItems(files: [FSItem])
+        case copySelectedItems(files: [Entry])
         case pasteItems(
             sourcePaths: [String],
             destinationPath: String,
@@ -49,15 +49,15 @@ struct FSItemsOperationsFeature {
             actionKind: EntryActionRecord.ActionKind,
         )
         case renameItem(oldPath: String, newPath: String)
-        case moveToTrash(items: [FSItem])
-        case deleteImmediately(items: [FSItem])
-        case putBackFromTrash(items: [FSItem])
-        case emptyTrash(items: [FSItem])
-        case compressItems(items: [FSItem])
-        case extractCompressedFile(file: FSItem)
+        case moveToTrash(items: [Entry])
+        case deleteImmediately(items: [Entry])
+        case putBackFromTrash(items: [Entry])
+        case emptyTrash(items: [Entry])
+        case compressItems(items: [Entry])
+        case extractCompressedFile(file: Entry)
         case setTagsForItems(targets: [TagChangeTarget])
         case applicationsLoaded(String, [ApplicationInfo])
-        case loadCommonApplicationsForFiles(files: [FSItem])
+        case loadCommonApplicationsForFiles(files: [Entry])
         case commonApplicationsLoaded([ApplicationInfo])
         case operationStarted(String, OperationKind)
         case operationFinished(String, OperationKind, Result<Void, FileOpError>)
@@ -65,9 +65,9 @@ struct FSItemsOperationsFeature {
         case clearError(String)
     }
 
-    @Dependency(\.fsItemClient)
-    var fsItemClient
-    @Dependency(\.fsItemCapabilities)
+    @Dependency(\.entryClient)
+    var entryClient
+    @Dependency(\.entryCapabilities)
     var capabilities
 
     var body: some Reducer<State, Action> {
@@ -119,7 +119,7 @@ struct FSItemsOperationsFeature {
                         if isInTrash(filePath) {
                             let hasMoreFiles = index < files.count - 1
                             let shouldContinue = await MainActor.run {
-                                FSItemAlertUtils.showTrashFileAlert(fileName: file.name, hasMoreFiles: hasMoreFiles)
+                                EntryAlertUtils.showTrashFileAlert(fileName: file.name, hasMoreFiles: hasMoreFiles)
                             }
                             if !shouldContinue {
                                 break
@@ -129,7 +129,7 @@ struct FSItemsOperationsFeature {
 
                         await send(.operationStarted(filePath, .openDefault))
                         do {
-                            try await fsItemClient.open(url, .defaultApp)
+                            try await entryClient.open(url, .defaultApp)
                             await send(.operationFinished(filePath, .openDefault, .success(())))
                         } catch {
                             await send(.operationFinished(filePath, .openDefault, .failure(error.fileOpError)))
@@ -141,14 +141,14 @@ struct FSItemsOperationsFeature {
                 let filePath = file.fullPath
                 let url = URL(fileURLWithPath: filePath)
                 return run(for: filePath, kind: .quickLook) {
-                    try await fsItemClient.quickLook(url)
+                    try await entryClient.quickLook(url)
                 }
 
             case let .quickLookFiles(files):
                 let urls = files.map { URL(fileURLWithPath: $0.fullPath) }
                 let keyPath = files.first?.fullPath ?? "quicklook"
                 return run(for: keyPath, kind: .quickLook) {
-                    try await fsItemClient.quickLookFiles(urls)
+                    try await entryClient.quickLookFiles(urls)
                 }
 
             case let .openFileWithApp(file):
@@ -159,13 +159,13 @@ struct FSItemsOperationsFeature {
                     let fileName = URL(fileURLWithPath: filePath).lastPathComponent
                     return .run { _ in
                         _ = await MainActor.run {
-                            FSItemAlertUtils.showTrashFileAlert(fileName: fileName, hasMoreFiles: false)
+                            EntryAlertUtils.showTrashFileAlert(fileName: fileName, hasMoreFiles: false)
                         }
                     }
                 }
 
                 return run(for: filePath, kind: .openWithApp(bundleID)) {
-                    try await fsItemClient.open(url, .bundleID(bundleID))
+                    try await entryClient.open(url, .bundleID(bundleID))
                 }
 
             case let .setDefaultAppForFile(type, bundleID, file):
@@ -181,7 +181,7 @@ struct FSItemsOperationsFeature {
                 }
                 let filePath = file.fullPath
                 return run(for: filePath, kind: .setDefaultApp(bundleID)) {
-                    try await fsItemClient.setDefaultApp(fileType, bundleID)
+                    try await entryClient.setDefaultApp(fileType, bundleID)
                 }
 
             case let .setDefaultAppWithOther(file):
@@ -233,7 +233,7 @@ struct FSItemsOperationsFeature {
                 return .run { send in
                     await send(.operationStarted(targetPath, .createFolder))
                     do {
-                        try await fsItemClient.createFolder(parentURL, name)
+                        try await entryClient.createFolder(parentURL, name)
                         await send(.operationFinished(targetPath, .createFolder, .success(())))
                         let record = EntryActionRecord(
                             actionKind: .createFolder,
@@ -273,7 +273,7 @@ struct FSItemsOperationsFeature {
 
                 let isCopy = operation == .copy
 
-                return .run { [fsItemClient] send in
+                return .run { [entryClient] send in
                     var targets: [EntryActionRecord.Target] = []
 
                     for (sourceURL, destURL) in destinations {
@@ -284,9 +284,9 @@ struct FSItemsOperationsFeature {
 
                         do {
                             if isCopy {
-                                try await fsItemClient.pasteFile(sourceURL, destURL)
+                                try await entryClient.pasteFile(sourceURL, destURL)
                             } else {
-                                try await fsItemClient.moveFile(sourceURL, destURL)
+                                try await entryClient.moveFile(sourceURL, destURL)
                             }
                             targets.append(.init(beforePath: sourcePath, afterPath: destURL.path))
                             await send(.operationFinished(sourcePath, kind, .success(())))
@@ -297,16 +297,16 @@ struct FSItemsOperationsFeature {
                             }
 
                             let shouldReplace = await MainActor.run {
-                                FSItemAlertUtils.showReplaceAlert(itemName: itemName, context: .move) == .replace
+                                EntryAlertUtils.showReplaceAlert(itemName: itemName, context: .move) == .replace
                             }
 
                             if shouldReplace {
                                 do {
                                     try FileManager.default.removeItem(at: destURL)
                                     if isCopy {
-                                        try await fsItemClient.pasteFile(sourceURL, destURL)
+                                        try await entryClient.pasteFile(sourceURL, destURL)
                                     } else {
-                                        try await fsItemClient.moveFile(sourceURL, destURL)
+                                        try await entryClient.moveFile(sourceURL, destURL)
                                     }
 
                                     let destinationFolder = destURL.deletingLastPathComponent().path
@@ -336,7 +336,7 @@ struct FSItemsOperationsFeature {
                 return .run { send in
                     await send(.operationStarted(oldPath, .rename))
                     do {
-                        try await fsItemClient.renameFile(sourceURL, destURL)
+                        try await entryClient.renameFile(sourceURL, destURL)
                         await send(.operationFinished(oldPath, .rename, .success(())))
                         let record = EntryActionRecord(
                             actionKind: .rename,
@@ -349,7 +349,7 @@ struct FSItemsOperationsFeature {
                             return
                         }
                         await MainActor.run {
-                            FSItemAlertUtils.showRenameConflictAlert(itemName: itemName)
+                            EntryAlertUtils.showRenameConflictAlert(itemName: itemName)
                         }
                         await send(.operationFinished(oldPath, .rename, .failure(error)))
                     } catch {
@@ -385,7 +385,7 @@ struct FSItemsOperationsFeature {
 
             case let .deleteImmediately(items):
                 return runParallel(items: items, kind: .deleteImmediately) { url in
-                    try await fsItemClient.deleteImmediately(url)
+                    try await entryClient.deleteImmediately(url)
                 }
 
             case let .emptyTrash(items):
@@ -393,7 +393,7 @@ struct FSItemsOperationsFeature {
                     items: items,
                     kind: .deleteImmediately,
                     operation: { url in
-                        try await fsItemClient.deleteImmediately(url)
+                        try await entryClient.deleteImmediately(url)
                     },
                     onComplete: {
                         await TrashMetadataStore.shared.removeAll()
@@ -401,7 +401,7 @@ struct FSItemsOperationsFeature {
                 )
 
             case let .putBackFromTrash(items):
-                return .run { [fsItemClient] send in
+                return .run { [entryClient] send in
                     var targets: [EntryActionRecord.Target] = []
 
                     for item in items {
@@ -420,7 +420,7 @@ struct FSItemsOperationsFeature {
                         let originalPath = metadata.originalPath
 
                         do {
-                            try await fsItemClient.putBackFromTrash(
+                            try await entryClient.putBackFromTrash(
                                 URL(fileURLWithPath: item.fullPath),
                                 originalPath,
                             )
@@ -433,14 +433,14 @@ struct FSItemsOperationsFeature {
                             }
 
                             let shouldReplace = await MainActor.run {
-                                FSItemAlertUtils.showReplaceAlert(itemName: itemName, context: .putBack) == .replace
+                                EntryAlertUtils.showReplaceAlert(itemName: itemName, context: .putBack) == .replace
                             }
 
                             if shouldReplace {
                                 do {
                                     let originalURL = URL(fileURLWithPath: originalPath)
                                     try FileManager.default.removeItem(at: originalURL)
-                                    try await fsItemClient.putBackFromTrash(
+                                    try await entryClient.putBackFromTrash(
                                         URL(fileURLWithPath: item.fullPath),
                                         originalPath,
                                     )
@@ -468,13 +468,13 @@ struct FSItemsOperationsFeature {
                 guard let firstItem = items.first else { return .none }
                 let parentPath = URL(fileURLWithPath: firstItem.fullPath).deletingLastPathComponent().path
 
-                return .run { [fsItemClient] send in
+                return .run { [entryClient] send in
                     await send(.operationStarted(parentPath, .compress))
 
                     do {
-                        let archiveURL = try await fsItemClient.compressItems(itemURLs)
+                        let archiveURL = try await entryClient.compressItems(itemURLs)
                         await send(.operationFinished(parentPath, .compress, .success(())))
-                        fsItemClient.postFileSystemChanged([archiveURL.path])
+                        entryClient.postFileSystemChanged([archiveURL.path])
                     } catch {
                         await send(.operationFinished(parentPath, .compress, .failure(error.fileOpError)))
                     }
@@ -484,20 +484,20 @@ struct FSItemsOperationsFeature {
                 let zipURL = URL(fileURLWithPath: file.fullPath)
                 let parentPath = zipURL.deletingLastPathComponent().path
 
-                return .run { [fsItemClient] send in
+                return .run { [entryClient] send in
                     await send(.operationStarted(parentPath, .extract))
 
                     do {
-                        try await fsItemClient.extractCompressedFile(zipURL)
+                        try await entryClient.extractCompressedFile(zipURL)
                         await send(.operationFinished(parentPath, .extract, .success(())))
-                        fsItemClient.postFileSystemChanged([parentPath])
+                        entryClient.postFileSystemChanged([parentPath])
                     } catch {
                         await send(.operationFinished(parentPath, .extract, .failure(error.fileOpError)))
                     }
                 }
 
             case let .setTagsForItems(targets):
-                return .run { [fsItemClient] send in
+                return .run { [entryClient] send in
                     var completedTargets: [EntryActionRecord.Target] = []
 
                     for target in targets {
@@ -506,7 +506,7 @@ struct FSItemsOperationsFeature {
 
                         await send(.operationStarted(filePath, .setTags))
                         do {
-                            try await fsItemClient.setTags(url, target.afterTags)
+                            try await entryClient.setTags(url, target.afterTags)
                             await send(.operationFinished(filePath, .setTags, .success(())))
                             completedTargets.append(EntryActionRecord.Target(
                                 beforePath: filePath,
@@ -546,7 +546,7 @@ struct FSItemsOperationsFeature {
                 let fileExtension = fileName.pathExtension
                 var counter = 1
 
-                while fsItemClient.fileExists(destURL.path) {
+                while entryClient.fileExists(destURL.path) {
                     let name: String = if counter == 1 {
                         fileExtension.isEmpty
                             ? "\(nameWithoutExtension) copy"
@@ -571,7 +571,7 @@ struct FSItemsOperationsFeature {
         return destinations
     }
 
-    private func validateDefaultAppSetting(file: FSItem) -> FileOpError? {
+    private func validateDefaultAppSetting(file: Entry) -> FileOpError? {
         guard !file.isDirectory else {
             return .unsupportedType
         }
@@ -601,7 +601,7 @@ struct FSItemsOperationsFeature {
     }
 
     private func runParallel(
-        items: [FSItem],
+        items: [Entry],
         kind: OperationKind,
         operation: @escaping @Sendable (URL) async throws -> Void,
         onComplete: (@Sendable () async -> Void)? = nil,
@@ -632,7 +632,7 @@ struct FSItemsOperationsFeature {
     }
 
     private func runParallelWithTargets(
-        items: [FSItem],
+        items: [Entry],
         kind: OperationKind,
         actionKind: EntryActionRecord.ActionKind,
         operation: @escaping @Sendable (URL) async throws -> EntryActionRecord.Target?,
@@ -688,8 +688,8 @@ struct FSItemsOperationsFeature {
         fileType: UTType,
     ) -> Effect<Action> {
         .run { send in
-            let apps = await fsItemClient.applicationsForFile(url)
-            let defaultApp = await fsItemClient.defaultApplication(fileType)
+            let apps = await entryClient.applicationsForFile(url)
+            let defaultApp = await entryClient.defaultApplication(fileType)
 
             let appsWithDefaultFlag = apps.map { app in
                 let isDefault = defaultApp?.bundleID == app.bundleID
@@ -706,26 +706,26 @@ struct FSItemsOperationsFeature {
         }
     }
 
-    private func loadCommonApplications(for files: [FSItem]) -> Effect<Action> {
-        .run { [fsItemClient] send in
-            let commonApps = await computeCommonApplications(files: files, fsItemClient: fsItemClient)
+    private func loadCommonApplications(for files: [Entry]) -> Effect<Action> {
+        .run { [entryClient] send in
+            let commonApps = await computeCommonApplications(files: files, entryClient: entryClient)
             let finalApps = finalizeApplicationList(commonApps)
             await send(.commonApplicationsLoaded(finalApps))
         }
     }
 
     private func computeCommonApplications(
-        files: [FSItem],
-        fsItemClient: FSItemClient,
+        files: [Entry],
+        entryClient: EntryClient,
     ) async -> [ApplicationInfo] {
         let fileInfos = prepareFileInfos(from: files)
         guard !fileInfos.isEmpty else { return [] }
 
-        let allAppMaps = await collectApplicationMaps(fileInfos: fileInfos, fsItemClient: fsItemClient)
+        let allAppMaps = await collectApplicationMaps(fileInfos: fileInfos, entryClient: entryClient)
         guard !allAppMaps.isEmpty else { return [] }
 
         let commonBundleIDs = findCommonBundleIDs(from: allAppMaps)
-        let fileTypeToDefaultApp = await loadDefaultApps(fileInfos: fileInfos, fsItemClient: fsItemClient)
+        let fileTypeToDefaultApp = await loadDefaultApps(fileInfos: fileInfos, entryClient: entryClient)
         return buildCommonApps(
             bundleIDs: commonBundleIDs,
             appMaps: allAppMaps,
@@ -735,12 +735,12 @@ struct FSItemsOperationsFeature {
     }
 
     private struct FileInfo {
-        let file: FSItem
+        let file: Entry
         let fileType: UTType
         let url: URL
     }
 
-    private func prepareFileInfos(from files: [FSItem]) -> [FileInfo] {
+    private func prepareFileInfos(from files: [Entry]) -> [FileInfo] {
         files.compactMap { file in
             guard !file.isDirectory,
                   let fileType = UTType(filenameExtension: file.fileExtension)
@@ -751,13 +751,13 @@ struct FSItemsOperationsFeature {
 
     private func collectApplicationMaps(
         fileInfos: [FileInfo],
-        fsItemClient: FSItemClient,
+        entryClient: EntryClient,
     ) async -> [[String: ApplicationInfo]] {
         var allAppMaps: [[String: ApplicationInfo]] = []
         await withTaskGroup(of: [String: ApplicationInfo]?.self) { group in
             for fileInfo in fileInfos {
                 group.addTask {
-                    let apps = await fsItemClient.applicationsForFile(fileInfo.url)
+                    let apps = await entryClient.applicationsForFile(fileInfo.url)
                     var appMap: [String: ApplicationInfo] = [:]
                     for app in apps {
                         if let bundleID = app.bundleID {
@@ -788,13 +788,13 @@ struct FSItemsOperationsFeature {
 
     private func loadDefaultApps(
         fileInfos: [FileInfo],
-        fsItemClient: FSItemClient,
+        entryClient: EntryClient,
     ) async -> [String: String] {
         var fileTypeToDefaultApp: [String: String] = [:]
         await withTaskGroup(of: (String, String?)?.self) { group in
             for fileInfo in fileInfos {
                 group.addTask {
-                    let defaultApp = await fsItemClient.defaultApplication(fileInfo.fileType)
+                    let defaultApp = await entryClient.defaultApplication(fileInfo.fileType)
                     return (fileInfo.fileType.identifier, defaultApp?.bundleID)
                 }
             }
@@ -858,16 +858,16 @@ private nonisolated func isInTrash(_ filePath: String) -> Bool {
 }
 
 private func selectApplicationAndOpenFile(
-    for file: FSItem,
+    for file: Entry,
     defaultChecked: Bool,
-) -> Effect<FSItemsOperationsFeature.Action> {
+) -> Effect<EntriesOperationsFeature.Action> {
     selectApplicationAndOpenFile(for: [file], defaultChecked: defaultChecked)
 }
 
 private func selectApplicationAndOpenFile(
-    for files: [FSItem],
+    for files: [Entry],
     defaultChecked: Bool,
-) -> Effect<FSItemsOperationsFeature.Action> {
+) -> Effect<EntriesOperationsFeature.Action> {
     let fileURLs = files.map { URL(fileURLWithPath: $0.fullPath) }
 
     return .run { send in
@@ -884,9 +884,9 @@ private func selectApplicationAndOpenFile(
 
 private nonisolated func applyApplicationSelection(
     _ selection: ApplicationSelection,
-    to file: FSItem,
-) -> [FSItemsOperationsFeature.Action] {
-    var effects: [FSItemsOperationsFeature.Action] = []
+    to file: Entry,
+) -> [EntriesOperationsFeature.Action] {
+    var effects: [EntriesOperationsFeature.Action] = []
 
     if selection.setAsDefault, let type = UTType(filenameExtension: file.fileExtension) {
         effects.append(.setDefaultAppForFile(

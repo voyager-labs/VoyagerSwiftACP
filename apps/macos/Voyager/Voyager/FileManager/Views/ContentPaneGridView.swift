@@ -70,7 +70,7 @@ struct ContentPaneGridView: View {
     private func findGridItemId(
         at point: CGPoint,
         itemPositions: [String: CGRect],
-        items: IdentifiedArrayOf<FSItem>,
+        items: IdentifiedArrayOf<Entry>,
     ) -> String? {
         for item in items {
             let iconRect = itemPositions[item.id + "_icon"]
@@ -99,13 +99,13 @@ struct ContentPaneGridView: View {
     private let verticalSpacing: CGFloat = 8
 
     private func itemGrid(
-        item: FSItem,
+        item: Entry,
         store: StoreOf<FileManagerFeature>,
-        fsStore: Store<FSItemsFeature.State, FSItemsFeature.Action>,
+        fsStore: Store<EntriesFeature.State, EntriesFeature.Action>,
         isTrashFolder: Bool = false,
-    ) -> FSItemGridView {
+    ) -> EntryGridView {
         let selectedItems = fsStore.displayItems.filter { fsStore.selectedIds.contains($0.id) }
-        let (showCompress, showExtract) = FSItemContextMenuUtils
+        let (showCompress, showExtract) = EntryContextMenuUtils
             .calculateCompressExtractOptions(selectedItems: selectedItems)
 
         let handlers = makeContextMenuHandlers(
@@ -127,18 +127,18 @@ struct ContentPaneGridView: View {
     }
 
     private func buildGridView(
-        item: FSItem,
+        item: Entry,
         store: StoreOf<FileManagerFeature>,
-        fsStore: Store<FSItemsFeature.State, FSItemsFeature.Action>,
-        handlers: FSItemContextMenuHandlers,
+        fsStore: Store<EntriesFeature.State, EntriesFeature.Action>,
+        handlers: EntryContextMenuHandlers,
         showCompress: Bool,
         showExtract: Bool,
-    ) -> FSItemGridView {
+    ) -> EntryGridView {
         let selectedIds = fsStore.selectedIds
         let clipboardItems = fsStore.clipboardItems
         let thumbnailsReady = fsStore.thumbnailsReady
 
-        return FSItemGridView(
+        return EntryGridView(
             item: item,
             isSelected: selectedIds.contains(item.id),
             isCut: clipboardItems.contains(item.fullPath) && fsStore.clipboardOperation == .cut,
@@ -180,7 +180,7 @@ struct ContentPaneGridView: View {
     }
 
     var body: some View {
-        let fsStore = store.scope(state: \.fsItems, action: \.fsItems)
+        let fsStore = store.scope(state: \.entries, action: \.entries)
 
         GeometryReader { geometry in
             let columns = [GridItem(.adaptive(minimum: itemWidth), spacing: minSpacing, alignment: .top)]
@@ -332,13 +332,13 @@ struct ContentPaneGridView: View {
         .border(fsStore.isDropTargeted ? Color.accentColor : Color.clear, width: 2)
         .onDrop(
             of: [UTType.fileURL],
-            delegate: FSItemDropDelegate(store: store, fsStore: fsStore),
+            delegate: EntryDropDelegate(store: store, fsStore: fsStore),
         )
     }
 
     @ViewBuilder
     private func gridSections(
-        fsStore: Store<FSItemsFeature.State, FSItemsFeature.Action>,
+        fsStore: Store<EntriesFeature.State, EntriesFeature.Action>,
         store: StoreOf<FileManagerFeature>,
         columns: [GridItem],
     ) -> some View {
@@ -366,7 +366,7 @@ struct ContentPaneGridView: View {
                            .first(where: { $0.name == group.groupName })?.colorCode
                         {
                             Circle()
-                                .fill(FSItemTagUtils.getTagColor(colorCode: colorCode))
+                                .fill(EntryTagUtils.getTagColor(colorCode: colorCode))
                                 .frame(width: 8, height: 8)
                         }
                         Text(group.groupName)
@@ -397,7 +397,7 @@ struct ContentPaneGridView: View {
         let columns = max(1, Int((usableWidth + minSpacing) / (itemWidth + minSpacing)))
         guard columns != lastGridColumnCount else { return }
         lastGridColumnCount = columns
-        store.send(.fsItems(.updateGridColumnCount(columns)))
+        store.send(.entries(.updateGridColumnCount(columns)))
     }
 }
 

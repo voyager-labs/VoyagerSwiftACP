@@ -12,7 +12,7 @@ struct OverlappingTagsView: View {
         ZStack(alignment: .leading) {
             ForEach(Array(tags.prefix(3).enumerated()), id: \.element.self) { index, tag in
                 Circle()
-                    .fill(FSItemTagUtils.getTagColor(colorCode: tag.colorCode))
+                    .fill(EntryTagUtils.getTagColor(colorCode: tag.colorCode))
                     .frame(width: tagSize, height: tagSize)
                     .overlay(
                         Circle()

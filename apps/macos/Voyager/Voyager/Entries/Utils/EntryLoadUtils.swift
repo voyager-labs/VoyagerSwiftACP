@@ -3,7 +3,7 @@ import CoreServices
 import Foundation
 import UniformTypeIdentifiers
 
-enum FSItemLoadUtils {
+enum EntryLoadUtils {
     private struct ItemMetadata {
         let kind: String
         let creatorApplication: String?
@@ -11,7 +11,7 @@ enum FSItemLoadUtils {
         let lastUsedDate: Date?
     }
 
-    nonisolated static func convertURLToFSItem(_ itemURL: URL) -> FSItem? {
+    nonisolated static func convertURLToEntry(_ itemURL: URL) -> Entry? {
         let fileManager = FileManager.default
         var isDirectory: ObjCBool = false
         guard fileManager.fileExists(atPath: itemURL.path, isDirectory: &isDirectory) else {
@@ -41,7 +41,7 @@ enum FSItemLoadUtils {
 
         let additionalInfo = calculateAdditionalInfo(url: itemURL, isDirectory: isDirectory.boolValue)
 
-        return FSItem(
+        return Entry(
             name: name,
             fullPath: itemURL.path,
             isDirectory: isDirectory.boolValue,
@@ -88,7 +88,7 @@ enum FSItemLoadUtils {
             }
 
             if let tagNames = try? itemURL.resourceValues(forKeys: [.tagNamesKey]).tagNames {
-                let nameToColorCode = FSItemTagUtils.getTagNameToColorCodeMapping()
+                let nameToColorCode = EntryTagUtils.getTagNameToColorCodeMapping()
                 tags = tagNames.map { tagString in
                     let colorCode = nameToColorCode[tagString] ?? 0
                     return FileTag(name: tagString, colorCode: colorCode)

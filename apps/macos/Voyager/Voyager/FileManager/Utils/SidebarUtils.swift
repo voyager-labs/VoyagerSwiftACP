@@ -408,8 +408,8 @@ enum SidebarUtils {
 
     @MainActor
     static func loadTags() async -> [TagItem] {
-        let tagNames = FSItemTagUtils.getFavoriteTagNames()
-        let nameToColorCode = FSItemTagUtils.getTagNameToColorCodeMapping()
+        let tagNames = EntryTagUtils.getFavoriteTagNames()
+        let nameToColorCode = EntryTagUtils.getTagNameToColorCodeMapping()
 
         return tagNames
             .filter { !$0.isEmpty }
@@ -417,21 +417,21 @@ enum SidebarUtils {
                 let colorCode = nameToColorCode[name] ?? 0
                 return TagItem(
                     name: name,
-                    color: FSItemTagUtils.getTagColor(colorCode: colorCode),
+                    color: EntryTagUtils.getTagColor(colorCode: colorCode),
                 )
             }
             .sorted { tag1, tag2 in
                 let colorCode1 = nameToColorCode[tag1.name] ?? 0
                 let colorCode2 = nameToColorCode[tag2.name] ?? 0
 
-                let idx1 = FSItemTagUtils.colorCodeOrder.firstIndex(of: colorCode1) ?? 999
-                let idx2 = FSItemTagUtils.colorCodeOrder.firstIndex(of: colorCode2) ?? 999
+                let idx1 = EntryTagUtils.colorCodeOrder.firstIndex(of: colorCode1) ?? 999
+                let idx2 = EntryTagUtils.colorCodeOrder.firstIndex(of: colorCode2) ?? 999
                 return idx1 < idx2
             }
     }
 
     @MainActor
-    static func loadRecentItems(showHidden: Bool) async -> [FSItem] {
+    static func loadRecentItems(showHidden: Bool) async -> [Entry] {
         let predicate = NSPredicate(format: "kMDItemLastUsedDate > %@", Date.distantPast as NSDate)
         let sortDescriptors = [NSSortDescriptor(key: "kMDItemLastUsedDate", ascending: false)]
 
@@ -441,12 +441,12 @@ enum SidebarUtils {
             filterFiles: true,
         )
 
-        let items = recentFiles.compactMap { FSItemLoadUtils.convertURLToFSItem($0) }
+        let items = recentFiles.compactMap { EntryLoadUtils.convertURLToEntry($0) }
         return showHidden ? items : items.filter { !$0.isHidden }
     }
 
     @MainActor
-    static func loadFilesWithTag(_ tag: String, showHidden: Bool) async -> [FSItem] {
+    static func loadFilesWithTag(_ tag: String, showHidden: Bool) async -> [Entry] {
         let predicate = NSPredicate(format: "kMDItemUserTags CONTAINS %@", tag)
         let sortDescriptors = [NSSortDescriptor(key: "kMDItemLastUsedDate", ascending: false)]
 
@@ -455,8 +455,8 @@ enum SidebarUtils {
             sortDescriptors: sortDescriptors,
         )
 
-        let items: [FSItem] = taggedFiles.compactMap { url in
-            guard let item = FSItemLoadUtils.convertURLToFSItem(url) else { return nil }
+        let items: [Entry] = taggedFiles.compactMap { url in
+            guard let item = EntryLoadUtils.convertURLToEntry(url) else { return nil }
 
             let hasTags = item.tags?.contains(where: { $0.name == tag }) ?? false
             return hasTags ? item : nil

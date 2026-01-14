@@ -6,8 +6,8 @@ struct TagsEditorView: View {
     let currentTags: [FileTag]
     let onToggleTag: (String) -> Void
 
-    private let tagNames = FSItemTagUtils.getFavoriteTagNames().filter { !$0.isEmpty }
-    private let nameToColorCode = FSItemTagUtils.getTagNameToColorCodeMapping()
+    private let tagNames = EntryTagUtils.getFavoriteTagNames().filter { !$0.isEmpty }
+    private let nameToColorCode = EntryTagUtils.getTagNameToColorCodeMapping()
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
@@ -23,7 +23,7 @@ struct TagsEditorView: View {
             VStack(alignment: .leading, spacing: 2) {
                 ForEach(Array(tagNames.enumerated()), id: \.offset) { _, tag in
                     let colorCode = nameToColorCode[tag] ?? 0
-                    let tagColor = FSItemTagUtils.getTagColor(colorCode: colorCode)
+                    let tagColor = EntryTagUtils.getTagColor(colorCode: colorCode)
                     let isTagged = currentTags.contains(where: { $0.name == tag })
 
                     Button {

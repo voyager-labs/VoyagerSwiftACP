@@ -289,7 +289,7 @@ struct ComposerView: View {
         let isRootScopeOnly = viewStore.scopes == [ComposerScopeUtils.rootScopePath]
         let isAllEmpty = trimmedText.isEmpty && viewStore.conditions.isEmpty
             && (viewStore.scopes.isEmpty || isRootScopeOnly)
-        let isDiscard = store.fsItems.isCollectionMode
+        let isDiscard = store.entries.isCollectionMode
             && store.openedCollectionBaseline != nil
             && store.isOpenedCollectionDirty
         let isEnabled = isDiscard

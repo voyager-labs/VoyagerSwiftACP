@@ -127,7 +127,7 @@ class FileManagerSplitViewController: NSViewController, NSSplitViewDelegate {
             store.send(.onAppear)
         }
 
-        store.send(.fsItems(.onAppear))
+        store.send(.entries(.onAppear))
 
         observeInspectorState()
         observeSidebarState()

@@ -1,16 +1,16 @@
 import Foundation
 
-enum FSItemSearchUtils {
+enum EntrySearchUtils {
     static func convertCollectionItems(
         _ items: [JSONValue],
         showHidden: Bool,
-    ) -> [FSItem] {
+    ) -> [Entry] {
         let converted = items.compactMap(makeCollectionItem)
         guard !showHidden else { return converted }
         return converted.filter { !$0.isHidden }
     }
 
-    private static func makeCollectionItem(_ value: JSONValue) -> FSItem? {
+    private static func makeCollectionItem(_ value: JSONValue) -> Entry? {
         guard let payload = value.objectValue,
               let path = payload.stringValue(for: "path")
         else {
@@ -29,7 +29,7 @@ enum FSItemSearchUtils {
         let isHidden = payload.boolValue(for: "isHidden") ?? name.hasPrefix(".")
         let isDirectory = payload.boolValue(for: "isDirectory") ?? false
 
-        return FSItem(
+        return Entry(
             name: name,
             fullPath: path,
             isDirectory: isDirectory,

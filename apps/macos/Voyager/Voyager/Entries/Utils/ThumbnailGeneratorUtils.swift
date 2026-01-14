@@ -12,7 +12,7 @@ final class SendableImage: @unchecked Sendable {
 }
 
 enum ThumbnailGeneratorUtils {
-    static func canGenerateThumbnail(for item: FSItem) -> Bool {
+    static func canGenerateThumbnail(for item: Entry) -> Bool {
         guard !item.isDirectory else { return false }
 
         guard let utType = UTType(filenameExtension: item.fileExtension) else {
@@ -42,7 +42,7 @@ enum ThumbnailGeneratorUtils {
     }
 
     static func prefetchThumbnails(
-        for items: [FSItem],
+        for items: [Entry],
         size: CGSize,
         scale: CGFloat = 2.0,
     ) async {
@@ -50,7 +50,7 @@ enum ThumbnailGeneratorUtils {
 
         await withTaskGroup(of: (String, SendableImage).self) { group in
             for item in thumbnailItems {
-                if FSItemIconUtils.getThumbnail(for: item.fullPath) != nil {
+                if EntryIconUtils.getThumbnail(for: item.fullPath) != nil {
                     continue
                 }
 
@@ -64,7 +64,7 @@ enum ThumbnailGeneratorUtils {
 
             for await (path, sendableImage) in group {
                 if let image = sendableImage.image {
-                    FSItemIconUtils.saveThumbnail(image, for: path)
+                    EntryIconUtils.saveThumbnail(image, for: path)
                 }
             }
         }

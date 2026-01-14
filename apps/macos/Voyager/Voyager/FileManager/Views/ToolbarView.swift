@@ -47,7 +47,7 @@ struct ToolbarView: View {
                     canGoToEnclosingDirectory: $0.canGoToEnclosingDirectory,
                     sidebarVisible: $0.sidebarVisible,
                     currentPath: $0.currentPath,
-                    isCollectionMode: $0.fsItems.isCollectionMode,
+                    isCollectionMode: $0.entries.isCollectionMode,
                     isOpeningCollectionFile: $0.isOpeningCollectionFile,
                     openedCollectionName: $0.openedCollectionName,
                     openedCollectionURLExists: $0.openedCollectionURL != nil,

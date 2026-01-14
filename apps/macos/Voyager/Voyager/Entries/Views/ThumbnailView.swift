@@ -2,7 +2,7 @@ import AppKit
 import SwiftUI
 
 struct ThumbnailView: View {
-    let item: FSItem
+    let item: Entry
     let displaySize: CGFloat
     let isReady: Bool
 
@@ -16,9 +16,9 @@ struct ThumbnailView: View {
     }
 
     private var displayIcon: NSImage {
-        if let cached = FSItemIconUtils.getThumbnail(for: item.fullPath) {
+        if let cached = EntryIconUtils.getThumbnail(for: item.fullPath) {
             return cached
         }
-        return FSItemIconUtils.icon(for: item)
+        return EntryIconUtils.icon(for: item)
     }
 }

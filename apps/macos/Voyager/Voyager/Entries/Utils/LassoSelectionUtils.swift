@@ -31,7 +31,7 @@ enum LassoSelectionUtils {
 
     static func calculateItemsInRect(
         _ rect: CGRect,
-        items: IdentifiedArrayOf<FSItem>,
+        items: IdentifiedArrayOf<Entry>,
         itemPositions: [String: CGRect],
     ) -> Set<String> {
         items

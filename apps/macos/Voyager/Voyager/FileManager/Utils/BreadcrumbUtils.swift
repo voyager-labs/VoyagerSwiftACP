@@ -28,10 +28,10 @@ enum BreadcrumbUtils {
             }
         }
 
-        init(fsItem: FSItem) {
-            fullPath = fsItem.fullPath
-            name = fsItem.name
-            icon = FSItemIconUtils.icon(for: fsItem)
+        init(entry: Entry) {
+            fullPath = entry.fullPath
+            name = entry.name
+            icon = EntryIconUtils.icon(for: entry)
         }
     }
 

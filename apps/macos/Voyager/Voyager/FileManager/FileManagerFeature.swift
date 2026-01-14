@@ -66,7 +66,7 @@ struct FileManagerFeature {
 
         var backHistory: [HistoryEntry] = []
         var forwardHistory: [HistoryEntry] = []
-        var fsItems: FSItemsFeature.State = .init()
+        var entries: EntriesFeature.State = .init()
         var viewLayout: ViewLayout = .list
         var showHiddenFiles: Bool = false
         var sidebarVisible: Bool = true
@@ -132,25 +132,25 @@ struct FileManagerFeature {
         }
 
         var canOpenSelectedItem: Bool {
-            guard !fsItems.selectedIds.isEmpty else {
+            guard !entries.selectedIds.isEmpty else {
                 return false
             }
-            return fsItems.displayItems.contains { fsItems.selectedIds.contains($0.id) }
+            return entries.displayItems.contains { entries.selectedIds.contains($0.id) }
         }
 
         var canQuickLookSelectedItem: Bool {
-            guard !fsItems.selectedIds.isEmpty else {
+            guard !entries.selectedIds.isEmpty else {
                 return false
             }
-            return fsItems.displayItems.contains { fsItems.selectedIds.contains($0.id) }
+            return entries.displayItems.contains { entries.selectedIds.contains($0.id) }
         }
 
         var hasSelectedItems: Bool {
-            !fsItems.selectedIds.isEmpty
+            !entries.selectedIds.isEmpty
         }
 
         var hasClipboardItems: Bool {
-            !fsItems.clipboardItems.isEmpty
+            !entries.clipboardItems.isEmpty
         }
 
         var breadcrumbItems: [BreadcrumbUtils.Item] {
@@ -158,8 +158,8 @@ struct FileManagerFeature {
             case .recents, .tags:
                 return []
             case .computer:
-                if fsItems.selectedIds.count == 1,
-                   let selectedItem = fsItems.displayItems.first(where: { $0.id == fsItems.selectedIds.first }),
+                if entries.selectedIds.count == 1,
+                   let selectedItem = entries.displayItems.first(where: { $0.id == entries.selectedIds.first }),
                    selectedItem.fullPath == "/"
                 {
                     return []
@@ -176,11 +176,11 @@ struct FileManagerFeature {
         }
 
         var selectedBreadcrumbItem: BreadcrumbUtils.Item? {
-            guard fsItems.selectedIds.count == 1,
-                  let selectedItem = fsItems.displayItems.first(where: { $0.id == fsItems.selectedIds.first })
+            guard entries.selectedIds.count == 1,
+                  let selectedItem = entries.displayItems.first(where: { $0.id == entries.selectedIds.first })
             else { return nil }
 
-            let selectedBreadcrumb = BreadcrumbUtils.Item(fsItem: selectedItem)
+            let selectedBreadcrumb = BreadcrumbUtils.Item(entry: selectedItem)
 
             if selectedBreadcrumb.fullPath == currentPath {
                 return nil
@@ -194,7 +194,7 @@ struct FileManagerFeature {
         }
 
         var canSaveCollection: Bool {
-            guard fsItems.isCollectionMode, collectionContext != nil else { return false }
+            guard entries.isCollectionMode, collectionContext != nil else { return false }
             if openedCollectionBaseline == nil {
                 return true
             }
@@ -381,7 +381,7 @@ struct FileManagerFeature {
         case dropItemsToSidebarFolder(providers: [NSItemProvider], targetURL: URL)
         case dropItemsToTag(providers: [NSItemProvider], tagName: String)
 
-        case fsItems(FSItemsFeature.Action)
+        case entries(EntriesFeature.Action)
         case toggleFavoritesSection
         case toggleLocationsSection
         case toggleTagsSection
@@ -398,8 +398,8 @@ struct FileManagerFeature {
         case collection(CollectionFeature.Action)
     }
 
-    @Dependency(\.fsItemClient)
-    var fsItemClient
+    @Dependency(\.entryClient)
+    var entryClient
 
     @Dependency(\.collectionFileClient)
     var collectionFileClient
@@ -417,8 +417,8 @@ struct FileManagerFeature {
             CollectionFeature()
         }
 
-        Scope(state: \.fsItems, action: \.fsItems) {
-            FSItemsFeature()
+        Scope(state: \.entries, action: \.entries) {
+            EntriesFeature()
         }
 
         Reduce { state, action in
@@ -438,7 +438,7 @@ struct FileManagerFeature {
                 } else {
                     state.viewLayout = .list
                 }
-                state.fsItems.isListView = state.viewLayout == .list
+                state.entries.isListView = state.viewLayout == .list
 
                 if UserDefaults.standard.object(forKey: "columnWidthName") != nil {
                     state.columnWidths = ListColumnWidths(
@@ -464,10 +464,10 @@ struct FileManagerFeature {
                 }
 
                 return .merge(
-                    .send(.fsItems(.setShowHidden(state.showHiddenFiles))),
-                    .send(.fsItems(.setSortKey(state.sortKey))),
-                    .send(.fsItems(.setSortOrder(state.sortOrder))),
-                    .send(.fsItems(.loadItems(path: state.currentPath))),
+                    .send(.entries(.setShowHidden(state.showHiddenFiles))),
+                    .send(.entries(.setSortKey(state.sortKey))),
+                    .send(.entries(.setSortOrder(state.sortOrder))),
+                    .send(.entries(.loadItems(path: state.currentPath))),
                     .send(.loadFavorites),
                     .send(.loadLocations),
                     .send(.loadTags),
@@ -513,7 +513,7 @@ struct FileManagerFeature {
                 let exitEffect = Self.exitCollectionMode(state: &state)
                 return .concatenate(
                     exitEffect,
-                    .send(.fsItems(.loadItems(path: path))),
+                    .send(.entries(.loadItems(path: path))),
                 )
 
             case let .openCollectionFile(url):
@@ -564,7 +564,7 @@ struct FileManagerFeature {
                 state.sortKey = navigation.sortKey
                 state.sortOrder = navigation.sortOrder
                 state.viewLayout = navigation.viewLayout
-                state.fsItems.isListView = navigation.viewLayout == .list
+                state.entries.isListView = navigation.viewLayout == .list
 
                 switch navigation.kind {
                 case .temporary:
@@ -688,25 +688,25 @@ struct FileManagerFeature {
                 }
 
             case .openSelectedItem:
-                return .send(.fsItems(.openSelectedItem))
+                return .send(.entries(.openSelectedItem))
 
             case .quickLookSelectedItem:
-                return .send(.fsItems(.quickLookSelectedItem))
+                return .send(.entries(.quickLookSelectedItem))
 
             case .duplicateSelectedItems:
-                return .send(.fsItems(.duplicateSelectedItems))
+                return .send(.entries(.duplicateSelectedItems))
 
             case .moveSelectedItemsToTrash:
-                return .send(.fsItems(.moveSelectedItemsToTrash))
+                return .send(.entries(.moveSelectedItemsToTrash))
 
             case .deleteSelectedItemsImmediately:
-                return .send(.fsItems(.deleteSelectedItemsImmediately))
+                return .send(.entries(.deleteSelectedItemsImmediately))
 
             case .putBackSelectedItems:
-                return .send(.fsItems(.putBackSelectedItems))
+                return .send(.entries(.putBackSelectedItems))
 
             case .emptyTrash:
-                return .send(.fsItems(.emptyTrash))
+                return .send(.entries(.emptyTrash))
 
             case .emptyTrashCompleted:
                 return .send(.closeWindow)
@@ -777,7 +777,7 @@ struct FileManagerFeature {
 
             case let .changeLayout(layout):
                 state.viewLayout = layout
-                state.fsItems.isListView = layout == .list
+                state.entries.isListView = layout == .list
                 UserDefaults.standard.set(layout.rawValue, forKey: "viewLayout")
                 return .none
 
@@ -845,7 +845,7 @@ struct FileManagerFeature {
                 let exitEffect = Self.exitCollectionMode(state: &state)
                 return .concatenate(
                     exitEffect,
-                    .send(.fsItems(.loadRecentItems(showHidden: state.showHiddenFiles))),
+                    .send(.entries(.loadRecentItems(showHidden: state.showHiddenFiles))),
                 )
 
             case .showComputer:
@@ -854,7 +854,7 @@ struct FileManagerFeature {
                 let exitEffect = Self.exitCollectionMode(state: &state)
                 return .concatenate(
                     exitEffect,
-                    .send(.fsItems(.loadComputerItems)),
+                    .send(.entries(.loadComputerItems)),
                 )
 
             case .loadFavorites:
@@ -881,7 +881,7 @@ struct FileManagerFeature {
                 let exitEffect = Self.exitCollectionMode(state: &state)
                 return .concatenate(
                     exitEffect,
-                    .send(.fsItems(.loadItems(path: favorite.url.path))),
+                    .send(.entries(.loadItems(path: favorite.url.path))),
                 )
 
             case let .insertFavorite(url, index):
@@ -949,7 +949,7 @@ struct FileManagerFeature {
                 let exitEffect = Self.exitCollectionMode(state: &state)
                 return .concatenate(
                     exitEffect,
-                    .send(.fsItems(.loadItems(path: location.url.path))),
+                    .send(.entries(.loadItems(path: location.url.path))),
                 )
 
             case .loadTags:
@@ -968,35 +968,35 @@ struct FileManagerFeature {
                 let exitEffect = Self.exitCollectionMode(state: &state)
                 return .concatenate(
                     exitEffect,
-                    .send(.fsItems(.loadTagItems(tagName: tagItem.name, showHidden: state.showHiddenFiles))),
+                    .send(.entries(.loadTagItems(tagName: tagItem.name, showHidden: state.showHiddenFiles))),
                 )
 
             case let .changeSortKey(key):
                 state.sortKey = key
                 UserDefaults.standard.set(key.rawValue, forKey: "sortKey")
-                return .send(.fsItems(.setSortKey(key)))
+                return .send(.entries(.setSortKey(key)))
 
             case let .changeSortOrder(order):
                 state.sortOrder = order
                 UserDefaults.standard.set(order.rawValue, forKey: "sortOrder")
-                return .send(.fsItems(.setSortOrder(order)))
+                return .send(.entries(.setSortOrder(order)))
 
             case let .changeGroupKey(key):
-                return .send(.fsItems(.setGroupKey(key)))
+                return .send(.entries(.setGroupKey(key)))
 
             case let .dropItemsToSidebarFolder(providers, targetURL):
-                return .send(.fsItems(.handleDrop(
+                return .send(.entries(.handleDrop(
                     providers: providers,
                     destinationPath: targetURL.path,
                 )))
 
             case let .dropItemsToTag(providers, tagName):
-                return .send(.fsItems(.handleDropToTag(
+                return .send(.entries(.handleDropToTag(
                     providers: providers,
                     tagName: tagName,
                 )))
 
-            case let .fsItems(action):
+            case let .entries(action):
                 switch action {
                 case .itemsLoaded:
                     state.titlePath = state.currentPath
@@ -1010,7 +1010,7 @@ struct FileManagerFeature {
                     return .none
 
                 case let .navigateFolder(id):
-                    guard let item = state.fsItems.displayItems.first(where: { $0.id == id }) else {
+                    guard let item = state.entries.displayItems.first(where: { $0.id == id }) else {
                         return .none
                     }
                     state.navigateToFolder(item.fullPath, sidebarItemName: item.name)
@@ -1018,7 +1018,7 @@ struct FileManagerFeature {
                     let exitEffect = Self.exitCollectionMode(state: &state)
                     return .concatenate(
                         exitEffect,
-                        .send(.fsItems(.loadItems(path: item.fullPath))),
+                        .send(.entries(.loadItems(path: item.fullPath))),
                     )
 
                 case let .openCollectionFile(url):
@@ -1046,7 +1046,7 @@ struct FileManagerFeature {
 
             case .discardCollectionChanges:
                 guard let baseline = state.openedCollectionBaseline,
-                      state.fsItems.isCollectionMode,
+                      state.entries.isCollectionMode,
                       state.isOpenedCollectionDirty
                 else {
                     return .none
@@ -1058,7 +1058,7 @@ struct FileManagerFeature {
                 state.sortKey = baseline.sortKey
                 state.sortOrder = baseline.sortOrder
                 state.viewLayout = baseline.viewLayout
-                state.fsItems.isListView = baseline.viewLayout == .list
+                state.entries.isListView = baseline.viewLayout == .list
 
                 if state.openedCollectionURL == nil {
                     state.composer.text = baseline.context.query
@@ -1126,8 +1126,8 @@ struct FileManagerFeature {
                     }
                     state.navigationState = nextNavigationState
                     return .concatenate(
-                        .send(.fsItems(.setCollectionMode(true))),
-                        .send(.fsItems(.collectionItemsLoadedFromSearch(items))),
+                        .send(.entries(.setCollectionMode(true))),
+                        .send(.entries(.collectionItemsLoadedFromSearch(items))),
                     )
 
                 case let .filtersResponse(.success(response)):
@@ -1167,8 +1167,8 @@ struct FileManagerFeature {
                     }
                     state.navigationState = nextNavigationState
                     return .concatenate(
-                        .send(.fsItems(.setCollectionMode(true))),
-                        .send(.fsItems(.collectionItemsLoadedFromSearch(items))),
+                        .send(.entries(.setCollectionMode(true))),
+                        .send(.entries(.collectionItemsLoadedFromSearch(items))),
                     )
 
                 case let .searchResponse(.failure(error)):
@@ -1233,7 +1233,7 @@ struct FileManagerFeature {
                     return .none
 
                 case .clearAll:
-                    if state.fsItems.isCollectionMode {
+                    if state.entries.isCollectionMode {
                         state.pendingSearchQuery = nil
                         state.collectionContext = CollectionContext(
                             query: "",
@@ -1383,29 +1383,29 @@ struct FileManagerFeature {
         switch state.navigationState {
         case .recents:
             .merge(
-                .send(.fsItems(.setShowHidden(state.showHiddenFiles))),
-                .send(.fsItems(.loadRecentItems(showHidden: state.showHiddenFiles))),
+                .send(.entries(.setShowHidden(state.showHiddenFiles))),
+                .send(.entries(.loadRecentItems(showHidden: state.showHiddenFiles))),
             )
         case let .tags(tagName):
             .merge(
-                .send(.fsItems(.setShowHidden(state.showHiddenFiles))),
-                .send(.fsItems(.loadTagItems(tagName: tagName, showHidden: state.showHiddenFiles))),
+                .send(.entries(.setShowHidden(state.showHiddenFiles))),
+                .send(.entries(.loadTagItems(tagName: tagName, showHidden: state.showHiddenFiles))),
             )
         case .computer:
             .merge(
-                .send(.fsItems(.setShowHidden(state.showHiddenFiles))),
-                .send(.fsItems(.loadComputerItems)),
+                .send(.entries(.setShowHidden(state.showHiddenFiles))),
+                .send(.entries(.loadComputerItems)),
             )
         case .folder, .collection:
             .merge(
-                .send(.fsItems(.setShowHidden(state.showHiddenFiles))),
-                .send(.fsItems(.loadItems(path: state.currentPath))),
+                .send(.entries(.setShowHidden(state.showHiddenFiles))),
+                .send(.entries(.loadItems(path: state.currentPath))),
             )
         }
     }
 
     private static func shouldPromptForUnsavedNavigation(state: State) -> Bool {
-        state.fsItems.isCollectionMode && state.canSaveCollection
+        state.entries.isCollectionMode && state.canSaveCollection
     }
 
     private static func performNavigation(
@@ -1506,7 +1506,7 @@ struct FileManagerFeature {
         let parentURL = URL(fileURLWithPath: parentPath)
         let childName = URL(fileURLWithPath: state.currentPath).lastPathComponent
         if !childName.isEmpty {
-            state.fsItems.selectAfterLoadFileNames = [childName]
+            state.entries.selectAfterLoadFileNames = [childName]
         }
         state.navigateToFolder(parentURL.path, sidebarItemName: parentURL.lastPathComponent)
         state.resetComposer()
@@ -1514,7 +1514,7 @@ struct FileManagerFeature {
         let exitEffect = Self.exitCollectionMode(state: &state)
         return .concatenate(
             exitEffect,
-            .send(.fsItems(.loadItems(path: parentURL.path))),
+            .send(.entries(.loadItems(path: parentURL.path))),
         )
     }
 
@@ -1536,12 +1536,12 @@ struct FileManagerFeature {
         state.openedCollectionBaseline = nil
         state.collectionOriginURL = nil
         state.pendingNavigation = nil
-        state.fsItems.collectionItems = []
+        state.entries.collectionItems = []
         return .merge(
             .cancel(id: CancelID.openCollectionFile),
             .cancel(id: ComposerFeature.CancelID.search),
             .cancel(id: ComposerFeature.CancelID.filters),
-            .send(.fsItems(.setCollectionMode(false))),
+            .send(.entries(.setCollectionMode(false))),
         )
     }
 }

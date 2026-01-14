@@ -1,6 +1,6 @@
 import AppKit
 
-enum FSItemAlertUtils {
+enum EntryAlertUtils {
     @MainActor
     static func showDeleteConfirmationAlert(itemNames: [String]) -> Bool {
         let alert = NSAlert()

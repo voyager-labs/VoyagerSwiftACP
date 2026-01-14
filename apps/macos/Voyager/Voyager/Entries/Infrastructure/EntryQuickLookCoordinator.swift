@@ -2,8 +2,8 @@ import AppKit
 import QuickLookUI
 
 @MainActor
-final class FSItemQuickLookCoordinator: NSObject, QLPreviewPanelDataSource, QLPreviewPanelDelegate {
-    static let shared = FSItemQuickLookCoordinator()
+final class EntryQuickLookCoordinator: NSObject, QLPreviewPanelDataSource, QLPreviewPanelDelegate {
+    static let shared = EntryQuickLookCoordinator()
 
     private var currentURL: URL?
     private var currentURLs: [URL] = []

@@ -1,6 +1,6 @@
 import SwiftUI
 
-enum FSItemTagUtils {
+enum EntryTagUtils {
     static let colorCodeOrder = [6, 7, 5, 2, 4, 3, 1]
 
     static func getTagColor(colorCode: Int) -> Color {
