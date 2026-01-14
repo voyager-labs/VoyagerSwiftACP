@@ -103,11 +103,13 @@ log_info "Nuitka 빌드 실행 (Python: ${VENV_PYTHON}, SDK: ${MACOS_SDK_PATH})"
 
 # arm64 전용 빌드 (빌드 시간 단축을 위해 universal 바이너리는 제외)
 MIGRATIONS_DIR="${BACKEND_DIR}/src/infra/db/migrations"
+OSX_METADATA_DATA_DIR="${BACKEND_DIR}/src/osxmetadata/attribute_data"
 if ! "${UV_BIN}" run --directory "${BACKEND_DIR}" --python "${VENV_PYTHON}" nuitka \
   --standalone \
   --macos-target-arch="arm64" \
   --output-dir="${NUITKA_OUTPUT_DIR}" \
   --include-data-dir="${BACKEND_DIR}/src/infra/db=infra/db" \
+  --include-data-dir="${OSX_METADATA_DATA_DIR}=osxmetadata/attribute_data" \
   --include-data-files="${MIGRATIONS_DIR}/env.py=infra/db/migrations/env.py" \
   --include-data-files="${MIGRATIONS_DIR}/config.py=infra/db/migrations/config.py" \
   --include-data-files="${MIGRATIONS_DIR}/__init__.py=infra/db/migrations/__init__.py" \
