@@ -167,6 +167,18 @@ struct EntriesFeature {
                 .compactMap(\.self)
             return paths.contains { operations.itemStates[$0]?.isBusy == true }
         }
+
+        mutating func updateGroupedItems() {
+            guard groupKey != .none else {
+                groupedItems = [GroupedItems(groupName: "", items: Array(displayItems))]
+                return
+            }
+
+            groupedItems = EntriesGroupingUtils.groupItems(
+                Array(displayItems),
+                by: groupKey,
+            )
+        }
     }
 
     enum Action: Sendable {
@@ -336,10 +348,7 @@ struct EntriesFeature {
                         } else {
                             state.items.insert(createdItem, at: 0)
                         }
-                        state.groupedItems = EntriesGroupingUtils.groupItems(
-                            Array(state.displayItems),
-                            by: state.groupKey,
-                        )
+                        state.updateGroupedItems()
                         state.creatingNewFolderId = createdItem.id
                         state.selectedIds = [createdItem.id]
                         state.lastSelectedId = createdItem.id
@@ -541,7 +550,7 @@ struct EntriesFeature {
 
             case let .setGroupKey(key):
                 state.groupKey = key
-                state.groupedItems = EntriesGroupingUtils.groupItems(Array(state.displayItems), by: key)
+                state.updateGroupedItems()
                 return .none
 
             case let .setCollectionMode(isCollectionMode):
@@ -549,7 +558,7 @@ struct EntriesFeature {
                 state.isCollectionMode = isCollectionMode
                 state.clearSelection()
                 state.operations.commonApplicationsForSelectedFiles = []
-                state.groupedItems = EntriesGroupingUtils.groupItems(Array(state.displayItems), by: state.groupKey)
+                state.updateGroupedItems()
                 return .none
 
             case let .setDropTargeted(isTargeted):
@@ -573,7 +582,7 @@ struct EntriesFeature {
                     return .none
                 }
 
-                state.groupedItems = EntriesGroupingUtils.groupItems(sorted, by: state.groupKey)
+                state.updateGroupedItems()
 
                 if !state.selectAfterLoadFileNames.isEmpty {
                     let fileNamesToSelect = state.selectAfterLoadFileNames
@@ -834,37 +843,41 @@ struct EntriesFeature {
                 if !state.hasUserSetSortOrder {
                     state.sortOrder = state.defaultSortOrder
                 }
-                let sortedItems = EntriesSortingUtils.sortItems(
-                    Array(state.items),
+
+                let currentItems = Array(state.displayItems)
+                let sorted = EntriesSortingUtils.sortItems(
+                    currentItems,
                     by: state.sortKey,
                     order: state.sortOrder,
                 )
-                state.items = IdentifiedArray(uniqueElements: sortedItems)
-                let sortedCollection = EntriesSortingUtils.sortItems(
-                    Array(state.collectionItems),
-                    by: state.sortKey,
-                    order: state.sortOrder,
-                )
-                state.collectionItems = IdentifiedArray(uniqueElements: sortedCollection)
-                state.groupedItems = EntriesGroupingUtils.groupItems(Array(state.displayItems), by: state.groupKey)
+
+                if state.isCollectionMode {
+                    state.collectionItems = IdentifiedArray(uniqueElements: sorted)
+                } else {
+                    state.items = IdentifiedArray(uniqueElements: sorted)
+                }
+
+                state.updateGroupedItems()
                 return .none
 
             case let .setSortOrder(order):
                 state.sortOrder = order
                 state.hasUserSetSortOrder = true
-                let sortedItems = EntriesSortingUtils.sortItems(
-                    Array(state.items),
+
+                let currentItems = Array(state.displayItems)
+                let sorted = EntriesSortingUtils.sortItems(
+                    currentItems,
                     by: state.sortKey,
                     order: state.sortOrder,
                 )
-                state.items = IdentifiedArray(uniqueElements: sortedItems)
-                let sortedCollection = EntriesSortingUtils.sortItems(
-                    Array(state.collectionItems),
-                    by: state.sortKey,
-                    order: state.sortOrder,
-                )
-                state.collectionItems = IdentifiedArray(uniqueElements: sortedCollection)
-                state.groupedItems = EntriesGroupingUtils.groupItems(Array(state.displayItems), by: state.groupKey)
+
+                if state.isCollectionMode {
+                    state.collectionItems = IdentifiedArray(uniqueElements: sorted)
+                } else {
+                    state.items = IdentifiedArray(uniqueElements: sorted)
+                }
+
+                state.updateGroupedItems()
                 return .none
 
             case .resetScrollFlag:
