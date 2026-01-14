@@ -1,6 +1,6 @@
 [project]
 name = "voyager-app-backend"
-version = "0.0.2"
+version = "0.0.3"
 description = "Voyager App Backend With FastAPI"
 readme = "README.md"
 requires-python = ">=3.13"
