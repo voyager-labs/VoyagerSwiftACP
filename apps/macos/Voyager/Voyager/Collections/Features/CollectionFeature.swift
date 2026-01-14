@@ -39,6 +39,9 @@ struct CollectionFeature {
     @Dependency(\.collectionFileClient)
     var collectionFileClient
 
+    @Dependency(\.userDefaultsClient)
+    var userDefaultsClient
+
     var body: some Reducer<State, Action> {
         Reduce { state, action in
             switch action {
@@ -75,8 +78,11 @@ struct CollectionFeature {
                 case let .success(snapshot):
                     state.pendingSave = snapshot
                     state.isSaving = true
-                    let initialDirectory = defaultCollectionSaveDirectory(preferredScopes: context.scopes)
-                    return .run { send in
+                    return .run { [userDefaultsClient] send in
+                        let initialDirectory = await defaultCollectionSaveDirectory(
+                            preferredScopes: context.scopes,
+                            userDefaultsClient: userDefaultsClient,
+                        )
                         let url = await showCollectionSavePanel(initialDirectory: initialDirectory)
                         await send(.savePanelResponse(url))
                     }
@@ -164,7 +170,7 @@ struct CollectionFeature {
                 switch result {
                 case let .success(url):
                     let directory = url.deletingLastPathComponent().path
-                    UserDefaults.standard.set(directory, forKey: SettingsKeys.lastCollectionSaveDirectory)
+                    userDefaultsClient.setString(directory, SettingsKeys.lastCollectionSaveDirectory)
                     return .none
 
                 case let .failure(error):
@@ -320,18 +326,22 @@ private func resetPendingSave(_ state: inout CollectionFeature.State) {
     state.pendingSave = nil
 }
 
-private func defaultCollectionSaveDirectory(preferredScopes: [String]) -> URL? {
-    let fileManager = FileManager.default
+@MainActor
+private func defaultCollectionSaveDirectory(
+    preferredScopes: [String],
+    userDefaultsClient: UserDefaultsClient,
+) -> URL? {
+    nonisolated(unsafe) let fileManager = FileManager.default
 
     if preferredScopes.count == 1,
        let scope = preferredScopes.first,
-       let url = validDirectoryURL(scope)
+       let url = validDirectoryURL(scope, fileManager: fileManager)
     {
         return url
     }
 
-    if let saved = UserDefaults.standard.string(forKey: SettingsKeys.lastCollectionSaveDirectory),
-       let url = validDirectoryURL(saved)
+    if let saved = userDefaultsClient.string(SettingsKeys.lastCollectionSaveDirectory),
+       let url = validDirectoryURL(saved, fileManager: fileManager)
     {
         return url
     }
@@ -339,9 +349,9 @@ private func defaultCollectionSaveDirectory(preferredScopes: [String]) -> URL? {
     return fileManager.homeDirectoryForCurrentUser
 }
 
-private func validDirectoryURL(_ path: String) -> URL? {
+private func validDirectoryURL(_ path: String, fileManager: FileManager) -> URL? {
     var isDirectory: ObjCBool = false
-    guard FileManager.default.fileExists(atPath: path, isDirectory: &isDirectory), isDirectory.boolValue else {
+    guard fileManager.fileExists(atPath: path, isDirectory: &isDirectory), isDirectory.boolValue else {
         return nil
     }
     return URL(fileURLWithPath: path)

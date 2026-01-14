@@ -398,6 +398,9 @@ struct FileManagerFeature {
     @Dependency(\.collectionFileClient)
     var collectionFileClient
 
+    @Dependency(\.userDefaultsClient)
+    var userDefaultsClient
+
     private nonisolated enum CancelID: Hashable, Sendable {
         case openCollectionFile
     }
@@ -418,14 +421,14 @@ struct FileManagerFeature {
         Reduce { state, action in
             switch action {
             case .onAppear:
-                state.showHiddenFiles = UserDefaults.standard.bool(forKey: SettingsKeys.showHiddenFiles)
-                state.sidebarVisible = UserDefaults.standard.object(forKey: "sidebarVisible") as? Bool ?? true
-                state.sortKey = SortKey(rawValue: UserDefaults.standard.string(forKey: "sortKey") ?? "") ?? .name
+                state.showHiddenFiles = userDefaultsClient.bool(SettingsKeys.showHiddenFiles)
+                state.sidebarVisible = userDefaultsClient.object("sidebarVisible") as? Bool ?? true
+                state.sortKey = SortKey(rawValue: userDefaultsClient.string("sortKey") ?? "") ?? .name
                 state
-                    .sortOrder = SortOrder(rawValue: UserDefaults.standard.string(forKey: "sortOrder") ?? "") ??
+                    .sortOrder = SortOrder(rawValue: userDefaultsClient.string("sortOrder") ?? "") ??
                     .ascending
 
-                if let viewLayoutRaw = UserDefaults.standard.string(forKey: "viewLayout"),
+                if let viewLayoutRaw = userDefaultsClient.string("viewLayout"),
                    let savedLayout = ViewLayout(rawValue: viewLayoutRaw)
                 {
                     state.viewLayout = savedLayout
@@ -434,26 +437,26 @@ struct FileManagerFeature {
                 }
                 state.entries.isListView = state.viewLayout == .list
 
-                if UserDefaults.standard.object(forKey: "columnWidthName") != nil {
+                if userDefaultsClient.object("columnWidthName") != nil {
                     state.columnWidths = ListColumnWidths(
-                        name: CGFloat(UserDefaults.standard.double(forKey: "columnWidthName")),
-                        date: CGFloat(UserDefaults.standard.double(forKey: "columnWidthDate")),
-                        size: CGFloat(UserDefaults.standard.double(forKey: "columnWidthSize")),
-                        kind: CGFloat(UserDefaults.standard.double(forKey: "columnWidthKind")),
+                        name: CGFloat(userDefaultsClient.double("columnWidthName")),
+                        date: CGFloat(userDefaultsClient.double("columnWidthDate")),
+                        size: CGFloat(userDefaultsClient.double("columnWidthSize")),
+                        kind: CGFloat(userDefaultsClient.double("columnWidthKind")),
                     )
                 }
 
-                if let listIconSize = UserDefaults.standard.object(forKey: SettingsKeys.listIconSize) as? CGFloat {
+                if let listIconSize = userDefaultsClient.object(SettingsKeys.listIconSize) as? CGFloat {
                     state.listIconSize = listIconSize
                 }
-                if let gridIconSize = UserDefaults.standard.object(forKey: SettingsKeys.gridIconSize) as? CGFloat {
+                if let gridIconSize = userDefaultsClient.object(SettingsKeys.gridIconSize) as? CGFloat {
                     state.gridIconSize = gridIconSize
                 }
 
-                if let listTextSize = UserDefaults.standard.object(forKey: SettingsKeys.listTextSize) as? CGFloat {
+                if let listTextSize = userDefaultsClient.object(SettingsKeys.listTextSize) as? CGFloat {
                     state.listTextSize = listTextSize
                 }
-                if let gridTextSize = UserDefaults.standard.object(forKey: SettingsKeys.gridTextSize) as? CGFloat {
+                if let gridTextSize = userDefaultsClient.object(SettingsKeys.gridTextSize) as? CGFloat {
                     state.gridTextSize = gridTextSize
                 }
 
@@ -465,7 +468,7 @@ struct FileManagerFeature {
                     .send(.loadFavorites),
                     .send(.loadLocations),
                     .send(.loadTags),
-                    .run { send in
+                    .run { [userDefaultsClient] send in
                         let listIconSizeKey = "listIconSize"
                         let gridIconSizeKey = "gridIconSize"
                         let listTextSizeKey = "listTextSize"
@@ -474,19 +477,19 @@ struct FileManagerFeature {
                         for await _ in NotificationCenter.default.notifications(
                             named: UserDefaults.didChangeNotification,
                         ) {
-                            if let listIconSize = UserDefaults.standard.object(forKey: listIconSizeKey) as? CGFloat {
+                            if let listIconSize = userDefaultsClient.object(listIconSizeKey) as? CGFloat {
                                 await send(.updateListIconSize(listIconSize))
                             }
-                            if let gridIconSize = UserDefaults.standard.object(forKey: gridIconSizeKey) as? CGFloat {
+                            if let gridIconSize = userDefaultsClient.object(gridIconSizeKey) as? CGFloat {
                                 await send(.updateGridIconSize(gridIconSize))
                             }
-                            if let listTextSize = UserDefaults.standard.object(forKey: listTextSizeKey) as? CGFloat {
+                            if let listTextSize = userDefaultsClient.object(listTextSizeKey) as? CGFloat {
                                 await send(.updateListTextSize(listTextSize))
                             }
-                            if let gridTextSize = UserDefaults.standard.object(forKey: gridTextSizeKey) as? CGFloat {
+                            if let gridTextSize = userDefaultsClient.object(gridTextSizeKey) as? CGFloat {
                                 await send(.updateGridTextSize(gridTextSize))
                             }
-                            let showHiddenFiles = UserDefaults.standard.bool(forKey: showHiddenFilesKey)
+                            let showHiddenFiles = userDefaultsClient.bool(showHiddenFilesKey)
                             await send(.setShowHiddenFiles(showHiddenFiles))
                         }
                     },
@@ -772,12 +775,12 @@ struct FileManagerFeature {
             case let .changeLayout(layout):
                 state.viewLayout = layout
                 state.entries.isListView = layout == .list
-                UserDefaults.standard.set(layout.rawValue, forKey: "viewLayout")
+                userDefaultsClient.setString(layout.rawValue, "viewLayout")
                 return .none
 
             case .toggleShowHiddenFiles:
                 state.showHiddenFiles.toggle()
-                UserDefaults.standard.set(state.showHiddenFiles, forKey: SettingsKeys.showHiddenFiles)
+                userDefaultsClient.setBool(state.showHiddenFiles, SettingsKeys.showHiddenFiles)
                 return Self.applyShowHiddenFilesChange(state: &state)
 
             case let .setShowHiddenFiles(isEnabled):
@@ -799,7 +802,7 @@ struct FileManagerFeature {
 
             case let .setSidebarVisible(visible):
                 state.sidebarVisible = visible
-                UserDefaults.standard.set(visible, forKey: "sidebarVisible")
+                userDefaultsClient.setObject(visible, "sidebarVisible")
                 return .none
 
             case .toggleFavoritesSection:
@@ -816,7 +819,7 @@ struct FileManagerFeature {
 
             case let .setSidebarWidth(width):
                 let clampedWidth = max(150, min(400, width))
-                UserDefaults.standard.set(clampedWidth, forKey: "sidebarWidth")
+                userDefaultsClient.setDouble(clampedWidth, "sidebarWidth")
                 return .none
 
             case let .updateColumnWidth(ctx):
@@ -827,10 +830,10 @@ struct FileManagerFeature {
                     padding: ctx.padding,
                     spacing: ctx.spacing,
                 )
-                UserDefaults.standard.set(state.columnWidths.name, forKey: "columnWidthName")
-                UserDefaults.standard.set(state.columnWidths.date, forKey: "columnWidthDate")
-                UserDefaults.standard.set(state.columnWidths.size, forKey: "columnWidthSize")
-                UserDefaults.standard.set(state.columnWidths.kind, forKey: "columnWidthKind")
+                userDefaultsClient.setDouble(state.columnWidths.name, "columnWidthName")
+                userDefaultsClient.setDouble(state.columnWidths.date, "columnWidthDate")
+                userDefaultsClient.setDouble(state.columnWidths.size, "columnWidthSize")
+                userDefaultsClient.setDouble(state.columnWidths.kind, "columnWidthKind")
                 return .none
 
             case .showRecents:
@@ -967,12 +970,12 @@ struct FileManagerFeature {
 
             case let .changeSortKey(key):
                 state.sortKey = key
-                UserDefaults.standard.set(key.rawValue, forKey: "sortKey")
+                userDefaultsClient.setString(key.rawValue, "sortKey")
                 return .send(.entries(.setSortKey(key)))
 
             case let .changeSortOrder(order):
                 state.sortOrder = order
-                UserDefaults.standard.set(order.rawValue, forKey: "sortOrder")
+                userDefaultsClient.setString(order.rawValue, "sortOrder")
                 return .send(.entries(.setSortOrder(order)))
 
             case let .changeGroupKey(key):

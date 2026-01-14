@@ -302,7 +302,7 @@ struct EntriesOperationsFeature {
 
                             if shouldReplace {
                                 do {
-                                    try FileManager.default.removeItem(at: destURL)
+                                    try await entryClient.deleteImmediately(destURL)
                                     if isCopy {
                                         try await entryClient.pasteFile(sourceURL, destURL)
                                     } else {
@@ -365,7 +365,9 @@ struct EntriesOperationsFeature {
                 ) { url in
                     var result: NSURL?
                     try await MainActor.run {
-                        try FileManager.default.trashItem(at: url, resultingItemURL: &result)
+                        var nsResult: NSURL?
+                        try FileManager.default.trashItem(at: url, resultingItemURL: &nsResult)
+                        result = nsResult
                     }
 
                     if let trashURL = result as URL? {
@@ -439,7 +441,7 @@ struct EntriesOperationsFeature {
                             if shouldReplace {
                                 do {
                                     let originalURL = URL(fileURLWithPath: originalPath)
-                                    try FileManager.default.removeItem(at: originalURL)
+                                    try await entryClient.deleteImmediately(originalURL)
                                     try await entryClient.putBackFromTrash(
                                         URL(fileURLWithPath: item.fullPath),
                                         originalPath,

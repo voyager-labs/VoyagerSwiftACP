@@ -1269,12 +1269,12 @@ struct EntriesFeature {
                 let oldPath = creatingId
                 state.clearCreatingFolder()
 
-                return .run { send in
+                return .run { [entryClient] send in
                     let parentURL = URL(fileURLWithPath: path)
                     let targetPath = parentURL.appendingPathComponent(name).path
 
                     let folderName: String
-                    if targetPath != oldPath, FileManager.default.fileExists(atPath: targetPath) {
+                    if targetPath != oldPath, entryClient.fileExists(targetPath) {
                         await MainActor.run {
                             EntryAlertUtils.showRenameConflictAlert(itemName: name)
                         }
@@ -1797,7 +1797,7 @@ struct EntriesFeature {
                 operationPath: originalPath,
                 operationKind: .moveToTrash,
                 perform: {
-                    let trashPath = try await Self.moveItemToTrash(path: originalPath)
+                    let trashPath = try await Self.moveItemToTrash(path: originalPath, entryClient: entryClient)
                     return EntryActionRecord.Target(beforePath: originalPath, afterPath: trashPath)
                 },
             )
@@ -1816,7 +1816,7 @@ struct EntriesFeature {
                 operationPath: originalPath,
                 operationKind: .moveToTrash,
                 perform: {
-                    let trashPath = try await Self.moveItemToTrash(path: originalPath)
+                    let trashPath = try await Self.moveItemToTrash(path: originalPath, entryClient: entryClient)
                     return EntryActionRecord.Target(beforePath: trashPath, afterPath: originalPath)
                 },
             )
@@ -1872,7 +1872,7 @@ struct EntriesFeature {
         return tags
     }
 
-    private static func moveItemToTrash(path: String) async throws -> String {
+    private static func moveItemToTrash(path: String, entryClient _: EntryClient) async throws -> String {
         let sourceURL = URL(fileURLWithPath: path)
         let trashURL = try await MainActor.run {
             var result: NSURL?
