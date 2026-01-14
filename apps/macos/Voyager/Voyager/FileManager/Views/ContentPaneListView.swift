@@ -84,14 +84,8 @@ struct ContentPaneListView: View {
         geometry: GeometryProxy,
         store: StoreOf<FileManagerFeature>,
         isTrashFolder: Bool,
+        options: (showCompress: Bool, showExtract: Bool),
     ) -> ItemRowProps {
-        let selectedIds = fsStore.selectedIds
-        let selectedItems = fsStore.displayItems.filter { selectedIds.contains($0.id) }
-        let options = EntryContextMenuUtils
-            .calculateCompressExtractOptions(selectedItems: selectedItems)
-        let showCompress = options.showCompress
-        let showExtract = options.showExtract
-
         let handlers = makeContextMenuHandlers(
             item: item,
             fsStore: fsStore,
@@ -110,8 +104,8 @@ struct ContentPaneListView: View {
         return ItemRowProps(
             handlers: handlers,
             width: width,
-            showCompress: showCompress,
-            showExtract: showExtract,
+            showCompress: options.showCompress,
+            showExtract: options.showExtract,
         )
     }
 
@@ -121,6 +115,8 @@ struct ContentPaneListView: View {
         fsStore: Store<EntriesFeature.State, EntriesFeature.Action>,
         geometry: GeometryProxy,
         store: StoreOf<FileManagerFeature>,
+        showCompress: Bool,
+        showExtract: Bool,
         isTrashFolder: Bool = false,
     ) -> EntryListView {
         let props = buildItemRowProps(
@@ -129,6 +125,7 @@ struct ContentPaneListView: View {
             geometry: geometry,
             store: store,
             isTrashFolder: isTrashFolder,
+            options: (showCompress: showCompress, showExtract: showExtract),
         )
 
         buildEntryListView(
@@ -214,6 +211,7 @@ struct ContentPaneListView: View {
         fsStore: Store<EntriesFeature.State, EntriesFeature.Action>,
         geometry: GeometryProxy,
         store: StoreOf<FileManagerFeature>,
+        options: (showCompress: Bool, showExtract: Bool),
     ) -> some View {
         let bgColor = zebraBackgroundColor(for: index)
 
@@ -222,6 +220,8 @@ struct ContentPaneListView: View {
             fsStore: fsStore,
             geometry: geometry,
             store: store,
+            showCompress: options.showCompress,
+            showExtract: options.showExtract,
             isTrashFolder: store.isTrashFolder,
         )
         .frame(height: rowHeight)
@@ -271,44 +271,70 @@ struct ContentPaneListView: View {
         .padding(.bottom, 4)
     }
 
-    @ViewBuilder
     private func groupedItemsContent(
         fsStore: Store<EntriesFeature.State, EntriesFeature.Action>,
         geometry: GeometryProxy,
         store: StoreOf<FileManagerFeature>,
     ) -> some View {
-        ForEach(Array(fsStore.groupedItems.enumerated()), id: \.element.groupName) { index, group in
-            if index > 0 {
-                Spacer().frame(height: 16)
-            }
+        let selectedIds = fsStore.selectedIds
+        let selectedItems = fsStore.displayItems.filter { selectedIds.contains($0.id) }
+        let options = EntryContextMenuUtils
+            .calculateCompressExtractOptions(selectedItems: selectedItems)
 
-            if !group.groupName.isEmpty, fsStore.groupKey != .name {
-                groupHeader(group: group, fsStore: fsStore)
-            }
+        return Group {
+            ForEach(Array(fsStore.groupedItems.enumerated()), id: \.element.groupName) { index, group in
+                if index > 0 {
+                    Spacer().frame(height: 16)
+                }
 
-            ForEach(Array(group.items.enumerated()), id: \.element.id) { itemIndex, item in
-                styledItemRow(item: item, index: itemIndex, fsStore: fsStore, geometry: geometry, store: store)
+                if !group.groupName.isEmpty, fsStore.groupKey != .name {
+                    groupHeader(group: group, fsStore: fsStore)
+                }
+
+                ForEach(Array(group.items.enumerated()), id: \.element.id) { itemIndex, item in
+                    styledItemRow(
+                        item: item,
+                        index: itemIndex,
+                        fsStore: fsStore,
+                        geometry: geometry,
+                        store: store,
+                        options: (showCompress: options.showCompress, showExtract: options.showExtract),
+                    )
+                }
             }
         }
     }
 
-    @ViewBuilder
     private func listContent(
         fsStore: Store<EntriesFeature.State, EntriesFeature.Action>,
         geometry: GeometryProxy,
         store: StoreOf<FileManagerFeature>,
     ) -> some View {
-        Color.clear.frame(height: 0).id("scrollTop")
+        let selectedIds = fsStore.selectedIds
+        let selectedItems = fsStore.displayItems.filter { selectedIds.contains($0.id) }
+        let options = EntryContextMenuUtils
+            .calculateCompressExtractOptions(selectedItems: selectedItems)
 
-        if fsStore.groupKey == .none {
-            ForEach(Array(fsStore.displayItems.enumerated()), id: \.element.id) { index, item in
-                styledItemRow(item: item, index: index, fsStore: fsStore, geometry: geometry, store: store)
+        return Group {
+            Color.clear.frame(height: 0).id("scrollTop")
+
+            if fsStore.groupKey == .none {
+                ForEach(Array(fsStore.displayItems.enumerated()), id: \.element.id) { index, item in
+                    styledItemRow(
+                        item: item,
+                        index: index,
+                        fsStore: fsStore,
+                        geometry: geometry,
+                        store: store,
+                        options: (showCompress: options.showCompress, showExtract: options.showExtract),
+                    )
+                }
+            } else {
+                groupedItemsContent(fsStore: fsStore, geometry: geometry, store: store)
             }
-        } else {
-            groupedItemsContent(fsStore: fsStore, geometry: geometry, store: store)
-        }
 
-        emptyRowsView(itemsCount: fsStore.displayItems.count, scrollHeight: scrollViewHeight, fsStore: fsStore)
+            emptyRowsView(itemsCount: fsStore.displayItems.count, scrollHeight: scrollViewHeight, fsStore: fsStore)
+        }
     }
 
     private func emptyRowTapAction(fsStore: Store<EntriesFeature.State, EntriesFeature.Action>) {

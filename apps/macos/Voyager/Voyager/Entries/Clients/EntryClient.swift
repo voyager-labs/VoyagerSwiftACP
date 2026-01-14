@@ -502,6 +502,8 @@ extension EntryClient: DependencyKey {
                             .isHiddenKey,
                             .labelColorKey,
                             .tagNamesKey,
+                            .addedToDirectoryDateKey,
+                            .contentAccessDateKey,
                         ],
                         options: options,
                     )

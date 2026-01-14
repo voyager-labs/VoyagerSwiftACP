@@ -105,12 +105,10 @@ struct ContentPaneGridView: View {
         item: Entry,
         store: StoreOf<FileManagerFeature>,
         fsStore: Store<EntriesFeature.State, EntriesFeature.Action>,
+        showCompress: Bool,
+        showExtract: Bool,
         isTrashFolder: Bool = false,
     ) -> EntryGridView {
-        let selectedItems = fsStore.displayItems.filter { fsStore.selectedIds.contains($0.id) }
-        let (showCompress, showExtract) = EntryContextMenuUtils
-            .calculateCompressExtractOptions(selectedItems: selectedItems)
-
         let handlers = makeContextMenuHandlers(
             item: item,
             fsStore: fsStore,
@@ -344,58 +342,75 @@ struct ContentPaneGridView: View {
         )
     }
 
-    @ViewBuilder
+    private func groupHeader(
+        group: GroupedItems,
+        fsStore: Store<EntriesFeature.State, EntriesFeature.Action>,
+    ) -> some View {
+        HStack(spacing: 8) {
+            if fsStore.groupKey == .tags,
+               let colorCode = group.items.first?.tags?
+               .first(where: { $0.name == group.groupName })?.colorCode
+            {
+                Circle()
+                    .fill(EntryTagUtils.getTagColor(colorCode: colorCode))
+                    .frame(width: 8, height: 8)
+            }
+            Text(group.groupName)
+                .font(.headline)
+                .foregroundColor(.primary)
+            Spacer()
+        }
+        .padding(.horizontal, 16)
+    }
+
     private func gridSections(
         fsStore: Store<EntriesFeature.State, EntriesFeature.Action>,
         store: StoreOf<FileManagerFeature>,
         columns: [GridItem],
     ) -> some View {
-        if fsStore.groupKey == .none {
-            LazyVGrid(columns: columns, alignment: .leading, spacing: verticalSpacing) {
-                ForEach(fsStore.displayItems) { item in
-                    itemGrid(
-                        item: item,
-                        store: store,
-                        fsStore: fsStore,
-                        isTrashFolder: store.isTrashFolder,
-                    )
-                }
-            }
-        } else {
-            ForEach(Array(fsStore.groupedItems.enumerated()), id: \.element.groupName) { index, group in
-                if index > 0 {
-                    Spacer().frame(height: 16)
-                }
+        let selectedIds = fsStore.selectedIds
+        let selectedItems = fsStore.displayItems.filter { selectedIds.contains($0.id) }
+        let options = EntryContextMenuUtils
+            .calculateCompressExtractOptions(selectedItems: selectedItems)
 
-                if !group.groupName.isEmpty, fsStore.groupKey != .name {
-                    HStack(spacing: 8) {
-                        if fsStore.groupKey == .tags,
-                           let colorCode = group.items.first?.tags?
-                           .first(where: { $0.name == group.groupName })?.colorCode
-                        {
-                            Circle()
-                                .fill(EntryTagUtils.getTagColor(colorCode: colorCode))
-                                .frame(width: 8, height: 8)
-                        }
-                        Text(group.groupName)
-                            .font(.headline)
-                            .foregroundColor(.primary)
-                        Spacer()
-                    }
-                    .padding(.horizontal, 16)
-                }
-
+        return Group {
+            if fsStore.groupKey == .none {
                 LazyVGrid(columns: columns, alignment: .leading, spacing: verticalSpacing) {
-                    ForEach(group.items) { item in
+                    ForEach(fsStore.displayItems) { item in
                         itemGrid(
                             item: item,
                             store: store,
                             fsStore: fsStore,
+                            showCompress: options.showCompress,
+                            showExtract: options.showExtract,
                             isTrashFolder: store.isTrashFolder,
                         )
                     }
                 }
-                .frame(maxWidth: .infinity, alignment: .center)
+            } else {
+                ForEach(Array(fsStore.groupedItems.enumerated()), id: \.element.groupName) { index, group in
+                    if index > 0 {
+                        Spacer().frame(height: 16)
+                    }
+
+                    if !group.groupName.isEmpty, fsStore.groupKey != .name {
+                        groupHeader(group: group, fsStore: fsStore)
+                    }
+
+                    LazyVGrid(columns: columns, alignment: .leading, spacing: verticalSpacing) {
+                        ForEach(group.items) { item in
+                            itemGrid(
+                                item: item,
+                                store: store,
+                                fsStore: fsStore,
+                                showCompress: options.showCompress,
+                                showExtract: options.showExtract,
+                                isTrashFolder: store.isTrashFolder,
+                            )
+                        }
+                    }
+                    .frame(maxWidth: .infinity, alignment: .center)
+                }
             }
         }
     }
