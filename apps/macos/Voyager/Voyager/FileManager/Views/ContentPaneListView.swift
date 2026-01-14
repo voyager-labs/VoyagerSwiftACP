@@ -97,7 +97,7 @@ struct ContentPaneListView: View {
             fsStore: fsStore,
             saveScrollPosition: saveScrollPositionBeforeOpen,
             isTrashFolder: isTrashFolder,
-            onEmptyTrash: { store.send(.emptyTrash) },
+            onEmptyTrash: { store.send(.entries(.emptyTrash)) },
             openWindow: { path in
                 Task {
                     _ = await fileManagerWindowClient.openWindow(path)

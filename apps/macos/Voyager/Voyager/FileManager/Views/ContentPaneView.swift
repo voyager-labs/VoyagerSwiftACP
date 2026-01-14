@@ -181,7 +181,7 @@ struct ContentPaneView: View {
         else { return false }
 
         if store.canQuickLookSelectedItem {
-            store.send(.quickLookSelectedItem)
+            store.send(.entries(.quickLookSelectedItem))
         }
         return true
     }
@@ -198,12 +198,12 @@ struct ContentPaneView: View {
 
         if event.modifierFlags.contains(.option) {
             if !store.entries.selectedIds.isEmpty {
-                store.send(.deleteSelectedItemsImmediately)
+                store.send(.entries(.deleteSelectedItemsImmediately))
             }
             return true
         } else {
             if !store.entries.selectedIds.isEmpty {
-                store.send(.moveSelectedItemsToTrash)
+                store.send(.entries(.moveSelectedItemsToTrash))
             }
             return true
         }

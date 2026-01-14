@@ -31,13 +31,13 @@ struct AppMenuCommands: Commands {
             .keyboardShortcut("n", modifiers: [.command, .shift])
 
             Button("Open") {
-                appDelegate.currentFileManagerStore?.send(.openSelectedItem)
+                appDelegate.currentFileManagerStore?.send(.entries(.openSelectedItem))
             }
             .keyboardShortcut(.downArrow, modifiers: .command)
             .disabled(appDelegate.currentFileManagerStore?.canOpenSelectedItem == false)
 
             Button("Quick Look") {
-                appDelegate.currentFileManagerStore?.send(.quickLookSelectedItem)
+                appDelegate.currentFileManagerStore?.send(.entries(.quickLookSelectedItem))
             }
             .keyboardShortcut(.space, modifiers: [])
             .disabled(appDelegate.currentFileManagerStore?.canQuickLookSelectedItem == false)

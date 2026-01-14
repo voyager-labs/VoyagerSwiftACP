@@ -327,13 +327,6 @@ struct FileManagerFeature {
         case openCollectionFile(URL)
         case collectionFileLoaded(Result<VoyagerCollectionFile, Error>)
         case navigateToCollection(FileManagerNavigationUtils.CollectionNavigation)
-        case openSelectedItem
-        case quickLookSelectedItem
-        case duplicateSelectedItems
-        case moveSelectedItemsToTrash
-        case deleteSelectedItemsImmediately
-        case putBackSelectedItems
-        case emptyTrash
         case emptyTrashCompleted
         case closeWindow
         case goBack
@@ -684,27 +677,6 @@ struct FileManagerFeature {
                         },
                     )
                 }
-
-            case .openSelectedItem:
-                return .send(.entries(.openSelectedItem))
-
-            case .quickLookSelectedItem:
-                return .send(.entries(.quickLookSelectedItem))
-
-            case .duplicateSelectedItems:
-                return .send(.entries(.duplicateSelectedItems))
-
-            case .moveSelectedItemsToTrash:
-                return .send(.entries(.moveSelectedItemsToTrash))
-
-            case .deleteSelectedItemsImmediately:
-                return .send(.entries(.deleteSelectedItemsImmediately))
-
-            case .putBackSelectedItems:
-                return .send(.entries(.putBackSelectedItems))
-
-            case .emptyTrash:
-                return .send(.entries(.emptyTrash))
 
             case .emptyTrashCompleted:
                 return .send(.closeWindow)

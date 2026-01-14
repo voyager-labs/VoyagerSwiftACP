@@ -7,7 +7,7 @@ struct ContentPaneContextMenu: View {
     var body: some View {
         if store.isTrashFolder {
             Button("Empty Trash") {
-                store.send(.emptyTrash)
+                store.send(.entries(.emptyTrash))
             }
         } else {
             Button("New Folder") {
