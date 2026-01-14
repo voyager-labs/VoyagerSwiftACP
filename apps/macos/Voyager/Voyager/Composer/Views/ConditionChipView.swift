@@ -102,36 +102,42 @@ struct ConditionChipView: View {
 
     private func propertyLabelView() -> some View {
         WithViewStore(propertyPickerStore, observe: { $0 }, content: { propertyStore in
-            Text(condition.propertyLabel)
-                .font(.system(size: 11, weight: .medium))
-                .foregroundColor(.primary.opacity(0.8))
-                .padding(.leading, 4)
-                .padding(.trailing, 2)
-                .padding(.vertical, 2)
-                .contentShape(Rectangle())
-                .onHover { hovering in
-                    isPropertyHovering = hovering
-                }
-                .background(
-                    isPropertyHovering
-                        ? (isDark ? Color.white.opacity(hoverFillOpacity) : Color.black.opacity(hoverFillOpacity))
-                        : Color.clear,
-                )
-                .onTapGesture {
-                    onPropertyTap()
-                    propertyStore.send(.startEditing(condition.propertyKey))
-                    propertyStore.send(.setPresented(true))
-                }
-                .popover(
-                    isPresented: propertyStore.binding(
-                        get: { $0.isPresented && $0.editingConditionKey == condition.propertyKey },
-                        send: ConditionPropertyPickerFeature.Action.setPresented,
-                    ),
-                    arrowEdge: .bottom,
-                    content: {
-                        ConditionPropertyPickerView(store: propertyPickerStore)
-                    },
-                )
+            HStack(spacing: 6) {
+                Image(systemName: ConditionPropertyIconUtils.iconName(forKey: condition.propertyKey))
+                    .font(.system(size: 10, weight: .medium))
+                    .foregroundColor(.secondary)
+                    .frame(width: 12, height: 12)
+                Text(condition.propertyLabel)
+                    .font(.system(size: 11, weight: .medium))
+                    .foregroundColor(.primary.opacity(0.8))
+            }
+            .padding(.leading, 4)
+            .padding(.trailing, 2)
+            .padding(.vertical, 2)
+            .contentShape(Rectangle())
+            .onHover { hovering in
+                isPropertyHovering = hovering
+            }
+            .background(
+                isPropertyHovering
+                    ? (isDark ? Color.white.opacity(hoverFillOpacity) : Color.black.opacity(hoverFillOpacity))
+                    : Color.clear,
+            )
+            .onTapGesture {
+                onPropertyTap()
+                propertyStore.send(.startEditing(condition.propertyKey))
+                propertyStore.send(.setPresented(true))
+            }
+            .popover(
+                isPresented: propertyStore.binding(
+                    get: { $0.isPresented && $0.editingConditionKey == condition.propertyKey },
+                    send: ConditionPropertyPickerFeature.Action.setPresented,
+                ),
+                arrowEdge: .bottom,
+                content: {
+                    ConditionPropertyPickerView(store: propertyPickerStore)
+                },
+            )
         })
     }
 

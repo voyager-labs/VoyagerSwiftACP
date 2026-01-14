@@ -146,7 +146,7 @@ struct ConditionPropertyPickerView: View {
                 VStack(spacing: 0) {
                     if !items.isEmpty {
                         ForEach(items) { property in
-                            propertyRow(property, viewStore: viewStore, showIcon: false)
+                            propertyRow(property, viewStore: viewStore, showIcon: true)
                         }
                     } else if !viewStore.searchText.isEmpty {
                         Text("No properties found")
@@ -166,7 +166,7 @@ struct ConditionPropertyPickerView: View {
     ) -> some View {
         if !recommended.isEmpty {
             ForEach(recommended) { property in
-                propertyRow(property, viewStore: viewStore, showIcon: false)
+                propertyRow(property, viewStore: viewStore, showIcon: true)
             }
         }
     }
@@ -213,6 +213,10 @@ struct ConditionPropertyPickerView: View {
         } label: {
             let isHovering = hoveredCategoryKey == categoryKey
             HStack(spacing: 8) {
+                Image(systemName: iconName(for: categoryKey))
+                    .font(.system(size: 12))
+                    .foregroundColor(.secondary)
+                    .frame(width: 16)
                 Text(categoryTitle(for: categoryKey))
                     .font(.system(size: 13))
                     .foregroundColor(.primary)
@@ -265,7 +269,7 @@ struct ConditionPropertyPickerView: View {
             let isHovering = hoveredPropertyKey == property.key
             HStack(spacing: 8) {
                 if showIcon {
-                    Image(systemName: iconName(for: property.category))
+                    Image(systemName: ConditionPropertyIconUtils.iconName(for: property))
                         .font(.system(size: 12))
                         .foregroundColor(.secondary)
                         .frame(width: 16)
@@ -308,16 +312,21 @@ struct ConditionPropertyPickerView: View {
     }
 
     private func iconName(for category: String) -> String {
+        let key = ConditionPropertyPickerView.categoryKey(for: category)
+        return ConditionPropertyIconUtils.iconName(forCategory: key)
+    }
+
+    private static func categoryKey(for category: String) -> String {
         switch category {
-        case "filesystem": "gearshape"
-        case "image": "photo"
-        case "video": "video"
-        case "audio": "speaker.wave.2"
-        case "document": "doc.text"
-        case "download": "arrow.down.circle"
-        case "content": "square.stack.3d.down.right"
-        case "location": "mappin.and.ellipse"
-        default: "questionmark.circle"
+        case "System Metadata": "filesystem"
+        case "Image": "image"
+        case "Video": "video"
+        case "Audio": "audio"
+        case "Document": "document"
+        case "Download": "download"
+        case "Content": "content"
+        case "Location": "location"
+        default: category
         }
     }
 }
