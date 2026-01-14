@@ -427,6 +427,7 @@ struct FileManagerFeature {
                 state
                     .sortOrder = SortOrder(rawValue: userDefaultsClient.string("sortOrder") ?? "") ??
                     .ascending
+                state.entries.groupKey = GroupKey(rawValue: userDefaultsClient.string("groupKey") ?? "") ?? .none
 
                 if let viewLayoutRaw = userDefaultsClient.string("viewLayout"),
                    let savedLayout = ViewLayout(rawValue: viewLayoutRaw)
@@ -979,6 +980,8 @@ struct FileManagerFeature {
                 return .send(.entries(.setSortOrder(order)))
 
             case let .changeGroupKey(key):
+                state.entries.groupKey = key
+                userDefaultsClient.setString(key.rawValue, "groupKey")
                 return .send(.entries(.setGroupKey(key)))
 
             case let .dropItemsToSidebarFolder(providers, targetURL):
