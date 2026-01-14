@@ -38,6 +38,7 @@ struct ComposerFeature {
         var redoHistory: [FilterSnapshot] = []
         var isLoadingSearch: Bool = false
         var isLoadingFilters: Bool = false
+        var isFilteringInFlight: Bool = false
         var lastSearchResponse: SearchResponsePayload?
         var lastFiltersResponse: SearchResponsePayload?
 
@@ -69,6 +70,7 @@ struct ComposerFeature {
         case clearAll
         case submit
         case cancelSearch
+        case cancelFilters
         case applyFilters
         case saveCollection
         case saveCollectionAs
@@ -115,7 +117,11 @@ struct ComposerFeature {
                 guard !state.isLoadingSearch else { return .none }
                 guard !state.scopes.contains(path) else { return .none }
                 state.pushHistory()
-                state.scopes.append(path)
+                if state.scopes.isEmpty || state.scopes == [ComposerScopeUtils.rootScopePath] {
+                    state.scopes = [path]
+                } else {
+                    state.scopes.append(path)
+                }
                 return applyFiltersIfNeeded(state: &state, searchClient: searchClient)
 
             case let .removeScope(path):
@@ -123,6 +129,9 @@ struct ComposerFeature {
                 if state.scopes.contains(path) {
                     state.pushHistory()
                     state.scopes.removeAll { $0 == path }
+                    if state.scopes.isEmpty {
+                        state.scopes = [ComposerScopeUtils.rootScopePath]
+                    }
                 }
                 return applyFiltersIfNeeded(state: &state, searchClient: searchClient)
 
@@ -130,7 +139,7 @@ struct ComposerFeature {
                 guard !state.isLoadingSearch else { return .none }
                 state.pushHistory()
                 state.text = ""
-                state.scopes = []
+                state.scopes = [ComposerScopeUtils.rootScopePath]
                 state.conditions = []
                 state.propertyPicker = .init()
                 state.operatorPicker = .init()
@@ -167,9 +176,16 @@ struct ComposerFeature {
                 state.isLoadingSearch = false
                 return .cancel(id: CancelID.search)
 
+            case .cancelFilters:
+                state.isLoadingFilters = false
+                state.isFilteringInFlight = false
+                return .cancel(id: CancelID.filters)
+
             case .applyFilters:
                 state.isLoadingSearch = false
                 state.lastSearchResponse = nil
+                state.isLoadingFilters = true
+                state.isFilteringInFlight = true
                 return .concatenate(
                     .cancel(id: CancelID.search),
                     applyFiltersIfNeeded(state: &state, searchClient: searchClient),
@@ -448,12 +464,14 @@ struct ComposerFeature {
 
             case let .filtersResponse(.success(response)):
                 state.isLoadingFilters = false
+                state.isFilteringInFlight = false
                 state.lastFiltersResponse = response
                 applyAppliedFilters(response.appliedFilters, state: &state)
                 return .none
 
             case .filtersResponse(.failure):
                 state.isLoadingFilters = false
+                state.isFilteringInFlight = false
                 return .none
             }
         }
@@ -477,12 +495,14 @@ private func applyFiltersIfNeeded(
     state: inout ComposerFeature.State,
     searchClient: SearchClient,
 ) -> Effect<ComposerFeature.Action> {
+    state.isLoadingFilters = true
+    state.isFilteringInFlight = true
     let filters = buildFilters(from: state)
     guard !filters.conditions.isEmpty else {
         state.isLoadingFilters = false
+        state.isFilteringInFlight = false
         return .cancel(id: ComposerFeature.CancelID.filters)
     }
-    state.isLoadingFilters = true
     return .run { send in
         do {
             let response = try await searchClient.applyFilters(.init(filters: filters))

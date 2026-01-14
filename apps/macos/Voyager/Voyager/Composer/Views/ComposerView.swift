@@ -21,6 +21,12 @@ struct ComposerView: View {
     @State private var isOptionKeyPressed: Bool = false
     @State private var isAddButtonHovering: Bool = false
     @State private var isScopePickerPresented: Bool = false
+    @State private var isUndoHovering: Bool = false
+    @State private var isRedoHovering: Bool = false
+    @State private var isStopHovering: Bool = false
+    @State private var isSubmitHovering: Bool = false
+    @State private var isClearHovering: Bool = false
+    @State private var isSaveHovering: Bool = false
 
     private let escapeKeyCode: UInt16 = 53
     private let zKeyCode: UInt16 = 6
@@ -56,20 +62,22 @@ struct ComposerView: View {
         }
         .background(
             RoundedRectangle(cornerRadius: VoyagerDS.Radius.composer)
-                .fill(.ultraThickMaterial)
+                .fill(VoyagerDS.Interaction.composerBackground(for: colorScheme))
                 .allowsHitTesting(false),
         )
         .allowsHitTesting(true)
     }
 
+    @ViewBuilder
     private func firstRow(viewStore: ViewStore<ComposerFeature.State, ComposerFeature.Action>) -> some View {
-        HStack(spacing: 8) {
-            undoButton(viewStore: viewStore)
-            redoButton(viewStore: viewStore)
-            textField(viewStore: viewStore)
+        let isLocked = viewStore.isLoadingSearch || viewStore.isFilteringInFlight
+        return HStack(spacing: 8) {
+            undoButton(viewStore: viewStore, isLocked: isLocked)
+            redoButton(viewStore: viewStore, isLocked: isLocked)
+            textField(viewStore: viewStore, isLocked: isLocked)
                 .frame(maxWidth: .infinity, alignment: .leading)
-            clearButton(viewStore: viewStore)
-            saveButton(viewStore: viewStore)
+            clearButton(viewStore: viewStore, isLocked: isLocked)
+            saveButton(viewStore: viewStore, isLocked: isLocked)
         }
         .padding(.horizontal, 16)
         .padding(.vertical, 6)
@@ -77,88 +85,152 @@ struct ComposerView: View {
     }
 
     @ViewBuilder
-    private func undoButton(viewStore: ViewStore<ComposerFeature.State, ComposerFeature.Action>) -> some View {
-        let isEnabled = viewStore.canUndo && !viewStore.isLoadingSearch
+    private func undoButton(
+        viewStore: ViewStore<ComposerFeature.State, ComposerFeature.Action>,
+        isLocked: Bool,
+    ) -> some View {
+        let isEnabled = viewStore.canUndo && !isLocked
         Button {
             store.send(.composer(.undo))
         } label: {
             Image(systemName: "arrow.uturn.backward")
                 .font(.system(size: 13))
                 .foregroundColor(isEnabled ? .primary : .secondary)
+                .padding(4)
+                .background(
+                    RoundedRectangle(cornerRadius: 4)
+                        .fill(isEnabled && isUndoHovering ? VoyagerDS.Interaction
+                            .controlHoverFill(for: colorScheme) : .clear),
+                )
         }
         .disabled(!isEnabled)
         .buttonStyle(.borderless)
+        .onHover { hovering in
+            isUndoHovering = hovering
+        }
     }
 
     @ViewBuilder
-    private func redoButton(viewStore: ViewStore<ComposerFeature.State, ComposerFeature.Action>) -> some View {
-        let isEnabled = viewStore.canRedo && !viewStore.isLoadingSearch
+    private func redoButton(
+        viewStore: ViewStore<ComposerFeature.State, ComposerFeature.Action>,
+        isLocked: Bool,
+    ) -> some View {
+        let isEnabled = viewStore.canRedo && !isLocked
         Button {
             store.send(.composer(.redo))
         } label: {
             Image(systemName: "arrow.uturn.forward")
                 .font(.system(size: 13))
                 .foregroundColor(isEnabled ? .primary : .secondary)
+                .padding(4)
+                .background(
+                    RoundedRectangle(cornerRadius: 4)
+                        .fill(isEnabled && isRedoHovering ? VoyagerDS.Interaction
+                            .controlHoverFill(for: colorScheme) : .clear),
+                )
         }
         .disabled(!isEnabled)
         .buttonStyle(.borderless)
+        .onHover { hovering in
+            isRedoHovering = hovering
+        }
     }
 
-    private func textField(viewStore: ViewStore<ComposerFeature.State, ComposerFeature.Action>) -> some View {
+    private func textField(
+        viewStore: ViewStore<ComposerFeature.State, ComposerFeature.Action>,
+        isLocked: Bool,
+    ) -> some View {
         ZStack(alignment: .trailing) {
             let isSubmitDisabled = viewStore.text
                 .trimmingCharacters(in: .whitespacesAndNewlines)
                 .isEmpty
-            queryInputField(viewStore: viewStore, isSubmitDisabled: isSubmitDisabled)
+            queryInputField(viewStore: viewStore, isSubmitDisabled: isSubmitDisabled, isLocked: isLocked)
 
-            let buttonBackground = Circle().fill(VoyagerDS.BrandSecondaryColor.c500)
-            if viewStore.isLoadingSearch {
-                Button {
-                    viewStore.send(.cancelSearch)
-                } label: {
-                    Image(systemName: "stop.fill")
-                        .font(.system(size: 9, weight: .regular))
-                        .foregroundColor(.black)
-                        .frame(width: 16, height: 16)
-                        .background(buttonBackground)
-                }
-                .buttonStyle(.borderless)
-                .padding(.trailing, 8)
+            if viewStore.isLoadingSearch || viewStore.isFilteringInFlight {
+                stopButton(viewStore: viewStore)
             } else {
-                let submitButtonBackground = Circle().fill(
-                    isSubmitDisabled
-                        ? VoyagerDS.BrandSecondaryColor.c500.opacity(0.5)
-                        : VoyagerDS.BrandSecondaryColor.c500,
-                )
-                Button {
-                    viewStore.send(.submit)
-                } label: {
-                    Image(systemName: "arrow.right")
-                        .font(.system(size: 9, weight: .regular))
-                        .foregroundColor(isSubmitDisabled ? .secondary : .black)
-                        .frame(width: 16, height: 16)
-                        .background(submitButtonBackground)
-                }
-                .buttonStyle(.borderless)
-                .disabled(isSubmitDisabled)
-                .background(
-                    Circle()
-                        .fill(
-                            isSubmitDisabled
-                                ? Color(red: 0.843, green: 0.714, blue: 0.322).opacity(0.5)
-                                : Color(red: 0.843, green: 0.714, blue: 0.322),
-                        )
-                        .allowsHitTesting(false),
-                )
-                .padding(.trailing, 8)
+                submitButton(viewStore: viewStore, isLocked: isLocked, isSubmitDisabled: isSubmitDisabled)
             }
         }
         .frame(minHeight: 30)
     }
 
+    @ViewBuilder
+    private func stopButton(viewStore: ViewStore<ComposerFeature.State, ComposerFeature.Action>) -> some View {
+        let buttonBackground = Circle().fill(VoyagerDS.BrandSecondaryColor.c500)
+        Button {
+            if viewStore.isLoadingSearch {
+                viewStore.send(.cancelSearch)
+            } else {
+                viewStore.send(.cancelFilters)
+            }
+        } label: {
+            Image(systemName: "stop.fill")
+                .font(.system(size: 9, weight: .regular))
+                .foregroundColor(.black)
+                .frame(width: 16, height: 16)
+                .background(buttonBackground)
+        }
+        .buttonStyle(.borderless)
+        .background(
+            Circle()
+                .fill(isStopHovering ? VoyagerDS.Interaction.controlHoverFill(for: colorScheme) : .clear)
+                .frame(width: 20, height: 20),
+        )
+        .padding(.trailing, 8)
+        .onHover { hovering in
+            isStopHovering = hovering
+        }
+    }
+
+    @ViewBuilder
+    private func submitButton(
+        viewStore: ViewStore<ComposerFeature.State, ComposerFeature.Action>,
+        isLocked: Bool,
+        isSubmitDisabled: Bool,
+    ) -> some View {
+        let submitButtonBackground = Circle().fill(
+            isSubmitDisabled
+                ? VoyagerDS.BrandSecondaryColor.c500.opacity(0.5)
+                : VoyagerDS.BrandSecondaryColor.c500,
+        )
+        Button {
+            viewStore.send(.submit)
+        } label: {
+            Image(systemName: "arrow.right")
+                .font(.system(size: 9, weight: .regular))
+                .foregroundColor(isSubmitDisabled ? .secondary : .black)
+                .frame(width: 16, height: 16)
+                .background(submitButtonBackground)
+        }
+        .buttonStyle(.borderless)
+        .disabled(isSubmitDisabled || isLocked)
+        .background(
+            Circle()
+                .fill(!isSubmitDisabled && !isLocked && isSubmitHovering
+                    ? VoyagerDS.Interaction.controlHoverFill(for: colorScheme)
+                    : .clear)
+                .frame(width: 20, height: 20),
+        )
+        .background(
+            Circle()
+                .fill(
+                    isSubmitDisabled
+                        ? Color(red: 0.843, green: 0.714, blue: 0.322).opacity(0.5)
+                        : Color(red: 0.843, green: 0.714, blue: 0.322),
+                )
+                .allowsHitTesting(false),
+        )
+        .padding(.trailing, 8)
+        .onHover { hovering in
+            isSubmitHovering = hovering
+        }
+    }
+
     private func queryInputField(
         viewStore: ViewStore<ComposerFeature.State, ComposerFeature.Action>,
         isSubmitDisabled _: Bool,
+        isLocked: Bool,
     ) -> some View {
         let placeholderText = "Enter your request..."
 
@@ -185,6 +257,7 @@ struct ComposerView: View {
             .padding(.horizontal, 10)
             .padding(.vertical, 4)
             .padding(.trailing, 28)
+            .disabled(isLocked)
         }
         .background(
             RoundedRectangle(cornerRadius: 8)
@@ -208,18 +281,33 @@ struct ComposerView: View {
         }
     }
 
-    private func clearButton(viewStore: ViewStore<ComposerFeature.State, ComposerFeature.Action>) -> some View {
-        let isAllEmpty = viewStore.text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && viewStore.scopes
-            .isEmpty && viewStore.conditions.isEmpty
+    private func clearButton(
+        viewStore: ViewStore<ComposerFeature.State, ComposerFeature.Action>,
+        isLocked: Bool,
+    ) -> some View {
+        let trimmedText = viewStore.text.trimmingCharacters(in: .whitespacesAndNewlines)
+        let isRootScopeOnly = viewStore.scopes == [ComposerScopeUtils.rootScopePath]
+        let isAllEmpty = trimmedText.isEmpty && viewStore.conditions.isEmpty
+            && (viewStore.scopes.isEmpty || isRootScopeOnly)
+        let isDiscard = store.fsItems.isCollectionMode
+            && store.openedCollectionBaseline != nil
+            && store.isOpenedCollectionDirty
+        let isEnabled = isDiscard
+            ? !isLocked
+            : (!isLocked && !isAllEmpty)
         return Button {
-            store.send(.composer(.clearAll))
+            if isDiscard {
+                store.send(.discardCollectionChanges)
+            } else {
+                store.send(.composer(.clearAll))
+            }
         } label: {
             HStack(spacing: 4) {
                 Image(systemName: "xmark.square")
-                Text("Clear all")
+                Text(isDiscard ? "Discard" : "Clear")
             }
             .font(.system(size: 10, weight: .medium))
-            .foregroundColor(isAllEmpty ? .secondary : .primary)
+            .foregroundColor(isEnabled ? .primary : .secondary)
             .padding(.horizontal, 7)
             .padding(.vertical, 4)
             .frame(height: 22)
@@ -230,16 +318,27 @@ struct ComposerView: View {
             )
         }
         .buttonStyle(.borderless)
-        .disabled(viewStore.isLoadingSearch || isAllEmpty)
+        .disabled(!isEnabled)
+        .background(
+            RoundedRectangle(cornerRadius: 8)
+                .fill(isEnabled && isClearHovering ? VoyagerDS.Interaction.controlHoverFill(for: colorScheme) : .clear)
+                .allowsHitTesting(false),
+        )
         .background(
             RoundedRectangle(cornerRadius: 8)
                 .fill(isDark ? Color.white.opacity(0.08) : Color.black.opacity(0.08))
                 .allowsHitTesting(false),
         )
+        .onHover { hovering in
+            isClearHovering = hovering
+        }
     }
 
-    private func saveButton(viewStore: ViewStore<ComposerFeature.State, ComposerFeature.Action>) -> some View {
-        let isEnabled = store.canSaveCollection && !viewStore.isLoadingSearch
+    private func saveButton(
+        viewStore _: ViewStore<ComposerFeature.State, ComposerFeature.Action>,
+        isLocked: Bool,
+    ) -> some View {
+        let isEnabled = store.canSaveCollection && !isLocked
         let isTemporaryCollection = store.openedCollectionURL == nil
         let isSaveAs = !isTemporaryCollection && isOptionKeyPressed
         return Button {
@@ -264,9 +363,17 @@ struct ComposerView: View {
         .disabled(!isEnabled)
         .background(
             RoundedRectangle(cornerRadius: 8)
+                .fill(isEnabled && isSaveHovering ? VoyagerDS.Interaction.controlHoverFill(for: colorScheme) : .clear)
+                .allowsHitTesting(false),
+        )
+        .background(
+            RoundedRectangle(cornerRadius: 8)
                 .fill(isDark ? Color.white.opacity(0.08) : Color.black.opacity(0.08))
                 .allowsHitTesting(false),
         )
+        .onHover { hovering in
+            isSaveHovering = hovering
+        }
     }
 
     private var horizontalSeparator: some View {
@@ -321,6 +428,7 @@ struct ComposerView: View {
         composerStore: StoreOf<ComposerFeature>,
         geometry: GeometryProxy,
     ) -> some View {
+        let isLocked = viewStore.isLoadingSearch || viewStore.isFilteringInFlight
         let availableWidth = geometry.size.width - chipHorizontalPadding * 2
         let pickerStore = composerStore.scope(state: \.propertyPicker, action: \.propertyPicker)
 
@@ -350,8 +458,8 @@ struct ComposerView: View {
             pickerStore: pickerStore,
             historyPaths: historyPaths,
         )
-        .allowsHitTesting(!viewStore.isLoadingSearch)
-        .opacity(viewStore.isLoadingSearch ? 0.6 : 1)
+        .allowsHitTesting(!isLocked)
+        .opacity(isLocked ? 0.6 : 1)
         .onPreferenceChange(ChipSizePreferenceKey.self) { sizes in
             handleChipSizeChange(sizes: sizes, allChips: allChips, availableWidth: availableWidth)
         }

@@ -1,3 +1,4 @@
+import AppKit
 import SwiftUI
 
 struct ScopePickerView: View {
@@ -129,6 +130,14 @@ struct ScopePickerView: View {
         }
     }
 
+    private func applicationsIcon() -> NSImage? {
+        var appIcon = NSImage(
+            contentsOfFile: "/System/Library/CoreServices/CoreTypes.bundle/Contents/Resources/SidebarApplicationsFolder.icns",
+        )
+        appIcon?.isTemplate = true
+        return appIcon
+    }
+
     @ViewBuilder
     private func directoryRow(item: ComposerScopeUtils.DirectoryItem) -> some View {
         Button {
@@ -137,10 +146,18 @@ struct ScopePickerView: View {
         } label: {
             let isHovering = hoveredPath == item.path
             HStack(spacing: 8) {
-                Image(systemName: item.iconName)
-                    .font(.system(size: 12))
-                    .foregroundColor(.secondary)
-                    .frame(width: 16)
+                if item.path == "/Applications", let appIcon = applicationsIcon() {
+                    Image(nsImage: appIcon)
+                        .resizable()
+                        .scaledToFit()
+                        .foregroundColor(.secondary)
+                        .frame(width: 16, height: 16)
+                } else {
+                    Image(systemName: item.iconName)
+                        .font(.system(size: 12))
+                        .foregroundColor(.secondary)
+                        .frame(width: 16)
+                }
 
                 Text(item.name)
                     .font(.system(size: 13))

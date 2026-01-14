@@ -52,20 +52,13 @@ private struct RightClickMonitorView: NSViewRepresentable {
     }
 }
 
-private struct GridLayoutConfig {
-    let columns: Int
-    let spacing: CGFloat
-    let edgePadding: CGFloat
-}
-
 // swiftlint:disable type_body_length
 struct ContentPaneGridView: View {
     let store: StoreOf<FileManagerFeature>
 
     @State private var nsScrollView: NSScrollView?
     @State private var hasRestoredScrollPosition: Bool = false
-    @State private var gridColumnCount: Int = 1
-
+    @State private var lastGridColumnCount: Int = 1
     private func saveScrollPositionBeforeOpen() {
         ScrollPositionUtils.saveScrollPosition(
             scrollView: nsScrollView,
@@ -190,8 +183,8 @@ struct ContentPaneGridView: View {
         let fsStore = store.scope(state: \.fsItems, action: \.fsItems)
 
         GeometryReader { geometry in
-            let layout = resolveLayout(for: geometry.size.width)
-            let columns = makeColumns(count: layout.columns, spacing: layout.spacing)
+            let columns = [GridItem(.adaptive(minimum: itemWidth), spacing: minSpacing, alignment: .top)]
+            let availableWidth = geometry.size.width
 
             VStack(spacing: 0) {
                 Color.clear.frame(height: 4)
@@ -220,9 +213,9 @@ struct ContentPaneGridView: View {
                                     )
                                 }
                             }
-                            .padding(.horizontal, layout.edgePadding)
+                            .padding(.horizontal, horizontalPadding)
                             .padding(.bottom, horizontalPadding)
-                            .frame(maxWidth: .infinity, minHeight: geometry.size.height - 4, alignment: .topLeading)
+                            .frame(maxWidth: .infinity, alignment: .topLeading)
                         }
                         .coordinateSpace(name: "scrollView")
                         .coordinateSpace(name: "contentPane")
@@ -294,6 +287,12 @@ struct ContentPaneGridView: View {
                                 },
                         )
                     }
+                    .onAppear {
+                        updateGridColumnCountIfNeeded(for: availableWidth)
+                    }
+                    .onChange(of: availableWidth) { newWidth in
+                        updateGridColumnCountIfNeeded(for: newWidth)
+                    }
                     .onChange(of: fsStore.lastSelectedId) { newId in
                         if fsStore.shouldScrollToSelection, let id = newId {
                             proxy.scrollTo(id, anchor: nil)
@@ -327,13 +326,6 @@ struct ContentPaneGridView: View {
                             proxy.scrollTo("scrollTop", anchor: .top)
                         }
                     }
-                }
-                .onAppear {
-                    updateColumnCountIfNeeded(layout.columns)
-                }
-                .onChange(of: geometry.size.width) { newWidth in
-                    let newLayout = resolveLayout(for: newWidth)
-                    updateColumnCountIfNeeded(newLayout.columns)
                 }
             }
         }
@@ -399,44 +391,14 @@ struct ContentPaneGridView: View {
             }
         }
     }
+
+    private func updateGridColumnCountIfNeeded(for width: CGFloat) {
+        let usableWidth = max(width - (horizontalPadding * 2), itemWidth)
+        let columns = max(1, Int((usableWidth + minSpacing) / (itemWidth + minSpacing)))
+        guard columns != lastGridColumnCount else { return }
+        lastGridColumnCount = columns
+        store.send(.fsItems(.updateGridColumnCount(columns)))
+    }
 }
 
 // swiftlint:enable type_body_length
-
-extension ContentPaneGridView {
-    private func resolveLayout(for width: CGFloat) -> GridLayoutConfig {
-        let usableWidth = max(width - (horizontalPadding * 2), itemWidth)
-        let candidateColumns = max(1, Int((usableWidth + minSpacing) / (itemWidth + minSpacing)))
-
-        if candidateColumns == 1 {
-            let padding = max(horizontalPadding, (width - itemWidth) / 2)
-            return GridLayoutConfig(columns: 1, spacing: minSpacing, edgePadding: padding)
-        }
-
-        let occupiedWidth = CGFloat(candidateColumns) * itemWidth
-        let baseSpacing = max(minSpacing, (width - occupiedWidth) / CGFloat(candidateColumns + 1))
-        let edgePadding = max(horizontalPadding, baseSpacing)
-        let spacing: CGFloat
-        if edgePadding > baseSpacing {
-            let remainingWidth = max(0, width - occupiedWidth - (edgePadding * 2))
-            spacing = max(minSpacing, remainingWidth / CGFloat(candidateColumns - 1))
-        } else {
-            spacing = baseSpacing
-        }
-
-        return GridLayoutConfig(columns: candidateColumns, spacing: spacing, edgePadding: edgePadding)
-    }
-
-    private func makeColumns(count: Int, spacing: CGFloat) -> [GridItem] {
-        Array(
-            repeating: GridItem(.fixed(itemWidth), spacing: spacing, alignment: .top),
-            count: max(1, count),
-        )
-    }
-
-    private func updateColumnCountIfNeeded(_ newValue: Int) {
-        guard gridColumnCount != newValue else { return }
-        gridColumnCount = newValue
-        store.send(.fsItems(.updateGridColumnCount(newValue)))
-    }
-}

@@ -3,60 +3,65 @@ import ComposableArchitecture
 import SwiftUI
 
 struct AppMenuCommands: Commands {
+    @ObservedObject private var appDelegate: AppDelegate
+
+    init() {
+        appDelegate = AppDelegate.shared ?? AppDelegate()
+    }
+
     var body: some Commands {
         CommandGroup(after: .appInfo) {
             Button("Check for Updates...") {
-                AppDelegate.shared?.checkForUpdates()
+                appDelegate.checkForUpdates()
             }
         }
 
         CommandGroup(replacing: .newItem) {
             Button("New Window") {
-                AppDelegate.shared?.createNewWindow()
+                appDelegate.createNewWindow()
             }
             .keyboardShortcut("n", modifiers: .command)
 
             Button("New Folder") {
-                if let currentPath = AppDelegate.shared?.currentFileManagerStore?.currentPath {
-                    AppDelegate.shared?.currentFileManagerStore?
+                if let currentPath = appDelegate.currentFileManagerStore?.currentPath {
+                    appDelegate.currentFileManagerStore?
                         .send(.fsItems(.createNewFolder(currentPath: currentPath)))
                 }
             }
             .keyboardShortcut("n", modifiers: [.command, .shift])
 
             Button("Open") {
-                AppDelegate.shared?.currentFileManagerStore?.send(.openSelectedItem)
+                appDelegate.currentFileManagerStore?.send(.openSelectedItem)
             }
             .keyboardShortcut(.downArrow, modifiers: .command)
-            .disabled(AppDelegate.shared?.currentFileManagerStore?.canOpenSelectedItem == false)
+            .disabled(appDelegate.currentFileManagerStore?.canOpenSelectedItem == false)
 
             Button("Quick Look") {
-                AppDelegate.shared?.currentFileManagerStore?.send(.quickLookSelectedItem)
+                appDelegate.currentFileManagerStore?.send(.quickLookSelectedItem)
             }
             .keyboardShortcut(.space, modifiers: [])
-            .disabled(AppDelegate.shared?.currentFileManagerStore?.canQuickLookSelectedItem == false)
+            .disabled(appDelegate.currentFileManagerStore?.canQuickLookSelectedItem == false)
         }
 
         CommandGroup(replacing: .saveItem) {
             Button("Save Collection Filter Changes") {
-                AppDelegate.shared?.currentFileManagerStore?.send(.composer(.saveCollection))
+                appDelegate.currentFileManagerStore?.send(.composer(.saveCollection))
             }
             .keyboardShortcut("s", modifiers: .command)
             .disabled({
-                guard let store = AppDelegate.shared?.currentFileManagerStore else { return true }
-                guard store.fsItems.isCollectionMode, store.openedCollectionURL != nil else { return true }
-                return !store.isOpenedCollectionDirty
+                guard let store = appDelegate.currentFileManagerStore else { return true }
+                guard store.fsItems.isCollectionMode else { return true }
+                return !store.canSaveCollection
             }())
 
             Button("Save Current Filter As New Collection") {
-                AppDelegate.shared?.currentFileManagerStore?.send(.composer(.saveCollectionAs))
+                appDelegate.currentFileManagerStore?.send(.composer(.saveCollectionAs))
             }
             .keyboardShortcut("s", modifiers: [.command, .shift])
             .disabled({
-                guard let store = AppDelegate.shared?.currentFileManagerStore else { return true }
-                guard store.fsItems.isCollectionMode, store.collectionContext != nil else { return true }
-                if store.openedCollectionURL == nil { return false }
-                return !store.isOpenedCollectionDirty
+                guard let store = appDelegate.currentFileManagerStore else { return true }
+                guard store.fsItems.isCollectionMode else { return true }
+                return !store.canSaveCollection
             }())
 
             Divider()
