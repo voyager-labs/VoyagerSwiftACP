@@ -107,6 +107,12 @@ struct EditMenuCommands: Commands {
             }
             .keyboardShortcut("v", modifiers: .command)
             .disabled(false)
+
+            Button("Duplicate") {
+                appDelegate.currentFileManagerStore?.send(.entries(.duplicateSelectedItems))
+            }
+            .keyboardShortcut("d", modifiers: .command)
+            .disabled(appDelegate.currentFileManagerStore?.entries.selectedIds.isEmpty ?? true)
         }
 
         CommandGroup(replacing: .textEditing) {
