@@ -4,6 +4,8 @@
 <dict>
 	<key>APP_ENV</key>
 	<string>$(APP_ENV)</string>
+	<key>BACKEND_MODE</key>
+	<string>$(BACKEND_MODE)</string>
 	<key>CFBundleDocumentTypes</key>
 	<array>
 		<dict>
