@@ -199,7 +199,7 @@ enum ComposerScopeUtils {
 
     static func buildCombinedList(
         history: [String],
-        favorites: [SidebarUtils.FavoriteItem],
+        favorites: [ScopeFavoriteItem],
         maxCount: Int = 10,
     ) -> [DirectoryItem] {
         var result: [DirectoryItem] = []

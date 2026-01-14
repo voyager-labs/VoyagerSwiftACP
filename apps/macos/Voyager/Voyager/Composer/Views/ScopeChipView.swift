@@ -4,7 +4,7 @@ import SwiftUI
 struct ScopeChipView: View {
     let paths: [String]
     let store: StoreOf<ComposerFeature>
-    let favorites: [SidebarUtils.FavoriteItem]
+    let favorites: [ScopeFavoriteItem]
     let backHistory: [String]
     @Binding var isComboBoxPresented: Bool
     @State private var editingPath: String?

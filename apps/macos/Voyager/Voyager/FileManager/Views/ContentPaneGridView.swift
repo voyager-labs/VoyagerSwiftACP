@@ -56,6 +56,9 @@ private struct RightClickMonitorView: NSViewRepresentable {
 struct ContentPaneGridView: View {
     let store: StoreOf<FileManagerFeature>
 
+    @Dependency(\.fileManagerWindowClient)
+    private var fileManagerWindowClient
+
     @State private var nsScrollView: NSScrollView?
     @State private var hasRestoredScrollPosition: Bool = false
     @State private var lastGridColumnCount: Int = 1
@@ -114,6 +117,11 @@ struct ContentPaneGridView: View {
             saveScrollPosition: saveScrollPositionBeforeOpen,
             isTrashFolder: isTrashFolder,
             onEmptyTrash: { store.send(.emptyTrash) },
+            openWindow: { path in
+                Task {
+                    _ = await fileManagerWindowClient.openWindow(path)
+                }
+            },
         )
 
         return buildGridView(

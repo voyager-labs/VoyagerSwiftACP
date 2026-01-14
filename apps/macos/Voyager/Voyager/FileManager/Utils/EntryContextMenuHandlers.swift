@@ -36,6 +36,7 @@ func makeContextMenuHandlers(
     saveScrollPosition: @escaping () -> Void,
     isTrashFolder: Bool,
     onEmptyTrash: @escaping () -> Void,
+    openWindow: @escaping (String) -> Void,
 ) -> EntryContextMenuHandlers {
     let onSelect: (Bool, Bool) -> Void = { isCommandPressed, isShiftPressed in
         fsStore.send(.selectItem(
@@ -55,7 +56,7 @@ func makeContextMenuHandlers(
 
     let onOpenInNewTab: (Bool) -> Void = { _ in
         if item.isDirectory {
-            AppDelegate.shared?.createNewWindow(path: item.fullPath)
+            openWindow(item.fullPath)
         }
     }
 

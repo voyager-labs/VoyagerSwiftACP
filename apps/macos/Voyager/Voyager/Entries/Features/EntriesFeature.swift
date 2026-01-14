@@ -15,6 +15,13 @@ public enum ClipboardOperation: Equatable, Sendable {
 /// 파일 시스템 아이템 목록 및 선택 관리 (FSV 영역)
 @Reducer
 struct EntriesFeature {
+    @Dependency(\.fileManagerWindowClient)
+    var fileManagerWindowClient
+    @Dependency(\.fileManagerWindowFocusClient)
+    var fileManagerWindowFocusClient
+    @Dependency(\.sidebarClient)
+    var sidebarClient
+
     private static func deduplicateById(_ items: [Entry]) -> [Entry] {
         var seen: Set<String> = []
         var unique: [Entry] = []
@@ -263,7 +270,7 @@ struct EntriesFeature {
                 state.clipboardOperation = clipboardOp
 
                 if state.isVirtualFolder {
-                    if state.currentFolderPath == SidebarUtils.computerName {
+                    if state.currentFolderPath == sidebarClient.computerName() {
                         return .send(.loadComputerItems)
                     } else if let tagName = state.currentFolderPath {
                         return .send(.loadTagItems(tagName: tagName, showHidden: state.showHiddenFiles))
@@ -501,7 +508,7 @@ struct EntriesFeature {
                 state.isVirtualFolder = true
 
                 return .run { send in
-                    let recentItems = await SidebarUtils.loadRecentItems(showHidden: showHidden)
+                    let recentItems = await sidebarClient.loadRecentItems(showHidden)
                     await send(.itemsLoaded(recentItems))
                 }
 
@@ -511,12 +518,12 @@ struct EntriesFeature {
 
                 return .run { send in
                     try await Task.sleep(for: .milliseconds(500))
-                    let taggedItems = await SidebarUtils.loadFilesWithTag(tagName, showHidden: showHidden)
+                    let taggedItems = await sidebarClient.loadFilesWithTag(tagName, showHidden)
                     await send(.itemsLoaded(taggedItems))
                 }
 
             case .loadComputerItems:
-                state.currentFolderPath = SidebarUtils.computerName
+                state.currentFolderPath = sidebarClient.computerName()
                 state.isVirtualFolder = true
 
                 return .run { send in
@@ -895,14 +902,28 @@ struct EntriesFeature {
                 if selectedFolders.count == 1, selectedFiles.isEmpty {
                     return .send(.navigateFolder(id: selectedFolders[0].id))
                 } else if selectedFolders.count > 1, selectedFiles.isEmpty {
-                    for folder in selectedFolders {
-                        AppDelegate.shared?.createNewWindow(path: folder.fullPath)
+                    let folderPaths = selectedFolders.map(\.fullPath)
+                    return .run { [fileManagerWindowClient] _ in
+                        for path in folderPaths {
+                            _ = await fileManagerWindowClient.openWindow(path)
+                        }
                     }
-                    return .none
                 } else if !selectedFolders.isEmpty {
-                    for folder in selectedFolders {
-                        AppDelegate.shared?.createNewWindow(path: folder.fullPath)
+                    let folderPaths = selectedFolders.map(\.fullPath)
+                    let openWindowsEffect: Effect<Action> = .run { [fileManagerWindowClient] _ in
+                        for path in folderPaths {
+                            _ = await fileManagerWindowClient.openWindow(path)
+                        }
                     }
+
+                    guard !selectedFiles.isEmpty else {
+                        return openWindowsEffect
+                    }
+
+                    return .merge(
+                        openWindowsEffect,
+                        .send(.operations(.openFiles(files: selectedFiles))),
+                    )
                 }
 
                 guard !selectedFiles.isEmpty else {
@@ -1207,18 +1228,9 @@ struct EntriesFeature {
                     ))),
 
                     // 윈도우 포커싱 (destinationPath의 윈도우 찾기)
-                    .run { [destinationPath] _ in
+                    .run { [destinationPath, fileManagerWindowFocusClient] _ in
                         try? await Task.sleep(nanoseconds: 500_000_000)
-                        await MainActor.run {
-                            guard let appDelegate = AppDelegate.shared else { return }
-
-                            // destinationPath에 해당하는 윈도우 찾기
-                            let targetController = appDelegate.windowControllers.first { controller in
-                                controller.store.currentPath == destinationPath
-                            }
-
-                            targetController?.window?.makeKeyAndOrderFront(nil)
-                        }
+                        await fileManagerWindowFocusClient.focusWindow(destinationPath)
                     },
                 )
 

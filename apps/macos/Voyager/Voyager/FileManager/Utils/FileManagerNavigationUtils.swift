@@ -24,7 +24,7 @@ enum FileManagerNavigationUtils {
 
     struct CollectionNavigation: Equatable, Sendable {
         var kind: CollectionKind
-        var context: FileManagerFeature.CollectionContext
+        var context: CollectionContext
         var sortKey: SortKey
         var sortOrder: SortOrder
         var viewLayout: FileManagerFeature.ViewLayout

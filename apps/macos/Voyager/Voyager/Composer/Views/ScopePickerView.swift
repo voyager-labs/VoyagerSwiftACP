@@ -5,7 +5,7 @@ struct ScopePickerView: View {
     @Binding var isPresented: Bool
     let oldPath: String?
     let onSelect: (String) -> Void
-    let favorites: [SidebarUtils.FavoriteItem]
+    let favorites: [ScopeFavoriteItem]
     let backHistory: [String]
 
     @State private var searchText: String = ""

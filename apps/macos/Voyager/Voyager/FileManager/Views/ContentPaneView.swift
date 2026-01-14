@@ -4,6 +4,9 @@ import SwiftUI
 
 struct ContentPaneView: View {
     let store: StoreOf<FileManagerFeature>
+
+    @Dependency(\.fileManagerWindowClient)
+    private var fileManagerWindowClient
     @FocusState private var isKeyCommandFocused: Bool
     private static let undoSelector = Selector(("undo:"))
     private static let redoSelector = Selector(("redo:"))
@@ -91,6 +94,11 @@ struct ContentPaneView: View {
                         selectedItem: nil,
                         availableWidth: leftWidth,
                         onNavigate: { path in store.send(.navigateTo(path)) },
+                        onOpenInNewWindow: { path in
+                            Task {
+                                _ = await fileManagerWindowClient.openWindow(path)
+                            }
+                        },
                     )
                     .frame(width: leftWidth, alignment: .leading)
                 } else {

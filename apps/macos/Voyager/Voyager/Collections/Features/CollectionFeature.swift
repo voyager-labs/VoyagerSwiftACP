@@ -21,7 +21,7 @@ struct CollectionFeature {
     }
 
     struct SaveRequestPayload: Equatable, Sendable {
-        let context: FileManagerFeature.CollectionContext?
+        let context: CollectionContext?
         let sortKey: String
         let sortOrder: String
         let viewLayout: String
@@ -203,7 +203,7 @@ private enum CollectionSaveValidationError: LocalizedError {
 }
 
 private func validateCollectionContext(
-    _ context: FileManagerFeature.CollectionContext,
+    _ context: CollectionContext,
     query: String,
     sortKey: String,
     sortOrder: String,

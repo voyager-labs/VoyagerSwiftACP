@@ -96,7 +96,11 @@ extension SearchClient: DependencyKey {
         func post<U: Decodable>(path: String, body: some Encodable) async throws -> U {
             let encoder = JSONEncoder()
             let decoder = JSONDecoder()
-            let baseURL = await MainActor.run { Dotenv.publicBackendURL }
+            let host = "127.0.0.1"
+            let port = "53723"
+            guard let baseURL = URL(string: "http://\(host):\(port)") else {
+                fatalError("Invalid backend base URL")
+            }
             let url = baseURL.appendingPathComponent(path)
             var request = URLRequest(url: url)
             request.httpMethod = "POST"

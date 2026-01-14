@@ -12,12 +12,6 @@ struct FileManagerFeature {
         let composerState: ComposerFeature.State
     }
 
-    struct CollectionContext: Equatable, Sendable {
-        var query: String
-        var scopes: [String]
-        var conditions: [Condition]
-    }
-
     struct CollectionBaseline: Equatable, Sendable {
         var context: CollectionContext
         var sortKey: SortKey

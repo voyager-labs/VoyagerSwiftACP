@@ -17,7 +17,7 @@ enum SidebarUtils {
         }
     }
 
-    static var computerName: String {
+    nonisolated static var computerName: String {
         FileManager.default.displayName(atPath: "/")
     }
 

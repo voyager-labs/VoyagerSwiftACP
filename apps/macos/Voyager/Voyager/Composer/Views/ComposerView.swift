@@ -12,7 +12,14 @@ private struct ChipSizePreferenceKey: PreferenceKey {
 
 // swiftlint:disable type_body_length file_length
 struct ComposerView: View {
-    let store: StoreOf<FileManagerFeature>
+    let store: StoreOf<ComposerFeature>
+    let favorites: [ScopeFavoriteItem]
+    let historyPaths: [String]
+    let isDiscardEnabled: Bool
+    let canSaveCollection: Bool
+    let isTemporaryCollection: Bool
+    let onDiscardCollectionChanges: () -> Void
+    let onExitComposer: () -> Void
     @State private var isComposeFieldFirstResponder: Bool = true
     @Environment(\.colorScheme)
     private var colorScheme: ColorScheme
@@ -34,22 +41,24 @@ struct ComposerView: View {
     private var isDark: Bool { colorScheme == .dark }
 
     var body: some View {
-        mainContent
-            .onAppear {
-                setupOnAppear()
-            }
-            .onDisappear {
-                cleanupKeyMonitor()
-            }
-            .onChange(of: store.composer.isPresented) { isPresented in
-                if !isPresented {
+        WithViewStore(store, observe: { $0.isPresented }, content: { viewStore in
+            mainContent
+                .onAppear {
+                    setupOnAppear()
+                }
+                .onDisappear {
                     cleanupKeyMonitor()
                 }
-            }
+                .onChange(of: viewStore.state) { isPresented in
+                    if !isPresented {
+                        cleanupKeyMonitor()
+                    }
+                }
+        })
     }
 
     private var mainContent: some View {
-        let composerStore = store.scope(state: \.composer, action: \.composer)
+        let composerStore = store
 
         return VStack(spacing: 0) {
             WithViewStore(composerStore, observe: { $0 }, content: { viewStore in
@@ -91,7 +100,7 @@ struct ComposerView: View {
     ) -> some View {
         let isEnabled = viewStore.canUndo && !isLocked
         Button {
-            store.send(.composer(.undo))
+            store.send(.undo)
         } label: {
             Image(systemName: "arrow.uturn.backward")
                 .font(.system(size: 13))
@@ -117,7 +126,7 @@ struct ComposerView: View {
     ) -> some View {
         let isEnabled = viewStore.canRedo && !isLocked
         Button {
-            store.send(.composer(.redo))
+            store.send(.redo)
         } label: {
             Image(systemName: "arrow.uturn.forward")
                 .font(.system(size: 13))
@@ -289,17 +298,15 @@ struct ComposerView: View {
         let isRootScopeOnly = viewStore.scopes == [ComposerScopeUtils.rootScopePath]
         let isAllEmpty = trimmedText.isEmpty && viewStore.conditions.isEmpty
             && (viewStore.scopes.isEmpty || isRootScopeOnly)
-        let isDiscard = store.entries.isCollectionMode
-            && store.openedCollectionBaseline != nil
-            && store.isOpenedCollectionDirty
+        let isDiscard = isDiscardEnabled
         let isEnabled = isDiscard
             ? !isLocked
             : (!isLocked && !isAllEmpty)
         return Button {
             if isDiscard {
-                store.send(.discardCollectionChanges)
+                onDiscardCollectionChanges()
             } else {
-                store.send(.composer(.clearAll))
+                viewStore.send(.clearAll)
             }
         } label: {
             HStack(spacing: 4) {
@@ -335,14 +342,13 @@ struct ComposerView: View {
     }
 
     private func saveButton(
-        viewStore _: ViewStore<ComposerFeature.State, ComposerFeature.Action>,
+        viewStore: ViewStore<ComposerFeature.State, ComposerFeature.Action>,
         isLocked: Bool,
     ) -> some View {
-        let isEnabled = store.canSaveCollection && !isLocked
-        let isTemporaryCollection = store.openedCollectionURL == nil
+        let isEnabled = canSaveCollection && !isLocked
         let isSaveAs = !isTemporaryCollection && isOptionKeyPressed
         return Button {
-            store.send(.composer(isSaveAs ? .saveCollectionAs : .saveCollection))
+            viewStore.send(isSaveAs ? .saveCollectionAs : .saveCollection)
         } label: {
             HStack(spacing: 4) {
                 Image(systemName: isSaveAs ? "square.and.arrow.down" : "tray.and.arrow.down")
@@ -444,14 +450,6 @@ struct ComposerView: View {
             buttonSpacing: chipSpacing,
         )
         let rows = calculateRowsWithButtons(chips: allChips, params: params)
-        let historyPaths: [String] = store.backHistory.compactMap { entry in
-            if case let .folder(path) = entry.navigationState {
-                path
-            } else {
-                nil
-            }
-        }
-
         return chipRowsView(
             rows: rows,
             composerStore: composerStore,
@@ -481,7 +479,7 @@ struct ComposerView: View {
             ScopeChipView(
                 paths: paths,
                 store: composerStore,
-                favorites: store.favorites,
+                favorites: favorites,
                 backHistory: historyPaths,
                 isComboBoxPresented: $isScopePickerPresented,
             )
@@ -619,19 +617,19 @@ struct ComposerView: View {
 
     private func conditionChipView(condition: Condition) -> some View {
         ConditionChipView(
-            propertyPickerStore: store.scope(state: \.composer.propertyPicker, action: \.composer.propertyPicker),
+            propertyPickerStore: store.scope(state: \.propertyPicker, action: \.propertyPicker),
             condition: condition,
             isDark: isDark,
             hoverFillOpacity: hoverFillOpacity,
-            operatorPickerStore: store.scope(state: \.composer.operatorPicker, action: \.composer.operatorPicker),
-            valuePickerStore: store.scope(state: \.composer.valuePicker, action: \.composer.valuePicker),
+            operatorPickerStore: store.scope(state: \.operatorPicker, action: \.operatorPicker),
+            valuePickerStore: store.scope(state: \.valuePicker, action: \.valuePicker),
             operatorOptions: operatorOptions(for: condition),
             defaultChipHeight: defaultChipHeight,
             onPropertyTap: {
-                store.send(.composer(.propertyPicker(.startEditing(condition.propertyKey))))
+                store.send(.propertyPicker(.startEditing(condition.propertyKey)))
             },
             onRemove: {
-                store.send(.composer(.removeCondition(propertyKey: condition.propertyKey)))
+                store.send(.removeCondition(propertyKey: condition.propertyKey))
             },
         )
     }
@@ -665,29 +663,29 @@ struct ComposerView: View {
                     isScopePickerPresented = false
                     return nil
                 }
-                if store.composer.propertyPicker.isPresented {
-                    store.send(.composer(.propertyPicker(.setPresented(false))))
+                if store.propertyPicker.isPresented {
+                    store.send(.propertyPicker(.setPresented(false)))
                     return nil
                 }
-                if store.composer.operatorPicker.isPresented {
-                    store.send(.composer(.operatorPicker(.setPresented(false))))
+                if store.operatorPicker.isPresented {
+                    store.send(.operatorPicker(.setPresented(false)))
                     return nil
                 }
-                if store.composer.valuePicker.isPresented {
-                    store.send(.composer(.valuePicker(.setPresented(false))))
+                if store.valuePicker.isPresented {
+                    store.send(.valuePicker(.setPresented(false)))
                     return nil
                 }
-                store.send(.exitComposer)
+                onExitComposer()
                 return nil
             }
             if event.keyCode == zKeyCode, event.modifierFlags.contains(.command) {
                 if event.modifierFlags.contains(.shift) {
-                    if store.composer.canRedo {
-                        store.send(.composer(.redo))
+                    if store.canRedo {
+                        store.send(.redo)
                     }
                 } else {
-                    if store.composer.canUndo {
-                        store.send(.composer(.undo))
+                    if store.canUndo {
+                        store.send(.undo)
                     }
                 }
                 return nil

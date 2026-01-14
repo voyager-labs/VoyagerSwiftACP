@@ -17,6 +17,9 @@ private struct ListRowPositionKey: PreferenceKey {
 struct ContentPaneListView: View {
     let store: StoreOf<FileManagerFeature>
 
+    @Dependency(\.fileManagerWindowClient)
+    private var fileManagerWindowClient
+
     @State private var contentWidth: CGFloat = 0
     @State private var rowPositions: [String: CGRect] = [:]
     @State private var scrollViewHeight: CGFloat = 0
@@ -95,6 +98,11 @@ struct ContentPaneListView: View {
             saveScrollPosition: saveScrollPositionBeforeOpen,
             isTrashFolder: isTrashFolder,
             onEmptyTrash: { store.send(.emptyTrash) },
+            openWindow: { path in
+                Task {
+                    _ = await fileManagerWindowClient.openWindow(path)
+                }
+            },
         )
 
         let width = contentWidth > 0 ? contentWidth : geometry.size.width
