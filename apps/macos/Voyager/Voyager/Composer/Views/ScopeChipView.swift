@@ -11,59 +11,30 @@ struct ScopeChipView: View {
     @State private var deleteHoverPath: String?
     @State private var dropdownHovering: Bool = false
     @State private var nameHoverPath: String?
-    @State private var addScopeHovering: Bool = false
     @Environment(\.colorScheme)
     private var colorScheme: ColorScheme
 
     var body: some View {
-        HStack(spacing: 4) {
+        let isRootPlaceholder = paths.isEmpty
+            || (paths.count == 1 && paths[0] == ComposerScopeUtils.rootScopePath)
+        HStack(spacing: isRootPlaceholder ? 1 : 4) {
             Image(systemName: "folder")
                 .font(.system(size: 10))
                 .foregroundColor(.secondary)
 
-            ForEach(Array(paths.enumerated()), id: \.offset) { index, path in
-                directoryNameChip(path: path, index: index)
-            }
-
-            if paths.isEmpty {
-                Button {
-                    editingPath = nil
-                    isComboBoxPresented = true
-                } label: {
-                    Text("Add scope")
-                        .font(.system(size: 11, weight: .medium))
-                        .foregroundColor(addScopeHovering ? .primary : .secondary)
-                        .padding(.horizontal, 6)
-                        .padding(.vertical, 2)
-                        .frame(height: 19)
-                        .background(
-                            RoundedRectangle(cornerRadius: 4)
-                                .fill(addScopeHovering ? VoyagerDS.Interaction.hoverFill(for: colorScheme) : .clear),
-                        )
-                }
-                .buttonStyle(.borderless)
-                .onHover { hovering in
-                    addScopeHovering = hovering
-                }
+            if isRootPlaceholder {
+                Text("This Mac")
+                    .font(.system(size: 11, weight: .medium))
+                    .foregroundColor(.primary)
+                    .padding(.horizontal, 3)
+                    .padding(.vertical, 2)
+                    .frame(height: 19)
+                dropdownButton(compact: true)
             } else {
-                Button {
-                    isComboBoxPresented = true
-                } label: {
-                    Image(systemName: "chevron.down")
-                        .font(.system(size: 10))
-                        .foregroundColor(dropdownHovering ? .primary : .secondary)
-                        .padding(.horizontal, 6)
-                        .padding(.vertical, 2)
-                        .frame(height: 19)
-                        .background(
-                            RoundedRectangle(cornerRadius: 4)
-                                .fill(dropdownHovering ? VoyagerDS.Interaction.hoverFill(for: colorScheme) : .clear),
-                        )
+                ForEach(Array(paths.enumerated()), id: \.offset) { index, path in
+                    directoryNameChip(path: path, index: index)
                 }
-                .buttonStyle(.borderless)
-                .onHover { hovering in
-                    dropdownHovering = hovering
-                }
+                dropdownButton(compact: false)
             }
         }
         .padding(.horizontal, 8)
@@ -87,6 +58,27 @@ struct ScopeChipView: View {
                 favorites: favorites,
                 backHistory: backHistory,
             )
+        }
+    }
+
+    private func dropdownButton(compact: Bool) -> some View {
+        Button {
+            isComboBoxPresented = true
+        } label: {
+            Image(systemName: "chevron.down")
+                .font(.system(size: 10))
+                .foregroundColor(dropdownHovering ? .primary : .secondary)
+                .padding(.horizontal, compact ? 3 : 6)
+                .padding(.vertical, 2)
+                .frame(height: 19)
+                .background(
+                    RoundedRectangle(cornerRadius: 4)
+                        .fill(dropdownHovering ? VoyagerDS.Interaction.hoverFill(for: colorScheme) : .clear),
+                )
+        }
+        .buttonStyle(.borderless)
+        .onHover { hovering in
+            dropdownHovering = hovering
         }
     }
 

@@ -4,33 +4,13 @@ import SwiftUI
 
 struct ViewToggleButton: View {
     let store: StoreOf<FileManagerFeature>
-    @Environment(\.colorScheme)
-    var colorScheme
-    @State private var isHovered: Bool = false
 
     var body: some View {
-        ZStack {
-            Image(systemName: store.viewLayout == .list ? "list.bullet" : "square.grid.2x2")
-                .font(.system(size: 12))
-                .foregroundColor(.secondary)
-                .frame(width: 24, height: 24)
-                .background(
-                    Group {
-                        if isHovered {
-                            ZStack {
-                                RoundedRectangle(cornerRadius: VoyagerDS.Radius.toolbarButton)
-                                    .fill(VoyagerDS.Surface.toolbarMenuButtonBackground(for: colorScheme))
-                                RoundedRectangle(cornerRadius: VoyagerDS.Radius.toolbarButton)
-                                    .fill(VoyagerDS.Interaction.toolbarButtonHoverFill(for: colorScheme))
-                            }
-                        }
-                    }
-                    .allowsHitTesting(false),
-                )
-        }
-        .contentShape(RoundedRectangle(cornerRadius: VoyagerDS.Radius.toolbarButton))
-        .overlay(
-            Menu {
+        ToolbarMenuButton(
+            systemName: store.viewLayout == .list ? "list.bullet" : "square.grid.2x2",
+            isEnabled: true,
+            font: ToolbarButtonLabel.Metrics.iconFont,
+            menuContent: {
                 Button(
                     action: { store.send(.changeLayout(.list)) },
                     label: {
@@ -52,15 +32,7 @@ struct ViewToggleButton: View {
                     },
                 )
                 .disabled(store.viewLayout == .grid)
-            } label: {
-                Color.clear
-                    .frame(width: 24, height: 24)
-            }
-            .menuIndicator(.hidden)
-            .buttonStyle(.borderless),
-        )
-        .overlay(
-            HoverTrackingOverlay(isHovered: $isHovered),
+            },
         )
     }
 }

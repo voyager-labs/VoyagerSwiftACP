@@ -22,6 +22,7 @@ struct ConditionChipView: View {
     @State private var tempDate: Date = .init()
     @State private var dateHoverIndex: Int?
     @State private var isChipHovering: Bool = false
+    @State private var isRemoveHovering: Bool = false
     @State private var boolPopoverIndex: Int?
     @State private var boolHoverIndex: Int?
     @State private var boolOptionHoverValue: String?
@@ -77,12 +78,22 @@ struct ConditionChipView: View {
                 Image(systemName: "xmark.circle.fill")
                     .font(.system(size: 10, weight: .bold))
                     .foregroundColor(.secondary)
+                    .background(
+                        Circle()
+                            .fill(isRemoveHovering
+                                ? VoyagerDS.Interaction.controlHoverFill(for: isDark ? .dark : .light)
+                                : .clear)
+                            .frame(width: 14, height: 14),
+                    )
             }
             .buttonStyle(.borderless)
             .padding(2)
             .offset(x: 6, y: -6)
             .opacity(isChipHovering ? 1 : 0)
             .allowsHitTesting(isChipHovering)
+            .onHover { hovering in
+                isRemoveHovering = hovering
+            }
         }
         .onHover { hovering in
             isChipHovering = hovering
@@ -91,36 +102,42 @@ struct ConditionChipView: View {
 
     private func propertyLabelView() -> some View {
         WithViewStore(propertyPickerStore, observe: { $0 }, content: { propertyStore in
-            Text(condition.propertyLabel)
-                .font(.system(size: 11, weight: .medium))
-                .foregroundColor(.primary.opacity(0.8))
-                .padding(.leading, 4)
-                .padding(.trailing, 2)
-                .padding(.vertical, 2)
-                .contentShape(Rectangle())
-                .onHover { hovering in
-                    isPropertyHovering = hovering
-                }
-                .background(
-                    isPropertyHovering
-                        ? (isDark ? Color.white.opacity(hoverFillOpacity) : Color.black.opacity(hoverFillOpacity))
-                        : Color.clear,
-                )
-                .onTapGesture {
-                    onPropertyTap()
-                    propertyStore.send(.startEditing(condition.propertyKey))
-                    propertyStore.send(.setPresented(true))
-                }
-                .popover(
-                    isPresented: propertyStore.binding(
-                        get: { $0.isPresented && $0.editingConditionKey == condition.propertyKey },
-                        send: ConditionPropertyPickerFeature.Action.setPresented,
-                    ),
-                    arrowEdge: .bottom,
-                    content: {
-                        ConditionPropertyPickerView(store: propertyPickerStore)
-                    },
-                )
+            HStack(spacing: 6) {
+                Image(systemName: ConditionPropertyIconUtils.iconName(forKey: condition.propertyKey))
+                    .font(.system(size: 10, weight: .medium))
+                    .foregroundColor(.secondary)
+                    .frame(width: 12, height: 12)
+                Text(condition.propertyLabel)
+                    .font(.system(size: 11, weight: .medium))
+                    .foregroundColor(.primary.opacity(0.8))
+            }
+            .padding(.leading, 4)
+            .padding(.trailing, 2)
+            .padding(.vertical, 2)
+            .contentShape(Rectangle())
+            .onHover { hovering in
+                isPropertyHovering = hovering
+            }
+            .background(
+                isPropertyHovering
+                    ? (isDark ? Color.white.opacity(hoverFillOpacity) : Color.black.opacity(hoverFillOpacity))
+                    : Color.clear,
+            )
+            .onTapGesture {
+                onPropertyTap()
+                propertyStore.send(.startEditing(condition.propertyKey))
+                propertyStore.send(.setPresented(true))
+            }
+            .popover(
+                isPresented: propertyStore.binding(
+                    get: { $0.isPresented && $0.editingConditionKey == condition.propertyKey },
+                    send: ConditionPropertyPickerFeature.Action.setPresented,
+                ),
+                arrowEdge: .bottom,
+                content: {
+                    ConditionPropertyPickerView(store: propertyPickerStore)
+                },
+            )
         })
     }
 
@@ -698,19 +715,23 @@ struct ConditionChipView: View {
         }
         .popover(isPresented: isPresented, arrowEdge: .bottom) {
             VStack(alignment: .leading, spacing: 12) {
-                CalendarDatePicker(selection: $tempDate)
+                let applySelection = {
+                    let formatted = ValueNormalizer.formatDateOnly(tempDate)
+                    valueViewStore.send(.setValue(index: index, text: formatted))
+                    valuePickerStore.send(.commit)
+                    DispatchQueue.main.async {
+                        if valueViewStore.errorMessage == nil {
+                            datePopoverIndex = nil
+                        }
+                    }
+                }
+
+                CalendarDatePicker(selection: $tempDate, onCommit: applySelection)
 
                 HStack {
                     Spacer()
                     Button("Apply") {
-                        let formatted = ValueNormalizer.formatDateOnly(tempDate)
-                        valueViewStore.send(.setValue(index: index, text: formatted))
-                        valuePickerStore.send(.commit)
-                        DispatchQueue.main.async {
-                            if valueViewStore.errorMessage == nil {
-                                datePopoverIndex = nil
-                            }
-                        }
+                        applySelection()
                     }
                     .keyboardShortcut(.defaultAction)
                 }
@@ -889,9 +910,10 @@ struct ConditionChipView: View {
 
 private struct CalendarDatePicker: NSViewRepresentable {
     @Binding var selection: Date
+    let onCommit: () -> Void
 
     func makeCoordinator() -> Coordinator {
-        Coordinator(selection: $selection)
+        Coordinator(selection: $selection, onCommit: onCommit)
     }
 
     func makeNSView(context: Context) -> NSDatePicker {
@@ -915,14 +937,19 @@ private struct CalendarDatePicker: NSViewRepresentable {
 
     final class Coordinator: NSObject {
         @Binding var selection: Date
+        let onCommit: () -> Void
 
-        init(selection: Binding<Date>) {
+        init(selection: Binding<Date>, onCommit: @escaping () -> Void) {
             _selection = selection
+            self.onCommit = onCommit
         }
 
         @objc
         func dateChanged(_ sender: NSDatePicker) {
             selection = sender.dateValue
+            if NSApp.currentEvent?.clickCount == 2 {
+                onCommit()
+            }
         }
     }
 }

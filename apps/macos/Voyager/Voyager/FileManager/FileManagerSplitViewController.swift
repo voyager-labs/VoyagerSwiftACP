@@ -316,7 +316,7 @@ extension FileManagerSplitViewController {
                     }
                     .overlay(
                         RoundedRectangle(cornerRadius: VoyagerDS.Radius.contentPane, style: .continuous)
-                            .strokeBorder(Color.primary.opacity(0.12), lineWidth: 1),
+                            .strokeBorder(Color.primary.opacity(0.03), lineWidth: 1),
                     )
 
                     if viewStore.isComposerPresented {
@@ -326,22 +326,24 @@ extension FileManagerSplitViewController {
                             .onTapGesture { store.send(.exitComposer) }
                     }
 
-                    if viewStore.isComposerPresented {
-                        ComposerView(store: store)
-                            .padding(.horizontal, VoyagerDS.Spacing.composerHorizontalPadding)
-                            .padding(.top, VoyagerDS.Spacing.composerTopPadding)
-                            .contentShape(Rectangle())
-                            .onTapGesture {}
-                            .transition(.move(edge: .top).combined(with: .opacity))
+                    Group {
+                        if viewStore.isComposerPresented {
+                            ComposerView(store: store)
+                                .padding(.horizontal, VoyagerDS.Spacing.composerHorizontalPadding)
+                                .padding(.top, VoyagerDS.Spacing.composerTopPadding)
+                                .contentShape(Rectangle())
+                                .onTapGesture {}
+                                .transition(.move(edge: .top).combined(with: .opacity))
+                        }
                     }
+                    .animation(
+                        .spring(response: 0.25, dampingFraction: 0.75),
+                        value: viewStore.isComposerPresented,
+                    )
                 }
                 .background(.thickMaterial)
                 .overlay(ContentPaneMaterialTint())
                 .ignoresSafeArea(.all, edges: .top)
-                .animation(
-                    .spring(response: 0.25, dampingFraction: 0.75),
-                    value: viewStore.isComposerPresented,
-                )
             },
         )
     }

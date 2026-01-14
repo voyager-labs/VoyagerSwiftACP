@@ -4,6 +4,8 @@
 <dict>
 	<key>APP_ENV</key>
 	<string>$(APP_ENV)</string>
+	<key>BACKEND_MODE</key>
+	<string>$(BACKEND_MODE)</string>
 	<key>CFBundleDocumentTypes</key>
 	<array>
 		<dict>
@@ -53,5 +55,9 @@
 			</dict>
 		</dict>
 	</array>
+    <key>SUFeedURL</key>
+    <string>https://downloads.voyager.fm/releases/appcast.xml</string>
+    <key>SUPublicEDKey</key>
+    <string>NomZB47jirICFt7N3J9K+ONptIwZig9UdpEnAiC1JJI=</string>
 </dict>
 </plist>

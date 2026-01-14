@@ -40,12 +40,19 @@ jobs:
           command: |
             r2 object get ${{ env.R2_BUCKET }}/${{ env.SPARKLE_APPCAST_KEY }} --file ${{ env.BUILD_DIR }}/appcast.xml
 
+      - name: Resolve version from tag
+        id: version
+        shell: bash
+        run: |
+          set -euo pipefail
+          ./scripts/ci/resolve-version-from-tag.sh
+
       - name: Resolve Sparkle baseline metadata
         id: baseline-meta
         shell: bash
         run: |
           set -euo pipefail
-          ./scripts/ci/resolve-sparkle-baseline.sh "${BUILD_DIR}/appcast.xml"
+          ./scripts/ci/resolve-sparkle-baseline.sh "${BUILD_DIR}/appcast.xml" "${{ steps.version.outputs.version }}"
 
       - name: Prepare baseline zip directory
         if: ${{ steps.baseline-meta.outputs.prev_key != '' && steps.baseline-meta.outputs.prev_name != '' }}

@@ -8,6 +8,13 @@ enum FileManagerNavigationUtils {
         case tags(String)
         case computer
         case collection(CollectionNavigation)
+
+        var isCollection: Bool {
+            if case .collection = self {
+                return true
+            }
+            return false
+        }
     }
 
     enum CollectionKind: Equatable, Sendable {

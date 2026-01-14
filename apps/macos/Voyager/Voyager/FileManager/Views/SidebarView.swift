@@ -13,6 +13,8 @@ struct SidebarItemView: View {
     let action: () -> Void
     let onDrop: (([NSItemProvider], URL) -> Void)?
 
+    @Environment(\.colorScheme)
+    private var colorScheme
     @State private var isDropTarget = false
 
     @ViewBuilder private var backgroundView: some View {
@@ -24,7 +26,7 @@ struct SidebarItemView: View {
         if isDropTarget {
             Color.accentColor
         } else if isSelected {
-            Color.white.opacity(0.12)
+            VoyagerDS.Surface.sidebarSelectionBackground(for: colorScheme)
         } else {
             Color.clear
         }
@@ -84,6 +86,8 @@ struct TagItemView: View {
     let action: () -> Void
     let onDrop: (([NSItemProvider], String) -> Void)? // 태그 드롭 콜백 (providers 전달)
 
+    @Environment(\.colorScheme)
+    private var colorScheme
     @State private var isDropTarget = false
 
     @ViewBuilder private var backgroundView: some View {
@@ -95,7 +99,7 @@ struct TagItemView: View {
         if isDropTarget {
             Color.accentColor
         } else if isSelected {
-            Color.white.opacity(0.12)
+            VoyagerDS.Surface.sidebarSelectionBackground(for: colorScheme)
         } else {
             Color.clear
         }
