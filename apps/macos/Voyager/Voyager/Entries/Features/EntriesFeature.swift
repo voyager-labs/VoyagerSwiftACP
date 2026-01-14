@@ -34,8 +34,9 @@ struct EntriesFeature {
         return unique
     }
 
-    private enum CancelID {
-        static let fsEventsWatcher = "fsEventsWatcher"
+    private nonisolated enum CancelID: Hashable, Sendable {
+        case fileSystemObserver // 전역 파일 시스템 변경 감시
+        case fsEventsWatcher // 특정 폴더 변경 감시
     }
 
     // TODO: swift-log로 변경
@@ -262,7 +263,7 @@ struct EntriesFeature {
                         await send(.reloadCurrentFolder)
                     }
                 }
-                .cancellable(id: "FileSystemObserver", cancelInFlight: true)
+                .cancellable(id: CancelID.fileSystemObserver, cancelInFlight: true)
 
             case .reloadCurrentFolder:
                 let (clipboardPaths, clipboardOp) = entryClient.loadClipboardPaths()
