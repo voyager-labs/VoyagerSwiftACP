@@ -11,6 +11,20 @@ enum EntryLoadUtils {
         let lastUsedDate: Date?
     }
 
+    private nonisolated(unsafe) static let dateFormatter: DateFormatter = {
+        let formatter = DateFormatter()
+        formatter.dateStyle = .medium
+        formatter.timeStyle = .short
+        return formatter
+    }()
+
+    private nonisolated(unsafe) static let byteFormatter: ByteCountFormatter = {
+        let formatter = ByteCountFormatter()
+        formatter.allowedUnits = [.useBytes, .useKB, .useMB, .useGB]
+        formatter.countStyle = .file
+        return formatter
+    }()
+
     nonisolated static func convertURLToEntry(_ itemURL: URL) -> Entry? {
         let fileManager = FileManager.default
         var isDirectory: ObjCBool = false
@@ -41,6 +55,10 @@ enum EntryLoadUtils {
 
         let additionalInfo = calculateAdditionalInfo(url: itemURL, isDirectory: isDirectory.boolValue)
 
+        let formattedSize = isDirectory.boolValue ? "--" : byteFormatter.string(fromByteCount: size)
+        let formattedModifiedDate = dateFormatter.string(from: modifiedDate)
+        let formattedCreatedDate = dateFormatter.string(from: createdDate)
+
         return Entry(
             name: name,
             fullPath: itemURL.path,
@@ -56,6 +74,9 @@ enum EntryLoadUtils {
             creatorApplication: metadata.creatorApplication,
             tags: metadata.tags,
             additionalInfo: additionalInfo,
+            formattedSize: formattedSize,
+            formattedModifiedDate: formattedModifiedDate,
+            formattedCreatedDate: formattedCreatedDate,
         )
     }
 

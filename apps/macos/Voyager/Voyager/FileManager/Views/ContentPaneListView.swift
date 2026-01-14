@@ -121,7 +121,7 @@ struct ContentPaneListView: View {
         store: StoreOf<FileManagerFeature>,
         context: ItemRenderContext,
         isTrashFolder: Bool = false,
-    ) -> EntryListView {
+    ) -> some View {
         let props = buildItemRowProps(
             item: item,
             fsStore: fsStore,
@@ -145,7 +145,7 @@ struct ContentPaneListView: View {
         fsStore: Store<EntriesFeature.State, EntriesFeature.Action>,
         store: StoreOf<FileManagerFeature>,
         props: ItemRowProps,
-    ) -> EntryListView {
+    ) -> some View {
         let selectedIds = fsStore.selectedIds
         let clipboardItems = fsStore.clipboardItems
         let thumbnailsReady = fsStore.thumbnailsReady
@@ -198,6 +198,7 @@ struct ContentPaneListView: View {
             showExtract: props.context.showExtract,
             draggingPaths: fsStore.draggingPaths,
         )
+        .equatable()
     }
 
     // swiftlint:enable function_body_length

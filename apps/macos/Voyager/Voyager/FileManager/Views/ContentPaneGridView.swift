@@ -108,7 +108,7 @@ struct ContentPaneGridView: View {
         showCompress: Bool,
         showExtract: Bool,
         isTrashFolder: Bool = false,
-    ) -> EntryGridView {
+    ) -> some View {
         let handlers = makeContextMenuHandlers(
             item: item,
             fsStore: fsStore,
@@ -139,7 +139,7 @@ struct ContentPaneGridView: View {
         handlers: EntryContextMenuHandlers,
         showCompress: Bool,
         showExtract: Bool,
-    ) -> EntryGridView {
+    ) -> some View {
         let selectedIds = fsStore.selectedIds
         let clipboardItems = fsStore.clipboardItems
         let thumbnailsReady = fsStore.thumbnailsReady
@@ -183,6 +183,7 @@ struct ContentPaneGridView: View {
             showExtract: showExtract,
             draggingPaths: fsStore.draggingPaths,
         )
+        .equatable()
     }
 
     var body: some View {

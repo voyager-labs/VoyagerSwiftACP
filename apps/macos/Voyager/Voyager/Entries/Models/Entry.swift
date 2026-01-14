@@ -27,6 +27,10 @@ public struct Entry: Identifiable, Sendable {
     public let tags: [FileTag]?
     public let additionalInfo: String?
 
+    public let formattedSize: String
+    public let formattedModifiedDate: String
+    public let formattedCreatedDate: String
+
     public nonisolated init(
         name: String,
         fullPath: String,
@@ -42,6 +46,9 @@ public struct Entry: Identifiable, Sendable {
         creatorApplication: String? = nil,
         tags: [FileTag]? = nil,
         additionalInfo: String? = nil,
+        formattedSize: String = "--",
+        formattedModifiedDate: String = "",
+        formattedCreatedDate: String = "",
     ) {
         id = fullPath
         self.name = name
@@ -58,6 +65,9 @@ public struct Entry: Identifiable, Sendable {
         self.creatorApplication = creatorApplication
         self.tags = tags
         self.additionalInfo = additionalInfo
+        self.formattedSize = formattedSize
+        self.formattedModifiedDate = formattedModifiedDate
+        self.formattedCreatedDate = formattedCreatedDate
     }
 }
 

@@ -3,7 +3,17 @@ import AppKit
 import SwiftUI
 import UniformTypeIdentifiers
 
-struct EntryListView: View {
+struct EntryListView: View, Equatable {
+    static func == (lhs: EntryListView, rhs: EntryListView) -> Bool {
+        lhs.item == rhs.item &&
+            lhs.isSelected == rhs.isSelected &&
+            lhs.isCut == rhs.isCut &&
+            lhs.isRenaming == rhs.isRenaming &&
+            lhs.isThumbnailReady == rhs.isThumbnailReady &&
+            lhs.iconSize == rhs.iconSize &&
+            lhs.textSize == rhs.textSize
+    }
+
     let item: Entry
     let isSelected: Bool
     let isCut: Bool
@@ -52,20 +62,6 @@ struct EntryListView: View {
     @State private var optionKeyTimer: Timer?
     @State private var showTagsEditor = false
     @State private var hasPrefetchedApplications = false
-
-    private static let dateFormatter: DateFormatter = {
-        let formatter = DateFormatter()
-        formatter.dateStyle = .medium
-        formatter.timeStyle = .short
-        return formatter
-    }()
-
-    private static let byteFormatter: ByteCountFormatter = {
-        let formatter = ByteCountFormatter()
-        formatter.allowedUnits = [.useBytes, .useKB, .useMB, .useGB]
-        formatter.countStyle = .file
-        return formatter
-    }()
 
     private func styledText(_ text: String, fontSize: CGFloat, isPrimary: Bool = true) -> some View {
         Text(text)
@@ -148,10 +144,10 @@ struct EntryListView: View {
                     }
                     .frame(width: layout.name, alignment: .leading)
 
-                    styledText(dateText(item.modifiedDate), fontSize: max(10, textSize - 1), isPrimary: false)
+                    styledText(item.formattedModifiedDate, fontSize: max(10, textSize - 1), isPrimary: false)
                         .frame(width: layout.date, alignment: .leading)
 
-                    styledText(sizeText(item), fontSize: max(10, textSize - 1), isPrimary: false)
+                    styledText(item.formattedSize, fontSize: max(10, textSize - 1), isPrimary: false)
                         .frame(width: layout.size, alignment: .trailing)
 
                     styledText(kindText(item), fontSize: max(10, textSize - 1), isPrimary: false)
@@ -505,15 +501,6 @@ private extension EntryListView {
         } label: {
             Label("Tags", systemImage: "tag")
         }
-    }
-
-    func sizeText(_ item: Entry) -> String {
-        if item.isDirectory { return "--" }
-        return Self.byteFormatter.string(fromByteCount: item.size)
-    }
-
-    func dateText(_ date: Date) -> String {
-        Self.dateFormatter.string(from: date)
     }
 
     func kindText(_ item: Entry) -> String {

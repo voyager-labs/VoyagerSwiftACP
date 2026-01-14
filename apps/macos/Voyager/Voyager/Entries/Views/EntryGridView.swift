@@ -3,7 +3,18 @@ import AppKit
 import SwiftUI
 import UniformTypeIdentifiers
 
-struct EntryGridView: View {
+struct EntryGridView: View, Equatable {
+    static func == (lhs: EntryGridView, rhs: EntryGridView) -> Bool {
+        // Entry의 Equatable 구현을 활용
+        lhs.item == rhs.item &&
+            lhs.isSelected == rhs.isSelected &&
+            lhs.isCut == rhs.isCut &&
+            lhs.isRenaming == rhs.isRenaming &&
+            lhs.isThumbnailReady == rhs.isThumbnailReady &&
+            lhs.iconSize == rhs.iconSize &&
+            lhs.textSize == rhs.textSize
+    }
+
     let item: Entry
     let isSelected: Bool
     let isCut: Bool
