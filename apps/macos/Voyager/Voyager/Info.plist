@@ -53,5 +53,9 @@
 			</dict>
 		</dict>
 	</array>
+    <key>SUFeedURL</key>
+    <string>https://downloads.voyager.fm/releases/appcast.xml</string>
+    <key>SUPublicEDKey</key>
+    <string>NomZB47jirICFt7N3J9K+ONptIwZig9UdpEnAiC1JJI=</string>
 </dict>
 </plist>
