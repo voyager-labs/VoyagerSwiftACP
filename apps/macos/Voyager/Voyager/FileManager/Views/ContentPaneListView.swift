@@ -71,11 +71,16 @@ struct ContentPaneListView: View {
         return nearest?.id
     }
 
+    private struct ItemRenderContext {
+        let layout: ListColumnLayout
+        let showCompress: Bool
+        let showExtract: Bool
+    }
+
     private struct ItemRowProps {
         let handlers: EntryContextMenuHandlers
         let width: CGFloat
-        let showCompress: Bool
-        let showExtract: Bool
+        let context: ItemRenderContext
     }
 
     private func buildItemRowProps(
@@ -84,7 +89,7 @@ struct ContentPaneListView: View {
         geometry: GeometryProxy,
         store: StoreOf<FileManagerFeature>,
         isTrashFolder: Bool,
-        options: (showCompress: Bool, showExtract: Bool),
+        context: ItemRenderContext,
     ) -> ItemRowProps {
         let handlers = makeContextMenuHandlers(
             item: item,
@@ -104,8 +109,7 @@ struct ContentPaneListView: View {
         return ItemRowProps(
             handlers: handlers,
             width: width,
-            showCompress: options.showCompress,
-            showExtract: options.showExtract,
+            context: context,
         )
     }
 
@@ -115,8 +119,7 @@ struct ContentPaneListView: View {
         fsStore: Store<EntriesFeature.State, EntriesFeature.Action>,
         geometry: GeometryProxy,
         store: StoreOf<FileManagerFeature>,
-        showCompress: Bool,
-        showExtract: Bool,
+        context: ItemRenderContext,
         isTrashFolder: Bool = false,
     ) -> EntryListView {
         let props = buildItemRowProps(
@@ -125,7 +128,7 @@ struct ContentPaneListView: View {
             geometry: geometry,
             store: store,
             isTrashFolder: isTrashFolder,
-            options: (showCompress: showCompress, showExtract: showExtract),
+            context: context,
         )
 
         buildEntryListView(
@@ -154,8 +157,7 @@ struct ContentPaneListView: View {
             isCut: clipboardItems.contains(item.fullPath) && fsStore.clipboardOperation == .cut,
             isRenaming: fsStore.renamingItemId == item.id,
             renamingText: fsStore.renamingText,
-            availableWidth: props.width,
-            columnWidths: store.columnWidths,
+            layout: props.context.layout,
             applications: fsStore.operations.applicationsForItems[item.fullPath],
             commonApplications: selectedIds.count > 1 ?
                 fsStore.operations.commonApplicationsForSelectedFiles : nil,
@@ -192,8 +194,8 @@ struct ContentPaneListView: View {
                 contextMenuTargetWasSelected = selectedIds.contains(item.id)
             },
             selectedCount: fsStore.selectedIds.isEmpty ? 1 : fsStore.selectedIds.count,
-            showCompress: props.showCompress,
-            showExtract: props.showExtract,
+            showCompress: props.context.showCompress,
+            showExtract: props.context.showExtract,
             draggingPaths: fsStore.draggingPaths,
         )
     }
@@ -211,7 +213,7 @@ struct ContentPaneListView: View {
         fsStore: Store<EntriesFeature.State, EntriesFeature.Action>,
         geometry: GeometryProxy,
         store: StoreOf<FileManagerFeature>,
-        options: (showCompress: Bool, showExtract: Bool),
+        context: ItemRenderContext,
     ) -> some View {
         let bgColor = zebraBackgroundColor(for: index)
 
@@ -220,8 +222,7 @@ struct ContentPaneListView: View {
             fsStore: fsStore,
             geometry: geometry,
             store: store,
-            showCompress: options.showCompress,
-            showExtract: options.showExtract,
+            context: context,
             isTrashFolder: store.isTrashFolder,
         )
         .frame(height: rowHeight)
@@ -275,13 +276,9 @@ struct ContentPaneListView: View {
         fsStore: Store<EntriesFeature.State, EntriesFeature.Action>,
         geometry: GeometryProxy,
         store: StoreOf<FileManagerFeature>,
+        context: ItemRenderContext,
     ) -> some View {
-        let selectedIds = fsStore.selectedIds
-        let selectedItems = fsStore.displayItems.filter { selectedIds.contains($0.id) }
-        let options = EntryContextMenuUtils
-            .calculateCompressExtractOptions(selectedItems: selectedItems)
-
-        return Group {
+        Group {
             ForEach(Array(fsStore.groupedItems.enumerated()), id: \.element.groupName) { index, group in
                 if index > 0 {
                     Spacer().frame(height: 16)
@@ -298,7 +295,7 @@ struct ContentPaneListView: View {
                         fsStore: fsStore,
                         geometry: geometry,
                         store: store,
-                        options: (showCompress: options.showCompress, showExtract: options.showExtract),
+                        context: context,
                     )
                 }
             }
@@ -315,6 +312,18 @@ struct ContentPaneListView: View {
         let options = EntryContextMenuUtils
             .calculateCompressExtractOptions(selectedItems: selectedItems)
 
+        let layout = store.columnWidths.makeAbsoluteWidths(
+            totalWidth: geometry.size.width,
+            padding: ListColumnLayout.outerPadding,
+            spacing: ListColumnLayout.columnSpacing,
+        )
+
+        let context = ItemRenderContext(
+            layout: layout,
+            showCompress: options.showCompress,
+            showExtract: options.showExtract,
+        )
+
         return Group {
             Color.clear.frame(height: 0).id("scrollTop")
 
@@ -326,11 +335,11 @@ struct ContentPaneListView: View {
                         fsStore: fsStore,
                         geometry: geometry,
                         store: store,
-                        options: (showCompress: options.showCompress, showExtract: options.showExtract),
+                        context: context,
                     )
                 }
             } else {
-                groupedItemsContent(fsStore: fsStore, geometry: geometry, store: store)
+                groupedItemsContent(fsStore: fsStore, geometry: geometry, store: store, context: context)
             }
 
             emptyRowsView(itemsCount: fsStore.displayItems.count, scrollHeight: scrollViewHeight, fsStore: fsStore)

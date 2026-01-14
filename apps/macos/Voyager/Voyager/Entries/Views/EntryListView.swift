@@ -9,8 +9,7 @@ struct EntryListView: View {
     let isCut: Bool
     let isRenaming: Bool
     let renamingText: String
-    let availableWidth: CGFloat
-    let columnWidths: ListColumnWidths
+    let layout: ListColumnLayout
     let applications: [ApplicationInfo]?
     let commonApplications: [ApplicationInfo]?
     let isThumbnailReady: Bool
@@ -78,12 +77,6 @@ struct EntryListView: View {
     }
 
     var body: some View {
-        let layout = columnWidths.makeAbsoluteWidths(
-            totalWidth: availableWidth,
-            padding: ListColumnLayout.outerPadding,
-            spacing: ListColumnLayout.columnSpacing,
-        )
-
         HStack(spacing: 0) {
             Color.clear
                 .frame(width: layout.outerPadding / 2)
