@@ -1268,9 +1268,6 @@ struct FileManagerFeature {
                     state.isSaveAsPendingFromCollection = false
                     state.pendingNavigation = nil
                     return .none
-
-                default:
-                    return .none
                 }
 
             case .enterComposer:

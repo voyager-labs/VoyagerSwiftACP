@@ -138,7 +138,7 @@ struct ScopePickerView: View {
     }
 
     private func applicationsIcon() -> NSImage? {
-        var appIcon = NSImage(
+        let appIcon = NSImage(
             contentsOfFile: "/System/Library/CoreServices/CoreTypes.bundle/Contents/Resources/SidebarApplicationsFolder.icns",
         )
         appIcon?.isTemplate = true

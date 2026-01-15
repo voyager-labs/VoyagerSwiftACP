@@ -80,7 +80,7 @@ struct ComposerView: View {
     @ViewBuilder
     private func firstRow(viewStore: ViewStore<ComposerFeature.State, ComposerFeature.Action>) -> some View {
         let isLocked = viewStore.isLoadingSearch || viewStore.isFilteringInFlight
-        return HStack(spacing: 8) {
+        HStack(spacing: 8) {
             undoButton(viewStore: viewStore, isLocked: isLocked)
             redoButton(viewStore: viewStore, isLocked: isLocked)
             textField(viewStore: viewStore, isLocked: isLocked)

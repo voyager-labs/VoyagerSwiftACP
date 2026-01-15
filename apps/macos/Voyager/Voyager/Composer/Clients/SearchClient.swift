@@ -94,8 +94,6 @@ extension SearchClient: DependencyKey {
     static let liveValue: SearchClient = {
         @Sendable
         func post<U: Decodable>(path: String, body: some Encodable) async throws -> U {
-            let encoder = JSONEncoder()
-            let decoder = JSONDecoder()
             let host = "127.0.0.1"
             let port = "53723"
             guard let baseURL = URL(string: "http://\(host):\(port)") else {
@@ -105,12 +103,16 @@ extension SearchClient: DependencyKey {
             var request = URLRequest(url: url)
             request.httpMethod = "POST"
             request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+
+            let encoder = JSONEncoder()
             request.httpBody = try encoder.encode(body)
 
             let (data, response) = try await URLSession.shared.data(for: request)
             guard let http = response as? HTTPURLResponse, 200 ..< 300 ~= http.statusCode else {
                 throw URLError(.badServerResponse)
             }
+
+            let decoder = JSONDecoder()
             return try decoder.decode(U.self, from: data)
         }
 

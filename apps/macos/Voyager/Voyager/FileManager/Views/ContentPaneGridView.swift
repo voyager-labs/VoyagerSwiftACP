@@ -33,7 +33,7 @@ private struct RightClickMonitorView: NSViewRepresentable {
             guard window != nil else { return }
 
             monitor = NSEvent.addLocalMonitorForEvents(matching: [.rightMouseDown]) { [weak self] event in
-                guard let self, let window else { return event }
+                guard let self else { return event }
                 let location = convert(event.locationInWindow, from: nil)
                 if bounds.contains(location) {
                     onRightMouseDown?(event.locationInWindow)

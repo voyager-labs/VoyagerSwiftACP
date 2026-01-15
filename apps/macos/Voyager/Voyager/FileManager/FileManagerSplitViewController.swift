@@ -19,7 +19,6 @@ class AppearanceAwareSplitView: NSSplitView {
     }
 
     override func resizeSubviews(withOldSize oldSize: NSSize) {
-        // bounds가 0일 때는 레이아웃 조작을 하지 않음 (경고 방지)
         guard bounds.width > 0, bounds.height > 0 else {
             return
         }

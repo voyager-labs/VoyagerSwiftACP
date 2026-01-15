@@ -319,7 +319,7 @@ private extension EntryGridView {
 
         Divider()
 
-        if let onPutBack {
+        if onPutBack != nil {
             if let onDeleteImmediately {
                 Button {
                     onDeleteImmediately()
