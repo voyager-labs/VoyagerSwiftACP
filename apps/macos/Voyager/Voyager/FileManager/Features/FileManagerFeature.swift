@@ -6,6 +6,15 @@ import SwiftUI
 // swiftlint:disable type_body_length file_length
 @Reducer
 struct FileManagerFeature {
+    @Dependency(\.entryClient)
+    var entryClient
+    @Dependency(\.collectionFileClient)
+    var collectionFileClient
+    @Dependency(\.userDefaultsClient)
+    var userDefaultsClient
+    @Dependency(\.sidebarClient)
+    var sidebarClient
+
     struct HistoryEntry: Equatable {
         let navigationState: FileManagerNavigationUtils.NavigationState
         let sidebarItemName: String?
@@ -19,14 +28,25 @@ struct FileManagerFeature {
         var viewLayout: ViewLayout
     }
 
-    static func makeWindowTitle(for path: String) -> String {
+    func makeWindowTitle(for path: String) -> String {
         if path == "/" {
-            return FileManager.default.displayName(atPath: "/")
+            return sidebarClient.computerName()
         }
-        if path == SidebarUtils.computerName {
+        if path == sidebarClient.computerName() {
             return path
         }
-        return FileManager.default.displayName(atPath: path)
+        return entryClient.displayName(path)
+    }
+
+    static func makeWindowTitle(for path: String) -> String {
+        let sidebarClient = SidebarClient.liveValue
+        if path == "/" {
+            return sidebarClient.computerName()
+        }
+        if path == sidebarClient.computerName() {
+            return path
+        }
+        return EntryClient.liveValue.displayName(path)
     }
 
     @ObservableState
@@ -37,7 +57,7 @@ struct FileManagerFeature {
             case let .folder(path): path
             case .recents: "Recents"
             case let .tags(tagName): tagName
-            case .computer: SidebarUtils.computerName
+            case .computer: "" // Will be computed in View using sidebarClient
             case let .collection(navigation):
                 switch navigation.kind {
                 case .temporary:
@@ -147,46 +167,6 @@ struct FileManagerFeature {
             !entries.clipboardItems.isEmpty
         }
 
-        var breadcrumbItems: [BreadcrumbUtils.Item] {
-            switch navigationState {
-            case .recents, .tags:
-                return []
-            case .computer:
-                if entries.selectedIds.count == 1,
-                   let selectedItem = entries.displayItems.first(where: { $0.id == entries.selectedIds.first }),
-                   selectedItem.fullPath == "/"
-                {
-                    return []
-                }
-                return [BreadcrumbUtils.Item(path: SidebarUtils.computerName)]
-            case let .folder(path):
-                if let rootPath = BreadcrumbUtils.findSpecialRootPath(for: path, isTrashFolder: isTrashFolder) {
-                    return BreadcrumbUtils.buildBreadcrumbs(from: rootPath, to: path)
-                }
-                return BreadcrumbUtils.buildBreadcrumbsForStandardPath(path)
-            case .collection:
-                return []
-            }
-        }
-
-        var selectedBreadcrumbItem: BreadcrumbUtils.Item? {
-            guard entries.selectedIds.count == 1,
-                  let selectedItem = entries.displayItems.first(where: { $0.id == entries.selectedIds.first })
-            else { return nil }
-
-            let selectedBreadcrumb = BreadcrumbUtils.Item(entry: selectedItem)
-
-            if selectedBreadcrumb.fullPath == currentPath {
-                return nil
-            }
-
-            return selectedBreadcrumb
-        }
-
-        var windowTitle: String {
-            FileManagerFeature.makeWindowTitle(for: titlePath)
-        }
-
         var canSaveCollection: Bool {
             guard entries.isCollectionMode, collectionContext != nil else { return false }
             if openedCollectionBaseline == nil {
@@ -210,40 +190,8 @@ struct FileManagerFeature {
             )
         }
 
-        mutating func applyHistoryEntry(
-            _ entry: HistoryEntry,
-            favorites: [SidebarUtils.FavoriteItem],
-            locations: [SidebarUtils.LocationItem],
-        ) {
-            navigationState = entry.navigationState
-            switch entry.navigationState {
-            case .collection:
-                selectedSidebarItem = nil
-            default:
-                selectedSidebarItem = entry.sidebarItemName
-                matchSidebarToPath(currentPath, favorites: favorites, locations: locations)
-            }
-            composer = entry.composerState
-            composer.isPresented = false
-        }
-
         mutating func resetComposer() {
             composer = .init()
-        }
-
-        mutating func matchSidebarToPath(
-            _ path: String,
-            favorites: [SidebarUtils.FavoriteItem],
-            locations: [SidebarUtils.LocationItem],
-        ) {
-            selectedSidebarItem = {
-                if path == SidebarUtils.computerName {
-                    return locations.first(where: { $0.isComputer })?.name ?? path
-                }
-                if !path.hasPrefix("/") { return path }
-                return favorites.first(where: { $0.url.path == path })?.name
-                    ?? locations.first(where: { $0.url.path == path })?.name
-            }()
         }
 
         mutating func navigateToFolder(_ path: String, sidebarItemName: String) {
@@ -385,15 +333,6 @@ struct FileManagerFeature {
         case collection(CollectionFeature.Action)
     }
 
-    @Dependency(\.entryClient)
-    var entryClient
-
-    @Dependency(\.collectionFileClient)
-    var collectionFileClient
-
-    @Dependency(\.userDefaultsClient)
-    var userDefaultsClient
-
     private nonisolated enum CancelID: Hashable, Sendable {
         case openCollectionFile
     }
@@ -454,6 +393,7 @@ struct FileManagerFeature {
                     state.gridTextSize = gridTextSize
                 }
 
+                let userDefaultsClient = userDefaultsClient
                 return .merge(
                     .send(.entries(.setShowHidden(state.showHiddenFiles))),
                     .send(.entries(.setSortKey(state.sortKey))),
@@ -490,7 +430,8 @@ struct FileManagerFeature {
                 )
 
             case let .navigateTo(path):
-                if path == SidebarUtils.computerName, state.currentPath == SidebarUtils.computerName {
+                let computerName = sidebarClient.computerName()
+                if path == computerName, state.currentPath == computerName {
                     return .none
                 }
                 if path != state.currentPath {
@@ -500,8 +441,13 @@ struct FileManagerFeature {
                     state.forwardHistory = []
                 }
                 state.navigationState = .folder(path)
-                state.matchSidebarToPath(path, favorites: state.favorites, locations: state.locations)
-                let exitEffect = Self.exitCollectionMode(state: &state)
+                matchSidebarToPath(
+                    state: &state,
+                    path: path,
+                    favorites: state.favorites,
+                    locations: state.locations,
+                )
+                let exitEffect = exitCollectionMode(state: &state)
                 return .concatenate(
                     exitEffect,
                     .send(.entries(.loadItems(path: path))),
@@ -530,7 +476,7 @@ struct FileManagerFeature {
                 state.selectedSidebarItem = state.favorites
                     .first(where: { $0.url.path == url.path })
                     .map(\.displayName)
-                let loadEffect: Effect<Action> = .run { [collectionFileClient, url] send in
+                let loadEffect: Effect<Action> = .run { [url] send in
                     do {
                         let file = try await collectionFileClient.load(url)
                         try Task.checkCancellation()
@@ -666,7 +612,7 @@ struct FileManagerFeature {
                     state.openedCollectionURL = nil
                     state.openedCollectionBaseline = nil
                     state.resetComposer()
-                    let exitEffect = Self.exitCollectionMode(state: &state)
+                    let exitEffect = exitCollectionMode(state: &state)
                     return .merge(
                         exitEffect,
                         .run { _ in
@@ -713,7 +659,7 @@ struct FileManagerFeature {
                 return .send(.performNavigation(.enclosingDirectory))
 
             case let .performNavigation(pending):
-                return Self.performNavigation(pending, state: &state)
+                return performNavigation(pending, state: &state)
 
             case let .showUnsavedNavigationAlert(pending):
                 return .run { send in
@@ -727,7 +673,7 @@ struct FileManagerFeature {
                     return .none
                 case .discard:
                     state.resetComposerOnNextDirectoryNavigation = true
-                    return Self.performNavigation(pending, state: &state)
+                    return performNavigation(pending, state: &state)
                 case .save:
                     state.resetComposerOnNextDirectoryNavigation = true
                     state.pendingNavigation = pending
@@ -812,16 +758,16 @@ struct FileManagerFeature {
             case .showRecents:
                 state.navigate(to: .recents, sidebarItemName: "Recents")
                 state.resetComposer()
-                let exitEffect = Self.exitCollectionMode(state: &state)
+                let exitEffect = exitCollectionMode(state: &state)
                 return .concatenate(
                     exitEffect,
                     .send(.entries(.loadRecentItems(showHidden: state.showHiddenFiles))),
                 )
 
             case .showComputer:
-                state.navigate(to: .computer, sidebarItemName: SidebarUtils.computerName)
+                state.navigate(to: .computer, sidebarItemName: sidebarClient.computerName())
                 state.resetComposer()
-                let exitEffect = Self.exitCollectionMode(state: &state)
+                let exitEffect = exitCollectionMode(state: &state)
                 return .concatenate(
                     exitEffect,
                     .send(.entries(.loadComputerItems)),
@@ -829,12 +775,18 @@ struct FileManagerFeature {
 
             case .loadFavorites:
                 return .run { send in
-                    let favorites = await SidebarUtils.loadFavorites()
+                    let favorites = await sidebarClient.loadFavorites(entryClient, userDefaultsClient)
                     await send(.favoritesLoaded(favorites))
                 }
 
             case let .favoritesLoaded(favorites):
                 state.favorites = favorites
+                matchSidebarToPath(
+                    state: &state,
+                    path: state.currentPath,
+                    favorites: favorites,
+                    locations: state.locations,
+                )
                 return .none
 
             case let .openFavorite(favorite):
@@ -848,7 +800,7 @@ struct FileManagerFeature {
                 guard state.currentPath != favorite.url.path else { return .none }
                 state.navigateToFolder(favorite.url.path, sidebarItemName: favorite.name)
                 state.resetComposer()
-                let exitEffect = Self.exitCollectionMode(state: &state)
+                let exitEffect = exitCollectionMode(state: &state)
                 return .concatenate(
                     exitEffect,
                     .send(.entries(.loadItems(path: favorite.url.path))),
@@ -871,17 +823,17 @@ struct FileManagerFeature {
                 let name = isVoycoll
                     ? url.deletingPathExtension().lastPathComponent
                     : entryClient.displayName(url.path)
-                let iconName = SidebarUtils.iconNameForURL(url, isDirectory: isDirectory.boolValue)
+                let iconName = sidebarClient.iconNameForURL(url, isDirectory.boolValue, entryClient)
                 let newFavorite = SidebarUtils.FavoriteItem(name: name, url: url, iconName: iconName)
 
                 let insertIndex = max(0, min(index, state.favorites.count))
                 state.favorites.insert(newFavorite, at: insertIndex)
-                SidebarUtils.saveFavorites(state.favorites)
+                sidebarClient.saveFavorites(state.favorites, userDefaultsClient)
                 return .none
 
             case let .removeFavorite(favorite):
                 state.favorites.removeAll { $0.url.path == favorite.url.path }
-                SidebarUtils.saveFavorites(state.favorites)
+                sidebarClient.saveFavorites(state.favorites, userDefaultsClient)
                 return .none
 
             case let .reorderFavorites(source, destination):
@@ -898,25 +850,30 @@ struct FileManagerFeature {
                 let insertIndex = max(0, min(adjustedDestination, reordered.count))
                 reordered.insert(contentsOf: itemsToMove, at: insertIndex)
                 state.favorites = reordered
-                SidebarUtils.saveFavorites(state.favorites)
+                sidebarClient.saveFavorites(state.favorites, userDefaultsClient)
                 return .none
 
             case .loadLocations:
                 return .run { send in
-                    let locations = await SidebarUtils.loadLocations()
+                    let locations = await sidebarClient.loadLocations(entryClient)
                     await send(.locationsLoaded(locations))
                 }
 
             case let .locationsLoaded(locations):
                 state.locations = locations
-                state.matchSidebarToPath(state.currentPath, favorites: state.favorites, locations: locations)
+                matchSidebarToPath(
+                    state: &state,
+                    path: state.currentPath,
+                    favorites: state.favorites,
+                    locations: locations,
+                )
                 return .none
 
             case let .openLocation(location):
                 guard state.currentPath != location.url.path else { return .none }
                 state.navigateToFolder(location.url.path, sidebarItemName: location.name)
                 state.resetComposer()
-                let exitEffect = Self.exitCollectionMode(state: &state)
+                let exitEffect = exitCollectionMode(state: &state)
                 return .concatenate(
                     exitEffect,
                     .send(.entries(.loadItems(path: location.url.path))),
@@ -924,7 +881,7 @@ struct FileManagerFeature {
 
             case .loadTags:
                 return .run { send in
-                    let tags = await SidebarUtils.loadTags()
+                    let tags = await sidebarClient.loadTags()
                     await send(.tagsLoaded(tags))
                 }
 
@@ -935,7 +892,7 @@ struct FileManagerFeature {
             case let .showTag(tagItem):
                 state.navigate(to: .tags(tagItem.name), sidebarItemName: tagItem.name)
                 state.resetComposer()
-                let exitEffect = Self.exitCollectionMode(state: &state)
+                let exitEffect = exitCollectionMode(state: &state)
                 return .concatenate(
                     exitEffect,
                     .send(.entries(.loadTagItems(tagName: tagItem.name, showHidden: state.showHiddenFiles))),
@@ -987,7 +944,7 @@ struct FileManagerFeature {
                     }
                     state.navigateToFolder(item.fullPath, sidebarItemName: item.name)
                     state.resetComposer()
-                    let exitEffect = Self.exitCollectionMode(state: &state)
+                    let exitEffect = exitCollectionMode(state: &state)
                     return .concatenate(
                         exitEffect,
                         .send(.entries(.loadItems(path: item.fullPath))),
@@ -1056,7 +1013,7 @@ struct FileManagerFeature {
                     let query = text.trimmingCharacters(in: .whitespacesAndNewlines)
                     state.pendingSearchQuery = query.isEmpty ? nil : query
                     if query.isEmpty, state.composer.conditions.isEmpty, state.composer.scopes.isEmpty {
-                        return Self.exitCollectionMode(state: &state)
+                        return exitCollectionMode(state: &state)
                     }
                     return .none
 
@@ -1154,7 +1111,7 @@ struct FileManagerFeature {
                         state.openedCollectionURL = nil
                         state.openedCollectionBaseline = nil
                         state.resetComposer()
-                        let exitEffect = Self.exitCollectionMode(state: &state)
+                        let exitEffect = exitCollectionMode(state: &state)
                         return .merge(
                             exitEffect,
                             .run { _ in
@@ -1181,7 +1138,7 @@ struct FileManagerFeature {
                         state.openedCollectionURL = nil
                         state.openedCollectionBaseline = nil
                         state.resetComposer()
-                        let exitEffect = Self.exitCollectionMode(state: &state)
+                        let exitEffect = exitCollectionMode(state: &state)
                         return .merge(
                             exitEffect,
                             .run { _ in
@@ -1214,7 +1171,7 @@ struct FileManagerFeature {
                         )
                         return .none
                     }
-                    return Self.exitCollectionMode(state: &state)
+                    return exitCollectionMode(state: &state)
 
                 case .saveCollection:
                     guard state.canSaveCollection else {
@@ -1306,7 +1263,7 @@ struct FileManagerFeature {
                     }
                     if let pending = state.pendingNavigation {
                         state.pendingNavigation = nil
-                        return Self.performNavigation(pending, state: &state)
+                        return performNavigation(pending, state: &state)
                     }
                     return .none
 
@@ -1338,16 +1295,24 @@ struct FileManagerFeature {
         }
     }
 
-    private static func exitCollectionMode(state: inout State) -> Effect<Action> {
+    private func exitCollectionMode(state: inout State) -> Effect<Action> {
         let wasCollection = if case .collection = state.navigationState { true } else { false }
-        let clearEffect = clearCollectionMode(state: &state)
+        let clearEffect = Self.clearCollectionMode(state: &state)
 
         guard wasCollection else {
             return clearEffect
         }
 
-        state.navigationState = FileManagerNavigationUtils.navigationStateFromPath(state.titlePath)
-        state.matchSidebarToPath(state.currentPath, favorites: state.favorites, locations: state.locations)
+        state.navigationState = FileManagerNavigationUtils.navigationStateFromPath(
+            state.titlePath,
+            computerName: sidebarClient.computerName(),
+        )
+        matchSidebarToPath(
+            state: &state,
+            path: state.currentPath,
+            favorites: state.favorites,
+            locations: state.locations,
+        )
         return clearEffect
     }
 
@@ -1380,7 +1345,7 @@ struct FileManagerFeature {
         state.entries.isCollectionMode && state.canSaveCollection
     }
 
-    private static func performNavigation(
+    private func performNavigation(
         _ pending: PendingNavigation,
         state: inout State,
     ) -> Effect<Action> {
@@ -1392,40 +1357,60 @@ struct FileManagerFeature {
             performForwardNavigation(state: &state)
 
         case let .history(index, isBackHistory):
-            Self.performHistoryNavigation(index: index, isBackHistory: isBackHistory, state: &state)
+            performHistoryNavigation(
+                index: index,
+                isBackHistory: isBackHistory,
+                state: &state,
+            )
 
         case .enclosingDirectory:
             performEnclosingDirectoryNavigation(state: &state)
         }
     }
 
-    private static func performBackNavigation(state: inout State) -> Effect<Action> {
+    private func performBackNavigation(state: inout State) -> Effect<Action> {
         guard let entry = state.backHistory.popLast() else { return .none }
         let currentSnapshot = state.makeHistoryEntry()
         state.appendForwardHistory(currentSnapshot)
-        state.applyHistoryEntry(entry, favorites: state.favorites, locations: state.locations)
-        resetComposerAfterAlertNavigation(state: &state)
+        applyHistoryEntry(
+            state: &state,
+            entry: entry,
+            favorites: state.favorites,
+            locations: state.locations,
+        )
+        Self.resetComposerAfterAlertNavigation(state: &state)
         let exitEffect = Self.clearCollectionMode(state: &state)
         return .concatenate(
             exitEffect,
-            FileManagerNavigationUtils.navigateToState(state.navigationState),
+            navigateToState(
+                state.navigationState,
+                showHidden: state.showHiddenFiles,
+            ),
         )
     }
 
-    private static func performForwardNavigation(state: inout State) -> Effect<Action> {
+    private func performForwardNavigation(state: inout State) -> Effect<Action> {
         guard let entry = state.forwardHistory.popLast() else { return .none }
         let currentSnapshot = state.makeHistoryEntry()
         state.appendBackHistory(currentSnapshot)
-        state.applyHistoryEntry(entry, favorites: state.favorites, locations: state.locations)
-        resetComposerAfterAlertNavigation(state: &state)
+        applyHistoryEntry(
+            state: &state,
+            entry: entry,
+            favorites: state.favorites,
+            locations: state.locations,
+        )
+        Self.resetComposerAfterAlertNavigation(state: &state)
         let exitEffect = Self.clearCollectionMode(state: &state)
         return .concatenate(
             exitEffect,
-            FileManagerNavigationUtils.navigateToState(state.navigationState),
+            navigateToState(
+                state.navigationState,
+                showHidden: state.showHiddenFiles,
+            ),
         )
     }
 
-    private static func performHistoryNavigation(
+    private func performHistoryNavigation(
         index: Int,
         isBackHistory: Bool,
         state: inout State,
@@ -1443,12 +1428,20 @@ struct FileManagerFeature {
             state.forwardHistory.append(contentsOf: trailing.reversed())
             state.trimHistory()
 
-            state.applyHistoryEntry(targetEntry, favorites: state.favorites, locations: state.locations)
-            resetComposerAfterAlertNavigation(state: &state)
+            applyHistoryEntry(
+                state: &state,
+                entry: targetEntry,
+                favorites: state.favorites,
+                locations: state.locations,
+            )
+            Self.resetComposerAfterAlertNavigation(state: &state)
             let exitEffect = Self.clearCollectionMode(state: &state)
             return .concatenate(
                 exitEffect,
-                FileManagerNavigationUtils.navigateToState(state.navigationState),
+                navigateToState(
+                    state.navigationState,
+                    showHidden: state.showHiddenFiles,
+                ),
             )
         }
 
@@ -1464,16 +1457,24 @@ struct FileManagerFeature {
         state.backHistory.append(contentsOf: trailing.reversed())
         state.trimHistory()
 
-        state.applyHistoryEntry(targetEntry, favorites: state.favorites, locations: state.locations)
-        resetComposerAfterAlertNavigation(state: &state)
+        applyHistoryEntry(
+            state: &state,
+            entry: targetEntry,
+            favorites: state.favorites,
+            locations: state.locations,
+        )
+        Self.resetComposerAfterAlertNavigation(state: &state)
         let exitEffect = Self.clearCollectionMode(state: &state)
         return .concatenate(
             exitEffect,
-            FileManagerNavigationUtils.navigateToState(state.navigationState),
+            navigateToState(
+                state.navigationState,
+                showHidden: state.showHiddenFiles,
+            ),
         )
     }
 
-    private static func performEnclosingDirectoryNavigation(state: inout State) -> Effect<Action> {
+    private func performEnclosingDirectoryNavigation(state: inout State) -> Effect<Action> {
         guard let parentPath = state.enclosingDirectoryPath else { return .none }
         let parentURL = URL(fileURLWithPath: parentPath)
         let childName = URL(fileURLWithPath: state.currentPath).lastPathComponent
@@ -1483,7 +1484,7 @@ struct FileManagerFeature {
         state.navigateToFolder(parentURL.path, sidebarItemName: parentURL.lastPathComponent)
         state.resetComposer()
         state.resetComposerOnNextDirectoryNavigation = false
-        let exitEffect = Self.exitCollectionMode(state: &state)
+        let exitEffect = exitCollectionMode(state: &state)
         return .concatenate(
             exitEffect,
             .send(.entries(.loadItems(path: parentURL.path))),
@@ -1496,6 +1497,27 @@ struct FileManagerFeature {
         {
             state.resetComposer()
             state.resetComposerOnNextDirectoryNavigation = false
+        }
+    }
+
+    private func navigateToState(
+        _ navigationState: FileManagerNavigationUtils.NavigationState,
+        showHidden: Bool = false,
+    ) -> Effect<Action> {
+        switch navigationState {
+        case .recents:
+            .send(.entries(.loadRecentItems(showHidden: showHidden)))
+        case let .folder(path):
+            .send(.entries(.loadItems(path: path)))
+        case let .tags(tagName):
+            .run { send in
+                let taggedItems = await sidebarClient.loadFilesWithTag(tagName, showHidden, entryClient)
+                await send(.entries(.itemsLoaded(taggedItems)))
+            }
+        case .computer:
+            .send(.entries(.loadComputerItems))
+        case let .collection(navigation):
+            .send(.navigateToCollection(navigation))
         }
     }
 
@@ -1515,6 +1537,46 @@ struct FileManagerFeature {
             .cancel(id: ComposerFeature.CancelID.filters),
             .send(.entries(.setCollectionMode(false))),
         )
+    }
+
+    private func applyHistoryEntry(
+        state: inout State,
+        entry: HistoryEntry,
+        favorites: [SidebarUtils.FavoriteItem],
+        locations: [SidebarUtils.LocationItem],
+    ) {
+        state.navigationState = entry.navigationState
+        switch entry.navigationState {
+        case .collection:
+            state.selectedSidebarItem = nil
+        default:
+            state.selectedSidebarItem = entry.sidebarItemName
+            matchSidebarToPath(
+                state: &state,
+                path: state.currentPath,
+                favorites: favorites,
+                locations: locations,
+            )
+        }
+        state.composer = entry.composerState
+        state.composer.isPresented = false
+    }
+
+    private func matchSidebarToPath(
+        state: inout State,
+        path: String,
+        favorites: [SidebarUtils.FavoriteItem],
+        locations: [SidebarUtils.LocationItem],
+    ) {
+        state.selectedSidebarItem = {
+            let computerName = sidebarClient.computerName()
+            if path == computerName {
+                return locations.first(where: { $0.isComputer })?.name ?? path
+            }
+            if !path.hasPrefix("/") { return path }
+            return favorites.first(where: { $0.url.path == path })?.name
+                ?? locations.first(where: { $0.url.path == path })?.name
+        }()
     }
 }
 

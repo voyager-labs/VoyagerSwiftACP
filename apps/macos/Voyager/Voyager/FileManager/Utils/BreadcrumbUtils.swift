@@ -11,21 +11,10 @@ enum BreadcrumbUtils {
             lhs.name == rhs.name && lhs.fullPath == rhs.fullPath
         }
 
-        init(path: String) {
+        init(path: String, name: String, icon: NSImage) {
             fullPath = path
-            if path == SidebarUtils.computerName {
-                name = path
-                icon = NSImage(named: "NSComputer") ?? NSWorkspace.shared.icon(forFile: "/")
-            } else {
-                name = FileManager.default.displayName(atPath: path)
-                if let trashPath = FileManager.default.urls(for: .trashDirectory, in: .userDomainMask).first?.path,
-                   path == trashPath
-                {
-                    icon = NSImage(named: NSImage.trashFullName) ?? NSWorkspace.shared.icon(forFile: path)
-                } else {
-                    icon = NSWorkspace.shared.icon(forFile: path)
-                }
-            }
+            self.name = name
+            self.icon = icon
         }
 
         init(entry: Entry) {
@@ -35,19 +24,23 @@ enum BreadcrumbUtils {
         }
     }
 
-    static func findSpecialRootPath(for path: String, isTrashFolder: Bool) -> String? {
-        if isTrashFolder,
-           let trashURL = FileManager.default.urls(for: .trashDirectory, in: .userDomainMask).first
-        {
-            return trashURL.path
+    static func findSpecialRootPath(
+        for path: String,
+        isTrashFolder: Bool,
+        trashPath: String?,
+        iCloudDrivePath: String,
+        cloudStoragePath: String,
+    ) -> String? {
+        if isTrashFolder, let trashPath {
+            return trashPath
         }
-        if path.hasPrefix(SidebarUtils.iCloudDrivePath) {
-            return SidebarUtils.iCloudDrivePath
+        if path.hasPrefix(iCloudDrivePath) {
+            return iCloudDrivePath
         }
-        if path.hasPrefix(SidebarUtils.cloudStoragePath + "/") {
-            let relativePath = path.replacingOccurrences(of: SidebarUtils.cloudStoragePath + "/", with: "")
+        if path.hasPrefix(cloudStoragePath + "/") {
+            let relativePath = path.replacingOccurrences(of: cloudStoragePath + "/", with: "")
             if let firstSlashIndex = relativePath.firstIndex(of: "/") {
-                return (SidebarUtils.cloudStoragePath as NSString)
+                return (cloudStoragePath as NSString)
                     .appendingPathComponent(String(relativePath[..<firstSlashIndex]))
             }
             return path
@@ -55,28 +48,28 @@ enum BreadcrumbUtils {
         return nil
     }
 
-    static func buildBreadcrumbs(from root: String, to target: String) -> [Item] {
-        var result = [Item(path: root)]
+    static func buildBreadcrumbPaths(from root: String, to target: String) -> [String] {
+        var result = [root]
         if target != root {
             let relativePath = target.replacingOccurrences(of: root + "/", with: "")
             var accumulated = root
             for component in relativePath.split(separator: "/") {
                 accumulated += "/" + component
-                result.append(Item(path: accumulated))
+                result.append(accumulated)
             }
         }
         return result
     }
 
-    static func buildBreadcrumbsForStandardPath(_ path: String) -> [Item] {
-        var result: [Item] = []
+    static func buildBreadcrumbPathsForStandardPath(_ path: String) -> [String] {
+        var result: [String] = []
         if path.hasPrefix("/") {
-            result.append(Item(path: "/"))
+            result.append("/")
         }
         var accumulated = "/"
         for component in path.split(separator: "/") {
-            accumulated += component
-            result.append(Item(path: accumulated))
+            accumulated += String(component)
+            result.append(accumulated)
             accumulated += "/"
         }
         return result

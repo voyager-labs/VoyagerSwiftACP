@@ -8,6 +8,9 @@ struct InspectorPaneView: View {
     @Environment(\.colorScheme)
     var colorScheme
 
+    @Dependency(\.sidebarClient)
+    private var sidebarClient
+
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             HStack {

@@ -15,12 +15,16 @@ public enum ClipboardOperation: Equatable, Sendable {
 /// 파일 시스템 아이템 목록 및 선택 관리 (FSV 영역)
 @Reducer
 struct EntriesFeature {
+    @Dependency(\.entryClient)
+    var entryClient
     @Dependency(\.fileManagerWindowClient)
     var fileManagerWindowClient
     @Dependency(\.fileManagerWindowFocusClient)
     var fileManagerWindowFocusClient
     @Dependency(\.sidebarClient)
     var sidebarClient
+    @Dependency(\.undoManagerClient)
+    var undoManagerClient
 
     private static func deduplicateById(_ items: [Entry]) -> [Entry] {
         var seen: Set<String> = []
@@ -257,11 +261,6 @@ struct EntriesFeature {
         case operations(EntriesOperationsFeature.Action)
     }
 
-    @Dependency(\.entryClient)
-    var entryClient
-    @Dependency(\.undoManagerClient)
-    var undoManagerClient
-
     var body: some Reducer<State, Action> {
         Scope(state: \.operations, action: \.operations) {
             EntriesOperationsFeature()
@@ -473,10 +472,11 @@ struct EntriesFeature {
                 state.currentFolderPath = path
                 state.isVirtualFolder = false
 
+                let entryClient = entryClient
                 return .merge(
                     .cancel(id: CancelID.fsEventsWatcher),
 
-                    .run { [entryClient, showHidden = state.showHiddenFiles, path] send in
+                    .run { [showHidden = state.showHiddenFiles, path, entryClient] send in
                         let url = URL(fileURLWithPath: (path as NSString).expandingTildeInPath)
 
                         do {
@@ -487,7 +487,7 @@ struct EntriesFeature {
                         }
                     },
 
-                    .run { [entryClient, path] send in
+                    .run { [path, entryClient] send in
                         let url = URL(fileURLWithPath: (path as NSString).expandingTildeInPath)
                         let stream = entryClient.startWatchingDirectory(url)
 
@@ -502,7 +502,7 @@ struct EntriesFeature {
                 guard let path = state.currentFolderPath else { return .none }
                 state.isReloading = true
 
-                return .run { [entryClient, showHidden = state.showHiddenFiles, path] send in
+                return .run { [showHidden = state.showHiddenFiles, path] send in
                     let url = URL(fileURLWithPath: (path as NSString).expandingTildeInPath)
 
                     do {
@@ -517,8 +517,10 @@ struct EntriesFeature {
                 state.currentFolderPath = nil
                 state.isVirtualFolder = true
 
-                return .run { send in
-                    let recentItems = await sidebarClient.loadRecentItems(showHidden)
+                let sidebarClient = sidebarClient
+                let entryClient = entryClient
+                return .run { [sidebarClient, entryClient] send in
+                    let recentItems = await sidebarClient.loadRecentItems(showHidden, entryClient)
                     await send(.itemsLoaded(recentItems))
                 }
 
@@ -526,9 +528,11 @@ struct EntriesFeature {
                 state.currentFolderPath = tagName
                 state.isVirtualFolder = true
 
-                return .run { send in
+                let sidebarClient = sidebarClient
+                let entryClient = entryClient
+                return .run { [sidebarClient, entryClient] send in
                     try await Task.sleep(for: .milliseconds(500))
-                    let taggedItems = await sidebarClient.loadFilesWithTag(tagName, showHidden)
+                    let taggedItems = await sidebarClient.loadFilesWithTag(tagName, showHidden, entryClient)
                     await send(.itemsLoaded(taggedItems))
                 }
 
@@ -536,7 +540,8 @@ struct EntriesFeature {
                 state.currentFolderPath = sidebarClient.computerName()
                 state.isVirtualFolder = true
 
-                return .run { send in
+                let entryClient = entryClient
+                return .run { [entryClient] send in
                     let computerItems = try await entryClient.loadComputerItems()
                     await send(.itemsLoaded(computerItems))
                 }
@@ -917,14 +922,14 @@ struct EntriesFeature {
                     return .send(.navigateFolder(id: selectedFolders[0].id))
                 } else if selectedFolders.count > 1, selectedFiles.isEmpty {
                     let folderPaths = selectedFolders.map(\.fullPath)
-                    return .run { [fileManagerWindowClient] _ in
+                    return .run { _ in
                         for path in folderPaths {
                             _ = await fileManagerWindowClient.openWindow(path)
                         }
                     }
                 } else if !selectedFolders.isEmpty {
                     let folderPaths = selectedFolders.map(\.fullPath)
-                    let openWindowsEffect: Effect<Action> = .run { [fileManagerWindowClient] _ in
+                    let openWindowsEffect: Effect<Action> = .run { _ in
                         for path in folderPaths {
                             _ = await fileManagerWindowClient.openWindow(path)
                         }
@@ -1047,6 +1052,7 @@ struct EntriesFeature {
                 state.clipboardItems = selectedPaths
                 state.clipboardOperation = .copy
 
+                let entryClient = entryClient
                 return .run { [entryClient] send in
                     await send(.operations(.copySelectedItems(files: selectedItems)))
 
@@ -1064,6 +1070,7 @@ struct EntriesFeature {
                 state.clipboardItems = selectedPaths
                 state.clipboardOperation = .cut
 
+                let entryClient = entryClient
                 return .run { [entryClient] send in
                     await send(.operations(.copySelectedItems(files: selectedItems)))
 
@@ -1157,7 +1164,7 @@ struct EntriesFeature {
                 }
 
             case let .handleDropToTag(providers, tagName):
-                return .run { @MainActor [entryClient] _ in
+                return .run { @MainActor _ in
                     var urls: [URL] = []
                     for provider in providers
                         where provider.hasItemConformingToTypeIdentifier(UTType.fileURL.identifier)
@@ -1242,7 +1249,7 @@ struct EntriesFeature {
                     ))),
 
                     // 윈도우 포커싱 (destinationPath의 윈도우 찾기)
-                    .run { [destinationPath, fileManagerWindowFocusClient] _ in
+                    .run { [destinationPath] _ in
                         try? await Task.sleep(nanoseconds: 500_000_000)
                         await fileManagerWindowFocusClient.focusWindow(destinationPath)
                     },
@@ -1283,6 +1290,7 @@ struct EntriesFeature {
                 let oldPath = creatingId
                 state.clearCreatingFolder()
 
+                let entryClient = entryClient
                 return .run { [entryClient] send in
                     let parentURL = URL(fileURLWithPath: path)
                     let targetPath = parentURL.appendingPathComponent(name).path
@@ -1569,14 +1577,11 @@ struct EntriesFeature {
         _ record: EntryActionRecord,
         direction: EntryActionDirection,
     ) -> Effect<Action> {
-        let entryClient = entryClient
-
-        return .run { send in
+        .run { send in
             do {
                 let targets = try await applyEntryActionTargets(
                     record: record,
                     direction: direction,
-                    entryClient: entryClient,
                     send: send,
                 )
                 let updatedRecord = EntryActionRecord(
@@ -1598,7 +1603,6 @@ struct EntriesFeature {
     private func applyEntryActionTargets(
         record: EntryActionRecord,
         direction: EntryActionDirection,
-        entryClient: EntryClient,
         send: Send<Action>,
     ) async throws -> [EntryActionRecord.Target] {
         guard !record.targets.isEmpty else {
@@ -1612,7 +1616,6 @@ struct EntriesFeature {
                 record: record,
                 target: target,
                 direction: direction,
-                entryClient: entryClient,
             )
 
             await send(.operations(.operationStarted(operation.operationPath, operation.operationKind)))
@@ -1642,36 +1645,34 @@ struct EntriesFeature {
         record: EntryActionRecord,
         target: EntryActionRecord.Target,
         direction: EntryActionDirection,
-        entryClient: EntryClient,
     ) throws -> EntryActionOperation {
         switch record.actionKind {
         case .rename:
-            try makeRenameOperation(target: target, direction: direction, entryClient: entryClient)
+            try makeRenameOperation(target: target, direction: direction)
 
         case .move:
-            try makeMoveOperation(target: target, direction: direction, entryClient: entryClient)
+            try makeMoveOperation(target: target, direction: direction)
 
         case .paste, .duplicate:
-            try makeCopyOperation(target: target, direction: direction, entryClient: entryClient)
+            try makeCopyOperation(target: target, direction: direction)
 
         case .createFolder:
-            try makeCreateFolderOperation(target: target, direction: direction, entryClient: entryClient)
+            try makeCreateFolderOperation(target: target, direction: direction)
 
         case .moveToTrash:
-            try makeMoveToTrashOperation(target: target, direction: direction, entryClient: entryClient)
+            try makeMoveToTrashOperation(target: target, direction: direction)
 
         case .putBack:
-            try makePutBackOperation(target: target, direction: direction, entryClient: entryClient)
+            try makePutBackOperation(target: target, direction: direction)
 
         case .setTags:
-            try makeSetTagsOperation(target: target, direction: direction, entryClient: entryClient)
+            try makeSetTagsOperation(target: target, direction: direction)
         }
     }
 
     private func makeRenameOperation(
         target: EntryActionRecord.Target,
         direction: EntryActionDirection,
-        entryClient: EntryClient,
     ) throws -> EntryActionOperation {
         let fromPath = try Self.requiredPath(
             direction == .undo ? target.afterPath : target.beforePath,
@@ -1697,7 +1698,6 @@ struct EntriesFeature {
     private func makeMoveOperation(
         target: EntryActionRecord.Target,
         direction: EntryActionDirection,
-        entryClient: EntryClient,
     ) throws -> EntryActionOperation {
         let fromPath = try Self.requiredPath(
             direction == .undo ? target.afterPath : target.beforePath,
@@ -1723,7 +1723,6 @@ struct EntriesFeature {
     private func makeCopyOperation(
         target: EntryActionRecord.Target,
         direction: EntryActionDirection,
-        entryClient: EntryClient,
     ) throws -> EntryActionOperation {
         switch direction {
         case .undo:
@@ -1756,7 +1755,6 @@ struct EntriesFeature {
     private func makeCreateFolderOperation(
         target: EntryActionRecord.Target,
         direction: EntryActionDirection,
-        entryClient: EntryClient,
     ) throws -> EntryActionOperation {
         switch direction {
         case .undo:
@@ -1788,7 +1786,6 @@ struct EntriesFeature {
     private func makeMoveToTrashOperation(
         target: EntryActionRecord.Target,
         direction: EntryActionDirection,
-        entryClient: EntryClient,
     ) throws -> EntryActionOperation {
         switch direction {
         case .undo:
@@ -1811,7 +1808,7 @@ struct EntriesFeature {
                 operationPath: originalPath,
                 operationKind: .moveToTrash,
                 perform: {
-                    let trashPath = try await Self.moveItemToTrash(path: originalPath, entryClient: entryClient)
+                    let trashPath = try await moveItemToTrash(path: originalPath)
                     return EntryActionRecord.Target(beforePath: originalPath, afterPath: trashPath)
                 },
             )
@@ -1821,7 +1818,6 @@ struct EntriesFeature {
     private func makePutBackOperation(
         target: EntryActionRecord.Target,
         direction: EntryActionDirection,
-        entryClient: EntryClient,
     ) throws -> EntryActionOperation {
         switch direction {
         case .undo:
@@ -1830,7 +1826,7 @@ struct EntriesFeature {
                 operationPath: originalPath,
                 operationKind: .moveToTrash,
                 perform: {
-                    let trashPath = try await Self.moveItemToTrash(path: originalPath, entryClient: entryClient)
+                    let trashPath = try await moveItemToTrash(path: originalPath)
                     return EntryActionRecord.Target(beforePath: trashPath, afterPath: originalPath)
                 },
             )
@@ -1854,7 +1850,6 @@ struct EntriesFeature {
     private func makeSetTagsOperation(
         target: EntryActionRecord.Target,
         direction: EntryActionDirection,
-        entryClient: EntryClient,
     ) throws -> EntryActionOperation {
         let filePath = try Self.requiredPath(target.beforePath, context: "setTags target")
         let tags = try Self.requiredTags(
@@ -1886,7 +1881,7 @@ struct EntriesFeature {
         return tags
     }
 
-    private static func moveItemToTrash(path: String, entryClient: EntryClient) async throws -> String {
+    private func moveItemToTrash(path: String) async throws -> String {
         let sourceURL = URL(fileURLWithPath: path)
         let trashURL = try await entryClient.moveToTrashAndReturnURL(sourceURL)
         let metadata = TrashMetadata(

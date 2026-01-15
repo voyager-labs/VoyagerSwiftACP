@@ -42,7 +42,12 @@ public struct EntryClient: Sendable {
     public var loadItems: @Sendable (URL, Bool) async throws -> [Entry]
     public var loadComputerItems: @Sendable () async throws -> [Entry]
     public var fileExists: @Sendable (String) -> Bool
+    public var fileExistsAtPath: @Sendable (String, UnsafeMutablePointer<ObjCBool>?) -> Bool
     public var displayName: @Sendable (String) -> String
+    public var urlsForDirectory: @Sendable (FileManager.SearchPathDirectory, FileManager.SearchPathDomainMask) -> [URL]
+    public var mountedVolumeURLs: @Sendable ([URLResourceKey], FileManager.VolumeEnumerationOptions) -> [URL]?
+    public var contentsOfDirectory: @Sendable (URL, [URLResourceKey], FileManager.DirectoryEnumerationOptions) throws
+        -> [URL]
     public var saveDragPaths: @Sendable ([String]) -> Void
     public var loadDragPaths: @Sendable () -> [String]
     public var saveDragWithOption: @Sendable (Bool) -> Void
@@ -76,7 +81,13 @@ public struct EntryClient: Sendable {
         loadItems: @escaping @Sendable (URL, Bool) async throws -> [Entry],
         loadComputerItems: @escaping @Sendable () async throws -> [Entry],
         fileExists: @escaping @Sendable (String) -> Bool,
+        fileExistsAtPath: @escaping @Sendable (String, UnsafeMutablePointer<ObjCBool>?) -> Bool,
         displayName: @escaping @Sendable (String) -> String,
+        urlsForDirectory: @escaping @Sendable (FileManager.SearchPathDirectory, FileManager.SearchPathDomainMask)
+            -> [URL],
+        mountedVolumeURLs: @escaping @Sendable ([URLResourceKey], FileManager.VolumeEnumerationOptions) -> [URL]?,
+        contentsOfDirectory: @escaping @Sendable (URL, [URLResourceKey],
+                                                  FileManager.DirectoryEnumerationOptions) throws -> [URL],
         saveDragPaths: @escaping @Sendable ([String]) -> Void,
         loadDragPaths: @escaping @Sendable () -> [String],
         saveDragWithOption: @escaping @Sendable (Bool) -> Void,
@@ -109,7 +120,11 @@ public struct EntryClient: Sendable {
         self.loadItems = loadItems
         self.loadComputerItems = loadComputerItems
         self.fileExists = fileExists
+        self.fileExistsAtPath = fileExistsAtPath
         self.displayName = displayName
+        self.urlsForDirectory = urlsForDirectory
+        self.mountedVolumeURLs = mountedVolumeURLs
+        self.contentsOfDirectory = contentsOfDirectory
         self.saveDragPaths = saveDragPaths
         self.loadDragPaths = loadDragPaths
         self.saveDragWithOption = saveDragWithOption
@@ -530,8 +545,6 @@ extension EntryClient: DependencyKey {
             },
             loadComputerItems: {
                 await Task.detached {
-                    // EntryClient의 displayName 메서드를 사용하도록 변경 필요
-                    // 현재는 EntryClient 자체가 초기화되는 중이므로 FileManager.default 사용 유지
                     let rootName = FileManager.default.displayName(atPath: "/")
                     return [
                         Entry(
@@ -547,8 +560,20 @@ extension EntryClient: DependencyKey {
             fileExists: { path in
                 FileManager.default.fileExists(atPath: path)
             },
+            fileExistsAtPath: { path, isDirectory in
+                FileManager.default.fileExists(atPath: path, isDirectory: isDirectory)
+            },
             displayName: { path in
                 FileManager.default.displayName(atPath: path)
+            },
+            urlsForDirectory: { directory, domain in
+                FileManager.default.urls(for: directory, in: domain)
+            },
+            mountedVolumeURLs: { keys, options in
+                FileManager.default.mountedVolumeURLs(includingResourceValuesForKeys: keys, options: options)
+            },
+            contentsOfDirectory: { url, keys, options in
+                try FileManager.default.contentsOfDirectory(at: url, includingPropertiesForKeys: keys, options: options)
             },
             saveDragPaths: { paths in
                 // 커스텀 Pasteboard 사용 (drag는 시스템 전용)
@@ -732,7 +757,11 @@ extension EntryClient: DependencyKey {
             loadItems: { _, _ in [] },
             loadComputerItems: { [] },
             fileExists: { _ in false },
+            fileExistsAtPath: { _, _ in false },
             displayName: { path in path },
+            urlsForDirectory: { _, _ in [] },
+            mountedVolumeURLs: { _, _ in nil },
+            contentsOfDirectory: { _, _, _ in [] },
             saveDragPaths: { _ in },
             loadDragPaths: { [] },
             saveDragWithOption: { _ in },
@@ -781,7 +810,11 @@ extension EntryClient: DependencyKey {
             loadItems: { _, _ in [] },
             loadComputerItems: { [] },
             fileExists: { _ in false },
+            fileExistsAtPath: { _, _ in false },
             displayName: { path in path },
+            urlsForDirectory: { _, _ in [] },
+            mountedVolumeURLs: { _, _ in nil },
+            contentsOfDirectory: { _, _, _ in [] },
             saveDragPaths: { _ in },
             loadDragPaths: { [] },
             saveDragWithOption: { _ in },

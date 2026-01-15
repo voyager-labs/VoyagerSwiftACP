@@ -32,7 +32,9 @@ class FileManagerWindowController: NSWindowController, NSWindowDelegate {
         super.init(window: window)
         window.delegate = self
         Self.setupWindowFrame(window, path ?? state.currentPath)
-        window.title = FileManagerFeature.makeWindowTitle(for: path ?? state.currentPath)
+        window.title = FileManagerFeature.makeWindowTitle(
+            for: path ?? state.currentPath,
+        )
     }
 
     private static func createInitialState(

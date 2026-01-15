@@ -2,11 +2,18 @@ import AppKit
 import ComposableArchitecture
 import SwiftUI
 
+// swiftlint:disable type_body_length
 struct ContentPaneView: View {
     let store: StoreOf<FileManagerFeature>
 
     @Dependency(\.fileManagerWindowClient)
     private var fileManagerWindowClient
+    @Dependency(\.entryClient)
+    private var entryClient
+    @Dependency(\.workspaceClient)
+    private var workspaceClient
+    @Dependency(\.sidebarClient)
+    private var sidebarClient
     @FocusState private var isKeyCommandFocused: Bool
     private static let undoSelector = Selector(("undo:"))
     private static let redoSelector = Selector(("redo:"))
@@ -88,10 +95,12 @@ struct ContentPaneView: View {
             let leftWidth = max(totalWidth * 0.5, 0)
 
             HStack(spacing: 0) {
-                if !store.breadcrumbItems.isEmpty || store.selectedBreadcrumbItem != nil {
+                let breadcrumbItems = breadcrumbItems(for: store.state)
+                let selectedBreadcrumbItem = selectedBreadcrumbItem(for: store.state)
+                if !breadcrumbItems.isEmpty || selectedBreadcrumbItem != nil {
                     PathBreadcrumbView(
-                        breadcrumbItems: store.breadcrumbItems,
-                        selectedItem: nil,
+                        breadcrumbItems: breadcrumbItems,
+                        selectedItem: selectedBreadcrumbItem,
                         availableWidth: leftWidth,
                         onNavigate: { path in store.send(.navigateTo(path)) },
                         onOpenInNewWindow: { path in
@@ -293,4 +302,86 @@ struct ContentPaneView: View {
         guard isTextEditingResponder() else { return false }
         return (NSApp.keyWindow?.firstResponder as? NSResponder)?.undoManager?.canRedo == true
     }
+
+    // swiftlint:disable function_body_length
+    private func breadcrumbItems(for state: FileManagerFeature.State) -> [BreadcrumbUtils.Item] {
+        switch state.navigationState {
+        case .recents, .tags:
+            return []
+        case .computer:
+            if state.entries.selectedIds.count == 1,
+               let selectedItem = state.entries.displayItems.first(where: { $0.id == state.entries.selectedIds.first }),
+               selectedItem.fullPath == "/"
+            {
+                return []
+            }
+            let computerName = sidebarClient.computerName()
+            return [
+                BreadcrumbUtils.Item(
+                    path: computerName,
+                    name: computerName,
+                    icon: NSImage(named: "NSComputer") ?? workspaceClient.iconForFile("/"),
+                ),
+            ]
+        case let .folder(path):
+            let trashPath = entryClient.urlsForDirectory(.trashDirectory, .userDomainMask).first?.path
+            let iCloudDrivePath = (NSHomeDirectory() as NSString)
+                .appendingPathComponent("Library/Mobile Documents/com~apple~CloudDocs")
+            let cloudStoragePath = (NSHomeDirectory() as NSString)
+                .appendingPathComponent("Library/CloudStorage")
+
+            let paths: [String] = if let rootPath = BreadcrumbUtils.findSpecialRootPath(
+                for: path,
+                isTrashFolder: state.isTrashFolder,
+                trashPath: trashPath,
+                iCloudDrivePath: iCloudDrivePath,
+                cloudStoragePath: cloudStoragePath,
+            ) {
+                BreadcrumbUtils.buildBreadcrumbPaths(from: rootPath, to: path)
+            } else {
+                BreadcrumbUtils.buildBreadcrumbPathsForStandardPath(path)
+            }
+
+            let computerName = sidebarClient.computerName()
+            return paths.map { breadcrumbPath in
+                let name: String
+                let icon: NSImage
+
+                if breadcrumbPath == computerName {
+                    name = computerName
+                    icon = NSImage(named: "NSComputer") ?? workspaceClient.iconForFile("/")
+                } else {
+                    name = entryClient.displayName(breadcrumbPath)
+                    if let trashPath = entryClient.urlsForDirectory(.trashDirectory, .userDomainMask).first?.path,
+                       breadcrumbPath == trashPath
+                    {
+                        icon = NSImage(named: NSImage.trashFullName) ?? workspaceClient.iconForFile(breadcrumbPath)
+                    } else {
+                        icon = workspaceClient.iconForFile(breadcrumbPath)
+                    }
+                }
+
+                return BreadcrumbUtils.Item(path: breadcrumbPath, name: name, icon: icon)
+            }
+        case .collection:
+            return []
+        }
+    }
+
+    private func selectedBreadcrumbItem(for state: FileManagerFeature.State) -> BreadcrumbUtils.Item? {
+        guard state.entries.selectedIds.count == 1,
+              let selectedItem = state.entries.displayItems.first(where: { $0.id == state.entries.selectedIds.first })
+        else { return nil }
+
+        let selectedBreadcrumb = BreadcrumbUtils.Item(entry: selectedItem)
+
+        if selectedBreadcrumb.fullPath == state.currentPath {
+            return nil
+        }
+
+        return selectedBreadcrumb
+    }
+    // swiftlint:enable function_body_length
 }
+
+// swiftlint:enable type_body_length

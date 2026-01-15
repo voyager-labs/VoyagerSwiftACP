@@ -10,6 +10,9 @@ struct ToolbarNavigationButtons: View {
     let canGoForward: Bool
     let canGoToEnclosingDirectory: Bool
 
+    @Dependency(\.sidebarClient)
+    private var sidebarClient
+
     var body: some View {
         HStack(spacing: 0) {
             backButton()
@@ -91,7 +94,7 @@ struct ToolbarNavigationButtons: View {
         case let .tags(tagName):
             tagName
         case .computer:
-            SidebarUtils.computerName
+            sidebarClient.computerName()
         case let .collection(navigation):
             switch navigation.kind {
             case .temporary:
