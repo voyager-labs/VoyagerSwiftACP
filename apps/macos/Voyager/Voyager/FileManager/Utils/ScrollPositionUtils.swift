@@ -30,6 +30,7 @@ enum ScrollPositionUtils {
         hasRestored = true
     }
 
+    @MainActor
     static func performAutoScroll(scrollView: NSScrollView?, workspaceClient: WorkspaceClient) {
         guard let scrollView,
               let currentEvent = workspaceClient.currentEvent()

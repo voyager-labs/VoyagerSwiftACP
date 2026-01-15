@@ -65,7 +65,7 @@ extension UserDefaultsClient: DependencyKey {
 
     nonisolated static var testValue: UserDefaultsClient {
         nonisolated(unsafe) var storage: [String: Any] = [:]
-        nonisolated(unsafe) let lock = NSLock()
+        let lock = NSLock()
         return UserDefaultsClient(
             bool: { key in
                 lock.lock()

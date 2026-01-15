@@ -125,10 +125,6 @@ struct ToolbarView: View {
             ?? (viewStore.isCollectionMode
                 ? "New Collection"
                 : entryClient.displayName(viewStore.currentPath))
-        let isNewCollection = viewStore.isCollectionMode && viewStore.openedCollectionName == nil
-        let isDirtySavedCollection = viewStore.isCollectionMode
-            && viewStore.openedCollectionURLExists
-            && viewStore.isOpenedCollectionDirty
         let composeSuffix = "/ Compose a filter"
         let showUnsavedIndicator = viewStore.isCollectionMode
             && (!viewStore.openedCollectionURLExists || viewStore.isOpenedCollectionDirty)

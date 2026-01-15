@@ -544,7 +544,9 @@ struct ContentPaneListView: View {
                         saveScrollPosition()
                     }
                     .introspect(.scrollView, on: .macOS(.v13...)) { scrollView in
-                        nsScrollView = scrollView
+                        Task { @MainActor in
+                            nsScrollView = scrollView
+                        }
                     }
                     .onChange(of: store.currentPath) { _ in
                         hasRestoredScrollPosition = false

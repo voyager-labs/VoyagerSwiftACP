@@ -34,7 +34,7 @@ struct SidebarItemView: View {
     }
 
     private func applicationsIcon() -> NSImage? {
-        var appIcon = NSImage(
+        let appIcon = NSImage(
             contentsOfFile: "/System/Library/CoreServices/CoreTypes.bundle/Contents/Resources/SidebarApplicationsFolder.icns",
         )
         appIcon?.isTemplate = true
@@ -361,7 +361,7 @@ struct SidebarView: View {
 
     private func resolveFirstDropURL(
         from providers: [NSItemProvider],
-        completion: @escaping (URL?) -> Void,
+        completion: @escaping @Sendable (URL?) -> Void,
     ) {
         for provider in providers where provider.hasItemConformingToTypeIdentifier(UTType.fileURL.identifier) {
             provider.loadItem(forTypeIdentifier: UTType.fileURL.identifier, options: nil) { data, _ in
