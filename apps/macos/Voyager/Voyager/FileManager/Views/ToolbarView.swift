@@ -32,6 +32,8 @@ struct ToolbarView: View {
     let store: StoreOf<FileManagerFeature>
     @Environment(\.colorScheme)
     private var colorScheme
+    @Dependency(\.entryClient)
+    private var entryClient
     @State private var isTitleAreaHovered: Bool = false
     @State private var isTitleHovered: Bool = false
 
@@ -122,7 +124,7 @@ struct ToolbarView: View {
         let titleText = viewStore.openedCollectionName
             ?? (viewStore.isCollectionMode
                 ? "New Collection"
-                : FileManager.default.displayName(atPath: viewStore.currentPath))
+                : entryClient.displayName(viewStore.currentPath))
         let isNewCollection = viewStore.isCollectionMode && viewStore.openedCollectionName == nil
         let isDirtySavedCollection = viewStore.isCollectionMode
             && viewStore.openedCollectionURLExists
