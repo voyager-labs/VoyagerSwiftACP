@@ -1,5 +1,6 @@
 // swiftlint:disable file_length
 import AppKit
+import ComposableArchitecture
 import SwiftUI
 import UniformTypeIdentifiers
 
@@ -56,6 +57,8 @@ struct EntryListView: View, Equatable {
     let showExtract: Bool
     let draggingPaths: [String]
 
+    @Dependency(\.workspaceClient)
+    private var workspaceClient
     @State private var isDropTarget = false
     @FocusState private var isTextFieldFocused: Bool
     @State private var isOptionPressed = false
@@ -518,11 +521,11 @@ private extension EntryListView {
     }
 
     func appIcon(for bundleID: String, size: CGFloat) -> NSImage? {
-        guard let appURL = NSWorkspace.shared.urlForApplication(withBundleIdentifier: bundleID) else {
+        guard let appURL = workspaceClient.urlForApplication(bundleID) else {
             return nil
         }
 
-        let originalIcon = NSWorkspace.shared.icon(forFile: appURL.path)
+        let originalIcon = workspaceClient.iconForFile(appURL.path)
 
         // 원본 이미지를 지정된 크기로 리사이즈
         let resizedIcon = NSImage(size: NSSize(width: size, height: size))

@@ -13,6 +13,8 @@ struct ScopeChipView: View {
     @State private var nameHoverPath: String?
     @Environment(\.colorScheme)
     private var colorScheme: ColorScheme
+    @Dependency(\.entryClient)
+    private var entryClient
 
     var body: some View {
         let isRootPlaceholder = paths.isEmpty
@@ -84,7 +86,7 @@ struct ScopeChipView: View {
 
     @ViewBuilder
     private func directoryNameChip(path: String, index _: Int) -> some View {
-        let displayName = FileManager.default.displayName(atPath: path)
+        let displayName = entryClient.displayName(path)
 
         HStack(spacing: 4) {
             Button {

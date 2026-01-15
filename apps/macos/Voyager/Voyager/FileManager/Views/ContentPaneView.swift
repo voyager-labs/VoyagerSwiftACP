@@ -325,9 +325,10 @@ struct ContentPaneView: View {
             ]
         case let .folder(path):
             let trashPath = entryClient.urlsForDirectory(.trashDirectory, .userDomainMask).first?.path
-            let iCloudDrivePath = (NSHomeDirectory() as NSString)
+            let homePath = entryClient.homeDirectory()
+            let iCloudDrivePath = (homePath as NSString)
                 .appendingPathComponent("Library/Mobile Documents/com~apple~CloudDocs")
-            let cloudStoragePath = (NSHomeDirectory() as NSString)
+            let cloudStoragePath = (homePath as NSString)
                 .appendingPathComponent("Library/CloudStorage")
 
             let isTrashFolder: Bool = if let trashPath {

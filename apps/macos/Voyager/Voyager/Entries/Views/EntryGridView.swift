@@ -1,5 +1,6 @@
 // swiftlint:disable file_length
 import AppKit
+import ComposableArchitecture
 import SwiftUI
 import UniformTypeIdentifiers
 
@@ -53,6 +54,8 @@ struct EntryGridView: View, Equatable {
     let showExtract: Bool
     let draggingPaths: [String]
 
+    @Dependency(\.workspaceClient)
+    private var workspaceClient
     @State private var isDropTarget = false
     @FocusState private var isTextFieldFocused: Bool
     @State private var isOptionPressed = false
@@ -467,17 +470,6 @@ private extension EntryGridView {
             Label("Tags", systemImage: "tag")
         }
     }
-}
-
-extension View {
-    @ViewBuilder
-    func `if`(_ condition: Bool, transform: (Self) -> some View) -> some View {
-        if condition {
-            transform(self)
-        } else {
-            self
-        }
-    }
 
     @ViewBuilder
     func appIconView(for bundleID: String) -> some View {
@@ -487,10 +479,10 @@ extension View {
     }
 
     func appIcon(for bundleID: String, size: CGFloat) -> NSImage? {
-        guard let appURL = NSWorkspace.shared.urlForApplication(withBundleIdentifier: bundleID) else {
+        guard let appURL = workspaceClient.urlForApplication(bundleID) else {
             return nil
         }
-        let originalIcon = NSWorkspace.shared.icon(forFile: appURL.path)
+        let originalIcon = workspaceClient.iconForFile(appURL.path)
 
         // 원본 이미지를 지정된 크기로 리사이즈
         let resizedIcon = NSImage(size: NSSize(width: size, height: size))
@@ -509,6 +501,17 @@ extension View {
         path.fill()
         image.unlockFocus()
         return image
+    }
+}
+
+extension View {
+    @ViewBuilder
+    func `if`(_ condition: Bool, transform: (Self) -> some View) -> some View {
+        if condition {
+            transform(self)
+        } else {
+            self
+        }
     }
 }
 
