@@ -67,6 +67,8 @@ struct EntriesOperationsFeature {
 
     @Dependency(\.entryClient)
     var entryClient
+    @Dependency(\.workspaceClient)
+    var workspaceClient
     @Dependency(\.entryCapabilities)
     var capabilities
 
@@ -152,7 +154,7 @@ struct EntriesOperationsFeature {
                 }
 
             case let .openFileWithApp(file):
-                return selectApplicationAndOpenFile(for: file, defaultChecked: false)
+                return selectApplicationAndOpenFile(for: file, defaultChecked: false, workspaceClient: workspaceClient)
 
             case let .openFileWithAppBundleID(filePath, bundleID, url):
                 if isInTrash(filePath) {
@@ -190,7 +192,7 @@ struct EntriesOperationsFeature {
                     return .none
                 }
 
-                return selectApplicationAndOpenFile(for: file, defaultChecked: true)
+                return selectApplicationAndOpenFile(for: file, defaultChecked: true, workspaceClient: workspaceClient)
 
             case let .openFilesWithAppFromOther(files, shouldSetAsDefault):
                 for file in files {
@@ -200,7 +202,11 @@ struct EntriesOperationsFeature {
                     }
                 }
 
-                return selectApplicationAndOpenFile(for: files, defaultChecked: shouldSetAsDefault)
+                return selectApplicationAndOpenFile(
+                    for: files,
+                    defaultChecked: shouldSetAsDefault,
+                    workspaceClient: workspaceClient,
+                )
 
             case let .loadApplicationsForFile(file):
                 guard !file.isDirectory else { return .none }
@@ -363,12 +369,8 @@ struct EntriesOperationsFeature {
                     kind: .moveToTrash,
                     actionKind: .moveToTrash,
                 ) { url in
-                    var result: NSURL?
-                    try await MainActor.run {
-                        var nsResult: NSURL?
-                        try FileManager.default.trashItem(at: url, resultingItemURL: &nsResult)
-                        result = nsResult
-                    }
+                    let trashURL = try await entryClient.moveToTrashAndReturnURL(url)
+                    let result: NSURL? = trashURL as NSURL
 
                     if let trashURL = result as URL? {
                         let metadata = TrashMetadata(
@@ -862,18 +864,24 @@ private nonisolated func isInTrash(_ filePath: String) -> Bool {
 private func selectApplicationAndOpenFile(
     for file: Entry,
     defaultChecked: Bool,
+    workspaceClient: WorkspaceClient,
 ) -> Effect<EntriesOperationsFeature.Action> {
-    selectApplicationAndOpenFile(for: [file], defaultChecked: defaultChecked)
+    selectApplicationAndOpenFile(for: [file], defaultChecked: defaultChecked, workspaceClient: workspaceClient)
 }
 
 private func selectApplicationAndOpenFile(
     for files: [Entry],
     defaultChecked: Bool,
+    workspaceClient: WorkspaceClient,
 ) -> Effect<EntriesOperationsFeature.Action> {
     let fileURLs = files.map { URL(fileURLWithPath: $0.fullPath) }
 
-    return .run { send in
-        guard let selection = await selectApplication(for: fileURLs, defaultChecked: defaultChecked) else { return }
+    return .run { [workspaceClient] send in
+        guard let selection = await selectApplication(
+            for: fileURLs,
+            workspaceClient: workspaceClient,
+            defaultChecked: defaultChecked,
+        ) else { return }
 
         for file in files {
             let effects = applyApplicationSelection(selection, to: file)
@@ -913,16 +921,23 @@ private class OpenWithPanelDelegate: NSObject, NSOpenSavePanelDelegate {
     let fileURLs: [URL]?
     var enableMode: EnableMode
     weak var panel: NSOpenPanel?
+    let workspaceClient: WorkspaceClient
 
     enum EnableMode: Int {
         case recommended = 0
         case all = 1
     }
 
-    init(fileURL: URL? = nil, fileURLs: [URL]? = nil, enableMode: EnableMode = .recommended) {
+    init(
+        workspaceClient: WorkspaceClient,
+        fileURL: URL? = nil,
+        fileURLs: [URL]? = nil,
+        enableMode: EnableMode = .recommended,
+    ) {
         self.fileURL = fileURL
         self.fileURLs = fileURLs
         self.enableMode = enableMode
+        self.workspaceClient = workspaceClient
         super.init()
     }
 
@@ -930,13 +945,12 @@ private class OpenWithPanelDelegate: NSObject, NSOpenSavePanelDelegate {
         guard url.pathExtension == "app" else { return false }
         guard enableMode == .recommended else { return true }
 
-        let workspace = NSWorkspace.shared
         if let fileURL {
-            let supportedApps = workspace.urlsForApplications(toOpen: fileURL)
+            let supportedApps = workspaceClient.urlsForApplications(fileURL)
             return supportedApps.contains(url)
         } else if let fileURLs {
             for fileURL in fileURLs {
-                let supportedApps = workspace.urlsForApplications(toOpen: fileURL)
+                let supportedApps = workspaceClient.urlsForApplications(fileURL)
                 if !supportedApps.contains(url) {
                     return false
                 }
@@ -1007,22 +1021,32 @@ private func createOpenWithAccessoryView(
 }
 
 @MainActor
-private func selectApplication(for itemURL: URL, defaultChecked: Bool = false) -> ApplicationSelection? {
+private func selectApplication(
+    for itemURL: URL,
+    workspaceClient: WorkspaceClient,
+    defaultChecked: Bool = false,
+) -> ApplicationSelection? {
     selectApplication(
         fileURL: itemURL,
         fileURLs: nil,
         message: "Choose an application to open the document \"\(itemURL.lastPathComponent)\".",
         defaultChecked: defaultChecked,
+        workspaceClient: workspaceClient,
     )
 }
 
 @MainActor
-private func selectApplication(for fileURLs: [URL], defaultChecked: Bool = false) -> ApplicationSelection? {
+private func selectApplication(
+    for fileURLs: [URL],
+    workspaceClient: WorkspaceClient,
+    defaultChecked: Bool = false,
+) -> ApplicationSelection? {
     selectApplication(
         fileURL: nil,
         fileURLs: fileURLs,
         message: "Choose an application to open \(fileURLs.count) items.",
         defaultChecked: defaultChecked,
+        workspaceClient: workspaceClient,
     )
 }
 
@@ -1032,6 +1056,7 @@ private func selectApplication(
     fileURLs: [URL]?,
     message: String,
     defaultChecked: Bool,
+    workspaceClient: WorkspaceClient,
 ) -> ApplicationSelection? {
     let panel = NSOpenPanel()
     panel.canChooseDirectories = false
@@ -1047,7 +1072,12 @@ private func selectApplication(
     panel.prompt = "Open"
     panel.message = message
 
-    let delegate = OpenWithPanelDelegate(fileURL: fileURL, fileURLs: fileURLs, enableMode: .recommended)
+    let delegate = OpenWithPanelDelegate(
+        workspaceClient: workspaceClient,
+        fileURL: fileURL,
+        fileURLs: fileURLs,
+        enableMode: .recommended,
+    )
     panel.delegate = delegate
     delegate.panel = panel
 

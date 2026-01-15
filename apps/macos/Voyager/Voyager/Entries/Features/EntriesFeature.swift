@@ -1886,16 +1886,9 @@ struct EntriesFeature {
         return tags
     }
 
-    private static func moveItemToTrash(path: String, entryClient _: EntryClient) async throws -> String {
+    private static func moveItemToTrash(path: String, entryClient: EntryClient) async throws -> String {
         let sourceURL = URL(fileURLWithPath: path)
-        let trashURL = try await MainActor.run {
-            var result: NSURL?
-            try FileManager.default.trashItem(at: sourceURL, resultingItemURL: &result)
-            guard let trashURL = result as URL? else {
-                throw FileOpError.system(message: "Trash URL not found")
-            }
-            return trashURL
-        }
+        let trashURL = try await entryClient.moveToTrashAndReturnURL(sourceURL)
         let metadata = TrashMetadata(
             trashPath: trashURL.path,
             originalPath: path,

@@ -870,7 +870,7 @@ struct FileManagerFeature {
 
                 let name = isVoycoll
                     ? url.deletingPathExtension().lastPathComponent
-                    : FileManager.default.displayName(atPath: url.path)
+                    : entryClient.displayName(url.path)
                 let iconName = SidebarUtils.iconNameForURL(url, isDirectory: isDirectory.boolValue)
                 let newFavorite = SidebarUtils.FavoriteItem(name: name, url: url, iconName: iconName)
 

@@ -31,6 +31,7 @@ public struct EntryClient: Sendable {
     public var moveFile: @Sendable (URL, URL) async throws -> Void
     public var renameFile: @Sendable (URL, URL) async throws -> Void
     public var moveToTrash: @Sendable (URL) async throws -> Void
+    public var moveToTrashAndReturnURL: @Sendable (URL) async throws -> URL
     public var deleteImmediately: @Sendable (URL) async throws -> Void
     public var putBackFromTrash: @Sendable (URL, String) async throws -> Void
     public var compressItems: @Sendable ([URL]) async throws -> URL
@@ -41,6 +42,7 @@ public struct EntryClient: Sendable {
     public var loadItems: @Sendable (URL, Bool) async throws -> [Entry]
     public var loadComputerItems: @Sendable () async throws -> [Entry]
     public var fileExists: @Sendable (String) -> Bool
+    public var displayName: @Sendable (String) -> String
     public var saveDragPaths: @Sendable ([String]) -> Void
     public var loadDragPaths: @Sendable () -> [String]
     public var saveDragWithOption: @Sendable (Bool) -> Void
@@ -63,6 +65,7 @@ public struct EntryClient: Sendable {
         moveFile: @escaping @Sendable (URL, URL) async throws -> Void,
         renameFile: @escaping @Sendable (URL, URL) async throws -> Void,
         moveToTrash: @escaping @Sendable (URL) async throws -> Void,
+        moveToTrashAndReturnURL: @escaping @Sendable (URL) async throws -> URL,
         deleteImmediately: @escaping @Sendable (URL) async throws -> Void,
         putBackFromTrash: @escaping @Sendable (URL, String) async throws -> Void,
         compressItems: @escaping @Sendable ([URL]) async throws -> URL,
@@ -73,6 +76,7 @@ public struct EntryClient: Sendable {
         loadItems: @escaping @Sendable (URL, Bool) async throws -> [Entry],
         loadComputerItems: @escaping @Sendable () async throws -> [Entry],
         fileExists: @escaping @Sendable (String) -> Bool,
+        displayName: @escaping @Sendable (String) -> String,
         saveDragPaths: @escaping @Sendable ([String]) -> Void,
         loadDragPaths: @escaping @Sendable () -> [String],
         saveDragWithOption: @escaping @Sendable (Bool) -> Void,
@@ -94,6 +98,7 @@ public struct EntryClient: Sendable {
         self.moveFile = moveFile
         self.renameFile = renameFile
         self.moveToTrash = moveToTrash
+        self.moveToTrashAndReturnURL = moveToTrashAndReturnURL
         self.deleteImmediately = deleteImmediately
         self.putBackFromTrash = putBackFromTrash
         self.compressItems = compressItems
@@ -104,6 +109,7 @@ public struct EntryClient: Sendable {
         self.loadItems = loadItems
         self.loadComputerItems = loadComputerItems
         self.fileExists = fileExists
+        self.displayName = displayName
         self.saveDragPaths = saveDragPaths
         self.loadDragPaths = loadDragPaths
         self.saveDragWithOption = saveDragWithOption
@@ -302,6 +308,7 @@ extension EntryClient: DependencyKey {
                 let name = await MainActor.run {
                     FileManager.default.displayName(atPath: defaultAppURL.path)
                 }
+                // TODO: displayName을 EntryClient 메서드로 전환할 때 변경
 
                 return await MainActor.run {
                     ApplicationInfo(id: bundleID, name: name, bundleID: bundleID)
@@ -337,6 +344,16 @@ extension EntryClient: DependencyKey {
                 try await MainActor.run {
                     var result: NSURL?
                     try FileManager.default.trashItem(at: url, resultingItemURL: &result)
+                }
+            },
+            moveToTrashAndReturnURL: { url in
+                try await MainActor.run {
+                    var result: NSURL?
+                    try FileManager.default.trashItem(at: url, resultingItemURL: &result)
+                    guard let trashURL = result as URL? else {
+                        throw FileOpError.system(message: "Trash URL not found")
+                    }
+                    return trashURL
                 }
             },
             deleteImmediately: { url in
@@ -513,6 +530,8 @@ extension EntryClient: DependencyKey {
             },
             loadComputerItems: {
                 await Task.detached {
+                    // EntryClient의 displayName 메서드를 사용하도록 변경 필요
+                    // 현재는 EntryClient 자체가 초기화되는 중이므로 FileManager.default 사용 유지
                     let rootName = FileManager.default.displayName(atPath: "/")
                     return [
                         Entry(
@@ -527,6 +546,9 @@ extension EntryClient: DependencyKey {
             },
             fileExists: { path in
                 FileManager.default.fileExists(atPath: path)
+            },
+            displayName: { path in
+                FileManager.default.displayName(atPath: path)
             },
             saveDragPaths: { paths in
                 // 커스텀 Pasteboard 사용 (drag는 시스템 전용)
@@ -699,6 +721,7 @@ extension EntryClient: DependencyKey {
             moveFile: { _, _ in unimplemented() },
             renameFile: { _, _ in unimplemented() },
             moveToTrash: { _ in unimplemented() },
+            moveToTrashAndReturnURL: { _ in unimplemented() },
             deleteImmediately: { _ in unimplemented() },
             putBackFromTrash: { _, _ in unimplemented() },
             compressItems: { _ in unimplemented() },
@@ -709,6 +732,7 @@ extension EntryClient: DependencyKey {
             loadItems: { _, _ in [] },
             loadComputerItems: { [] },
             fileExists: { _ in false },
+            displayName: { path in path },
             saveDragPaths: { _ in },
             loadDragPaths: { [] },
             saveDragWithOption: { _ in },
@@ -746,6 +770,7 @@ extension EntryClient: DependencyKey {
             moveFile: { _, _ in },
             renameFile: { _, _ in },
             moveToTrash: { _ in },
+            moveToTrashAndReturnURL: { _ in URL(fileURLWithPath: "/tmp/.Trash/test") },
             deleteImmediately: { _ in },
             putBackFromTrash: { _, _ in },
             compressItems: { _ in URL(fileURLWithPath: "/tmp/Archive.zip") },
@@ -756,6 +781,7 @@ extension EntryClient: DependencyKey {
             loadItems: { _, _ in [] },
             loadComputerItems: { [] },
             fileExists: { _ in false },
+            displayName: { path in path },
             saveDragPaths: { _ in },
             loadDragPaths: { [] },
             saveDragWithOption: { _ in },
