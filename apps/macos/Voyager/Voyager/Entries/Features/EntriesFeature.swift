@@ -1908,9 +1908,9 @@ struct EntriesFeature {
 
     private func generateThumbnailsEffect(for items: [Entry]) -> Effect<Action> {
         .run { send in
-            let scale = await MainActor.run { NSScreen.main?.backingScaleFactor ?? 2.0 }
-            let baseSize: CGFloat = 64
-            let size = CGSize(width: baseSize * scale, height: baseSize * scale)
+            let scale = await MainActor.run { NSScreen.main?.backingScaleFactor ?? 3.0 }
+            let baseSize: CGFloat = 256
+            let size = CGSize(width: baseSize, height: baseSize)
 
             await withTaskGroup(of: String?.self) { group in
                 for item in items {
