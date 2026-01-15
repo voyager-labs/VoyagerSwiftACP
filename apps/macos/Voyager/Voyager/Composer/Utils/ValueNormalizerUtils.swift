@@ -9,7 +9,7 @@ struct ValueNormalizeResult: Equatable {
     let resetIndices: [Int]
 }
 
-enum ValueNormalizer {
+enum ValueNormalizerUtils {
     // 공용 날짜 포맷터 (ISO 8601, 초까지, UTC, Z 표기)
     private static let isoFormatter: ISO8601DateFormatter = {
         let formatter = ISO8601DateFormatter()

@@ -87,7 +87,7 @@ struct FileManagerFeature {
         var isFavoritesCollapsed: Bool = false
         var isLocationsCollapsed: Bool = false
         var isTagsCollapsed: Bool = false
-        var columnWidths: ListColumnWidths = .default
+        var columnWidths: ListColumnWidthsUtils = .default
 
         var composer: ComposerFeature.State = .init()
         var pendingSearchQuery: String?
@@ -243,7 +243,7 @@ struct FileManagerFeature {
     }
 
     struct ColumnUpdate: Equatable, Sendable {
-        let column: ListColumnWidths.Column
+        let column: ListColumnWidthsUtils.Column
         let delta: CGFloat
         let totalWidth: CGFloat
         let padding: CGFloat
@@ -365,7 +365,7 @@ struct FileManagerFeature {
                 state.entries.isListView = state.viewLayout == .list
 
                 if userDefaultsClient.object("columnWidthName") != nil {
-                    state.columnWidths = ListColumnWidths(
+                    state.columnWidths = ListColumnWidthsUtils(
                         name: CGFloat(userDefaultsClient.double("columnWidthName")),
                         date: CGFloat(userDefaultsClient.double("columnWidthDate")),
                         size: CGFloat(userDefaultsClient.double("columnWidthSize")),

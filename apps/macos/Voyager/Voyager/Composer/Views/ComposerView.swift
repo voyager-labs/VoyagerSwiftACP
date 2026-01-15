@@ -700,7 +700,7 @@ struct ComposerView: View {
     }
 
     private func operatorOptions(for condition: Condition) -> [OperatorOption] {
-        ConditionOperatorMapping.operatorOptions(for: condition.propertyKey).map { op in
+        ConditionOperatorMappingUtils.operatorOptions(for: condition.propertyKey).map { op in
             let valueArity: Int = {
                 switch op.valueUI {
                 case .rangeNumber, .rangeDate:

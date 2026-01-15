@@ -1,6 +1,6 @@
 import Foundation
 
-struct ListColumnLayout {
+struct ListColumnLayoutUtils {
     static let outerPadding: CGFloat = 16
     static let columnSpacing: CGFloat = 8
 
@@ -11,7 +11,7 @@ struct ListColumnLayout {
     let size: CGFloat
     let kind: CGFloat
 
-    init(availableWidth: CGFloat, columnWidths: ListColumnWidths? = nil) {
+    init(availableWidth: CGFloat, columnWidths: ListColumnWidthsUtils? = nil) {
         let usableWidth = max(availableWidth - outerPadding * 2, 0)
         let widthForColumns = max(usableWidth - columnSpacing * 3, 0)
 

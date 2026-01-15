@@ -541,7 +541,7 @@ private func encodeValue(condition: Condition, values: [String]) -> JSONValue? {
 
     case .date:
         let formattedValues = values.map { value in
-            ValueNormalizer.formatDateOnlyString(value) ?? value
+            ValueNormalizerUtils.formatDateOnlyString(value) ?? value
         }
         if formattedValues.count == 1 {
             return .string(formattedValues[0])

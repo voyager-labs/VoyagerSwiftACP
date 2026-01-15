@@ -92,7 +92,7 @@ struct ContentPaneListView: View {
     }
 
     private struct ItemRenderContext {
-        let layout: ListColumnLayout
+        let layout: ListColumnLayoutUtils
         let showCompress: Bool
         let showExtract: Bool
     }
@@ -344,8 +344,8 @@ struct ContentPaneListView: View {
 
         let layout = store.columnWidths.makeAbsoluteWidths(
             totalWidth: geometry.size.width,
-            padding: ListColumnLayout.outerPadding,
-            spacing: ListColumnLayout.columnSpacing,
+            padding: ListColumnLayoutUtils.outerPadding,
+            spacing: ListColumnLayoutUtils.columnSpacing,
         )
 
         let context = ItemRenderContext(
@@ -444,8 +444,8 @@ struct ContentPaneListView: View {
                                 column: column,
                                 delta: delta,
                                 totalWidth: headerWidth,
-                                padding: ListColumnLayout.outerPadding,
-                                spacing: ListColumnLayout.columnSpacing,
+                                padding: ListColumnLayoutUtils.outerPadding,
+                                spacing: ListColumnLayoutUtils.columnSpacing,
                             ),
                         ))
                     },

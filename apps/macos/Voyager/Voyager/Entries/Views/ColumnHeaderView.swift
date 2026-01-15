@@ -5,18 +5,18 @@ struct ColumnHeaderView: View {
     let sortKey: SortKey
     let sortOrder: SortOrder
     let availableWidth: CGFloat
-    let columnWidths: ListColumnWidths
+    let columnWidths: ListColumnWidthsUtils
     let onSortKeyChange: (SortKey) -> Void
     let onSortOrderToggle: () -> Void
-    let onColumnResize: (ListColumnWidths.Column, CGFloat) -> Void
+    let onColumnResize: (ListColumnWidthsUtils.Column, CGFloat) -> Void
 
-    @State private var activeResizeColumn: ListColumnWidths.Column?
+    @State private var activeResizeColumn: ListColumnWidthsUtils.Column?
 
     var body: some View {
         let layout = columnWidths.makeAbsoluteWidths(
             totalWidth: availableWidth,
-            padding: ListColumnLayout.outerPadding,
-            spacing: ListColumnLayout.columnSpacing,
+            padding: ListColumnLayoutUtils.outerPadding,
+            spacing: ListColumnLayoutUtils.columnSpacing,
         )
 
         HStack(alignment: .top, spacing: 0) {
@@ -112,7 +112,7 @@ struct ColumnHeaderView: View {
         sortKey targetSortKey: SortKey,
         alignment: HorizontalAlignment,
         showIcon: Bool,
-        column: ListColumnWidths.Column,
+        column: ListColumnWidthsUtils.Column,
     ) -> some View {
         HStack(alignment: .center, spacing: 2) {
             resizeHandle(column: column)
@@ -170,7 +170,7 @@ struct ColumnHeaderView: View {
     }
 
     @ViewBuilder
-    private func resizeHandle(column: ListColumnWidths.Column) -> some View {
+    private func resizeHandle(column: ListColumnWidthsUtils.Column) -> some View {
         ZStack(alignment: .leading) {
             Rectangle()
                 .fill(Color.clear)

@@ -18,8 +18,8 @@ extension MDItemPropertyClient: DependencyKey, TestDependencyKey {
                     "addedAt",
                 ]
 
-                return ConditionMapping.allProperties.map { info in
-                    let type = ConditionOperatorMapping.propertyType(for: info.key) ?? .string
+                return ConditionMappingUtils.allProperties.map { info in
+                    let type = ConditionOperatorMappingUtils.propertyType(for: info.key) ?? .string
                     let typeString = switch type {
                     case .string: "string"
                     case .number: "number"

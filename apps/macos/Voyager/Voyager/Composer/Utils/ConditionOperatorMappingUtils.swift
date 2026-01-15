@@ -26,7 +26,7 @@ struct OperatorUIOption {
     let valueUI: ValueUIKind
 }
 
-enum ConditionOperatorMapping {
+enum ConditionOperatorMappingUtils {
     private static let propertyKeyToType: [String: PropertyType] = [
         // 숫자
         "size": .number,

@@ -1,6 +1,6 @@
 import Foundation
 
-struct ListColumnWidths: Equatable, Sendable {
+struct ListColumnWidthsUtils: Equatable, Sendable {
     enum Column: Sendable {
         case name
         case date
@@ -13,15 +13,15 @@ struct ListColumnWidths: Equatable, Sendable {
     var size: CGFloat
     var kind: CGFloat
 
-    static let `default` = ListColumnWidths(
+    static let `default` = ListColumnWidthsUtils(
         name: 0.4,
         date: 0.35,
         size: 0.1,
         kind: 0.15,
     )
 
-    func makeAbsoluteWidths(totalWidth: CGFloat, padding _: CGFloat, spacing _: CGFloat) -> ListColumnLayout {
-        ListColumnLayout(availableWidth: totalWidth, columnWidths: self)
+    func makeAbsoluteWidths(totalWidth: CGFloat, padding _: CGFloat, spacing _: CGFloat) -> ListColumnLayoutUtils {
+        ListColumnLayoutUtils(availableWidth: totalWidth, columnWidths: self)
     }
 
     func updated(
@@ -30,7 +30,7 @@ struct ListColumnWidths: Equatable, Sendable {
         totalWidth: CGFloat,
         padding: CGFloat,
         spacing: CGFloat,
-    ) -> ListColumnWidths {
+    ) -> ListColumnWidthsUtils {
         let usableWidth = max(totalWidth - padding * 2, 0)
         let widthForColumns = max(usableWidth - spacing * 3, 0)
         let deltaRatio = widthForColumns > 0 ? delta / widthForColumns : 0

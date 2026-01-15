@@ -19,7 +19,7 @@ struct EntryListView: View, Equatable {
     let isCut: Bool
     let isRenaming: Bool
     let renamingText: String
-    let layout: ListColumnLayout
+    let layout: ListColumnLayoutUtils
     let applications: [ApplicationInfo]?
     let commonApplications: [ApplicationInfo]?
     let isThumbnailReady: Bool

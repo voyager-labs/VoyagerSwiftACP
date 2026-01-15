@@ -2,7 +2,7 @@ import Foundation
 
 /// UI 라벨을 백엔드에서 기대하는 key/operator 코드로 매핑하는 유틸.
 /// 프론트에서 선택한 라벨을 그대로 넘기지 말고 이 매핑을 통해 정규화해 사용한다.
-enum ConditionMapping {
+enum ConditionMappingUtils {
     enum Category: String {
         case system = "System Metadata"
         case content = "Content"

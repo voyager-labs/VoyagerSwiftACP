@@ -15,8 +15,8 @@ struct ConditionPropertyPickerFeature {
                 "createdAt",
                 "addedAt",
             ]
-            return ConditionMapping.allProperties.map { info in
-                let typeString = ConditionOperatorMapping.propertyTypeString(for: info.key)
+            return ConditionMappingUtils.allProperties.map { info in
+                let typeString = ConditionOperatorMappingUtils.propertyTypeString(for: info.key)
 
                 return MDItemProperty(
                     key: info.key,
