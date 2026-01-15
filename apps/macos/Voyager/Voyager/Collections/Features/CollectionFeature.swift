@@ -42,6 +42,9 @@ struct CollectionFeature {
     @Dependency(\.userDefaultsClient)
     var userDefaultsClient
 
+    @Dependency(\.entryClient)
+    var entryClient
+
     var body: some Reducer<State, Action> {
         Reduce { state, action in
             switch action {
@@ -82,6 +85,7 @@ struct CollectionFeature {
                         let initialDirectory = await defaultCollectionSaveDirectory(
                             preferredScopes: context.scopes,
                             userDefaultsClient: userDefaultsClient,
+                            entryClient: entryClient,
                         )
                         let url = await showCollectionSavePanel(initialDirectory: initialDirectory)
                         await send(.savePanelResponse(url))
@@ -330,28 +334,27 @@ private func resetPendingSave(_ state: inout CollectionFeature.State) {
 private func defaultCollectionSaveDirectory(
     preferredScopes: [String],
     userDefaultsClient: UserDefaultsClient,
+    entryClient: EntryClient,
 ) -> URL? {
-    nonisolated(unsafe) let fileManager = FileManager.default
-
     if preferredScopes.count == 1,
        let scope = preferredScopes.first,
-       let url = validDirectoryURL(scope, fileManager: fileManager)
+       let url = validDirectoryURL(scope, entryClient: entryClient)
     {
         return url
     }
 
     if let saved = userDefaultsClient.string(SettingsKeys.lastCollectionSaveDirectory),
-       let url = validDirectoryURL(saved, fileManager: fileManager)
+       let url = validDirectoryURL(saved, entryClient: entryClient)
     {
         return url
     }
 
-    return fileManager.homeDirectoryForCurrentUser
+    return URL(fileURLWithPath: entryClient.homeDirectory())
 }
 
-private func validDirectoryURL(_ path: String, fileManager: FileManager) -> URL? {
+private func validDirectoryURL(_ path: String, entryClient: EntryClient) -> URL? {
     var isDirectory: ObjCBool = false
-    guard fileManager.fileExists(atPath: path, isDirectory: &isDirectory), isDirectory.boolValue else {
+    guard entryClient.fileExistsAtPath(path, &isDirectory), isDirectory.boolValue else {
         return nil
     }
     return URL(fileURLWithPath: path)

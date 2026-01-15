@@ -59,6 +59,7 @@ class FileManagerSplitViewController: NSViewController, NSSplitViewDelegate {
 
     let store: StoreOf<FileManagerFeature>
     let initialPath: String?
+    private let userDefaultsClient: UserDefaultsClient
     private var hasSetInitialLayout = false
     private var inspectorHosting: NSViewController?
     private var observationTask: Task<Void, Never>?
@@ -83,9 +84,14 @@ class FileManagerSplitViewController: NSViewController, NSSplitViewDelegate {
     private var dividerTopConstraint: NSLayoutConstraint?
     private var dividerBottomConstraint: NSLayoutConstraint?
 
-    init(store: StoreOf<FileManagerFeature>, initialPath: String? = nil) {
+    init(
+        store: StoreOf<FileManagerFeature>,
+        initialPath: String? = nil,
+        userDefaultsClient: UserDefaultsClient = .liveValue,
+    ) {
         self.store = store
         self.initialPath = initialPath
+        self.userDefaultsClient = userDefaultsClient
         super.init(nibName: nil, bundle: nil)
     }
 
@@ -175,13 +181,13 @@ class FileManagerSplitViewController: NSViewController, NSSplitViewDelegate {
                       let sidebarView = sidebarHosting?.view else { continue }
 
                 if sidebarVisible {
-                    let savedWidth = UserDefaults.standard.object(forKey: "sidebarWidth") as? Double ?? 220
+                    let savedWidth = userDefaultsClient.object("sidebarWidth") as? Double ?? 220
                     mainSplitView.setPosition(CGFloat(savedWidth), ofDividerAt: 0)
                     containerLeadingConstraint?.constant = 0
                 } else {
                     let currentWidth = sidebarView.frame.width
                     if currentWidth > 0 {
-                        UserDefaults.standard.set(currentWidth, forKey: "sidebarWidth")
+                        userDefaultsClient.setObject(currentWidth, "sidebarWidth")
                     }
                     mainSplitView.setPosition(0, ofDividerAt: 0)
                     containerLeadingConstraint?.constant = contentVerticalMargin
@@ -200,7 +206,7 @@ class FileManagerSplitViewController: NSViewController, NSSplitViewDelegate {
               let mainSplitView,
               mainSplitView.bounds.width > 0 else { return }
 
-        let savedWidth = UserDefaults.standard.object(forKey: "sidebarWidth") as? Double ?? 220
+        let savedWidth = userDefaultsClient.object("sidebarWidth") as? Double ?? 220
         if store.sidebarVisible {
             mainSplitView.setPosition(CGFloat(savedWidth), ofDividerAt: 0)
         } else {
@@ -637,7 +643,7 @@ extension FileManagerSplitViewController {
         let collapseThreshold: CGFloat = 2
 
         if !isCollapsed, sidebarWidth > collapseThreshold {
-            UserDefaults.standard.set(sidebarWidth, forKey: "sidebarWidth")
+            userDefaultsClient.setObject(sidebarWidth, "sidebarWidth")
         }
 
         let shouldBeVisible = !isCollapsed

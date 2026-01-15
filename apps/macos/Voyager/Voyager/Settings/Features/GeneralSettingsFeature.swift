@@ -25,10 +25,10 @@ enum DirectoryOption: Equatable, Hashable, Identifiable {
         }
     }
 
-    var displayName: String {
+    func displayName(entryClient: EntryClient) -> String {
         switch self {
         case .home:
-            FileManager.default.homeDirectoryForCurrentUser.lastPathComponent
+            URL(fileURLWithPath: entryClient.homeDirectory()).lastPathComponent
         case .root:
             "Macintosh HD"
         case .desktop:
@@ -44,18 +44,18 @@ enum DirectoryOption: Equatable, Hashable, Identifiable {
         }
     }
 
-    var path: String? {
+    func path(entryClient: EntryClient) -> String? {
         switch self {
         case .home:
-            FileManager.default.homeDirectoryForCurrentUser.path
+            entryClient.homeDirectory()
         case .root:
             "/"
         case .desktop:
-            FileManager.default.urls(for: .desktopDirectory, in: .userDomainMask).first?.path
+            entryClient.urlsForDirectory(.desktopDirectory, .userDomainMask).first?.path
         case .documents:
-            FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first?.path
+            entryClient.urlsForDirectory(.documentDirectory, .userDomainMask).first?.path
         case .downloads:
-            FileManager.default.urls(for: .downloadsDirectory, in: .userDomainMask).first?.path
+            entryClient.urlsForDirectory(.downloadsDirectory, .userDomainMask).first?.path
         case let .custom(path):
             path
         case .other:
@@ -63,7 +63,7 @@ enum DirectoryOption: Equatable, Hashable, Identifiable {
         }
     }
 
-    var icon: Image {
+    func icon(entryClient: EntryClient, workspaceClient: WorkspaceClient) -> Image {
         let iconSize: CGFloat = 14
 
         func resizeImage(_ image: NSImage, to size: NSSize) -> NSImage {
@@ -81,19 +81,19 @@ enum DirectoryOption: Equatable, Hashable, Identifiable {
 
         switch self {
         case .home, .desktop, .documents, .downloads:
-            if let path {
-                let originalImage = NSWorkspace.shared.icon(forFile: path)
+            if let path = path(entryClient: entryClient) {
+                let originalImage = workspaceClient.iconForFile(path)
                 let resizedImage = resizeImage(originalImage, to: NSSize(width: iconSize, height: iconSize))
                 return Image(nsImage: resizedImage)
             } else {
                 return Image(systemName: "folder.fill")
             }
         case .root:
-            let originalImage = NSWorkspace.shared.icon(forFile: "/")
+            let originalImage = workspaceClient.iconForFile("/")
             let resizedImage = resizeImage(originalImage, to: NSSize(width: iconSize, height: iconSize))
             return Image(nsImage: resizedImage)
         case let .custom(path):
-            let originalImage = NSWorkspace.shared.icon(forFile: path)
+            let originalImage = workspaceClient.iconForFile(path)
             let resizedImage = resizeImage(originalImage, to: NSSize(width: iconSize, height: iconSize))
             return Image(nsImage: resizedImage)
         case .other:
@@ -101,24 +101,23 @@ enum DirectoryOption: Equatable, Hashable, Identifiable {
         }
     }
 
-    static func from(path: String) -> DirectoryOption {
-        let fm = FileManager.default
-        let homePath = fm.homeDirectoryForCurrentUser.path
+    static func from(path: String, entryClient: EntryClient) -> DirectoryOption {
+        let homePath = entryClient.homeDirectory()
         let rootPath = "/"
 
         if path == homePath {
             return .home
         } else if path == rootPath {
             return .root
-        } else if let desktopPath = fm.urls(for: .desktopDirectory, in: .userDomainMask).first?.path,
+        } else if let desktopPath = entryClient.urlsForDirectory(.desktopDirectory, .userDomainMask).first?.path,
                   path == desktopPath
         {
             return .desktop
-        } else if let documentsPath = fm.urls(for: .documentDirectory, in: .userDomainMask).first?.path,
+        } else if let documentsPath = entryClient.urlsForDirectory(.documentDirectory, .userDomainMask).first?.path,
                   path == documentsPath
         {
             return .documents
-        } else if let downloadsPath = fm.urls(for: .downloadsDirectory, in: .userDomainMask).first?.path,
+        } else if let downloadsPath = entryClient.urlsForDirectory(.downloadsDirectory, .userDomainMask).first?.path,
                   path == downloadsPath
         {
             return .downloads
@@ -159,6 +158,11 @@ struct GeneralSettingsFeature {
         case toggleAlertBeforeQuit(Bool)
     }
 
+    @Dependency(\.entryClient)
+    var entryClient: EntryClient
+    @Dependency(\.userDefaultsClient)
+    var userDefaultsClient: UserDefaultsClient
+
     var body: some Reducer<State, Action> {
         Reduce { state, action in
             switch action {
@@ -167,42 +171,42 @@ struct GeneralSettingsFeature {
 
             case .loadSettings:
                 // 시작 디렉토리 로드
-                let startingDir = UserDefaults.standard.string(forKey: SettingsKeys.defaultTabPath)
-                    ?? NSHomeDirectory()
+                let startingDir = userDefaultsClient.string(SettingsKeys.defaultTabPath)
+                    ?? entryClient.homeDirectory()
                 state.startingDirectory = startingDir
-                state.selectedDirectoryOption = DirectoryOption.from(path: startingDir)
+                state.selectedDirectoryOption = DirectoryOption.from(path: startingDir, entryClient: entryClient)
 
                 // 로그인 시 실행 상태 확인
                 let appService = SMAppService.mainApp
                 let actualStatus = appService.status
                 let isActuallyRegistered = (actualStatus == .enabled)
 
-                let savedValue = UserDefaults.standard.bool(forKey: SettingsKeys.launchAtStartup)
+                let savedValue = userDefaultsClient.bool(SettingsKeys.launchAtStartup)
                 if savedValue != isActuallyRegistered {
                     state.launchAtStartup = isActuallyRegistered
-                    UserDefaults.standard.set(isActuallyRegistered, forKey: SettingsKeys.launchAtStartup)
+                    userDefaultsClient.setBool(isActuallyRegistered, SettingsKeys.launchAtStartup)
                 } else {
                     state.launchAtStartup = savedValue
                 }
 
                 // 자동 업데이트 및 종료 알림 설정
-                state.automaticUpdate = UserDefaults.standard
-                    .object(forKey: SettingsKeys.automaticUpdate) as? Bool ?? false
-                state.alertBeforeQuit = UserDefaults.standard.bool(forKey: SettingsKeys.alertBeforeQuit)
+                state.automaticUpdate = userDefaultsClient
+                    .object(SettingsKeys.automaticUpdate) as? Bool ?? false
+                state.alertBeforeQuit = userDefaultsClient.bool(SettingsKeys.alertBeforeQuit)
 
                 return .none
 
             case let .setStartingDirectory(path):
                 state.startingDirectory = path
-                state.selectedDirectoryOption = DirectoryOption.from(path: path)
+                state.selectedDirectoryOption = DirectoryOption.from(path: path, entryClient: entryClient)
                 state.startingDirectoryError = nil
-                UserDefaults.standard.set(path, forKey: SettingsKeys.defaultTabPath)
+                userDefaultsClient.setString(path, SettingsKeys.defaultTabPath)
                 return .none
 
             case let .selectDirectoryOption(option):
                 if case .other = option {
                     return .send(.openOtherDirectoryPanel)
-                } else if let path = option.path {
+                } else if let path = option.path(entryClient: entryClient) {
                     return .send(.setStartingDirectory(path))
                 } else {
                     return .none
@@ -225,9 +229,9 @@ struct GeneralSettingsFeature {
                     return .none
                 }
 
-                if FileManager.default.fileExists(atPath: path) {
+                if entryClient.fileExists(path) {
                     var isDirectory: ObjCBool = false
-                    if FileManager.default.fileExists(atPath: path, isDirectory: &isDirectory),
+                    if entryClient.fileExistsAtPath(path, &isDirectory),
                        isDirectory.boolValue
                     {
                         return .send(.setStartingDirectory(path))
@@ -249,7 +253,7 @@ struct GeneralSettingsFeature {
                         try appService.unregister()
                     }
                     state.launchAtStartup = enabled
-                    UserDefaults.standard.set(enabled, forKey: SettingsKeys.launchAtStartup)
+                    userDefaultsClient.setBool(enabled, SettingsKeys.launchAtStartup)
                     state.launchAtStartupError = nil
                 } catch {
                     state.launchAtStartupError =
@@ -259,14 +263,14 @@ struct GeneralSettingsFeature {
 
             case let .toggleAutomaticUpdate(enabled):
                 state.automaticUpdate = enabled
-                UserDefaults.standard.set(enabled, forKey: SettingsKeys.automaticUpdate)
+                userDefaultsClient.setBool(enabled, SettingsKeys.automaticUpdate)
                 state.automaticUpdateError = nil
                 AppDelegate.shared?.setAutomaticUpdate(enabled: enabled)
                 return .none
 
             case let .toggleAlertBeforeQuit(enabled):
                 state.alertBeforeQuit = enabled
-                UserDefaults.standard.set(enabled, forKey: SettingsKeys.alertBeforeQuit)
+                userDefaultsClient.setBool(enabled, SettingsKeys.alertBeforeQuit)
                 return .none
             }
         }

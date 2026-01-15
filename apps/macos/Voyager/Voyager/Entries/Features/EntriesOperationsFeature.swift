@@ -113,12 +113,14 @@ struct EntriesOperationsFeature {
                     return .none
                 }
 
-                return .run { send in
+                let entryClient = entryClient
+                return .run { [entryClient] send in
                     for (index, file) in files.enumerated() {
                         let filePath = file.fullPath
                         let url = URL(fileURLWithPath: filePath)
 
-                        if isInTrash(filePath) {
+                        let isTrash = isInTrash(filePath, entryClient: entryClient)
+                        if isTrash {
                             let hasMoreFiles = index < files.count - 1
                             let shouldContinue = await MainActor.run {
                                 EntryAlertUtils.showTrashFileAlert(fileName: file.name, hasMoreFiles: hasMoreFiles)
@@ -157,7 +159,7 @@ struct EntriesOperationsFeature {
                 return selectApplicationAndOpenFile(for: file, defaultChecked: false, workspaceClient: workspaceClient)
 
             case let .openFileWithAppBundleID(filePath, bundleID, url):
-                if isInTrash(filePath) {
+                if isInTrash(filePath, entryClient: entryClient) {
                     let fileName = URL(fileURLWithPath: filePath).lastPathComponent
                     return .run { _ in
                         _ = await MainActor.run {
@@ -856,8 +858,10 @@ private nonisolated func finalizeApplicationList(_ apps: [ApplicationInfo]) -> [
     return result
 }
 
-private nonisolated func isInTrash(_ filePath: String) -> Bool {
-    let trashPath = FileManager.default.urls(for: .trashDirectory, in: .userDomainMask).first?.path ?? ""
+private nonisolated func isInTrash(_ filePath: String, entryClient: EntryClient) -> Bool {
+    guard let trashPath = entryClient.trashDirectoryPath(), !trashPath.isEmpty else {
+        return false
+    }
     return filePath.starts(with: trashPath + "/")
 }
 
