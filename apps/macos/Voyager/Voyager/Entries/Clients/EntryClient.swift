@@ -1,7 +1,11 @@
 // swiftlint:disable file_length
 import AppKit
 import ComposableArchitecture
+import CoreServices
+
+// swiftlint:disable large_tuple
 import Foundation
+import ImageIO
 import QuickLookUI
 import UniformTypeIdentifiers
 
@@ -45,9 +49,20 @@ public struct EntryClient: Sendable {
     public var fileExistsAtPath: @Sendable (String, UnsafeMutablePointer<ObjCBool>?) -> Bool
     public var displayName: @Sendable (String) -> String
     public var urlsForDirectory: @Sendable (FileManager.SearchPathDirectory, FileManager.SearchPathDomainMask) -> [URL]
+    public var homeDirectory: @Sendable () -> String
+    public var trashDirectoryPath: @Sendable () -> String?
     public var mountedVolumeURLs: @Sendable ([URLResourceKey], FileManager.VolumeEnumerationOptions) -> [URL]?
     public var contentsOfDirectory: @Sendable (URL, [URLResourceKey], FileManager.DirectoryEnumerationOptions) throws
         -> [URL]
+    public var getItemMetadata: @Sendable (URL, Bool, WorkspaceClient) -> (
+        kind: String,
+        creatorApplication: String?,
+        lastUsedDate: Date?,
+    )
+    public var getImageResolution: @Sendable (URL) -> String?
+    public var getFormattedFileSize: @Sendable (URL) -> String?
+    public var getFolderItemCount: @Sendable (URL) -> String?
+    public var isPackageDirectory: @Sendable (URL) -> Bool
     public var saveDragPaths: @Sendable ([String]) -> Void
     public var loadDragPaths: @Sendable () -> [String]
     public var saveDragWithOption: @Sendable (Bool) -> Void
@@ -85,9 +100,23 @@ public struct EntryClient: Sendable {
         displayName: @escaping @Sendable (String) -> String,
         urlsForDirectory: @escaping @Sendable (FileManager.SearchPathDirectory, FileManager.SearchPathDomainMask)
             -> [URL],
+        homeDirectory: @escaping @Sendable () -> String,
+        trashDirectoryPath: @escaping @Sendable () -> String?,
         mountedVolumeURLs: @escaping @Sendable ([URLResourceKey], FileManager.VolumeEnumerationOptions) -> [URL]?,
-        contentsOfDirectory: @escaping @Sendable (URL, [URLResourceKey],
-                                                  FileManager.DirectoryEnumerationOptions) throws -> [URL],
+        contentsOfDirectory: @escaping @Sendable (
+            URL,
+            [URLResourceKey],
+            FileManager.DirectoryEnumerationOptions,
+        ) throws -> [URL],
+        getItemMetadata: @escaping @Sendable (URL, Bool, WorkspaceClient) -> (
+            kind: String,
+            creatorApplication: String?,
+            lastUsedDate: Date?,
+        ),
+        getImageResolution: @escaping @Sendable (URL) -> String?,
+        getFormattedFileSize: @escaping @Sendable (URL) -> String?,
+        getFolderItemCount: @escaping @Sendable (URL) -> String?,
+        isPackageDirectory: @escaping @Sendable (URL) -> Bool,
         saveDragPaths: @escaping @Sendable ([String]) -> Void,
         loadDragPaths: @escaping @Sendable () -> [String],
         saveDragWithOption: @escaping @Sendable (Bool) -> Void,
@@ -123,8 +152,15 @@ public struct EntryClient: Sendable {
         self.fileExistsAtPath = fileExistsAtPath
         self.displayName = displayName
         self.urlsForDirectory = urlsForDirectory
+        self.homeDirectory = homeDirectory
+        self.trashDirectoryPath = trashDirectoryPath
         self.mountedVolumeURLs = mountedVolumeURLs
         self.contentsOfDirectory = contentsOfDirectory
+        self.getItemMetadata = getItemMetadata
+        self.getImageResolution = getImageResolution
+        self.getFormattedFileSize = getFormattedFileSize
+        self.getFolderItemCount = getFolderItemCount
+        self.isPackageDirectory = isPackageDirectory
         self.saveDragPaths = saveDragPaths
         self.loadDragPaths = loadDragPaths
         self.saveDragWithOption = saveDragWithOption
@@ -519,12 +555,13 @@ extension EntryClient: DependencyKey {
             },
             loadItems: { directoryURL, showHidden in
                 try await Task.detached {
-                    let fileManager = FileManager.default
+                    let entryClient = EntryClient.liveValue
+                    let workspaceClient = WorkspaceClient.liveValue
                     let options: FileManager.DirectoryEnumerationOptions = showHidden ? [] : [.skipsHiddenFiles]
 
-                    let contents = try fileManager.contentsOfDirectory(
-                        at: directoryURL,
-                        includingPropertiesForKeys: [
+                    let contents = try entryClient.contentsOfDirectory(
+                        directoryURL,
+                        [
                             .nameKey,
                             .fileSizeKey,
                             .contentModificationDateKey,
@@ -537,10 +574,16 @@ extension EntryClient: DependencyKey {
                             .addedToDirectoryDateKey,
                             .contentAccessDateKey,
                         ],
-                        options: options,
+                        options,
                     )
 
-                    return contents.compactMap { EntryLoadUtils.convertURLToEntry($0) }
+                    return contents.compactMap { url in
+                        EntryLoadUtils.convertURLToEntry(
+                            url,
+                            entryClient: entryClient,
+                            workspaceClient: workspaceClient,
+                        )
+                    }
                 }.value
             },
             loadComputerItems: {
@@ -569,11 +612,109 @@ extension EntryClient: DependencyKey {
             urlsForDirectory: { directory, domain in
                 FileManager.default.urls(for: directory, in: domain)
             },
+            homeDirectory: {
+                NSHomeDirectory()
+            },
+            trashDirectoryPath: {
+                FileManager.default.urls(for: .trashDirectory, in: .userDomainMask).first?.path
+            },
             mountedVolumeURLs: { keys, options in
                 FileManager.default.mountedVolumeURLs(includingResourceValuesForKeys: keys, options: options)
             },
             contentsOfDirectory: { url, keys, options in
                 try FileManager.default.contentsOfDirectory(at: url, includingPropertiesForKeys: keys, options: options)
+            },
+            getItemMetadata: { url, isDirectory, workspaceClient in
+                var kind: String
+                var creatorApplication: String?
+                var lastUsedDate: Date?
+
+                if isDirectory {
+                    kind = "Folder"
+                } else {
+                    kind = url.pathExtension.isEmpty ? "File" : url.pathExtension.uppercased() + " File"
+                }
+
+                if let mdItem = MDItemCreate(kCFAllocatorDefault, url.path as CFString) {
+                    if !isDirectory {
+                        if let contentType = MDItemCopyAttribute(mdItem, kMDItemContentType) as? String {
+                            if let uti = UTType(mimeType: contentType) {
+                                kind = uti.localizedDescription ?? contentType
+                            }
+                        }
+
+                        if let appURL = workspaceClient.urlForApplicationToOpen(url) {
+                            creatorApplication = appURL.deletingPathExtension().lastPathComponent
+                        }
+                    }
+
+                    if let lastUsed = MDItemCopyAttribute(mdItem, "kMDItemLastUsedDate" as CFString) as? Date {
+                        lastUsedDate = lastUsed
+                    }
+                }
+
+                return (kind: kind, creatorApplication: creatorApplication, lastUsedDate: lastUsedDate)
+            },
+            getImageResolution: { url in
+                guard let imageSource = CGImageSourceCreateWithURL(url as CFURL, nil),
+                      let properties = CGImageSourceCopyPropertiesAtIndex(imageSource, 0, nil) as? [CFString: Any],
+                      let width = properties[kCGImagePropertyPixelWidth] as? Int,
+                      let height = properties[kCGImagePropertyPixelHeight] as? Int
+                else {
+                    return nil
+                }
+
+                return "\(width) × \(height)"
+            },
+            getFormattedFileSize: { url in
+                guard let resourceValues = try? url.resourceValues(forKeys: [.fileSizeKey]),
+                      let fileSize = resourceValues.fileSize
+                else {
+                    return nil
+                }
+
+                let formatter = ByteCountFormatter()
+                formatter.allowedUnits = [.useKB, .useMB, .useGB]
+                formatter.countStyle = .file
+                formatter.includesUnit = true
+                formatter.isAdaptive = true
+
+                return formatter.string(fromByteCount: Int64(fileSize))
+            },
+            getFolderItemCount: { url in
+                guard let contents = try? FileManager.default.contentsOfDirectory(
+                    at: url,
+                    includingPropertiesForKeys: nil,
+                    options: [.skipsHiddenFiles],
+                ) else {
+                    return nil
+                }
+
+                let count = contents.count
+                if count == 0 {
+                    return "No items"
+                }
+                return "\(count) item\(count == 1 ? "" : "s")"
+            },
+            isPackageDirectory: { url in
+                if let values = try? url.resourceValues(forKeys: [.isPackageKey]),
+                   values.isPackage == true
+                {
+                    return true
+                }
+
+                let ext = url.pathExtension.lowercased()
+                if ["app", "icon"].contains(ext) {
+                    return true
+                }
+
+                if let type = UTType(filenameExtension: url.pathExtension),
+                   type.conforms(to: .package)
+                {
+                    return true
+                }
+
+                return false
             },
             saveDragPaths: { paths in
                 // 커스텀 Pasteboard 사용 (drag는 시스템 전용)
@@ -760,8 +901,15 @@ extension EntryClient: DependencyKey {
             fileExistsAtPath: { _, _ in false },
             displayName: { path in path },
             urlsForDirectory: { _, _ in [] },
+            homeDirectory: { "/Users/test" },
+            trashDirectoryPath: { nil },
             mountedVolumeURLs: { _, _ in nil },
             contentsOfDirectory: { _, _, _ in [] },
+            getItemMetadata: { _, _, _ in ("File", nil, nil) },
+            getImageResolution: { _ in nil },
+            getFormattedFileSize: { _ in nil },
+            getFolderItemCount: { _ in nil },
+            isPackageDirectory: { _ in false },
             saveDragPaths: { _ in },
             loadDragPaths: { [] },
             saveDragWithOption: { _ in },
@@ -813,8 +961,15 @@ extension EntryClient: DependencyKey {
             fileExistsAtPath: { _, _ in false },
             displayName: { path in path },
             urlsForDirectory: { _, _ in [] },
+            homeDirectory: { "/Users/test" },
+            trashDirectoryPath: { nil },
             mountedVolumeURLs: { _, _ in nil },
             contentsOfDirectory: { _, _, _ in [] },
+            getItemMetadata: { _, _, _ in ("File", nil, nil) },
+            getImageResolution: { _ in nil },
+            getFormattedFileSize: { _ in nil },
+            getFolderItemCount: { _ in nil },
+            isPackageDirectory: { _ in false },
             saveDragPaths: { _ in },
             loadDragPaths: { [] },
             saveDragWithOption: { _ in },
@@ -827,6 +982,8 @@ extension EntryClient: DependencyKey {
         )
     }
 }
+
+// swiftlint:enable large_tuple
 
 public extension DependencyValues {
     nonisolated var entryClient: EntryClient {

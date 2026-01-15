@@ -19,6 +19,10 @@ struct ContentPaneListView: View {
 
     @Dependency(\.fileManagerWindowClient)
     private var fileManagerWindowClient
+    @Dependency(\.workspaceClient)
+    private var workspaceClient
+    @Dependency(\.entryClient)
+    private var entryClient
 
     @State private var contentWidth: CGFloat = 0
     @State private var rowPositions: [String: CGRect] = [:]
@@ -32,11 +36,27 @@ struct ContentPaneListView: View {
         max(24, store.listIconSize + 4)
     }
 
-    private func saveScrollPositionBeforeOpen() {
+    private func saveScrollPosition() {
         ScrollPositionUtils.saveScrollPosition(
             scrollView: nsScrollView,
             currentPath: store.currentPath,
             store: store,
+        )
+    }
+
+    private func restoreScrollPosition() {
+        ScrollPositionUtils.restoreScrollPosition(
+            scrollView: nsScrollView,
+            currentPath: store.currentPath,
+            scrollPositions: store.scrollPositions,
+            hasRestored: &hasRestoredScrollPosition,
+        )
+    }
+
+    private func performAutoScroll() {
+        ScrollPositionUtils.performAutoScroll(
+            scrollView: nsScrollView,
+            workspaceClient: workspaceClient,
         )
     }
 
@@ -94,7 +114,7 @@ struct ContentPaneListView: View {
         let handlers = makeContextMenuHandlers(
             item: item,
             fsStore: fsStore,
-            saveScrollPosition: saveScrollPositionBeforeOpen,
+            saveScrollPosition: saveScrollPosition,
             isTrashFolder: isTrashFolder,
             onEmptyTrash: { store.send(.entries(.emptyTrash)) },
             openWindow: { path in
@@ -224,7 +244,7 @@ struct ContentPaneListView: View {
             geometry: geometry,
             store: store,
             context: context,
-            isTrashFolder: store.isTrashFolder,
+            isTrashFolder: isTrashFolder,
         )
         .frame(height: rowHeight)
         .frame(maxWidth: .infinity, alignment: .leading)
@@ -241,6 +261,15 @@ struct ContentPaneListView: View {
             },
         )
         .id(item.id)
+    }
+
+    private var isTrashFolder: Bool {
+        guard case let .folder(path) = store.navigationState,
+              let trashPath = entryClient.trashDirectoryPath()
+        else {
+            return false
+        }
+        return path == trashPath || path.hasPrefix(trashPath + "/")
     }
 
     @ViewBuilder
@@ -470,7 +499,7 @@ struct ContentPaneListView: View {
                                         fsStore.send(.updateListRowDrag(currentItemId: currentItemId))
                                     }
 
-                                    ScrollPositionUtils.performAutoScroll(scrollView: nsScrollView)
+                                    performAutoScroll()
                                 } else {
                                     if !fsStore.displayItems.isEmpty {
                                         let startItemId: String?
@@ -512,11 +541,7 @@ struct ContentPaneListView: View {
                         }
                     }
                     .onChange(of: store.showHiddenFiles) { _ in
-                        ScrollPositionUtils.saveScrollPosition(
-                            scrollView: nsScrollView,
-                            currentPath: store.currentPath,
-                            store: store,
-                        )
+                        saveScrollPosition()
                     }
                     .introspect(.scrollView, on: .macOS(.v13...)) { scrollView in
                         nsScrollView = scrollView
@@ -528,12 +553,7 @@ struct ContentPaneListView: View {
                         guard itemCount != 0 else { return }
 
                         if store.scrollPositions[store.currentPath] != nil {
-                            ScrollPositionUtils.restoreScrollPosition(
-                                scrollView: nsScrollView,
-                                currentPath: store.currentPath,
-                                scrollPositions: store.scrollPositions,
-                                hasRestored: &hasRestoredScrollPosition,
-                            )
+                            restoreScrollPosition()
                         } else {
                             proxy.scrollTo("scrollTop", anchor: .top)
                         }

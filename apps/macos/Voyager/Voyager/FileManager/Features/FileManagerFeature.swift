@@ -68,12 +68,6 @@ struct FileManagerFeature {
             }
         }
 
-        var isTrashFolder: Bool {
-            guard case let .folder(path) = navigationState else { return false }
-            let trashPath = FileManager.default.urls(for: .trashDirectory, in: .userDomainMask).first?.path ?? ""
-            return path == trashPath || path.starts(with: trashPath + "/")
-        }
-
         var titlePath: String = SettingsFeature.getDefaultTabPath()
 
         var scrollPositions: [String: CGPoint] = [:]
@@ -812,7 +806,7 @@ struct FileManagerFeature {
                 }
 
                 var isDirectory: ObjCBool = false
-                guard FileManager.default.fileExists(atPath: url.path, isDirectory: &isDirectory) else {
+                guard entryClient.fileExistsAtPath(url.path, &isDirectory) else {
                     return .none
                 }
                 let isVoycoll = url.pathExtension.lowercased() == "voycoll"
@@ -933,7 +927,10 @@ struct FileManagerFeature {
 
                 case .operations(.operationFinished(_, .deleteImmediately, .success)):
                     // emptyTrash 완료 감지
-                    if state.isTrashFolder {
+                    if case let .folder(path) = state.navigationState,
+                       let trashPath = entryClient.trashDirectoryPath(),
+                       path == trashPath || path.hasPrefix(trashPath + "/")
+                    {
                         return .send(.emptyTrashCompleted)
                     }
                     return .none
@@ -1511,7 +1508,12 @@ struct FileManagerFeature {
             .send(.entries(.loadItems(path: path)))
         case let .tags(tagName):
             .run { send in
-                let taggedItems = await sidebarClient.loadFilesWithTag(tagName, showHidden, entryClient)
+                let taggedItems = await sidebarClient.loadFilesWithTag(
+                    tagName,
+                    showHidden,
+                    entryClient,
+                    WorkspaceClient.liveValue,
+                )
                 await send(.entries(.itemsLoaded(taggedItems)))
             }
         case .computer:

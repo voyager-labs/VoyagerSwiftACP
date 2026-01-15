@@ -330,9 +330,15 @@ struct ContentPaneView: View {
             let cloudStoragePath = (NSHomeDirectory() as NSString)
                 .appendingPathComponent("Library/CloudStorage")
 
+            let isTrashFolder: Bool = if let trashPath {
+                path == trashPath || path.hasPrefix(trashPath + "/")
+            } else {
+                false
+            }
+
             let paths: [String] = if let rootPath = BreadcrumbUtils.findSpecialRootPath(
                 for: path,
-                isTrashFolder: state.isTrashFolder,
+                isTrashFolder: isTrashFolder,
                 trashPath: trashPath,
                 iCloudDrivePath: iCloudDrivePath,
                 cloudStoragePath: cloudStoragePath,
@@ -373,7 +379,7 @@ struct ContentPaneView: View {
               let selectedItem = state.entries.displayItems.first(where: { $0.id == state.entries.selectedIds.first })
         else { return nil }
 
-        let selectedBreadcrumb = BreadcrumbUtils.Item(entry: selectedItem)
+        let selectedBreadcrumb = BreadcrumbUtils.Item(entry: selectedItem, workspaceClient: workspaceClient)
 
         if selectedBreadcrumb.fullPath == state.currentPath {
             return nil

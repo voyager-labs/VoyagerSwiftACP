@@ -1,4 +1,5 @@
 import AppKit
+import ComposableArchitecture
 import SwiftUI
 
 struct ScopePickerView: View {
@@ -7,6 +8,9 @@ struct ScopePickerView: View {
     let onSelect: (String) -> Void
     let favorites: [ScopeFavoriteItem]
     let backHistory: [String]
+
+    @Dependency(\.entryClient)
+    private var entryClient
 
     @State private var searchText: String = ""
     @State private var searchResults: [ComposerScopeUtils.DirectoryItem] = []
@@ -48,9 +52,11 @@ struct ScopePickerView: View {
 
                     guard !Task.isCancelled else { return }
 
+                    let entryClient = entryClient
                     let results = try? await Task.detached(priority: .userInitiated) {
                         try await ComposerScopeUtils.searchDirectories(
                             query: searchText,
+                            entryClient: entryClient,
                             maxResults: 50,
                             initialMaxDepth: 2,
                             timeout: 2.0,
@@ -114,6 +120,7 @@ struct ScopePickerView: View {
                     let combinedList = ComposerScopeUtils.buildCombinedList(
                         history: backHistory,
                         favorites: favorites,
+                        entryClient: entryClient,
                         maxCount: 10,
                     )
 

@@ -5,50 +5,14 @@ import UniformTypeIdentifiers
 enum EntryIconUtils {
     private static let iconCache = NSCache<NSString, NSImage>()
     private static let thumbnailCache = NSCache<NSString, NSImage>()
-    private static let voycollIconName = "voycollFileIcon"
+    static let voycollIconName = "voycollFileIcon"
 
-    static func icon(for item: Entry) -> NSImage {
-        if item.fullPath == "/" {
-            return NSWorkspace.shared.icon(forFile: "/")
-        }
+    static func getCachedIcon(for key: String) -> NSImage? {
+        iconCache.object(forKey: key as NSString)
+    }
 
-        if item.fileExtension.lowercased() == "voycoll" {
-            let cacheKey = "asset:\(voycollIconName)"
-            if let cached = iconCache.object(forKey: cacheKey as NSString) {
-                return cached
-            }
-            if let icon = NSImage(named: voycollIconName) {
-                iconCache.setObject(icon, forKey: cacheKey as NSString)
-                return icon
-            }
-        }
-
-        if item.isDirectory {
-            let cacheKey = "dir:\(item.fullPath)"
-            if let cached = iconCache.object(forKey: cacheKey as NSString) {
-                return cached
-            }
-            let icon = NSWorkspace.shared.icon(forFile: item.fullPath)
-            iconCache.setObject(icon, forKey: cacheKey as NSString)
-            return icon
-        }
-
-        let cacheKey = UTType(filenameExtension: item.fileExtension)
-            .map { "type:\($0.identifier)" }
-            ?? "generic:file"
-
-        if let cached = iconCache.object(forKey: cacheKey as NSString) {
-            return cached
-        }
-
-        let icon: NSImage = if let utType = UTType(filenameExtension: item.fileExtension) {
-            NSWorkspace.shared.icon(for: utType)
-        } else {
-            NSWorkspace.shared.icon(for: .data)
-        }
-
-        iconCache.setObject(icon, forKey: cacheKey as NSString)
-        return icon
+    static func setCachedIcon(_ icon: NSImage, for key: String) {
+        iconCache.setObject(icon, forKey: key as NSString)
     }
 
     static func clearCache() {

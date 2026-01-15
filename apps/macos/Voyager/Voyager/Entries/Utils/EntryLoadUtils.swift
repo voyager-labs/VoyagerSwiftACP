@@ -1,16 +1,8 @@
 import AppKit
-import CoreServices
 import Foundation
 import UniformTypeIdentifiers
 
 enum EntryLoadUtils {
-    private struct ItemMetadata {
-        let kind: String
-        let creatorApplication: String?
-        let tags: [FileTag]?
-        let lastUsedDate: Date?
-    }
-
     private nonisolated(unsafe) static let dateFormatter: DateFormatter = {
         let formatter = DateFormatter()
         formatter.dateStyle = .medium
@@ -25,10 +17,13 @@ enum EntryLoadUtils {
         return formatter
     }()
 
-    nonisolated static func convertURLToEntry(_ itemURL: URL) -> Entry? {
-        let fileManager = FileManager.default
+    nonisolated static func convertURLToEntry(
+        _ itemURL: URL,
+        entryClient: EntryClient,
+        workspaceClient: WorkspaceClient,
+    ) -> Entry? {
         var isDirectory: ObjCBool = false
-        guard fileManager.fileExists(atPath: itemURL.path, isDirectory: &isDirectory) else {
+        guard entryClient.fileExistsAtPath(itemURL.path, &isDirectory) else {
             return nil
         }
 
@@ -50,10 +45,15 @@ enum EntryLoadUtils {
 
         let isHidden = resourceValues?.isHidden ?? false || name.hasPrefix(".")
 
-        let metadata = getItemMetadata(from: itemURL, isDirectory: isDirectory.boolValue)
+        let metadata = entryClient.getItemMetadata(itemURL, isDirectory.boolValue, workspaceClient)
         let lastOpenedDate = metadata.lastUsedDate
+        let tags = getTags(from: itemURL)
 
-        let additionalInfo = calculateAdditionalInfo(url: itemURL, isDirectory: isDirectory.boolValue)
+        let additionalInfo = calculateAdditionalInfo(
+            url: itemURL,
+            isDirectory: isDirectory.boolValue,
+            entryClient: entryClient,
+        )
 
         let formattedSize = isDirectory.boolValue ? "--" : byteFormatter.string(fromByteCount: size)
         let formattedModifiedDate = dateFormatter.string(from: modifiedDate)
@@ -72,7 +72,7 @@ enum EntryLoadUtils {
             fileExtension: itemURL.pathExtension,
             kind: metadata.kind,
             creatorApplication: metadata.creatorApplication,
-            tags: metadata.tags,
+            tags: tags,
             additionalInfo: additionalInfo,
             formattedSize: formattedSize,
             formattedModifiedDate: formattedModifiedDate,
@@ -80,136 +80,43 @@ enum EntryLoadUtils {
         )
     }
 
-    private nonisolated static func getItemMetadata(
-        from itemURL: URL,
-        isDirectory: Bool,
-    ) -> ItemMetadata {
-        var kind: String
-        var creatorApplication: String?
-        var tags: [FileTag]?
-        var lastUsedDate: Date?
-
-        if isDirectory {
-            kind = "Folder"
-        } else {
-            kind = itemURL.pathExtension.isEmpty ? "File" : itemURL.pathExtension.uppercased() + " File"
-        }
-
-        if let mdItem = MDItemCreate(kCFAllocatorDefault, itemURL.path as CFString) {
-            if !isDirectory {
-                if let contentType = MDItemCopyAttribute(mdItem, kMDItemContentType) as? String {
-                    if let uti = UTType(mimeType: contentType) {
-                        kind = uti.localizedDescription ?? contentType
-                    }
-                }
-
-                if let appURL = NSWorkspace.shared.urlForApplication(toOpen: itemURL) {
-                    creatorApplication = appURL.deletingPathExtension().lastPathComponent
-                }
-            }
-
-            if let tagNames = try? itemURL.resourceValues(forKeys: [.tagNamesKey]).tagNames {
-                let nameToColorCode = EntryTagUtils.getTagNameToColorCodeMapping()
-                tags = tagNames.map { tagString in
-                    let colorCode = nameToColorCode[tagString] ?? 0
-                    return FileTag(name: tagString, colorCode: colorCode)
-                }
-            }
-            if let lastUsed = MDItemCopyAttribute(mdItem, "kMDItemLastUsedDate" as CFString) as? Date {
-                lastUsedDate = lastUsed
+    private nonisolated static func getTags(from itemURL: URL) -> [FileTag]? {
+        if let tagNames = try? itemURL.resourceValues(forKeys: [.tagNamesKey]).tagNames {
+            let nameToColorCode = EntryTagUtils.getTagNameToColorCodeMapping()
+            return tagNames.map { tagString in
+                let colorCode = nameToColorCode[tagString] ?? 0
+                return FileTag(name: tagString, colorCode: colorCode)
             }
         }
-
-        return ItemMetadata(kind: kind, creatorApplication: creatorApplication, tags: tags, lastUsedDate: lastUsedDate)
+        return nil
     }
 
-    private nonisolated static func calculateAdditionalInfo(url: URL, isDirectory: Bool) -> String? {
+    private nonisolated static func calculateAdditionalInfo(
+        url: URL,
+        isDirectory: Bool,
+        entryClient: EntryClient,
+    ) -> String? {
         if isDirectory {
-            if isPackageDirectory(url) {
+            if entryClient.isPackageDirectory(url) {
                 return nil
             }
             let ext = url.pathExtension.lowercased()
             if ext == "voycoll" {
                 return nil
             }
-            return getFolderItemCount(url)
+            return entryClient.getFolderItemCount(url)
         }
 
         let ext = url.pathExtension.lowercased()
 
         if ["jpg", "jpeg", "png", "heic", "gif", "webp", "bmp", "tiff"].contains(ext) {
-            return getImageResolution(url)
+            return entryClient.getImageResolution(url)
         }
 
         if ["zip", "tar", "gz", "bz2", "xz", "rar", "7z", "dmg", "pkg"].contains(ext) {
-            return getFormattedFileSize(url)
+            return entryClient.getFormattedFileSize(url)
         }
 
         return nil
-    }
-
-    private nonisolated static func isPackageDirectory(_ url: URL) -> Bool {
-        if let values = try? url.resourceValues(forKeys: [.isPackageKey]),
-           values.isPackage == true
-        {
-            return true
-        }
-
-        let ext = url.pathExtension.lowercased()
-        if ["app", "icon"].contains(ext) {
-            return true
-        }
-
-        if let type = UTType(filenameExtension: url.pathExtension),
-           type.conforms(to: .package)
-        {
-            return true
-        }
-
-        return false
-    }
-
-    private nonisolated static func getFolderItemCount(_ url: URL) -> String? {
-        guard let contents = try? FileManager.default.contentsOfDirectory(
-            at: url,
-            includingPropertiesForKeys: nil,
-            options: [.skipsHiddenFiles],
-        ) else {
-            return nil
-        }
-
-        let count = contents.count
-        if count == 0 {
-            return "No items"
-        }
-        return "\(count) item\(count == 1 ? "" : "s")"
-    }
-
-    private nonisolated static func getImageResolution(_ url: URL) -> String? {
-        guard let imageSource = CGImageSourceCreateWithURL(url as CFURL, nil),
-              let properties = CGImageSourceCopyPropertiesAtIndex(imageSource, 0, nil) as? [CFString: Any],
-              let width = properties[kCGImagePropertyPixelWidth] as? Int,
-              let height = properties[kCGImagePropertyPixelHeight] as? Int
-        else {
-            return nil
-        }
-
-        return "\(width) × \(height)"
-    }
-
-    private nonisolated static func getFormattedFileSize(_ url: URL) -> String? {
-        guard let resourceValues = try? url.resourceValues(forKeys: [.fileSizeKey]),
-              let fileSize = resourceValues.fileSize
-        else {
-            return nil
-        }
-
-        let formatter = ByteCountFormatter()
-        formatter.allowedUnits = [.useKB, .useMB, .useGB]
-        formatter.countStyle = .file
-        formatter.includesUnit = true
-        formatter.isAdaptive = true
-
-        return formatter.string(fromByteCount: Int64(fileSize))
     }
 }

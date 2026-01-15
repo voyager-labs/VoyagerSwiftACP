@@ -4,8 +4,11 @@ import SwiftUI
 struct ContentPaneContextMenu: View {
     let store: StoreOf<FileManagerFeature>
 
+    @Dependency(\.entryClient)
+    private var entryClient
+
     var body: some View {
-        if store.isTrashFolder {
+        if isTrashFolder {
             Button("Empty Trash") {
                 store.send(.entries(.emptyTrash))
             }
@@ -55,6 +58,15 @@ struct ContentPaneContextMenu: View {
             groupKeyToggle("Size", key: .size)
             groupKeyToggle("Tags", key: .tags)
         }
+    }
+
+    private var isTrashFolder: Bool {
+        guard case let .folder(path) = store.navigationState,
+              let trashPath = entryClient.trashDirectoryPath()
+        else {
+            return false
+        }
+        return path == trashPath || path.hasPrefix(trashPath + "/")
     }
 
     private func viewLayoutToggle(_ title: String, layout: FileManagerFeature.ViewLayout) -> some View {

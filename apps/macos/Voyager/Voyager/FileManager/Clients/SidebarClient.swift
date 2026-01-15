@@ -15,8 +15,8 @@ private struct IconMapping {
 
 struct SidebarClient: Sendable {
     var computerName: @Sendable () -> String
-    var loadRecentItems: @Sendable (Bool, EntryClient) async -> [Entry]
-    var loadFilesWithTag: @Sendable (String, Bool, EntryClient) async -> [Entry]
+    var loadRecentItems: @Sendable (Bool, EntryClient, WorkspaceClient) async -> [Entry]
+    var loadFilesWithTag: @Sendable (String, Bool, EntryClient, WorkspaceClient) async -> [Entry]
     var loadLocations: @Sendable (EntryClient) async -> [SidebarUtils.LocationItem]
     var loadFavorites: @Sendable (EntryClient, UserDefaultsClient) async -> [SidebarUtils.FavoriteItem]
     var saveFavorites: @Sendable ([SidebarUtils.FavoriteItem], UserDefaultsClient) -> Void
@@ -26,8 +26,8 @@ struct SidebarClient: Sendable {
 
     nonisolated init(
         computerName: @escaping @Sendable () -> String,
-        loadRecentItems: @escaping @Sendable (Bool, EntryClient) async -> [Entry],
-        loadFilesWithTag: @escaping @Sendable (String, Bool, EntryClient) async -> [Entry],
+        loadRecentItems: @escaping @Sendable (Bool, EntryClient, WorkspaceClient) async -> [Entry],
+        loadFilesWithTag: @escaping @Sendable (String, Bool, EntryClient, WorkspaceClient) async -> [Entry],
         loadLocations: @escaping @Sendable (EntryClient) async -> [SidebarUtils.LocationItem],
         loadFavorites: @escaping @Sendable (EntryClient, UserDefaultsClient) async -> [SidebarUtils.FavoriteItem],
         saveFavorites: @escaping @Sendable ([SidebarUtils.FavoriteItem], UserDefaultsClient) -> Void,
@@ -168,7 +168,9 @@ extension SidebarClient: DependencyKey {
     }
 
     @MainActor
-    private static func loadRecentItems(showHidden: Bool, entryClient: EntryClient) async -> [Entry] {
+    private static func loadRecentItems(showHidden: Bool, entryClient: EntryClient, workspaceClient: WorkspaceClient)
+        async -> [Entry]
+    {
         let predicate = NSPredicate(format: "kMDItemLastUsedDate > %@", Date.distantPast as NSDate)
         let sortDescriptors = [NSSortDescriptor(key: "kMDItemLastUsedDate", ascending: false)]
 
@@ -179,12 +181,23 @@ extension SidebarClient: DependencyKey {
             filterFiles: true,
         )
 
-        let items = recentFiles.compactMap { EntryLoadUtils.convertURLToEntry($0) }
+        let items = recentFiles.compactMap { url in
+            EntryLoadUtils.convertURLToEntry(
+                url,
+                entryClient: entryClient,
+                workspaceClient: workspaceClient,
+            )
+        }
         return showHidden ? items : items.filter { !$0.isHidden }
     }
 
     @MainActor
-    private static func loadFilesWithTag(_ tag: String, showHidden: Bool, entryClient: EntryClient) async -> [Entry] {
+    private static func loadFilesWithTag(
+        _ tag: String,
+        showHidden: Bool,
+        entryClient: EntryClient,
+        workspaceClient: WorkspaceClient,
+    ) async -> [Entry] {
         let predicate = NSPredicate(format: "kMDItemUserTags CONTAINS %@", tag)
         let sortDescriptors = [NSSortDescriptor(key: "kMDItemLastUsedDate", ascending: false)]
 
@@ -195,7 +208,11 @@ extension SidebarClient: DependencyKey {
         )
 
         let items: [Entry] = taggedFiles.compactMap { url in
-            guard let item = EntryLoadUtils.convertURLToEntry(url) else { return nil }
+            guard let item = EntryLoadUtils.convertURLToEntry(
+                url,
+                entryClient: entryClient,
+                workspaceClient: workspaceClient,
+            ) else { return nil }
 
             let hasTags = item.tags?.contains(where: { $0.name == tag }) ?? false
             return hasTags ? item : nil
@@ -209,11 +226,20 @@ extension SidebarClient: DependencyKey {
             computerName: {
                 fileManager.displayName(atPath: "/")
             },
-            loadRecentItems: { showHidden, entryClient in
-                await Self.loadRecentItems(showHidden: showHidden, entryClient: entryClient)
+            loadRecentItems: { showHidden, entryClient, workspaceClient in
+                await Self.loadRecentItems(
+                    showHidden: showHidden,
+                    entryClient: entryClient,
+                    workspaceClient: workspaceClient,
+                )
             },
-            loadFilesWithTag: { tagName, showHidden, entryClient in
-                await Self.loadFilesWithTag(tagName, showHidden: showHidden, entryClient: entryClient)
+            loadFilesWithTag: { tagName, showHidden, entryClient, workspaceClient in
+                await Self.loadFilesWithTag(
+                    tagName,
+                    showHidden: showHidden,
+                    entryClient: entryClient,
+                    workspaceClient: workspaceClient,
+                )
             },
             loadLocations: { entryClient in
                 await MainActor.run {
@@ -510,8 +536,8 @@ extension SidebarClient: DependencyKey {
     nonisolated static var testValue: SidebarClient {
         SidebarClient(
             computerName: { "" },
-            loadRecentItems: { _, _ in [] },
-            loadFilesWithTag: { _, _, _ in [] },
+            loadRecentItems: { _, _, _ in [] },
+            loadFilesWithTag: { _, _, _, _ in [] },
             loadLocations: { _ in [] },
             loadFavorites: { _, _ in [] },
             saveFavorites: { _, _ in },
@@ -524,8 +550,8 @@ extension SidebarClient: DependencyKey {
     nonisolated static var previewValue: SidebarClient {
         SidebarClient(
             computerName: { "" },
-            loadRecentItems: { _, _ in [] },
-            loadFilesWithTag: { _, _, _ in [] },
+            loadRecentItems: { _, _, _ in [] },
+            loadFilesWithTag: { _, _, _, _ in [] },
             loadLocations: { _ in [] },
             loadFavorites: { _, _ in [] },
             saveFavorites: { _, _ in },

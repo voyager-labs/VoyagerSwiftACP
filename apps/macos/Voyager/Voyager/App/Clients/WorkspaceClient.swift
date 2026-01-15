@@ -4,16 +4,17 @@ import Foundation
 import UniformTypeIdentifiers
 
 /// NSWorkspace 관련 기능을 제공하는 Client
-struct WorkspaceClient: Sendable {
-    var urlForApplication: @Sendable (String) -> URL?
-    var urlForApplicationToOpen: @Sendable (URL) -> URL?
-    var urlsForApplications: @Sendable (URL) -> [URL]
-    var iconForFile: @Sendable (String) -> NSImage
-    var iconForType: @Sendable (UTType) -> NSImage
-    var openApplication: @Sendable (URL) async throws -> Void
-    var openURL: @Sendable (URL) -> Bool
+public struct WorkspaceClient: Sendable {
+    public var urlForApplication: @Sendable (String) -> URL?
+    public var urlForApplicationToOpen: @Sendable (URL) -> URL?
+    public var urlsForApplications: @Sendable (URL) -> [URL]
+    public var iconForFile: @Sendable (String) -> NSImage
+    public var iconForType: @Sendable (UTType) -> NSImage
+    public var openApplication: @Sendable (URL) async throws -> Void
+    public var openURL: @Sendable (URL) -> Bool
+    public var currentEvent: @Sendable () -> NSEvent?
 
-    nonisolated init(
+    public nonisolated init(
         urlForApplication: @escaping @Sendable (String) -> URL?,
         urlForApplicationToOpen: @escaping @Sendable (URL) -> URL?,
         urlsForApplications: @escaping @Sendable (URL) -> [URL],
@@ -21,6 +22,7 @@ struct WorkspaceClient: Sendable {
         iconForType: @escaping @Sendable (UTType) -> NSImage,
         openApplication: @escaping @Sendable (URL) async throws -> Void,
         openURL: @escaping @Sendable (URL) -> Bool,
+        currentEvent: @escaping @Sendable () -> NSEvent?,
     ) {
         self.urlForApplication = urlForApplication
         self.urlForApplicationToOpen = urlForApplicationToOpen
@@ -29,11 +31,12 @@ struct WorkspaceClient: Sendable {
         self.iconForType = iconForType
         self.openApplication = openApplication
         self.openURL = openURL
+        self.currentEvent = currentEvent
     }
 }
 
 extension WorkspaceClient: DependencyKey {
-    nonisolated static var liveValue: WorkspaceClient {
+    public nonisolated static var liveValue: WorkspaceClient {
         nonisolated(unsafe) let workspace = NSWorkspace.shared
         return WorkspaceClient(
             urlForApplication: { bundleID in
@@ -58,10 +61,13 @@ extension WorkspaceClient: DependencyKey {
             openURL: { url in
                 workspace.open(url)
             },
+            currentEvent: {
+                NSApplication.shared.currentEvent
+            },
         )
     }
 
-    nonisolated static var testValue: WorkspaceClient {
+    public nonisolated static var testValue: WorkspaceClient {
         WorkspaceClient(
             urlForApplication: { _ in nil },
             urlForApplicationToOpen: { _ in nil },
@@ -70,10 +76,11 @@ extension WorkspaceClient: DependencyKey {
             iconForType: { _ in NSImage() },
             openApplication: { _ in },
             openURL: { _ in false },
+            currentEvent: { nil },
         )
     }
 
-    nonisolated static var previewValue: WorkspaceClient {
+    public nonisolated static var previewValue: WorkspaceClient {
         testValue
     }
 }

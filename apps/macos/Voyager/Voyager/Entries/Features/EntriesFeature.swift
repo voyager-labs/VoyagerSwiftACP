@@ -25,6 +25,8 @@ struct EntriesFeature {
     var sidebarClient
     @Dependency(\.undoManagerClient)
     var undoManagerClient
+    @Dependency(\.workspaceClient)
+    var workspaceClient
 
     private static func deduplicateById(_ items: [Entry]) -> [Entry] {
         var seen: Set<String> = []
@@ -338,7 +340,11 @@ struct EntriesFeature {
                 switch (kind, result) {
                 case (.createFolder, .success):
                     let createdURL = URL(fileURLWithPath: filePath)
-                    if let createdItem = EntryLoadUtils.convertURLToEntry(createdURL) {
+                    if let createdItem = EntryLoadUtils.convertURLToEntry(
+                        createdURL,
+                        entryClient: entryClient,
+                        workspaceClient: workspaceClient,
+                    ) {
                         if let creatingId = state.creatingNewFolderId,
                            let index = state.items.index(id: creatingId)
                         {
@@ -519,8 +525,9 @@ struct EntriesFeature {
 
                 let sidebarClient = sidebarClient
                 let entryClient = entryClient
-                return .run { [sidebarClient, entryClient] send in
-                    let recentItems = await sidebarClient.loadRecentItems(showHidden, entryClient)
+                let workspaceClient = workspaceClient
+                return .run { [sidebarClient, entryClient, workspaceClient] send in
+                    let recentItems = await sidebarClient.loadRecentItems(showHidden, entryClient, workspaceClient)
                     await send(.itemsLoaded(recentItems))
                 }
 
@@ -530,9 +537,15 @@ struct EntriesFeature {
 
                 let sidebarClient = sidebarClient
                 let entryClient = entryClient
-                return .run { [sidebarClient, entryClient] send in
+                let workspaceClient = workspaceClient
+                return .run { [sidebarClient, entryClient, workspaceClient] send in
                     try await Task.sleep(for: .milliseconds(500))
-                    let taggedItems = await sidebarClient.loadFilesWithTag(tagName, showHidden, entryClient)
+                    let taggedItems = await sidebarClient.loadFilesWithTag(
+                        tagName,
+                        showHidden,
+                        entryClient,
+                        workspaceClient,
+                    )
                     await send(.itemsLoaded(taggedItems))
                 }
 

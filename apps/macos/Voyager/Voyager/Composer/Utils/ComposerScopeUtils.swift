@@ -16,11 +16,10 @@ enum ComposerScopeUtils {
         let iconName: String
     }
 
-    private nonisolated static func iconNameForPath(_ path: String) -> String {
-        if path == NSHomeDirectory() { return "house" }
+    private nonisolated static func iconNameForPath(_ path: String, entryClient: EntryClient) -> String {
+        if path == entryClient.homeDirectory() { return "house" }
         if path.hasPrefix("/Volumes/") { return "externaldrive" }
 
-        let fm = FileManager.default
         let mappings: [IconMapping] = [
             IconMapping(directory: .applicationDirectory, domain: .localDomainMask, iconName: "folder.badge.gearshape"),
             IconMapping(directory: .desktopDirectory, domain: .userDomainMask, iconName: "desktopcomputer"),
@@ -32,7 +31,9 @@ enum ComposerScopeUtils {
             IconMapping(directory: .trashDirectory, domain: .userDomainMask, iconName: "trash"),
         ]
 
-        for mapping in mappings where fm.urls(for: mapping.directory, in: mapping.domain).first?.path == path {
+        for mapping in mappings
+            where entryClient.urlsForDirectory(mapping.directory, mapping.domain).first?.path == path
+        {
             return mapping.iconName
         }
 
@@ -52,6 +53,7 @@ enum ComposerScopeUtils {
         params: SearchParams,
         results: inout [DirectoryItem],
         currentDepth: Int,
+        entryClient: EntryClient,
     ) {
         if Date().timeIntervalSince(params.startTime) > params.timeout {
             return
@@ -66,7 +68,9 @@ enum ComposerScopeUtils {
             return
         }
 
-        guard let contents = try? FileManager.default.contentsOfDirectory(atPath: path) else { return }
+        guard let pathURL = URL(string: "file://\(path)"),
+              let contents = try? entryClient.contentsOfDirectory(pathURL, [], [])
+        else { return }
 
         for item in contents {
             if Date().timeIntervalSince(params.startTime) > params.timeout {
@@ -75,9 +79,9 @@ enum ComposerScopeUtils {
 
             guard results.count < params.maxResults else { break }
 
-            let fullPath = (path as NSString).appendingPathComponent(item)
+            let fullPath = (path as NSString).appendingPathComponent(item.path)
             var isDirectory: ObjCBool = false
-            guard FileManager.default.fileExists(atPath: fullPath, isDirectory: &isDirectory),
+            guard entryClient.fileExistsAtPath(fullPath, &isDirectory),
                   isDirectory.boolValue
             else { continue }
 
@@ -86,6 +90,7 @@ enum ComposerScopeUtils {
                 query: params.query,
                 results: &results,
                 maxResults: params.maxResults,
+                entryClient: entryClient,
             )
 
             searchRecursive(
@@ -93,6 +98,7 @@ enum ComposerScopeUtils {
                 params: params,
                 results: &results,
                 currentDepth: currentDepth + 1,
+                entryClient: entryClient,
             )
         }
     }
@@ -102,15 +108,16 @@ enum ComposerScopeUtils {
         query: String,
         results: inout [DirectoryItem],
         maxResults: Int,
+        entryClient: EntryClient,
     ) {
         guard results.count < maxResults else { return }
 
-        let displayName = FileManager.default.displayName(atPath: fullPath)
+        let displayName = entryClient.displayName(fullPath)
         let nameLower = displayName.lowercased()
 
         guard nameLower.contains(query) else { return }
 
-        let iconName = iconNameForPath(fullPath)
+        let iconName = iconNameForPath(fullPath, entryClient: entryClient)
         results.append(DirectoryItem(
             id: fullPath,
             path: fullPath,
@@ -140,6 +147,7 @@ enum ComposerScopeUtils {
 
     nonisolated static func searchDirectories(
         query: String,
+        entryClient: EntryClient,
         maxResults: Int = 50,
         initialMaxDepth: Int = 2,
         timeout: TimeInterval = 2.0,
@@ -150,12 +158,13 @@ enum ComposerScopeUtils {
             let queryLower = query.lowercased()
             var allResults: [DirectoryItem] = []
             let startTime = Date()
+            let homeDir = entryClient.homeDirectory()
             let searchPaths = [
                 "/",
-                NSHomeDirectory(),
-                (NSHomeDirectory() as NSString).appendingPathComponent("Desktop"),
-                (NSHomeDirectory() as NSString).appendingPathComponent("Documents"),
-                (NSHomeDirectory() as NSString).appendingPathComponent("Downloads"),
+                homeDir,
+                (homeDir as NSString).appendingPathComponent("Desktop"),
+                (homeDir as NSString).appendingPathComponent("Documents"),
+                (homeDir as NSString).appendingPathComponent("Downloads"),
             ]
 
             for searchPath in searchPaths {
@@ -175,6 +184,7 @@ enum ComposerScopeUtils {
                         params: params,
                         results: &results,
                         currentDepth: 0,
+                        entryClient: entryClient,
                     )
                     return results
                 }
@@ -200,6 +210,7 @@ enum ComposerScopeUtils {
     static func buildCombinedList(
         history: [String],
         favorites: [ScopeFavoriteItem],
+        entryClient: EntryClient,
         maxCount: Int = 10,
     ) -> [DirectoryItem] {
         var result: [DirectoryItem] = []
@@ -210,10 +221,10 @@ enum ComposerScopeUtils {
         for path in historyItems {
             if (path as NSString).pathExtension.lowercased() == collectionsExtension { continue }
             guard !seenPaths.contains(path) else { continue }
-            guard FileManager.default.fileExists(atPath: path) else { continue }
+            guard entryClient.fileExists(path) else { continue }
 
-            let displayName = FileManager.default.displayName(atPath: path)
-            let iconName = iconNameForPath(path)
+            let displayName = entryClient.displayName(path)
+            let iconName = iconNameForPath(path, entryClient: entryClient)
 
             result.append(DirectoryItem(
                 id: path,
@@ -231,7 +242,7 @@ enum ComposerScopeUtils {
                 let path = favorite.url.path
                 if favorite.url.pathExtension.lowercased() == collectionsExtension { continue }
                 guard !seenPaths.contains(path) else { continue }
-                guard FileManager.default.fileExists(atPath: path) else { continue }
+                guard entryClient.fileExists(path) else { continue }
 
                 result.append(DirectoryItem(
                     id: path,
