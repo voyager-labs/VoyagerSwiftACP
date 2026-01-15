@@ -29,6 +29,10 @@ enum EntrySearchUtils {
         let isHidden = payload.boolValue(for: "isHidden") ?? name.hasPrefix(".")
         let isDirectory = payload.boolValue(for: "isDirectory") ?? false
 
+        let formattedSize = EntryLoadUtils.formatSize(size: size, isDirectory: isDirectory)
+        let formattedModifiedDate = EntryLoadUtils.formatDate(modifiedDate)
+        let formattedCreatedDate = EntryLoadUtils.formatDate(createdDate)
+
         return Entry(
             name: name,
             fullPath: path,
@@ -44,6 +48,9 @@ enum EntrySearchUtils {
             creatorApplication: nil,
             tags: nil,
             additionalInfo: nil,
+            formattedSize: formattedSize,
+            formattedModifiedDate: formattedModifiedDate,
+            formattedCreatedDate: formattedCreatedDate,
         )
     }
 

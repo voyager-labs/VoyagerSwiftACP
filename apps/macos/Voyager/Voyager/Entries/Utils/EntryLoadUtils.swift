@@ -119,4 +119,12 @@ enum EntryLoadUtils {
 
         return nil
     }
+
+    nonisolated static func formatSize(size: Int64, isDirectory: Bool) -> String {
+        isDirectory ? "--" : byteFormatter.string(fromByteCount: size)
+    }
+
+    nonisolated static func formatDate(_ date: Date) -> String {
+        dateFormatter.string(from: date)
+    }
 }
