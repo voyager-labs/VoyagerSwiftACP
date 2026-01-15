@@ -18,6 +18,14 @@ class AppearanceAwareSplitView: NSSplitView {
         updateBackgroundColor()
     }
 
+    override func resizeSubviews(withOldSize oldSize: NSSize) {
+        // bounds가 0일 때는 레이아웃 조작을 하지 않음 (경고 방지)
+        guard bounds.width > 0, bounds.height > 0 else {
+            return
+        }
+        super.resizeSubviews(withOldSize: oldSize)
+    }
+
     func updateBackgroundColor() {
         wantsLayer = true
         // 투명하게 설정 (뒤의 블러가 보이도록)
@@ -178,7 +186,8 @@ class FileManagerSplitViewController: NSViewController, NSSplitViewDelegate {
         Task { @MainActor in
             for await sidebarVisible in store.publisher.sidebarVisible.values {
                 guard let mainSplitView,
-                      let sidebarView = sidebarHosting?.view else { continue }
+                      let sidebarView = sidebarHosting?.view,
+                      mainSplitView.bounds.width > 0 else { continue }
 
                 if sidebarVisible {
                     let savedWidth = userDefaultsClient.object("sidebarWidth") as? Double ?? 220
@@ -262,7 +271,6 @@ extension FileManagerSplitViewController {
         guard let mainSplit = mainSplitView,
               let container = contentInspectorContainer else { return }
         let appearance = mainSplit.effectiveAppearance
-        let isDark = isDarkMode(appearance: appearance)
 
         appearance.performAsCurrentDrawingAppearance {
             container.layer?.backgroundColor = NSColor.clear.cgColor
