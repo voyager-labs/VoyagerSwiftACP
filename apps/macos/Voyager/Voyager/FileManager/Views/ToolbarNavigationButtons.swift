@@ -10,6 +10,13 @@ struct ToolbarNavigationButtons: View {
     let canGoForward: Bool
     let canGoToEnclosingDirectory: Bool
 
+    @Dependency(\.sidebarClient)
+    private var sidebarClient
+    @Dependency(\.entryClient)
+    private var entryClient
+    @Dependency(\.workspaceClient)
+    private var workspaceClient
+
     var body: some View {
         HStack(spacing: 0) {
             backButton()
@@ -85,13 +92,13 @@ struct ToolbarNavigationButtons: View {
     private func historyDisplayName(for entry: FileManagerFeature.HistoryEntry) -> String {
         switch entry.navigationState {
         case let .folder(path):
-            FileManager.default.displayName(atPath: path)
+            entryClient.displayName(path)
         case .recents:
             "Recents"
         case let .tags(tagName):
             tagName
         case .computer:
-            SidebarUtils.computerName
+            sidebarClient.computerName()
         case let .collection(navigation):
             switch navigation.kind {
             case .temporary:
@@ -115,10 +122,10 @@ struct ToolbarNavigationButtons: View {
     private func historyIcon(for entry: FileManagerFeature.HistoryEntry) -> NSImage? {
         switch entry.navigationState {
         case let .folder(path):
-            return NSWorkspace.shared.icon(forFile: path)
+            return workspaceClient.iconForFile(path)
         case let .collection(navigation):
             if case let .file(url, _) = navigation.kind {
-                return NSWorkspace.shared.icon(forFile: url.path)
+                return workspaceClient.iconForFile(url.path)
             }
             return nil
         case .recents:

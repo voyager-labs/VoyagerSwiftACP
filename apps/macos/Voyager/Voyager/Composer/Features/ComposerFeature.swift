@@ -2,18 +2,6 @@
 import Foundation
 
 // swiftlint:disable file_length type_body_length
-struct Condition: Equatable, Identifiable, Hashable, Sendable {
-    var id: String { propertyKey }
-    var propertyKey: String
-    var propertyLabel: String
-    var propertyType: String
-    var operatorCode: String?
-    var operatorLabel: String?
-    var operatorValueArity: Int?
-    var valueType: ValueType = .unknown
-    var values: [String]?
-}
-
 struct FilterSnapshot: Equatable {
     let scopes: [String]
     let conditions: [Condition]
@@ -553,7 +541,7 @@ private func encodeValue(condition: Condition, values: [String]) -> JSONValue? {
 
     case .date:
         let formattedValues = values.map { value in
-            ValueNormalizer.formatDateOnlyString(value) ?? value
+            ValueNormalizerUtils.formatDateOnlyString(value) ?? value
         }
         if formattedValues.count == 1 {
             return .string(formattedValues[0])

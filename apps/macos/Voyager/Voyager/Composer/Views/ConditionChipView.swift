@@ -672,13 +672,13 @@ struct ConditionChipView: View {
                     ),
                 ),
             )
-            tempDate = ValueNormalizer.parseDate(currentText) ?? Date()
+            tempDate = ValueNormalizerUtils.parseDate(currentText) ?? Date()
             datePopoverIndex = index
         } label: {
             let isHovering = dateHoverIndex == index
             let labelText = currentText.isEmpty
                 ? (placeholderText.isEmpty ? "Value" : placeholderText.capitalized)
-                : (ValueNormalizer.formatDateOnlyString(currentText) ?? currentText)
+                : (ValueNormalizerUtils.formatDateOnlyString(currentText) ?? currentText)
             Text(labelText)
                 .font(.system(size: 11, weight: .medium))
                 .foregroundColor(currentText.isEmpty ? .secondary : .primary)
@@ -716,7 +716,7 @@ struct ConditionChipView: View {
         .popover(isPresented: isPresented, arrowEdge: .bottom) {
             VStack(alignment: .leading, spacing: 12) {
                 let applySelection = {
-                    let formatted = ValueNormalizer.formatDateOnly(tempDate)
+                    let formatted = ValueNormalizerUtils.formatDateOnly(tempDate)
                     valueViewStore.send(.setValue(index: index, text: formatted))
                     valuePickerStore.send(.commit)
                     DispatchQueue.main.async {
@@ -878,9 +878,9 @@ struct ConditionChipView: View {
             ""
         }
         if condition.valueType == .date {
-            let first = ValueNormalizer.formatDateOnlyString(values[0]) ?? values[0]
+            let first = ValueNormalizerUtils.formatDateOnlyString(values[0]) ?? values[0]
             if values.count >= 2 {
-                let second = ValueNormalizer.formatDateOnlyString(values[1]) ?? values[1]
+                let second = ValueNormalizerUtils.formatDateOnlyString(values[1]) ?? values[1]
                 if first == second {
                     return first + suffix
                 }

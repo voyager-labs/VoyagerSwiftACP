@@ -79,7 +79,7 @@ struct ViewMenuCommands: Commands {
                 Toggle("Ascending", isOn: sortOrderToggleBinding(.ascending))
                 Toggle("Descending", isOn: sortOrderToggleBinding(.descending))
             }
-            .disabled(appDelegate.currentFileManagerStore?.fsItems.groupKey != GroupKey.none)
+            .disabled(appDelegate.currentFileManagerStore?.entries.groupKey != GroupKey.none)
         }
     }
 
@@ -95,7 +95,7 @@ struct ViewMenuCommands: Commands {
 
     private func groupKeyToggleBinding(_ key: GroupKey) -> Binding<Bool> {
         Binding(
-            get: { appDelegate.currentFileManagerStore?.fsItems.groupKey == key },
+            get: { appDelegate.currentFileManagerStore?.entries.groupKey == key },
             set: { isOn in
                 guard isOn else { return }
                 appDelegate.currentFileManagerStore?.send(.changeGroupKey(key))

@@ -4,8 +4,15 @@ import Foundation
 
 @Reducer
 struct SettingsFeature {
-    static func getDefaultTabPath() -> String {
-        UserDefaults.standard.string(forKey: SettingsKeys.defaultTabPath) ?? NSHomeDirectory()
+    @Dependency(\.entryClient)
+    var entryClient: EntryClient
+    @Dependency(\.userDefaultsClient)
+    var userDefaultsClient: UserDefaultsClient
+
+    nonisolated static func getDefaultTabPath() -> String {
+        let entryClient = EntryClient.liveValue
+        let userDefaultsClient = UserDefaultsClient.liveValue
+        return userDefaultsClient.string("defaultTabPath") ?? entryClient.homeDirectory()
     }
 
     @ObservableState

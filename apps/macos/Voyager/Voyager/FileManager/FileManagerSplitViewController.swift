@@ -18,6 +18,13 @@ class AppearanceAwareSplitView: NSSplitView {
         updateBackgroundColor()
     }
 
+    override func resizeSubviews(withOldSize oldSize: NSSize) {
+        guard bounds.width > 0, bounds.height > 0 else {
+            return
+        }
+        super.resizeSubviews(withOldSize: oldSize)
+    }
+
     func updateBackgroundColor() {
         wantsLayer = true
         // 투명하게 설정 (뒤의 블러가 보이도록)
@@ -28,10 +35,38 @@ class AppearanceAwareSplitView: NSSplitView {
 class FileManagerSplitViewController: NSViewController, NSSplitViewDelegate {
     private struct ContentPaneViewState: Equatable {
         let isComposerPresented: Bool
+        let favorites: [ScopeFavoriteItem]
+        let historyPaths: [String]
+        let isDiscardEnabled: Bool
+        let canSaveCollection: Bool
+        let isTemporaryCollection: Bool
+
+        init(state: FileManagerFeature.State) {
+            isComposerPresented = state.composer.isPresented
+            favorites = state.favorites.map { favorite in
+                ScopeFavoriteItem(
+                    name: favorite.name,
+                    url: favorite.url,
+                    iconName: favorite.iconName,
+                )
+            }
+            historyPaths = state.backHistory.compactMap { entry in
+                if case let .folder(path) = entry.navigationState {
+                    return path
+                }
+                return nil
+            }
+            isDiscardEnabled = state.entries.isCollectionMode
+                && state.openedCollectionBaseline != nil
+                && state.isOpenedCollectionDirty
+            canSaveCollection = state.canSaveCollection
+            isTemporaryCollection = state.openedCollectionURL == nil
+        }
     }
 
     let store: StoreOf<FileManagerFeature>
     let initialPath: String?
+    private let userDefaultsClient: UserDefaultsClient
     private var hasSetInitialLayout = false
     private var inspectorHosting: NSViewController?
     private var observationTask: Task<Void, Never>?
@@ -56,9 +91,14 @@ class FileManagerSplitViewController: NSViewController, NSSplitViewDelegate {
     private var dividerTopConstraint: NSLayoutConstraint?
     private var dividerBottomConstraint: NSLayoutConstraint?
 
-    init(store: StoreOf<FileManagerFeature>, initialPath: String? = nil) {
+    init(
+        store: StoreOf<FileManagerFeature>,
+        initialPath: String? = nil,
+        userDefaultsClient: UserDefaultsClient = .liveValue,
+    ) {
         self.store = store
         self.initialPath = initialPath
+        self.userDefaultsClient = userDefaultsClient
         super.init(nibName: nil, bundle: nil)
     }
 
@@ -127,7 +167,7 @@ class FileManagerSplitViewController: NSViewController, NSSplitViewDelegate {
             store.send(.onAppear)
         }
 
-        store.send(.fsItems(.onAppear))
+        store.send(.entries(.onAppear))
 
         observeInspectorState()
         observeSidebarState()
@@ -145,16 +185,17 @@ class FileManagerSplitViewController: NSViewController, NSSplitViewDelegate {
         Task { @MainActor in
             for await sidebarVisible in store.publisher.sidebarVisible.values {
                 guard let mainSplitView,
-                      let sidebarView = sidebarHosting?.view else { continue }
+                      let sidebarView = sidebarHosting?.view,
+                      mainSplitView.bounds.width > 0 else { continue }
 
                 if sidebarVisible {
-                    let savedWidth = UserDefaults.standard.object(forKey: "sidebarWidth") as? Double ?? 220
+                    let savedWidth = userDefaultsClient.object("sidebarWidth") as? Double ?? 220
                     mainSplitView.setPosition(CGFloat(savedWidth), ofDividerAt: 0)
                     containerLeadingConstraint?.constant = 0
                 } else {
                     let currentWidth = sidebarView.frame.width
                     if currentWidth > 0 {
-                        UserDefaults.standard.set(currentWidth, forKey: "sidebarWidth")
+                        userDefaultsClient.setObject(currentWidth, "sidebarWidth")
                     }
                     mainSplitView.setPosition(0, ofDividerAt: 0)
                     containerLeadingConstraint?.constant = contentVerticalMargin
@@ -173,7 +214,7 @@ class FileManagerSplitViewController: NSViewController, NSSplitViewDelegate {
               let mainSplitView,
               mainSplitView.bounds.width > 0 else { return }
 
-        let savedWidth = UserDefaults.standard.object(forKey: "sidebarWidth") as? Double ?? 220
+        let savedWidth = userDefaultsClient.object("sidebarWidth") as? Double ?? 220
         if store.sidebarVisible {
             mainSplitView.setPosition(CGFloat(savedWidth), ofDividerAt: 0)
         } else {
@@ -229,7 +270,6 @@ extension FileManagerSplitViewController {
         guard let mainSplit = mainSplitView,
               let container = contentInspectorContainer else { return }
         let appearance = mainSplit.effectiveAppearance
-        let isDark = isDarkMode(appearance: appearance)
 
         appearance.performAsCurrentDrawingAppearance {
             container.layer?.backgroundColor = NSColor.clear.cgColor
@@ -307,7 +347,7 @@ extension FileManagerSplitViewController {
         let store = store
         return WithViewStore(
             store,
-            observe: { ContentPaneViewState(isComposerPresented: $0.composer.isPresented) },
+            observe: { ContentPaneViewState(state: $0) },
             content: { viewStore in
                 ZStack(alignment: .top) {
                     VStack(spacing: 0) {
@@ -328,12 +368,21 @@ extension FileManagerSplitViewController {
 
                     Group {
                         if viewStore.isComposerPresented {
-                            ComposerView(store: store)
-                                .padding(.horizontal, VoyagerDS.Spacing.composerHorizontalPadding)
-                                .padding(.top, VoyagerDS.Spacing.composerTopPadding)
-                                .contentShape(Rectangle())
-                                .onTapGesture {}
-                                .transition(.move(edge: .top).combined(with: .opacity))
+                            ComposerView(
+                                store: store.scope(state: \.composer, action: \.composer),
+                                favorites: viewStore.favorites,
+                                historyPaths: viewStore.historyPaths,
+                                isDiscardEnabled: viewStore.isDiscardEnabled,
+                                canSaveCollection: viewStore.canSaveCollection,
+                                isTemporaryCollection: viewStore.isTemporaryCollection,
+                                onDiscardCollectionChanges: { store.send(.discardCollectionChanges) },
+                                onExitComposer: { store.send(.exitComposer) },
+                            )
+                            .padding(.horizontal, VoyagerDS.Spacing.composerHorizontalPadding)
+                            .padding(.top, VoyagerDS.Spacing.composerTopPadding)
+                            .contentShape(Rectangle())
+                            .onTapGesture {}
+                            .transition(.move(edge: .top).combined(with: .opacity))
                         }
                     }
                     .animation(
@@ -601,7 +650,7 @@ extension FileManagerSplitViewController {
         let collapseThreshold: CGFloat = 2
 
         if !isCollapsed, sidebarWidth > collapseThreshold {
-            UserDefaults.standard.set(sidebarWidth, forKey: "sidebarWidth")
+            userDefaultsClient.setObject(sidebarWidth, "sidebarWidth")
         }
 
         let shouldBeVisible = !isCollapsed

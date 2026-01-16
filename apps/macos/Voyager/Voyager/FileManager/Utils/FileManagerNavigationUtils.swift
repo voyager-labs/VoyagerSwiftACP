@@ -1,4 +1,3 @@
-import ComposableArchitecture
 import Foundation
 
 enum FileManagerNavigationUtils {
@@ -24,36 +23,18 @@ enum FileManagerNavigationUtils {
 
     struct CollectionNavigation: Equatable, Sendable {
         var kind: CollectionKind
-        var context: FileManagerFeature.CollectionContext
+        var context: CollectionContext
         var sortKey: SortKey
         var sortOrder: SortOrder
         var viewLayout: FileManagerFeature.ViewLayout
     }
 
-    static func navigateToState(_ navigationState: NavigationState) -> Effect<FileManagerFeature.Action> {
-        switch navigationState {
-        case .recents:
-            .send(.fsItems(.loadRecentItems(showHidden: false)))
-        case let .folder(path):
-            .send(.fsItems(.loadItems(path: path)))
-        case let .tags(tagName):
-            .run { send in
-                let taggedItems = await SidebarUtils.loadFilesWithTag(tagName, showHidden: false)
-                await send(.fsItems(.itemsLoaded(taggedItems)))
-            }
-        case .computer:
-            .send(.fsItems(.loadComputerItems))
-        case let .collection(navigation):
-            .send(.navigateToCollection(navigation))
-        }
-    }
-
-    static func navigationStateFromPath(_ path: String) -> NavigationState {
+    static func navigationStateFromPath(_ path: String, computerName: String) -> NavigationState {
         switch path {
         case "Recents":
             .recents
         default:
-            if path == SidebarUtils.computerName {
+            if path == computerName {
                 .computer
             } else if path.hasPrefix("/") {
                 .folder(path)

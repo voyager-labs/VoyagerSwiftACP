@@ -46,7 +46,7 @@ struct EditMenuCommands: Commands {
                 {
                     return
                 }
-                appDelegate.currentFileManagerStore?.send(.fsItems(.requestUndo))
+                appDelegate.currentFileManagerStore?.send(.entries(.requestUndo))
             }
             .keyboardShortcut("z", modifiers: .command)
             .disabled(!canUndo)
@@ -57,7 +57,7 @@ struct EditMenuCommands: Commands {
                 {
                     return
                 }
-                appDelegate.currentFileManagerStore?.send(.fsItems(.requestRedo))
+                appDelegate.currentFileManagerStore?.send(.entries(.requestRedo))
             }
             .keyboardShortcut("z", modifiers: [.command, .shift])
             .disabled(!canRedo)
@@ -84,7 +84,7 @@ struct EditMenuCommands: Commands {
             Button("Cut") {
                 if NSApp.sendAction(#selector(NSText.cut(_:)), to: nil, from: nil) {
                 } else {
-                    appDelegate.currentFileManagerStore?.send(.fsItems(.cutSelectedItems))
+                    appDelegate.currentFileManagerStore?.send(.entries(.cutSelectedItems))
                 }
             }
             .keyboardShortcut("x", modifiers: .command)
@@ -93,7 +93,7 @@ struct EditMenuCommands: Commands {
             Button("Copy") {
                 if NSApp.sendAction(#selector(NSText.copy(_:)), to: nil, from: nil) {
                 } else {
-                    appDelegate.currentFileManagerStore?.send(.fsItems(.copySelectedItems))
+                    appDelegate.currentFileManagerStore?.send(.entries(.copySelectedItems))
                 }
             }
             .keyboardShortcut("c", modifiers: .command)
@@ -102,18 +102,24 @@ struct EditMenuCommands: Commands {
             Button("Paste") {
                 if NSApp.sendAction(#selector(NSText.paste(_:)), to: nil, from: nil) {
                 } else if let currentPath = appDelegate.currentFileManagerStore?.currentPath {
-                    appDelegate.currentFileManagerStore?.send(.fsItems(.pasteItems(destinationPath: currentPath)))
+                    appDelegate.currentFileManagerStore?.send(.entries(.pasteItems(destinationPath: currentPath)))
                 }
             }
             .keyboardShortcut("v", modifiers: .command)
             .disabled(false)
+
+            Button("Duplicate") {
+                appDelegate.currentFileManagerStore?.send(.entries(.duplicateSelectedItems))
+            }
+            .keyboardShortcut("d", modifiers: .command)
+            .disabled(appDelegate.currentFileManagerStore?.entries.selectedIds.isEmpty ?? true)
         }
 
         CommandGroup(replacing: .textEditing) {
             Button("Select All") {
                 if NSApp.sendAction(#selector(NSText.selectAll(_:)), to: nil, from: nil) {
                 } else {
-                    appDelegate.currentFileManagerStore?.send(.fsItems(.selectAll))
+                    appDelegate.currentFileManagerStore?.send(.entries(.selectAll))
                 }
             }
             .keyboardShortcut("a", modifiers: .command)

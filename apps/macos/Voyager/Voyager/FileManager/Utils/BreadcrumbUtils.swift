@@ -1,5 +1,6 @@
 import AppKit
 import Foundation
+import UniformTypeIdentifiers
 
 enum BreadcrumbUtils {
     struct Item: Equatable {
@@ -11,43 +12,76 @@ enum BreadcrumbUtils {
             lhs.name == rhs.name && lhs.fullPath == rhs.fullPath
         }
 
-        init(path: String) {
+        init(path: String, name: String, icon: NSImage) {
             fullPath = path
-            if path == SidebarUtils.computerName {
-                name = path
-                icon = NSImage(named: "NSComputer") ?? NSWorkspace.shared.icon(forFile: "/")
-            } else {
-                name = FileManager.default.displayName(atPath: path)
-                if let trashPath = FileManager.default.urls(for: .trashDirectory, in: .userDomainMask).first?.path,
-                   path == trashPath
-                {
-                    icon = NSImage(named: NSImage.trashFullName) ?? NSWorkspace.shared.icon(forFile: path)
-                } else {
-                    icon = NSWorkspace.shared.icon(forFile: path)
-                }
-            }
+            self.name = name
+            self.icon = icon
         }
 
-        init(fsItem: FSItem) {
-            fullPath = fsItem.fullPath
-            name = fsItem.name
-            icon = FSItemIconUtils.icon(for: fsItem)
+        init(entry: Entry, workspaceClient: WorkspaceClient) {
+            fullPath = entry.fullPath
+            name = entry.name
+
+            // 아이콘 캐싱 키 생성
+            let cacheKey: String = if entry.fullPath == "/" {
+                "root:/"
+            } else if entry.fileExtension.lowercased() == "voycoll" {
+                "asset:\(EntryIconUtils.voycollIconName)"
+            } else if entry.isDirectory {
+                "dir:\(entry.fullPath)"
+            } else {
+                UTType(filenameExtension: entry.fileExtension)
+                    .map { "type:\($0.identifier)" }
+                    ?? "generic:file"
+            }
+
+            // 캐시 확인
+            if let cached = EntryIconUtils.getCachedIcon(for: cacheKey) {
+                icon = cached
+            } else {
+                // 아이콘 가져오기
+                let fetchedIcon: NSImage = if entry.fullPath == "/" {
+                    workspaceClient.iconForFile("/")
+                } else if entry.fileExtension.lowercased() == "voycoll" {
+                    if let voycollIcon = NSImage(named: EntryIconUtils.voycollIconName) {
+                        voycollIcon
+                    } else {
+                        workspaceClient.iconForType(.data)
+                    }
+                } else if entry.isDirectory {
+                    workspaceClient.iconForFile(entry.fullPath)
+                } else {
+                    if let utType = UTType(filenameExtension: entry.fileExtension) {
+                        workspaceClient.iconForType(utType)
+                    } else {
+                        workspaceClient.iconForType(.data)
+                    }
+                }
+
+                // 캐시 저장
+                EntryIconUtils.setCachedIcon(fetchedIcon, for: cacheKey)
+                icon = fetchedIcon
+            }
         }
     }
 
-    static func findSpecialRootPath(for path: String, isTrashFolder: Bool) -> String? {
-        if isTrashFolder,
-           let trashURL = FileManager.default.urls(for: .trashDirectory, in: .userDomainMask).first
-        {
-            return trashURL.path
+    static func findSpecialRootPath(
+        for path: String,
+        isTrashFolder: Bool,
+        trashPath: String?,
+        iCloudDrivePath: String,
+        cloudStoragePath: String,
+    ) -> String? {
+        if isTrashFolder, let trashPath {
+            return trashPath
         }
-        if path.hasPrefix(SidebarUtils.iCloudDrivePath) {
-            return SidebarUtils.iCloudDrivePath
+        if path.hasPrefix(iCloudDrivePath) {
+            return iCloudDrivePath
         }
-        if path.hasPrefix(SidebarUtils.cloudStoragePath + "/") {
-            let relativePath = path.replacingOccurrences(of: SidebarUtils.cloudStoragePath + "/", with: "")
+        if path.hasPrefix(cloudStoragePath + "/") {
+            let relativePath = path.replacingOccurrences(of: cloudStoragePath + "/", with: "")
             if let firstSlashIndex = relativePath.firstIndex(of: "/") {
-                return (SidebarUtils.cloudStoragePath as NSString)
+                return (cloudStoragePath as NSString)
                     .appendingPathComponent(String(relativePath[..<firstSlashIndex]))
             }
             return path
@@ -55,28 +89,28 @@ enum BreadcrumbUtils {
         return nil
     }
 
-    static func buildBreadcrumbs(from root: String, to target: String) -> [Item] {
-        var result = [Item(path: root)]
+    static func buildBreadcrumbPaths(from root: String, to target: String) -> [String] {
+        var result = [root]
         if target != root {
             let relativePath = target.replacingOccurrences(of: root + "/", with: "")
             var accumulated = root
             for component in relativePath.split(separator: "/") {
                 accumulated += "/" + component
-                result.append(Item(path: accumulated))
+                result.append(accumulated)
             }
         }
         return result
     }
 
-    static func buildBreadcrumbsForStandardPath(_ path: String) -> [Item] {
-        var result: [Item] = []
+    static func buildBreadcrumbPathsForStandardPath(_ path: String) -> [String] {
+        var result: [String] = []
         if path.hasPrefix("/") {
-            result.append(Item(path: "/"))
+            result.append("/")
         }
         var accumulated = "/"
         for component in path.split(separator: "/") {
-            accumulated += component
-            result.append(Item(path: accumulated))
+            accumulated += String(component)
+            result.append(accumulated)
             accumulated += "/"
         }
         return result

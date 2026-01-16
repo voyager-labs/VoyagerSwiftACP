@@ -43,7 +43,7 @@ struct SortGroupButton: View {
                     sortOrderToggle("Ascending", order: .ascending)
                     sortOrderToggle("Descending", order: .descending)
                 }
-                .disabled(store.fsItems.groupKey != .none)
+                .disabled(store.entries.groupKey != .none)
             },
         )
     }
@@ -52,7 +52,7 @@ struct SortGroupButton: View {
         Toggle(
             title,
             isOn: Binding(
-                get: { store.fsItems.groupKey == key },
+                get: { store.entries.groupKey == key },
                 set: { isOn in
                     if isOn {
                         store.send(.changeGroupKey(key))

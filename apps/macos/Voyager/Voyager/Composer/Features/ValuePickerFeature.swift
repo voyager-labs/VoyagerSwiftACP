@@ -1,15 +1,6 @@
 import ComposableArchitecture
 import Foundation
 
-enum ValueType: String, Sendable, Equatable {
-    case string
-    case number
-    case date
-    case boolean
-    case array
-    case unknown
-}
-
 @Reducer
 struct ValuePickerFeature {
     @ObservableState
@@ -110,13 +101,13 @@ struct ValuePickerFeature {
                     return .none
                 }
 
-                let expected = max(state.valueArity, ValueNormalizer.expectedArity(for: state.valueUIKind))
+                let expected = max(state.valueArity, ValueNormalizerUtils.expectedArity(for: state.valueUIKind))
                 var paddedValues = state.values
                 if expected > 0, paddedValues.count < expected {
                     paddedValues.append(contentsOf: Array(repeating: "", count: expected - paddedValues.count))
                 }
 
-                let result = ValueNormalizer.normalize(
+                let result = ValueNormalizerUtils.normalize(
                     kind: state.valueUIKind,
                     rawValues: paddedValues,
                     editingIndex: state.editingIndex,
