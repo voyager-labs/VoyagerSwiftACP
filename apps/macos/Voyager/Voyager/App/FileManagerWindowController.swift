@@ -139,6 +139,21 @@ class FileManagerWindowController: NSWindowController, NSWindowDelegate {
         observeStoreChanges()
     }
 
+    func window(
+        _: NSWindow,
+        willUseFullScreenPresentationOptions proposedOptions: NSApplication.PresentationOptions,
+    ) -> NSApplication.PresentationOptions {
+        var options = proposedOptions
+        options.insert(.autoHideMenuBar)
+        options.insert(.autoHideDock)
+        options.insert(.fullScreen)
+
+        if #available(macOS 11.0, *) {
+            options.insert(.autoHideToolbar)
+        }
+        return options
+    }
+
     private func observeStoreChanges() {
         cancellables.removeAll()
         setupTitlePublisher()
