@@ -212,13 +212,14 @@ struct ContentPaneGridView: View {
         GeometryReader { geometry in
             let columns = [GridItem(.adaptive(minimum: itemWidth), spacing: minSpacing, alignment: .top)]
             let availableWidth = geometry.size.width
+            let minScrollContentHeight = max(0, geometry.size.height - 4)
 
             VStack(spacing: 0) {
                 Color.clear.frame(height: 4)
 
                 ScrollViewReader { proxy in
                     ScrollView {
-                        ZStack {
+                        ZStack(alignment: .topLeading) {
                             Color.clear
                                 .frame(maxWidth: .infinity, maxHeight: .infinity)
                                 .contentShape(Rectangle())
@@ -244,6 +245,7 @@ struct ContentPaneGridView: View {
                             .padding(.bottom, horizontalPadding)
                             .frame(maxWidth: .infinity, alignment: .topLeading)
                         }
+                        .frame(minHeight: minScrollContentHeight, alignment: .topLeading)
                         .coordinateSpace(name: "scrollView")
                         .coordinateSpace(name: "contentPane")
                         .coordinateSpace(name: "gridContainer")
