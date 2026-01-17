@@ -1,4 +1,5 @@
 import Foundation
+import UniformTypeIdentifiers
 
 enum GroupKey: String, Equatable, CaseIterable {
     case none = "None"
@@ -22,6 +23,7 @@ struct GroupedItems: Equatable {
     }
 }
 
+// swiftlint:disable type_body_length
 enum EntriesGroupingUtils {
     private static func groupByName(_ items: [Entry]) -> [GroupedItems] {
         let dictionary = Dictionary(grouping: items) { item -> String in
@@ -205,10 +207,47 @@ enum EntriesGroupingUtils {
         }
     }
 
+    /// - Parameter entry: 매핑할 Entry
+    /// - Returns: 카테고리 이름
+    private static func categoryForEntry(_ entry: Entry) -> String {
+        if entry.isDirectory {
+            return "Folders"
+        }
+
+        if entry.fileExtension.lowercased() == "voycoll" {
+            return "Collections"
+        }
+
+        guard let utType = UTType(filenameExtension: entry.fileExtension.lowercased()) else {
+            return "Other"
+        }
+
+        return categoryForUTType(utType, fileExtension: entry.fileExtension.lowercased())
+    }
+
     private static func groupByKind(_ files: [Entry]) -> [GroupedItems] {
-        Dictionary(grouping: files) { $0.kind }
+        Dictionary(grouping: files) { categoryForEntry($0) }
             .map { GroupedItems(groupName: $0.key, items: $0.value) }
-            .sorted { $0.groupName < $1.groupName }
+            .sorted(by: sortCategoryGroups)
+    }
+
+    /// 카테고리 그룹 정렬 순서 (Folders가 맨 위, Other가 마지막, 나머지는 알파벳 순)
+    private static func sortCategoryGroups(_ lhs: GroupedItems, _ rhs: GroupedItems) -> Bool {
+        if lhs.groupName == "Folders" {
+            return true
+        }
+        if rhs.groupName == "Folders" {
+            return false
+        }
+
+        if lhs.groupName == "Other" {
+            return false
+        }
+        if rhs.groupName == "Other" {
+            return true
+        }
+
+        return lhs.groupName < rhs.groupName
     }
 
     static func groupItems(
@@ -229,7 +268,7 @@ enum EntriesGroupingUtils {
         case .name:
             groupItemsByName(items)
         case .kind:
-            groupItemsByKind(items)
+            groupByKind(items)
         case .application:
             groupItemsByApplication(items)
         case .dateLastOpened:
@@ -250,17 +289,6 @@ enum EntriesGroupingUtils {
     private static func groupItemsByName(_ items: [Entry]) -> [GroupedItems] {
         let sortedItems = items.sorted { $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending }
         return [GroupedItems(groupName: "", items: sortedItems)]
-    }
-
-    private static func groupItemsByKind(_ items: [Entry]) -> [GroupedItems] {
-        var result: [GroupedItems] = []
-        let folders = items.filter(\.isDirectory)
-        if !folders.isEmpty {
-            result.append(GroupedItems(groupName: "", items: folders))
-        }
-        let files = items.filter { !$0.isDirectory }
-        result.append(contentsOf: groupByKind(files))
-        return result
     }
 
     private static func groupItemsByDateLastOpened(_ items: [Entry]) -> [GroupedItems] {
@@ -369,3 +397,78 @@ enum EntriesGroupingUtils {
         return result
     }
 }
+
+// MARK: - Category Classification
+
+extension EntriesGroupingUtils {
+    private static func categoryForUTType(_ utType: UTType, fileExtension: String) -> String {
+        if utType.conforms(to: .application) { return "Applications" }
+        if isSpreadsheet(utType: utType, fileExtension: fileExtension) { return "Spreadsheets" }
+        if isPresentation(utType: utType, fileExtension: fileExtension) { return "Presentations" }
+        if utType.conforms(to: .pdf) { return "PDF Documents" }
+        if isMailOrMessage(utType: utType, fileExtension: fileExtension) { return "Mail & Messages" }
+        if utType.conforms(to: .image) { return "Images" }
+        if isMovie(utType: utType) { return "Movies" }
+        if isAudio(utType: utType) { return "Audio" }
+        if isArchive(utType: utType) { return "Archives" }
+        if isDocument(utType: utType) { return "Documents" }
+        return "Other"
+    }
+
+    private static func isSpreadsheet(utType: UTType, fileExtension: String) -> Bool {
+        utType.identifier.hasPrefix("com.microsoft.excel") ||
+            utType.identifier.hasPrefix("org.openxmlformats.spreadsheetml") ||
+            utType.identifier == "com.apple.iwork.numbers.numbers" ||
+            utType.identifier.hasPrefix("com.apple.iwork.numbers") ||
+            fileExtension == "csv"
+    }
+
+    private static func isPresentation(utType: UTType, fileExtension: String) -> Bool {
+        utType.identifier.hasPrefix("com.microsoft.powerpoint") ||
+            utType.identifier.hasPrefix("org.openxmlformats.presentationml") ||
+            utType.identifier == "com.apple.iwork.keynote.keynote" ||
+            utType.identifier.hasPrefix("com.apple.iwork.keynote") ||
+            fileExtension == "key"
+    }
+
+    private static func isMailOrMessage(utType: UTType, fileExtension: String) -> Bool {
+        utType.identifier.hasPrefix("com.apple.mail") ||
+            utType.identifier.hasPrefix("public.vcard") ||
+            utType.identifier == "com.apple.mail.emlx" ||
+            fileExtension == "eml" ||
+            fileExtension == "mbox"
+    }
+
+    private static func isMovie(utType: UTType) -> Bool {
+        utType.conforms(to: .movie) ||
+            utType.conforms(to: .video) ||
+            utType.conforms(to: .quickTimeMovie) ||
+            utType.conforms(to: .mpeg4Movie) ||
+            utType.conforms(to: .avi)
+    }
+
+    private static func isAudio(utType: UTType) -> Bool {
+        utType.conforms(to: .audio) ||
+            utType.conforms(to: .mp3) ||
+            utType.identifier.hasPrefix("public.aiff") ||
+            utType.identifier == "com.microsoft.waveform-audio"
+    }
+
+    private static func isArchive(utType: UTType) -> Bool {
+        utType.conforms(to: .archive) ||
+            utType.conforms(to: .zip) ||
+            utType.conforms(to: .gzip) ||
+            utType.conforms(to: .bz2) ||
+            utType.identifier == "com.7-zip.7-zip-archive" ||
+            utType.identifier == "com.rarlab.rar-archive"
+    }
+
+    private static func isDocument(utType: UTType) -> Bool {
+        utType.conforms(to: .text) ||
+            utType.conforms(to: .rtf) ||
+            utType.conforms(to: .plainText) ||
+            utType.identifier.hasPrefix("com.microsoft.word")
+    }
+}
+
+// swiftlint:enable type_body_length
