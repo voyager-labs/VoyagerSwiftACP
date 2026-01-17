@@ -359,37 +359,49 @@ struct ContentPaneGridView: View {
     private func groupHeader(
         group: GroupedItems,
         fsStore: Store<EntriesFeature.State, EntriesFeature.Action>,
+        isFirstGroup: Bool = false,
     ) -> some View {
         let isCollapsed = fsStore.collapsedGroups.contains(group.groupName)
 
-        return HStack(spacing: 8) {
-            if fsStore.groupKey == .tags,
-               let colorCode = group.items.first?.tags?
-               .first(where: { $0.name == group.groupName })?.colorCode
-            {
-                Circle()
-                    .fill(EntryTagUtils.getTagColor(colorCode: colorCode))
-                    .frame(width: 8, height: 8)
+        return VStack(spacing: 0) {
+            if !isFirstGroup {
+                Rectangle()
+                    .fill(Color.secondary.opacity(0.12))
+                    .frame(height: 2)
+                    .padding(.horizontal, -horizontalPadding)
+
+                Spacer().frame(height: 12)
             }
 
-            Text(group.groupName)
-                .font(.headline)
-                .foregroundColor(.primary)
+            HStack(spacing: 8) {
+                if fsStore.groupKey == .tags,
+                   let colorCode = group.items.first?.tags?
+                   .first(where: { $0.name == group.groupName })?.colorCode
+                {
+                    Circle()
+                        .fill(EntryTagUtils.getTagColor(colorCode: colorCode))
+                        .frame(width: 8, height: 8)
+                }
 
-            Text("(\(group.count))")
-                .font(.headline)
-                .foregroundColor(.secondary)
+                Text(group.groupName)
+                    .font(.headline)
+                    .foregroundColor(.secondary)
 
-            GroupToggleButton(
-                isCollapsed: isCollapsed,
-                action: {
-                    fsStore.send(.toggleGroup(group.groupName))
-                },
-            )
+                Text("(\(group.count))")
+                    .font(.headline)
+                    .foregroundColor(.secondary)
 
-            Spacer()
+                GroupToggleButton(
+                    isCollapsed: isCollapsed,
+                    action: {
+                        fsStore.send(.toggleGroup(group.groupName))
+                    },
+                )
+
+                Spacer()
+            }
+            .padding(.horizontal, 16)
         }
-        .padding(.horizontal, 16)
     }
 
     private func gridSections(
@@ -423,7 +435,7 @@ struct ContentPaneGridView: View {
                     }
 
                     if !group.groupName.isEmpty, fsStore.groupKey != .name {
-                        groupHeader(group: group, fsStore: fsStore)
+                        groupHeader(group: group, fsStore: fsStore, isFirstGroup: index == 0)
                     }
 
                     if !fsStore.collapsedGroups.contains(group.groupName) {
