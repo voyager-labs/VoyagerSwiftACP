@@ -360,7 +360,9 @@ struct ContentPaneGridView: View {
         group: GroupedItems,
         fsStore: Store<EntriesFeature.State, EntriesFeature.Action>,
     ) -> some View {
-        HStack(spacing: 8) {
+        let isCollapsed = fsStore.collapsedGroups.contains(group.groupName)
+
+        return HStack(spacing: 8) {
             if fsStore.groupKey == .tags,
                let colorCode = group.items.first?.tags?
                .first(where: { $0.name == group.groupName })?.colorCode
@@ -369,9 +371,22 @@ struct ContentPaneGridView: View {
                     .fill(EntryTagUtils.getTagColor(colorCode: colorCode))
                     .frame(width: 8, height: 8)
             }
+
             Text(group.groupName)
                 .font(.headline)
                 .foregroundColor(.primary)
+
+            Text("(\(group.count))")
+                .font(.headline)
+                .foregroundColor(.secondary)
+
+            GroupToggleButton(
+                isCollapsed: isCollapsed,
+                action: {
+                    fsStore.send(.toggleGroup(group.groupName))
+                },
+            )
+
             Spacer()
         }
         .padding(.horizontal, 16)
@@ -411,19 +426,21 @@ struct ContentPaneGridView: View {
                         groupHeader(group: group, fsStore: fsStore)
                     }
 
-                    LazyVGrid(columns: columns, alignment: .leading, spacing: verticalSpacing) {
-                        ForEach(group.items) { item in
-                            itemGrid(
-                                item: item,
-                                store: store,
-                                fsStore: fsStore,
-                                showCompress: options.showCompress,
-                                showExtract: options.showExtract,
-                                isTrashFolder: isTrashFolder,
-                            )
+                    if !fsStore.collapsedGroups.contains(group.groupName) {
+                        LazyVGrid(columns: columns, alignment: .leading, spacing: verticalSpacing) {
+                            ForEach(group.items) { item in
+                                itemGrid(
+                                    item: item,
+                                    store: store,
+                                    fsStore: fsStore,
+                                    showCompress: options.showCompress,
+                                    showExtract: options.showExtract,
+                                    isTrashFolder: isTrashFolder,
+                                )
+                            }
                         }
+                        .frame(maxWidth: .infinity, alignment: .center)
                     }
-                    .frame(maxWidth: .infinity, alignment: .center)
                 }
             }
         }

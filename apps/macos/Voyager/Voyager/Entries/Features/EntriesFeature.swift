@@ -72,6 +72,7 @@ struct EntriesFeature {
 
         var groupKey: GroupKey = .none
         var groupedItems: [GroupedItems] = []
+        var collapsedGroups: Set<String> = []
 
         var operations: EntriesOperationsFeature.State = .init()
         var undoRecords: [EntryActionRecord] = []
@@ -203,6 +204,7 @@ struct EntriesFeature {
         case fileSystemChanged([String])
         case setShowHidden(Bool)
         case setGroupKey(GroupKey)
+        case toggleGroup(String)
         case setCollectionMode(Bool)
         case setDropTargeted(Bool)
         case selectItem(id: String, isCommandPressed: Bool, isShiftPressed: Bool)
@@ -591,6 +593,14 @@ struct EntriesFeature {
             case let .setGroupKey(key):
                 state.groupKey = key
                 state.updateGroupedItems()
+                return .none
+
+            case let .toggleGroup(groupName):
+                if state.collapsedGroups.contains(groupName) {
+                    state.collapsedGroups.remove(groupName)
+                } else {
+                    state.collapsedGroups.insert(groupName)
+                }
                 return .none
 
             case let .setCollectionMode(isCollectionMode):
