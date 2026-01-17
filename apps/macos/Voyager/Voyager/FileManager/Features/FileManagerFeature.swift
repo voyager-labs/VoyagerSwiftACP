@@ -88,6 +88,7 @@ struct FileManagerFeature {
         var isLocationsCollapsed: Bool = false
         var isTagsCollapsed: Bool = false
         var columnWidths: ListColumnWidthsUtils = .default
+        var pendingSidebarSelectionRestore: String?
 
         var composer: ComposerFeature.State = .init()
         var pendingSearchQuery: String?
@@ -268,6 +269,7 @@ struct FileManagerFeature {
         case navigateTo(String)
         case openCollectionFile(URL)
         case collectionFileLoaded(Result<VoyagerCollectionFile, Error>)
+        case restoreSidebarSelection
         case navigateToCollection(FileManagerNavigationUtils.CollectionNavigation)
         case emptyTrashCompleted
         case closeWindow
@@ -544,15 +546,25 @@ struct FileManagerFeature {
 
                     let resolved = resolveCollectionFilters(from: file)
                     if trimmedQuery.isEmpty, resolved.scopes.isEmpty, resolved.conditions.isEmpty {
+                        if !state.backHistory.isEmpty {
+                            state.backHistory.removeLast()
+                        }
                         state.isOpeningCollectionFile = false
                         state.openedCollectionName = nil
+                        state.openedCollectionURL = nil
                         state.openedCollectionBaseline = nil
-                        return .run { _ in
-                            await showCollectionOpenErrorAlert(
-                                title: "Empty Collection",
-                                message: "This collection file has no query, scope, or filters.",
-                            )
-                        }
+                        state.resetComposer()
+                        let exitEffect = exitCollectionMode(state: &state)
+                        return .merge(
+                            exitEffect,
+                            .run { send in
+                                await showCollectionOpenErrorAlert(
+                                    title: "Empty Collection",
+                                    message: "This collection file has no query, scope, or filters.",
+                                )
+                                await send(.restoreSidebarSelection)
+                            },
+                        )
                     }
 
                     state.composer.text = ""
@@ -609,11 +621,12 @@ struct FileManagerFeature {
                     let exitEffect = exitCollectionMode(state: &state)
                     return .merge(
                         exitEffect,
-                        .run { _ in
+                        .run { send in
                             await showCollectionOpenErrorAlert(
                                 title: "Unable to Open Collection",
                                 message: error.localizedDescription,
                             )
+                            await send(.restoreSidebarSelection)
                         },
                     )
                 }
@@ -627,6 +640,13 @@ struct FileManagerFeature {
                         NSApp.keyWindow?.close()
                     }
                 }
+
+            case .restoreSidebarSelection:
+                if let restoreSelection = state.pendingSidebarSelectionRestore {
+                    state.selectedSidebarItem = restoreSelection
+                }
+                state.pendingSidebarSelectionRestore = nil
+                return .none
 
             case .goBack:
                 if Self.shouldPromptForUnsavedNavigation(state: state) {
@@ -788,6 +808,7 @@ struct FileManagerFeature {
                     if state.openedCollectionURL?.path == favorite.url.path {
                         return .none
                     }
+                    state.pendingSidebarSelectionRestore = state.selectedSidebarItem
                     state.selectedSidebarItem = favorite.displayName
                     return .send(.openCollectionFile(favorite.url))
                 }
@@ -1013,6 +1034,7 @@ struct FileManagerFeature {
                 case let .searchResponse(.success(response)):
                     let wasOpeningCollectionFile = state.isOpeningCollectionFile
                     state.isOpeningCollectionFile = false
+                    state.pendingSidebarSelectionRestore = nil
                     let previousSnapshot = state.makeHistoryEntry()
                     let previousNavigationState = state.navigationState
                     let items = response.items ?? []
@@ -1055,6 +1077,7 @@ struct FileManagerFeature {
                 case let .filtersResponse(.success(response)):
                     let wasOpeningCollectionFile = state.isOpeningCollectionFile
                     state.isOpeningCollectionFile = false
+                    state.pendingSidebarSelectionRestore = nil
                     let previousSnapshot = state.makeHistoryEntry()
                     let previousNavigationState = state.navigationState
                     let items = response.items ?? []
@@ -1107,7 +1130,7 @@ struct FileManagerFeature {
                         let exitEffect = exitCollectionMode(state: &state)
                         return .merge(
                             exitEffect,
-                            .run { _ in
+                            .run { send in
                                 await showCollectionOpenErrorAlert(
                                     title: "Unable to Run Collection Search",
                                     message: """
@@ -1116,6 +1139,7 @@ struct FileManagerFeature {
                                     Make sure the backend is running and try again.
                                     """,
                                 )
+                                await send(.restoreSidebarSelection)
                             },
                         )
                     }
@@ -1134,7 +1158,7 @@ struct FileManagerFeature {
                         let exitEffect = exitCollectionMode(state: &state)
                         return .merge(
                             exitEffect,
-                            .run { _ in
+                            .run { send in
                                 await showCollectionOpenErrorAlert(
                                     title: "Unable to Apply Collection Filters",
                                     message: """
@@ -1143,6 +1167,7 @@ struct FileManagerFeature {
                                     Make sure the backend is running and try again.
                                     """,
                                 )
+                                await send(.restoreSidebarSelection)
                             },
                         )
                     }
