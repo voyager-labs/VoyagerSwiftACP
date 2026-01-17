@@ -233,7 +233,7 @@ struct ContentPaneGridView: View {
 
                             VStack(spacing: 0) {
                                 Color.clear.frame(height: 0).id("scrollTop")
-                                LazyVStack(alignment: .leading, spacing: 16) {
+                                LazyVStack(alignment: .leading, spacing: 12) {
                                     gridSections(
                                         fsStore: fsStore,
                                         store: store,
@@ -430,10 +430,6 @@ struct ContentPaneGridView: View {
                 }
             } else {
                 ForEach(Array(fsStore.groupedItems.enumerated()), id: \.element.groupName) { index, group in
-                    if index > 0 {
-                        Spacer().frame(height: 16)
-                    }
-
                     if !group.groupName.isEmpty, fsStore.groupKey != .name {
                         groupHeader(group: group, fsStore: fsStore, isFirstGroup: index == 0)
                     }
