@@ -926,13 +926,6 @@ struct FileManagerFeature {
                     return .none
 
                 case .operations(.operationFinished(_, .deleteImmediately, .success)):
-                    // emptyTrash 완료 감지
-                    if case let .folder(path) = state.navigationState,
-                       let trashPath = entryClient.trashDirectoryPath(),
-                       path == trashPath || path.hasPrefix(trashPath + "/")
-                    {
-                        return .send(.emptyTrashCompleted)
-                    }
                     return .none
 
                 case let .navigateFolder(id):
@@ -949,6 +942,9 @@ struct FileManagerFeature {
 
                 case let .openCollectionFile(url):
                     return .send(.openCollectionFile(url))
+
+                case .emptyTrashCompleted:
+                    return .send(.emptyTrashCompleted)
 
                 default:
                     return .none

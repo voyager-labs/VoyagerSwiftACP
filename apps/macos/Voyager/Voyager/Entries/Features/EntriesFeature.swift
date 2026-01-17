@@ -102,6 +102,9 @@ struct EntriesFeature {
         var itemPositions: [String: CGRect] = [:]
         var gridColumnCount: Int = 1
 
+        var pendingEmptyTrashItemCount: Int = 0
+        var emptyTrashCompletedCount: Int = 0
+
         var isRenaming: Bool {
             renamingItemId != nil
         }
@@ -237,6 +240,8 @@ struct EntriesFeature {
         case extractSelectedItem
         case toggleTagForSelectedItem(tag: String)
         case emptyTrash
+        case clearEmptyTrashTracking
+        case emptyTrashCompleted
         case setSelectAfterLoad(fileNames: [String])
         case thumbnailsReady(paths: [String])
         case startRename(id: String)
@@ -404,8 +409,22 @@ struct EntriesFeature {
                     }
 
                 case (.moveToTrash, .success),
-                     (.deleteImmediately, .success),
                      (.putBack, .success):
+                    return .send(.reloadCurrentFolder)
+
+                case (.deleteImmediately, .success):
+                    if state.pendingEmptyTrashItemCount > 0 {
+                        state.emptyTrashCompletedCount += 1
+                        if state.emptyTrashCompletedCount >= state.pendingEmptyTrashItemCount {
+                            state.pendingEmptyTrashItemCount = 0
+                            state.emptyTrashCompletedCount = 0
+                            return .merge(
+                                .send(.reloadCurrentFolder),
+                                .send(.emptyTrashCompleted),
+                            )
+                        }
+                    }
+
                     return .send(.reloadCurrentFolder)
 
                 case (.compress, .success),
@@ -505,6 +524,9 @@ struct EntriesFeature {
                 )
 
             case .reloadItems:
+                if state.currentFolderPath == nil {
+                    return .none
+                }
                 guard let path = state.currentFolderPath else { return .none }
                 state.isReloading = true
 
@@ -1389,11 +1411,25 @@ struct EntriesFeature {
 
             case .emptyTrash:
                 let allItems = Array(state.items)
+                let itemCount = allItems.count
+                state.pendingEmptyTrashItemCount = itemCount
+                state.emptyTrashCompletedCount = 0
                 return .run { send in
-                    let shouldEmpty = await EntryAlertUtils.showEmptyTrashConfirmationAlert(itemCount: allItems.count)
-                    guard shouldEmpty else { return }
+                    let shouldEmpty = await EntryAlertUtils.showEmptyTrashConfirmationAlert(itemCount: itemCount)
+                    guard shouldEmpty else {
+                        await send(.clearEmptyTrashTracking)
+                        return
+                    }
                     await send(.operations(.emptyTrash(items: allItems)))
                 }
+
+            case .clearEmptyTrashTracking:
+                state.pendingEmptyTrashItemCount = 0
+                state.emptyTrashCompletedCount = 0
+                return .none
+
+            case .emptyTrashCompleted:
+                return .none
 
             case let .setSelectAfterLoad(fileNames):
                 state.selectAfterLoadFileNames = fileNames
