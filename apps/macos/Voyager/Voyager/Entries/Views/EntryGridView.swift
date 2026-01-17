@@ -93,6 +93,10 @@ struct EntryGridView: View, Equatable {
 
             VStack(spacing: 0) {
                 VStack(spacing: 0) {
+                    let font = NSFont.systemFont(ofSize: textSize)
+                    let lineHeight = ceil(font.ascender - font.descender + font.leading)
+                    let tagYOffset = max(0, (lineHeight - 8) / 2)
+
                     HStack(alignment: .top, spacing: 4) {
                         if let tags = item.tags, !tags.isEmpty {
                             OverlappingTagsView(
@@ -100,7 +104,7 @@ struct EntryGridView: View, Equatable {
                                 isSelected: (isSelected || isDropTarget) && !isRenaming,
                                 showBorderWhenUnselected: false,
                             )
-                            .padding(.top, 2)
+                            .padding(.top, tagYOffset)
                         }
 
                         if isRenaming {
