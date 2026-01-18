@@ -27,7 +27,7 @@ struct OperatorUIOption {
 }
 
 enum ConditionOperatorMappingUtils {
-    private static let propertyKeyToType: [String: PropertyType] = [
+    private static let fallbackPropertyKeyToType: [String: PropertyType] = [
         // 숫자
         "size": .number,
         "pixelHeight": .number,
@@ -63,7 +63,7 @@ enum ConditionOperatorMappingUtils {
         "creator": .string,
     ]
 
-    private static let propertyKeyToSupported: [String: [String]] = [
+    private static let fallbackPropertyKeyToSupported: [String: [String]] = [
         "size": ["eq", "gt", "gte", "lt", "lte", "between"],
         "contentType": ["eq", "contains", "in"],
         "kind": ["eq", "contains"],
@@ -91,6 +91,62 @@ enum ConditionOperatorMappingUtils {
         "latitude": ["eq", "gt", "gte", "lt", "lte", "between"],
         "longitude": ["eq", "gt", "gte", "lt", "lte", "between"],
     ]
+
+    private static let registrySnapshot: SystemPropertyRegistry? = {
+        do {
+            return try SystemPropertyRegistryLoader.load()
+        } catch {
+            return nil
+        }
+    }()
+
+    private static let propertyKeyToType: [String: PropertyType] = {
+        guard let registrySnapshot else {
+            return fallbackPropertyKeyToType
+        }
+
+        var mapping: [String: PropertyType] = [:]
+        for (key, definition) in registrySnapshot.propertyKeyRegistry {
+            let propertyKey = definition.propertyKey ?? key
+            guard let type = propertyType(from: definition.valueType) else {
+                continue
+            }
+            mapping[propertyKey] = type
+        }
+
+        return mapping.isEmpty ? fallbackPropertyKeyToType : mapping
+    }()
+
+    private static let propertyKeyToSupported: [String: [String]] = {
+        guard let registrySnapshot else {
+            return fallbackPropertyKeyToSupported
+        }
+
+        var mapping: [String: [String]] = [:]
+        for (key, definition) in registrySnapshot.propertyKeyRegistry {
+            let propertyKey = definition.propertyKey ?? key
+            mapping[propertyKey] = definition.supportedOperators
+        }
+
+        return mapping.isEmpty ? fallbackPropertyKeyToSupported : mapping
+    }()
+
+    private static func propertyType(from valueType: String) -> PropertyType? {
+        switch valueType.lowercased() {
+        case "string":
+            .string
+        case "number":
+            .number
+        case "date", "datetime":
+            .datetime
+        case "boolean":
+            .boolean
+        case "array":
+            .array
+        default:
+            nil
+        }
+    }
 
     /// 타입별 오퍼레이터 템플릿
     private static func operators(for type: PropertyType) -> [OperatorUIOption] {
