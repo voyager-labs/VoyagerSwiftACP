@@ -12,6 +12,7 @@ UV_BIN="${UV_BIN:-uv}"
 BACKEND_DIR="${BACKEND_DIR:-${REPO_ROOT}/apps/backend}"
 VENV_DIR="${VENV_DIR:-${BACKEND_DIR}/build/helper-runtime}"
 NUITKA_OUTPUT_DIR="${NUITKA_OUTPUT_DIR:-${BACKEND_DIR}/build/nuitka}"
+REGISTRY_JSON="${REPO_ROOT}/shared/system_property_registry.json"
 
 log() {
   local level="${1:-INFO}"
@@ -104,12 +105,17 @@ log_info "Nuitka 빌드 실행 (Python: ${VENV_PYTHON}, SDK: ${MACOS_SDK_PATH})"
 # arm64 전용 빌드 (빌드 시간 단축을 위해 universal 바이너리는 제외)
 MIGRATIONS_DIR="${BACKEND_DIR}/src/infra/db/migrations"
 OSX_METADATA_DATA_DIR="${BACKEND_DIR}/src/osxmetadata/attribute_data"
+if [[ ! -f "${REGISTRY_JSON}" ]]; then
+  log_error "레지스트리 JSON을 찾을 수 없습니다: ${REGISTRY_JSON}"
+  exit 1
+fi
 if ! "${UV_BIN}" run --directory "${BACKEND_DIR}" --python "${VENV_PYTHON}" nuitka \
   --standalone \
   --macos-target-arch="arm64" \
   --output-dir="${NUITKA_OUTPUT_DIR}" \
   --include-data-dir="${BACKEND_DIR}/src/infra/db=infra/db" \
   --include-data-dir="${OSX_METADATA_DATA_DIR}=osxmetadata/attribute_data" \
+  --include-data-files="${REGISTRY_JSON}=shared/system_property_registry.json" \
   --include-data-files="${MIGRATIONS_DIR}/env.py=infra/db/migrations/env.py" \
   --include-data-files="${MIGRATIONS_DIR}/config.py=infra/db/migrations/config.py" \
   --include-data-files="${MIGRATIONS_DIR}/__init__.py=infra/db/migrations/__init__.py" \
