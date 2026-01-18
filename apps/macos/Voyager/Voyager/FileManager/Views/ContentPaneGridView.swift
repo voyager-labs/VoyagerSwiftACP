@@ -33,7 +33,7 @@ private struct RightClickMonitorView: NSViewRepresentable {
             guard window != nil else { return }
 
             monitor = NSEvent.addLocalMonitorForEvents(matching: [.rightMouseDown]) { [weak self] event in
-                guard let self, let window else { return event }
+                guard let self else { return event }
                 let location = convert(event.locationInWindow, from: nil)
                 if bounds.contains(location) {
                     onRightMouseDown?(event.locationInWindow)
@@ -56,10 +56,17 @@ private struct RightClickMonitorView: NSViewRepresentable {
 struct ContentPaneGridView: View {
     let store: StoreOf<FileManagerFeature>
 
+    @Dependency(\.fileManagerWindowClient)
+    private var fileManagerWindowClient
+    @Dependency(\.entryClient)
+    private var entryClient
+    @Dependency(\.workspaceClient)
+    private var workspaceClient
+
     @State private var nsScrollView: NSScrollView?
     @State private var hasRestoredScrollPosition: Bool = false
     @State private var lastGridColumnCount: Int = 1
-    private func saveScrollPositionBeforeOpen() {
+    private func saveScrollPosition() {
         ScrollPositionUtils.saveScrollPosition(
             scrollView: nsScrollView,
             currentPath: store.currentPath,
@@ -67,10 +74,26 @@ struct ContentPaneGridView: View {
         )
     }
 
+    private func restoreScrollPosition() {
+        ScrollPositionUtils.restoreScrollPosition(
+            scrollView: nsScrollView,
+            currentPath: store.currentPath,
+            scrollPositions: store.scrollPositions,
+            hasRestored: &hasRestoredScrollPosition,
+        )
+    }
+
+    private func performAutoScroll() {
+        ScrollPositionUtils.performAutoScroll(
+            scrollView: nsScrollView,
+            workspaceClient: workspaceClient,
+        )
+    }
+
     private func findGridItemId(
         at point: CGPoint,
         itemPositions: [String: CGRect],
-        items: IdentifiedArrayOf<FSItem>,
+        items: IdentifiedArrayOf<Entry>,
     ) -> String? {
         for item in items {
             let iconRect = itemPositions[item.id + "_icon"]
@@ -99,21 +122,24 @@ struct ContentPaneGridView: View {
     private let verticalSpacing: CGFloat = 8
 
     private func itemGrid(
-        item: FSItem,
+        item: Entry,
         store: StoreOf<FileManagerFeature>,
-        fsStore: Store<FSItemsFeature.State, FSItemsFeature.Action>,
+        fsStore: Store<EntriesFeature.State, EntriesFeature.Action>,
+        showCompress: Bool,
+        showExtract: Bool,
         isTrashFolder: Bool = false,
-    ) -> FSItemGridView {
-        let selectedItems = fsStore.displayItems.filter { fsStore.selectedIds.contains($0.id) }
-        let (showCompress, showExtract) = FSItemContextMenuUtils
-            .calculateCompressExtractOptions(selectedItems: selectedItems)
-
+    ) -> some View {
         let handlers = makeContextMenuHandlers(
             item: item,
             fsStore: fsStore,
-            saveScrollPosition: saveScrollPositionBeforeOpen,
+            saveScrollPosition: saveScrollPosition,
             isTrashFolder: isTrashFolder,
-            onEmptyTrash: { store.send(.emptyTrash) },
+            onEmptyTrash: { store.send(.entries(.emptyTrash)) },
+            openWindow: { path in
+                Task {
+                    _ = await fileManagerWindowClient.openWindow(path)
+                }
+            },
         )
 
         return buildGridView(
@@ -127,18 +153,18 @@ struct ContentPaneGridView: View {
     }
 
     private func buildGridView(
-        item: FSItem,
+        item: Entry,
         store: StoreOf<FileManagerFeature>,
-        fsStore: Store<FSItemsFeature.State, FSItemsFeature.Action>,
-        handlers: FSItemContextMenuHandlers,
+        fsStore: Store<EntriesFeature.State, EntriesFeature.Action>,
+        handlers: EntryContextMenuHandlers,
         showCompress: Bool,
         showExtract: Bool,
-    ) -> FSItemGridView {
+    ) -> some View {
         let selectedIds = fsStore.selectedIds
         let clipboardItems = fsStore.clipboardItems
         let thumbnailsReady = fsStore.thumbnailsReady
 
-        return FSItemGridView(
+        return EntryGridView(
             item: item,
             isSelected: selectedIds.contains(item.id),
             isCut: clipboardItems.contains(item.fullPath) && fsStore.clipboardOperation == .cut,
@@ -177,10 +203,11 @@ struct ContentPaneGridView: View {
             showExtract: showExtract,
             draggingPaths: fsStore.draggingPaths,
         )
+        .equatable()
     }
 
     var body: some View {
-        let fsStore = store.scope(state: \.fsItems, action: \.fsItems)
+        let fsStore = store.scope(state: \.entries, action: \.entries)
 
         GeometryReader { geometry in
             let columns = [GridItem(.adaptive(minimum: itemWidth), spacing: minSpacing, alignment: .top)]
@@ -258,7 +285,7 @@ struct ContentPaneGridView: View {
                                     if fsStore.lassoSelection != nil {
                                         fsStore.send(.updateLassoSelection(currentPoint: value.location))
 
-                                        ScrollPositionUtils.performAutoScroll(scrollView: nsScrollView)
+                                        performAutoScroll()
                                     } else {
                                         let dragDistance = LassoSelectionUtils.calculateDragDistance(
                                             from: value.startLocation,
@@ -300,11 +327,7 @@ struct ContentPaneGridView: View {
                         }
                     }
                     .onChange(of: store.showHiddenFiles) { _ in
-                        ScrollPositionUtils.saveScrollPosition(
-                            scrollView: nsScrollView,
-                            currentPath: store.currentPath,
-                            store: store,
-                        )
+                        saveScrollPosition()
                     }
                     .introspect(.scrollView, on: .macOS(.v13...)) { scrollView in
                         nsScrollView = scrollView
@@ -316,12 +339,7 @@ struct ContentPaneGridView: View {
                         guard itemCount != 0 else { return }
 
                         if store.scrollPositions[store.currentPath] != nil {
-                            ScrollPositionUtils.restoreScrollPosition(
-                                scrollView: nsScrollView,
-                                currentPath: store.currentPath,
-                                scrollPositions: store.scrollPositions,
-                                hasRestored: &hasRestoredScrollPosition,
-                            )
+                            restoreScrollPosition()
                         } else {
                             proxy.scrollTo("scrollTop", anchor: .top)
                         }
@@ -332,64 +350,90 @@ struct ContentPaneGridView: View {
         .border(fsStore.isDropTargeted ? Color.accentColor : Color.clear, width: 2)
         .onDrop(
             of: [UTType.fileURL],
-            delegate: FSItemDropDelegate(store: store, fsStore: fsStore),
+            delegate: EntryDropDelegate(store: store, fsStore: fsStore),
         )
     }
 
-    @ViewBuilder
+    private func groupHeader(
+        group: GroupedItems,
+        fsStore: Store<EntriesFeature.State, EntriesFeature.Action>,
+    ) -> some View {
+        HStack(spacing: 8) {
+            if fsStore.groupKey == .tags,
+               let colorCode = group.items.first?.tags?
+               .first(where: { $0.name == group.groupName })?.colorCode
+            {
+                Circle()
+                    .fill(EntryTagUtils.getTagColor(colorCode: colorCode))
+                    .frame(width: 8, height: 8)
+            }
+            Text(group.groupName)
+                .font(.headline)
+                .foregroundColor(.primary)
+            Spacer()
+        }
+        .padding(.horizontal, 16)
+    }
+
     private func gridSections(
-        fsStore: Store<FSItemsFeature.State, FSItemsFeature.Action>,
+        fsStore: Store<EntriesFeature.State, EntriesFeature.Action>,
         store: StoreOf<FileManagerFeature>,
         columns: [GridItem],
     ) -> some View {
-        if fsStore.groupKey == .none {
-            LazyVGrid(columns: columns, alignment: .leading, spacing: verticalSpacing) {
-                ForEach(fsStore.displayItems) { item in
-                    itemGrid(
-                        item: item,
-                        store: store,
-                        fsStore: fsStore,
-                        isTrashFolder: store.isTrashFolder,
-                    )
-                }
-            }
-        } else {
-            ForEach(Array(fsStore.groupedItems.enumerated()), id: \.element.groupName) { index, group in
-                if index > 0 {
-                    Spacer().frame(height: 16)
-                }
+        let selectedIds = fsStore.selectedIds
+        let selectedItems = fsStore.displayItems.filter { selectedIds.contains($0.id) }
+        let options = EntryContextMenuUtils
+            .calculateCompressExtractOptions(selectedItems: selectedItems)
 
-                if !group.groupName.isEmpty, fsStore.groupKey != .name {
-                    HStack(spacing: 8) {
-                        if fsStore.groupKey == .tags,
-                           let colorCode = group.items.first?.tags?
-                           .first(where: { $0.name == group.groupName })?.colorCode
-                        {
-                            Circle()
-                                .fill(FSItemTagUtils.getTagColor(colorCode: colorCode))
-                                .frame(width: 8, height: 8)
-                        }
-                        Text(group.groupName)
-                            .font(.headline)
-                            .foregroundColor(.primary)
-                        Spacer()
-                    }
-                    .padding(.horizontal, 16)
-                }
-
+        return Group {
+            if fsStore.groupKey == .none {
                 LazyVGrid(columns: columns, alignment: .leading, spacing: verticalSpacing) {
-                    ForEach(group.items) { item in
+                    ForEach(fsStore.displayItems) { item in
                         itemGrid(
                             item: item,
                             store: store,
                             fsStore: fsStore,
-                            isTrashFolder: store.isTrashFolder,
+                            showCompress: options.showCompress,
+                            showExtract: options.showExtract,
+                            isTrashFolder: isTrashFolder,
                         )
                     }
                 }
-                .frame(maxWidth: .infinity, alignment: .center)
+            } else {
+                ForEach(Array(fsStore.groupedItems.enumerated()), id: \.element.groupName) { index, group in
+                    if index > 0 {
+                        Spacer().frame(height: 16)
+                    }
+
+                    if !group.groupName.isEmpty, fsStore.groupKey != .name {
+                        groupHeader(group: group, fsStore: fsStore)
+                    }
+
+                    LazyVGrid(columns: columns, alignment: .leading, spacing: verticalSpacing) {
+                        ForEach(group.items) { item in
+                            itemGrid(
+                                item: item,
+                                store: store,
+                                fsStore: fsStore,
+                                showCompress: options.showCompress,
+                                showExtract: options.showExtract,
+                                isTrashFolder: isTrashFolder,
+                            )
+                        }
+                    }
+                    .frame(maxWidth: .infinity, alignment: .center)
+                }
             }
         }
+    }
+
+    private var isTrashFolder: Bool {
+        guard case let .folder(path) = store.navigationState,
+              let trashPath = entryClient.trashDirectoryPath()
+        else {
+            return false
+        }
+        return path == trashPath || path.hasPrefix(trashPath + "/")
     }
 
     private func updateGridColumnCountIfNeeded(for width: CGFloat) {
@@ -397,7 +441,7 @@ struct ContentPaneGridView: View {
         let columns = max(1, Int((usableWidth + minSpacing) / (itemWidth + minSpacing)))
         guard columns != lastGridColumnCount else { return }
         lastGridColumnCount = columns
-        store.send(.fsItems(.updateGridColumnCount(columns)))
+        store.send(.entries(.updateGridColumnCount(columns)))
     }
 }
 

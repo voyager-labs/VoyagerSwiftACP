@@ -17,9 +17,9 @@ enum AppliedFiltersUtils {
 
     private static func makeCondition(from payload: SearchConditionPayload) -> Condition {
         let propertyKey = payload.propertyKey
-        let propertyLabel = ConditionMapping.defaultLabel(forKey: propertyKey)
-        let propertyType = ConditionOperatorMapping.propertyTypeString(for: propertyKey)
-        let operatorOption = ConditionOperatorMapping
+        let propertyLabel = ConditionMappingUtils.defaultLabel(forKey: propertyKey)
+        let propertyType = ConditionOperatorMappingUtils.propertyTypeString(for: propertyKey)
+        let operatorOption = ConditionOperatorMappingUtils
             .operatorOptions(for: propertyKey)
             .first { $0.code == payload.operator }
         let valueUIKind = operatorOption?.valueUI ?? .singleText
@@ -34,7 +34,7 @@ enum AppliedFiltersUtils {
             propertyType: propertyType,
             operatorCode: payload.operator,
             operatorLabel: operatorLabel,
-            operatorValueArity: ValueNormalizer.expectedArity(for: valueUIKind),
+            operatorValueArity: ValueNormalizerUtils.expectedArity(for: valueUIKind),
             valueType: valueType,
             values: stringValues(from: payload.value, valueUIKind: valueUIKind),
         )
@@ -103,7 +103,7 @@ enum AppliedFiltersUtils {
     private static func normalizeDateString(_ text: String, valueUIKind: ValueUIKind) -> String? {
         switch valueUIKind {
         case .singleDate, .rangeDate:
-            ValueNormalizer.formatDateOnlyString(text)
+            ValueNormalizerUtils.formatDateOnlyString(text)
         default:
             nil
         }

@@ -2,15 +2,25 @@ import AppKit
 import ComposableArchitecture
 import SwiftUI
 
+// swiftlint:disable type_body_length
 struct ContentPaneView: View {
     let store: StoreOf<FileManagerFeature>
+
+    @Dependency(\.fileManagerWindowClient)
+    private var fileManagerWindowClient
+    @Dependency(\.entryClient)
+    private var entryClient
+    @Dependency(\.workspaceClient)
+    private var workspaceClient
+    @Dependency(\.sidebarClient)
+    private var sidebarClient
     @FocusState private var isKeyCommandFocused: Bool
     private static let undoSelector = Selector(("undo:"))
     private static let redoSelector = Selector(("redo:"))
 
     private var statusText: String {
-        let total = store.fsItems.displayItems.count
-        let selected = store.fsItems.selectedIds.count
+        let total = store.entries.displayItems.count
+        let selected = store.entries.selectedIds.count
 
         if selected == 0 {
             return "\(total) items"
@@ -21,7 +31,7 @@ struct ContentPaneView: View {
 
     private var isCollectionSearching: Bool {
         let isSearching = store.composer.isLoadingSearch || store.composer.isLoadingFilters
-        let hasContext = store.fsItems.isCollectionMode
+        let hasContext = store.entries.isCollectionMode
             || store.pendingSearchQuery != nil
             || !store.composer.scopes.isEmpty
             || !store.composer.conditions.isEmpty
@@ -55,10 +65,10 @@ struct ContentPaneView: View {
             .focused($isKeyCommandFocused)
             .allowsHitTesting(false)
         }
-        .onChange(of: store.fsItems.selectedIds) { _ in
+        .onChange(of: store.entries.selectedIds) { _ in
             restoreKeyCommandFocus()
         }
-        .onChange(of: store.fsItems.isRenaming) { isRenaming in
+        .onChange(of: store.entries.isRenaming) { isRenaming in
             if !isRenaming {
                 DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
                     restoreKeyCommandFocus()
@@ -85,12 +95,19 @@ struct ContentPaneView: View {
             let leftWidth = max(totalWidth * 0.5, 0)
 
             HStack(spacing: 0) {
-                if !store.breadcrumbItems.isEmpty || store.selectedBreadcrumbItem != nil {
+                let breadcrumbItems = breadcrumbItems(for: store.state)
+                let selectedBreadcrumbItem = selectedBreadcrumbItem(for: store.state)
+                if !breadcrumbItems.isEmpty || selectedBreadcrumbItem != nil {
                     PathBreadcrumbView(
-                        breadcrumbItems: store.breadcrumbItems,
-                        selectedItem: nil,
+                        breadcrumbItems: breadcrumbItems,
+                        selectedItem: selectedBreadcrumbItem,
                         availableWidth: leftWidth,
                         onNavigate: { path in store.send(.navigateTo(path)) },
+                        onOpenInNewWindow: { path in
+                            Task {
+                                _ = await fileManagerWindowClient.openWindow(path)
+                            }
+                        },
                     )
                     .frame(width: leftWidth, alignment: .leading)
                 } else {
@@ -144,8 +161,8 @@ struct ContentPaneView: View {
     }
 
     private func handleEscapeKey(_ event: NSEvent) -> Bool {
-        guard event.keyCode == 53, store.fsItems.isRenaming else { return false }
-        store.send(.fsItems(.cancelRename))
+        guard event.keyCode == 53, store.entries.isRenaming else { return false }
+        store.send(.entries(.cancelRename))
         return true
     }
 
@@ -154,15 +171,15 @@ struct ContentPaneView: View {
               event.modifierFlags.isDisjoint(with: [.command, .option, .control, .shift])
         else { return false }
 
-        if store.fsItems.isRenaming {
-            store.send(.fsItems(.commitRename))
+        if store.entries.isRenaming {
+            store.send(.entries(.commitRename))
             return true
         }
 
-        if store.fsItems.selectedIds.count == 1,
-           let selectedId = store.fsItems.selectedIds.first
+        if store.entries.selectedIds.count == 1,
+           let selectedId = store.entries.selectedIds.first
         {
-            store.send(.fsItems(.startRename(id: selectedId)))
+            store.send(.entries(.startRename(id: selectedId)))
         }
         return true
     }
@@ -173,7 +190,7 @@ struct ContentPaneView: View {
         else { return false }
 
         if store.canQuickLookSelectedItem {
-            store.send(.quickLookSelectedItem)
+            store.send(.entries(.quickLookSelectedItem))
         }
         return true
     }
@@ -189,13 +206,13 @@ struct ContentPaneView: View {
         else { return false }
 
         if event.modifierFlags.contains(.option) {
-            if !store.fsItems.selectedIds.isEmpty {
-                store.send(.deleteSelectedItemsImmediately)
+            if !store.entries.selectedIds.isEmpty {
+                store.send(.entries(.deleteSelectedItemsImmediately))
             }
             return true
         } else {
-            if !store.fsItems.selectedIds.isEmpty {
-                store.send(.moveSelectedItemsToTrash)
+            if !store.entries.selectedIds.isEmpty {
+                store.send(.entries(.moveSelectedItemsToTrash))
             }
             return true
         }
@@ -209,11 +226,11 @@ struct ContentPaneView: View {
         @MainActor
         func move(_ offset: Int) {
             if offset == 1 {
-                store.send(.fsItems(.selectNextItem(isShiftPressed: isShiftPressed)))
+                store.send(.entries(.selectNextItem(isShiftPressed: isShiftPressed)))
             } else if offset == -1 {
-                store.send(.fsItems(.selectPreviousItem(isShiftPressed: isShiftPressed)))
+                store.send(.entries(.selectPreviousItem(isShiftPressed: isShiftPressed)))
             } else {
-                store.send(.fsItems(.selectByOffset(offset: offset, isShiftPressed: isShiftPressed)))
+                store.send(.entries(.selectByOffset(offset: offset, isShiftPressed: isShiftPressed)))
             }
         }
 
@@ -221,10 +238,10 @@ struct ContentPaneView: View {
         case 123 where store.viewLayout == .grid: move(-1)
         case 124 where store.viewLayout == .grid: move(+1)
         case 126 where store.viewLayout == .grid:
-            let columnCount = store.fsItems.gridColumnCount
+            let columnCount = store.entries.gridColumnCount
             move(-columnCount)
         case 125 where store.viewLayout == .grid:
-            let columnCount = store.fsItems.gridColumnCount
+            let columnCount = store.entries.gridColumnCount
             move(+columnCount)
         case 126: move(-1)
         case 125: move(+1)
@@ -258,7 +275,7 @@ struct ContentPaneView: View {
             {
                 return true
             }
-            store.send(.fsItems(.requestRedo))
+            store.send(.entries(.requestRedo))
             return true
         }
 
@@ -267,7 +284,7 @@ struct ContentPaneView: View {
         {
             return true
         }
-        store.send(.fsItems(.requestUndo))
+        store.send(.entries(.requestUndo))
         return true
     }
 
@@ -285,4 +302,93 @@ struct ContentPaneView: View {
         guard isTextEditingResponder() else { return false }
         return (NSApp.keyWindow?.firstResponder as? NSResponder)?.undoManager?.canRedo == true
     }
+
+    // swiftlint:disable function_body_length
+    private func breadcrumbItems(for state: FileManagerFeature.State) -> [BreadcrumbUtils.Item] {
+        switch state.navigationState {
+        case .recents, .tags:
+            return []
+        case .computer:
+            if state.entries.selectedIds.count == 1,
+               let selectedItem = state.entries.displayItems.first(where: { $0.id == state.entries.selectedIds.first }),
+               selectedItem.fullPath == "/"
+            {
+                return []
+            }
+            let computerName = sidebarClient.computerName()
+            return [
+                BreadcrumbUtils.Item(
+                    path: computerName,
+                    name: computerName,
+                    icon: NSImage(named: "NSComputer") ?? workspaceClient.iconForFile("/"),
+                ),
+            ]
+        case let .folder(path):
+            let trashPath = entryClient.urlsForDirectory(.trashDirectory, .userDomainMask).first?.path
+            let homePath = entryClient.homeDirectory()
+            let iCloudDrivePath = (homePath as NSString)
+                .appendingPathComponent("Library/Mobile Documents/com~apple~CloudDocs")
+            let cloudStoragePath = (homePath as NSString)
+                .appendingPathComponent("Library/CloudStorage")
+
+            let isTrashFolder: Bool = if let trashPath {
+                path == trashPath || path.hasPrefix(trashPath + "/")
+            } else {
+                false
+            }
+
+            let paths: [String] = if let rootPath = BreadcrumbUtils.findSpecialRootPath(
+                for: path,
+                isTrashFolder: isTrashFolder,
+                trashPath: trashPath,
+                iCloudDrivePath: iCloudDrivePath,
+                cloudStoragePath: cloudStoragePath,
+            ) {
+                BreadcrumbUtils.buildBreadcrumbPaths(from: rootPath, to: path)
+            } else {
+                BreadcrumbUtils.buildBreadcrumbPathsForStandardPath(path)
+            }
+
+            let computerName = sidebarClient.computerName()
+            return paths.map { breadcrumbPath in
+                let name: String
+                let icon: NSImage
+
+                if breadcrumbPath == computerName {
+                    name = computerName
+                    icon = NSImage(named: "NSComputer") ?? workspaceClient.iconForFile("/")
+                } else {
+                    name = entryClient.displayName(breadcrumbPath)
+                    if let trashPath = entryClient.urlsForDirectory(.trashDirectory, .userDomainMask).first?.path,
+                       breadcrumbPath == trashPath
+                    {
+                        icon = NSImage(named: NSImage.trashFullName) ?? workspaceClient.iconForFile(breadcrumbPath)
+                    } else {
+                        icon = workspaceClient.iconForFile(breadcrumbPath)
+                    }
+                }
+
+                return BreadcrumbUtils.Item(path: breadcrumbPath, name: name, icon: icon)
+            }
+        case .collection:
+            return []
+        }
+    }
+
+    private func selectedBreadcrumbItem(for state: FileManagerFeature.State) -> BreadcrumbUtils.Item? {
+        guard state.entries.selectedIds.count == 1,
+              let selectedItem = state.entries.displayItems.first(where: { $0.id == state.entries.selectedIds.first })
+        else { return nil }
+
+        let selectedBreadcrumb = BreadcrumbUtils.Item(entry: selectedItem, workspaceClient: workspaceClient)
+
+        if selectedBreadcrumb.fullPath == state.currentPath {
+            return nil
+        }
+
+        return selectedBreadcrumb
+    }
+    // swiftlint:enable function_body_length
 }
+
+// swiftlint:enable type_body_length

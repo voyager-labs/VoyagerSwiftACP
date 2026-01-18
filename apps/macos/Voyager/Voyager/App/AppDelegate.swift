@@ -55,8 +55,8 @@ class AppDelegate: NSObject, NSApplicationDelegate, ObservableObject {
         hasStore = true
         hasSelectedItems = store.hasSelectedItems
         hasClipboardItems = store.hasClipboardItems
-        canUndo = store.fsItems.canUndoEntryAction
-        canRedo = store.fsItems.canRedoEntryAction
+        canUndo = store.entries.canUndoEntryAction
+        canRedo = store.entries.canRedoEntryAction
         currentFileManagerStore = store
     }
 

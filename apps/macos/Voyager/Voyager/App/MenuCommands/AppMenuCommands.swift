@@ -25,19 +25,19 @@ struct AppMenuCommands: Commands {
             Button("New Folder") {
                 if let currentPath = appDelegate.currentFileManagerStore?.currentPath {
                     appDelegate.currentFileManagerStore?
-                        .send(.fsItems(.createNewFolder(currentPath: currentPath)))
+                        .send(.entries(.createNewFolder(currentPath: currentPath)))
                 }
             }
             .keyboardShortcut("n", modifiers: [.command, .shift])
 
             Button("Open") {
-                appDelegate.currentFileManagerStore?.send(.openSelectedItem)
+                appDelegate.currentFileManagerStore?.send(.entries(.openSelectedItem))
             }
             .keyboardShortcut(.downArrow, modifiers: .command)
             .disabled(appDelegate.currentFileManagerStore?.canOpenSelectedItem == false)
 
             Button("Quick Look") {
-                appDelegate.currentFileManagerStore?.send(.quickLookSelectedItem)
+                appDelegate.currentFileManagerStore?.send(.entries(.quickLookSelectedItem))
             }
             .keyboardShortcut(.space, modifiers: [])
             .disabled(appDelegate.currentFileManagerStore?.canQuickLookSelectedItem == false)
@@ -50,7 +50,7 @@ struct AppMenuCommands: Commands {
             .keyboardShortcut("s", modifiers: .command)
             .disabled({
                 guard let store = appDelegate.currentFileManagerStore else { return true }
-                guard store.fsItems.isCollectionMode else { return true }
+                guard store.entries.isCollectionMode else { return true }
                 return !store.canSaveCollection
             }())
 
@@ -60,7 +60,7 @@ struct AppMenuCommands: Commands {
             .keyboardShortcut("s", modifiers: [.command, .shift])
             .disabled({
                 guard let store = appDelegate.currentFileManagerStore else { return true }
-                guard store.fsItems.isCollectionMode else { return true }
+                guard store.entries.isCollectionMode else { return true }
                 return !store.canSaveCollection
             }())
 

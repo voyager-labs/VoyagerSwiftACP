@@ -66,6 +66,7 @@ struct PathBreadcrumbView: View {
     let selectedItem: BreadcrumbUtils.Item?
     let availableWidth: CGFloat
     let onNavigate: (String) -> Void
+    let onOpenInNewWindow: (String) -> Void
 
     @State private var hoveredIndex: Int?
 
@@ -175,7 +176,7 @@ struct PathBreadcrumbView: View {
                     }
                     .contextMenu {
                         Button {
-                            AppDelegate.shared?.createNewWindow(path: item.fullPath)
+                            onOpenInNewWindow(item.fullPath)
                         } label: {
                             Text("Open in New Window")
                         }

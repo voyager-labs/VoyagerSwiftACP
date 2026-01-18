@@ -1,3 +1,4 @@
+// swiftlint:disable file_length type_body_length
 import AppKit
 import ComposableArchitecture
 import SwiftUI
@@ -33,7 +34,7 @@ struct SidebarItemView: View {
     }
 
     private func applicationsIcon() -> NSImage? {
-        var appIcon = NSImage(
+        let appIcon = NSImage(
             contentsOfFile: "/System/Library/CoreServices/CoreTypes.bundle/Contents/Resources/SidebarApplicationsFolder.icns",
         )
         appIcon?.isTemplate = true
@@ -168,6 +169,10 @@ private struct SidebarSectionHeader: View {
 
 struct SidebarView: View {
     let store: StoreOf<FileManagerFeature>
+    @Dependency(\.entryClient)
+    private var entryClient
+    @Dependency(\.userDefaultsClient)
+    private var userDefaultsClient
     @State private var dropTargetIndex: Int?
     @State private var draggingFavoriteURL: URL?
 
@@ -215,7 +220,7 @@ struct SidebarView: View {
         .frame(minWidth: 150)
         .background(Color.clear)
         .navigationSplitViewColumnWidth(ideal: {
-            if let savedWidth = UserDefaults.standard.object(forKey: "sidebarWidth") as? Double,
+            if let savedWidth = userDefaultsClient.object("sidebarWidth") as? Double,
                savedWidth > 0
             {
                 return CGFloat(savedWidth)
@@ -310,6 +315,7 @@ struct SidebarView: View {
                 delegate: FavoriteDropDelegate(
                     index: index,
                     dropTargetIndex: $dropTargetIndex,
+                    entryClient: entryClient,
                     resolveURL: { providers, completion in
                         resolveFirstDropURL(from: providers, completion: completion)
                     },
@@ -330,6 +336,7 @@ struct SidebarView: View {
                    let url = URL(string: urlString)
                 {
                     Task { @MainActor in
+                        let entryClient = entryClient
                         if let existingIndex = store.favorites.firstIndex(where: { $0.url.path == url.path }) {
                             if existingIndex != index {
                                 store.send(.reorderFavorites(from: IndexSet(integer: existingIndex), to: index))
@@ -338,7 +345,7 @@ struct SidebarView: View {
                             return
                         }
                         var isDirectory: ObjCBool = false
-                        guard FileManager.default.fileExists(atPath: url.path, isDirectory: &isDirectory),
+                        guard entryClient.fileExistsAtPath(url.path, &isDirectory),
                               isDirectory.boolValue || url.pathExtension.lowercased() == "voycoll"
                         else {
                             return
@@ -354,7 +361,7 @@ struct SidebarView: View {
 
     private func resolveFirstDropURL(
         from providers: [NSItemProvider],
-        completion: @escaping (URL?) -> Void,
+        completion: @escaping @Sendable (URL?) -> Void,
     ) {
         for provider in providers where provider.hasItemConformingToTypeIdentifier(UTType.fileURL.identifier) {
             provider.loadItem(forTypeIdentifier: UTType.fileURL.identifier, options: nil) { data, _ in
@@ -375,6 +382,7 @@ struct SidebarView: View {
     private struct FavoriteDropDelegate: DropDelegate {
         let index: Int
         @Binding var dropTargetIndex: Int?
+        let entryClient: EntryClient
         let resolveURL: (_ providers: [NSItemProvider], _ completion: @escaping (URL?) -> Void) -> Void
         let onDrop: (_ providers: [NSItemProvider], _ index: Int) -> Bool
 
@@ -406,7 +414,7 @@ struct SidebarView: View {
 
                 var isDirectory: ObjCBool = false
                 let isVoycoll = url.pathExtension.lowercased() == "voycoll"
-                let exists = FileManager.default.fileExists(atPath: url.path, isDirectory: &isDirectory)
+                let exists = entryClient.fileExistsAtPath(url.path, &isDirectory)
                 let canDrop = exists && (isDirectory.boolValue || isVoycoll)
 
                 DispatchQueue.main.async {
@@ -492,3 +500,5 @@ struct SidebarView: View {
         }
     }
 }
+
+// swiftlint:enable file_length type_body_length

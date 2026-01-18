@@ -32,7 +32,9 @@ class FileManagerWindowController: NSWindowController, NSWindowDelegate {
         super.init(window: window)
         window.delegate = self
         Self.setupWindowFrame(window, path ?? state.currentPath)
-        window.title = FileManagerFeature.makeWindowTitle(for: path ?? state.currentPath)
+        window.title = FileManagerFeature.makeWindowTitle(
+            for: path ?? state.currentPath,
+        )
     }
 
     private static func createInitialState(
@@ -42,7 +44,7 @@ class FileManagerWindowController: NSWindowController, NSWindowDelegate {
         var state: FileManagerFeature.State
         if let duplicateState {
             var newState = duplicateState
-            newState.fsItems = FSItemsFeature.State()
+            newState.entries = EntriesFeature.State()
             state = newState
         } else {
             state = FileManagerFeature.State()
@@ -156,13 +158,13 @@ class FileManagerWindowController: NSWindowController, NSWindowDelegate {
 
         let initialTitle = makeTitle(
             store.state.openedCollectionName,
-            store.state.fsItems.isCollectionMode,
+            store.state.entries.isCollectionMode,
             store.state.titlePath,
         )
 
         let titlePublisher = Publishers.CombineLatest3(
             store.publisher.openedCollectionName.removeDuplicates(),
-            store.publisher.fsItems.isCollectionMode.removeDuplicates(),
+            store.publisher.entries.isCollectionMode.removeDuplicates(),
             store.publisher.titlePath.removeDuplicates(),
         )
         .map(makeTitle)
@@ -182,27 +184,27 @@ class FileManagerWindowController: NSWindowController, NSWindowDelegate {
             AppDelegate.shared?.updateMenuState(store: store)
         }
 
-        store.publisher.fsItems.selectedIds
+        store.publisher.entries.selectedIds
             .removeDuplicates()
             .sink { _ in updateMenuStateIfKeyWindow() }
             .store(in: &cancellables)
 
-        store.publisher.fsItems.clipboardItems
+        store.publisher.entries.clipboardItems
             .removeDuplicates()
             .sink { _ in updateMenuStateIfKeyWindow() }
             .store(in: &cancellables)
 
-        store.publisher.fsItems.undoRecords
+        store.publisher.entries.undoRecords
             .removeDuplicates()
             .sink { _ in updateMenuStateIfKeyWindow() }
             .store(in: &cancellables)
 
-        store.publisher.fsItems.redoRecords
+        store.publisher.entries.redoRecords
             .removeDuplicates()
             .sink { _ in updateMenuStateIfKeyWindow() }
             .store(in: &cancellables)
 
-        store.publisher.fsItems.operations.itemStates
+        store.publisher.entries.operations.itemStates
             .removeDuplicates()
             .sink { _ in updateMenuStateIfKeyWindow() }
             .store(in: &cancellables)

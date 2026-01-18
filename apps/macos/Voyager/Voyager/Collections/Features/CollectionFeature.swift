@@ -21,7 +21,7 @@ struct CollectionFeature {
     }
 
     struct SaveRequestPayload: Equatable, Sendable {
-        let context: FileManagerFeature.CollectionContext?
+        let context: CollectionContext?
         let sortKey: String
         let sortOrder: String
         let viewLayout: String
@@ -38,6 +38,12 @@ struct CollectionFeature {
 
     @Dependency(\.collectionFileClient)
     var collectionFileClient
+
+    @Dependency(\.userDefaultsClient)
+    var userDefaultsClient
+
+    @Dependency(\.entryClient)
+    var entryClient
 
     var body: some Reducer<State, Action> {
         Reduce { state, action in
@@ -75,8 +81,12 @@ struct CollectionFeature {
                 case let .success(snapshot):
                     state.pendingSave = snapshot
                     state.isSaving = true
-                    let initialDirectory = defaultCollectionSaveDirectory(preferredScopes: context.scopes)
-                    return .run { send in
+                    return .run { [userDefaultsClient] send in
+                        let initialDirectory = await defaultCollectionSaveDirectory(
+                            preferredScopes: context.scopes,
+                            userDefaultsClient: userDefaultsClient,
+                            entryClient: entryClient,
+                        )
                         let url = await showCollectionSavePanel(initialDirectory: initialDirectory)
                         await send(.savePanelResponse(url))
                     }
@@ -164,7 +174,7 @@ struct CollectionFeature {
                 switch result {
                 case let .success(url):
                     let directory = url.deletingLastPathComponent().path
-                    UserDefaults.standard.set(directory, forKey: SettingsKeys.lastCollectionSaveDirectory)
+                    userDefaultsClient.setString(directory, SettingsKeys.lastCollectionSaveDirectory)
                     return .none
 
                 case let .failure(error):
@@ -203,7 +213,7 @@ private enum CollectionSaveValidationError: LocalizedError {
 }
 
 private func validateCollectionContext(
-    _ context: FileManagerFeature.CollectionContext,
+    _ context: CollectionContext,
     query: String,
     sortKey: String,
     sortOrder: String,
@@ -296,7 +306,7 @@ private func encodeBooleanValues(_ values: [String]) -> JSONValue? {
 
 private func encodeDateValues(_ values: [String]) -> JSONValue? {
     let formattedValues = values.map { value in
-        ValueNormalizer.formatDateOnlyString(value) ?? value
+        ValueNormalizerUtils.formatDateOnlyString(value) ?? value
     }
     if formattedValues.count == 1 {
         return .string(formattedValues[0])
@@ -320,28 +330,31 @@ private func resetPendingSave(_ state: inout CollectionFeature.State) {
     state.pendingSave = nil
 }
 
-private func defaultCollectionSaveDirectory(preferredScopes: [String]) -> URL? {
-    let fileManager = FileManager.default
-
+@MainActor
+private func defaultCollectionSaveDirectory(
+    preferredScopes: [String],
+    userDefaultsClient: UserDefaultsClient,
+    entryClient: EntryClient,
+) -> URL? {
     if preferredScopes.count == 1,
        let scope = preferredScopes.first,
-       let url = validDirectoryURL(scope)
+       let url = validDirectoryURL(scope, entryClient: entryClient)
     {
         return url
     }
 
-    if let saved = UserDefaults.standard.string(forKey: SettingsKeys.lastCollectionSaveDirectory),
-       let url = validDirectoryURL(saved)
+    if let saved = userDefaultsClient.string(SettingsKeys.lastCollectionSaveDirectory),
+       let url = validDirectoryURL(saved, entryClient: entryClient)
     {
         return url
     }
 
-    return fileManager.homeDirectoryForCurrentUser
+    return URL(fileURLWithPath: entryClient.homeDirectory())
 }
 
-private func validDirectoryURL(_ path: String) -> URL? {
+private func validDirectoryURL(_ path: String, entryClient: EntryClient) -> URL? {
     var isDirectory: ObjCBool = false
-    guard FileManager.default.fileExists(atPath: path, isDirectory: &isDirectory), isDirectory.boolValue else {
+    guard entryClient.fileExistsAtPath(path, &isDirectory), isDirectory.boolValue else {
         return nil
     }
     return URL(fileURLWithPath: path)

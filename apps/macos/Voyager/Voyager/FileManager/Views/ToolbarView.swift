@@ -32,6 +32,8 @@ struct ToolbarView: View {
     let store: StoreOf<FileManagerFeature>
     @Environment(\.colorScheme)
     private var colorScheme
+    @Dependency(\.entryClient)
+    private var entryClient
     @State private var isTitleAreaHovered: Bool = false
     @State private var isTitleHovered: Bool = false
 
@@ -47,7 +49,7 @@ struct ToolbarView: View {
                     canGoToEnclosingDirectory: $0.canGoToEnclosingDirectory,
                     sidebarVisible: $0.sidebarVisible,
                     currentPath: $0.currentPath,
-                    isCollectionMode: $0.fsItems.isCollectionMode,
+                    isCollectionMode: $0.entries.isCollectionMode,
                     isOpeningCollectionFile: $0.isOpeningCollectionFile,
                     openedCollectionName: $0.openedCollectionName,
                     openedCollectionURLExists: $0.openedCollectionURL != nil,
@@ -122,11 +124,7 @@ struct ToolbarView: View {
         let titleText = viewStore.openedCollectionName
             ?? (viewStore.isCollectionMode
                 ? "New Collection"
-                : FileManager.default.displayName(atPath: viewStore.currentPath))
-        let isNewCollection = viewStore.isCollectionMode && viewStore.openedCollectionName == nil
-        let isDirtySavedCollection = viewStore.isCollectionMode
-            && viewStore.openedCollectionURLExists
-            && viewStore.isOpenedCollectionDirty
+                : entryClient.displayName(viewStore.currentPath))
         let composeSuffix = "/ Compose a filter"
         let showUnsavedIndicator = viewStore.isCollectionMode
             && (!viewStore.openedCollectionURLExists || viewStore.isOpenedCollectionDirty)
