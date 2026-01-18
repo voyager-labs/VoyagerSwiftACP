@@ -123,7 +123,15 @@ def _load_registry_payload() -> dict[str, Any]:
 
 
 def _parse_mditem_registry(payload: dict[str, Any]) -> dict[str, MDItemAttribute]:
-    raw_registry = payload.get("mditem_registry", {})
+    raw_registry = payload.get("mditem_registry")
+    if raw_registry is None:
+        raw_registry = {
+            key: value
+            for key, value in payload.items()
+            if key not in {"property_key_registry", "mditem_registry"}
+            and not key.startswith("$")
+            and not key.startswith("_")
+        }
     registry: dict[str, MDItemAttribute] = {}
 
     for key, raw in raw_registry.items():

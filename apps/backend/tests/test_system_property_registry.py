@@ -18,12 +18,11 @@ def test_registry_json_structure() -> None:
     registry_path = _repo_root() / "shared" / "system_property_registry.json"
     data = json.loads(registry_path.read_text(encoding="utf-8"))
 
-    assert "mditem_registry" in data
+    assert "$version" in data
     assert "property_key_registry" in data
-    assert "version" in data
 
     property_keys = data["property_key_registry"]
-    mditem_keys = data["mditem_registry"]
+    mditem_keys = data
 
     assert "size" in property_keys
     assert "kMDItemContentType" in mditem_keys
