@@ -1,0 +1,1044 @@
+{
+    "mditem_registry": {
+        "kMDItemAlbum": {
+            "category": "audio",
+            "db_field": null,
+            "description": "\uc568\ubc94 \uc774\ub984",
+            "examples": [
+                "Greatest Hits",
+                "Live Concert"
+            ],
+            "key": "kMDItemAlbum",
+            "search_aliases": [
+                "\uc568\ubc94",
+                "album"
+            ],
+            "type": "string"
+        },
+        "kMDItemAltitude": {
+            "category": "location",
+            "db_field": null,
+            "description": "GPS \uace0\ub3c4 (\ubbf8\ud130)",
+            "examples": [
+                100,
+                500,
+                1000
+            ],
+            "key": "kMDItemAltitude",
+            "search_aliases": [
+                "\uace0\ub3c4",
+                "altitude",
+                "\ub192\uc774"
+            ],
+            "type": "number"
+        },
+        "kMDItemAudioBitRate": {
+            "category": "video",
+            "db_field": null,
+            "description": "\uc624\ub514\uc624 \ube44\ud2b8\ub808\uc774\ud2b8 (bits/sec)",
+            "examples": [
+                128000,
+                192000,
+                320000
+            ],
+            "key": "kMDItemAudioBitRate",
+            "search_aliases": [
+                "\uc624\ub514\uc624\ube44\ud2b8\ub808\uc774\ud2b8",
+                "audio bitrate",
+                "\uc74c\uc9c8"
+            ],
+            "type": "number"
+        },
+        "kMDItemAudioChannelCount": {
+            "category": "video",
+            "db_field": null,
+            "description": "\uc624\ub514\uc624 \ucc44\ub110 \uc218 (1=\ubaa8\ub178, 2=\uc2a4\ud14c\ub808\uc624, 6=5.1)",
+            "examples": [
+                1,
+                2,
+                6
+            ],
+            "key": "kMDItemAudioChannelCount",
+            "search_aliases": [
+                "\ucc44\ub110",
+                "channel",
+                "\uc2a4\ud14c\ub808\uc624",
+                "\ubaa8\ub178",
+                "\uc11c\ub77c\uc6b4\ub4dc"
+            ],
+            "type": "number"
+        },
+        "kMDItemAudioSampleRate": {
+            "category": "audio",
+            "db_field": null,
+            "description": "\uc624\ub514\uc624 \uc0d8\ud50c\ub9c1 \ub808\uc774\ud2b8 (Hz)",
+            "examples": [
+                44100,
+                48000,
+                96000
+            ],
+            "key": "kMDItemAudioSampleRate",
+            "search_aliases": [
+                "\uc0d8\ud50c\ub808\uc774\ud2b8",
+                "sample rate",
+                "\uc0d8\ud50c\ub9c1"
+            ],
+            "type": "number"
+        },
+        "kMDItemAuthors": {
+            "category": "document",
+            "db_field": null,
+            "description": "\ubb38\uc11c \uc791\uc131\uc790 \ubaa9\ub85d",
+            "examples": [
+                [
+                    "John Doe"
+                ],
+                [
+                    "\ud64d\uae38\ub3d9",
+                    "\uae40\ucca0\uc218"
+                ]
+            ],
+            "key": "kMDItemAuthors",
+            "search_aliases": [
+                "\uc791\uc131\uc790",
+                "author",
+                "\uc800\uc790",
+                "\ub9cc\ub4e0\uc0ac\ub78c"
+            ],
+            "type": "array"
+        },
+        "kMDItemBitsPerSample": {
+            "category": "image",
+            "db_field": null,
+            "description": "\uc0d8\ud50c\ub2f9 \ube44\ud2b8 \uc218",
+            "examples": [
+                8,
+                16,
+                32
+            ],
+            "key": "kMDItemBitsPerSample",
+            "search_aliases": [
+                "\ube44\ud2b8\uc2ec\ub3c4",
+                "bit depth",
+                "color depth"
+            ],
+            "type": "number"
+        },
+        "kMDItemCodecs": {
+            "category": "video",
+            "db_field": null,
+            "description": "\ube44\ub514\uc624/\uc624\ub514\uc624 \ucf54\ub371 \ubaa9\ub85d",
+            "examples": [
+                [
+                    "H.264"
+                ],
+                [
+                    "H.265",
+                    "AAC"
+                ],
+                [
+                    "VP9",
+                    "Opus"
+                ]
+            ],
+            "key": "kMDItemCodecs",
+            "search_aliases": [
+                "\ucf54\ub371",
+                "codec",
+                "\uc778\ucf54\ub529",
+                "\uc555\ucd95"
+            ],
+            "type": "array"
+        },
+        "kMDItemColorSpace": {
+            "category": "image",
+            "db_field": null,
+            "description": "\uc0c9\uacf5\uac04 (RGB, CMYK \ub4f1)",
+            "examples": [
+                "RGB",
+                "CMYK",
+                "Gray"
+            ],
+            "key": "kMDItemColorSpace",
+            "search_aliases": [
+                "\uc0c9\uacf5\uac04",
+                "color space",
+                "\uceec\ub7ec"
+            ],
+            "type": "string"
+        },
+        "kMDItemComposer": {
+            "category": "audio",
+            "db_field": null,
+            "description": "\uc791\uace1\uac00",
+            "examples": [
+                "Bach",
+                "Mozart",
+                "\uc724\ud558"
+            ],
+            "key": "kMDItemComposer",
+            "search_aliases": [
+                "\uc791\uace1\uac00",
+                "composer"
+            ],
+            "type": "string"
+        },
+        "kMDItemContentCreationDate": {
+            "category": "content",
+            "db_field": "content_creation_date",
+            "description": "\ucf58\ud150\uce20 \uc0dd\uc131 \uc2dc\uac04 (EXIF \ub4f1)",
+            "examples": [
+                "2025-01-01 12:00:00"
+            ],
+            "key": "kMDItemContentCreationDate",
+            "search_aliases": [
+                "\ucf58\ud150\uce20\uc0dd\uc131\uc77c",
+                "content creation"
+            ],
+            "type": "date"
+        },
+        "kMDItemContentModificationDate": {
+            "category": "content",
+            "db_field": "content_modification_date",
+            "description": "\ucf58\ud150\uce20 \uc218\uc815 \uc2dc\uac04",
+            "examples": [
+                "2025-01-01 12:00:00"
+            ],
+            "key": "kMDItemContentModificationDate",
+            "search_aliases": [
+                "\ucf58\ud150\uce20\uc218\uc815\uc77c",
+                "content modification"
+            ],
+            "type": "date"
+        },
+        "kMDItemContentType": {
+            "category": "filesystem",
+            "db_field": "uniform_type_identifier",
+            "description": "Uniform Type Identifier (UTI)",
+            "examples": [
+                "public.pdf",
+                "public.jpeg",
+                "com.apple.application",
+                "public.mpeg-4"
+            ],
+            "key": "kMDItemContentType",
+            "search_aliases": [
+                "\ud30c\uc77c\ud0c0\uc785",
+                "file type",
+                "uti",
+                "mime"
+            ],
+            "type": "string"
+        },
+        "kMDItemCreator": {
+            "category": "document",
+            "db_field": null,
+            "description": "\ubb38\uc11c \uc0dd\uc131 \ud504\ub85c\uadf8\ub7a8",
+            "examples": [
+                "Microsoft Word",
+                "Adobe Photoshop",
+                "Pages"
+            ],
+            "key": "kMDItemCreator",
+            "search_aliases": [
+                "\uc0dd\uc131\ud504\ub85c\uadf8\ub7a8",
+                "creator",
+                "\uc560\ud50c\ub9ac\ucf00\uc774\uc158"
+            ],
+            "type": "string"
+        },
+        "kMDItemDateAdded": {
+            "category": "filesystem",
+            "db_field": "added_date",
+            "description": "\ud30c\uc77c \ucd94\uac00 \uc2dc\uac04 (\ub2e4\uc6b4\ub85c\ub4dc/\ubcf5\uc0ac\ub41c \uc2dc\uac04)",
+            "examples": [
+                "2025-01-01 12:00:00"
+            ],
+            "key": "kMDItemDateAdded",
+            "search_aliases": [
+                "\ucd94\uac00\uc77c",
+                "added date",
+                "\ub2e4\uc6b4\ub85c\ub4dc\uc77c"
+            ],
+            "type": "date"
+        },
+        "kMDItemDownloadedDate": {
+            "category": "download",
+            "db_field": null,
+            "description": "\ub2e4\uc6b4\ub85c\ub4dc \uc644\ub8cc \uc2dc\uac04",
+            "examples": [
+                "2025-01-01 12:00:00"
+            ],
+            "key": "kMDItemDownloadedDate",
+            "search_aliases": [
+                "\ub2e4\uc6b4\ub85c\ub4dc\uc77c",
+                "downloaded date"
+            ],
+            "type": "date"
+        },
+        "kMDItemDurationSeconds": {
+            "category": "video",
+            "db_field": null,
+            "description": "\ube44\ub514\uc624/\uc624\ub514\uc624 \uc7ac\uc0dd \uc2dc\uac04 (\ucd08)",
+            "examples": [
+                60,
+                180,
+                3600,
+                7200
+            ],
+            "key": "kMDItemDurationSeconds",
+            "search_aliases": [
+                "\uae38\uc774",
+                "duration",
+                "\uc7ac\uc0dd\uc2dc\uac04",
+                "\uc2dc\uac04"
+            ],
+            "type": "number"
+        },
+        "kMDItemEncodingApplications": {
+            "category": "content",
+            "db_field": null,
+            "description": "\uc778\ucf54\ub529\uc5d0 \uc0ac\uc6a9\ub41c \uc560\ud50c\ub9ac\ucf00\uc774\uc158",
+            "examples": [
+                [
+                    "Final Cut Pro"
+                ],
+                [
+                    "Adobe Premiere Pro",
+                    "Compressor"
+                ]
+            ],
+            "key": "kMDItemEncodingApplications",
+            "search_aliases": [
+                "\uc778\ucf54\ub529\ud504\ub85c\uadf8\ub7a8",
+                "encoding app"
+            ],
+            "type": "array"
+        },
+        "kMDItemFSContentChangeDate": {
+            "category": "filesystem",
+            "db_field": "modification_date",
+            "description": "\ud30c\uc77c \uc218\uc815 \uc2dc\uac04",
+            "examples": [
+                "2025-01-01 12:00:00"
+            ],
+            "key": "kMDItemFSContentChangeDate",
+            "search_aliases": [
+                "\uc218\uc815\uc77c",
+                "modification date",
+                "\ubcc0\uacbd\uc77c"
+            ],
+            "type": "date"
+        },
+        "kMDItemFSCreationDate": {
+            "category": "filesystem",
+            "db_field": "creation_date",
+            "description": "\ud30c\uc77c \uc0dd\uc131 \uc2dc\uac04",
+            "examples": [
+                "2025-01-01 12:00:00"
+            ],
+            "key": "kMDItemFSCreationDate",
+            "search_aliases": [
+                "\uc0dd\uc131\uc77c",
+                "creation date",
+                "\ub9cc\ub4e0\ub0a0"
+            ],
+            "type": "date"
+        },
+        "kMDItemFSInvisible": {
+            "category": "filesystem",
+            "db_field": "is_invisible",
+            "description": "\uc228\uae40 \ud30c\uc77c \uc5ec\ubd80",
+            "examples": [
+                true,
+                false
+            ],
+            "key": "kMDItemFSInvisible",
+            "search_aliases": [
+                "\uc228\uae40",
+                "hidden",
+                "invisible"
+            ],
+            "type": "boolean"
+        },
+        "kMDItemFSSize": {
+            "category": "filesystem",
+            "db_field": "size",
+            "description": "\ud30c\uc77c \ud06c\uae30 (bytes)",
+            "examples": [
+                1024,
+                1048576,
+                104857600,
+                1073741824
+            ],
+            "key": "kMDItemFSSize",
+            "search_aliases": [
+                "\ud06c\uae30",
+                "size",
+                "\uc6a9\ub7c9",
+                "\ud30c\uc77c\ud06c\uae30"
+            ],
+            "type": "number"
+        },
+        "kMDItemHasAlphaChannel": {
+            "category": "image",
+            "db_field": null,
+            "description": "\uc54c\ud30c \ucc44\ub110(\ud22c\uba85\ub3c4) \ud3ec\ud568 \uc5ec\ubd80",
+            "examples": [
+                true,
+                false
+            ],
+            "key": "kMDItemHasAlphaChannel",
+            "search_aliases": [
+                "\uc54c\ud30c\ucc44\ub110",
+                "alpha",
+                "\ud22c\uba85\ub3c4",
+                "transparency"
+            ],
+            "type": "boolean"
+        },
+        "kMDItemKeywords": {
+            "category": "document",
+            "db_field": null,
+            "description": "\ubb38\uc11c \ud0a4\uc6cc\ub4dc/\ud0dc\uadf8",
+            "examples": [
+                [
+                    "work",
+                    "important"
+                ],
+                [
+                    "\uc5c5\ubb34",
+                    "\uae34\uae09",
+                    "\uac80\ud1a0\ud544\uc694"
+                ]
+            ],
+            "key": "kMDItemKeywords",
+            "search_aliases": [
+                "\ud0a4\uc6cc\ub4dc",
+                "keyword",
+                "\ud0dc\uadf8",
+                "tag"
+            ],
+            "type": "array"
+        },
+        "kMDItemKind": {
+            "category": "filesystem",
+            "db_field": "file_kind",
+            "description": "\ud30c\uc77c \uc885\ub958 (\ub85c\uceec\ub77c\uc774\uc988\ub41c \uc124\uba85)",
+            "examples": [
+                "PDF \ubb38\uc11c",
+                "JPEG \uc774\ubbf8\uc9c0",
+                "MPEG-4 \ub3d9\uc601\uc0c1",
+                "\uc751\uc6a9 \ud504\ub85c\uadf8\ub7a8"
+            ],
+            "key": "kMDItemKind",
+            "search_aliases": [
+                "\uc885\ub958",
+                "kind",
+                "type",
+                "\ud30c\uc77c\uc885\ub958"
+            ],
+            "type": "string"
+        },
+        "kMDItemLastUsedDate": {
+            "category": "filesystem",
+            "db_field": "last_used_date",
+            "description": "\ud30c\uc77c \ub9c8\uc9c0\ub9c9 \uc2e4\ud589/\uc0ac\uc6a9 \uc2dc\uac04",
+            "examples": [
+                "2025-01-01 12:00:00"
+            ],
+            "key": "kMDItemLastUsedDate",
+            "search_aliases": [
+                "\ub9c8\uc9c0\ub9c9\uc0ac\uc6a9",
+                "last used",
+                "\uc2e4\ud589\uc77c"
+            ],
+            "type": "date"
+        },
+        "kMDItemLatitude": {
+            "category": "location",
+            "db_field": null,
+            "description": "GPS \uc704\ub3c4",
+            "examples": [
+                37.5665,
+                35.6762
+            ],
+            "key": "kMDItemLatitude",
+            "search_aliases": [
+                "\uc704\ub3c4",
+                "latitude",
+                "gps"
+            ],
+            "type": "number"
+        },
+        "kMDItemLongitude": {
+            "category": "location",
+            "db_field": null,
+            "description": "GPS \uacbd\ub3c4",
+            "examples": [
+                126.978,
+                139.6503
+            ],
+            "key": "kMDItemLongitude",
+            "search_aliases": [
+                "\uacbd\ub3c4",
+                "longitude",
+                "gps"
+            ],
+            "type": "number"
+        },
+        "kMDItemMusicalGenre": {
+            "category": "audio",
+            "db_field": null,
+            "description": "\uc74c\uc545 \uc7a5\ub974",
+            "examples": [
+                "Rock",
+                "Jazz",
+                "Classical",
+                "K-Pop"
+            ],
+            "key": "kMDItemMusicalGenre",
+            "search_aliases": [
+                "\uc7a5\ub974",
+                "genre",
+                "\uc74c\uc545\uc7a5\ub974"
+            ],
+            "type": "string"
+        },
+        "kMDItemNumberOfPages": {
+            "category": "document",
+            "db_field": null,
+            "description": "\ubb38\uc11c \ud398\uc774\uc9c0 \uc218",
+            "examples": [
+                1,
+                10,
+                50,
+                100
+            ],
+            "key": "kMDItemNumberOfPages",
+            "search_aliases": [
+                "\ud398\uc774\uc9c0",
+                "page",
+                "\ud398\uc774\uc9c0\uc218"
+            ],
+            "type": "number"
+        },
+        "kMDItemOrientation": {
+            "category": "image",
+            "db_field": null,
+            "description": "\uc774\ubbf8\uc9c0 \ud68c\uc804 \ubc29\ud5a5 (0-8)",
+            "examples": [
+                0,
+                1,
+                3,
+                6,
+                8
+            ],
+            "key": "kMDItemOrientation",
+            "search_aliases": [
+                "\ud68c\uc804",
+                "orientation",
+                "\ubc29\ud5a5"
+            ],
+            "type": "number"
+        },
+        "kMDItemPageHeight": {
+            "category": "document",
+            "db_field": null,
+            "description": "\ud398\uc774\uc9c0 \ub192\uc774 (\ud3ec\uc778\ud2b8)",
+            "examples": [
+                792,
+                1224
+            ],
+            "key": "kMDItemPageHeight",
+            "search_aliases": [
+                "\ud398\uc774\uc9c0\ub192\uc774",
+                "page height"
+            ],
+            "type": "number"
+        },
+        "kMDItemPageWidth": {
+            "category": "document",
+            "db_field": null,
+            "description": "\ud398\uc774\uc9c0 \ub108\ube44 (\ud3ec\uc778\ud2b8)",
+            "examples": [
+                612,
+                792
+            ],
+            "key": "kMDItemPageWidth",
+            "search_aliases": [
+                "\ud398\uc774\uc9c0\ub108\ube44",
+                "page width"
+            ],
+            "type": "number"
+        },
+        "kMDItemPixelCount": {
+            "category": "image",
+            "db_field": null,
+            "description": "\ucd1d \ud53d\uc140 \uc218",
+            "examples": [
+                2073600,
+                8294400,
+                33177600
+            ],
+            "key": "kMDItemPixelCount",
+            "search_aliases": [
+                "\ud53d\uc140\uc218",
+                "pixel count",
+                "\ud574\uc0c1\ub3c4"
+            ],
+            "type": "number"
+        },
+        "kMDItemPixelHeight": {
+            "category": "image",
+            "db_field": null,
+            "description": "\uc774\ubbf8\uc9c0/\ube44\ub514\uc624 \ub192\uc774 (pixels)",
+            "examples": [
+                1080,
+                1920,
+                2160,
+                4096
+            ],
+            "key": "kMDItemPixelHeight",
+            "search_aliases": [
+                "\ub192\uc774",
+                "height",
+                "\uc138\ub85c",
+                "\ud574\uc0c1\ub3c4"
+            ],
+            "type": "number"
+        },
+        "kMDItemPixelWidth": {
+            "category": "image",
+            "db_field": null,
+            "description": "\uc774\ubbf8\uc9c0/\ube44\ub514\uc624 \ub108\ube44 (pixels)",
+            "examples": [
+                1920,
+                3840,
+                7680
+            ],
+            "key": "kMDItemPixelWidth",
+            "search_aliases": [
+                "\ub108\ube44",
+                "width",
+                "\uac00\ub85c",
+                "\ud574\uc0c1\ub3c4"
+            ],
+            "type": "number"
+        },
+        "kMDItemSecurityMethod": {
+            "category": "document",
+            "db_field": null,
+            "description": "\ubb38\uc11c \ubcf4\uc548/\uc554\ud638\ud654 \ubc29\uc2dd",
+            "examples": [
+                "Password Encrypted",
+                "None"
+            ],
+            "key": "kMDItemSecurityMethod",
+            "search_aliases": [
+                "\uc554\ud638\ud654",
+                "\ubcf4\uc548",
+                "encrypted",
+                "security",
+                "password"
+            ],
+            "type": "string"
+        },
+        "kMDItemTitle": {
+            "category": "document",
+            "db_field": null,
+            "description": "\ubb38\uc11c \uc81c\ubaa9",
+            "examples": [
+                "Quarterly Report",
+                "\ud504\ub85c\uc81d\ud2b8 \uacc4\ud68d\uc11c",
+                "\ud68c\uc758\ub85d"
+            ],
+            "key": "kMDItemTitle",
+            "search_aliases": [
+                "\uc81c\ubaa9",
+                "title",
+                "\ubb38\uc11c\uc81c\ubaa9"
+            ],
+            "type": "string"
+        },
+        "kMDItemTotalBitRate": {
+            "category": "video",
+            "db_field": null,
+            "description": "\uc804\uccb4 \ube44\ud2b8\ub808\uc774\ud2b8 (bits/sec)",
+            "examples": [
+                5000000,
+                10000000,
+                20000000
+            ],
+            "key": "kMDItemTotalBitRate",
+            "search_aliases": [
+                "\ube44\ud2b8\ub808\uc774\ud2b8",
+                "bitrate",
+                "\uc804\uc1a1\ub960"
+            ],
+            "type": "number"
+        },
+        "kMDItemVideoBitRate": {
+            "category": "video",
+            "db_field": null,
+            "description": "\ube44\ub514\uc624 \ube44\ud2b8\ub808\uc774\ud2b8 (bits/sec)",
+            "examples": [
+                2500000,
+                5000000,
+                10000000
+            ],
+            "key": "kMDItemVideoBitRate",
+            "search_aliases": [
+                "\ube44\ub514\uc624\ube44\ud2b8\ub808\uc774\ud2b8",
+                "video bitrate",
+                "\ud654\uc9c8"
+            ],
+            "type": "number"
+        },
+        "kMDItemWhereFroms": {
+            "category": "download",
+            "db_field": null,
+            "description": "\ub2e4\uc6b4\ub85c\ub4dc \ucd9c\ucc98 URL \ubaa9\ub85d",
+            "examples": [
+                [
+                    "https://example.com/file.pdf"
+                ],
+                [
+                    "https://github.com/repo"
+                ]
+            ],
+            "key": "kMDItemWhereFroms",
+            "search_aliases": [
+                "\ucd9c\ucc98",
+                "\ub2e4\uc6b4\ub85c\ub4dc",
+                "url",
+                "where from",
+                "source"
+            ],
+            "type": "array"
+        }
+    },
+    "property_key_registry": {
+        "addedAt": {
+            "db_field": "added_date",
+            "json_path": null,
+            "property_key": "addedAt",
+            "supported_operators": [
+                "eq",
+                "gt",
+                "gte",
+                "lt",
+                "lte",
+                "between"
+            ],
+            "value_type": "date"
+        },
+        "audioBitRate": {
+            "db_field": null,
+            "json_path": "$.kMDItemAudioBitRate",
+            "property_key": "audioBitRate",
+            "supported_operators": [
+                "eq",
+                "gt",
+                "gte",
+                "lt",
+                "lte"
+            ],
+            "value_type": "number"
+        },
+        "audioChannelCount": {
+            "db_field": null,
+            "json_path": "$.kMDItemAudioChannelCount",
+            "property_key": "audioChannelCount",
+            "supported_operators": [
+                "eq",
+                "in"
+            ],
+            "value_type": "number"
+        },
+        "audioSampleRate": {
+            "db_field": null,
+            "json_path": "$.kMDItemAudioSampleRate",
+            "property_key": "audioSampleRate",
+            "supported_operators": [
+                "eq",
+                "gt",
+                "gte",
+                "lt",
+                "lte"
+            ],
+            "value_type": "number"
+        },
+        "colorSpace": {
+            "db_field": null,
+            "json_path": "$.kMDItemColorSpace",
+            "property_key": "colorSpace",
+            "supported_operators": [
+                "eq",
+                "in"
+            ],
+            "value_type": "string"
+        },
+        "contentCreatedAt": {
+            "db_field": "content_creation_date",
+            "json_path": null,
+            "property_key": "contentCreatedAt",
+            "supported_operators": [
+                "eq",
+                "gt",
+                "gte",
+                "lt",
+                "lte",
+                "between"
+            ],
+            "value_type": "date"
+        },
+        "contentModifiedAt": {
+            "db_field": "content_modification_date",
+            "json_path": null,
+            "property_key": "contentModifiedAt",
+            "supported_operators": [
+                "eq",
+                "gt",
+                "gte",
+                "lt",
+                "lte",
+                "between"
+            ],
+            "value_type": "date"
+        },
+        "contentType": {
+            "db_field": "uniform_type_identifier",
+            "json_path": null,
+            "property_key": "contentType",
+            "supported_operators": [
+                "eq",
+                "contains",
+                "in"
+            ],
+            "value_type": "string"
+        },
+        "createdAt": {
+            "db_field": "creation_date",
+            "json_path": null,
+            "property_key": "createdAt",
+            "supported_operators": [
+                "eq",
+                "gt",
+                "gte",
+                "lt",
+                "lte",
+                "between"
+            ],
+            "value_type": "date"
+        },
+        "creator": {
+            "db_field": null,
+            "json_path": "$.kMDItemCreator",
+            "property_key": "creator",
+            "supported_operators": [
+                "eq",
+                "contains"
+            ],
+            "value_type": "string"
+        },
+        "duration": {
+            "db_field": null,
+            "json_path": "$.kMDItemDurationSeconds",
+            "property_key": "duration",
+            "supported_operators": [
+                "eq",
+                "gt",
+                "gte",
+                "lt",
+                "lte",
+                "between"
+            ],
+            "value_type": "number"
+        },
+        "extension": {
+            "db_field": "extension",
+            "json_path": null,
+            "property_key": "extension",
+            "supported_operators": [
+                "eq",
+                "in"
+            ],
+            "value_type": "string"
+        },
+        "hasAlphaChannel": {
+            "db_field": null,
+            "json_path": "$.kMDItemHasAlphaChannel",
+            "property_key": "hasAlphaChannel",
+            "supported_operators": [
+                "eq"
+            ],
+            "value_type": "boolean"
+        },
+        "isInvisible": {
+            "db_field": "is_invisible",
+            "json_path": null,
+            "property_key": "isInvisible",
+            "supported_operators": [
+                "eq"
+            ],
+            "value_type": "boolean"
+        },
+        "kind": {
+            "db_field": "file_kind",
+            "json_path": null,
+            "property_key": "kind",
+            "supported_operators": [
+                "eq",
+                "contains"
+            ],
+            "value_type": "string"
+        },
+        "lastUsedAt": {
+            "db_field": "last_used_date",
+            "json_path": null,
+            "property_key": "lastUsedAt",
+            "supported_operators": [
+                "eq",
+                "gt",
+                "gte",
+                "lt",
+                "lte",
+                "between"
+            ],
+            "value_type": "date"
+        },
+        "latitude": {
+            "db_field": null,
+            "json_path": "$.kMDItemLatitude",
+            "property_key": "latitude",
+            "supported_operators": [
+                "eq",
+                "gt",
+                "gte",
+                "lt",
+                "lte",
+                "between"
+            ],
+            "value_type": "number"
+        },
+        "longitude": {
+            "db_field": null,
+            "json_path": "$.kMDItemLongitude",
+            "property_key": "longitude",
+            "supported_operators": [
+                "eq",
+                "gt",
+                "gte",
+                "lt",
+                "lte",
+                "between"
+            ],
+            "value_type": "number"
+        },
+        "modifiedAt": {
+            "db_field": "modification_date",
+            "json_path": null,
+            "property_key": "modifiedAt",
+            "supported_operators": [
+                "eq",
+                "gt",
+                "gte",
+                "lt",
+                "lte",
+                "between"
+            ],
+            "value_type": "date"
+        },
+        "name": {
+            "db_field": "name_full",
+            "json_path": null,
+            "property_key": "name",
+            "supported_operators": [
+                "eq",
+                "contains"
+            ],
+            "value_type": "string"
+        },
+        "numberOfPages": {
+            "db_field": null,
+            "json_path": "$.kMDItemNumberOfPages",
+            "property_key": "numberOfPages",
+            "supported_operators": [
+                "eq",
+                "gt",
+                "gte",
+                "lt",
+                "lte",
+                "between"
+            ],
+            "value_type": "number"
+        },
+        "pixelHeight": {
+            "db_field": null,
+            "json_path": "$.kMDItemPixelHeight",
+            "property_key": "pixelHeight",
+            "supported_operators": [
+                "eq",
+                "gt",
+                "gte",
+                "lt",
+                "lte",
+                "between"
+            ],
+            "value_type": "number"
+        },
+        "pixelWidth": {
+            "db_field": null,
+            "json_path": "$.kMDItemPixelWidth",
+            "property_key": "pixelWidth",
+            "supported_operators": [
+                "eq",
+                "gt",
+                "gte",
+                "lt",
+                "lte",
+                "between"
+            ],
+            "value_type": "number"
+        },
+        "size": {
+            "db_field": "size",
+            "json_path": null,
+            "property_key": "size",
+            "supported_operators": [
+                "eq",
+                "gt",
+                "gte",
+                "lt",
+                "lte",
+                "between"
+            ],
+            "value_type": "number"
+        },
+        "title": {
+            "db_field": null,
+            "json_path": "$.kMDItemTitle",
+            "property_key": "title",
+            "supported_operators": [
+                "eq",
+                "contains"
+            ],
+            "value_type": "string"
+        },
+        "videoBitRate": {
+            "db_field": null,
+            "json_path": "$.kMDItemVideoBitRate",
+            "property_key": "videoBitRate",
+            "supported_operators": [
+                "eq",
+                "gt",
+                "gte",
+                "lt",
+                "lte"
+            ],
+            "value_type": "number"
+        }
+    },
+    "version": "1.0.0"
+}
