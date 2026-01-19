@@ -13,20 +13,20 @@ nonisolated struct EntryRecord: Codable, FetchableRecord, MutablePersistableReco
     var parentDirName: String
     var depthFromHome: Int
     var relativePathFromHome: String?
-    var size: Int64?
+    var size: Int64
     var uniformTypeIdentifier: String?
     var fileKind: String?
     var isInvisible: Bool
-    var creationDate: Date?
-    var modificationDate: Date?
-    var contentCreationDate: Date?
-    var contentModificationDate: Date?
-    var addedDate: Date?
+    var creationDate: Date
+    var modificationDate: Date
+    var contentCreationDate: Date
+    var contentModificationDate: Date
+    var addedDate: Date
     var lastUsedDate: Date?
-    var originalMetadata: String?
+    var originalMetadata: String
 
     static let databaseTableName = "entries"
-    static let insertableColumnCount = Columns.allCases.filter { $0 != .id }.count
+    static let insertableColumnCount = Columns.allCases.count(where: { $0 != .id })
 
     enum Columns: String, ColumnExpression, CaseIterable {
         case id
