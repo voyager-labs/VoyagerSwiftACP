@@ -103,9 +103,19 @@ actor DatabaseManager {
         }
 
         var migrator = DatabaseMigrator()
+        let logger = self.logger
 
         registerEntriesTableMigration(into: &migrator)
         registerEntriesIndexesMigration(into: &migrator)
+
+        let legacyEntries = try await pool.read { db in
+            let hasMigrations = try db.tableExists("grdb_migrations")
+            guard !hasMigrations else { return false }
+            return try db.tableExists("entries")
+        }
+        if legacyEntries {
+            logger.info("Legacy entries DB detected without migrations; applying baseline migrations")
+        }
 
         try migrator.migrate(pool)
     }
@@ -113,76 +123,127 @@ actor DatabaseManager {
     private func registerEntriesTableMigration(into migrator: inout DatabaseMigrator) {
         // V1: entries 테이블 생성
         migrator.registerMigration("v1_create_entries") { db in
-            try db.create(table: "entries") { table in
-                // Primary Key
-                table.autoIncrementedPrimaryKey("id")
-
-                // 논리 키 (유니크 제약)
-                table.column("volume_identifier", .text).notNull()
-                table.column("file_resource_identifier", .text).notNull()
-                table.uniqueKey(["volume_identifier", "file_resource_identifier"])
-
-                // 경로 정보
-                table.column("path", .text).notNull()
-                table.column("dir_path", .text).notNull()
-                table.column("name_full", .text).notNull()
-                table.column("name_stem", .text).notNull()
-                table.column("extension", .text).notNull()
-                table.column("parent_dir_name", .text).notNull()
-                table.column("depth_from_home", .integer).notNull()
-                table.column("relative_path_from_home", .text)
-
-                // 파일 속성
-                table.column("size", .integer)
-                table.column("uniform_type_identifier", .text)
-                table.column("file_kind", .text)
-                table.column("is_invisible", .boolean).notNull().defaults(to: false)
-
-                // 시간 필드 (Spotlight 메타데이터)
-                table.column("creation_date", .datetime)
-                table.column("modification_date", .datetime)
-                table.column("content_creation_date", .datetime)
-                table.column("content_modification_date", .datetime)
-                table.column("added_date", .datetime)
-                table.column("last_used_date", .datetime)
-
-                // JSON 컬럼
-                table.column("original_metadata", .text) // JSON TEXT
+            if try db.tableExists("entries") {
+                try Self.validateExistingEntriesTable(db)
+                return
             }
+
+            try Self.createEntriesTable(db)
         }
     }
 
     private func registerEntriesIndexesMigration(into migrator: inout DatabaseMigrator) {
         // V2: 검색/정렬 인덱스 추가
         migrator.registerMigration("v2_add_entries_indexes") { db in
-            try db.create(index: "idx_entries_path", on: "entries", columns: ["path"])
-            try db.create(index: "idx_entries_dir_path", on: "entries", columns: ["dir_path"])
-            try db.create(index: "idx_entries_name_full", on: "entries", columns: ["name_full"])
-            try db.create(index: "idx_entries_name_stem", on: "entries", columns: ["name_stem"])
-            try db.create(index: "idx_entries_extension", on: "entries", columns: ["extension"])
-            try db.create(
-                index: "idx_entries_parent_dir_name",
-                on: "entries",
-                columns: ["parent_dir_name"]
+            guard try db.tableExists("entries") else {
+                throw DatabaseError.migrationFailed("entries table missing before index migration")
+            }
+
+            try Self.createMissingEntriesIndexes(db)
+        }
+    }
+
+    private static let entriesRequiredColumns = [
+        "id",
+        "volume_identifier",
+        "file_resource_identifier",
+        "path",
+        "dir_path",
+        "name_full",
+        "name_stem",
+        "extension",
+        "parent_dir_name",
+        "depth_from_home",
+        "relative_path_from_home",
+        "size",
+        "uniform_type_identifier",
+        "file_kind",
+        "is_invisible",
+        "creation_date",
+        "modification_date",
+        "content_creation_date",
+        "content_modification_date",
+        "added_date",
+        "last_used_date",
+        "original_metadata",
+    ]
+
+    private struct IndexSpec {
+        let name: String
+        let columns: [String]
+    }
+
+    private static let entriesIndexSpecs = [
+        IndexSpec(name: "idx_entries_path", columns: ["path"]),
+        IndexSpec(name: "idx_entries_dir_path", columns: ["dir_path"]),
+        IndexSpec(name: "idx_entries_name_full", columns: ["name_full"]),
+        IndexSpec(name: "idx_entries_name_stem", columns: ["name_stem"]),
+        IndexSpec(name: "idx_entries_extension", columns: ["extension"]),
+        IndexSpec(name: "idx_entries_parent_dir_name", columns: ["parent_dir_name"]),
+        IndexSpec(
+            name: "idx_entries_uniform_type_identifier",
+            columns: ["uniform_type_identifier"]
+        ),
+        IndexSpec(name: "idx_entries_file_kind", columns: ["file_kind"]),
+        IndexSpec(name: "idx_entries_is_invisible", columns: ["is_invisible"]),
+        IndexSpec(name: "idx_entries_modification_date", columns: ["modification_date"]),
+        IndexSpec(name: "idx_entries_creation_date", columns: ["creation_date"]),
+        IndexSpec(name: "idx_entries_added_date", columns: ["added_date"]),
+    ]
+
+    private static func validateExistingEntriesTable(_ db: Database) throws {
+        let existingColumns = Set(try db.columns(in: "entries").map(\.name))
+        let missing = entriesRequiredColumns.filter { !existingColumns.contains($0) }
+        if !missing.isEmpty {
+            throw DatabaseError.migrationFailed(
+                "Legacy entries table missing columns: \(missing.joined(separator: \", \"))"
             )
-            try db.create(
-                index: "idx_entries_uniform_type_identifier",
-                on: "entries",
-                columns: ["uniform_type_identifier"]
-            )
-            try db.create(index: "idx_entries_file_kind", on: "entries", columns: ["file_kind"])
-            try db.create(index: "idx_entries_is_invisible", on: "entries", columns: ["is_invisible"])
-            try db.create(
-                index: "idx_entries_modification_date",
-                on: "entries",
-                columns: ["modification_date"]
-            )
-            try db.create(
-                index: "idx_entries_creation_date",
-                on: "entries",
-                columns: ["creation_date"]
-            )
-            try db.create(index: "idx_entries_added_date", on: "entries", columns: ["added_date"])
+        }
+    }
+
+    private static func createEntriesTable(_ db: Database) throws {
+        try db.create(table: "entries") { table in
+            // Primary Key
+            table.autoIncrementedPrimaryKey("id")
+
+            // 논리 키 (유니크 제약)
+            table.column("volume_identifier", .text).notNull()
+            table.column("file_resource_identifier", .text).notNull()
+            table.uniqueKey(["volume_identifier", "file_resource_identifier"])
+
+            // 경로 정보
+            table.column("path", .text).notNull()
+            table.column("dir_path", .text).notNull()
+            table.column("name_full", .text).notNull()
+            table.column("name_stem", .text).notNull()
+            table.column("extension", .text).notNull()
+            table.column("parent_dir_name", .text).notNull()
+            table.column("depth_from_home", .integer).notNull()
+            table.column("relative_path_from_home", .text)
+
+            // 파일 속성
+            table.column("size", .integer)
+            table.column("uniform_type_identifier", .text)
+            table.column("file_kind", .text)
+            table.column("is_invisible", .boolean).notNull().defaults(to: false)
+
+            // 시간 필드 (Spotlight 메타데이터)
+            table.column("creation_date", .datetime)
+            table.column("modification_date", .datetime)
+            table.column("content_creation_date", .datetime)
+            table.column("content_modification_date", .datetime)
+            table.column("added_date", .datetime)
+            table.column("last_used_date", .datetime)
+
+            // JSON 컬럼
+            table.column("original_metadata", .text) // JSON TEXT
+        }
+    }
+
+    private static func createMissingEntriesIndexes(_ db: Database) throws {
+        let existingIndexes = Set(try db.indexes(on: "entries").map(\.name))
+        for spec in entriesIndexSpecs where !existingIndexes.contains(spec.name) {
+            try db.create(index: spec.name, on: "entries", columns: spec.columns)
         }
     }
 
