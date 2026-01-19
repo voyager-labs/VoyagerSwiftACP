@@ -381,10 +381,15 @@
         "ui_label": "Content modification date",
         "ui_pinned": true
       },
-      "content_type": {
+      "uniform_type_identifier": {
         "availability": "macOS 10.4+",
         "description": "The UTI pedigree of a file.",
-        "search_aliases": ["content_type", "content type", "content types"],
+        "search_aliases": [
+          "uniform type identifier",
+          "content_type",
+          "content type",
+          "content types"
+        ],
         "system_keys": [
           "mditem:kMDItemContentType",
           "nsurl:NSURLContentTypeKey"
@@ -595,7 +600,7 @@
         "type": "string_list",
         "ui_label": "Keywords"
       },
-      "kind": {
+      "file_kind": {
         "availability": "macOS 10.4+",
         "description": "A description of the kind of item this file represents.",
         "search_aliases": ["kind"],
@@ -988,7 +993,7 @@
         "type": "boolean",
         "ui_label": "Has hidden extension"
       },
-      "is_hidden": {
+      "is_invisible": {
         "availability": "macOS 10.6+",
         "description": "Key for determining whether the resource is normally not displayed to users, returned as a Boolean NSNumber object (read-write).",
         "search_aliases": [
@@ -1020,7 +1025,7 @@
         "type": "number",
         "ui_label": "Label number"
       },
-      "name": {
+      "name_full": {
         "availability": "macOS 10.6+",
         "description": "The resource's name in the file system, returned as an NSString object (read-write).",
         "search_aliases": ["name"],
@@ -1586,10 +1591,12 @@
         "type": "string",
         "ui_label": "Custom icon"
       },
-      "date_added": {
+      "added_date": {
         "availability": "macOS 10.7+",
         "description": "Date added.",
         "search_aliases": [
+          "added_date",
+          "added date",
           "date_added",
           "date added",
           "time added",
@@ -1600,7 +1607,7 @@
           "mdimporter:kMDItemDateAdded",
           "nsurl:NSURLAddedToDirectoryDateKey"
         ],
-        "type": "string",
+        "type": "date",
         "ui_label": "Date added",
         "ui_pinned": true
       },
@@ -1733,10 +1740,12 @@
         "type": "string",
         "ui_label": "File security"
       },
-      "file_size": {
+      "size": {
         "availability": "macOS 10.6+",
         "description": "The key for the file's size, in bytes.",
         "search_aliases": [
+          "size",
+          "sizes",
           "file_size",
           "file size",
           "file bytes",
