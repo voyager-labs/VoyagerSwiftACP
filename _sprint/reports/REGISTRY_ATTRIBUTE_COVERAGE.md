@@ -3,21 +3,23 @@
 - 작성일: 2026-01-19
 - 대상 레지스트리: `shared/system_property_registry.json`
 - 비교 데이터:
-  - `apps/backend/src/osxmetadata/attribute_data/audio_attributes.json`
-  - `apps/backend/src/osxmetadata/attribute_data/common_attributes.json`
-  - `apps/backend/src/osxmetadata/attribute_data/filesystem_attributes.json`
-  - `apps/backend/src/osxmetadata/attribute_data/image_attributes.json`
-  - `apps/backend/src/osxmetadata/attribute_data/video_attributes.json`
-  - `apps/backend/src/osxmetadata/attribute_data/mdimporter_constants.json`
-  - `apps/backend/src/osxmetadata/attribute_data/nsurl_resource_keys.json`
-  - `apps/backend/src/osxmetadata/attribute_data/load_attribute_data.py` (추가 주입 키 참고)
+    - `apps/backend/src/osxmetadata/attribute_data/audio_attributes.json`
+    - `apps/backend/src/osxmetadata/attribute_data/common_attributes.json`
+    - `apps/backend/src/osxmetadata/attribute_data/filesystem_attributes.json`
+    - `apps/backend/src/osxmetadata/attribute_data/image_attributes.json`
+    - `apps/backend/src/osxmetadata/attribute_data/video_attributes.json`
+    - `apps/backend/src/osxmetadata/attribute_data/mdimporter_constants.json`
+    - `apps/backend/src/osxmetadata/attribute_data/nsurl_resource_keys.json`
+    - `apps/backend/src/osxmetadata/attribute_data/load_attribute_data.py` (추가 주입 키 참고)
 
 ## 비교 방식
+
 - 각 JSON 파일의 `name` 필드를 키로 수집했다.
 - `load_attribute_data.py`에서 주입하는 키(`kMDItemDownloadedDate`)를 추가 비교 대상에 포함했다.
 - 레지스트리에서는 `$`/`_` 메타 키를 제외하고 실제 MDItem 키만 비교했다.
 
 ## 요약
+
 - 레지스트리 키 수: **41**
 - 비교 대상 키 총합: **295**
 - 레지스트리에 누락된 키: **254**
@@ -25,25 +27,27 @@
 - 전체 커버리지: **13.9%**
 
 ## 파일별 누락 현황
-| 파일 | 총 키 수 | 레지스트리 누락 | 커버리지 |
-| --- | ---: | ---: | ---: |
-| `audio_attributes.json` | 19 | 15 | 21.1% |
-| `common_attributes.json` | 57 | 41 | 28.1% |
-| `filesystem_attributes.json` | 12 | 8 | 33.3% |
-| `image_attributes.json` | 37 | 26 | 29.7% |
-| `video_attributes.json` | 13 | 9 | 30.8% |
-| `mdimporter_constants.json` | 44 | 42 | 4.5% |
-| `nsurl_resource_keys.json` | 113 | 113 | 0.0% |
-| `load_attribute_data.py` 주입 | 1 | 1 | 0.0% |
+
+| 파일                          | 총 키 수 | 레지스트리 누락 | 커버리지 |
+| ----------------------------- | -------: | --------------: | -------: |
+| `audio_attributes.json`       |       19 |              15 |    21.1% |
+| `common_attributes.json`      |       57 |              41 |    28.1% |
+| `filesystem_attributes.json`  |       12 |               8 |    33.3% |
+| `image_attributes.json`       |       37 |              26 |    29.7% |
+| `video_attributes.json`       |       13 |               9 |    30.8% |
+| `mdimporter_constants.json`   |       44 |              42 |     4.5% |
+| `nsurl_resource_keys.json`    |      113 |             113 |     0.0% |
+| `load_attribute_data.py` 주입 |        1 |               1 |     0.0% |
 
 ## 프리픽스별 커버리지
-| 프리픽스 | 총 키 수 | 레지스트리 누락 | 커버리지 |
-| --- | ---: | ---: | ---: |
-| `NSURL` | 113 | 113 | 0.0% |
-| `kMDItem` | 163 | 122 | 25.2% |
-| `kMDLabel` | 17 | 17 | 0.0% |
-| `kMDPrivate` | 1 | 1 | 0.0% |
-| `kMDPublic` | 1 | 1 | 0.0% |
+
+| 프리픽스     | 총 키 수 | 레지스트리 누락 | 커버리지 |
+| ------------ | -------: | --------------: | -------: |
+| `NSURL`      |      113 |             113 |     0.0% |
+| `kMDItem`    |      163 |             122 |    25.2% |
+| `kMDLabel`   |       17 |              17 |     0.0% |
+| `kMDPrivate` |        1 |               1 |     0.0% |
+| `kMDPublic`  |        1 |               1 |     0.0% |
 
 ## 레지스트리 포함 키
 
@@ -97,6 +101,7 @@
 - 각 항목은 **키 + 한 줄 설명(한국어)**으로 표기했다.
 
 ### audio_attributes.json
+
 - kMDItemAppleLoopDescriptors: 설명: MDItem 메타데이터의 애플 루프 Descriptors 관련 값
 - kMDItemAppleLoopsKeyFilterType: 설명: MDItem 메타데이터의 애플 루프 키 필터 타입 관련 값
 - kMDItemAppleLoopsLoopMode: 설명: MDItem 메타데이터의 애플 루프 루프 모드 관련 값
@@ -114,6 +119,7 @@
 - kMDItemTimeSignature: 설명: MDItem 메타데이터의 시간 서명 관련 값
 
 ### common_attributes.json
+
 - kMDItemAttributeChangeDate: 설명: MDItem 메타데이터의 속성 변경 날짜 관련 값
 - kMDItemAudiences: 설명: MDItem 메타데이터의 대상 관련 값
 - kMDItemAuthorAddresses: 설명: MDItem 메타데이터의 저자 주소 관련 값
@@ -157,6 +163,7 @@
 - kMDItemVersion: 설명: MDItem 메타데이터의 Version 관련 값
 
 ### filesystem_attributes.json
+
 - kMDItemDisplayName: 설명: MDItem 메타데이터의 표시 이름 관련 값
 - kMDItemFSIsExtensionHidden: 설명: MDItem 메타데이터의 파일 시스템 확장자 숨김 여부 관련 값
 - kMDItemFSLabel: 설명: MDItem 메타데이터의 파일 시스템 라벨 관련 값
@@ -167,6 +174,7 @@
 - kMDItemPath: 설명: MDItem 메타데이터의 경로 관련 값
 
 ### image_attributes.json
+
 - kMDItemAcquisitionMake: 설명: MDItem 메타데이터의 Acquisition 제조사 관련 값
 - kMDItemAcquisitionModel: 설명: MDItem 메타데이터의 Acquisition 모델 관련 값
 - kMDItemAperture: 설명: MDItem 메타데이터의 조리개 관련 값
@@ -195,6 +203,7 @@
 - kMDItemWhiteBalance: 설명: MDItem 메타데이터의 화이트 밸런스 관련 값
 
 ### video_attributes.json
+
 - kMDItemDeliveryType: 설명: MDItem 메타데이터의 전달 타입 관련 값
 - kMDItemDirector: 설명: MDItem 메타데이터의 감독 관련 값
 - kMDItemGenre: 설명: MDItem 메타데이터의 장르 관련 값
@@ -206,6 +215,7 @@
 - kMDItemStreamable: 설명: MDItem 메타데이터의 스트리밍 가능 관련 값
 
 ### mdimporter_constants.json
+
 - kMDItemApplicationCategories: 설명: MDItem 메타데이터의 애플리케이션 카테고리 관련 값
 - kMDItemCameraOwner: 설명: MDItem 메타데이터의 카메라 소유자 관련 값
 - kMDItemContentTypeTree: 설명: MDItem 메타데이터의 콘텐츠 타입 트리 관련 값
@@ -250,6 +260,7 @@
 - kMDPublicVisibility: 설명: 공개 메타데이터의 가시성 관련 값
 
 ### nsurl_resource_keys.json
+
 - NSURLAddedToDirectoryDateKey: 설명: URL 리소스의 추가 디렉터리 날짜 키 관련 값
 - NSURLApplicationIsScriptableKey: 설명: URL 리소스의 애플리케이션 스크립트 가능 키 여부 관련 값
 - NSURLAttributeModificationDateKey: 설명: URL 리소스의 속성 수정 날짜 키 관련 값
@@ -365,14 +376,14 @@
 - NSURLVolumeUUIDStringKey: 설명: URL 리소스의 볼륨 UUID 문자열 키 관련 값
 
 ### load_attribute_data.py 주입
-- kMDItemDownloadedDate: 설명: MDItem 메타데이터의 다운로드 날짜 관련 값(레지스트리에 이미 포함됨)
 
+- kMDItemDownloadedDate: 설명: MDItem 메타데이터의 다운로드 날짜 관련 값(레지스트리에 이미 포함됨)
 
 ## 레지스트리에만 존재하는 키
 
 없음
 
 ## 참고 사항
+
 - `nsurl_resource_keys.json`/`mdimporter_constants.json` 항목은 현재 레지스트리에 포함되어 있지 않다.
 - 레지스트리는 검색/DSL에서 사용하는 subset만 정의하고 있으므로 전체 MDItem/NSURL 상수와 1:1 매칭되지 않는다.
-
