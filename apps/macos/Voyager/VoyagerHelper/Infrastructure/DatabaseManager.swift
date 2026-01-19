@@ -1,3 +1,4 @@
+import Darwin
 import Foundation
 import GRDB
 import Logging
@@ -27,30 +28,16 @@ actor DatabaseManager {
         let dbURL = try databaseURLProvider()
         try ensureDirectoryExists(for: dbURL)
 
-        // DatabasePool 생성 (단일 writer + 다중 reader)
-        var configuration = Configuration()
-        let logger = self.logger
-        configuration.prepareDatabase { db in
-            // PRAGMA 설정
-            try db.execute(sql: "PRAGMA foreign_keys = ON")
-            try db.execute(sql: "PRAGMA journal_mode = WAL")
-            try db.execute(sql: "PRAGMA synchronous = NORMAL")
-            try db.execute(sql: "PRAGMA busy_timeout = 5000") // 5초
-
-            // JSON1 지원 확인
-            if let result = try? Int64.fetchOne(db, sql: "SELECT json_extract('{\"a\":1}', '$.a')"),
-               result == 1
-            {
-                // JSON1 지원 확인됨
-            } else {
-                logger.warning("JSON1 support check failed - may need alternative strategy")
+        do {
+            try await withMigrationLock(for: dbURL) {
+                let configuration = makeConfiguration()
+                pool = try DatabasePool(path: dbURL.path, configuration: configuration)
+                try await migrate(databaseURL: dbURL)
             }
+        } catch {
+            pool = nil
+            throw error
         }
-
-        pool = try DatabasePool(path: dbURL.path, configuration: configuration)
-
-        // 마이그레이션 실행
-        try await migrate()
     }
 
     /// 데이터베이스 읽기 작업 실행
@@ -88,6 +75,28 @@ actor DatabaseManager {
         return voyagerDir.appendingPathComponent("Entries.db")
     }
 
+    private func makeConfiguration() -> Configuration {
+        var configuration = Configuration()
+        let logger = self.logger
+        configuration.prepareDatabase { db in
+            // PRAGMA 설정
+            try db.execute(sql: "PRAGMA foreign_keys = ON")
+            try db.execute(sql: "PRAGMA journal_mode = WAL")
+            try db.execute(sql: "PRAGMA synchronous = NORMAL")
+            try db.execute(sql: "PRAGMA busy_timeout = 5000") // 5초
+
+            // JSON1 지원 확인
+            if let result = try? Int64.fetchOne(db, sql: "SELECT json_extract('{\"a\":1}', '$.a')"),
+               result == 1
+            {
+                // JSON1 지원 확인됨
+            } else {
+                logger.warning("JSON1 support check failed - may need alternative strategy")
+            }
+        }
+        return configuration
+    }
+
     private func ensureDirectoryExists(for databaseURL: URL) throws {
         let directoryURL = databaseURL.deletingLastPathComponent()
         try FileManager.default.createDirectory(
@@ -96,8 +105,54 @@ actor DatabaseManager {
         )
     }
 
+    private func migrationLockURL(for databaseURL: URL) -> URL {
+        databaseURL.appendingPathExtension("migration.lock")
+    }
+
+    private func withMigrationLock<T>(
+        for databaseURL: URL,
+        _ block: () async throws -> T
+    ) async throws -> T {
+        let lockURL = migrationLockURL(for: databaseURL)
+        let lockDescriptor = try acquireMigrationLock(at: lockURL)
+        defer { releaseMigrationLock(lockDescriptor, at: lockURL) }
+        return try await block()
+    }
+
+    private func acquireMigrationLock(at lockURL: URL) throws -> Int32 {
+        let descriptor = open(lockURL.path, O_CREAT | O_EXCL | O_WRONLY, S_IRUSR | S_IWUSR)
+        guard descriptor != -1 else {
+            throw DatabaseError.migrationLockExists(lockURL.path)
+        }
+
+        let payload = "pid=\(getpid()) timestamp=\(iso8601Timestamp())\n"
+        let data = Data(payload.utf8)
+        _ = data.withUnsafeBytes { buffer in
+            guard let baseAddress = buffer.baseAddress else { return 0 }
+            return Darwin.write(descriptor, baseAddress, buffer.count)
+        }
+        return descriptor
+    }
+
+    private func releaseMigrationLock(_ descriptor: Int32, at lockURL: URL) {
+        _ = close(descriptor)
+        try? FileManager.default.removeItem(at: lockURL)
+    }
+
+    private func backupDatabaseFile(databaseURL: URL, pool: DatabasePool) async throws -> URL {
+        let timestamp = backupTimestamp()
+        let backupURL = databaseURL.appendingPathExtension("bak.\(timestamp)")
+        if FileManager.default.fileExists(atPath: backupURL.path) {
+            try FileManager.default.removeItem(at: backupURL)
+        }
+        try await pool.write { db in
+            try db.execute(sql: "VACUUM INTO ?", arguments: [backupURL.path])
+        }
+        return backupURL
+    }
+
     /// 마이그레이션 실행
-    private func migrate() async throws {
+    private func migrate(databaseURL: URL) async throws {
         guard let pool else {
             throw DatabaseError.notInitialized
         }
@@ -115,6 +170,8 @@ actor DatabaseManager {
         }
         if legacyEntries {
             logger.info("Legacy entries DB detected without migrations; applying baseline migrations")
+            let backupURL = try await backupDatabaseFile(databaseURL: databaseURL, pool: pool)
+            logger.info("Legacy entries DB backup created at: \(backupURL.path)")
         }
 
         try migrator.migrate(pool)
@@ -179,6 +236,7 @@ actor DatabaseManager {
         IndexSpec(name: "idx_entries_name_full", columns: ["name_full"]),
         IndexSpec(name: "idx_entries_name_stem", columns: ["name_stem"]),
         IndexSpec(name: "idx_entries_extension", columns: ["extension"]),
+        IndexSpec(name: "idx_entries_size", columns: ["size"]),
         IndexSpec(name: "idx_entries_parent_dir_name", columns: ["parent_dir_name"]),
         IndexSpec(
             name: "idx_entries_uniform_type_identifier",
@@ -196,9 +254,32 @@ actor DatabaseManager {
         let missing = entriesRequiredColumns.filter { !existingColumns.contains($0) }
         if !missing.isEmpty {
             throw DatabaseError.migrationFailed(
-                "Legacy entries table missing columns: \(missing.joined(separator: \", \"))"
+                "Legacy entries table missing columns: \(missing.joined(separator: ", "))"
             )
         }
+    }
+
+    private func iso8601Timestamp() -> String {
+        timestampString(format: "%Y-%m-%dT%H:%M:%SZ")
+    }
+
+    private func backupTimestamp() -> String {
+        timestampString(format: "%Y%m%d%H%M%S")
+    }
+
+    private func timestampString(format: String) -> String {
+        var now = time_t(Date().timeIntervalSince1970)
+        var tmValue = tm()
+        gmtime_r(&now, &tmValue)
+
+        var buffer = [CChar](repeating: 0, count: 32)
+        format.withCString { formatCString in
+            _ = strftime(&buffer, buffer.count, formatCString, &tmValue)
+        }
+        if buffer[0] == 0 {
+            return String(Int(Date().timeIntervalSince1970))
+        }
+        return String(cString: buffer)
     }
 
     private static func createEntriesTable(_ db: Database) throws {
@@ -250,6 +331,7 @@ actor DatabaseManager {
     enum DatabaseError: Error, Equatable {
         case notInitialized
         case applicationSupportNotFound
+        case migrationLockExists(String)
         case migrationFailed(String)
     }
 }
