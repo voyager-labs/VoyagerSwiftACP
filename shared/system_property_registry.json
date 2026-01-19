@@ -1508,7 +1508,7 @@
           "app is scriptables"
         ],
         "system_keys": ["nsurl:NSURLApplicationIsScriptableKey"],
-        "type": "string",
+        "type": "boolean",
         "ui_label": "Application is scriptable"
       },
       "bundle_url": {
@@ -2178,7 +2178,7 @@
           "kind is mutually exclusive set keys"
         ],
         "system_keys": ["mdimporter:kMDLabelKindIsMutuallyExclusiveSetKey"],
-        "type": "string",
+        "type": "boolean",
         "ui_label": "Kind is mutually exclusive set key"
       },
       "kind_visibility_key": {
@@ -2262,7 +2262,7 @@
           "may have extended attribute"
         ],
         "system_keys": ["nsurl:NSURLMayHaveExtendedAttributesKey"],
-        "type": "string",
+        "type": "boolean",
         "ui_label": "May have extended attributes"
       },
       "may_share_file_content": {
@@ -2274,7 +2274,7 @@
           "may share file contents"
         ],
         "system_keys": ["nsurl:NSURLMayShareFileContentKey"],
-        "type": "string",
+        "type": "boolean",
         "ui_label": "May share file content"
       },
       "parent_directory_url": {
@@ -2465,7 +2465,7 @@
           "ubiquitous item has unresolved conflict"
         ],
         "system_keys": ["nsurl:NSURLUbiquitousItemHasUnresolvedConflictsKey"],
-        "type": "string",
+        "type": "boolean",
         "ui_label": "Ubiquitous item has unresolved conflicts"
       },
       "ubiquitous_item_is_downloading": {
@@ -2477,7 +2477,7 @@
           "ubiquitous item is downloadings"
         ],
         "system_keys": ["nsurl:NSURLUbiquitousItemIsDownloadingKey"],
-        "type": "string",
+        "type": "boolean",
         "ui_label": "Ubiquitous item is downloading"
       },
       "ubiquitous_item_is_excluded_from_sync": {
@@ -2489,7 +2489,7 @@
           "ubiquitous item is excluded from syncs"
         ],
         "system_keys": ["nsurl:NSURLUbiquitousItemIsExcludedFromSyncKey"],
-        "type": "string",
+        "type": "boolean",
         "ui_label": "Ubiquitous item is excluded from sync"
       },
       "ubiquitous_item_is_shared": {
@@ -2501,7 +2501,7 @@
           "ubiquitous item is shareds"
         ],
         "system_keys": ["nsurl:NSURLUbiquitousItemIsSharedKey"],
-        "type": "string",
+        "type": "boolean",
         "ui_label": "Ubiquitous item is shared"
       },
       "ubiquitous_item_is_uploaded": {
@@ -2513,7 +2513,7 @@
           "ubiquitous item is uploadeds"
         ],
         "system_keys": ["nsurl:NSURLUbiquitousItemIsUploadedKey"],
-        "type": "string",
+        "type": "boolean",
         "ui_label": "Ubiquitous item is uploaded"
       },
       "ubiquitous_item_is_uploading": {
@@ -2525,7 +2525,7 @@
           "ubiquitous item is uploadings"
         ],
         "system_keys": ["nsurl:NSURLUbiquitousItemIsUploadingKey"],
-        "type": "string",
+        "type": "boolean",
         "ui_label": "Ubiquitous item is uploading"
       },
       "ubiquitous_item_uploading_error": {
@@ -2672,7 +2672,7 @@
           "volume is automounteds"
         ],
         "system_keys": ["nsurl:NSURLVolumeIsAutomountedKey"],
-        "type": "string",
+        "type": "boolean",
         "ui_label": "Volume is automounted"
       },
       "volume_is_browsable": {
@@ -2684,7 +2684,7 @@
           "volume is browsables"
         ],
         "system_keys": ["nsurl:NSURLVolumeIsBrowsableKey"],
-        "type": "string",
+        "type": "boolean",
         "ui_label": "Volume is browsable"
       },
       "volume_is_ejectable": {
@@ -2696,7 +2696,7 @@
           "volume is ejectables"
         ],
         "system_keys": ["nsurl:NSURLVolumeIsEjectableKey"],
-        "type": "string",
+        "type": "boolean",
         "ui_label": "Volume is ejectable"
       },
       "volume_is_encrypted": {
@@ -2708,7 +2708,7 @@
           "volume is encrypteds"
         ],
         "system_keys": ["nsurl:NSURLVolumeIsEncryptedKey"],
-        "type": "string",
+        "type": "boolean",
         "ui_label": "Volume is encrypted"
       },
       "volume_is_internal": {
@@ -2720,7 +2720,7 @@
           "volume is internals"
         ],
         "system_keys": ["nsurl:NSURLVolumeIsInternalKey"],
-        "type": "string",
+        "type": "boolean",
         "ui_label": "Volume is internal"
       },
       "volume_is_journaling": {
@@ -2732,7 +2732,7 @@
           "volume is journalings"
         ],
         "system_keys": ["nsurl:NSURLVolumeIsJournalingKey"],
-        "type": "string",
+        "type": "boolean",
         "ui_label": "Volume is journaling"
       },
       "volume_is_local": {
@@ -2744,7 +2744,7 @@
           "volume is locals"
         ],
         "system_keys": ["nsurl:NSURLVolumeIsLocalKey"],
-        "type": "string",
+        "type": "boolean",
         "ui_label": "Volume is local"
       },
       "volume_is_read_only": {
@@ -2756,7 +2756,7 @@
           "volume is read onlies"
         ],
         "system_keys": ["nsurl:NSURLVolumeIsReadOnlyKey"],
-        "type": "string",
+        "type": "boolean",
         "ui_label": "Volume is read only"
       },
       "volume_is_removable": {
@@ -2768,7 +2768,7 @@
           "volume is removables"
         ],
         "system_keys": ["nsurl:NSURLVolumeIsRemovableKey"],
-        "type": "string",
+        "type": "boolean",
         "ui_label": "Volume is removable"
       },
       "volume_is_root_file_system": {
@@ -2782,7 +2782,7 @@
           "volume is root filesystems"
         ],
         "system_keys": ["nsurl:NSURLVolumeIsRootFileSystemKey"],
-        "type": "string",
+        "type": "boolean",
         "ui_label": "Volume is root file system"
       },
       "volume_localized_format_description": {
@@ -2855,7 +2855,7 @@
           "volume supports access permission"
         ],
         "system_keys": ["nsurl:NSURLVolumeSupportsAccessPermissionsKey"],
-        "type": "string",
+        "type": "boolean",
         "ui_label": "Volume supports access permissions"
       },
       "volume_supports_advisory_file_locking": {
@@ -2867,7 +2867,7 @@
           "volume supports advisory file lockings"
         ],
         "system_keys": ["nsurl:NSURLVolumeSupportsAdvisoryFileLockingKey"],
-        "type": "string",
+        "type": "boolean",
         "ui_label": "Volume supports advisory file locking"
       },
       "volume_supports_case_preserved_names": {
@@ -2879,7 +2879,7 @@
           "volume supports case preserved name"
         ],
         "system_keys": ["nsurl:NSURLVolumeSupportsCasePreservedNamesKey"],
-        "type": "string",
+        "type": "boolean",
         "ui_label": "Volume supports case preserved names"
       },
       "volume_supports_case_sensitive_names": {
@@ -2891,7 +2891,7 @@
           "volume supports case sensitive name"
         ],
         "system_keys": ["nsurl:NSURLVolumeSupportsCaseSensitiveNamesKey"],
-        "type": "string",
+        "type": "boolean",
         "ui_label": "Volume supports case sensitive names"
       },
       "volume_supports_compression": {
@@ -2903,7 +2903,7 @@
           "volume supports compressions"
         ],
         "system_keys": ["nsurl:NSURLVolumeSupportsCompressionKey"],
-        "type": "string",
+        "type": "boolean",
         "ui_label": "Volume supports compression"
       },
       "volume_supports_exclusive_renaming": {
@@ -2915,7 +2915,7 @@
           "volume supports exclusive renamings"
         ],
         "system_keys": ["nsurl:NSURLVolumeSupportsExclusiveRenamingKey"],
-        "type": "string",
+        "type": "boolean",
         "ui_label": "Volume supports exclusive renaming"
       },
       "volume_supports_extended_security": {
@@ -2927,7 +2927,7 @@
           "volume supports extended securities"
         ],
         "system_keys": ["nsurl:NSURLVolumeSupportsExtendedSecurityKey"],
-        "type": "string",
+        "type": "boolean",
         "ui_label": "Volume supports extended security"
       },
       "volume_supports_file_cloning": {
@@ -2939,7 +2939,7 @@
           "volume supports file clonings"
         ],
         "system_keys": ["nsurl:NSURLVolumeSupportsFileCloningKey"],
-        "type": "string",
+        "type": "boolean",
         "ui_label": "Volume supports file cloning"
       },
       "volume_supports_file_protection": {
@@ -2951,7 +2951,7 @@
           "volume supports file protections"
         ],
         "system_keys": ["nsurl:NSURLVolumeSupportsFileProtectionKey"],
-        "type": "string",
+        "type": "boolean",
         "ui_label": "Volume supports file protection"
       },
       "volume_supports_hard_links": {
@@ -2963,7 +2963,7 @@
           "volume supports hard link"
         ],
         "system_keys": ["nsurl:NSURLVolumeSupportsHardLinksKey"],
-        "type": "string",
+        "type": "boolean",
         "ui_label": "Volume supports hard links"
       },
       "volume_supports_immutable_files": {
@@ -2975,7 +2975,7 @@
           "volume supports immutable file"
         ],
         "system_keys": ["nsurl:NSURLVolumeSupportsImmutableFilesKey"],
-        "type": "string",
+        "type": "boolean",
         "ui_label": "Volume supports immutable files"
       },
       "volume_supports_journaling": {
@@ -2987,7 +2987,7 @@
           "volume supports journalings"
         ],
         "system_keys": ["nsurl:NSURLVolumeSupportsJournalingKey"],
-        "type": "string",
+        "type": "boolean",
         "ui_label": "Volume supports journaling"
       },
       "volume_supports_persistent_i_ds": {
@@ -2998,7 +2998,7 @@
           "volume supports persistent ids"
         ],
         "system_keys": ["nsurl:NSURLVolumeSupportsPersistentIDsKey"],
-        "type": "string",
+        "type": "boolean",
         "ui_label": "Volume supports persistent i ds"
       },
       "volume_supports_renaming": {
@@ -3010,7 +3010,7 @@
           "volume supports renamings"
         ],
         "system_keys": ["nsurl:NSURLVolumeSupportsRenamingKey"],
-        "type": "string",
+        "type": "boolean",
         "ui_label": "Volume supports renaming"
       },
       "volume_supports_root_directory_dates": {
@@ -3024,7 +3024,7 @@
           "volume supports root folder date"
         ],
         "system_keys": ["nsurl:NSURLVolumeSupportsRootDirectoryDatesKey"],
-        "type": "string",
+        "type": "boolean",
         "ui_label": "Volume supports root directory dates"
       },
       "volume_supports_sparse_files": {
@@ -3036,7 +3036,7 @@
           "volume supports sparse file"
         ],
         "system_keys": ["nsurl:NSURLVolumeSupportsSparseFilesKey"],
-        "type": "string",
+        "type": "boolean",
         "ui_label": "Volume supports sparse files"
       },
       "volume_supports_swap_renaming": {
@@ -3048,7 +3048,7 @@
           "volume supports swap renamings"
         ],
         "system_keys": ["nsurl:NSURLVolumeSupportsSwapRenamingKey"],
-        "type": "string",
+        "type": "boolean",
         "ui_label": "Volume supports swap renaming"
       },
       "volume_supports_symbolic_links": {
@@ -3060,7 +3060,7 @@
           "volume supports symbolic link"
         ],
         "system_keys": ["nsurl:NSURLVolumeSupportsSymbolicLinksKey"],
-        "type": "string",
+        "type": "boolean",
         "ui_label": "Volume supports symbolic links"
       },
       "volume_supports_volume_sizes": {
@@ -3072,7 +3072,7 @@
           "volume supports volume siz"
         ],
         "system_keys": ["nsurl:NSURLVolumeSupportsVolumeSizesKey"],
-        "type": "string",
+        "type": "boolean",
         "ui_label": "Volume supports volume sizes"
       },
       "volume_supports_zero_runs": {
@@ -3084,7 +3084,7 @@
           "volume supports zero run"
         ],
         "system_keys": ["nsurl:NSURLVolumeSupportsZeroRunsKey"],
-        "type": "string",
+        "type": "boolean",
         "ui_label": "Volume supports zero runs"
       },
       "volume_total_capacity": {
