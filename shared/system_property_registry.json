@@ -348,7 +348,8 @@
           "mdimporter:kMDLabelContentChangeDate",
           "nsurl:NSURLContentModificationDateKey"
         ],
-        "type": "date"
+        "type": "date",
+        "ui_pinned": true
       },
       "content_type": {
         "availability": "macOS 10.4+",
@@ -776,7 +777,35 @@
           "mditem:kMDItemFSCreationDate",
           "nsurl:NSURLCreationDateKey"
         ],
-        "type": "date"
+        "type": "date",
+        "ui_pinned": true
+      },
+      "depth_from_home": {
+        "description": "Directory depth from the user's home (excluding the file itself).",
+        "search_aliases": [
+          "depth_from_home",
+          "depth from home",
+          "home depth",
+          "home folder depth",
+          "depths from home"
+        ],
+        "system_keys": [],
+        "type": "number",
+        "ui_label": "Depth from home"
+      },
+      "dir_path": {
+        "description": "Absolute directory path containing the file.",
+        "search_aliases": [
+          "dir_path",
+          "dir path",
+          "directory path",
+          "folder path",
+          "dir paths",
+          "directory paths"
+        ],
+        "system_keys": [],
+        "type": "string",
+        "ui_label": "Directory path"
       },
       "display_name": {
         "availability": "macOS 10.4+",
@@ -788,6 +817,20 @@
           "nsurl:NSURLLocalizedNameKey"
         ],
         "type": "string"
+      },
+      "extension": {
+        "description": "File extension without leading dot.",
+        "search_aliases": [
+          "extension",
+          "file extension",
+          "ext",
+          "extensions",
+          "file extensions"
+        ],
+        "system_keys": [],
+        "type": "string",
+        "ui_label": "Extension",
+        "ui_pinned": true
       },
       "file_allocated_size": {
         "availability": "macOS 10.6+",
@@ -897,7 +940,35 @@
         "description": "The resource's name in the file system, returned as an NSString object (read-write).",
         "search_aliases": ["name"],
         "system_keys": ["mditem:kMDItemFSName", "nsurl:NSURLNameKey"],
-        "type": "string"
+        "type": "string",
+        "ui_pinned": true
+      },
+      "name_stem": {
+        "description": "File name without extension.",
+        "search_aliases": [
+          "name_stem",
+          "name stem",
+          "file name stem",
+          "filename stem",
+          "name stems"
+        ],
+        "system_keys": [],
+        "type": "string",
+        "ui_label": "File name stem"
+      },
+      "parent_dir_name": {
+        "description": "Name of the parent directory.",
+        "search_aliases": [
+          "parent_dir_name",
+          "parent dir name",
+          "parent directory name",
+          "parent folder name",
+          "parent dir names",
+          "parent directory names"
+        ],
+        "system_keys": [],
+        "type": "string",
+        "ui_label": "Parent directory name"
       },
       "path": {
         "availability": "macOS 10.4+",
@@ -905,6 +976,19 @@
         "search_aliases": ["path"],
         "system_keys": ["mditem:kMDItemPath", "nsurl:NSURLPathKey"],
         "type": "string"
+      },
+      "relative_path_from_home": {
+        "description": "Path relative to the user's home (~/...).",
+        "search_aliases": [
+          "relative_path_from_home",
+          "relative path from home",
+          "relative home path",
+          "home relative path",
+          "relative paths from home"
+        ],
+        "system_keys": [],
+        "type": "string",
+        "ui_label": "Relative path from home"
       }
     },
     "image": {
@@ -1382,7 +1466,8 @@
           "mdimporter:kMDItemDateAdded",
           "nsurl:NSURLAddedToDirectoryDateKey"
         ],
-        "type": "string"
+        "type": "string",
+        "ui_pinned": true
       },
       "document_identifier": {
         "availability": "macOS 10.10+",
@@ -1516,7 +1601,8 @@
           "nsurl:NSURLFileSizeKey",
           "nsurl:NSURLTotalFileSizeKey"
         ],
-        "type": "number"
+        "type": "number",
+        "ui_pinned": true
       },
       "focal_length35mm": {
         "availability": "macOS 10.7+",
