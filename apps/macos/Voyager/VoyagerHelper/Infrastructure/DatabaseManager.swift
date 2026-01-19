@@ -163,6 +163,10 @@ actor DatabaseManager {
         registerEntriesTableMigration(into: &migrator)
         registerEntriesIndexesMigration(into: &migrator)
 
+        try await pool.read { db in
+            try Self.validateMigrationHistory(db)
+        }
+
         let legacyEntries = try await pool.read { db in
             let hasMigrations = try db.tableExists("grdb_migrations")
             guard !hasMigrations else { return false }
@@ -225,6 +229,11 @@ actor DatabaseManager {
         "original_metadata",
     ]
 
+    private static let migrationIdentifiers = [
+        "v1_create_entries",
+        "v2_add_entries_indexes",
+    ]
+
     private struct IndexSpec {
         let name: String
         let columns: [String]
@@ -255,6 +264,29 @@ actor DatabaseManager {
         if !missing.isEmpty {
             throw DatabaseError.migrationFailed(
                 "Legacy entries table missing columns: \(missing.joined(separator: ", "))"
+            )
+        }
+    }
+
+    private static func validateMigrationHistory(_ db: Database) throws {
+        guard try db.tableExists("grdb_migrations") else { return }
+
+        let applied = try String.fetchAll(
+            db,
+            sql: "SELECT identifier FROM grdb_migrations ORDER BY rowid"
+        )
+        let known = Set(migrationIdentifiers)
+        let unknown = applied.filter { !known.contains($0) }
+        if !unknown.isEmpty {
+            throw DatabaseError.migrationFailed(
+                "Unknown migrations detected: \(unknown.joined(separator: ", "))"
+            )
+        }
+
+        let expectedPrefix = Array(migrationIdentifiers.prefix(applied.count))
+        if applied != expectedPrefix {
+            throw DatabaseError.migrationFailed(
+                "Migration history mismatch: expected \(expectedPrefix.joined(separator: ", "))"
             )
         }
     }
