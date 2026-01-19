@@ -1,8 +1,8 @@
 # VOY-112 Phase 2 — 백엔드 로더 전환
 
 ## 목표
-- 백엔드가 `shared/system_property_registry.json`을 로딩하여
-  레지스트리 데이터로 사용하도록 전환한다.
+- 백엔드가 `shared/system_property_registry.json`,
+  `shared/property_key_registry.json`을 로딩하여 레지스트리 데이터로 사용하도록 전환한다.
 
 ## 상세 태스크
 1) 로더 구현
@@ -17,6 +17,7 @@
    - `core/llm`, `core/search` 등 레지스트리 참조부 검증
 5) 빌드/배포 포함 확인
    - 백엔드 배포/패키징 경로에 `shared/system_property_registry.json` 포함 확인
+   - 백엔드 배포/패키징 경로에 `shared/property_key_registry.json` 포함 확인
    - Nuitka 빌드 옵션에 데이터 파일 포함 설정
    - 배포 스크립트/경로 변경 필요 여부 점검
 6) Source/Bundled 모드 검증

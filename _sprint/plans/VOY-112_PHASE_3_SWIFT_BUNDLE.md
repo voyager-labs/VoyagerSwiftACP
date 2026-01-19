@@ -1,8 +1,8 @@
 # VOY-112 Phase 3 — Swift 번들 포함 및 로딩 경로 정리
 
 ## 목표
-- Swift 앱 번들에 `shared/system_property_registry.json`을 포함하고,
-  런타임에서 해당 리소스를 로딩한다.
+- Swift 앱 번들에 `shared/system_property_registry.json`,
+  `shared/property_key_registry.json`을 포함하고 런타임에서 해당 리소스를 로딩한다.
 
 ## 상세 태스크
 1) 리소스 포함
@@ -36,6 +36,7 @@
 
 ## 커밋 분리
 - `feat(macos): bundle system_property_registry.json`
+- `feat(macos): bundle property_key_registry.json`
 
 ## Mermaid (Phase 3 흐름)
 ```mermaid

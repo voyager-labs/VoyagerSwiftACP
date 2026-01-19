@@ -2,14 +2,15 @@
 
 ## 목표/범위
 - 이슈: VOY-112 — 시스템 프로퍼티 레지스트리 JSON SSOT 전환 및 shared 배포
-- 핵심: `shared/system_property_registry.json`을 SSOT로 두고 백엔드/Swift 앱 번들에 동일 파일을 포함해 참조한다.
+- 핵심: `shared/system_property_registry.json`, `shared/property_key_registry.json`을 SSOT로 두고
+  백엔드/Swift 앱 번들에 동일 파일 세트를 포함해 참조한다.
 - 제외: DB 시드/마이그레이션, 자연어 파서/LLM 변환 로직 변경, 신규 operator 도입
 
 ## 전제/의존성
 - 레지스트리 구조는 **키 기반 JSON**으로 확정
-- 레지스트리 파일명: `shared/system_property_registry.json`
+- 레지스트리 파일명: `shared/system_property_registry.json`, `shared/property_key_registry.json`
 - Swift 앱은 **번들 리소스**로 포함하여 로딩
-- 백엔드는 **동일 파일**을 로드하도록 전환
+- 백엔드는 **동일 파일 세트**를 로드하도록 전환
 
 ## 전체 흐름(고수준)
 1) 레지스트리 JSON 정의 확정 및 이관
@@ -31,6 +32,7 @@
 - Phase 1: 레지스트리 JSON 도입  
   - 문서: `VOY-112_PHASE_1_REGISTRY_JSON.md`
   - 대표 커밋: `chore(shared): add system_property_registry.json`
+  - 대표 커밋: `chore(shared): add property_key_registry.json`
 
 - Phase 2: 백엔드 로더 전환  
   - 문서: `VOY-112_PHASE_2_BACKEND_LOADER.md`
@@ -39,6 +41,7 @@
 - Phase 3: Swift 번들 포함 및 로딩 경로 정리  
   - 문서: `VOY-112_PHASE_3_SWIFT_BUNDLE.md`
   - 대표 커밋: `feat(macos): bundle system_property_registry.json`
+  - 대표 커밋: `feat(macos): bundle property_key_registry.json`
 
 - Phase 4: 문서/테스트 정리  
   - 문서: `VOY-112_PHASE_4_DOCS_TESTS.md`
@@ -46,6 +49,7 @@
 
 ## 검증/체크리스트
 - [ ] `shared/system_property_registry.json` 로드 성공
+- [ ] `shared/property_key_registry.json` 로드 성공
 - [ ] 백엔드에서 레지스트리 키 조회 가능
 - [ ] Swift 앱에서 번들 리소스 로드 가능
 - [ ] 문서 최신화 완료

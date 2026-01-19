@@ -1,16 +1,17 @@
 # VOY-112 Phase 1 — 레지스트리 JSON 도입
 
 ## 목표
-- `shared/system_property_registry.json`을 **키 기반 구조**로 추가하고,
-  기존 Python 레지스트리 정의를 JSON으로 이관한다.
+- `shared/system_property_registry.json`, `shared/property_key_registry.json`을
+  **키 기반 구조**로 추가하고 기존 Python 레지스트리 정의를 JSON으로 이관한다.
 
 ## 상세 태스크
 1) JSON 스키마 확정
-   - 최상위: `version`, `mditem_registry`, `property_key_registry`
-   - `mditem_registry`: MDItem 키 기반 dict 구조
+   - 파일 분리: `system_property_registry.json`(system_property), `property_key_registry.json`(property)
+   - 메타 키: `$kind`, `$version`
+   - `system_property_registry.json`: 시스템 프로퍼티 키 기반 dict 구조
      - 필수 필드: `type`, `description`, `search_aliases`, `category`
      - 선택 필드: `db_field`, `examples`, `key`
-   - `property_key_registry`: propertyKey 기반 dict 구조
+   - `property_key_registry.json`: propertyKey 기반 dict 구조
      - 필수 필드: `value_type`, `supported_operators`
      - 선택 필드: `db_field`, `json_path`, `property_key`
 2) 레지스트리 이관
@@ -23,6 +24,7 @@
 
 ## 산출물
 - `shared/system_property_registry.json`
+- `shared/property_key_registry.json`
 - 스모크 체크 기준(문서/노트 형태)
 
 ## 사이드이펙트 고려
@@ -35,12 +37,15 @@
 
 ## 커밋 분리
 - `chore(shared): add system_property_registry.json`
+- `chore(shared): add property_key_registry.json`
 
 ## Mermaid (Phase 1 흐름)
 ```mermaid
 flowchart TD
     A[mditem_registry.py] --> B[키 기반 JSON 스키마 확정]
     B --> C[shared/system_property_registry.json 생성]
+    B --> C2[shared/property_key_registry.json 생성]
     C --> D[스모크 체크 항목 정의]
+    C2 --> D
     D --> E[리뷰/확정]
 ```
