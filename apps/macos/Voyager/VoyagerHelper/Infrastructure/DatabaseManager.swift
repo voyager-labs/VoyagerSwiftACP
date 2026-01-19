@@ -151,146 +151,6 @@ actor DatabaseManager {
         return backupURL
     }
 
-    /// 마이그레이션 실행
-    private func migrate(databaseURL: URL) async throws {
-        guard let pool else {
-            throw DatabaseError.notInitialized
-        }
-
-        var migrator = DatabaseMigrator()
-        let logger = self.logger
-
-        registerEntriesTableMigration(into: &migrator)
-        registerEntriesIndexesMigration(into: &migrator)
-
-        try await pool.read { db in
-            try Self.validateMigrationHistory(db)
-        }
-
-        let legacyEntries = try await pool.read { db in
-            let hasMigrations = try db.tableExists("grdb_migrations")
-            guard !hasMigrations else { return false }
-            return try db.tableExists("entries")
-        }
-        if legacyEntries {
-            logger.info("Legacy entries DB detected without migrations; applying baseline migrations")
-            let backupURL = try await backupDatabaseFile(databaseURL: databaseURL, pool: pool)
-            logger.info("Legacy entries DB backup created at: \(backupURL.path)")
-        }
-
-        try migrator.migrate(pool)
-    }
-
-    private func registerEntriesTableMigration(into migrator: inout DatabaseMigrator) {
-        // V1: entries 테이블 생성
-        migrator.registerMigration("v1_create_entries") { db in
-            if try db.tableExists("entries") {
-                try Self.validateExistingEntriesTable(db)
-                return
-            }
-
-            try Self.createEntriesTable(db)
-        }
-    }
-
-    private func registerEntriesIndexesMigration(into migrator: inout DatabaseMigrator) {
-        // V2: 검색/정렬 인덱스 추가
-        migrator.registerMigration("v2_add_entries_indexes") { db in
-            guard try db.tableExists("entries") else {
-                throw DatabaseError.migrationFailed("entries table missing before index migration")
-            }
-
-            try Self.createMissingEntriesIndexes(db)
-        }
-    }
-
-    private static let entriesRequiredColumns = [
-        "id",
-        "volume_identifier",
-        "file_resource_identifier",
-        "path",
-        "dir_path",
-        "name_full",
-        "name_stem",
-        "extension",
-        "parent_dir_name",
-        "depth_from_home",
-        "relative_path_from_home",
-        "size",
-        "uniform_type_identifier",
-        "file_kind",
-        "is_invisible",
-        "creation_date",
-        "modification_date",
-        "content_creation_date",
-        "content_modification_date",
-        "added_date",
-        "last_used_date",
-        "original_metadata",
-    ]
-
-    private static let migrationIdentifiers = [
-        "v1_create_entries",
-        "v2_add_entries_indexes",
-    ]
-
-    private struct IndexSpec {
-        let name: String
-        let columns: [String]
-    }
-
-    private static let entriesIndexSpecs = [
-        IndexSpec(name: "idx_entries_path", columns: ["path"]),
-        IndexSpec(name: "idx_entries_dir_path", columns: ["dir_path"]),
-        IndexSpec(name: "idx_entries_name_full", columns: ["name_full"]),
-        IndexSpec(name: "idx_entries_name_stem", columns: ["name_stem"]),
-        IndexSpec(name: "idx_entries_extension", columns: ["extension"]),
-        IndexSpec(name: "idx_entries_size", columns: ["size"]),
-        IndexSpec(name: "idx_entries_parent_dir_name", columns: ["parent_dir_name"]),
-        IndexSpec(
-            name: "idx_entries_uniform_type_identifier",
-            columns: ["uniform_type_identifier"]
-        ),
-        IndexSpec(name: "idx_entries_file_kind", columns: ["file_kind"]),
-        IndexSpec(name: "idx_entries_is_invisible", columns: ["is_invisible"]),
-        IndexSpec(name: "idx_entries_modification_date", columns: ["modification_date"]),
-        IndexSpec(name: "idx_entries_creation_date", columns: ["creation_date"]),
-        IndexSpec(name: "idx_entries_added_date", columns: ["added_date"]),
-    ]
-
-    private static func validateExistingEntriesTable(_ db: Database) throws {
-        let existingColumns = Set(try db.columns(in: "entries").map(\.name))
-        let missing = entriesRequiredColumns.filter { !existingColumns.contains($0) }
-        if !missing.isEmpty {
-            throw DatabaseError.migrationFailed(
-                "Legacy entries table missing columns: \(missing.joined(separator: ", "))"
-            )
-        }
-    }
-
-    private static func validateMigrationHistory(_ db: Database) throws {
-        guard try db.tableExists("grdb_migrations") else { return }
-
-        let applied = try String.fetchAll(
-            db,
-            sql: "SELECT identifier FROM grdb_migrations ORDER BY rowid"
-        )
-        let known = Set(migrationIdentifiers)
-        let unknown = applied.filter { !known.contains($0) }
-        if !unknown.isEmpty {
-            throw DatabaseError.migrationFailed(
-                "Unknown migrations detected: \(unknown.joined(separator: ", "))"
-            )
-        }
-
-        let expectedPrefix = Array(migrationIdentifiers.prefix(applied.count))
-        if applied != expectedPrefix {
-            throw DatabaseError.migrationFailed(
-                "Migration history mismatch: expected \(expectedPrefix.joined(separator: ", "))"
-            )
-        }
-    }
-
     private func iso8601Timestamp() -> String {
         timestampString(format: "%Y-%m-%dT%H:%M:%SZ")
     }
@@ -314,50 +174,33 @@ actor DatabaseManager {
         return String(cString: buffer)
     }
 
-    private static func createEntriesTable(_ db: Database) throws {
-        try db.create(table: "entries") { table in
-            // Primary Key
-            table.autoIncrementedPrimaryKey("id")
-
-            // 논리 키 (유니크 제약)
-            table.column("volume_identifier", .text).notNull()
-            table.column("file_resource_identifier", .text).notNull()
-            table.uniqueKey(["volume_identifier", "file_resource_identifier"])
-
-            // 경로 정보
-            table.column("path", .text).notNull()
-            table.column("dir_path", .text).notNull()
-            table.column("name_full", .text).notNull()
-            table.column("name_stem", .text).notNull()
-            table.column("extension", .text).notNull()
-            table.column("parent_dir_name", .text).notNull()
-            table.column("depth_from_home", .integer).notNull()
-            table.column("relative_path_from_home", .text)
-
-            // 파일 속성
-            table.column("size", .integer)
-            table.column("uniform_type_identifier", .text)
-            table.column("file_kind", .text)
-            table.column("is_invisible", .boolean).notNull().defaults(to: false)
-
-            // 시간 필드 (Spotlight 메타데이터)
-            table.column("creation_date", .datetime)
-            table.column("modification_date", .datetime)
-            table.column("content_creation_date", .datetime)
-            table.column("content_modification_date", .datetime)
-            table.column("added_date", .datetime)
-            table.column("last_used_date", .datetime)
-
-            // JSON 컬럼
-            table.column("original_metadata", .text) // JSON TEXT
+    /// 마이그레이션 실행
+    private func migrate(databaseURL: URL) async throws {
+        guard let pool else {
+            throw DatabaseError.notInitialized
         }
-    }
 
-    private static func createMissingEntriesIndexes(_ db: Database) throws {
-        let existingIndexes = Set(try db.indexes(on: "entries").map(\.name))
-        for spec in entriesIndexSpecs where !existingIndexes.contains(spec.name) {
-            try db.create(index: spec.name, on: "entries", columns: spec.columns)
+        var migrator = DatabaseMigrator()
+        let logger = self.logger
+
+        DatabaseMigrations.registerAll(into: &migrator)
+
+        try await pool.read { db in
+            try DatabaseMigrations.validateMigrationHistory(db)
         }
+
+        let legacyEntries = try await pool.read { db in
+            let hasMigrations = try db.tableExists("grdb_migrations")
+            guard !hasMigrations else { return false }
+            return try db.tableExists("entries")
+        }
+        if legacyEntries {
+            logger.info("Legacy entries DB detected without migrations; applying baseline migrations")
+            let backupURL = try await backupDatabaseFile(databaseURL: databaseURL, pool: pool)
+            logger.info("Legacy entries DB backup created at: \(backupURL.path)")
+        }
+
+        try migrator.migrate(pool)
     }
 
     enum DatabaseError: Error, Equatable {
