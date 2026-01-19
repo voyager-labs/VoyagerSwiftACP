@@ -215,7 +215,7 @@
     },
     "common": {
       "attribute_modification_date": {
-        "availability": "iOS 4.0+ iPadOS 4.0+ macOS 10.6+ Mac Catalyst 13.1+ tvOS 9.0+ watchOS 2.0+",
+        "availability": "macOS 10.6+",
         "description": "The time at which the resource's attributes were most recently modified, returned as an NSDate object if the volume supports attribute modification dates, or nil if attribute modification dates are unsupported (read-only).",
         "search_aliases": [
           "attribute_modification_date",
@@ -761,7 +761,7 @@
     },
     "filesystem": {
       "creation_date": {
-        "availability": "iOS 4.0+ iPadOS 4.0+ macOS 10.6+ Mac Catalyst 13.1+ tvOS 9.0+ watchOS 2.0+",
+        "availability": "macOS 10.6+",
         "description": "The time at which the resource was created.",
         "search_aliases": [
           "creation_date",
@@ -790,7 +790,7 @@
         "type": "string"
       },
       "file_allocated_size": {
-        "availability": "iOS 4.0+ iPadOS 4.0+ macOS 10.6+ Mac Catalyst 13.1+ tvOS 9.0+ watchOS 2.0+",
+        "availability": "macOS 10.6+",
         "description": "The key for the total size allocated on-disk for the file.",
         "search_aliases": [
           "file_allocated_size",
@@ -847,7 +847,7 @@
         "type": "number"
       },
       "has_hidden_extension": {
-        "availability": "iOS 4.0+ iPadOS 4.0+ macOS 10.6+ Mac Catalyst 13.1+ tvOS 9.0+ watchOS 2.0+",
+        "availability": "macOS 10.6+",
         "description": "Key for determining whether the resource's extension is normally removed from its localized name, returned as a Boolean NSNumber object (read-write).",
         "search_aliases": [
           "has_hidden_extension",
@@ -863,7 +863,7 @@
         "type": "boolean"
       },
       "is_hidden": {
-        "availability": "iOS 4.0+ iPadOS 4.0+ macOS 10.6+ Mac Catalyst 13.1+ tvOS 9.0+ watchOS 2.0+",
+        "availability": "macOS 10.6+",
         "description": "Key for determining whether the resource is normally not displayed to users, returned as a Boolean NSNumber object (read-write).",
         "search_aliases": [
           "is_hidden",
@@ -876,7 +876,7 @@
         "type": "boolean"
       },
       "label_number": {
-        "availability": "iOS 4.0+ iPadOS 4.0+ macOS 10.6+ Mac Catalyst 13.1+ tvOS 9.0+ watchOS 2.0+",
+        "availability": "macOS 10.6+",
         "description": "The resource's label number, returned as an NSNumber object (read-write).",
         "search_aliases": [
           "label_number",
@@ -893,7 +893,7 @@
         "type": "number"
       },
       "name": {
-        "availability": "iOS 4.0+ iPadOS 4.0+ macOS 10.6+ Mac Catalyst 13.1+ tvOS 9.0+ watchOS 2.0+",
+        "availability": "macOS 10.6+",
         "description": "The resource's name in the file system, returned as an NSString object (read-write).",
         "search_aliases": ["name"],
         "system_keys": ["mditem:kMDItemFSName", "nsurl:NSURLNameKey"],
@@ -1316,7 +1316,7 @@
         "type": "string"
       },
       "canonical_path": {
-        "availability": "iOS 10.0+ iPadOS 10.0+ macOS 10.12+ Mac Catalyst 13.1+ tvOS 10.0+ watchOS 3.0+",
+        "availability": "macOS 10.12+",
         "description": "Canonical path.",
         "search_aliases": [
           "canonical_path",
@@ -1338,7 +1338,7 @@
         "type": "string"
       },
       "content_access_date": {
-        "availability": "iOS 4.0+ iPadOS 4.0+ macOS 10.6+ Mac Catalyst 13.1+ tvOS 9.0+ watchOS 2.0+",
+        "availability": "macOS 10.6+",
         "description": "The time at which the resource was most recently accessed.",
         "search_aliases": [
           "content_access_date",
@@ -1362,7 +1362,7 @@
         "type": "string"
       },
       "custom_icon": {
-        "availability": "iOS 4.0+ iPadOS 4.0+ macOS 10.6+ Mac Catalyst 13.1+ tvOS 9.0+ watchOS 2.0+",
+        "availability": "macOS 10.6+",
         "description": "The icon stored with the resource, returned as an NSImage object, or nil if the resource has no custom icon.",
         "search_aliases": ["custom_icon", "custom icon", "custom icons"],
         "system_keys": ["nsurl:NSURLCustomIconKey"],
@@ -1385,7 +1385,7 @@
         "type": "string"
       },
       "document_identifier": {
-        "availability": "iOS 8.0+ iPadOS 8.0+ macOS 10.10+ Mac Catalyst 13.1+ tvOS 9.0+ watchOS 2.0+",
+        "availability": "macOS 10.10+",
         "description": "The document identifier returned as an NSNumber (read-only).",
         "search_aliases": [
           "document_identifier",
@@ -1417,7 +1417,7 @@
         "type": "string"
       },
       "effective_icon": {
-        "availability": "iOS 4.0+ iPadOS 4.0+ macOS 10.6+ Mac Catalyst 13.1+ tvOS 9.0+ watchOS 2.0+",
+        "availability": "macOS 10.6+",
         "description": "The resource's normal icon, returned as an NSImage object (read-only).",
         "search_aliases": [
           "effective_icon",
@@ -1450,7 +1450,7 @@
         "type": "string"
       },
       "file_content_identifier": {
-        "availability": "iOS 14.0+ iPadOS 14.0+ macOS 11.0+ Mac Catalyst 14.0+ tvOS 14.0+ watchOS 7.0+",
+        "availability": "macOS 11.0+",
         "description": "The key for a value that APFS assigns to identify a file's content data stream.",
         "search_aliases": [
           "file_content_identifier",
@@ -1462,7 +1462,7 @@
         "type": "string"
       },
       "file_protection": {
-        "availability": "iOS 9.0+ iPadOS 9.0+ macOS 10.11+ Mac Catalyst 13.1+ tvOS 9.0+ watchOS 2.0+",
+        "availability": "macOS 10.11+",
         "description": "The key for the protection level of the file.",
         "search_aliases": [
           "file_protection",
@@ -1473,7 +1473,7 @@
         "type": "string"
       },
       "file_resource_identifier": {
-        "availability": "iOS 5.0+ iPadOS 5.0+ macOS 10.7+ Mac Catalyst 13.1+ tvOS 9.0+ watchOS 2.0+",
+        "availability": "macOS 10.7+",
         "description": "The key for the resource's unique identifier.",
         "search_aliases": [
           "file_resource_identifier",
@@ -1485,7 +1485,7 @@
         "type": "string"
       },
       "file_resource_type": {
-        "availability": "iOS 5.0+ iPadOS 5.0+ macOS 10.7+ Mac Catalyst 13.1+ tvOS 9.0+ watchOS 2.0+",
+        "availability": "macOS 10.7+",
         "description": "The key for the resource's object type.",
         "search_aliases": [
           "file_resource_type",
@@ -1496,14 +1496,14 @@
         "type": "string"
       },
       "file_security": {
-        "availability": "iOS 5.0+ iPadOS 5.0+ macOS 10.7+ Mac Catalyst 13.1+ tvOS 9.0+ watchOS 2.0+",
+        "availability": "macOS 10.7+",
         "description": "The key for the resource's security information.",
         "search_aliases": ["file_security", "file security", "file securities"],
         "system_keys": ["nsurl:NSURLFileSecurityKey"],
         "type": "string"
       },
       "file_size": {
-        "availability": "iOS 4.0+ iPadOS 4.0+ macOS 10.6+ Mac Catalyst 13.1+ tvOS 9.0+ watchOS 2.0+",
+        "availability": "macOS 10.6+",
         "description": "The key for the file's size, in bytes.",
         "search_aliases": [
           "file_size",
@@ -1530,7 +1530,7 @@
         "type": "string"
       },
       "generation_identifier": {
-        "availability": "iOS 8.0+ iPadOS 8.0+ macOS 10.10+ Mac Catalyst 13.1+ tvOS 9.0+ watchOS 2.0+",
+        "availability": "macOS 10.10+",
         "description": "An opaque generation identifier, returned as an id <NSCopying, NSCoding, NSObject> (read-only)",
         "search_aliases": [
           "generation_identifier",
@@ -1685,14 +1685,14 @@
         "type": "string"
       },
       "is_alias_file": {
-        "availability": "iOS 4.0+ iPadOS 4.0+ macOS 10.6+ Mac Catalyst 13.1+ tvOS 9.0+ watchOS 2.0+",
+        "availability": "macOS 10.6+",
         "description": "The key for determining whether the file is an alias.",
         "search_aliases": ["is_alias_file", "is alias file", "is alias files"],
         "system_keys": ["nsurl:NSURLIsAliasFileKey"],
         "type": "boolean"
       },
       "is_application": {
-        "availability": "iOS 9.0+ iPadOS 9.0+ macOS 10.11+ Mac Catalyst 13.1+ tvOS 9.0+ watchOS 2.0+",
+        "availability": "macOS 10.11+",
         "description": "Is application.",
         "search_aliases": [
           "is_application",
@@ -1718,7 +1718,7 @@
         "type": "boolean"
       },
       "is_directory": {
-        "availability": "iOS 4.0+ iPadOS 4.0+ macOS 10.6+ Mac Catalyst 13.1+ tvOS 9.0+ watchOS 2.0+",
+        "availability": "macOS 10.6+",
         "description": "Key for determining whether the resource is a directory, returned as a Boolean NSNumber object (read-only).",
         "search_aliases": [
           "is_directory",
@@ -1731,7 +1731,7 @@
         "type": "boolean"
       },
       "is_excluded_from_backup": {
-        "availability": "iOS 5.1+ iPadOS 5.1+ macOS 10.8+ Mac Catalyst 13.1+ tvOS 9.0+ watchOS 2.0+",
+        "availability": "macOS 10.8+",
         "description": "A key for indicating whether the system excludes the resource from all backups of app data.",
         "search_aliases": [
           "is_excluded_from_backup",
@@ -1742,7 +1742,7 @@
         "type": "boolean"
       },
       "is_executable": {
-        "availability": "iOS 5.0+ iPadOS 5.0+ macOS 10.7+ Mac Catalyst 13.1+ tvOS 9.0+ watchOS 2.0+",
+        "availability": "macOS 10.7+",
         "description": "Key for determining whether the current process (as determined by the EUID) can execute the resource (if it is a file) or search the resource (if it is a directory), returned as a Boolean NSNumber object (read-only).",
         "search_aliases": ["is_executable", "is executable", "is executables"],
         "system_keys": ["nsurl:NSURLIsExecutableKey"],
@@ -1760,7 +1760,7 @@
         "type": "boolean"
       },
       "is_mount_trigger": {
-        "availability": "iOS 5.0+ iPadOS 5.0+ macOS 10.7+ Mac Catalyst 13.1+ tvOS 9.0+ watchOS 2.0+",
+        "availability": "macOS 10.7+",
         "description": "Key for determining whether the URL is a file system trigger directory, returned as a Boolean NSNumber object (read-only). Traversing or opening a file system trigger directory causes an attempt to mount a file system on the directory.",
         "search_aliases": [
           "is_mount_trigger",
@@ -1782,28 +1782,28 @@
         "type": "boolean"
       },
       "is_package": {
-        "availability": "iOS 4.0+ iPadOS 4.0+ macOS 10.6+ Mac Catalyst 13.1+ tvOS 9.0+ watchOS 2.0+",
+        "availability": "macOS 10.6+",
         "description": "The key for determining whether the resource is a file package.",
         "search_aliases": ["is_package", "is package", "is packages"],
         "system_keys": ["nsurl:NSURLIsPackageKey"],
         "type": "boolean"
       },
       "is_purgeable": {
-        "availability": "iOS 14.0+ iPadOS 14.0+ macOS 11.0+ Mac Catalyst 14.0+ tvOS 14.0+ watchOS 7.0+",
+        "availability": "macOS 11.0+",
         "description": "The key for a Boolean value that indicates whether the file system can delete a file when the system needs to free space.",
         "search_aliases": ["is_purgeable", "is purgeable", "is purgeables"],
         "system_keys": ["nsurl:NSURLIsPurgeableKey"],
         "type": "boolean"
       },
       "is_readable": {
-        "availability": "iOS 5.0+ iPadOS 5.0+ macOS 10.7+ Mac Catalyst 13.1+ tvOS 9.0+ watchOS 2.0+",
+        "availability": "macOS 10.7+",
         "description": "Key for determining whether the current process (as determined by the EUID) can read the resource, returned as a Boolean NSNumber object (read-only).",
         "search_aliases": ["is_readable", "is readable", "is readables"],
         "system_keys": ["nsurl:NSURLIsReadableKey"],
         "type": "boolean"
       },
       "is_regular_file": {
-        "availability": "iOS 4.0+ iPadOS 4.0+ macOS 10.6+ Mac Catalyst 13.1+ tvOS 9.0+ watchOS 2.0+",
+        "availability": "macOS 10.6+",
         "description": "The key for determining whether the resource is a regular file rather than a directory or a symbolic link.",
         "search_aliases": [
           "is_regular_file",
@@ -1814,14 +1814,14 @@
         "type": "boolean"
       },
       "is_sparse": {
-        "availability": "iOS 14.0+ iPadOS 14.0+ macOS 11.0+ Mac Catalyst 14.0+ tvOS 14.0+ watchOS 7.0+",
+        "availability": "macOS 11.0+",
         "description": "The key for a Boolean value that indicates whether the file has sparse regions.",
         "search_aliases": ["is_sparse", "is sparse", "is sparses"],
         "system_keys": ["nsurl:NSURLIsSparseKey"],
         "type": "boolean"
       },
       "is_symbolic_link": {
-        "availability": "iOS 4.0+ iPadOS 4.0+ macOS 10.6+ Mac Catalyst 13.1+ tvOS 9.0+ watchOS 2.0+",
+        "availability": "macOS 10.6+",
         "description": "Key for determining whether the resource is a symbolic link, returned as a Boolean NSNumber object (read-only).",
         "search_aliases": [
           "is_symbolic_link",
@@ -1832,7 +1832,7 @@
         "type": "boolean"
       },
       "is_system_immutable": {
-        "availability": "iOS 4.0+ iPadOS 4.0+ macOS 10.6+ Mac Catalyst 13.1+ tvOS 9.0+ watchOS 2.0+",
+        "availability": "macOS 10.6+",
         "description": "Key for determining whether the resource's system immutable bit is set, returned as a Boolean NSNumber object (read-write).",
         "search_aliases": [
           "is_system_immutable",
@@ -1843,7 +1843,7 @@
         "type": "boolean"
       },
       "is_ubiquitous_item": {
-        "availability": "iOS 5.0+ iPadOS 5.0+ macOS 10.7+ Mac Catalyst 13.1+ tvOS 9.0+ watchOS 2.0+",
+        "availability": "macOS 10.7+",
         "description": "The key for a Boolean value that indicates whether the item is in iCloud storage.",
         "search_aliases": [
           "is_ubiquitous_item",
@@ -1854,7 +1854,7 @@
         "type": "boolean"
       },
       "is_user_immutable": {
-        "availability": "iOS 4.0+ iPadOS 4.0+ macOS 10.6+ Mac Catalyst 13.1+ tvOS 9.0+ watchOS 2.0+",
+        "availability": "macOS 10.6+",
         "description": "Key for determining whether the resource's user immutable bit is set, returned as a Boolean NSNumber object (read-write).",
         "search_aliases": [
           "is_user_immutable",
@@ -1865,21 +1865,21 @@
         "type": "boolean"
       },
       "is_volume": {
-        "availability": "iOS 4.0+ iPadOS 4.0+ macOS 10.6+ Mac Catalyst 13.1+ tvOS 9.0+ watchOS 2.0+",
+        "availability": "macOS 10.6+",
         "description": "Key for determining whether the resource is the root directory of a volume, returned as a Boolean NSNumber object (read-only).",
         "search_aliases": ["is_volume", "is volume", "is volumes"],
         "system_keys": ["nsurl:NSURLIsVolumeKey"],
         "type": "boolean"
       },
       "is_writable": {
-        "availability": "iOS 5.0+ iPadOS 5.0+ macOS 10.7+ Mac Catalyst 13.1+ tvOS 9.0+ watchOS 2.0+",
+        "availability": "macOS 10.7+",
         "description": "Key for determining whether the current process (as determined by the EUID) can write to the resource, returned as a Boolean NSNumber object (read-only).",
         "search_aliases": ["is_writable", "is writable", "is writables"],
         "system_keys": ["nsurl:NSURLIsWritableKey"],
         "type": "boolean"
       },
       "keys_of_unset_values": {
-        "availability": "iOS 5.0+ iPadOS 5.0+ macOS 10.7+ Mac Catalyst 13.1+ tvOS 9.0+ watchOS 2.0+",
+        "availability": "macOS 10.7+",
         "description": "Key for the resource properties that have not been set after the setResourceValues:error: method returns an error, returned as an array of NSString objects.",
         "search_aliases": [
           "keys_of_unset_values",
@@ -1914,7 +1914,7 @@
         "type": "string"
       },
       "label_color": {
-        "availability": "iOS 4.0+ iPadOS 4.0+ macOS 10.6+ Mac Catalyst 13.1+ tvOS 9.0+ watchOS 2.0+",
+        "availability": "macOS 10.6+",
         "description": "The resource's label color, returned as an NSColor object, or nil if the resource has no label color (read-only).",
         "search_aliases": [
           "label_color",
@@ -1934,7 +1934,7 @@
         "type": "string"
       },
       "link_count": {
-        "availability": "iOS 4.0+ iPadOS 4.0+ macOS 10.6+ Mac Catalyst 13.1+ tvOS 9.0+ watchOS 2.0+",
+        "availability": "macOS 10.6+",
         "description": "The number of hard links to the resource, returned as an NSNumber object (read-only).",
         "search_aliases": [
           "link_count",
@@ -1947,14 +1947,14 @@
         "type": "number"
       },
       "local_domain": {
-        "availability": "macOS 10.7+ Mac Catalyst 13.0+",
+        "availability": "macOS 10.7+",
         "description": "Local domain.",
         "search_aliases": ["local_domain", "local domain", "local domains"],
         "system_keys": ["mdimporter:kMDLabelLocalDomain"],
         "type": "string"
       },
       "localized_label": {
-        "availability": "iOS 4.0+ iPadOS 4.0+ macOS 10.6+ Mac Catalyst 13.1+ tvOS 9.0+ watchOS 2.0+",
+        "availability": "macOS 10.6+",
         "description": "The resource's localized label text, returned as an NSString object, or nil if the resource has no localized label text (read-only).",
         "search_aliases": [
           "localized_label",
@@ -1967,7 +1967,7 @@
         "type": "string"
       },
       "may_have_extended_attributes": {
-        "availability": "iOS 14.0+ iPadOS 14.0+ macOS 11.0+ Mac Catalyst 14.0+ tvOS 14.0+ watchOS 7.0+",
+        "availability": "macOS 11.0+",
         "description": "The key for a Boolean value that indicates whether the file has extended attributes.",
         "search_aliases": [
           "may_have_extended_attributes",
@@ -1978,7 +1978,7 @@
         "type": "string"
       },
       "may_share_file_content": {
-        "availability": "iOS 14.0+ iPadOS 14.0+ macOS 11.0+ Mac Catalyst 14.0+ tvOS 14.0+ watchOS 7.0+",
+        "availability": "macOS 11.0+",
         "description": "The key for a Boolean value that indicates whether cloned files and their original files may share data blocks.",
         "search_aliases": [
           "may_share_file_content",
@@ -1989,7 +1989,7 @@
         "type": "string"
       },
       "parent_directory_url": {
-        "availability": "iOS 4.0+ iPadOS 4.0+ macOS 10.6+ Mac Catalyst 13.1+ tvOS 9.0+ watchOS 2.0+",
+        "availability": "macOS 10.6+",
         "description": "The parent directory of the resource, returned as an NSURL object, or nil if the resource is the root directory of its volume (read-only).",
         "search_aliases": [
           "parent_directory_url",
@@ -2002,7 +2002,7 @@
         "type": "string"
       },
       "preferred_io_block_size": {
-        "availability": "iOS 5.0+ iPadOS 5.0+ macOS 10.7+ Mac Catalyst 13.1+ tvOS 9.0+ watchOS 2.0+",
+        "availability": "macOS 10.7+",
         "description": "The key for the optimal block size to use when reading or writing the file's data.",
         "search_aliases": [
           "preferred_io_block_size",
@@ -2086,7 +2086,7 @@
         "type": "string"
       },
       "user_domain": {
-        "availability": "macOS 10.7+ Mac Catalyst 13.0+",
+        "availability": "macOS 10.7+",
         "description": "User domain.",
         "search_aliases": ["user_domain", "user domain", "user domains"],
         "system_keys": ["mdimporter:kMDLabelUserDomain"],
@@ -2109,7 +2109,7 @@
     },
     "storage": {
       "ubiquitous_item_container_display_name": {
-        "availability": "iOS 8.0+ iPadOS 8.0+ macOS 10.10+ Mac Catalyst 13.1+ tvOS 9.0+ watchOS 2.0+",
+        "availability": "macOS 10.10+",
         "description": "The key for a string that contains the name of the item's container as it appears to the user.",
         "search_aliases": [
           "ubiquitous_item_container_display_name",
@@ -2120,7 +2120,7 @@
         "type": "string"
       },
       "ubiquitous_item_download_requested": {
-        "availability": "iOS 8.0+ iPadOS 8.0+ macOS 10.10+ Mac Catalyst 13.1+ tvOS 9.0+ watchOS 2.0+",
+        "availability": "macOS 10.10+",
         "description": "The key for a Boolean value that indicates whether the system has already made a call startDownloadingUbiquitousItemAtURL:error: to download the item.",
         "search_aliases": [
           "ubiquitous_item_download_requested",
@@ -2131,7 +2131,7 @@
         "type": "string"
       },
       "ubiquitous_item_downloading_error": {
-        "availability": "iOS 7.0+ iPadOS 7.0+ macOS 10.9+ Mac Catalyst 13.1+ tvOS 9.0+ watchOS 2.0+",
+        "availability": "macOS 10.9+",
         "description": "The key for an error object that indicates why downloading the item from iCloud fails.",
         "search_aliases": [
           "ubiquitous_item_downloading_error",
@@ -2142,7 +2142,7 @@
         "type": "string"
       },
       "ubiquitous_item_downloading_status": {
-        "availability": "iOS 7.0+ iPadOS 7.0+ macOS 10.9+ Mac Catalyst 13.1+ tvOS 9.0+ watchOS 2.0+",
+        "availability": "macOS 10.9+",
         "description": "The key for the current download state for the item.",
         "search_aliases": [
           "ubiquitous_item_downloading_status",
@@ -2153,7 +2153,7 @@
         "type": "string"
       },
       "ubiquitous_item_has_unresolved_conflicts": {
-        "availability": "iOS 5.0+ iPadOS 5.0+ macOS 10.7+ Mac Catalyst 13.1+ tvOS 9.0+ watchOS 2.0+",
+        "availability": "macOS 10.7+",
         "description": "The key for a Boolean value that indicates whether this item has outstanding conflicts.",
         "search_aliases": [
           "ubiquitous_item_has_unresolved_conflicts",
@@ -2164,7 +2164,7 @@
         "type": "string"
       },
       "ubiquitous_item_is_downloading": {
-        "availability": "iOS 5.0+ iPadOS 5.0+ macOS 10.7+ Mac Catalyst 13.1+ tvOS 9.0+ watchOS 2.0+",
+        "availability": "macOS 10.7+",
         "description": "The key for a Boolean value that indicates whether the system is downloading the item from iCloud.",
         "search_aliases": [
           "ubiquitous_item_is_downloading",
@@ -2175,7 +2175,7 @@
         "type": "string"
       },
       "ubiquitous_item_is_excluded_from_sync": {
-        "availability": "iOS 14.5+ iPadOS 14.5+ macOS 11.3+ Mac Catalyst 14.5+ tvOS 14.5+ watchOS 7.4+",
+        "availability": "macOS 11.3+",
         "description": "The key of a Boolean value that indicates whether the system excludes the item from syncing.",
         "search_aliases": [
           "ubiquitous_item_is_excluded_from_sync",
@@ -2186,7 +2186,7 @@
         "type": "string"
       },
       "ubiquitous_item_is_shared": {
-        "availability": "iOS 10.0+ iPadOS 10.0+ macOS 10.12+ Mac Catalyst 13.1+",
+        "availability": "macOS 10.12+",
         "description": "The key for a Boolean value that indicates a shared item.",
         "search_aliases": [
           "ubiquitous_item_is_shared",
@@ -2197,7 +2197,7 @@
         "type": "string"
       },
       "ubiquitous_item_is_uploaded": {
-        "availability": "iOS 5.0+ iPadOS 5.0+ macOS 10.7+ Mac Catalyst 13.1+ tvOS 9.0+ watchOS 2.0+",
+        "availability": "macOS 10.7+",
         "description": "The key for a Boolean value that indicates whether the system uploads the item's data to iCloud storage.",
         "search_aliases": [
           "ubiquitous_item_is_uploaded",
@@ -2208,7 +2208,7 @@
         "type": "string"
       },
       "ubiquitous_item_is_uploading": {
-        "availability": "iOS 5.0+ iPadOS 5.0+ macOS 10.7+ Mac Catalyst 13.1+ tvOS 9.0+ watchOS 2.0+",
+        "availability": "macOS 10.7+",
         "description": "The key for a Boolean value that indicates whether the system is uploading the item to iCloud.",
         "search_aliases": [
           "ubiquitous_item_is_uploading",
@@ -2219,7 +2219,7 @@
         "type": "string"
       },
       "ubiquitous_item_uploading_error": {
-        "availability": "iOS 7.0+ iPadOS 7.0+ macOS 10.9+ Mac Catalyst 13.1+ tvOS 9.0+ watchOS 2.0+",
+        "availability": "macOS 10.9+",
         "description": "The key for an error object that indicates why uploading the item to iCloud fails.",
         "search_aliases": [
           "ubiquitous_item_uploading_error",
@@ -2230,7 +2230,7 @@
         "type": "string"
       },
       "ubiquitous_shared_item_current_user_permissions": {
-        "availability": "iOS 10.0+ iPadOS 10.0+ macOS 10.12+ Mac Catalyst 13.1+",
+        "availability": "macOS 10.12+",
         "description": "The key for the current user's permissions.",
         "search_aliases": [
           "ubiquitous_shared_item_current_user_permissions",
@@ -2243,7 +2243,7 @@
         "type": "string"
       },
       "ubiquitous_shared_item_current_user_role": {
-        "availability": "iOS 10.0+ iPadOS 10.0+ macOS 10.12+ Mac Catalyst 13.1+",
+        "availability": "macOS 10.12+",
         "description": "The key for the role of the current user.",
         "search_aliases": [
           "ubiquitous_shared_item_current_user_role",
@@ -2254,7 +2254,7 @@
         "type": "string"
       },
       "ubiquitous_shared_item_most_recent_editor_name_components": {
-        "availability": "iOS 10.0+ iPadOS 10.0+ macOS 10.12+ Mac Catalyst 13.1+",
+        "availability": "macOS 10.12+",
         "description": "The key for the name components of the most recent editor.",
         "search_aliases": [
           "ubiquitous_shared_item_most_recent_editor_name_components",
@@ -2267,7 +2267,7 @@
         "type": "string"
       },
       "ubiquitous_shared_item_owner_name_components": {
-        "availability": "iOS 10.0+ iPadOS 10.0+ macOS 10.12+ Mac Catalyst 13.1+",
+        "availability": "macOS 10.12+",
         "description": "The key for the name components of the item's owner.",
         "search_aliases": [
           "ubiquitous_shared_item_owner_name_components",
@@ -2280,7 +2280,7 @@
         "type": "string"
       },
       "volume_available_capacity": {
-        "availability": "iOS 4.0+ iPadOS 4.0+ macOS 10.6+ Mac Catalyst 13.1+ tvOS 9.0+ watchOS 2.0+",
+        "availability": "macOS 10.6+",
         "description": "Key for the volume's available capacity in bytes (read-only).",
         "search_aliases": [
           "volume_available_capacity",
@@ -2291,7 +2291,7 @@
         "type": "string"
       },
       "volume_available_capacity_for_important_usage": {
-        "availability": "iOS 11.0+ iPadOS 11.0+ macOS 10.13+ Mac Catalyst 13.1+",
+        "availability": "macOS 10.13+",
         "description": "Key for the volume's available capacity in bytes for storing important resources (read-only).",
         "search_aliases": [
           "volume_available_capacity_for_important_usage",
@@ -2304,7 +2304,7 @@
         "type": "string"
       },
       "volume_available_capacity_for_opportunistic_usage": {
-        "availability": "iOS 11.0+ iPadOS 11.0+ macOS 10.13+ Mac Catalyst 13.1+",
+        "availability": "macOS 10.13+",
         "description": "Key for the volume's available capacity in bytes for storing nonessential resources (read-only).",
         "search_aliases": [
           "volume_available_capacity_for_opportunistic_usage",
@@ -2317,7 +2317,7 @@
         "type": "string"
       },
       "volume_creation_date": {
-        "availability": "iOS 5.0+ iPadOS 5.0+ macOS 10.7+ Mac Catalyst 13.1+ tvOS 9.0+ watchOS 2.0+",
+        "availability": "macOS 10.7+",
         "description": "Key for the volume's creation date, returned as an NSDate object, or NULL if it cannot be determined (read-only).",
         "search_aliases": [
           "volume_creation_date",
@@ -2332,7 +2332,7 @@
         "type": "date"
       },
       "volume_identifier": {
-        "availability": "iOS 5.0+ iPadOS 5.0+ macOS 10.7+ Mac Catalyst 13.1+ tvOS 9.0+ watchOS 2.0+",
+        "availability": "macOS 10.7+",
         "description": "The unique identifier of the resource's volume, returned as an id (read-only).",
         "search_aliases": [
           "volume_identifier",
@@ -2344,7 +2344,7 @@
         "type": "string"
       },
       "volume_is_automounted": {
-        "availability": "iOS 5.0+ iPadOS 5.0+ macOS 10.7+ Mac Catalyst 13.1+ tvOS 9.0+ watchOS 2.0+",
+        "availability": "macOS 10.7+",
         "description": "Key for determining whether the volume is automounted, returned as a Boolean NSNumber object (read-only).",
         "search_aliases": [
           "volume_is_automounted",
@@ -2355,7 +2355,7 @@
         "type": "string"
       },
       "volume_is_browsable": {
-        "availability": "iOS 5.0+ iPadOS 5.0+ macOS 10.7+ Mac Catalyst 13.1+ tvOS 9.0+ watchOS 2.0+",
+        "availability": "macOS 10.7+",
         "description": "Key for determining whether the volume is visible in GUI-based file-browsing environments, such as the Desktop or the Finder application, returned as a Boolean NSNumber object (read-only).",
         "search_aliases": [
           "volume_is_browsable",
@@ -2366,7 +2366,7 @@
         "type": "string"
       },
       "volume_is_ejectable": {
-        "availability": "iOS 5.0+ iPadOS 5.0+ macOS 10.7+ Mac Catalyst 13.1+ tvOS 9.0+ watchOS 2.0+",
+        "availability": "macOS 10.7+",
         "description": "Key for determining whether the volume is ejectable from the drive mechanism under software control, returned as a Boolean NSNumber object (read-only).",
         "search_aliases": [
           "volume_is_ejectable",
@@ -2377,7 +2377,7 @@
         "type": "string"
       },
       "volume_is_encrypted": {
-        "availability": "iOS 10.0+ iPadOS 10.0+ macOS 10.12+ Mac Catalyst 13.1+ tvOS 10.0+ watchOS 3.0+",
+        "availability": "macOS 10.12+",
         "description": "Whether the volume is encrypted, returned as NSNumber containing a Boolean value (read-only).",
         "search_aliases": [
           "volume_is_encrypted",
@@ -2388,7 +2388,7 @@
         "type": "string"
       },
       "volume_is_internal": {
-        "availability": "iOS 5.0+ iPadOS 5.0+ macOS 10.7+ Mac Catalyst 13.1+ tvOS 9.0+ watchOS 2.0+",
+        "availability": "macOS 10.7+",
         "description": "Key for determining whether the volume is connected to an internal bus, returned as a Boolean NSNumber object, or nil if it cannot be determined (read-only).",
         "search_aliases": [
           "volume_is_internal",
@@ -2399,7 +2399,7 @@
         "type": "string"
       },
       "volume_is_journaling": {
-        "availability": "iOS 4.0+ iPadOS 4.0+ macOS 10.6+ Mac Catalyst 13.1+ tvOS 9.0+ watchOS 2.0+",
+        "availability": "macOS 10.6+",
         "description": "Key for determining whether the volume is currently journaling, returned as a Boolean NSNumber object (read-only).",
         "search_aliases": [
           "volume_is_journaling",
@@ -2410,7 +2410,7 @@
         "type": "string"
       },
       "volume_is_local": {
-        "availability": "iOS 5.0+ iPadOS 5.0+ macOS 10.7+ Mac Catalyst 13.1+ tvOS 9.0+ watchOS 2.0+",
+        "availability": "macOS 10.7+",
         "description": "Key for determining whether the volume is stored on a local device, returned as a Boolean NSNumber object (read-only).",
         "search_aliases": [
           "volume_is_local",
@@ -2421,7 +2421,7 @@
         "type": "string"
       },
       "volume_is_read_only": {
-        "availability": "iOS 5.0+ iPadOS 5.0+ macOS 10.7+ Mac Catalyst 13.1+ tvOS 9.0+ watchOS 2.0+",
+        "availability": "macOS 10.7+",
         "description": "Key for determining whether the volume is read-only, returned as a Boolean NSNumber object (read-only).",
         "search_aliases": [
           "volume_is_read_only",
@@ -2432,7 +2432,7 @@
         "type": "string"
       },
       "volume_is_removable": {
-        "availability": "iOS 5.0+ iPadOS 5.0+ macOS 10.7+ Mac Catalyst 13.1+ tvOS 9.0+ watchOS 2.0+",
+        "availability": "macOS 10.7+",
         "description": "Key for determining whether the volume is removable from the drive mechanism, returned as a Boolean NSNumber object (read-only).",
         "search_aliases": [
           "volume_is_removable",
@@ -2443,7 +2443,7 @@
         "type": "string"
       },
       "volume_is_root_file_system": {
-        "availability": "iOS 10.0+ iPadOS 10.0+ macOS 10.12+ Mac Catalyst 13.1+ tvOS 10.0+ watchOS 3.0+",
+        "availability": "macOS 10.12+",
         "description": "Whether the volume is the root filesystem, returned as NSNumber containing a Boolean value (read-only).",
         "search_aliases": [
           "volume_is_root_file_system",
@@ -2456,7 +2456,7 @@
         "type": "string"
       },
       "volume_localized_format_description": {
-        "availability": "iOS 4.0+ iPadOS 4.0+ macOS 10.6+ Mac Catalyst 13.1+ tvOS 9.0+ watchOS 2.0+",
+        "availability": "macOS 10.6+",
         "description": "Key for the volume's descriptive format name, returned as an NSString object (read-only).",
         "search_aliases": [
           "volume_localized_format_description",
@@ -2467,7 +2467,7 @@
         "type": "string"
       },
       "volume_localized_name": {
-        "availability": "iOS 5.0+ iPadOS 5.0+ macOS 10.7+ Mac Catalyst 13.1+ tvOS 9.0+ watchOS 2.0+",
+        "availability": "macOS 10.7+",
         "description": "The name of the volume as it should be displayed in the user interface, returned as an NSString object (read-only).",
         "search_aliases": [
           "volume_localized_name",
@@ -2478,7 +2478,7 @@
         "type": "string"
       },
       "volume_maximum_file_size": {
-        "availability": "iOS 5.0+ iPadOS 5.0+ macOS 10.7+ Mac Catalyst 13.1+ tvOS 9.0+ watchOS 2.0+",
+        "availability": "macOS 10.7+",
         "description": "Key for the largest file size supported by the volume in bytes, returned as a Boolean NSNumber object, or nil if it cannot be determined (read-only).",
         "search_aliases": [
           "volume_maximum_file_size",
@@ -2492,14 +2492,14 @@
         "type": "number"
       },
       "volume_name": {
-        "availability": "iOS 5.0+ iPadOS 5.0+ macOS 10.7+ Mac Catalyst 13.1+ tvOS 9.0+ watchOS 2.0+",
+        "availability": "macOS 10.7+",
         "description": "The name of the volume, returned as an NSString object (read-write). Settable only if NSURLVolumeSupportsRenamingKey is YES.",
         "search_aliases": ["volume_name", "volume name", "volume names"],
         "system_keys": ["nsurl:NSURLVolumeNameKey"],
         "type": "string"
       },
       "volume_resource_count": {
-        "availability": "iOS 4.0+ iPadOS 4.0+ macOS 10.6+ Mac Catalyst 13.1+ tvOS 9.0+ watchOS 2.0+",
+        "availability": "macOS 10.6+",
         "description": "Key for the total number of resources on the volume, returned as an NSNumber object (read-only).",
         "search_aliases": [
           "volume_resource_count",
@@ -2512,7 +2512,7 @@
         "type": "number"
       },
       "volume_supports_access_permissions": {
-        "availability": "iOS 11.0+ iPadOS 11.0+ macOS 10.13+ Mac Catalyst 13.1+ tvOS 11.0+ watchOS 4.0+",
+        "availability": "macOS 10.13+",
         "description": "Volume supports access permissions.",
         "search_aliases": [
           "volume_supports_access_permissions",
@@ -2523,7 +2523,7 @@
         "type": "string"
       },
       "volume_supports_advisory_file_locking": {
-        "availability": "iOS 5.0+ iPadOS 5.0+ macOS 10.7+ Mac Catalyst 13.1+ tvOS 9.0+ watchOS 2.0+",
+        "availability": "macOS 10.7+",
         "description": "Key for determining whether the volume implements whole-file advisory locks in the style of flock, along with the O_EXLOCK and O_SHLOCK flags of the open function, returned as a Boolean NSNumber object (read-only).",
         "search_aliases": [
           "volume_supports_advisory_file_locking",
@@ -2534,7 +2534,7 @@
         "type": "string"
       },
       "volume_supports_case_preserved_names": {
-        "availability": "iOS 4.0+ iPadOS 4.0+ macOS 10.6+ Mac Catalyst 13.1+ tvOS 9.0+ watchOS 2.0+",
+        "availability": "macOS 10.6+",
         "description": "Key for determining whether the volume supports case-preserved names, returned as a Boolean NSNumber object (read-only).",
         "search_aliases": [
           "volume_supports_case_preserved_names",
@@ -2545,7 +2545,7 @@
         "type": "string"
       },
       "volume_supports_case_sensitive_names": {
-        "availability": "iOS 4.0+ iPadOS 4.0+ macOS 10.6+ Mac Catalyst 13.1+ tvOS 9.0+ watchOS 2.0+",
+        "availability": "macOS 10.6+",
         "description": "Key for determining whether the volume supports case-sensitive names, returned as a Boolean NSNumber object (read-only).",
         "search_aliases": [
           "volume_supports_case_sensitive_names",
@@ -2556,7 +2556,7 @@
         "type": "string"
       },
       "volume_supports_compression": {
-        "availability": "iOS 10.0+ iPadOS 10.0+ macOS 10.12+ Mac Catalyst 13.1+ tvOS 10.0+ watchOS 3.0+",
+        "availability": "macOS 10.12+",
         "description": "Whether the volume supports transparent decompression of compressed files using decmpfs, returned as NSNumber containing a Boolean value (read-only).",
         "search_aliases": [
           "volume_supports_compression",
@@ -2567,7 +2567,7 @@
         "type": "string"
       },
       "volume_supports_exclusive_renaming": {
-        "availability": "iOS 10.0+ iPadOS 10.0+ macOS 10.12+ Mac Catalyst 13.1+ tvOS 10.0+ watchOS 3.0+",
+        "availability": "macOS 10.12+",
         "description": "Whether the volume supports exclusive renaming using renamex_np(2) with the RENAME_EXCL option, returned as NSNumber containing a Boolean value (read-only).",
         "search_aliases": [
           "volume_supports_exclusive_renaming",
@@ -2578,7 +2578,7 @@
         "type": "string"
       },
       "volume_supports_extended_security": {
-        "availability": "iOS 5.0+ iPadOS 5.0+ macOS 10.7+ Mac Catalyst 13.1+ tvOS 9.0+ watchOS 2.0+",
+        "availability": "macOS 10.7+",
         "description": "Key for determining whether the volume supports extended security (access control lists), returned as a Boolean NSNumber object (read-only).",
         "search_aliases": [
           "volume_supports_extended_security",
@@ -2589,7 +2589,7 @@
         "type": "string"
       },
       "volume_supports_file_cloning": {
-        "availability": "iOS 10.0+ iPadOS 10.0+ macOS 10.12+ Mac Catalyst 13.1+ tvOS 10.0+ watchOS 3.0+",
+        "availability": "macOS 10.12+",
         "description": "Whether the volume supports cloning using clonefile(2), returned as NSNumber containing a Boolean value (read-only).",
         "search_aliases": [
           "volume_supports_file_cloning",
@@ -2600,7 +2600,7 @@
         "type": "string"
       },
       "volume_supports_file_protection": {
-        "availability": "iOS 14.0+ iPadOS 14.0+ macOS 11.0+ Mac Catalyst 14.0+ tvOS 14.0+ watchOS 7.0+",
+        "availability": "macOS 11.0+",
         "description": "A Boolean value that indicates the volume supports data protection for files.",
         "search_aliases": [
           "volume_supports_file_protection",
@@ -2611,7 +2611,7 @@
         "type": "string"
       },
       "volume_supports_hard_links": {
-        "availability": "iOS 4.0+ iPadOS 4.0+ macOS 10.6+ Mac Catalyst 13.1+ tvOS 9.0+ watchOS 2.0+",
+        "availability": "macOS 10.6+",
         "description": "Key for determining whether the volume supports hard links, returned as a Boolean NSNumber object (read-only).",
         "search_aliases": [
           "volume_supports_hard_links",
@@ -2622,7 +2622,7 @@
         "type": "string"
       },
       "volume_supports_immutable_files": {
-        "availability": "iOS 11.0+ iPadOS 11.0+ macOS 10.13+ Mac Catalyst 13.1+ tvOS 11.0+ watchOS 4.0+",
+        "availability": "macOS 10.13+",
         "description": "Volume supports immutable files.",
         "search_aliases": [
           "volume_supports_immutable_files",
@@ -2633,7 +2633,7 @@
         "type": "string"
       },
       "volume_supports_journaling": {
-        "availability": "iOS 4.0+ iPadOS 4.0+ macOS 10.6+ Mac Catalyst 13.1+ tvOS 9.0+ watchOS 2.0+",
+        "availability": "macOS 10.6+",
         "description": "Key for determining whether the volume supports journaling, returned as a Boolean NSNumber object (read-only).",
         "search_aliases": [
           "volume_supports_journaling",
@@ -2644,7 +2644,7 @@
         "type": "string"
       },
       "volume_supports_persistent_i_ds": {
-        "availability": "iOS 4.0+ iPadOS 4.0+ macOS 10.6+ Mac Catalyst 13.1+ tvOS 9.0+ watchOS 2.0+",
+        "availability": "macOS 10.6+",
         "description": "Key for determining whether the volume supports persistent IDs, returned as a Boolean NSNumber object (read-only).",
         "search_aliases": [
           "volume_supports_persistent_i_ds",
@@ -2654,7 +2654,7 @@
         "type": "string"
       },
       "volume_supports_renaming": {
-        "availability": "iOS 5.0+ iPadOS 5.0+ macOS 10.7+ Mac Catalyst 13.1+ tvOS 9.0+ watchOS 2.0+",
+        "availability": "macOS 10.7+",
         "description": "Key for determining whether the volume can be renamed, returned as a Boolean NSNumber object (read-only).",
         "search_aliases": [
           "volume_supports_renaming",
@@ -2665,7 +2665,7 @@
         "type": "string"
       },
       "volume_supports_root_directory_dates": {
-        "availability": "iOS 5.0+ iPadOS 5.0+ macOS 10.7+ Mac Catalyst 13.1+ tvOS 9.0+ watchOS 2.0+",
+        "availability": "macOS 10.7+",
         "description": "Key for determining whether the volume supports reliable storage of times for the root directory, returned as a Boolean NSNumber object (read-only).",
         "search_aliases": [
           "volume_supports_root_directory_dates",
@@ -2678,7 +2678,7 @@
         "type": "string"
       },
       "volume_supports_sparse_files": {
-        "availability": "iOS 4.0+ iPadOS 4.0+ macOS 10.6+ Mac Catalyst 13.1+ tvOS 9.0+ watchOS 2.0+",
+        "availability": "macOS 10.6+",
         "description": "Key for determining whether the volume supports sparse files, returned as a Boolean NSNumber object (read-only).",
         "search_aliases": [
           "volume_supports_sparse_files",
@@ -2689,7 +2689,7 @@
         "type": "string"
       },
       "volume_supports_swap_renaming": {
-        "availability": "iOS 10.0+ iPadOS 10.0+ macOS 10.12+ Mac Catalyst 13.1+ tvOS 10.0+ watchOS 3.0+",
+        "availability": "macOS 10.12+",
         "description": "Whether the volume supports renaming using renamex_np(2) with the RENAME_SWAP option, returned as NSNumber containing a Boolean value (read-only).",
         "search_aliases": [
           "volume_supports_swap_renaming",
@@ -2700,7 +2700,7 @@
         "type": "string"
       },
       "volume_supports_symbolic_links": {
-        "availability": "iOS 4.0+ iPadOS 4.0+ macOS 10.6+ Mac Catalyst 13.1+ tvOS 9.0+ watchOS 2.0+",
+        "availability": "macOS 10.6+",
         "description": "Key for determining whether the volume supports symbolic links, returned as a Boolean NSNumber object (read-only).",
         "search_aliases": [
           "volume_supports_symbolic_links",
@@ -2711,7 +2711,7 @@
         "type": "string"
       },
       "volume_supports_volume_sizes": {
-        "availability": "iOS 5.0+ iPadOS 5.0+ macOS 10.7+ Mac Catalyst 13.1+ tvOS 9.0+ watchOS 2.0+",
+        "availability": "macOS 10.7+",
         "description": "Key for determining whether the volume supports returning volume size information, returned as a Boolean NSNumber object (read-only). If true, volume size information is available as values of the NSURLVolumeTotalCapacityKey andNSURLVolumeAvailableCapacityKey keys.",
         "search_aliases": [
           "volume_supports_volume_sizes",
@@ -2722,7 +2722,7 @@
         "type": "string"
       },
       "volume_supports_zero_runs": {
-        "availability": "iOS 4.0+ iPadOS 4.0+ macOS 10.6+ Mac Catalyst 13.1+ tvOS 9.0+ watchOS 2.0+",
+        "availability": "macOS 10.6+",
         "description": "Key for determining whether the volume supports zero runs, returned as a Boolean NSNumber object (read-only).",
         "search_aliases": [
           "volume_supports_zero_runs",
@@ -2733,7 +2733,7 @@
         "type": "string"
       },
       "volume_total_capacity": {
-        "availability": "iOS 4.0+ iPadOS 4.0+ macOS 10.6+ Mac Catalyst 13.1+ tvOS 9.0+ watchOS 2.0+",
+        "availability": "macOS 10.6+",
         "description": "Key for the volume's total capacity in bytes (read-only).",
         "search_aliases": [
           "volume_total_capacity",
@@ -2744,7 +2744,7 @@
         "type": "string"
       },
       "volume_url": {
-        "availability": "iOS 4.0+ iPadOS 4.0+ macOS 10.6+ Mac Catalyst 13.1+ tvOS 9.0+ watchOS 2.0+",
+        "availability": "macOS 10.6+",
         "description": "The root directory of the resource's volume, returned as an NSURL object (read-only).",
         "search_aliases": [
           "volume_url",
@@ -2756,7 +2756,7 @@
         "type": "string"
       },
       "volume_url_for_remounting": {
-        "availability": "iOS 5.0+ iPadOS 5.0+ macOS 10.7+ Mac Catalyst 13.1+ tvOS 9.0+ watchOS 2.0+",
+        "availability": "macOS 10.7+",
         "description": "Key for the URL needed to remount the network volume, returned as an NSURL object, or nil if a URL is not available (read-only).",
         "search_aliases": [
           "volume_url_for_remounting",
@@ -2769,7 +2769,7 @@
         "type": "string"
       },
       "volume_uuid_string": {
-        "availability": "iOS 5.0+ iPadOS 5.0+ macOS 10.7+ Mac Catalyst 13.1+ tvOS 9.0+ watchOS 2.0+",
+        "availability": "macOS 10.7+",
         "description": "Key for the volume's persistent UUID, returned as an NSString object, or nil if a persistent UUID is not available (read-only).",
         "search_aliases": [
           "volume_uuid_string",
