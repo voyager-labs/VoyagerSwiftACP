@@ -2,36 +2,10 @@
   "$kind": "property_condition_registry",
   "$version": "1.1.0",
   "type_defaults": {
-    "string": [
-      "eq",
-      "neq",
-      "contains",
-      "in",
-      "empty",
-      "not_empty"
-    ],
-    "number": [
-      "eq",
-      "neq",
-      "gt",
-      "gte",
-      "lt",
-      "lte",
-      "between"
-    ],
-    "date": [
-      "eq",
-      "neq",
-      "gt",
-      "gte",
-      "lt",
-      "lte",
-      "between"
-    ],
-    "boolean": [
-      "eq",
-      "neq"
-    ],
+    "string": ["eq", "neq", "contains", "in", "empty", "not_empty"],
+    "number": ["eq", "neq", "gt", "gte", "lt", "lte", "between"],
+    "date": ["eq", "neq", "gt", "gte", "lt", "lte", "between"],
+    "boolean": ["eq", "neq"],
     "string_list": [
       "contains",
       "empty",
@@ -45,18 +19,9 @@
       "ui_label": "Is",
       "value_shape": "single",
       "value_count": 1,
-      "allowed_types": [
-        "string",
-        "number",
-        "date",
-        "boolean"
-      ],
+      "allowed_types": ["string", "number", "date", "boolean"],
       "inverse_of": "neq",
-      "aliases": [
-        "is",
-        "equals",
-        "="
-      ],
+      "aliases": ["is", "equals", "="],
       "ui_value_kind": {
         "string": "singleText",
         "number": "singleNumber",
@@ -68,18 +33,9 @@
       "ui_label": "Is not",
       "value_shape": "single",
       "value_count": 1,
-      "allowed_types": [
-        "string",
-        "number",
-        "date",
-        "boolean"
-      ],
+      "allowed_types": ["string", "number", "date", "boolean"],
       "inverse_of": "eq",
-      "aliases": [
-        "is not",
-        "not equals",
-        "!="
-      ],
+      "aliases": ["is not", "not equals", "!="],
       "ui_value_kind": {
         "string": "singleText",
         "number": "singleNumber",
@@ -91,15 +47,9 @@
       "ui_label": "Contains",
       "value_shape": "single",
       "value_count": 1,
-      "allowed_types": [
-        "string",
-        "string_list"
-      ],
+      "allowed_types": ["string", "string_list"],
       "inverse_of": "not_contains",
-      "aliases": [
-        "contains",
-        "has"
-      ],
+      "aliases": ["contains", "has"],
       "ui_value_kind": {
         "string": "singleText",
         "string_list": "singleText"
@@ -109,13 +59,9 @@
       "ui_label": "Does not contain",
       "value_shape": "single",
       "value_count": 1,
-      "allowed_types": [
-        "string"
-      ],
+      "allowed_types": ["string"],
       "inverse_of": "contains",
-      "aliases": [
-        "not contains"
-      ],
+      "aliases": ["not contains"],
       "ui_value_kind": {
         "string": "singleText"
       }
@@ -124,14 +70,9 @@
       "ui_label": "In list",
       "value_shape": "list",
       "value_count": "n",
-      "allowed_types": [
-        "string"
-      ],
+      "allowed_types": ["string"],
       "inverse_of": "not_in",
-      "aliases": [
-        "in",
-        "one of"
-      ],
+      "aliases": ["in", "one of"],
       "ui_value_kind": {
         "string": "listText"
       }
@@ -140,14 +81,9 @@
       "ui_label": "Not in list",
       "value_shape": "list",
       "value_count": "n",
-      "allowed_types": [
-        "string"
-      ],
+      "allowed_types": ["string"],
       "inverse_of": "in",
-      "aliases": [
-        "not in",
-        "none of"
-      ],
+      "aliases": ["not in", "none of"],
       "ui_value_kind": {
         "string": "listText"
       }
@@ -156,15 +92,9 @@
       "ui_label": "Is empty",
       "value_shape": "none",
       "value_count": 0,
-      "allowed_types": [
-        "string",
-        "string_list"
-      ],
+      "allowed_types": ["string", "string_list"],
       "inverse_of": "not_empty",
-      "aliases": [
-        "is empty",
-        "empty"
-      ],
+      "aliases": ["is empty", "empty"],
       "ui_value_kind": {
         "string": "none",
         "string_list": "none"
@@ -174,15 +104,9 @@
       "ui_label": "Is not empty",
       "value_shape": "none",
       "value_count": 0,
-      "allowed_types": [
-        "string",
-        "string_list"
-      ],
+      "allowed_types": ["string", "string_list"],
       "inverse_of": "empty",
-      "aliases": [
-        "is not empty",
-        "not empty"
-      ],
+      "aliases": ["is not empty", "not empty"],
       "ui_value_kind": {
         "string": "none",
         "string_list": "none"
@@ -192,16 +116,9 @@
       "ui_label": "Is greater than",
       "value_shape": "single",
       "value_count": 1,
-      "allowed_types": [
-        "number",
-        "date"
-      ],
+      "allowed_types": ["number", "date"],
       "inverse_of": "lte",
-      "aliases": [
-        ">",
-        "after",
-        "greater than"
-      ],
+      "aliases": [">", "after", "greater than"],
       "ui_value_kind": {
         "number": "singleNumber",
         "date": "singleDate"
@@ -211,16 +128,9 @@
       "ui_label": "Is at least",
       "value_shape": "single",
       "value_count": 1,
-      "allowed_types": [
-        "number",
-        "date"
-      ],
+      "allowed_types": ["number", "date"],
       "inverse_of": "lt",
-      "aliases": [
-        ">=",
-        "on or after",
-        "greater or equal"
-      ],
+      "aliases": [">=", "on or after", "greater or equal"],
       "ui_value_kind": {
         "number": "singleNumber",
         "date": "singleDate"
@@ -230,16 +140,9 @@
       "ui_label": "Is less than",
       "value_shape": "single",
       "value_count": 1,
-      "allowed_types": [
-        "number",
-        "date"
-      ],
+      "allowed_types": ["number", "date"],
       "inverse_of": "gte",
-      "aliases": [
-        "<",
-        "before",
-        "less than"
-      ],
+      "aliases": ["<", "before", "less than"],
       "ui_value_kind": {
         "number": "singleNumber",
         "date": "singleDate"
@@ -249,16 +152,9 @@
       "ui_label": "Is at most",
       "value_shape": "single",
       "value_count": 1,
-      "allowed_types": [
-        "number",
-        "date"
-      ],
+      "allowed_types": ["number", "date"],
       "inverse_of": "gt",
-      "aliases": [
-        "<=",
-        "on or before",
-        "less or equal"
-      ],
+      "aliases": ["<=", "on or before", "less or equal"],
       "ui_value_kind": {
         "number": "singleNumber",
         "date": "singleDate"
@@ -268,14 +164,9 @@
       "ui_label": "Is between",
       "value_shape": "range",
       "value_count": 2,
-      "allowed_types": [
-        "number",
-        "date"
-      ],
+      "allowed_types": ["number", "date"],
       "inverse_of": "not_between",
-      "aliases": [
-        "between"
-      ],
+      "aliases": ["between"],
       "ui_value_kind": {
         "number": "rangeNumber",
         "date": "rangeDate"
@@ -285,14 +176,9 @@
       "ui_label": "Is not between",
       "value_shape": "range",
       "value_count": 2,
-      "allowed_types": [
-        "number",
-        "date"
-      ],
+      "allowed_types": ["number", "date"],
       "inverse_of": "between",
-      "aliases": [
-        "not between"
-      ],
+      "aliases": ["not between"],
       "ui_value_kind": {
         "number": "rangeNumber",
         "date": "rangeDate"
@@ -302,12 +188,8 @@
       "ui_label": "Starts with",
       "value_shape": "single",
       "value_count": 1,
-      "allowed_types": [
-        "string"
-      ],
-      "aliases": [
-        "starts with"
-      ],
+      "allowed_types": ["string"],
+      "aliases": ["starts with"],
       "ui_value_kind": {
         "string": "singleText"
       }
@@ -316,12 +198,8 @@
       "ui_label": "Ends with",
       "value_shape": "single",
       "value_count": 1,
-      "allowed_types": [
-        "string"
-      ],
-      "aliases": [
-        "ends with"
-      ],
+      "allowed_types": ["string"],
+      "aliases": ["ends with"],
       "ui_value_kind": {
         "string": "singleText"
       }
@@ -330,13 +208,8 @@
       "ui_label": "Matches pattern",
       "value_shape": "single",
       "value_count": 1,
-      "allowed_types": [
-        "string"
-      ],
-      "aliases": [
-        "matches",
-        "regex"
-      ],
+      "allowed_types": ["string"],
+      "aliases": ["matches", "regex"],
       "ui_value_kind": {
         "string": "singleText"
       }
@@ -345,12 +218,8 @@
       "ui_label": "Equals (case-insensitive)",
       "value_shape": "single",
       "value_count": 1,
-      "allowed_types": [
-        "string"
-      ],
-      "aliases": [
-        "equals ignore case"
-      ],
+      "allowed_types": ["string"],
+      "aliases": ["equals ignore case"],
       "ui_value_kind": {
         "string": "singleText"
       }
@@ -359,12 +228,8 @@
       "ui_label": "Contains (case-insensitive)",
       "value_shape": "single",
       "value_count": 1,
-      "allowed_types": [
-        "string"
-      ],
-      "aliases": [
-        "contains ignore case"
-      ],
+      "allowed_types": ["string"],
+      "aliases": ["contains ignore case"],
       "ui_value_kind": {
         "string": "singleText"
       }
@@ -373,18 +238,9 @@
       "ui_label": "Is null",
       "value_shape": "none",
       "value_count": 0,
-      "allowed_types": [
-        "string",
-        "number",
-        "date",
-        "boolean",
-        "string_list"
-      ],
+      "allowed_types": ["string", "number", "date", "boolean", "string_list"],
       "inverse_of": "is_not_null",
-      "aliases": [
-        "is null",
-        "null"
-      ],
+      "aliases": ["is null", "null"],
       "ui_value_kind": {
         "string": "none",
         "number": "none",
@@ -397,18 +253,9 @@
       "ui_label": "Is not null",
       "value_shape": "none",
       "value_count": 0,
-      "allowed_types": [
-        "string",
-        "number",
-        "date",
-        "boolean",
-        "string_list"
-      ],
+      "allowed_types": ["string", "number", "date", "boolean", "string_list"],
       "inverse_of": "is_null",
-      "aliases": [
-        "is not null",
-        "not null"
-      ],
+      "aliases": ["is not null", "not null"],
       "ui_value_kind": {
         "string": "none",
         "number": "none",
@@ -421,17 +268,9 @@
       "ui_label": "Exists",
       "value_shape": "none",
       "value_count": 0,
-      "allowed_types": [
-        "string",
-        "number",
-        "date",
-        "boolean",
-        "string_list"
-      ],
+      "allowed_types": ["string", "number", "date", "boolean", "string_list"],
       "inverse_of": "not_exists",
-      "aliases": [
-        "exists"
-      ],
+      "aliases": ["exists"],
       "ui_value_kind": {
         "string": "none",
         "number": "none",
@@ -444,17 +283,9 @@
       "ui_label": "Does not exist",
       "value_shape": "none",
       "value_count": 0,
-      "allowed_types": [
-        "string",
-        "number",
-        "date",
-        "boolean",
-        "string_list"
-      ],
+      "allowed_types": ["string", "number", "date", "boolean", "string_list"],
       "inverse_of": "exists",
-      "aliases": [
-        "not exists"
-      ],
+      "aliases": ["not exists"],
       "ui_value_kind": {
         "string": "none",
         "number": "none",
@@ -467,12 +298,8 @@
       "ui_label": "Contains any",
       "value_shape": "list",
       "value_count": "n",
-      "allowed_types": [
-        "string_list"
-      ],
-      "aliases": [
-        "contains any"
-      ],
+      "allowed_types": ["string_list"],
+      "aliases": ["contains any"],
       "ui_value_kind": {
         "string_list": "listText"
       }
@@ -481,12 +308,8 @@
       "ui_label": "Contains all",
       "value_shape": "list",
       "value_count": "n",
-      "allowed_types": [
-        "string_list"
-      ],
-      "aliases": [
-        "contains all"
-      ],
+      "allowed_types": ["string_list"],
+      "aliases": ["contains all"],
       "ui_value_kind": {
         "string_list": "listText"
       }
