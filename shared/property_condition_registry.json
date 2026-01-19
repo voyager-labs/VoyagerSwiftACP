@@ -1,0 +1,97 @@
+{
+  "$kind": "property_condition_registry",
+  "$version": "1.0.0",
+  "type_defaults": {
+    "string": ["eq", "neq", "contains", "in", "empty", "not_empty"],
+    "number": ["eq", "neq", "gt", "gte", "lt", "lte", "between"],
+    "date": ["eq", "neq", "gt", "gte", "lt", "lte", "between"],
+    "boolean": ["eq", "neq"],
+    "array": ["contains", "in", "empty", "not_empty"]
+  },
+  "operators": {
+    "eq": {
+      "label": "Is",
+      "value_ui": {
+        "string": "singleText",
+        "number": "singleNumber",
+        "date": "singleDate",
+        "boolean": "toggle",
+        "array": "listText"
+      }
+    },
+    "neq": {
+      "label": "Is not",
+      "value_ui": {
+        "string": "singleText",
+        "number": "singleNumber",
+        "date": "singleDate",
+        "boolean": "toggle",
+        "array": "listText"
+      }
+    },
+    "contains": {
+      "label": "Contains",
+      "value_ui": {
+        "string": "singleText",
+        "array": "listText"
+      }
+    },
+    "in": {
+      "label": "In list",
+      "value_ui": {
+        "string": "listText",
+        "number": "listNumber",
+        "array": "listText"
+      }
+    },
+    "empty": {
+      "label": "Is empty",
+      "value_ui": {
+        "string": "none",
+        "array": "none"
+      }
+    },
+    "not_empty": {
+      "label": "Is not empty",
+      "value_ui": {
+        "string": "none",
+        "array": "none"
+      }
+    },
+    "gt": {
+      "label": "Is greater than",
+      "value_ui": {
+        "number": "singleNumber",
+        "date": "singleDate"
+      }
+    },
+    "gte": {
+      "label": "Is greater or equal",
+      "value_ui": {
+        "number": "singleNumber",
+        "date": "singleDate"
+      }
+    },
+    "lt": {
+      "label": "Is less than",
+      "value_ui": {
+        "number": "singleNumber",
+        "date": "singleDate"
+      }
+    },
+    "lte": {
+      "label": "Is less or equal",
+      "value_ui": {
+        "number": "singleNumber",
+        "date": "singleDate"
+      }
+    },
+    "between": {
+      "label": "Is between",
+      "value_ui": {
+        "number": "rangeNumber",
+        "date": "rangeDate"
+      }
+    }
+  }
+}
