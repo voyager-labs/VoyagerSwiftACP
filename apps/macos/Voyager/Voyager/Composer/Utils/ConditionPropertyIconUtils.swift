@@ -3,28 +3,26 @@ import Foundation
 enum ConditionPropertyIconUtils {
     private static let keyIconMap: [String: String] = [
         "name": "doc.text",
-        "extension": "doc.badge.ellipsis",
-        "size": "arrow.up.left.and.arrow.down.right",
-        "contentType": "doc.text.magnifyingglass",
+        "file_allocated_size": "arrow.up.left.and.arrow.down.right",
+        "content_type": "doc.text.magnifyingglass",
         "kind": "tag",
-        "isInvisible": "eye.slash",
-        "createdAt": "calendar.badge.plus",
-        "modifiedAt": "calendar.badge.clock",
-        "addedAt": "calendar.badge.plus",
-        "lastUsedAt": "clock",
-        "contentCreatedAt": "calendar.badge.plus",
-        "contentModifiedAt": "calendar.badge.clock",
-        "pixelHeight": "rectangle.expand.vertical",
-        "pixelWidth": "arrow.left.and.right",
-        "colorSpace": "paintpalette",
-        "hasAlphaChannel": "circle.lefthalf.filled",
-        "duration": "clock",
-        "videoBitRate": "waveform.path.ecg",
-        "audioBitRate": "waveform.path.ecg",
-        "audioSampleRate": "waveform",
-        "audioChannelCount": "speaker.wave.2",
+        "is_hidden": "eye.slash",
+        "creation_date": "calendar.badge.plus",
+        "content_modification_date": "calendar.badge.clock",
+        "date_added": "calendar.badge.plus",
+        "last_used_date": "clock",
+        "content_creation_date": "calendar.badge.plus",
+        "pixel_height": "rectangle.expand.vertical",
+        "pixel_width": "arrow.left.and.right",
+        "color_space": "paintpalette",
+        "has_alpha_channel": "circle.lefthalf.filled",
+        "duration_seconds": "clock",
+        "video_bit_rate": "waveform.path.ecg",
+        "audio_bit_rate": "waveform.path.ecg",
+        "audio_sample_rate": "waveform",
+        "audio_channel_count": "speaker.wave.2",
         "title": "text.book.closed",
-        "numberOfPages": "doc.text",
+        "number_of_pages": "doc.text",
         "creator": "person",
         "latitude": "location",
         "longitude": "location",
@@ -46,14 +44,13 @@ enum ConditionPropertyIconUtils {
 
     static func iconName(forCategory category: String) -> String {
         switch category {
+        case "common": "square.stack.3d.down.right"
         case "filesystem": "gearshape"
         case "image": "photo"
         case "video": "video"
         case "audio": "speaker.wave.2"
-        case "document": "doc.text"
-        case "download": "arrow.down.circle"
-        case "content": "square.stack.3d.down.right"
-        case "location": "mappin.and.ellipse"
+        case "storage": "externaldrive"
+        case "misc": "questionmark.circle"
         default: "questionmark.circle"
         }
     }

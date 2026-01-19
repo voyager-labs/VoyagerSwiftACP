@@ -7,23 +7,13 @@ struct ConditionPropertyPickerFeature {
     struct State: Equatable {
         var isPresented: Bool = false
         var properties: [SystemProperty] = {
-            let defaultKeys: Set<String> = [
-                "name",
-                "extension",
-                "size",
-                "modifiedAt",
-                "createdAt",
-                "addedAt",
-            ]
-            return ConditionMappingUtils.allProperties.map { info in
-                let typeString = ConditionOperatorMappingUtils.propertyTypeString(for: info.key)
-
-                return SystemProperty(
+            ConditionMappingUtils.allProperties.map { info in
+                SystemProperty(
                     key: info.key,
                     label: info.label,
-                    category: info.category.rawValue,
-                    type: typeString,
-                    isDefault: defaultKeys.contains(info.key),
+                    category: info.category,
+                    type: info.type,
+                    isDefault: info.isDefault,
                 )
             }
         }()
