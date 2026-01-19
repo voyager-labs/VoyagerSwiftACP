@@ -298,36 +298,11 @@ struct ConditionPropertyPickerView: View {
     }
 
     private func categoryTitle(for key: String) -> String {
-        switch key {
-        case "filesystem": "System Metadata"
-        case "image": "Image"
-        case "video": "Video"
-        case "audio": "Audio"
-        case "document": "Document"
-        case "download": "Download"
-        case "content": "Content"
-        case "location": "Location"
-        default: key
-        }
+        ConditionMappingUtils.categoryLabel(for: key)
     }
 
     private func iconName(for category: String) -> String {
-        let key = ConditionPropertyPickerView.categoryKey(for: category)
-        return ConditionPropertyIconUtils.iconName(forCategory: key)
-    }
-
-    private static func categoryKey(for category: String) -> String {
-        switch category {
-        case "System Metadata": "filesystem"
-        case "Image": "image"
-        case "Video": "video"
-        case "Audio": "audio"
-        case "Document": "document"
-        case "Download": "download"
-        case "Content": "content"
-        case "Location": "location"
-        default: category
-        }
+        ConditionPropertyIconUtils.iconName(forCategory: category)
     }
 }
 

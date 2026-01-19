@@ -5,7 +5,7 @@ enum PropertyType {
     case number
     case datetime
     case boolean
-    case array
+    case stringList
 }
 
 enum ValueUIKind {
@@ -27,71 +27,6 @@ struct OperatorUIOption {
 }
 
 enum ConditionOperatorMappingUtils {
-    private static let fallbackPropertyKeyToType: [String: PropertyType] = [
-        // 숫자
-        "size": .number,
-        "pixelHeight": .number,
-        "pixelWidth": .number,
-        "duration": .number,
-        "videoBitRate": .number,
-        "audioBitRate": .number,
-        "audioSampleRate": .number,
-        "audioChannelCount": .number,
-        "numberOfPages": .number,
-        "latitude": .number,
-        "longitude": .number,
-
-        // 날짜/시간
-        "createdAt": .datetime,
-        "modifiedAt": .datetime,
-        "addedAt": .datetime,
-        "lastUsedAt": .datetime,
-        "contentCreatedAt": .datetime,
-        "contentModifiedAt": .datetime,
-
-        // 불린
-        "isInvisible": .boolean,
-        "hasAlphaChannel": .boolean,
-
-        // 문자열
-        "name": .string,
-        "extension": .string,
-        "kind": .string,
-        "contentType": .string,
-        "colorSpace": .string,
-        "title": .string,
-        "creator": .string,
-    ]
-
-    private static let fallbackPropertyKeyToSupported: [String: [String]] = [
-        "size": ["eq", "gt", "gte", "lt", "lte", "between"],
-        "contentType": ["eq", "contains", "in"],
-        "kind": ["eq", "contains"],
-        "name": ["eq", "contains"],
-        "extension": ["eq", "in"],
-        "isInvisible": ["eq"],
-        "createdAt": ["eq", "gt", "gte", "lt", "lte", "between"],
-        "modifiedAt": ["eq", "gt", "gte", "lt", "lte", "between"],
-        "addedAt": ["eq", "gt", "gte", "lt", "lte", "between"],
-        "lastUsedAt": ["eq", "gt", "gte", "lt", "lte", "between"],
-        "contentCreatedAt": ["eq", "gt", "gte", "lt", "lte", "between"],
-        "contentModifiedAt": ["eq", "gt", "gte", "lt", "lte", "between"],
-        "pixelHeight": ["eq", "gt", "gte", "lt", "lte", "between"],
-        "pixelWidth": ["eq", "gt", "gte", "lt", "lte", "between"],
-        "colorSpace": ["eq", "in"],
-        "hasAlphaChannel": ["eq"],
-        "duration": ["eq", "gt", "gte", "lt", "lte", "between"],
-        "videoBitRate": ["eq", "gt", "gte", "lt", "lte"],
-        "audioBitRate": ["eq", "gt", "gte", "lt", "lte"],
-        "audioSampleRate": ["eq", "gt", "gte", "lt", "lte"],
-        "audioChannelCount": ["eq", "in"],
-        "title": ["eq", "contains"],
-        "numberOfPages": ["eq", "gt", "gte", "lt", "lte", "between"],
-        "creator": ["eq", "contains"],
-        "latitude": ["eq", "gt", "gte", "lt", "lte", "between"],
-        "longitude": ["eq", "gt", "gte", "lt", "lte", "between"],
-    ]
-
     private static let registrySnapshot: SystemPropertyRegistry? = {
         do {
             return try SystemPropertyRegistryLoader.load()
@@ -100,35 +35,66 @@ enum ConditionOperatorMappingUtils {
         }
     }()
 
+    private static let conditionRegistrySnapshot: PropertyConditionRegistry? = {
+        do {
+            return try PropertyConditionRegistryLoader.load()
+        } catch {
+            return nil
+        }
+    }()
+
     private static let propertyKeyToType: [String: PropertyType] = {
         guard let registrySnapshot else {
-            return fallbackPropertyKeyToType
+            return [:]
         }
 
         var mapping: [String: PropertyType] = [:]
-        for (key, definition) in registrySnapshot.propertyKeyRegistry {
-            let propertyKey = definition.propertyKey ?? key
-            guard let type = propertyType(from: definition.valueType) else {
-                continue
+        for (_, entries) in registrySnapshot.categories {
+            for (key, definition) in entries {
+                guard let type = propertyType(from: definition.type) else {
+                    continue
+                }
+                mapping[key] = type
             }
-            mapping[propertyKey] = type
         }
 
-        return mapping.isEmpty ? fallbackPropertyKeyToType : mapping
+        return mapping
     }()
 
     private static let propertyKeyToSupported: [String: [String]] = {
-        guard let registrySnapshot else {
-            return fallbackPropertyKeyToSupported
+        guard let registrySnapshot, let conditionRegistrySnapshot else {
+            return [:]
         }
 
         var mapping: [String: [String]] = [:]
-        for (key, definition) in registrySnapshot.propertyKeyRegistry {
-            let propertyKey = definition.propertyKey ?? key
-            mapping[propertyKey] = definition.supportedOperators
+        for (_, entries) in registrySnapshot.categories {
+            for (key, definition) in entries {
+                guard let type = propertyType(from: definition.type) else {
+                    continue
+                }
+                let typeKey = conditionTypeKey(for: type)
+                guard let operators = conditionRegistrySnapshot.typeDefaults[typeKey] else {
+                    continue
+                }
+                mapping[key] = operators
+            }
         }
 
-        return mapping.isEmpty ? fallbackPropertyKeyToSupported : mapping
+        return mapping
+    }()
+
+    private static let propertyKeyToTypeString: [String: String] = {
+        guard let registrySnapshot else {
+            return [:]
+        }
+
+        var mapping: [String: String] = [:]
+        for (_, entries) in registrySnapshot.categories {
+            for (key, definition) in entries {
+                mapping[key] = definition.type
+            }
+        }
+        return mapping
     }()
 
     private static func propertyType(from valueType: String) -> PropertyType? {
@@ -141,69 +107,89 @@ enum ConditionOperatorMappingUtils {
             .datetime
         case "boolean":
             .boolean
-        case "array":
-            .array
+        case "string_list":
+            .stringList
         default:
             nil
         }
     }
 
-    /// 타입별 오퍼레이터 템플릿
-    private static func operators(for type: PropertyType) -> [OperatorUIOption] {
+    private static func conditionTypeKey(for type: PropertyType) -> String {
         switch type {
         case .string:
-            [
-                .init(code: "eq", label: "Is", valueUI: .singleText),
-                .init(code: "neq", label: "Is not", valueUI: .singleText),
-                .init(code: "contains", label: "Contains", valueUI: .singleText),
-                .init(code: "in", label: "In list", valueUI: .listText),
-                .init(code: "empty", label: "Is empty", valueUI: .none),
-                .init(code: "not_empty", label: "Is not empty", valueUI: .none),
-            ]
+            "string"
         case .number:
-            [
-                .init(code: "eq", label: "Is", valueUI: .singleNumber),
-                .init(code: "neq", label: "Is not", valueUI: .singleNumber),
-                .init(code: "gt", label: "Is greater than", valueUI: .singleNumber),
-                .init(code: "gte", label: "Is greater or equal", valueUI: .singleNumber),
-                .init(code: "lt", label: "Is less than", valueUI: .singleNumber),
-                .init(code: "lte", label: "Is less or equal", valueUI: .singleNumber),
-                .init(code: "between", label: "Is between", valueUI: .rangeNumber),
-            ]
+            "number"
         case .datetime:
-            [
-                .init(code: "eq", label: "Is", valueUI: .singleDate),
-                .init(code: "neq", label: "Is not", valueUI: .singleDate),
-                .init(code: "gt", label: "Is after", valueUI: .singleDate),
-                .init(code: "gte", label: "Is on or after", valueUI: .singleDate),
-                .init(code: "lt", label: "Is before", valueUI: .singleDate),
-                .init(code: "lte", label: "Is on or before", valueUI: .singleDate),
-                .init(code: "between", label: "Is between", valueUI: .rangeDate),
-            ]
+            "date"
         case .boolean:
-            [
-                .init(code: "eq", label: "Is", valueUI: .toggle),
-                .init(code: "neq", label: "Is not", valueUI: .toggle),
-            ]
-        case .array:
-            [
-                .init(code: "contains", label: "Contains", valueUI: .listText),
-                .init(code: "in", label: "In list", valueUI: .listText),
-                .init(code: "empty", label: "Is empty", valueUI: .none),
-                .init(code: "not_empty", label: "Is not empty", valueUI: .none),
-            ]
+            "boolean"
+        case .stringList:
+            "string_list"
         }
+    }
+
+    private static func valueUIKind(from raw: String) -> ValueUIKind? {
+        switch raw {
+        case "none":
+            .none
+        case "singleText":
+            .singleText
+        case "singleNumber":
+            .singleNumber
+        case "singleDate":
+            .singleDate
+        case "rangeNumber":
+            .rangeNumber
+        case "rangeDate":
+            .rangeDate
+        case "listText":
+            .listText
+        case "listNumber":
+            .listNumber
+        case "toggle":
+            .toggle
+        default:
+            nil
+        }
+    }
+
+    private static func registryOperators(for type: PropertyType) -> [OperatorUIOption]? {
+        guard let conditionRegistrySnapshot else {
+            return nil
+        }
+
+        let typeKey = conditionTypeKey(for: type)
+        guard let operatorCodes = conditionRegistrySnapshot.typeDefaults[typeKey] else {
+            return nil
+        }
+
+        let options = operatorCodes.compactMap { code -> OperatorUIOption? in
+            guard let definition = conditionRegistrySnapshot.operators[code],
+                  let valueUIKey = definition.uiValueKind?[typeKey],
+                  let valueUI = valueUIKind(from: valueUIKey)
+            else {
+                return nil
+            }
+            guard let label = definition.uiLabel else {
+                return nil
+            }
+            return OperatorUIOption(code: code, label: label, valueUI: valueUI)
+        }
+
+        return options.isEmpty ? nil : options
     }
 
     /// propertyKey로 타입을 찾고 허용 오퍼레이터 목록을 반환
     static func operatorOptions(for propertyKey: String) -> [OperatorUIOption] {
-        let type = propertyKeyToType[propertyKey] ?? .string
-        let supported = propertyKeyToSupported[propertyKey]
-        let options = operators(for: type)
-        if let supported {
-            return options.filter { supported.contains($0.code) }
+        guard let type = propertyKeyToType[propertyKey] else {
+            return []
         }
-        return options
+        let options = registryOperators(for: type) ?? []
+        guard let supported = propertyKeyToSupported[propertyKey] else {
+            return options
+        }
+        return options.filter { supported.contains($0.code) }
     }
 
     /// propertyKey에 대응하는 타입을 노출 (외부에서 모델 생성 시 사용).
@@ -213,27 +199,14 @@ enum ConditionOperatorMappingUtils {
 
     /// propertyKey에 대응하는 타입 문자열을 반환 (UI 모델용).
     static func propertyTypeString(for propertyKey: String) -> String {
-        guard let type = propertyKeyToType[propertyKey] else {
-            return "string"
-        }
-
-        switch type {
-        case .string:
-            return "string"
-        case .number:
-            return "number"
-        case .datetime:
-            return "datetime"
-        case .boolean:
-            return "boolean"
-        case .array:
-            return "array"
-        }
+        propertyKeyToTypeString[propertyKey] ?? "unknown"
     }
 
     /// operator 코드와 타입 조합으로 값 UI 힌트를 반환
     static func valueUI(for operatorCode: String, propertyKey: String) -> ValueUIKind {
-        let type = propertyKeyToType[propertyKey] ?? .string
-        return operators(for: type).first { $0.code == operatorCode }?.valueUI ?? .singleText
+        guard let type = propertyKeyToType[propertyKey] else {
+            return .singleText
+        }
+        return registryOperators(for: type)?.first { $0.code == operatorCode }?.valueUI ?? .singleText
     }
 }

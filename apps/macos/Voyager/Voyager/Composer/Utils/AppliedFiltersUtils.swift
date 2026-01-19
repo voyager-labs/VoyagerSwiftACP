@@ -50,7 +50,7 @@ enum AppliedFiltersUtils {
             .date
         case "boolean":
             .boolean
-        case "array":
+        case "string_list":
             .array
         default:
             .unknown
