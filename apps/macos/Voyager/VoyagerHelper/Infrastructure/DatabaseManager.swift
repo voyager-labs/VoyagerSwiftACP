@@ -9,10 +9,10 @@ actor DatabaseManager {
 
     private var pool: DatabasePool?
     private let logger: Logger
-    private let databaseURLProvider: () throws -> URL
+    private let databaseURLProvider: @Sendable () throws -> URL
 
     init(
-        databaseURLProvider: @escaping () throws -> URL = DatabaseManager.defaultDatabaseURL,
+        databaseURLProvider: @Sendable @escaping () throws -> URL = DatabaseManager.defaultDatabaseURL,
         logger: Logger = Logger(label: "VoyagerHelper.Database")
     ) {
         self.databaseURLProvider = databaseURLProvider
@@ -29,7 +29,8 @@ actor DatabaseManager {
 
         // DatabasePool 생성 (단일 writer + 다중 reader)
         var configuration = Configuration()
-        configuration.prepareDatabase { [self] db in
+        let logger = self.logger
+        configuration.prepareDatabase { db in
             // PRAGMA 설정
             try db.execute(sql: "PRAGMA foreign_keys = ON")
             try db.execute(sql: "PRAGMA journal_mode = WAL")
@@ -52,14 +53,25 @@ actor DatabaseManager {
         try await migrate()
     }
 
-    /// 데이터베이스 풀 반환
-    /// - Returns: 초기화된 DatabasePool
-    /// - Throws: 데이터베이스가 초기화되지 않은 경우 에러
-    func getPool() throws -> DatabasePool {
+    /// 데이터베이스 읽기 작업 실행
+    func read<T>(_ block: @Sendable (Database) throws -> T) async throws -> T {
         guard let pool else {
             throw DatabaseError.notInitialized
         }
-        return pool
+        return try await pool.read(block)
+    }
+
+    /// 데이터베이스 쓰기 작업 실행
+    func write<T>(_ block: @Sendable (Database) throws -> T) async throws -> T {
+        guard let pool else {
+            throw DatabaseError.notInitialized
+        }
+        return try await pool.write(block)
+    }
+
+    /// 데이터베이스 연결 해제
+    func shutdown() {
+        pool = nil
     }
 
     /// 데이터베이스 파일 URL 반환
