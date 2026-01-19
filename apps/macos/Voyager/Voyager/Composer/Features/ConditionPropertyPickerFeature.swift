@@ -6,7 +6,7 @@ struct ConditionPropertyPickerFeature {
     @ObservableState
     struct State: Equatable {
         var isPresented: Bool = false
-        var properties: [MDItemProperty] = {
+        var properties: [SystemProperty] = {
             let defaultKeys: Set<String> = [
                 "name",
                 "extension",
@@ -18,7 +18,7 @@ struct ConditionPropertyPickerFeature {
             return ConditionMappingUtils.allProperties.map { info in
                 let typeString = ConditionOperatorMappingUtils.propertyTypeString(for: info.key)
 
-                return MDItemProperty(
+                return SystemProperty(
                     key: info.key,
                     label: info.label,
                     category: info.category.rawValue,
@@ -47,7 +47,7 @@ struct ConditionPropertyPickerFeature {
         case searchTextChanged(String)
         case categoryTapped(String)
         case backFromCategory
-        case propertyTapped(MDItemProperty)
+        case propertyTapped(SystemProperty)
         case startEditing(String)
         case clearDuplicateMessage
     }

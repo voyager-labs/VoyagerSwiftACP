@@ -1,7 +1,7 @@
 import Foundation
 
-/// 백엔드 `/api/mditem/properties` 응답을 매핑하는 모델.
-struct MDItemProperty: Decodable, Equatable, Identifiable {
+/// 백엔드 시스템 프로퍼티 레지스트리 응답을 매핑하는 모델.
+struct SystemProperty: Decodable, Equatable, Identifiable {
     let key: String
     let label: String
     let category: String

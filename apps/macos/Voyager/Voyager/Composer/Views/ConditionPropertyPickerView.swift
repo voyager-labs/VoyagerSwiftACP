@@ -161,7 +161,7 @@ struct ConditionPropertyPickerView: View {
 
     @ViewBuilder
     private func recommendedSection(
-        _ recommended: [MDItemProperty],
+        _ recommended: [SystemProperty],
         viewStore: ViewStoreOf<ConditionPropertyPickerFeature>,
     ) -> some View {
         if !recommended.isEmpty {
@@ -173,7 +173,7 @@ struct ConditionPropertyPickerView: View {
 
     @ViewBuilder
     private func categorySection(
-        _ grouped: [String: [MDItemProperty]],
+        _ grouped: [String: [SystemProperty]],
         hasRecommended: Bool,
         viewStore: ViewStoreOf<ConditionPropertyPickerFeature>,
     ) -> some View {
@@ -194,7 +194,7 @@ struct ConditionPropertyPickerView: View {
     }
 
     @ViewBuilder
-    private func emptyStateIfNeeded(filtered: [MDItemProperty], query: String) -> some View {
+    private func emptyStateIfNeeded(filtered: [SystemProperty], query: String) -> some View {
         if filtered.isEmpty, !query.isEmpty {
             Text("No properties found")
                 .font(.system(size: 12))
@@ -205,7 +205,7 @@ struct ConditionPropertyPickerView: View {
 
     private func categoryRow(
         categoryKey: String,
-        items: [MDItemProperty],
+        items: [SystemProperty],
         viewStore: ViewStoreOf<ConditionPropertyPickerFeature>,
     ) -> some View {
         Button {
@@ -241,7 +241,7 @@ struct ConditionPropertyPickerView: View {
 
     private func filteredProperties(
         _ viewStore: ViewStoreOf<ConditionPropertyPickerFeature>,
-    ) -> [MDItemProperty] {
+    ) -> [SystemProperty] {
         let existingKeys = viewStore.existingKeys
         let editingKey = viewStore.editingConditionKey
         let props = viewStore.properties.filter { property in
@@ -259,7 +259,7 @@ struct ConditionPropertyPickerView: View {
     }
 
     private func propertyRow(
-        _ property: MDItemProperty,
+        _ property: SystemProperty,
         viewStore: ViewStoreOf<ConditionPropertyPickerFeature>,
         showIcon: Bool = true,
     ) -> some View {

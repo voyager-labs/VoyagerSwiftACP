@@ -30,7 +30,7 @@ enum ConditionPropertyIconUtils {
         "longitude": "location",
     ]
 
-    static func iconName(for property: MDItemProperty) -> String {
+    static func iconName(for property: SystemProperty) -> String {
         iconName(forKey: property.key, category: property.category)
     }
 

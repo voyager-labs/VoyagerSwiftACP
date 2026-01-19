@@ -53,7 +53,7 @@ struct ComposerFeature {
         case addScope(path: String)
         case removeScope(path: String)
         case updateScope(oldPath: String, newPath: String)
-        case addCondition(property: MDItemProperty)
+        case addCondition(property: SystemProperty)
         case removeCondition(propertyKey: String)
         case clearAll
         case submit
@@ -65,7 +65,7 @@ struct ComposerFeature {
         case focusQueryField
         case setOperator(propertyKey: String, option: OperatorOption)
         case setValue(propertyKey: String, values: [String])
-        case replaceConditionProperty(originalKey: String, property: MDItemProperty)
+        case replaceConditionProperty(originalKey: String, property: SystemProperty)
         case undo
         case redo
         case propertyPicker(ConditionPropertyPickerFeature.Action)

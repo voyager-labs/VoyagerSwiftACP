@@ -1,12 +1,12 @@
 import ComposableArchitecture
 import Foundation
 
-struct MDItemPropertyClient: Sendable {
-    var fetchAll: @Sendable () async throws -> [MDItemProperty]
+struct SystemPropertyClient: Sendable {
+    var fetchAll: @Sendable () async throws -> [SystemProperty]
 }
 
-extension MDItemPropertyClient: DependencyKey, TestDependencyKey {
-    static let liveValue = MDItemPropertyClient(
+extension SystemPropertyClient: DependencyKey, TestDependencyKey {
+    static let liveValue = SystemPropertyClient(
         fetchAll: {
             await MainActor.run {
                 let defaultKeys: Set<String> = [
@@ -28,7 +28,7 @@ extension MDItemPropertyClient: DependencyKey, TestDependencyKey {
                     case .array: "array"
                     }
 
-                    return MDItemProperty(
+                    return SystemProperty(
                         key: info.key,
                         label: info.label,
                         category: info.category.rawValue,
@@ -40,12 +40,12 @@ extension MDItemPropertyClient: DependencyKey, TestDependencyKey {
         },
     )
 
-    nonisolated(unsafe) static var testValue: MDItemPropertyClient = .init(fetchAll: { [] })
+    nonisolated(unsafe) static var testValue: SystemPropertyClient = .init(fetchAll: { [] })
 }
 
 extension DependencyValues {
-    nonisolated var mdItemPropertyClient: MDItemPropertyClient {
-        get { self[MDItemPropertyClient.self] }
-        set { self[MDItemPropertyClient.self] = newValue }
+    nonisolated var systemPropertyClient: SystemPropertyClient {
+        get { self[SystemPropertyClient.self] }
+        set { self[SystemPropertyClient.self] = newValue }
     }
 }
