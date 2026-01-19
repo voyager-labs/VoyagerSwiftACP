@@ -72,6 +72,7 @@ struct EntriesFeature {
 
         var groupKey: GroupKey = .none
         var groupedItems: [GroupedItems] = []
+        var collapsedGroups: Set<String> = []
 
         var operations: EntriesOperationsFeature.State = .init()
         var undoRecords: [EntryActionRecord] = []
@@ -101,6 +102,9 @@ struct EntriesFeature {
         var listRowDragSelection: ListRowDragSelection?
         var itemPositions: [String: CGRect] = [:]
         var gridColumnCount: Int = 1
+
+        var pendingEmptyTrashItemCount: Int = 0
+        var emptyTrashCompletedCount: Int = 0
 
         var isRenaming: Bool {
             renamingItemId != nil
@@ -200,6 +204,7 @@ struct EntriesFeature {
         case fileSystemChanged([String])
         case setShowHidden(Bool)
         case setGroupKey(GroupKey)
+        case toggleGroup(String)
         case setCollectionMode(Bool)
         case setDropTargeted(Bool)
         case selectItem(id: String, isCommandPressed: Bool, isShiftPressed: Bool)
@@ -237,6 +242,8 @@ struct EntriesFeature {
         case extractSelectedItem
         case toggleTagForSelectedItem(tag: String)
         case emptyTrash
+        case clearEmptyTrashTracking
+        case emptyTrashCompleted
         case setSelectAfterLoad(fileNames: [String])
         case thumbnailsReady(paths: [String])
         case startRename(id: String)
@@ -404,8 +411,22 @@ struct EntriesFeature {
                     }
 
                 case (.moveToTrash, .success),
-                     (.deleteImmediately, .success),
                      (.putBack, .success):
+                    return .send(.reloadCurrentFolder)
+
+                case (.deleteImmediately, .success):
+                    if state.pendingEmptyTrashItemCount > 0 {
+                        state.emptyTrashCompletedCount += 1
+                        if state.emptyTrashCompletedCount >= state.pendingEmptyTrashItemCount {
+                            state.pendingEmptyTrashItemCount = 0
+                            state.emptyTrashCompletedCount = 0
+                            return .merge(
+                                .send(.reloadCurrentFolder),
+                                .send(.emptyTrashCompleted),
+                            )
+                        }
+                    }
+
                     return .send(.reloadCurrentFolder)
 
                 case (.compress, .success),
@@ -505,6 +526,9 @@ struct EntriesFeature {
                 )
 
             case .reloadItems:
+                if state.currentFolderPath == nil {
+                    return .none
+                }
                 guard let path = state.currentFolderPath else { return .none }
                 state.isReloading = true
 
@@ -569,6 +593,14 @@ struct EntriesFeature {
             case let .setGroupKey(key):
                 state.groupKey = key
                 state.updateGroupedItems()
+                return .none
+
+            case let .toggleGroup(groupName):
+                if state.collapsedGroups.contains(groupName) {
+                    state.collapsedGroups.remove(groupName)
+                } else {
+                    state.collapsedGroups.insert(groupName)
+                }
                 return .none
 
             case let .setCollectionMode(isCollectionMode):
@@ -1389,11 +1421,25 @@ struct EntriesFeature {
 
             case .emptyTrash:
                 let allItems = Array(state.items)
+                let itemCount = allItems.count
+                state.pendingEmptyTrashItemCount = itemCount
+                state.emptyTrashCompletedCount = 0
                 return .run { send in
-                    let shouldEmpty = await EntryAlertUtils.showEmptyTrashConfirmationAlert(itemCount: allItems.count)
-                    guard shouldEmpty else { return }
+                    let shouldEmpty = await EntryAlertUtils.showEmptyTrashConfirmationAlert(itemCount: itemCount)
+                    guard shouldEmpty else {
+                        await send(.clearEmptyTrashTracking)
+                        return
+                    }
                     await send(.operations(.emptyTrash(items: allItems)))
                 }
+
+            case .clearEmptyTrashTracking:
+                state.pendingEmptyTrashItemCount = 0
+                state.emptyTrashCompletedCount = 0
+                return .none
+
+            case .emptyTrashCompleted:
+                return .none
 
             case let .setSelectAfterLoad(fileNames):
                 state.selectAfterLoadFileNames = fileNames

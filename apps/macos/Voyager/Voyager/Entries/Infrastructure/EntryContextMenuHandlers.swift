@@ -39,6 +39,11 @@ func makeContextMenuHandlers(
     openWindow: @escaping (String) -> Void,
 ) -> EntryContextMenuHandlers {
     let onSelect: (Bool, Bool) -> Void = { isCommandPressed, isShiftPressed in
+        if !isCommandPressed, !isShiftPressed, fsStore.selectedIds.contains(item.id), fsStore.selectedIds.count > 1 {
+            restoreFileManagerFocus()
+            return
+        }
+
         fsStore.send(.selectItem(
             id: item.id,
             isCommandPressed: isCommandPressed,
@@ -48,10 +53,17 @@ func makeContextMenuHandlers(
     }
 
     let onOpen: () -> Void = {
-        EntryContextMenuUtils.sendWithSelection(item, fsStore: fsStore, action: {
+        let currentSelectedIds = fsStore.selectedIds
+
+        if currentSelectedIds.count >= 1 {
             saveScrollPosition()
             fsStore.send(.openSelectedItem)
-        })
+        } else {
+            EntryContextMenuUtils.sendWithSelection(item, fsStore: fsStore, action: {
+                saveScrollPosition()
+                fsStore.send(.openSelectedItem)
+            })
+        }
     }
 
     let onOpenInNewTab: (Bool) -> Void = { _ in

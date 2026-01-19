@@ -115,28 +115,78 @@ struct EntriesOperationsFeature {
 
                 let entryClient = entryClient
                 return .run { [entryClient] send in
-                    for (index, file) in files.enumerated() {
-                        let filePath = file.fullPath
-                        let url = URL(fileURLWithPath: filePath)
+                    guard let firstFile = files.first else { return }
+                    let firstFilePath = firstFile.fullPath
+                    let isTrash = isInTrash(firstFilePath, entryClient: entryClient)
 
-                        let isTrash = isInTrash(filePath, entryClient: entryClient)
-                        if isTrash {
+                    if isTrash {
+                        for (index, file) in files.enumerated() {
                             let hasMoreFiles = index < files.count - 1
-                            let shouldContinue = await MainActor.run {
+                            _ = await MainActor.run {
                                 EntryAlertUtils.showTrashFileAlert(fileName: file.name, hasMoreFiles: hasMoreFiles)
                             }
-                            if !shouldContinue {
-                                break
+                        }
+                        return
+                    }
+
+                    var groupedFiles: [String: [(Entry, Int)]] = [:]
+                    for (index, file) in files.enumerated() {
+                        let ext = file.fileExtension.lowercased()
+                        groupedFiles[ext, default: []].append((file, index))
+                    }
+
+                    for (_, groupFiles) in groupedFiles {
+                        let urls = groupFiles.map { URL(fileURLWithPath: $0.0.fullPath) }
+                        guard let firstURL = urls.first else { continue }
+
+                        let appURL = await Task { @MainActor in
+                            let workspace = NSWorkspace.shared
+                            return workspace.urlForApplication(toOpen: firstURL)
+                        }.value
+                        guard let appURL else {
+                            for (file, _) in groupFiles {
+                                let filePath = file.fullPath
+                                let url = URL(fileURLWithPath: filePath)
+                                await send(.operationStarted(filePath, .openDefault))
+                                do {
+                                    try await entryClient.open(url, .defaultApp)
+                                    await send(.operationFinished(filePath, .openDefault, .success(())))
+                                } catch {
+                                    await send(.operationFinished(filePath, .openDefault, .failure(error.fileOpError)))
+                                }
                             }
                             continue
                         }
 
-                        await send(.operationStarted(filePath, .openDefault))
+                        for (file, _) in groupFiles {
+                            let filePath = file.fullPath
+                            await send(.operationStarted(filePath, .openDefault))
+                        }
+
                         do {
-                            try await entryClient.open(url, .defaultApp)
-                            await send(.operationFinished(filePath, .openDefault, .success(())))
+                            try await withScopedAccess(urls) {
+                                try await Task { @MainActor in
+                                    let workspace = NSWorkspace.shared
+                                    let configuration = NSWorkspace.OpenConfiguration()
+                                    configuration.createsNewApplicationInstance = false
+                                    try await workspace.open(
+                                        urls,
+                                        withApplicationAt: appURL,
+                                        configuration: configuration,
+                                    )
+                                }.value
+                            }
+                            for (file, _) in groupFiles {
+                                let filePath = file.fullPath
+                                await send(
+                                    .operationFinished(filePath, .openDefault, .success(())),
+                                )
+                            }
                         } catch {
-                            await send(.operationFinished(filePath, .openDefault, .failure(error.fileOpError)))
+                            for (file, _) in groupFiles {
+                                let filePath = file.fullPath
+                                await send(.operationFinished(filePath, .openDefault, .failure(error.fileOpError)))
+                            }
                         }
                     }
                 }

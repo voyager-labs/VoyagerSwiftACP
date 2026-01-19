@@ -14,7 +14,7 @@
 				<string>voycoll</string>
 			</array>
 			<key>CFBundleTypeIconFile</key>
-			<string>VoycollIcon</string>
+			<string>voycollFileIcon</string>
 			<key>CFBundleTypeName</key>
 			<string>Voyager Collection</string>
             <key>CFBundleTypeRole</key>
@@ -41,7 +41,7 @@
 			<key>UTTypeDescription</key>
 			<string>Voyager Collection</string>
 			<key>UTTypeIconName</key>
-			<string>VoycollIcon</string>
+			<string>voycollFileIcon</string>
 			<key>UTTypeIdentifier</key>
 			<string>fm.voyager.collection</string>
 			<key>UTTypeTagSpecification</key>
