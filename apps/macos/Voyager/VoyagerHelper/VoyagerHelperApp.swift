@@ -30,6 +30,12 @@ class VoyagerHelperApp {
         VoyagerHelperApp.lifecycle = lifecycle
 
         Task {
+            do {
+                try await DatabaseManager.shared.initialize()
+            } catch {
+                logger.error("Database initialization failed: \(error)")
+                exit(EXIT_FAILURE)
+            }
             await stateBroadcaster.startObservingRequests()
             await stateBroadcaster.postCurrentState()
             await lifecycle.start()
