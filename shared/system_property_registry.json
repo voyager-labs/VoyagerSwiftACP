@@ -1,6 +1,6 @@
 {
   "$kind": "system_property_registry",
-  "$version": "2.0.0",
+  "$version": "2.0.1",
   "categories": {
     "audio": {
       "apple_loop_descriptors": {
@@ -293,9 +293,10 @@
         ],
         "system_keys": ["mditem:kMDItemContentCreationDate"],
         "type": "date",
-        "ui_label": "Content creation date"
+        "ui_label": "Content creation date",
+        "db_indexed": true
       },
-      "content_modification_date": {
+      "modification_date": {
         "availability": "macOS 10.4+",
         "description": "The date and time that the contents of the file were last modified.",
         "search_aliases": [
@@ -313,7 +314,8 @@
         ],
         "type": "date",
         "ui_label": "Content modification date",
-        "ui_pinned": true
+        "ui_pinned": true,
+        "db_indexed": true
       },
       "uniform_type_identifier": {
         "availability": "macOS 10.4+",
@@ -324,7 +326,8 @@
           "nsurl:NSURLContentTypeKey"
         ],
         "type": "string",
-        "ui_label": "Content type"
+        "ui_label": "Content type",
+        "db_indexed": true
       },
       "contributors": {
         "availability": "macOS 10.4+",
@@ -500,7 +503,8 @@
         "search_aliases": [],
         "system_keys": ["mditem:kMDItemKind", "mdimporter:kMDLabelKind"],
         "type": "string",
-        "ui_label": "Kind"
+        "ui_label": "Kind",
+        "db_indexed": true
       },
       "languages": {
         "availability": "macOS 10.4+",
@@ -520,7 +524,8 @@
         ],
         "system_keys": ["mditem:kMDItemLastUsedDate"],
         "type": "date",
-        "ui_label": "Last used date"
+        "ui_label": "Last used date",
+        "db_indexed": true
       },
       "number_of_pages": {
         "availability": "macOS 10.4+",
@@ -729,7 +734,8 @@
         ],
         "type": "date",
         "ui_label": "Creation date",
-        "ui_pinned": true
+        "ui_pinned": true,
+        "db_indexed": true
       },
       "depth_from_home": {
         "description": "Directory depth from the user's home (excluding the file itself).",
@@ -740,14 +746,16 @@
         ],
         "system_keys": [],
         "type": "number",
-        "ui_label": "Depth from home"
+        "ui_label": "Depth from home",
+        "db_indexed": true
       },
       "dir_path": {
         "description": "Absolute directory path containing the file.",
         "search_aliases": ["folder path", "dir paths", "directory paths"],
         "system_keys": [],
         "type": "string",
-        "ui_label": "Directory path"
+        "ui_label": "Directory path",
+        "db_indexed": true
       },
       "display_name": {
         "availability": "macOS 10.4+",
@@ -772,7 +780,8 @@
         "system_keys": [],
         "type": "string",
         "ui_label": "Extension",
-        "ui_pinned": true
+        "ui_pinned": true,
+        "db_indexed": true
       },
       "file_allocated_size": {
         "availability": "macOS 10.6+",
@@ -845,7 +854,8 @@
         "search_aliases": ["is hidden"],
         "system_keys": ["mditem:kMDItemFSInvisible", "nsurl:NSURLIsHiddenKey"],
         "type": "boolean",
-        "ui_label": "Is hidden"
+        "ui_label": "Is hidden",
+        "db_indexed": true
       },
       "label_number": {
         "availability": "macOS 10.6+",
@@ -867,14 +877,16 @@
         "system_keys": ["mditem:kMDItemFSName", "nsurl:NSURLNameKey"],
         "type": "string",
         "ui_label": "Name",
-        "ui_pinned": true
+        "ui_pinned": true,
+        "db_indexed": true
       },
       "name_stem": {
         "description": "File name without extension.",
         "search_aliases": ["name stems"],
         "system_keys": [],
         "type": "string",
-        "ui_label": "File name stem"
+        "ui_label": "File name stem",
+        "db_indexed": true
       },
       "parent_dir_name": {
         "description": "Name of the parent directory.",
@@ -885,7 +897,8 @@
         ],
         "system_keys": [],
         "type": "string",
-        "ui_label": "Parent directory name"
+        "ui_label": "Parent directory name",
+        "db_indexed": true
       },
       "path": {
         "availability": "macOS 10.4+",
@@ -893,7 +906,8 @@
         "search_aliases": [],
         "system_keys": ["mditem:kMDItemPath", "nsurl:NSURLPathKey"],
         "type": "string",
-        "ui_label": "Path"
+        "ui_label": "Path",
+        "db_indexed": true
       },
       "relative_path_from_home": {
         "description": "Path relative to the user's home (~/...).",
@@ -904,7 +918,8 @@
         ],
         "system_keys": [],
         "type": "string",
-        "ui_label": "Relative path from home"
+        "ui_label": "Relative path from home",
+        "db_indexed": true
       }
     },
     "image": {
@@ -1326,7 +1341,8 @@
         ],
         "type": "date",
         "ui_label": "Date added",
-        "ui_pinned": true
+        "ui_pinned": true,
+        "db_indexed": true
       },
       "document_identifier": {
         "availability": "macOS 10.10+",
@@ -1430,7 +1446,8 @@
         ],
         "type": "number",
         "ui_label": "File size",
-        "ui_pinned": true
+        "ui_pinned": true,
+        "db_indexed": true
       },
       "focal_length35mm": {
         "availability": "macOS 10.7+",
