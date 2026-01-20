@@ -6,38 +6,15 @@ from collections.abc import Generator, Iterable
 
 from fastapi import APIRouter, Query
 from fastapi.responses import JSONResponse, StreamingResponse
-from pydantic import BaseModel
-from sqlmodel import select, text
+from sqlmodel import select
 
-from app.config import config
 from app.file.indexing_service import stream_indexing_events
-from app.file.schemas import IndexFilesRequest, NaturalQueryRequest
-from core.llm.cached_llm_converter import CachedLLMConverter
-from core.llm.langchain_provider import LangChainProvider
+from app.file.schemas import IndexFilesRequest
 from infra.db.engine import engine_manager
 from infra.repositories.file_entries import FileEntriesRepository
 from infra.schemas.file_entry_schema import FileEntrySchema
 
 router = APIRouter(prefix="/files", tags=["files"])
-
-
-class NaturalQueryRequest(BaseModel):
-    """자연어 검색 요청"""
-
-    query: str
-
-
-# 캐시 컨버터 싱글톤 (서버 재시작 전까지 캐시 유지)
-_cached_converter: CachedLLMConverter | None = None
-
-
-def get_cached_converter() -> CachedLLMConverter:
-    """캐시 컨버터 싱글톤 반환"""
-    global _cached_converter
-    if _cached_converter is None:
-        llm = LangChainProvider(provider="openai", base_url=config.gateway_url)
-        _cached_converter = CachedLLMConverter(llm, cache_size=100)
-    return _cached_converter
 
 
 _indexing_lock = threading.Lock()
@@ -222,70 +199,6 @@ async def get_file_detail(file_id: int):
             "last_used_date": file.last_used_date.isoformat() if file.last_used_date else None,
             "owner_uid": file.owner_uid,
             "owner_gid": file.owner_gid,
-        }
-
-
-@router.post("/query")
-async def query_files(request: NaturalQueryRequest):
-    """자연어 쿼리를 SQL로 변환하여 파일 검색
-
-    동일한 쿼리는 캐시에서 즉시 반환됩니다.
-    """
-    import time
-
-    start_time = time.time()
-    converter = get_cached_converter()
-
-    # 캐시 히트 여부 확인
-    cache_hit = request.query in converter._cache
-
-    generated_sql = None
-    try:
-        generated_sql = await converter.convert(request.query)
-
-        if not generated_sql:
-            return {
-                "query": request.query,
-                "success": False,
-                "where_clause": None,
-                "count": 0,
-                "cache_hit": cache_hit,
-                "error": "SQL 변환 실패",
-                "execution_time": round(time.time() - start_time, 3),
-            }
-
-        # SQL 실행
-        with engine_manager.session(autocommit=False) as session:
-            sql = f"""
-                SELECT id, path, name_full, size, extension, file_kind, modification_date
-                FROM file_entries
-                WHERE {generated_sql}
-                ORDER BY modification_date DESC
-            """
-
-            stmt = text(sql)
-            result = session.exec(stmt)
-            rows = result.fetchall()
-
-            return {
-                "query": request.query,
-                "success": True,
-                "where_clause": generated_sql,
-                "count": len(rows),
-                "cache_hit": cache_hit,
-                "cache_size": len(converter._cache),
-                "execution_time": round(time.time() - start_time, 3),
-            }
-
-    except Exception as e:
-        return {
-            "query": request.query,
-            "success": False,
-            "where_clause": generated_sql,
-            "count": 0,
-            "cache_hit": cache_hit,
-            "error": str(e)[:200],
-            "execution_time": round(time.time() - start_time, 3),
         }
 
 
