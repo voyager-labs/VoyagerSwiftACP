@@ -102,35 +102,6 @@ curl http://localhost:8000/api/files/db-size
 }
 ```
 
-### 3. 자연어 검색 (LLM)
-
-```bash
-curl -X POST http://localhost:8000/api/files/query \
-  -H "Content-Type: application/json" \
-  -d '{"query":"PDF 파일","limit":5}'
-```
-
-**응답:**
-```json
-{
-  "query": "PDF 파일",
-  "where_clause": "extension = 'pdf'",
-  "count": 31,
-  "items": [
-    {
-      "id": 24,
-      "path": "/Users/.../file.pdf",
-      "name": "file.pdf",
-      "size": 65073055,
-      "extension": "pdf",
-      "modification_date": "2025-10-19 21:49:37"
-    }
-  ]
-}
-```
-
----
-
 ## 📚 API 문서
 
 서버 실행 후 브라우저에서:

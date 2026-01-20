@@ -5,12 +5,6 @@ from pydantic import BaseModel, Field
 from app.file.indexing_service import DEFAULT_BATCH_SIZE, DEFAULT_EXCLUDES
 
 
-class NaturalQueryRequest(BaseModel):
-    """자연어 검색 요청"""
-
-    query: str
-
-
 class IndexFilesRequest(BaseModel):
     """내부 테스트용 임시 인덱싱 요청 스키마."""
 
