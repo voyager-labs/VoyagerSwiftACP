@@ -1018,10 +1018,7 @@
           "label numbers",
           "tag numbers"
         ],
-        "system_keys": [
-          "mditem:kMDItemFSui_label",
-          "nsurl:NSURLLabelNumberKey"
-        ],
+        "system_keys": ["mditem:kMDItemFSLabel", "nsurl:NSURLLabelNumberKey"],
         "type": "number",
         "ui_label": "Label number"
       },
