@@ -57,6 +57,14 @@ actor DatabaseManager {
         return try await pool.write(block)
     }
 
+    /// 트랜잭션 없이 데이터베이스 쓰기 작업 실행
+    func writeWithoutTransaction<T>(_ block: @Sendable (Database) throws -> T) async throws -> T {
+        guard let pool else {
+            throw DatabaseError.notInitialized
+        }
+        return try await pool.writeWithoutTransaction(block)
+    }
+
     /// 데이터베이스 연결 해제
     func shutdown() {
         pool = nil

@@ -22,6 +22,41 @@ enum InitialIndexingRunner {
             return 0
         }
 
+        let pragmaSnapshot = try await IndexingDatabasePragmas.apply(manager: manager)
+
+        do {
+            let inserted = try await runHomeIndexing(
+                manager: manager,
+                logger: logger,
+                batchSize: batchSize
+            )
+            await IndexingDatabasePragmas.restore(manager: manager, logger: logger, snapshot: pragmaSnapshot)
+            return inserted
+        } catch {
+            await IndexingDatabasePragmas.restore(manager: manager, logger: logger, snapshot: pragmaSnapshot)
+            throw error
+        }
+    }
+
+    private static func makeQuery(homeURL: URL) throws -> MDQuery {
+        let queryString = "kMDItemContentTypeTree == \"public.item\""
+        guard let query = MDQueryCreate(kCFAllocatorDefault, queryString as CFString, nil, nil) else {
+            throw IndexingError.queryCreationFailed
+        }
+        let scopes = [homeURL as CFURL] as CFArray
+        MDQuerySetSearchScope(query, scopes, 0)
+        let executed = MDQueryExecute(query, CFOptionFlags(kMDQuerySynchronous.rawValue))
+        guard executed else {
+            throw IndexingError.queryExecutionFailed
+        }
+        return query
+    }
+
+    private static func runHomeIndexing(
+        manager: DatabaseManager,
+        logger: Logger,
+        batchSize: Int?
+    ) async throws -> Int {
         let homeURL = FileManager.default.homeDirectoryForCurrentUser
         let cachedVolumeIdentifier = InitialIndexingRecordBuilder.volumeIdentifier(from: homeURL)
         let query = try makeQuery(homeURL: homeURL)
@@ -68,19 +103,5 @@ enum InitialIndexingRunner {
 
         logger.info("Home indexing completed: inserted \(inserted) entries")
         return inserted
-    }
-
-    private static func makeQuery(homeURL: URL) throws -> MDQuery {
-        let queryString = "kMDItemContentTypeTree == \"public.item\""
-        guard let query = MDQueryCreate(kCFAllocatorDefault, queryString as CFString, nil, nil) else {
-            throw IndexingError.queryCreationFailed
-        }
-        let scopes = [homeURL as CFURL] as CFArray
-        MDQuerySetSearchScope(query, scopes, 0)
-        let executed = MDQueryExecute(query, CFOptionFlags(kMDQuerySynchronous.rawValue))
-        guard executed else {
-            throw IndexingError.queryExecutionFailed
-        }
-        return query
     }
 }
