@@ -2,7 +2,7 @@
 import Foundation
 
 enum MetadataJSONEncoder {
-    private static let metadataKeys: [String] = [
+    nonisolated private static let metadataKeys: [String] = [
         "_kMDItemUserTags",
         "kMDItemAcquisitionMake",
         "kMDItemAcquisitionModel",
@@ -194,11 +194,20 @@ enum MetadataJSONEncoder {
         return formatter
     }()
 
+    nonisolated static func attributes(from mdItem: MDItem) -> NSDictionary {
+        MDItemCopyAttributes(mdItem, metadataKeys as CFArray) as NSDictionary? ?? [:]
+    }
+
     @MainActor
     static func encode(mdItem: MDItem, path: String) -> String? {
+        let attributes = Self.attributes(from: mdItem)
+        return encode(attributes: attributes, path: path)
+    }
+
+    @MainActor
+    static func encode(attributes: NSDictionary, path: String) -> String? {
         var payload: [String: Any] = [:]
         payload.reserveCapacity(metadataKeys.count)
-        let attributes = MDItemCopyAttributes(mdItem, metadataKeys as CFArray) as NSDictionary?
 
         for key in metadataKeys {
             if key == "_kMDItemUserTags" {
@@ -206,7 +215,7 @@ enum MetadataJSONEncoder {
                 continue
             }
             if key == "kMDItemFinderComment" {
-                if let value = attributes?[key] {
+                if let value = attributes[key] {
                     payload[key] = jsonValue(from: value)
                 } else if let comment = XattrMetadataReader.readComment(path: path) {
                     payload[key] = comment
@@ -215,7 +224,7 @@ enum MetadataJSONEncoder {
                 }
                 continue
             }
-            if let value = attributes?[key] {
+            if let value = attributes[key] {
                 payload[key] = jsonValue(from: value)
             } else {
                 payload[key] = NSNull()

@@ -2,19 +2,6 @@
 import Foundation
 
 struct InitialIndexingRecordBuilder {
-    nonisolated private static let recordAttributeKeys: [String] = [
-        kMDItemFSSize as String,
-        kMDItemFSCreationDate as String,
-        kMDItemFSContentChangeDate as String,
-        kMDItemDateAdded as String,
-        kMDItemContentCreationDate as String,
-        kMDItemContentModificationDate as String,
-        kMDItemContentType as String,
-        kMDItemKind as String,
-        kMDItemFSInvisible as String,
-        kMDItemLastUsedDate as String,
-    ]
-
     private struct IdentifierPair {
         let volumeIdentifier: String
         let fileResourceIdentifier: String
@@ -136,7 +123,7 @@ struct InitialIndexingRecordBuilder {
     }
 
     nonisolated private static func fileAttributes(mdItem: MDItem, url: URL) async -> FileAttributes? {
-        let attributes = mdItemAttributes(from: mdItem)
+        let attributes = MetadataJSONEncoder.attributes(from: mdItem)
         let mdItemValues = mdItemValues(from: attributes)
         let fallbackValues = fallbackValuesIfNeeded(url: url, values: mdItemValues)
         guard let resolvedDates = resolvedDates(
@@ -153,7 +140,7 @@ struct InitialIndexingRecordBuilder {
         let isInvisible = boolValue(attributeValue(attributes, key: kMDItemFSInvisible))
         let lastUsedDate = dateValue(attributeValue(attributes, key: kMDItemLastUsedDate))
         let originalMetadata = await MetadataJSONEncoder.encode(
-            mdItem: mdItem,
+            attributes: attributes,
             path: url.path
         ) ?? "{}"
 
@@ -231,10 +218,6 @@ struct InitialIndexingRecordBuilder {
             contentModificationDate: contentModificationDate,
             addedDate: addedDate
         )
-    }
-
-    nonisolated private static func mdItemAttributes(from mdItem: MDItem) -> NSDictionary {
-        MDItemCopyAttributes(mdItem, recordAttributeKeys as CFArray) as NSDictionary? ?? [:]
     }
 
     nonisolated private static func attributeValue(_ attributes: NSDictionary, key: CFString) -> Any? {
