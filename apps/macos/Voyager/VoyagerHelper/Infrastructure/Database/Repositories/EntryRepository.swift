@@ -130,10 +130,16 @@ nonisolated struct EntryRepository: Sendable {
     func insertBatch(_ records: [EntryRecord]) async throws {
         guard !records.isEmpty else { return }
 
-        let logger = logger
         let batchSize = try await manager.read { db in
-            try maxBatchSize(in: db)
+            try Self.maxBatchSize(in: db)
         }
+        try await insertBatch(records, batchSize: batchSize)
+    }
+
+    func insertBatch(_ records: [EntryRecord], batchSize: Int) async throws {
+        guard !records.isEmpty else { return }
+
+        let logger = logger
 
         for chunk in records.chunked(into: batchSize) {
             do {
@@ -175,7 +181,7 @@ nonisolated struct EntryRepository: Sendable {
         return try request.fetchOne(db)
     }
 
-    private func maxBatchSize(in db: Database) throws -> Int {
+    static func maxBatchSize(in db: Database) throws -> Int {
         let maxVariables = try Int.fetchOne(db, sql: "PRAGMA max_variable_number") ?? 999
         let columnsPerRow = EntryRecord.insertableColumnCount
         guard columnsPerRow > 0 else { return 1 }
@@ -183,9 +189,21 @@ nonisolated struct EntryRepository: Sendable {
     }
 
     private func insertChunk(_ records: [EntryRecord], db: Database) throws {
-        for var record in records {
-            try record.insert(db)
+        let columns = EntryRecord.insertableColumns
+        guard !columns.isEmpty else { return }
+
+        let columnList = columns.map(\.rawValue).joined(separator: ", ")
+        let placeholder = "(" + Array(repeating: "?", count: columns.count).joined(separator: ", ") + ")"
+        let placeholders = Array(repeating: placeholder, count: records.count).joined(separator: ", ")
+        let sql = "INSERT INTO \(EntryRecord.databaseTableName) (\(columnList)) VALUES \(placeholders)"
+
+        var arguments: [DatabaseValueConvertible?] = []
+        arguments.reserveCapacity(records.count * columns.count)
+        for record in records {
+            arguments.append(contentsOf: record.insertableValues)
         }
+
+        try db.execute(sql: sql, arguments: StatementArguments(arguments))
     }
 
     private func insertChunkIndividually(_ records: [EntryRecord], db: Database) throws {
