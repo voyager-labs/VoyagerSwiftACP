@@ -32,6 +32,10 @@ class VoyagerHelperApp {
         Task {
             do {
                 try await DatabaseManager.shared.initialize()
+                _ = try await InitialIndexingRunner.indexHomeDirectoryIfNeeded(
+                    manager: DatabaseManager.shared,
+                    logger: logger
+                )
             } catch {
                 logger.error("Database initialization failed: \(error)")
                 exit(EXIT_FAILURE)
