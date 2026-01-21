@@ -57,18 +57,13 @@ struct InitialIndexingRecordBuilder {
     }
 
     nonisolated static func makeRecord(
-        from path: String,
+        mdItem: MDItem,
+        path: String,
         homeURL: URL,
         cachedVolumeIdentifier: String?
     ) async -> EntryRecord? {
         let fileURL = URL(fileURLWithPath: path)
         let standardizedURL = fileURL.standardizedFileURL
-        guard let mdItem = MDItemCreate(
-            kCFAllocatorDefault,
-            standardizedURL.path as CFString
-        ) else {
-            return nil
-        }
 
         do {
             guard let identifiers = try identifiers(

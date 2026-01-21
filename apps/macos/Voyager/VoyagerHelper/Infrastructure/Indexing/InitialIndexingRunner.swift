@@ -46,7 +46,8 @@ enum InitialIndexingRunner {
             }
 
             let record = await InitialIndexingRecordBuilder.makeRecord(
-                from: path,
+                mdItem: mdItem,
+                path: path,
                 homeURL: homeURL,
                 cachedVolumeIdentifier: cachedVolumeIdentifier
             )
