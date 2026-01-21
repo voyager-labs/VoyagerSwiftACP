@@ -2,6 +2,19 @@
 import Foundation
 
 struct InitialIndexingRecordBuilder {
+    nonisolated private static let recordAttributeKeys: [String] = [
+        kMDItemFSSize as String,
+        kMDItemFSCreationDate as String,
+        kMDItemFSContentChangeDate as String,
+        kMDItemDateAdded as String,
+        kMDItemContentCreationDate as String,
+        kMDItemContentModificationDate as String,
+        kMDItemContentType as String,
+        kMDItemKind as String,
+        kMDItemFSInvisible as String,
+        kMDItemLastUsedDate as String,
+    ]
+
     private struct IdentifierPair {
         let volumeIdentifier: String
         let fileResourceIdentifier: String
@@ -128,21 +141,22 @@ struct InitialIndexingRecordBuilder {
     }
 
     nonisolated private static func fileAttributes(mdItem: MDItem, url: URL) async -> FileAttributes? {
-        let mdItemValues = mdItemValues(from: mdItem)
+        let attributes = mdItemAttributes(from: mdItem)
+        let mdItemValues = mdItemValues(from: attributes)
         let fallbackValues = fallbackValuesIfNeeded(url: url, values: mdItemValues)
         guard let resolvedDates = resolvedDates(
-            mdItem: mdItem,
             values: mdItemValues,
-            fallbackValues: fallbackValues
+            fallbackValues: fallbackValues,
+            attributes: attributes
         ) else {
             return nil
         }
 
         let size = resolvedSize(values: mdItemValues, fallbackValues: fallbackValues)
-        let uniformTypeIdentifier = stringAttribute(mdItem, key: kMDItemContentType)
-        let fileKind = stringAttribute(mdItem, key: kMDItemKind)
-        let isInvisible = boolAttribute(mdItem, key: kMDItemFSInvisible)
-        let lastUsedDate = dateAttribute(mdItem, key: kMDItemLastUsedDate)
+        let uniformTypeIdentifier = stringValue(attributeValue(attributes, key: kMDItemContentType))
+        let fileKind = stringValue(attributeValue(attributes, key: kMDItemKind))
+        let isInvisible = boolValue(attributeValue(attributes, key: kMDItemFSInvisible))
+        let lastUsedDate = dateValue(attributeValue(attributes, key: kMDItemLastUsedDate))
         let originalMetadata = await MetadataJSONEncoder.encode(
             mdItem: mdItem,
             path: url.path
@@ -163,12 +177,12 @@ struct InitialIndexingRecordBuilder {
         )
     }
 
-    nonisolated private static func mdItemValues(from mdItem: MDItem) -> MDItemValues {
+    nonisolated private static func mdItemValues(from attributes: NSDictionary) -> MDItemValues {
         MDItemValues(
-            size: int64Attribute(mdItem, key: kMDItemFSSize),
-            creationDate: dateAttribute(mdItem, key: kMDItemFSCreationDate),
-            modificationDate: dateAttribute(mdItem, key: kMDItemFSContentChangeDate),
-            addedDate: dateAttribute(mdItem, key: kMDItemDateAdded)
+            size: int64Value(attributeValue(attributes, key: kMDItemFSSize)),
+            creationDate: dateValue(attributeValue(attributes, key: kMDItemFSCreationDate)),
+            modificationDate: dateValue(attributeValue(attributes, key: kMDItemFSContentChangeDate)),
+            addedDate: dateValue(attributeValue(attributes, key: kMDItemDateAdded))
         )
     }
 
@@ -196,9 +210,9 @@ struct InitialIndexingRecordBuilder {
     }
 
     nonisolated private static func resolvedDates(
-        mdItem: MDItem,
         values: MDItemValues,
-        fallbackValues: URLResourceValues?
+        fallbackValues: URLResourceValues?,
+        attributes: NSDictionary
     ) -> ResolvedDates? {
         guard let creationDate = values.creationDate ?? fallbackValues?.creationDate else {
             return nil
@@ -207,9 +221,9 @@ struct InitialIndexingRecordBuilder {
             return nil
         }
 
-        let contentCreationDate = dateAttribute(mdItem, key: kMDItemContentCreationDate)
+        let contentCreationDate = dateValue(attributeValue(attributes, key: kMDItemContentCreationDate))
             ?? creationDate
-        let contentModificationDate = dateAttribute(mdItem, key: kMDItemContentModificationDate)
+        let contentModificationDate = dateValue(attributeValue(attributes, key: kMDItemContentModificationDate))
             ?? modificationDate
         let addedDate = values.addedDate
             ?? fallbackValues?.addedToDirectoryDate
@@ -222,6 +236,36 @@ struct InitialIndexingRecordBuilder {
             contentModificationDate: contentModificationDate,
             addedDate: addedDate
         )
+    }
+
+    nonisolated private static func mdItemAttributes(from mdItem: MDItem) -> NSDictionary {
+        MDItemCopyAttributes(mdItem, recordAttributeKeys as CFArray) as NSDictionary? ?? [:]
+    }
+
+    nonisolated private static func attributeValue(_ attributes: NSDictionary, key: CFString) -> Any? {
+        attributes[key as String]
+    }
+
+    nonisolated private static func stringValue(_ value: Any?) -> String? {
+        value as? String
+    }
+
+    nonisolated private static func int64Value(_ value: Any?) -> Int64? {
+        (value as? NSNumber)?.int64Value
+    }
+
+    nonisolated private static func boolValue(_ value: Any?) -> Bool {
+        if let value = value as? Bool {
+            return value
+        }
+        if let value = value as? NSNumber {
+            return value.boolValue
+        }
+        return false
+    }
+
+    nonisolated private static func dateValue(_ value: Any?) -> Date? {
+        value as? Date
     }
 
     nonisolated private static func identifierString(_ value: Any?) -> String? {
@@ -241,31 +285,9 @@ struct InitialIndexingRecordBuilder {
         return String(describing: value)
     }
 
-    nonisolated private static func stringAttribute(_ mdItem: MDItem, key: CFString) -> String? {
-        MDItemCopyAttribute(mdItem, key) as? String
-    }
-
     nonisolated static func volumeIdentifier(from url: URL) -> String? {
         let values = try? url.resourceValues(forKeys: [.volumeIdentifierKey])
         return identifierString(values?.volumeIdentifier)
-    }
-
-    nonisolated private static func int64Attribute(_ mdItem: MDItem, key: CFString) -> Int64? {
-        (MDItemCopyAttribute(mdItem, key) as? NSNumber)?.int64Value
-    }
-
-    nonisolated private static func boolAttribute(_ mdItem: MDItem, key: CFString) -> Bool {
-        if let value = MDItemCopyAttribute(mdItem, key) as? Bool {
-            return value
-        }
-        if let value = MDItemCopyAttribute(mdItem, key) as? NSNumber {
-            return value.boolValue
-        }
-        return false
-    }
-
-    nonisolated private static func dateAttribute(_ mdItem: MDItem, key: CFString) -> Date? {
-        MDItemCopyAttribute(mdItem, key) as? Date
     }
 
     nonisolated private static func relativeInfo(path: URL, homeURL: URL) -> (depth: Int, relative: String?) {
