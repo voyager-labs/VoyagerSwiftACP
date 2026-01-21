@@ -203,7 +203,8 @@ nonisolated struct EntryRepository: Sendable {
             arguments.append(contentsOf: record.insertableValues)
         }
 
-        try db.execute(sql: sql, arguments: StatementArguments(arguments))
+        let statement = try db.cachedStatement(sql: sql)
+        try statement.execute(arguments: StatementArguments(arguments))
     }
 
     private func insertChunkIndividually(_ records: [EntryRecord], db: Database) throws {
