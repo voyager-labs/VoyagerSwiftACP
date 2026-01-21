@@ -32,16 +32,23 @@ class VoyagerHelperApp {
         Task {
             do {
                 try await DatabaseManager.shared.initialize()
-                _ = try await InitialIndexingRunner.indexHomeDirectoryIfNeeded(
-                    manager: DatabaseManager.shared,
-                    logger: logger
-                )
             } catch {
                 logger.error("Database initialization failed: \(error)")
                 exit(EXIT_FAILURE)
             }
             await stateBroadcaster.startObservingRequests()
             await stateBroadcaster.postCurrentState()
+            Task {
+                do {
+                    _ = try await InitialIndexingRunner.indexHomeDirectoryIfNeeded(
+                        manager: DatabaseManager.shared,
+                        logger: logger
+                    )
+                } catch {
+                    logger.error("Initial indexing failed: \(error)")
+                    exit(EXIT_FAILURE)
+                }
+            }
             await lifecycle.start()
         }
         RunLoop.current.run()
