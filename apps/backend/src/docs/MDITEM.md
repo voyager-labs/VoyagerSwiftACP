@@ -1,8 +1,8 @@
 # MDItem 레지스트리 활용 현황 분석
 
 > 작성일: 2025-11-17
-> 파일: `src/core/metadata/mditem_registry.py`
-> SSOT: `shared/system_property_registry.json`
+> 파일: `src/core/metadata/registry_loader.py`
+> SSOT: `shared/system_property_registry.json`, `shared/property_condition_registry.json`
 > DB 테이블: `file_entries`
 
 ## 📊 요약
@@ -348,8 +348,8 @@ search_frequency = {
 ## 9. 참고자료
 
 -   Apple Developer: [Common Metadata Attribute Keys](https://developer.apple.com/documentation/coreservices/file_metadata/mditem/common_metadata_attribute_keys)
--   레지스트리 SSOT: `shared/system_property_registry.json`
--   로더: [src/core/metadata/mditem_registry.py](../src/core/metadata/mditem_registry.py)
+-   레지스트리 SSOT: `shared/system_property_registry.json`, `shared/property_condition_registry.json`
+-   로더: [src/core/metadata/registry_loader.py](../src/core/metadata/registry_loader.py)
 -   DB 스키마: `file_entries` 테이블 (26 컬럼)
 
 ---
