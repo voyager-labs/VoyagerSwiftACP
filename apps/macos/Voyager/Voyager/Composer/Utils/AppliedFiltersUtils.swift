@@ -5,28 +5,30 @@ enum AppliedFiltersUtils {
         _ appliedFilters: AppliedFiltersPayload?,
         fallbackScopes: [String],
         fallbackConditions: [Condition],
+        registryClient: RegistryClient,
     ) -> (scopes: [String], conditions: [Condition]) {
         let scopes = appliedFilters?.scopes ?? fallbackScopes
-        let conditions: [Condition] = if let appliedConditions = appliedFilters?.conditions {
-            appliedConditions.map(makeCondition(from:))
-        } else {
-            fallbackConditions
-        }
+        let conditions: [Condition] =
+            if let appliedConditions = appliedFilters?.conditions {
+                appliedConditions.map { makeCondition(from: $0, registryClient: registryClient) }
+            } else {
+                fallbackConditions
+            }
         return (scopes, conditions)
     }
 
-    private static func makeCondition(from payload: SearchConditionPayload) -> Condition {
+    private static func makeCondition(
+        from payload: SearchConditionPayload,
+        registryClient: RegistryClient,
+    ) -> Condition {
         let propertyKey = payload.propertyKey
-        let propertyLabel = ConditionMappingUtils.defaultLabel(forKey: propertyKey)
-        let propertyType = ConditionOperatorMappingUtils.propertyTypeString(for: propertyKey)
-        let operatorOption = ConditionOperatorMappingUtils
-            .operatorOptions(for: propertyKey)
-            .first { $0.code == payload.operator }
-        let valueUIKind = operatorOption?.valueUI ?? .singleText
-        let operatorLabel = operatorOption?.label ?? payload.operator
-        let valueType = operatorOption == nil
-            ? valueType(for: propertyType)
-            : valueType(for: valueUIKind)
+        let propertyLabel = registryClient.label(for: propertyKey)
+        let propertyType = registryClient.propertyTypeString(for: propertyKey)
+        let typeKey = conditionTypeKey(for: propertyType)
+        let operatorDefinition = registryClient.operatorDefinition(payload.operator)
+        let valueUIKind = registryClient.operatorUIKind(for: payload.operator, typeKey: typeKey)
+        let operatorLabel = operatorDefinition.uiLabel ?? payload.operator
+        let valueType = registryClient.valueType(for: valueUIKind)
 
         return Condition(
             propertyKey: propertyKey,
@@ -35,42 +37,13 @@ enum AppliedFiltersUtils {
             operatorCode: payload.operator,
             operatorLabel: operatorLabel,
             operatorValueArity: ValueNormalizerUtils.expectedArity(for: valueUIKind),
+            operatorValueUIKind: valueUIKind,
             valueType: valueType,
             values: stringValues(from: payload.value, valueUIKind: valueUIKind),
         )
     }
 
-    private static func valueType(for propertyType: String) -> ValueType {
-        switch propertyType {
-        case "string":
-            .string
-        case "number":
-            .number
-        case "date", "datetime":
-            .date
-        case "boolean":
-            .boolean
-        case "string_list":
-            .array
-        default:
-            .unknown
-        }
-    }
-
-    private static func valueType(for valueUIKind: ValueUIKind) -> ValueType {
-        switch valueUIKind {
-        case .singleNumber, .rangeNumber, .listNumber:
-            .number
-        case .singleDate, .rangeDate:
-            .date
-        case .toggle:
-            .boolean
-        case .listText, .singleText, .none:
-            .string
-        }
-    }
-
-    private static func stringValues(from value: JSONValue?, valueUIKind: ValueUIKind) -> [String]? {
+    private static func stringValues(from value: JSONValue?, valueUIKind: String) -> [String]? {
         guard let value else { return nil }
         switch value {
         case let .string(text):
@@ -87,7 +60,7 @@ enum AppliedFiltersUtils {
         }
     }
 
-    private static func stringValue(from value: JSONValue, valueUIKind: ValueUIKind) -> String? {
+    private static func stringValue(from value: JSONValue, valueUIKind: String) -> String? {
         switch value {
         case let .string(text):
             normalizeDateString(text, valueUIKind: valueUIKind) ?? text
@@ -100,12 +73,29 @@ enum AppliedFiltersUtils {
         }
     }
 
-    private static func normalizeDateString(_ text: String, valueUIKind: ValueUIKind) -> String? {
+    private static func normalizeDateString(_ text: String, valueUIKind: String) -> String? {
         switch valueUIKind {
-        case .singleDate, .rangeDate:
+        case "singleDate", "rangeDate":
             ValueNormalizerUtils.formatDateOnlyString(text)
         default:
             nil
+        }
+    }
+
+    private static func conditionTypeKey(for rawType: String) -> String {
+        switch rawType.lowercased() {
+        case "string":
+            "string"
+        case "number":
+            "number"
+        case "date", "datetime":
+            "date"
+        case "boolean":
+            "boolean"
+        case "string_list":
+            "string_list"
+        default:
+            "unknown"
         }
     }
 

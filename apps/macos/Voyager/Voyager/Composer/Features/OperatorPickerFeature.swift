@@ -1,29 +1,20 @@
 import ComposableArchitecture
 import Foundation
 
-struct OperatorOption: Equatable, Identifiable {
-    let code: String
-    let label: String
-    let valueArity: Int
-    let valueType: ValueType?
-    let valueUIKind: ValueUIKind
-
-    var id: String { code }
-}
-
 @Reducer
 struct OperatorPickerFeature {
     @ObservableState
     struct State: Equatable {
         var isPresented: Bool = false
-        var options: [OperatorOption] = []
+        var options: [String] = []
+        var optionLabels: [String: String] = [:]
         var propertyKey: String?
     }
 
     enum Action: Sendable {
         case setPresented(Bool)
-        case prepare(propertyKey: String, options: [OperatorOption])
-        case select(OperatorOption)
+        case prepare(propertyKey: String, options: [String], optionLabels: [String: String])
+        case select(String)
     }
 
     var body: some Reducer<State, Action> {
@@ -36,9 +27,10 @@ struct OperatorPickerFeature {
                 }
                 return .none
 
-            case let .prepare(propertyKey, options):
+            case let .prepare(propertyKey, options, optionLabels):
                 state.propertyKey = propertyKey
                 state.options = options
+                state.optionLabels = optionLabels
                 state.isPresented = true
                 return .none
 

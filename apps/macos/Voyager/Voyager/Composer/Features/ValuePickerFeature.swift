@@ -7,9 +7,9 @@ struct ValuePickerFeature {
     struct State: Equatable {
         var isPresented: Bool = false
         var propertyKey: String?
-        var operatorOption: OperatorOption?
-        var valueType: ValueType = .string
-        var valueUIKind: ValueUIKind = .singleText
+        var operatorCode: String?
+        var valueType: String = "string"
+        var valueUIKind: String = "singleText"
         var valueArity: Int = 1
         var values: [String] = [""]
         var errorMessage: String?
@@ -18,9 +18,10 @@ struct ValuePickerFeature {
 
     struct PreparePayload: Sendable, Equatable {
         let propertyKey: String
-        let operatorOption: OperatorOption
-        let valueType: ValueType
-        let valueUIKind: ValueUIKind
+        let operatorCode: String
+        let valueType: String
+        let valueUIKind: String
+        let valueArity: Int
         let existingValues: [String]?
         let editingIndex: Int?
     }
@@ -40,20 +41,20 @@ struct ValuePickerFeature {
                 state.isPresented = isPresented
                 if !isPresented {
                     state.propertyKey = nil
-                    state.operatorOption = nil
+                    state.operatorCode = nil
                     state.values = [""]
                     state.errorMessage = nil
                     state.editingIndex = nil
-                    state.valueUIKind = .singleText
+                    state.valueUIKind = "singleText"
                     state.valueArity = 1
                 }
                 return .none
 
             case let .prepare(payload):
                 state.propertyKey = payload.propertyKey
-                state.operatorOption = payload.operatorOption
+                state.operatorCode = payload.operatorCode
                 state.valueType = payload.valueType
-                state.valueArity = max(0, payload.operatorOption.valueArity)
+                state.valueArity = max(0, payload.valueArity)
                 state.valueUIKind = payload.valueUIKind
                 state.errorMessage = nil
                 state.editingIndex = payload.editingIndex
@@ -96,7 +97,7 @@ struct ValuePickerFeature {
 
             case .commit:
                 guard let propertyKey = state.propertyKey,
-                      state.operatorOption != nil
+                      state.operatorCode != nil
                 else {
                     return .none
                 }

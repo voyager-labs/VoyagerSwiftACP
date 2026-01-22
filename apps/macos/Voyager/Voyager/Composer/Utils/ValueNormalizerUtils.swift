@@ -109,46 +109,52 @@ enum ValueNormalizerUtils {
         return formatDate(end)
     }
 
-    static func expectedArity(for kind: ValueUIKind) -> Int {
+    static func expectedArity(for kind: String) -> Int {
         switch kind {
-        case .none: 0
-        case .rangeNumber, .rangeDate: 2
-        default: 1
+        case "none":
+            0
+        case "rangeNumber", "rangeDate":
+            2
+        default:
+            1
         }
     }
 
     static func normalize(
-        kind: ValueUIKind,
+        kind: String,
         rawValues: [String],
         editingIndex: Int?,
     ) -> ValueNormalizeResult {
         switch kind {
-        case .none:
+        case "none":
             .init(values: [], errorMessage: nil, resetIndices: [])
 
-        case .singleText:
+        case "singleText":
             normalizeSingleText(rawValues: rawValues)
 
-        case .listText:
+        case "listText":
             normalizeListText(rawValues: rawValues)
 
-        case .singleNumber:
+        case "singleNumber":
             normalizeSingleNumber(rawValues: rawValues)
 
-        case .rangeNumber:
+        case "rangeNumber":
             normalizeRangeNumber(rawValues: rawValues, editingIndex: editingIndex)
 
-        case .listNumber:
+        case "listNumber":
             normalizeListNumber(rawValues: rawValues)
 
-        case .singleDate:
+        case "singleDate":
             normalizeSingleDate(rawValues: rawValues)
 
-        case .rangeDate:
+        case "rangeDate":
             normalizeRangeDate(rawValues: rawValues, editingIndex: editingIndex)
 
-        case .toggle:
+        case "toggle":
             normalizeToggle(rawValues: rawValues)
+
+        default:
+            normalizeSingleText(rawValues: rawValues)
         }
     }
 
@@ -174,7 +180,9 @@ enum ValueNormalizerUtils {
     private static func normalizeListText(rawValues: [String]) -> ValueNormalizeResult {
         let parts: [String] = rawValues.flatMap { splitList($0) }
         let empties = rawValues.enumerated()
-            .compactMap { $0.element.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? $0.offset : nil }
+            .compactMap {
+                $0.element.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? $0.offset : nil
+            }
         guard !parts.isEmpty else {
             return .init(
                 values: nil,
@@ -266,7 +274,10 @@ enum ValueNormalizerUtils {
         guard dates.count == trimmed.count else {
             let bad = trimmed.enumerated()
                 .compactMap { parseDate($0.element) == nil ? $0.offset : nil }
-            return .init(values: nil, errorMessage: "Enter valid date.", resetIndices: bad.isEmpty ? [0, 1] : bad)
+            return .init(
+                values: nil, errorMessage: "Enter valid date.",
+                resetIndices: bad.isEmpty ? [0, 1] : bad,
+            )
         }
 
         if dates.count >= 2, dates[0] > dates[1] {
@@ -306,7 +317,9 @@ enum ValueNormalizerUtils {
                 return .init(values: nil, errorMessage: "Enter valid date.", resetIndices: [1])
             }
             if !fromText.isEmpty, let fromDate = parseDate(fromText), fromDate > toDate {
-                return .init(values: nil, errorMessage: "From must be ≤ To.", resetIndices: [editingIndex])
+                return .init(
+                    values: nil, errorMessage: "From must be ≤ To.", resetIndices: [editingIndex],
+                )
             }
             // From 비어 있으면 To만 반영(추후 From 입력 대비)
             return .init(values: trimmed, errorMessage: nil, resetIndices: [])

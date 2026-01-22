@@ -28,10 +28,6 @@ enum ConditionPropertyIconUtils {
         "longitude": "location",
     ]
 
-    static func iconName(for property: SystemProperty) -> String {
-        iconName(forKey: property.key, category: property.category)
-    }
-
     static func iconName(forKey key: String, category: String? = nil) -> String {
         if let iconName = keyIconMap[key] {
             return iconName
