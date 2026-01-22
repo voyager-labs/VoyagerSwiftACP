@@ -6,7 +6,6 @@ enum IncrementalIndexingValidator {
     struct StateSnapshot {
         let watchedPaths: String?
         let lastSyncAt: String?
-        let spotlightSeed: String?
     }
 
     static func startIfReady(
@@ -19,7 +18,11 @@ enum IncrementalIndexingValidator {
                 logger.info("Incremental indexing skipped (state not ready)")
                 return
             }
-            logger.info("Incremental indexing ready (pipeline pending)")
+            logger.info("Incremental indexing ready")
+            try await IncrementalIndexingWatcher.shared.start(
+                manager: manager,
+                logger: logger
+            )
         } catch {
             logger.error("Incremental indexing gate failed: \(error)")
         }
@@ -40,21 +43,15 @@ enum IncrementalIndexingValidator {
                 sql: "SELECT value FROM indexing_state WHERE key = ?",
                 arguments: ["last_sync_at"]
             )
-            let spotlightSeed = try String.fetchOne(
-                db,
-                sql: "SELECT value FROM indexing_state WHERE key = ?",
-                arguments: ["spotlight_seed"]
-            )
             return StateSnapshot(
                 watchedPaths: watchedPaths,
-                lastSyncAt: lastSyncAt,
-                spotlightSeed: spotlightSeed
+                lastSyncAt: lastSyncAt
             )
         }
     }
 
     private static func isReady(snapshot: StateSnapshot) -> Bool {
-        guard snapshot.watchedPaths != nil, snapshot.spotlightSeed != nil else {
+        guard snapshot.watchedPaths != nil else {
             return false
         }
         guard let lastSyncAt = snapshot.lastSyncAt, lastSyncAt != "null" else {
