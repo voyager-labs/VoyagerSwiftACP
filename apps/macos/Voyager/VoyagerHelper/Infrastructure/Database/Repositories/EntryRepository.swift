@@ -155,6 +155,21 @@ nonisolated struct EntryRepository: Sendable {
         }
     }
 
+    func upsertByPath(_ record: EntryRecord) async throws -> EntryRecord {
+        try await manager.write { db in
+            var record = record
+            if let existing = try EntryRecord.filter(EntryRecord.Columns.path == record.path).fetchOne(db) {
+                record.id = existing.id
+                try record.update(db)
+                return record
+            }
+
+            record.id = nil
+            try record.insert(db)
+            return record
+        }
+    }
+
     func upsertByLogicalKey(_ key: EntryLogicalKey, record: EntryRecord) async throws -> EntryRecord {
         try await manager.write { db in
             var record = record
