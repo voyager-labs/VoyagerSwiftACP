@@ -14,11 +14,16 @@ enum InitialIndexingRunner {
         logger: Logger,
         batchSize: Int? = nil
     ) async throws -> Int {
-        let existingCount = try await manager.read { db in
-            try Int.fetchOne(db, sql: "SELECT COUNT(*) FROM entries") ?? 0
+        let lastSyncAt: String? = try await manager.read { db -> String? in
+            guard try db.tableExists("indexing_state") else { return nil }
+            return try String.fetchOne(
+                db,
+                sql: "SELECT value FROM indexing_state WHERE key = ?",
+                arguments: ["last_sync_at"]
+            )
         }
-        guard existingCount == 0 else {
-            logger.info("Home indexing skipped (entries already exist)")
+        if let lastSyncAt, lastSyncAt != "null" {
+            logger.info("Home indexing skipped (last_sync_at already set)")
             return 0
         }
 
@@ -30,6 +35,7 @@ enum InitialIndexingRunner {
                 logger: logger,
                 batchSize: batchSize
             )
+            try await updateLastSyncAt(manager: manager)
             await IndexingDatabasePragmas.restore(manager: manager, logger: logger, snapshot: pragmaSnapshot)
             return inserted
         } catch {
@@ -67,32 +73,39 @@ enum InitialIndexingRunner {
         let maxBatchSize = try await manager.read { db in
             try EntryRepository.maxBatchSize(in: db)
         }
+        let maxPathBatchSize = try await manager.read { db in
+            try Int.fetchOne(db, sql: "PRAGMA max_variable_number") ?? 999
+        }
         let effectiveBatchSize = batchSize ?? maxBatchSize
 
         var inserted = 0
         var batch: [EntryRecord] = []
         batch.reserveCapacity(effectiveBatchSize)
 
-        for index in 0..<resultCount {
-            guard let item = MDQueryGetResultAtIndex(query, index) else { continue }
-            let mdItem = unsafeBitCast(item, to: MDItem.self)
-            guard let path = MDItemCopyAttribute(mdItem, kMDItemPath) as? String else {
-                continue
+        let pathBatchSize = min(maxPathBatchSize, max(1000, effectiveBatchSize))
+        var index = 0
+        while index < resultCount {
+            let end = min(index + pathBatchSize, resultCount)
+            let items = loadItems(query: query, range: index..<end)
+            let existingPaths = try await fetchExistingPaths(manager: manager, paths: items.map(\.path))
+
+            for item in items where !existingPaths.contains(item.path) {
+                let record = await InitialIndexingRecordBuilder.makeRecord(
+                    mdItem: item.mdItem,
+                    path: item.path,
+                    homeURL: homeURL,
+                    cachedVolumeIdentifier: cachedVolumeIdentifier
+                )
+                guard let record else { continue }
+                batch.append(record)
+                if batch.count >= effectiveBatchSize {
+                    try await repo.insertBatch(batch, batchSize: effectiveBatchSize)
+                    inserted += batch.count
+                    batch.removeAll(keepingCapacity: true)
+                }
             }
 
-            let record = await InitialIndexingRecordBuilder.makeRecord(
-                mdItem: mdItem,
-                path: path,
-                homeURL: homeURL,
-                cachedVolumeIdentifier: cachedVolumeIdentifier
-            )
-            guard let record else { continue }
-            batch.append(record)
-            if batch.count >= effectiveBatchSize {
-                try await repo.insertBatch(batch, batchSize: effectiveBatchSize)
-                inserted += batch.count
-                batch.removeAll(keepingCapacity: true)
-            }
+            index = end
         }
 
         if !batch.isEmpty {
@@ -103,5 +116,54 @@ enum InitialIndexingRunner {
 
         logger.info("Home indexing completed: inserted \(inserted) entries")
         return inserted
+    }
+
+    private struct IndexedItem {
+        let mdItem: MDItem
+        let path: String
+    }
+
+    private static func loadItems(query: MDQuery, range: Range<Int>) -> [IndexedItem] {
+        var items: [IndexedItem] = []
+        items.reserveCapacity(range.count)
+
+        for index in range {
+            guard let item = MDQueryGetResultAtIndex(query, index) else { continue }
+            let mdItem = unsafeBitCast(item, to: MDItem.self)
+            guard let path = MDItemCopyAttribute(mdItem, kMDItemPath) as? String else {
+                continue
+            }
+            items.append(IndexedItem(mdItem: mdItem, path: path))
+        }
+
+        return items
+    }
+
+    private static func fetchExistingPaths(
+        manager: DatabaseManager,
+        paths: [String]
+    ) async throws -> Set<String> {
+        guard !paths.isEmpty else { return [] }
+        return try await manager.read { db in
+            let placeholders = Array(repeating: "?", count: paths.count).joined(separator: ", ")
+            let sql = "SELECT path FROM entries WHERE path IN (\(placeholders))"
+            let existing = try String.fetchAll(db, sql: sql, arguments: StatementArguments(paths))
+            return Set(existing)
+        }
+    }
+
+    private static func updateLastSyncAt(manager: DatabaseManager) async throws {
+        let formatter = ISO8601DateFormatter()
+        formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        let value = formatter.string(from: Date())
+
+        try await manager.write { db in
+            let sql = """
+            INSERT INTO indexing_state (key, value, updated_at)
+            VALUES (?, ?, CURRENT_TIMESTAMP)
+            ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at
+            """
+            try db.execute(sql: sql, arguments: ["last_sync_at", value])
+        }
     }
 }

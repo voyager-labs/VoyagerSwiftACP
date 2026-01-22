@@ -44,6 +44,10 @@ class VoyagerHelperApp {
                         manager: DatabaseManager.shared,
                         logger: logger
                     )
+                    await IncrementalIndexingValidator.startIfReady(
+                        manager: DatabaseManager.shared,
+                        logger: logger
+                    )
                 } catch {
                     logger.error("Initial indexing failed: \(error)")
                     exit(EXIT_FAILURE)

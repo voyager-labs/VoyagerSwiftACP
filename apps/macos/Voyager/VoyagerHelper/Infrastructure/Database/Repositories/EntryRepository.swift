@@ -192,10 +192,22 @@ nonisolated struct EntryRepository: Sendable {
         let columns = EntryRecord.insertableColumns
         guard !columns.isEmpty else { return }
 
+        let updatableColumns = columns.filter {
+            $0 != .volumeIdentifier && $0 != .fileResourceIdentifier
+        }
+        let updateAssignments = updatableColumns
+            .map { "\($0.rawValue) = excluded.\($0.rawValue)" }
+            .joined(separator: ", ")
+
         let columnList = columns.map(\.rawValue).joined(separator: ", ")
         let placeholder = "(" + Array(repeating: "?", count: columns.count).joined(separator: ", ") + ")"
         let placeholders = Array(repeating: placeholder, count: records.count).joined(separator: ", ")
-        let sql = "INSERT INTO \(EntryRecord.databaseTableName) (\(columnList)) VALUES \(placeholders)"
+        let sql = """
+        INSERT INTO \(EntryRecord.databaseTableName) (\(columnList))
+        VALUES \(placeholders)
+        ON CONFLICT(volume_identifier, file_resource_identifier)
+        DO UPDATE SET \(updateAssignments)
+        """
 
         var arguments: [DatabaseValueConvertible?] = []
         arguments.reserveCapacity(records.count * columns.count)
@@ -211,7 +223,7 @@ nonisolated struct EntryRepository: Sendable {
         var lastError: Error?
         for var record in records {
             do {
-                try record.insert(db)
+                try insertChunk([record], db: db)
             } catch {
                 lastError = error
                 logger.warning("Entry insert failed: \(error)")
