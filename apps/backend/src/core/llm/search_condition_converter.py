@@ -3,22 +3,47 @@
 LLM이 자연어 쿼리를 Search API conditions 배열로 변환합니다.
 """
 
+import os
+from importlib import resources
 from pathlib import Path
 from typing import Any
 
 from pydantic import BaseModel, Field
 
 from core.llm.llm_provider import LLMProvider
-from core.metadata.mditem_registry import PROPERTY_KEY_REGISTRY, get_all_property_keys
+from core.metadata.registry_loader import SYSTEM_PROPERTY_REGISTRY, get_all_property_keys
+
+
+def _read_prompt_template(filename: str) -> str:
+    try:
+        template = (
+            resources.files("core.llm.prompts").joinpath(filename).read_text(encoding="utf-8")
+        )
+    except Exception as exc:
+        raise RuntimeError(
+            "프롬프트 템플릿 로드 실패: core.llm.prompts 패키지 리소스를 찾을 수 없습니다. "
+            "Nuitka 빌드 시 --include-data-dir로 core/llm/prompts를 포함해야 합니다."
+        ) from exc
+
+    missing_placeholders = [
+        token for token in ("{home_dir}", "{property_info}") if token not in template
+    ]
+    if missing_placeholders:
+        raise RuntimeError(
+            "프롬프트 템플릿 검증 실패: "
+            f"{filename}에 필수 placeholder가 없습니다: {', '.join(missing_placeholders)}"
+        )
+
+    return template
 
 
 class SearchCondition(BaseModel):
     """단일 검색 조건"""
 
-    propertyKey: str = Field(description="속성 키 (예: size, extension, modifiedAt)")
-    operator: str = Field(description="연산자 (eq, gt, gte, lt, lte, between, contains, in)")
-    value: str | int | float | list[str] | list[int] | list[float] = Field(
-        description="값 (단일값, 배열, [min, max])"
+    propertyKey: str = Field(description="속성 키 (예: name_full, extension, file_allocated_size)")
+    operator: str = Field(description="연산자 (레지스트리 property_types.<type>.operators 기준)")
+    value: str | int | float | list[str] | list[int] | list[float] | None = Field(
+        description="값 (단일값, 배열, [min, max]) - empty/exists는 생략 가능"
     )
 
 
@@ -33,182 +58,44 @@ class SearchConditionsOutput(BaseModel):
 class SearchConditionConverter:
     """LLM 기반 자연어 → Search conditions 변환기"""
 
-    def __init__(self, llm_provider: LLMProvider):
+    PROMPT_VERSION_DEFAULT = "v2"
+    PROMPT_VERSION_ENV = "DSL_PROMPT"
+    PROMPT_TEMPLATE_BY_VERSION = {
+        "v1": "search_condition_system.md",
+        "1": "search_condition_system.md",
+        "v2": "search_condition_system.v2.md",
+        "2": "search_condition_system.v2.md",
+        "v3": "search_condition_system.v3.md",
+        "3": "search_condition_system.v3.md",
+    }
+
+    def __init__(self, llm_provider: LLMProvider, prompt_version: str | None = None):
         self.client = llm_provider
         self.home_dir = str(Path.home())
+        env_version = os.getenv(self.PROMPT_VERSION_ENV)
+        selected_version = prompt_version or env_version or self.PROMPT_VERSION_DEFAULT
+        template_file = self.PROMPT_TEMPLATE_BY_VERSION.get(selected_version)
+        if not template_file:
+            raise RuntimeError(
+                "알 수 없는 DSL 프롬프트 버전입니다: "
+                f"{selected_version}. 지원: {', '.join(sorted(self.PROMPT_TEMPLATE_BY_VERSION))}"
+            )
+        self.prompt_template_file = template_file
         self.system_prompt = self._build_system_prompt()
 
     def _build_system_prompt(self) -> str:
         """LLM 시스템 프롬프트 생성"""
-        # PropertyKey 정보 생성
         property_info: list[str] = []
-        for key, mapping in PROPERTY_KEY_REGISTRY.items():
+        for key, mapping in SYSTEM_PROPERTY_REGISTRY.items():
             operators = ", ".join(mapping.supported_operators)
-            type_name = mapping.value_type.value
+            type_name = mapping.type.value
             property_info.append(f"  - {key} ({type_name}): operators=[{operators}]")
 
-        return f"""당신은 파일 검색을 위한 조건 생성 전문가입니다.
-자연어를 구조화된 검색 조건 배열로 변환하세요.
-
-🚨 절대 규칙 (반드시 지켜야 함):
-1. 반드시 아래에 있는 propertyKey만 사용
-2. ⚠️ 없는 propertyKey는 절대 사용하지 마세요!
-3. ⚠️ 설명, 주석, 부가 설명을 절대 추가하지 마세요! 조건만 출력!
-
-=== 기존 조건/스코프 조합 규칙 ===
-사용자가 기존 조건/스코프를 함께 보내면:
-- 쿼리 의도와 기존 조건을 분석하여 최적의 조건 배열 생성
-- 중복 조건: 쿼리 의도에 맞게 수정 또는 유지
-- 충돌 조건: 쿼리 의도 우선, 기존 조건 수정/삭제 가능
-- 보완 조건: 쿼리에서 언급하지 않은 기존 조건은 유지
-- 스코프(폴더): 쿼리에서 다른 폴더를 언급하면 쿼리 우선, 아니면 기존 스코프 유지
-
-=== 출력 형식 ===
-조건 객체 배열과 스코프를 반환합니다:
-- conditions: 조건 배열
-- scopes: 쿼리에서 폴더를 언급한 경우만 설정 (언급 없으면 null)
-
-각 조건:
-- propertyKey: 속성 키 (아래 목록에서만 선택)
-- operator: 연산자 (eq, gt, gte, lt, lte, between, contains, in)
-- value: 값 (숫자, 문자열, 배열, [min, max])
-
-=== 스코프(폴더) 추출 규칙 ===
-쿼리에서 폴더/경로를 언급하면 scopes에 절대 경로로 추출:
-- "다운로드 폴더" → ["{self.home_dir}/Downloads"]
-- "데스크탑에서" → ["{self.home_dir}/Desktop"]
-- "문서 폴더" → ["{self.home_dir}/Documents"]
-- "홈 폴더" → ["{self.home_dir}"]
-- ⚠️ 복수의 폴더가 언급되면 배열에 모두 포함
-- ⚠️ 폴더 언급이 없으면 scopes는 null (기존 스코프 유지)
-
-=== 지원 속성 (propertyKey) ===
-{chr(10).join(property_info)}
-
-=== 추가 속성 (중요!) ===
-
-  - name (STRING) - 파일 이름 (확장자 포함)
-    검색어: 파일명, 이름
-    사용: operator="contains", value="검색어"
-    ⚠️ 파일명 검색은 반드시 'name' 사용!
-
-  - extension (STRING) - 파일 확장자 (점 없이)
-    예시: operator="eq", value="pdf"
-    예시: operator="in", value=["jpg", "jpeg", "png"]
-
-=== 연산자 규칙 ===
-- eq: 정확히 일치 (value: 단일값)
-- gt: 초과 (>)
-- gte: 이상 (>=)
-- lt: 미만 (<)
-- lte: 이하 (<=)
-- between: 범위 (value: [min, max] 배열)
-- contains: 문자열 포함 (value: 문자열)
-- in: 목록 중 하나 (value: 배열)
-
-=== 변환 규칙 ===
-
-1. 크기 변환:
-   - 1 KB = 1024
-   - 1 MB = 1048576
-   - 10 MB = 10485760
-   - 100 MB = 104857600
-   - 1 GB = 1073741824
-
-2. 파일 타입 매핑:
-   - PDF → extension: "pdf"
-   - 이미지 → extension: ["jpg", "jpeg", "png", "gif", "heic"]
-   - 영상/비디오 → extension: ["mp4", "mov", "avi", "mkv"]
-   - 문서 → extension: ["pdf", "doc", "docx", "ppt", "pptx", "xls", "xlsx"]
-   - 압축파일 → extension: ["zip", "rar", "7z", "tar", "gz"]
-
-3. 날짜 (⚠️ YYYY-MM-DD 형식):
-   - 오늘: 현재 날짜 (예: "2025-12-25")
-   - 어제: 현재-1일 (예: "2025-12-24")
-   - 최근 7일: 현재-7일 (예: "2025-12-18")
-   - 최근 30일: 현재-30일
-   - ⚠️ 날짜 값은 반드시 YYYY-MM-DD 문자열! (시간 포함 금지)
-
-4. "다운로드" 관련 (⚠️ 중요):
-   - "다운로드한 파일" → addedAt 사용
-   - "어제 다운로드" → addedAt, operator="gt", value=(어제 날짜)
-
-5. 시간/길이 변환:
-   - 1분 = 60초
-   - 10분 = 600초
-   - 1시간 = 3600초
-
-=== 올바른 예시 ===
-
-입력: "10MB 이상 PDF 파일"
-출력: [
-  {{"propertyKey": "size", "operator": "gt", "value": 10485760}},
-  {{"propertyKey": "extension", "operator": "eq", "value": "pdf"}}
-]
-
-입력: "어제 다운로드한 파일"
-출력: [
-  {{"propertyKey": "addedAt", "operator": "gt", "value": "2025-12-24"}}
-]
-
-입력: "최근 7일 1080p 이상 영상"
-출력: [
-  {{"propertyKey": "modifiedAt", "operator": "gt", "value": "2025-12-18"}},
-  {{"propertyKey": "pixelHeight", "operator": "gte", "value": 1080}},
-  {{"propertyKey": "extension", "operator": "in", "value": ["mp4", "mov", "avi"]}}
-]
-
-입력: "이미지 파일"
-출력: [
-  {{"propertyKey": "extension", "operator": "in", "value": ["jpg", "jpeg", "png", "gif", "heic"]}}
-]
-
-입력: "파일명에 report가 포함된 PDF"
-출력: [
-  {{"propertyKey": "name", "operator": "contains", "value": "report"}},
-  {{"propertyKey": "extension", "operator": "eq", "value": "pdf"}}
-]
-
-입력: "1MB ~ 100MB 사이 영상"
-출력: [
-  {{"propertyKey": "size", "operator": "between", "value": [1048576, 104857600]}},
-  {{"propertyKey": "extension", "operator": "in", "value": ["mp4", "mov", "avi", "mkv"]}}
-]
-
-입력: "10분 이상 영상"
-출력: [
-  {{"propertyKey": "duration", "operator": "gt", "value": 600}},
-  {{"propertyKey": "extension", "operator": "in", "value": ["mp4", "mov", "avi", "mkv"]}}
-]
-
-입력: "암호화된 PDF"
-출력: [
-  {{"propertyKey": "extension", "operator": "eq", "value": "pdf"}}
-]
-
-입력: "4K, 10분, MP4, 최근 7일, 10MB" (5개 조건 → 4개만 선택)
-출력: [
-  {{\"propertyKey\": \"pixelHeight\", \"operator\": \"gte\", \"value\": 2160}},
-  {{\"propertyKey\": \"duration\", \"operator\": \"gte\", \"value\": 600}},
-  {{\"propertyKey\": \"extension\", \"operator\": \"eq\", \"value\": \"mp4\"}},
-  {{\"propertyKey\": \"modifiedAt\", \"operator\": \"gt\", \"value\": \"2025-12-18\"}}
-]
-
-=== 잘못된 예시 (이렇게 하지 마세요!) ===
-
-❌ 틀림: propertyKey="filename"
-   이유: 'filename'은 존재하지 않음
-   ✅ 올바름: propertyKey="name"
-
-❌ 틀림: propertyKey="downloadedAt"
-   이유: 'downloadedAt'은 존재하지 않음
-   ✅ 올바름: propertyKey="addedAt"
-
-❌ 틀림: value=".pdf"
-   이유: 확장자에 점(.) 포함하면 안 됨
-   ✅ 올바름: value="pdf"
-
-출력 형식: 조건 배열만! 설명 없이!"""
+        template = _read_prompt_template(self.prompt_template_file)
+        return template.format(
+            home_dir=self.home_dir,
+            property_info="\n".join(property_info),
+        )
 
     async def convert(
         self,
@@ -286,8 +173,13 @@ class SearchConditionConverter:
 class CachedSearchConditionConverter(SearchConditionConverter):
     """캐싱 기능이 있는 SearchConditionConverter"""
 
-    def __init__(self, llm_provider: LLMProvider, cache_size: int = 100):
-        super().__init__(llm_provider)
+    def __init__(
+        self,
+        llm_provider: LLMProvider,
+        cache_size: int = 100,
+        prompt_version: str | None = None,
+    ):
+        super().__init__(llm_provider, prompt_version=prompt_version)
         self._cache: dict[str, dict[str, Any]] = {}
         self._cache_size = cache_size
 
