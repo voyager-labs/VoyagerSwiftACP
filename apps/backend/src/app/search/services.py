@@ -19,6 +19,7 @@ from core.search.scope_builder import ScopeBuilder
 from infra.db.engine import engine_manager
 
 
+# TODO: Collection으로 변경 모듈 이름 변경
 class SearchService:
     """검색 서비스"""
 

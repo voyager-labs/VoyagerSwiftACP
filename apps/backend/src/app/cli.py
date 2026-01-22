@@ -68,6 +68,7 @@ def prod() -> None:
         sys.argv = original_argv
 
 
+# deprecated
 def index() -> None:
     """파일 메타데이터 수집 CLI"""
     parser = argparse.ArgumentParser(description="파일 메타데이터 수집 및 DB 저장")
