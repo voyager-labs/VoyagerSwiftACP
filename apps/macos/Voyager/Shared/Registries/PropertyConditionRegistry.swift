@@ -1,6 +1,6 @@
 import Foundation
 
-struct PropertyConditionRegistry: Decodable {
+struct PropertyConditionRegistry: Decodable, Sendable {
     let kind: String?
     let version: String?
     let propertyTypes: [String: PropertyType]
@@ -14,7 +14,7 @@ struct PropertyConditionRegistry: Decodable {
     }
 }
 
-struct PropertyType: Decodable {
+struct PropertyType: Decodable, Sendable {
     let operators: [String]
     let sqlCast: String?
 
@@ -24,7 +24,7 @@ struct PropertyType: Decodable {
     }
 }
 
-struct OperatorDefinition: Decodable {
+struct OperatorDefinition: Decodable, Sendable {
     let uiLabel: String?
     let sqlOperator: String?
     let valueShape: ValueShape?
@@ -46,14 +46,14 @@ struct OperatorDefinition: Decodable {
     }
 }
 
-enum ValueShape: String, Decodable {
+enum ValueShape: String, Decodable, Sendable {
     case none
     case single
     case list
     case range
 }
 
-enum ValueCount: Decodable, Equatable {
+enum ValueCount: Decodable, Equatable, Sendable {
     case fixed(Int)
     case multiple
 

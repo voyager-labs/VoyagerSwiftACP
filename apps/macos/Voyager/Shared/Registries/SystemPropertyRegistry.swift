@@ -1,6 +1,6 @@
 import Foundation
 
-struct SystemPropertyDefinition: Decodable {
+struct SystemPropertyDefinition: Decodable, Equatable, Sendable {
     let uiLabel: String?
     let description: String
     let type: String
@@ -24,7 +24,7 @@ struct SystemPropertyDefinition: Decodable {
     }
 }
 
-struct SystemPropertyRegistry: Decodable {
+struct SystemPropertyRegistry: Decodable, Sendable {
     let kind: String?
     let version: String?
     let categories: [String: [String: SystemPropertyDefinition]]
