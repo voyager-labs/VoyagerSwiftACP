@@ -3,6 +3,9 @@
 LangChain을 사용하여 다양한 LLM을 통일된 인터페이스로 제공합니다.
 """
 
+import json
+import os
+import re
 from typing import Any
 
 from langchain_community.llms import Ollama
@@ -181,4 +184,93 @@ class LangChainProvider(LLMProvider):
                 return await structured_llm.ainvoke(prompt)
 
         except Exception as e:
-            raise RuntimeError(f"Structured output 생성 오류: {e}")
+            if self.provider != "ollama":
+                raise RuntimeError(f"Structured output 생성 오류: {e}")
+
+            # Ollama 모델들(특히 일부 gpt-oss 계열)은 LangChain structured output 경로가
+            # 실패할 수 있어, JSON-only 응답 + 파싱 + Pydantic 검증으로 폴백합니다.
+            try:
+                json_only_prompt = self._build_json_only_prompt(prompt=prompt, schema=schema)
+
+                # 반복 실행을 피하기 위해 기본은 1회만 호출합니다.
+                # 필요 시 환경변수로 폴백 재시도 횟수를 늘릴 수 있습니다.
+                retries = _env_int("OLLAMA_STRUCTURED_FALLBACK_RETRIES", default=0)
+                last_error: Exception | None = None
+                for attempt in range(retries + 1):
+                    try:
+                        raw = await self.generate(prompt=json_only_prompt, system=system)
+                        payload = self._extract_json_object(raw)
+                        return schema.model_validate(payload)
+                    except Exception as attempt_error:
+                        last_error = attempt_error
+
+                raise last_error or RuntimeError("Unknown ollama structured fallback failure.")
+            except Exception as fallback_error:
+                raise RuntimeError(
+                    "Structured output 생성 오류(ollama fallback 포함): "
+                    f"{e} / fallback: {fallback_error}"
+                )
+
+    def _build_json_only_prompt(self, *, prompt: str, schema: type[BaseModel]) -> str:
+        schema_json = schema.model_json_schema()
+        schema_text = json.dumps(schema_json, ensure_ascii=False)
+
+        return "\n".join(
+            [
+                prompt,
+                "",
+                "IMPORTANT: Output a single JSON object ONLY. No prose, no Markdown, no code fences.",
+                "중요: 반드시 JSON 객체만 출력하세요. 설명/문장/코드블록/마크다운 금지.",
+                "",
+                "If unsure, output empty-but-valid JSON like:",
+                '{"conditions":[],"scopes":null,"error":null}',
+                "",
+                "아래 JSON Schema를 만족해야 합니다(키 이름/타입 엄수):",
+                schema_text,
+            ]
+        )
+
+    def _extract_json_object(self, text: str) -> dict[str, Any]:
+        """LLM 출력에서 첫 JSON 객체를 추출합니다.
+
+        Ollama 텍스트 출력이 코드블록/설명 등을 섞는 경우가 있어 방어적으로 파싱합니다.
+        """
+        stripped = text.strip()
+
+        # ```json ... ``` 형태 우선 처리
+        fenced = re.search(r"```(?:json)?\s*(\{.*?\})\s*```", stripped, flags=re.DOTALL)
+        if fenced:
+            candidate = fenced.group(1).strip()
+            return json.loads(candidate)
+
+        # 전체가 JSON 객체면 그대로
+        if stripped.startswith("{") and stripped.endswith("}"):
+            return json.loads(stripped)
+
+        # 텍스트 내 첫 번째 JSON 객체를 브레이스 매칭으로 추출
+        start = stripped.find("{")
+        if start == -1:
+            raise ValueError("JSON object not found in response.")
+
+        depth = 0
+        for i in range(start, len(stripped)):
+            char = stripped[i]
+            if char == "{":
+                depth += 1
+            elif char == "}":
+                depth -= 1
+                if depth == 0:
+                    candidate = stripped[start : i + 1]
+                    return json.loads(candidate)
+
+        raise ValueError("Unterminated JSON object in response.")
+
+
+def _env_int(name: str, *, default: int) -> int:
+    raw = os.getenv(name, "").strip()
+    if not raw:
+        return default
+    try:
+        return int(raw)
+    except ValueError:
+        return default
