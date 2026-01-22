@@ -70,19 +70,19 @@ struct ValuePickerView: View {
         }
     }
 
-    private func fieldTitle(for valueType: ValueType, index: Int? = nil) -> String {
+    private func fieldTitle(for valueType: String, index: Int? = nil) -> String {
         let base = switch valueType {
-        case .string:
+        case "string":
             "Text"
-        case .number:
+        case "number":
             "Number"
-        case .date:
+        case "date", "datetime":
             "Date"
-        case .boolean:
+        case "boolean":
             "Boolean"
-        case .array:
+        case "string_list":
             "List"
-        case .unknown:
+        default:
             "Value"
         }
 
@@ -92,9 +92,9 @@ struct ValuePickerView: View {
         return base
     }
 
-    private func fieldPlaceholder(for valueType: ValueType) -> String {
+    private func fieldPlaceholder(for valueType: String) -> String {
         switch valueType {
-        case .number:
+        case "number":
             "Number Value"
         default:
             "Enter value"
