@@ -454,6 +454,7 @@ struct ComposerView: View {
             rows: rows,
             composerStore: composerStore,
             pickerStore: pickerStore,
+            operatorOptionsByKey: viewStore.operatorOptionsByKey,
             historyPaths: historyPaths,
         )
         .allowsHitTesting(!isLocked)
@@ -472,6 +473,7 @@ struct ComposerView: View {
     private func chipView(
         chip: ChipItemType,
         composerStore: StoreOf<ComposerFeature>,
+        operatorOptionsByKey: [String: [String]],
         historyPaths: [String],
     ) -> some View {
         switch chip {
@@ -484,7 +486,7 @@ struct ComposerView: View {
                 isComboBoxPresented: $isScopePickerPresented,
             )
         case let .condition(condition):
-            conditionChipView(condition: condition)
+            conditionChipView(condition: condition, operatorOptionsByKey: operatorOptionsByKey)
         }
     }
 
@@ -492,6 +494,7 @@ struct ComposerView: View {
         rows: [[ChipItemType]],
         composerStore: StoreOf<ComposerFeature>,
         pickerStore: StoreOf<ConditionPropertyPickerFeature>,
+        operatorOptionsByKey: [String: [String]],
         historyPaths: [String],
     ) -> some View {
         VStack(alignment: .leading, spacing: chipSpacing) {
@@ -500,16 +503,21 @@ struct ComposerView: View {
 
                 HStack(spacing: chipSpacing) {
                     ForEach(Array(rowChips.enumerated()), id: \.element.id) { _, chip in
-                        chipView(chip: chip, composerStore: composerStore, historyPaths: historyPaths)
-                            .background(
-                                GeometryReader { chipGeometry in
-                                    Color.clear
-                                        .preference(
-                                            key: ChipSizePreferenceKey.self,
-                                            value: [AnyHashable(chip.id): chipGeometry.size],
-                                        )
-                                },
-                            )
+                        chipView(
+                            chip: chip,
+                            composerStore: composerStore,
+                            operatorOptionsByKey: operatorOptionsByKey,
+                            historyPaths: historyPaths,
+                        )
+                        .background(
+                            GeometryReader { chipGeometry in
+                                Color.clear
+                                    .preference(
+                                        key: ChipSizePreferenceKey.self,
+                                        value: [AnyHashable(chip.id): chipGeometry.size],
+                                    )
+                            },
+                        )
                     }
 
                     if isLastRow {
@@ -615,7 +623,10 @@ struct ComposerView: View {
         return rows
     }
 
-    private func conditionChipView(condition: Condition) -> some View {
+    private func conditionChipView(
+        condition: Condition,
+        operatorOptionsByKey: [String: [String]],
+    ) -> some View {
         ConditionChipView(
             propertyPickerStore: store.scope(state: \.propertyPicker, action: \.propertyPicker),
             condition: condition,
@@ -623,7 +634,7 @@ struct ComposerView: View {
             hoverFillOpacity: hoverFillOpacity,
             operatorPickerStore: store.scope(state: \.operatorPicker, action: \.operatorPicker),
             valuePickerStore: store.scope(state: \.valuePicker, action: \.valuePicker),
-            operatorOptions: operatorOptions(for: condition),
+            operatorOptions: operatorOptionsByKey[condition.propertyKey] ?? [],
             defaultChipHeight: defaultChipHeight,
             onPropertyTap: {
                 store.send(.propertyPicker(.startEditing(condition.propertyKey)))
@@ -696,42 +707,6 @@ struct ComposerView: View {
         flagsChangedMonitor = NSEvent.addLocalMonitorForEvents(matching: .flagsChanged) { event in
             isOptionKeyPressed = event.modifierFlags.contains(.option)
             return event
-        }
-    }
-
-    private func operatorOptions(for condition: Condition) -> [OperatorOption] {
-        ConditionOperatorMappingUtils.operatorOptions(for: condition.propertyKey).map { op in
-            let valueArity: Int = {
-                switch op.valueUI {
-                case .rangeNumber, .rangeDate:
-                    2
-                case .none:
-                    0
-                default:
-                    1
-                }
-            }()
-
-            let valueType: ValueType = {
-                switch op.valueUI {
-                case .singleNumber, .rangeNumber, .listNumber:
-                    .number
-                case .singleDate, .rangeDate:
-                    .date
-                case .toggle:
-                    .boolean
-                case .listText, .singleText, .none:
-                    .string
-                }
-            }()
-
-            return OperatorOption(
-                code: op.code,
-                label: op.label,
-                valueArity: valueArity,
-                valueType: valueType,
-                valueUIKind: op.valueUI,
-            )
         }
     }
 

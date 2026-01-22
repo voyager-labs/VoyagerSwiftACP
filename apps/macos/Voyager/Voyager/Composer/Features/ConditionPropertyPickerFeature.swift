@@ -3,20 +3,16 @@ import Foundation
 
 @Reducer
 struct ConditionPropertyPickerFeature {
+    @Dependency(\.registryClient)
+    var registryClient
+
     @ObservableState
     struct State: Equatable {
         var isPresented: Bool = false
-        var properties: [SystemProperty] = {
-            ConditionMappingUtils.allProperties.map { info in
-                SystemProperty(
-                    key: info.key,
-                    label: info.label,
-                    category: info.category,
-                    type: info.type,
-                    isDefault: info.isDefault,
-                )
-            }
-        }()
+        var properties: [String] = []
+        var propertyLabels: [String: String] = [:]
+        var propertyCategories: [String: String] = [:]
+        var propertyDefaults: Set<String> = []
 
         var searchText: String = ""
         var mode: Mode = .root
@@ -37,7 +33,7 @@ struct ConditionPropertyPickerFeature {
         case searchTextChanged(String)
         case categoryTapped(String)
         case backFromCategory
-        case propertyTapped(SystemProperty)
+        case propertyTapped(String)
         case startEditing(String)
         case clearDuplicateMessage
     }
@@ -59,6 +55,19 @@ struct ConditionPropertyPickerFeature {
                 return .none
 
             case .onAppear:
+                let entries = registryClient.allProperties()
+                state.properties = entries.map(\.key)
+                state.propertyLabels = Dictionary(
+                    uniqueKeysWithValues: entries.map { ($0.key, $0.definition.uiLabel ?? $0.key) },
+                )
+                state.propertyCategories = Dictionary(
+                    uniqueKeysWithValues: entries.map { ($0.key, $0.category) },
+                )
+                state.propertyDefaults = Set(
+                    entries
+                        .filter { $0.definition.uiPinned ?? false }
+                        .map(\.key),
+                )
                 return .none
 
             case let .searchTextChanged(text):

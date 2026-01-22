@@ -1,22 +1,57 @@
 {
   "$kind": "property_condition_registry",
-  "$version": "1.1.0",
-  "type_defaults": {
-    "string": ["eq", "neq", "contains", "in", "empty", "not_empty"],
-    "number": ["eq", "neq", "gt", "gte", "lt", "lte", "between"],
-    "date": ["eq", "neq", "gt", "gte", "lt", "lte", "between"],
-    "boolean": ["eq", "neq"],
-    "string_list": [
-      "contains",
-      "empty",
-      "not_empty",
-      "contains_any",
-      "contains_all"
-    ]
+  "$version": "1.2.4",
+  "property_types": {
+    "string": {
+      "operators": ["eq", "neq", "empty", "exists", "starts_with", "ends_with"],
+      "sql_cast": "TEXT"
+    },
+    "number": {
+      "operators": [
+        "eq",
+        "neq",
+        "gt",
+        "gte",
+        "lt",
+        "lte",
+        "between",
+        "not_between"
+      ],
+      "sql_cast": "REAL"
+    },
+    "date": {
+      "operators": [
+        "eq",
+        "neq",
+        "gt",
+        "gte",
+        "lt",
+        "lte",
+        "between",
+        "not_between"
+      ],
+      "sql_cast": "TEXT"
+    },
+    "boolean": {
+      "operators": ["eq", "neq"],
+      "sql_cast": "INTEGER"
+    },
+    "string_list": {
+      "operators": [
+        "empty",
+        "contains_any",
+        "contains_all",
+        "exists",
+        "not_contains_any",
+        "not_contains_all"
+      ],
+      "sql_cast": "TEXT"
+    }
   },
   "operators": {
     "eq": {
       "ui_label": "Is",
+      "sql_operator": "=",
       "value_shape": "single",
       "value_count": 1,
       "allowed_types": ["string", "number", "date", "boolean"],
@@ -31,6 +66,7 @@
     },
     "neq": {
       "ui_label": "Is not",
+      "sql_operator": "!=",
       "value_shape": "single",
       "value_count": 1,
       "allowed_types": ["string", "number", "date", "boolean"],
@@ -43,77 +79,38 @@
         "boolean": "toggle"
       }
     },
-    "contains": {
-      "ui_label": "Contains",
-      "value_shape": "single",
-      "value_count": 1,
-      "allowed_types": ["string", "string_list"],
-      "inverse_of": "not_contains",
-      "aliases": ["contains", "has"],
-      "ui_value_kind": {
-        "string": "singleText",
-        "string_list": "singleText"
-      }
-    },
-    "not_contains": {
-      "ui_label": "Does not contain",
-      "value_shape": "single",
-      "value_count": 1,
-      "allowed_types": ["string"],
-      "inverse_of": "contains",
-      "aliases": ["not contains"],
-      "ui_value_kind": {
-        "string": "singleText"
-      }
-    },
-    "in": {
-      "ui_label": "In list",
-      "value_shape": "list",
-      "value_count": "n",
-      "allowed_types": ["string"],
-      "inverse_of": "not_in",
-      "aliases": ["in", "one of"],
-      "ui_value_kind": {
-        "string": "listText"
-      }
-    },
-    "not_in": {
-      "ui_label": "Not in list",
-      "value_shape": "list",
-      "value_count": "n",
-      "allowed_types": ["string"],
-      "inverse_of": "in",
-      "aliases": ["not in", "none of"],
-      "ui_value_kind": {
-        "string": "listText"
-      }
-    },
     "empty": {
       "ui_label": "Is empty",
+      "sql_operator": "IS NULL OR = ''",
       "value_shape": "none",
       "value_count": 0,
       "allowed_types": ["string", "string_list"],
-      "inverse_of": "not_empty",
+      "inverse_of": "exists",
       "aliases": ["is empty", "empty"],
       "ui_value_kind": {
         "string": "none",
         "string_list": "none"
       }
     },
-    "not_empty": {
-      "ui_label": "Is not empty",
+    "exists": {
+      "ui_label": "Exists",
+      "sql_operator": "IS NOT NULL",
       "value_shape": "none",
       "value_count": 0,
-      "allowed_types": ["string", "string_list"],
+      "allowed_types": ["string", "number", "date", "boolean", "string_list"],
       "inverse_of": "empty",
-      "aliases": ["is not empty", "not empty"],
+      "aliases": ["exists"],
       "ui_value_kind": {
         "string": "none",
+        "number": "none",
+        "date": "none",
+        "boolean": "none",
         "string_list": "none"
       }
     },
     "gt": {
       "ui_label": "Is greater than",
+      "sql_operator": ">",
       "value_shape": "single",
       "value_count": 1,
       "allowed_types": ["number", "date"],
@@ -126,6 +123,7 @@
     },
     "gte": {
       "ui_label": "Is at least",
+      "sql_operator": ">=",
       "value_shape": "single",
       "value_count": 1,
       "allowed_types": ["number", "date"],
@@ -138,6 +136,7 @@
     },
     "lt": {
       "ui_label": "Is less than",
+      "sql_operator": "<",
       "value_shape": "single",
       "value_count": 1,
       "allowed_types": ["number", "date"],
@@ -150,6 +149,7 @@
     },
     "lte": {
       "ui_label": "Is at most",
+      "sql_operator": "<=",
       "value_shape": "single",
       "value_count": 1,
       "allowed_types": ["number", "date"],
@@ -162,6 +162,7 @@
     },
     "between": {
       "ui_label": "Is between",
+      "sql_operator": "BETWEEN",
       "value_shape": "range",
       "value_count": 2,
       "allowed_types": ["number", "date"],
@@ -174,6 +175,7 @@
     },
     "not_between": {
       "ui_label": "Is not between",
+      "sql_operator": "NOT BETWEEN",
       "value_shape": "range",
       "value_count": 2,
       "allowed_types": ["number", "date"],
@@ -186,6 +188,7 @@
     },
     "starts_with": {
       "ui_label": "Starts with",
+      "sql_operator": "LIKE",
       "value_shape": "single",
       "value_count": 1,
       "allowed_types": ["string"],
@@ -196,6 +199,7 @@
     },
     "ends_with": {
       "ui_label": "Ends with",
+      "sql_operator": "LIKE",
       "value_shape": "single",
       "value_count": 1,
       "allowed_types": ["string"],
@@ -206,6 +210,7 @@
     },
     "matches": {
       "ui_label": "Matches pattern",
+      "sql_operator": "LIKE",
       "value_shape": "single",
       "value_count": 1,
       "allowed_types": ["string"],
@@ -214,102 +219,50 @@
         "string": "singleText"
       }
     },
-    "eq_ignore_case": {
-      "ui_label": "Equals (case-insensitive)",
-      "value_shape": "single",
-      "value_count": 1,
-      "allowed_types": ["string"],
-      "aliases": ["equals ignore case"],
-      "ui_value_kind": {
-        "string": "singleText"
-      }
-    },
-    "contains_ignore_case": {
-      "ui_label": "Contains (case-insensitive)",
-      "value_shape": "single",
-      "value_count": 1,
-      "allowed_types": ["string"],
-      "aliases": ["contains ignore case"],
-      "ui_value_kind": {
-        "string": "singleText"
-      }
-    },
-    "is_null": {
-      "ui_label": "Is null",
-      "value_shape": "none",
-      "value_count": 0,
-      "allowed_types": ["string", "number", "date", "boolean", "string_list"],
-      "inverse_of": "is_not_null",
-      "aliases": ["is null", "null"],
-      "ui_value_kind": {
-        "string": "none",
-        "number": "none",
-        "date": "none",
-        "boolean": "none",
-        "string_list": "none"
-      }
-    },
-    "is_not_null": {
-      "ui_label": "Is not null",
-      "value_shape": "none",
-      "value_count": 0,
-      "allowed_types": ["string", "number", "date", "boolean", "string_list"],
-      "inverse_of": "is_null",
-      "aliases": ["is not null", "not null"],
-      "ui_value_kind": {
-        "string": "none",
-        "number": "none",
-        "date": "none",
-        "boolean": "none",
-        "string_list": "none"
-      }
-    },
-    "exists": {
-      "ui_label": "Exists",
-      "value_shape": "none",
-      "value_count": 0,
-      "allowed_types": ["string", "number", "date", "boolean", "string_list"],
-      "inverse_of": "not_exists",
-      "aliases": ["exists"],
-      "ui_value_kind": {
-        "string": "none",
-        "number": "none",
-        "date": "none",
-        "boolean": "none",
-        "string_list": "none"
-      }
-    },
-    "not_exists": {
-      "ui_label": "Does not exist",
-      "value_shape": "none",
-      "value_count": 0,
-      "allowed_types": ["string", "number", "date", "boolean", "string_list"],
-      "inverse_of": "exists",
-      "aliases": ["not exists"],
-      "ui_value_kind": {
-        "string": "none",
-        "number": "none",
-        "date": "none",
-        "boolean": "none",
-        "string_list": "none"
-      }
-    },
     "contains_any": {
       "ui_label": "Contains any",
+      "sql_operator": "EXISTS (json_each)",
       "value_shape": "list",
       "value_count": "n",
       "allowed_types": ["string_list"],
       "aliases": ["contains any"],
       "ui_value_kind": {
         "string_list": "listText"
-      }
+      },
+      "inverse_of": "not_contains_any"
     },
     "contains_all": {
       "ui_label": "Contains all",
+      "sql_operator": "COUNT_DISTINCT = N (json_each)",
       "value_shape": "list",
       "value_count": "n",
       "allowed_types": ["string_list"],
       "aliases": ["contains all"],
+      "ui_value_kind": {
+        "string_list": "listText"
+      },
+      "inverse_of": "not_contains_all"
+    },
+    "not_contains_any": {
+      "ui_label": "Contains none",
+      "sql_operator": "NOT EXISTS (json_each)",
+      "value_shape": "list",
+      "value_count": "n",
+      "allowed_types": ["string_list"],
+      "inverse_of": "contains_any",
+      "aliases": ["contains none", "not contains any"],
+      "ui_value_kind": {
+        "string_list": "listText"
+      }
+    },
+    "not_contains_all": {
+      "ui_label": "Missing any",
+      "sql_operator": "COUNT_DISTINCT != N (json_each)",
+      "value_shape": "list",
+      "value_count": "n",
+      "allowed_types": ["string_list"],
+      "inverse_of": "contains_all",
+      "aliases": ["missing any", "not contains all"],
       "ui_value_kind": {
         "string_list": "listText"
       }

@@ -14,6 +14,8 @@ struct FileManagerFeature {
     var userDefaultsClient
     @Dependency(\.sidebarClient)
     var sidebarClient
+    @Dependency(\.registryClient)
+    var registryClient
 
     struct HistoryEntry: Equatable {
         let navigationState: FileManagerNavigationUtils.NavigationState
@@ -544,7 +546,7 @@ struct FileManagerFeature {
                     let trimmedQuery = file.query.trimmingCharacters(in: .whitespacesAndNewlines)
                     state.pendingSearchQuery = trimmedQuery.isEmpty ? nil : trimmedQuery
 
-                    let resolved = resolveCollectionFilters(from: file)
+                    let resolved = resolveCollectionFilters(from: file, registryClient: registryClient)
                     if trimmedQuery.isEmpty, resolved.scopes.isEmpty, resolved.conditions.isEmpty {
                         if !state.backHistory.isEmpty {
                             state.backHistory.removeLast()
@@ -1620,7 +1622,10 @@ private func makeCollectionNavigation(
     )
 }
 
-private func resolveCollectionFilters(from file: VoyagerCollectionFile) -> (scopes: [String], conditions: [Condition]) {
+private func resolveCollectionFilters(
+    from file: VoyagerCollectionFile,
+    registryClient: RegistryClient,
+) -> (scopes: [String], conditions: [Condition]) {
     let conditionPayloads = file.conditions.map { condition in
         SearchConditionPayload(
             propertyKey: condition.propertyKey,
@@ -1633,6 +1638,7 @@ private func resolveCollectionFilters(from file: VoyagerCollectionFile) -> (scop
         appliedFilters,
         fallbackScopes: file.scopes,
         fallbackConditions: [],
+        registryClient: registryClient,
     )
 }
 
