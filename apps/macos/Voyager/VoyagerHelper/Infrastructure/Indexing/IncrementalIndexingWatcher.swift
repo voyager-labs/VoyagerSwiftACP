@@ -45,6 +45,8 @@ final class IncrementalIndexingWatcher {
     private let homeURL = FileManager.default.homeDirectoryForCurrentUser
     private var cachedVolumeIdentifier: String?
     private var processingTask: Task<Void, Never>?
+    private let eventPlanner = IncrementalIndexingEventPlanner()
+    private var eventExecutor: IncrementalIndexingEventExecutor?
     private let eventLogger = os.Logger(subsystem: Bundle.main.bundleIdentifier ?? "Voyager",
                                         category: "VoyagerHelper.IncrementalIndexing")
 
@@ -62,6 +64,13 @@ final class IncrementalIndexingWatcher {
             URL(fileURLWithPath: $0).standardizedFileURL.path
         }
         cachedVolumeIdentifier = InitialIndexingRecordBuilder.volumeIdentifier(from: homeURL)
+        eventExecutor = IncrementalIndexingEventExecutor(
+            manager: manager,
+            logger: logger,
+            eventLogger: eventLogger,
+            homeURL: homeURL,
+            cachedVolumeIdentifier: cachedVolumeIdentifier
+        )
         let sinceEventId = try await loadLastEventId(manager: manager)
             ?? FSEventStreamEventId(kFSEventStreamEventIdSinceNow)
         try await persistWatchedPaths(manager: manager, paths: watchedPaths)
@@ -86,6 +95,7 @@ final class IncrementalIndexingWatcher {
         stopStreamThread()
         manager = nil
         logger = nil
+        eventExecutor = nil
     }
 
     // 스트림 전용 스레드 시작
@@ -176,24 +186,25 @@ final class IncrementalIndexingWatcher {
         flags: [FSEventStreamEventFlags],
         ids: [FSEventStreamEventId]
     ) {
-        let eventCount = paths.count
-        guard eventCount > 0 else { return }
-
-        var maxEventId = lastEventId ?? 0
-        var changes: [(String, FSEventStreamEventFlags)] = []
-        changes.reserveCapacity(eventCount)
-
-        for index in 0..<eventCount {
-            maxEventId = max(maxEventId, ids[index])
-            guard let normalized = normalizePath(paths[index]) else { continue }
-            changes.append((normalized, flags[index]))
+        guard let plan = eventPlanner.plan(
+            paths: paths,
+            flags: flags,
+            ids: ids,
+            lastEventId: lastEventId,
+            watchedPaths: watchedPaths
+        ) else {
+            return
         }
 
-        lastEventId = maxEventId
-        eventLogger.info(
-            "Incremental indexing events filtered: total=\(eventCount, privacy: .public), watched=\(changes.count, privacy: .public), last_event_id=\(maxEventId, privacy: .public)"
-        )
-        enqueueProcessing(changes: changes, maxEventId: maxEventId)
+        lastEventId = plan.maxEventId
+        let messageParts = [
+            "Incremental indexing events filtered: total=\(plan.totalCount)",
+            "watched=\(plan.changes.count)",
+            "last_event_id=\(plan.maxEventId)"
+        ]
+        let message = messageParts.joined(separator: ", ")
+        eventLogger.info("\(message, privacy: .public)")
+        enqueueProcessing(changes: plan.changes, maxEventId: plan.maxEventId)
     }
 
     // DB 반영 작업 직렬화
@@ -201,9 +212,7 @@ final class IncrementalIndexingWatcher {
         changes: [(String, FSEventStreamEventFlags)],
         maxEventId: FSEventStreamEventId
     ) {
-        guard let manager, let logger else { return }
-        let cachedIdentifier = cachedVolumeIdentifier
-        let homePath = homeURL.standardizedFileURL.path
+        guard let eventExecutor else { return }
         let previousTask = processingTask
 
         processingTask = Task { [weak self] in
@@ -212,18 +221,11 @@ final class IncrementalIndexingWatcher {
             }
             guard let self else { return }
             do {
-                if !changes.isEmpty {
-                    try await self.applyChanges(
-                        changes,
-                        manager: manager,
-                        logger: logger,
-                        cachedVolumeIdentifier: cachedIdentifier,
-                        homePath: homePath
-                    )
-                }
-                try await self.persistLastEventId(manager: manager, eventId: maxEventId)
+                try await eventExecutor.apply(changes: changes, maxEventId: maxEventId)
             } catch {
-                self.eventLogger.error("Incremental indexing apply failed: \(String(describing: error), privacy: .public)")
+                self.eventLogger.error(
+                    "Incremental indexing apply failed: \(String(describing: error), privacy: .public)"
+                )
             }
         }
     }
@@ -286,98 +288,5 @@ extension IncrementalIndexingWatcher {
             """
             try db.execute(sql: sql, arguments: ["watched_paths", value])
         }
-    }
-
-    // 변경 경로 DB 반영
-    private func applyChanges(
-        _ changes: [(String, FSEventStreamEventFlags)],
-        manager: DatabaseManager,
-        logger: Logging.Logger,
-        cachedVolumeIdentifier: String?,
-        homePath: String
-    ) async throws {
-        let repo = EntryRepository(manager: manager, logger: logger)
-        var insertedOrUpdated = 0
-        var deleted = 0
-        var lastError: Error?
-
-        for (path, flags) in changes {
-            let removed = flags & FSEventStreamEventFlags(kFSEventStreamEventFlagItemRemoved) != 0
-            let exists = FileManager.default.fileExists(atPath: path)
-            if removed || !exists {
-                do {
-                    deleted += try await repo.deleteByPath(path)
-                } catch {
-                    lastError = error
-                    eventLogger.error("Incremental indexing delete failed: \(String(describing: error), privacy: .public)")
-                }
-                continue
-            }
-
-            guard let mdItem = MDItemCreate(kCFAllocatorDefault, path as CFString) else {
-                continue
-            }
-            let cachedIdentifier = path.hasPrefix(homePath) ? cachedVolumeIdentifier : nil
-            let record = await InitialIndexingRecordBuilder.makeRecord(
-                mdItem: mdItem,
-                path: path,
-                homeURL: homeURL,
-                cachedVolumeIdentifier: cachedIdentifier
-            )
-            guard let record else { continue }
-
-            do {
-                _ = try await repo.upsertByPath(record)
-                insertedOrUpdated += 1
-            } catch {
-                lastError = error
-                eventLogger.error("Incremental indexing upsert failed: \(String(describing: error), privacy: .public)")
-            }
-        }
-
-        if insertedOrUpdated > 0 || deleted > 0 {
-            eventLogger.info(
-                "Incremental indexing applied: upserted=\(insertedOrUpdated, privacy: .public), deleted=\(deleted, privacy: .public)"
-            )
-        }
-
-        if let lastError {
-            throw lastError
-        }
-    }
-
-    // 마지막 이벤트 ID 저장
-    private func persistLastEventId(
-        manager: DatabaseManager,
-        eventId: FSEventStreamEventId
-    ) async throws {
-        let value = String(eventId)
-        try await manager.write { db in
-            let sql = """
-            INSERT INTO indexing_state (key, value, updated_at)
-            VALUES (?, ?, CURRENT_TIMESTAMP)
-            ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at
-            """
-            try db.execute(sql: sql, arguments: ["last_fsevent_id", value])
-        }
-    }
-}
-
-extension IncrementalIndexingWatcher {
-    // 감시 경로 기준 표준화
-    private func normalizePath(_ path: String) -> String? {
-        let standardized = URL(fileURLWithPath: path).standardizedFileURL.path
-        guard isWatchedPath(standardized) else { return nil }
-        return standardized
-    }
-
-    // 감시 경로 하위 여부 판단
-    private func isWatchedPath(_ path: String) -> Bool {
-        for root in watchedPaths {
-            if path == root || path.hasPrefix(root + "/") {
-                return true
-            }
-        }
-        return false
     }
 }
