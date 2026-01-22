@@ -26,6 +26,7 @@ struct ConditionChipView: View {
     @State private var boolPopoverIndex: Int?
     @State private var boolHoverIndex: Int?
     @State private var boolOptionHoverValue: String?
+    @FocusState private var focusedValueIndex: Int?
 
     var body: some View {
         WithViewStore(
@@ -576,6 +577,8 @@ struct ConditionChipView: View {
             }
             return Array(0 ..< fieldCount)
         }()
+        let shouldFocus = valueViewStore.isPresented &&
+            valueViewStore.propertyKey == condition.propertyKey
 
         return HStack(spacing: 6) {
             ForEach(indices, id: \.self) { index in
@@ -647,6 +650,7 @@ struct ConditionChipView: View {
                                     .allowsHitTesting(false)
                             }
                         }
+                        .focused($focusedValueIndex, equals: index)
                         .onSubmit {
                             valuePickerStore.send(.commit)
                         }
@@ -669,6 +673,38 @@ struct ConditionChipView: View {
             }
         }
         .padding(.leading, 4)
+        .onAppear {
+            updateInlineValueFocus(
+                shouldFocus: shouldFocus,
+                targetIndex: valueViewStore.editingIndex ?? indices.first,
+            )
+        }
+        .onChange(of: valueViewStore.isPresented) { _ in
+            updateInlineValueFocus(
+                shouldFocus: shouldFocus,
+                targetIndex: valueViewStore.editingIndex ?? indices.first,
+            )
+        }
+        .onChange(of: valueViewStore.editingIndex) { _ in
+            updateInlineValueFocus(
+                shouldFocus: shouldFocus,
+                targetIndex: valueViewStore.editingIndex ?? indices.first,
+            )
+        }
+        .onChange(of: valueViewStore.propertyKey) { _ in
+            updateInlineValueFocus(
+                shouldFocus: shouldFocus,
+                targetIndex: valueViewStore.editingIndex ?? indices.first,
+            )
+        }
+    }
+
+    private func updateInlineValueFocus(shouldFocus: Bool, targetIndex: Int?) {
+        let nextFocus = shouldFocus ? targetIndex : nil
+        guard focusedValueIndex != nextFocus else { return }
+        DispatchQueue.main.async {
+            focusedValueIndex = nextFocus
+        }
     }
 
     private func dateValueButton(
