@@ -67,6 +67,27 @@ def load_env() -> None:
     load_dotenv(dotenv_path=app_env_file, override=False)
 
 
+def _require_env(key: str) -> str:
+    try:
+        value = os.environ[key]
+    except KeyError as exc:
+        raise RuntimeError(f"필수 환경 변수 누락: {key}") from exc
+
+    if value == "":
+        raise RuntimeError(f"필수 환경 변수 값이 비어 있습니다: {key}")
+
+    return value
+
+
+def _require_bool(key: str) -> bool:
+    value = _require_env(key)
+    normalized = value.lower()
+    if normalized in {"true", "false"}:
+        return normalized == "true"
+
+    raise RuntimeError(f"환경 변수 {key}는 true/false여야 합니다: {value}")
+
+
 # 싱글톤 VoyagerConfig 인스턴스
 _config: VoyagerConfig | None = None
 
@@ -87,25 +108,32 @@ def load_config() -> VoyagerConfig:
 
     load_env()
 
+    app_env = _require_env("APP_ENV")
+    if app_env == "dev":
+        app_env_literal: Literal["dev", "prod"] = "dev"
+    elif app_env == "prod":
+        app_env_literal = "prod"
+    else:
+        raise RuntimeError(f"APP_ENV는 dev/prod만 허용됩니다: {app_env}")
+
     _config = VoyagerConfig(
         # App 기본 설정
-        app_name=os.getenv("PUBLIC_APP_NAME") or "",
-        app_env=os.getenv("APP_ENV") or "dev",  # type: ignore[arg-type]
-        log_level=os.getenv("PUBLIC_LOG_LEVEL") or "",
+        app_name=_require_env("PUBLIC_APP_NAME"),
+        app_env=app_env_literal,
+        log_level=_require_env("PUBLIC_LOG_LEVEL"),
         # Gateway/Web 설정
-        gateway_url=os.getenv("PUBLIC_GATEWAY_URL") or "",
-        web_base_url=os.getenv("PUBLIC_WEB_BASE_URL") or "",
+        gateway_url=_require_env("PUBLIC_GATEWAY_URL"),
+        web_base_url=_require_env("PUBLIC_WEB_BASE_URL"),
         # Backend 설정
-        backend_host=os.getenv("PUBLIC_BACKEND_HOST") or "",
-        backend_port=os.getenv("PUBLIC_BACKEND_PORT") or "",
-        backend_process_name=os.getenv("PUBLIC_BACKEND_PROCESS_NAME") or "",
+        backend_host=_require_env("PUBLIC_BACKEND_HOST"),
+        backend_port=_require_env("PUBLIC_BACKEND_PORT"),
+        backend_process_name=_require_env("PUBLIC_BACKEND_PROCESS_NAME"),
         # SQLite 설정
-        sqlite_protocol=os.getenv("PUBLIC_SQLITE_PROTOCOL") or "",
-        sqlite_echo=(os.getenv("PUBLIC_SQLITE_ECHO") or "").lower() == "true",
-        sqlite_check_same_thread=(os.getenv("PUBLIC_SQLITE_CHECK_SAME_THREAD") or "").lower()
-        == "true",
-        sqlite_file_location=os.getenv("PUBLIC_SQLITE_FILE_LOCATION") or "",
-        sqlite_file_name=os.getenv("PUBLIC_SQLITE_FILE_NAME") or "",
+        sqlite_protocol=_require_env("PUBLIC_SQLITE_PROTOCOL"),
+        sqlite_echo=_require_bool("PUBLIC_SQLITE_ECHO"),
+        sqlite_check_same_thread=_require_bool("PUBLIC_SQLITE_CHECK_SAME_THREAD"),
+        sqlite_file_location=_require_env("PUBLIC_SQLITE_FILE_LOCATION"),
+        sqlite_file_name=_require_env("PUBLIC_SQLITE_FILE_NAME"),
     )
 
     return _config
