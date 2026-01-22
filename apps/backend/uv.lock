@@ -2343,6 +2343,7 @@ dev = [
     { name = "pyright" },
     { name = "pytest" },
     { name = "ruff" },
+    { name = "tiktoken" },
     { name = "uv" },
 ]
 
@@ -2371,6 +2372,7 @@ dev = [
     { name = "pyright", specifier = ">=1.1.375" },
     { name = "pytest", specifier = ">=8.3.0" },
     { name = "ruff", specifier = ">=0.7.0" },
+    { name = "tiktoken", specifier = ">=0.7.0" },
     { name = "uv", specifier = ">=0.8.13" },
 ]
 
