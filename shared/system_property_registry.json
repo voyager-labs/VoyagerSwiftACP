@@ -45,6 +45,7 @@
           "sound channel counts",
           "audio channel numbers"
         ],
+        "legacy_keys": ["audioChannelCount"],
         "system_keys": ["mditem:kMDItemAudioChannelCount"],
         "type": "number",
         "ui_label": "Audio channel count"
@@ -73,6 +74,7 @@
           "sound sample rates",
           "audio sample bitrates"
         ],
+        "legacy_keys": ["audioSampleRate"],
         "system_keys": ["mditem:kMDItemAudioSampleRate"],
         "type": "number",
         "ui_label": "Audio sample rate"
@@ -291,6 +293,7 @@
           "content created dates",
           "content creation times"
         ],
+        "legacy_keys": ["contentCreatedAt"],
         "system_keys": ["mditem:kMDItemContentCreationDate"],
         "type": "date",
         "ui_label": "Content creation date",
@@ -306,6 +309,7 @@
           "content modified dates",
           "content modification times"
         ],
+        "legacy_keys": ["modifiedAt", "contentModifiedAt"],
         "system_keys": [
           "mditem:kMDItemContentModificationDate",
           "mditem:kMDItemFSContentChangeDate",
@@ -321,6 +325,7 @@
         "availability": "macOS 10.4+",
         "description": "The UTI pedigree of a file.",
         "search_aliases": ["content types"],
+        "legacy_keys": ["contentType"],
         "system_keys": [
           "mditem:kMDItemContentType",
           "nsurl:NSURLContentTypeKey"
@@ -365,6 +370,7 @@
         "availability": "macOS 10.4+",
         "description": "Application used to create the document content (for example \"Word\", \"Pages\", and so on).",
         "search_aliases": [],
+        "legacy_keys": ["creator"],
         "system_keys": ["mditem:kMDItemCreator"],
         "type": "string",
         "ui_label": "Creator"
@@ -389,6 +395,7 @@
         "availability": "macOS 10.4+",
         "description": "The duration, in seconds, of the content of file. A value of 10. 5 represents media that is 10 and 1/2 seconds long.",
         "search_aliases": ["length seconds", "duration sec"],
+        "legacy_keys": ["duration"],
         "system_keys": ["mditem:kMDItemDurationSeconds"],
         "type": "number",
         "ui_label": "Duration seconds"
@@ -501,6 +508,7 @@
         "availability": "macOS 10.4+",
         "description": "A description of the kind of item this file represents.",
         "search_aliases": [],
+        "legacy_keys": ["kind"],
         "system_keys": ["mditem:kMDItemKind", "mdimporter:kMDLabelKind"],
         "type": "string",
         "ui_label": "Kind",
@@ -522,6 +530,7 @@
           "last used dates",
           "last used times"
         ],
+        "legacy_keys": ["lastUsedAt"],
         "system_keys": ["mditem:kMDItemLastUsedDate"],
         "type": "date",
         "ui_label": "Last used date",
@@ -531,6 +540,7 @@
         "availability": "macOS 10.4+",
         "description": "Number of pages in the document.",
         "search_aliases": ["num of pages", "number of page", "num of page"],
+        "legacy_keys": ["numberOfPages"],
         "system_keys": ["mditem:kMDItemNumberOfPages"],
         "type": "number",
         "ui_label": "Number of pages"
@@ -688,6 +698,7 @@
         "availability": "macOS 10.4+",
         "description": "The title of the file. For example, this could be the title of a document, the name of a song, or the subject of an email message.",
         "search_aliases": [],
+        "legacy_keys": ["title"],
         "system_keys": ["mditem:kMDItemTitle"],
         "type": "string",
         "ui_label": "Title"
@@ -728,6 +739,7 @@
           "created dates",
           "creation times"
         ],
+        "legacy_keys": ["createdAt"],
         "system_keys": [
           "mditem:kMDItemFSCreationDate",
           "nsurl:NSURLCreationDateKey"
@@ -787,6 +799,7 @@
         "availability": "macOS 10.6+",
         "description": "The key for the total size allocated on-disk for the file.",
         "search_aliases": ["file allocated bytes", "file allocated sizes"],
+        "legacy_keys": ["size"],
         "system_keys": [
           "mditem:kMDItemFSSize",
           "nsurl:NSURLFileAllocatedSizeKey",
@@ -852,6 +865,7 @@
         "availability": "macOS 10.6+",
         "description": "Key for determining whether the resource is normally not displayed to users, returned as a Boolean NSNumber object (read-write).",
         "search_aliases": ["is hidden"],
+        "legacy_keys": ["isInvisible"],
         "system_keys": ["mditem:kMDItemFSInvisible", "nsurl:NSURLIsHiddenKey"],
         "type": "boolean",
         "ui_label": "Is hidden",
@@ -874,6 +888,7 @@
         "availability": "macOS 10.6+",
         "description": "The resource's name in the file system, returned as an NSString object (read-write).",
         "search_aliases": ["full name"],
+        "legacy_keys": ["name"],
         "system_keys": ["mditem:kMDItemFSName", "nsurl:NSURLNameKey"],
         "type": "string",
         "ui_label": "Name",
@@ -975,6 +990,7 @@
         "availability": "macOS 10.4+",
         "description": "The color space model used by the document contents. For example, \"RGB\", \"CMYK\", \"YUV\", or \"YCbCr\".",
         "search_aliases": ["color spaces"],
+        "legacy_keys": ["colorSpace"],
         "system_keys": ["mditem:kMDItemColorSpace"],
         "type": "string",
         "ui_label": "Color space"
@@ -1075,6 +1091,7 @@
         "availability": "macOS 10.4+",
         "description": "Indicates if this image file has an alpha channel.",
         "search_aliases": ["has alpha channels"],
+        "legacy_keys": ["hasAlphaChannel"],
         "system_keys": ["mditem:kMDItemHasAlphaChannel"],
         "type": "boolean",
         "ui_label": "Has alpha channel"
@@ -1099,6 +1116,7 @@
         "availability": "macOS 10.5+",
         "description": "The latitude of the item in degrees north of the equator, expressed using the WGS84 datum. Negative values lie south of the equator.",
         "search_aliases": [],
+        "legacy_keys": ["latitude"],
         "system_keys": ["mditem:kMDItemLatitude"],
         "type": "string",
         "ui_label": "Latitude"
@@ -1115,6 +1133,7 @@
         "availability": "macOS 10.5+",
         "description": "The longitude of the item in degrees east of the prime meridian, expressed using the WGS84 datum. Negative values lie west of the prime meridian.",
         "search_aliases": [],
+        "legacy_keys": ["longitude"],
         "system_keys": ["mditem:kMDItemLongitude"],
         "type": "string",
         "ui_label": "Longitude"
@@ -1169,6 +1188,7 @@
         "availability": "macOS 10.4+",
         "description": "The height, in pixels, of the contents. For example, the image height or the video frame height.",
         "search_aliases": ["px height", "pixel heights", "px heights"],
+        "legacy_keys": ["pixelHeight"],
         "system_keys": ["mditem:kMDItemPixelHeight"],
         "type": "number",
         "ui_label": "Pixel height"
@@ -1177,6 +1197,7 @@
         "availability": "macOS 10.4+",
         "description": "The width, in pixels, of the contents. For example, the image width or the video frame width.",
         "search_aliases": ["px width", "pixel widths", "px widths"],
+        "legacy_keys": ["pixelWidth"],
         "system_keys": ["mditem:kMDItemPixelWidth"],
         "type": "number",
         "ui_label": "Pixel width"
@@ -1335,6 +1356,7 @@
         "availability": "macOS 10.7+",
         "description": "Date added.",
         "search_aliases": ["time added", "date addeds", "time addeds"],
+        "legacy_keys": ["addedAt"],
         "system_keys": [
           "mdimporter:kMDItemDateAdded",
           "nsurl:NSURLAddedToDirectoryDateKey"
@@ -2516,6 +2538,7 @@
           "audio bit rates",
           "sound bit rates"
         ],
+        "legacy_keys": ["audioBitRate"],
         "system_keys": ["mditem:kMDItemAudioBitRate"],
         "type": "number",
         "ui_label": "Audio bit rate"
@@ -2623,6 +2646,7 @@
           "video bit rates",
           "movie bit rates"
         ],
+        "legacy_keys": ["videoBitRate"],
         "system_keys": ["mditem:kMDItemVideoBitRate"],
         "type": "number",
         "ui_label": "Video bit rate"
