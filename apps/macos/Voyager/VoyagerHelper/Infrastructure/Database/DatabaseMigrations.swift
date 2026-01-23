@@ -85,6 +85,23 @@ nonisolated enum DatabaseMigrations {
         {
             directoryURL = URL(fileURLWithPath: projectRoot, isDirectory: true)
                 .appendingPathComponent(expandedLocation, isDirectory: true)
+        } else if let resources = Bundle.main.resourceURL {
+            let bundledURL = resources.appendingPathComponent(expandedLocation, isDirectory: true)
+            var isDirectory = ObjCBool(false)
+            if FileManager.default.fileExists(atPath: bundledURL.path, isDirectory: &isDirectory),
+               isDirectory.boolValue
+            {
+                directoryURL = bundledURL
+            } else if let projectRoot = ProcessInfo.processInfo.environment["VOYAGER_PROJECT_ROOT"],
+                      !projectRoot.isEmpty
+            {
+                directoryURL = URL(fileURLWithPath: projectRoot, isDirectory: true)
+                    .appendingPathComponent(expandedLocation, isDirectory: true)
+            } else {
+                throw DatabaseError.migrationFailed(
+                    "VOYAGER_PROJECT_ROOT required for relative migration path: \(expandedLocation)",
+                )
+            }
         } else {
             throw DatabaseError.migrationFailed(
                 "VOYAGER_PROJECT_ROOT required for relative migration path: \(expandedLocation)",
