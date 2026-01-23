@@ -5,6 +5,12 @@ import Logging
 import os
 
 final class IncrementalIndexingEventExecutor {
+    private struct ApplyOutcome {
+        let upserted: Int
+        let deleted: Int
+        let error: Error?
+    }
+
     private let manager: DatabaseManager
     private let logger: Logging.Logger
     private let eventLogger: os.Logger
@@ -30,7 +36,7 @@ final class IncrementalIndexingEventExecutor {
 
     // 변경 경로 적용 및 마지막 이벤트 저장
     func apply(
-        changes: [(String, FSEventStreamEventFlags)],
+        changes: [IncrementalIndexingPlannedChange],
         maxEventId: FSEventStreamEventId
     ) async throws {
         if !changes.isEmpty {
@@ -40,47 +46,27 @@ final class IncrementalIndexingEventExecutor {
     }
 
     // 변경 경로 DB 반영
-    private func applyChanges(_ changes: [(String, FSEventStreamEventFlags)]) async throws {
+    private func applyChanges(_ changes: [IncrementalIndexingPlannedChange]) async throws {
         let repo = EntryRepository(manager: manager, logger: logger)
         var insertedOrUpdated = 0
         var deleted = 0
         var lastError: Error?
 
-        for (path, flags) in changes {
-            let removed = flags & FSEventStreamEventFlags(kFSEventStreamEventFlagItemRemoved) != 0
-            let exists = FileManager.default.fileExists(atPath: path)
-            if removed || !exists {
-                do {
-                    deleted += try await repo.deleteByPath(path)
-                } catch {
+        for change in changes {
+            switch change.action {
+            case .delete:
+                let outcome = await handleDelete(repo: repo, path: change.path)
+                deleted += outcome.deleted
+                if let error = outcome.error {
                     lastError = error
-                    eventLogger.error(
-                        "Incremental indexing delete failed: \(String(describing: error), privacy: .public)"
-                    )
                 }
-                continue
-            }
-
-            guard let mdItem = MDItemCreate(kCFAllocatorDefault, path as CFString) else {
-                continue
-            }
-            let cachedIdentifier = path.hasPrefix(homePath) ? cachedVolumeIdentifier : nil
-            let record = await InitialIndexingRecordBuilder.makeRecord(
-                mdItem: mdItem,
-                path: path,
-                homeURL: homeURL,
-                cachedVolumeIdentifier: cachedIdentifier
-            )
-            guard let record else { continue }
-
-            do {
-                _ = try await repo.upsertByPath(record)
-                insertedOrUpdated += 1
-            } catch {
-                lastError = error
-                eventLogger.error(
-                    "Incremental indexing upsert failed: \(String(describing: error), privacy: .public)"
-                )
+            case .upsert:
+                let outcome = await handleUpsert(repo: repo, path: change.path)
+                insertedOrUpdated += outcome.upserted
+                deleted += outcome.deleted
+                if let error = outcome.error {
+                    lastError = error
+                }
             }
         }
 
@@ -95,6 +81,50 @@ final class IncrementalIndexingEventExecutor {
 
         if let lastError {
             throw lastError
+        }
+    }
+
+    // 삭제 처리
+    private func handleDelete(repo: EntryRepository, path: String) async -> ApplyOutcome {
+        do {
+            let deleted = try await repo.deleteByPath(path)
+            return ApplyOutcome(upserted: 0, deleted: deleted, error: nil)
+        } catch {
+            eventLogger.error(
+                "Incremental indexing delete failed: \(String(describing: error), privacy: .public)"
+            )
+            return ApplyOutcome(upserted: 0, deleted: 0, error: error)
+        }
+    }
+
+    // 업서트 처리
+    private func handleUpsert(repo: EntryRepository, path: String) async -> ApplyOutcome {
+        if !FileManager.default.fileExists(atPath: path) {
+            return await handleDelete(repo: repo, path: path)
+        }
+
+        guard let mdItem = MDItemCreate(kCFAllocatorDefault, path as CFString) else {
+            return ApplyOutcome(upserted: 0, deleted: 0, error: nil)
+        }
+        let cachedIdentifier = path.hasPrefix(homePath) ? cachedVolumeIdentifier : nil
+        let record = await InitialIndexingRecordBuilder.makeRecord(
+            mdItem: mdItem,
+            path: path,
+            homeURL: homeURL,
+            cachedVolumeIdentifier: cachedIdentifier
+        )
+        guard let record else {
+            return ApplyOutcome(upserted: 0, deleted: 0, error: nil)
+        }
+
+        do {
+            _ = try await repo.upsertByPath(record)
+            return ApplyOutcome(upserted: 1, deleted: 0, error: nil)
+        } catch {
+            eventLogger.error(
+                "Incremental indexing upsert failed: \(String(describing: error), privacy: .public)"
+            )
+            return ApplyOutcome(upserted: 0, deleted: 0, error: error)
         }
     }
 

@@ -209,7 +209,7 @@ final class IncrementalIndexingWatcher {
 
     // DB 반영 작업 직렬화
     private func enqueueProcessing(
-        changes: [(String, FSEventStreamEventFlags)],
+        changes: [IncrementalIndexingPlannedChange],
         maxEventId: FSEventStreamEventId
     ) {
         guard let eventExecutor else { return }

@@ -4,7 +4,17 @@ import Foundation
 struct IncrementalIndexingEventPlan {
     let totalCount: Int
     let maxEventId: FSEventStreamEventId
-    let changes: [(String, FSEventStreamEventFlags)]
+    let changes: [IncrementalIndexingPlannedChange]
+}
+
+enum IncrementalIndexingAction {
+    case upsert
+    case delete
+}
+
+struct IncrementalIndexingPlannedChange {
+    let path: String
+    var action: IncrementalIndexingAction
 }
 
 final class IncrementalIndexingEventPlanner {
@@ -20,13 +30,20 @@ final class IncrementalIndexingEventPlanner {
         guard eventCount > 0 else { return nil }
 
         var maxEventId = lastEventId ?? 0
-        var changes: [(String, FSEventStreamEventFlags)] = []
+        var changes: [IncrementalIndexingPlannedChange] = []
+        var indexByPath: [String: Int] = [:]
         changes.reserveCapacity(eventCount)
 
         for index in 0..<eventCount {
             maxEventId = max(maxEventId, ids[index])
             guard let normalized = normalizePath(paths[index], watchedPaths: watchedPaths) else { continue }
-            changes.append((normalized, flags[index]))
+            guard let action = resolveAction(flags[index]) else { continue }
+            if let existingIndex = indexByPath[normalized] {
+                changes[existingIndex].action = action
+                continue
+            }
+            indexByPath[normalized] = changes.count
+            changes.append(IncrementalIndexingPlannedChange(path: normalized, action: action))
         }
 
         return IncrementalIndexingEventPlan(
@@ -34,6 +51,25 @@ final class IncrementalIndexingEventPlanner {
             maxEventId: maxEventId,
             changes: changes
         )
+    }
+
+    // 이벤트 플래그에 따른 처리 결정
+    private func resolveAction(_ flags: FSEventStreamEventFlags) -> IncrementalIndexingAction? {
+        let removedFlag = FSEventStreamEventFlags(kFSEventStreamEventFlagItemRemoved)
+        if flags & removedFlag != 0 {
+            return .delete
+        }
+
+        let upsertFlags = FSEventStreamEventFlags(kFSEventStreamEventFlagItemCreated)
+            | FSEventStreamEventFlags(kFSEventStreamEventFlagItemModified)
+            | FSEventStreamEventFlags(kFSEventStreamEventFlagItemRenamed)
+            | FSEventStreamEventFlags(kFSEventStreamEventFlagItemInodeMetaMod)
+            | FSEventStreamEventFlags(kFSEventStreamEventFlagItemFinderInfoMod)
+            | FSEventStreamEventFlags(kFSEventStreamEventFlagItemXattrMod)
+            | FSEventStreamEventFlags(kFSEventStreamEventFlagItemChangeOwner)
+
+        guard flags & upsertFlags != 0 else { return nil }
+        return .upsert
     }
 
     // 감시 경로 기준 표준화
