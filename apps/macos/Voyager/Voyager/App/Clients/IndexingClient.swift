@@ -1,17 +1,11 @@
 import ComposableArchitecture
 import Foundation
 import Logging
-import SwiftDotenv
-
-private struct IndexingRequestPayload: Encodable {
-    let paths: [String]
-}
 
 struct IndexingClient: Sendable {
-    // TODO: VOY-88 정식 인덱싱 엔드포인트 구현 이후 요청 경로와 인덱싱 패스를 수정한다.
-    var start: @Sendable (_ paths: [String]) async -> Void
+    var start: @Sendable () async -> Void
 
-    nonisolated init(start: @escaping @Sendable (_ paths: [String]) async -> Void) {
+    nonisolated init(start: @escaping @Sendable () async -> Void) {
         self.start = start
     }
 }
@@ -19,35 +13,25 @@ struct IndexingClient: Sendable {
 extension IndexingClient: DependencyKey {
     nonisolated static var liveValue: IndexingClient {
         let logger = Logger(label: "Voyager")
-        return IndexingClient(start: { paths in
-            guard !paths.isEmpty else { return }
-
-            let request = await MainActor.run { () -> URLRequest? in
-                let baseURL = Dotenv.publicBackendURL
-                let url = baseURL.appendingPathComponent("api/files/indexing")
-                var request = URLRequest(url: url)
-                request.httpMethod = "POST"
-                request.setValue("application/json", forHTTPHeaderField: "Content-Type")
-                request.httpBody = try? JSONEncoder().encode(IndexingRequestPayload(paths: paths))
-                return request
+        return IndexingClient(start: {
+            logger.info("IndexingClient.start invoked.")
+            await MainActor.run {
+                DistributedNotificationCenter.default().post(
+                    name: .voyagerIndexingRequest,
+                    object: nil,
+                    userInfo: nil,
+                )
             }
-
-            guard let request else {
-                logger.warning("Indexing request build failed.")
-                return
-            }
-            logger.info("Indexing request started.")
-            let task = URLSession.shared.dataTask(with: request)
-            task.resume()
+            logger.info("Indexing request sent.")
         })
     }
 
     nonisolated static var testValue: IndexingClient {
-        IndexingClient(start: { _ in })
+        IndexingClient(start: {})
     }
 
     nonisolated static var previewValue: IndexingClient {
-        IndexingClient(start: { _ in })
+        IndexingClient(start: {})
     }
 }
 

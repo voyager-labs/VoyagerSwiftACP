@@ -1,7 +1,9 @@
 @preconcurrency import ComposableArchitecture
 import Foundation
+import Logging
 
 // swiftlint:disable file_length type_body_length
+private let composerLogger = Logger(label: "Voyager")
 struct FilterSnapshot: Equatable {
     let scopes: [String]
     let conditions: [Condition]
@@ -11,6 +13,8 @@ struct FilterSnapshot: Equatable {
 struct ComposerFeature {
     @Dependency(\.searchClient)
     var searchClient
+    @Dependency(\.registryClient)
+    var registryClient
 
     @ObservableState
     struct State: Equatable {
@@ -18,12 +22,13 @@ struct ComposerFeature {
         var text: String = ""
         var scopes: [String] = []
         var conditions: [Condition] = []
+        var operatorOptionsByKey: [String: [String]] = [:]
         var focusRequestID: Int = 0
         var propertyPicker: ConditionPropertyPickerFeature.State = .init()
         var operatorPicker: OperatorPickerFeature.State = .init()
         var valuePicker: ValuePickerFeature.State = .init()
-        var history: [FilterSnapshot] = []
-        var redoHistory: [FilterSnapshot] = []
+        var history: [FilterSnapshot] = [] // 이 히스토리는 UndoManager를 사용하도록 변경해야 하는 것이 아닌가?
+        var redoHistory: [FilterSnapshot] = [] // 이 히스토리는 UndoManager를 사용하도록 변경해야 하는 것이 아닌가?
         var isLoadingSearch: Bool = false
         var isLoadingFilters: Bool = false
         var isFilteringInFlight: Bool = false
@@ -53,7 +58,7 @@ struct ComposerFeature {
         case addScope(path: String)
         case removeScope(path: String)
         case updateScope(oldPath: String, newPath: String)
-        case addCondition(property: MDItemProperty)
+        case addCondition(propertyKey: String)
         case removeCondition(propertyKey: String)
         case clearAll
         case submit
@@ -63,9 +68,9 @@ struct ComposerFeature {
         case saveCollection
         case saveCollectionAs
         case focusQueryField
-        case setOperator(propertyKey: String, option: OperatorOption)
+        case setOperator(propertyKey: String, operatorCode: String)
         case setValue(propertyKey: String, values: [String])
-        case replaceConditionProperty(originalKey: String, property: MDItemProperty)
+        case replaceConditionProperty(originalKey: String, propertyKey: String)
         case undo
         case redo
         case propertyPicker(ConditionPropertyPickerFeature.Action)
@@ -129,6 +134,7 @@ struct ComposerFeature {
                 state.text = ""
                 state.scopes = [ComposerScopeUtils.rootScopePath]
                 state.conditions = []
+                state.operatorOptionsByKey = [:]
                 state.propertyPicker = .init()
                 state.operatorPicker = .init()
                 state.valuePicker = .init()
@@ -199,25 +205,29 @@ struct ComposerFeature {
                 }
                 return applyFiltersIfNeeded(state: &state, searchClient: searchClient)
 
-            case let .addCondition(property):
+            case let .addCondition(propertyKey):
                 guard !state.isLoadingSearch else { return .none }
-                if state.conditions.contains(where: { $0.propertyKey == property.key }) {
-                    state.propertyPicker.duplicateMessage = "\"\(property.label)\" is already added."
+                let label = registryClient.labelForKey(propertyKey)
+                let propertyType = registryClient.propertyTypeString(propertyKey)
+                if state.conditions.contains(where: { $0.propertyKey == propertyKey }) {
+                    state.propertyPicker.duplicateMessage = "\"\(label)\" is already added."
                     return .none
                 }
 
                 state.pushHistory()
                 let condition = Condition(
-                    propertyKey: property.key,
-                    propertyLabel: property.label,
-                    propertyType: property.type,
+                    propertyKey: propertyKey,
+                    propertyLabel: label,
+                    propertyType: propertyType,
                     operatorCode: nil,
                     operatorLabel: nil,
                     operatorValueArity: nil,
-                    valueType: valueType(for: property.type),
+                    operatorValueUIKind: nil,
+                    valueType: valueType(for: propertyType),
                     values: nil,
                 )
                 state.conditions.append(condition)
+                updateOperatorOptions(state: &state, registryClient: registryClient)
                 state.propertyPicker.duplicateMessage = nil
                 state.propertyPicker.isPresented = false
                 return .none
@@ -227,30 +237,42 @@ struct ComposerFeature {
                 if state.conditions.contains(where: { $0.propertyKey == propertyKey }) {
                     state.pushHistory()
                     state.conditions.removeAll { $0.propertyKey == propertyKey }
+                    updateOperatorOptions(state: &state, registryClient: registryClient)
                 }
                 return .none
 
-            case let .setOperator(propertyKey, option):
+            case let .setOperator(propertyKey, operatorCode):
                 guard !state.isLoadingSearch else { return .none }
                 if let idx = state.conditions.firstIndex(where: { $0.propertyKey == propertyKey }) {
                     state.pushHistory()
-                    state.conditions[idx].operatorCode = option.code
-                    state.conditions[idx].operatorLabel = option.label
-                    state.conditions[idx].operatorValueArity = option.valueArity
-                    state.conditions[idx].valueType = option
-                        .valueType ?? valueType(for: state.conditions[idx].propertyType)
+                    let propertyType = state.conditions[idx].propertyType
+                    let typeKey = conditionTypeKey(for: propertyType)
+                    let uiValueKind = registryClient.operatorUIKind(
+                        for: operatorCode,
+                        typeKey: typeKey,
+                    )
+                    state.conditions[idx].operatorCode = operatorCode
+                    state.conditions[idx].operatorLabel = registryClient.operatorLabel(for: operatorCode)
+                    state.conditions[idx].operatorValueArity = registryClient.valueArity(for: uiValueKind)
+                    state.conditions[idx].operatorValueUIKind = uiValueKind
+                    state.conditions[idx].valueType = registryClient.valueType(for: uiValueKind)
                     state.conditions[idx].values = nil
                     if state.valuePicker.propertyKey == propertyKey {
                         state.valuePicker.isPresented = false
                         state.valuePicker.propertyKey = nil
-                        state.valuePicker.operatorOption = nil
-                        state.valuePicker.values = Array(repeating: "", count: option.valueArity)
+                        state.valuePicker.operatorCode = nil
+                        state.valuePicker.valueUIKind = "singleText"
+                        state.valuePicker.valueType = "string"
+                        state.valuePicker.values = Array(
+                            repeating: "",
+                            count: registryClient.valueArity(for: uiValueKind),
+                        )
                         state.valuePicker.errorMessage = nil
                     }
                 }
                 return .none
 
-            case let .replaceConditionProperty(originalKey, property):
+            case let .replaceConditionProperty(originalKey, propertyKey):
                 guard !state.isLoadingSearch else { return .none }
                 guard let idx = state.conditions.firstIndex(where: { $0.propertyKey == originalKey }) else {
                     state.propertyPicker.editingConditionKey = nil
@@ -258,23 +280,28 @@ struct ComposerFeature {
                     return .none
                 }
 
+                let label = registryClient.labelForKey(propertyKey)
+                let propertyType = registryClient.propertyTypeString(propertyKey)
+
                 // 중복 방지: 다른 조건에 동일 key가 이미 있으면 안내 후 아무 변화 없이 종료
-                if let dupIndex = state.conditions.firstIndex(where: { $0.propertyKey == property.key }),
+                if let dupIndex = state.conditions.firstIndex(where: { $0.propertyKey == propertyKey }),
                    dupIndex != idx
                 {
-                    state.propertyPicker.duplicateMessage = "\"\(property.label)\" is already added."
+                    state.propertyPicker.duplicateMessage = "\"\(label)\" is already added."
                     return .none
                 }
 
                 state.pushHistory()
-                state.conditions[idx].propertyKey = property.key
-                state.conditions[idx].propertyLabel = property.label
-                state.conditions[idx].propertyType = property.type
+                state.conditions[idx].propertyKey = propertyKey
+                state.conditions[idx].propertyLabel = label
+                state.conditions[idx].propertyType = propertyType
                 state.conditions[idx].operatorCode = nil
                 state.conditions[idx].operatorLabel = nil
                 state.conditions[idx].operatorValueArity = nil
-                state.conditions[idx].valueType = valueType(for: property.type)
+                state.conditions[idx].operatorValueUIKind = nil
+                state.conditions[idx].valueType = valueType(for: propertyType)
                 state.conditions[idx].values = nil
+                updateOperatorOptions(state: &state, registryClient: registryClient)
                 state.propertyPicker.editingConditionKey = nil
                 state.propertyPicker.isPresented = false
                 state.propertyPicker.duplicateMessage = nil
@@ -288,6 +315,7 @@ struct ComposerFeature {
                 state.redoHistory.append(current)
                 state.scopes = previous.scopes
                 state.conditions = previous.conditions
+                updateOperatorOptions(state: &state, registryClient: registryClient)
                 let after = buildFilters(from: state)
                 if before != after {
                     return applyFiltersIfNeeded(state: &state, searchClient: searchClient)
@@ -302,6 +330,7 @@ struct ComposerFeature {
                 state.history.append(current)
                 state.scopes = next.scopes
                 state.conditions = next.conditions
+                updateOperatorOptions(state: &state, registryClient: registryClient)
                 let after = buildFilters(from: state)
                 if before != after {
                     return applyFiltersIfNeeded(state: &state, searchClient: searchClient)
@@ -310,9 +339,9 @@ struct ComposerFeature {
 
             case let .propertyPicker(.propertyTapped(property)):
                 if let editingKey = state.propertyPicker.editingConditionKey {
-                    return .send(.replaceConditionProperty(originalKey: editingKey, property: property))
+                    return .send(.replaceConditionProperty(originalKey: editingKey, propertyKey: property))
                 } else {
-                    return .send(.addCondition(property: property))
+                    return .send(.addCondition(propertyKey: property))
                 }
 
             case let .propertyPicker(.setPresented(isPresented)):
@@ -339,13 +368,18 @@ struct ComposerFeature {
                 if !isPresented {
                     state.operatorPicker.propertyKey = nil
                     state.operatorPicker.options = []
+                    state.operatorPicker.optionLabels = [:]
                 }
                 return .none
 
-            case let .operatorPicker(.prepare(propertyKey, options)):
+            case let .operatorPicker(.prepare(propertyKey, options, _)):
                 guard !state.isLoadingSearch else { return .none }
+                let optionLabels = Dictionary(
+                    uniqueKeysWithValues: options.map { ($0, registryClient.operatorLabel(for: $0)) },
+                )
                 state.operatorPicker.propertyKey = propertyKey
                 state.operatorPicker.options = options
+                state.operatorPicker.optionLabels = optionLabels
                 state.operatorPicker.isPresented = true
                 return .none
 
@@ -353,7 +387,7 @@ struct ComposerFeature {
                 guard let propertyKey = state.operatorPicker.propertyKey else {
                     return .none
                 }
-                return .send(.setOperator(propertyKey: propertyKey, option: option))
+                return .send(.setOperator(propertyKey: propertyKey, operatorCode: option))
 
             case .operatorPicker:
                 return .none
@@ -362,20 +396,19 @@ struct ComposerFeature {
                 state.valuePicker.isPresented = isPresented
                 if !isPresented {
                     state.valuePicker.propertyKey = nil
-                    state.valuePicker.operatorOption = nil
-                    if state.valuePicker.valueArity > 0 {
-                        state.valuePicker.values = Array(repeating: "", count: state.valuePicker.valueArity)
-                    }
+                    state.valuePicker.operatorCode = nil
+                    state.valuePicker.values = []
                     state.valuePicker.errorMessage = nil
+                    state.valuePicker.editingIndex = nil
                 }
                 return .none
 
             case let .valuePicker(.prepare(payload)):
                 guard !state.isLoadingSearch else { return .none }
                 state.valuePicker.propertyKey = payload.propertyKey
-                state.valuePicker.operatorOption = payload.operatorOption
+                state.valuePicker.operatorCode = payload.operatorCode
                 state.valuePicker.valueType = payload.valueType
-                state.valuePicker.valueArity = max(0, payload.operatorOption.valueArity)
+                state.valuePicker.valueArity = max(0, payload.valueArity)
                 state.valuePicker.valueUIKind = payload.valueUIKind
                 state.valuePicker.editingIndex = payload.editingIndex
 
@@ -418,7 +451,7 @@ struct ComposerFeature {
                 }
                 state.valuePicker.isPresented = false
                 state.valuePicker.propertyKey = nil
-                state.valuePicker.operatorOption = nil
+                state.valuePicker.operatorCode = nil
                 state.valuePicker.errorMessage = nil
                 state.valuePicker.editingIndex = nil
                 return applyFiltersIfNeeded(state: &state, searchClient: searchClient)
@@ -434,7 +467,7 @@ struct ComposerFeature {
                 }
                 state.valuePicker.isPresented = false
                 state.valuePicker.propertyKey = nil
-                state.valuePicker.operatorOption = nil
+                state.valuePicker.operatorCode = nil
                 state.valuePicker.errorMessage = nil
                 state.valuePicker.editingIndex = nil
                 return .none
@@ -443,7 +476,7 @@ struct ComposerFeature {
                 state.isLoadingSearch = false
                 state.lastSearchResponse = response
                 state.lastFiltersResponse = nil
-                applyAppliedFilters(response.appliedFilters, state: &state)
+                applyAppliedFilters(response.appliedFilters, state: &state, registryClient: registryClient)
                 return .none
 
             case .searchResponse(.failure):
@@ -454,7 +487,7 @@ struct ComposerFeature {
                 state.isLoadingFilters = false
                 state.isFilteringInFlight = false
                 state.lastFiltersResponse = response
-                applyAppliedFilters(response.appliedFilters, state: &state)
+                applyAppliedFilters(response.appliedFilters, state: &state, registryClient: registryClient)
                 return .none
 
             case .filtersResponse(.failure):
@@ -469,14 +502,17 @@ struct ComposerFeature {
 private func applyAppliedFilters(
     _ appliedFilters: AppliedFiltersPayload?,
     state: inout ComposerFeature.State,
+    registryClient: RegistryClient,
 ) {
     let resolved = AppliedFiltersUtils.resolve(
         appliedFilters,
         fallbackScopes: state.scopes,
         fallbackConditions: state.conditions,
+        registryClient: registryClient,
     )
     state.scopes = resolved.scopes
     state.conditions = resolved.conditions
+    updateOperatorOptions(state: &state, registryClient: registryClient)
 }
 
 private func applyFiltersIfNeeded(
@@ -504,6 +540,7 @@ private func applyFiltersIfNeeded(
 
 private func buildFilters(from state: ComposerFeature.State) -> SearchFiltersPayload {
     let conditionPayloads: [SearchConditionPayload] = state.conditions.compactMap { condition in
+        guard condition.isActive else { return nil }
         guard let op = condition.operatorCode else { return nil }
         if let arity = condition.operatorValueArity, arity == 0 {
             return SearchConditionPayload(propertyKey: condition.propertyKey, operator: op, value: nil)
@@ -512,6 +549,13 @@ private func buildFilters(from state: ComposerFeature.State) -> SearchFiltersPay
         guard let encoded = encodeValue(condition: condition, values: values) else { return nil }
         return SearchConditionPayload(propertyKey: condition.propertyKey, operator: op, value: encoded)
     }
+    composerLogger.debug(
+        "Built search filters payload",
+        metadata: [
+            "scopes": .stringConvertible(state.scopes.count),
+            "conditions": .stringConvertible(conditionPayloads.count),
+        ],
+    )
     return SearchFiltersPayload(
         scopes: state.scopes,
         conditions: conditionPayloads,
@@ -521,8 +565,20 @@ private func buildFilters(from state: ComposerFeature.State) -> SearchFiltersPay
 // swiftlint:disable:next cyclomatic_complexity
 private func encodeValue(condition: Condition, values: [String]) -> JSONValue? {
     let op = condition.operatorCode?.lowercased()
+    if let kind = condition.operatorValueUIKind {
+        switch kind {
+        case "listText":
+            return .array(values.map(JSONValue.string))
+        case "listNumber":
+            let numbers = values.compactMap(Double.init)
+            guard numbers.count == values.count else { return nil }
+            return .array(numbers.map(JSONValue.number))
+        default:
+            break
+        }
+    }
     switch condition.valueType {
-    case .number:
+    case "number":
         let numbers = values.compactMap(Double.init)
         guard numbers.count == values.count else { return nil }
         if numbers.count == 1 {
@@ -530,7 +586,7 @@ private func encodeValue(condition: Condition, values: [String]) -> JSONValue? {
         }
         return .array(numbers.map(JSONValue.number))
 
-    case .boolean:
+    case "boolean":
         guard let first = values.first?.lowercased() else { return nil }
         if first == "true" {
             return .bool(true)
@@ -539,7 +595,7 @@ private func encodeValue(condition: Condition, values: [String]) -> JSONValue? {
         }
         return nil
 
-    case .date:
+    case "date", "datetime":
         let formattedValues = values.map { value in
             ValueNormalizerUtils.formatDateOnlyString(value) ?? value
         }
@@ -548,7 +604,7 @@ private func encodeValue(condition: Condition, values: [String]) -> JSONValue? {
         }
         return .array(formattedValues.map(JSONValue.string))
 
-    case .array, .string, .unknown:
+    case "string_list", "string", "unknown":
         if op == "in" || op == "anyof" {
             return .array(values.map(JSONValue.string))
         }
@@ -556,24 +612,50 @@ private func encodeValue(condition: Condition, values: [String]) -> JSONValue? {
             return .string(values[0])
         }
         return .array(values.map(JSONValue.string))
+
+    default:
+        if values.count == 1 {
+            return .string(values[0])
+        }
+        return .array(values.map(JSONValue.string))
     }
 }
 
-private func valueType(for propertyType: String) -> ValueType {
+private func valueType(for propertyType: String) -> String {
     switch propertyType {
-    case "string":
-        .string
-    case "number":
-        .number
-    case "date", "datetime":
-        .date
-    case "boolean":
-        .boolean
-    case "array":
-        .array
+    case "string", "number", "date", "datetime", "boolean", "string_list":
+        propertyType
     default:
-        .unknown
+        "unknown"
     }
+}
+
+private func conditionTypeKey(for rawType: String) -> String {
+    switch rawType.lowercased() {
+    case "string":
+        "string"
+    case "number":
+        "number"
+    case "date", "datetime":
+        "date"
+    case "boolean":
+        "boolean"
+    case "string_list":
+        "string_list"
+    default:
+        "unknown"
+    }
+}
+
+private func updateOperatorOptions(
+    state: inout ComposerFeature.State,
+    registryClient: RegistryClient,
+) {
+    state.operatorOptionsByKey = Dictionary(
+        uniqueKeysWithValues: state.conditions.map {
+            ($0.propertyKey, registryClient.operatorCodes(for: $0.propertyKey))
+        },
+    )
 }
 
 // swiftlint:enable type_body_length

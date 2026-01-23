@@ -57,11 +57,19 @@ struct EntryGridView: View, Equatable {
     @Dependency(\.workspaceClient)
     private var workspaceClient
     @State private var isDropTarget = false
-    @FocusState private var isTextFieldFocused: Bool
     @State private var isOptionPressed = false
     @State private var optionKeyTimer: Timer?
     @State private var showTagsEditor = false
     @State private var hasPrefetchedApplications = false
+    @State private var shouldFocusRename = false
+    @State private var renameTextWidth: CGFloat = 120
+
+    private struct RenameTextWidthKey: PreferenceKey {
+        static var defaultValue: CGFloat = 120
+        static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) {
+            value = nextValue()
+        }
+    }
 
     var body: some View {
         VStack(spacing: 1) {
@@ -85,6 +93,10 @@ struct EntryGridView: View, Equatable {
 
             VStack(spacing: 0) {
                 VStack(spacing: 0) {
+                    let font = NSFont.systemFont(ofSize: textSize)
+                    let lineHeight = ceil(font.ascender - font.descender + font.leading)
+                    let tagYOffset = max(0, (lineHeight - 8) / 2)
+
                     HStack(alignment: .top, spacing: 4) {
                         if let tags = item.tags, !tags.isEmpty {
                             OverlappingTagsView(
@@ -92,19 +104,24 @@ struct EntryGridView: View, Equatable {
                                 isSelected: (isSelected || isDropTarget) && !isRenaming,
                                 showBorderWhenUnselected: false,
                             )
-                            .padding(.top, 2)
+                            .padding(.top, tagYOffset)
                         }
 
                         if isRenaming {
-                            TextField("", text: Binding(
-                                get: { renamingText },
-                                set: { onRenameUpdate($0) },
-                            ))
-                            .font(.system(size: textSize))
-                            .lineLimit(1)
-                            .truncationMode(.middle)
-                            .multilineTextAlignment(.center)
-                            .textFieldStyle(.plain)
+                            AutoSizingTextView(
+                                text: Binding(
+                                    get: { renamingText },
+                                    set: { onRenameUpdate($0) },
+                                ),
+                                font: NSFont.systemFont(ofSize: textSize),
+                                textAlignment: .center,
+                                availableWidth: renameTextWidth,
+                                shouldFocus: shouldFocusRename,
+                                onCommit: onRenameCommit,
+                                onCancel: onRenameCancel,
+                            )
+                            .frame(maxWidth: .infinity)
+                            .layoutPriority(1)
                             .padding(.horizontal, 0)
                             .padding(.vertical, 0)
                             .background(
@@ -115,17 +132,14 @@ struct EntryGridView: View, Equatable {
                                 RoundedRectangle(cornerRadius: 4)
                                     .stroke(Color(nsColor: .keyboardFocusIndicatorColor), lineWidth: 1),
                             )
-                            .fixedSize(horizontal: true, vertical: false)
-                            .focused($isTextFieldFocused)
-                            .onSubmit {
-                                onRenameCommit()
-                            }
-                            .onExitCommand {
-                                onRenameCancel()
-                            }
+                            .background(
+                                GeometryReader { proxy in
+                                    Color.clear.preference(key: RenameTextWidthKey.self, value: proxy.size.width)
+                                },
+                            )
                             .onAppear {
                                 DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) {
-                                    isTextFieldFocused = true
+                                    shouldFocusRename = true
                                 }
                             }
                         } else {
@@ -223,6 +237,11 @@ struct EntryGridView: View, Equatable {
         }
         .onAppear {
             startOptionKeyMonitoring()
+        }
+        .onPreferenceChange(RenameTextWidthKey.self) { width in
+            if abs(width - renameTextWidth) > 0.5 {
+                renameTextWidth = width
+            }
         }
         .onDisappear {
             stopOptionKeyMonitoring()

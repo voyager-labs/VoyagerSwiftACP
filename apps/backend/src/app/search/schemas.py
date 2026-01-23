@@ -1,15 +1,27 @@
 """Search API 스키마 정의"""
 
-from pydantic import BaseModel, Field
+from __future__ import annotations
+
+from pydantic import BaseModel, Field, field_validator
 
 
+# TODO: Collection으로 변경 모듈 이름 변경
 class SearchCondition(BaseModel):
     """단일 검색 조건"""
 
-    propertyKey: str = Field(..., description="속성 키 (예: size, extension)")
-    operator: str = Field(..., description="연산자 (eq, gt, gte, lt, lte, between, contains, in)")
-    value: str | int | float | list[str] | list[int] | list[float] = Field(
-        ..., description="값 (단일값, 배열, [min, max])"
+    propertyKey: str = Field(
+        ..., description="속성 키 (예: name_full, content_type_tree, file_allocated_size)"
+    )
+    operator: str = Field(
+        ...,
+        description=(
+            "연산자 (eq, neq, gt, gte, lt, lte, between, not_between, empty, exists, "
+            "starts_with, ends_with, matches, contains_any, contains_all, "
+            "not_contains_any, not_contains_all)"
+        ),
+    )
+    value: str | int | float | list[str] | list[int] | list[float] | None = Field(
+        None, description="값 (단일값, 배열, [min, max]) - empty/exists는 생략 가능"
     )
 
 
@@ -17,9 +29,7 @@ class SearchFilters(BaseModel):
     """검색 필터"""
 
     scopes: list[str] = Field(default_factory=list, description="검색 경로 범위")
-    conditions: list[SearchCondition] = Field(
-        default_factory=list, description="검색 조건 목록"
-    )
+    conditions: list[SearchCondition] = Field(default_factory=list, description="검색 조건 목록")
 
 
 class QuerySearchRequest(BaseModel):
@@ -27,6 +37,14 @@ class QuerySearchRequest(BaseModel):
 
     query: str = Field(..., min_length=1, description="자연어 검색 쿼리")
     filters: SearchFilters | None = Field(None, description="선택적 필터")
+
+    @field_validator("query")
+    @classmethod
+    def validate_query(cls, value: str) -> str:
+        trimmed = value.strip()
+        if not trimmed:
+            raise ValueError("query는 공백만 포함할 수 없습니다.")
+        return trimmed
 
 
 class FilterSearchRequest(BaseModel):
@@ -54,9 +72,17 @@ class AppliedFilters(BaseModel):
     conditions: list[SearchCondition] = Field(default_factory=list)
 
 
+class SearchError(BaseModel):
+    """검색 오류 메타"""
+
+    code: str = Field(..., description="오류 코드")
+    details: str | None = Field(None, description="오류 상세")
+
+
 class SearchResponse(BaseModel):
     """검색 응답"""
 
     itemCount: int
     appliedFilters: AppliedFilters
     items: list[SearchItem]
+    error: SearchError | None = None

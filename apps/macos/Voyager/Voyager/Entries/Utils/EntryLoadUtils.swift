@@ -3,7 +3,7 @@ import Foundation
 import UniformTypeIdentifiers
 
 enum EntryLoadUtils {
-    private nonisolated(unsafe) static let dateFormatter: DateFormatter = {
+    private nonisolated static let dateFormatter: DateFormatter = {
         let formatter = DateFormatter()
         formatter.dateStyle = .medium
         formatter.timeStyle = .short

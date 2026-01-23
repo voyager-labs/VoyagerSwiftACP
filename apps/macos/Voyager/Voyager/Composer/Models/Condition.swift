@@ -6,6 +6,8 @@ struct Condition: Equatable, Identifiable, Hashable, Sendable {
     var operatorCode: String?
     var operatorLabel: String?
     var operatorValueArity: Int?
-    var valueType: ValueType = .unknown
+    var operatorValueUIKind: String?
+    var valueType: String = "unknown"
     var values: [String]?
+    var isActive: Bool = true
 }

@@ -112,7 +112,7 @@ struct ToolbarNavigationButtons: View {
     private func historyMenuLabel(for entry: FileManagerFeature.HistoryEntry) -> some View {
         HStack(spacing: 6) {
             if let icon = historyIcon(for: entry) {
-                Image(nsImage: resizedHistoryIcon(from: icon, isCollection: entry.navigationState.isCollection))
+                Image(nsImage: resizedHistoryIcon(from: icon))
                     .frame(width: 10, height: 10)
             }
             Text(historyDisplayName(for: entry))
@@ -137,8 +137,8 @@ struct ToolbarNavigationButtons: View {
         }
     }
 
-    private func resizedHistoryIcon(from icon: NSImage, isCollection: Bool) -> NSImage {
-        let size: CGFloat = isCollection ? 8 : 10
+    private func resizedHistoryIcon(from icon: NSImage) -> NSImage {
+        let size: CGFloat = 10
         let targetSize = NSSize(width: size, height: size)
         let resized = NSImage(size: targetSize)
         resized.lockFocus()

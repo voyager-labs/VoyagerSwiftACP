@@ -1,32 +1,116 @@
 import Foundation
 
 enum AppliedFiltersUtils {
+    struct ResolutionResult: Equatable {
+        let scopes: [String]
+        let conditions: [Condition]
+        let unknownKeys: [String]
+    }
+
     static func resolve(
         _ appliedFilters: AppliedFiltersPayload?,
         fallbackScopes: [String],
         fallbackConditions: [Condition],
+        registryClient: RegistryClient,
     ) -> (scopes: [String], conditions: [Condition]) {
-        let scopes = appliedFilters?.scopes ?? fallbackScopes
-        let conditions: [Condition] = if let appliedConditions = appliedFilters?.conditions {
-            appliedConditions.map(makeCondition(from:))
-        } else {
-            fallbackConditions
-        }
-        return (scopes, conditions)
+        let resolved = resolveDetailed(
+            appliedFilters,
+            fallbackScopes: fallbackScopes,
+            fallbackConditions: fallbackConditions,
+            registryClient: registryClient,
+        )
+        return (resolved.scopes, resolved.conditions)
     }
 
-    private static func makeCondition(from payload: SearchConditionPayload) -> Condition {
-        let propertyKey = payload.propertyKey
-        let propertyLabel = ConditionMappingUtils.defaultLabel(forKey: propertyKey)
-        let propertyType = ConditionOperatorMappingUtils.propertyTypeString(for: propertyKey)
-        let operatorOption = ConditionOperatorMappingUtils
-            .operatorOptions(for: propertyKey)
-            .first { $0.code == payload.operator }
-        let valueUIKind = operatorOption?.valueUI ?? .singleText
-        let operatorLabel = operatorOption?.label ?? payload.operator
-        let valueType = operatorOption == nil
-            ? valueType(for: propertyType)
-            : valueType(for: valueUIKind)
+    static func resolveDetailed(
+        _ appliedFilters: AppliedFiltersPayload?,
+        fallbackScopes: [String],
+        fallbackConditions: [Condition],
+        registryClient: RegistryClient,
+    ) -> ResolutionResult {
+        let scopes = appliedFilters?.scopes ?? fallbackScopes
+        if let appliedConditions = appliedFilters?.conditions {
+            let resolved = appliedConditions.map {
+                makeResolvedCondition(from: $0, registryClient: registryClient)
+            }
+            let unknownKeys = Array(
+                Set(resolved.compactMap(\.unknownKey)),
+            ).sorted()
+            return ResolutionResult(
+                scopes: scopes,
+                conditions: resolved.map(\.condition),
+                unknownKeys: unknownKeys,
+            )
+        }
+        return ResolutionResult(
+            scopes: scopes,
+            conditions: fallbackConditions,
+            unknownKeys: [],
+        )
+    }
+
+    private struct ResolvedCondition {
+        let condition: Condition
+        let unknownKey: String?
+    }
+
+    private static func makeResolvedCondition(
+        from payload: SearchConditionPayload,
+        registryClient: RegistryClient,
+    ) -> ResolvedCondition {
+        switch registryClient.resolveKey(payload.propertyKey) {
+        case let .canonical(propertyKey):
+            return ResolvedCondition(
+                condition: makeCondition(
+                    from: payload,
+                    propertyKey: propertyKey,
+                    registryClient: registryClient,
+                ),
+                unknownKey: nil,
+            )
+
+        case let .legacy(original, normalized):
+            return ResolvedCondition(
+                condition: makeCondition(
+                    from: payload,
+                    propertyKey: normalized,
+                    registryClient: registryClient,
+                ),
+                unknownKey: nil,
+            )
+
+        case let .unknown(original):
+            let values = stringValues(from: payload.value, valueUIKind: "singleText")
+            return ResolvedCondition(
+                condition: Condition(
+                    propertyKey: original,
+                    propertyLabel: "Unknown (\(original))",
+                    propertyType: "unknown",
+                    operatorCode: payload.operator,
+                    operatorLabel: payload.operator,
+                    operatorValueArity: nil,
+                    operatorValueUIKind: nil,
+                    valueType: "unknown",
+                    values: values,
+                    isActive: false,
+                ),
+                unknownKey: original,
+            )
+        }
+    }
+
+    private static func makeCondition(
+        from payload: SearchConditionPayload,
+        propertyKey: String,
+        registryClient: RegistryClient,
+    ) -> Condition {
+        let propertyLabel = registryClient.label(for: propertyKey)
+        let propertyType = registryClient.propertyTypeString(for: propertyKey)
+        let typeKey = conditionTypeKey(for: propertyType)
+        let operatorDefinition = registryClient.operatorDefinition(payload.operator)
+        let valueUIKind = registryClient.operatorUIKind(for: payload.operator, typeKey: typeKey)
+        let operatorLabel = operatorDefinition.uiLabel ?? payload.operator
+        let valueType = registryClient.valueType(for: valueUIKind)
 
         return Condition(
             propertyKey: propertyKey,
@@ -35,42 +119,14 @@ enum AppliedFiltersUtils {
             operatorCode: payload.operator,
             operatorLabel: operatorLabel,
             operatorValueArity: ValueNormalizerUtils.expectedArity(for: valueUIKind),
+            operatorValueUIKind: valueUIKind,
             valueType: valueType,
             values: stringValues(from: payload.value, valueUIKind: valueUIKind),
+            isActive: true,
         )
     }
 
-    private static func valueType(for propertyType: String) -> ValueType {
-        switch propertyType {
-        case "string":
-            .string
-        case "number":
-            .number
-        case "date", "datetime":
-            .date
-        case "boolean":
-            .boolean
-        case "array":
-            .array
-        default:
-            .unknown
-        }
-    }
-
-    private static func valueType(for valueUIKind: ValueUIKind) -> ValueType {
-        switch valueUIKind {
-        case .singleNumber, .rangeNumber, .listNumber:
-            .number
-        case .singleDate, .rangeDate:
-            .date
-        case .toggle:
-            .boolean
-        case .listText, .singleText, .none:
-            .string
-        }
-    }
-
-    private static func stringValues(from value: JSONValue?, valueUIKind: ValueUIKind) -> [String]? {
+    private static func stringValues(from value: JSONValue?, valueUIKind: String) -> [String]? {
         guard let value else { return nil }
         switch value {
         case let .string(text):
@@ -87,7 +143,7 @@ enum AppliedFiltersUtils {
         }
     }
 
-    private static func stringValue(from value: JSONValue, valueUIKind: ValueUIKind) -> String? {
+    private static func stringValue(from value: JSONValue, valueUIKind: String) -> String? {
         switch value {
         case let .string(text):
             normalizeDateString(text, valueUIKind: valueUIKind) ?? text
@@ -100,12 +156,29 @@ enum AppliedFiltersUtils {
         }
     }
 
-    private static func normalizeDateString(_ text: String, valueUIKind: ValueUIKind) -> String? {
+    private static func normalizeDateString(_ text: String, valueUIKind: String) -> String? {
         switch valueUIKind {
-        case .singleDate, .rangeDate:
+        case "singleDate", "rangeDate":
             ValueNormalizerUtils.formatDateOnlyString(text)
         default:
             nil
+        }
+    }
+
+    private static func conditionTypeKey(for rawType: String) -> String {
+        switch rawType.lowercased() {
+        case "string":
+            "string"
+        case "number":
+            "number"
+        case "date", "datetime":
+            "date"
+        case "boolean":
+            "boolean"
+        case "string_list":
+            "string_list"
+        default:
+            "unknown"
         }
     }
 

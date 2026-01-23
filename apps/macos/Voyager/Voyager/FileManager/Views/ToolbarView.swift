@@ -35,7 +35,6 @@ struct ToolbarView: View {
     @Dependency(\.entryClient)
     private var entryClient
     @State private var isTitleAreaHovered: Bool = false
-    @State private var isTitleHovered: Bool = false
 
     var body: some View {
         WithViewStore(
@@ -86,9 +85,18 @@ struct ToolbarView: View {
             )
 
             HStack(spacing: 8) {
-                titleButton(viewStore: viewStore)
-
-                Spacer()
+                Button(
+                    action: { store.send(.enterComposer) },
+                    label: {
+                        HStack(spacing: 4) {
+                            titleContent(viewStore: viewStore)
+                            Spacer()
+                        }
+                        .frame(maxWidth: .infinity)
+                        .contentShape(Rectangle())
+                    },
+                )
+                .buttonStyle(.borderless)
 
                 if isTitleAreaHovered {
                     ViewToggleButton(store: store)
@@ -118,7 +126,7 @@ struct ToolbarView: View {
         Color.primary.opacity(0.12)
     }
 
-    private func titleButton(viewStore: ViewStore<ViewState, FileManagerFeature.Action>) -> some View {
+    private func titleContent(viewStore: ViewStore<ViewState, FileManagerFeature.Action>) -> some View {
         let isShowingCollection = viewStore
             .isCollectionMode || (viewStore.isOpeningCollectionFile && viewStore.openedCollectionName != nil)
         let titleText = viewStore.openedCollectionName
@@ -129,40 +137,31 @@ struct ToolbarView: View {
         let showUnsavedIndicator = viewStore.isCollectionMode
             && (!viewStore.openedCollectionURLExists || viewStore.isOpenedCollectionDirty)
 
-        return Button(
-            action: { store.send(.enterComposer) },
-            label: {
-                HStack(spacing: 4) {
-                    if isShowingCollection {
-                        CollectionTitleIcon()
-                    } else {
-                        Image(systemName: "folder")
-                            .font(.system(size: 12))
-                    }
+        return HStack(spacing: 4) {
+            if isShowingCollection {
+                CollectionTitleIcon()
+            } else {
+                Image(systemName: "folder")
+                    .font(.system(size: 12))
+            }
 
-                    Text(titleText)
-                        .font(.system(size: 15, weight: .semibold))
-                        .foregroundColor(.primary)
+            Text(titleText)
+                .font(.system(size: 15, weight: .semibold))
+                .foregroundColor(.primary)
 
-                    if showUnsavedIndicator, !isTitleHovered {
-                        Image(systemName: "circle.fill")
-                            .font(.system(size: 6, weight: .semibold))
-                            .foregroundColor(VoyagerDS.BrandSecondaryColor.c600)
-                    }
+            if showUnsavedIndicator, !isTitleAreaHovered {
+                Image(systemName: "circle.fill")
+                    .font(.system(size: 6, weight: .semibold))
+                    .foregroundColor(VoyagerDS.BrandSecondaryColor.c600)
+            }
 
-                    if isTitleHovered {
-                        Text(composeSuffix)
-                            .font(.system(size: 12))
-                            .foregroundColor(.secondary)
-                            .lineLimit(1)
-                            .fixedSize(horizontal: true, vertical: false)
-                    }
-                }
-            },
-        )
-        .buttonStyle(.borderless)
-        .onHover { hovering in
-            isTitleHovered = hovering
+            if isTitleAreaHovered {
+                Text(composeSuffix)
+                    .font(.system(size: 12))
+                    .foregroundColor(.secondary)
+                    .lineLimit(1)
+                    .fixedSize(horizontal: true, vertical: false)
+            }
         }
     }
 }

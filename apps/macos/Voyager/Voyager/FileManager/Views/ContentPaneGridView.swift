@@ -212,13 +212,14 @@ struct ContentPaneGridView: View {
         GeometryReader { geometry in
             let columns = [GridItem(.adaptive(minimum: itemWidth), spacing: minSpacing, alignment: .top)]
             let availableWidth = geometry.size.width
+            let minScrollContentHeight = max(0, geometry.size.height - 4)
 
             VStack(spacing: 0) {
                 Color.clear.frame(height: 4)
 
                 ScrollViewReader { proxy in
                     ScrollView {
-                        ZStack {
+                        ZStack(alignment: .topLeading) {
                             Color.clear
                                 .frame(maxWidth: .infinity, maxHeight: .infinity)
                                 .contentShape(Rectangle())
@@ -232,7 +233,7 @@ struct ContentPaneGridView: View {
 
                             VStack(spacing: 0) {
                                 Color.clear.frame(height: 0).id("scrollTop")
-                                LazyVStack(alignment: .leading, spacing: 16) {
+                                LazyVStack(alignment: .leading, spacing: 12) {
                                     gridSections(
                                         fsStore: fsStore,
                                         store: store,
@@ -244,6 +245,7 @@ struct ContentPaneGridView: View {
                             .padding(.bottom, horizontalPadding)
                             .frame(maxWidth: .infinity, alignment: .topLeading)
                         }
+                        .frame(minHeight: minScrollContentHeight, alignment: .topLeading)
                         .coordinateSpace(name: "scrollView")
                         .coordinateSpace(name: "contentPane")
                         .coordinateSpace(name: "gridContainer")
@@ -357,22 +359,49 @@ struct ContentPaneGridView: View {
     private func groupHeader(
         group: GroupedItems,
         fsStore: Store<EntriesFeature.State, EntriesFeature.Action>,
+        isFirstGroup: Bool = false,
     ) -> some View {
-        HStack(spacing: 8) {
-            if fsStore.groupKey == .tags,
-               let colorCode = group.items.first?.tags?
-               .first(where: { $0.name == group.groupName })?.colorCode
-            {
-                Circle()
-                    .fill(EntryTagUtils.getTagColor(colorCode: colorCode))
-                    .frame(width: 8, height: 8)
+        let isCollapsed = fsStore.collapsedGroups.contains(group.groupName)
+
+        return VStack(spacing: 0) {
+            if !isFirstGroup {
+                Rectangle()
+                    .fill(Color.secondary.opacity(0.12))
+                    .frame(height: 2)
+                    .padding(.horizontal, -horizontalPadding)
+
+                Spacer().frame(height: 12)
             }
-            Text(group.groupName)
-                .font(.headline)
-                .foregroundColor(.primary)
-            Spacer()
+
+            HStack(spacing: 8) {
+                if fsStore.groupKey == .tags,
+                   let colorCode = group.items.first?.tags?
+                   .first(where: { $0.name == group.groupName })?.colorCode
+                {
+                    Circle()
+                        .fill(EntryTagUtils.getTagColor(colorCode: colorCode))
+                        .frame(width: 8, height: 8)
+                }
+
+                Text(group.groupName)
+                    .font(.headline)
+                    .foregroundColor(.secondary)
+
+                Text("(\(group.count))")
+                    .font(.headline)
+                    .foregroundColor(.secondary)
+
+                GroupToggleButton(
+                    isCollapsed: isCollapsed,
+                    action: {
+                        fsStore.send(.toggleGroup(group.groupName))
+                    },
+                )
+
+                Spacer()
+            }
+            .padding(.horizontal, 16)
         }
-        .padding(.horizontal, 16)
     }
 
     private func gridSections(
@@ -401,27 +430,25 @@ struct ContentPaneGridView: View {
                 }
             } else {
                 ForEach(Array(fsStore.groupedItems.enumerated()), id: \.element.groupName) { index, group in
-                    if index > 0 {
-                        Spacer().frame(height: 16)
-                    }
-
                     if !group.groupName.isEmpty, fsStore.groupKey != .name {
-                        groupHeader(group: group, fsStore: fsStore)
+                        groupHeader(group: group, fsStore: fsStore, isFirstGroup: index == 0)
                     }
 
-                    LazyVGrid(columns: columns, alignment: .leading, spacing: verticalSpacing) {
-                        ForEach(group.items) { item in
-                            itemGrid(
-                                item: item,
-                                store: store,
-                                fsStore: fsStore,
-                                showCompress: options.showCompress,
-                                showExtract: options.showExtract,
-                                isTrashFolder: isTrashFolder,
-                            )
+                    if !fsStore.collapsedGroups.contains(group.groupName) {
+                        LazyVGrid(columns: columns, alignment: .leading, spacing: verticalSpacing) {
+                            ForEach(group.items) { item in
+                                itemGrid(
+                                    item: item,
+                                    store: store,
+                                    fsStore: fsStore,
+                                    showCompress: options.showCompress,
+                                    showExtract: options.showExtract,
+                                    isTrashFolder: isTrashFolder,
+                                )
+                            }
                         }
+                        .frame(maxWidth: .infinity, alignment: .center)
                     }
-                    .frame(maxWidth: .infinity, alignment: .center)
                 }
             }
         }

@@ -101,8 +101,10 @@ struct ConditionPropertyPickerView: View {
 
     private func rootContent(_ viewStore: ViewStoreOf<ConditionPropertyPickerFeature>) -> some View {
         let filtered = filteredProperties(viewStore)
-        let recommended = filtered.filter(\.isDefault)
-        let grouped = Dictionary(grouping: filtered, by: { $0.category })
+        let recommended = filtered.filter { viewStore.propertyDefaults.contains($0) }
+        let grouped = Dictionary(grouping: filtered) { key in
+            viewStore.propertyCategories[key] ?? "misc"
+        }
         let hasRecommended = !recommended.isEmpty
 
         return ScrollView {
@@ -119,7 +121,7 @@ struct ConditionPropertyPickerView: View {
         categoryKey: String,
     ) -> some View {
         let filtered = filteredProperties(viewStore)
-        let items = filtered.filter { $0.category == categoryKey }
+        let items = filtered.filter { viewStore.propertyCategories[$0] == categoryKey }
 
         return VStack(spacing: 0) {
             HStack {
@@ -145,8 +147,8 @@ struct ConditionPropertyPickerView: View {
             ScrollView {
                 VStack(spacing: 0) {
                     if !items.isEmpty {
-                        ForEach(items) { property in
-                            propertyRow(property, viewStore: viewStore, showIcon: true)
+                        ForEach(items, id: \.self) { key in
+                            propertyRow(key, viewStore: viewStore, showIcon: true)
                         }
                     } else if !viewStore.searchText.isEmpty {
                         Text("No properties found")
@@ -161,19 +163,19 @@ struct ConditionPropertyPickerView: View {
 
     @ViewBuilder
     private func recommendedSection(
-        _ recommended: [MDItemProperty],
+        _ recommended: [String],
         viewStore: ViewStoreOf<ConditionPropertyPickerFeature>,
     ) -> some View {
         if !recommended.isEmpty {
-            ForEach(recommended) { property in
-                propertyRow(property, viewStore: viewStore, showIcon: true)
+            ForEach(recommended, id: \.self) { key in
+                propertyRow(key, viewStore: viewStore, showIcon: true)
             }
         }
     }
 
     @ViewBuilder
     private func categorySection(
-        _ grouped: [String: [MDItemProperty]],
+        _ grouped: [String: [String]],
         hasRecommended: Bool,
         viewStore: ViewStoreOf<ConditionPropertyPickerFeature>,
     ) -> some View {
@@ -194,7 +196,7 @@ struct ConditionPropertyPickerView: View {
     }
 
     @ViewBuilder
-    private func emptyStateIfNeeded(filtered: [MDItemProperty], query: String) -> some View {
+    private func emptyStateIfNeeded(filtered: [String], query: String) -> some View {
         if filtered.isEmpty, !query.isEmpty {
             Text("No properties found")
                 .font(.system(size: 12))
@@ -205,7 +207,7 @@ struct ConditionPropertyPickerView: View {
 
     private func categoryRow(
         categoryKey: String,
-        items: [MDItemProperty],
+        items: [String],
         viewStore: ViewStoreOf<ConditionPropertyPickerFeature>,
     ) -> some View {
         Button {
@@ -241,11 +243,11 @@ struct ConditionPropertyPickerView: View {
 
     private func filteredProperties(
         _ viewStore: ViewStoreOf<ConditionPropertyPickerFeature>,
-    ) -> [MDItemProperty] {
+    ) -> [String] {
         let existingKeys = viewStore.existingKeys
         let editingKey = viewStore.editingConditionKey
-        let props = viewStore.properties.filter { property in
-            if existingKeys.contains(property.key), property.key != editingKey {
+        let props = viewStore.properties.filter { key in
+            if existingKeys.contains(key), key != editingKey {
                 return false
             }
             return true
@@ -253,29 +255,37 @@ struct ConditionPropertyPickerView: View {
         let query = viewStore.searchText.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !query.isEmpty else { return props }
 
-        return props.filter { property in
-            property.label.localizedCaseInsensitiveContains(query)
+        return props.filter { key in
+            let label = viewStore.propertyLabels[key] ?? key
+            return label.localizedCaseInsensitiveContains(query)
         }
     }
 
     private func propertyRow(
-        _ property: MDItemProperty,
+        _ propertyKey: String,
         viewStore: ViewStoreOf<ConditionPropertyPickerFeature>,
         showIcon: Bool = true,
     ) -> some View {
         Button {
-            viewStore.send(.propertyTapped(property))
+            viewStore.send(.propertyTapped(propertyKey))
         } label: {
-            let isHovering = hoveredPropertyKey == property.key
+            let isHovering = hoveredPropertyKey == propertyKey
+            let label = viewStore.propertyLabels[propertyKey] ?? propertyKey
+            let category = viewStore.propertyCategories[propertyKey]
             HStack(spacing: 8) {
                 if showIcon {
-                    Image(systemName: ConditionPropertyIconUtils.iconName(for: property))
-                        .font(.system(size: 12))
-                        .foregroundColor(.secondary)
-                        .frame(width: 16)
+                    Image(
+                        systemName: ConditionPropertyIconUtils.iconName(
+                            forKey: propertyKey,
+                            category: category,
+                        ),
+                    )
+                    .font(.system(size: 12))
+                    .foregroundColor(.secondary)
+                    .frame(width: 16)
                 }
 
-                Text(property.label)
+                Text(label)
                     .font(.system(size: 13))
                     .foregroundColor(.primary)
                     .lineLimit(1)
@@ -293,41 +303,19 @@ struct ConditionPropertyPickerView: View {
         }
         .buttonStyle(.plain)
         .onHover { hovering in
-            hoveredPropertyKey = hovering ? property.key : nil
+            hoveredPropertyKey = hovering ? propertyKey : nil
         }
     }
 
     private func categoryTitle(for key: String) -> String {
-        switch key {
-        case "filesystem": "System Metadata"
-        case "image": "Image"
-        case "video": "Video"
-        case "audio": "Audio"
-        case "document": "Document"
-        case "download": "Download"
-        case "content": "Content"
-        case "location": "Location"
-        default: key
-        }
+        let spaced = key
+            .replacingOccurrences(of: "_", with: " ")
+            .replacingOccurrences(of: "([a-z])([A-Z])", with: "$1 $2", options: .regularExpression)
+        return spaced.prefix(1).uppercased() + spaced.dropFirst()
     }
 
     private func iconName(for category: String) -> String {
-        let key = ConditionPropertyPickerView.categoryKey(for: category)
-        return ConditionPropertyIconUtils.iconName(forCategory: key)
-    }
-
-    private static func categoryKey(for category: String) -> String {
-        switch category {
-        case "System Metadata": "filesystem"
-        case "Image": "image"
-        case "Video": "video"
-        case "Audio": "audio"
-        case "Document": "document"
-        case "Download": "download"
-        case "Content": "content"
-        case "Location": "location"
-        default: category
-        }
+        ConditionPropertyIconUtils.iconName(forCategory: category)
     }
 }
 

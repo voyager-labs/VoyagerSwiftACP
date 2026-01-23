@@ -15,7 +15,6 @@ struct ThumbnailView: View {
         Image(nsImage: displayIcon)
             .resizable()
             .scaledToFit()
-            .scaleEffect(item.fileExtension.lowercased() == "voycoll" ? 0.88 : 1.0)
             .clipShape(RoundedRectangle(cornerRadius: 4))
             .id("\(item.fullPath)-\(isReady)")
     }

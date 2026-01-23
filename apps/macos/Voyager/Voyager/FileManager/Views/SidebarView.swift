@@ -8,11 +8,14 @@ struct SidebarItemView: View {
     let iconName: String
     let title: String
     let isSelected: Bool
+    let isContextMenuTarget: Bool
+    let contextMenuTargetWasSelected: Bool
     let isFavorite: Bool
     let iconColor: Color?
     let targetURL: URL?
     let action: () -> Void
     let onDrop: (([NSItemProvider], URL) -> Void)?
+    let onContextMenuOpen: (() -> Void)?
 
     @Environment(\.colorScheme)
     private var colorScheme
@@ -21,6 +24,13 @@ struct SidebarItemView: View {
     @ViewBuilder private var backgroundView: some View {
         RoundedRectangle(cornerRadius: 6)
             .fill(backgroundColor)
+            .overlay(
+                RoundedRectangle(cornerRadius: 6)
+                    .stroke(
+                        isContextMenuTarget ? contextMenuOutlineColor : Color.clear,
+                        lineWidth: isContextMenuTarget ? 1 : 0,
+                    ),
+            )
     }
 
     private var backgroundColor: Color {
@@ -31,6 +41,10 @@ struct SidebarItemView: View {
         } else {
             Color.clear
         }
+    }
+
+    private var contextMenuOutlineColor: Color {
+        Color(nsColor: contextMenuTargetWasSelected ? .secondaryLabelColor : .tertiaryLabelColor)
     }
 
     private func applicationsIcon() -> NSImage? {
@@ -78,14 +92,25 @@ struct SidebarItemView: View {
             onDrop(providers, targetURL)
             return true
         }
+        .overlay(
+            Group {
+                if let onContextMenuOpen {
+                    RightClickCaptureView(onRightClick: onContextMenuOpen)
+                        .allowsHitTesting(false)
+                }
+            },
+        )
     }
 }
 
 struct TagItemView: View {
     let tag: SidebarUtils.TagItem
     let isSelected: Bool
+    let isContextMenuTarget: Bool
+    let contextMenuTargetWasSelected: Bool
     let action: () -> Void
     let onDrop: (([NSItemProvider], String) -> Void)? // 태그 드롭 콜백 (providers 전달)
+    let onContextMenuOpen: (() -> Void)?
 
     @Environment(\.colorScheme)
     private var colorScheme
@@ -94,6 +119,13 @@ struct TagItemView: View {
     @ViewBuilder private var backgroundView: some View {
         RoundedRectangle(cornerRadius: 6)
             .fill(backgroundColor)
+            .overlay(
+                RoundedRectangle(cornerRadius: 6)
+                    .stroke(
+                        isContextMenuTarget ? contextMenuOutlineColor : Color.clear,
+                        lineWidth: isContextMenuTarget ? 1 : 0,
+                    ),
+            )
     }
 
     private var backgroundColor: Color {
@@ -104,6 +136,10 @@ struct TagItemView: View {
         } else {
             Color.clear
         }
+    }
+
+    private var contextMenuOutlineColor: Color {
+        Color(nsColor: contextMenuTargetWasSelected ? .secondaryLabelColor : .tertiaryLabelColor)
     }
 
     var body: some View {
@@ -131,6 +167,14 @@ struct TagItemView: View {
             onDrop(providers, tag.name)
             return true
         }
+        .overlay(
+            Group {
+                if let onContextMenuOpen {
+                    RightClickCaptureView(onRightClick: onContextMenuOpen)
+                        .allowsHitTesting(false)
+                }
+            },
+        )
     }
 }
 
@@ -175,6 +219,8 @@ struct SidebarView: View {
     private var userDefaultsClient
     @State private var dropTargetIndex: Int?
     @State private var draggingFavoriteURL: URL?
+    @State private var contextMenuTargetId: String?
+    @State private var contextMenuTargetWasSelected = false
 
     var body: some View {
         VStack(spacing: 0) {
@@ -187,6 +233,9 @@ struct SidebarView: View {
                         iconName: "clock",
                         title: "Recents",
                         isSelected: store.selectedSidebarItem == "Recents",
+                        isContextMenuTarget: contextMenuTargetId == "Recents",
+                        contextMenuTargetWasSelected: contextMenuTargetId == "Recents"
+                            ? contextMenuTargetWasSelected : false,
                         isFavorite: true,
                         iconColor: nil,
                         targetURL: nil,
@@ -194,6 +243,7 @@ struct SidebarView: View {
                             store.send(.showRecents)
                         },
                         onDrop: nil,
+                        onContextMenuOpen: nil,
                     )
                     .padding(.top, 8)
 
@@ -219,6 +269,10 @@ struct SidebarView: View {
         }
         .frame(minWidth: 150)
         .background(Color.clear)
+        .onReceive(NotificationCenter.default.publisher(for: NSMenu.didEndTrackingNotification)) { _ in
+            contextMenuTargetId = nil
+            contextMenuTargetWasSelected = false
+        }
         .navigationSplitViewColumnWidth(ideal: {
             if let savedWidth = userDefaultsClient.object("sidebarWidth") as? Double,
                savedWidth > 0
@@ -258,6 +312,9 @@ struct SidebarView: View {
                                 iconName: favorite.iconName,
                                 title: favorite.displayName,
                                 isSelected: store.selectedSidebarItem == favorite.displayName,
+                                isContextMenuTarget: contextMenuTargetId == favorite.displayName,
+                                contextMenuTargetWasSelected: contextMenuTargetId == favorite.displayName
+                                    ? contextMenuTargetWasSelected : false,
                                 isFavorite: true,
                                 iconColor: favorite.url.pathExtension.lowercased() == "voycoll"
                                     ? VoyagerDS.BrandSecondaryColor.c600
@@ -271,6 +328,10 @@ struct SidebarView: View {
                                         providers: providers,
                                         targetURL: targetURL,
                                     ))
+                                },
+                                onContextMenuOpen: {
+                                    contextMenuTargetId = favorite.displayName
+                                    contextMenuTargetWasSelected = store.selectedSidebarItem == favorite.displayName
                                 },
                             )
                             .contextMenu {
@@ -447,6 +508,9 @@ struct SidebarView: View {
                                 iconName: location.iconName,
                                 title: location.name,
                                 isSelected: store.selectedSidebarItem == location.name,
+                                isContextMenuTarget: contextMenuTargetId == location.name,
+                                contextMenuTargetWasSelected: contextMenuTargetId == location.name
+                                    ? contextMenuTargetWasSelected : false,
                                 isFavorite: false,
                                 iconColor: nil,
                                 targetURL: location.isComputer ? nil : location.url,
@@ -460,6 +524,7 @@ struct SidebarView: View {
                                 onDrop: { providers, targetURL in
                                     store.send(.dropItemsToSidebarFolder(providers: providers, targetURL: targetURL))
                                 },
+                                onContextMenuOpen: nil,
                             )
                         }
                     }
@@ -486,15 +551,65 @@ struct SidebarView: View {
                             TagItemView(
                                 tag: tag,
                                 isSelected: store.selectedSidebarItem == tag.name,
+                                isContextMenuTarget: contextMenuTargetId == tag.name,
+                                contextMenuTargetWasSelected: contextMenuTargetId == tag.name
+                                    ? contextMenuTargetWasSelected : false,
                                 action: {
                                     store.send(.showTag(tag))
                                 },
                                 onDrop: { providers, tagName in
                                     store.send(.dropItemsToTag(providers: providers, tagName: tagName))
                                 },
+                                onContextMenuOpen: nil,
                             )
                         }
                     }
+                }
+            }
+        }
+    }
+}
+
+private struct RightClickCaptureView: NSViewRepresentable {
+    let onRightClick: () -> Void
+
+    func makeNSView(context _: Context) -> CaptureView {
+        let view = CaptureView()
+        view.onRightClick = onRightClick
+        return view
+    }
+
+    func updateNSView(_ nsView: CaptureView, context _: Context) {
+        nsView.onRightClick = onRightClick
+    }
+
+    @MainActor
+    final class CaptureView: NSView {
+        var onRightClick: (() -> Void)?
+        private var monitor: Any?
+
+        override func viewDidMoveToWindow() {
+            super.viewDidMoveToWindow()
+            if let monitor {
+                NSEvent.removeMonitor(monitor)
+                self.monitor = nil
+            }
+            guard window != nil else { return }
+
+            monitor = NSEvent.addLocalMonitorForEvents(matching: [.rightMouseDown]) { [weak self] event in
+                guard let self else { return event }
+                let location = convert(event.locationInWindow, from: nil)
+                if bounds.contains(location) {
+                    onRightClick?()
+                }
+                return event
+            }
+        }
+
+        deinit {
+            MainActor.assumeIsolated {
+                if let monitor {
+                    NSEvent.removeMonitor(monitor)
                 }
             }
         }
