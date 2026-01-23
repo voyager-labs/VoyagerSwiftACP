@@ -63,7 +63,6 @@ final class OnboardingFeatureTests: XCTestCase {
 
         await store.send(.onAppear) { state in
             state.currentStep = .betaAccess
-            state.showResumeBanner = true
             state.welcome.isComplete = true
             state.betaAccess.status = .active
             state.betaAccess.reason = .none
@@ -89,7 +88,6 @@ final class OnboardingFeatureTests: XCTestCase {
         await store.send(.onAppear)
 
         XCTAssertEqual(store.state.currentStep, .welcome)
-        XCTAssertFalse(store.state.showResumeBanner)
         XCTAssertTrue(store.state.welcome.isComplete)
         XCTAssertFalse(store.state.betaAccess.isComplete)
         XCTAssertFalse(store.state.permissions.isComplete)
@@ -100,10 +98,7 @@ final class OnboardingFeatureTests: XCTestCase {
 
     func testCompleteOpensWindowAndSavesProgress() async {
         let snapshotRecorder = SnapshotRecorder()
-        let previousDelegate = AppDelegate.shared
-        let testDelegate = TestAppDelegate()
-        AppDelegate.shared = testDelegate
-        defer { AppDelegate.shared = previousDelegate }
+        let pathRecorder = PathRecorder()
 
         var initialState = OnboardingFeature.State()
         initialState.currentStep = .complete
@@ -120,6 +115,10 @@ final class OnboardingFeatureTests: XCTestCase {
                 },
                 reset: {},
             )
+            $0.fileManagerWindowClient = FileManagerWindowClient(openWindow: { path in
+                await pathRecorder.append(path)
+                return true
+            })
         }
 
         await store.send(.complete(.startUsingTapped)) { state in
@@ -132,7 +131,8 @@ final class OnboardingFeatureTests: XCTestCase {
             state.complete.isOpeningWindow = false
         }
 
-        XCTAssertEqual(testDelegate.openedPaths.count, 1)
+        let openedPaths = await pathRecorder.snapshot()
+        XCTAssertEqual(openedPaths.count, 1)
         let savedSnapshot = await snapshotRecorder.value
         XCTAssertEqual(savedSnapshot?.stepState.completeComplete, true)
         await store.finish()
@@ -161,7 +161,6 @@ final class OnboardingFeatureTests: XCTestCase {
 
         await store.send(.onAppear) { state in
             state.currentStep = .complete
-            state.showResumeBanner = false
             state.welcome.isComplete = true
             state.betaAccess.status = .active
             state.betaAccess.reason = .none
@@ -182,12 +181,14 @@ private actor SnapshotRecorder {
     }
 }
 
-@MainActor
-private final class TestAppDelegate: AppDelegate, @unchecked Sendable {
-    var openedPaths: [String?] = []
+private actor PathRecorder {
+    private var paths: [String] = []
 
-    override func createNewWindow(path: String? = nil) -> FileManagerWindowController? {
-        openedPaths.append(path)
-        return nil
+    func append(_ path: String) {
+        paths.append(path)
+    }
+
+    func snapshot() -> [String] {
+        paths
     }
 }

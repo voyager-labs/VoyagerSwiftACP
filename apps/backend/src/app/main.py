@@ -18,7 +18,7 @@ async def lifespan(app: FastAPI):
     cfg = load_config()
     app.state.config = cfg
 
-    process_title = os.getenv("PUBLIC_BACKEND_PROCESS_NAME")
+    process_title = os.environ["PUBLIC_BACKEND_PROCESS_NAME"]
     setproctitle.setproctitle(process_title)
 
     # DB 엔진 초기화

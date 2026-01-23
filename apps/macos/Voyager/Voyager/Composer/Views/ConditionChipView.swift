@@ -26,6 +26,7 @@ struct ConditionChipView: View {
     @State private var boolPopoverIndex: Int?
     @State private var boolHoverIndex: Int?
     @State private var boolOptionHoverValue: String?
+    @FocusState private var focusedValueIndex: Int?
 
     var body: some View {
         WithViewStore(
@@ -55,17 +56,22 @@ struct ConditionChipView: View {
         let isBooleanType = condition.valueType == "boolean"
         let isEditingValue = !isDateType && !isBooleanType && valueStore.isPresented &&
             valueStore.propertyKey == condition.propertyKey
+        let isInactive = !condition.isActive
 
-        return HStack(spacing: 2) {
-            propertyLabelView()
-            operatorButtonView(opStore: opStore, label: opLabel, color: opColor)
-            valueSection(
-                valueUIKind: valueUIKind,
-                valueArity: valueArity,
-                isEditingValue: isEditingValue,
-                isDateType: isDateType,
-                valueStore: valueStore,
-            )
+        return ZStack(alignment: .topTrailing) {
+            HStack(spacing: 2) {
+                propertyLabelView()
+                operatorButtonView(opStore: opStore, label: opLabel, color: opColor)
+                valueSection(
+                    valueUIKind: valueUIKind,
+                    valueArity: valueArity,
+                    isEditingValue: isEditingValue,
+                    isDateType: isDateType,
+                    valueStore: valueStore,
+                )
+            }
+            .allowsHitTesting(!isInactive)
+            .opacity(isInactive ? 0.55 : 1)
         }
         .padding(.horizontal, 8)
         .frame(height: defaultChipHeight)
@@ -576,6 +582,8 @@ struct ConditionChipView: View {
             }
             return Array(0 ..< fieldCount)
         }()
+        let shouldFocus = valueViewStore.isPresented &&
+            valueViewStore.propertyKey == condition.propertyKey
 
         return HStack(spacing: 6) {
             ForEach(indices, id: \.self) { index in
@@ -647,6 +655,7 @@ struct ConditionChipView: View {
                                     .allowsHitTesting(false)
                             }
                         }
+                        .focused($focusedValueIndex, equals: index)
                         .onSubmit {
                             valuePickerStore.send(.commit)
                         }
@@ -669,6 +678,38 @@ struct ConditionChipView: View {
             }
         }
         .padding(.leading, 4)
+        .onAppear {
+            updateInlineValueFocus(
+                shouldFocus: shouldFocus,
+                targetIndex: valueViewStore.editingIndex ?? indices.first,
+            )
+        }
+        .onChange(of: valueViewStore.isPresented) { _ in
+            updateInlineValueFocus(
+                shouldFocus: shouldFocus,
+                targetIndex: valueViewStore.editingIndex ?? indices.first,
+            )
+        }
+        .onChange(of: valueViewStore.editingIndex) { _ in
+            updateInlineValueFocus(
+                shouldFocus: shouldFocus,
+                targetIndex: valueViewStore.editingIndex ?? indices.first,
+            )
+        }
+        .onChange(of: valueViewStore.propertyKey) { _ in
+            updateInlineValueFocus(
+                shouldFocus: shouldFocus,
+                targetIndex: valueViewStore.editingIndex ?? indices.first,
+            )
+        }
+    }
+
+    private func updateInlineValueFocus(shouldFocus: Bool, targetIndex: Int?) {
+        let nextFocus = shouldFocus ? targetIndex : nil
+        guard focusedValueIndex != nextFocus else { return }
+        DispatchQueue.main.async {
+            focusedValueIndex = nextFocus
+        }
     }
 
     private func dateValueButton(

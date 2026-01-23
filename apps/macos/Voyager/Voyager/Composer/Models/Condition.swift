@@ -9,4 +9,5 @@ struct Condition: Equatable, Identifiable, Hashable, Sendable {
     var operatorValueUIKind: String?
     var valueType: String = "unknown"
     var values: [String]?
+    var isActive: Bool = true
 }

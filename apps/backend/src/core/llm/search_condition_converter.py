@@ -3,22 +3,60 @@
 LLM이 자연어 쿼리를 Search API conditions 배열로 변환합니다.
 """
 
-from pathlib import Path
-from typing import Any
+from __future__ import annotations
 
+import json
+import logging
+import re
+from importlib import resources
+from pathlib import Path
+from typing import Any, TypeVar, cast
+
+from langchain_core.messages import BaseMessage, HumanMessage, SystemMessage
+from langchain_core.runnables import Runnable
 from pydantic import BaseModel, Field
 
-from core.llm.llm_provider import LLMProvider
-from core.metadata.mditem_registry import PROPERTY_KEY_REGISTRY, get_all_property_keys
+from core.metadata.registry_loader import (
+    SYSTEM_PROPERTY_REGISTRY,
+    get_all_property_keys,
+    load_condition_registry,
+)
+
+logger = logging.getLogger("uvicorn.error")
+
+TStructured = TypeVar("TStructured", bound=BaseModel)
+
+
+def _read_prompt_template(filename: str) -> str:
+    try:
+        template = (
+            resources.files("core.llm.prompts").joinpath(filename).read_text(encoding="utf-8")
+        )
+    except Exception as exc:
+        raise RuntimeError(
+            "프롬프트 템플릿 로드 실패: core.llm.prompts 패키지 리소스를 찾을 수 없습니다. "
+            "Nuitka 빌드 시 --include-data-dir로 core/llm/prompts를 포함해야 합니다."
+        ) from exc
+
+    missing_placeholders = [
+        token for token in ("{home_dir}", "{property_info}") if token not in template
+    ]
+    if missing_placeholders:
+        raise RuntimeError(
+            "프롬프트 템플릿 검증 실패: "
+            f"{filename}에 필수 placeholder가 없습니다: {', '.join(missing_placeholders)}"
+        )
+
+    return template
 
 
 class SearchCondition(BaseModel):
     """단일 검색 조건"""
 
-    propertyKey: str = Field(description="속성 키 (예: size, extension, modifiedAt)")
-    operator: str = Field(description="연산자 (eq, gt, gte, lt, lte, between, contains, in)")
-    value: str | int | float | list[str] | list[int] | list[float] = Field(
-        description="값 (단일값, 배열, [min, max])"
+    propertyKey: str = Field(description="속성 키 (예: name_full, extension, file_allocated_size)")
+    operator: str = Field(description="연산자 (레지스트리 property_types.<type>.operators 기준)")
+    value: str | int | float | list[str] | list[int] | list[float] | None = Field(
+        description="값 (단일값, 배열, [min, max]) - empty/exists는 생략 가능"
     )
 
 
@@ -33,182 +71,156 @@ class SearchConditionsOutput(BaseModel):
 class SearchConditionConverter:
     """LLM 기반 자연어 → Search conditions 변환기"""
 
-    def __init__(self, llm_provider: LLMProvider):
+    PROMPT_TEMPLATE_FILE = "compose_filter_system.md"
+    CORE_KEYS = {
+        "name_full",
+        "extension",
+        "content_type_tree",
+        "file_allocated_size",
+        "size",
+        "downloaded_date",
+        "modification_date",
+        "creation_date",
+        "dir_path",
+        "path",
+    }
+    SCOPE_PATTERNS = (
+        (r"\bdownloads?\b", "Downloads"),
+        (r"\bdocuments?\b", "Documents"),
+        (r"\bdesktop\b", "Desktop"),
+        (r"\bhome folder\b|\bhome directory\b", ""),
+    )
+
+    def __init__(self, llm_provider: Any):
         self.client = llm_provider
         self.home_dir = str(Path.home())
+        self.prompt_template_file = self.PROMPT_TEMPLATE_FILE
         self.system_prompt = self._build_system_prompt()
 
     def _build_system_prompt(self) -> str:
         """LLM 시스템 프롬프트 생성"""
-        # PropertyKey 정보 생성
-        property_info: list[str] = []
-        for key, mapping in PROPERTY_KEY_REGISTRY.items():
-            operators = ", ".join(mapping.supported_operators)
-            type_name = mapping.value_type.value
-            property_info.append(f"  - {key} ({type_name}): operators=[{operators}]")
+        property_info = self._build_property_info()
+        template = _read_prompt_template(self.prompt_template_file)
+        return template.format(
+            home_dir=self.home_dir,
+            property_info=property_info,
+        )
 
-        return f"""당신은 파일 검색을 위한 조건 생성 전문가입니다.
-자연어를 구조화된 검색 조건 배열로 변환하세요.
+    def _build_property_info(self) -> str:
+        return "keys from user prompt"
 
-🚨 절대 규칙 (반드시 지켜야 함):
-1. 반드시 아래에 있는 propertyKey만 사용
-2. ⚠️ 없는 propertyKey는 절대 사용하지 마세요!
-3. ⚠️ 설명, 주석, 부가 설명을 절대 추가하지 마세요! 조건만 출력!
+    def _extract_candidate_keys(
+        self,
+        query: str,
+        existing_conditions: list[dict[str, Any]] | None = None,
+    ) -> set[str]:
+        candidates = set(self.CORE_KEYS)
 
-=== 기존 조건/스코프 조합 규칙 ===
-사용자가 기존 조건/스코프를 함께 보내면:
-- 쿼리 의도와 기존 조건을 분석하여 최적의 조건 배열 생성
-- 중복 조건: 쿼리 의도에 맞게 수정 또는 유지
-- 충돌 조건: 쿼리 의도 우선, 기존 조건 수정/삭제 가능
-- 보완 조건: 쿼리에서 언급하지 않은 기존 조건은 유지
-- 스코프(폴더): 쿼리에서 다른 폴더를 언급하면 쿼리 우선, 아니면 기존 스코프 유지
+        for raw in existing_conditions or []:
+            key = raw.get("propertyKey")
+            if isinstance(key, str):
+                candidates.add(key)
 
-=== 출력 형식 ===
-조건 객체 배열과 스코프를 반환합니다:
-- conditions: 조건 배열
-- scopes: 쿼리에서 폴더를 언급한 경우만 설정 (언급 없으면 null)
+        lower = query.lower()
+        for key, mapping in SYSTEM_PROPERTY_REGISTRY.items():
+            for alias in mapping.search_aliases:
+                if alias and alias.lower() in lower:
+                    candidates.add(key)
+                    break
+            if key.lower() in lower:
+                candidates.add(key)
 
-각 조건:
-- propertyKey: 속성 키 (아래 목록에서만 선택)
-- operator: 연산자 (eq, gt, gte, lt, lte, between, contains, in)
-- value: 값 (숫자, 문자열, 배열, [min, max])
+        return {key for key in candidates if key in SYSTEM_PROPERTY_REGISTRY}
 
-=== 스코프(폴더) 추출 규칙 ===
-쿼리에서 폴더/경로를 언급하면 scopes에 절대 경로로 추출:
-- "다운로드 폴더" → ["{self.home_dir}/Downloads"]
-- "데스크탑에서" → ["{self.home_dir}/Desktop"]
-- "문서 폴더" → ["{self.home_dir}/Documents"]
-- "홈 폴더" → ["{self.home_dir}"]
-- ⚠️ 복수의 폴더가 언급되면 배열에 모두 포함
-- ⚠️ 폴더 언급이 없으면 scopes는 null (기존 스코프 유지)
+    def _build_key_groups(
+        self,
+        query: str,
+        existing_conditions: list[dict[str, Any]] | None = None,
+    ) -> dict[str, list[str]]:
+        candidates = self._extract_candidate_keys(query, existing_conditions)
+        grouped: dict[str, list[str]] = {}
+        for key in sorted(candidates):
+            mapping = SYSTEM_PROPERTY_REGISTRY.get(key)
+            if not mapping:
+                continue
+            grouped.setdefault(mapping.type.value, []).append(key)
+        return grouped
 
-=== 지원 속성 (propertyKey) ===
-{chr(10).join(property_info)}
+    def _build_keys_payload(
+        self,
+        query: str,
+        existing_conditions: list[dict[str, Any]] | None = None,
+    ) -> str:
+        grouped = self._build_key_groups(query, existing_conditions)
+        segments: list[str] = []
+        for type_name in sorted(grouped.keys()):
+            keys = ",".join(sorted(grouped[type_name]))
+            segments.append(f"{type_name}:{keys}")
+        return "|".join(segments)
 
-=== 추가 속성 (중요!) ===
+    def _build_ops_payload(self, type_names: list[str]) -> str:
+        registry = load_condition_registry()
+        parts: list[str] = []
+        for type_name in sorted(set(type_names)):
+            defaults = registry.property_types.get(type_name)
+            if not defaults:
+                continue
+            operators = defaults.operators
+            filtered: list[str] = []
+            for operator_code in operators:
+                operator = registry.operators.get(operator_code)
+                if not operator:
+                    continue
+                if operator.allowed_types and type_name not in operator.allowed_types:
+                    continue
+                filtered.append(operator_code)
+            parts.append(f"{type_name}={','.join(filtered)}")
+        return "|".join(parts)
 
-  - name (STRING) - 파일 이름 (확장자 포함)
-    검색어: 파일명, 이름
-    사용: operator="contains", value="검색어"
-    ⚠️ 파일명 검색은 반드시 'name' 사용!
+    def _infer_scopes_from_query(self, query: str) -> list[str] | None:
+        lower = query.lower()
+        scopes: list[str] = []
+        for pattern, suffix in self.SCOPE_PATTERNS:
+            if not re.search(pattern, lower):
+                continue
+            path = self.home_dir if suffix == "" else str(Path(self.home_dir) / suffix)
+            if path not in scopes:
+                scopes.append(path)
+        return scopes or None
 
-  - extension (STRING) - 파일 확장자 (점 없이)
-    예시: operator="eq", value="pdf"
-    예시: operator="in", value=["jpg", "jpeg", "png"]
+    def _build_user_prompt(
+        self,
+        query: str,
+        existing_conditions: list[dict[str, Any]] | None = None,
+        existing_scopes: list[str] | None = None,
+    ) -> str:
+        prompt_parts = [f"q={query}"]
+        grouped = self._build_key_groups(query, existing_conditions)
+        keys_payload = "|".join(
+            f"{type_name}:{','.join(sorted(grouped[type_name]))}"
+            for type_name in sorted(grouped.keys())
+        )
+        if keys_payload:
+            prompt_parts.append(f"keys={keys_payload}")
 
-=== 연산자 규칙 ===
-- eq: 정확히 일치 (value: 단일값)
-- gt: 초과 (>)
-- gte: 이상 (>=)
-- lt: 미만 (<)
-- lte: 이하 (<=)
-- between: 범위 (value: [min, max] 배열)
-- contains: 문자열 포함 (value: 문자열)
-- in: 목록 중 하나 (value: 배열)
+        ops_payload = self._build_ops_payload(list(grouped.keys()))
+        if ops_payload:
+            prompt_parts.append(f"ops={ops_payload}")
 
-=== 변환 규칙 ===
+        if existing_conditions:
+            conditions_json = json.dumps(existing_conditions, ensure_ascii=False)
+            prompt_parts.append(f"conditions={conditions_json}")
 
-1. 크기 변환:
-   - 1 KB = 1024
-   - 1 MB = 1048576
-   - 10 MB = 10485760
-   - 100 MB = 104857600
-   - 1 GB = 1073741824
+        if existing_scopes:
+            scopes_json = json.dumps(existing_scopes, ensure_ascii=False)
+            prompt_parts.append(f"scopes={scopes_json}")
+        else:
+            inferred_scopes = self._infer_scopes_from_query(query)
+            if inferred_scopes:
+                scopes_json = json.dumps(inferred_scopes, ensure_ascii=False)
+                prompt_parts.append(f"scopes={scopes_json}")
 
-2. 파일 타입 매핑:
-   - PDF → extension: "pdf"
-   - 이미지 → extension: ["jpg", "jpeg", "png", "gif", "heic"]
-   - 영상/비디오 → extension: ["mp4", "mov", "avi", "mkv"]
-   - 문서 → extension: ["pdf", "doc", "docx", "ppt", "pptx", "xls", "xlsx"]
-   - 압축파일 → extension: ["zip", "rar", "7z", "tar", "gz"]
-
-3. 날짜 (⚠️ YYYY-MM-DD 형식):
-   - 오늘: 현재 날짜 (예: "2025-12-25")
-   - 어제: 현재-1일 (예: "2025-12-24")
-   - 최근 7일: 현재-7일 (예: "2025-12-18")
-   - 최근 30일: 현재-30일
-   - ⚠️ 날짜 값은 반드시 YYYY-MM-DD 문자열! (시간 포함 금지)
-
-4. "다운로드" 관련 (⚠️ 중요):
-   - "다운로드한 파일" → addedAt 사용
-   - "어제 다운로드" → addedAt, operator="gt", value=(어제 날짜)
-
-5. 시간/길이 변환:
-   - 1분 = 60초
-   - 10분 = 600초
-   - 1시간 = 3600초
-
-=== 올바른 예시 ===
-
-입력: "10MB 이상 PDF 파일"
-출력: [
-  {{"propertyKey": "size", "operator": "gt", "value": 10485760}},
-  {{"propertyKey": "extension", "operator": "eq", "value": "pdf"}}
-]
-
-입력: "어제 다운로드한 파일"
-출력: [
-  {{"propertyKey": "addedAt", "operator": "gt", "value": "2025-12-24"}}
-]
-
-입력: "최근 7일 1080p 이상 영상"
-출력: [
-  {{"propertyKey": "modifiedAt", "operator": "gt", "value": "2025-12-18"}},
-  {{"propertyKey": "pixelHeight", "operator": "gte", "value": 1080}},
-  {{"propertyKey": "extension", "operator": "in", "value": ["mp4", "mov", "avi"]}}
-]
-
-입력: "이미지 파일"
-출력: [
-  {{"propertyKey": "extension", "operator": "in", "value": ["jpg", "jpeg", "png", "gif", "heic"]}}
-]
-
-입력: "파일명에 report가 포함된 PDF"
-출력: [
-  {{"propertyKey": "name", "operator": "contains", "value": "report"}},
-  {{"propertyKey": "extension", "operator": "eq", "value": "pdf"}}
-]
-
-입력: "1MB ~ 100MB 사이 영상"
-출력: [
-  {{"propertyKey": "size", "operator": "between", "value": [1048576, 104857600]}},
-  {{"propertyKey": "extension", "operator": "in", "value": ["mp4", "mov", "avi", "mkv"]}}
-]
-
-입력: "10분 이상 영상"
-출력: [
-  {{"propertyKey": "duration", "operator": "gt", "value": 600}},
-  {{"propertyKey": "extension", "operator": "in", "value": ["mp4", "mov", "avi", "mkv"]}}
-]
-
-입력: "암호화된 PDF"
-출력: [
-  {{"propertyKey": "extension", "operator": "eq", "value": "pdf"}}
-]
-
-입력: "4K, 10분, MP4, 최근 7일, 10MB" (5개 조건 → 4개만 선택)
-출력: [
-  {{\"propertyKey\": \"pixelHeight\", \"operator\": \"gte\", \"value\": 2160}},
-  {{\"propertyKey\": \"duration\", \"operator\": \"gte\", \"value\": 600}},
-  {{\"propertyKey\": \"extension\", \"operator\": \"eq\", \"value\": \"mp4\"}},
-  {{\"propertyKey\": \"modifiedAt\", \"operator\": \"gt\", \"value\": \"2025-12-18\"}}
-]
-
-=== 잘못된 예시 (이렇게 하지 마세요!) ===
-
-❌ 틀림: propertyKey="filename"
-   이유: 'filename'은 존재하지 않음
-   ✅ 올바름: propertyKey="name"
-
-❌ 틀림: propertyKey="downloadedAt"
-   이유: 'downloadedAt'은 존재하지 않음
-   ✅ 올바름: propertyKey="addedAt"
-
-❌ 틀림: value=".pdf"
-   이유: 확장자에 점(.) 포함하면 안 됨
-   ✅ 올바름: value="pdf"
-
-출력 형식: 조건 배열만! 설명 없이!"""
+        return "\n".join(prompt_parts)
 
     async def convert(
         self,
@@ -227,46 +239,68 @@ class SearchConditionConverter:
             {"conditions": [...], "scopes": [...] | None}
         """
         try:
-            import json
+            prompt = self._build_user_prompt(query, existing_conditions, existing_scopes)
 
-            # 프롬프트 구성
-            prompt_parts = [f"사용자 쿼리: {query}"]
-
-            if existing_conditions:
-                conditions_json = json.dumps(existing_conditions, ensure_ascii=False)
-                prompt_parts.append(f"기존 조건: {conditions_json}")
-
-            if existing_scopes:
-                scopes_json = json.dumps(existing_scopes, ensure_ascii=False)
-                prompt_parts.append(f"기존 스코프: {scopes_json}")
-
-            if existing_conditions or existing_scopes:
-                prompt_parts.append(
-                    "위 쿼리와 기존 조건/스코프를 분석하여 최적의 결과를 생성하세요. "
-                    "쿼리에서 폴더를 언급하면 스코프를 변경하고, 아니면 기존 스코프를 유지(scopes=null)하세요."
-                )
-
-            prompt_parts.append("출력:")
-            prompt = "\n".join(prompt_parts)
-
-            result = await self.client.generate_structured(
+            result = await self._request_structured(
                 prompt=prompt,
                 schema=SearchConditionsOutput,
                 system=self.system_prompt,
             )
 
             if result.error:
-                print(f"[SearchConditionConverter] {result.error}")
-                return {"conditions": [], "scopes": None}
+                logger.error("[SearchConditionConverter] %s", result.error)
+                return {"conditions": [], "scopes": None, "error": result.error}
 
+            normalized_conditions = [
+                self._normalize_condition(c.model_dump()) for c in result.conditions
+            ]
+            filtered_conditions = [c for c in normalized_conditions if c is not None]
             return {
-                "conditions": [c.model_dump() for c in result.conditions],
+                "conditions": filtered_conditions,
                 "scopes": result.scopes,
+                "error": None,
             }
 
         except Exception as e:
-            print(f"[SearchConditionConverter] 변환 실패: {e}")
-            return {"conditions": [], "scopes": None}
+            logger.exception("[SearchConditionConverter] 변환 실패: %s", e)
+            return {"conditions": [], "scopes": None, "error": str(e)}
+
+    def _normalize_condition(self, condition: dict[str, Any]) -> dict[str, Any] | None:
+        operator = condition.get("operator")
+        value = condition.get("value")
+        if operator == "eq" and value is None:
+            return None
+        if operator == "matches" and isinstance(value, str):
+            condition["value"] = self._normalize_matches_value(value)
+        return condition
+
+    async def _request_structured(
+        self,
+        prompt: str,
+        schema: type[TStructured],
+        system: str | None = None,
+    ) -> TStructured:
+        messages = self._build_messages(prompt=prompt, system=system)
+        structured_llm = cast(
+            Runnable[list[BaseMessage], TStructured],
+            self.client.llm.with_structured_output(schema),
+        )
+        return await structured_llm.ainvoke(messages)
+
+    @staticmethod
+    def _build_messages(prompt: str, system: str | None = None) -> list[BaseMessage]:
+        messages: list[BaseMessage] = [HumanMessage(content=prompt)]
+        if system:
+            messages.insert(0, SystemMessage(content=system))
+        return messages
+
+    @staticmethod
+    def _normalize_matches_value(value: str) -> str:
+        if "%" in value:
+            return value
+        if ".*" in value:
+            return value.replace(".*", "%")
+        return value
 
     async def convert_with_metadata(self, query: str) -> dict[str, Any]:
         """변환 + 메타데이터 반환"""
@@ -278,15 +312,20 @@ class SearchConditionConverter:
             "query": query,
             "conditions": result["conditions"],
             "scopes": result["scopes"],
-            "success": len(result["conditions"]) > 0,
+            "success": not result.get("error") and len(result["conditions"]) > 0,
             "supported_properties": get_all_property_keys(),
+            "error": result.get("error"),
         }
 
 
 class CachedSearchConditionConverter(SearchConditionConverter):
     """캐싱 기능이 있는 SearchConditionConverter"""
 
-    def __init__(self, llm_provider: LLMProvider, cache_size: int = 100):
+    def __init__(
+        self,
+        llm_provider: Any,
+        cache_size: int = 100,
+    ):
         super().__init__(llm_provider)
         self._cache: dict[str, dict[str, Any]] = {}
         self._cache_size = cache_size

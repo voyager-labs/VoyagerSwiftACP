@@ -103,7 +103,6 @@ fi
 export SDKROOT="${MACOS_SDK_PATH}"
 log_info "Nuitka 빌드 실행 (Python: ${VENV_PYTHON}, SDK: ${MACOS_SDK_PATH})"
 
-
 if [[ ! -f "${REGISTRY_JSON}" ]]; then
   log_error "레지스트리 JSON을 찾을 수 없습니다: ${REGISTRY_JSON}"
   exit 1
@@ -117,14 +116,12 @@ if ! "${UV_BIN}" run --directory "${BACKEND_DIR}" --python "${VENV_PYTHON}" nuit
   --standalone \
   --macos-target-arch="arm64" \
   --output-dir="${NUITKA_OUTPUT_DIR}" \
-  --include-package=langchain_core \
-  --include-package=langchain_community \
-  --include-package=langchain_openai \
-  --remove-output \
-  --assume-yes-for-downloads \
-  "${SERVER_SCRIPT}"; then
-  log_error "Nuitka 빌드 실패"
-  exit 1
+  --include-data-dir="${BACKEND_DIR}/src/infra/db=infra/db" \
+  --include-data-dir="${OSX_METADATA_DATA_DIR}=osxmetadata/attribute_data" \
+  --include-data-dir="${PROMPTS_DIR}=core/llm/prompts" \
+  --include-data-files="${REGISTRY_JSON}=shared/system_property_registry.json" \
+  --include-data-files="${CONDITION_REGISTRY_JSON}=shared/property_condition_registry.json" \
+  --include-data-files="${MIGRATIONS_DIR}/env.py=infra/db/migrations/env.py" \
 fi
 
 if [[ -f "${RAW_BINARY_PATH}" ]]; then

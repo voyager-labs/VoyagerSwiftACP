@@ -1,27 +1,109 @@
 import Foundation
 
 enum AppliedFiltersUtils {
+    struct ResolutionResult: Equatable {
+        let scopes: [String]
+        let conditions: [Condition]
+        let unknownKeys: [String]
+    }
+
     static func resolve(
         _ appliedFilters: AppliedFiltersPayload?,
         fallbackScopes: [String],
         fallbackConditions: [Condition],
         registryClient: RegistryClient,
     ) -> (scopes: [String], conditions: [Condition]) {
+        let resolved = resolveDetailed(
+            appliedFilters,
+            fallbackScopes: fallbackScopes,
+            fallbackConditions: fallbackConditions,
+            registryClient: registryClient,
+        )
+        return (resolved.scopes, resolved.conditions)
+    }
+
+    static func resolveDetailed(
+        _ appliedFilters: AppliedFiltersPayload?,
+        fallbackScopes: [String],
+        fallbackConditions: [Condition],
+        registryClient: RegistryClient,
+    ) -> ResolutionResult {
         let scopes = appliedFilters?.scopes ?? fallbackScopes
-        let conditions: [Condition] =
-            if let appliedConditions = appliedFilters?.conditions {
-                appliedConditions.map { makeCondition(from: $0, registryClient: registryClient) }
-            } else {
-                fallbackConditions
+        if let appliedConditions = appliedFilters?.conditions {
+            let resolved = appliedConditions.map {
+                makeResolvedCondition(from: $0, registryClient: registryClient)
             }
-        return (scopes, conditions)
+            let unknownKeys = Array(
+                Set(resolved.compactMap(\.unknownKey)),
+            ).sorted()
+            return ResolutionResult(
+                scopes: scopes,
+                conditions: resolved.map(\.condition),
+                unknownKeys: unknownKeys,
+            )
+        }
+        return ResolutionResult(
+            scopes: scopes,
+            conditions: fallbackConditions,
+            unknownKeys: [],
+        )
+    }
+
+    private struct ResolvedCondition {
+        let condition: Condition
+        let unknownKey: String?
+    }
+
+    private static func makeResolvedCondition(
+        from payload: SearchConditionPayload,
+        registryClient: RegistryClient,
+    ) -> ResolvedCondition {
+        switch registryClient.resolveKey(payload.propertyKey) {
+        case let .canonical(propertyKey):
+            return ResolvedCondition(
+                condition: makeCondition(
+                    from: payload,
+                    propertyKey: propertyKey,
+                    registryClient: registryClient,
+                ),
+                unknownKey: nil,
+            )
+
+        case let .legacy(original, normalized):
+            return ResolvedCondition(
+                condition: makeCondition(
+                    from: payload,
+                    propertyKey: normalized,
+                    registryClient: registryClient,
+                ),
+                unknownKey: nil,
+            )
+
+        case let .unknown(original):
+            let values = stringValues(from: payload.value, valueUIKind: "singleText")
+            return ResolvedCondition(
+                condition: Condition(
+                    propertyKey: original,
+                    propertyLabel: "Unknown (\(original))",
+                    propertyType: "unknown",
+                    operatorCode: payload.operator,
+                    operatorLabel: payload.operator,
+                    operatorValueArity: nil,
+                    operatorValueUIKind: nil,
+                    valueType: "unknown",
+                    values: values,
+                    isActive: false,
+                ),
+                unknownKey: original,
+            )
+        }
     }
 
     private static func makeCondition(
         from payload: SearchConditionPayload,
+        propertyKey: String,
         registryClient: RegistryClient,
     ) -> Condition {
-        let propertyKey = payload.propertyKey
         let propertyLabel = registryClient.label(for: propertyKey)
         let propertyType = registryClient.propertyTypeString(for: propertyKey)
         let typeKey = conditionTypeKey(for: propertyType)
@@ -40,6 +122,7 @@ enum AppliedFiltersUtils {
             operatorValueUIKind: valueUIKind,
             valueType: valueType,
             values: stringValues(from: payload.value, valueUIKind: valueUIKind),
+            isActive: true,
         )
     }
 

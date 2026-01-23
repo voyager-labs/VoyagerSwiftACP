@@ -245,6 +245,7 @@ private func buildCollectionConditions(from conditions: [Condition]) throws -> [
     results.reserveCapacity(conditions.count)
 
     for condition in conditions {
+        guard condition.isActive else { continue }
         guard let op = condition.operatorCode, let arity = condition.operatorValueArity else {
             throw CollectionSaveValidationError.incompleteCondition(condition.propertyLabel)
         }

@@ -10,31 +10,31 @@ def _repo_root() -> Path:
 
 
 def test_registry_json_exists() -> None:
-    registry_path = _repo_root() / "shared" / "system_property_registry.json"
-    assert registry_path.exists()
+    repo_root = _repo_root()
+    mditem_path = repo_root / "shared" / "system_property_registry.json"
+    assert mditem_path.exists()
 
 
 def test_registry_json_structure() -> None:
-    registry_path = _repo_root() / "shared" / "system_property_registry.json"
-    data = json.loads(registry_path.read_text(encoding="utf-8"))
+    repo_root = _repo_root()
+    mditem_path = repo_root / "shared" / "system_property_registry.json"
+    mditem_data = json.loads(mditem_path.read_text(encoding="utf-8"))
 
-    assert "$version" in data
-    assert "property_key_registry" in data
+    assert mditem_data.get("$kind") == "system_property_registry"
+    assert "$version" in mditem_data
 
-    property_keys = data["property_key_registry"]
-    mditem_keys = data
-
-    assert "size" in property_keys
-    assert "kMDItemContentType" in mditem_keys
+    assert "categories" in mditem_data
+    assert "common" in mditem_data["categories"]
+    assert "uniform_type_identifier" in mditem_data["categories"]["common"]
 
 
 def test_loader_reads_registry() -> None:
     repo_root = _repo_root()
     sys.path.insert(0, str(repo_root / "apps" / "backend" / "src"))
 
-    from core.metadata import mditem_registry
+    from core.metadata import SYSTEM_PROPERTY_REGISTRY
 
-    mapping = mditem_registry.get_property_key_mapping("size")
+    mapping = SYSTEM_PROPERTY_REGISTRY.get("uniform_type_identifier")
     assert mapping is not None
-    assert mapping.db_field == "size"
-    assert mapping.value_type.value == "number"
+    assert mapping.type.value == "string"
+    assert mapping.system_keys
