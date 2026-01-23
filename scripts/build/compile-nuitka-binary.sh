@@ -13,6 +13,7 @@ BACKEND_DIR="${BACKEND_DIR:-${REPO_ROOT}/apps/backend}"
 VENV_DIR="${VENV_DIR:-${BACKEND_DIR}/build/helper-runtime}"
 NUITKA_OUTPUT_DIR="${NUITKA_OUTPUT_DIR:-${BACKEND_DIR}/build/nuitka}"
 REGISTRY_JSON="${REPO_ROOT}/shared/system_property_registry.json"
+CONDITION_REGISTRY_JSON="${REPO_ROOT}/shared/property_condition_registry.json"
 
 log() {
   local level="${1:-INFO}"
@@ -109,6 +110,10 @@ if [[ ! -f "${REGISTRY_JSON}" ]]; then
   log_error "레지스트리 JSON을 찾을 수 없습니다: ${REGISTRY_JSON}"
   exit 1
 fi
+if [[ ! -f "${CONDITION_REGISTRY_JSON}" ]]; then
+  log_error "레지스트리 JSON을 찾을 수 없습니다: ${CONDITION_REGISTRY_JSON}"
+  exit 1
+fi
 if ! "${UV_BIN}" run --directory "${BACKEND_DIR}" --python "${VENV_PYTHON}" nuitka \
   --standalone \
   --macos-target-arch="arm64" \
@@ -116,6 +121,7 @@ if ! "${UV_BIN}" run --directory "${BACKEND_DIR}" --python "${VENV_PYTHON}" nuit
   --include-data-dir="${BACKEND_DIR}/src/infra/db=infra/db" \
   --include-data-dir="${OSX_METADATA_DATA_DIR}=osxmetadata/attribute_data" \
   --include-data-files="${REGISTRY_JSON}=shared/system_property_registry.json" \
+  --include-data-files="${CONDITION_REGISTRY_JSON}=shared/property_condition_registry.json" \
   --include-data-files="${MIGRATIONS_DIR}/env.py=infra/db/migrations/env.py" \
   --include-data-files="${MIGRATIONS_DIR}/config.py=infra/db/migrations/config.py" \
   --include-data-files="${MIGRATIONS_DIR}/__init__.py=infra/db/migrations/__init__.py" \

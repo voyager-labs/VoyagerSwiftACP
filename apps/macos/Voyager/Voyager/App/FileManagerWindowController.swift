@@ -14,12 +14,17 @@ class FileManagerWindowController: NSWindowController, NSWindowDelegate {
         duplicateState: FileManagerFeature.State? = nil,
         asTab: Bool = true,
         makeContentViewController: ((StoreOf<FileManagerFeature>, String?) -> NSViewController)? = nil,
+        registryClient: RegistryClient,
     ) {
         initialPath = path
         let state = Self.createInitialState(path: path, duplicateState: duplicateState)
         let undoManager = UndoManager()
         windowUndoManager = undoManager
-        store = Self.createStore(state: state, undoManager: undoManager)
+        store = Self.createStore(
+            state: state,
+            undoManager: undoManager,
+            registryClient: registryClient,
+        )
 
         let window = Self.createWindow(
             store: store,
@@ -61,11 +66,13 @@ class FileManagerWindowController: NSWindowController, NSWindowDelegate {
     private static func createStore(
         state: FileManagerFeature.State,
         undoManager: UndoManager,
+        registryClient: RegistryClient,
     ) -> StoreOf<FileManagerFeature> {
         Store(initialState: state) {
             FileManagerFeature()
         } withDependencies: {
             $0.undoManagerClient = .live(undoManager: undoManager)
+            $0.registryClient = registryClient
         }
     }
 

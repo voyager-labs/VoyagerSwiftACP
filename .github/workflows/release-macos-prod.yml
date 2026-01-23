@@ -101,6 +101,7 @@ jobs:
       VERSION_PREFIX: releases/versions
       SPARKLE_APPCAST_KEY: releases/appcast.xml
       DOWNLOADS_BASE_URL: ${{ vars.DOWNLOADS_BASE_URL }}
+      SPARKLE_BASELINE_COUNT: 2
 
     steps:
       - name: Checkout
