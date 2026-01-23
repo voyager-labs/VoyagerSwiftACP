@@ -1,13 +1,17 @@
 """Search 서비스 레이어"""
 
-from typing import Any
+import asyncio
+import logging
+from typing import Any, cast
 
 from sqlalchemy import text
+from sqlmodel import select
 
 from app.config import load_config
 from app.search.schemas import (
     AppliedFilters,
     SearchCondition,
+    SearchError,
     SearchFilters,
     SearchItem,
     SearchResponse,
@@ -17,6 +21,7 @@ from core.llm.search_condition_converter import CachedSearchConditionConverter
 from core.search.condition_builder import ConditionBuilder, ConditionBuilderError
 from core.search.scope_builder import ScopeBuilder
 from infra.db.engine import engine_manager
+from infra.schemas.file_entry_schema import FileEntrySchema
 
 
 # TODO: Collection으로 변경 모듈 이름 변경
@@ -63,10 +68,25 @@ class SearchService:
             if filters.scopes:
                 existing_scopes = filters.scopes
 
-        # 2. LLM으로 query + 기존 조건/스코프 → 최적 결과 생성
+        # 2. query + 기존 조건/스코프 → 최적 결과 생성
         llm_result = await self.converter.convert(query, existing_conditions, existing_scopes)
+        llm_error = llm_result.get("error")
 
         # 3. 결과 조건 생성
+        if llm_error:
+            logger.error("[SearchService] LLM convert error: %s", llm_error)
+            applied_conditions = [SearchCondition(**c) for c in (existing_conditions or [])]
+            applied_scopes = existing_scopes or []
+            return SearchResponse(
+                itemCount=0,
+                appliedFilters=AppliedFilters(
+                    scopes=applied_scopes,
+                    conditions=applied_conditions,
+                ),
+                items=[],
+                error=SearchError(code="LLM_CONVERSION_FAILED", details=llm_error),
+            )
+
         applied_conditions = [SearchCondition(**c) for c in llm_result["conditions"]]
 
         # 4. Scopes 설정: LLM이 새 스코프를 반환하면 사용, 아니면 기존 스코프 유지
@@ -75,7 +95,7 @@ class SearchService:
         )
 
         # 5. SQL 생성 및 실행
-        items = await self._execute_search(
+        items, error = await self._execute_search(
             scopes=applied_scopes,
             conditions=[c.model_dump() for c in applied_conditions],
         )
@@ -87,6 +107,7 @@ class SearchService:
                 conditions=applied_conditions,
             ),
             items=items,
+            error=error,
         )
 
     async def filter_search(
@@ -102,7 +123,7 @@ class SearchService:
             SearchResponse
         """
         # 직접 필터 적용
-        items = await self._execute_search(
+        items, error = await self._execute_search(
             scopes=filters.scopes,
             conditions=[c.model_dump() for c in filters.conditions],
         )
@@ -114,13 +135,14 @@ class SearchService:
                 conditions=list(filters.conditions),
             ),
             items=items,
+            error=error,
         )
 
     async def _execute_search(
         self,
         scopes: list[str],
         conditions: list[dict[str, Any]],
-    ) -> list[SearchItem]:
+    ) -> tuple[list[SearchItem], SearchError | None]:
         """SQL 실행 및 결과 반환"""
         try:
             # Scope 조건 생성
@@ -131,48 +153,42 @@ class SearchService:
 
             # WHERE절 결합
             where_clause = f"{scope_clause} AND {condition_clause}"
-            all_params = scope_params + condition_params
+            all_params: dict[str, Any] = {**scope_params, **condition_params}
 
-            # SQL 실행
-            sql = f"""
-                SELECT
-                    id, path, name_full, size, extension,
-                    file_kind, modification_date
-                FROM file_entries
-                WHERE {where_clause}
-                ORDER BY modification_date DESC
-            """
+            def _run_query() -> list[FileEntrySchema]:
+                where_text = text(where_clause).bindparams(**all_params)
+                statement = select(FileEntrySchema).where(where_text)
+                with engine_manager.session(autocommit=False) as session:
+                    result = session.exec(statement)
+                    return list(result.all())
 
-            # 파라미터를 positional에서 named로 변환
-            param_dict: dict[str, Any] = {}
-            for i, param in enumerate(all_params):
-                param_name = f"p{i}"
-                sql = sql.replace("?", f":{param_name}", 1)
-                param_dict[param_name] = param
+            entries: list[FileEntrySchema] = await asyncio.to_thread(_run_query)
 
-            with engine_manager.session(autocommit=False) as session:
-                result = session.execute(text(sql), param_dict)
-                rows = result.fetchall()
-
-            return [
-                SearchItem(
-                    id=row[0],
-                    path=row[1],
-                    name=row[2],
-                    size=row[3],
-                    extension=row[4],
-                    fileKind=row[5],
-                    modificationDate=str(row[6]) if row[6] else None,
+            items: list[SearchItem] = []
+            for entry in entries:
+                entry_id = cast(int, entry.id)
+                items.append(
+                    SearchItem(
+                        id=entry_id,
+                        path=entry.path,
+                        name=entry.name_full,
+                        size=entry.size,
+                        extension=entry.extension,
+                        fileKind=entry.file_kind,
+                        modificationDate=str(entry.modification_date)
+                        if entry.modification_date
+                        else None,
+                    )
                 )
-                for row in rows
-            ]
+
+            return items, None
 
         except ConditionBuilderError as e:
-            print(f"[SearchService] Condition error: {e}")
-            return []
+            logger.error("[SearchService] Condition error: %s", e)
+            return [], SearchError(code="CONDITION_BUILD_FAILED", details=str(e))
         except Exception as e:
-            print(f"[SearchService] Search error: {e}")
-            return []
+            logger.exception("[SearchService] Search error: %s", e)
+            return [], SearchError(code="SEARCH_EXECUTION_FAILED", details=str(e))
 
 
 # 싱글톤 인스턴스
@@ -185,3 +201,6 @@ def get_search_service() -> SearchService:
     if _search_service is None:
         _search_service = SearchService()
     return _search_service
+
+
+logger = logging.getLogger("uvicorn.error")

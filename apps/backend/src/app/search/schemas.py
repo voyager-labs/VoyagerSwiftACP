@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 
 
 # TODO: Collection으로 변경 모듈 이름 변경
@@ -29,7 +29,7 @@ class SearchFilters(BaseModel):
     """검색 필터"""
 
     scopes: list[str] = Field(default_factory=list, description="검색 경로 범위")
-    conditions: list["SearchCondition"] = Field(default_factory=list, description="검색 조건 목록")
+    conditions: list[SearchCondition] = Field(default_factory=list, description="검색 조건 목록")
 
 
 class QuerySearchRequest(BaseModel):
@@ -37,6 +37,14 @@ class QuerySearchRequest(BaseModel):
 
     query: str = Field(..., min_length=1, description="자연어 검색 쿼리")
     filters: SearchFilters | None = Field(None, description="선택적 필터")
+
+    @field_validator("query")
+    @classmethod
+    def validate_query(cls, value: str) -> str:
+        trimmed = value.strip()
+        if not trimmed:
+            raise ValueError("query는 공백만 포함할 수 없습니다.")
+        return trimmed
 
 
 class FilterSearchRequest(BaseModel):
@@ -61,7 +69,14 @@ class AppliedFilters(BaseModel):
     """적용된 필터"""
 
     scopes: list[str] = Field(default_factory=list)
-    conditions: list["SearchCondition"] = Field(default_factory=list)
+    conditions: list[SearchCondition] = Field(default_factory=list)
+
+
+class SearchError(BaseModel):
+    """검색 오류 메타"""
+
+    code: str = Field(..., description="오류 코드")
+    details: str | None = Field(None, description="오류 상세")
 
 
 class SearchResponse(BaseModel):
@@ -70,3 +85,4 @@ class SearchResponse(BaseModel):
     itemCount: int
     appliedFilters: AppliedFilters
     items: list[SearchItem]
+    error: SearchError | None = None
