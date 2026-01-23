@@ -5,7 +5,6 @@ description = "Voyager App Backend With FastAPI"
 readme = "README.md"
 requires-python = ">=3.13"
 dependencies = [
-  "alembic>=1.13.2",
   "fastapi[standard]==0.116.1",
   "langchain-community>=0.3.0",
   "langchain-core>=0.3.0",
@@ -55,12 +54,11 @@ package = true
 
 [tool.uv.build-backend]
 module-root = "src"
-module-name = ["app", "core", "infra", "osxmetadata", "utils"]
+module-name = ["app", "core", "infra"]
 
 [project.scripts]
 dev = "app.cli:dev"
 prod = "app.cli:prod"
-index = "app.cli:index"
 
 [tool.pyright]
 typeCheckingMode = "strict"
