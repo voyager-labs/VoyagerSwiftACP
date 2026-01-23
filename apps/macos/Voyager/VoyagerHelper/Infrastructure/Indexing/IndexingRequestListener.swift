@@ -54,7 +54,7 @@ final class IndexingRequestListener {
         let token = DistributedNotificationCenter.default().addObserver(
             forName: .voyagerIndexingRequest,
             object: nil,
-            queue: .main
+            queue: .main,
         ) { [weak self] _ in
             guard let self else { return }
             Task { @MainActor in
@@ -99,7 +99,7 @@ final class IndexingRequestListener {
 
             _ = try await InitialIndexingRunner.indexHomeDirectoryIfNeeded(
                 manager: manager,
-                logger: logger
+                logger: logger,
             )
 
             try await setStatus(.completed, completedAt: iso8601Now())
@@ -125,7 +125,7 @@ final class IndexingRequestListener {
         _ status: InitialIndexingStatus,
         requestedAt: String? = nil,
         startedAt: String? = nil,
-        completedAt: String? = nil
+        completedAt: String? = nil,
     ) async throws {
         try await upsertStateValue(StateKey.initialIndexingStatus, value: status.rawValue)
         if let requestedAt {
@@ -145,7 +145,7 @@ final class IndexingRequestListener {
             return try String.fetchOne(
                 db,
                 sql: "SELECT value FROM indexing_state WHERE key = ?",
-                arguments: [key]
+                arguments: [key],
             )
         }
     }

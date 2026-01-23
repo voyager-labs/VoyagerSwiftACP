@@ -2,7 +2,7 @@
 import Foundation
 
 enum MetadataJSONEncoder {
-    nonisolated private static let metadataKeys: [String] = [
+    private nonisolated static let metadataKeys: [String] = [
         "_kMDItemUserTags",
         "kMDItemAcquisitionMake",
         "kMDItemAcquisitionModel",
@@ -257,19 +257,19 @@ enum MetadataJSONEncoder {
     private static func jsonScalarValue(from value: Any) -> Any? {
         switch value {
         case let string as String:
-            return string
+            string
         case let bool as Bool:
-            return bool
+            bool
         case let number as NSNumber:
-            return number
+            number
         case let date as Date:
-            return iso8601String(from: date)
+            iso8601String(from: date)
         case let url as URL:
-            return url.path
+            url.path
         case let data as Data:
-            return data.base64EncodedString()
+            data.base64EncodedString()
         default:
-            return nil
+            nil
         }
     }
 

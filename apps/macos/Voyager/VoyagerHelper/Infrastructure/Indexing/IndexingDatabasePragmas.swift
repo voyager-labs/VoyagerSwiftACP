@@ -19,22 +19,22 @@ enum IndexingDatabasePragmas {
         let mmapSize: Int64
     }
 
-    nonisolated private static let config = Config(
+    private nonisolated static let config = Config(
         journalMode: "WAL",
         synchronous: "NORMAL",
         tempStore: "MEMORY",
         cacheSize: -16384,
-        mmapSize: 134_217_728
+        mmapSize: 134_217_728,
     )
 
     static func apply(manager: DatabaseManager) async throws -> Snapshot {
         try await manager.writeWithoutTransaction { db in
-            let snapshot = Snapshot(
-                journalMode: (try String.fetchOne(db, sql: "PRAGMA journal_mode")) ?? "delete",
-                synchronous: (try Int.fetchOne(db, sql: "PRAGMA synchronous")) ?? 1,
-                tempStore: (try Int.fetchOne(db, sql: "PRAGMA temp_store")) ?? 0,
-                cacheSize: (try Int.fetchOne(db, sql: "PRAGMA cache_size")) ?? 0,
-                mmapSize: (try Int64.fetchOne(db, sql: "PRAGMA mmap_size")) ?? 0
+            let snapshot = try Snapshot(
+                journalMode: (String.fetchOne(db, sql: "PRAGMA journal_mode")) ?? "delete",
+                synchronous: (Int.fetchOne(db, sql: "PRAGMA synchronous")) ?? 1,
+                tempStore: (Int.fetchOne(db, sql: "PRAGMA temp_store")) ?? 0,
+                cacheSize: (Int.fetchOne(db, sql: "PRAGMA cache_size")) ?? 0,
+                mmapSize: (Int64.fetchOne(db, sql: "PRAGMA mmap_size")) ?? 0,
             )
 
             let config = Self.config
@@ -51,7 +51,7 @@ enum IndexingDatabasePragmas {
     static func restore(
         manager: DatabaseManager,
         logger: Logger,
-        snapshot: Snapshot
+        snapshot: Snapshot,
     ) async {
         do {
             try await manager.writeWithoutTransaction { db in

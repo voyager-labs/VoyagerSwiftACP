@@ -1,7 +1,7 @@
 @preconcurrency import CoreServices
 import Foundation
 
-struct InitialIndexingRecordBuilder {
+enum InitialIndexingRecordBuilder {
     private struct IdentifierPair {
         let volumeIdentifier: String
         let fileResourceIdentifier: String
@@ -47,7 +47,7 @@ struct InitialIndexingRecordBuilder {
         mdItem: MDItem,
         path: String,
         homeURL: URL,
-        cachedVolumeIdentifier: String?
+        cachedVolumeIdentifier: String?,
     ) async -> EntryRecord? {
         let fileURL = URL(fileURLWithPath: path)
         let standardizedURL = fileURL.standardizedFileURL
@@ -55,7 +55,7 @@ struct InitialIndexingRecordBuilder {
         do {
             guard let identifiers = try identifiers(
                 for: standardizedURL,
-                cachedVolumeIdentifier: cachedVolumeIdentifier
+                cachedVolumeIdentifier: cachedVolumeIdentifier,
             ) else {
                 return nil
             }
@@ -87,7 +87,7 @@ struct InitialIndexingRecordBuilder {
                 contentModificationDate: attributes.contentModificationDate,
                 addedDate: attributes.addedDate,
                 lastUsedDate: attributes.lastUsedDate,
-                originalMetadata: attributes.originalMetadata
+                originalMetadata: attributes.originalMetadata,
             )
             return record
         } catch {
@@ -95,9 +95,9 @@ struct InitialIndexingRecordBuilder {
         }
     }
 
-    nonisolated private static func identifiers(
+    private nonisolated static func identifiers(
         for url: URL,
-        cachedVolumeIdentifier: String?
+        cachedVolumeIdentifier: String?,
     ) throws -> IdentifierPair? {
         let identifierKeys: Set<URLResourceKey> = cachedVolumeIdentifier == nil
             ? [.volumeIdentifierKey, .fileResourceIdentifierKey]
@@ -108,28 +108,28 @@ struct InitialIndexingRecordBuilder {
         guard let volumeIdentifier else { return nil }
         return IdentifierPair(
             volumeIdentifier: volumeIdentifier,
-            fileResourceIdentifier: fileResourceIdentifier
+            fileResourceIdentifier: fileResourceIdentifier,
         )
     }
 
-    nonisolated private static func nameComponents(for url: URL) -> NameComponents {
+    private nonisolated static func nameComponents(for url: URL) -> NameComponents {
         let dirURL = url.deletingLastPathComponent()
         return NameComponents(
             dirURL: dirURL,
             nameFull: url.lastPathComponent,
             nameStem: url.deletingPathExtension().lastPathComponent,
-            fileExtension: url.pathExtension.lowercased()
+            fileExtension: url.pathExtension.lowercased(),
         )
     }
 
-    nonisolated private static func fileAttributes(mdItem: MDItem, url: URL) async -> FileAttributes? {
+    private nonisolated static func fileAttributes(mdItem: MDItem, url: URL) async -> FileAttributes? {
         let attributes = MetadataJSONEncoder.attributes(from: mdItem)
         let mdItemValues = mdItemValues(from: attributes)
         let fallbackValues = fallbackValuesIfNeeded(url: url, values: mdItemValues)
         guard let resolvedDates = resolvedDates(
             values: mdItemValues,
             fallbackValues: fallbackValues,
-            attributes: attributes
+            attributes: attributes,
         ) else {
             return nil
         }
@@ -141,7 +141,7 @@ struct InitialIndexingRecordBuilder {
         let lastUsedDate = dateValue(attributeValue(attributes, key: kMDItemLastUsedDate))
         let originalMetadata = await MetadataJSONEncoder.encode(
             attributes: attributes,
-            path: url.path
+            path: url.path,
         ) ?? "{}"
 
         return FileAttributes(
@@ -155,22 +155,22 @@ struct InitialIndexingRecordBuilder {
             fileKind: fileKind,
             isInvisible: isInvisible,
             lastUsedDate: lastUsedDate,
-            originalMetadata: originalMetadata
+            originalMetadata: originalMetadata,
         )
     }
 
-    nonisolated private static func mdItemValues(from attributes: NSDictionary) -> MDItemValues {
+    private nonisolated static func mdItemValues(from attributes: NSDictionary) -> MDItemValues {
         MDItemValues(
             size: int64Value(attributeValue(attributes, key: kMDItemFSSize)),
             creationDate: dateValue(attributeValue(attributes, key: kMDItemFSCreationDate)),
             modificationDate: dateValue(attributeValue(attributes, key: kMDItemFSContentChangeDate)),
-            addedDate: dateValue(attributeValue(attributes, key: kMDItemDateAdded))
+            addedDate: dateValue(attributeValue(attributes, key: kMDItemDateAdded)),
         )
     }
 
-    nonisolated private static func fallbackValuesIfNeeded(
+    private nonisolated static func fallbackValuesIfNeeded(
         url: URL,
-        values: MDItemValues
+        values: MDItemValues,
     ) -> URLResourceValues? {
         let needsFallback = values.size == nil
             || values.creationDate == nil
@@ -178,23 +178,23 @@ struct InitialIndexingRecordBuilder {
             || values.addedDate == nil
         guard needsFallback else { return nil }
         return try? url.resourceValues(
-            forKeys: [.fileSizeKey, .creationDateKey, .contentModificationDateKey, .addedToDirectoryDateKey]
+            forKeys: [.fileSizeKey, .creationDateKey, .contentModificationDateKey, .addedToDirectoryDateKey],
         )
     }
 
-    nonisolated private static func resolvedSize(
+    private nonisolated static func resolvedSize(
         values: MDItemValues,
-        fallbackValues: URLResourceValues?
+        fallbackValues: URLResourceValues?,
     ) -> Int64 {
         values.size
             ?? fallbackValues?.fileSize.map(Int64.init)
             ?? 0
     }
 
-    nonisolated private static func resolvedDates(
+    private nonisolated static func resolvedDates(
         values: MDItemValues,
         fallbackValues: URLResourceValues?,
-        attributes: NSDictionary
+        attributes: NSDictionary,
     ) -> ResolvedDates? {
         guard let creationDate = values.creationDate ?? fallbackValues?.creationDate else {
             return nil
@@ -216,23 +216,23 @@ struct InitialIndexingRecordBuilder {
             modificationDate: modificationDate,
             contentCreationDate: contentCreationDate,
             contentModificationDate: contentModificationDate,
-            addedDate: addedDate
+            addedDate: addedDate,
         )
     }
 
-    nonisolated private static func attributeValue(_ attributes: NSDictionary, key: CFString) -> Any? {
+    private nonisolated static func attributeValue(_ attributes: NSDictionary, key: CFString) -> Any? {
         attributes[key as String]
     }
 
-    nonisolated private static func stringValue(_ value: Any?) -> String? {
+    private nonisolated static func stringValue(_ value: Any?) -> String? {
         value as? String
     }
 
-    nonisolated private static func int64Value(_ value: Any?) -> Int64? {
+    private nonisolated static func int64Value(_ value: Any?) -> Int64? {
         (value as? NSNumber)?.int64Value
     }
 
-    nonisolated private static func boolValue(_ value: Any?) -> Bool {
+    private nonisolated static func boolValue(_ value: Any?) -> Bool {
         if let value = value as? Bool {
             return value
         }
@@ -242,11 +242,11 @@ struct InitialIndexingRecordBuilder {
         return false
     }
 
-    nonisolated private static func dateValue(_ value: Any?) -> Date? {
+    private nonisolated static func dateValue(_ value: Any?) -> Date? {
         value as? Date
     }
 
-    nonisolated private static func identifierString(_ value: Any?) -> String? {
+    private nonisolated static func identifierString(_ value: Any?) -> String? {
         guard let value else { return nil }
         if let string = value as? String {
             return string
@@ -268,14 +268,14 @@ struct InitialIndexingRecordBuilder {
         return identifierString(values?.volumeIdentifier)
     }
 
-    nonisolated private static func relativeInfo(path: URL, homeURL: URL) -> (depth: Int, relative: String?) {
+    private nonisolated static func relativeInfo(path: URL, homeURL: URL) -> (depth: Int, relative: String?) {
         let homePath = homeURL.standardizedFileURL.path
         let targetPath = path.standardizedFileURL.path
         guard targetPath == homePath || targetPath.hasPrefix(homePath + "/") else {
             return (-1, nil)
         }
         let relative = targetPath.dropFirst(homePath.count).trimmingCharacters(
-            in: CharacterSet(charactersIn: "/")
+            in: CharacterSet(charactersIn: "/"),
         )
         guard !relative.isEmpty else { return (-1, "~/") }
         let depth = max(-1, relative.split(separator: "/").count - 1)

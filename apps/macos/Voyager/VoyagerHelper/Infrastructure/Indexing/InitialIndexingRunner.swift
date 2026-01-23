@@ -12,14 +12,14 @@ enum InitialIndexingRunner {
     static func indexHomeDirectoryIfNeeded(
         manager: DatabaseManager,
         logger: Logger,
-        batchSize: Int? = nil
+        batchSize: Int? = nil,
     ) async throws -> Int {
         let lastSyncAt: String? = try await manager.read { db -> String? in
             guard try db.tableExists("indexing_state") else { return nil }
             return try String.fetchOne(
                 db,
                 sql: "SELECT value FROM indexing_state WHERE key = ?",
-                arguments: ["last_sync_at"]
+                arguments: ["last_sync_at"],
             )
         }
         if let lastSyncAt, lastSyncAt != "null" {
@@ -33,7 +33,7 @@ enum InitialIndexingRunner {
             let inserted = try await runHomeIndexing(
                 manager: manager,
                 logger: logger,
-                batchSize: batchSize
+                batchSize: batchSize,
             )
             try await updateLastSyncAt(manager: manager)
             await IndexingDatabasePragmas.restore(manager: manager, logger: logger, snapshot: pragmaSnapshot)
@@ -61,7 +61,7 @@ enum InitialIndexingRunner {
     private static func runHomeIndexing(
         manager: DatabaseManager,
         logger: Logger,
-        batchSize: Int?
+        batchSize: Int?,
     ) async throws -> Int {
         let homeURL = FileManager.default.homeDirectoryForCurrentUser
         let cachedVolumeIdentifier = InitialIndexingRecordBuilder.volumeIdentifier(from: homeURL)
@@ -86,7 +86,7 @@ enum InitialIndexingRunner {
         var index = 0
         while index < resultCount {
             let end = min(index + pathBatchSize, resultCount)
-            let items = loadItems(query: query, range: index..<end)
+            let items = loadItems(query: query, range: index ..< end)
             let existingPaths = try await fetchExistingPaths(manager: manager, paths: items.map(\.path))
 
             for item in items where !existingPaths.contains(item.path) {
@@ -94,7 +94,7 @@ enum InitialIndexingRunner {
                     mdItem: item.mdItem,
                     path: item.path,
                     homeURL: homeURL,
-                    cachedVolumeIdentifier: cachedVolumeIdentifier
+                    cachedVolumeIdentifier: cachedVolumeIdentifier,
                 )
                 guard let record else { continue }
                 batch.append(record)
@@ -141,7 +141,7 @@ enum InitialIndexingRunner {
 
     private static func fetchExistingPaths(
         manager: DatabaseManager,
-        paths: [String]
+        paths: [String],
     ) async throws -> Set<String> {
         guard !paths.isEmpty else { return [] }
         return try await manager.read { db in

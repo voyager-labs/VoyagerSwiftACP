@@ -14,11 +14,10 @@ enum XattrMetadataReader {
         var tags: [[Any]] = []
         tags.reserveCapacity(values.count)
         for value in values {
-            let text: String
-            if let dataValue = value as? Data {
-                text = String(bytes: dataValue, encoding: .utf8) ?? String(describing: dataValue)
+            let text = if let dataValue = value as? Data {
+                String(bytes: dataValue, encoding: .utf8) ?? String(describing: dataValue)
             } else {
-                text = String(describing: value)
+                String(describing: value)
             }
             let parts = text.split(separator: "\n", maxSplits: 1, omittingEmptySubsequences: false)
             let name = parts.first.map(String.init)?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""

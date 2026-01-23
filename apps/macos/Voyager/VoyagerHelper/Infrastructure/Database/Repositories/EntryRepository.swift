@@ -63,10 +63,10 @@ nonisolated struct EntryUpdate: Sendable {
         append(&assignments, column: .originalMetadata, value: originalMetadata)
     }
 
-    private func append<T: DatabaseValueConvertible>(
+    private func append(
         _ assignments: inout [ColumnAssignment],
         column: EntryRecord.Columns,
-        value: T?
+        value: (some DatabaseValueConvertible)?,
     ) {
         guard let value else { return }
         assignments.append(column.set(to: value))
@@ -191,7 +191,7 @@ nonisolated struct EntryRepository: Sendable {
     private func fetchByLogicalKey(_ key: EntryLogicalKey, db: Database) throws -> EntryRecord? {
         let request = EntryRecord.filter(
             EntryRecord.Columns.volumeIdentifier == key.volumeIdentifier &&
-                EntryRecord.Columns.fileResourceIdentifier == key.fileResourceIdentifier
+                EntryRecord.Columns.fileResourceIdentifier == key.fileResourceIdentifier,
         )
         return try request.fetchOne(db)
     }

@@ -16,21 +16,21 @@ nonisolated enum DatabaseMigrations {
 
         let applied = try String.fetchAll(
             db,
-            sql: "SELECT identifier FROM grdb_migrations ORDER BY rowid"
+            sql: "SELECT identifier FROM grdb_migrations ORDER BY rowid",
         )
         let migrationIdentifiers = try loadSQLMigrations().map(\.id)
         let known = Set(migrationIdentifiers)
         let unknown = applied.filter { !known.contains($0) }
         if !unknown.isEmpty {
             throw DatabaseError.migrationFailed(
-                "Unknown migrations detected: \(unknown.joined(separator: ", "))"
+                "Unknown migrations detected: \(unknown.joined(separator: ", "))",
             )
         }
 
         let expectedPrefix = Array(migrationIdentifiers.prefix(applied.count))
         if applied != expectedPrefix {
             throw DatabaseError.migrationFailed(
-                "Migration history mismatch: expected \(expectedPrefix.joined(separator: ", "))"
+                "Migration history mismatch: expected \(expectedPrefix.joined(separator: ", "))",
             )
         }
     }
@@ -46,7 +46,7 @@ nonisolated enum DatabaseMigrations {
         let directoryURL = try migrationDirectoryURL()
         let fileURLs = try FileManager.default.contentsOfDirectory(
             at: directoryURL,
-            includingPropertiesForKeys: nil
+            includingPropertiesForKeys: nil,
         )
         let sqlFiles = fileURLs
             .filter { $0.pathExtension.lowercased() == "sql" }
@@ -54,7 +54,7 @@ nonisolated enum DatabaseMigrations {
 
         guard !sqlFiles.isEmpty else {
             throw DatabaseError.migrationFailed(
-                "No migration SQL files found in \(directoryURL.path)"
+                "No migration SQL files found in \(directoryURL.path)",
             )
         }
 
@@ -72,7 +72,7 @@ nonisolated enum DatabaseMigrations {
     private static func migrationDirectoryURL() throws -> URL {
         guard let location = envValue(for: "PUBLIC_SQLITE_MIGRATIONS_FILE_LOCATION") else {
             throw DatabaseError.migrationFailed(
-                "Migration directory not configured. Set PUBLIC_SQLITE_MIGRATIONS_FILE_LOCATION."
+                "Migration directory not configured. Set PUBLIC_SQLITE_MIGRATIONS_FILE_LOCATION.",
             )
         }
 
@@ -87,7 +87,7 @@ nonisolated enum DatabaseMigrations {
                 .appendingPathComponent(expandedLocation, isDirectory: true)
         } else {
             throw DatabaseError.migrationFailed(
-                "VOYAGER_PROJECT_ROOT required for relative migration path: \(expandedLocation)"
+                "VOYAGER_PROJECT_ROOT required for relative migration path: \(expandedLocation)",
             )
         }
 
@@ -96,7 +96,7 @@ nonisolated enum DatabaseMigrations {
               isDirectory.boolValue
         else {
             throw DatabaseError.migrationFailed(
-                "Migration directory not found at \(directoryURL.path)"
+                "Migration directory not found at \(directoryURL.path)",
             )
         }
         return directoryURL
@@ -113,21 +113,21 @@ nonisolated enum DatabaseMigrations {
     }
 
     private static func validateExistingEntriesTable(_ db: Database) throws {
-        let existingColumns = Set(try db.columns(in: EntriesSchema.tableName).map(\.name))
+        let existingColumns = try Set(db.columns(in: EntriesSchema.tableName).map(\.name))
         let missing = EntriesSchema.requiredColumns.filter { !existingColumns.contains($0) }
         if !missing.isEmpty {
             throw DatabaseError.migrationFailed(
-                "Legacy entries table missing columns: \(missing.joined(separator: ", "))"
+                "Legacy entries table missing columns: \(missing.joined(separator: ", "))",
             )
         }
     }
 
     private static func validateExistingIndexingStateTable(_ db: Database) throws {
-        let existingColumns = Set(try db.columns(in: IndexingStateSchema.tableName).map(\.name))
+        let existingColumns = try Set(db.columns(in: IndexingStateSchema.tableName).map(\.name))
         let missing = IndexingStateSchema.requiredColumns.filter { !existingColumns.contains($0) }
         if !missing.isEmpty {
             throw DatabaseError.migrationFailed(
-                "Legacy indexing_state table missing columns: \(missing.joined(separator: ", "))"
+                "Legacy indexing_state table missing columns: \(missing.joined(separator: ", "))",
             )
         }
     }
@@ -152,7 +152,7 @@ nonisolated enum DatabaseMigrations {
         _ db: Database,
         key: String,
         value: String,
-        now: Date
+        now: Date,
     ) throws {
         let sql = """
         INSERT INTO indexing_state (key, value, updated_at)

@@ -19,7 +19,7 @@ extension IndexingClient: DependencyKey {
                 DistributedNotificationCenter.default().post(
                     name: .voyagerIndexingRequest,
                     object: nil,
-                    userInfo: nil
+                    userInfo: nil,
                 )
             }
             logger.info("Indexing request sent.")
@@ -27,11 +27,11 @@ extension IndexingClient: DependencyKey {
     }
 
     nonisolated static var testValue: IndexingClient {
-        IndexingClient(start: { })
+        IndexingClient(start: {})
     }
 
     nonisolated static var previewValue: IndexingClient {
-        IndexingClient(start: { })
+        IndexingClient(start: {})
     }
 }
 

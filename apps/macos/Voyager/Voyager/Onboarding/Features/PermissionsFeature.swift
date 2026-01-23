@@ -205,7 +205,7 @@ struct PermissionsFeature {
 
     private func startIndexingIfReady(state: inout State) -> Effect<Action> {
         logger.info(
-            "Onboarding indexing check: fullDiskAccess=\(state.fullDiskAccessStatus), filesAndFolders=\(state.filesAndFoldersStatus), inBackground=\(state.isIndexingInBackground)"
+            "Onboarding indexing check: fullDiskAccess=\(state.fullDiskAccessStatus), filesAndFolders=\(state.filesAndFoldersStatus), inBackground=\(state.isIndexingInBackground)",
         )
         guard state.fullDiskAccessStatus == .granted,
               state.filesAndFoldersStatus == .granted,

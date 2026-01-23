@@ -10,7 +10,7 @@ enum IncrementalIndexingValidator {
 
     static func startIfReady(
         manager: DatabaseManager,
-        logger: Logger
+        logger: Logger,
     ) async {
         do {
             let snapshot = try await loadStateSnapshot(manager: manager)
@@ -21,7 +21,7 @@ enum IncrementalIndexingValidator {
             logger.info("Incremental indexing ready")
             try await IncrementalIndexingWatcher.shared.start(
                 manager: manager,
-                logger: logger
+                logger: logger,
             )
         } catch {
             logger.error("Incremental indexing gate failed: \(error)")
@@ -36,16 +36,16 @@ enum IncrementalIndexingValidator {
             let watchedPaths = try String.fetchOne(
                 db,
                 sql: "SELECT value FROM indexing_state WHERE key = ?",
-                arguments: ["watched_paths"]
+                arguments: ["watched_paths"],
             )
             let lastSyncAt = try String.fetchOne(
                 db,
                 sql: "SELECT value FROM indexing_state WHERE key = ?",
-                arguments: ["last_sync_at"]
+                arguments: ["last_sync_at"],
             )
             return StateSnapshot(
                 watchedPaths: watchedPaths,
-                lastSyncAt: lastSyncAt
+                lastSyncAt: lastSyncAt,
             )
         }
     }

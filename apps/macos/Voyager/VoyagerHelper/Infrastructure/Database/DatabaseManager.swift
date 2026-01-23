@@ -15,7 +15,7 @@ actor DatabaseManager {
 
     init(
         databaseURLProvider: @Sendable @escaping () throws -> URL = DatabaseManager.defaultDatabaseURL,
-        logger: Logger = Logger(label: "VoyagerHelper.Database")
+        logger: Logger = Logger(label: "VoyagerHelper.Database"),
     ) {
         self.databaseURLProvider = databaseURLProvider
         self.logger = logger
@@ -107,7 +107,7 @@ actor DatabaseManager {
 
     private func makeConfiguration() -> Configuration {
         var configuration = Configuration()
-        let logger = self.logger
+        let logger = logger
         configuration.prepareDatabase { db in
             // PRAGMA 설정
             try db.execute(sql: "PRAGMA foreign_keys = ON")
@@ -141,7 +141,7 @@ actor DatabaseManager {
 
     private func withMigrationLock<T>(
         for databaseURL: URL,
-        _ block: () async throws -> T
+        _ block: () async throws -> T,
     ) async throws -> T {
         let lockURL = migrationLockURL(for: databaseURL)
         let lockDescriptor = try acquireMigrationLock(at: lockURL)
@@ -211,7 +211,7 @@ actor DatabaseManager {
         }
 
         var migrator = DatabaseMigrator()
-        let logger = self.logger
+        let logger = logger
 
         try DatabaseMigrations.registerAll(into: &migrator)
 

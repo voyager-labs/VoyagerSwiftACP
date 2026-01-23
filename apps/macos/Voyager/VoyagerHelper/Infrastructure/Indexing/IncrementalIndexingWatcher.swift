@@ -25,7 +25,7 @@ private let kIncrementalIndexingEventCallback: FSEventStreamCallback = { _, info
     watcher.handleEvents(
         paths: pathList,
         flags: flagsList,
-        ids: idsList
+        ids: idsList,
     )
 }
 
@@ -69,7 +69,7 @@ final class IncrementalIndexingWatcher {
             logger: logger,
             eventLogger: eventLogger,
             homeURL: homeURL,
-            cachedVolumeIdentifier: cachedVolumeIdentifier
+            cachedVolumeIdentifier: cachedVolumeIdentifier,
         )
         let sinceEventId = try await loadLastEventId(manager: manager)
             ?? FSEventStreamEventId(kFSEventStreamEventIdSinceNow)
@@ -83,8 +83,8 @@ final class IncrementalIndexingWatcher {
     func stop() {
         eventQueue.async { [weak self] in
             guard let self else { return }
-            self.processingTask?.cancel()
-            self.processingTask = nil
+            processingTask?.cancel()
+            processingTask = nil
         }
         if let stream {
             FSEventStreamStop(stream)
@@ -118,7 +118,7 @@ final class IncrementalIndexingWatcher {
             info: Unmanaged.passUnretained(self).toOpaque(),
             retain: nil,
             release: nil,
-            copyDescription: nil
+            copyDescription: nil,
         )
         let flags = FSEventStreamCreateFlags(kFSEventStreamCreateFlagFileEvents)
         guard let stream = FSEventStreamCreate(
@@ -128,7 +128,7 @@ final class IncrementalIndexingWatcher {
             paths,
             sinceEventId,
             streamLatency,
-            flags
+            flags,
         ) else {
             logger.error("Failed to create FSEventStream")
             return
@@ -173,7 +173,7 @@ final class IncrementalIndexingWatcher {
     fileprivate func handleEvents(
         paths: [String],
         flags: [FSEventStreamEventFlags],
-        ids: [FSEventStreamEventId]
+        ids: [FSEventStreamEventId],
     ) {
         eventQueue.async { [weak self] in
             self?.handleEventsOnQueue(paths: paths, flags: flags, ids: ids)
@@ -184,14 +184,14 @@ final class IncrementalIndexingWatcher {
     private func handleEventsOnQueue(
         paths: [String],
         flags: [FSEventStreamEventFlags],
-        ids: [FSEventStreamEventId]
+        ids: [FSEventStreamEventId],
     ) {
         guard let plan = eventPlanner.plan(
             paths: paths,
             flags: flags,
             ids: ids,
             lastEventId: lastEventId,
-            watchedPaths: watchedPaths
+            watchedPaths: watchedPaths,
         ) else {
             return
         }
@@ -200,7 +200,7 @@ final class IncrementalIndexingWatcher {
         let messageParts = [
             "Incremental indexing events filtered: total=\(plan.totalCount)",
             "watched=\(plan.changes.count)",
-            "last_event_id=\(plan.maxEventId)"
+            "last_event_id=\(plan.maxEventId)",
         ]
         let message = messageParts.joined(separator: ", ")
         eventLogger.info("\(message, privacy: .public)")
@@ -211,7 +211,7 @@ final class IncrementalIndexingWatcher {
         enqueueProcessing(
             changes: plan.changes,
             rescanPaths: plan.rescanPaths,
-            maxEventId: plan.maxEventId
+            maxEventId: plan.maxEventId,
         )
     }
 
@@ -219,7 +219,7 @@ final class IncrementalIndexingWatcher {
     private func enqueueProcessing(
         changes: [IncrementalIndexingPlannedChange],
         rescanPaths: [String],
-        maxEventId: FSEventStreamEventId
+        maxEventId: FSEventStreamEventId,
     ) {
         guard let eventExecutor else { return }
         let previousTask = processingTask
@@ -233,11 +233,11 @@ final class IncrementalIndexingWatcher {
                 try await eventExecutor.apply(
                     changes: changes,
                     rescanPaths: rescanPaths,
-                    maxEventId: maxEventId
+                    maxEventId: maxEventId,
                 )
             } catch {
-                self.eventLogger.error(
-                    "Incremental indexing apply failed: \(String(describing: error), privacy: .public)"
+                eventLogger.error(
+                    "Incremental indexing apply failed: \(String(describing: error), privacy: .public)",
                 )
             }
         }
@@ -252,7 +252,7 @@ extension IncrementalIndexingWatcher {
             return try String.fetchOne(
                 db,
                 sql: "SELECT value FROM indexing_state WHERE key = ?",
-                arguments: ["watched_paths"]
+                arguments: ["watched_paths"],
             )
         }
 
@@ -280,7 +280,7 @@ extension IncrementalIndexingWatcher {
             return try String.fetchOne(
                 db,
                 sql: "SELECT value FROM indexing_state WHERE key = ?",
-                arguments: ["last_fsevent_id"]
+                arguments: ["last_fsevent_id"],
             )
         }
         guard let raw, let value = UInt64(raw) else { return nil }

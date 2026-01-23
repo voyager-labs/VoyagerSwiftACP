@@ -24,13 +24,13 @@ final class IncrementalIndexingEventExecutor {
         logger: Logging.Logger,
         eventLogger: os.Logger,
         homeURL: URL,
-        cachedVolumeIdentifier: String?
+        cachedVolumeIdentifier: String?,
     ) {
         self.manager = manager
         self.logger = logger
         self.eventLogger = eventLogger
         self.homeURL = homeURL
-        self.homePath = homeURL.standardizedFileURL.path
+        homePath = homeURL.standardizedFileURL.path
         self.cachedVolumeIdentifier = cachedVolumeIdentifier
     }
 
@@ -38,7 +38,7 @@ final class IncrementalIndexingEventExecutor {
     func apply(
         changes: [IncrementalIndexingPlannedChange],
         rescanPaths: [String],
-        maxEventId: FSEventStreamEventId
+        maxEventId: FSEventStreamEventId,
     ) async throws {
         if !changes.isEmpty {
             try await applyChanges(changes)
@@ -77,7 +77,7 @@ final class IncrementalIndexingEventExecutor {
         if insertedOrUpdated > 0 || deleted > 0 {
             let messageParts = [
                 "Incremental indexing applied: upserted=\(insertedOrUpdated)",
-                "deleted=\(deleted)"
+                "deleted=\(deleted)",
             ]
             let message = messageParts.joined(separator: ", ")
             eventLogger.info("\(message, privacy: .public)")
@@ -95,7 +95,7 @@ final class IncrementalIndexingEventExecutor {
             return ApplyOutcome(upserted: 0, deleted: deleted, error: nil)
         } catch {
             eventLogger.error(
-                "Incremental indexing delete failed: \(String(describing: error), privacy: .public)"
+                "Incremental indexing delete failed: \(String(describing: error), privacy: .public)",
             )
             return ApplyOutcome(upserted: 0, deleted: 0, error: error)
         }
@@ -115,7 +115,7 @@ final class IncrementalIndexingEventExecutor {
             mdItem: mdItem,
             path: path,
             homeURL: homeURL,
-            cachedVolumeIdentifier: cachedIdentifier
+            cachedVolumeIdentifier: cachedIdentifier,
         )
         guard let record else {
             return ApplyOutcome(upserted: 0, deleted: 0, error: nil)
@@ -126,7 +126,7 @@ final class IncrementalIndexingEventExecutor {
             return ApplyOutcome(upserted: 1, deleted: 0, error: nil)
         } catch {
             eventLogger.error(
-                "Incremental indexing upsert failed: \(String(describing: error), privacy: .public)"
+                "Incremental indexing upsert failed: \(String(describing: error), privacy: .public)",
             )
             return ApplyOutcome(upserted: 0, deleted: 0, error: error)
         }
@@ -154,7 +154,7 @@ final class IncrementalIndexingEventExecutor {
             } catch {
                 lastError = error
                 eventLogger.error(
-                    "Incremental indexing rescan failed: \(String(describing: error), privacy: .public)"
+                    "Incremental indexing rescan failed: \(String(describing: error), privacy: .public)",
                 )
             }
         }
@@ -178,7 +178,7 @@ final class IncrementalIndexingEventExecutor {
         var scannedPaths: Set<String> = []
         scannedPaths.reserveCapacity(resultCount)
 
-        for index in 0..<resultCount {
+        for index in 0 ..< resultCount {
             guard let item = MDQueryGetResultAtIndex(query, index) else { continue }
             let mdItem = unsafeBitCast(item, to: MDItem.self)
             guard let itemPath = MDItemCopyAttribute(mdItem, kMDItemPath) as? String else { continue }
@@ -188,7 +188,7 @@ final class IncrementalIndexingEventExecutor {
                 mdItem: mdItem,
                 path: itemPath,
                 homeURL: homeURL,
-                cachedVolumeIdentifier: cachedIdentifier
+                cachedVolumeIdentifier: cachedIdentifier,
             )
             guard let record else { continue }
             _ = try await repo.upsertByPath(record)
@@ -223,7 +223,7 @@ final class IncrementalIndexingEventExecutor {
             try String.fetchAll(
                 db,
                 sql: "SELECT path FROM entries WHERE path = ? OR path LIKE ?",
-                arguments: [prefix, likePrefix]
+                arguments: [prefix, likePrefix],
             )
         }
     }

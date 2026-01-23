@@ -25,7 +25,7 @@ final class IncrementalIndexingEventPlanner {
         flags: [FSEventStreamEventFlags],
         ids: [FSEventStreamEventId],
         lastEventId: FSEventStreamEventId?,
-        watchedPaths: [String]
+        watchedPaths: [String],
     ) -> IncrementalIndexingEventPlan? {
         let eventCount = min(paths.count, flags.count, ids.count)
         guard eventCount > 0 else { return nil }
@@ -36,7 +36,7 @@ final class IncrementalIndexingEventPlanner {
         var rescanPaths: Set<String> = []
         changes.reserveCapacity(eventCount)
 
-        for index in 0..<eventCount {
+        for index in 0 ..< eventCount {
             maxEventId = max(maxEventId, ids[index])
             guard let normalized = normalizePath(paths[index], watchedPaths: watchedPaths) else { continue }
             if shouldRescan(flags[index]) {
@@ -55,7 +55,7 @@ final class IncrementalIndexingEventPlanner {
             totalCount: eventCount,
             maxEventId: maxEventId,
             changes: changes,
-            rescanPaths: rescanPaths.sorted()
+            rescanPaths: rescanPaths.sorted(),
         )
     }
 

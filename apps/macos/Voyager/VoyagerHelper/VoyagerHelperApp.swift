@@ -15,7 +15,7 @@ class VoyagerHelperApp {
         let stateBroadcaster = HelperStateBroadcaster()
         let indexingListener = IndexingRequestListener(
             manager: DatabaseManager.shared,
-            logger: logger
+            logger: logger,
         )
 
         logger.info(
@@ -43,7 +43,7 @@ class VoyagerHelperApp {
                     if await indexingListener.hasCompletedInitialIndexing() {
                         await IncrementalIndexingValidator.startIfReady(
                             manager: DatabaseManager.shared,
-                            logger: logger
+                            logger: logger,
                         )
                     }
                 } catch {
