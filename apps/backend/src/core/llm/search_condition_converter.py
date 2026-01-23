@@ -3,15 +3,28 @@
 LLM이 자연어 쿼리를 Search API conditions 배열로 변환합니다.
 """
 
-import os
+from __future__ import annotations
+
+import json
+import logging
+import re
 from importlib import resources
 from pathlib import Path
-from typing import Any
+from typing import Any, TypeVar, cast
 
+from langchain_core.messages import BaseMessage, HumanMessage, SystemMessage
+from langchain_core.runnables import Runnable
 from pydantic import BaseModel, Field
 
-from core.llm.llm_provider import LLMProvider
-from core.metadata.registry_loader import SYSTEM_PROPERTY_REGISTRY, get_all_property_keys
+from core.metadata.registry_loader import (
+    SYSTEM_PROPERTY_REGISTRY,
+    get_all_property_keys,
+    load_condition_registry,
+)
+
+logger = logging.getLogger("uvicorn.error")
+
+TStructured = TypeVar("TStructured", bound=BaseModel)
 
 
 def _read_prompt_template(filename: str) -> str:
@@ -58,44 +71,156 @@ class SearchConditionsOutput(BaseModel):
 class SearchConditionConverter:
     """LLM 기반 자연어 → Search conditions 변환기"""
 
-    PROMPT_VERSION_DEFAULT = "v2"
-    PROMPT_VERSION_ENV = "DSL_PROMPT"
-    PROMPT_TEMPLATE_BY_VERSION = {
-        "v1": "search_condition_system.md",
-        "1": "search_condition_system.md",
-        "v2": "search_condition_system.v2.md",
-        "2": "search_condition_system.v2.md",
-        "v3": "search_condition_system.v3.md",
-        "3": "search_condition_system.v3.md",
+    PROMPT_TEMPLATE_FILE = "compose_filter_system.md"
+    CORE_KEYS = {
+        "name_full",
+        "extension",
+        "content_type_tree",
+        "file_allocated_size",
+        "size",
+        "downloaded_date",
+        "modification_date",
+        "creation_date",
+        "dir_path",
+        "path",
     }
+    SCOPE_PATTERNS = (
+        (r"\bdownloads?\b", "Downloads"),
+        (r"\bdocuments?\b", "Documents"),
+        (r"\bdesktop\b", "Desktop"),
+        (r"\bhome folder\b|\bhome directory\b", ""),
+    )
 
-    def __init__(self, llm_provider: LLMProvider, prompt_version: str | None = None):
+    def __init__(self, llm_provider: Any):
         self.client = llm_provider
         self.home_dir = str(Path.home())
-        env_version = os.getenv(self.PROMPT_VERSION_ENV)
-        selected_version = prompt_version or env_version or self.PROMPT_VERSION_DEFAULT
-        template_file = self.PROMPT_TEMPLATE_BY_VERSION.get(selected_version)
-        if not template_file:
-            raise RuntimeError(
-                "알 수 없는 DSL 프롬프트 버전입니다: "
-                f"{selected_version}. 지원: {', '.join(sorted(self.PROMPT_TEMPLATE_BY_VERSION))}"
-            )
-        self.prompt_template_file = template_file
+        self.prompt_template_file = self.PROMPT_TEMPLATE_FILE
         self.system_prompt = self._build_system_prompt()
 
     def _build_system_prompt(self) -> str:
         """LLM 시스템 프롬프트 생성"""
-        property_info: list[str] = []
-        for key, mapping in SYSTEM_PROPERTY_REGISTRY.items():
-            operators = ", ".join(mapping.supported_operators)
-            type_name = mapping.type.value
-            property_info.append(f"  - {key} ({type_name}): operators=[{operators}]")
-
+        property_info = self._build_property_info()
         template = _read_prompt_template(self.prompt_template_file)
         return template.format(
             home_dir=self.home_dir,
-            property_info="\n".join(property_info),
+            property_info=property_info,
         )
+
+    def _build_property_info(self) -> str:
+        return "keys from user prompt"
+
+    def _extract_candidate_keys(
+        self,
+        query: str,
+        existing_conditions: list[dict[str, Any]] | None = None,
+    ) -> set[str]:
+        candidates = set(self.CORE_KEYS)
+
+        for raw in existing_conditions or []:
+            key = raw.get("propertyKey")
+            if isinstance(key, str):
+                candidates.add(key)
+
+        lower = query.lower()
+        for key, mapping in SYSTEM_PROPERTY_REGISTRY.items():
+            for alias in mapping.search_aliases:
+                if alias and alias.lower() in lower:
+                    candidates.add(key)
+                    break
+            if key.lower() in lower:
+                candidates.add(key)
+
+        return {key for key in candidates if key in SYSTEM_PROPERTY_REGISTRY}
+
+    def _build_key_groups(
+        self,
+        query: str,
+        existing_conditions: list[dict[str, Any]] | None = None,
+    ) -> dict[str, list[str]]:
+        candidates = self._extract_candidate_keys(query, existing_conditions)
+        grouped: dict[str, list[str]] = {}
+        for key in sorted(candidates):
+            mapping = SYSTEM_PROPERTY_REGISTRY.get(key)
+            if not mapping:
+                continue
+            grouped.setdefault(mapping.type.value, []).append(key)
+        return grouped
+
+    def _build_keys_payload(
+        self,
+        query: str,
+        existing_conditions: list[dict[str, Any]] | None = None,
+    ) -> str:
+        grouped = self._build_key_groups(query, existing_conditions)
+        segments: list[str] = []
+        for type_name in sorted(grouped.keys()):
+            keys = ",".join(sorted(grouped[type_name]))
+            segments.append(f"{type_name}:{keys}")
+        return "|".join(segments)
+
+    def _build_ops_payload(self, type_names: list[str]) -> str:
+        registry = load_condition_registry()
+        parts: list[str] = []
+        for type_name in sorted(set(type_names)):
+            defaults = registry.property_types.get(type_name)
+            if not defaults:
+                continue
+            operators = defaults.operators
+            filtered: list[str] = []
+            for operator_code in operators:
+                operator = registry.operators.get(operator_code)
+                if not operator:
+                    continue
+                if operator.allowed_types and type_name not in operator.allowed_types:
+                    continue
+                filtered.append(operator_code)
+            parts.append(f"{type_name}={','.join(filtered)}")
+        return "|".join(parts)
+
+    def _infer_scopes_from_query(self, query: str) -> list[str] | None:
+        lower = query.lower()
+        scopes: list[str] = []
+        for pattern, suffix in self.SCOPE_PATTERNS:
+            if not re.search(pattern, lower):
+                continue
+            path = self.home_dir if suffix == "" else str(Path(self.home_dir) / suffix)
+            if path not in scopes:
+                scopes.append(path)
+        return scopes or None
+
+    def _build_user_prompt(
+        self,
+        query: str,
+        existing_conditions: list[dict[str, Any]] | None = None,
+        existing_scopes: list[str] | None = None,
+    ) -> str:
+        prompt_parts = [f"q={query}"]
+        grouped = self._build_key_groups(query, existing_conditions)
+        keys_payload = "|".join(
+            f"{type_name}:{','.join(sorted(grouped[type_name]))}"
+            for type_name in sorted(grouped.keys())
+        )
+        if keys_payload:
+            prompt_parts.append(f"keys={keys_payload}")
+
+        ops_payload = self._build_ops_payload(list(grouped.keys()))
+        if ops_payload:
+            prompt_parts.append(f"ops={ops_payload}")
+
+        if existing_conditions:
+            conditions_json = json.dumps(existing_conditions, ensure_ascii=False)
+            prompt_parts.append(f"conditions={conditions_json}")
+
+        if existing_scopes:
+            scopes_json = json.dumps(existing_scopes, ensure_ascii=False)
+            prompt_parts.append(f"scopes={scopes_json}")
+        else:
+            inferred_scopes = self._infer_scopes_from_query(query)
+            if inferred_scopes:
+                scopes_json = json.dumps(inferred_scopes, ensure_ascii=False)
+                prompt_parts.append(f"scopes={scopes_json}")
+
+        return "\n".join(prompt_parts)
 
     async def convert(
         self,
@@ -114,46 +239,68 @@ class SearchConditionConverter:
             {"conditions": [...], "scopes": [...] | None}
         """
         try:
-            import json
+            prompt = self._build_user_prompt(query, existing_conditions, existing_scopes)
 
-            # 프롬프트 구성
-            prompt_parts = [f"사용자 쿼리: {query}"]
-
-            if existing_conditions:
-                conditions_json = json.dumps(existing_conditions, ensure_ascii=False)
-                prompt_parts.append(f"기존 조건: {conditions_json}")
-
-            if existing_scopes:
-                scopes_json = json.dumps(existing_scopes, ensure_ascii=False)
-                prompt_parts.append(f"기존 스코프: {scopes_json}")
-
-            if existing_conditions or existing_scopes:
-                prompt_parts.append(
-                    "위 쿼리와 기존 조건/스코프를 분석하여 최적의 결과를 생성하세요. "
-                    "쿼리에서 폴더를 언급하면 스코프를 변경하고, 아니면 기존 스코프를 유지(scopes=null)하세요."
-                )
-
-            prompt_parts.append("출력:")
-            prompt = "\n".join(prompt_parts)
-
-            result = await self.client.generate_structured(
+            result = await self._request_structured(
                 prompt=prompt,
                 schema=SearchConditionsOutput,
                 system=self.system_prompt,
             )
 
             if result.error:
-                print(f"[SearchConditionConverter] {result.error}")
-                return {"conditions": [], "scopes": None}
+                logger.error("[SearchConditionConverter] %s", result.error)
+                return {"conditions": [], "scopes": None, "error": result.error}
 
+            normalized_conditions = [
+                self._normalize_condition(c.model_dump()) for c in result.conditions
+            ]
+            filtered_conditions = [c for c in normalized_conditions if c is not None]
             return {
-                "conditions": [c.model_dump() for c in result.conditions],
+                "conditions": filtered_conditions,
                 "scopes": result.scopes,
+                "error": None,
             }
 
         except Exception as e:
-            print(f"[SearchConditionConverter] 변환 실패: {e}")
-            return {"conditions": [], "scopes": None}
+            logger.exception("[SearchConditionConverter] 변환 실패: %s", e)
+            return {"conditions": [], "scopes": None, "error": str(e)}
+
+    def _normalize_condition(self, condition: dict[str, Any]) -> dict[str, Any] | None:
+        operator = condition.get("operator")
+        value = condition.get("value")
+        if operator == "eq" and value is None:
+            return None
+        if operator == "matches" and isinstance(value, str):
+            condition["value"] = self._normalize_matches_value(value)
+        return condition
+
+    async def _request_structured(
+        self,
+        prompt: str,
+        schema: type[TStructured],
+        system: str | None = None,
+    ) -> TStructured:
+        messages = self._build_messages(prompt=prompt, system=system)
+        structured_llm = cast(
+            Runnable[list[BaseMessage], TStructured],
+            self.client.llm.with_structured_output(schema),
+        )
+        return await structured_llm.ainvoke(messages)
+
+    @staticmethod
+    def _build_messages(prompt: str, system: str | None = None) -> list[BaseMessage]:
+        messages: list[BaseMessage] = [HumanMessage(content=prompt)]
+        if system:
+            messages.insert(0, SystemMessage(content=system))
+        return messages
+
+    @staticmethod
+    def _normalize_matches_value(value: str) -> str:
+        if "%" in value:
+            return value
+        if ".*" in value:
+            return value.replace(".*", "%")
+        return value
 
     async def convert_with_metadata(self, query: str) -> dict[str, Any]:
         """변환 + 메타데이터 반환"""
@@ -165,8 +312,9 @@ class SearchConditionConverter:
             "query": query,
             "conditions": result["conditions"],
             "scopes": result["scopes"],
-            "success": len(result["conditions"]) > 0,
+            "success": not result.get("error") and len(result["conditions"]) > 0,
             "supported_properties": get_all_property_keys(),
+            "error": result.get("error"),
         }
 
 
@@ -175,11 +323,10 @@ class CachedSearchConditionConverter(SearchConditionConverter):
 
     def __init__(
         self,
-        llm_provider: LLMProvider,
+        llm_provider: Any,
         cache_size: int = 100,
-        prompt_version: str | None = None,
     ):
-        super().__init__(llm_provider, prompt_version=prompt_version)
+        super().__init__(llm_provider)
         self._cache: dict[str, dict[str, Any]] = {}
         self._cache_size = cache_size
 

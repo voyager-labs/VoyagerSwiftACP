@@ -7,7 +7,6 @@ requires-python = ">=3.13"
 dependencies = [
   "alembic>=1.13.2",
   "fastapi[standard]==0.116.1",
-  "langchain-community>=0.3.0",
   "langchain-core>=0.3.0",
   "langchain-openai>=0.2.0",
   "orjson>=3.11.3",
@@ -61,7 +60,6 @@ module-name = ["app", "core", "infra", "osxmetadata", "utils"]
 [project.scripts]
 dev = "app.cli:dev"
 prod = "app.cli:prod"
-index = "app.cli:index"
 
 [tool.pyright]
 typeCheckingMode = "strict"
