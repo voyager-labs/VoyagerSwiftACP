@@ -3,7 +3,7 @@ import Foundation
 import Logging
 
 @MainActor
-final class HelperIndexingRequestListener {
+final class IndexingRequestListener {
     private enum InitialIndexingStatus: String {
         case pending
         case running
@@ -52,7 +52,7 @@ final class HelperIndexingRequestListener {
     func startObservingRequests() {
         guard observer == nil else { return }
         let token = DistributedNotificationCenter.default().addObserver(
-            forName: .voyagerHelperIndexingRequest,
+            forName: .voyagerIndexingRequest,
             object: nil,
             queue: .main
         ) { [weak self] _ in
@@ -62,6 +62,7 @@ final class HelperIndexingRequestListener {
             }
         }
         observer = token
+        logger.info("Indexing request listener started")
     }
 
     // 초기 인덱싱 완료 여부 판단

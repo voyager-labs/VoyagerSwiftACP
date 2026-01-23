@@ -5,7 +5,7 @@ import SwiftDotenv
 @main
 class VoyagerHelperApp {
     private static var lifecycle: HelperLifecycle?
-    private static var indexingListener: HelperIndexingRequestListener?
+    private static var indexingListener: IndexingRequestListener?
 
     @MainActor
     static func main() {
@@ -13,7 +13,7 @@ class VoyagerHelperApp {
         let logger = Logger(label: "VoyagerHelper")
         let environment = Environment()
         let stateBroadcaster = HelperStateBroadcaster()
-        let indexingListener = HelperIndexingRequestListener(
+        let indexingListener = IndexingRequestListener(
             manager: DatabaseManager.shared,
             logger: logger
         )

@@ -204,6 +204,9 @@ struct PermissionsFeature {
     }
 
     private func startIndexingIfReady(state: inout State) -> Effect<Action> {
+        logger.info(
+            "Onboarding indexing check: fullDiskAccess=\(state.fullDiskAccessStatus), filesAndFolders=\(state.filesAndFoldersStatus), inBackground=\(state.isIndexingInBackground)"
+        )
         guard state.fullDiskAccessStatus == .granted,
               state.filesAndFoldersStatus == .granted,
               !state.isIndexingInBackground
@@ -212,10 +215,9 @@ struct PermissionsFeature {
         }
 
         state.isIndexingInBackground = true
-        let paths = ["~/Desktop", "~/Documents", "~/Downloads"]
         return .run { [indexingClient] _ in
             logger.info("Onboarding indexing triggered.")
-            await indexingClient.start(paths)
+            await indexingClient.start()
         }
     }
 }
