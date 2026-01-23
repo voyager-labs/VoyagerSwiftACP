@@ -37,10 +37,14 @@ final class IncrementalIndexingEventExecutor {
     // 변경 경로 적용 및 마지막 이벤트 저장
     func apply(
         changes: [IncrementalIndexingPlannedChange],
+        rescanPaths: [String],
         maxEventId: FSEventStreamEventId
     ) async throws {
         if !changes.isEmpty {
             try await applyChanges(changes)
+        }
+        if !rescanPaths.isEmpty {
+            try await rescanDirectories(rescanPaths)
         }
         try await persistLastEventId(eventId: maxEventId)
     }
@@ -138,6 +142,89 @@ final class IncrementalIndexingEventExecutor {
             ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at
             """
             try db.execute(sql: sql, arguments: ["last_fsevent_id", value])
+        }
+    }
+
+    // 부분 재스캔 적용
+    private func rescanDirectories(_ paths: [String]) async throws {
+        var lastError: Error?
+        for path in paths {
+            do {
+                try await rescanDirectory(path: path)
+            } catch {
+                lastError = error
+                eventLogger.error(
+                    "Incremental indexing rescan failed: \(String(describing: error), privacy: .public)"
+                )
+            }
+        }
+        if let lastError {
+            throw lastError
+        }
+    }
+
+    // 단일 경로 재스캔
+    private func rescanDirectory(path: String) async throws {
+        let standardized = URL(fileURLWithPath: path).standardizedFileURL.path
+        let repo = EntryRepository(manager: manager, logger: logger)
+
+        guard FileManager.default.fileExists(atPath: standardized) else {
+            _ = try await repo.deleteByPath(standardized)
+            return
+        }
+
+        let query = try makeQuery(rootPath: standardized)
+        let resultCount = Int(MDQueryGetResultCount(query))
+        var scannedPaths: Set<String> = []
+        scannedPaths.reserveCapacity(resultCount)
+
+        for index in 0..<resultCount {
+            guard let item = MDQueryGetResultAtIndex(query, index) else { continue }
+            let mdItem = unsafeBitCast(item, to: MDItem.self)
+            guard let itemPath = MDItemCopyAttribute(mdItem, kMDItemPath) as? String else { continue }
+            scannedPaths.insert(itemPath)
+            let cachedIdentifier = itemPath.hasPrefix(homePath) ? cachedVolumeIdentifier : nil
+            let record = await InitialIndexingRecordBuilder.makeRecord(
+                mdItem: mdItem,
+                path: itemPath,
+                homeURL: homeURL,
+                cachedVolumeIdentifier: cachedIdentifier
+            )
+            guard let record else { continue }
+            _ = try await repo.upsertByPath(record)
+        }
+
+        let existingPaths = try await fetchExistingPaths(prefix: standardized)
+        for existingPath in existingPaths where !scannedPaths.contains(existingPath) {
+            _ = try await repo.deleteByPath(existingPath)
+        }
+    }
+
+    // 재스캔 쿼리 생성
+    private func makeQuery(rootPath: String) throws -> MDQuery {
+        let queryString = "kMDItemContentTypeTree == \"public.item\""
+        guard let query = MDQueryCreate(kCFAllocatorDefault, queryString as CFString, nil, nil) else {
+            throw InitialIndexingRunner.IndexingError.queryCreationFailed
+        }
+        let scopeURL = URL(fileURLWithPath: rootPath) as CFURL
+        let scopes = [scopeURL] as CFArray
+        MDQuerySetSearchScope(query, scopes, 0)
+        let executed = MDQueryExecute(query, CFOptionFlags(kMDQuerySynchronous.rawValue))
+        guard executed else {
+            throw InitialIndexingRunner.IndexingError.queryExecutionFailed
+        }
+        return query
+    }
+
+    // 재스캔 경로 목록 로드
+    private func fetchExistingPaths(prefix: String) async throws -> [String] {
+        let likePrefix = prefix.hasSuffix("/") ? "\(prefix)%" : "\(prefix)/%"
+        return try await manager.read { db in
+            try String.fetchAll(
+                db,
+                sql: "SELECT path FROM entries WHERE path = ? OR path LIKE ?",
+                arguments: [prefix, likePrefix]
+            )
         }
     }
 }

@@ -204,12 +204,21 @@ final class IncrementalIndexingWatcher {
         ]
         let message = messageParts.joined(separator: ", ")
         eventLogger.info("\(message, privacy: .public)")
-        enqueueProcessing(changes: plan.changes, maxEventId: plan.maxEventId)
+        if !plan.rescanPaths.isEmpty {
+            let rescanMessage = "Incremental indexing rescan paths: \(plan.rescanPaths.joined(separator: ", "))"
+            eventLogger.warning("\(rescanMessage, privacy: .public)")
+        }
+        enqueueProcessing(
+            changes: plan.changes,
+            rescanPaths: plan.rescanPaths,
+            maxEventId: plan.maxEventId
+        )
     }
 
     // DB 반영 작업 직렬화
     private func enqueueProcessing(
         changes: [IncrementalIndexingPlannedChange],
+        rescanPaths: [String],
         maxEventId: FSEventStreamEventId
     ) {
         guard let eventExecutor else { return }
@@ -221,7 +230,11 @@ final class IncrementalIndexingWatcher {
             }
             guard let self else { return }
             do {
-                try await eventExecutor.apply(changes: changes, maxEventId: maxEventId)
+                try await eventExecutor.apply(
+                    changes: changes,
+                    rescanPaths: rescanPaths,
+                    maxEventId: maxEventId
+                )
             } catch {
                 self.eventLogger.error(
                     "Incremental indexing apply failed: \(String(describing: error), privacy: .public)"

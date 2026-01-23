@@ -5,6 +5,7 @@ struct IncrementalIndexingEventPlan {
     let totalCount: Int
     let maxEventId: FSEventStreamEventId
     let changes: [IncrementalIndexingPlannedChange]
+    let rescanPaths: [String]
 }
 
 enum IncrementalIndexingAction {
@@ -32,11 +33,15 @@ final class IncrementalIndexingEventPlanner {
         var maxEventId = lastEventId ?? 0
         var changes: [IncrementalIndexingPlannedChange] = []
         var indexByPath: [String: Int] = [:]
+        var rescanPaths: Set<String> = []
         changes.reserveCapacity(eventCount)
 
         for index in 0..<eventCount {
             maxEventId = max(maxEventId, ids[index])
             guard let normalized = normalizePath(paths[index], watchedPaths: watchedPaths) else { continue }
+            if shouldRescan(flags[index]) {
+                rescanPaths.insert(normalized)
+            }
             guard let action = resolveAction(flags[index]) else { continue }
             if let existingIndex = indexByPath[normalized] {
                 changes[existingIndex].action = action
@@ -49,8 +54,18 @@ final class IncrementalIndexingEventPlanner {
         return IncrementalIndexingEventPlan(
             totalCount: eventCount,
             maxEventId: maxEventId,
-            changes: changes
+            changes: changes,
+            rescanPaths: rescanPaths.sorted()
         )
+    }
+
+    // 드롭/오버플로 감지
+    private func shouldRescan(_ flags: FSEventStreamEventFlags) -> Bool {
+        let mustScan = FSEventStreamEventFlags(kFSEventStreamEventFlagMustScanSubDirs)
+        let userDropped = FSEventStreamEventFlags(kFSEventStreamEventFlagUserDropped)
+        let kernelDropped = FSEventStreamEventFlags(kFSEventStreamEventFlagKernelDropped)
+        let rescanFlags = mustScan | userDropped | kernelDropped
+        return flags & rescanFlags != 0
     }
 
     // 이벤트 플래그에 따른 처리 결정
