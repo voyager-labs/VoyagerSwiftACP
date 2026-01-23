@@ -1,16 +1,15 @@
 import logging
 import os
 import platform
-import sqlite3
 from contextlib import asynccontextmanager
 
 import setproctitle
 from fastapi import FastAPI
 
-from app.config import VoyagerConfig, get_db_config, load_config
+from app.config import get_db_config, load_config
 from app.search.routes import router as search_router
-from infra.db.bootstrap import initialize_sqlite_db
 from infra.db.engine import engine_manager
+from infra.db.utils import ensure_parent_dir
 
 
 @asynccontextmanager
@@ -22,17 +21,17 @@ async def lifespan(app: FastAPI):
     process_title = os.getenv("PUBLIC_BACKEND_PROCESS_NAME")
     setproctitle.setproctitle(process_title)
 
-    # DB 엔진 초기화 및 Alembic 기반 마이그레이션 적용
-    init_summary = initialize_sqlite_db(get_db_config(cfg))
+    # DB 엔진 초기화
+    db_cfg = get_db_config(cfg)
+    ensure_parent_dir(db_cfg.db_file)
+    engine_manager.initialize(db_cfg)
 
     logger = logging.getLogger("uvicorn.error")
     py_ver = platform.python_version()
-    sqlite_ver = getattr(sqlite3, "sqlite_version", "")
     message = (
         "Environment initialized: "
         f"app={cfg.app_name} env={cfg.app_env} "
-        f"python={py_ver} sqlite={sqlite_ver or 'unknown'} "
-        f"db_rev={init_summary.current_rev}/{init_summary.head_rev}"
+        f"python={py_ver} "
         f"gateway_url={cfg.gateway_url}"
         f"backend_host={cfg.backend_host}"
         f"backend_port={cfg.backend_port}"
