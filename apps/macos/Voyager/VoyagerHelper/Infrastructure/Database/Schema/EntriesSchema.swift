@@ -80,5 +80,7 @@ nonisolated enum EntriesSchema {
             table.column("last_used_date", .datetime)
             table.column("original_metadata", .text).notNull()
         }
+
+        try db.create(index: "idx_entries_dir_path", on: tableName, columns: ["dir_path"])
     }
 }

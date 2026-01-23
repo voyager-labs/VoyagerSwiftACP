@@ -26,7 +26,56 @@ nonisolated struct EntryRecord: Codable, FetchableRecord, MutablePersistableReco
     var originalMetadata: String
 
     static let databaseTableName = "entries"
-    static let insertableColumnCount = Columns.allCases.count(where: { $0 != .id })
+    static let insertableColumns: [Columns] = [
+        .volumeIdentifier,
+        .fileResourceIdentifier,
+        .path,
+        .dirPath,
+        .nameFull,
+        .nameStem,
+        .fileExtension,
+        .parentDirName,
+        .depthFromHome,
+        .relativePathFromHome,
+        .size,
+        .uniformTypeIdentifier,
+        .fileKind,
+        .isInvisible,
+        .creationDate,
+        .modificationDate,
+        .contentCreationDate,
+        .contentModificationDate,
+        .addedDate,
+        .lastUsedDate,
+        .originalMetadata,
+    ]
+    static let insertableColumnCount = insertableColumns.count
+
+    var insertableValues: [DatabaseValueConvertible?] {
+        [
+            volumeIdentifier,
+            fileResourceIdentifier,
+            path,
+            dirPath,
+            nameFull,
+            nameStem,
+            fileExtension,
+            parentDirName,
+            depthFromHome,
+            relativePathFromHome,
+            size,
+            uniformTypeIdentifier,
+            fileKind,
+            isInvisible,
+            creationDate,
+            modificationDate,
+            contentCreationDate,
+            contentModificationDate,
+            addedDate,
+            lastUsedDate,
+            originalMetadata,
+        ]
+    }
 
     enum Columns: String, ColumnExpression, CaseIterable {
         case id

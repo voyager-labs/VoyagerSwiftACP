@@ -2,6 +2,7 @@ import Darwin
 import Foundation
 import GRDB
 import Logging
+import SwiftDotenv
 
 /// Helper 앱의 GRDB 데이터베이스 관리자
 /// DatabasePool을 사용하여 단일 writer + 다중 reader 모드로 동작
@@ -56,23 +57,52 @@ actor DatabaseManager {
         return try await pool.write(block)
     }
 
+    /// 트랜잭션 없이 데이터베이스 쓰기 작업 실행
+    func writeWithoutTransaction<T>(_ block: @Sendable (Database) throws -> T) async throws -> T {
+        guard let pool else {
+            throw DatabaseError.notInitialized
+        }
+        return try await pool.writeWithoutTransaction(block)
+    }
+
     /// 데이터베이스 연결 해제
     func shutdown() {
         pool = nil
     }
 
     /// 데이터베이스 파일 URL 반환
-    /// Application Support/Voyager 디렉토리에 저장
     private static func defaultDatabaseURL() throws -> URL {
-        guard let appSupport = FileManager.default.urls(
-            for: .applicationSupportDirectory,
-            in: .userDomainMask,
-        ).first else {
-            throw DatabaseError.applicationSupportNotFound
+        if let envURL = resolveDatabaseURLFromEnv() {
+            return envURL
+        }
+        throw DatabaseError.missingDatabaseConfiguration
+    }
+
+    private static func resolveDatabaseURLFromEnv() -> URL? {
+        guard let location = envValue(for: "PUBLIC_SQLITE_FILE_LOCATION"),
+              let name = envValue(for: "PUBLIC_SQLITE_FILE_NAME")
+        else {
+            return nil
         }
 
-        let voyagerDir = appSupport.appendingPathComponent("Voyager")
-        return voyagerDir.appendingPathComponent("Entries.db")
+        let expandedLocation = (location as NSString).expandingTildeInPath
+        var baseURL = URL(fileURLWithPath: expandedLocation, isDirectory: true)
+        if !expandedLocation.hasPrefix("/") {
+            let cwd = FileManager.default.currentDirectoryPath
+            baseURL = URL(fileURLWithPath: cwd, isDirectory: true)
+                .appendingPathComponent(expandedLocation, isDirectory: true)
+        }
+        return baseURL.appendingPathComponent(name)
+    }
+
+    private static func envValue(for key: String) -> String? {
+        if let value = Dotenv[key]?.stringValue, !value.isEmpty {
+            return value
+        }
+        if let value = ProcessInfo.processInfo.environment[key], !value.isEmpty {
+            return value
+        }
+        return nil
     }
 
     private func makeConfiguration() -> Configuration {
@@ -183,7 +213,7 @@ actor DatabaseManager {
         var migrator = DatabaseMigrator()
         let logger = self.logger
 
-        DatabaseMigrations.registerAll(into: &migrator)
+        try DatabaseMigrations.registerAll(into: &migrator)
 
         try await pool.read { db in
             try DatabaseMigrations.validateMigrationHistory(db)
@@ -205,7 +235,7 @@ actor DatabaseManager {
 
     enum DatabaseError: Error, Equatable {
         case notInitialized
-        case applicationSupportNotFound
+        case missingDatabaseConfiguration
         case migrationLockExists(String)
         case migrationFailed(String)
     }

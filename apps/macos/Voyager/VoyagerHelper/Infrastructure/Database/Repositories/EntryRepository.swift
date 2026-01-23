@@ -130,10 +130,16 @@ nonisolated struct EntryRepository: Sendable {
     func insertBatch(_ records: [EntryRecord]) async throws {
         guard !records.isEmpty else { return }
 
-        let logger = logger
         let batchSize = try await manager.read { db in
-            try maxBatchSize(in: db)
+            try Self.maxBatchSize(in: db)
         }
+        try await insertBatch(records, batchSize: batchSize)
+    }
+
+    func insertBatch(_ records: [EntryRecord], batchSize: Int) async throws {
+        guard !records.isEmpty else { return }
+
+        let logger = logger
 
         for chunk in records.chunked(into: batchSize) {
             do {
@@ -146,6 +152,21 @@ nonisolated struct EntryRepository: Sendable {
                     try insertChunkIndividually(chunk, db: db)
                 }
             }
+        }
+    }
+
+    func upsertByPath(_ record: EntryRecord) async throws -> EntryRecord {
+        try await manager.write { db in
+            var record = record
+            if let existing = try EntryRecord.filter(EntryRecord.Columns.path == record.path).fetchOne(db) {
+                record.id = existing.id
+                try record.update(db)
+                return record
+            }
+
+            record.id = nil
+            try record.insert(db)
+            return record
         }
     }
 
@@ -175,7 +196,7 @@ nonisolated struct EntryRepository: Sendable {
         return try request.fetchOne(db)
     }
 
-    private func maxBatchSize(in db: Database) throws -> Int {
+    static func maxBatchSize(in db: Database) throws -> Int {
         let maxVariables = try Int.fetchOne(db, sql: "PRAGMA max_variable_number") ?? 999
         let columnsPerRow = EntryRecord.insertableColumnCount
         guard columnsPerRow > 0 else { return 1 }
@@ -183,16 +204,41 @@ nonisolated struct EntryRepository: Sendable {
     }
 
     private func insertChunk(_ records: [EntryRecord], db: Database) throws {
-        for var record in records {
-            try record.insert(db)
+        let columns = EntryRecord.insertableColumns
+        guard !columns.isEmpty else { return }
+
+        let updatableColumns = columns.filter {
+            $0 != .volumeIdentifier && $0 != .fileResourceIdentifier
         }
+        let updateAssignments = updatableColumns
+            .map { "\($0.rawValue) = excluded.\($0.rawValue)" }
+            .joined(separator: ", ")
+
+        let columnList = columns.map(\.rawValue).joined(separator: ", ")
+        let placeholder = "(" + Array(repeating: "?", count: columns.count).joined(separator: ", ") + ")"
+        let placeholders = Array(repeating: placeholder, count: records.count).joined(separator: ", ")
+        let sql = """
+        INSERT INTO \(EntryRecord.databaseTableName) (\(columnList))
+        VALUES \(placeholders)
+        ON CONFLICT(volume_identifier, file_resource_identifier)
+        DO UPDATE SET \(updateAssignments)
+        """
+
+        var arguments: [DatabaseValueConvertible?] = []
+        arguments.reserveCapacity(records.count * columns.count)
+        for record in records {
+            arguments.append(contentsOf: record.insertableValues)
+        }
+
+        let statement = try db.cachedStatement(sql: sql)
+        try statement.execute(arguments: StatementArguments(arguments))
     }
 
     private func insertChunkIndividually(_ records: [EntryRecord], db: Database) throws {
         var lastError: Error?
         for var record in records {
             do {
-                try record.insert(db)
+                try insertChunk([record], db: db)
             } catch {
                 lastError = error
                 logger.warning("Entry insert failed: \(error)")
