@@ -370,7 +370,6 @@
         "availability": "macOS 10.4+",
         "description": "Application used to create the document content (for example \"Word\", \"Pages\", and so on).",
         "search_aliases": [],
-        "legacy_keys": ["creator"],
         "system_keys": ["mditem:kMDItemCreator"],
         "type": "string",
         "ui_label": "Creator"
@@ -1116,7 +1115,6 @@
         "availability": "macOS 10.5+",
         "description": "The latitude of the item in degrees north of the equator, expressed using the WGS84 datum. Negative values lie south of the equator.",
         "search_aliases": [],
-        "legacy_keys": ["latitude"],
         "system_keys": ["mditem:kMDItemLatitude"],
         "type": "string",
         "ui_label": "Latitude"
@@ -1133,7 +1131,6 @@
         "availability": "macOS 10.5+",
         "description": "The longitude of the item in degrees east of the prime meridian, expressed using the WGS84 datum. Negative values lie west of the prime meridian.",
         "search_aliases": [],
-        "legacy_keys": ["longitude"],
         "system_keys": ["mditem:kMDItemLongitude"],
         "type": "string",
         "ui_label": "Longitude"
