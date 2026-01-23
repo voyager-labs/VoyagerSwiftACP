@@ -8,6 +8,13 @@ struct RegistryClient: Sendable {
     var operatorCodes: @Sendable (_ key: String) -> [String]
     var operatorDefinition: @Sendable (_ code: String) -> OperatorDefinition
     var operatorValueUIKind: @Sendable (_ code: String, _ typeKey: String) -> String
+    var resolvePropertyKey: @Sendable (_ key: String) -> PropertyKeyResolution
+}
+
+enum PropertyKeyResolution: Equatable, Sendable {
+    case canonical(String)
+    case legacy(original: String, normalized: String)
+    case unknown(String)
 }
 
 extension RegistryClient {
@@ -29,6 +36,10 @@ extension RegistryClient {
 
     func operatorUIKind(for code: String, typeKey: String) -> String {
         operatorValueUIKind(code, typeKey)
+    }
+
+    func resolveKey(_ key: String) -> PropertyKeyResolution {
+        resolvePropertyKey(key)
     }
 
     func valueArity(for uiValueKind: String) -> Int {
@@ -72,6 +83,7 @@ extension RegistryClient: DependencyKey, TestDependencyKey {
         operatorValueUIKind: { _, _ in
             preconditionFailure("operator ui_value_kind 누락")
         },
+        resolvePropertyKey: { .canonical($0) },
     )
 }
 
@@ -89,6 +101,7 @@ extension RegistryClient {
         let types = snapshot.propertyKeyToType
         let operatorMap = snapshot.operatorCodesByKey
         let operatorDefinitions = snapshot.operatorDefinitions
+        let legacyKeyMap = snapshot.legacyKeyMap
 
         return RegistryClient(
             allProperties: { allProperties },
@@ -123,6 +136,15 @@ extension RegistryClient {
                     preconditionFailure("operator ui_value_kind 누락: \(code) / \(typeKey)")
                 }
                 return uiValueKind
+            },
+            resolvePropertyKey: { key in
+                if labels[key] != nil {
+                    return .canonical(key)
+                }
+                if let normalized = legacyKeyMap[key], labels[normalized] != nil {
+                    return .legacy(original: key, normalized: normalized)
+                }
+                return .unknown(key)
             },
         )
     }

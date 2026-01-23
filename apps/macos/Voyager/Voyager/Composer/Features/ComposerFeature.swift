@@ -540,6 +540,7 @@ private func applyFiltersIfNeeded(
 
 private func buildFilters(from state: ComposerFeature.State) -> SearchFiltersPayload {
     let conditionPayloads: [SearchConditionPayload] = state.conditions.compactMap { condition in
+        guard condition.isActive else { return nil }
         guard let op = condition.operatorCode else { return nil }
         if let arity = condition.operatorValueArity, arity == 0 {
             return SearchConditionPayload(propertyKey: condition.propertyKey, operator: op, value: nil)

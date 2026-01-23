@@ -5,6 +5,7 @@ struct SystemPropertyDefinition: Decodable, Equatable, Sendable {
     let description: String
     let type: String
     let searchAliases: [String]?
+    let legacyKeys: [String]?
     let systemKeys: [String]
     let availability: String?
     let valueFormat: String?
@@ -16,6 +17,7 @@ struct SystemPropertyDefinition: Decodable, Equatable, Sendable {
         case description
         case type
         case searchAliases = "search_aliases"
+        case legacyKeys = "legacy_keys"
         case systemKeys = "system_keys"
         case availability
         case valueFormat = "value_format"

@@ -609,7 +609,22 @@ struct FileManagerFeature {
                             : .send(.composer(.submit)))
                     effects.append(searchEffect)
 
-                    return .concatenate(effects)
+                    var mergedEffects: [Effect<Action>] = [.concatenate(effects)]
+                    if !resolved.unknownKeys.isEmpty {
+                        let unknownKeys = resolved.unknownKeys.joined(separator: ", ")
+                        let warningMessage = [
+                            "Some filters in this collection are no longer supported and were disabled:",
+                            "\(unknownKeys).",
+                        ].joined(separator: " ")
+                        mergedEffects.append(.run { _ in
+                            await showCollectionOpenErrorAlert(
+                                title: "Unsupported Filters",
+                                message: warningMessage,
+                            )
+                        })
+                    }
+
+                    return .merge(mergedEffects)
 
                 case let .failure(error):
                     if !state.backHistory.isEmpty {
@@ -1625,7 +1640,7 @@ private func makeCollectionNavigation(
 private func resolveCollectionFilters(
     from file: VoyagerCollectionFile,
     registryClient: RegistryClient,
-) -> (scopes: [String], conditions: [Condition]) {
+) -> AppliedFiltersUtils.ResolutionResult {
     let conditionPayloads = file.conditions.map { condition in
         SearchConditionPayload(
             propertyKey: condition.propertyKey,
@@ -1634,7 +1649,7 @@ private func resolveCollectionFilters(
         )
     }
     let appliedFilters = AppliedFiltersPayload(scopes: file.scopes, conditions: conditionPayloads)
-    return AppliedFiltersUtils.resolve(
+    return AppliedFiltersUtils.resolveDetailed(
         appliedFilters,
         fallbackScopes: file.scopes,
         fallbackConditions: [],

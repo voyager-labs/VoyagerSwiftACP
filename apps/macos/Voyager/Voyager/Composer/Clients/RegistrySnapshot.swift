@@ -6,6 +6,7 @@ struct RegistrySnapshot: Sendable {
     let allProperties: [PropertyEntry]
     let propertyKeyToLabel: [String: String]
     let propertyKeyToType: [String: String]
+    let legacyKeyMap: [String: String]
     let operatorCodesByKey: [String: [String]]
     let operatorDefinitions: [String: OperatorDefinition]
     let propertyTypes: [String: PropertyType]
@@ -30,6 +31,7 @@ struct RegistrySnapshot: Sendable {
         var labels: [String: String] = [:]
         var types: [String: String] = [:]
         var operatorMap: [String: [String]] = [:]
+        var legacyKeyMap: [String: String] = [:]
 
         for (categoryKey, entries) in systemRegistry.categories {
             for (key, definition) in entries {
@@ -40,6 +42,11 @@ struct RegistrySnapshot: Sendable {
                 properties.append((key: key, category: categoryKey, definition: definition))
                 labels[key] = label
                 types[key] = definition.type
+                if let legacyKeys = definition.legacyKeys {
+                    for legacyKey in legacyKeys where legacyKeyMap[legacyKey] == nil {
+                        legacyKeyMap[legacyKey] = key
+                    }
+                }
             }
         }
 
@@ -79,6 +86,7 @@ struct RegistrySnapshot: Sendable {
             allProperties: properties,
             propertyKeyToLabel: labels,
             propertyKeyToType: types,
+            legacyKeyMap: legacyKeyMap,
             operatorCodesByKey: operatorMap,
             operatorDefinitions: conditionRegistry.operators,
             propertyTypes: conditionRegistry.propertyTypes,

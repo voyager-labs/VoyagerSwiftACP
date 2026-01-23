@@ -56,17 +56,22 @@ struct ConditionChipView: View {
         let isBooleanType = condition.valueType == "boolean"
         let isEditingValue = !isDateType && !isBooleanType && valueStore.isPresented &&
             valueStore.propertyKey == condition.propertyKey
+        let isInactive = !condition.isActive
 
-        return HStack(spacing: 2) {
-            propertyLabelView()
-            operatorButtonView(opStore: opStore, label: opLabel, color: opColor)
-            valueSection(
-                valueUIKind: valueUIKind,
-                valueArity: valueArity,
-                isEditingValue: isEditingValue,
-                isDateType: isDateType,
-                valueStore: valueStore,
-            )
+        return ZStack(alignment: .topTrailing) {
+            HStack(spacing: 2) {
+                propertyLabelView()
+                operatorButtonView(opStore: opStore, label: opLabel, color: opColor)
+                valueSection(
+                    valueUIKind: valueUIKind,
+                    valueArity: valueArity,
+                    isEditingValue: isEditingValue,
+                    isDateType: isDateType,
+                    valueStore: valueStore,
+                )
+            }
+            .allowsHitTesting(!isInactive)
+            .opacity(isInactive ? 0.55 : 1)
         }
         .padding(.horizontal, 8)
         .frame(height: defaultChipHeight)
