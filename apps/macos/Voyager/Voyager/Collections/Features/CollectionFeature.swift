@@ -245,6 +245,7 @@ private func buildCollectionConditions(from conditions: [Condition]) throws -> [
     results.reserveCapacity(conditions.count)
 
     for condition in conditions {
+        guard condition.isActive else { continue }
         guard let op = condition.operatorCode, let arity = condition.operatorValueArity else {
             throw CollectionSaveValidationError.incompleteCondition(condition.propertyLabel)
         }
@@ -269,17 +270,32 @@ private func buildCollectionConditions(from conditions: [Condition]) throws -> [
 }
 
 private func encodeCollectionValue(condition: Condition, values: [String]) -> JSONValue? {
-    switch condition.valueType {
-    case .number:
+    if let kind = condition.operatorValueUIKind {
+        switch kind {
+        case "listText":
+            return .array(values.map(JSONValue.string))
+        case "listNumber":
+            let numbers = values.compactMap(Double.init)
+            guard numbers.count == values.count else { return nil }
+            return .array(numbers.map(JSONValue.number))
+        default:
+            break
+        }
+    }
+    return switch condition.valueType {
+    case "number":
         encodeNumberValues(values)
 
-    case .boolean:
+    case "boolean":
         encodeBooleanValues(values)
 
-    case .date:
+    case "date", "datetime":
         encodeDateValues(values)
 
-    case .array, .string, .unknown:
+    case "string_list", "string", "unknown":
+        encodeStringValues(values, operatorCode: condition.operatorCode)
+
+    default:
         encodeStringValues(values, operatorCode: condition.operatorCode)
     }
 }

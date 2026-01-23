@@ -22,6 +22,9 @@ class AppDelegate: NSObject, NSApplicationDelegate, ObservableObject {
     private var onboardingWindowClient
     // TODO: 온보딩 게이트 판단/표시 호출을 전용 경로로 모아 중복 체크를 제거한다.
 
+    private lazy var registrySnapshot = RegistrySnapshot.load()
+    private lazy var registryClient = RegistryClient.live(snapshot: registrySnapshot)
+
     @Published var hasSelectedItems: Bool = false
     @Published var hasClipboardItems: Bool = false
     @Published var hasStore: Bool = false
@@ -72,6 +75,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, ObservableObject {
     }
 
     func applicationWillFinishLaunching(_: Notification) {
+        _ = registrySnapshot
         appLifecycleStore.send(.willFinishLaunching)
         updaterStore.send(.configureAtLaunch)
     }
@@ -140,7 +144,11 @@ class AppDelegate: NSObject, NSApplicationDelegate, ObservableObject {
             return nil
         }
         // TODO: 모든 윈도우 생성 경로를 여기로 통합해 게이트 적용 지점을 단일화한다.
-        let controller = FileManagerWindowController(path: path, asTab: false)
+        let controller = FileManagerWindowController(
+            path: path,
+            asTab: false,
+            registryClient: registryClient,
+        )
         windowControllers.append(controller)
         controller.showWindow(nil)
         return controller
@@ -155,7 +163,12 @@ class AppDelegate: NSObject, NSApplicationDelegate, ObservableObject {
             return
         }
 
-        let controller = FileManagerWindowController(path: path, duplicateState: duplicateState, asTab: true)
+        let controller = FileManagerWindowController(
+            path: path,
+            duplicateState: duplicateState,
+            asTab: true,
+            registryClient: registryClient,
+        )
         windowControllers.append(controller)
 
         if let newWindow = controller.window {

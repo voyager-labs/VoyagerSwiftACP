@@ -12,13 +12,14 @@ struct OperatorPickerView: View {
             VStack(spacing: 0) {
                 ScrollView {
                     VStack(spacing: 0) {
-                        ForEach(viewStore.options) { option in
+                        ForEach(viewStore.options, id: \.self) { code in
                             Button {
-                                viewStore.send(.select(option))
+                                viewStore.send(.select(code))
                             } label: {
-                                let isHovering = hoveredOptionCode == option.code
+                                let isHovering = hoveredOptionCode == code
+                                let label = viewStore.optionLabels[code] ?? code
                                 HStack {
-                                    Text(option.label)
+                                    Text(label)
                                         .foregroundColor(.primary)
                                         .font(.system(size: 12))
                                     Spacer()
@@ -33,7 +34,7 @@ struct OperatorPickerView: View {
                             }
                             .buttonStyle(.plain)
                             .onHover { hovering in
-                                hoveredOptionCode = hovering ? option.code : nil
+                                hoveredOptionCode = hovering ? code : nil
                             }
                         }
                     }

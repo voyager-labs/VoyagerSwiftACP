@@ -7,6 +7,7 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		11884BDAA11DD6217EEF5014 /* system_property_registry.json in Resources */ = {isa = PBXBuildFile; fileRef = A68896D2BA838902604FD30A /* system_property_registry.json */; };
 		6C57FBA92F02111500D85C72 /* Sparkle in Frameworks */ = {isa = PBXBuildFile; productRef = 6C57FBA82F02111500D85C72 /* Sparkle */; };
 		6C727A2D2F0DF4A10012D44A /* Logging in Frameworks */ = {isa = PBXBuildFile; productRef = 6C727A2C2F0DF4A10012D44A /* Logging */; };
 		6C727A2F2F0DF4AA0012D44A /* Logging in Frameworks */ = {isa = PBXBuildFile; productRef = 6C727A2E2F0DF4AA0012D44A /* Logging */; };
@@ -14,10 +15,13 @@
 		7E1724A12EC5BA6600385F6E /* SwiftUIIntrospect in Frameworks */ = {isa = PBXBuildFile; productRef = 7E1724A02EC5BA6600385F6E /* SwiftUIIntrospect */; };
 		7E1974712E8BDC0700D041D3 /* InjectionNext in Frameworks */ = {isa = PBXBuildFile; productRef = 7E1974702E8BDC0700D041D3 /* InjectionNext */; };
 		7E6AF6AD2E8BABD8005DC7D3 /* Inject in Frameworks */ = {isa = PBXBuildFile; productRef = 7E6AF6AC2E8BABD8005DC7D3 /* Inject */; };
+		7E8B3C4F2F1A2B3C400D9E8F2 /* GRDB in Frameworks */ = {isa = PBXBuildFile; productRef = 7E8B3C4E2F1A2B3C400D9E8F1 /* GRDB */; };
+		7E8B3C502F1A2B3C400D9E8F3 /* GRDB in Frameworks */ = {isa = PBXBuildFile; productRef = 7E8B3C4E2F1A2B3C400D9E8F1 /* GRDB */; };
 		7E9D64952E8CDDC8006CB69F /* SwiftDotenv in Frameworks */ = {isa = PBXBuildFile; productRef = 7E9D64942E8CDDC8006CB69F /* SwiftDotenv */; };
 		7EEC64512E8CE684004ACEA5 /* SwiftDotenv in Frameworks */ = {isa = PBXBuildFile; productRef = 7EEC64502E8CE684004ACEA5 /* SwiftDotenv */; };
 		7EEC64532E8CE6E3004ACEA5 /* InjectionNext in Frameworks */ = {isa = PBXBuildFile; productRef = 7EEC64522E8CE6E3004ACEA5 /* InjectionNext */; };
 		AF0F1E7B33B24D4A00A1F123 /* VoyagerHelper.app in Copy Helper into App */ = {isa = PBXBuildFile; fileRef = 7E14EE232E866E82005AC834 /* VoyagerHelper.app */; settings = {ATTRIBUTES = (CodeSignOnCopy, ); }; };
+		B2AD8C7BD69A51C61EF4D9FC /* property_condition_registry.json in Resources */ = {isa = PBXBuildFile; fileRef = 60F570BDE5ECDE55DC1C7E60 /* property_condition_registry.json */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -66,11 +70,13 @@
 /* End PBXCopyFilesBuildPhase section */
 
 /* Begin PBXFileReference section */
+		60F570BDE5ECDE55DC1C7E60 /* property_condition_registry.json */ = {isa = PBXFileReference; lastKnownFileType = text.json; name = property_condition_registry.json; path = ../../../shared/property_condition_registry.json; sourceTree = SOURCE_ROOT; };
 		7E14EDCC2E86622C005AC834 /* Voyager.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = Voyager.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		7E14EDDB2E86622E005AC834 /* VoyagerTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = VoyagerTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		7E14EDE52E86622E005AC834 /* VoyagerUITests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = VoyagerUITests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		7E14EE232E866E82005AC834 /* VoyagerHelper.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = VoyagerHelper.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		7E14EE2F2E866E85005AC834 /* VoyagerHelperTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = VoyagerHelperTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
+		A68896D2BA838902604FD30A /* system_property_registry.json */ = {isa = PBXFileReference; lastKnownFileType = text.json; name = system_property_registry.json; path = ../../../shared/system_property_registry.json; sourceTree = SOURCE_ROOT; };
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedRootGroup section */
@@ -142,6 +148,7 @@
 				6C727A2F2F0DF4AA0012D44A /* Logging in Frameworks */,
 				7E9D64952E8CDDC8006CB69F /* SwiftDotenv in Frameworks */,
 				7EEC64532E8CE6E3004ACEA5 /* InjectionNext in Frameworks */,
+				7E8B3C4F2F1A2B3C400D9E8F2 /* GRDB in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -149,6 +156,7 @@
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				7E8B3C502F1A2B3C400D9E8F3 /* GRDB in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -158,6 +166,8 @@
 		7E14EDC32E86622C005AC834 = {
 			isa = PBXGroup;
 			children = (
+				A68896D2BA838902604FD30A /* system_property_registry.json */,
+				60F570BDE5ECDE55DC1C7E60 /* property_condition_registry.json */,
 				7E14EDCE2E86622C005AC834 /* Voyager */,
 				24DD04D6008045F2B081D402 /* Shared */,
 				7E14EDDE2E86622E005AC834 /* VoyagerTests */,
@@ -286,6 +296,7 @@
 				7E9D64942E8CDDC8006CB69F /* SwiftDotenv */,
 				7EEC64522E8CE6E3004ACEA5 /* InjectionNext */,
 				6C727A2E2F0DF4AA0012D44A /* Logging */,
+				7E8B3C4E2F1A2B3C400D9E8F1 /* GRDB */,
 			);
 			productName = VoyagerHelper;
 			productReference = 7E14EE232E866E82005AC834 /* VoyagerHelper.app */;
@@ -309,6 +320,7 @@
 			);
 			name = VoyagerHelperTests;
 			packageProductDependencies = (
+				7E8B3C4E2F1A2B3C400D9E8F1 /* GRDB */,
 			);
 			productName = VoyagerHelperTests;
 			productReference = 7E14EE2F2E866E85005AC834 /* VoyagerHelperTests.xctest */;
@@ -361,6 +373,7 @@
 				7E17249F2EC5B91C00385F6E /* XCRemoteSwiftPackageReference "SwiftUI-Introspect" */,
 				6C57FBA72F02111500D85C72 /* XCRemoteSwiftPackageReference "Sparkle" */,
 				6C727A2B2F0DF4A10012D44A /* XCRemoteSwiftPackageReference "swift-log" */,
+				7E8B3C4D2F1A2B3C400D9E8F0 /* XCRemoteSwiftPackageReference "GRDB" */,
 			);
 			preferredProjectObjectVersion = 77;
 			productRefGroup = 7E14EDCD2E86622C005AC834 /* Products */;
@@ -381,6 +394,8 @@
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				11884BDAA11DD6217EEF5014 /* system_property_registry.json in Resources */,
+				B2AD8C7BD69A51C61EF4D9FC /* property_condition_registry.json in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -686,11 +701,11 @@
 			isa = XCBuildConfiguration;
 			buildSettings = {
 				APP_ENV = dev;
-				BACKEND_MODE = source;
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
 				ASSETCATALOG_COMPILER_INCLUDE_ALL_APPICON_ASSETS = YES;
 				AUTOMATION_APPLE_EVENTS = YES;
+				BACKEND_MODE = source;
 				CODE_SIGN_IDENTITY = "-";
 				CODE_SIGN_STYLE = Manual;
 				COMBINE_HIDPI_IMAGES = YES;
@@ -699,7 +714,7 @@
 				DEVELOPMENT_TEAM = "";
 				EMIT_FRONTEND_COMMAND_LINES = YES;
 				ENABLE_APP_SANDBOX = NO;
-				ENABLE_HARDENED_RUNTIME = YES;
+				ENABLE_HARDENED_RUNTIME = NO;
 				ENABLE_PREVIEWS = YES;
 				ENABLE_RESOURCE_ACCESS_AUDIO_INPUT = NO;
 				ENABLE_RESOURCE_ACCESS_CALENDARS = NO;
@@ -718,7 +733,7 @@
 				);
 				MACOSX_DEPLOYMENT_TARGET = 13.5;
 				MARKETING_VERSION = 0.0.4;
-                "OTHER_LDFLAGS[arch=*]" = (
+				"OTHER_LDFLAGS[arch=*]" = (
 					"-Xlinker",
 					"-interposable",
 				);
@@ -745,10 +760,10 @@
 			isa = XCBuildConfiguration;
 			buildSettings = {
 				APP_ENV = prod;
-				BACKEND_MODE = bundled;
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
 				ASSETCATALOG_COMPILER_INCLUDE_ALL_APPICON_ASSETS = YES;
+				BACKEND_MODE = bundled;
 				"CODE_SIGN_IDENTITY[sdk=macosx*]" = "Developer ID Application";
 				CODE_SIGN_STYLE = Manual;
 				COMBINE_HIDPI_IMAGES = YES;
@@ -777,7 +792,7 @@
 				);
 				MACOSX_DEPLOYMENT_TARGET = 13.5;
 				MARKETING_VERSION = 0.0.4;
-                PRODUCT_BUNDLE_IDENTIFIER = fm.voyager.Voyager;
+				PRODUCT_BUNDLE_IDENTIFIER = fm.voyager.Voyager;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				PROVISIONING_PROFILE_SPECIFIER = "";
 				REGISTER_APP_GROUPS = YES;
@@ -802,7 +817,7 @@
 				GENERATE_INFOPLIST_FILE = YES;
 				MACOSX_DEPLOYMENT_TARGET = 13.5;
 				MARKETING_VERSION = 0.0.4;
-                PRODUCT_BUNDLE_IDENTIFIER = fm.voyager.VoyagerTests;
+				PRODUCT_BUNDLE_IDENTIFIER = fm.voyager.VoyagerTests;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				PROVISIONING_PROFILE_SPECIFIER = "";
 				STRING_CATALOG_GENERATE_SYMBOLS = NO;
@@ -825,7 +840,7 @@
 				GENERATE_INFOPLIST_FILE = YES;
 				MACOSX_DEPLOYMENT_TARGET = 13.5;
 				MARKETING_VERSION = 0.0.4;
-                PRODUCT_BUNDLE_IDENTIFIER = fm.voyager.VoyagerTests;
+				PRODUCT_BUNDLE_IDENTIFIER = fm.voyager.VoyagerTests;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				PROVISIONING_PROFILE_SPECIFIER = "";
 				STRING_CATALOG_GENERATE_SYMBOLS = NO;
@@ -846,7 +861,7 @@
 				DEVELOPMENT_TEAM = "";
 				GENERATE_INFOPLIST_FILE = YES;
 				MARKETING_VERSION = 0.0.4;
-                PRODUCT_BUNDLE_IDENTIFIER = fm.voyager.VoyagerUITests;
+				PRODUCT_BUNDLE_IDENTIFIER = fm.voyager.VoyagerUITests;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				PROVISIONING_PROFILE_SPECIFIER = "";
 				STRING_CATALOG_GENERATE_SYMBOLS = NO;
@@ -867,7 +882,7 @@
 				DEVELOPMENT_TEAM = "";
 				GENERATE_INFOPLIST_FILE = YES;
 				MARKETING_VERSION = 0.0.4;
-                PRODUCT_BUNDLE_IDENTIFIER = fm.voyager.VoyagerUITests;
+				PRODUCT_BUNDLE_IDENTIFIER = fm.voyager.VoyagerUITests;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				PROVISIONING_PROFILE_SPECIFIER = "";
 				STRING_CATALOG_GENERATE_SYMBOLS = NO;
@@ -883,10 +898,10 @@
 			isa = XCBuildConfiguration;
 			buildSettings = {
 				APP_ENV = dev;
-				BACKEND_MODE = source;
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
 				AUTOMATION_APPLE_EVENTS = YES;
+				BACKEND_MODE = source;
 				"CODE_SIGN_IDENTITY[sdk=macosx*]" = "-";
 				CODE_SIGN_STYLE = Manual;
 				COMBINE_HIDPI_IMAGES = YES;
@@ -915,7 +930,7 @@
 					"@executable_path/../Frameworks",
 				);
 				MARKETING_VERSION = 0.0.4;
-                PRODUCT_BUNDLE_IDENTIFIER = fm.voyager.VoyagerHelper;
+				PRODUCT_BUNDLE_IDENTIFIER = fm.voyager.VoyagerHelper;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				PROVISIONING_PROFILE_SPECIFIER = "";
 				REGISTER_APP_GROUPS = YES;
@@ -939,9 +954,9 @@
 			isa = XCBuildConfiguration;
 			buildSettings = {
 				APP_ENV = prod;
-				BACKEND_MODE = bundled;
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				BACKEND_MODE = bundled;
 				"CODE_SIGN_IDENTITY[sdk=macosx*]" = "Developer ID Application";
 				CODE_SIGN_STYLE = Manual;
 				COMBINE_HIDPI_IMAGES = YES;
@@ -971,7 +986,7 @@
 					"@executable_path/../Frameworks",
 				);
 				MARKETING_VERSION = 0.0.4;
-                PRODUCT_BUNDLE_IDENTIFIER = fm.voyager.VoyagerHelper;
+				PRODUCT_BUNDLE_IDENTIFIER = fm.voyager.VoyagerHelper;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				PROVISIONING_PROFILE_SPECIFIER = "";
 				REGISTER_APP_GROUPS = YES;
@@ -997,7 +1012,7 @@
 				GENERATE_INFOPLIST_FILE = YES;
 				MACOSX_DEPLOYMENT_TARGET = 13.5;
 				MARKETING_VERSION = 0.0.4;
-                PRODUCT_BUNDLE_IDENTIFIER = fm.voyager.VoyagerHelperTests;
+				PRODUCT_BUNDLE_IDENTIFIER = fm.voyager.VoyagerHelperTests;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				PROVISIONING_PROFILE_SPECIFIER = "";
 				STRING_CATALOG_GENERATE_SYMBOLS = NO;
@@ -1020,7 +1035,7 @@
 				GENERATE_INFOPLIST_FILE = YES;
 				MACOSX_DEPLOYMENT_TARGET = 13.5;
 				MARKETING_VERSION = 0.0.4;
-                PRODUCT_BUNDLE_IDENTIFIER = fm.voyager.VoyagerHelperTests;
+				PRODUCT_BUNDLE_IDENTIFIER = fm.voyager.VoyagerHelperTests;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				PROVISIONING_PROFILE_SPECIFIER = "";
 				STRING_CATALOG_GENERATE_SYMBOLS = NO;
@@ -1140,6 +1155,14 @@
 				minimumVersion = 1.5.2;
 			};
 		};
+		7E8B3C4D2F1A2B3C400D9E8F0 /* XCRemoteSwiftPackageReference "GRDB" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/groue/GRDB.swift";
+			requirement = {
+				kind = upToNextMajorVersion;
+				minimumVersion = 6.0.0;
+			};
+		};
 		7E9D64932E8CDDC8006CB69F /* XCRemoteSwiftPackageReference "swift-dotenv" */ = {
 			isa = XCRemoteSwiftPackageReference;
 			repositoryURL = "https://github.com/thebarndog/swift-dotenv";
@@ -1185,6 +1208,11 @@
 			isa = XCSwiftPackageProductDependency;
 			package = 7E6AF6AB2E8BABD8005DC7D3 /* XCRemoteSwiftPackageReference "Inject" */;
 			productName = Inject;
+		};
+		7E8B3C4E2F1A2B3C400D9E8F1 /* GRDB */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 7E8B3C4D2F1A2B3C400D9E8F0 /* XCRemoteSwiftPackageReference "GRDB" */;
+			productName = GRDB;
 		};
 		7E9D64942E8CDDC8006CB69F /* SwiftDotenv */ = {
 			isa = XCSwiftPackageProductDependency;

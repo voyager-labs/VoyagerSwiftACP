@@ -10,7 +10,7 @@ struct ConditionChipView: View {
     let hoverFillOpacity: Double
     let operatorPickerStore: StoreOf<OperatorPickerFeature>
     let valuePickerStore: StoreOf<ValuePickerFeature>
-    let operatorOptions: [OperatorOption]
+    let operatorOptions: [String]
     let defaultChipHeight: CGFloat
     let onPropertyTap: () -> Void
     let onRemove: () -> Void
@@ -26,6 +26,7 @@ struct ConditionChipView: View {
     @State private var boolPopoverIndex: Int?
     @State private var boolHoverIndex: Int?
     @State private var boolOptionHoverValue: String?
+    @FocusState private var focusedValueIndex: Int?
 
     var body: some View {
         WithViewStore(
@@ -49,23 +50,28 @@ struct ConditionChipView: View {
     ) -> some View {
         let opLabel = condition.operatorLabel ?? "Operator"
         let opColor: Color = condition.operatorLabel == nil ? .secondary.opacity(0.7) : .primary
-        let selectedOperator = operatorOptions.first(where: { $0.code == condition.operatorCode })
-        let valueArity = condition.operatorValueArity ?? selectedOperator?.valueArity ?? 0
-        let isDateType = condition.valueType == .date
-        let isBooleanType = condition.valueType == .boolean
+        let valueUIKind = condition.operatorValueUIKind ?? "singleText"
+        let valueArity = condition.operatorValueArity ?? ValueNormalizerUtils.expectedArity(for: valueUIKind)
+        let isDateType = condition.valueType == "date" || condition.valueType == "datetime"
+        let isBooleanType = condition.valueType == "boolean"
         let isEditingValue = !isDateType && !isBooleanType && valueStore.isPresented &&
             valueStore.propertyKey == condition.propertyKey
+        let isInactive = !condition.isActive
 
-        return HStack(spacing: 2) {
-            propertyLabelView()
-            operatorButtonView(opStore: opStore, label: opLabel, color: opColor)
-            valueSection(
-                selectedOperator: selectedOperator,
-                valueArity: valueArity,
-                isEditingValue: isEditingValue,
-                isDateType: isDateType,
-                valueStore: valueStore,
-            )
+        return ZStack(alignment: .topTrailing) {
+            HStack(spacing: 2) {
+                propertyLabelView()
+                operatorButtonView(opStore: opStore, label: opLabel, color: opColor)
+                valueSection(
+                    valueUIKind: valueUIKind,
+                    valueArity: valueArity,
+                    isEditingValue: isEditingValue,
+                    isDateType: isDateType,
+                    valueStore: valueStore,
+                )
+            }
+            .allowsHitTesting(!isInactive)
+            .opacity(isInactive ? 0.55 : 1)
         }
         .padding(.horizontal, 8)
         .frame(height: defaultChipHeight)
@@ -147,7 +153,11 @@ struct ConditionChipView: View {
         color: Color,
     ) -> some View {
         Button {
-            opStore.send(.prepare(propertyKey: condition.propertyKey, options: operatorOptions))
+            opStore.send(.prepare(
+                propertyKey: condition.propertyKey,
+                options: operatorOptions,
+                optionLabels: [:],
+            ))
         } label: {
             Text(label)
                 .font(.system(size: 11, weight: .medium))
@@ -188,28 +198,29 @@ struct ConditionChipView: View {
     // swiftlint:disable cyclomatic_complexity
     @ViewBuilder
     private func valueSection(
-        selectedOperator: OperatorOption?,
+        valueUIKind: String,
         valueArity: Int,
         isEditingValue: Bool,
         isDateType: Bool,
         valueStore: ViewStore<ValuePickerFeature.State, ValuePickerFeature.Action>,
     ) -> some View {
-        if let op = selectedOperator, valueArity != 0 {
-            if op.valueUIKind == .rangeNumber {
+        if let operatorCode = condition.operatorCode, valueArity != 0 {
+            if valueUIKind == "rangeNumber" {
                 let isActive = valueStore.isPresented && valueStore.propertyKey == condition.propertyKey
                 let isEditingThis = isActive && valueStore.editingIndex != nil
                 let hasCommittedValues = (condition.values?.count ?? 0) >= 2
                 let needsPrepare = valueStore.propertyKey != condition.propertyKey ||
-                    valueStore.operatorOption?.code != op.code ||
+                    valueStore.operatorCode != operatorCode ||
                     valueStore.valueArity != valueArity
                 let sendPrepare: () -> Void = {
                     _ = valuePickerStore.send(
                         .prepare(
                             .init(
                                 propertyKey: condition.propertyKey,
-                                operatorOption: op,
+                                operatorCode: operatorCode,
                                 valueType: condition.valueType,
-                                valueUIKind: op.valueUIKind,
+                                valueUIKind: valueUIKind,
+                                valueArity: valueArity,
                                 existingValues: condition.values,
                                 editingIndex: nil,
                             ),
@@ -219,7 +230,8 @@ struct ConditionChipView: View {
 
                 if isEditingThis && hasCommittedValues {
                     rangeEditingView(
-                        operatorOption: op,
+                        operatorCode: operatorCode,
+                        valueUIKind: valueUIKind,
                         editingIndex: valueStore.editingIndex ?? 0,
                         valueStore: valueStore,
                     )
@@ -233,10 +245,10 @@ struct ConditionChipView: View {
                     })
                 } else if isActive || !hasCommittedValues {
                     inlineValueInputs(
-                        operatorOption: op,
                         valueViewStore: valueStore,
                         valueArity: valueArity,
                         valueType: condition.valueType,
+                        valueUIKind: valueUIKind,
                         errorMessage: valueStore.errorMessage,
                         editingIndex: nil,
                     )
@@ -249,45 +261,56 @@ struct ConditionChipView: View {
                         if newValue { sendPrepare() }
                     })
                 } else if let values = condition.values, values.count >= 2 {
-                    rangeDisplayView(operatorOption: op, values: values)
+                    rangeDisplayView(
+                        operatorCode: operatorCode,
+                        valueUIKind: valueUIKind,
+                        values: values,
+                    )
                 }
             } else
             if isDateType {
                 dateValueSection(
-                    operatorOption: op,
+                    operatorCode: operatorCode,
+                    valueUIKind: valueUIKind,
                     valueArity: valueArity,
                     valueViewStore: valueStore,
                 )
             } else
             if isEditingValue, valueArity >= 2, let editingIndex = valueStore.editingIndex {
                 rangeEditingView(
-                    operatorOption: op,
+                    operatorCode: operatorCode,
+                    valueUIKind: valueUIKind,
                     editingIndex: editingIndex,
                     valueStore: valueStore,
                 )
             } else if isEditingValue {
                 inlineValueInputs(
-                    operatorOption: selectedOperator,
                     valueViewStore: valueStore,
                     valueArity: valueArity,
                     valueType: condition.valueType,
+                    valueUIKind: valueUIKind,
                     errorMessage: valueStore.errorMessage,
                     editingIndex: nil,
                 )
             } else if valueArity >= 2, let values = condition.values, values.count >= 2 {
-                rangeDisplayView(operatorOption: op, values: values)
+                rangeDisplayView(
+                    operatorCode: operatorCode,
+                    valueUIKind: valueUIKind,
+                    values: values,
+                )
             } else {
-                if condition.valueType == .boolean {
+                if condition.valueType == "boolean" {
                     let currentText = condition.values?.first ?? ""
                     booleanValueButton(
                         placeholderText: "",
                         currentText: currentText,
                         index: 0,
                         valueViewStore: ViewStore(valuePickerStore, observe: { $0 }),
-                        operatorOption: op,
+                        operatorCode: operatorCode,
+                        valueUIKind: valueUIKind,
                     )
                 } else {
-                    singleValueButton(operatorOption: op)
+                    singleValueButton(operatorCode: operatorCode, valueUIKind: valueUIKind, valueArity: valueArity)
                 }
             }
         } else {
@@ -298,7 +321,8 @@ struct ConditionChipView: View {
     // swiftlint:enable cyclomatic_complexity
 
     private func rangeEditingView(
-        operatorOption: OperatorOption,
+        operatorCode: String,
+        valueUIKind: String,
         editingIndex: Int,
         valueStore: ViewStore<ValuePickerFeature.State, ValuePickerFeature.Action>,
     ) -> some View {
@@ -313,9 +337,10 @@ struct ConditionChipView: View {
                             .prepare(
                                 .init(
                                     propertyKey: condition.propertyKey,
-                                    operatorOption: operatorOption,
+                                    operatorCode: operatorCode,
                                     valueType: condition.valueType,
-                                    valueUIKind: operatorOption.valueUIKind,
+                                    valueUIKind: valueUIKind,
+                                    valueArity: 2,
                                     existingValues: condition.values,
                                     editingIndex: 0,
                                 ),
@@ -329,10 +354,10 @@ struct ConditionChipView: View {
             }
 
             inlineValueInputs(
-                operatorOption: operatorOption,
                 valueViewStore: valueStore,
-                valueArity: operatorOption.valueArity,
+                valueArity: 2,
                 valueType: condition.valueType,
+                valueUIKind: valueUIKind,
                 errorMessage: valueStore.errorMessage,
                 editingIndex: editingIndex,
             )
@@ -350,9 +375,10 @@ struct ConditionChipView: View {
                             .prepare(
                                 .init(
                                     propertyKey: condition.propertyKey,
-                                    operatorOption: operatorOption,
+                                    operatorCode: operatorCode,
                                     valueType: condition.valueType,
-                                    valueUIKind: operatorOption.valueUIKind,
+                                    valueUIKind: valueUIKind,
+                                    valueArity: 2,
                                     existingValues: condition.values,
                                     editingIndex: 1,
                                 ),
@@ -364,7 +390,11 @@ struct ConditionChipView: View {
         }
     }
 
-    private func rangeDisplayView(operatorOption: OperatorOption, values: [String]) -> some View {
+    private func rangeDisplayView(
+        operatorCode: String,
+        valueUIKind: String,
+        values: [String],
+    ) -> some View {
         HStack(spacing: 6) {
             ValuePillView(
                 text: values[0],
@@ -375,9 +405,10 @@ struct ConditionChipView: View {
                         .prepare(
                             .init(
                                 propertyKey: condition.propertyKey,
-                                operatorOption: operatorOption,
+                                operatorCode: operatorCode,
                                 valueType: condition.valueType,
-                                valueUIKind: operatorOption.valueUIKind,
+                                valueUIKind: valueUIKind,
+                                valueArity: 2,
                                 existingValues: condition.values,
                                 editingIndex: 0,
                             ),
@@ -397,9 +428,10 @@ struct ConditionChipView: View {
                         .prepare(
                             .init(
                                 propertyKey: condition.propertyKey,
-                                operatorOption: operatorOption,
+                                operatorCode: operatorCode,
                                 valueType: condition.valueType,
-                                valueUIKind: operatorOption.valueUIKind,
+                                valueUIKind: valueUIKind,
+                                valueArity: 2,
                                 existingValues: condition.values,
                                 editingIndex: 1,
                             ),
@@ -412,7 +444,8 @@ struct ConditionChipView: View {
 
     @ViewBuilder
     private func dateValueSection(
-        operatorOption: OperatorOption,
+        operatorCode: String,
+        valueUIKind: String,
         valueArity: Int,
         valueViewStore: ViewStore<ValuePickerFeature.State, ValuePickerFeature.Action>,
     ) -> some View {
@@ -425,7 +458,9 @@ struct ConditionChipView: View {
                     hasError: hasError,
                     index: 0,
                     valueViewStore: valueViewStore,
-                    operatorOption: operatorOption,
+                    operatorCode: operatorCode,
+                    valueUIKind: valueUIKind,
+                    valueArity: valueArity,
                 )
                 Text("and")
                     .font(.system(size: 11, weight: .medium))
@@ -436,7 +471,9 @@ struct ConditionChipView: View {
                     hasError: hasError,
                     index: 1,
                     valueViewStore: valueViewStore,
-                    operatorOption: operatorOption,
+                    operatorCode: operatorCode,
+                    valueUIKind: valueUIKind,
+                    valueArity: valueArity,
                 )
             }
         } else {
@@ -446,20 +483,27 @@ struct ConditionChipView: View {
                 hasError: hasError,
                 index: 0,
                 valueViewStore: valueViewStore,
-                operatorOption: operatorOption,
+                operatorCode: operatorCode,
+                valueUIKind: valueUIKind,
+                valueArity: valueArity,
             )
         }
     }
 
-    private func singleValueButton(operatorOption: OperatorOption) -> some View {
+    private func singleValueButton(
+        operatorCode: String,
+        valueUIKind: String,
+        valueArity: Int,
+    ) -> some View {
         Button {
             valuePickerStore.send(
                 .prepare(
                     .init(
                         propertyKey: condition.propertyKey,
-                        operatorOption: operatorOption,
+                        operatorCode: operatorCode,
                         valueType: condition.valueType,
-                        valueUIKind: operatorOption.valueUIKind,
+                        valueUIKind: valueUIKind,
+                        valueArity: valueArity,
                         existingValues: condition.values,
                         editingIndex: nil,
                     ),
@@ -523,10 +567,10 @@ struct ConditionChipView: View {
     }
 
     private func inlineValueInputs(
-        operatorOption: OperatorOption?,
         valueViewStore: ViewStore<ValuePickerFeature.State, ValuePickerFeature.Action>,
         valueArity: Int,
-        valueType: ValueType,
+        valueType: String,
+        valueUIKind: String,
         errorMessage: String?,
         editingIndex: Int?,
     ) -> some View {
@@ -538,6 +582,8 @@ struct ConditionChipView: View {
             }
             return Array(0 ..< fieldCount)
         }()
+        let shouldFocus = valueViewStore.isPresented &&
+            valueViewStore.propertyKey == condition.propertyKey
 
         return HStack(spacing: 6) {
             ForEach(indices, id: \.self) { index in
@@ -548,21 +594,16 @@ struct ConditionChipView: View {
                     valueType: valueType,
                 )
 
-                if valueType == .date {
+                if valueType == "date" || valueType == "datetime" {
                     EmptyView()
-                } else if valueType == .boolean {
+                } else if valueType == "boolean" {
                     booleanValueButton(
                         placeholderText: placeholderText,
                         currentText: currentText,
                         index: index,
                         valueViewStore: valueViewStore,
-                        operatorOption: operatorOption ?? OperatorOption(
-                            code: condition.operatorCode ?? "eq",
-                            label: condition.operatorLabel ?? "Is",
-                            valueArity: valueArity,
-                            valueType: .boolean,
-                            valueUIKind: .toggle,
-                        ),
+                        operatorCode: condition.operatorCode ?? "eq",
+                        valueUIKind: valueUIKind,
                     )
                 } else {
                     HStack(spacing: 4) {
@@ -582,13 +623,13 @@ struct ConditionChipView: View {
                         .padding(.vertical, 4)
                         .frame(
                             minWidth: {
-                                if valueType == .number {
+                                if valueType == "number" {
                                     return hasError ? 70 : 55
                                 }
                                 return hasError ? 80 : 60
                             }(),
                             maxWidth: {
-                                if valueType == .number {
+                                if valueType == "number" {
                                     return hasError ? 130 : 95
                                 }
                                 return hasError ? 150 : 110
@@ -614,11 +655,12 @@ struct ConditionChipView: View {
                                     .allowsHitTesting(false)
                             }
                         }
+                        .focused($focusedValueIndex, equals: index)
                         .onSubmit {
                             valuePickerStore.send(.commit)
                         }
 
-                        if valueType == .number, condition.propertyKey == "size" {
+                        if valueType == "number", condition.propertyKey == "size" {
                             Text("bytes")
                                 .font(.system(size: 11))
                                 .foregroundColor(.primary)
@@ -636,6 +678,38 @@ struct ConditionChipView: View {
             }
         }
         .padding(.leading, 4)
+        .onAppear {
+            updateInlineValueFocus(
+                shouldFocus: shouldFocus,
+                targetIndex: valueViewStore.editingIndex ?? indices.first,
+            )
+        }
+        .onChange(of: valueViewStore.isPresented) { _ in
+            updateInlineValueFocus(
+                shouldFocus: shouldFocus,
+                targetIndex: valueViewStore.editingIndex ?? indices.first,
+            )
+        }
+        .onChange(of: valueViewStore.editingIndex) { _ in
+            updateInlineValueFocus(
+                shouldFocus: shouldFocus,
+                targetIndex: valueViewStore.editingIndex ?? indices.first,
+            )
+        }
+        .onChange(of: valueViewStore.propertyKey) { _ in
+            updateInlineValueFocus(
+                shouldFocus: shouldFocus,
+                targetIndex: valueViewStore.editingIndex ?? indices.first,
+            )
+        }
+    }
+
+    private func updateInlineValueFocus(shouldFocus: Bool, targetIndex: Int?) {
+        let nextFocus = shouldFocus ? targetIndex : nil
+        guard focusedValueIndex != nextFocus else { return }
+        DispatchQueue.main.async {
+            focusedValueIndex = nextFocus
+        }
     }
 
     private func dateValueButton(
@@ -644,7 +718,9 @@ struct ConditionChipView: View {
         hasError: Bool,
         index: Int,
         valueViewStore: ViewStore<ValuePickerFeature.State, ValuePickerFeature.Action>,
-        operatorOption: OperatorOption,
+        operatorCode: String,
+        valueUIKind: String,
+        valueArity: Int,
     ) -> some View {
         let isPresented = Binding<Bool>(
             get: { datePopoverIndex == index },
@@ -664,9 +740,10 @@ struct ConditionChipView: View {
                 .prepare(
                     .init(
                         propertyKey: condition.propertyKey,
-                        operatorOption: operatorOption,
+                        operatorCode: operatorCode,
                         valueType: condition.valueType,
-                        valueUIKind: operatorOption.valueUIKind,
+                        valueUIKind: valueUIKind,
+                        valueArity: valueArity,
                         existingValues: currentValues,
                         editingIndex: index,
                     ),
@@ -746,7 +823,8 @@ struct ConditionChipView: View {
         currentText: String,
         index: Int,
         valueViewStore: ViewStore<ValuePickerFeature.State, ValuePickerFeature.Action>,
-        operatorOption: OperatorOption,
+        operatorCode: String,
+        valueUIKind: String,
     ) -> some View {
         let isPresented = Binding<Bool>(
             get: { boolPopoverIndex == index },
@@ -760,9 +838,10 @@ struct ConditionChipView: View {
                 .prepare(
                     .init(
                         propertyKey: condition.propertyKey,
-                        operatorOption: operatorOption,
-                        valueType: .boolean,
-                        valueUIKind: .toggle,
+                        operatorCode: operatorCode,
+                        valueType: "boolean",
+                        valueUIKind: valueUIKind,
+                        valueArity: 1,
                         existingValues: condition.values,
                         editingIndex: index,
                     ),
@@ -872,12 +951,12 @@ struct ConditionChipView: View {
 
     private func displayValueText() -> String {
         guard let values = condition.values, !values.isEmpty else { return "Value" }
-        let suffix = if condition.propertyKey == "size", condition.valueType == .number {
+        let suffix = if condition.propertyKey == "size", condition.valueType == "number" {
             " bytes"
         } else {
             ""
         }
-        if condition.valueType == .date {
+        if condition.valueType == "date" || condition.valueType == "datetime" {
             let first = ValueNormalizerUtils.formatDateOnlyString(values[0]) ?? values[0]
             if values.count >= 2 {
                 let second = ValueNormalizerUtils.formatDateOnlyString(values[1]) ?? values[1]
@@ -894,13 +973,13 @@ struct ConditionChipView: View {
         return values[0] + suffix
     }
 
-    private func placeholder(for arity: Int, index: Int, valueType: ValueType) -> String {
+    private func placeholder(for arity: Int, index: Int, valueType: String) -> String {
         if arity >= 2 {
             return index == 0 ? "From" : "To"
         }
 
         switch valueType {
-        case .number:
+        case "number":
             return "Number Value"
         default:
             return "Value"

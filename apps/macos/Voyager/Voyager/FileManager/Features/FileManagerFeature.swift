@@ -14,6 +14,8 @@ struct FileManagerFeature {
     var userDefaultsClient
     @Dependency(\.sidebarClient)
     var sidebarClient
+    @Dependency(\.registryClient)
+    var registryClient
 
     struct HistoryEntry: Equatable {
         let navigationState: FileManagerNavigationUtils.NavigationState
@@ -544,7 +546,7 @@ struct FileManagerFeature {
                     let trimmedQuery = file.query.trimmingCharacters(in: .whitespacesAndNewlines)
                     state.pendingSearchQuery = trimmedQuery.isEmpty ? nil : trimmedQuery
 
-                    let resolved = resolveCollectionFilters(from: file)
+                    let resolved = resolveCollectionFilters(from: file, registryClient: registryClient)
                     if trimmedQuery.isEmpty, resolved.scopes.isEmpty, resolved.conditions.isEmpty {
                         if !state.backHistory.isEmpty {
                             state.backHistory.removeLast()
@@ -607,7 +609,22 @@ struct FileManagerFeature {
                             : .send(.composer(.submit)))
                     effects.append(searchEffect)
 
-                    return .concatenate(effects)
+                    var mergedEffects: [Effect<Action>] = [.concatenate(effects)]
+                    if !resolved.unknownKeys.isEmpty {
+                        let unknownKeys = resolved.unknownKeys.joined(separator: ", ")
+                        let warningMessage = [
+                            "Some filters in this collection are no longer supported and were disabled:",
+                            "\(unknownKeys).",
+                        ].joined(separator: " ")
+                        mergedEffects.append(.run { _ in
+                            await showCollectionOpenErrorAlert(
+                                title: "Unsupported Filters",
+                                message: warningMessage,
+                            )
+                        })
+                    }
+
+                    return .merge(mergedEffects)
 
                 case let .failure(error):
                     if !state.backHistory.isEmpty {
@@ -1620,7 +1637,10 @@ private func makeCollectionNavigation(
     )
 }
 
-private func resolveCollectionFilters(from file: VoyagerCollectionFile) -> (scopes: [String], conditions: [Condition]) {
+private func resolveCollectionFilters(
+    from file: VoyagerCollectionFile,
+    registryClient: RegistryClient,
+) -> AppliedFiltersUtils.ResolutionResult {
     let conditionPayloads = file.conditions.map { condition in
         SearchConditionPayload(
             propertyKey: condition.propertyKey,
@@ -1629,10 +1649,11 @@ private func resolveCollectionFilters(from file: VoyagerCollectionFile) -> (scop
         )
     }
     let appliedFilters = AppliedFiltersPayload(scopes: file.scopes, conditions: conditionPayloads)
-    return AppliedFiltersUtils.resolve(
+    return AppliedFiltersUtils.resolveDetailed(
         appliedFilters,
         fallbackScopes: file.scopes,
         fallbackConditions: [],
+        registryClient: registryClient,
     )
 }
 
