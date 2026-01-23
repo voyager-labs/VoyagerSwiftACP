@@ -10,6 +10,7 @@ REPO_ROOT="$(cd "${SCRIPT_DIR}/../.." && pwd -P)"
 
 UV_BIN="${UV_BIN:-uv}"
 BACKEND_DIR="${BACKEND_DIR:-${REPO_ROOT}/apps/backend}"
+PROMPTS_DIR="${PROMPTS_DIR:-${BACKEND_DIR}/src/core/llm/prompts}"
 VENV_DIR="${VENV_DIR:-${BACKEND_DIR}/build/helper-runtime}"
 NUITKA_OUTPUT_DIR="${NUITKA_OUTPUT_DIR:-${BACKEND_DIR}/build/nuitka}"
 REGISTRY_JSON="${REPO_ROOT}/shared/system_property_registry.json"
