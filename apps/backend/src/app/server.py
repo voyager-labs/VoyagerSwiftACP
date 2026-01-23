@@ -15,6 +15,6 @@ os.environ.setdefault("BACKEND_MODE", "bundled")
 load_env()
 
 if __name__ == "__main__":
-    host = os.getenv("PUBLIC_BACKEND_HOST")
-    port = int(os.getenv("PUBLIC_BACKEND_PORT"))
+    host = os.environ["PUBLIC_BACKEND_HOST"]
+    port = int(os.environ["PUBLIC_BACKEND_PORT"])
     uvicorn.run(app, host=host, port=port, log_level="info")

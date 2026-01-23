@@ -151,6 +151,4 @@ def get_db_config(cfg: VoyagerConfig) -> DbConfig:
     return cfg.get_db_config()
 
 
-config = load_config()
-
-__all__ = ["load_config", "get_db_config", "VoyagerConfig", "config"]
+__all__ = ["load_config", "get_db_config", "VoyagerConfig"]

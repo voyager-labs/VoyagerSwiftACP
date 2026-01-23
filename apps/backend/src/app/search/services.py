@@ -4,7 +4,7 @@ from typing import Any
 
 from sqlalchemy import text
 
-from app.config import config
+from app.config import load_config
 from app.search.schemas import (
     AppliedFilters,
     SearchCondition,
@@ -32,6 +32,7 @@ class SearchService:
     def converter(self) -> CachedSearchConditionConverter:
         """Lazy initialization of converter"""
         if self._converter is None:
+            config = load_config()
             llm_provider = LangChainProvider(
                 provider="openai",
                 base_url=config.gateway_url,
