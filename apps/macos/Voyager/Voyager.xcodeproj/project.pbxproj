@@ -22,6 +22,7 @@
 		7EEC64532E8CE6E3004ACEA5 /* InjectionNext in Frameworks */ = {isa = PBXBuildFile; productRef = 7EEC64522E8CE6E3004ACEA5 /* InjectionNext */; };
 		AF0F1E7B33B24D4A00A1F123 /* VoyagerHelper.app in Copy Helper into App */ = {isa = PBXBuildFile; fileRef = 7E14EE232E866E82005AC834 /* VoyagerHelper.app */; settings = {ATTRIBUTES = (CodeSignOnCopy, ); }; };
 		B2AD8C7BD69A51C61EF4D9FC /* property_condition_registry.json in Resources */ = {isa = PBXBuildFile; fileRef = 60F570BDE5ECDE55DC1C7E60 /* property_condition_registry.json */; };
+		A1B2C3D4E5F60708192A3B4D /* Migrations in Resources */ = {isa = PBXBuildFile; fileRef = A1B2C3D4E5F60708192A3B4C /* Migrations */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -77,6 +78,7 @@
 		7E14EE232E866E82005AC834 /* VoyagerHelper.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = VoyagerHelper.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		7E14EE2F2E866E85005AC834 /* VoyagerHelperTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = VoyagerHelperTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		A68896D2BA838902604FD30A /* system_property_registry.json */ = {isa = PBXFileReference; lastKnownFileType = text.json; name = system_property_registry.json; path = ../../../shared/system_property_registry.json; sourceTree = SOURCE_ROOT; };
+		A1B2C3D4E5F60708192A3B4C /* Migrations */ = {isa = PBXFileReference; lastKnownFileType = folder; name = Migrations; path = VoyagerHelper/Infrastructure/Database/Migrations; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedRootGroup section */
@@ -168,6 +170,7 @@
 			children = (
 				A68896D2BA838902604FD30A /* system_property_registry.json */,
 				60F570BDE5ECDE55DC1C7E60 /* property_condition_registry.json */,
+				A1B2C3D4E5F60708192A3B4C /* Migrations */,
 				7E14EDCE2E86622C005AC834 /* Voyager */,
 				24DD04D6008045F2B081D402 /* Shared */,
 				7E14EDDE2E86622E005AC834 /* VoyagerTests */,
@@ -417,6 +420,7 @@
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				A1B2C3D4E5F60708192A3B4D /* Migrations in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
