@@ -179,33 +179,6 @@ enum InitialIndexingRunner {
         )
     }
 
-    private struct BatchPlan {
-        let repo: EntryRepository
-        let effectiveBatchSize: Int
-        let pathBatchSize: Int
-    }
-
-    private static func prepareBatchPlan(
-        manager: DatabaseManager,
-        logger: Logger,
-        batchSize: Int?,
-    ) async throws -> BatchPlan {
-        let repo = EntryRepository(manager: manager, logger: logger)
-        let maxBatchSize = try await manager.read { db in
-            try EntryRepository.maxBatchSize(in: db)
-        }
-        let maxPathBatchSize = try await manager.read { db in
-            try Int.fetchOne(db, sql: "PRAGMA max_variable_number") ?? 999
-        }
-        let effectiveBatchSize = batchSize ?? maxBatchSize
-        let pathBatchSize = min(maxPathBatchSize, max(1000, effectiveBatchSize))
-        return BatchPlan(
-            repo: repo,
-            effectiveBatchSize: effectiveBatchSize,
-            pathBatchSize: pathBatchSize,
-        )
-    }
-
     private static func loadItems(query: MDQuery, range: Range<Int>) -> [IndexedItem] {
         var items: [IndexedItem] = []
         items.reserveCapacity(range.count)
