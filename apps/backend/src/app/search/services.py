@@ -21,7 +21,7 @@ from core.llm.search_condition_converter import CachedSearchConditionConverter
 from core.search.condition_builder import ConditionBuilder, ConditionBuilderError
 from core.search.scope_builder import ScopeBuilder
 from infra.db.engine import engine_manager
-from infra.schemas.file_entry_schema import FileEntrySchema
+from infra.schemas.entry_schema import EntrySchema
 
 
 # TODO: Collection으로 변경 모듈 이름 변경
@@ -155,14 +155,14 @@ class SearchService:
             where_clause = f"{scope_clause} AND {condition_clause}"
             all_params: dict[str, Any] = {**scope_params, **condition_params}
 
-            def _run_query() -> list[FileEntrySchema]:
+            def _run_query() -> list[EntrySchema]:
                 where_text = text(where_clause).bindparams(**all_params)
-                statement = select(FileEntrySchema).where(where_text)
+                statement = select(EntrySchema).where(where_text)
                 with engine_manager.session(autocommit=False) as session:
                     result = session.exec(statement)
                     return list(result.all())
 
-            entries: list[FileEntrySchema] = await asyncio.to_thread(_run_query)
+            entries: list[EntrySchema] = await asyncio.to_thread(_run_query)
 
             items: list[SearchItem] = []
             for entry in entries:
