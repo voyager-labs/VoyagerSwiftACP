@@ -96,4 +96,13 @@ private func startSentryIfNeeded() {
         options.sendDefaultPii = false
         options.tracesSampleRate = NSNumber(value: tracesSampleRate)
     }
+    if let deviceId = DeviceIdentifierProvider.current() {
+        let appVersion = AppVersionInfo.shortVersion
+        let osVersion = ProcessInfo.processInfo.operatingSystemVersionString
+        SentrySDK.configureScope { scope in
+            scope.setUser(Sentry.User(userId: deviceId))
+            scope.setTag(value: appVersion, key: "app_version")
+            scope.setTag(value: osVersion, key: "os_version")
+        }
+    }
 }

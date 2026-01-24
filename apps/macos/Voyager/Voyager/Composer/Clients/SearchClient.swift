@@ -97,10 +97,18 @@ extension SearchClient: DependencyKey {
             let encoder = JSONEncoder()
             let decoder = JSONDecoder()
             let baseURL = await MainActor.run { Dotenv.publicBackendURL }
+            let appVersion = await MainActor.run { AppVersionInfo.shortVersion }
+            let deviceId = await MainActor.run { DeviceIdentifierProvider.current() }
+            let osVersion = ProcessInfo.processInfo.operatingSystemVersionString
             let url = baseURL.appendingPathComponent(path)
             var request = URLRequest(url: url)
             request.httpMethod = "POST"
             request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+            if let deviceId {
+                request.setValue(deviceId, forHTTPHeaderField: "X-Voyager-Device-Id")
+            }
+            request.setValue(appVersion, forHTTPHeaderField: "X-Voyager-App-Version")
+            request.setValue(osVersion, forHTTPHeaderField: "X-Voyager-OS-Version")
             request.httpBody = try encoder.encode(body)
 
             let (data, response) = try await URLSession.shared.data(for: request)
