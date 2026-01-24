@@ -41,6 +41,7 @@ enum ConditionPropertyIconUtils {
     static func iconName(forCategory category: String) -> String {
         switch category {
         case "common": "list.bullet.rectangle"
+        case "date": "calendar"
         case "filesystem": "folder"
         case "image": "photo"
         case "video": "video"
