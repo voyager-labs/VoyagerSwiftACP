@@ -275,7 +275,8 @@ enum ValueNormalizerUtils {
             let bad = trimmed.enumerated()
                 .compactMap { parseDate($0.element) == nil ? $0.offset : nil }
             return .init(
-                values: nil, errorMessage: "Enter valid date.",
+                values: nil,
+                errorMessage: "Enter valid date.",
                 resetIndices: bad.isEmpty ? [0, 1] : bad,
             )
         }

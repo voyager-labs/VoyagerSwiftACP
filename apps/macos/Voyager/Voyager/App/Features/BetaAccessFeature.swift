@@ -160,11 +160,12 @@ private func mapVerificationOutcome(
 ) -> BetaAccessVerificationResult {
     switch outcome {
     case let .success(response):
-        response.ok
-            ? BetaAccessVerificationResult(status: .active)
-            : BetaAccessVerificationResult(status: .checkFailed, reason: .internalError)
+        if response.ok {
+            return BetaAccessVerificationResult(status: .active)
+        }
+        return BetaAccessVerificationResult(status: .checkFailed, reason: .internalError)
     case let .failure(error):
-        mapVerificationError(error)
+        return mapVerificationError(error)
     }
 }
 

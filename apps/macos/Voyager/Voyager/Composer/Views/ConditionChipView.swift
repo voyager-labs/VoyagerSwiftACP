@@ -453,41 +453,57 @@ struct ConditionChipView: View {
         if valueArity >= 2 {
             HStack(spacing: 6) {
                 dateValueButton(
-                    placeholderText: "From",
-                    currentText: condition.values?.first ?? "",
-                    hasError: hasError,
-                    index: 0,
+                    config: DateValueButtonConfig(
+                        placeholderText: "From",
+                        currentText: condition.values?.first ?? "",
+                        hasError: hasError,
+                        index: 0,
+                        operatorCode: operatorCode,
+                        valueUIKind: valueUIKind,
+                        valueArity: valueArity,
+                    ),
                     valueViewStore: valueViewStore,
-                    operatorCode: operatorCode,
-                    valueUIKind: valueUIKind,
-                    valueArity: valueArity,
                 )
                 Text("and")
                     .font(.system(size: 11, weight: .medium))
                     .foregroundColor(.secondary)
                 dateValueButton(
-                    placeholderText: "To",
-                    currentText: (condition.values?.count ?? 0) > 1 ? (condition.values?[1] ?? "") : "",
-                    hasError: hasError,
-                    index: 1,
+                    config: DateValueButtonConfig(
+                        placeholderText: "To",
+                        currentText: (condition.values?.count ?? 0) > 1 ? (condition.values?[1] ?? "") : "",
+                        hasError: hasError,
+                        index: 1,
+                        operatorCode: operatorCode,
+                        valueUIKind: valueUIKind,
+                        valueArity: valueArity,
+                    ),
                     valueViewStore: valueViewStore,
-                    operatorCode: operatorCode,
-                    valueUIKind: valueUIKind,
-                    valueArity: valueArity,
                 )
             }
         } else {
             dateValueButton(
-                placeholderText: "Value",
-                currentText: condition.values?.first ?? "",
-                hasError: hasError,
-                index: 0,
+                config: DateValueButtonConfig(
+                    placeholderText: "Value",
+                    currentText: condition.values?.first ?? "",
+                    hasError: hasError,
+                    index: 0,
+                    operatorCode: operatorCode,
+                    valueUIKind: valueUIKind,
+                    valueArity: valueArity,
+                ),
                 valueViewStore: valueViewStore,
-                operatorCode: operatorCode,
-                valueUIKind: valueUIKind,
-                valueArity: valueArity,
             )
         }
+    }
+
+    private struct DateValueButtonConfig {
+        let placeholderText: String
+        let currentText: String
+        let hasError: Bool
+        let index: Int
+        let operatorCode: String
+        let valueUIKind: String
+        let valueArity: Int
     }
 
     private func singleValueButton(
@@ -713,17 +729,11 @@ struct ConditionChipView: View {
     }
 
     private func dateValueButton(
-        placeholderText: String,
-        currentText: String,
-        hasError: Bool,
-        index: Int,
+        config: DateValueButtonConfig,
         valueViewStore: ViewStore<ValuePickerFeature.State, ValuePickerFeature.Action>,
-        operatorCode: String,
-        valueUIKind: String,
-        valueArity: Int,
     ) -> some View {
         let isPresented = Binding<Bool>(
-            get: { datePopoverIndex == index },
+            get: { datePopoverIndex == config.index },
             set: { show in
                 if !show { datePopoverIndex = nil }
             },
@@ -740,25 +750,25 @@ struct ConditionChipView: View {
                 .prepare(
                     .init(
                         propertyKey: condition.propertyKey,
-                        operatorCode: operatorCode,
+                        operatorCode: config.operatorCode,
                         valueType: condition.valueType,
-                        valueUIKind: valueUIKind,
-                        valueArity: valueArity,
+                        valueUIKind: config.valueUIKind,
+                        valueArity: config.valueArity,
                         existingValues: currentValues,
-                        editingIndex: index,
+                        editingIndex: config.index,
                     ),
                 ),
             )
-            tempDate = ValueNormalizerUtils.parseDate(currentText) ?? Date()
-            datePopoverIndex = index
+            tempDate = ValueNormalizerUtils.parseDate(config.currentText) ?? Date()
+            datePopoverIndex = config.index
         } label: {
-            let isHovering = dateHoverIndex == index
-            let labelText = currentText.isEmpty
-                ? (placeholderText.isEmpty ? "Value" : placeholderText.capitalized)
-                : (ValueNormalizerUtils.formatDateOnlyString(currentText) ?? currentText)
+            let isHovering = dateHoverIndex == config.index
+            let labelText = config.currentText.isEmpty
+                ? (config.placeholderText.isEmpty ? "Value" : config.placeholderText.capitalized)
+                : (ValueNormalizerUtils.formatDateOnlyString(config.currentText) ?? config.currentText)
             Text(labelText)
                 .font(.system(size: 11, weight: .medium))
-                .foregroundColor(currentText.isEmpty ? .secondary : .primary)
+                .foregroundColor(config.currentText.isEmpty ? .secondary : .primary)
                 .padding(.horizontal, 6)
                 .padding(.vertical, 4)
                 .frame(minWidth: 50, maxWidth: 80, alignment: .center)
@@ -775,9 +785,9 @@ struct ConditionChipView: View {
                 .overlay(
                     RoundedRectangle(cornerRadius: 4)
                         .stroke(
-                            hasError ? Color.red.opacity(0.85) :
+                            config.hasError ? Color.red.opacity(0.85) :
                                 Color.clear,
-                            lineWidth: hasError ? 1 : 0,
+                            lineWidth: config.hasError ? 1 : 0,
                         ),
                 )
         }
@@ -785,8 +795,8 @@ struct ConditionChipView: View {
         .contentShape(Rectangle())
         .onHover { hover in
             if hover {
-                dateHoverIndex = index
-            } else if dateHoverIndex == index {
+                dateHoverIndex = config.index
+            } else if dateHoverIndex == config.index {
                 dateHoverIndex = nil
             }
         }
@@ -794,7 +804,7 @@ struct ConditionChipView: View {
             VStack(alignment: .leading, spacing: 12) {
                 let applySelection = {
                     let formatted = ValueNormalizerUtils.formatDateOnly(tempDate)
-                    valueViewStore.send(.setValue(index: index, text: formatted))
+                    valueViewStore.send(.setValue(index: config.index, text: formatted))
                     valuePickerStore.send(.commit)
                     DispatchQueue.main.async {
                         if valueViewStore.errorMessage == nil {

@@ -1,8 +1,7 @@
 import AppKit
 import ComposableArchitecture
 
-@MainActor
-private var onboardingWindowController: OnboardingWindowController?
+@MainActor private var onboardingWindowController: OnboardingWindowController?
 
 struct OnboardingWindowClient: Sendable {
     var showIfNeeded: @Sendable () -> Bool

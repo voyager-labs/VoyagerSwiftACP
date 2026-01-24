@@ -5,7 +5,7 @@ struct BetaAccessStepView: View {
     let store: StoreOf<BetaAccessFeature>
 
     var body: some View {
-        WithViewStore(store, observe: { $0 }) { viewStore in
+        WithViewStore(store, observe: { $0 }, content: { viewStore in
             VStack(alignment: .leading, spacing: 12) {
                 VStack(alignment: .leading, spacing: 8) {
                     VStack(alignment: .leading, spacing: 4) {
@@ -72,7 +72,7 @@ struct BetaAccessStepView: View {
             .onAppear {
                 viewStore.send(.onAppear)
             }
-        }
+        })
     }
 
     private enum ChipTone {
