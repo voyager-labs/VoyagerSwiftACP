@@ -34,10 +34,10 @@ class VoyagerHelperApp {
                 logger.error("Database initialization failed: \(error)")
                 exit(EXIT_FAILURE)
             }
-            await stateBroadcaster.startObservingRequests()
-            await stateBroadcaster.postCurrentState()
+            stateBroadcaster.startObservingRequests()
+            stateBroadcaster.postCurrentState()
             await indexingListener.prepare()
-            await indexingListener.startObservingRequests()
+            indexingListener.startObservingRequests()
             Task {
                 do {
                     if await indexingListener.hasCompletedInitialIndexing() {

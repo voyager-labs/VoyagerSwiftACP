@@ -11,7 +11,7 @@ extension IndexingRequestListener {
     }
 
     private enum RecoveryReferenceSource: String {
-        case heartbeat = "heartbeat"
+        case heartbeat
         case startedAt = "started_at"
     }
 
@@ -280,9 +280,9 @@ extension IndexingRequestListener {
     private func contextLabel(_ context: RunningStatusContext) -> String {
         switch context {
         case .prepare:
-            return "prepare"
+            "prepare"
         case .request:
-            return "request"
+            "request"
         }
     }
 
