@@ -46,7 +46,7 @@ actor DatabaseManager {
         guard let pool else {
             throw DatabaseError.notInitialized
         }
-        return try await pool.read(block)
+        return try pool.read(block)
     }
 
     /// 데이터베이스 쓰기 작업 실행
@@ -54,7 +54,7 @@ actor DatabaseManager {
         guard let pool else {
             throw DatabaseError.notInitialized
         }
-        return try await pool.write(block)
+        return try pool.write(block)
     }
 
     /// 트랜잭션 없이 데이터베이스 쓰기 작업 실행
@@ -62,7 +62,7 @@ actor DatabaseManager {
         guard let pool else {
             throw DatabaseError.notInitialized
         }
-        return try await pool.writeWithoutTransaction(block)
+        return try pool.writeWithoutTransaction(block)
     }
 
     /// 데이터베이스 연결 해제
@@ -201,7 +201,16 @@ actor DatabaseManager {
         if buffer[0] == 0 {
             return String(Int(Date().timeIntervalSince1970))
         }
-        return String(cString: buffer)
+        var bytes: [UInt8] = []
+        bytes.reserveCapacity(buffer.count)
+        for cChar in buffer where cChar != 0 {
+            bytes.append(UInt8(bitPattern: cChar))
+        }
+        guard !bytes.isEmpty else {
+            return String(Int(Date().timeIntervalSince1970))
+        }
+        return String(bytes: bytes, encoding: .utf8)
+            ?? String(Int(Date().timeIntervalSince1970))
     }
 
     /// 마이그레이션 실행

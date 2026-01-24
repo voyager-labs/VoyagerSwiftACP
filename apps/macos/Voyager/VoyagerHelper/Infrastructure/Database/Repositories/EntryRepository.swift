@@ -236,7 +236,7 @@ nonisolated struct EntryRepository: Sendable {
 
     private func insertChunkIndividually(_ records: [EntryRecord], db: Database) throws {
         var lastError: Error?
-        for var record in records {
+        for record in records {
             do {
                 try insertChunk([record], db: db)
             } catch {
