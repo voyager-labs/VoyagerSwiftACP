@@ -44,7 +44,7 @@ extension OnboardingProgressStore: DependencyKey {
         static let stepState = "onboardingStepState"
     }
 
-    nonisolated static let currentVersion = 1
+    nonisolated static let currentVersion = 1.1
 
     nonisolated static var liveValue: OnboardingProgressStore {
         OnboardingProgressStore(
@@ -54,9 +54,19 @@ extension OnboardingProgressStore: DependencyKey {
                 guard let currentStepRaw = defaults.string(forKey: Keys.currentStep) else {
                     return .empty
                 }
-                guard let version = defaults.object(forKey: Keys.version) as? Int else {
+
+                // Migration: Support both Int (legacy) and Double (current) version types
+                let version: Double
+                if let doubleVersion = defaults.object(forKey: Keys.version) as? Double {
+                    version = doubleVersion
+                } else if let intVersion = defaults.object(forKey: Keys.version) as? Int {
+                    // Migrate from Int to Double
+                    version = Double(intVersion)
+                    defaults.set(version, forKey: Keys.version) // Update to Double
+                } else {
                     return .resetRequired
                 }
+
                 guard version == currentVersion else {
                     return .resetRequired
                 }
