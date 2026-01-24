@@ -28,11 +28,14 @@ enum ConditionPropertyIconUtils {
         "longitude": "location",
     ]
 
-    static func iconName(forKey key: String, category: String? = nil) -> String {
+    static func iconName(forKey key: String, category: String? = nil, type: String? = nil) -> String {
         if let iconName = keyIconMap[key] {
             return iconName
         }
         if let category {
+            if category == "misc", let type {
+                return iconName(forType: type)
+            }
             return iconName(forCategory: category)
         }
         return "slider.horizontal.3"
@@ -49,6 +52,17 @@ enum ConditionPropertyIconUtils {
         case "storage": "externaldrive"
         case "misc": "questionmark.circle"
         default: "questionmark.circle"
+        }
+    }
+
+    static func iconName(forType type: String) -> String {
+        switch type {
+        case "date": "calendar"
+        case "number": "number"
+        case "boolean": "checkmark.circle"
+        case "string": "textformat"
+        case "string_list": "tag"
+        default: "slider.horizontal.3"
         }
     }
 }

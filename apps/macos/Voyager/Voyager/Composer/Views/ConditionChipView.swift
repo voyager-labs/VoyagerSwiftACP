@@ -109,10 +109,18 @@ struct ConditionChipView: View {
     private func propertyLabelView() -> some View {
         WithViewStore(propertyPickerStore, observe: { $0 }, content: { propertyStore in
             HStack(spacing: 6) {
-                Image(systemName: ConditionPropertyIconUtils.iconName(forKey: condition.propertyKey))
-                    .font(.system(size: 10, weight: .medium))
-                    .foregroundColor(.secondary)
-                    .frame(width: 12, height: 12)
+                let category = propertyStore.propertyCategories[condition.propertyKey]
+                let type = propertyStore.propertyTypes[condition.propertyKey]
+                Image(
+                    systemName: ConditionPropertyIconUtils.iconName(
+                        forKey: condition.propertyKey,
+                        category: category,
+                        type: type,
+                    ),
+                )
+                .font(.system(size: 10, weight: .medium))
+                .foregroundColor(.secondary)
+                .frame(width: 12, height: 12)
                 Text(condition.propertyLabel)
                     .font(.system(size: 11, weight: .medium))
                     .foregroundColor(.primary.opacity(0.8))
