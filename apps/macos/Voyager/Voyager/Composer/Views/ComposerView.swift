@@ -256,7 +256,7 @@ struct ComposerView: View {
         isSubmitDisabled _: Bool,
         isLocked: Bool,
     ) -> some View {
-        let placeholderText = "Enter your request..."
+        let placeholderText = "Describe the collection you want..."
 
         return ZStack(alignment: .leading) {
             if viewStore.text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {

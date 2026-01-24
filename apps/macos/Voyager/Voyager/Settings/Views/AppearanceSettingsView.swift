@@ -205,7 +205,7 @@ struct AppearanceSettingsView: View {
                     }
 
                     HStack(alignment: .top, spacing: 20) {
-                        Text("Grid view")
+                        Text("Icon view")
                             .foregroundColor(.primary)
                             .fixedSize(horizontal: true, vertical: false)
                             .frame(width: 140, alignment: .leading)
@@ -263,7 +263,7 @@ struct AppearanceSettingsView: View {
                     }
 
                     HStack(alignment: .top, spacing: 20) {
-                        Text("Grid view")
+                        Text("Icon view")
                             .foregroundColor(.primary)
                             .fixedSize(horizontal: true, vertical: false)
                             .frame(width: 140, alignment: .leading)
