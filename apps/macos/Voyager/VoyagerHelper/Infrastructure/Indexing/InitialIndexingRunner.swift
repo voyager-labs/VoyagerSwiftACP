@@ -13,6 +13,7 @@ enum InitialIndexingRunner {
         manager: DatabaseManager,
         logger: Logger,
         batchSize: Int? = nil,
+        heartbeat: (@Sendable () async -> Void)? = nil,
     ) async throws -> Int {
         let lastSyncAt: String? = try await manager.read { db -> String? in
             guard try db.tableExists("indexing_state") else { return nil }
@@ -34,6 +35,7 @@ enum InitialIndexingRunner {
                 manager: manager,
                 logger: logger,
                 batchSize: batchSize,
+                heartbeat: heartbeat,
             )
             try await updateLastSyncAt(manager: manager)
             await IndexingDatabasePragmas.restore(manager: manager, logger: logger, snapshot: pragmaSnapshot)
@@ -62,6 +64,7 @@ enum InitialIndexingRunner {
         manager: DatabaseManager,
         logger: Logger,
         batchSize: Int?,
+        heartbeat: (@Sendable () async -> Void)?,
     ) async throws -> Int {
         let homeURL = FileManager.default.homeDirectoryForCurrentUser
         let cachedVolumeIdentifier = InitialIndexingRecordBuilder.volumeIdentifier(from: homeURL)
@@ -69,20 +72,15 @@ enum InitialIndexingRunner {
         let resultCount = Int(MDQueryGetResultCount(query))
         logger.info("Home indexing started: Spotlight results \(resultCount)")
 
-        let repo = EntryRepository(manager: manager, logger: logger)
-        let maxBatchSize = try await manager.read { db in
-            try EntryRepository.maxBatchSize(in: db)
-        }
-        let maxPathBatchSize = try await manager.read { db in
-            try Int.fetchOne(db, sql: "PRAGMA max_variable_number") ?? 999
-        }
-        let effectiveBatchSize = batchSize ?? maxBatchSize
+        let plan = try await prepareBatchPlan(manager: manager, logger: logger, batchSize: batchSize)
+        let repo = plan.repo
+        let effectiveBatchSize = plan.effectiveBatchSize
 
         var inserted = 0
         var batch: [EntryRecord] = []
         batch.reserveCapacity(effectiveBatchSize)
 
-        let pathBatchSize = min(maxPathBatchSize, max(1000, effectiveBatchSize))
+        let pathBatchSize = plan.pathBatchSize
         var index = 0
         while index < resultCount {
             let end = min(index + pathBatchSize, resultCount)
@@ -105,6 +103,9 @@ enum InitialIndexingRunner {
                 }
             }
 
+            if let heartbeat {
+                await heartbeat()
+            }
             index = end
         }
 
@@ -114,6 +115,9 @@ enum InitialIndexingRunner {
             batch.removeAll(keepingCapacity: false)
         }
 
+        if let heartbeat {
+            await heartbeat()
+        }
         logger.info("Home indexing completed: inserted \(inserted) entries")
         return inserted
     }
@@ -121,6 +125,33 @@ enum InitialIndexingRunner {
     private struct IndexedItem {
         let mdItem: MDItem
         let path: String
+    }
+
+    private struct BatchPlan {
+        let repo: EntryRepository
+        let effectiveBatchSize: Int
+        let pathBatchSize: Int
+    }
+
+    private static func prepareBatchPlan(
+        manager: DatabaseManager,
+        logger: Logger,
+        batchSize: Int?,
+    ) async throws -> BatchPlan {
+        let repo = EntryRepository(manager: manager, logger: logger)
+        let maxBatchSize = try await manager.read { db in
+            try EntryRepository.maxBatchSize(in: db)
+        }
+        let maxPathBatchSize = try await manager.read { db in
+            try Int.fetchOne(db, sql: "PRAGMA max_variable_number") ?? 999
+        }
+        let effectiveBatchSize = batchSize ?? maxBatchSize
+        let pathBatchSize = min(maxPathBatchSize, max(1000, effectiveBatchSize))
+        return BatchPlan(
+            repo: repo,
+            effectiveBatchSize: effectiveBatchSize,
+            pathBatchSize: pathBatchSize,
+        )
     }
 
     private static func loadItems(query: MDQuery, range: Range<Int>) -> [IndexedItem] {
