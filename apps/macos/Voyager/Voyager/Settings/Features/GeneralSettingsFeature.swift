@@ -162,6 +162,8 @@ struct GeneralSettingsFeature {
     var entryClient: EntryClient
     @Dependency(\.userDefaultsClient)
     var userDefaultsClient: UserDefaultsClient
+    @Dependency(\.updaterClient)
+    var updaterClient: UpdaterClient
 
     var body: some Reducer<State, Action> {
         Reduce { state, action in
@@ -265,8 +267,9 @@ struct GeneralSettingsFeature {
                 state.automaticUpdate = enabled
                 userDefaultsClient.setBool(enabled, SettingsKeys.automaticUpdate)
                 state.automaticUpdateError = nil
-                AppDelegate.shared?.setAutomaticUpdate(enabled: enabled)
-                return .none
+                return .run { _ in
+                    await updaterClient.setAutomaticUpdate(enabled)
+                }
 
             case let .toggleAlertBeforeQuit(enabled):
                 state.alertBeforeQuit = enabled

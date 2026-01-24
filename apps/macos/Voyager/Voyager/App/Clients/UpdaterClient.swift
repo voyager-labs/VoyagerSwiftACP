@@ -80,8 +80,6 @@ private final class UpdaterCoordinator {
             userDriverDelegate: nil,
         )
 
-        controller?.updater.automaticallyChecksForUpdates = true
-
         let automaticUpdates = UserDefaults.standard
             .object(forKey: SettingsKeys.automaticUpdate) as? Bool ?? false
         controller?.updater.automaticallyDownloadsUpdates = automaticUpdates
