@@ -40,8 +40,8 @@ enum ConditionPropertyIconUtils {
 
     static func iconName(forCategory category: String) -> String {
         switch category {
-        case "common": "square.stack.3d.down.right"
-        case "filesystem": "gearshape"
+        case "common": "list.bullet.rectangle"
+        case "filesystem": "folder"
         case "image": "photo"
         case "video": "video"
         case "audio": "speaker.wave.2"

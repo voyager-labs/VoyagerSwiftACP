@@ -6,7 +6,7 @@ struct CompleteStepView: View {
     var isCentered: Bool = false
 
     var body: some View {
-        WithViewStore(store, observe: { $0 }) { viewStore in
+        WithViewStore(store, observe: { $0 }, content: { viewStore in
             VStack(alignment: isCentered ? .center : .leading, spacing: 12) {
                 if viewStore.isOpeningWindow {
                     ProgressView()
@@ -23,6 +23,6 @@ struct CompleteStepView: View {
                 }
             }
             .frame(maxWidth: .infinity, alignment: isCentered ? .center : .leading)
-        }
+        })
     }
 }

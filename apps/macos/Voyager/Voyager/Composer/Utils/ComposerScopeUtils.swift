@@ -22,7 +22,7 @@ enum ComposerScopeUtils {
 
         let mappings: [IconMapping] = [
             IconMapping(directory: .applicationDirectory, domain: .localDomainMask, iconName: "folder.badge.gearshape"),
-            IconMapping(directory: .desktopDirectory, domain: .userDomainMask, iconName: "desktopcomputer"),
+            IconMapping(directory: .desktopDirectory, domain: .userDomainMask, iconName: "menubar.dock.rectangle"),
             IconMapping(directory: .documentDirectory, domain: .userDomainMask, iconName: "doc.text"),
             IconMapping(directory: .downloadsDirectory, domain: .userDomainMask, iconName: "arrow.down.circle"),
             IconMapping(directory: .moviesDirectory, domain: .userDomainMask, iconName: "film"),

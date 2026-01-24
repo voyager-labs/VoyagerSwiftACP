@@ -145,9 +145,9 @@ class AppDelegate: NSObject, NSApplicationDelegate, ObservableObject {
         }
         // TODO: 모든 윈도우 생성 경로를 여기로 통합해 게이트 적용 지점을 단일화한다.
         let controller = FileManagerWindowController(
+            registryClient: registryClient,
             path: path,
             asTab: false,
-            registryClient: registryClient,
         )
         windowControllers.append(controller)
         controller.showWindow(nil)
@@ -164,10 +164,10 @@ class AppDelegate: NSObject, NSApplicationDelegate, ObservableObject {
         }
 
         let controller = FileManagerWindowController(
+            registryClient: registryClient,
             path: path,
             duplicateState: duplicateState,
             asTab: true,
-            registryClient: registryClient,
         )
         windowControllers.append(controller)
 

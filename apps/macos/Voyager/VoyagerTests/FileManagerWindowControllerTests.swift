@@ -6,14 +6,14 @@ import XCTest
 final class FileManagerWindowControllerTests: XCTestCase {
     func testUndoManagerIsUniquePerWindowController() throws {
         let firstController = FileManagerWindowController(
+            registryClient: .testValue,
             asTab: true,
             makeContentViewController: { _, _ in NSViewController() },
-            registryClient: .testValue,
         )
         let secondController = FileManagerWindowController(
+            registryClient: .testValue,
             asTab: true,
             makeContentViewController: { _, _ in NSViewController() },
-            registryClient: .testValue,
         )
 
         let firstWindow = try XCTUnwrap(firstController.window)

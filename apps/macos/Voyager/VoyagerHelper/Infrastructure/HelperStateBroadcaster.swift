@@ -1,7 +1,7 @@
 @preconcurrency import Foundation
 
-@MainActor
 // Helper 상태를 캐시하고 알림으로 브로드캐스트하는 관리자
+@MainActor
 final class HelperStateBroadcaster {
     // Backend 상태 캐시용 구조체
     private struct BackendState: Sendable {

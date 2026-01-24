@@ -12,7 +12,7 @@ struct OnboardingView: View {
     )
 
     var body: some View {
-        WithViewStore(store, observe: { $0 }) { viewStore in
+        WithViewStore(store, observe: { $0 }, content: { viewStore in
             GeometryReader { proxy in
                 let isWideLayout = proxy.size.width >= 900
                 let horizontalPadding: CGFloat = 24
@@ -93,7 +93,7 @@ struct OnboardingView: View {
             .onAppear {
                 viewStore.send(.onAppear)
             }
-        }
+        })
     }
 
     private var backgroundView: some View {

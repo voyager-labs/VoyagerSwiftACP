@@ -14,6 +14,7 @@ VENV_DIR="${VENV_DIR:-${BACKEND_DIR}/build/helper-runtime}"
 NUITKA_OUTPUT_DIR="${NUITKA_OUTPUT_DIR:-${BACKEND_DIR}/build/nuitka}"
 REGISTRY_JSON="${REPO_ROOT}/shared/system_property_registry.json"
 CONDITION_REGISTRY_JSON="${REPO_ROOT}/shared/property_condition_registry.json"
+PROMPTS_DIR="${PROMPTS_DIR:-${BACKEND_DIR}/src/core/llm/prompts}"
 
 log() {
   local level="${1:-INFO}"
@@ -109,6 +110,10 @@ if [[ ! -f "${REGISTRY_JSON}" ]]; then
 fi
 if [[ ! -f "${CONDITION_REGISTRY_JSON}" ]]; then
   log_error "레지스트리 JSON을 찾을 수 없습니다: ${CONDITION_REGISTRY_JSON}"
+  exit 1
+fi
+if [[ ! -d "${PROMPTS_DIR}" ]]; then
+  log_error "프롬프트 디렉토리를 찾을 수 없습니다: ${PROMPTS_DIR}"
   exit 1
 fi
 

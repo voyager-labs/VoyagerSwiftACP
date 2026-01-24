@@ -6,9 +6,9 @@ struct WelcomeStepView: View {
     var isCentered: Bool = false
 
     var body: some View {
-        WithViewStore(store, observe: { $0 }) { _ in
+        WithViewStore(store, observe: { $0 }, content: { _ in
             EmptyView()
                 .frame(maxWidth: .infinity, alignment: isCentered ? .center : .leading)
-        }
+        })
     }
 }
