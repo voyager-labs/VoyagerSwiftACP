@@ -57,7 +57,7 @@ if [[ -f "${PYTHON_VERSION_FILE}" ]]; then
 fi
 
 if [[ -n "${required_python_version}" ]]; then
-  python_version="$("${UV_BIN}" run python -c 'import sys; print(".".join(map(str, sys.version_info[:3])))')"
+  python_version="$("${UV_BIN}" run --directory "${BACKEND_DIR}" python -c 'import sys; print(".".join(map(str, sys.version_info[:3])))')"
   if [[ "${python_version}" != "${required_python_version}" ]]; then
     log_error "python 버전 불일치: 현재 ${python_version}, 요구 ${required_python_version}"
     log_error "  ${PYTHON_VERSION_FILE}을 갱신하거나 UV_PYTHON 환경변수를 지정하세요"
@@ -87,10 +87,10 @@ log_info "빌드된 휠: ${wheel_path}"
 log_info "기존 venv 정리 후 재생성 (${VENV_DIR})"
 rm -rf "${VENV_DIR}"
 # 번들 내 파이썬 이식성을 위해 복사 모드 사용
-"${UV_BIN}" run python -m venv --copies --without-pip "${VENV_DIR}"
+"${UV_BIN}" run --directory "${BACKEND_DIR}" python -m venv --copies --without-pip "${VENV_DIR}"
 
 log_info "uv Python 런타임(lib) 복사"
-python_base_prefix="$("${UV_BIN}" run python -c 'import sys; print(sys.base_prefix)')"
+python_base_prefix="$("${UV_BIN}" run --directory "${BACKEND_DIR}" python -c 'import sys; print(sys.base_prefix)')"
 if [[ -z "${python_base_prefix}" ]]; then
   log_error "uv Python base prefix를 확인할 수 없습니다"
   exit 1

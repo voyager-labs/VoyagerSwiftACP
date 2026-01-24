@@ -1,6 +1,5 @@
 import Foundation
 import GRDB
-import SwiftDotenv
 
 nonisolated enum DatabaseMigrations {
     static func registerAll(into migrator: inout DatabaseMigrator) throws {
@@ -70,46 +69,26 @@ nonisolated enum DatabaseMigrations {
     }
 
     private static func migrationDirectoryURL() throws -> URL {
-        guard let location = envValue(for: "PUBLIC_SQLITE_MIGRATIONS_FILE_LOCATION") else {
+        guard let resources = Bundle.main.resourceURL else {
+            throw DatabaseError.migrationFailed("Bundle resourceURL not available.")
+        }
+
+        let bundledURL = resources.appendingPathComponent("Migrations", isDirectory: true)
+        guard isDirectory(bundledURL) else {
             throw DatabaseError.migrationFailed(
-                "Migration directory not configured. Set PUBLIC_SQLITE_MIGRATIONS_FILE_LOCATION.",
+                "Bundled migrations directory not found at \(bundledURL.path).",
             )
         }
 
-        let expandedLocation = (location as NSString).expandingTildeInPath
-        let directoryURL: URL
-        if expandedLocation.hasPrefix("/") {
-            directoryURL = URL(fileURLWithPath: expandedLocation, isDirectory: true)
-        } else if let projectRoot = ProcessInfo.processInfo.environment["VOYAGER_PROJECT_ROOT"],
-                  !projectRoot.isEmpty
-        {
-            directoryURL = URL(fileURLWithPath: projectRoot, isDirectory: true)
-                .appendingPathComponent(expandedLocation, isDirectory: true)
-        } else {
-            throw DatabaseError.migrationFailed(
-                "VOYAGER_PROJECT_ROOT required for relative migration path: \(expandedLocation)",
-            )
-        }
-
-        var isDirectory = ObjCBool(false)
-        guard FileManager.default.fileExists(atPath: directoryURL.path, isDirectory: &isDirectory),
-              isDirectory.boolValue
-        else {
-            throw DatabaseError.migrationFailed(
-                "Migration directory not found at \(directoryURL.path)",
-            )
-        }
-        return directoryURL
+        return bundledURL
     }
 
-    private static func envValue(for key: String) -> String? {
-        if let value = Dotenv[key]?.stringValue, !value.isEmpty {
-            return value
+    private static func isDirectory(_ url: URL) -> Bool {
+        var isDirectory = ObjCBool(false)
+        guard FileManager.default.fileExists(atPath: url.path, isDirectory: &isDirectory) else {
+            return false
         }
-        if let value = ProcessInfo.processInfo.environment[key], !value.isEmpty {
-            return value
-        }
-        return nil
+        return isDirectory.boolValue
     }
 
     private static func validateExistingEntriesTable(_ db: Database) throws {
