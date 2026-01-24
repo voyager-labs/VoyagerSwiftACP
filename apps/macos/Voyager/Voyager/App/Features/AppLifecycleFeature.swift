@@ -1,5 +1,7 @@
 import ComposableArchitecture
 import Foundation
+import Sentry
+import SwiftDotenv
 
 @Reducer
 struct AppLifecycleFeature {
@@ -31,6 +33,7 @@ struct AppLifecycleFeature {
             switch action {
             case .willFinishLaunching:
                 try? EnvironmentLoader.loadEnvFiles()
+                startSentryIfNeeded()
 
                 if state.didStartHelper {
                     return .none
@@ -80,5 +83,17 @@ struct AppLifecycleFeature {
                 )
             }
         }
+    }
+}
+
+private func startSentryIfNeeded() {
+    guard let dsn = Dotenv["SENTRY_DSN"]?.stringValue, !dsn.isEmpty else {
+        return
+    }
+    let tracesSampleRate = Double(Dotenv["SENTRY_TRACES_SAMPLE_RATE"]?.stringValue ?? "") ?? 0.05
+    SentrySDK.start { options in
+        options.dsn = dsn
+        options.sendDefaultPii = false
+        options.tracesSampleRate = NSNumber(value: tracesSampleRate)
     }
 }
