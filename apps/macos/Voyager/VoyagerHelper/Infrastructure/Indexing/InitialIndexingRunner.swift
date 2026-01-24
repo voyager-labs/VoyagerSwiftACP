@@ -73,51 +73,14 @@ enum InitialIndexingRunner {
         logger.info("Home indexing started: Spotlight results \(resultCount)")
 
         let plan = try await prepareBatchPlan(manager: manager, logger: logger, batchSize: batchSize)
-        let repo = plan.repo
-        let effectiveBatchSize = plan.effectiveBatchSize
-
-        var inserted = 0
-        var batch: [EntryRecord] = []
-        batch.reserveCapacity(effectiveBatchSize)
-
-        let pathBatchSize = plan.pathBatchSize
-        var index = 0
-        while index < resultCount {
-            let end = min(index + pathBatchSize, resultCount)
-            let items = loadItems(query: query, range: index ..< end)
-            let existingPaths = try await fetchExistingPaths(manager: manager, paths: items.map(\.path))
-
-            for item in items where !existingPaths.contains(item.path) {
-                let record = await InitialIndexingRecordBuilder.makeRecord(
-                    mdItem: item.mdItem,
-                    path: item.path,
-                    homeURL: homeURL,
-                    cachedVolumeIdentifier: cachedVolumeIdentifier,
-                )
-                guard let record else { continue }
-                batch.append(record)
-                if batch.count >= effectiveBatchSize {
-                    try await repo.insertBatch(batch, batchSize: effectiveBatchSize)
-                    inserted += batch.count
-                    batch.removeAll(keepingCapacity: true)
-                }
-            }
-
-            if let heartbeat {
-                await heartbeat()
-            }
-            index = end
-        }
-
-        if !batch.isEmpty {
-            try await repo.insertBatch(batch, batchSize: effectiveBatchSize)
-            inserted += batch.count
-            batch.removeAll(keepingCapacity: false)
-        }
-
-        if let heartbeat {
-            await heartbeat()
-        }
+        let context = ProcessContext(
+            manager: manager,
+            homeURL: homeURL,
+            cachedVolumeIdentifier: cachedVolumeIdentifier,
+            plan: plan,
+            heartbeat: heartbeat,
+        )
+        let inserted = try await processQueryResults(query: query, resultCount: resultCount, context: context)
         logger.info("Home indexing completed: inserted \(inserted) entries")
         return inserted
     }
@@ -131,6 +94,68 @@ enum InitialIndexingRunner {
         let repo: EntryRepository
         let effectiveBatchSize: Int
         let pathBatchSize: Int
+    }
+
+    private struct ProcessContext {
+        let manager: DatabaseManager
+        let homeURL: URL
+        let cachedVolumeIdentifier: String?
+        let plan: BatchPlan
+        let heartbeat: (@Sendable () async -> Void)?
+    }
+
+    private struct AppendContext {
+        let homeURL: URL
+        let cachedVolumeIdentifier: String?
+        let repo: EntryRepository
+        let batchSize: Int
+    }
+
+    private static func processQueryResults(
+        query: MDQuery,
+        resultCount: Int,
+        context: ProcessContext,
+    ) async throws -> Int {
+        let repo = context.plan.repo
+        let effectiveBatchSize = context.plan.effectiveBatchSize
+        var inserted = 0
+        var batch: [EntryRecord] = []
+        batch.reserveCapacity(effectiveBatchSize)
+
+        let pathBatchSize = context.plan.pathBatchSize
+        let appendContext = AppendContext(
+            homeURL: context.homeURL,
+            cachedVolumeIdentifier: context.cachedVolumeIdentifier,
+            repo: repo,
+            batchSize: effectiveBatchSize,
+        )
+        var index = 0
+        while index < resultCount {
+            let end = min(index + pathBatchSize, resultCount)
+            let items = loadItems(query: query, range: index ..< end)
+            let existingPaths = try await fetchExistingPaths(manager: context.manager, paths: items.map(\.path))
+
+            try await appendRecords(
+                items: items,
+                existingPaths: existingPaths,
+                context: appendContext,
+                batch: &batch,
+                inserted: &inserted,
+            )
+
+            await emitHeartbeat(context.heartbeat)
+            index = end
+        }
+
+        try await flushBatch(
+            &batch,
+            repo: repo,
+            inserted: &inserted,
+            batchSize: effectiveBatchSize,
+            keepCapacity: false,
+        )
+        await emitHeartbeat(context.heartbeat)
+        return inserted
     }
 
     private static func prepareBatchPlan(
@@ -170,6 +195,34 @@ enum InitialIndexingRunner {
         return items
     }
 
+    private static func appendRecords(
+        items: [IndexedItem],
+        existingPaths: Set<String>,
+        context: AppendContext,
+        batch: inout [EntryRecord],
+        inserted: inout Int,
+    ) async throws {
+        for item in items where !existingPaths.contains(item.path) {
+            let record = await InitialIndexingRecordBuilder.makeRecord(
+                mdItem: item.mdItem,
+                path: item.path,
+                homeURL: context.homeURL,
+                cachedVolumeIdentifier: context.cachedVolumeIdentifier,
+            )
+            guard let record else { continue }
+            batch.append(record)
+            if batch.count >= context.batchSize {
+                try await flushBatch(
+                    &batch,
+                    repo: context.repo,
+                    inserted: &inserted,
+                    batchSize: context.batchSize,
+                    keepCapacity: true,
+                )
+            }
+        }
+    }
+
     private static func fetchExistingPaths(
         manager: DatabaseManager,
         paths: [String],
@@ -196,5 +249,23 @@ enum InitialIndexingRunner {
             """
             try db.execute(sql: sql, arguments: ["last_sync_at", value])
         }
+    }
+
+    private static func emitHeartbeat(_ heartbeat: (@Sendable () async -> Void)?) async {
+        guard let heartbeat else { return }
+        await heartbeat()
+    }
+
+    private static func flushBatch(
+        _ batch: inout [EntryRecord],
+        repo: EntryRepository,
+        inserted: inout Int,
+        batchSize: Int,
+        keepCapacity: Bool,
+    ) async throws {
+        guard !batch.isEmpty else { return }
+        try await repo.insertBatch(batch, batchSize: batchSize)
+        inserted += batch.count
+        batch.removeAll(keepingCapacity: keepCapacity)
     }
 }
