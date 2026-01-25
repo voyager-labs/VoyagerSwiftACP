@@ -28,6 +28,7 @@ public struct EntryClient: Sendable {
     public var setDefaultApp: @Sendable (UTType, String) async throws -> Void
     public var quickLook: @Sendable (URL) async throws -> Void
     public var quickLookFiles: @Sendable ([URL]) async throws -> Void
+    public var openFinderInfo: @Sendable ([URL]) async throws -> Void
     public var applicationsForFile: @Sendable (URL) async -> [ApplicationInfo]
     public var defaultApplication: @Sendable (UTType) async -> ApplicationInfo?
     public var createFolder: @Sendable (URL, String) async throws -> Void
@@ -79,6 +80,7 @@ public struct EntryClient: Sendable {
         setDefaultApp: @escaping @Sendable (UTType, String) async throws -> Void,
         quickLook: @escaping @Sendable (URL) async throws -> Void,
         quickLookFiles: @escaping @Sendable ([URL]) async throws -> Void,
+        openFinderInfo: @escaping @Sendable ([URL]) async throws -> Void,
         applicationsForFile: @escaping @Sendable (URL) async -> [ApplicationInfo],
         defaultApplication: @escaping @Sendable (UTType) async -> ApplicationInfo?,
         createFolder: @escaping @Sendable (URL, String) async throws -> Void,
@@ -133,6 +135,7 @@ public struct EntryClient: Sendable {
         self.setDefaultApp = setDefaultApp
         self.quickLook = quickLook
         self.quickLookFiles = quickLookFiles
+        self.openFinderInfo = openFinderInfo
         self.applicationsForFile = applicationsForFile
         self.defaultApplication = defaultApplication
         self.createFolder = createFolder
@@ -318,6 +321,27 @@ extension EntryClient: DependencyKey {
                 try await withScopedAccess(urls) {
                     let tokens = await MainActor.run { urls.map(SecurityScopedURLToken.init) }
                     await EntryQuickLookCoordinator.shared.present(urls: urls, scopeTokens: tokens, initialIndex: 0)
+                }
+            },
+            openFinderInfo: { urls in
+                guard !urls.isEmpty else { return }
+                try await withScopedAccess(urls) {
+                    let error = await MainActor.run { () -> FileOpError? in
+                        let script = finderInfoAppleScript(for: urls)
+                        var errorInfo: NSDictionary?
+                        guard let appleScript = NSAppleScript(source: script) else {
+                            return .system(message: "Failed to create AppleScript.")
+                        }
+                        appleScript.executeAndReturnError(&errorInfo)
+                        if let errorInfo {
+                            return fileOpErrorForAppleScript(errorInfo)
+                        }
+                        return nil
+                    }
+
+                    if let error {
+                        throw error
+                    }
                 }
             },
             applicationsForFile: { url in
@@ -894,6 +918,7 @@ extension EntryClient: DependencyKey {
             setDefaultApp: { _, _ in unimplemented() },
             quickLook: { _ in unimplemented() },
             quickLookFiles: { _ in unimplemented() },
+            openFinderInfo: { _ in unimplemented() },
             applicationsForFile: { _ in unimplemented() },
             defaultApplication: { _ in unimplemented() },
             createFolder: { _, _ in unimplemented() },
@@ -951,6 +976,7 @@ extension EntryClient: DependencyKey {
             setDefaultApp: { _, _ in },
             quickLook: { _ in },
             quickLookFiles: { _ in },
+            openFinderInfo: { _ in },
             applicationsForFile: { _ async in
                 [previewInfo, chromeInfo, otherInfo]
             },
@@ -1006,6 +1032,47 @@ public extension DependencyValues {
         get { self[EntryClient.self] }
         set { self[EntryClient.self] = newValue }
     }
+}
+
+@MainActor
+private func finderInfoAppleScript(for urls: [URL]) -> String {
+    let items = urls
+        .map { url in
+            let escapedPath = appleScriptEscapedPath(url.path)
+            return "(POSIX file \"\(escapedPath)\") as alias"
+        }
+        .joined(separator: ", ")
+
+    return """
+    set finderItems to {\(items)}
+    tell application \"Finder\"
+        activate
+        repeat with finderItem in finderItems
+            open information window of finderItem
+        end repeat
+    end tell
+    """
+}
+
+private func appleScriptEscapedPath(_ path: String) -> String {
+    path
+        .replacingOccurrences(of: "\\", with: "\\\\")
+        .replacingOccurrences(of: "\"", with: "\\\"")
+}
+
+@MainActor
+private func fileOpErrorForAppleScript(_ errorInfo: NSDictionary) -> FileOpError {
+    let errorNumber = (errorInfo[NSAppleScript.errorNumber] as? NSNumber)?.intValue
+    let errorMessage = errorInfo[NSAppleScript.errorMessage] as? String
+
+    if errorNumber == -1743 {
+        return .system(
+            message: "Permission to control Finder was denied.",
+            suggestion: "Enable Voyager in System Settings > Privacy & Security > Automation.",
+        )
+    }
+
+    return .system(message: errorMessage ?? "Failed to open Finder Get Info.")
 }
 
 func withScopedAccess<T>(_ url: URL, perform: @escaping () async throws -> T) async throws -> T {

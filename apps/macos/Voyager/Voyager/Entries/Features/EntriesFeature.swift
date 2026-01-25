@@ -220,6 +220,7 @@ struct EntriesFeature {
 
         case openSelectedItem
         case quickLookSelectedItem
+        case getInfoForSelectedItems
         case openWithSelectedItem(bundleID: String?, shouldSetAsDefault: Bool)
         case openCollectionFile(URL)
         case navigateFolder(id: String)
@@ -1016,6 +1017,11 @@ struct EntriesFeature {
                 }
 
                 return .send(.operations(.quickLookFiles(files: selectedItems)))
+
+            case .getInfoForSelectedItems:
+                let selectedItems = getSelectedItems(selectedIds: state.selectedIds, items: state.displayItems)
+                guard !selectedItems.isEmpty else { return .none }
+                return .send(.operations(.openFinderInfo(items: selectedItems)))
 
             case let .openWithSelectedItem(bundleID, shouldSetAsDefault):
                 let selectedFiles = getSelectedFiles(selectedIds: state.selectedIds, items: state.displayItems)

@@ -188,6 +188,7 @@ struct ContentPaneListView: View {
             onOpen: props.handlers.onOpen,
             onOpenInNewTab: props.handlers.onOpenInNewTab,
             onQuickLook: props.handlers.onQuickLook,
+            onGetInfo: props.handlers.onGetInfo,
             onOpenWithApp: props.handlers.onOpenWithApp,
             onRenameUpdate: props.handlers.onRenameUpdate,
             onRenameCommit: props.handlers.onRenameCommit,

@@ -30,6 +30,7 @@ struct EntryGridView: View, Equatable {
     let onOpen: () -> Void
     let onOpenInNewTab: ((Bool) -> Void)?
     let onQuickLook: (() -> Void)?
+    let onGetInfo: (() -> Void)?
     let onOpenWithApp: ((String?, Bool) -> Void)?
     let onRenameUpdate: (String) -> Void
     let onRenameCommit: () -> Void
@@ -478,6 +479,15 @@ private extension EntryGridView {
                     Label("Quick Look", systemImage: "eye")
                 }
                 .keyboardShortcut(.space, modifiers: [])
+            }
+
+            if let onGetInfo {
+                Button {
+                    onGetInfo()
+                } label: {
+                    Label("Get Info", systemImage: "info.circle")
+                }
+                .keyboardShortcut("i", modifiers: [.command])
             }
 
             Divider()

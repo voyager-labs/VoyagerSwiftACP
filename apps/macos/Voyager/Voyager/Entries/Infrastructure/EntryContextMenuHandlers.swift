@@ -8,6 +8,7 @@ struct EntryContextMenuHandlers {
     let onOpen: () -> Void
     let onOpenInNewTab: (Bool) -> Void
     let onQuickLook: () -> Void
+    let onGetInfo: () -> Void
     let onOpenWithApp: (String?, Bool) -> Void
     let onRenameUpdate: (String) -> Void
     let onRenameCommit: () -> Void
@@ -78,6 +79,12 @@ func makeContextMenuHandlers(
     let onQuickLook: () -> Void = {
         EntryContextMenuUtils.sendWithSelection(item, fsStore: fsStore, action: {
             fsStore.send(.quickLookSelectedItem)
+        })
+    }
+
+    let onGetInfo: () -> Void = {
+        EntryContextMenuUtils.sendWithSelection(item, fsStore: fsStore, action: {
+            fsStore.send(.getInfoForSelectedItems)
         })
     }
 
@@ -205,6 +212,7 @@ func makeContextMenuHandlers(
         onOpen: onOpen,
         onOpenInNewTab: onOpenInNewTab,
         onQuickLook: onQuickLook,
+        onGetInfo: onGetInfo,
         onOpenWithApp: onOpenWithApp,
         onRenameUpdate: onRenameUpdate,
         onRenameCommit: onRenameCommit,

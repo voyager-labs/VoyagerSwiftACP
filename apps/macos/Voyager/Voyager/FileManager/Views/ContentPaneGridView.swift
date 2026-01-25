@@ -179,6 +179,7 @@ struct ContentPaneGridView: View {
             onOpen: handlers.onOpen,
             onOpenInNewTab: handlers.onOpenInNewTab,
             onQuickLook: handlers.onQuickLook,
+            onGetInfo: handlers.onGetInfo,
             onOpenWithApp: handlers.onOpenWithApp,
             onRenameUpdate: handlers.onRenameUpdate,
             onRenameCommit: handlers.onRenameCommit,

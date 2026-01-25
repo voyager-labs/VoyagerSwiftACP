@@ -34,6 +34,7 @@ struct EntriesOperationsFeature {
         case openFiles(files: [Entry])
         case quickLookFile(file: Entry)
         case quickLookFiles(files: [Entry])
+        case openFinderInfo(items: [Entry])
         case openFileWithApp(file: Entry)
         case openFileWithAppBundleID(filePath: String, bundleID: String, url: URL)
         case setDefaultAppForFile(type: UTType?, bundleID: String, file: Entry)
@@ -103,6 +104,17 @@ struct EntriesOperationsFeature {
                     }
                 case let .failure(error):
                     state.itemStates[filePath]?.lastError = error
+
+                    if case .getInfo = kind {
+                        return .run { _ in
+                            await MainActor.run {
+                                EntryAlertUtils.showGetInfoFailureAlert(
+                                    message: error.message,
+                                    suggestion: error.suggestion,
+                                )
+                            }
+                        }
+                    }
                 }
                 return .none
 
@@ -204,6 +216,13 @@ struct EntriesOperationsFeature {
                 let keyPath = files.first?.fullPath ?? "quicklook"
                 return run(for: keyPath, kind: .quickLook) {
                     try await entryClient.quickLookFiles(urls)
+                }
+
+            case let .openFinderInfo(items):
+                let urls = items.map { URL(fileURLWithPath: $0.fullPath) }
+                let keyPath = items.first?.fullPath ?? "getinfo"
+                return run(for: keyPath, kind: .getInfo) {
+                    try await entryClient.openFinderInfo(urls)
                 }
 
             case let .openFileWithApp(file):
@@ -1192,6 +1211,7 @@ enum OperationKind: Equatable, Hashable, Sendable {
     case openWithApp(String)
     case setDefaultApp(String)
     case quickLook
+    case getInfo
     case createFolder
     case createAlias
     case pasteFile
