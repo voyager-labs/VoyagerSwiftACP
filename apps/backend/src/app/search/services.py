@@ -23,7 +23,7 @@ from core.llm.search_condition_converter import CachedSearchConditionConverter
 from core.search.condition_builder import ConditionBuilder, ConditionBuilderError
 from core.search.scope_builder import ScopeBuilder
 from infra.db.engine import engine_manager
-from infra.schemas.file_entry_schema import FileEntrySchema
+from infra.schemas.entry_schema import EntrySchema
 from utils.telemetry import log_metric
 
 
@@ -197,7 +197,7 @@ class SearchService:
 
             sql_start = time.perf_counter()
             with sentry_sdk.start_span(op="db.sql", description="execute_search"):
-                entries: list[FileEntrySchema] = await asyncio.to_thread(_run_query)
+                entries: list[EntrySchema] = await asyncio.to_thread(_run_query)
             log_metric(
                 "voyager_search_sql_duration_ms",
                 round((time.perf_counter() - sql_start) * 1000, 2),
