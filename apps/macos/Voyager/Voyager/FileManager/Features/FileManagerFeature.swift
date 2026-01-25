@@ -351,6 +351,13 @@ struct FileManagerFeature {
         Reduce { state, action in
             switch action {
             case .onAppear:
+                if shouldLogDailyFileManagerOpen(userDefaultsClient) {
+                    TelemetryLogger.logMetric(
+                        "voyager_file_manager_first_open_total",
+                        value: 1,
+                        tags: ["date": currentDateKey()],
+                    )
+                }
                 state.showHiddenFiles = userDefaultsClient.bool(SettingsKeys.showHiddenFiles)
                 state.sidebarVisible = userDefaultsClient.object("sidebarVisible") as? Bool ?? true
                 state.sortKey = SortKey(rawValue: userDefaultsClient.string("sortKey") ?? "") ?? .name
@@ -1674,6 +1681,26 @@ private func sortOrder(from file: VoyagerCollectionFile) -> SortOrder? {
 private func viewLayout(from file: VoyagerCollectionFile) -> FileManagerFeature.ViewLayout? {
     guard let rawValue = file.viewLayout else { return nil }
     return FileManagerFeature.ViewLayout(rawValue: rawValue)
+}
+
+private func shouldLogDailyFileManagerOpen(_ userDefaultsClient: UserDefaultsClient) -> Bool {
+    let key = "voyager.file_manager.first_open_date"
+    let today = currentDateKey()
+    let lastValue = userDefaultsClient.string(key)
+    if lastValue == today {
+        return false
+    }
+    userDefaultsClient.setString(today, key)
+    return true
+}
+
+private func currentDateKey() -> String {
+    let formatter = DateFormatter()
+    formatter.calendar = Calendar(identifier: .gregorian)
+    formatter.locale = Locale(identifier: "en_US_POSIX")
+    formatter.timeZone = TimeZone.current
+    formatter.dateFormat = "yyyy-MM-dd"
+    return formatter.string(from: Date())
 }
 
 @MainActor
