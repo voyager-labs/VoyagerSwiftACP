@@ -45,6 +45,7 @@ struct EntryListView: View, Equatable {
     let onRename: () -> Void
     let onCompress: () -> Void
     let onDuplicate: () -> Void
+    let onCreateAlias: () -> Void
     let onExtract: () -> Void
     let onCopy: () -> Void
     let onCut: () -> Void
@@ -399,6 +400,13 @@ private extension EntryListView {
             }
             .keyboardShortcut(.space, modifiers: [])
 
+            Button {
+                onGetInfo()
+            } label: {
+                Label("Get Info", systemImage: "info.circle")
+            }
+            .keyboardShortcut("i", modifiers: [.command])
+
             Divider()
 
             Button {
@@ -445,6 +453,12 @@ private extension EntryListView {
                 Label("Duplicate", systemImage: "plus.square.on.square")
             }
             .keyboardShortcut("d", modifiers: [.command])
+
+            Button {
+                onCreateAlias()
+            } label: {
+                Label("Make Alias", systemImage: "arrowshape.turn.up.right")
+            }
 
             if showExtract {
                 Button {

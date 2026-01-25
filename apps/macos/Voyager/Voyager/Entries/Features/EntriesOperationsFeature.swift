@@ -41,6 +41,7 @@ struct EntriesOperationsFeature {
         case openFilesWithAppFromOther(files: [Entry], shouldSetAsDefault: Bool)
         case loadApplicationsForFile(file: Entry)
         case createNewFolder(name: String, parentPath: String)
+        case createAliases(items: [Entry])
         case copySelectedItems(files: [Entry])
         case pasteItems(
             sourcePaths: [String],
@@ -301,6 +302,41 @@ struct EntriesOperationsFeature {
                     } catch {
                         await send(.operationFinished(targetPath, .createFolder, .failure(error.fileOpError)))
                     }
+                }
+
+            case let .createAliases(items):
+                return .run { [entryClient] send in
+                    var targets: [EntryActionRecord.Target] = []
+
+                    for item in items {
+                        let sourceURL = URL(fileURLWithPath: item.fullPath)
+                        let parentURL = sourceURL.deletingLastPathComponent()
+                        let baseName = sourceURL.lastPathComponent
+
+                        var aliasName = "\(baseName) alias"
+                        var aliasURL = parentURL.appendingPathComponent(aliasName)
+                        var counter = 2
+
+                        while entryClient.fileExists(aliasURL.path) {
+                            aliasName = "\(baseName) alias \(counter)"
+                            aliasURL = parentURL.appendingPathComponent(aliasName)
+                            counter += 1
+                        }
+
+                        await send(.operationStarted(item.fullPath, .createAlias))
+                        do {
+                            try await entryClient.createAlias(sourceURL, aliasURL)
+                            await send(.operationFinished(item.fullPath, .createAlias, .success(())))
+                            targets.append(.init(beforePath: item.fullPath, afterPath: aliasURL.path))
+                            entryClient.postFileSystemChanged([aliasURL.path])
+                        } catch {
+                            await send(.operationFinished(item.fullPath, .createAlias, .failure(error.fileOpError)))
+                        }
+                    }
+
+                    guard !targets.isEmpty else { return }
+                    let record = EntryActionRecord(actionKind: .createAlias, targets: targets)
+                    await send(.entryActionCompleted(record))
                 }
 
             case let .copySelectedItems(files):
@@ -1157,6 +1193,7 @@ enum OperationKind: Equatable, Hashable, Sendable {
     case setDefaultApp(String)
     case quickLook
     case createFolder
+    case createAlias
     case pasteFile
     case rename
     case moveToTrash

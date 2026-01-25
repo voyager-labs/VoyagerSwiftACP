@@ -203,6 +203,7 @@ struct ContentPaneListView: View {
             onRename: props.handlers.onRename,
             onCompress: props.handlers.onCompress,
             onDuplicate: props.handlers.onDuplicate,
+            onCreateAlias: props.handlers.onCreateAlias,
             onExtract: props.handlers.onExtract,
             onCopy: props.handlers.onCopy,
             onCut: props.handlers.onCut,

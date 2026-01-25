@@ -194,6 +194,7 @@ struct ContentPaneGridView: View {
             onRename: handlers.onRename,
             onCompress: handlers.onCompress,
             onDuplicate: handlers.onDuplicate,
+            onCreateAlias: handlers.onCreateAlias,
             onExtract: handlers.onExtract,
             onCopy: handlers.onCopy,
             onCut: handlers.onCut,

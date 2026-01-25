@@ -23,6 +23,7 @@ struct EntryContextMenuHandlers {
     let onRename: () -> Void
     let onCompress: () -> Void
     let onDuplicate: () -> Void
+    let onCreateAlias: () -> Void
     let onExtract: () -> Void
     let onCopy: () -> Void
     let onCut: () -> Void
@@ -155,6 +156,12 @@ func makeContextMenuHandlers(
         })
     }
 
+    let onCreateAlias: () -> Void = {
+        EntryContextMenuUtils.sendWithSelection(item, fsStore: fsStore, action: {
+            fsStore.send(.createAliasForSelectedItems)
+        })
+    }
+
     let onExtract: () -> Void = {
         EntryContextMenuUtils.sendWithSelection(item, fsStore: fsStore, action: {
             fsStore.send(.extractSelectedItem)
@@ -199,6 +206,7 @@ func makeContextMenuHandlers(
         onRename: onRename,
         onCompress: onCompress,
         onDuplicate: onDuplicate,
+        onCreateAlias: onCreateAlias,
         onExtract: onExtract,
         onCopy: onCopy,
         onCut: onCut,

@@ -227,6 +227,7 @@ struct EntriesFeature {
         case cutSelectedItems
         case pasteItems(destinationPath: String)
         case duplicateSelectedItems
+        case createAliasForSelectedItems
         case startDrag(paths: [String])
         case dropToFolder(destinationPath: String)
         case handleDrop(providers: [NSItemProvider], destinationPath: String)
@@ -1158,6 +1159,13 @@ struct EntriesFeature {
                     actionKind: .duplicate,
                 )))
 
+            case .createAliasForSelectedItems:
+                let selectedItems = getSelectedItems(selectedIds: state.selectedIds, items: state.displayItems)
+                guard !selectedItems.isEmpty else {
+                    return .none
+                }
+                return .send(.operations(.createAliases(items: selectedItems)))
+
             case let .startDrag(paths):
                 state.draggingPaths = paths
                 entryClient.saveDragPaths(paths)
@@ -1718,6 +1726,9 @@ struct EntriesFeature {
         case .createFolder:
             try makeCreateFolderOperation(target: target, direction: direction)
 
+        case .createAlias:
+            try makeCreateAliasOperation(target: target, direction: direction)
+
         case .moveToTrash:
             try makeMoveToTrashOperation(target: target, direction: direction)
 
@@ -1726,6 +1737,38 @@ struct EntriesFeature {
 
         case .setTags:
             try makeSetTagsOperation(target: target, direction: direction)
+        }
+    }
+
+    private func makeCreateAliasOperation(
+        target: EntryActionRecord.Target,
+        direction: EntryActionDirection,
+    ) throws -> EntryActionOperation {
+        switch direction {
+        case .undo:
+            let targetPath = try Self.requiredPath(target.afterPath, context: "undo create alias")
+            return EntryActionOperation(
+                operationPath: targetPath,
+                operationKind: .deleteImmediately,
+                perform: {
+                    try await entryClient.deleteImmediately(URL(fileURLWithPath: targetPath))
+                    return target
+                },
+            )
+        case .redo:
+            let sourcePath = try Self.requiredPath(target.beforePath, context: "redo create alias source")
+            let aliasPath = try Self.requiredPath(target.afterPath, context: "redo create alias destination")
+            return EntryActionOperation(
+                operationPath: sourcePath,
+                operationKind: .createAlias,
+                perform: {
+                    try await entryClient.createAlias(
+                        URL(fileURLWithPath: sourcePath),
+                        URL(fileURLWithPath: aliasPath),
+                    )
+                    return target
+                },
+            )
         }
     }
 

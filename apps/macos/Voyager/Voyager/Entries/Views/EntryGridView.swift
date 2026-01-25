@@ -45,6 +45,7 @@ struct EntryGridView: View, Equatable {
     let onRename: (() -> Void)?
     let onCompress: (() -> Void)?
     let onDuplicate: (() -> Void)?
+    let onCreateAlias: (() -> Void)?
     let onExtract: (() -> Void)?
     let onCopy: (() -> Void)?
     let onCut: (() -> Void)?
@@ -367,6 +368,15 @@ private extension EntryGridView {
                 .keyboardShortcut(.space, modifiers: [])
             }
 
+            if let onGetInfo {
+                Button {
+                    onGetInfo()
+                } label: {
+                    Label("Get Info", systemImage: "info.circle")
+                }
+                .keyboardShortcut("i", modifiers: [.command])
+            }
+
             Divider()
 
             if let onCopy {
@@ -422,6 +432,14 @@ private extension EntryGridView {
                     Label("Duplicate", systemImage: "plus.square.on.square")
                 }
                 .keyboardShortcut("d", modifiers: [.command])
+            }
+
+            if let onCreateAlias {
+                Button {
+                    onCreateAlias()
+                } label: {
+                    Label("Make Alias", systemImage: "arrowshape.turn.up.right")
+                }
             }
 
             if showExtract, let onExtract {

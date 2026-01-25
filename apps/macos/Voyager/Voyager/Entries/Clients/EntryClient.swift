@@ -84,6 +84,7 @@ public struct EntryClient: Sendable {
         pasteFile: @escaping @Sendable (URL, URL) async throws -> Void,
         moveFile: @escaping @Sendable (URL, URL) async throws -> Void,
         renameFile: @escaping @Sendable (URL, URL) async throws -> Void,
+        createAlias: @escaping @Sendable (URL, URL) async throws -> Void,
         moveToTrash: @escaping @Sendable (URL) async throws -> Void,
         moveToTrashAndReturnURL: @escaping @Sendable (URL) async throws -> URL,
         deleteImmediately: @escaping @Sendable (URL) async throws -> Void,
@@ -137,6 +138,7 @@ public struct EntryClient: Sendable {
         self.pasteFile = pasteFile
         self.moveFile = moveFile
         self.renameFile = renameFile
+        self.createAlias = createAlias
         self.moveToTrash = moveToTrash
         self.moveToTrashAndReturnURL = moveToTrashAndReturnURL
         self.deleteImmediately = deleteImmediately
@@ -390,6 +392,17 @@ extension EntryClient: DependencyKey {
                     throw FileOpError.fileExists(itemName: destinationURL.lastPathComponent)
                 }
                 try FileManager.default.moveItem(at: sourceURL, to: destinationURL)
+            },
+            createAlias: { sourceURL, aliasURL in
+                if FileManager.default.fileExists(atPath: aliasURL.path) {
+                    throw FileOpError.fileExists(itemName: aliasURL.lastPathComponent)
+                }
+                let bookmarkData = try sourceURL.bookmarkData(
+                    options: .suitableForBookmarkFile,
+                    includingResourceValuesForKeys: nil,
+                    relativeTo: nil,
+                )
+                try URL.writeBookmarkData(bookmarkData, to: aliasURL)
             },
             moveToTrash: { url in
                 try await MainActor.run {
@@ -886,6 +899,7 @@ extension EntryClient: DependencyKey {
             pasteFile: { _, _ in unimplemented() },
             moveFile: { _, _ in unimplemented() },
             renameFile: { _, _ in unimplemented() },
+            createAlias: { _, _ in unimplemented() },
             moveToTrash: { _ in unimplemented() },
             moveToTrashAndReturnURL: { _ in unimplemented() },
             deleteImmediately: { _ in unimplemented() },
@@ -946,6 +960,7 @@ extension EntryClient: DependencyKey {
             pasteFile: { _, _ in },
             moveFile: { _, _ in },
             renameFile: { _, _ in },
+            createAlias: { _, _ in },
             moveToTrash: { _ in },
             moveToTrashAndReturnURL: { _ in URL(fileURLWithPath: "/tmp/.Trash/test") },
             deleteImmediately: { _ in },
