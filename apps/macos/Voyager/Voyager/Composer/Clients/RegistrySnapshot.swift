@@ -1,7 +1,18 @@
 import Foundation
 
 struct RegistrySnapshot: Sendable {
-    typealias PropertyEntry = (key: String, category: String, definition: SystemPropertyDefinition)
+    struct PropertyEntry: Sendable {
+        let key: String
+        let category: String
+        let definition: SystemPropertyDefinition
+    }
+
+    private struct PropertyBuild {
+        let properties: [PropertyEntry]
+        let labels: [String: String]
+        let types: [String: String]
+        let legacyKeyMap: [String: String]
+    }
 
     let allProperties: [PropertyEntry]
     let propertyKeyToLabel: [String: String]
@@ -12,25 +23,40 @@ struct RegistrySnapshot: Sendable {
     let propertyTypes: [String: PropertyType]
 
     static func load() -> RegistrySnapshot {
-        let systemRegistry: SystemPropertyRegistry
-        let conditionRegistry: PropertyConditionRegistry
+        let systemRegistry: SystemPropertyRegistry = loadRegistry(resourceName: "system_property_registry")
+        let conditionRegistry: PropertyConditionRegistry = loadRegistry(
+            resourceName: "property_condition_registry",
+        )
 
+        let propertyBuild = buildProperties(from: systemRegistry)
+        let operatorMap = buildOperatorMap(
+            properties: propertyBuild.properties,
+            conditionRegistry: conditionRegistry,
+        )
+
+        return RegistrySnapshot(
+            allProperties: propertyBuild.properties,
+            propertyKeyToLabel: propertyBuild.labels,
+            propertyKeyToType: propertyBuild.types,
+            legacyKeyMap: propertyBuild.legacyKeyMap,
+            operatorCodesByKey: operatorMap,
+            operatorDefinitions: conditionRegistry.operators,
+            propertyTypes: conditionRegistry.propertyTypes,
+        )
+    }
+
+    private static func loadRegistry<T: Decodable>(resourceName: String) -> T {
         do {
-            systemRegistry = try RegistryLoader.load(resourceName: "system_property_registry")
+            return try RegistryLoader.load(resourceName: resourceName)
         } catch {
-            preconditionFailure("SystemPropertyRegistry 로드 실패: \(error)")
+            preconditionFailure("\(resourceName) 로드 실패: \(error)")
         }
+    }
 
-        do {
-            conditionRegistry = try RegistryLoader.load(resourceName: "property_condition_registry")
-        } catch {
-            preconditionFailure("PropertyConditionRegistry 로드 실패: \(error)")
-        }
-
+    private static func buildProperties(from systemRegistry: SystemPropertyRegistry) -> PropertyBuild {
         var properties: [PropertyEntry] = []
         var labels: [String: String] = [:]
         var types: [String: String] = [:]
-        var operatorMap: [String: [String]] = [:]
         var legacyKeyMap: [String: String] = [:]
 
         for (categoryKey, entries) in systemRegistry.categories {
@@ -39,7 +65,9 @@ struct RegistrySnapshot: Sendable {
                     preconditionFailure("ui_label 누락: \(key)")
                 }
 
-                properties.append((key: key, category: categoryKey, definition: definition))
+                properties.append(
+                    PropertyEntry(key: key, category: categoryKey, definition: definition),
+                )
                 labels[key] = label
                 types[key] = definition.type
                 if let legacyKeys = definition.legacyKeys {
@@ -56,6 +84,19 @@ struct RegistrySnapshot: Sendable {
             return lhsLabel.localizedCaseInsensitiveCompare(rhsLabel) == .orderedAscending
         }
 
+        return PropertyBuild(
+            properties: properties,
+            labels: labels,
+            types: types,
+            legacyKeyMap: legacyKeyMap,
+        )
+    }
+
+    private static func buildOperatorMap(
+        properties: [PropertyEntry],
+        conditionRegistry: PropertyConditionRegistry,
+    ) -> [String: [String]] {
+        var operatorMap: [String: [String]] = [:]
         for property in properties {
             let typeKey = conditionTypeKey(for: property.definition.type)
             guard let typeKey else {
@@ -64,33 +105,29 @@ struct RegistrySnapshot: Sendable {
             guard let operatorDefaults = conditionRegistry.propertyTypes[typeKey] else {
                 preconditionFailure("property_types 누락: \(typeKey)")
             }
-            let options: [String] = operatorDefaults.operators.compactMap { code in
+            let options = operatorDefaults.operators.filter { code in
                 guard let definition = conditionRegistry.operators[code] else {
-                    return nil
+                    return false
                 }
-                guard let label = definition.uiLabel, !label.isEmpty else {
-                    return nil
-                }
-                guard let uiValueRaw = definition.uiValueKind?[typeKey],
-                      !uiValueRaw.isEmpty
-                else {
-                    return nil
-                }
-                _ = label
-                return code
+                return isValidOperator(definition: definition, typeKey: typeKey)
             }
             operatorMap[property.key] = options
         }
+        return operatorMap
+    }
 
-        return RegistrySnapshot(
-            allProperties: properties,
-            propertyKeyToLabel: labels,
-            propertyKeyToType: types,
-            legacyKeyMap: legacyKeyMap,
-            operatorCodesByKey: operatorMap,
-            operatorDefinitions: conditionRegistry.operators,
-            propertyTypes: conditionRegistry.propertyTypes,
-        )
+    private static func isValidOperator(
+        definition: OperatorDefinition,
+        typeKey: String,
+    ) -> Bool {
+        guard let label = definition.uiLabel, !label.isEmpty else {
+            return false
+        }
+        guard let uiValueRaw = definition.uiValueKind?[typeKey], !uiValueRaw.isEmpty else {
+            return false
+        }
+        _ = label
+        return true
     }
 
     private static func conditionTypeKey(for rawType: String) -> String? {

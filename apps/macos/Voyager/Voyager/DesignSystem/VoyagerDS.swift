@@ -42,8 +42,20 @@ enum VoyagerDS {
 
     enum Radius {
         static let overlayCard: CGFloat = 12
-        static let composer: CGFloat = 18
-        static let contentPane: CGFloat = 23
+        static var composer: CGFloat {
+            if #available(macOS 26.0, *) {
+                return 18
+            }
+            return 10
+        }
+
+        static var contentPane: CGFloat {
+            if #available(macOS 26.0, *) {
+                return 23
+            }
+            return 6
+        }
+
         static let control: CGFloat = 8
         static let chipContainer: CGFloat = 6
         static let chipItem: CGFloat = 4

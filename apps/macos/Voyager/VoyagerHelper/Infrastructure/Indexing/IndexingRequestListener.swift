@@ -4,22 +4,37 @@ import Logging
 
 @MainActor
 final class IndexingRequestListener {
-    private enum InitialIndexingStatus: String {
+    enum InitialIndexingStatus: String {
         case pending
         case running
         case completed
     }
 
-    private enum StateKey {
+    enum StateKey {
         static let initialIndexingStatus = "initial_indexing_status"
         static let initialIndexingRequestedAt = "initial_indexing_requested_at"
         static let initialIndexingStartedAt = "initial_indexing_started_at"
         static let initialIndexingCompletedAt = "initial_indexing_completed_at"
+        static let initialIndexingLastHeartbeat = "initial_indexing_last_heartbeat"
+        static let initialIndexingRetryCount = "initial_indexing_retry_count"
+        static let initialIndexingLastRetryAt = "initial_indexing_last_retry_at"
+        static let initialIndexingResetReason = "initial_indexing_reset_reason"
+    }
+
+    enum StartTrigger: String {
+        case request
+        case recovery
+    }
+
+    enum RunningStatusContext {
+        case prepare
+        case request
     }
 
     private let manager: DatabaseManager
-    private let logger: Logger
+    let logger: Logger
     private nonisolated(unsafe) var observer: NSObjectProtocol?
+    var lastHeartbeatAt: Date?
 
     init(manager: DatabaseManager, logger: Logger) {
         self.manager = manager
@@ -38,6 +53,10 @@ final class IndexingRequestListener {
         do {
             guard try await isIndexingStateReady() else { return }
             if let status = try await fetchStatus() {
+                if status == .running {
+                    _ = await handleRunningStatus(context: .prepare)
+                    return
+                }
                 logger.info("Initial indexing status: \(status.rawValue)")
                 return
             }
@@ -84,7 +103,7 @@ final class IndexingRequestListener {
 
             if let status = try await fetchStatus() {
                 if status == .running {
-                    logger.info("Initial indexing already running; request ignored")
+                    _ = await handleRunningStatus(context: .request)
                     return
                 }
                 if status == .completed {
@@ -93,17 +112,7 @@ final class IndexingRequestListener {
                 }
             }
 
-            let now = iso8601Now()
-            try await setStatus(.running, requestedAt: now, startedAt: now)
-            logger.info("Initial indexing request accepted")
-
-            _ = try await InitialIndexingRunner.indexHomeDirectoryIfNeeded(
-                manager: manager,
-                logger: logger,
-            )
-
-            try await setStatus(.completed, completedAt: iso8601Now())
-            await IncrementalIndexingValidator.startIfReady(manager: manager, logger: logger)
+            try await startInitialIndexing(trigger: .request)
         } catch {
             logger.error("Initial indexing request failed: \(error)")
             do {
@@ -114,6 +123,19 @@ final class IndexingRequestListener {
         }
     }
 
+    private func handleRunningStatus(context: RunningStatusContext) async -> Bool {
+        if await recoverIfStuckIfNeeded(context: context) {
+            return true
+        }
+        switch context {
+        case .prepare:
+            logger.info("Initial indexing status: \(InitialIndexingStatus.running.rawValue)")
+        case .request:
+            logger.info("Initial indexing already running; request ignored")
+        }
+        return true
+    }
+
     private func fetchStatus() async throws -> InitialIndexingStatus? {
         guard let raw = try await fetchStateValue(StateKey.initialIndexingStatus) else {
             return nil
@@ -121,7 +143,7 @@ final class IndexingRequestListener {
         return InitialIndexingStatus(rawValue: raw)
     }
 
-    private func setStatus(
+    func setStatus(
         _ status: InitialIndexingStatus,
         requestedAt: String? = nil,
         startedAt: String? = nil,
@@ -139,7 +161,31 @@ final class IndexingRequestListener {
         }
     }
 
-    private func fetchStateValue(_ key: String) async throws -> String? {
+    // 초기 인덱싱 실행
+    func startInitialIndexing(trigger: StartTrigger) async throws {
+        let now = iso8601Now()
+        try await setStatus(.running, requestedAt: now, startedAt: now)
+        try await upsertStateValue(StateKey.initialIndexingLastHeartbeat, value: now)
+        lastHeartbeatAt = Date()
+
+        logger.info("Initial indexing start (\(trigger.rawValue))")
+
+        let heartbeat: @Sendable () async -> Void = { [weak self] in
+            await self?.recordHeartbeatIfNeeded()
+        }
+
+        _ = try await InitialIndexingRunner.indexHomeDirectoryIfNeeded(
+            manager: manager,
+            logger: logger,
+            heartbeat: heartbeat,
+        )
+
+        try await setStatus(.completed, completedAt: iso8601Now())
+        await IncrementalIndexingValidator.startIfReady(manager: manager, logger: logger)
+        logger.info("Initial indexing completed (\(trigger.rawValue))")
+    }
+
+    func fetchStateValue(_ key: String) async throws -> String? {
         try await manager.read { db in
             guard try db.tableExists("indexing_state") else { return nil }
             return try String.fetchOne(
@@ -150,7 +196,7 @@ final class IndexingRequestListener {
         }
     }
 
-    private func upsertStateValue(_ key: String, value: String) async throws {
+    func upsertStateValue(_ key: String, value: String) async throws {
         try await manager.write { db in
             let sql = """
             INSERT INTO indexing_state (key, value, updated_at)
@@ -165,11 +211,5 @@ final class IndexingRequestListener {
         try await manager.read { db in
             try db.tableExists("indexing_state")
         }
-    }
-
-    private func iso8601Now() -> String {
-        let formatter = ISO8601DateFormatter()
-        formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
-        return formatter.string(from: Date())
     }
 }

@@ -16,7 +16,7 @@ struct ViewToggleButton: View {
                     label: {
                         HStack {
                             Image(systemName: "list.bullet")
-                            Text("List")
+                            Text("as List")
                         }
                     },
                 )
@@ -27,7 +27,7 @@ struct ViewToggleButton: View {
                     label: {
                         HStack {
                             Image(systemName: "square.grid.2x2")
-                            Text("Grid")
+                            Text("as Icon")
                         }
                     },
                 )

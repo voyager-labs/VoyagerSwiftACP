@@ -566,17 +566,31 @@ private func buildFilters(from state: ComposerFeature.State) -> SearchFiltersPay
 private func encodeValue(condition: Condition, values: [String]) -> JSONValue? {
     let op = condition.operatorCode?.lowercased()
     if let kind = condition.operatorValueUIKind {
-        switch kind {
-        case "listText":
-            return .array(values.map(JSONValue.string))
-        case "listNumber":
-            let numbers = values.compactMap(Double.init)
-            guard numbers.count == values.count else { return nil }
-            return .array(numbers.map(JSONValue.number))
-        default:
-            break
+        if let listValue = encodeListValue(kind: kind, values: values) {
+            return listValue
         }
     }
+    return encodeValueByType(condition: condition, values: values, op: op)
+}
+
+private func encodeListValue(kind: String, values: [String]) -> JSONValue? {
+    switch kind {
+    case "listText":
+        return .array(values.map(JSONValue.string))
+    case "listNumber":
+        let numbers = values.compactMap(Double.init)
+        guard numbers.count == values.count else { return nil }
+        return .array(numbers.map(JSONValue.number))
+    default:
+        return nil
+    }
+}
+
+private func encodeValueByType(
+    condition: Condition,
+    values: [String],
+    op: String?,
+) -> JSONValue? {
     switch condition.valueType {
     case "number":
         let numbers = values.compactMap(Double.init)

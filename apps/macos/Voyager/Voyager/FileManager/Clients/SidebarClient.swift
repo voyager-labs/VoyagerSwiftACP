@@ -401,7 +401,7 @@ extension SidebarClient: DependencyKey {
                         makeFavorite(
                             name: "Desktop",
                             directory: .desktopDirectory,
-                            iconName: "desktopcomputer",
+                            iconName: "menubar.dock.rectangle",
                             entryClient: entryClient,
                         ),
                         makeFavorite(
@@ -437,7 +437,7 @@ extension SidebarClient: DependencyKey {
                     IconMapping(
                         directory: .desktopDirectory,
                         domain: .userDomainMask,
-                        iconName: "desktopcomputer",
+                        iconName: "menubar.dock.rectangle",
                     ),
                     IconMapping(
                         directory: .documentDirectory,
@@ -514,7 +514,7 @@ extension SidebarClient: DependencyKey {
                 makeFavorite(
                     name: "Desktop",
                     directory: .desktopDirectory,
-                    iconName: "desktopcomputer",
+                    iconName: "menubar.dock.rectangle",
                     entryClient: entryClient,
                 ),
                 makeFavorite(

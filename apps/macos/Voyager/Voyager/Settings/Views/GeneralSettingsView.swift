@@ -29,7 +29,7 @@ struct GeneralSettingsView: View {
                 ))
             }
 
-            Section {
+            Section("Updates") {
                 VStack(alignment: .leading, spacing: 12) {
                     Toggle("Automatically download and install updates", isOn: Binding(
                         get: { store.automaticUpdate },
@@ -57,7 +57,7 @@ struct GeneralSettingsView: View {
                 }
             }
 
-            Section {
+            Section("Workspace") {
                 HStack {
                     Text("Starting directory")
                     Spacer()

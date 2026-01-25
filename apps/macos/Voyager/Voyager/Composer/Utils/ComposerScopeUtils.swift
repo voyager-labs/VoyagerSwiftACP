@@ -16,13 +16,15 @@ enum ComposerScopeUtils {
         let iconName: String
     }
 
-    private nonisolated static func iconNameForPath(_ path: String, entryClient: EntryClient) -> String {
+    private nonisolated static func iconNameForPath(_ path: String, entryClient: EntryClient)
+        -> String
+    {
         if path == entryClient.homeDirectory() { return "house" }
         if path.hasPrefix("/Volumes/") { return "externaldrive" }
 
         let mappings: [IconMapping] = [
             IconMapping(directory: .applicationDirectory, domain: .localDomainMask, iconName: "folder.badge.gearshape"),
-            IconMapping(directory: .desktopDirectory, domain: .userDomainMask, iconName: "desktopcomputer"),
+            IconMapping(directory: .desktopDirectory, domain: .userDomainMask, iconName: "menubar.dock.rectangle"),
             IconMapping(directory: .documentDirectory, domain: .userDomainMask, iconName: "doc.text"),
             IconMapping(directory: .downloadsDirectory, domain: .userDomainMask, iconName: "arrow.down.circle"),
             IconMapping(directory: .moviesDirectory, domain: .userDomainMask, iconName: "film"),
@@ -118,12 +120,13 @@ enum ComposerScopeUtils {
         guard nameLower.contains(query) else { return }
 
         let iconName = iconNameForPath(fullPath, entryClient: entryClient)
-        results.append(DirectoryItem(
-            id: fullPath,
-            path: fullPath,
-            name: displayName,
-            iconName: iconName,
-        ))
+        results.append(
+            DirectoryItem(
+                id: fullPath,
+                path: fullPath,
+                name: displayName,
+                iconName: iconName,
+            ))
     }
 
     private nonisolated static func sortSearchResults(
@@ -226,12 +229,13 @@ enum ComposerScopeUtils {
             let displayName = entryClient.displayName(path)
             let iconName = iconNameForPath(path, entryClient: entryClient)
 
-            result.append(DirectoryItem(
-                id: path,
-                path: path,
-                name: displayName,
-                iconName: iconName,
-            ))
+            result.append(
+                DirectoryItem(
+                    id: path,
+                    path: path,
+                    name: displayName,
+                    iconName: iconName,
+                ))
 
             seenPaths.insert(path)
         }
@@ -244,12 +248,13 @@ enum ComposerScopeUtils {
                 guard !seenPaths.contains(path) else { continue }
                 guard entryClient.fileExists(path) else { continue }
 
-                result.append(DirectoryItem(
-                    id: path,
-                    path: path,
-                    name: favorite.name,
-                    iconName: favorite.iconName,
-                ))
+                result.append(
+                    DirectoryItem(
+                        id: path,
+                        path: path,
+                        name: favorite.name,
+                        iconName: favorite.iconName,
+                    ))
 
                 seenPaths.insert(path)
             }

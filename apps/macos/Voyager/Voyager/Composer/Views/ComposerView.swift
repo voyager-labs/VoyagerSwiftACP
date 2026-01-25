@@ -70,9 +70,24 @@ struct ComposerView: View {
             })
         }
         .background(
-            RoundedRectangle(cornerRadius: VoyagerDS.Radius.composer)
-                .fill(VoyagerDS.Interaction.composerBackground(for: colorScheme))
-                .allowsHitTesting(false),
+            VisualEffectBackgroundView(
+                material: .popover,
+                blendingMode: .withinWindow,
+                tintColor: NSColor(VoyagerDS.Interaction.composerBackground(for: colorScheme)),
+                tintOpacity: isDark ? 0.15 : 0.15,
+            )
+            .clipShape(RoundedRectangle(cornerRadius: VoyagerDS.Radius.composer))
+            .overlay(
+                RoundedRectangle(cornerRadius: VoyagerDS.Radius.composer)
+                    .stroke(isDark ? Color.white.opacity(0.08) : Color.black.opacity(0.12), lineWidth: 1),
+            )
+            .shadow(
+                color: Color.black.opacity(isDark ? 0.45 : 0.18),
+                radius: isDark ? 18 : 12,
+                x: 0,
+                y: isDark ? 10 : 6,
+            )
+            .allowsHitTesting(false),
         )
         .allowsHitTesting(true)
     }
@@ -241,7 +256,7 @@ struct ComposerView: View {
         isSubmitDisabled _: Bool,
         isLocked: Bool,
     ) -> some View {
-        let placeholderText = "Enter your request..."
+        let placeholderText = "Describe the collection you want..."
 
         return ZStack(alignment: .leading) {
             if viewStore.text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {

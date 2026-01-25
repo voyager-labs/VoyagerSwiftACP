@@ -129,11 +129,15 @@ struct ToolbarNavigationButtons: View {
             }
             return nil
         case .recents:
-            return NSImage(systemSymbolName: "clock.arrow.circlepath", accessibilityDescription: nil)
+            return NSImage(
+                systemSymbolName: "clock.arrow.circlepath", accessibilityDescription: nil,
+            )
         case .tags:
             return NSImage(systemSymbolName: "tag", accessibilityDescription: nil)
         case .computer:
-            return NSImage(systemSymbolName: "desktopcomputer", accessibilityDescription: nil)
+            return NSImage(
+                systemSymbolName: "menubar.dock.rectangle", accessibilityDescription: nil,
+            )
         }
     }
 

@@ -272,12 +272,14 @@ struct ConditionPropertyPickerView: View {
             let isHovering = hoveredPropertyKey == propertyKey
             let label = viewStore.propertyLabels[propertyKey] ?? propertyKey
             let category = viewStore.propertyCategories[propertyKey]
+            let type = viewStore.propertyTypes[propertyKey]
             HStack(spacing: 8) {
                 if showIcon {
                     Image(
                         systemName: ConditionPropertyIconUtils.iconName(
                             forKey: propertyKey,
                             category: category,
+                            type: type,
                         ),
                     )
                     .font(.system(size: 12))

@@ -188,23 +188,6 @@
       }
     },
     "common": {
-      "attribute_modification_date": {
-        "availability": "macOS 10.6+",
-        "description": "The time at which the resource's attributes were most recently modified, returned as an NSDate object if the volume supports attribute modification dates, or nil if attribute modification dates are unsupported (read-only).",
-        "search_aliases": [
-          "attribute modified date",
-          "attribute modification time",
-          "attribute modification dates",
-          "attribute modified dates",
-          "attribute modification times"
-        ],
-        "system_keys": [
-          "mditem:kMDItemAttributeChangeDate",
-          "nsurl:NSURLAttributeModificationDateKey"
-        ],
-        "type": "date",
-        "ui_label": "Attribute modification date"
-      },
       "audiences": {
         "availability": "macOS 10.4+",
         "description": "The audience for which the file is intended. The audience may be determined by the creator or the publisher or by a third party.",
@@ -282,44 +265,6 @@
         "system_keys": ["mditem:kMDItemContactKeywords"],
         "type": "string_list",
         "ui_label": "Contact keywords"
-      },
-      "content_creation_date": {
-        "availability": "macOS 10.4+",
-        "description": "The creation date of an edited or optimized version of the song or composition.",
-        "search_aliases": [
-          "content created date",
-          "content creation time",
-          "content creation dates",
-          "content created dates",
-          "content creation times"
-        ],
-        "legacy_keys": ["contentCreatedAt"],
-        "system_keys": ["mditem:kMDItemContentCreationDate"],
-        "type": "date",
-        "ui_label": "Content creation date",
-        "db_indexed": true
-      },
-      "modification_date": {
-        "availability": "macOS 10.4+",
-        "description": "The date and time that the contents of the file were last modified.",
-        "search_aliases": [
-          "content modified date",
-          "content modification time",
-          "content modification dates",
-          "content modified dates",
-          "content modification times"
-        ],
-        "legacy_keys": ["modifiedAt", "contentModifiedAt"],
-        "system_keys": [
-          "mditem:kMDItemContentModificationDate",
-          "mditem:kMDItemFSContentChangeDate",
-          "mdimporter:kMDLabelContentChangeDate",
-          "nsurl:NSURLContentModificationDateKey"
-        ],
-        "type": "date",
-        "ui_label": "Content modification date",
-        "ui_pinned": true,
-        "db_indexed": true
       },
       "uniform_type_identifier": {
         "availability": "macOS 10.4+",
@@ -521,20 +466,6 @@
         "type": "string_list",
         "ui_label": "Languages"
       },
-      "last_used_date": {
-        "availability": "macOS 10.4+",
-        "description": "The date and time that the file was last used. This value is updated automatically by LaunchServices everytime a file is opened by double clicking, or by asking LaunchServices to open a file.",
-        "search_aliases": [
-          "last used time",
-          "last used dates",
-          "last used times"
-        ],
-        "legacy_keys": ["lastUsedAt"],
-        "system_keys": ["mditem:kMDItemLastUsedDate"],
-        "type": "date",
-        "ui_label": "Last used date",
-        "db_indexed": true
-      },
       "number_of_pages": {
         "availability": "macOS 10.4+",
         "description": "Number of pages in the document.",
@@ -727,7 +658,88 @@
         "ui_label": "Where froms"
       }
     },
-    "filesystem": {
+    "date": {
+      "attribute_modification_date": {
+        "availability": "macOS 10.6+",
+        "description": "The time at which the resource's attributes were most recently modified, returned as an NSDate object if the volume supports attribute modification dates, or nil if attribute modification dates are unsupported (read-only).",
+        "search_aliases": [
+          "attribute modified date",
+          "attribute modification time",
+          "attribute modification dates",
+          "attribute modified dates",
+          "attribute modification times"
+        ],
+        "system_keys": [
+          "mditem:kMDItemAttributeChangeDate",
+          "nsurl:NSURLAttributeModificationDateKey"
+        ],
+        "type": "date",
+        "ui_label": "Attribute modification date"
+      },
+      "content_access_date": {
+        "availability": "macOS 10.6+",
+        "description": "The time at which the resource was most recently accessed.",
+        "search_aliases": [
+          "content access time",
+          "content access dates",
+          "content access times"
+        ],
+        "system_keys": ["nsurl:NSURLContentAccessDateKey"],
+        "type": "date",
+        "ui_label": "Content access date"
+      },
+      "content_creation_date": {
+        "availability": "macOS 10.4+",
+        "description": "The creation date of an edited or optimized version of the song or composition.",
+        "search_aliases": [
+          "content created date",
+          "content creation time",
+          "content creation dates",
+          "content created dates",
+          "content creation times"
+        ],
+        "legacy_keys": ["contentCreatedAt"],
+        "system_keys": ["mditem:kMDItemContentCreationDate"],
+        "type": "date",
+        "ui_label": "Content creation date",
+        "db_indexed": true
+      },
+      "modification_date": {
+        "availability": "macOS 10.4+",
+        "description": "The date and time that the contents of the file were last modified.",
+        "search_aliases": [
+          "content modified date",
+          "content modification time",
+          "content modification dates",
+          "content modified dates",
+          "content modification times"
+        ],
+        "legacy_keys": ["modifiedAt", "contentModifiedAt"],
+        "system_keys": [
+          "mditem:kMDItemContentModificationDate",
+          "mditem:kMDItemFSContentChangeDate",
+          "mdimporter:kMDLabelContentChangeDate",
+          "nsurl:NSURLContentModificationDateKey"
+        ],
+        "type": "date",
+        "ui_label": "Content modification date",
+        "ui_pinned": true,
+        "db_indexed": true
+      },
+      "last_used_date": {
+        "availability": "macOS 10.4+",
+        "description": "The date and time that the file was last used. This value is updated automatically by LaunchServices everytime a file is opened by double clicking, or by asking LaunchServices to open a file.",
+        "search_aliases": [
+          "last used time",
+          "last used dates",
+          "last used times"
+        ],
+        "legacy_keys": ["lastUsedAt"],
+        "system_keys": ["mditem:kMDItemLastUsedDate"],
+        "type": "date",
+        "ui_label": "Last used date",
+        "db_indexed": true
+      },
       "creation_date": {
         "availability": "macOS 10.6+",
         "description": "The time at which the resource was created.",
@@ -748,6 +760,34 @@
         "ui_pinned": true,
         "db_indexed": true
       },
+      "added_date": {
+        "availability": "macOS 10.7+",
+        "description": "Date added.",
+        "search_aliases": ["time added", "date addeds", "time addeds"],
+        "legacy_keys": ["addedAt"],
+        "system_keys": [
+          "mdimporter:kMDItemDateAdded",
+          "nsurl:NSURLAddedToDirectoryDateKey"
+        ],
+        "type": "date",
+        "ui_label": "Date added",
+        "ui_pinned": true,
+        "db_indexed": true
+      },
+      "downloaded_date": {
+        "availability": "macOS 10.7+",
+        "description": "Downloaded date.",
+        "search_aliases": [
+          "downloaded time",
+          "downloaded dates",
+          "downloaded times"
+        ],
+        "system_keys": ["mdimporter:kMDItemDownloadedDate"],
+        "type": "date",
+        "ui_label": "Downloaded date"
+      }
+    },
+    "filesystem": {
       "depth_from_home": {
         "description": "Directory depth from the user's home (excluding the file itself).",
         "search_aliases": [
@@ -1321,18 +1361,6 @@
         "type": "string",
         "ui_label": "Changed notification"
       },
-      "content_access_date": {
-        "availability": "macOS 10.6+",
-        "description": "The time at which the resource was most recently accessed.",
-        "search_aliases": [
-          "content access time",
-          "content access dates",
-          "content access times"
-        ],
-        "system_keys": ["nsurl:NSURLContentAccessDateKey"],
-        "type": "date",
-        "ui_label": "Content access date"
-      },
       "content_type_tree": {
         "availability": "macOS 10.5+",
         "description": "Content type tree.",
@@ -1349,20 +1377,6 @@
         "type": "string",
         "ui_label": "Custom icon"
       },
-      "added_date": {
-        "availability": "macOS 10.7+",
-        "description": "Date added.",
-        "search_aliases": ["time added", "date addeds", "time addeds"],
-        "legacy_keys": ["addedAt"],
-        "system_keys": [
-          "mdimporter:kMDItemDateAdded",
-          "nsurl:NSURLAddedToDirectoryDateKey"
-        ],
-        "type": "date",
-        "ui_label": "Date added",
-        "ui_pinned": true,
-        "db_indexed": true
-      },
       "document_identifier": {
         "availability": "macOS 10.10+",
         "description": "The document identifier returned as an NSNumber (read-only).",
@@ -1370,18 +1384,6 @@
         "system_keys": ["nsurl:NSURLDocumentIdentifierKey"],
         "type": "string",
         "ui_label": "Document identifier"
-      },
-      "downloaded_date": {
-        "availability": "macOS 10.7+",
-        "description": "Downloaded date.",
-        "search_aliases": [
-          "downloaded time",
-          "downloaded dates",
-          "downloaded times"
-        ],
-        "system_keys": ["mdimporter:kMDItemDownloadedDate"],
-        "type": "date",
-        "ui_label": "Downloaded date"
       },
       "editors": {
         "availability": "macOS 10.5+",

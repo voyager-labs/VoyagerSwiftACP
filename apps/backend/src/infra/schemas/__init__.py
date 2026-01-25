@@ -1,6 +1,6 @@
-from .file_entry_schema import FileEntrySchema
+from .entry_schema import EntrySchema
 
-SCHEMAS = [FileEntrySchema]
+SCHEMAS = [EntrySchema]
 
 __all__ = [
     "SCHEMAS",

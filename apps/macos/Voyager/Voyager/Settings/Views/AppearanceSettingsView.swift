@@ -129,18 +129,157 @@ struct ThemePreviewCard: View {
 struct AppearanceSettingsView: View {
     let store: StoreOf<AppearanceSettingsFeature>
 
+    // TODO(설정-뷰사이즈): 현재 프리셋 UI는 초기 정리 버전입니다.
+    // - 프리셋 값이 하드코딩되어 있음 → DesignSystem/SettingsTypes로 이동하고 근거(의도) 문서화
+    // - Custom 옵션은 상태 표시용인데 Picker에서 선택 가능함 → 비활성화/숨김 처리 + 미세조정(슬라이더) 모드 제공 검토
+    // - 프리셋 선택을 별도로 저장하지 않고 icon/text 값으로 역추론 중 → UserDefaults에 preset 저장(마이그레이션 포함) 검토
+    // - 기존 커스텀 값에서 가장 가까운 프리셋 추천/원클릭 정리 UX 추가
+    // - 문자열 로컬라이즈(Theme, View size, Customize per view 등) 및 접근성 레이블 정리
+
+    private enum SizePreset: String, CaseIterable, Identifiable {
+        case small
+        case medium
+        case large
+        case custom
+
+        var id: String { rawValue }
+
+        var title: String {
+            switch self {
+            case .small:
+                "Small"
+            case .medium:
+                "Medium"
+            case .large:
+                "Large"
+            case .custom:
+                "Custom"
+            }
+        }
+    }
+
+    private struct ViewSizing {
+        let iconSize: CGFloat
+        let textSize: CGFloat
+    }
+
+    private var listPreset: SizePreset {
+        presetForList(iconSize: store.listIconSize, textSize: store.listTextSize)
+    }
+
+    private var iconPreset: SizePreset {
+        presetForIcon(iconSize: store.gridIconSize, textSize: store.gridTextSize)
+    }
+
+    private var overallPreset: SizePreset {
+        guard listPreset == iconPreset else {
+            return .custom
+        }
+        return listPreset == .custom ? .custom : listPreset
+    }
+
+    private var overallPresetBinding: Binding<SizePreset> {
+        Binding(
+            get: { overallPreset },
+            set: { preset in
+                applyOverallPreset(preset)
+            },
+        )
+    }
+
+    private var listPresetBinding: Binding<SizePreset> {
+        Binding(
+            get: { listPreset },
+            set: { preset in
+                applyListPreset(preset)
+            },
+        )
+    }
+
+    private var iconPresetBinding: Binding<SizePreset> {
+        Binding(
+            get: { iconPreset },
+            set: { preset in
+                applyIconPreset(preset)
+            },
+        )
+    }
+
+    private func presetForList(iconSize: CGFloat, textSize: CGFloat) -> SizePreset {
+        let icon = Int(iconSize.rounded())
+        let text = Int(textSize.rounded())
+
+        if icon == 18, text == 12 { return .small }
+        if icon == 20, text == 13 { return .medium }
+        if icon == 24, text == 14 { return .large }
+
+        return .custom
+    }
+
+    private func presetForIcon(iconSize: CGFloat, textSize: CGFloat) -> SizePreset {
+        let icon = Int(iconSize.rounded())
+        let text = Int(textSize.rounded())
+
+        if icon == 48, text == 11 { return .small }
+        if icon == 64, text == 12 { return .medium }
+        if icon == 96, text == 13 { return .large }
+
+        return .custom
+    }
+
+    private func sizingForListPreset(_ preset: SizePreset) -> ViewSizing? {
+        switch preset {
+        case .small:
+            ViewSizing(iconSize: 18, textSize: 12)
+        case .medium:
+            ViewSizing(iconSize: 20, textSize: 13)
+        case .large:
+            ViewSizing(iconSize: 24, textSize: 14)
+        case .custom:
+            nil
+        }
+    }
+
+    private func sizingForIconPreset(_ preset: SizePreset) -> ViewSizing? {
+        switch preset {
+        case .small:
+            ViewSizing(iconSize: 48, textSize: 11)
+        case .medium:
+            ViewSizing(iconSize: 64, textSize: 12)
+        case .large:
+            ViewSizing(iconSize: 96, textSize: 13)
+        case .custom:
+            nil
+        }
+    }
+
+    private func applyOverallPreset(_ preset: SizePreset) {
+        guard preset != .custom else { return }
+        guard let listSizing = sizingForListPreset(preset) else { return }
+        guard let iconSizing = sizingForIconPreset(preset) else { return }
+
+        store.send(.setListIconSize(listSizing.iconSize))
+        store.send(.setListTextSize(listSizing.textSize))
+        store.send(.setGridIconSize(iconSizing.iconSize))
+        store.send(.setGridTextSize(iconSizing.textSize))
+    }
+
+    private func applyListPreset(_ preset: SizePreset) {
+        guard preset != .custom else { return }
+        guard let sizing = sizingForListPreset(preset) else { return }
+        store.send(.setListIconSize(sizing.iconSize))
+        store.send(.setListTextSize(sizing.textSize))
+    }
+
+    private func applyIconPreset(_ preset: SizePreset) {
+        guard preset != .custom else { return }
+        guard let sizing = sizingForIconPreset(preset) else { return }
+        store.send(.setGridIconSize(sizing.iconSize))
+        store.send(.setGridTextSize(sizing.textSize))
+    }
+
     var body: some View {
         Form {
-            Section {
-                Toggle(
-                    "Show Hidden Files",
-                    isOn: Binding(
-                        get: { store.showHiddenFiles },
-                        set: { store.send(.setShowHiddenFiles($0)) },
-                    ),
-                )
-            }
-
             Section {
                 HStack(alignment: .top, spacing: 20) {
                     Text("Theme")
@@ -175,120 +314,39 @@ struct AppearanceSettingsView: View {
                 .padding(.vertical, 4)
             }
 
-            Section("Icon size") {
-                VStack(alignment: .leading, spacing: 10) {
-                    HStack(alignment: .top, spacing: 20) {
-                        Text("List view")
-                            .foregroundColor(.primary)
-                            .fixedSize(horizontal: true, vertical: false)
-                            .frame(width: 140, alignment: .leading)
-
-                        Spacer()
-
-                        HStack(spacing: 12) {
-                            Slider(
-                                value: Binding(
-                                    get: { store.listIconSize },
-                                    set: { store.send(.setListIconSize($0)) },
-                                ),
-                                in: 16 ... 32,
-                                step: 1,
-                            )
-                            .frame(width: 200)
-
-                            Text("\(Int(store.listIconSize))" +
-                                "x\(Int(store.listIconSize))")
-                                .foregroundColor(.secondary)
-                                .fixedSize(horizontal: true, vertical: false)
-                                .frame(minWidth: 70, alignment: .trailing)
-                        }
-                    }
-
-                    HStack(alignment: .top, spacing: 20) {
-                        Text("Grid view")
-                            .foregroundColor(.primary)
-                            .fixedSize(horizontal: true, vertical: false)
-                            .frame(width: 140, alignment: .leading)
-
-                        Spacer()
-
-                        HStack(spacing: 12) {
-                            Slider(
-                                value: Binding(
-                                    get: { store.gridIconSize },
-                                    set: { store.send(.setGridIconSize($0)) },
-                                ),
-                                in: 16 ... 512,
-                                step: 4,
-                            )
-                            .frame(width: 200)
-
-                            Text("\(Int(store.gridIconSize))" +
-                                "x\(Int(store.gridIconSize))")
-                                .foregroundColor(.secondary)
-                                .fixedSize(horizontal: true, vertical: false)
-                                .frame(minWidth: 70, alignment: .trailing)
-                        }
-                    }
-                }
-                .padding(.vertical, 4)
+            Section("File display") {
+                Toggle(
+                    "Show Hidden Files",
+                    isOn: Binding(
+                        get: { store.showHiddenFiles },
+                        set: { store.send(.setShowHiddenFiles($0)) },
+                    ),
+                )
             }
 
-            Section("Text size") {
-                VStack(alignment: .leading, spacing: 10) {
-                    HStack(alignment: .top, spacing: 20) {
-                        Text("List view")
-                            .foregroundColor(.primary)
-                            .fixedSize(horizontal: true, vertical: false)
-                            .frame(width: 140, alignment: .leading)
-
-                        Spacer()
-
-                        HStack(spacing: 12) {
-                            Slider(
-                                value: Binding(
-                                    get: { store.listTextSize },
-                                    set: { store.send(.setListTextSize($0)) },
-                                ),
-                                in: 10 ... 16,
-                                step: 1,
-                            )
-                            .frame(width: 200)
-
-                            Text("\(Int(store.listTextSize)) pt")
-                                .foregroundColor(.secondary)
-                                .fixedSize(horizontal: true, vertical: false)
-                                .frame(minWidth: 70, alignment: .trailing)
-                        }
-                    }
-
-                    HStack(alignment: .top, spacing: 20) {
-                        Text("Grid view")
-                            .foregroundColor(.primary)
-                            .fixedSize(horizontal: true, vertical: false)
-                            .frame(width: 140, alignment: .leading)
-
-                        Spacer()
-
-                        HStack(spacing: 12) {
-                            Slider(
-                                value: Binding(
-                                    get: { store.gridTextSize },
-                                    set: { store.send(.setGridTextSize($0)) },
-                                ),
-                                in: 10 ... 16,
-                                step: 1,
-                            )
-                            .frame(width: 200)
-
-                            Text("\(Int(store.gridTextSize)) pt")
-                                .foregroundColor(.secondary)
-                                .fixedSize(horizontal: true, vertical: false)
-                                .frame(minWidth: 70, alignment: .trailing)
-                        }
+            Section("View size") {
+                Picker("Overall", selection: overallPresetBinding) {
+                    ForEach(SizePreset.allCases) { preset in
+                        Text(preset.title).tag(preset)
                     }
                 }
-                .padding(.vertical, 4)
+                .pickerStyle(.segmented)
+
+                DisclosureGroup("Customize per view") {
+                    Picker("List", selection: listPresetBinding) {
+                        ForEach(SizePreset.allCases) { preset in
+                            Text(preset.title).tag(preset)
+                        }
+                    }
+                    .pickerStyle(.segmented)
+
+                    Picker("Icon", selection: iconPresetBinding) {
+                        ForEach(SizePreset.allCases) { preset in
+                            Text(preset.title).tag(preset)
+                        }
+                    }
+                    .pickerStyle(.segmented)
+                }
             }
         }
         .formStyle(.grouped)
