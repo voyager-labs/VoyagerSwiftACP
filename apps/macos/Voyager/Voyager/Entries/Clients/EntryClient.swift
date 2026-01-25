@@ -327,15 +327,30 @@ extension EntryClient: DependencyKey {
                 guard !urls.isEmpty else { return }
                 try await withScopedAccess(urls) {
                     let error = await MainActor.run { () -> FileOpError? in
-                        let script = finderInfoAppleScript(for: urls)
-                        var errorInfo: NSDictionary?
-                        guard let appleScript = NSAppleScript(source: script) else {
-                            return .system(message: "Failed to create AppleScript.")
+                        // Use NSPerformService instead of AppleScript to avoid requiring
+                        // NSAppleEventsUsageDescription and Automation permissions
+                        let pasteboard = NSPasteboard(name: NSPasteboard.Name("VoyagerGetInfo-\(UUID().uuidString)"))
+                        pasteboard.clearContents()
+
+                        // Set file paths to pasteboard
+                        let paths = urls.map(\.path)
+                        pasteboard.setPropertyList(paths, forType: NSPasteboard.PasteboardType("NSFilenamesPboardType"))
+
+                        // Invoke Finder's "Show Info" service
+                        let success = NSPerformService("Finder/Show Info", pasteboard)
+
+                        if !success {
+                            return .system(message: "Failed to open Get Info window.")
                         }
-                        appleScript.executeAndReturnError(&errorInfo)
-                        if let errorInfo {
-                            return fileOpErrorForAppleScript(errorInfo)
-                        }
+
+                        return nil
+                    }
+
+                    if let error {
+                        throw error
+                    }
+                }
+            },
                         return nil
                     }
 
@@ -1032,47 +1047,6 @@ public extension DependencyValues {
         get { self[EntryClient.self] }
         set { self[EntryClient.self] = newValue }
     }
-}
-
-@MainActor
-private func finderInfoAppleScript(for urls: [URL]) -> String {
-    let items = urls
-        .map { url in
-            let escapedPath = appleScriptEscapedPath(url.path)
-            return "(POSIX file \"\(escapedPath)\") as alias"
-        }
-        .joined(separator: ", ")
-
-    return """
-    set finderItems to {\(items)}
-    tell application \"Finder\"
-        activate
-        repeat with finderItem in finderItems
-            open information window of finderItem
-        end repeat
-    end tell
-    """
-}
-
-private func appleScriptEscapedPath(_ path: String) -> String {
-    path
-        .replacingOccurrences(of: "\\", with: "\\\\")
-        .replacingOccurrences(of: "\"", with: "\\\"")
-}
-
-@MainActor
-private func fileOpErrorForAppleScript(_ errorInfo: NSDictionary) -> FileOpError {
-    let errorNumber = (errorInfo[NSAppleScript.errorNumber] as? NSNumber)?.intValue
-    let errorMessage = errorInfo[NSAppleScript.errorMessage] as? String
-
-    if errorNumber == -1743 {
-        return .system(
-            message: "Permission to control Finder was denied.",
-            suggestion: "Enable Voyager in System Settings > Privacy & Security > Automation.",
-        )
-    }
-
-    return .system(message: errorMessage ?? "Failed to open Finder Get Info.")
 }
 
 func withScopedAccess<T>(_ url: URL, perform: @escaping () async throws -> T) async throws -> T {
