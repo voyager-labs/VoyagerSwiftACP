@@ -163,6 +163,9 @@ struct ContentPaneGridView: View {
         showExtract: Bool,
     ) -> some View {
         let selectedIds = fsStore.selectedIds
+        let selectedURLs = fsStore.displayItems
+            .filter { selectedIds.contains($0.id) }
+            .map { URL(fileURLWithPath: $0.fullPath) }
         let clipboardItems = fsStore.clipboardItems
         let thumbnailsReady = fsStore.thumbnailsReady
 
@@ -205,6 +208,9 @@ struct ContentPaneGridView: View {
             onCopyURLs: handlers.onCopyURLs,
             onCut: handlers.onCut,
             onToggleTag: handlers.onToggleTag,
+            onPerformService: handlers.onPerformService,
+            onRevealInFinder: handlers.onRevealInFinder,
+            selectedURLs: selectedURLs,
             selectedCount: fsStore.selectedIds.isEmpty ? 1 : fsStore.selectedIds.count,
             showCompress: showCompress,
             showExtract: showExtract,

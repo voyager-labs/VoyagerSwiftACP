@@ -169,6 +169,9 @@ struct ContentPaneListView: View {
         props: ItemRowProps,
     ) -> some View {
         let selectedIds = fsStore.selectedIds
+        let selectedURLs = fsStore.displayItems
+            .filter { selectedIds.contains($0.id) }
+            .map { URL(fileURLWithPath: $0.fullPath) }
         let clipboardItems = fsStore.clipboardItems
         let thumbnailsReady = fsStore.thumbnailsReady
         let isContextMenuTarget = contextMenuTargetId == item.id
@@ -214,6 +217,8 @@ struct ContentPaneListView: View {
             onCopyURLs: props.handlers.onCopyURLs,
             onCut: props.handlers.onCut,
             onToggleTag: props.handlers.onToggleTag,
+            onPerformService: props.handlers.onPerformService,
+            onRevealInFinder: props.handlers.onRevealInFinder,
             isContextMenuTarget: isContextMenuTarget,
             contextMenuTargetWasSelected: isContextMenuTarget ? contextMenuTargetWasSelected : false,
             onContextMenuOpen: { windowPoint in
@@ -236,6 +241,7 @@ struct ContentPaneListView: View {
                     ))
                 }
             },
+            selectedURLs: selectedURLs,
             selectedCount: fsStore.selectedIds.isEmpty ? 1 : fsStore.selectedIds.count,
             showCompress: props.context.showCompress,
             showExtract: props.context.showExtract,

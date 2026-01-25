@@ -1,4 +1,3 @@
-// swiftlint:disable file_length
 import AppKit
 import ComposableArchitecture
 import SwiftUI
@@ -54,9 +53,12 @@ struct EntryListView: View, Equatable {
     let onCopyURLs: () -> Void
     let onCut: () -> Void
     let onToggleTag: (String) -> Void
+    let onPerformService: (String) -> Void
+    let onRevealInFinder: () -> Void
+    let selectedURLs: [URL]
     let isContextMenuTarget: Bool
     let contextMenuTargetWasSelected: Bool
-    let onContextMenuOpen: () -> Void
+    let onContextMenuOpen: (CGPoint) -> Void
     let selectedCount: Int
     let showCompress: Bool
     let showExtract: Bool
@@ -70,6 +72,8 @@ struct EntryListView: View, Equatable {
     @State private var optionKeyTimer: Timer?
     @State private var showTagsEditor = false
     @State private var hasPrefetchedApplications = false
+    @State private var serviceNames: [String] = []
+    @State private var servicesRequestorView: ServicesMenuRequestorView?
 
     private func styledText(_ text: String, fontSize: CGFloat, isPrimary: Bool = true) -> some View {
         Text(text)
@@ -225,11 +229,55 @@ struct EntryListView: View, Equatable {
             )
         }
         .contextMenu {
-            contextMenuContent
+            EntryContextMenuContent(
+                item: item,
+                selectedCount: selectedCount,
+                isOptionPressed: isOptionPressed,
+                applications: applications,
+                commonApplications: commonApplications,
+                onOpen: onOpen,
+                onOpenInNewTab: onOpenInNewTab,
+                onOpenWithApp: onOpenWithApp,
+                onLoadApplications: onLoadApplications,
+                onLoadCommonApplications: onLoadCommonApplications,
+                onPutBack: onPutBack,
+                onMoveToTrash: onMoveToTrash,
+                onDeleteImmediately: onDeleteImmediately,
+                onEmptyTrash: onEmptyTrash,
+                onRename: onRename,
+                onCompress: onCompress,
+                onDuplicate: onDuplicate,
+                onCreateAlias: onCreateAlias,
+                onExtract: onExtract,
+                onQuickLook: onQuickLook,
+                onGetInfo: onGetInfo,
+                onShare: onShare,
+                onCopy: onCopy,
+                onCopyAbsolutePaths: onCopyAbsolutePaths,
+                onCopyURLs: onCopyURLs,
+                onCut: onCut,
+                onPerformService: onPerformService,
+                onRevealInFinder: onRevealInFinder,
+                serviceNames: serviceNames,
+                refreshServicesMenuItems: refreshServicesMenuItems,
+                showCompress: showCompress,
+                showExtract: showExtract,
+                onToggleTag: onToggleTag,
+                showTagsEditor: $showTagsEditor,
+                appIcon: { appIcon(for: $0, size: 16) },
+                tagColorImage: { color, size in colorCircleImage(color: color, size: size) },
+            )
         }
         .overlay(
             RightClickCaptureView(onRightClick: onContextMenuOpen)
                 .allowsHitTesting(false),
+        )
+        .background(
+            ServicesMenuRequestorRepresentable(
+                selectedURLs: selectedURLs,
+                onViewReady: { servicesRequestorView = $0 },
+            )
+            .frame(width: 0, height: 0),
         )
         .onHover { isHovering in
             guard isHovering, !hasPrefetchedApplications else { return }
@@ -259,10 +307,28 @@ struct EntryListView: View, Equatable {
         optionKeyTimer?.invalidate()
         optionKeyTimer = nil
     }
+
+    private func refreshServicesMenuItems() {
+        if let servicesRequestorView, let window = servicesRequestorView.window {
+            window.makeFirstResponder(servicesRequestorView)
+        }
+        NSApp.registerServicesMenuSendTypes([.fileURL], returnTypes: [])
+        NSApp.servicesMenu?.update()
+
+        let items = NSApp.servicesMenu?.items ?? []
+        var seen = Set<String>()
+        serviceNames = items.compactMap { item in
+            guard !item.isSeparatorItem else { return nil }
+            guard item.isEnabled else { return nil }
+            let title = item.title.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !title.isEmpty, seen.insert(title).inserted else { return nil }
+            return title
+        }
+    }
 }
 
 private struct RightClickCaptureView: NSViewRepresentable {
-    let onRightClick: () -> Void
+    let onRightClick: (CGPoint) -> Void
 
     func makeNSView(context _: Context) -> CaptureView {
         let view = CaptureView()
@@ -308,283 +374,11 @@ private struct RightClickCaptureView: NSViewRepresentable {
 }
 
 private extension EntryListView {
-    @ViewBuilder var contextMenuContent: some View {
-        Group {
-            Button {
-                onOpen()
-            } label: {
-                Label("Open", systemImage: "arrow.up.forward.square")
-            }
-            .keyboardShortcut(.downArrow, modifiers: [.command])
-        }
-        .onAppear {
-            if selectedCount > 1, commonApplications == nil {
-                onLoadCommonApplications?()
-            } else if !item.isDirectory, applications == nil {
-                onLoadApplications()
-            }
-        }
-
-        if item.isDirectory {
-            Button {
-                onOpenInNewTab(isOptionPressed)
-            } label: {
-                Label("Open in New Window", systemImage: "macwindow.badge.plus")
-            }
-        }
-
-        if !item.isDirectory {
-            let appsToShow = selectedCount > 1 ? commonApplications : applications
-
-            Menu {
-                if let apps = appsToShow, !apps.isEmpty {
-                    let regularApps = apps.filter { $0.id != "other" }
-
-                    ForEach(Array(regularApps.enumerated()), id: \.element.id) { _, app in
-                        Button {
-                            onOpenWithApp(app.bundleID, isOptionPressed)
-                        } label: {
-                            HStack {
-                                if let bundleID = app.bundleID {
-                                    appIconView(for: bundleID)
-                                }
-                                Text(app.isDefault ? "\(app.name) (default)" : app.name)
-                            }
-                        }
-
-                        if app.isDefault {
-                            Divider()
-                        }
-                    }
-                } else {
-                    Button("Loading…") {}
-                        .disabled(true)
-                }
-
-                Divider()
-                Button("Other…") {
-                    onOpenWithApp(nil, isOptionPressed)
-                }
-            } label: {
-                Label(isOptionPressed ? "Always Open With" : "Open With", systemImage: "app.badge")
-            }
-            .onAppear {
-                if appsToShow == nil {
-                    if selectedCount > 1 {
-                        onLoadCommonApplications?()
-                    } else {
-                        onLoadApplications()
-                    }
-                }
-            }
-        }
-
-        Divider()
-
-        if onPutBack != nil {
-            Button {
-                onDeleteImmediately()
-            } label: {
-                Label("Delete Immediately...", systemImage: "trash")
-            }
-            .keyboardShortcut(.delete, modifiers: [.command, .option])
-
-            Button {
-                onEmptyTrash()
-            } label: {
-                Label("Empty Trash", systemImage: "trash")
-            }
-
-            Divider()
-
-            Button {
-                onQuickLook()
-            } label: {
-                Label("Quick Look \"\(item.name)\"", systemImage: "eye")
-            }
-            .keyboardShortcut(.space, modifiers: [])
-
-            Button {
-                onGetInfo()
-            } label: {
-                Label("Get Info", systemImage: "info.circle")
-            }
-            .keyboardShortcut("i", modifiers: [.command])
-
-            Button {
-                onShare()
-            } label: {
-                Label("Share...", systemImage: "square.and.arrow.up")
-            }
-
-            Divider()
-
-            Button {
-                onCopy()
-            } label: {
-                Label("Copy", systemImage: "doc.on.doc")
-            }
-            .keyboardShortcut("c", modifiers: [.command])
-
-            Button {
-                onCopyAbsolutePaths()
-            } label: {
-                Label(
-                    selectedCount == 1 ? "Copy Absolute Path" : "Copy Absolute Paths",
-                    systemImage: "doc.on.clipboard",
-                )
-            }
-
-            Button {
-                onCopyURLs()
-            } label: {
-                Label(selectedCount == 1 ? "Copy URL" : "Copy URLs", systemImage: "link")
-            }
-        } else {
-            Button {
-                onMoveToTrash()
-            } label: {
-                Label("Move to Trash", systemImage: "trash")
-            }
-            .keyboardShortcut(.delete, modifiers: [.command])
-
-            Button {
-                onDeleteImmediately()
-            } label: {
-                Label("Delete Immediately...", systemImage: "trash")
-            }
-            .keyboardShortcut(.delete, modifiers: [.command, .option])
-
-            Divider()
-
-            Button {
-                onRename()
-            } label: {
-                Label("Rename", systemImage: "pencil")
-            }
-            .keyboardShortcut(.return, modifiers: [])
-
-            if showCompress {
-                Button {
-                    onCompress()
-                } label: {
-                    Label(selectedCount == 1 ? "Compress \"\(item.name)\"" : "Compress", systemImage: "doc.zipper")
-                }
-            }
-
-            Button {
-                onDuplicate()
-            } label: {
-                Label("Duplicate", systemImage: "plus.square.on.square")
-            }
-            .keyboardShortcut("d", modifiers: [.command])
-
-            Button {
-                onCreateAlias()
-            } label: {
-                Label("Make Alias", systemImage: "arrowshape.turn.up.right")
-            }
-
-            if showExtract {
-                Button {
-                    onExtract()
-                } label: {
-                    Label("Extract Archive", systemImage: "doc.zipper")
-                }
-            }
-
-            Button {
-                onQuickLook()
-            } label: {
-                Label("Quick Look", systemImage: "eye")
-            }
-            .keyboardShortcut(.space, modifiers: [])
-
-            Button {
-                onGetInfo()
-            } label: {
-                Label("Get Info", systemImage: "info.circle")
-            }
-            .keyboardShortcut("i", modifiers: [.command])
-
-            Button {
-                onShare()
-            } label: {
-                Label("Share...", systemImage: "square.and.arrow.up")
-            }
-
-            Divider()
-
-            Button {
-                onCopy()
-            } label: {
-                Label("Copy", systemImage: "doc.on.doc")
-            }
-            .keyboardShortcut("c", modifiers: [.command])
-
-            Button {
-                onCopyAbsolutePaths()
-            } label: {
-                Label(
-                    selectedCount == 1 ? "Copy Absolute Path" : "Copy Absolute Paths",
-                    systemImage: "doc.on.clipboard",
-                )
-            }
-
-            Button {
-                onCopyURLs()
-            } label: {
-                Label(selectedCount == 1 ? "Copy URL" : "Copy URLs", systemImage: "link")
-            }
-
-            Button {
-                onCut()
-            } label: {
-                Label("Cut", systemImage: "scissors")
-            }
-            .keyboardShortcut("x", modifiers: [.command])
-        }
-
-        Divider()
-
-        Menu {
-            ForEach(EntryTagUtils.getFavoriteTagNames().filter { !$0.isEmpty }.prefix(7), id: \.self) { tag in
-                let colorCode = EntryTagUtils.getTagNameToColorCodeMapping()[tag] ?? 0
-                let tagColor = EntryTagUtils.getTagColor(colorCode: colorCode)
-                let isTagged = item.tags?.contains(where: { $0.name == tag }) ?? false
-
-                Button {
-                    onToggleTag(tag)
-                } label: {
-                    HStack {
-                        Image(nsImage: colorCircleImage(color: tagColor, size: 10))
-                        Text(isTagged ? "\(tag) ✓" : tag)
-                    }
-                }
-            }
-
-            Divider()
-
-            Button("Edit Tags...") {
-                showTagsEditor = true
-            }
-        } label: {
-            Label("Tags", systemImage: "tag")
-        }
-    }
-
     func kindText(_ item: Entry) -> String {
         if item.fileExtension.lowercased() == "voycoll" {
             return "Voyager Collection"
         }
         return item.kind
-    }
-
-    @ViewBuilder
-    func appIconView(for bundleID: String) -> some View {
-        if let icon = appIcon(for: bundleID, size: 16) {
-            Image(nsImage: icon)
-        }
     }
 
     func appIcon(for bundleID: String, size: CGFloat) -> NSImage? {

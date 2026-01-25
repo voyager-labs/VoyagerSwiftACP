@@ -30,6 +30,8 @@ public struct EntryClient: Sendable {
     public var quickLookFiles: @Sendable ([URL]) async throws -> Void
     public var openFinderInfo: @Sendable ([URL]) async throws -> Void
     public var shareItems: @Sendable ([URL], CGPoint?) async throws -> Void
+    public var performService: @Sendable (String, [URL]) async throws -> Void
+    public var revealInFinder: @Sendable ([URL]) async throws -> Void
     public var applicationsForFile: @Sendable (URL) async -> [ApplicationInfo]
     public var defaultApplication: @Sendable (UTType) async -> ApplicationInfo?
     public var createFolder: @Sendable (URL, String) async throws -> Void
@@ -83,6 +85,8 @@ public struct EntryClient: Sendable {
         quickLookFiles: @escaping @Sendable ([URL]) async throws -> Void,
         openFinderInfo: @escaping @Sendable ([URL]) async throws -> Void,
         shareItems: @escaping @Sendable ([URL], CGPoint?) async throws -> Void,
+        performService: @escaping @Sendable (String, [URL]) async throws -> Void,
+        revealInFinder: @escaping @Sendable ([URL]) async throws -> Void,
         applicationsForFile: @escaping @Sendable (URL) async -> [ApplicationInfo],
         defaultApplication: @escaping @Sendable (UTType) async -> ApplicationInfo?,
         createFolder: @escaping @Sendable (URL, String) async throws -> Void,
@@ -139,6 +143,8 @@ public struct EntryClient: Sendable {
         self.quickLookFiles = quickLookFiles
         self.openFinderInfo = openFinderInfo
         self.shareItems = shareItems
+        self.performService = performService
+        self.revealInFinder = revealInFinder
         self.applicationsForFile = applicationsForFile
         self.defaultApplication = defaultApplication
         self.createFolder = createFolder
@@ -377,6 +383,39 @@ extension EntryClient: DependencyKey {
 
                     if let error {
                         throw error
+                    }
+                }
+            },
+            performService: { serviceName, urls in
+                guard !urls.isEmpty else { return }
+                try await withScopedAccess(urls) {
+                    let error = await MainActor.run { () -> FileOpError? in
+                        NSApp.registerServicesMenuSendTypes([.fileURL], returnTypes: [])
+                        NSApp.servicesMenu?.update()
+
+                        let pasteboard = NSPasteboard(
+                            name: NSPasteboard.Name("VoyagerServices-\(UUID().uuidString)"),
+                        )
+                        pasteboard.clearContents()
+                        pasteboard.writeObjects(urls as [NSURL])
+
+                        let success = NSPerformService(serviceName, pasteboard)
+                        if !success {
+                            return .system(message: "Failed to run service: \(serviceName)")
+                        }
+                        return nil
+                    }
+
+                    if let error {
+                        throw error
+                    }
+                }
+            },
+            revealInFinder: { urls in
+                guard !urls.isEmpty else { return }
+                try await withScopedAccess(urls) {
+                    await MainActor.run {
+                        NSWorkspace.shared.activateFileViewerSelecting(urls)
                     }
                 }
             },
@@ -956,6 +995,8 @@ extension EntryClient: DependencyKey {
             quickLookFiles: { _ in unimplemented() },
             openFinderInfo: { _ in unimplemented() },
             shareItems: { _, _ in unimplemented() },
+            performService: { _, _ in unimplemented() },
+            revealInFinder: { _ in unimplemented() },
             applicationsForFile: { _ in unimplemented() },
             defaultApplication: { _ in unimplemented() },
             createFolder: { _, _ in unimplemented() },
@@ -1015,6 +1056,8 @@ extension EntryClient: DependencyKey {
             quickLookFiles: { _ in },
             openFinderInfo: { _ in },
             shareItems: { _, _ in },
+            performService: { _, _ in },
+            revealInFinder: { _ in },
             applicationsForFile: { _ async in
                 [previewInfo, chromeInfo, otherInfo]
             },
