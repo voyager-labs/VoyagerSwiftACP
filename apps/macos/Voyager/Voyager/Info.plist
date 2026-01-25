@@ -6,6 +6,10 @@
 	<string>$(APP_ENV)</string>
 	<key>BACKEND_MODE</key>
 	<string>$(BACKEND_MODE)</string>
+	<key>CFBundleShortVersionString</key>
+	<string>$(MARKETING_VERSION)</string>
+	<key>CFBundleVersion</key>
+	<string>$(CURRENT_PROJECT_VERSION)</string>
 	<key>CFBundleDocumentTypes</key>
 	<array>
 		<dict>
