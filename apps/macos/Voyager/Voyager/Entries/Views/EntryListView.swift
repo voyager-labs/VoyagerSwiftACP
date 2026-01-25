@@ -48,6 +48,8 @@ struct EntryListView: View, Equatable {
     let onCreateAlias: () -> Void
     let onExtract: () -> Void
     let onCopy: () -> Void
+    let onCopyAbsolutePaths: () -> Void
+    let onCopyURLs: () -> Void
     let onCut: () -> Void
     let onToggleTag: (String) -> Void
     let isContextMenuTarget: Bool
@@ -415,6 +417,21 @@ private extension EntryListView {
                 Label("Copy", systemImage: "doc.on.doc")
             }
             .keyboardShortcut("c", modifiers: [.command])
+
+            Button {
+                onCopyAbsolutePaths()
+            } label: {
+                Label(
+                    selectedCount == 1 ? "Copy Absolute Path" : "Copy Absolute Paths",
+                    systemImage: "doc.on.clipboard",
+                )
+            }
+
+            Button {
+                onCopyURLs()
+            } label: {
+                Label(selectedCount == 1 ? "Copy URL" : "Copy URLs", systemImage: "link")
+            }
         } else {
             Button {
                 onMoveToTrash()
@@ -483,6 +500,21 @@ private extension EntryListView {
                 Label("Copy", systemImage: "doc.on.doc")
             }
             .keyboardShortcut("c", modifiers: [.command])
+
+            Button {
+                onCopyAbsolutePaths()
+            } label: {
+                Label(
+                    selectedCount == 1 ? "Copy Absolute Path" : "Copy Absolute Paths",
+                    systemImage: "doc.on.clipboard",
+                )
+            }
+
+            Button {
+                onCopyURLs()
+            } label: {
+                Label(selectedCount == 1 ? "Copy URL" : "Copy URLs", systemImage: "link")
+            }
 
             Button {
                 onCut()

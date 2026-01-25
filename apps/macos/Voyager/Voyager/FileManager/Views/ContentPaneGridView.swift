@@ -197,6 +197,8 @@ struct ContentPaneGridView: View {
             onCreateAlias: handlers.onCreateAlias,
             onExtract: handlers.onExtract,
             onCopy: handlers.onCopy,
+            onCopyAbsolutePaths: handlers.onCopyAbsolutePaths,
+            onCopyURLs: handlers.onCopyURLs,
             onCut: handlers.onCut,
             onToggleTag: handlers.onToggleTag,
             selectedCount: fsStore.selectedIds.isEmpty ? 1 : fsStore.selectedIds.count,

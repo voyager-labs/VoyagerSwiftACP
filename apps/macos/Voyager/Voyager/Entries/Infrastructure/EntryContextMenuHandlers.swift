@@ -26,6 +26,8 @@ struct EntryContextMenuHandlers {
     let onCreateAlias: () -> Void
     let onExtract: () -> Void
     let onCopy: () -> Void
+    let onCopyAbsolutePaths: () -> Void
+    let onCopyURLs: () -> Void
     let onCut: () -> Void
     let onToggleTag: (String) -> Void
 }
@@ -180,6 +182,18 @@ func makeContextMenuHandlers(
         })
     }
 
+    let onCopyAbsolutePaths: () -> Void = {
+        EntryContextMenuUtils.sendWithSelection(item, fsStore: fsStore, action: {
+            fsStore.send(.copySelectedAbsolutePaths)
+        })
+    }
+
+    let onCopyURLs: () -> Void = {
+        EntryContextMenuUtils.sendWithSelection(item, fsStore: fsStore, action: {
+            fsStore.send(.copySelectedURLs)
+        })
+    }
+
     let onToggleTag: (String) -> Void = { tag in
         EntryContextMenuUtils.sendWithSelection(item, fsStore: fsStore, action: {
             fsStore.send(.toggleTagForSelectedItem(tag: tag))
@@ -209,6 +223,8 @@ func makeContextMenuHandlers(
         onCreateAlias: onCreateAlias,
         onExtract: onExtract,
         onCopy: onCopy,
+        onCopyAbsolutePaths: onCopyAbsolutePaths,
+        onCopyURLs: onCopyURLs,
         onCut: onCut,
         onToggleTag: onToggleTag,
     )

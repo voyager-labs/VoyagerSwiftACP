@@ -206,6 +206,8 @@ struct ContentPaneListView: View {
             onCreateAlias: props.handlers.onCreateAlias,
             onExtract: props.handlers.onExtract,
             onCopy: props.handlers.onCopy,
+            onCopyAbsolutePaths: props.handlers.onCopyAbsolutePaths,
+            onCopyURLs: props.handlers.onCopyURLs,
             onCut: props.handlers.onCut,
             onToggleTag: props.handlers.onToggleTag,
             isContextMenuTarget: isContextMenuTarget,

@@ -224,6 +224,8 @@ struct EntriesFeature {
         case openCollectionFile(URL)
         case navigateFolder(id: String)
         case copySelectedItems
+        case copySelectedAbsolutePaths
+        case copySelectedURLs
         case cutSelectedItems
         case pasteItems(destinationPath: String)
         case duplicateSelectedItems
@@ -1104,6 +1106,32 @@ struct EntriesFeature {
 
                     entryClient.postFileSystemChanged([])
                 }
+
+            case .copySelectedAbsolutePaths:
+                let selectedItems = getSelectedItems(selectedIds: state.selectedIds, items: state.displayItems)
+                guard !selectedItems.isEmpty else { return .none }
+
+                let text = selectedItems
+                    .map(\.fullPath)
+                    .joined(separator: "\n")
+
+                let pasteboard = NSPasteboard.general
+                pasteboard.clearContents()
+                pasteboard.setString(text, forType: .string)
+                return .none
+
+            case .copySelectedURLs:
+                let selectedItems = getSelectedItems(selectedIds: state.selectedIds, items: state.displayItems)
+                guard !selectedItems.isEmpty else { return .none }
+
+                let text = selectedItems
+                    .map { URL(fileURLWithPath: $0.fullPath).absoluteString }
+                    .joined(separator: "\n")
+
+                let pasteboard = NSPasteboard.general
+                pasteboard.clearContents()
+                pasteboard.setString(text, forType: .string)
+                return .none
 
             case .cutSelectedItems:
                 guard !state.selectedIds.isEmpty else {
