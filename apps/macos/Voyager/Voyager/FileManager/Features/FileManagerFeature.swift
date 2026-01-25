@@ -1318,6 +1318,10 @@ struct FileManagerFeature {
                     state.composer.scopes = [state.currentPath]
                 }
                 state.composer.isPresented = true
+                TelemetryLogger.logMetric(
+                    "voyager_composer_open_total",
+                    value: 1,
+                )
                 return .none
 
             case .exitComposer:

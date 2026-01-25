@@ -95,6 +95,7 @@ private func startSentryIfNeeded() {
         options.dsn = dsn
         options.sendDefaultPii = false
         options.tracesSampleRate = NSNumber(value: tracesSampleRate)
+        options.enableLogs = true
     }
     if let deviceId = DeviceIdentifierProvider.current() {
         let appVersion = AppVersionInfo.shortVersion
