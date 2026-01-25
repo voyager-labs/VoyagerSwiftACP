@@ -1,6 +1,7 @@
 import AppKit
 import ComposableArchitecture
 import Foundation
+import Logging
 @preconcurrency import Sparkle
 
 public struct UpdaterClient: Sendable {
@@ -67,16 +68,22 @@ public extension DependencyValues {
 }
 
 @MainActor
-private final class UpdaterCoordinator {
+private final class UpdaterCoordinator: NSObject, SPUUpdaterDelegate {
     static let shared = UpdaterCoordinator()
     private var controller: SPUStandardUpdaterController?
+    private var pendingRelaunchAttemptId: UUID?
+    private var didInvokeInstallHandler = false
+
+    override private init() {
+        super.init()
+    }
 
     func configureIfNeeded() {
         guard controller == nil else { return }
 
         controller = SPUStandardUpdaterController(
             startingUpdater: true,
-            updaterDelegate: nil,
+            updaterDelegate: self,
             userDriverDelegate: nil,
         )
 
@@ -111,5 +118,45 @@ private final class UpdaterCoordinator {
             updater.checkForUpdatesInBackground()
             break
         }
+    }
+
+    func updater(
+        _: SPUUpdater,
+        shouldPostponeRelaunchForUpdate _: SUAppcastItem,
+        untilInvokingBlock installHandler: @escaping () -> Void,
+    ) -> Bool {
+        let logger = Logger(label: "Voyager")
+        logger.info("sparkle_postpone_relaunch_begin")
+
+        let attemptId: UUID
+        if let pendingRelaunchAttemptId {
+            attemptId = pendingRelaunchAttemptId
+        } else {
+            attemptId = UUID()
+            pendingRelaunchAttemptId = attemptId
+            didInvokeInstallHandler = false
+        }
+
+        Task { @MainActor in
+            await VoyagerTerminationCoordinator.shared.begin(.sparkleRelaunch)
+            await HelperAppClient.liveValue.stop()
+            logger.info("sparkle_postpone_relaunch_end")
+            invokeInstallHandlerOnce(attemptId: attemptId, installHandler)
+        }
+
+        // fail-safe: 어떤 이유로든 stop이 지연되어도 relaunch가 영원히 막히지 않게 한다.
+        Task { @MainActor in
+            try? await Task.sleep(nanoseconds: 5_000_000_000)
+            invokeInstallHandlerOnce(attemptId: attemptId, installHandler)
+        }
+
+        return true
+    }
+
+    private func invokeInstallHandlerOnce(attemptId: UUID, _ installHandler: @escaping () -> Void) {
+        guard pendingRelaunchAttemptId == attemptId, !didInvokeInstallHandler else { return }
+        didInvokeInstallHandler = true
+        pendingRelaunchAttemptId = nil
+        installHandler()
     }
 }

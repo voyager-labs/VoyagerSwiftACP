@@ -1,6 +1,7 @@
 import AppKit
 import Combine
 import ComposableArchitecture
+import Logging
 import SwiftUI
 
 extension Notification.Name {
@@ -18,6 +19,9 @@ class AppDelegate: NSObject, NSApplicationDelegate, ObservableObject {
         UpdaterFeature()
     }
 
+    @Dependency(\.helperAppClient)
+    private var helperAppClient
+
     @Dependency(\.onboardingWindowClient)
     private var onboardingWindowClient
     // TODO: 온보딩 게이트 판단/표시 호출을 전용 경로로 모아 중복 체크를 제거한다.
@@ -31,6 +35,8 @@ class AppDelegate: NSObject, NSApplicationDelegate, ObservableObject {
     @Published var canUndo: Bool = false
     @Published var canRedo: Bool = false
     @Published var currentFileManagerStore: StoreOf<FileManagerFeature>?
+
+    private var terminationAttemptId: UUID?
 
     var windowControllers: [FileManagerWindowController] = []
     var closedTabHistory: [FileManagerFeature.State] = []
@@ -118,23 +124,69 @@ class AppDelegate: NSObject, NSApplicationDelegate, ObservableObject {
     }
 
     func applicationShouldTerminate(_: NSApplication) -> NSApplication.TerminateReply {
+        if terminationAttemptId != nil {
+            return .terminateLater
+        }
+
+        let attemptId = UUID()
+        terminationAttemptId = attemptId
+
         let shouldAlert = UserDefaults.standard.bool(forKey: SettingsKeys.alertBeforeQuit)
+        if shouldAlert {
+            let isIndexing = checkIndexingStatus()
 
-        guard shouldAlert else {
-            return .terminateNow
-        }
+            showQuitAlert(isIndexing: isIndexing) { [weak self] shouldQuit in
+                guard let self else { return }
 
-        let isIndexing = checkIndexingStatus()
-
-        showQuitAlert(isIndexing: isIndexing) { shouldQuit in
-            if shouldQuit {
-                NSApplication.shared.reply(toApplicationShouldTerminate: true)
-            } else {
-                NSApplication.shared.reply(toApplicationShouldTerminate: false)
+                if shouldQuit {
+                    startTerminationCleanup(attemptId: attemptId)
+                } else {
+                    Task { @MainActor in
+                        await VoyagerTerminationCoordinator.shared.end()
+                        self.replyToTerminate(attemptId: attemptId, shouldTerminate: false)
+                    }
+                }
             }
+            return .terminateLater
         }
 
+        startTerminationCleanup(attemptId: attemptId)
         return .terminateLater
+    }
+
+    private func startTerminationCleanup(attemptId: UUID) {
+        let lifecycleStore = appLifecycleStore
+        let helperClient = helperAppClient
+        let logger = Logger(label: "Voyager")
+
+        Task { @MainActor in
+            await VoyagerTerminationCoordinator.shared.begin(.userQuit)
+            lifecycleStore.send(.willTerminate)
+
+            logger.info("app_terminate_cleanup_begin")
+
+            // Helper stop은 내부적으로 5초 예산으로 SIGTERM→forceTerminate→SIGKILL을 시도한다.
+            await helperClient.stop()
+
+            logger.info("app_terminate_cleanup_done")
+            self.replyToTerminate(attemptId: attemptId, shouldTerminate: true)
+        }
+
+        // fail-safe: cleanup이 어떤 이유로든 지연되어도 앱 종료를 영원히 막지 않는다.
+        Task { @MainActor in
+            try? await Task.sleep(nanoseconds: 5_000_000_000)
+            self.replyToTerminate(attemptId: attemptId, shouldTerminate: true)
+        }
+    }
+
+    @MainActor
+    private func replyToTerminate(attemptId: UUID, shouldTerminate: Bool) {
+        guard terminationAttemptId == attemptId else {
+            return
+        }
+
+        terminationAttemptId = nil
+        NSApplication.shared.reply(toApplicationShouldTerminate: shouldTerminate)
     }
 
     @discardableResult
@@ -270,10 +322,6 @@ class AppDelegate: NSObject, NSApplicationDelegate, ObservableObject {
                 updateMenuState(store: nil)
             }
         }
-    }
-
-    func applicationWillTerminate(_: Notification) {
-        appLifecycleStore.send(.willTerminate)
     }
 
     func application(_: NSApplication, openFile filename: String) -> Bool {

@@ -1,6 +1,8 @@
 @preconcurrency import AppKit
 import ComposableArchitecture
+import Darwin
 import Foundation
+import Logging
 
 public struct HelperAppClient: Sendable {
     public var start: @Sendable () async -> Void
@@ -27,13 +29,11 @@ extension HelperAppClient: DependencyKey {
         HelperAppClient(
             start: {
                 await MainActor.run {
-                    launchHelperOnce(resolveHelperInfo())
+                    launchHelper(resolveHelperInfo())
                 }
             },
             stop: {
-                await MainActor.run {
-                    terminateHelper(resolveHelperInfo())
-                }
+                await terminateHelperGracefully(resolveHelperInfo())
             },
             isRunning: {
                 await MainActor.run {
@@ -98,6 +98,74 @@ public extension DependencyValues {
     }
 }
 
+public extension HelperAppClient {
+    func resolveAlignedState(
+        stateClient: HelperStateClient,
+        mainBundleVersion: String?,
+        logger: Logger,
+    ) async -> HelperState? {
+        let state = await requestStateWithFallback(stateClient: stateClient, logger: logger)
+        return await ensureAligned(
+            state,
+            stateClient: stateClient,
+            mainBundleVersion: mainBundleVersion,
+            logger: logger,
+        )
+    }
+}
+
+private extension HelperAppClient {
+    func requestStateWithFallback(
+        stateClient: HelperStateClient,
+        logger: Logger,
+    ) async -> HelperState? {
+        // Helper가 떠있다는 전제를 하지 않고, start는 idempotent하다는 가정 하에 항상 호출한다.
+        await start()
+
+        // 1) State를 요청한다.
+        if let state = await stateClient.resolve() {
+            return state
+        }
+
+        // 2) state가 안 오면, unresponsive로 판단하고 회수/재기동 후 1회 더 요청한다.
+        logger.warning("helper_state_missing_restart")
+        await stop()
+        await start()
+        return await stateClient.resolve()
+    }
+
+    func ensureAligned(
+        _ state: HelperState?,
+        stateClient: HelperStateClient,
+        mainBundleVersion: String?,
+        logger: Logger,
+    ) async -> HelperState? {
+        guard let state else {
+            return state
+        }
+
+        guard let mainVersion = mainBundleVersion else {
+            return state
+        }
+
+        guard let helperVersion = state.helperBundleVersion else {
+            logger.info("helper_launch_force_restart_begin -- helper=unknown main=\(mainVersion)")
+            await stop()
+            await start()
+            return await stateClient.resolve()
+        }
+
+        guard mainVersion != helperVersion else {
+            return state
+        }
+
+        logger.info("helper_launch_force_restart_begin -- helper=\(helperVersion) main=\(mainVersion)")
+        await stop()
+        await start()
+        return await stateClient.resolve()
+    }
+}
+
 private struct HelperLifecycleInfo {
     let bundleId: String
     let url: URL
@@ -131,18 +199,26 @@ private func resolveHelperInfo() -> HelperLifecycleInfo {
 }
 
 @MainActor
-private func launchHelperOnce(_ info: HelperLifecycleInfo) {
+private func launchHelper(_ info: HelperLifecycleInfo) {
+    let logger = Logger(label: "Voyager")
+
     let runningApps = NSWorkspace.shared.runningApplications
     let isHelperRunning = runningApps.contains { app in
         app.bundleIdentifier == info.bundleId
     }
+    if isHelperRunning {
+        return
+    }
 
-    if !isHelperRunning {
-        let config = NSWorkspace.OpenConfiguration()
-        if let helperEnvironment = resolveHelperEnvironment() {
-            config.environment = helperEnvironment
+    logger.info("helper_launch_begin")
+    let config = NSWorkspace.OpenConfiguration()
+    if let helperEnvironment = resolveHelperEnvironment() {
+        config.environment = helperEnvironment
+    }
+    NSWorkspace.shared.openApplication(at: info.url, configuration: config) { _, error in
+        if let error {
+            logger.error("helper_launch_failed -- \(String(describing: error))")
         }
-        NSWorkspace.shared.openApplication(at: info.url, configuration: config) { _, _ in }
     }
 }
 
@@ -156,9 +232,65 @@ private func resolveHelperEnvironment() -> [String: String]? {
 }
 
 @MainActor
-private func terminateHelper(_ info: HelperLifecycleInfo) {
-    let runningApps = NSWorkspace.shared.runningApplications
-    if let helper = runningApps.first(where: { $0.bundleIdentifier == info.bundleId }) {
-        helper.terminate()
+private func terminateHelperGracefully(_ info: HelperLifecycleInfo) async {
+    let logger = Logger(label: "Voyager")
+
+    guard let helper = findRunningHelper(bundleId: info.bundleId) else {
+        return
+    }
+
+    logger.info("helper_stop_begin")
+
+    if helper.bundleURL == nil {
+        logger.warning("helper_stop_bundleurl_nil")
+    } else if helper.bundleURL?.lastPathComponent != "VoyagerHelper.app" {
+        logger.warning("helper_stop_bundleurl_unexpected -- \(helper.bundleURL?.path ?? "nil")")
+        return
+    }
+
+    let pid = helper.processIdentifier
+    if kill(pid, SIGTERM) != 0 {
+        logger.warning("helper_stop_sigterm_failed -- errno=\(errno)")
+    }
+
+    if await waitForHelperTermination(bundleId: info.bundleId, timeoutSeconds: 3) {
+        logger.info("helper_stop_done")
+        return
+    }
+
+    helper.forceTerminate()
+    if await waitForHelperTermination(bundleId: info.bundleId, timeoutSeconds: 2) {
+        logger.info("helper_stop_done")
+        return
+    }
+
+    _ = kill(pid, SIGKILL)
+    if await waitForHelperTermination(bundleId: info.bundleId, timeoutSeconds: 2) {
+        logger.warning("helper_stop_forced")
+    } else {
+        logger.error("helper_stop_failed")
+    }
+}
+
+@MainActor
+private func findRunningHelper(bundleId: String) -> NSRunningApplication? {
+    NSWorkspace.shared.runningApplications.first(where: { $0.bundleIdentifier == bundleId })
+}
+
+@MainActor
+private func waitForHelperTermination(bundleId: String, timeoutSeconds: TimeInterval) async -> Bool {
+    let deadline = Date().addingTimeInterval(timeoutSeconds)
+    while Date() < deadline {
+        let isRunning = NSWorkspace.shared.runningApplications.contains { app in
+            app.bundleIdentifier == bundleId
+        }
+        if !isRunning {
+            return true
+        }
+        try? await Task.sleep(nanoseconds: 200_000_000)
+    }
+
+    return !NSWorkspace.shared.runningApplications.contains { app in
+        app.bundleIdentifier == bundleId
     }
 }
