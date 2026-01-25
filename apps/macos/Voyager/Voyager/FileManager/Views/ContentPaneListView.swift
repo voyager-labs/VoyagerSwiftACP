@@ -215,6 +215,15 @@ struct ContentPaneListView: View {
             onContextMenuOpen: {
                 contextMenuTargetId = item.id
                 contextMenuTargetWasSelected = selectedIds.contains(item.id)
+
+                // Finder behavior: 우클릭한 아이템이 선택에 포함되어 있지 않으면 해당 아이템 1개로 선택을 전환한다.
+                if !selectedIds.contains(item.id) {
+                    fsStore.send(.selectItem(
+                        id: item.id,
+                        isCommandPressed: false,
+                        isShiftPressed: false,
+                    ))
+                }
             },
             selectedCount: fsStore.selectedIds.isEmpty ? 1 : fsStore.selectedIds.count,
             showCompress: props.context.showCompress,
