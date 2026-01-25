@@ -35,6 +35,7 @@ struct EntriesOperationsFeature {
         case quickLookFile(file: Entry)
         case quickLookFiles(files: [Entry])
         case openFinderInfo(items: [Entry])
+        case shareItems(items: [Entry], anchor: CGPoint?)
         case openFileWithApp(file: Entry)
         case openFileWithAppBundleID(filePath: String, bundleID: String, url: URL)
         case setDefaultAppForFile(type: UTType?, bundleID: String, file: Entry)
@@ -223,6 +224,13 @@ struct EntriesOperationsFeature {
                 let keyPath = items.first?.fullPath ?? "getinfo"
                 return run(for: keyPath, kind: .getInfo) {
                     try await entryClient.openFinderInfo(urls)
+                }
+
+            case let .shareItems(items, anchor):
+                let urls = items.map { URL(fileURLWithPath: $0.fullPath) }
+                let keyPath = items.first?.fullPath ?? "share"
+                return run(for: keyPath, kind: .share) {
+                    try await entryClient.shareItems(urls, anchor)
                 }
 
             case let .openFileWithApp(file):
@@ -1212,6 +1220,7 @@ enum OperationKind: Equatable, Hashable, Sendable {
     case setDefaultApp(String)
     case quickLook
     case getInfo
+    case share
     case createFolder
     case createAlias
     case pasteFile

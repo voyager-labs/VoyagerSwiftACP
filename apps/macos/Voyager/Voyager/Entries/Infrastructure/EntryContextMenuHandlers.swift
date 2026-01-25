@@ -9,6 +9,7 @@ struct EntryContextMenuHandlers {
     let onOpenInNewTab: (Bool) -> Void
     let onQuickLook: () -> Void
     let onGetInfo: () -> Void
+    let onShare: () -> Void
     let onOpenWithApp: (String?, Bool) -> Void
     let onRenameUpdate: (String) -> Void
     let onRenameCommit: () -> Void
@@ -38,6 +39,7 @@ func makeContextMenuHandlers(
     item: Entry,
     fsStore: Store<EntriesFeature.State, EntriesFeature.Action>,
     saveScrollPosition: @escaping () -> Void,
+    shareAnchorProvider: @escaping () -> CGPoint?,
     isTrashFolder: Bool,
     onEmptyTrash: @escaping () -> Void,
     openWindow: @escaping (String) -> Void,
@@ -85,6 +87,12 @@ func makeContextMenuHandlers(
     let onGetInfo: () -> Void = {
         EntryContextMenuUtils.sendWithSelection(item, fsStore: fsStore, action: {
             fsStore.send(.getInfoForSelectedItems)
+        })
+    }
+
+    let onShare: () -> Void = {
+        EntryContextMenuUtils.sendWithSelection(item, fsStore: fsStore, action: {
+            fsStore.send(.shareSelectedItems(anchor: shareAnchorProvider()))
         })
     }
 
@@ -213,6 +221,7 @@ func makeContextMenuHandlers(
         onOpenInNewTab: onOpenInNewTab,
         onQuickLook: onQuickLook,
         onGetInfo: onGetInfo,
+        onShare: onShare,
         onOpenWithApp: onOpenWithApp,
         onRenameUpdate: onRenameUpdate,
         onRenameCommit: onRenameCommit,

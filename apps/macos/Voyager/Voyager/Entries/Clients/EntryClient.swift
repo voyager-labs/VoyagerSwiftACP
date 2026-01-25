@@ -29,6 +29,7 @@ public struct EntryClient: Sendable {
     public var quickLook: @Sendable (URL) async throws -> Void
     public var quickLookFiles: @Sendable ([URL]) async throws -> Void
     public var openFinderInfo: @Sendable ([URL]) async throws -> Void
+    public var shareItems: @Sendable ([URL], CGPoint?) async throws -> Void
     public var applicationsForFile: @Sendable (URL) async -> [ApplicationInfo]
     public var defaultApplication: @Sendable (UTType) async -> ApplicationInfo?
     public var createFolder: @Sendable (URL, String) async throws -> Void
@@ -81,6 +82,7 @@ public struct EntryClient: Sendable {
         quickLook: @escaping @Sendable (URL) async throws -> Void,
         quickLookFiles: @escaping @Sendable ([URL]) async throws -> Void,
         openFinderInfo: @escaping @Sendable ([URL]) async throws -> Void,
+        shareItems: @escaping @Sendable ([URL], CGPoint?) async throws -> Void,
         applicationsForFile: @escaping @Sendable (URL) async -> [ApplicationInfo],
         defaultApplication: @escaping @Sendable (UTType) async -> ApplicationInfo?,
         createFolder: @escaping @Sendable (URL, String) async throws -> Void,
@@ -136,6 +138,7 @@ public struct EntryClient: Sendable {
         self.quickLook = quickLook
         self.quickLookFiles = quickLookFiles
         self.openFinderInfo = openFinderInfo
+        self.shareItems = shareItems
         self.applicationsForFile = applicationsForFile
         self.defaultApplication = defaultApplication
         self.createFolder = createFolder
@@ -351,6 +354,24 @@ extension EntryClient: DependencyKey {
                     }
                 }
             },
+            shareItems: { urls, anchor in
+                guard !urls.isEmpty else { return }
+                try await withScopedAccess(urls) {
+                    let error = await MainActor.run { () -> FileOpError? in
+                        guard let window = NSApp.keyWindow ?? NSApp.mainWindow,
+                              let view = window.contentView
+                        else {
+                            return .system(message: "No active window to share from.")
+                        }
+
+                        let picker = NSSharingServicePicker(items: urls)
+                        let rect = shareAnchorRect(
+                            in: view,
+                            window: window,
+                            event: NSApp.currentEvent,
+                            screenPoint: anchor,
+                        )
+                        picker.show(relativeTo: rect, of: view, preferredEdge: .minY)
                         return nil
                     }
 
@@ -934,6 +955,7 @@ extension EntryClient: DependencyKey {
             quickLook: { _ in unimplemented() },
             quickLookFiles: { _ in unimplemented() },
             openFinderInfo: { _ in unimplemented() },
+            shareItems: { _, _ in unimplemented() },
             applicationsForFile: { _ in unimplemented() },
             defaultApplication: { _ in unimplemented() },
             createFolder: { _, _ in unimplemented() },
@@ -992,6 +1014,7 @@ extension EntryClient: DependencyKey {
             quickLook: { _ in },
             quickLookFiles: { _ in },
             openFinderInfo: { _ in },
+            shareItems: { _, _ in },
             applicationsForFile: { _ async in
                 [previewInfo, chromeInfo, otherInfo]
             },
@@ -1047,6 +1070,29 @@ public extension DependencyValues {
         get { self[EntryClient.self] }
         set { self[EntryClient.self] = newValue }
     }
+}
+
+@MainActor
+private func shareAnchorRect(
+    in view: NSView,
+    window: NSWindow,
+    event: NSEvent?,
+    screenPoint: CGPoint?,
+) -> CGRect {
+    // TODO: 좌표 기반 앵커링을 엔트리(셀/행) 프레임 기준으로 전환해야 함
+    if let screenPoint {
+        let windowPoint = window.convertPoint(fromScreen: screenPoint)
+        let viewPoint = view.convert(windowPoint, from: nil)
+        return CGRect(x: viewPoint.x, y: viewPoint.y, width: 1, height: 1)
+    }
+
+    if let event, event.window == window {
+        let location = view.convert(event.locationInWindow, from: nil)
+        return CGRect(x: location.x, y: location.y, width: 1, height: 1)
+    }
+
+    let bounds = view.bounds
+    return CGRect(x: bounds.midX, y: bounds.midY, width: 1, height: 1)
 }
 
 func withScopedAccess<T>(_ url: URL, perform: @escaping () async throws -> T) async throws -> T {

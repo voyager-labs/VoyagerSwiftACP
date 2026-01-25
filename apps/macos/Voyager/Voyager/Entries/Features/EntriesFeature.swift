@@ -221,6 +221,7 @@ struct EntriesFeature {
         case openSelectedItem
         case quickLookSelectedItem
         case getInfoForSelectedItems
+        case shareSelectedItems(anchor: CGPoint?)
         case openWithSelectedItem(bundleID: String?, shouldSetAsDefault: Bool)
         case openCollectionFile(URL)
         case navigateFolder(id: String)
@@ -1022,6 +1023,11 @@ struct EntriesFeature {
                 let selectedItems = getSelectedItems(selectedIds: state.selectedIds, items: state.displayItems)
                 guard !selectedItems.isEmpty else { return .none }
                 return .send(.operations(.openFinderInfo(items: selectedItems)))
+
+            case let .shareSelectedItems(anchor):
+                let selectedItems = getSelectedItems(selectedIds: state.selectedIds, items: state.displayItems)
+                guard !selectedItems.isEmpty else { return .none }
+                return .send(.operations(.shareItems(items: selectedItems, anchor: anchor)))
 
             case let .openWithSelectedItem(bundleID, shouldSetAsDefault):
                 let selectedFiles = getSelectedFiles(selectedIds: state.selectedIds, items: state.displayItems)

@@ -31,6 +31,7 @@ struct EntryGridView: View, Equatable {
     let onOpenInNewTab: ((Bool) -> Void)?
     let onQuickLook: (() -> Void)?
     let onGetInfo: (() -> Void)?
+    let onShare: (() -> Void)?
     let onOpenWithApp: ((String?, Bool) -> Void)?
     let onRenameUpdate: (String) -> Void
     let onRenameCommit: () -> Void
@@ -380,6 +381,14 @@ private extension EntryGridView {
                 .keyboardShortcut("i", modifiers: [.command])
             }
 
+            if let onShare {
+                Button {
+                    onShare()
+                } label: {
+                    Label("Share...", systemImage: "square.and.arrow.up")
+                }
+            }
+
             Divider()
 
             if let onCopy {
@@ -488,6 +497,14 @@ private extension EntryGridView {
                     Label("Get Info", systemImage: "info.circle")
                 }
                 .keyboardShortcut("i", modifiers: [.command])
+            }
+
+            if let onShare {
+                Button {
+                    onShare()
+                } label: {
+                    Label("Share...", systemImage: "square.and.arrow.up")
+                }
             }
 
             Divider()

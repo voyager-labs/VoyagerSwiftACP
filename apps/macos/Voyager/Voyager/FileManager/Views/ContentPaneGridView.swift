@@ -133,6 +133,8 @@ struct ContentPaneGridView: View {
             item: item,
             fsStore: fsStore,
             saveScrollPosition: saveScrollPosition,
+            // TODO: 좌표 기반 앵커링을 엔트리 기준 위치로 전환해야 함
+            shareAnchorProvider: { nil },
             isTrashFolder: isTrashFolder,
             onEmptyTrash: { store.send(.entries(.emptyTrash)) },
             openWindow: { path in
@@ -180,6 +182,7 @@ struct ContentPaneGridView: View {
             onOpenInNewTab: handlers.onOpenInNewTab,
             onQuickLook: handlers.onQuickLook,
             onGetInfo: handlers.onGetInfo,
+            onShare: handlers.onShare,
             onOpenWithApp: handlers.onOpenWithApp,
             onRenameUpdate: handlers.onRenameUpdate,
             onRenameCommit: handlers.onRenameCommit,

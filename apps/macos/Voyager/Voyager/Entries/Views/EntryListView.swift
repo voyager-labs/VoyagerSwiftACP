@@ -31,6 +31,7 @@ struct EntryListView: View, Equatable {
     let onOpenInNewTab: (Bool) -> Void
     let onQuickLook: () -> Void
     let onGetInfo: () -> Void
+    let onShare: () -> Void
     let onOpenWithApp: (String?, Bool) -> Void
     let onRenameUpdate: (String) -> Void
     let onRenameCommit: () -> Void
@@ -275,7 +276,7 @@ private struct RightClickCaptureView: NSViewRepresentable {
 
     @MainActor
     final class CaptureView: NSView {
-        var onRightClick: (() -> Void)?
+        var onRightClick: ((CGPoint) -> Void)?
         private var monitor: Any?
 
         override func viewDidMoveToWindow() {
@@ -290,7 +291,7 @@ private struct RightClickCaptureView: NSViewRepresentable {
                 guard let self else { return event }
                 let location = convert(event.locationInWindow, from: nil)
                 if bounds.contains(location) {
-                    onRightClick?()
+                    onRightClick?(event.locationInWindow)
                 }
                 return event
             }
@@ -410,6 +411,12 @@ private extension EntryListView {
             }
             .keyboardShortcut("i", modifiers: [.command])
 
+            Button {
+                onShare()
+            } label: {
+                Label("Share...", systemImage: "square.and.arrow.up")
+            }
+
             Divider()
 
             Button {
@@ -499,6 +506,12 @@ private extension EntryListView {
                 Label("Get Info", systemImage: "info.circle")
             }
             .keyboardShortcut("i", modifiers: [.command])
+
+            Button {
+                onShare()
+            } label: {
+                Label("Share...", systemImage: "square.and.arrow.up")
+            }
 
             Divider()
 
