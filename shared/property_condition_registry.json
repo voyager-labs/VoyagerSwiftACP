@@ -1,42 +1,17 @@
 {
   "$kind": "property_condition_registry",
-  "$version": "2.0.0",
+  "$version": "2.0.1",
   "property_types": {
     "string": {
-      "operators": [
-        "contains_any",
-        "contains_all",
-        "starts_with",
-        "ends_with",
-        "eq",
-        "neq"
-      ],
+      "operators": ["any", "all", "sw", "ew", "eq", "neq", "rx"],
       "sql_cast": "TEXT"
     },
     "number": {
-      "operators": [
-        "eq",
-        "gt",
-        "lt",
-        "between",
-        "neq",
-        "gte",
-        "lte",
-        "not_between"
-      ],
+      "operators": ["eq", "gt", "lt", "btw", "neq", "gte", "lte", "nbtw"],
       "sql_cast": "REAL"
     },
     "date": {
-      "operators": [
-        "eq",
-        "neq",
-        "gt",
-        "gte",
-        "lt",
-        "lte",
-        "between",
-        "not_between"
-      ],
+      "operators": ["eq", "neq", "gt", "gte", "lt", "lte", "btw", "nbtw"],
       "sql_cast": "TEXT"
     },
     "boolean": {
@@ -44,14 +19,7 @@
       "sql_cast": "INTEGER"
     },
     "string_list": {
-      "operators": [
-        "contains_any",
-        "contains_all",
-        "not_contains_any",
-        "not_contains_all",
-        "exists",
-        "empty"
-      ],
+      "operators": ["any", "all", "none", "miss", "exists", "empty"],
       "sql_cast": "TEXT"
     }
   },
@@ -248,9 +216,10 @@
       "allowed_types": ["string", "string_list"],
       "aliases": ["contains any"],
       "ui_value_kind": {
+        "string": "listText",
         "string_list": "listText"
       },
-      "inverse_of": "not_contains_any"
+      "inverse_of": "none"
     },
     "all": {
       "ui_label": "Contains all",
@@ -261,9 +230,10 @@
       "allowed_types": ["string", "string_list"],
       "aliases": ["contains all"],
       "ui_value_kind": {
+        "string": "listText",
         "string_list": "listText"
       },
-      "inverse_of": "not_contains_all"
+      "inverse_of": "miss"
     },
     "none": {
       "ui_label": "Contains none",
@@ -272,7 +242,7 @@
       "value_shape": "list",
       "value_count": "n",
       "allowed_types": ["string_list"],
-      "inverse_of": "contains_any",
+      "inverse_of": "any",
       "aliases": ["contains none", "not contains any"],
       "ui_value_kind": {
         "string_list": "listText"
@@ -285,7 +255,7 @@
       "value_shape": "list",
       "value_count": "n",
       "allowed_types": ["string_list"],
-      "inverse_of": "contains_all",
+      "inverse_of": "all",
       "aliases": ["missing any", "not contains all"],
       "ui_value_kind": {
         "string_list": "listText"
