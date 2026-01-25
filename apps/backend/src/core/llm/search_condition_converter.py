@@ -18,7 +18,7 @@ from pydantic import BaseModel, Field
 
 from core.metadata.registry_loader import (
     SYSTEM_PROPERTY_REGISTRY,
-    get_all_property_keys,
+    get_visible_property_keys,
     load_condition_registry,
 )
 
@@ -123,6 +123,8 @@ class SearchConditionConverter:
 
         lower = query.lower()
         for key, mapping in SYSTEM_PROPERTY_REGISTRY.items():
+            if mapping.ui_hidden:
+                continue
             for alias in mapping.search_aliases:
                 if alias and alias.lower() in lower:
                     candidates.add(key)
@@ -130,7 +132,12 @@ class SearchConditionConverter:
             if key.lower() in lower:
                 candidates.add(key)
 
-        return {key for key in candidates if key in SYSTEM_PROPERTY_REGISTRY}
+        return {key for key in candidates if self._is_visible_key(key)}
+
+    @staticmethod
+    def _is_visible_key(key: str) -> bool:
+        mapping = SYSTEM_PROPERTY_REGISTRY.get(key)
+        return bool(mapping) and not mapping.ui_hidden
 
     def _build_key_groups(
         self,
@@ -141,7 +148,7 @@ class SearchConditionConverter:
         grouped: dict[str, list[str]] = {}
         for key in sorted(candidates):
             mapping = SYSTEM_PROPERTY_REGISTRY.get(key)
-            if not mapping:
+            if not mapping or mapping.ui_hidden:
                 continue
             grouped.setdefault(mapping.type.value, []).append(key)
         return grouped
@@ -239,7 +246,15 @@ class SearchConditionConverter:
             {"conditions": [...], "scopes": [...] | None}
         """
         try:
-            prompt = self._build_user_prompt(query, existing_conditions, existing_scopes)
+            visible_conditions = None
+            if existing_conditions:
+                visible_conditions = [
+                    condition
+                    for condition in existing_conditions
+                    if self._is_visible_key(str(condition.get("propertyKey", "")))
+                ]
+
+            prompt = self._build_user_prompt(query, visible_conditions, existing_scopes)
 
             result = await self._request_structured(
                 prompt=prompt,
@@ -254,7 +269,11 @@ class SearchConditionConverter:
             normalized_conditions = [
                 self._normalize_condition(c.model_dump()) for c in result.conditions
             ]
-            filtered_conditions = [c for c in normalized_conditions if c is not None]
+            filtered_conditions = [
+                c
+                for c in normalized_conditions
+                if c is not None and self._is_visible_key(str(c.get("propertyKey", "")))
+            ]
             return {
                 "conditions": filtered_conditions,
                 "scopes": result.scopes,
@@ -313,7 +332,7 @@ class SearchConditionConverter:
             "conditions": result["conditions"],
             "scopes": result["scopes"],
             "success": not result.get("error") and len(result["conditions"]) > 0,
-            "supported_properties": get_all_property_keys(),
+            "supported_properties": get_visible_property_keys(),
             "error": result.get("error"),
         }
 

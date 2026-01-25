@@ -11,6 +11,7 @@ struct SystemPropertyDefinition: Decodable, Equatable, Sendable {
     let valueFormat: String?
     let dbIndexed: Bool?
     let uiPinned: Bool?
+    let uiHidden: Bool?
 
     private enum CodingKeys: String, CodingKey {
         case uiLabel = "ui_label"
@@ -23,6 +24,7 @@ struct SystemPropertyDefinition: Decodable, Equatable, Sendable {
         case valueFormat = "value_format"
         case dbIndexed = "db_indexed"
         case uiPinned = "ui_pinned"
+        case uiHidden = "ui_hidden"
     }
 }
 
