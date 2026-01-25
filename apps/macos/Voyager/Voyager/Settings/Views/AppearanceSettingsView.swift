@@ -131,7 +131,7 @@ struct AppearanceSettingsView: View {
 
     // TODO(설정-뷰사이즈): 현재 프리셋 UI는 초기 정리 버전입니다.
     // - 프리셋 값이 하드코딩되어 있음 → DesignSystem/SettingsTypes로 이동하고 근거(의도) 문서화
-    // - Custom 옵션은 상태 표시용인데 Picker에서 선택 가능함 → 비활성화/숨김 처리 + 미세조정(슬라이더) 모드 제공 검토
+    // - Mixed는 상태 표시용으로 라벨만 노출 중 → 접근성 설명/상태 안내 문구 보강 검토
     // - 프리셋 선택을 별도로 저장하지 않고 icon/text 값으로 역추론 중 → UserDefaults에 preset 저장(마이그레이션 포함) 검토
     // - 기존 커스텀 값에서 가장 가까운 프리셋 추천/원클릭 정리 UX 추가
     // - 문자열 로컬라이즈(Theme, View size, Customize per view 등) 및 접근성 레이블 정리
@@ -140,7 +140,7 @@ struct AppearanceSettingsView: View {
         case small
         case medium
         case large
-        case custom
+        case mixed
 
         var id: String { rawValue }
 
@@ -152,8 +152,8 @@ struct AppearanceSettingsView: View {
                 "Medium"
             case .large:
                 "Large"
-            case .custom:
-                "Custom"
+            case .mixed:
+                "Mixed"
             }
         }
     }
@@ -173,15 +173,19 @@ struct AppearanceSettingsView: View {
 
     private var overallPreset: SizePreset {
         guard listPreset == iconPreset else {
-            return .custom
+            return .mixed
         }
-        return listPreset == .custom ? .custom : listPreset
+        return listPreset == .mixed ? .mixed : listPreset
     }
 
-    private var overallPresetBinding: Binding<SizePreset> {
+    private var overallPresetSelection: Binding<SizePreset?> {
         Binding(
-            get: { overallPreset },
+            get: {
+                let preset = overallPreset
+                return preset == .mixed ? nil : preset
+            },
             set: { preset in
+                guard let preset else { return }
                 applyOverallPreset(preset)
             },
         )
@@ -205,6 +209,14 @@ struct AppearanceSettingsView: View {
         )
     }
 
+    private var perViewPresets: [SizePreset] {
+        SizePreset.allCases.filter { $0 != .mixed }
+    }
+
+    private var overallPresets: [SizePreset] {
+        perViewPresets
+    }
+
     private func presetForList(iconSize: CGFloat, textSize: CGFloat) -> SizePreset {
         let icon = Int(iconSize.rounded())
         let text = Int(textSize.rounded())
@@ -213,7 +225,7 @@ struct AppearanceSettingsView: View {
         if icon == 20, text == 13 { return .medium }
         if icon == 24, text == 14 { return .large }
 
-        return .custom
+        return .mixed
     }
 
     private func presetForIcon(iconSize: CGFloat, textSize: CGFloat) -> SizePreset {
@@ -224,7 +236,7 @@ struct AppearanceSettingsView: View {
         if icon == 64, text == 12 { return .medium }
         if icon == 96, text == 13 { return .large }
 
-        return .custom
+        return .mixed
     }
 
     private func sizingForListPreset(_ preset: SizePreset) -> ViewSizing? {
@@ -235,7 +247,7 @@ struct AppearanceSettingsView: View {
             ViewSizing(iconSize: 20, textSize: 13)
         case .large:
             ViewSizing(iconSize: 24, textSize: 14)
-        case .custom:
+        case .mixed:
             nil
         }
     }
@@ -248,13 +260,13 @@ struct AppearanceSettingsView: View {
             ViewSizing(iconSize: 64, textSize: 12)
         case .large:
             ViewSizing(iconSize: 96, textSize: 13)
-        case .custom:
+        case .mixed:
             nil
         }
     }
 
     private func applyOverallPreset(_ preset: SizePreset) {
-        guard preset != .custom else { return }
+        guard preset != .mixed else { return }
         guard let listSizing = sizingForListPreset(preset) else { return }
         guard let iconSizing = sizingForIconPreset(preset) else { return }
 
@@ -265,14 +277,14 @@ struct AppearanceSettingsView: View {
     }
 
     private func applyListPreset(_ preset: SizePreset) {
-        guard preset != .custom else { return }
+        guard preset != .mixed else { return }
         guard let sizing = sizingForListPreset(preset) else { return }
         store.send(.setListIconSize(sizing.iconSize))
         store.send(.setListTextSize(sizing.textSize))
     }
 
     private func applyIconPreset(_ preset: SizePreset) {
-        guard preset != .custom else { return }
+        guard preset != .mixed else { return }
         guard let sizing = sizingForIconPreset(preset) else { return }
         store.send(.setGridIconSize(sizing.iconSize))
         store.send(.setGridTextSize(sizing.textSize))
@@ -325,23 +337,41 @@ struct AppearanceSettingsView: View {
             }
 
             Section("View size") {
-                Picker("Overall", selection: overallPresetBinding) {
-                    ForEach(SizePreset.allCases) { preset in
-                        Text(preset.title).tag(preset)
+                HStack(alignment: .center, spacing: 20) {
+                    HStack(spacing: 6) {
+                        Text("Overall")
+                            .foregroundColor(.primary)
+                            .fixedSize(horizontal: true, vertical: false)
+
+                        if overallPreset == .mixed {
+                            Text(SizePreset.mixed.title)
+                                .font(.caption)
+                                .foregroundColor(.secondary)
+                        }
                     }
+                    .frame(width: 140, alignment: .leading)
+
+                    Spacer()
+
+                    Picker("Overall", selection: overallPresetSelection) {
+                        ForEach(overallPresets) { preset in
+                            Text(preset.title).tag(Optional(preset))
+                        }
+                    }
+                    .pickerStyle(.segmented)
+                    .labelsHidden()
                 }
-                .pickerStyle(.segmented)
 
                 DisclosureGroup("Customize per view") {
                     Picker("List", selection: listPresetBinding) {
-                        ForEach(SizePreset.allCases) { preset in
+                        ForEach(perViewPresets) { preset in
                             Text(preset.title).tag(preset)
                         }
                     }
                     .pickerStyle(.segmented)
 
                     Picker("Icon", selection: iconPresetBinding) {
-                        ForEach(SizePreset.allCases) { preset in
+                        ForEach(perViewPresets) { preset in
                             Text(preset.title).tag(preset)
                         }
                     }
