@@ -352,7 +352,7 @@ struct FileManagerFeature {
             switch action {
             case .onAppear:
                 if shouldLogDailyFileManagerOpen(userDefaultsClient) {
-                    TelemetryLogger.logMetric(
+                    VoyagerSentryMetricLogger.logMetric(
                         "voyager_file_manager_first_open_total",
                         value: 1,
                         tags: ["date": currentDateKey()],
@@ -1325,7 +1325,7 @@ struct FileManagerFeature {
                     state.composer.scopes = [state.currentPath]
                 }
                 state.composer.isPresented = true
-                TelemetryLogger.logMetric(
+                VoyagerSentryMetricLogger.logMetric(
                     "voyager_composer_open_total",
                     value: 1,
                 )

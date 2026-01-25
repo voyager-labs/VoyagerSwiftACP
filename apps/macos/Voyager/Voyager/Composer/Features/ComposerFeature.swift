@@ -154,16 +154,16 @@ struct ComposerFeature {
                 let query = state.text.trimmingCharacters(in: .whitespacesAndNewlines)
                 guard !query.isEmpty else { return .none }
                 let filters = buildFilters(from: state)
-                TelemetryLogger.logMetric(
+                VoyagerSentryMetricLogger.logMetric(
                     "voyager_composer_submit_total",
                     value: 1,
                 )
-                TelemetryLogger.logMetric(
+                VoyagerSentryMetricLogger.logMetric(
                     "voyager_search_submit_total",
                     value: 1,
                 )
                 if state.hasSubmittedInSession {
-                    TelemetryLogger.logMetric(
+                    VoyagerSentryMetricLogger.logMetric(
                         "voyager_search_resubmit_total",
                         value: 1,
                     )
@@ -192,7 +192,7 @@ struct ComposerFeature {
 
             case .cancelSearch:
                 state.isLoadingSearch = false
-                TelemetryLogger.logMetric(
+                VoyagerSentryMetricLogger.logMetric(
                     "voyager_search_cancel_total",
                     value: 1,
                     tags: ["type": "search"],
@@ -202,7 +202,7 @@ struct ComposerFeature {
             case .cancelFilters:
                 state.isLoadingFilters = false
                 state.isFilteringInFlight = false
-                TelemetryLogger.logMetric(
+                VoyagerSentryMetricLogger.logMetric(
                     "voyager_search_cancel_total",
                     value: 1,
                     tags: ["type": "filters"],
@@ -214,7 +214,7 @@ struct ComposerFeature {
                 state.lastSearchResponse = nil
                 state.isLoadingFilters = true
                 state.isFilteringInFlight = true
-                TelemetryLogger.logMetric(
+                VoyagerSentryMetricLogger.logMetric(
                     "voyager_composer_filters_apply_total",
                     value: 1,
                 )
@@ -517,12 +517,12 @@ struct ComposerFeature {
                 state.lastFiltersResponse = nil
                 applyAppliedFilters(response.appliedFilters, state: &state, registryClient: registryClient)
                 if let startedAt = state.searchStartedAt {
-                    TelemetryLogger.logMetric(
+                    VoyagerSentryMetricLogger.logMetric(
                         "voyager_search_roundtrip_duration_ms",
                         value: round((Date().timeIntervalSince(startedAt)) * 1000),
                     )
                 }
-                TelemetryLogger.logMetric(
+                VoyagerSentryMetricLogger.logMetric(
                     "voyager_search_result_total",
                     value: 1,
                     tags: ["result": response.itemCount > 0 ? "success" : "empty"],
@@ -532,7 +532,7 @@ struct ComposerFeature {
 
             case .searchResponse(.failure):
                 state.isLoadingSearch = false
-                TelemetryLogger.logMetric(
+                VoyagerSentryMetricLogger.logMetric(
                     "voyager_search_result_total",
                     value: 1,
                     tags: ["result": "error"],
@@ -547,7 +547,7 @@ struct ComposerFeature {
                 state.lastFiltersResponse = response
                 applyAppliedFilters(response.appliedFilters, state: &state, registryClient: registryClient)
                 if let startedAt = state.filtersStartedAt {
-                    TelemetryLogger.logMetric(
+                    VoyagerSentryMetricLogger.logMetric(
                         "voyager_filters_roundtrip_duration_ms",
                         value: round((Date().timeIntervalSince(startedAt)) * 1000),
                     )
@@ -656,19 +656,19 @@ private func encodeValueByType(
 ) -> JSONValue? {
     switch condition.valueType {
     case "number":
-        return encodeNumberValues(values)
+        encodeNumberValues(values)
 
     case "boolean":
-        return encodeBooleanValue(values)
+        encodeBooleanValue(values)
 
     case "date", "datetime":
-        return encodeDateValues(values)
+        encodeDateValues(values)
 
     case "string_list", "string", "unknown":
-        return encodeStringValues(values, operatorCode: condition.operatorCode)
+        encodeStringValues(values, operatorCode: condition.operatorCode)
 
     default:
-        return encodeDefaultValues(values)
+        encodeDefaultValues(values)
     }
 }
 

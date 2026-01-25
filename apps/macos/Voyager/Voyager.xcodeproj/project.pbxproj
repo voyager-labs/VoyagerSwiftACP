@@ -11,6 +11,7 @@
 		6C57FBA92F02111500D85C72 /* Sparkle in Frameworks */ = {isa = PBXBuildFile; productRef = 6C57FBA82F02111500D85C72 /* Sparkle */; };
 		6C727A2D2F0DF4A10012D44A /* Logging in Frameworks */ = {isa = PBXBuildFile; productRef = 6C727A2C2F0DF4A10012D44A /* Logging */; };
 		6C727A2F2F0DF4AA0012D44A /* Logging in Frameworks */ = {isa = PBXBuildFile; productRef = 6C727A2E2F0DF4AA0012D44A /* Logging */; };
+		6C8A20C933C9C3F600B2B9B1 /* Sentry in Frameworks */ = {isa = PBXBuildFile; productRef = 7E17C1202F24CB7500F6BD2B /* Sentry */; };
 		6CFB7B382E9D48B40005FDF6 /* ComposableArchitecture in Frameworks */ = {isa = PBXBuildFile; productRef = 6CFB7B372E9D48B40005FDF6 /* ComposableArchitecture */; };
 		7E1724A12EC5BA6600385F6E /* SwiftUIIntrospect in Frameworks */ = {isa = PBXBuildFile; productRef = 7E1724A02EC5BA6600385F6E /* SwiftUIIntrospect */; };
 		7E17C1212F24CB7500F6BD2B /* Sentry in Frameworks */ = {isa = PBXBuildFile; productRef = 7E17C1202F24CB7500F6BD2B /* Sentry */; };
@@ -150,6 +151,7 @@
 			buildActionMask = 2147483647;
 			files = (
 				6C727A2F2F0DF4AA0012D44A /* Logging in Frameworks */,
+				6C8A20C933C9C3F600B2B9B1 /* Sentry in Frameworks */,
 				7E9D64952E8CDDC8006CB69F /* SwiftDotenv in Frameworks */,
 				7EEC64532E8CE6E3004ACEA5 /* InjectionNext in Frameworks */,
 				7E8B3C4F2F1A2B3C400D9E8F2 /* GRDB in Frameworks */,
@@ -299,6 +301,7 @@
 			);
 			name = VoyagerHelper;
 			packageProductDependencies = (
+				7E17C1202F24CB7500F6BD2B /* Sentry */,
 				7E9D64942E8CDDC8006CB69F /* SwiftDotenv */,
 				7EEC64522E8CE6E3004ACEA5 /* InjectionNext */,
 				6C727A2E2F0DF4AA0012D44A /* Logging */,

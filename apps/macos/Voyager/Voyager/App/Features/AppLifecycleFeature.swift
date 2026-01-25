@@ -1,6 +1,5 @@
 import ComposableArchitecture
 import Foundation
-import Sentry
 import SwiftDotenv
 
 @Reducer
@@ -33,7 +32,14 @@ struct AppLifecycleFeature {
             switch action {
             case .willFinishLaunching:
                 try? EnvironmentLoader.loadEnvFiles()
-                startSentryIfNeeded()
+                let userId = DeviceIdentifierProvider.current()
+                let appVersion = AppVersionInfo.shortVersion
+                SentryBootstrap.startIfNeeded(
+                    appVersion: appVersion,
+                    userId: userId,
+                    component: "app",
+                )
+                VoyagerSentryMetricLogger.userIdProvider = { DeviceIdentifierProvider.current() }
 
                 if state.didStartHelper {
                     return .none
@@ -82,28 +88,6 @@ struct AppLifecycleFeature {
                     .cancel(id: CancelID.helperMonitor),
                 )
             }
-        }
-    }
-}
-
-private func startSentryIfNeeded() {
-    guard let dsn = Dotenv["SENTRY_DSN"]?.stringValue, !dsn.isEmpty else {
-        return
-    }
-    let tracesSampleRate = Double(Dotenv["SENTRY_TRACES_SAMPLE_RATE"]?.stringValue ?? "") ?? 0.05
-    SentrySDK.start { options in
-        options.dsn = dsn
-        options.sendDefaultPii = false
-        options.tracesSampleRate = NSNumber(value: tracesSampleRate)
-        options.enableLogs = true
-    }
-    if let deviceId = DeviceIdentifierProvider.current() {
-        let appVersion = AppVersionInfo.shortVersion
-        let osVersion = ProcessInfo.processInfo.operatingSystemVersionString
-        SentrySDK.configureScope { scope in
-            scope.setUser(Sentry.User(userId: deviceId))
-            scope.setTag(value: appVersion, key: "app_version")
-            scope.setTag(value: osVersion, key: "os_version")
         }
     }
 }

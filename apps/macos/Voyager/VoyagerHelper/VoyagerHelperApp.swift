@@ -12,6 +12,11 @@ class VoyagerHelperApp {
         bootstrapLogging()
         let logger = Logger(label: "VoyagerHelper")
         let environment = Environment()
+        SentryBootstrap.startIfNeeded(
+            appVersion: helperAppVersion(),
+            userId: nil,
+            component: "helper",
+        )
         let stateBroadcaster = HelperStateBroadcaster()
         let indexingListener = IndexingRequestListener(
             manager: DatabaseManager.shared,
@@ -69,6 +74,22 @@ class VoyagerHelperApp {
             #else
             return oslogHandler
             #endif
+        }
+    }
+
+    private static func helperAppVersion() -> String? {
+        let info = Bundle.main.infoDictionary
+        let shortVersion = info?["CFBundleShortVersionString"] as? String
+        let build = info?["CFBundleVersion"] as? String
+        switch (shortVersion, build) {
+        case let (short?, build?):
+            return "\(short) (\(build))"
+        case let (short?, nil):
+            return short
+        case let (nil, build?):
+            return build
+        default:
+            return nil
         }
     }
 }

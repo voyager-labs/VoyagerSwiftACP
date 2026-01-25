@@ -10,7 +10,9 @@ enum MetricLogLevel {
     case fatal
 }
 
-enum TelemetryLogger {
+enum VoyagerSentryMetricLogger {
+    static var userIdProvider: (() -> String?)?
+
     static func logMetric(
         _ name: String,
         value: Double,
@@ -21,8 +23,8 @@ enum TelemetryLogger {
             "metric.name": name,
             "metric.value": value,
         ]
-        if let deviceId = DeviceIdentifierProvider.current() {
-            attributes["metric.user_id"] = deviceId
+        if let userId = userIdProvider?() {
+            attributes["metric.user_id"] = userId
         }
         if let tags {
             for (key, tagValue) in tags {
