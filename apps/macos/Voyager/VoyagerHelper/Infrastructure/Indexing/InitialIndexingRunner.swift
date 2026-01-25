@@ -66,11 +66,23 @@ enum InitialIndexingRunner {
         batchSize: Int?,
         heartbeat: (@Sendable () async -> Void)?,
     ) async throws -> Int {
+        let startedAt = Date()
         let homeURL = FileManager.default.homeDirectoryForCurrentUser
         let cachedVolumeIdentifier = InitialIndexingRecordBuilder.volumeIdentifier(from: homeURL)
         let query = try makeQuery(homeURL: homeURL)
         let resultCount = Int(MDQueryGetResultCount(query))
-        logger.info("Home indexing started: Spotlight results \(resultCount)")
+        logger.info(
+            "Home indexing started",
+            metadata: ["spotlight_results": "\(resultCount)"],
+        )
+        VoyagerSentryMetricLogger.logMetric(
+            "voyager_index_job_total",
+            value: 1,
+            tags: [
+                "stage": "home_start",
+                "spotlight_results": "\(resultCount)",
+            ],
+        )
 
         let plan = try await prepareBatchPlan(manager: manager, logger: logger, batchSize: batchSize)
         let context = ProcessContext(
@@ -81,7 +93,29 @@ enum InitialIndexingRunner {
             heartbeat: heartbeat,
         )
         let inserted = try await processQueryResults(query: query, resultCount: resultCount, context: context)
-        logger.info("Home indexing completed: inserted \(inserted) entries")
+        let durationMs = Int(Date().timeIntervalSince(startedAt) * 1000)
+        logger.info(
+            "Home indexing completed",
+            metadata: [
+                "inserted": "\(inserted)",
+                "duration_ms": "\(durationMs)",
+            ],
+        )
+        VoyagerSentryMetricLogger.logMetric(
+            "voyager_index_job_total",
+            value: 1,
+            tags: [
+                "stage": "home_completed",
+                "inserted": "\(inserted)",
+            ],
+        )
+        VoyagerSentryMetricLogger.logMetric(
+            "voyager_index_job_duration_ms",
+            value: Double(durationMs),
+            tags: [
+                "scope": "home",
+            ],
+        )
         return inserted
     }
 

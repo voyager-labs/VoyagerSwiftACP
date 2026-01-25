@@ -3,7 +3,7 @@ import Foundation
 import Logging
 
 // swiftlint:disable file_length type_body_length
-private let composerLogger = Logger(label: "Voyager")
+private let kComposerLogger = Logger(label: "Voyager")
 struct FilterSnapshot: Equatable {
     let scopes: [String]
     let conditions: [Condition]
@@ -34,6 +34,9 @@ struct ComposerFeature {
         var isFilteringInFlight: Bool = false
         var lastSearchResponse: SearchResponsePayload?
         var lastFiltersResponse: SearchResponsePayload?
+        var searchStartedAt: Date?
+        var filtersStartedAt: Date?
+        var hasSubmittedInSession: Bool = false
 
         var canUndo: Bool { !history.isEmpty }
         var canRedo: Bool { !redoHistory.isEmpty }
@@ -100,6 +103,11 @@ struct ComposerFeature {
             switch action {
             case let .setPresented(isPresented):
                 state.isPresented = isPresented
+                if !isPresented {
+                    state.hasSubmittedInSession = false
+                    state.searchStartedAt = nil
+                    state.filtersStartedAt = nil
+                }
                 return .none
 
             case let .setText(text):
@@ -146,6 +154,22 @@ struct ComposerFeature {
                 let query = state.text.trimmingCharacters(in: .whitespacesAndNewlines)
                 guard !query.isEmpty else { return .none }
                 let filters = buildFilters(from: state)
+                VoyagerSentryMetricLogger.logMetric(
+                    "voyager_composer_submit_total",
+                    value: 1,
+                )
+                VoyagerSentryMetricLogger.logMetric(
+                    "voyager_search_submit_total",
+                    value: 1,
+                )
+                if state.hasSubmittedInSession {
+                    VoyagerSentryMetricLogger.logMetric(
+                        "voyager_search_resubmit_total",
+                        value: 1,
+                    )
+                }
+                state.hasSubmittedInSession = true
+                state.searchStartedAt = Date()
                 state.isLoadingSearch = true
                 state.isLoadingFilters = false
                 state.lastFiltersResponse = nil
@@ -168,11 +192,21 @@ struct ComposerFeature {
 
             case .cancelSearch:
                 state.isLoadingSearch = false
+                VoyagerSentryMetricLogger.logMetric(
+                    "voyager_search_cancel_total",
+                    value: 1,
+                    tags: ["type": "search"],
+                )
                 return .cancel(id: CancelID.search)
 
             case .cancelFilters:
                 state.isLoadingFilters = false
                 state.isFilteringInFlight = false
+                VoyagerSentryMetricLogger.logMetric(
+                    "voyager_search_cancel_total",
+                    value: 1,
+                    tags: ["type": "filters"],
+                )
                 return .cancel(id: CancelID.filters)
 
             case .applyFilters:
@@ -180,6 +214,11 @@ struct ComposerFeature {
                 state.lastSearchResponse = nil
                 state.isLoadingFilters = true
                 state.isFilteringInFlight = true
+                VoyagerSentryMetricLogger.logMetric(
+                    "voyager_composer_filters_apply_total",
+                    value: 1,
+                )
+                state.filtersStartedAt = Date()
                 return .concatenate(
                     .cancel(id: CancelID.search),
                     applyFiltersIfNeeded(state: &state, searchClient: searchClient),
@@ -477,10 +516,29 @@ struct ComposerFeature {
                 state.lastSearchResponse = response
                 state.lastFiltersResponse = nil
                 applyAppliedFilters(response.appliedFilters, state: &state, registryClient: registryClient)
+                if let startedAt = state.searchStartedAt {
+                    VoyagerSentryMetricLogger.logMetric(
+                        "voyager_search_roundtrip_duration_ms",
+                        value: round((Date().timeIntervalSince(startedAt)) * 1000),
+                    )
+                }
+                VoyagerSentryMetricLogger.logMetric(
+                    "voyager_search_result_total",
+                    value: 1,
+                    tags: ["result": response.itemCount > 0 ? "success" : "empty"],
+                )
+                state.searchStartedAt = nil
                 return .none
 
             case .searchResponse(.failure):
                 state.isLoadingSearch = false
+                VoyagerSentryMetricLogger.logMetric(
+                    "voyager_search_result_total",
+                    value: 1,
+                    tags: ["result": "error"],
+                    level: .warn,
+                )
+                state.searchStartedAt = nil
                 return .none
 
             case let .filtersResponse(.success(response)):
@@ -488,11 +546,19 @@ struct ComposerFeature {
                 state.isFilteringInFlight = false
                 state.lastFiltersResponse = response
                 applyAppliedFilters(response.appliedFilters, state: &state, registryClient: registryClient)
+                if let startedAt = state.filtersStartedAt {
+                    VoyagerSentryMetricLogger.logMetric(
+                        "voyager_filters_roundtrip_duration_ms",
+                        value: round((Date().timeIntervalSince(startedAt)) * 1000),
+                    )
+                }
+                state.filtersStartedAt = nil
                 return .none
 
             case .filtersResponse(.failure):
                 state.isLoadingFilters = false
                 state.isFilteringInFlight = false
+                state.filtersStartedAt = nil
                 return .none
             }
         }
@@ -549,7 +615,7 @@ private func buildFilters(from state: ComposerFeature.State) -> SearchFiltersPay
         guard let encoded = encodeValue(condition: condition, values: values) else { return nil }
         return SearchConditionPayload(propertyKey: condition.propertyKey, operator: op, value: encoded)
     }
-    composerLogger.debug(
+    kComposerLogger.debug(
         "Built search filters payload",
         metadata: [
             "scopes": .stringConvertible(state.scopes.count),
@@ -562,15 +628,13 @@ private func buildFilters(from state: ComposerFeature.State) -> SearchFiltersPay
     )
 }
 
-// swiftlint:disable:next cyclomatic_complexity
 private func encodeValue(condition: Condition, values: [String]) -> JSONValue? {
-    let op = condition.operatorCode?.lowercased()
     if let kind = condition.operatorValueUIKind {
         if let listValue = encodeListValue(kind: kind, values: values) {
             return listValue
         }
     }
-    return encodeValueByType(condition: condition, values: values, op: op)
+    return encodeValueByType(condition: condition, values: values)
 }
 
 private func encodeListValue(kind: String, values: [String]) -> JSONValue? {
@@ -589,50 +653,68 @@ private func encodeListValue(kind: String, values: [String]) -> JSONValue? {
 private func encodeValueByType(
     condition: Condition,
     values: [String],
-    op: String?,
 ) -> JSONValue? {
     switch condition.valueType {
     case "number":
-        let numbers = values.compactMap(Double.init)
-        guard numbers.count == values.count else { return nil }
-        if numbers.count == 1 {
-            return .number(numbers[0])
-        }
-        return .array(numbers.map(JSONValue.number))
+        encodeNumberValues(values)
 
     case "boolean":
-        guard let first = values.first?.lowercased() else { return nil }
-        if first == "true" {
-            return .bool(true)
-        } else if first == "false" {
-            return .bool(false)
-        }
-        return nil
+        encodeBooleanValue(values)
 
     case "date", "datetime":
-        let formattedValues = values.map { value in
-            ValueNormalizerUtils.formatDateOnlyString(value) ?? value
-        }
-        if formattedValues.count == 1 {
-            return .string(formattedValues[0])
-        }
-        return .array(formattedValues.map(JSONValue.string))
+        encodeDateValues(values)
 
     case "string_list", "string", "unknown":
-        if op == "in" || op == "anyof" {
-            return .array(values.map(JSONValue.string))
-        }
-        if values.count == 1 {
-            return .string(values[0])
-        }
-        return .array(values.map(JSONValue.string))
+        encodeStringValues(values, operatorCode: condition.operatorCode)
 
     default:
-        if values.count == 1 {
-            return .string(values[0])
-        }
+        encodeDefaultValues(values)
+    }
+}
+
+private func encodeNumberValues(_ values: [String]) -> JSONValue? {
+    let numbers = values.compactMap(Double.init)
+    guard numbers.count == values.count else { return nil }
+    if numbers.count == 1 {
+        return .number(numbers[0])
+    }
+    return .array(numbers.map(JSONValue.number))
+}
+
+private func encodeBooleanValue(_ values: [String]) -> JSONValue? {
+    guard let first = values.first?.lowercased() else { return nil }
+    if first == "true" {
+        return .bool(true)
+    }
+    if first == "false" {
+        return .bool(false)
+    }
+    return nil
+}
+
+private func encodeDateValues(_ values: [String]) -> JSONValue? {
+    let formattedValues = values.map { value in
+        ValueNormalizerUtils.formatDateOnlyString(value) ?? value
+    }
+    if formattedValues.count == 1 {
+        return .string(formattedValues[0])
+    }
+    return .array(formattedValues.map(JSONValue.string))
+}
+
+private func encodeStringValues(_ values: [String], operatorCode: String?) -> JSONValue? {
+    let op = operatorCode?.lowercased()
+    if op == "in" || op == "anyof" {
         return .array(values.map(JSONValue.string))
     }
+    return encodeDefaultValues(values)
+}
+
+private func encodeDefaultValues(_ values: [String]) -> JSONValue? {
+    if values.count == 1 {
+        return .string(values[0])
+    }
+    return .array(values.map(JSONValue.string))
 }
 
 private func valueType(for propertyType: String) -> String {

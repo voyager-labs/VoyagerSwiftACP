@@ -1,5 +1,6 @@
 import ComposableArchitecture
 import Foundation
+import SwiftDotenv
 
 @Reducer
 struct AppLifecycleFeature {
@@ -31,6 +32,14 @@ struct AppLifecycleFeature {
             switch action {
             case .willFinishLaunching:
                 try? EnvironmentLoader.loadEnvFiles()
+                let userId = DeviceIdentifierProvider.current()
+                let appVersion = AppVersionInfo.shortVersion
+                SentryBootstrap.startIfNeeded(
+                    appVersion: appVersion,
+                    userId: userId,
+                    component: "app",
+                )
+                VoyagerSentryMetricLogger.userIdProvider = { DeviceIdentifierProvider.current() }
 
                 if state.didStartHelper {
                     return .none
