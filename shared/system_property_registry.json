@@ -1,6 +1,6 @@
 {
   "$kind": "system_property_registry",
-  "$version": "2.1.0",
+  "$version": "2.1.1",
   "categories": {
     "audio": {
       "apple_loop_descriptors": {
@@ -934,9 +934,8 @@
         "legacy_keys": ["name"],
         "system_keys": ["mditem:kMDItemFSName", "nsurl:NSURLNameKey"],
         "type": "string",
-        "ui_label": "Name",
+        "ui_label": "Full name",
         "ui_hidden": true,
-        "ui_pinned": true,
         "db_indexed": true
       },
       "name_stem": {
@@ -944,7 +943,8 @@
         "search_aliases": ["name stems"],
         "system_keys": [],
         "type": "string",
-        "ui_label": "File name stem",
+        "ui_label": "Name",
+        "ui_pinned": true,
         "db_indexed": true
       },
       "parent_dir_name": {

@@ -1,9 +1,9 @@
 {
   "$kind": "property_condition_registry",
-  "$version": "2.0.1",
+  "$version": "2.0.2",
   "property_types": {
     "string": {
-      "operators": ["any", "all", "sw", "ew", "eq", "neq", "rx"],
+      "operators": ["any", "all", "sw", "ew", "eq", "neq"],
       "sql_cast": "TEXT"
     },
     "number": {
