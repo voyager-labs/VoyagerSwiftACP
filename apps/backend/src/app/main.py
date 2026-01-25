@@ -33,19 +33,23 @@ def _parse_sample_rate(value: str | None, default: float) -> float:
 
 def init_sentry() -> None:
     load_env()
-    dsn = os.getenv("SENTRY_DSN")
+    dsn = os.getenv("PUBLIC_SENTRY_DSN")
     if not dsn:
         return
-    traces_sample_rate = _parse_sample_rate(os.getenv("SENTRY_TRACES_SAMPLE_RATE"), 0.05)
-    profiles_sample_rate = _parse_sample_rate(os.getenv("SENTRY_PROFILES_SAMPLE_RATE"), 0.0)
+    traces_sample_rate_value = os.getenv("PUBLIC_SENTRY_TRACES_SAMPLE_RATE")
+    traces_sample_rate = _parse_sample_rate(traces_sample_rate_value, 0.0) if traces_sample_rate_value else None
+    environment = os.getenv("APP_ENV")
+    init_kwargs: dict[str, object] = {
+        "dsn": dsn,
+        "integrations": [FastApiIntegration()],
+        "send_default_pii": False,
+    }
+    if traces_sample_rate is not None:
+        init_kwargs["traces_sample_rate"] = traces_sample_rate
+    if environment:
+        init_kwargs["environment"] = environment
     sentry_sdk.init(
-        dsn=dsn,
-        integrations=[FastApiIntegration()],
-        send_default_pii=False,
-        traces_sample_rate=traces_sample_rate,
-        profiles_sample_rate=profiles_sample_rate,
-        environment=os.getenv("SENTRY_ENVIRONMENT") or os.getenv("APP_ENV"),
-        release=os.getenv("SENTRY_RELEASE"),
+        **init_kwargs,
     )
 
 
