@@ -34,6 +34,7 @@ public struct EntryClient: Sendable {
     public var pasteFile: @Sendable (URL, URL) async throws -> Void
     public var moveFile: @Sendable (URL, URL) async throws -> Void
     public var renameFile: @Sendable (URL, URL) async throws -> Void
+    public var createAlias: @Sendable (URL, URL) async throws -> Void
     public var moveToTrash: @Sendable (URL) async throws -> Void
     public var moveToTrashAndReturnURL: @Sendable (URL) async throws -> URL
     public var deleteImmediately: @Sendable (URL) async throws -> Void
