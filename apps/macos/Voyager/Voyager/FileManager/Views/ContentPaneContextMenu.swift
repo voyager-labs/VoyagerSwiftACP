@@ -22,8 +22,8 @@ struct ContentPaneContextMenu: View {
         Divider()
 
         Menu("View") {
-            viewLayoutToggle("List", layout: .list)
-            viewLayoutToggle("Grid", layout: .grid)
+            viewLayoutToggle("as List", layout: .list)
+            viewLayoutToggle("as Icon", layout: .grid)
         }
 
         Menu("Sort By") {

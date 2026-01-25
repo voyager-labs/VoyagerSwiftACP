@@ -42,7 +42,7 @@ struct ViewMenuCommands: Commands {
                 Label("as List", systemImage: "list.bullet")
             }
             Toggle(isOn: viewLayoutToggleBinding(.grid)) {
-                Label("as Grid", systemImage: "square.grid.2x2")
+                Label("as Icon", systemImage: "square.grid.2x2")
             }
 
             Divider()

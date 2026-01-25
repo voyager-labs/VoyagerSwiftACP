@@ -10,11 +10,11 @@ class FileManagerWindowController: NSWindowController, NSWindowDelegate {
     private var cancellables: Set<AnyCancellable> = []
 
     init(
+        registryClient: RegistryClient,
         path: String? = nil,
         duplicateState: FileManagerFeature.State? = nil,
         asTab: Bool = true,
         makeContentViewController: ((StoreOf<FileManagerFeature>, String?) -> NSViewController)? = nil,
-        registryClient: RegistryClient,
     ) {
         initialPath = path
         let state = Self.createInitialState(path: path, duplicateState: duplicateState)

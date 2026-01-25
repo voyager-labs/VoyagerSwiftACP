@@ -12,6 +12,7 @@ struct ConditionPropertyPickerFeature {
         var properties: [String] = []
         var propertyLabels: [String: String] = [:]
         var propertyCategories: [String: String] = [:]
+        var propertyTypes: [String: String] = [:]
         var propertyDefaults: Set<String> = []
 
         var searchText: String = ""
@@ -62,6 +63,9 @@ struct ConditionPropertyPickerFeature {
                 )
                 state.propertyCategories = Dictionary(
                     uniqueKeysWithValues: entries.map { ($0.key, $0.category) },
+                )
+                state.propertyTypes = Dictionary(
+                    uniqueKeysWithValues: entries.map { ($0.key, $0.definition.type) },
                 )
                 state.propertyDefaults = Set(
                     entries

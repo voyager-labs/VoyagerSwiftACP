@@ -55,6 +55,8 @@
 			</dict>
 		</dict>
 	</array>
+    <key>SUEnableAutomaticChecks</key>
+    <true/>
     <key>SUFeedURL</key>
     <string>https://downloads.voyager.fm/releases/appcast.xml</string>
     <key>SUPublicEDKey</key>

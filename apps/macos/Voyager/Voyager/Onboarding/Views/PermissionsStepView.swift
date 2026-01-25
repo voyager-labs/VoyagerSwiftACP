@@ -6,7 +6,7 @@ struct PermissionsStepView: View {
     let store: StoreOf<PermissionsFeature>
 
     var body: some View {
-        WithViewStore(store, observe: { $0 }) { viewStore in
+        WithViewStore(store, observe: { $0 }, content: { viewStore in
             let statusColor: Color = viewStore.fullDiskAccessStatus == .granted ? .green : .secondary
 
             VStack(alignment: .leading, spacing: 16) {
@@ -125,6 +125,6 @@ struct PermissionsStepView: View {
             .onReceive(NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)) { _ in
                 viewStore.send(.appDidBecomeActive)
             }
-        }
+        })
     }
 }

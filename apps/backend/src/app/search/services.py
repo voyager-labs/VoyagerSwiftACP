@@ -188,9 +188,9 @@ class SearchService:
             where_clause = f"{scope_clause} AND {condition_clause}"
             all_params: dict[str, Any] = {**scope_params, **condition_params}
 
-            def _run_query() -> list[FileEntrySchema]:
+            def _run_query() -> list[EntrySchema]:
                 where_text = text(where_clause).bindparams(**all_params)
-                statement = select(FileEntrySchema).where(where_text)
+                statement = select(EntrySchema).where(where_text)
                 with engine_manager.session(autocommit=False) as session:
                     result = session.exec(statement)
                     return list(result.all())
