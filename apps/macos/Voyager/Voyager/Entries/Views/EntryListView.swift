@@ -1,4 +1,3 @@
-// swiftlint:disable file_length
 import AppKit
 import ComposableArchitecture
 import SwiftUI
@@ -54,6 +53,9 @@ struct EntryListView: View, Equatable {
     let onCopyURLs: () -> Void
     let onCut: () -> Void
     let onToggleTag: (String) -> Void
+    let onPerformService: (String) -> Void
+    let onRevealInFinder: () -> Void
+    let selectedURLs: [URL]
     let isContextMenuTarget: Bool
     let contextMenuTargetWasSelected: Bool
     let onContextMenuOpen: (CGPoint) -> Void
@@ -70,6 +72,8 @@ struct EntryListView: View, Equatable {
     @State private var optionKeyTimer: Timer?
     @State private var showTagsEditor = false
     @State private var hasPrefetchedApplications = false
+    @State private var serviceNames: [String] = []
+    @State private var servicesRequestorView: ServicesMenuRequestorView?
 
     private func styledText(_ text: String, fontSize: CGFloat, isPrimary: Bool = true) -> some View {
         Text(text)
@@ -252,6 +256,10 @@ struct EntryListView: View, Equatable {
                 onCopyAbsolutePaths: onCopyAbsolutePaths,
                 onCopyURLs: onCopyURLs,
                 onCut: onCut,
+                onPerformService: onPerformService,
+                onRevealInFinder: onRevealInFinder,
+                serviceNames: serviceNames,
+                refreshServicesMenuItems: refreshServicesMenuItems,
                 showCompress: showCompress,
                 showExtract: showExtract,
                 onToggleTag: onToggleTag,
@@ -263,6 +271,13 @@ struct EntryListView: View, Equatable {
         .overlay(
             RightClickCaptureView(onRightClick: onContextMenuOpen)
                 .allowsHitTesting(false),
+        )
+        .background(
+            ServicesMenuRequestorRepresentable(
+                selectedURLs: selectedURLs,
+                onViewReady: { servicesRequestorView = $0 },
+            )
+            .frame(width: 0, height: 0),
         )
         .onHover { isHovering in
             guard isHovering, !hasPrefetchedApplications else { return }
@@ -292,10 +307,28 @@ struct EntryListView: View, Equatable {
         optionKeyTimer?.invalidate()
         optionKeyTimer = nil
     }
+
+    private func refreshServicesMenuItems() {
+        if let servicesRequestorView, let window = servicesRequestorView.window {
+            window.makeFirstResponder(servicesRequestorView)
+        }
+        NSApp.registerServicesMenuSendTypes([.fileURL], returnTypes: [])
+        NSApp.servicesMenu?.update()
+
+        let items = NSApp.servicesMenu?.items ?? []
+        var seen = Set<String>()
+        serviceNames = items.compactMap { item in
+            guard !item.isSeparatorItem else { return nil }
+            guard item.isEnabled else { return nil }
+            let title = item.title.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !title.isEmpty, seen.insert(title).inserted else { return nil }
+            return title
+        }
+    }
 }
 
 private struct RightClickCaptureView: NSViewRepresentable {
-    let onRightClick: () -> Void
+    let onRightClick: (CGPoint) -> Void
 
     func makeNSView(context _: Context) -> CaptureView {
         let view = CaptureView()

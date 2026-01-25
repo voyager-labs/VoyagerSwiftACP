@@ -54,6 +54,9 @@ struct EntryGridView: View, Equatable {
     let onCopyURLs: (() -> Void)?
     let onCut: (() -> Void)?
     let onToggleTag: ((String) -> Void)?
+    let onPerformService: ((String) -> Void)?
+    let onRevealInFinder: (() -> Void)?
+    let selectedURLs: [URL]
     let selectedCount: Int
     let showCompress: Bool
     let showExtract: Bool
@@ -66,6 +69,8 @@ struct EntryGridView: View, Equatable {
     @State private var optionKeyTimer: Timer?
     @State private var showTagsEditor = false
     @State private var hasPrefetchedApplications = false
+    @State private var serviceNames: [String] = []
+    @State private var servicesRequestorView: ServicesMenuRequestorView?
     @State private var shouldFocusRename = false
     @State private var renameTextWidth: CGFloat = 120
 
@@ -259,6 +264,10 @@ struct EntryGridView: View, Equatable {
                 onCopyAbsolutePaths: onCopyAbsolutePaths,
                 onCopyURLs: onCopyURLs,
                 onCut: onCut,
+                // onPerformService: onPerformService,
+                // onRevealInFinder: onRevealInFinder,
+                // serviceNames: serviceNames,
+                // refreshServicesMenuItems: refreshServicesMenuItems,
                 showCompress: showCompress,
                 showExtract: showExtract,
                 onToggleTag: onToggleTag,
@@ -284,6 +293,13 @@ struct EntryGridView: View, Equatable {
         .onDisappear {
             stopOptionKeyMonitoring()
         }
+        .background(
+            ServicesMenuRequestorRepresentable(
+                selectedURLs: selectedURLs,
+                onViewReady: { servicesRequestorView = $0 },
+            )
+            .frame(width: 0, height: 0),
+        )
     }
 
     private func startOptionKeyMonitoring() {
@@ -299,6 +315,24 @@ struct EntryGridView: View, Equatable {
     private func stopOptionKeyMonitoring() {
         optionKeyTimer?.invalidate()
         optionKeyTimer = nil
+    }
+
+    private func refreshServicesMenuItems() {
+        if let servicesRequestorView, let window = servicesRequestorView.window {
+            window.makeFirstResponder(servicesRequestorView)
+        }
+        NSApp.registerServicesMenuSendTypes([.fileURL], returnTypes: [])
+        NSApp.servicesMenu?.update()
+
+        let items = NSApp.servicesMenu?.items ?? []
+        var seen = Set<String>()
+        serviceNames = items.compactMap { item in
+            guard !item.isSeparatorItem else { return nil }
+            guard item.isEnabled else { return nil }
+            let title = item.title.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !title.isEmpty, seen.insert(title).inserted else { return nil }
+            return title
+        }
     }
 }
 

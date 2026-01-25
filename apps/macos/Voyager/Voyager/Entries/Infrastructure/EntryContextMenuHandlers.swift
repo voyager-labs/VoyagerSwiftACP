@@ -32,6 +32,8 @@ struct EntryContextMenuHandlers {
     let onCopyURLs: () -> Void
     let onCut: () -> Void
     let onToggleTag: (String) -> Void
+    let onPerformService: (String) -> Void
+    let onRevealInFinder: () -> Void
 }
 
 // swiftlint:disable function_body_length
@@ -215,6 +217,18 @@ func makeContextMenuHandlers(
         })
     }
 
+    let onPerformService: (String) -> Void = { serviceName in
+        EntryContextMenuUtils.sendWithSelection(item, fsStore: fsStore, action: {
+            fsStore.send(.performService(serviceName: serviceName))
+        })
+    }
+
+    let onRevealInFinder: () -> Void = {
+        EntryContextMenuUtils.sendWithSelection(item, fsStore: fsStore, action: {
+            fsStore.send(.revealSelectedItemsInFinder)
+        })
+    }
+
     return EntryContextMenuHandlers(
         onSelect: onSelect,
         onOpen: onOpen,
@@ -244,7 +258,7 @@ func makeContextMenuHandlers(
         onCopyURLs: onCopyURLs,
         onCut: onCut,
         onToggleTag: onToggleTag,
+        onPerformService: onPerformService,
+        onRevealInFinder: onRevealInFinder,
     )
 }
-
-// swiftlint:enable function_body_length

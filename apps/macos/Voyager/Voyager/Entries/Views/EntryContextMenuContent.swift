@@ -28,6 +28,10 @@ struct EntryContextMenuContent: View {
     let onCopyAbsolutePaths: (() -> Void)?
     let onCopyURLs: (() -> Void)?
     let onCut: (() -> Void)?
+    let onPerformService: ((String) -> Void)?
+    let onRevealInFinder: (() -> Void)?
+    let serviceNames: [String]
+    let refreshServicesMenuItems: () -> Void
     let showCompress: Bool
     let showExtract: Bool
     let onToggleTag: ((String) -> Void)?
@@ -155,7 +159,7 @@ struct EntryContextMenuContent: View {
         quickLookButton(showItemName: true)
         getInfoButton
         shareButton
-        // servicesSection
+        servicesSection
 
         Divider()
 
@@ -228,6 +232,7 @@ struct EntryContextMenuContent: View {
         quickLookButton(showItemName: false)
         getInfoButton
         shareButton
+        servicesSection
 
         Divider()
 
@@ -271,6 +276,36 @@ struct EntryContextMenuContent: View {
                 onShare()
             } label: {
                 Label("Share...", systemImage: "square.and.arrow.up")
+            }
+        }
+    }
+
+    @ViewBuilder private var servicesSection: some View {
+        if let onPerformService {
+            Menu {
+                if serviceNames.isEmpty {
+                    Button("No Services") {}
+                        .disabled(true)
+                } else {
+                    ForEach(serviceNames, id: \.self) { name in
+                        Button(name) {
+                            onPerformService(name)
+                        }
+                    }
+                }
+            } label: {
+                Label("Services", systemImage: "gearshape")
+            }
+            .onAppear {
+                refreshServicesMenuItems()
+            }
+
+            if let onRevealInFinder {
+                Button {
+                    onRevealInFinder()
+                } label: {
+                    Label("Reveal in Finder", systemImage: "sidebar.right")
+                }
             }
         }
     }
