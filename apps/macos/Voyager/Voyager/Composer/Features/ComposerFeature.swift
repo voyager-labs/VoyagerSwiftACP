@@ -612,7 +612,7 @@ private func buildFilters(from state: ComposerFeature.State) -> SearchFiltersPay
             return SearchConditionPayload(propertyKey: condition.propertyKey, operator: op, value: nil)
         }
         guard let values = condition.values, !values.isEmpty else { return nil }
-        guard let encoded = encodeValue(condition: condition, values: values) else { return nil }
+        guard let encoded = ConditionValueEncoder.encode(condition: condition, values: values) else { return nil }
         return SearchConditionPayload(propertyKey: condition.propertyKey, operator: op, value: encoded)
     }
     kComposerLogger.debug(
@@ -626,95 +626,6 @@ private func buildFilters(from state: ComposerFeature.State) -> SearchFiltersPay
         scopes: state.scopes,
         conditions: conditionPayloads,
     )
-}
-
-private func encodeValue(condition: Condition, values: [String]) -> JSONValue? {
-    if let kind = condition.operatorValueUIKind {
-        if let listValue = encodeListValue(kind: kind, values: values) {
-            return listValue
-        }
-    }
-    return encodeValueByType(condition: condition, values: values)
-}
-
-private func encodeListValue(kind: String, values: [String]) -> JSONValue? {
-    switch kind {
-    case "listText":
-        return .array(values.map(JSONValue.string))
-    case "listNumber":
-        let numbers = values.compactMap(Double.init)
-        guard numbers.count == values.count else { return nil }
-        return .array(numbers.map(JSONValue.number))
-    default:
-        return nil
-    }
-}
-
-private func encodeValueByType(
-    condition: Condition,
-    values: [String],
-) -> JSONValue? {
-    switch condition.valueType {
-    case "number":
-        encodeNumberValues(values)
-
-    case "boolean":
-        encodeBooleanValue(values)
-
-    case "date", "datetime":
-        encodeDateValues(values)
-
-    case "string_list", "string", "unknown":
-        encodeStringValues(values, operatorCode: condition.operatorCode)
-
-    default:
-        encodeDefaultValues(values)
-    }
-}
-
-private func encodeNumberValues(_ values: [String]) -> JSONValue? {
-    let numbers = values.compactMap(Double.init)
-    guard numbers.count == values.count else { return nil }
-    if numbers.count == 1 {
-        return .number(numbers[0])
-    }
-    return .array(numbers.map(JSONValue.number))
-}
-
-private func encodeBooleanValue(_ values: [String]) -> JSONValue? {
-    guard let first = values.first?.lowercased() else { return nil }
-    if first == "true" {
-        return .bool(true)
-    }
-    if first == "false" {
-        return .bool(false)
-    }
-    return nil
-}
-
-private func encodeDateValues(_ values: [String]) -> JSONValue? {
-    let formattedValues = values.map { value in
-        ValueNormalizerUtils.formatDateOnlyString(value) ?? value
-    }
-    if formattedValues.count == 1 {
-        return .string(formattedValues[0])
-    }
-    return .array(formattedValues.map(JSONValue.string))
-}
-
-private func encodeStringValues(_ values: [String], operatorCode: String?) -> JSONValue? {
-    let op = operatorCode?.lowercased()
-    if op == "in" || op == "anyof" {
-        return .array(values.map(JSONValue.string))
-    }
-    return encodeDefaultValues(values)
-}
-
-private func encodeDefaultValues(_ values: [String]) -> JSONValue? {
-    if values.count == 1 {
-        return .string(values[0])
-    }
-    return .array(values.map(JSONValue.string))
 }
 
 private func valueType(for propertyType: String) -> String {
@@ -753,5 +664,3 @@ private func updateOperatorOptions(
         },
     )
 }
-
-// swiftlint:enable type_body_length
