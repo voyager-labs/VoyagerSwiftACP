@@ -232,7 +232,40 @@ struct EntryGridView: View, Equatable {
             )
         }
         .contextMenu {
-            contextMenuContent
+            EntryContextMenuContent(
+                item: item,
+                selectedCount: selectedCount,
+                isOptionPressed: isOptionPressed,
+                applications: applications,
+                commonApplications: commonApplications,
+                onOpen: onOpen,
+                onOpenInNewTab: onOpenInNewTab,
+                onOpenWithApp: onOpenWithApp,
+                onLoadApplications: onLoadApplications,
+                onLoadCommonApplications: onLoadCommonApplications,
+                onPutBack: onPutBack,
+                onMoveToTrash: onMoveToTrash,
+                onDeleteImmediately: onDeleteImmediately,
+                onEmptyTrash: onEmptyTrash,
+                onRename: onRename,
+                onCompress: onCompress,
+                onDuplicate: onDuplicate,
+                onCreateAlias: onCreateAlias,
+                onExtract: onExtract,
+                onQuickLook: onQuickLook,
+                onGetInfo: onGetInfo,
+                onShare: onShare,
+                onCopy: onCopy,
+                onCopyAbsolutePaths: onCopyAbsolutePaths,
+                onCopyURLs: onCopyURLs,
+                onCut: onCut,
+                showCompress: showCompress,
+                showExtract: showExtract,
+                onToggleTag: onToggleTag,
+                showTagsEditor: $showTagsEditor,
+                appIcon: { appIcon(for: $0, size: 16) },
+                tagColorImage: { color, size in colorCircleImage(color: color, size: size) },
+            )
         }
         .onHover { isHovering in
             guard isHovering, !hasPrefetchedApplications else { return }
@@ -270,318 +303,6 @@ struct EntryGridView: View, Equatable {
 }
 
 private extension EntryGridView {
-    @ViewBuilder var contextMenuContent: some View {
-        Group {
-            Button {
-                onOpen()
-            } label: {
-                Label("Open", systemImage: "arrow.up.forward.square")
-            }
-            .keyboardShortcut(.downArrow, modifiers: [.command])
-        }
-        .onAppear {
-            if selectedCount > 1, commonApplications == nil {
-                onLoadCommonApplications?()
-            } else if !item.isDirectory, applications == nil {
-                onLoadApplications?()
-            }
-        }
-
-        if item.isDirectory, let onOpenInNewTab {
-            Button {
-                onOpenInNewTab(isOptionPressed)
-            } label: {
-                Label("Open in New Window", systemImage: "macwindow.badge.plus")
-            }
-        }
-
-        if !item.isDirectory, let onOpenWithApp {
-            let appsToShow = selectedCount > 1 ? commonApplications : applications
-
-            Menu {
-                if let apps = appsToShow, !apps.isEmpty {
-                    let regularApps = apps.filter { $0.id != "other" }
-
-                    ForEach(Array(regularApps.enumerated()), id: \.element.id) { _, app in
-                        Button {
-                            onOpenWithApp(app.bundleID, isOptionPressed)
-                        } label: {
-                            HStack {
-                                if let bundleID = app.bundleID {
-                                    appIconView(for: bundleID)
-                                }
-                                Text(app.isDefault ? "\(app.name) (default)" : app.name)
-                            }
-                        }
-
-                        if app.isDefault {
-                            Divider()
-                        }
-                    }
-                } else {
-                    Button("Loading…") {}
-                        .disabled(true)
-                }
-
-                Divider()
-                Button("Other…") {
-                    onOpenWithApp(nil, isOptionPressed)
-                }
-            } label: {
-                Label(isOptionPressed ? "Always Open With" : "Open With", systemImage: "app.badge")
-            }
-            .onAppear {
-                if appsToShow == nil {
-                    if selectedCount > 1 {
-                        onLoadCommonApplications?()
-                    } else {
-                        onLoadApplications?()
-                    }
-                }
-            }
-        }
-
-        Divider()
-
-        if onPutBack != nil {
-            if let onDeleteImmediately {
-                Button {
-                    onDeleteImmediately()
-                } label: {
-                    Label("Delete Immediately...", systemImage: "trash")
-                }
-                .keyboardShortcut(.delete, modifiers: [.command, .option])
-            }
-
-            if let onEmptyTrash {
-                Button {
-                    onEmptyTrash()
-                } label: {
-                    Label("Empty Trash", systemImage: "trash")
-                }
-            }
-
-            Divider()
-
-            if let onQuickLook {
-                Button {
-                    onQuickLook()
-                } label: {
-                    Label("Quick Look \"\(item.name)\"", systemImage: "eye")
-                }
-                .keyboardShortcut(.space, modifiers: [])
-            }
-
-            if let onGetInfo {
-                Button {
-                    onGetInfo()
-                } label: {
-                    Label("Get Info", systemImage: "info.circle")
-                }
-                .keyboardShortcut("i", modifiers: [.command])
-            }
-
-            if let onShare {
-                Button {
-                    onShare()
-                } label: {
-                    Label("Share...", systemImage: "square.and.arrow.up")
-                }
-            }
-
-            Divider()
-
-            if let onCopy {
-                Button {
-                    onCopy()
-                } label: {
-                    Label("Copy", systemImage: "doc.on.doc")
-                }
-                .keyboardShortcut("c", modifiers: [.command])
-            }
-
-            if let onCopyAbsolutePaths {
-                Button {
-                    onCopyAbsolutePaths()
-                } label: {
-                    Label(
-                        selectedCount == 1 ? "Copy Absolute Path" : "Copy Absolute Paths",
-                        systemImage: "doc.on.clipboard",
-                    )
-                }
-            }
-
-            if let onCopyURLs {
-                Button {
-                    onCopyURLs()
-                } label: {
-                    Label(selectedCount == 1 ? "Copy URL" : "Copy URLs", systemImage: "link")
-                }
-            }
-        } else {
-            if let onMoveToTrash {
-                Button {
-                    onMoveToTrash()
-                } label: {
-                    Label("Move to Trash", systemImage: "trash")
-                }
-                .keyboardShortcut(.delete, modifiers: [.command])
-            }
-
-            if let onDeleteImmediately {
-                Button {
-                    onDeleteImmediately()
-                } label: {
-                    Label("Delete Immediately...", systemImage: "trash")
-                }
-                .keyboardShortcut(.delete, modifiers: [.command, .option])
-            }
-
-            Divider()
-
-            if let onRename {
-                Button {
-                    onRename()
-                } label: {
-                    Label("Rename", systemImage: "pencil")
-                }
-                .keyboardShortcut(.return, modifiers: [])
-            }
-
-            if showCompress, let onCompress {
-                Button {
-                    onCompress()
-                } label: {
-                    Label(selectedCount == 1 ? "Compress \"\(item.name)\"" : "Compress", systemImage: "doc.zipper")
-                }
-            }
-
-            if let onDuplicate {
-                Button {
-                    onDuplicate()
-                } label: {
-                    Label("Duplicate", systemImage: "plus.square.on.square")
-                }
-                .keyboardShortcut("d", modifiers: [.command])
-            }
-
-            if let onCreateAlias {
-                Button {
-                    onCreateAlias()
-                } label: {
-                    Label("Make Alias", systemImage: "arrowshape.turn.up.right")
-                }
-            }
-
-            if showExtract, let onExtract {
-                Button {
-                    onExtract()
-                } label: {
-                    Label("Extract Archive", systemImage: "doc.zipper")
-                }
-            }
-
-            if let onQuickLook {
-                Button {
-                    onQuickLook()
-                } label: {
-                    Label("Quick Look", systemImage: "eye")
-                }
-                .keyboardShortcut(.space, modifiers: [])
-            }
-
-            if let onGetInfo {
-                Button {
-                    onGetInfo()
-                } label: {
-                    Label("Get Info", systemImage: "info.circle")
-                }
-                .keyboardShortcut("i", modifiers: [.command])
-            }
-
-            if let onShare {
-                Button {
-                    onShare()
-                } label: {
-                    Label("Share...", systemImage: "square.and.arrow.up")
-                }
-            }
-
-            Divider()
-
-            if let onCopy {
-                Button {
-                    onCopy()
-                } label: {
-                    Label("Copy", systemImage: "doc.on.doc")
-                }
-                .keyboardShortcut("c", modifiers: [.command])
-            }
-
-            if let onCopyAbsolutePaths {
-                Button {
-                    onCopyAbsolutePaths()
-                } label: {
-                    Label(
-                        selectedCount == 1 ? "Copy Absolute Path" : "Copy Absolute Paths",
-                        systemImage: "doc.on.clipboard",
-                    )
-                }
-            }
-
-            if let onCopyURLs {
-                Button {
-                    onCopyURLs()
-                } label: {
-                    Label(selectedCount == 1 ? "Copy URL" : "Copy URLs", systemImage: "link")
-                }
-            }
-
-            if let onCut {
-                Button {
-                    onCut()
-                } label: {
-                    Label("Cut", systemImage: "scissors")
-                }
-                .keyboardShortcut("x", modifiers: [.command])
-            }
-        }
-
-        Divider()
-
-        Menu {
-            ForEach(EntryTagUtils.getFavoriteTagNames().filter { !$0.isEmpty }.prefix(7), id: \.self) { tag in
-                let colorCode = EntryTagUtils.getTagNameToColorCodeMapping()[tag] ?? 0
-                let tagColor = EntryTagUtils.getTagColor(colorCode: colorCode)
-                let isTagged = item.tags?.contains(where: { $0.name == tag }) ?? false
-
-                Button {
-                    onToggleTag?(tag)
-                } label: {
-                    HStack {
-                        Image(nsImage: colorCircleImage(color: tagColor, size: 10))
-                        Text(isTagged ? "\(tag) ✓" : tag)
-                    }
-                }
-            }
-
-            Divider()
-
-            Button("Edit Tags...") {
-                showTagsEditor = true
-            }
-        } label: {
-            Label("Tags", systemImage: "tag")
-        }
-    }
-
-    @ViewBuilder
-    func appIconView(for bundleID: String) -> some View {
-        if let icon = appIcon(for: bundleID, size: 16) {
-            Image(nsImage: icon)
-        }
-    }
-
     func appIcon(for bundleID: String, size: CGFloat) -> NSImage? {
         guard let appURL = workspaceClient.urlForApplication(bundleID) else {
             return nil
