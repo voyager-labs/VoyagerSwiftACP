@@ -219,6 +219,7 @@ struct ContentPaneListView: View {
             onToggleTag: props.handlers.onToggleTag,
             onPerformService: props.handlers.onPerformService,
             onRevealInFinder: props.handlers.onRevealInFinder,
+            selectedURLs: selectedURLs,
             isContextMenuTarget: isContextMenuTarget,
             contextMenuTargetWasSelected: isContextMenuTarget ? contextMenuTargetWasSelected : false,
             onContextMenuOpen: { windowPoint in
@@ -241,7 +242,6 @@ struct ContentPaneListView: View {
                     ))
                 }
             },
-            selectedURLs: selectedURLs,
             selectedCount: fsStore.selectedIds.isEmpty ? 1 : fsStore.selectedIds.count,
             showCompress: props.context.showCompress,
             showExtract: props.context.showExtract,
