@@ -2,10 +2,11 @@ import logging
 import os
 import platform
 import time
+from collections.abc import Awaitable, Callable
 from contextlib import asynccontextmanager
 
-import setproctitle
 import sentry_sdk
+import setproctitle
 from fastapi import FastAPI, Request, Response
 from sentry_sdk.integrations.fastapi import FastApiIntegration
 
@@ -97,9 +98,13 @@ app = FastAPI(
     lifespan=lifespan,
 )
 
+
 # 요청 지연/상태/트레이스 태그를 공통으로 기록
 @app.middleware("http")
-async def add_request_observability(request: Request, call_next) -> Response:
+async def add_request_observability(
+    request: Request,
+    call_next: Callable[[Request], Awaitable[Response]],
+) -> Response:
     start = time.perf_counter()
     trace_id = request.headers.get("X-Trace-Id")
     session_id = request.headers.get("X-Session-Id")
@@ -123,14 +128,14 @@ async def add_request_observability(request: Request, call_next) -> Response:
         if os_version:
             scope.set_tag("os_version", os_version)
 
-        response = await call_next(request)
+        response: Response = await call_next(request)
         duration_ms = (time.perf_counter() - start) * 1000
         scope.set_tag("status", response.status_code)
         scope.set_extra("duration_ms", round(duration_ms, 2))
-        tags = {
+        tags: dict[str, str] = {
             "route": route,
             "method": method,
-            "status": response.status_code,
+            "status": str(response.status_code),
         }
         log_metric("voyager_http_request_duration_ms", round(duration_ms, 2), tags)
         log_metric("voyager_http_requests_total", 1, tags)
@@ -141,6 +146,7 @@ async def add_request_observability(request: Request, call_next) -> Response:
                 {"route": route, "error_code": "HTTP_5XX"},
             )
         return response
+
 
 # 라우터 등록
 app.include_router(search_router, prefix="/api")

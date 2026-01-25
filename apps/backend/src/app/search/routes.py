@@ -1,9 +1,7 @@
 """Search API 엔드포인트"""
 
-from fastapi import APIRouter, Depends
 import sentry_sdk
-
-from utils.telemetry import log_metric
+from fastapi import APIRouter, Depends
 
 from app.search.schemas import (
     FilterSearchRequest,
@@ -11,6 +9,7 @@ from app.search.schemas import (
     SearchResponse,
 )
 from app.search.services import SearchService, get_search_service
+from utils.telemetry import log_metric
 
 router = APIRouter(prefix="/collection", tags=["collection"])
 
