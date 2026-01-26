@@ -31,18 +31,19 @@ async def lifespan(app: FastAPI):
     logger = logging.getLogger("uvicorn.error")
     py_ver = platform.python_version()
     message = (
-        "Environment initialized: "
-        f"app={cfg.app_name} env={cfg.app_env} "
-        f"python={py_ver} "
-        f"gateway_url={cfg.gateway_url}"
-        f"backend_host={cfg.backend_host}"
-        f"backend_port={cfg.backend_port}"
-        f"backend_process_name={cfg.backend_process_name}"
-        f"sqlite_protocol={cfg.sqlite_protocol}"
-        f"sqlite_echo={cfg.sqlite_echo}"
-        f"sqlite_check_same_thread={cfg.sqlite_check_same_thread}"
-        f"sqlite_file_location={cfg.sqlite_file_location}"
-        f"sqlite_file_name={cfg.sqlite_file_name}"
+        "Environment initialized: \n"
+        f"app = {cfg.app_name} env = {cfg.app_env} \n"
+        f"python = {py_ver} \n"
+        f"gateway_url = {cfg.gateway_url} \n"
+        f"backend_host = {cfg.backend_host} \n"
+        f"backend_port = {cfg.backend_port} \n"
+        f"backend_url =  http://{cfg.backend_host}:{cfg.backend_port} \n"
+        f"backend_process_name = {cfg.backend_process_name} \n"
+        f"sqlite_protocol = {cfg.sqlite_protocol} \n"
+        f"sqlite_echo = {cfg.sqlite_echo} \n"
+        f"sqlite_check_same_thread = {cfg.sqlite_check_same_thread} \n"
+        f"sqlite_file_location = {cfg.sqlite_file_location} \n"
+        f"sqlite_file_name = {cfg.sqlite_file_name} \n"
     )
     bar = "=" * max(60, len(message))
     logger.warning(f"\n{bar}\n{message}\n{bar}")
