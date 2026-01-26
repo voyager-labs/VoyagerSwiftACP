@@ -1,6 +1,5 @@
 """Search API 엔드포인트"""
 
-import sentry_sdk
 from fastapi import APIRouter, Depends
 
 from app.search.schemas import (
@@ -27,7 +26,6 @@ async def query_search(
     - **query**: 자연어 검색 쿼리 (필수)
     - **filters**: 선택적 필터 (scopes, conditions)
     """
-    sentry_sdk.set_tag("collection_type", "query")
     log_metric("voyager_collection_query_total", 1, {"route": "/api/collection"})
     return await service.query_search(
         query=request.query,
@@ -48,7 +46,6 @@ async def filter_search(
         - **scopes**: 검색 경로 범위
         - **conditions**: 검색 조건 목록
     """
-    sentry_sdk.set_tag("collection_type", "filters")
     log_metric("voyager_collection_filters_total", 1, {"route": "/api/collection/filters"})
     return await service.filter_search(
         filters=request.filters,

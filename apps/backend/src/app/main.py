@@ -5,55 +5,14 @@ import time
 from collections.abc import Awaitable, Callable
 from contextlib import asynccontextmanager
 
-import sentry_sdk
 import setproctitle
 from fastapi import FastAPI, Request, Response
-from sentry_sdk.integrations.fastapi import FastApiIntegration
 
-from app.config import get_db_config, load_config, load_env
+from app.config import get_db_config, load_config
 from app.search.routes import router as search_router
 from infra.db.engine import engine_manager
 from infra.db.utils import ensure_parent_dir
 from utils.telemetry import log_metric
-
-
-def _parse_sample_rate(value: str | None, default: float) -> float:
-    if not value:
-        return default
-    try:
-        parsed = float(value)
-    except ValueError:
-        return default
-    if parsed < 0:
-        return 0.0
-    if parsed > 1:
-        return 1.0
-    return parsed
-
-
-def init_sentry() -> None:
-    load_env()
-    dsn = os.getenv("PUBLIC_SENTRY_DSN")
-    if not dsn:
-        return
-    traces_sample_rate_value = os.getenv("PUBLIC_SENTRY_TRACES_SAMPLE_RATE")
-    traces_sample_rate = _parse_sample_rate(traces_sample_rate_value, 0.0) if traces_sample_rate_value else None
-    environment = os.getenv("APP_ENV")
-    init_kwargs: dict[str, object] = {
-        "dsn": dsn,
-        "integrations": [FastApiIntegration()],
-        "send_default_pii": False,
-    }
-    if traces_sample_rate is not None:
-        init_kwargs["traces_sample_rate"] = traces_sample_rate
-    if environment:
-        init_kwargs["environment"] = environment
-    sentry_sdk.init(
-        **init_kwargs,
-    )
-
-
-init_sentry()
 
 
 @asynccontextmanager
@@ -110,46 +69,25 @@ async def add_request_observability(
     call_next: Callable[[Request], Awaitable[Response]],
 ) -> Response:
     start = time.perf_counter()
-    trace_id = request.headers.get("X-Trace-Id")
-    session_id = request.headers.get("X-Session-Id")
-    device_id = request.headers.get("X-Voyager-Device-Id")
-    app_version = request.headers.get("X-Voyager-App-Version")
-    os_version = request.headers.get("X-Voyager-OS-Version")
     route = request.url.path
     method = request.method
 
-    with sentry_sdk.push_scope() as scope:
-        scope.set_tag("route", route)
-        scope.set_tag("method", method)
-        if trace_id:
-            scope.set_tag("trace_id", trace_id)
-        if session_id:
-            scope.set_tag("session_id", session_id)
-        if device_id:
-            scope.set_user({"id": device_id})
-        if app_version:
-            scope.set_tag("app_version", app_version)
-        if os_version:
-            scope.set_tag("os_version", os_version)
-
-        response: Response = await call_next(request)
-        duration_ms = (time.perf_counter() - start) * 1000
-        scope.set_tag("status", response.status_code)
-        scope.set_extra("duration_ms", round(duration_ms, 2))
-        tags: dict[str, str] = {
-            "route": route,
-            "method": method,
-            "status": str(response.status_code),
-        }
-        log_metric("voyager_http_request_duration_ms", round(duration_ms, 2), tags)
-        log_metric("voyager_http_requests_total", 1, tags)
-        if response.status_code >= 500:
-            log_metric(
-                "voyager_http_errors_total",
-                1,
-                {"route": route, "error_code": "HTTP_5XX"},
-            )
-        return response
+    response: Response = await call_next(request)
+    duration_ms = (time.perf_counter() - start) * 1000
+    tags: dict[str, str] = {
+        "route": route,
+        "method": method,
+        "status": str(response.status_code),
+    }
+    log_metric("voyager_http_request_duration_ms", round(duration_ms, 2), tags)
+    log_metric("voyager_http_requests_total", 1, tags)
+    if response.status_code >= 500:
+        log_metric(
+            "voyager_http_errors_total",
+            1,
+            {"route": route, "error_code": "HTTP_5XX"},
+        )
+    return response
 
 
 # 라우터 등록

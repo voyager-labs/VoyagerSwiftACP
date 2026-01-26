@@ -5,7 +5,6 @@ import logging
 import time
 from typing import Any, cast
 
-import sentry_sdk
 from sqlalchemy import text
 from sqlmodel import select
 
@@ -73,14 +72,11 @@ class SearchService:
 
         # 2. query + 기존 조건/스코프 → 최적 결과 생성
         llm_start = time.perf_counter()
-        with sentry_sdk.start_span(op="llm.convert", description="query_search"):
-            llm_result = await self.converter.convert(query, existing_conditions, existing_scopes)
+        llm_result = await self.converter.convert(query, existing_conditions, existing_scopes)
         llm_error = llm_result.get("error")
 
         # 3. 결과 조건 생성
         if llm_error:
-            sentry_sdk.set_tag("search_error_code", "LLM_CONVERSION_FAILED")
-            sentry_sdk.set_tag("search_result", "error")
             log_metric(
                 "voyager_search_error_total",
                 1,
@@ -196,8 +192,7 @@ class SearchService:
                     return list(result.all())
 
             sql_start = time.perf_counter()
-            with sentry_sdk.start_span(op="db.sql", description="execute_search"):
-                entries: list[EntrySchema] = await asyncio.to_thread(_run_query)
+            entries: list[EntrySchema] = await asyncio.to_thread(_run_query)
             log_metric(
                 "voyager_search_sql_duration_ms",
                 round((time.perf_counter() - sql_start) * 1000, 2),
@@ -223,7 +218,6 @@ class SearchService:
             return items, None
 
         except ConditionBuilderError as e:
-            sentry_sdk.capture_exception(e)
             log_metric(
                 "voyager_search_error_total",
                 1,
@@ -232,7 +226,6 @@ class SearchService:
             logger.error("[SearchService] Condition error: %s", e)
             return [], SearchError(code="CONDITION_BUILD_FAILED", details=str(e))
         except Exception as e:
-            sentry_sdk.capture_exception(e)
             log_metric(
                 "voyager_search_error_total",
                 1,
@@ -263,14 +256,9 @@ def _tag_search_result(
     conditions_count: int,
     scopes_count: int,
 ) -> None:
-    sentry_sdk.set_tag("search_conditions_count_bucket", _bucket_for_count(conditions_count))
-    sentry_sdk.set_tag("search_scopes_count_bucket", _bucket_for_count(scopes_count))
     if error:
-        sentry_sdk.set_tag("search_error_code", error.code)
-        sentry_sdk.set_tag("search_result", "error")
         log_metric("voyager_search_error_total", 1, {"error_code": error.code})
         return
-    sentry_sdk.set_tag("search_itemcount_bucket", _bucket_for_count(len(items)))
     log_metric(
         "voyager_search_itemcount_bucket",
         1,
@@ -286,10 +274,6 @@ def _tag_search_result(
         1,
         {"bucket": _bucket_for_count(scopes_count)},
     )
-    if not items:
-        sentry_sdk.set_tag("search_result", "empty")
-    else:
-        sentry_sdk.set_tag("search_result", "success")
 
 
 def _bucket_for_count(value: int) -> str:
