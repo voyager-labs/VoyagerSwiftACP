@@ -1,8 +1,8 @@
+// swiftlint:disable file_length attributes
 @preconcurrency import ComposableArchitecture
 import Foundation
 import Logging
 
-// swiftlint:disable file_length type_body_length
 private let kComposerLogger = Logger(label: "Voyager")
 struct FilterSnapshot: Equatable {
     let scopes: [String]
@@ -10,6 +10,7 @@ struct FilterSnapshot: Equatable {
 }
 
 @Reducer
+// swiftlint:disable:next type_body_length
 struct ComposerFeature {
     @Dependency(\.searchClient)
     var searchClient
@@ -664,3 +665,5 @@ private func updateOperatorOptions(
         },
     )
 }
+
+// swiftlint:enable file_length attributes
