@@ -96,6 +96,10 @@ final class EntryListTableViewController: NSViewController {
         tableView.intercellSpacing = NSSize(width: ListColumnLayoutUtils.columnSpacing, height: 0)
         tableView.doubleAction = #selector(handleDoubleClick)
 
+        tableView.registerForDraggedTypes([.fileURL])
+        tableView.setDraggingSourceOperationMask([.copy, .move], forLocal: true)
+        tableView.setDraggingSourceOperationMask([.copy], forLocal: false)
+
         scrollView.documentView = tableView
 
         view.addSubview(scrollView)
@@ -513,9 +517,125 @@ extension EntryListTableViewController: NSTableViewDataSource {
     func numberOfRows(in _: NSTableView) -> Int {
         rows.count
     }
+
+    func tableView(_: NSTableView, pasteboardWriterForRow row: Int) -> (any NSPasteboardWriting)? {
+        guard row >= 0, row < rows.count else { return nil }
+        guard case let .entry(entry) = rows[row].kind else { return nil }
+        return NSURL(fileURLWithPath: entry.fullPath)
+    }
+
+    func tableView(
+        _ tableView: NSTableView,
+        validateDrop info: any NSDraggingInfo,
+        proposedRow row: Int,
+        proposedDropOperation dropOperation: NSTableView.DropOperation,
+    ) -> NSDragOperation {
+        _ = info
+
+        var destinationPath = store.state.currentPath
+        if dropOperation == .on,
+           row >= 0,
+           row < rows.count,
+           case let .entry(entry) = rows[row].kind,
+           entry.isDirectory
+        {
+            tableView.setDropRow(row, dropOperation: .on)
+            destinationPath = entry.fullPath
+        } else {
+            tableView.setDropRow(-1, dropOperation: .on)
+        }
+
+        let sourcePaths = entryClient.loadDragPaths()
+        let isInternalDrag = !sourcePaths.isEmpty
+        let isOptionDrag = isInternalDrag
+            ? entryClient.loadDragWithOption()
+            : NSEvent.modifierFlags.contains(.option)
+
+        if isInternalDrag, !isOptionDrag {
+            let sourceParent = URL(fileURLWithPath: sourcePaths[0]).deletingLastPathComponent().path
+            if sourceParent == destinationPath {
+                return []
+            }
+
+            // 자기 자신의 하위 폴더로 이동 방지
+            for sourcePath in sourcePaths {
+                if destinationPath.hasPrefix(sourcePath + "/") || destinationPath == sourcePath {
+                    return []
+                }
+            }
+        }
+
+        return isOptionDrag ? .copy : .move
+    }
+
+    func tableView(
+        _: NSTableView,
+        acceptDrop info: any NSDraggingInfo,
+        row: Int,
+        dropOperation: NSTableView.DropOperation,
+    ) -> Bool {
+        var destinationPath = store.state.currentPath
+        if dropOperation == .on,
+           row >= 0,
+           row < rows.count,
+           case let .entry(entry) = rows[row].kind,
+           entry.isDirectory
+        {
+            destinationPath = entry.fullPath
+        }
+
+        let internalPaths = entryClient.loadDragPaths()
+        if !internalPaths.isEmpty {
+            fsStore.send(.handleDrop(providers: [], destinationPath: destinationPath))
+            return true
+        }
+
+        let pasteboard = info.draggingPasteboard
+        let options: [NSPasteboard.ReadingOptionKey: Any] = [
+            .urlReadingFileURLsOnly: true,
+        ]
+        guard let urls = pasteboard.readObjects(forClasses: [NSURL.self], options: options) as? [URL],
+              !urls.isEmpty
+        else {
+            return false
+        }
+
+        let isOptionPressed = NSEvent.modifierFlags.contains(.option)
+        fsStore.send(.dropItems(
+            sourcePaths: urls.map(\.path),
+            destinationPath: destinationPath,
+            isOptionDrag: isOptionPressed,
+        ))
+        return true
+    }
 }
 
 extension EntryListTableViewController: NSTableViewDelegate {
+    func tableView(
+        _: NSTableView,
+        draggingSession _: NSDraggingSession,
+        willBeginAt _: NSPoint,
+        forRowsWith rowIndexes: IndexSet,
+    ) {
+        let paths = rowIndexes.compactMap { index -> String? in
+            guard index >= 0, index < rows.count else { return nil }
+            guard case let .entry(entry) = rows[index].kind else { return nil }
+            return entry.fullPath
+        }
+        guard !paths.isEmpty else { return }
+        fsStore.send(.startDrag(paths: paths))
+    }
+
+    func tableView(
+        _: NSTableView,
+        draggingSession _: NSDraggingSession,
+        endedAt _: NSPoint,
+        operation: NSDragOperation,
+    ) {
+        guard operation == [] else { return }
+        fsStore.send(.startDrag(paths: []))
+    }
+
     func tableView(_ tableView: NSTableView, sortDescriptorsDidChange _: [NSSortDescriptor]) {
         guard !isUpdatingSortFromStore else { return }
         guard let descriptor = tableView.sortDescriptors.first else { return }
