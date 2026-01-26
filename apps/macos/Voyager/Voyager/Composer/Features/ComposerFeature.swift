@@ -2,7 +2,7 @@
 import Foundation
 import Logging
 
-// swiftlint:disable file_length type_body_length
+// swiftlint:disable file_length
 private let kComposerLogger = Logger(label: "Voyager")
 struct FilterSnapshot: Equatable {
     let scopes: [String]
@@ -11,6 +11,7 @@ struct FilterSnapshot: Equatable {
 
 @Reducer
 struct ComposerFeature {
+    // swiftlint:disable:previous type_body_length
     @Dependency(\.searchClient)
     var searchClient
     @Dependency(\.registryClient)
@@ -155,16 +156,16 @@ struct ComposerFeature {
                 guard !query.isEmpty else { return .none }
                 let filters = buildFilters(from: state)
                 VoyagerSentryMetricLogger.logMetric(
-                    "voyager_composer_submit_total",
+                    "voyager_composer_submit",
                     value: 1,
                 )
                 VoyagerSentryMetricLogger.logMetric(
-                    "voyager_search_submit_total",
+                    "voyager_search_submit",
                     value: 1,
                 )
                 if state.hasSubmittedInSession {
                     VoyagerSentryMetricLogger.logMetric(
-                        "voyager_search_resubmit_total",
+                        "voyager_search_resubmit",
                         value: 1,
                     )
                 }
@@ -193,7 +194,7 @@ struct ComposerFeature {
             case .cancelSearch:
                 state.isLoadingSearch = false
                 VoyagerSentryMetricLogger.logMetric(
-                    "voyager_search_cancel_total",
+                    "voyager_search_cancel",
                     value: 1,
                     tags: ["type": "search"],
                 )
@@ -203,7 +204,7 @@ struct ComposerFeature {
                 state.isLoadingFilters = false
                 state.isFilteringInFlight = false
                 VoyagerSentryMetricLogger.logMetric(
-                    "voyager_search_cancel_total",
+                    "voyager_search_cancel",
                     value: 1,
                     tags: ["type": "filters"],
                 )
@@ -215,7 +216,7 @@ struct ComposerFeature {
                 state.isLoadingFilters = true
                 state.isFilteringInFlight = true
                 VoyagerSentryMetricLogger.logMetric(
-                    "voyager_composer_filters_apply_total",
+                    "voyager_composer_filters_apply",
                     value: 1,
                 )
                 state.filtersStartedAt = Date()
@@ -523,7 +524,7 @@ struct ComposerFeature {
                     )
                 }
                 VoyagerSentryMetricLogger.logMetric(
-                    "voyager_search_result_total",
+                    "voyager_search_result",
                     value: 1,
                     tags: ["result": response.itemCount > 0 ? "success" : "empty"],
                 )
@@ -533,7 +534,7 @@ struct ComposerFeature {
             case .searchResponse(.failure):
                 state.isLoadingSearch = false
                 VoyagerSentryMetricLogger.logMetric(
-                    "voyager_search_result_total",
+                    "voyager_search_result",
                     value: 1,
                     tags: ["result": "error"],
                     level: .warn,

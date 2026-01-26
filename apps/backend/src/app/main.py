@@ -12,7 +12,6 @@ from app.config import get_db_config, load_config
 from app.search.routes import router as search_router
 from infra.db.engine import engine_manager
 from infra.db.utils import ensure_parent_dir
-from utils.telemetry import log_metric
 
 
 @asynccontextmanager
@@ -74,19 +73,6 @@ async def add_request_observability(
 
     response: Response = await call_next(request)
     duration_ms = (time.perf_counter() - start) * 1000
-    tags: dict[str, str] = {
-        "route": route,
-        "method": method,
-        "status": str(response.status_code),
-    }
-    log_metric("voyager_http_request_duration_ms", round(duration_ms, 2), tags)
-    log_metric("voyager_http_requests_total", 1, tags)
-    if response.status_code >= 500:
-        log_metric(
-            "voyager_http_errors_total",
-            1,
-            {"route": route, "error_code": "HTTP_5XX"},
-        )
     return response
 
 

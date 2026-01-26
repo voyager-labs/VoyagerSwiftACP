@@ -8,7 +8,6 @@ from app.search.schemas import (
     SearchResponse,
 )
 from app.search.services import SearchService, get_search_service
-from utils.telemetry import log_metric
 
 router = APIRouter(prefix="/collection", tags=["collection"])
 
@@ -26,7 +25,6 @@ async def query_search(
     - **query**: 자연어 검색 쿼리 (필수)
     - **filters**: 선택적 필터 (scopes, conditions)
     """
-    log_metric("voyager_collection_query_total", 1, {"route": "/api/collection"})
     return await service.query_search(
         query=request.query,
         filters=request.filters,
@@ -46,7 +44,6 @@ async def filter_search(
         - **scopes**: 검색 경로 범위
         - **conditions**: 검색 조건 목록
     """
-    log_metric("voyager_collection_filters_total", 1, {"route": "/api/collection/filters"})
     return await service.filter_search(
         filters=request.filters,
     )

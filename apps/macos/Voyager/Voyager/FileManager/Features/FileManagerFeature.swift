@@ -353,7 +353,7 @@ struct FileManagerFeature {
             case .onAppear:
                 if shouldLogDailyFileManagerOpen(userDefaultsClient) {
                     VoyagerSentryMetricLogger.logMetric(
-                        "voyager_file_manager_first_open_total",
+                        "voyager_file_manager_first_open",
                         value: 1,
                         tags: ["date": currentDateKey()],
                     )
@@ -1343,7 +1343,7 @@ struct FileManagerFeature {
                 }
                 state.composer.isPresented = true
                 VoyagerSentryMetricLogger.logMetric(
-                    "voyager_composer_open_total",
+                    "voyager_composer_open",
                     value: 1,
                 )
                 return .none
