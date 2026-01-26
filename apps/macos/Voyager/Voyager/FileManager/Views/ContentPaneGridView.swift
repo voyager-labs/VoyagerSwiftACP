@@ -133,6 +133,8 @@ struct ContentPaneGridView: View {
             item: item,
             fsStore: fsStore,
             saveScrollPosition: saveScrollPosition,
+            // TODO: 좌표 기반 앵커링을 엔트리 기준 위치로 전환해야 함
+            shareAnchorProvider: { nil },
             isTrashFolder: isTrashFolder,
             onEmptyTrash: { store.send(.entries(.emptyTrash)) },
             openWindow: { path in
@@ -161,6 +163,9 @@ struct ContentPaneGridView: View {
         showExtract: Bool,
     ) -> some View {
         let selectedIds = fsStore.selectedIds
+        let selectedURLs = fsStore.displayItems
+            .filter { selectedIds.contains($0.id) }
+            .map { URL(fileURLWithPath: $0.fullPath) }
         let clipboardItems = fsStore.clipboardItems
         let thumbnailsReady = fsStore.thumbnailsReady
 
@@ -179,6 +184,8 @@ struct ContentPaneGridView: View {
             onOpen: handlers.onOpen,
             onOpenInNewTab: handlers.onOpenInNewTab,
             onQuickLook: handlers.onQuickLook,
+            onGetInfo: handlers.onGetInfo,
+            onShare: handlers.onShare,
             onOpenWithApp: handlers.onOpenWithApp,
             onRenameUpdate: handlers.onRenameUpdate,
             onRenameCommit: handlers.onRenameCommit,
@@ -194,10 +201,16 @@ struct ContentPaneGridView: View {
             onRename: handlers.onRename,
             onCompress: handlers.onCompress,
             onDuplicate: handlers.onDuplicate,
+            onCreateAlias: handlers.onCreateAlias,
             onExtract: handlers.onExtract,
             onCopy: handlers.onCopy,
+            onCopyAbsolutePaths: handlers.onCopyAbsolutePaths,
+            onCopyURLs: handlers.onCopyURLs,
             onCut: handlers.onCut,
             onToggleTag: handlers.onToggleTag,
+            onPerformService: handlers.onPerformService,
+            onRevealInFinder: handlers.onRevealInFinder,
+            selectedURLs: selectedURLs,
             selectedCount: fsStore.selectedIds.isEmpty ? 1 : fsStore.selectedIds.count,
             showCompress: showCompress,
             showExtract: showExtract,

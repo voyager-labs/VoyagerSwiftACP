@@ -68,6 +68,8 @@ final class HelperStateBroadcaster {
 
     // 알림 payload를 생성한다
     private func buildPayload() -> [String: Any] {
+        let helperBundleVersion = Bundle.main.infoDictionary?["CFBundleVersion"] as? String
+
         var backend: [String: Any] = [
             HelperStateUserInfoKey.Backend.ready: backendState.ready,
         ]
@@ -90,11 +92,17 @@ final class HelperStateBroadcaster {
             ]
         }
 
-        return [
-            HelperStateUserInfoKey.schemaVersion: 1,
+        var payload: [String: Any] = [
+            HelperStateUserInfoKey.schemaVersion: 2,
             HelperStateUserInfoKey.generatedAt: Date().timeIntervalSince1970,
             HelperStateUserInfoKey.helperReady: true,
             HelperStateUserInfoKey.backend: backend,
         ]
+
+        if let helperBundleVersion {
+            payload[HelperStateUserInfoKey.helperBundleVersion] = helperBundleVersion
+        }
+
+        return payload
     }
 }

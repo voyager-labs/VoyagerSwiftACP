@@ -57,7 +57,8 @@ struct ConditionPropertyPickerFeature {
 
             case .onAppear:
                 let entries = registryClient.allProperties()
-                state.properties = entries.map(\.key)
+                let visibleEntries = entries.filter { !($0.definition.uiHidden ?? false) }
+                state.properties = visibleEntries.map(\.key)
                 state.propertyLabels = Dictionary(
                     uniqueKeysWithValues: entries.map { ($0.key, $0.definition.uiLabel ?? $0.key) },
                 )
@@ -68,7 +69,7 @@ struct ConditionPropertyPickerFeature {
                     uniqueKeysWithValues: entries.map { ($0.key, $0.definition.type) },
                 )
                 state.propertyDefaults = Set(
-                    entries
+                    visibleEntries
                         .filter { $0.definition.uiPinned ?? false }
                         .map(\.key),
                 )

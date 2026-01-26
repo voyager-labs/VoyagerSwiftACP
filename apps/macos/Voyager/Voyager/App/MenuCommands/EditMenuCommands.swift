@@ -39,6 +39,10 @@ struct EditMenuCommands: Commands {
         let canUndo = canUndoResponder || appDelegate.canUndo
         let canRedo = canRedoResponder || appDelegate.canRedo
 
+        let selectedCount = appDelegate.currentFileManagerStore?.entries.selectedIds.count ?? 0
+        let copyAbsolutePathTitle = selectedCount == 1 ? "Copy Absolute Path" : "Copy Absolute Paths"
+        let copyURLTitle = selectedCount == 1 ? "Copy URL" : "Copy URLs"
+
         CommandGroup(replacing: .undoRedo) {
             Button("Undo") {
                 if canUndoInTextResponder(),
@@ -99,6 +103,18 @@ struct EditMenuCommands: Commands {
             .keyboardShortcut("c", modifiers: .command)
             .disabled(false)
 
+            Divider()
+
+            Button(copyAbsolutePathTitle) {
+                appDelegate.currentFileManagerStore?.send(.entries(.copySelectedAbsolutePaths))
+            }
+            .disabled(appDelegate.currentFileManagerStore?.entries.selectedIds.isEmpty ?? true)
+
+            Button(copyURLTitle) {
+                appDelegate.currentFileManagerStore?.send(.entries(.copySelectedURLs))
+            }
+            .disabled(appDelegate.currentFileManagerStore?.entries.selectedIds.isEmpty ?? true)
+
             Button("Paste") {
                 if NSApp.sendAction(#selector(NSText.paste(_:)), to: nil, from: nil) {
                 } else if let currentPath = appDelegate.currentFileManagerStore?.currentPath {
@@ -112,6 +128,11 @@ struct EditMenuCommands: Commands {
                 appDelegate.currentFileManagerStore?.send(.entries(.duplicateSelectedItems))
             }
             .keyboardShortcut("d", modifiers: .command)
+            .disabled(appDelegate.currentFileManagerStore?.entries.selectedIds.isEmpty ?? true)
+
+            Button("Make Alias") {
+                appDelegate.currentFileManagerStore?.send(.entries(.createAliasForSelectedItems))
+            }
             .disabled(appDelegate.currentFileManagerStore?.entries.selectedIds.isEmpty ?? true)
         }
 

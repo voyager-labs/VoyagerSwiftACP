@@ -1,3 +1,4 @@
+import Darwin
 import Foundation
 import Logging
 import SwiftDotenv
@@ -127,8 +128,38 @@ actor ProcessRunner {
 
     func stop() async {
         stopRequested = true
-        process?.terminate()
-        process = nil
+
+        guard let process else {
+            await stateBroadcaster.markBackendStopped()
+            await stateBroadcaster.postCurrentState()
+            return
+        }
+
+        logger.info("backend_stop_begin")
+
+        // 1) SIGTERM
+        process.terminate()
+
+        // 2) 최대 3초 대기
+        let termDeadline = Date().addingTimeInterval(3)
+        while process.isRunning, Date() < termDeadline {
+            try? await Task.sleep(nanoseconds: 200_000_000)
+        }
+
+        // 3) 아직 살아있으면 SIGKILL
+        if process.isRunning {
+            _ = Darwin.kill(process.processIdentifier, SIGKILL)
+            let killDeadline = Date().addingTimeInterval(1)
+            while process.isRunning, Date() < killDeadline {
+                try? await Task.sleep(nanoseconds: 200_000_000)
+            }
+        }
+
+        self.process = nil
+        await stateBroadcaster.markBackendStopped()
+        await stateBroadcaster.postCurrentState()
+
+        logger.info("backend_stop_done")
     }
 
     private func makeProcessConfig(

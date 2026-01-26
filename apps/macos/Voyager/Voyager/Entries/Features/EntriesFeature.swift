@@ -220,13 +220,20 @@ struct EntriesFeature {
 
         case openSelectedItem
         case quickLookSelectedItem
+        case getInfoForSelectedItems
+        case shareSelectedItems(anchor: CGPoint?)
+        case revealSelectedItemsInFinder
+        case performService(serviceName: String)
         case openWithSelectedItem(bundleID: String?, shouldSetAsDefault: Bool)
         case openCollectionFile(URL)
         case navigateFolder(id: String)
         case copySelectedItems
+        case copySelectedAbsolutePaths
+        case copySelectedURLs
         case cutSelectedItems
         case pasteItems(destinationPath: String)
         case duplicateSelectedItems
+        case createAliasForSelectedItems
         case startDrag(paths: [String])
         case dropToFolder(destinationPath: String)
         case handleDrop(providers: [NSItemProvider], destinationPath: String)
@@ -1014,6 +1021,26 @@ struct EntriesFeature {
 
                 return .send(.operations(.quickLookFiles(files: selectedItems)))
 
+            case .getInfoForSelectedItems:
+                let selectedItems = getSelectedItems(selectedIds: state.selectedIds, items: state.displayItems)
+                guard !selectedItems.isEmpty else { return .none }
+                return .send(.operations(.openFinderInfo(items: selectedItems)))
+
+            case let .shareSelectedItems(anchor):
+                let selectedItems = getSelectedItems(selectedIds: state.selectedIds, items: state.displayItems)
+                guard !selectedItems.isEmpty else { return .none }
+                return .send(.operations(.shareItems(items: selectedItems, anchor: anchor)))
+
+            case .revealSelectedItemsInFinder:
+                let selectedItems = getSelectedItems(selectedIds: state.selectedIds, items: state.displayItems)
+                guard !selectedItems.isEmpty else { return .none }
+                return .send(.operations(.revealInFinder(items: selectedItems)))
+
+            case let .performService(serviceName):
+                let selectedItems = getSelectedItems(selectedIds: state.selectedIds, items: state.displayItems)
+                guard !selectedItems.isEmpty else { return .none }
+                return .send(.operations(.performService(items: selectedItems, name: serviceName)))
+
             case let .openWithSelectedItem(bundleID, shouldSetAsDefault):
                 let selectedFiles = getSelectedFiles(selectedIds: state.selectedIds, items: state.displayItems)
 
@@ -1104,6 +1131,32 @@ struct EntriesFeature {
                     entryClient.postFileSystemChanged([])
                 }
 
+            case .copySelectedAbsolutePaths:
+                let selectedItems = getSelectedItems(selectedIds: state.selectedIds, items: state.displayItems)
+                guard !selectedItems.isEmpty else { return .none }
+
+                let text = selectedItems
+                    .map(\.fullPath)
+                    .joined(separator: "\n")
+
+                let pasteboard = NSPasteboard.general
+                pasteboard.clearContents()
+                pasteboard.setString(text, forType: .string)
+                return .none
+
+            case .copySelectedURLs:
+                let selectedItems = getSelectedItems(selectedIds: state.selectedIds, items: state.displayItems)
+                guard !selectedItems.isEmpty else { return .none }
+
+                let text = selectedItems
+                    .map { URL(fileURLWithPath: $0.fullPath).absoluteString }
+                    .joined(separator: "\n")
+
+                let pasteboard = NSPasteboard.general
+                pasteboard.clearContents()
+                pasteboard.setString(text, forType: .string)
+                return .none
+
             case .cutSelectedItems:
                 guard !state.selectedIds.isEmpty else {
                     return .none
@@ -1157,6 +1210,13 @@ struct EntriesFeature {
                     operation: .copy,
                     actionKind: .duplicate,
                 )))
+
+            case .createAliasForSelectedItems:
+                let selectedItems = getSelectedItems(selectedIds: state.selectedIds, items: state.displayItems)
+                guard !selectedItems.isEmpty else {
+                    return .none
+                }
+                return .send(.operations(.createAliases(items: selectedItems)))
 
             case let .startDrag(paths):
                 state.draggingPaths = paths
@@ -1718,6 +1778,9 @@ struct EntriesFeature {
         case .createFolder:
             try makeCreateFolderOperation(target: target, direction: direction)
 
+        case .createAlias:
+            try makeCreateAliasOperation(target: target, direction: direction)
+
         case .moveToTrash:
             try makeMoveToTrashOperation(target: target, direction: direction)
 
@@ -1726,6 +1789,38 @@ struct EntriesFeature {
 
         case .setTags:
             try makeSetTagsOperation(target: target, direction: direction)
+        }
+    }
+
+    private func makeCreateAliasOperation(
+        target: EntryActionRecord.Target,
+        direction: EntryActionDirection,
+    ) throws -> EntryActionOperation {
+        switch direction {
+        case .undo:
+            let targetPath = try Self.requiredPath(target.afterPath, context: "undo create alias")
+            return EntryActionOperation(
+                operationPath: targetPath,
+                operationKind: .deleteImmediately,
+                perform: {
+                    try await entryClient.deleteImmediately(URL(fileURLWithPath: targetPath))
+                    return target
+                },
+            )
+        case .redo:
+            let sourcePath = try Self.requiredPath(target.beforePath, context: "redo create alias source")
+            let aliasPath = try Self.requiredPath(target.afterPath, context: "redo create alias destination")
+            return EntryActionOperation(
+                operationPath: sourcePath,
+                operationKind: .createAlias,
+                perform: {
+                    try await entryClient.createAlias(
+                        URL(fileURLWithPath: sourcePath),
+                        URL(fileURLWithPath: aliasPath),
+                    )
+                    return target
+                },
+            )
         }
     }
 

@@ -11,8 +11,10 @@
 		6C57FBA92F02111500D85C72 /* Sparkle in Frameworks */ = {isa = PBXBuildFile; productRef = 6C57FBA82F02111500D85C72 /* Sparkle */; };
 		6C727A2D2F0DF4A10012D44A /* Logging in Frameworks */ = {isa = PBXBuildFile; productRef = 6C727A2C2F0DF4A10012D44A /* Logging */; };
 		6C727A2F2F0DF4AA0012D44A /* Logging in Frameworks */ = {isa = PBXBuildFile; productRef = 6C727A2E2F0DF4AA0012D44A /* Logging */; };
+		6C8A20C933C9C3F600B2B9B1 /* Sentry in Frameworks */ = {isa = PBXBuildFile; productRef = 7E17C1202F24CB7500F6BD2B /* Sentry */; };
 		6CFB7B382E9D48B40005FDF6 /* ComposableArchitecture in Frameworks */ = {isa = PBXBuildFile; productRef = 6CFB7B372E9D48B40005FDF6 /* ComposableArchitecture */; };
 		7E1724A12EC5BA6600385F6E /* SwiftUIIntrospect in Frameworks */ = {isa = PBXBuildFile; productRef = 7E1724A02EC5BA6600385F6E /* SwiftUIIntrospect */; };
+		7E17C1212F24CB7500F6BD2B /* Sentry in Frameworks */ = {isa = PBXBuildFile; productRef = 7E17C1202F24CB7500F6BD2B /* Sentry */; };
 		7E1974712E8BDC0700D041D3 /* InjectionNext in Frameworks */ = {isa = PBXBuildFile; productRef = 7E1974702E8BDC0700D041D3 /* InjectionNext */; };
 		7E6AF6AD2E8BABD8005DC7D3 /* Inject in Frameworks */ = {isa = PBXBuildFile; productRef = 7E6AF6AC2E8BABD8005DC7D3 /* Inject */; };
 		7E8B3C4F2F1A2B3C400D9E8F2 /* GRDB in Frameworks */ = {isa = PBXBuildFile; productRef = 7E8B3C4E2F1A2B3C400D9E8F1 /* GRDB */; };
@@ -20,9 +22,9 @@
 		7E9D64952E8CDDC8006CB69F /* SwiftDotenv in Frameworks */ = {isa = PBXBuildFile; productRef = 7E9D64942E8CDDC8006CB69F /* SwiftDotenv */; };
 		7EEC64512E8CE684004ACEA5 /* SwiftDotenv in Frameworks */ = {isa = PBXBuildFile; productRef = 7EEC64502E8CE684004ACEA5 /* SwiftDotenv */; };
 		7EEC64532E8CE6E3004ACEA5 /* InjectionNext in Frameworks */ = {isa = PBXBuildFile; productRef = 7EEC64522E8CE6E3004ACEA5 /* InjectionNext */; };
+		A1B2C3D4E5F60708192A3B4D /* Migrations in Resources */ = {isa = PBXBuildFile; fileRef = A1B2C3D4E5F60708192A3B4C /* Migrations */; };
 		AF0F1E7B33B24D4A00A1F123 /* VoyagerHelper.app in Copy Helper into App */ = {isa = PBXBuildFile; fileRef = 7E14EE232E866E82005AC834 /* VoyagerHelper.app */; settings = {ATTRIBUTES = (CodeSignOnCopy, ); }; };
 		B2AD8C7BD69A51C61EF4D9FC /* property_condition_registry.json in Resources */ = {isa = PBXBuildFile; fileRef = 60F570BDE5ECDE55DC1C7E60 /* property_condition_registry.json */; };
-		A1B2C3D4E5F60708192A3B4D /* Migrations in Resources */ = {isa = PBXBuildFile; fileRef = A1B2C3D4E5F60708192A3B4C /* Migrations */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -77,8 +79,8 @@
 		7E14EDE52E86622E005AC834 /* VoyagerUITests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = VoyagerUITests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		7E14EE232E866E82005AC834 /* VoyagerHelper.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = VoyagerHelper.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		7E14EE2F2E866E85005AC834 /* VoyagerHelperTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = VoyagerHelperTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
-		A68896D2BA838902604FD30A /* system_property_registry.json */ = {isa = PBXFileReference; lastKnownFileType = text.json; name = system_property_registry.json; path = ../../../shared/system_property_registry.json; sourceTree = SOURCE_ROOT; };
 		A1B2C3D4E5F60708192A3B4C /* Migrations */ = {isa = PBXFileReference; lastKnownFileType = folder; name = Migrations; path = VoyagerHelper/Infrastructure/Database/Migrations; sourceTree = "<group>"; };
+		A68896D2BA838902604FD30A /* system_property_registry.json */ = {isa = PBXFileReference; lastKnownFileType = text.json; name = system_property_registry.json; path = ../../../shared/system_property_registry.json; sourceTree = SOURCE_ROOT; };
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedRootGroup section */
@@ -122,6 +124,7 @@
 				7E6AF6AD2E8BABD8005DC7D3 /* Inject in Frameworks */,
 				7EEC64512E8CE684004ACEA5 /* SwiftDotenv in Frameworks */,
 				6C727A2D2F0DF4A10012D44A /* Logging in Frameworks */,
+				7E17C1212F24CB7500F6BD2B /* Sentry in Frameworks */,
 				6CFB7B382E9D48B40005FDF6 /* ComposableArchitecture in Frameworks */,
 				6C57FBA92F02111500D85C72 /* Sparkle in Frameworks */,
 				7E1724A12EC5BA6600385F6E /* SwiftUIIntrospect in Frameworks */,
@@ -148,6 +151,7 @@
 			buildActionMask = 2147483647;
 			files = (
 				6C727A2F2F0DF4AA0012D44A /* Logging in Frameworks */,
+				6C8A20C933C9C3F600B2B9B1 /* Sentry in Frameworks */,
 				7E9D64952E8CDDC8006CB69F /* SwiftDotenv in Frameworks */,
 				7EEC64532E8CE6E3004ACEA5 /* InjectionNext in Frameworks */,
 				7E8B3C4F2F1A2B3C400D9E8F2 /* GRDB in Frameworks */,
@@ -225,6 +229,7 @@
 				7E1724A02EC5BA6600385F6E /* SwiftUIIntrospect */,
 				6C57FBA82F02111500D85C72 /* Sparkle */,
 				6C727A2C2F0DF4A10012D44A /* Logging */,
+				7E17C1202F24CB7500F6BD2B /* Sentry */,
 			);
 			productName = Voyager;
 			productReference = 7E14EDCC2E86622C005AC834 /* Voyager.app */;
@@ -296,6 +301,7 @@
 			);
 			name = VoyagerHelper;
 			packageProductDependencies = (
+				7E17C1202F24CB7500F6BD2B /* Sentry */,
 				7E9D64942E8CDDC8006CB69F /* SwiftDotenv */,
 				7EEC64522E8CE6E3004ACEA5 /* InjectionNext */,
 				6C727A2E2F0DF4AA0012D44A /* Logging */,
@@ -377,6 +383,7 @@
 				6C57FBA72F02111500D85C72 /* XCRemoteSwiftPackageReference "Sparkle" */,
 				6C727A2B2F0DF4A10012D44A /* XCRemoteSwiftPackageReference "swift-log" */,
 				7E8B3C4D2F1A2B3C400D9E8F0 /* XCRemoteSwiftPackageReference "GRDB" */,
+				7E17C11F2F24CB7500F6BD2B /* XCRemoteSwiftPackageReference "sentry-cocoa" */,
 			);
 			preferredProjectObjectVersion = 77;
 			productRefGroup = 7E14EDCD2E86622C005AC834 /* Products */;
@@ -436,6 +443,7 @@
 /* Begin PBXShellScriptBuildPhase section */
 		7E6AF6B12E8BB003005DC7D3 /* Run Lint and Format */ = {
 			isa = PBXShellScriptBuildPhase;
+			basedOnDependencyAnalysis = 0;
 			buildActionMask = 2147483647;
 			files = (
 			);
@@ -450,7 +458,7 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 			shellPath = /bin/sh;
-			shellScript = "#!/bin/bash\nset -euo pipefail\n\nROOT=\"$SRCROOT\"\n\necho \"================================\"\necho \"🔍 SwiftLint: using system installation...\"\necho \"================================\"\n\n# 시스템에 설치된 SwiftLint 사용\nif command -v swiftlint >/dev/null 2>&1; then\n  echo \"✓ Running SwiftLint at: $(which swiftlint)\"\n  swiftlint --config \"$ROOT/.swiftlint.yml\" --reporter xcode\n  echo \"✓ SwiftLint completed\"\nelse\n  echo \"⚠️ SwiftLint not found in PATH\"\nfi\n\necho \"================================\"\necho \"🔧 SwiftFormat: using system installation...\"\necho \"================================\"\n\n# 시스템에 설치된 SwiftFormat 사용\nif command -v swiftformat >/dev/null 2>&1; then\n  echo \"✓ Running SwiftFormat at: $(which swiftformat)\"\n  swiftformat --config \"$ROOT/.swiftformat\" \"$ROOT\" --verbose || true\n  echo \"✓ SwiftFormat completed\"\nelse\n  echo \"⚠️ SwiftFormat not found in PATH\"\nfi\n\necho \"================================\"\n";
+			shellScript = "#!/bin/bash\nset -euo pipefail\n\nROOT=\"$SRCROOT\"\n\necho \"================================\"\necho \"🔍 SwiftLint: using system installation...\"\necho \"================================\"\n\n# 시스템에 설치된 SwiftLint 사용\nif command -v swiftlint >/dev/null 2>&1; then\n  echo \"✓ Running SwiftLint at: $(which swiftlint)\"\n  swiftlint --config \"$ROOT/.swiftlint.yml\" --reporter xcode || true\n  echo \"✓ SwiftLint completed\"\nelse\n  echo \"⚠️ SwiftLint not found in PATH\"\nfi\n\necho \"================================\"\necho \"🔧 SwiftFormat: using system installation...\"\necho \"================================\"\n\n# 시스템에 설치된 SwiftFormat 사용\nif command -v swiftformat >/dev/null 2>&1; then\n  echo \"✓ Running SwiftFormat at: $(which swiftformat)\"\n  swiftformat --config \"$ROOT/.swiftformat\" \"$ROOT\" --verbose || true\n  echo \"✓ SwiftFormat completed\"\nelse\n  echo \"⚠️ SwiftFormat not found in PATH\"\nfi\n\necho \"================================\"\n";
 		};
 		7EC6B03F2E8CE43B00379B56 /* Run Lint and Format */ = {
 			isa = PBXShellScriptBuildPhase;
@@ -468,7 +476,7 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 			shellPath = /bin/sh;
-			shellScript = "#!/bin/bash\nset -euo pipefail\n\nROOT=\"$SRCROOT\"\n\necho \"================================\"\necho \"🔍 SwiftLint: using system installation...\"\necho \"================================\"\n\n# 시스템에 설치된 SwiftLint 사용\nif command -v swiftlint >/dev/null 2>&1; then\n  echo \"✓ Running SwiftLint at: $(which swiftlint)\"\n  swiftlint --config \"$ROOT/.swiftlint.yml\" --reporter xcode\n  echo \"✓ SwiftLint completed\"\nelse\n  echo \"⚠️ SwiftLint not found in PATH\"\nfi\n\necho \"================================\"\necho \"🔧 SwiftFormat: using system installation...\"\necho \"================================\"\n\n# 시스템에 설치된 SwiftFormat 사용\nif command -v swiftformat >/dev/null 2>&1; then\n  echo \"✓ Running SwiftFormat at: $(which swiftformat)\"\n  swiftformat --config \"$ROOT/.swiftformat\" \"$ROOT\" --verbose || true\n  echo \"✓ SwiftFormat completed\"\nelse\n  echo \"⚠️ SwiftFormat not found in PATH\"\nfi\n\necho \"================================\"\n";
+			shellScript = "#!/bin/bash\nset -euo pipefail\n\nROOT=\"$SRCROOT\"\n\necho \"================================\"\necho \"🔍 SwiftLint: using system installation...\"\necho \"================================\"\n\n# 시스템에 설치된 SwiftLint 사용\nif command -v swiftlint >/dev/null 2>&1; then\n  echo \"✓ Running SwiftLint at: $(which swiftlint)\"\n  swiftlint --config \"$ROOT/.swiftlint.yml\" --reporter xcode || true\n  echo \"✓ SwiftLint completed\"\nelse\n  echo \"⚠️ SwiftLint not found in PATH\"\nfi\n\necho \"================================\"\necho \"🔧 SwiftFormat: using system installation...\"\necho \"================================\"\n\n# 시스템에 설치된 SwiftFormat 사용\nif command -v swiftformat >/dev/null 2>&1; then\n  echo \"✓ Running SwiftFormat at: $(which swiftformat)\"\n  swiftformat --config \"$ROOT/.swiftformat\" \"$ROOT\" --verbose || true\n  echo \"✓ SwiftFormat completed\"\nelse\n  echo \"⚠️ SwiftFormat not found in PATH\"\nfi\n\necho \"================================\"\n";
 		};
 		AFB0BEEF33B27A4C00A1F900 /* Build Backend Binary */ = {
 			isa = PBXShellScriptBuildPhase;
@@ -736,7 +744,7 @@
 					"@executable_path/../Frameworks",
 				);
 				MACOSX_DEPLOYMENT_TARGET = 13.5;
-				MARKETING_VERSION = 0.1.0-alpha.3;
+				MARKETING_VERSION = 0.1.0;
 				"OTHER_LDFLAGS[arch=*]" = (
 					"-Xlinker",
 					"-interposable",
@@ -795,7 +803,7 @@
 					"@executable_path/../Frameworks",
 				);
 				MACOSX_DEPLOYMENT_TARGET = 13.5;
-				MARKETING_VERSION = 0.1.0-alpha.3;
+				MARKETING_VERSION = 0.1.0;
 				PRODUCT_BUNDLE_IDENTIFIER = fm.voyager.Voyager;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				PROVISIONING_PROFILE_SPECIFIER = "";
@@ -820,7 +828,7 @@
 				DEVELOPMENT_TEAM = "";
 				GENERATE_INFOPLIST_FILE = YES;
 				MACOSX_DEPLOYMENT_TARGET = 13.5;
-				MARKETING_VERSION = 0.1.0-alpha.3;
+				MARKETING_VERSION = 0.1.0;
 				PRODUCT_BUNDLE_IDENTIFIER = fm.voyager.VoyagerTests;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				PROVISIONING_PROFILE_SPECIFIER = "";
@@ -843,7 +851,7 @@
 				DEVELOPMENT_TEAM = "";
 				GENERATE_INFOPLIST_FILE = YES;
 				MACOSX_DEPLOYMENT_TARGET = 13.5;
-				MARKETING_VERSION = 0.1.0-alpha.3;
+				MARKETING_VERSION = 0.1.0;
 				PRODUCT_BUNDLE_IDENTIFIER = fm.voyager.VoyagerTests;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				PROVISIONING_PROFILE_SPECIFIER = "";
@@ -864,7 +872,7 @@
 				DEAD_CODE_STRIPPING = YES;
 				DEVELOPMENT_TEAM = "";
 				GENERATE_INFOPLIST_FILE = YES;
-				MARKETING_VERSION = 0.1.0-alpha.3;
+				MARKETING_VERSION = 0.1.0;
 				PRODUCT_BUNDLE_IDENTIFIER = fm.voyager.VoyagerUITests;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				PROVISIONING_PROFILE_SPECIFIER = "";
@@ -885,7 +893,7 @@
 				DEAD_CODE_STRIPPING = YES;
 				DEVELOPMENT_TEAM = "";
 				GENERATE_INFOPLIST_FILE = YES;
-				MARKETING_VERSION = 0.1.0-alpha.3;
+				MARKETING_VERSION = 0.1.0;
 				PRODUCT_BUNDLE_IDENTIFIER = fm.voyager.VoyagerUITests;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				PROVISIONING_PROFILE_SPECIFIER = "";
@@ -933,7 +941,7 @@
 					"$(inherited)",
 					"@executable_path/../Frameworks",
 				);
-				MARKETING_VERSION = 0.1.0-alpha.3;
+				MARKETING_VERSION = 0.1.0;
 				PRODUCT_BUNDLE_IDENTIFIER = fm.voyager.VoyagerHelper;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				PROVISIONING_PROFILE_SPECIFIER = "";
@@ -989,7 +997,7 @@
 					"$(inherited)",
 					"@executable_path/../Frameworks",
 				);
-				MARKETING_VERSION = 0.1.0-alpha.3;
+				MARKETING_VERSION = 0.1.0;
 				PRODUCT_BUNDLE_IDENTIFIER = fm.voyager.VoyagerHelper;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				PROVISIONING_PROFILE_SPECIFIER = "";
@@ -1015,7 +1023,7 @@
 				DEVELOPMENT_TEAM = "";
 				GENERATE_INFOPLIST_FILE = YES;
 				MACOSX_DEPLOYMENT_TARGET = 13.5;
-				MARKETING_VERSION = 0.1.0-alpha.3;
+				MARKETING_VERSION = 0.1.0;
 				PRODUCT_BUNDLE_IDENTIFIER = fm.voyager.VoyagerHelperTests;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				PROVISIONING_PROFILE_SPECIFIER = "";
@@ -1038,7 +1046,7 @@
 				DEVELOPMENT_TEAM = "";
 				GENERATE_INFOPLIST_FILE = YES;
 				MACOSX_DEPLOYMENT_TARGET = 13.5;
-				MARKETING_VERSION = 0.1.0-alpha.3;
+				MARKETING_VERSION = 0.1.0;
 				PRODUCT_BUNDLE_IDENTIFIER = fm.voyager.VoyagerHelperTests;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				PROVISIONING_PROFILE_SPECIFIER = "";
@@ -1143,6 +1151,14 @@
 				version = 26.0.0;
 			};
 		};
+		7E17C11F2F24CB7500F6BD2B /* XCRemoteSwiftPackageReference "sentry-cocoa" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/getsentry/sentry-cocoa.git";
+			requirement = {
+				kind = upToNextMajorVersion;
+				minimumVersion = 9.2.0;
+			};
+		};
 		7E19746F2E8BDC0700D041D3 /* XCRemoteSwiftPackageReference "InjectionNext" */ = {
 			isa = XCRemoteSwiftPackageReference;
 			repositoryURL = "https://github.com/johnno1962/InjectionNext";
@@ -1202,6 +1218,11 @@
 			isa = XCSwiftPackageProductDependency;
 			package = 7E17249F2EC5B91C00385F6E /* XCRemoteSwiftPackageReference "SwiftUI-Introspect" */;
 			productName = SwiftUIIntrospect;
+		};
+		7E17C1202F24CB7500F6BD2B /* Sentry */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 7E17C11F2F24CB7500F6BD2B /* XCRemoteSwiftPackageReference "sentry-cocoa" */;
+			productName = Sentry;
 		};
 		7E1974702E8BDC0700D041D3 /* InjectionNext */ = {
 			isa = XCSwiftPackageProductDependency;

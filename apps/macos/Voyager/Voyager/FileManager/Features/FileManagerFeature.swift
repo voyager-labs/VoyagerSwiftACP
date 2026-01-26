@@ -351,6 +351,13 @@ struct FileManagerFeature {
         Reduce { state, action in
             switch action {
             case .onAppear:
+                if shouldLogDailyFileManagerOpen(userDefaultsClient) {
+                    VoyagerSentryMetricLogger.logMetric(
+                        "voyager_file_manager_first_open_total",
+                        value: 1,
+                        tags: ["date": currentDateKey()],
+                    )
+                }
                 state.showHiddenFiles = userDefaultsClient.bool(SettingsKeys.showHiddenFiles)
                 state.sidebarVisible = userDefaultsClient.object("sidebarVisible") as? Bool ?? true
                 state.sortKey = SortKey(rawValue: userDefaultsClient.string("sortKey") ?? "") ?? .name
@@ -428,6 +435,7 @@ struct FileManagerFeature {
                 )
 
             case let .navigateTo(path):
+                let previousNavigationState = state.navigationState
                 let computerName = sidebarClient.computerName()
                 if path == computerName, state.currentPath == computerName {
                     return .none
@@ -439,6 +447,7 @@ struct FileManagerFeature {
                     state.forwardHistory = []
                 }
                 state.navigationState = .folder(path)
+                logDAUNavigationIfNeeded(previous: previousNavigationState, next: state.navigationState)
                 matchSidebarToPath(
                     state: &state,
                     path: path,
@@ -452,6 +461,9 @@ struct FileManagerFeature {
                 )
 
             case let .openCollectionFile(url):
+                if state.openedCollectionURL?.path != url.path {
+                    VoyagerSentryMetricLogger.logDAUNavigation(kind: .collection)
+                }
                 let exitEffect = Self.clearCollectionMode(state: &state)
                 if case .collection = state.navigationState {
                     // 이미 콜렉션 상태면 히스토리에는 중복 추가하지 않음
@@ -830,7 +842,9 @@ struct FileManagerFeature {
                     return .send(.openCollectionFile(favorite.url))
                 }
                 guard state.currentPath != favorite.url.path else { return .none }
+                let previousNavigationState = state.navigationState
                 state.navigateToFolder(favorite.url.path, sidebarItemName: favorite.name)
+                logDAUNavigationIfNeeded(previous: previousNavigationState, next: state.navigationState)
                 state.resetComposer()
                 let exitEffect = exitCollectionMode(state: &state)
                 return .concatenate(
@@ -903,7 +917,9 @@ struct FileManagerFeature {
 
             case let .openLocation(location):
                 guard state.currentPath != location.url.path else { return .none }
+                let previousNavigationState = state.navigationState
                 state.navigateToFolder(location.url.path, sidebarItemName: location.name)
+                logDAUNavigationIfNeeded(previous: previousNavigationState, next: state.navigationState)
                 state.resetComposer()
                 let exitEffect = exitCollectionMode(state: &state)
                 return .concatenate(
@@ -970,7 +986,9 @@ struct FileManagerFeature {
                     guard let item = state.entries.displayItems.first(where: { $0.id == id }) else {
                         return .none
                     }
+                    let previousNavigationState = state.navigationState
                     state.navigateToFolder(item.fullPath, sidebarItemName: item.name)
+                    logDAUNavigationIfNeeded(previous: previousNavigationState, next: state.navigationState)
                     state.resetComposer()
                     let exitEffect = exitCollectionMode(state: &state)
                     return .concatenate(
@@ -1086,6 +1104,9 @@ struct FileManagerFeature {
                         state.forwardHistory = []
                     }
                     state.navigationState = nextNavigationState
+                    if !wasOpeningCollectionFile, !previousNavigationState.isCollection {
+                        logDAUNavigationIfNeeded(previous: previousNavigationState, next: nextNavigationState)
+                    }
                     return .concatenate(
                         .send(.entries(.setCollectionMode(true))),
                         .send(.entries(.collectionItemsLoadedFromSearch(items))),
@@ -1128,6 +1149,9 @@ struct FileManagerFeature {
                         state.forwardHistory = []
                     }
                     state.navigationState = nextNavigationState
+                    if !wasOpeningCollectionFile, !previousNavigationState.isCollection {
+                        logDAUNavigationIfNeeded(previous: previousNavigationState, next: nextNavigationState)
+                    }
                     return .concatenate(
                         .send(.entries(.setCollectionMode(true))),
                         .send(.entries(.collectionItemsLoadedFromSearch(items))),
@@ -1318,6 +1342,10 @@ struct FileManagerFeature {
                     state.composer.scopes = [state.currentPath]
                 }
                 state.composer.isPresented = true
+                VoyagerSentryMetricLogger.logMetric(
+                    "voyager_composer_open_total",
+                    value: 1,
+                )
                 return .none
 
             case .exitComposer:
@@ -1513,7 +1541,9 @@ struct FileManagerFeature {
         if !childName.isEmpty {
             state.entries.selectAfterLoadFileNames = [childName]
         }
+        let previousNavigationState = state.navigationState
         state.navigateToFolder(parentURL.path, sidebarItemName: parentURL.lastPathComponent)
+        logDAUNavigationIfNeeded(previous: previousNavigationState, next: state.navigationState)
         state.resetComposer()
         state.resetComposerOnNextDirectoryNavigation = false
         let exitEffect = exitCollectionMode(state: &state)
@@ -1558,6 +1588,28 @@ struct FileManagerFeature {
         }
     }
 
+    private func logDAUNavigationIfNeeded(
+        previous: FileManagerNavigationUtils.NavigationState,
+        next: FileManagerNavigationUtils.NavigationState,
+    ) {
+        guard previous != next else { return }
+        guard let kind = dauNavigationKind(for: next) else { return }
+        VoyagerSentryMetricLogger.logDAUNavigation(kind: kind)
+    }
+
+    private func dauNavigationKind(
+        for navigationState: FileManagerNavigationUtils.NavigationState,
+    ) -> DAUNavigationKind? {
+        switch navigationState {
+        case .folder:
+            .folder
+        case .collection:
+            .collection
+        default:
+            nil
+        }
+    }
+
     private static func clearCollectionMode(state: inout State) -> Effect<Action> {
         state.collectionContext = nil
         state.pendingSearchQuery = nil
@@ -1582,7 +1634,9 @@ struct FileManagerFeature {
         favorites: [SidebarUtils.FavoriteItem],
         locations: [SidebarUtils.LocationItem],
     ) {
+        let previousNavigationState = state.navigationState
         state.navigationState = entry.navigationState
+        logDAUNavigationIfNeeded(previous: previousNavigationState, next: state.navigationState)
         switch entry.navigationState {
         case .collection:
             state.selectedSidebarItem = nil
@@ -1670,6 +1724,26 @@ private func sortOrder(from file: VoyagerCollectionFile) -> SortOrder? {
 private func viewLayout(from file: VoyagerCollectionFile) -> FileManagerFeature.ViewLayout? {
     guard let rawValue = file.viewLayout else { return nil }
     return FileManagerFeature.ViewLayout(rawValue: rawValue)
+}
+
+private func shouldLogDailyFileManagerOpen(_ userDefaultsClient: UserDefaultsClient) -> Bool {
+    let key = "voyager.file_manager.first_open_date"
+    let today = currentDateKey()
+    let lastValue = userDefaultsClient.string(key)
+    if lastValue == today {
+        return false
+    }
+    userDefaultsClient.setString(today, key)
+    return true
+}
+
+private func currentDateKey() -> String {
+    let formatter = DateFormatter()
+    formatter.calendar = Calendar(identifier: .gregorian)
+    formatter.locale = Locale(identifier: "en_US_POSIX")
+    formatter.timeZone = TimeZone.current
+    formatter.dateFormat = "yyyy-MM-dd"
+    return formatter.string(from: Date())
 }
 
 @MainActor

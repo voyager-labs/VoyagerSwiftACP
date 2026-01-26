@@ -1,14 +1,14 @@
 from __future__ import annotations
 
 from datetime import datetime
-from typing import ClassVar
+from typing import Any, ClassVar
 
 from sqlalchemy import UniqueConstraint
 from sqlmodel import Field, SQLModel
 
 
 class EntrySchema(SQLModel, table=True):
-    __tablename__: ClassVar[str] = "entries"
+    __tablename__: ClassVar[Any] = "entries"
     __table_args__ = (
         UniqueConstraint(
             "volume_identifier",
@@ -20,7 +20,9 @@ class EntrySchema(SQLModel, table=True):
     id: int | None = Field(default=None, primary_key=True)
 
     # Identity
-    volume_identifier: str = Field(index=True, description="볼륨 식별자 (URLResourceKey.volumeIdentifierKey)")
+    volume_identifier: str = Field(
+        index=True, description="볼륨 식별자 (URLResourceKey.volumeIdentifierKey)"
+    )
     file_resource_identifier: str = Field(
         index=True, description="파일 리소스 식별자 (URLResourceKey.fileResourceIdentifierKey)"
     )

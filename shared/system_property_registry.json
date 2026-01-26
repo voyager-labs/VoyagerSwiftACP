@@ -1,6 +1,6 @@
 {
   "$kind": "system_property_registry",
-  "$version": "2.0.1",
+  "$version": "2.1.1",
   "categories": {
     "audio": {
       "apple_loop_descriptors": {
@@ -129,7 +129,7 @@
         "description": "The musical genre of the song or composition contained in the audio file. For example: Jazz, Pop, Rock, Classical.",
         "search_aliases": ["musical genres"],
         "system_keys": ["mditem:kMDItemMusicalGenre"],
-        "type": "string",
+        "type": "string_list",
         "ui_label": "Musical genre"
       },
       "musical_instrument_category": {
@@ -137,7 +137,7 @@
         "description": "Specifies the category of an instrument.",
         "search_aliases": ["musical instrument categories"],
         "system_keys": ["mditem:kMDItemMusicalInstrumentCategory"],
-        "type": "string",
+        "type": "string_list",
         "ui_label": "Musical instrument category"
       },
       "musical_instrument_name": {
@@ -247,7 +247,7 @@
         "description": "Identifies city of origin according to guidelines established by the provider.",
         "search_aliases": [],
         "system_keys": ["mditem:kMDItemCity"],
-        "type": "string",
+        "type": "string_list",
         "ui_label": "City"
       },
       "comment": {
@@ -275,7 +275,7 @@
           "mditem:kMDItemContentType",
           "nsurl:NSURLContentTypeKey"
         ],
-        "type": "string",
+        "type": "string_list",
         "ui_label": "Content type",
         "db_indexed": true
       },
@@ -300,7 +300,7 @@
         "description": "The full, publishable name of the country or region where the intellectual property of the item was created, according to guidelines of the provider.",
         "search_aliases": [],
         "system_keys": ["mditem:kMDItemCountry"],
-        "type": "string",
+        "type": "string_list",
         "ui_label": "Country"
       },
       "coverage": {
@@ -454,7 +454,7 @@
         "search_aliases": [],
         "legacy_keys": ["kind"],
         "system_keys": ["mditem:kMDItemKind", "mdimporter:kMDLabelKind"],
-        "type": "string",
+        "type": "string_list",
         "ui_label": "Kind",
         "db_indexed": true
       },
@@ -797,6 +797,7 @@
         ],
         "system_keys": [],
         "type": "number",
+        "ui_hidden": true,
         "ui_label": "Depth from home",
         "db_indexed": true
       },
@@ -805,6 +806,7 @@
         "search_aliases": ["folder path", "dir paths", "directory paths"],
         "system_keys": [],
         "type": "string",
+        "ui_hidden": true,
         "ui_label": "Directory path",
         "db_indexed": true
       },
@@ -829,7 +831,7 @@
           "file extensions"
         ],
         "system_keys": [],
-        "type": "string",
+        "type": "string_list",
         "ui_label": "Extension",
         "ui_pinned": true,
         "db_indexed": true
@@ -871,6 +873,7 @@
         ],
         "system_keys": ["mditem:kMDItemFSOwnerGroupID"],
         "type": "number",
+        "ui_hidden": true,
         "ui_label": "FS owner group ID"
       },
       "fs_owner_user_id": {
@@ -883,6 +886,7 @@
         ],
         "system_keys": ["mditem:kMDItemFSOwnerUserID"],
         "type": "number",
+        "ui_hidden": true,
         "ui_label": "FS owner user ID"
       },
       "has_hidden_extension": {
@@ -930,8 +934,8 @@
         "legacy_keys": ["name"],
         "system_keys": ["mditem:kMDItemFSName", "nsurl:NSURLNameKey"],
         "type": "string",
-        "ui_label": "Name",
-        "ui_pinned": true,
+        "ui_label": "Full name",
+        "ui_hidden": true,
         "db_indexed": true
       },
       "name_stem": {
@@ -939,7 +943,8 @@
         "search_aliases": ["name stems"],
         "system_keys": [],
         "type": "string",
-        "ui_label": "File name stem",
+        "ui_label": "Name",
+        "ui_pinned": true,
         "db_indexed": true
       },
       "parent_dir_name": {
@@ -951,6 +956,7 @@
         ],
         "system_keys": [],
         "type": "string",
+        "ui_hidden": true,
         "ui_label": "Parent directory name",
         "db_indexed": true
       },
@@ -960,6 +966,7 @@
         "search_aliases": [],
         "system_keys": ["mditem:kMDItemPath", "nsurl:NSURLPathKey"],
         "type": "string",
+        "ui_hidden": true,
         "ui_label": "Path",
         "db_indexed": true
       },
@@ -972,6 +979,7 @@
         ],
         "system_keys": [],
         "type": "string",
+        "ui_hidden": true,
         "ui_label": "Relative path from home",
         "db_indexed": true
       }
@@ -1351,6 +1359,7 @@
         "search_aliases": ["canonical paths"],
         "system_keys": ["nsurl:NSURLCanonicalPathKey"],
         "type": "string",
+        "ui_hidden": true,
         "ui_label": "Canonical path"
       },
       "changed_notification": {
@@ -1383,6 +1392,7 @@
         "search_aliases": ["document id", "document identifiers"],
         "system_keys": ["nsurl:NSURLDocumentIdentifierKey"],
         "type": "string",
+        "ui_hidden": true,
         "ui_label": "Document identifier"
       },
       "editors": {
@@ -1423,6 +1433,7 @@
         "search_aliases": ["file content id", "file content identifiers"],
         "system_keys": ["nsurl:NSURLFileContentIdentifierKey"],
         "type": "string",
+        "ui_hidden": true,
         "ui_label": "File content identifier"
       },
       "file_protection": {
@@ -1431,6 +1442,7 @@
         "search_aliases": ["file protections"],
         "system_keys": ["nsurl:NSURLFileProtectionKey"],
         "type": "string",
+        "ui_hidden": true,
         "ui_label": "File protection"
       },
       "file_resource_identifier": {
@@ -1439,6 +1451,7 @@
         "search_aliases": ["file resource id", "file resource identifiers"],
         "system_keys": ["nsurl:NSURLFileResourceIdentifierKey"],
         "type": "string",
+        "ui_hidden": true,
         "ui_label": "File resource identifier"
       },
       "file_resource_type": {
@@ -1455,6 +1468,7 @@
         "search_aliases": ["file securities"],
         "system_keys": ["nsurl:NSURLFileSecurityKey"],
         "type": "string",
+        "ui_hidden": true,
         "ui_label": "File security"
       },
       "size": {
@@ -1484,6 +1498,7 @@
         "search_aliases": ["generation id", "generation identifiers"],
         "system_keys": ["nsurl:NSURLGenerationIdentifierKey"],
         "type": "string",
+        "ui_hidden": true,
         "ui_label": "Generation identifier"
       },
       "gps_area_information": {
@@ -1872,6 +1887,7 @@
         ],
         "system_keys": ["nsurl:NSURLParentDirectoryURLKey"],
         "type": "string",
+        "ui_hidden": true,
         "ui_label": "Parent directory URL"
       },
       "preferred_io_block_size": {
@@ -1915,6 +1931,7 @@
         "search_aliases": ["quarantine property"],
         "system_keys": ["nsurl:NSURLQuarantinePropertiesKey"],
         "type": "string",
+        "ui_hidden": true,
         "ui_label": "Quarantine properties"
       },
       "removed_notification": {

@@ -11,6 +11,7 @@ nonisolated enum HelperStateUserInfoKey {
     static let schemaVersion = "schema_version"
     static let generatedAt = "generated_at"
     static let helperReady = "helper_ready"
+    static let helperBundleVersion = "helper_bundle_version"
     static let backend = "backend"
 
     // Backend 상태 영역 key 정의

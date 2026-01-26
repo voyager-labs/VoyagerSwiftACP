@@ -18,6 +18,7 @@ public struct HelperState: Sendable, Equatable {
     }
 
     public let helperReady: Bool
+    public let helperBundleVersion: String?
     public let backend: Backend
 }
 
@@ -193,7 +194,8 @@ private actor HelperStateResolver {
         let info = info ?? [:]
 
         if let schemaVersion = Parser.parseInt(from: info[HelperStateUserInfoKey.schemaVersion]),
-           schemaVersion != 1
+           schemaVersion != 1,
+           schemaVersion != 2
         {
             return nil
         }
@@ -221,7 +223,8 @@ private actor HelperStateResolver {
             endpoint: endpoint,
         )
 
-        return HelperState(helperReady: helperReady, backend: backend)
+        let helperBundleVersion = info[HelperStateUserInfoKey.helperBundleVersion] as? String
+        return HelperState(helperReady: helperReady, helperBundleVersion: helperBundleVersion, backend: backend)
     }
 
     // endpoint payload를 파싱한다

@@ -7,6 +7,7 @@ struct EntryActionRecord: Equatable, Identifiable, Sendable {
         case duplicate
         case paste
         case createFolder
+        case createAlias
         case moveToTrash
         case putBack
         case setTags

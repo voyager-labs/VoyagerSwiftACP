@@ -31,6 +31,7 @@ struct ContentPaneListView: View {
     @State private var hasRestoredScrollPosition: Bool = false
     @State private var contextMenuTargetId: String?
     @State private var contextMenuTargetWasSelected = false
+    @State private var contextMenuAnchor: CGPoint?
 
     private var rowHeight: CGFloat {
         max(24, store.listIconSize + 4)
@@ -115,6 +116,7 @@ struct ContentPaneListView: View {
             item: item,
             fsStore: fsStore,
             saveScrollPosition: saveScrollPosition,
+            shareAnchorProvider: { contextMenuAnchor },
             isTrashFolder: isTrashFolder,
             onEmptyTrash: { store.send(.entries(.emptyTrash)) },
             openWindow: { path in
@@ -167,6 +169,9 @@ struct ContentPaneListView: View {
         props: ItemRowProps,
     ) -> some View {
         let selectedIds = fsStore.selectedIds
+        let selectedURLs = fsStore.displayItems
+            .filter { selectedIds.contains($0.id) }
+            .map { URL(fileURLWithPath: $0.fullPath) }
         let clipboardItems = fsStore.clipboardItems
         let thumbnailsReady = fsStore.thumbnailsReady
         let isContextMenuTarget = contextMenuTargetId == item.id
@@ -188,6 +193,8 @@ struct ContentPaneListView: View {
             onOpen: props.handlers.onOpen,
             onOpenInNewTab: props.handlers.onOpenInNewTab,
             onQuickLook: props.handlers.onQuickLook,
+            onGetInfo: props.handlers.onGetInfo,
+            onShare: props.handlers.onShare,
             onOpenWithApp: props.handlers.onOpenWithApp,
             onRenameUpdate: props.handlers.onRenameUpdate,
             onRenameCommit: props.handlers.onRenameCommit,
@@ -203,15 +210,37 @@ struct ContentPaneListView: View {
             onRename: props.handlers.onRename,
             onCompress: props.handlers.onCompress,
             onDuplicate: props.handlers.onDuplicate,
+            onCreateAlias: props.handlers.onCreateAlias,
             onExtract: props.handlers.onExtract,
             onCopy: props.handlers.onCopy,
+            onCopyAbsolutePaths: props.handlers.onCopyAbsolutePaths,
+            onCopyURLs: props.handlers.onCopyURLs,
             onCut: props.handlers.onCut,
             onToggleTag: props.handlers.onToggleTag,
+            onPerformService: props.handlers.onPerformService,
+            onRevealInFinder: props.handlers.onRevealInFinder,
+            selectedURLs: selectedURLs,
             isContextMenuTarget: isContextMenuTarget,
             contextMenuTargetWasSelected: isContextMenuTarget ? contextMenuTargetWasSelected : false,
-            onContextMenuOpen: {
+            onContextMenuOpen: { windowPoint in
                 contextMenuTargetId = item.id
                 contextMenuTargetWasSelected = selectedIds.contains(item.id)
+
+                if let window = nsScrollView?.window ?? NSApp.keyWindow {
+                    // TODO: 좌표 기반 앵커링을 엔트리 기준 위치로 전환해야 함
+                    contextMenuAnchor = window.convertPoint(toScreen: windowPoint)
+                } else {
+                    contextMenuAnchor = nil
+                }
+
+                // Finder behavior: 우클릭한 아이템이 선택에 포함되어 있지 않으면 해당 아이템 1개로 선택을 전환한다.
+                if !selectedIds.contains(item.id) {
+                    fsStore.send(.selectItem(
+                        id: item.id,
+                        isCommandPressed: false,
+                        isShiftPressed: false,
+                    ))
+                }
             },
             selectedCount: fsStore.selectedIds.isEmpty ? 1 : fsStore.selectedIds.count,
             showCompress: props.context.showCompress,

@@ -126,7 +126,8 @@ enum ComposerScopeUtils {
                 path: fullPath,
                 name: displayName,
                 iconName: iconName,
-            ))
+            ),
+        )
     }
 
     private nonisolated static func sortSearchResults(
@@ -235,7 +236,8 @@ enum ComposerScopeUtils {
                     path: path,
                     name: displayName,
                     iconName: iconName,
-                ))
+                ),
+            )
 
             seenPaths.insert(path)
         }
@@ -254,7 +256,8 @@ enum ComposerScopeUtils {
                         path: path,
                         name: favorite.name,
                         iconName: favorite.iconName,
-                    ))
+                    ),
+                )
 
                 seenPaths.insert(path)
             }

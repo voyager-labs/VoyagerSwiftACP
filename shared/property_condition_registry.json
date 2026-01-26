@@ -1,57 +1,25 @@
 {
   "$kind": "property_condition_registry",
-  "$version": "1.2.5",
+  "$version": "2.0.2",
   "property_types": {
     "string": {
-      "operators": [
-        "eq",
-        "neq",
-        "contains_all",
-        "contains_any",
-        "starts_with",
-        "ends_with"
-      ],
+      "operators": ["any", "all", "sw", "ew", "eq", "neq"],
       "sql_cast": "TEXT"
     },
     "number": {
-      "operators": [
-        "eq",
-        "neq",
-        "gt",
-        "gte",
-        "lt",
-        "lte",
-        "between",
-        "not_between"
-      ],
+      "operators": ["eq", "gt", "lt", "btw", "neq", "gte", "lte", "nbtw"],
       "sql_cast": "REAL"
     },
     "date": {
-      "operators": [
-        "eq",
-        "neq",
-        "gt",
-        "gte",
-        "lt",
-        "lte",
-        "between",
-        "not_between"
-      ],
+      "operators": ["eq", "neq", "gt", "gte", "lt", "lte", "btw", "nbtw"],
       "sql_cast": "TEXT"
     },
     "boolean": {
-      "operators": ["eq", "neq"],
+      "operators": ["eq"],
       "sql_cast": "INTEGER"
     },
     "string_list": {
-      "operators": [
-        "empty",
-        "contains_any",
-        "contains_all",
-        "exists",
-        "not_contains_any",
-        "not_contains_all"
-      ],
+      "operators": ["any", "all", "none", "miss", "exists", "empty"],
       "sql_cast": "TEXT"
     }
   },
@@ -78,7 +46,7 @@
       "sql_kind": "comparison",
       "value_shape": "single",
       "value_count": 1,
-      "allowed_types": ["string", "number", "date", "boolean"],
+      "allowed_types": ["string", "number", "date"],
       "inverse_of": "eq",
       "aliases": ["is not", "not equals", "!="],
       "ui_value_kind": {
@@ -175,36 +143,36 @@
         "date": "singleDate"
       }
     },
-    "between": {
+    "btw": {
       "ui_label": "Is between",
       "sql_operator": "BETWEEN",
       "sql_kind": "range",
       "value_shape": "range",
       "value_count": 2,
       "allowed_types": ["number", "date"],
-      "inverse_of": "not_between",
+      "inverse_of": "nbtw",
       "aliases": ["between"],
       "ui_value_kind": {
         "number": "rangeNumber",
         "date": "rangeDate"
       }
     },
-    "not_between": {
+    "nbtw": {
       "ui_label": "Is not between",
       "sql_operator": "NOT BETWEEN",
       "sql_kind": "range",
       "value_shape": "range",
       "value_count": 2,
       "allowed_types": ["number", "date"],
-      "inverse_of": "between",
+      "inverse_of": "btw",
       "aliases": ["not between"],
       "ui_value_kind": {
         "number": "rangeNumber",
         "date": "rangeDate"
       }
     },
-    "starts_with": {
-      "ui_label": "Starts with",
+    "sw": {
+      "ui_label": "Begins with",
       "sql_operator": "LIKE",
       "sql_kind": "like_prefix",
       "value_shape": "single",
@@ -215,7 +183,7 @@
         "string": "singleText"
       }
     },
-    "ends_with": {
+    "ew": {
       "ui_label": "Ends with",
       "sql_operator": "LIKE",
       "sql_kind": "like_suffix",
@@ -227,7 +195,7 @@
         "string": "singleText"
       }
     },
-    "matches": {
+    "rx": {
       "ui_label": "Matches pattern",
       "sql_operator": "LIKE",
       "sql_kind": "like_pattern",
@@ -239,53 +207,55 @@
         "string": "singleText"
       }
     },
-    "contains_any": {
+    "any": {
       "ui_label": "Contains any",
       "sql_operator": "EXISTS (json_each)",
       "sql_kind": "string_list_any",
       "value_shape": "list",
       "value_count": "n",
-      "allowed_types": ["string_list"],
+      "allowed_types": ["string", "string_list"],
       "aliases": ["contains any"],
       "ui_value_kind": {
+        "string": "listText",
         "string_list": "listText"
       },
-      "inverse_of": "not_contains_any"
+      "inverse_of": "none"
     },
-    "contains_all": {
+    "all": {
       "ui_label": "Contains all",
       "sql_operator": "COUNT_DISTINCT = N (json_each)",
       "sql_kind": "string_list_all",
       "value_shape": "list",
       "value_count": "n",
-      "allowed_types": ["string_list"],
+      "allowed_types": ["string", "string_list"],
       "aliases": ["contains all"],
       "ui_value_kind": {
+        "string": "listText",
         "string_list": "listText"
       },
-      "inverse_of": "not_contains_all"
+      "inverse_of": "miss"
     },
-    "not_contains_any": {
+    "none": {
       "ui_label": "Contains none",
       "sql_operator": "NOT EXISTS (json_each)",
       "sql_kind": "string_list_not_any",
       "value_shape": "list",
       "value_count": "n",
       "allowed_types": ["string_list"],
-      "inverse_of": "contains_any",
+      "inverse_of": "any",
       "aliases": ["contains none", "not contains any"],
       "ui_value_kind": {
         "string_list": "listText"
       }
     },
-    "not_contains_all": {
+    "miss": {
       "ui_label": "Missing any",
       "sql_operator": "COUNT_DISTINCT != N (json_each)",
       "sql_kind": "string_list_not_all",
       "value_shape": "list",
       "value_count": "n",
       "allowed_types": ["string_list"],
-      "inverse_of": "contains_all",
+      "inverse_of": "all",
       "aliases": ["missing any", "not contains all"],
       "ui_value_kind": {
         "string_list": "listText"

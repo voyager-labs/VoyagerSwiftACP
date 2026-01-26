@@ -2,6 +2,7 @@
 
 import asyncio
 import logging
+import time
 from typing import Any, cast
 
 from sqlalchemy import text
@@ -22,6 +23,7 @@ from core.search.condition_builder import ConditionBuilder, ConditionBuilderErro
 from core.search.scope_builder import ScopeBuilder
 from infra.db.engine import engine_manager
 from infra.schemas.entry_schema import EntrySchema
+from utils.telemetry import log_metric
 
 
 # TODO: Collection으로 변경 모듈 이름 변경
@@ -69,11 +71,17 @@ class SearchService:
                 existing_scopes = filters.scopes
 
         # 2. query + 기존 조건/스코프 → 최적 결과 생성
+        llm_start = time.perf_counter()
         llm_result = await self.converter.convert(query, existing_conditions, existing_scopes)
         llm_error = llm_result.get("error")
 
         # 3. 결과 조건 생성
         if llm_error:
+            log_metric(
+                "voyager_search_error_total",
+                1,
+                {"error_code": "LLM_CONVERSION_FAILED"},
+            )
             logger.error("[SearchService] LLM convert error: %s", llm_error)
             applied_conditions = [SearchCondition(**c) for c in (existing_conditions or [])]
             applied_scopes = existing_scopes or []
@@ -99,6 +107,16 @@ class SearchService:
             scopes=applied_scopes,
             conditions=[c.model_dump() for c in applied_conditions],
         )
+        _tag_search_result(
+            items,
+            error,
+            conditions_count=len(applied_conditions),
+            scopes_count=len(applied_scopes),
+        )
+        log_metric(
+            "voyager_collection_query_duration_ms",
+            round((time.perf_counter() - llm_start) * 1000, 2),
+        )
 
         return SearchResponse(
             itemCount=len(items),
@@ -123,9 +141,20 @@ class SearchService:
             SearchResponse
         """
         # 직접 필터 적용
+        start = time.perf_counter()
         items, error = await self._execute_search(
             scopes=filters.scopes,
             conditions=[c.model_dump() for c in filters.conditions],
+        )
+        _tag_search_result(
+            items,
+            error,
+            conditions_count=len(filters.conditions),
+            scopes_count=len(filters.scopes),
+        )
+        log_metric(
+            "voyager_collection_filters_duration_ms",
+            round((time.perf_counter() - start) * 1000, 2),
         )
 
         return SearchResponse(
@@ -162,7 +191,12 @@ class SearchService:
                     result = session.exec(statement)
                     return list(result.all())
 
+            sql_start = time.perf_counter()
             entries: list[EntrySchema] = await asyncio.to_thread(_run_query)
+            log_metric(
+                "voyager_search_sql_duration_ms",
+                round((time.perf_counter() - sql_start) * 1000, 2),
+            )
 
             items: list[SearchItem] = []
             for entry in entries:
@@ -184,9 +218,19 @@ class SearchService:
             return items, None
 
         except ConditionBuilderError as e:
+            log_metric(
+                "voyager_search_error_total",
+                1,
+                {"error_code": "CONDITION_BUILD_FAILED"},
+            )
             logger.error("[SearchService] Condition error: %s", e)
             return [], SearchError(code="CONDITION_BUILD_FAILED", details=str(e))
         except Exception as e:
+            log_metric(
+                "voyager_search_error_total",
+                1,
+                {"error_code": "SEARCH_EXECUTION_FAILED"},
+            )
             logger.exception("[SearchService] Search error: %s", e)
             return [], SearchError(code="SEARCH_EXECUTION_FAILED", details=str(e))
 
@@ -204,3 +248,41 @@ def get_search_service() -> SearchService:
 
 
 logger = logging.getLogger("uvicorn.error")
+
+
+def _tag_search_result(
+    items: list[SearchItem],
+    error: SearchError | None,
+    conditions_count: int,
+    scopes_count: int,
+) -> None:
+    if error:
+        log_metric("voyager_search_error_total", 1, {"error_code": error.code})
+        return
+    log_metric(
+        "voyager_search_itemcount_bucket",
+        1,
+        {"bucket": _bucket_for_count(len(items))},
+    )
+    log_metric(
+        "voyager_search_conditions_count_bucket",
+        1,
+        {"bucket": _bucket_for_count(conditions_count)},
+    )
+    log_metric(
+        "voyager_search_scopes_count_bucket",
+        1,
+        {"bucket": _bucket_for_count(scopes_count)},
+    )
+
+
+def _bucket_for_count(value: int) -> str:
+    if value <= 0:
+        return "0"
+    if value <= 1:
+        return "1"
+    if value <= 10:
+        return "2-10"
+    if value <= 50:
+        return "11-50"
+    return "51+"

@@ -177,6 +177,7 @@ class SystemPropertyAttribute:
     availability: str | None = None
     value_format: str | None = None
     ui_pinned: bool | None = None
+    ui_hidden: bool = False
 
 
 def _parse_value_type(raw_type: str) -> SystemPropertyType:
@@ -239,6 +240,7 @@ def _parse_system_property_registry(
                 availability=raw.get("availability"),
                 value_format=raw.get("value_format"),
                 ui_pinned=raw.get("ui_pinned"),
+                ui_hidden=bool(raw.get("ui_hidden", False)),
             )
 
     return registry
@@ -269,6 +271,11 @@ def get_all_property_keys() -> list[str]:
     return list(SYSTEM_PROPERTY_REGISTRY.keys())
 
 
+def get_visible_property_keys() -> list[str]:
+    """UI에 노출 가능한 propertyKey 목록 반환"""
+    return [k for k, v in SYSTEM_PROPERTY_REGISTRY.items() if not v.ui_hidden]
+
+
 def get_attributes_by_category(category: str) -> dict[str, SystemPropertyAttribute]:
     """카테고리별 속성 필터링"""
     return {k: v for k, v in SYSTEM_PROPERTY_REGISTRY.items() if v.category == category}
@@ -292,6 +299,7 @@ __all__ = [
     "SystemPropertyAttribute",
     "SystemPropertyType",
     "get_all_property_keys",
+    "get_visible_property_keys",
     "get_attributes_by_category",
     "get_indexed_attributes",
     "get_json_attributes",

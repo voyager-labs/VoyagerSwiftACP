@@ -73,6 +73,9 @@ class ConditionBuilder:
         if not mapping:
             raise ConditionBuilderError(f"Unknown propertyKey: {property_key}")
 
+        if mapping.ui_hidden:
+            raise ConditionBuilderError(f"Hidden propertyKey: {property_key}")
+
         if operator not in mapping.supported_operators:
             raise ConditionBuilderError(
                 f"Operator '{operator}' not supported for '{property_key}'. "

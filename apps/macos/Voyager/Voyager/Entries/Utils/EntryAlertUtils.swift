@@ -115,4 +115,14 @@ enum EntryAlertUtils {
             return false
         }
     }
+
+    @MainActor
+    static func showGetInfoFailureAlert(message: String, suggestion: String?) {
+        let alert = NSAlert()
+        alert.alertStyle = .warning
+        alert.messageText = message
+        alert.informativeText = suggestion ?? "Please try again."
+        alert.addButton(withTitle: "OK")
+        alert.runModal()
+    }
 }

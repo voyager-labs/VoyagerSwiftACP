@@ -8,6 +8,8 @@ struct EntryContextMenuHandlers {
     let onOpen: () -> Void
     let onOpenInNewTab: (Bool) -> Void
     let onQuickLook: () -> Void
+    let onGetInfo: () -> Void
+    let onShare: () -> Void
     let onOpenWithApp: (String?, Bool) -> Void
     let onRenameUpdate: (String) -> Void
     let onRenameCommit: () -> Void
@@ -23,10 +25,15 @@ struct EntryContextMenuHandlers {
     let onRename: () -> Void
     let onCompress: () -> Void
     let onDuplicate: () -> Void
+    let onCreateAlias: () -> Void
     let onExtract: () -> Void
     let onCopy: () -> Void
+    let onCopyAbsolutePaths: () -> Void
+    let onCopyURLs: () -> Void
     let onCut: () -> Void
     let onToggleTag: (String) -> Void
+    let onPerformService: (String) -> Void
+    let onRevealInFinder: () -> Void
 }
 
 // swiftlint:disable function_body_length
@@ -34,6 +41,7 @@ func makeContextMenuHandlers(
     item: Entry,
     fsStore: Store<EntriesFeature.State, EntriesFeature.Action>,
     saveScrollPosition: @escaping () -> Void,
+    shareAnchorProvider: @escaping () -> CGPoint?,
     isTrashFolder: Bool,
     onEmptyTrash: @escaping () -> Void,
     openWindow: @escaping (String) -> Void,
@@ -75,6 +83,18 @@ func makeContextMenuHandlers(
     let onQuickLook: () -> Void = {
         EntryContextMenuUtils.sendWithSelection(item, fsStore: fsStore, action: {
             fsStore.send(.quickLookSelectedItem)
+        })
+    }
+
+    let onGetInfo: () -> Void = {
+        EntryContextMenuUtils.sendWithSelection(item, fsStore: fsStore, action: {
+            fsStore.send(.getInfoForSelectedItems)
+        })
+    }
+
+    let onShare: () -> Void = {
+        EntryContextMenuUtils.sendWithSelection(item, fsStore: fsStore, action: {
+            fsStore.send(.shareSelectedItems(anchor: shareAnchorProvider()))
         })
     }
 
@@ -155,6 +175,12 @@ func makeContextMenuHandlers(
         })
     }
 
+    let onCreateAlias: () -> Void = {
+        EntryContextMenuUtils.sendWithSelection(item, fsStore: fsStore, action: {
+            fsStore.send(.createAliasForSelectedItems)
+        })
+    }
+
     let onExtract: () -> Void = {
         EntryContextMenuUtils.sendWithSelection(item, fsStore: fsStore, action: {
             fsStore.send(.extractSelectedItem)
@@ -173,9 +199,33 @@ func makeContextMenuHandlers(
         })
     }
 
+    let onCopyAbsolutePaths: () -> Void = {
+        EntryContextMenuUtils.sendWithSelection(item, fsStore: fsStore, action: {
+            fsStore.send(.copySelectedAbsolutePaths)
+        })
+    }
+
+    let onCopyURLs: () -> Void = {
+        EntryContextMenuUtils.sendWithSelection(item, fsStore: fsStore, action: {
+            fsStore.send(.copySelectedURLs)
+        })
+    }
+
     let onToggleTag: (String) -> Void = { tag in
         EntryContextMenuUtils.sendWithSelection(item, fsStore: fsStore, action: {
             fsStore.send(.toggleTagForSelectedItem(tag: tag))
+        })
+    }
+
+    let onPerformService: (String) -> Void = { serviceName in
+        EntryContextMenuUtils.sendWithSelection(item, fsStore: fsStore, action: {
+            fsStore.send(.performService(serviceName: serviceName))
+        })
+    }
+
+    let onRevealInFinder: () -> Void = {
+        EntryContextMenuUtils.sendWithSelection(item, fsStore: fsStore, action: {
+            fsStore.send(.revealSelectedItemsInFinder)
         })
     }
 
@@ -184,6 +234,8 @@ func makeContextMenuHandlers(
         onOpen: onOpen,
         onOpenInNewTab: onOpenInNewTab,
         onQuickLook: onQuickLook,
+        onGetInfo: onGetInfo,
+        onShare: onShare,
         onOpenWithApp: onOpenWithApp,
         onRenameUpdate: onRenameUpdate,
         onRenameCommit: onRenameCommit,
@@ -199,11 +251,14 @@ func makeContextMenuHandlers(
         onRename: onRename,
         onCompress: onCompress,
         onDuplicate: onDuplicate,
+        onCreateAlias: onCreateAlias,
         onExtract: onExtract,
         onCopy: onCopy,
+        onCopyAbsolutePaths: onCopyAbsolutePaths,
+        onCopyURLs: onCopyURLs,
         onCut: onCut,
         onToggleTag: onToggleTag,
+        onPerformService: onPerformService,
+        onRevealInFinder: onRevealInFinder,
     )
 }
-
-// swiftlint:enable function_body_length

@@ -259,7 +259,7 @@ private func buildCollectionConditions(from conditions: [Condition]) throws -> [
             throw CollectionSaveValidationError.incompleteCondition(condition.propertyLabel)
         }
 
-        guard let encoded = encodeCollectionValue(condition: condition, values: values) else {
+        guard let encoded = ConditionValueEncoder.encode(condition: condition, values: values) else {
             throw CollectionSaveValidationError.invalidConditionValue(condition.propertyLabel)
         }
 
@@ -267,78 +267,6 @@ private func buildCollectionConditions(from conditions: [Condition]) throws -> [
     }
 
     return results
-}
-
-private func encodeCollectionValue(condition: Condition, values: [String]) -> JSONValue? {
-    if let kind = condition.operatorValueUIKind {
-        switch kind {
-        case "listText":
-            return .array(values.map(JSONValue.string))
-        case "listNumber":
-            let numbers = values.compactMap(Double.init)
-            guard numbers.count == values.count else { return nil }
-            return .array(numbers.map(JSONValue.number))
-        default:
-            break
-        }
-    }
-    return switch condition.valueType {
-    case "number":
-        encodeNumberValues(values)
-
-    case "boolean":
-        encodeBooleanValues(values)
-
-    case "date", "datetime":
-        encodeDateValues(values)
-
-    case "string_list", "string", "unknown":
-        encodeStringValues(values, operatorCode: condition.operatorCode)
-
-    default:
-        encodeStringValues(values, operatorCode: condition.operatorCode)
-    }
-}
-
-private func encodeNumberValues(_ values: [String]) -> JSONValue? {
-    let numbers = values.compactMap(Double.init)
-    guard numbers.count == values.count else { return nil }
-    if numbers.count == 1, let first = numbers.first {
-        return .number(first)
-    }
-    return .array(numbers.map(JSONValue.number))
-}
-
-private func encodeBooleanValues(_ values: [String]) -> JSONValue? {
-    guard let first = values.first?.lowercased() else { return nil }
-    if first == "true" {
-        return .bool(true)
-    }
-    if first == "false" {
-        return .bool(false)
-    }
-    return nil
-}
-
-private func encodeDateValues(_ values: [String]) -> JSONValue? {
-    let formattedValues = values.map { value in
-        ValueNormalizerUtils.formatDateOnlyString(value) ?? value
-    }
-    if formattedValues.count == 1 {
-        return .string(formattedValues[0])
-    }
-    return .array(formattedValues.map(JSONValue.string))
-}
-
-private func encodeStringValues(_ values: [String], operatorCode: String?) -> JSONValue? {
-    let op = operatorCode?.lowercased()
-    if op == "in" || op == "anyof" {
-        return .array(values.map(JSONValue.string))
-    }
-    if values.count == 1 {
-        return .string(values[0])
-    }
-    return .array(values.map(JSONValue.string))
 }
 
 private func resetPendingSave(_ state: inout CollectionFeature.State) {

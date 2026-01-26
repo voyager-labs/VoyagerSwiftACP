@@ -28,12 +28,17 @@ public struct EntryClient: Sendable {
     public var setDefaultApp: @Sendable (UTType, String) async throws -> Void
     public var quickLook: @Sendable (URL) async throws -> Void
     public var quickLookFiles: @Sendable ([URL]) async throws -> Void
+    public var openFinderInfo: @Sendable ([URL]) async throws -> Void
+    public var shareItems: @Sendable ([URL], CGPoint?) async throws -> Void
+    public var performService: @Sendable (String, [URL]) async throws -> Void
+    public var revealInFinder: @Sendable ([URL]) async throws -> Void
     public var applicationsForFile: @Sendable (URL) async -> [ApplicationInfo]
     public var defaultApplication: @Sendable (UTType) async -> ApplicationInfo?
     public var createFolder: @Sendable (URL, String) async throws -> Void
     public var pasteFile: @Sendable (URL, URL) async throws -> Void
     public var moveFile: @Sendable (URL, URL) async throws -> Void
     public var renameFile: @Sendable (URL, URL) async throws -> Void
+    public var createAlias: @Sendable (URL, URL) async throws -> Void
     public var moveToTrash: @Sendable (URL) async throws -> Void
     public var moveToTrashAndReturnURL: @Sendable (URL) async throws -> URL
     public var deleteImmediately: @Sendable (URL) async throws -> Void
@@ -78,12 +83,17 @@ public struct EntryClient: Sendable {
         setDefaultApp: @escaping @Sendable (UTType, String) async throws -> Void,
         quickLook: @escaping @Sendable (URL) async throws -> Void,
         quickLookFiles: @escaping @Sendable ([URL]) async throws -> Void,
+        openFinderInfo: @escaping @Sendable ([URL]) async throws -> Void,
+        shareItems: @escaping @Sendable ([URL], CGPoint?) async throws -> Void,
+        performService: @escaping @Sendable (String, [URL]) async throws -> Void,
+        revealInFinder: @escaping @Sendable ([URL]) async throws -> Void,
         applicationsForFile: @escaping @Sendable (URL) async -> [ApplicationInfo],
         defaultApplication: @escaping @Sendable (UTType) async -> ApplicationInfo?,
         createFolder: @escaping @Sendable (URL, String) async throws -> Void,
         pasteFile: @escaping @Sendable (URL, URL) async throws -> Void,
         moveFile: @escaping @Sendable (URL, URL) async throws -> Void,
         renameFile: @escaping @Sendable (URL, URL) async throws -> Void,
+        createAlias: @escaping @Sendable (URL, URL) async throws -> Void,
         moveToTrash: @escaping @Sendable (URL) async throws -> Void,
         moveToTrashAndReturnURL: @escaping @Sendable (URL) async throws -> URL,
         deleteImmediately: @escaping @Sendable (URL) async throws -> Void,
@@ -131,12 +141,17 @@ public struct EntryClient: Sendable {
         self.setDefaultApp = setDefaultApp
         self.quickLook = quickLook
         self.quickLookFiles = quickLookFiles
+        self.openFinderInfo = openFinderInfo
+        self.shareItems = shareItems
+        self.performService = performService
+        self.revealInFinder = revealInFinder
         self.applicationsForFile = applicationsForFile
         self.defaultApplication = defaultApplication
         self.createFolder = createFolder
         self.pasteFile = pasteFile
         self.moveFile = moveFile
         self.renameFile = renameFile
+        self.createAlias = createAlias
         self.moveToTrash = moveToTrash
         self.moveToTrashAndReturnURL = moveToTrashAndReturnURL
         self.deleteImmediately = deleteImmediately
@@ -317,6 +332,93 @@ extension EntryClient: DependencyKey {
                     await EntryQuickLookCoordinator.shared.present(urls: urls, scopeTokens: tokens, initialIndex: 0)
                 }
             },
+            openFinderInfo: { urls in
+                guard !urls.isEmpty else { return }
+                try await withScopedAccess(urls) {
+                    let error = await MainActor.run { () -> FileOpError? in
+                        // Use NSPerformService instead of AppleScript to avoid requiring
+                        // NSAppleEventsUsageDescription and Automation permissions
+                        let pasteboard = NSPasteboard(name: NSPasteboard.Name("VoyagerGetInfo-\(UUID().uuidString)"))
+                        pasteboard.clearContents()
+
+                        // Set file paths to pasteboard
+                        let paths = urls.map(\.path)
+                        pasteboard.setPropertyList(paths, forType: NSPasteboard.PasteboardType("NSFilenamesPboardType"))
+
+                        // Invoke Finder's "Show Info" service
+                        let success = NSPerformService("Finder/Show Info", pasteboard)
+
+                        if !success {
+                            return .system(message: "Failed to open Get Info window.")
+                        }
+
+                        return nil
+                    }
+
+                    if let error {
+                        throw error
+                    }
+                }
+            },
+            shareItems: { urls, anchor in
+                guard !urls.isEmpty else { return }
+                try await withScopedAccess(urls) {
+                    let error = await MainActor.run { () -> FileOpError? in
+                        guard let window = NSApp.keyWindow ?? NSApp.mainWindow,
+                              let view = window.contentView
+                        else {
+                            return .system(message: "No active window to share from.")
+                        }
+
+                        let picker = NSSharingServicePicker(items: urls)
+                        let rect = shareAnchorRect(
+                            in: view,
+                            window: window,
+                            event: NSApp.currentEvent,
+                            screenPoint: anchor,
+                        )
+                        picker.show(relativeTo: rect, of: view, preferredEdge: .minY)
+                        return nil
+                    }
+
+                    if let error {
+                        throw error
+                    }
+                }
+            },
+            performService: { serviceName, urls in
+                guard !urls.isEmpty else { return }
+                try await withScopedAccess(urls) {
+                    let error = await MainActor.run { () -> FileOpError? in
+                        NSApp.registerServicesMenuSendTypes([.fileURL], returnTypes: [])
+                        NSApp.servicesMenu?.update()
+
+                        let pasteboard = NSPasteboard(
+                            name: NSPasteboard.Name("VoyagerServices-\(UUID().uuidString)"),
+                        )
+                        pasteboard.clearContents()
+                        pasteboard.writeObjects(urls as [NSURL])
+
+                        let success = NSPerformService(serviceName, pasteboard)
+                        if !success {
+                            return .system(message: "Failed to run service: \(serviceName)")
+                        }
+                        return nil
+                    }
+
+                    if let error {
+                        throw error
+                    }
+                }
+            },
+            revealInFinder: { urls in
+                guard !urls.isEmpty else { return }
+                try await withScopedAccess(urls) {
+                    await MainActor.run {
+                        NSWorkspace.shared.activateFileViewerSelecting(urls)
+                    }
+                }
+            },
             applicationsForFile: { url in
                 let workspace = NSWorkspace.shared
                 let appURLs = workspace.urlsForApplications(toOpen: url)
@@ -390,6 +492,17 @@ extension EntryClient: DependencyKey {
                     throw FileOpError.fileExists(itemName: destinationURL.lastPathComponent)
                 }
                 try FileManager.default.moveItem(at: sourceURL, to: destinationURL)
+            },
+            createAlias: { sourceURL, aliasURL in
+                if FileManager.default.fileExists(atPath: aliasURL.path) {
+                    throw FileOpError.fileExists(itemName: aliasURL.lastPathComponent)
+                }
+                let bookmarkData = try sourceURL.bookmarkData(
+                    options: .suitableForBookmarkFile,
+                    includingResourceValuesForKeys: nil,
+                    relativeTo: nil,
+                )
+                try URL.writeBookmarkData(bookmarkData, to: aliasURL)
             },
             moveToTrash: { url in
                 try await MainActor.run {
@@ -880,12 +993,17 @@ extension EntryClient: DependencyKey {
             setDefaultApp: { _, _ in unimplemented() },
             quickLook: { _ in unimplemented() },
             quickLookFiles: { _ in unimplemented() },
+            openFinderInfo: { _ in unimplemented() },
+            shareItems: { _, _ in unimplemented() },
+            performService: { _, _ in unimplemented() },
+            revealInFinder: { _ in unimplemented() },
             applicationsForFile: { _ in unimplemented() },
             defaultApplication: { _ in unimplemented() },
             createFolder: { _, _ in unimplemented() },
             pasteFile: { _, _ in unimplemented() },
             moveFile: { _, _ in unimplemented() },
             renameFile: { _, _ in unimplemented() },
+            createAlias: { _, _ in unimplemented() },
             moveToTrash: { _ in unimplemented() },
             moveToTrashAndReturnURL: { _ in unimplemented() },
             deleteImmediately: { _ in unimplemented() },
@@ -936,6 +1054,10 @@ extension EntryClient: DependencyKey {
             setDefaultApp: { _, _ in },
             quickLook: { _ in },
             quickLookFiles: { _ in },
+            openFinderInfo: { _ in },
+            shareItems: { _, _ in },
+            performService: { _, _ in },
+            revealInFinder: { _ in },
             applicationsForFile: { _ async in
                 [previewInfo, chromeInfo, otherInfo]
             },
@@ -946,6 +1068,7 @@ extension EntryClient: DependencyKey {
             pasteFile: { _, _ in },
             moveFile: { _, _ in },
             renameFile: { _, _ in },
+            createAlias: { _, _ in },
             moveToTrash: { _ in },
             moveToTrashAndReturnURL: { _ in URL(fileURLWithPath: "/tmp/.Trash/test") },
             deleteImmediately: { _ in },
@@ -990,6 +1113,29 @@ public extension DependencyValues {
         get { self[EntryClient.self] }
         set { self[EntryClient.self] = newValue }
     }
+}
+
+@MainActor
+private func shareAnchorRect(
+    in view: NSView,
+    window: NSWindow,
+    event: NSEvent?,
+    screenPoint: CGPoint?,
+) -> CGRect {
+    // TODO: 좌표 기반 앵커링을 엔트리(셀/행) 프레임 기준으로 전환해야 함
+    if let screenPoint {
+        let windowPoint = window.convertPoint(fromScreen: screenPoint)
+        let viewPoint = view.convert(windowPoint, from: nil)
+        return CGRect(x: viewPoint.x, y: viewPoint.y, width: 1, height: 1)
+    }
+
+    if let event, event.window == window {
+        let location = view.convert(event.locationInWindow, from: nil)
+        return CGRect(x: location.x, y: location.y, width: 1, height: 1)
+    }
+
+    let bounds = view.bounds
+    return CGRect(x: bounds.midX, y: bounds.midY, width: 1, height: 1)
 }
 
 func withScopedAccess<T>(_ url: URL, perform: @escaping () async throws -> T) async throws -> T {

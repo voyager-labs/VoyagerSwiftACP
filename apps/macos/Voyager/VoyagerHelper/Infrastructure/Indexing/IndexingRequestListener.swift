@@ -64,6 +64,16 @@ final class IndexingRequestListener {
             try await setStatus(.pending)
         } catch {
             logger.error("Initial indexing status prepare failed: \(error)")
+            VoyagerSentryMetricLogger.logMetric(
+                "voyager_index_job_total",
+                value: 1,
+                tags: [
+                    "stage": "failed",
+                    "context": "prepare",
+                    "error_type": String(describing: error),
+                ],
+                level: .error,
+            )
         }
     }
 
@@ -93,6 +103,16 @@ final class IndexingRequestListener {
             return false
         } catch {
             logger.error("Initial indexing status check failed: \(error)")
+            VoyagerSentryMetricLogger.logMetric(
+                "voyager_index_job_total",
+                value: 1,
+                tags: [
+                    "stage": "failed",
+                    "context": "status_check",
+                    "error_type": String(describing: error),
+                ],
+                level: .error,
+            )
             return false
         }
     }
@@ -115,10 +135,30 @@ final class IndexingRequestListener {
             try await startInitialIndexing(trigger: .request)
         } catch {
             logger.error("Initial indexing request failed: \(error)")
+            VoyagerSentryMetricLogger.logMetric(
+                "voyager_index_job_total",
+                value: 1,
+                tags: [
+                    "stage": "failed",
+                    "context": "request",
+                    "error_type": String(describing: error),
+                ],
+                level: .error,
+            )
             do {
                 try await setStatus(.pending)
             } catch {
                 logger.error("Initial indexing status reset failed: \(error)")
+                VoyagerSentryMetricLogger.logMetric(
+                    "voyager_index_job_total",
+                    value: 1,
+                    tags: [
+                        "stage": "failed",
+                        "context": "status_reset",
+                        "error_type": String(describing: error),
+                    ],
+                    level: .error,
+                )
             }
         }
     }
@@ -163,26 +203,42 @@ final class IndexingRequestListener {
 
     // 초기 인덱싱 실행
     func startInitialIndexing(trigger: StartTrigger) async throws {
+        let startedAt = Date()
         let now = iso8601Now()
         try await setStatus(.running, requestedAt: now, startedAt: now)
         try await upsertStateValue(StateKey.initialIndexingLastHeartbeat, value: now)
         lastHeartbeatAt = Date()
 
-        logger.info("Initial indexing start (\(trigger.rawValue))")
+        logInitialIndexingStart(trigger: trigger)
 
         let heartbeat: @Sendable () async -> Void = { [weak self] in
             await self?.recordHeartbeatIfNeeded()
         }
 
-        _ = try await InitialIndexingRunner.indexHomeDirectoryIfNeeded(
-            manager: manager,
-            logger: logger,
-            heartbeat: heartbeat,
-        )
+        do {
+            let inserted = try await InitialIndexingRunner.indexHomeDirectoryIfNeeded(
+                manager: manager,
+                logger: logger,
+                heartbeat: heartbeat,
+            )
 
-        try await setStatus(.completed, completedAt: iso8601Now())
-        await IncrementalIndexingValidator.startIfReady(manager: manager, logger: logger)
-        logger.info("Initial indexing completed (\(trigger.rawValue))")
+            try await setStatus(.completed, completedAt: iso8601Now())
+            await IncrementalIndexingValidator.startIfReady(manager: manager, logger: logger)
+            let durationMs = Int(Date().timeIntervalSince(startedAt) * 1000)
+            logInitialIndexingCompleted(
+                trigger: trigger,
+                inserted: inserted,
+                durationMs: durationMs,
+            )
+        } catch {
+            let durationMs = Int(Date().timeIntervalSince(startedAt) * 1000)
+            logInitialIndexingFailed(
+                trigger: trigger,
+                durationMs: durationMs,
+                error: error,
+            )
+            throw error
+        }
     }
 
     func fetchStateValue(_ key: String) async throws -> String? {
@@ -211,5 +267,87 @@ final class IndexingRequestListener {
         try await manager.read { db in
             try db.tableExists("indexing_state")
         }
+    }
+}
+
+private extension IndexingRequestListener {
+    func logInitialIndexingStart(trigger: StartTrigger) {
+        logger.info(
+            "Initial indexing start",
+            metadata: ["trigger": "\(trigger.rawValue)"],
+        )
+        VoyagerSentryMetricLogger.logMetric(
+            "voyager_index_job_total",
+            value: 1,
+            tags: [
+                "stage": "start",
+                "trigger": trigger.rawValue,
+            ],
+        )
+    }
+
+    func logInitialIndexingCompleted(
+        trigger: StartTrigger,
+        inserted: Int,
+        durationMs: Int,
+    ) {
+        logger.info(
+            "Initial indexing completed",
+            metadata: [
+                "trigger": "\(trigger.rawValue)",
+                "inserted": "\(inserted)",
+                "duration_ms": "\(durationMs)",
+            ],
+        )
+        VoyagerSentryMetricLogger.logMetric(
+            "voyager_index_job_total",
+            value: 1,
+            tags: [
+                "stage": "completed",
+                "trigger": trigger.rawValue,
+                "inserted": "\(inserted)",
+            ],
+        )
+        VoyagerSentryMetricLogger.logMetric(
+            "voyager_index_job_duration_ms",
+            value: Double(durationMs),
+            tags: [
+                "trigger": trigger.rawValue,
+            ],
+        )
+    }
+
+    func logInitialIndexingFailed(
+        trigger: StartTrigger,
+        durationMs: Int,
+        error: Error,
+    ) {
+        logger.error(
+            "Initial indexing failed",
+            metadata: [
+                "trigger": "\(trigger.rawValue)",
+                "duration_ms": "\(durationMs)",
+                "error": "\(String(describing: error))",
+            ],
+        )
+        VoyagerSentryMetricLogger.logMetric(
+            "voyager_index_job_total",
+            value: 1,
+            tags: [
+                "stage": "failed",
+                "trigger": trigger.rawValue,
+                "error_type": String(describing: error),
+            ],
+            level: .error,
+        )
+        VoyagerSentryMetricLogger.logMetric(
+            "voyager_index_job_duration_ms",
+            value: Double(durationMs),
+            tags: [
+                "trigger": trigger.rawValue,
+                "status": "failed",
+            ],
+            level: .error,
+        )
     }
 }
