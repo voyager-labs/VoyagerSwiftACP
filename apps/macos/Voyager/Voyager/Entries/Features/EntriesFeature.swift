@@ -1355,6 +1355,19 @@ struct EntriesFeature {
                     return .none
                 }
 
+                func isDescendantPath(_ destinationPath: String, of sourcePath: String) -> Bool {
+                    let destinationComponents = URL(fileURLWithPath: destinationPath)
+                        .standardizedFileURL.pathComponents
+                    let sourceComponents = URL(fileURLWithPath: sourcePath)
+                        .standardizedFileURL.pathComponents
+
+                    guard destinationComponents.count > sourceComponents.count else {
+                        return false
+                    }
+
+                    return Array(destinationComponents.prefix(sourceComponents.count)) == sourceComponents
+                }
+
                 if !isOptionDrag {
                     let sourceParent = URL(fileURLWithPath: sourcePaths[0])
                         .deletingLastPathComponent().path
@@ -1364,7 +1377,7 @@ struct EntriesFeature {
 
                     // 자기 자신의 하위 폴더로 이동 방지
                     for sourcePath in sourcePaths {
-                        if destinationPath.hasPrefix(sourcePath + "/") || destinationPath == sourcePath {
+                        if destinationPath == sourcePath || isDescendantPath(destinationPath, of: sourcePath) {
                             return .none
                         }
                     }

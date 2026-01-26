@@ -54,6 +54,19 @@ final class EntryListTableViewController: NSViewController {
     @Dependency(\.entryClient)
     private var entryClient
 
+    private func isDescendantPath(_ destinationPath: String, of sourcePath: String) -> Bool {
+        let destinationComponents = URL(fileURLWithPath: destinationPath)
+            .standardizedFileURL.pathComponents
+        let sourceComponents = URL(fileURLWithPath: sourcePath)
+            .standardizedFileURL.pathComponents
+
+        guard destinationComponents.count > sourceComponents.count else {
+            return false
+        }
+
+        return Array(destinationComponents.prefix(sourceComponents.count)) == sourceComponents
+    }
+
     init(store: StoreOf<FileManagerFeature>) {
         self.store = store
         fsStore = store.scope(state: \.entries, action: \.entries)
@@ -528,13 +541,10 @@ extension EntryListTableViewController: NSTableViewDataSource {
         _ tableView: NSTableView,
         validateDrop info: any NSDraggingInfo,
         proposedRow row: Int,
-        proposedDropOperation dropOperation: NSTableView.DropOperation,
+        proposedDropOperation _: NSTableView.DropOperation,
     ) -> NSDragOperation {
-        _ = info
-
         var destinationPath = store.state.currentPath
-        if dropOperation == .on,
-           row >= 0,
+        if row >= 0,
            row < rows.count,
            case let .entry(entry) = rows[row].kind,
            entry.isDirectory
@@ -547,11 +557,9 @@ extension EntryListTableViewController: NSTableViewDataSource {
 
         let sourcePaths = entryClient.loadDragPaths()
         let isInternalDrag = !sourcePaths.isEmpty
-        let isOptionDrag = isInternalDrag
-            ? entryClient.loadDragWithOption()
-            : NSEvent.modifierFlags.contains(.option)
+        let wantsCopy = isInternalDrag ? entryClient.loadDragWithOption() : NSEvent.modifierFlags.contains(.option)
 
-        if isInternalDrag, !isOptionDrag {
+        if isInternalDrag, !wantsCopy {
             let sourceParent = URL(fileURLWithPath: sourcePaths[0]).deletingLastPathComponent().path
             if sourceParent == destinationPath {
                 return []
@@ -559,13 +567,20 @@ extension EntryListTableViewController: NSTableViewDataSource {
 
             // 자기 자신의 하위 폴더로 이동 방지
             for sourcePath in sourcePaths {
-                if destinationPath.hasPrefix(sourcePath + "/") || destinationPath == sourcePath {
+                if destinationPath == sourcePath || isDescendantPath(destinationPath, of: sourcePath) {
                     return []
                 }
             }
         }
 
-        return isOptionDrag ? .copy : .move
+        let allowed = info.draggingSourceOperationMask
+        let preferred: NSDragOperation = wantsCopy ? .copy : .move
+        if !preferred.isDisjoint(with: allowed) {
+            return preferred.intersection(allowed)
+        }
+
+        // 외부 드래그에서 move 불가(copy만 가능 등) fallback
+        return NSDragOperation.copy.intersection(allowed)
     }
 
     func tableView(
@@ -600,7 +615,15 @@ extension EntryListTableViewController: NSTableViewDataSource {
             return false
         }
 
-        let isOptionPressed = NSEvent.modifierFlags.contains(.option)
+        let allowed = info.draggingSourceOperationMask
+        let preferred: NSDragOperation = NSEvent.modifierFlags.contains(.option) ? .copy : .move
+        let resolved = preferred.isDisjoint(with: allowed)
+            ? NSDragOperation.copy.intersection(allowed)
+            : preferred.intersection(allowed)
+        guard !resolved.isEmpty else {
+            return false
+        }
+        let isOptionPressed = resolved.contains(.copy) && !resolved.contains(.move)
         fsStore.send(.dropItems(
             sourcePaths: urls.map(\.path),
             destinationPath: destinationPath,
@@ -632,7 +655,7 @@ extension EntryListTableViewController: NSTableViewDelegate {
         endedAt _: NSPoint,
         operation: NSDragOperation,
     ) {
-        guard operation == [] else { return }
+        guard operation.isEmpty else { return }
         fsStore.send(.startDrag(paths: []))
     }
 
