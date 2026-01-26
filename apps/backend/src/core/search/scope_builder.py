@@ -19,8 +19,13 @@ class ScopeBuilder:
         Example:
             Input: ["/Users/foo/Downloads", "/Users/foo/Documents"]
             Output: (
-                "(path LIKE :s0 OR path LIKE :s1)",
-                {"s0": "/Users/foo/Downloads/%", "s1": "/Users/foo/Documents/%"}
+                "(dir_path = :s0 OR dir_path LIKE :s0_child OR dir_path = :s1 OR dir_path LIKE :s1_child)",
+                {
+                    "s0": "/Users/foo/Downloads",
+                    "s0_child": "/Users/foo/Downloads/%",
+                    "s1": "/Users/foo/Documents",
+                    "s1_child": "/Users/foo/Documents/%",
+                }
             )
         """
         if not scopes:
@@ -32,9 +37,11 @@ class ScopeBuilder:
         for index, scope in enumerate(scopes):
             # 경로 정규화: 후행 슬래시 제거 후 /%로 패턴 생성
             normalized = scope.rstrip("/")
-            placeholder = f"s{index}"
-            clauses.append(f"path LIKE :{placeholder}")
-            params[placeholder] = f"{normalized}/%"
+            base_placeholder = f"s{index}"
+            child_placeholder = f"s{index}_child"
+            clauses.append(f"dir_path = :{base_placeholder} OR dir_path LIKE :{child_placeholder}")
+            params[base_placeholder] = normalized
+            params[child_placeholder] = f"{normalized}/%"
 
         if len(clauses) == 1:
             return clauses[0], params
