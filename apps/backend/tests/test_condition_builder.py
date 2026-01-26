@@ -31,10 +31,12 @@ def _registry_mapping(key: str):
 def test_build_db_comparison_clause() -> None:
     builder = _builder()
 
-    clause, params = builder.build_clause("uniform_type_identifier", "any", "public.png")
+    clause, params = builder.build_clause(
+        "uniform_type_identifier", "any", ["public.png", "public.jpeg"]
+    )
 
-    assert clause == "uniform_type_identifier = :p0"
-    assert params == {"p0": "public.png"}
+    assert clause == "uniform_type_identifier IN (:p0, :p1)"
+    assert params == {"p0": "public.png", "p1": "public.jpeg"}
 
 
 def test_build_db_range_clause_for_date() -> None:
@@ -95,6 +97,35 @@ def test_build_json_string_list_contains_all_dedupes_values() -> None:
         ") = :p2"
     )
     assert params == {"p0": "alpha", "p1": mapping.json_path, "p2": 1}
+
+
+def test_build_db_string_list_any_uses_in_clause() -> None:
+    builder = _builder()
+
+    clause, params = builder.build_clause(
+        "uniform_type_identifier", "any", ["public.png", "public.jpeg"]
+    )
+
+    assert clause == "uniform_type_identifier IN (:p0, :p1)"
+    assert params == {"p0": "public.png", "p1": "public.jpeg"}
+
+
+def test_build_db_string_list_none_uses_not_in_clause() -> None:
+    builder = _builder()
+
+    clause, params = builder.build_clause("uniform_type_identifier", "none", ["public.png"])
+
+    assert clause == "uniform_type_identifier NOT IN (:p0)"
+    assert params == {"p0": "public.png"}
+
+
+def test_build_contains_wraps_like_pattern() -> None:
+    builder = _builder()
+
+    clause, params = builder.build_clause("name_stem", "cn", "report")
+
+    assert clause == "name_stem LIKE :p0"
+    assert params == {"p0": "%report%"}
 
 
 def test_build_json_string_list_empty() -> None:

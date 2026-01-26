@@ -139,6 +139,8 @@ class ConditionBuilder:
     ) -> str:
         """DB 컬럼 조건 생성"""
         field = mapping.key
+        if mapping.type == SystemPropertyType.STRING_LIST:
+            return self._build_db_string_list_clause(binder, field, operator_meta, value)
         # DATE 타입이면 DATE() 함수로 날짜만 비교
         if mapping.type == SystemPropertyType.DATE:
             field = f"DATE({field})"
@@ -247,6 +249,46 @@ class ConditionBuilder:
             second = binder.bind(json_path)
             return f"({length_clause.format(first)} IS NULL OR {length_clause.format(second)} = 0)"
         return f"({field} IS NULL OR {field} = '')"
+
+    def _build_db_string_list_clause(
+        self,
+        binder: _ParamBinder,
+        field: str,
+        operator_meta: ConditionOperator,
+        value: Any,
+    ) -> str:
+        sql_kind = operator_meta.sql_kind
+
+        if sql_kind == "exists":
+            return f"{field} IS NOT NULL"
+
+        if sql_kind == "empty":
+            return f"({field} IS NULL OR {field} = '')"
+
+        values: list[Any]
+        if isinstance(value, (list, tuple)):
+            values = list(cast(Sequence[Any], value))
+        else:
+            values = []
+        if not values:
+            raise ConditionBuilderError(
+                f"'{operator_meta.code}' operator requires non-empty array value, got: {value}"
+            )
+
+        if sql_kind == "string_list_any":
+            placeholders = binder.bind_many(values)
+            return f"{field} IN ({placeholders})"
+
+        if sql_kind == "string_list_not_any":
+            placeholders = binder.bind_many(values)
+            return f"{field} NOT IN ({placeholders})"
+
+        if sql_kind in {"string_list_all", "string_list_not_all"}:
+            raise ConditionBuilderError(
+                f"Operator '{operator_meta.code}' is not supported for DB string_list fields."
+            )
+
+        raise ConditionBuilderError(f"Unsupported string_list sql_kind: {sql_kind}")
 
     def _build_range_clause(
         self,
