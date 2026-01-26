@@ -15,7 +15,6 @@ from .registry_loader import (
     SYSTEM_PROPERTY_REGISTRY,
     SystemPropertyAttribute,
     SystemPropertyType,
-    get_attributes_by_category,
     get_indexed_attributes,
     get_json_attributes,
 )
@@ -24,7 +23,6 @@ __all__ = [
     "SYSTEM_PROPERTY_REGISTRY",
     "SystemPropertyAttribute",
     "SystemPropertyType",
-    "get_attributes_by_category",
     "get_indexed_attributes",
     "get_json_attributes",
 ]

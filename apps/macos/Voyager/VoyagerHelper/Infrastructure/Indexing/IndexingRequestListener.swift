@@ -65,7 +65,7 @@ final class IndexingRequestListener {
         } catch {
             logger.error("Initial indexing status prepare failed: \(error)")
             VoyagerSentryMetricLogger.logMetric(
-                "voyager_index_job_total",
+                "voyager_initial_index_job",
                 value: 1,
                 tags: [
                     "stage": "failed",
@@ -104,7 +104,7 @@ final class IndexingRequestListener {
         } catch {
             logger.error("Initial indexing status check failed: \(error)")
             VoyagerSentryMetricLogger.logMetric(
-                "voyager_index_job_total",
+                "voyager_initial_index_job",
                 value: 1,
                 tags: [
                     "stage": "failed",
@@ -136,7 +136,7 @@ final class IndexingRequestListener {
         } catch {
             logger.error("Initial indexing request failed: \(error)")
             VoyagerSentryMetricLogger.logMetric(
-                "voyager_index_job_total",
+                "voyager_initial_index_job",
                 value: 1,
                 tags: [
                     "stage": "failed",
@@ -150,7 +150,7 @@ final class IndexingRequestListener {
             } catch {
                 logger.error("Initial indexing status reset failed: \(error)")
                 VoyagerSentryMetricLogger.logMetric(
-                    "voyager_index_job_total",
+                    "voyager_initial_index_job",
                     value: 1,
                     tags: [
                         "stage": "failed",
@@ -277,7 +277,7 @@ private extension IndexingRequestListener {
             metadata: ["trigger": "\(trigger.rawValue)"],
         )
         VoyagerSentryMetricLogger.logMetric(
-            "voyager_index_job_total",
+            "voyager_initial_index_job",
             value: 1,
             tags: [
                 "stage": "start",
@@ -300,7 +300,7 @@ private extension IndexingRequestListener {
             ],
         )
         VoyagerSentryMetricLogger.logMetric(
-            "voyager_index_job_total",
+            "voyager_initial_index_job",
             value: 1,
             tags: [
                 "stage": "completed",
@@ -309,7 +309,7 @@ private extension IndexingRequestListener {
             ],
         )
         VoyagerSentryMetricLogger.logMetric(
-            "voyager_index_job_duration_ms",
+            "voyager_initial_index_job_duration_ms",
             value: Double(durationMs),
             tags: [
                 "trigger": trigger.rawValue,
@@ -331,7 +331,7 @@ private extension IndexingRequestListener {
             ],
         )
         VoyagerSentryMetricLogger.logMetric(
-            "voyager_index_job_total",
+            "voyager_initial_index_job",
             value: 1,
             tags: [
                 "stage": "failed",
@@ -341,7 +341,7 @@ private extension IndexingRequestListener {
             level: .error,
         )
         VoyagerSentryMetricLogger.logMetric(
-            "voyager_index_job_duration_ms",
+            "voyager_initial_index_job_duration_ms",
             value: Double(durationMs),
             tags: [
                 "trigger": trigger.rawValue,

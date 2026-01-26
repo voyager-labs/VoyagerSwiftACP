@@ -76,7 +76,7 @@ enum InitialIndexingRunner {
             metadata: ["spotlight_results": "\(resultCount)"],
         )
         VoyagerSentryMetricLogger.logMetric(
-            "voyager_index_job_total",
+            "voyager_initial_index_job",
             value: 1,
             tags: [
                 "stage": "home_start",
@@ -102,7 +102,7 @@ enum InitialIndexingRunner {
             ],
         )
         VoyagerSentryMetricLogger.logMetric(
-            "voyager_index_job_total",
+            "voyager_initial_index_job",
             value: 1,
             tags: [
                 "stage": "home_completed",
@@ -110,7 +110,7 @@ enum InitialIndexingRunner {
             ],
         )
         VoyagerSentryMetricLogger.logMetric(
-            "voyager_index_job_duration_ms",
+            "voyager_initial_index_job_duration_ms",
             value: Double(durationMs),
             tags: [
                 "scope": "home",

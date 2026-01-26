@@ -31,7 +31,7 @@ def _registry_mapping(key: str):
 def test_build_db_comparison_clause() -> None:
     builder = _builder()
 
-    clause, params = builder.build_clause("uniform_type_identifier", "eq", "public.png")
+    clause, params = builder.build_clause("uniform_type_identifier", "any", "public.png")
 
     assert clause == "uniform_type_identifier = :p0"
     assert params == {"p0": "public.png"}
@@ -41,7 +41,7 @@ def test_build_db_range_clause_for_date() -> None:
     builder = _builder()
 
     clause, params = builder.build_clause(
-        "content_creation_date", "between", ["2024-01-01", "2024-12-31"]
+        "content_creation_date", "btw", ["2024-01-01", "2024-12-31"]
     )
 
     assert clause == "DATE(content_creation_date) BETWEEN :p0 AND :p1"
@@ -64,7 +64,7 @@ def test_build_json_string_list_contains_any() -> None:
     builder = _builder()
     mapping = _registry_mapping("contact_keywords")
 
-    clause, params = builder.build_clause("contact_keywords", "contains_any", ["alpha", "beta"])
+    clause, params = builder.build_clause("contact_keywords", "any", ["alpha", "beta"])
 
     assert clause == (
         "EXISTS (SELECT 1 FROM json_each(original_metadata, :p2) WHERE value IN (:p0, :p1))"
@@ -72,11 +72,20 @@ def test_build_json_string_list_contains_any() -> None:
     assert params == {"p0": "alpha", "p1": "beta", "p2": mapping.json_path}
 
 
+def test_build_db_string_any_of_clause() -> None:
+    builder = _builder()
+
+    clause, params = builder.build_clause("extension", "any", ["pdf", "png"])
+
+    assert clause == "extension IN (:p0, :p1)"
+    assert params == {"p0": "pdf", "p1": "png"}
+
+
 def test_build_json_string_list_contains_all_dedupes_values() -> None:
     builder = _builder()
     mapping = _registry_mapping("contact_keywords")
 
-    clause, params = builder.build_clause("contact_keywords", "contains_all", ["alpha", "alpha"])
+    clause, params = builder.build_clause("contact_keywords", "all", ["alpha", "alpha"])
 
     assert clause == (
         "(\n"
@@ -119,4 +128,4 @@ def test_between_value_validation() -> None:
     from core.search.condition_builder import ConditionBuilderError
 
     with pytest.raises(ConditionBuilderError):
-        builder.build_clause("content_creation_date", "between", ["2024-01-01"])
+        builder.build_clause("content_creation_date", "btw", ["2024-01-01"])

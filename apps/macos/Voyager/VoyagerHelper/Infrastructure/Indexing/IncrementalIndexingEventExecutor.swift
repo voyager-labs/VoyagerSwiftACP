@@ -267,7 +267,7 @@ private extension IncrementalIndexingEventExecutor {
             ],
         )
         VoyagerSentryMetricLogger.logMetric(
-            "voyager_index_job_total",
+            "voyager_incremental_index_job",
             value: 1,
             tags: [
                 "stage": "incremental_apply",
@@ -276,7 +276,7 @@ private extension IncrementalIndexingEventExecutor {
             ],
         )
         VoyagerSentryMetricLogger.logMetric(
-            "voyager_index_job_duration_ms",
+            "voyager_incremental_index_job_duration_ms",
             value: Double(durationMs),
             tags: [
                 "scope": "incremental",
@@ -300,7 +300,7 @@ private extension IncrementalIndexingEventExecutor {
             ],
         )
         VoyagerSentryMetricLogger.logMetric(
-            "voyager_index_job_total",
+            "voyager_incremental_index_job",
             value: 1,
             tags: [
                 "stage": "failed",
@@ -310,7 +310,7 @@ private extension IncrementalIndexingEventExecutor {
             level: .error,
         )
         VoyagerSentryMetricLogger.logMetric(
-            "voyager_index_job_duration_ms",
+            "voyager_incremental_index_job_duration_ms",
             value: Double(durationMs),
             tags: [
                 "scope": "incremental",
@@ -322,7 +322,7 @@ private extension IncrementalIndexingEventExecutor {
 
     func logIncrementalChangesSummary(upserted: Int, deleted: Int) {
         VoyagerSentryMetricLogger.logMetric(
-            "voyager_index_job_total",
+            "voyager_incremental_index_job",
             value: 1,
             tags: [
                 "stage": "incremental_changes",
@@ -334,7 +334,7 @@ private extension IncrementalIndexingEventExecutor {
 
     func logIncrementalChangeFailure(context: String, error: Error) {
         VoyagerSentryMetricLogger.logMetric(
-            "voyager_index_job_total",
+            "voyager_incremental_index_job",
             value: 1,
             tags: [
                 "stage": "failed",

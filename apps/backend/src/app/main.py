@@ -12,7 +12,6 @@ from app.config import get_db_config, load_config
 from app.search.routes import router as search_router
 from infra.db.engine import engine_manager
 from infra.db.utils import ensure_parent_dir
-from utils.telemetry import log_metric
 
 
 @asynccontextmanager
@@ -32,18 +31,19 @@ async def lifespan(app: FastAPI):
     logger = logging.getLogger("uvicorn.error")
     py_ver = platform.python_version()
     message = (
-        "Environment initialized: "
-        f"app={cfg.app_name} env={cfg.app_env} "
-        f"python={py_ver} "
-        f"gateway_url={cfg.gateway_url}"
-        f"backend_host={cfg.backend_host}"
-        f"backend_port={cfg.backend_port}"
-        f"backend_process_name={cfg.backend_process_name}"
-        f"sqlite_protocol={cfg.sqlite_protocol}"
-        f"sqlite_echo={cfg.sqlite_echo}"
-        f"sqlite_check_same_thread={cfg.sqlite_check_same_thread}"
-        f"sqlite_file_location={cfg.sqlite_file_location}"
-        f"sqlite_file_name={cfg.sqlite_file_name}"
+        "Environment initialized: \n"
+        f"app = {cfg.app_name} env = {cfg.app_env} \n"
+        f"python = {py_ver} \n"
+        f"gateway_url = {cfg.gateway_url} \n"
+        f"backend_host = {cfg.backend_host} \n"
+        f"backend_port = {cfg.backend_port} \n"
+        f"backend_url =  http://{cfg.backend_host}:{cfg.backend_port} \n"
+        f"backend_process_name = {cfg.backend_process_name} \n"
+        f"sqlite_protocol = {cfg.sqlite_protocol} \n"
+        f"sqlite_echo = {cfg.sqlite_echo} \n"
+        f"sqlite_check_same_thread = {cfg.sqlite_check_same_thread} \n"
+        f"sqlite_file_location = {cfg.sqlite_file_location} \n"
+        f"sqlite_file_name = {cfg.sqlite_file_name} \n"
     )
     bar = "=" * max(60, len(message))
     logger.warning(f"\n{bar}\n{message}\n{bar}")
@@ -74,19 +74,6 @@ async def add_request_observability(
 
     response: Response = await call_next(request)
     duration_ms = (time.perf_counter() - start) * 1000
-    tags: dict[str, str] = {
-        "route": route,
-        "method": method,
-        "status": str(response.status_code),
-    }
-    log_metric("voyager_http_request_duration_ms", round(duration_ms, 2), tags)
-    log_metric("voyager_http_requests_total", 1, tags)
-    if response.status_code >= 500:
-        log_metric(
-            "voyager_http_errors_total",
-            1,
-            {"route": route, "error_code": "HTTP_5XX"},
-        )
     return response
 
 

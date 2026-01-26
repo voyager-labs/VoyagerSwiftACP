@@ -17,6 +17,7 @@ enum EntrySearchUtils {
             return nil
         }
 
+        // TODO: Payload가 아닌 URL로 부터 직접 파싱하도록 변경하는 것이 더 좋을 것 같다. [VOY-147]
         let url = URL(fileURLWithPath: path)
         let name = payload.stringValue(for: "name") ?? url.lastPathComponent
         let fileExtension = payload.stringValue(for: "extension") ?? url.pathExtension
