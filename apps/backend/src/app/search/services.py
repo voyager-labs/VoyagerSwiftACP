@@ -151,7 +151,7 @@ class SearchService:
         condition_dicts = [c.model_dump() for c in filters.conditions]
         try:
             entries = await execute_search(
-                model=EntrySchema,
+                model=EntrySchema,  # TODO: 아이템 조회 필드 최적화 [VOY-147]
                 session_context=lambda: engine_manager.session(autocommit=False),
                 scopes=filters.scopes,
                 conditions=condition_dicts,

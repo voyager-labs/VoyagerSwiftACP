@@ -72,6 +72,15 @@ def test_build_json_string_list_contains_any() -> None:
     assert params == {"p0": "alpha", "p1": "beta", "p2": mapping.json_path}
 
 
+def test_build_db_string_any_of_clause() -> None:
+    builder = _builder()
+
+    clause, params = builder.build_clause("extension", "any", ["pdf", "png"])
+
+    assert clause == "extension IN (:p0, :p1)"
+    assert params == {"p0": "pdf", "p1": "png"}
+
+
 def test_build_json_string_list_contains_all_dedupes_values() -> None:
     builder = _builder()
     mapping = _registry_mapping("contact_keywords")

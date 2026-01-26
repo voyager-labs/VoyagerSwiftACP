@@ -6,29 +6,44 @@ import sys
 from dataclasses import dataclass
 from enum import Enum
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
-REGISTRY_ENV_VAR = "REGISTRY_PATH"
 REGISTRY_SHARED_DIR = "shared"
 CONDITION_REGISTRY_FILENAME = "property_condition_registry.json"
 SYSTEM_PROPERTY_REGISTRY_FILENAME = "system_property_registry.json"
 
 
+def _coerce_str_any_dict(value: Any) -> dict[str, Any]:
+    if not isinstance(value, dict):
+        return {}
+    result: dict[str, Any] = {}
+    value_dict = cast(dict[str, Any], value)
+    for raw_key, raw_value in value_dict.items():
+        result[raw_key] = raw_value
+    return result
+
+
+def _coerce_str_list(value: Any) -> list[str]:
+    if not isinstance(value, list):
+        return []
+    result: list[str] = []
+    for item in cast(list[str], value):
+        result.append(item)
+    return result
+
+
+def _coerce_str_str_dict(value: Any) -> dict[str, str]:
+    if not isinstance(value, dict):
+        return {}
+    result: dict[str, str] = {}
+    value_dict = cast(dict[str, str], value)
+    for raw_key, raw_value in value_dict.items():
+        result[raw_key] = raw_value
+    return result
+
+
 def _candidate_registry_paths(filename: str) -> list[Path]:
     candidates: list[Path] = []
-
-    env_path = os.getenv(REGISTRY_ENV_VAR)
-    if env_path:
-        env_candidate = Path(env_path).expanduser()
-        if env_candidate.is_dir():
-            candidates.append(env_candidate / filename)
-        elif env_candidate.suffix == ".json":
-            if env_candidate.name == filename:
-                candidates.append(env_candidate)
-            else:
-                candidates.append(env_candidate.parent / filename)
-        else:
-            candidates.append(env_candidate / filename)
 
     module_path = Path(__file__).resolve()
     for parent in module_path.parents:
@@ -60,26 +75,30 @@ def resolve_registry_path(filename: str) -> Path:
             return path
 
     tried = "\n".join(f" - {path}" for path in _candidate_registry_paths(filename))
-    raise FileNotFoundError(f"{filename}을 찾을 수 없습니다.\n시도한 경로:\n{tried}")
+    raise FileNotFoundError(f"{filename} not found.\nTried paths:\n{tried}")
 
 
 def load_registry_payload(filename: str) -> dict[str, Any]:
     path = resolve_registry_path(filename)
     with path.open("r", encoding="utf-8") as f:
-        return json.load(f)
+        raw = json.load(f)
+    payload = _coerce_str_any_dict(raw)
+    if not payload:
+        raise ValueError(f"{filename} is empty")
+    return payload
 
 
 def _require_registry_kind(payload: dict[str, Any], expected: str, filename: str) -> None:
     kind = payload.get("$kind")
     if kind != expected:
-        raise ValueError(f"{filename} $kind이 '{expected}'여야 합니다. (현재: {kind})")
+        raise ValueError(f"{filename} $kind is '{expected}' but got '{kind}'")
 
 
 def _require_payload_mapping(payload: dict[str, Any], key: str, filename: str) -> dict[str, Any]:
-    value = payload.get(key)
-    if not isinstance(value, dict) or not value:
-        raise ValueError(f"{filename} '{key}'는 비어있지 않은 객체여야 합니다.")
-    return value
+    mapping = _coerce_str_any_dict(payload.get(key))
+    if not mapping:
+        raise ValueError(f"{filename} '{key}' is empty")
+    return mapping
 
 
 @dataclass
@@ -119,31 +138,36 @@ def load_condition_registry(
 ) -> ConditionRegistry:
     payload = load_registry_payload(filename)
     _require_registry_kind(payload, "property_condition_registry", filename)
-    property_types = _require_payload_mapping(payload, "property_types", filename)
+
+    property_types_payload = _require_payload_mapping(payload, "property_types", filename)
     operators_payload = _require_payload_mapping(payload, "operators", filename)
 
     operators: dict[str, ConditionOperator] = {}
     for code, raw in operators_payload.items():
+        raw_dict = _coerce_str_any_dict(raw)
+        if not raw_dict:
+            continue
         operators[code] = ConditionOperator(
             code=code,
-            sql_operator=raw.get("sql_operator"),
-            sql_kind=raw.get("sql_kind"),
-            value_shape=raw.get("value_shape"),
-            value_count=raw.get("value_count"),
-            allowed_types=list(raw.get("allowed_types", [])),
-            inverse_of=raw.get("inverse_of"),
-            aliases=list(raw.get("aliases", [])),
-            ui_label=raw.get("ui_label"),
-            ui_value_kind=dict(raw.get("ui_value_kind", {})),
+            sql_operator=cast(str | None, raw_dict.get("sql_operator")),
+            sql_kind=cast(str | None, raw_dict.get("sql_kind")),
+            value_shape=cast(str | None, raw_dict.get("value_shape")),
+            value_count=cast(int | str | None, raw_dict.get("value_count")),
+            allowed_types=_coerce_str_list(raw_dict.get("allowed_types")),
+            inverse_of=cast(str | None, raw_dict.get("inverse_of")),
+            aliases=_coerce_str_list(raw_dict.get("aliases")),
+            ui_label=cast(str | None, raw_dict.get("ui_label")),
+            ui_value_kind=_coerce_str_str_dict(raw_dict.get("ui_value_kind")),
         )
 
     parsed_property_types: dict[str, ConditionTypeDefaults] = {}
-    for type_key, raw in property_types.items():
-        if not isinstance(raw, dict):
-            raise ValueError(f"property_types.{type_key}는 객체여야 합니다.")
+    for type_key, raw in property_types_payload.items():
+        raw_dict = _coerce_str_any_dict(raw)
+        if not raw_dict:
+            continue
         parsed_property_types[type_key] = ConditionTypeDefaults(
-            operators=list(raw.get("operators", [])),
-            sql_cast=raw.get("sql_cast"),
+            operators=_coerce_str_list(raw_dict.get("operators")),
+            sql_cast=cast(str | None, raw_dict.get("sql_cast")),
         )
 
     return ConditionRegistry(property_types=parsed_property_types, operators=operators)
@@ -164,10 +188,10 @@ class SystemPropertyAttribute:
     """System property 정의"""
 
     key: str
-    db_field: str | None
     db_indexed: bool
     type: SystemPropertyType
-    label: str
+    ui_label: str
+    legacy_keys: list[str]
     description: str
     search_aliases: list[str]
     category: str
@@ -185,21 +209,26 @@ def _parse_value_type(raw_type: str) -> SystemPropertyType:
 
 
 def _json_path_for(system_keys: list[str]) -> str | None:
+    """system_keys에서 original_metadata JSON path를 유도합니다."""
+
     if not system_keys:
         return None
 
+    # original_metadata는 kMDItem* 키(또는 기타 provider key) 기반으로 저장됩니다.
     for system_key in system_keys:
         if system_key.startswith("mditem:"):
             return f"$.{system_key.split(':', 1)[1]}"
 
     first = system_keys[0]
-    return f"$.{first.split(':', 1)[1]}" if ":" in first else f"$.{first}"
+    if ":" in first:
+        return f"$.{first.split(':', 1)[1]}"
+    return f"$.{first}"
 
 
 def _operators_for_type(registry: ConditionRegistry, value_type: SystemPropertyType) -> list[str]:
     type_key = value_type.value
-    property_types = registry.property_types.get(type_key)
-    operator_codes = property_types.operators if property_types else []
+    defaults = registry.property_types.get(type_key)
+    operator_codes = defaults.operators if defaults else []
     supported: list[str] = []
     for code in operator_codes:
         operator = registry.operators.get(code)
@@ -212,35 +241,65 @@ def _operators_for_type(registry: ConditionRegistry, value_type: SystemPropertyT
 
 
 def _parse_system_property_registry(
-    payload: dict[str, Any], condition_registry: ConditionRegistry
+    payload: dict[str, Any],
+    condition_registry: ConditionRegistry,
 ) -> dict[str, SystemPropertyAttribute]:
     categories = payload.get("categories")
-    if not isinstance(categories, dict) or not categories:
+    categories_dict = _coerce_str_any_dict(categories)
+    if not categories_dict:
         raise ValueError("system_property_registry의 categories는 비어있지 않은 객체여야 합니다.")
-    registry: dict[str, SystemPropertyAttribute] = {}
 
-    for category, entries in categories.items():
-        if not isinstance(entries, dict):
+    registry: dict[str, SystemPropertyAttribute] = {}
+    for category, entries in categories_dict.items():
+        entries_dict = _coerce_str_any_dict(entries)
+        if not entries_dict:
             continue
-        for key, raw in entries.items():
-            value_type = _parse_value_type(raw["type"])
-            system_keys = raw.get("system_keys", [])
+
+        for key, raw in entries_dict.items():
+            raw_dict = _coerce_str_any_dict(raw)
+            if not raw_dict:
+                continue
+
+            raw_type = raw_dict.get("type")
+            if not isinstance(raw_type, str):
+                continue
+            value_type = _parse_value_type(raw_type)
+
+            system_keys = _coerce_str_list(raw_dict.get("system_keys"))
+            legacy_keys = _coerce_str_list(raw_dict.get("legacy_keys"))
+            search_aliases = _coerce_str_list(raw_dict.get("search_aliases"))
+
+            ui_label_value = raw_dict.get("ui_label")
+            ui_label = ui_label_value if isinstance(ui_label_value, str) else key
+
+            description_value = raw_dict.get("description")
+            description = description_value if isinstance(description_value, str) else ""
+
+            availability_value = raw_dict.get("availability")
+            availability = availability_value if isinstance(availability_value, str) else None
+
+            value_format_value = raw_dict.get("value_format")
+            value_format = value_format_value if isinstance(value_format_value, str) else None
+
+            ui_pinned_value = raw_dict.get("ui_pinned")
+            ui_pinned = ui_pinned_value if isinstance(ui_pinned_value, bool) else None
+
             registry[key] = SystemPropertyAttribute(
                 key=key,
-                db_field=key if raw.get("db_indexed") else None,
-                db_indexed=bool(raw.get("db_indexed", False)),
+                db_indexed=bool(raw_dict.get("db_indexed", False)),
                 type=value_type,
-                label=raw.get("label", key),
-                description=raw.get("description", ""),
-                search_aliases=raw.get("search_aliases", []),
+                ui_label=ui_label,
+                legacy_keys=legacy_keys,
+                description=description,
+                search_aliases=search_aliases,
                 category=category,
                 system_keys=system_keys,
                 json_path=_json_path_for(system_keys),
                 supported_operators=_operators_for_type(condition_registry, value_type),
-                availability=raw.get("availability"),
-                value_format=raw.get("value_format"),
-                ui_pinned=raw.get("ui_pinned"),
-                ui_hidden=bool(raw.get("ui_hidden", False)),
+                availability=availability,
+                value_format=value_format,
+                ui_pinned=ui_pinned,
+                ui_hidden=bool(raw_dict.get("ui_hidden", False)),
             )
 
     return registry
@@ -263,32 +322,38 @@ SYSTEM_PROPERTY_REGISTRY = load_system_property_registry(CONDITION_REGISTRY)
 
 def get_property_key_mapping(property_key: str) -> SystemPropertyAttribute | None:
     """propertyKey로 매핑 정보 조회"""
+
     return SYSTEM_PROPERTY_REGISTRY.get(property_key)
 
 
 def get_all_property_keys() -> list[str]:
     """모든 지원 propertyKey 목록 반환"""
+
     return list(SYSTEM_PROPERTY_REGISTRY.keys())
 
 
 def get_visible_property_keys() -> list[str]:
     """UI에 노출 가능한 propertyKey 목록 반환"""
+
     return [k for k, v in SYSTEM_PROPERTY_REGISTRY.items() if not v.ui_hidden]
 
 
 def get_attributes_by_category(category: str) -> dict[str, SystemPropertyAttribute]:
     """카테고리별 속성 필터링"""
+
     return {k: v for k, v in SYSTEM_PROPERTY_REGISTRY.items() if v.category == category}
 
 
 def get_indexed_attributes() -> dict[str, SystemPropertyAttribute]:
     """전용 DB 컬럼이 있는 속성들만 반환"""
-    return {k: v for k, v in SYSTEM_PROPERTY_REGISTRY.items() if v.db_field is not None}
+
+    return {k: v for k, v in SYSTEM_PROPERTY_REGISTRY.items() if v.db_indexed}
 
 
 def get_json_attributes() -> dict[str, SystemPropertyAttribute]:
     """JSON 쿼리가 필요한 속성들만 반환"""
-    return {k: v for k, v in SYSTEM_PROPERTY_REGISTRY.items() if v.db_field is None}
+
+    return {k: v for k, v in SYSTEM_PROPERTY_REGISTRY.items() if not v.db_indexed}
 
 
 __all__ = [
@@ -296,6 +361,7 @@ __all__ = [
     "SYSTEM_PROPERTY_REGISTRY",
     "ConditionOperator",
     "ConditionRegistry",
+    "ConditionTypeDefaults",
     "SystemPropertyAttribute",
     "SystemPropertyType",
     "get_all_property_keys",

@@ -13,6 +13,43 @@ from core.metadata.registry_loader import (
     SystemPropertyType,
 )
 
+# sql_kind 처리 규칙 모음
+SQL_KIND_DEFAULT_OPERATORS: dict[str, str] = {
+    "comparison": "=",
+    "range": "BETWEEN",
+    "like_prefix": "LIKE",
+    "like_suffix": "LIKE",
+    "like_pattern": "LIKE",
+}
+
+SQL_KIND_VALUE_SHAPES: dict[str, set[str]] = {
+    "comparison": {"single"},
+    "like_prefix": {"single"},
+    "like_suffix": {"single"},
+    "like_pattern": {"single"},
+    "range": {"range"},
+    "exists": {"none"},
+    "empty": {"none"},
+    "string_list_any": {"list"},
+    "string_list_all": {"list"},
+    "string_list_not_any": {"list"},
+    "string_list_not_all": {"list"},
+}
+
+SQL_KIND_HANDLERS: dict[str, str] = {
+    "exists": "_build_exists_clause",
+    "empty": "_build_empty_clause",
+    "range": "_build_range_clause",
+    "like_prefix": "_build_like_prefix_clause",
+    "like_suffix": "_build_like_suffix_clause",
+    "like_pattern": "_build_like_pattern_clause",
+    "comparison": "_build_comparison_clause",
+    "string_list_any": "_build_string_list_any_clause",
+    "string_list_not_any": "_build_string_list_not_any_clause",
+    "string_list_all": "_build_string_list_all_clause",
+    "string_list_not_all": "_build_string_list_not_all_clause",
+}
+
 
 class ConditionBuilderError(Exception):
     """조건 빌더 에러"""
@@ -53,7 +90,7 @@ class ConditionBuilder:
 
         Args:
             property_key: 속성 키 (예: "size", "extension")
-            operator: 연산자 (예: "eq", "gt", "contains")
+            operator: 연산자 (예: "eq", "gt", "cn")
             value: 값
 
         Returns:
@@ -89,7 +126,7 @@ class ConditionBuilder:
         self._validate_operator_meta(operator_meta, operator, property_key)
         self._validate_value(operator_meta.value_count, operator, value, property_key)
 
-        if mapping.db_field:
+        if mapping.db_indexed:
             return self._build_db_clause(binder, mapping, operator_meta, value)
         return self._build_json_clause(binder, mapping, operator_meta, value)
 
@@ -101,9 +138,7 @@ class ConditionBuilder:
         value: Any,
     ) -> str:
         """DB 컬럼 조건 생성"""
-        field = mapping.db_field
-        if not field:
-            raise ConditionBuilderError(f"Missing db_field for '{mapping.key}'")
+        field = mapping.key
         # DATE 타입이면 DATE() 함수로 날짜만 비교
         if mapping.type == SystemPropertyType.DATE:
             field = f"DATE({field})"
@@ -128,11 +163,10 @@ class ConditionBuilder:
         if not property_types or not property_types.sql_cast:
             raise ConditionBuilderError(f"Missing sql_cast for type '{mapping.type.value}'.")
         cast_type = property_types.sql_cast
-        if not mapping.json_path:
+        json_path = self._json_path_for_system_keys(mapping.system_keys)
+        if not json_path:
             raise ConditionBuilderError(f"Missing JSON path for '{mapping.key}'")
-        if mapping.type == SystemPropertyType.STRING_LIST:
-            return self._build_string_list_clause(binder, mapping, operator_meta, value)
-        field = f"CAST(json_extract(original_metadata, '{mapping.json_path}') AS {cast_type})"
+        field = f"CAST(json_extract(original_metadata, '{json_path}') AS {cast_type})"
         if mapping.type == SystemPropertyType.DATE:
             field = f"DATE({field})"
         return self._build_kind_clause(
@@ -141,7 +175,7 @@ class ConditionBuilder:
             mapping=mapping,
             operator_meta=operator_meta,
             value=value,
-            json_path=mapping.json_path,
+            json_path=json_path,
         )
 
     def _validate_operator_meta(
@@ -157,20 +191,7 @@ class ConditionBuilder:
         if not value_shape:
             return
 
-        expected_shapes = {
-            "comparison": {"single"},
-            "like_prefix": {"single"},
-            "like_suffix": {"single"},
-            "like_pattern": {"single"},
-            "range": {"range"},
-            "exists": {"none"},
-            "empty": {"none"},
-            "string_list_any": {"list"},
-            "string_list_all": {"list"},
-            "string_list_not_any": {"list"},
-            "string_list_not_all": {"list"},
-        }
-        allowed_shapes = expected_shapes.get(sql_kind)
+        allowed_shapes = SQL_KIND_VALUE_SHAPES.get(sql_kind)
         if allowed_shapes and value_shape not in allowed_shapes:
             raise ConditionBuilderError(
                 f"Operator '{operator}' value_shape mismatch: '{value_shape}' for sql_kind '{sql_kind}'."
@@ -186,112 +207,38 @@ class ConditionBuilder:
         json_path: str | None,
     ) -> str:
         sql_kind = operator_meta.sql_kind
-        sql_operator = operator_meta.sql_operator
+        if not sql_kind:
+            raise ConditionBuilderError(
+                f"Missing sql_kind for operator '{operator_meta.code}' (propertyKey: {mapping.key})."
+            )
+        handler_name = SQL_KIND_HANDLERS.get(sql_kind)
+        if not handler_name:
+            raise ConditionBuilderError(f"Unsupported sql_kind: {sql_kind}")
+        handler = getattr(self, handler_name, None)
+        if not handler:
+            raise ConditionBuilderError(f"Unsupported sql_kind: {sql_kind}")
+        return handler(binder, field, mapping, operator_meta, value, json_path)
 
-        if sql_kind == "exists":
-            if json_path:
-                return self._build_json_presence_clause(binder, json_path)
-            return f"{field} IS NOT NULL"
-
-        if sql_kind == "empty":
-            return self._build_empty_clause(binder, field, mapping, json_path)
-
-        if sql_kind == "range":
-            if not isinstance(value, (list, tuple)):
-                raise ConditionBuilderError(
-                    f"'{operator_meta.code}' operator requires [min, max] array, got: {value}"
-                )
-            range_values = list(cast(Sequence[Any], value))
-            if len(range_values) != 2:
-                raise ConditionBuilderError(
-                    f"'{operator_meta.code}' operator requires [min, max] array, got: {value}"
-                )
-            start = binder.bind(range_values[0])
-            end = binder.bind(range_values[1])
-            return f"{field} {sql_operator or 'BETWEEN'} {start} AND {end}"
-
-        if sql_kind == "like_prefix":
-            placeholder = binder.bind(f"{value}%")
-            return f"{field} {sql_operator or 'LIKE'} {placeholder}"
-
-        if sql_kind == "like_suffix":
-            placeholder = binder.bind(f"%{value}")
-            return f"{field} {sql_operator or 'LIKE'} {placeholder}"
-
-        if sql_kind == "like_pattern":
-            placeholder = binder.bind(value)
-            return f"{field} {sql_operator or 'LIKE'} {placeholder}"
-
-        if sql_kind == "comparison":
-            placeholder = binder.bind(value)
-            return f"{field} {sql_operator or '='} {placeholder}"
-
-        raise ConditionBuilderError(f"Unsupported sql_kind: {sql_kind}")
-
-    def _build_string_list_clause(
+    def _build_exists_clause(
         self,
         binder: _ParamBinder,
+        field: str,
         mapping: SystemPropertyAttribute,
         operator_meta: ConditionOperator,
         value: Any,
+        json_path: str | None,
     ) -> str:
-        sql_kind = operator_meta.sql_kind
-        json_path = mapping.json_path
-        if not json_path:
-            raise ConditionBuilderError(f"Missing JSON path for '{mapping.key}'")
-
-        if sql_kind == "exists":
+        if json_path:
             return self._build_json_presence_clause(binder, json_path)
-
-        if sql_kind == "empty":
-            length_clause = "json_array_length(original_metadata, {})"
-            first = binder.bind(json_path)
-            second = binder.bind(json_path)
-            return f"({length_clause.format(first)} IS NULL OR {length_clause.format(second)} = 0)"
-
-        values: list[Any]
-        if isinstance(value, (list, tuple)):
-            values = list(cast(Sequence[Any], value))
-        else:
-            values = []
-        if not values:
-            raise ConditionBuilderError(
-                f"'{operator_meta.code}' operator requires non-empty array value, got: {value}"
-            )
-
-        unique_values = list(dict.fromkeys(values))
-        placeholders = binder.bind_many(unique_values)
-        json_placeholder = binder.bind(json_path)
-
-        if sql_kind in {"string_list_any", "string_list_not_any"}:
-            clause = (
-                f"EXISTS (SELECT 1 FROM json_each(original_metadata, {json_placeholder}) "
-                f"WHERE value IN ({placeholders}))"
-            )
-            if sql_kind == "string_list_not_any":
-                clause = f"NOT {clause}"
-            return clause
-
-        if sql_kind in {"string_list_all", "string_list_not_all"}:
-            count_placeholder = binder.bind(len(unique_values))
-            clause = (
-                "(\n"
-                "  SELECT COUNT(DISTINCT value)\n"
-                f"  FROM json_each(original_metadata, {json_placeholder})\n"
-                f"  WHERE value IN ({placeholders})\n"
-                f") = {count_placeholder}"
-            )
-            if sql_kind == "string_list_not_all":
-                clause = f"NOT ({clause})"
-            return clause
-
-        raise ConditionBuilderError(f"Unsupported string_list sql_kind: {sql_kind}")
+        return f"{field} IS NOT NULL"
 
     def _build_empty_clause(
         self,
         binder: _ParamBinder,
         field: str,
         mapping: SystemPropertyAttribute,
+        operator_meta: ConditionOperator,
+        value: Any,
         json_path: str | None,
     ) -> str:
         if mapping.type == SystemPropertyType.STRING_LIST and json_path:
@@ -300,6 +247,249 @@ class ConditionBuilder:
             second = binder.bind(json_path)
             return f"({length_clause.format(first)} IS NULL OR {length_clause.format(second)} = 0)"
         return f"({field} IS NULL OR {field} = '')"
+
+    def _build_range_clause(
+        self,
+        binder: _ParamBinder,
+        field: str,
+        mapping: SystemPropertyAttribute,
+        operator_meta: ConditionOperator,
+        value: Any,
+        json_path: str | None,
+    ) -> str:
+        if not isinstance(value, (list, tuple)):
+            raise ConditionBuilderError(
+                f"'{operator_meta.code}' operator requires [min, max] array, got: {value}"
+            )
+        range_values = list(cast(Sequence[Any], value))
+        if len(range_values) != 2:
+            raise ConditionBuilderError(
+                f"'{operator_meta.code}' operator requires [min, max] array, got: {value}"
+            )
+        start = binder.bind(range_values[0])
+        end = binder.bind(range_values[1])
+        sql_operator = self._resolve_sql_operator(operator_meta)
+        return f"{field} {sql_operator} {start} AND {end}"
+
+    def _build_like_prefix_clause(
+        self,
+        binder: _ParamBinder,
+        field: str,
+        mapping: SystemPropertyAttribute,
+        operator_meta: ConditionOperator,
+        value: Any,
+        json_path: str | None,
+    ) -> str:
+        placeholder = binder.bind(f"{value}%")
+        sql_operator = self._resolve_sql_operator(operator_meta)
+        return f"{field} {sql_operator} {placeholder}"
+
+    def _build_like_suffix_clause(
+        self,
+        binder: _ParamBinder,
+        field: str,
+        mapping: SystemPropertyAttribute,
+        operator_meta: ConditionOperator,
+        value: Any,
+        json_path: str | None,
+    ) -> str:
+        placeholder = binder.bind(f"%{value}")
+        sql_operator = self._resolve_sql_operator(operator_meta)
+        return f"{field} {sql_operator} {placeholder}"
+
+    def _build_like_pattern_clause(
+        self,
+        binder: _ParamBinder,
+        field: str,
+        mapping: SystemPropertyAttribute,
+        operator_meta: ConditionOperator,
+        value: Any,
+        json_path: str | None,
+    ) -> str:
+        normalized = self._normalize_like_pattern_value(operator_meta, value)
+        placeholder = binder.bind(normalized)
+        sql_operator = self._resolve_sql_operator(operator_meta)
+        return f"{field} {sql_operator} {placeholder}"
+
+    def _build_comparison_clause(
+        self,
+        binder: _ParamBinder,
+        field: str,
+        mapping: SystemPropertyAttribute,
+        operator_meta: ConditionOperator,
+        value: Any,
+        json_path: str | None,
+    ) -> str:
+        placeholder = binder.bind(value)
+        sql_operator = self._resolve_sql_operator(operator_meta)
+        return f"{field} {sql_operator} {placeholder}"
+
+    def _build_string_list_any_clause(
+        self,
+        binder: _ParamBinder,
+        field: str,
+        mapping: SystemPropertyAttribute,
+        operator_meta: ConditionOperator,
+        value: Any,
+        json_path: str | None,
+    ) -> str:
+        values = self._normalize_string_list_values(operator_meta, value)
+        # db_indexed 컬럼인 경우 JSON array membership가 아니라 IN(...)로 처리합니다.
+        if not json_path:
+            if len(values) == 1:
+                placeholder = binder.bind(values[0])
+                return f"{field} = {placeholder}"
+            placeholders = binder.bind_many(values)
+            return f"{field} IN ({placeholders})"
+
+        placeholders = binder.bind_many(values)
+        json_placeholder = binder.bind(json_path)
+        return (
+            f"EXISTS (SELECT 1 FROM json_each(original_metadata, {json_placeholder}) "
+            f"WHERE value IN ({placeholders}))"
+        )
+
+    def _build_string_list_not_any_clause(
+        self,
+        binder: _ParamBinder,
+        field: str,
+        mapping: SystemPropertyAttribute,
+        operator_meta: ConditionOperator,
+        value: Any,
+        json_path: str | None,
+    ) -> str:
+        values = self._normalize_string_list_values(operator_meta, value)
+        if not json_path:
+            if len(values) == 1:
+                placeholder = binder.bind(values[0])
+                return f"{field} != {placeholder}"
+            placeholders = binder.bind_many(values)
+            return f"{field} NOT IN ({placeholders})"
+
+        clause = self._build_string_list_any_clause(
+            binder=binder,
+            field=field,
+            mapping=mapping,
+            operator_meta=operator_meta,
+            value=value,
+            json_path=json_path,
+        )
+        return f"NOT {clause}"
+
+    def _build_string_list_all_clause(
+        self,
+        binder: _ParamBinder,
+        field: str,
+        mapping: SystemPropertyAttribute,
+        operator_meta: ConditionOperator,
+        value: Any,
+        json_path: str | None,
+    ) -> str:
+        values = self._normalize_string_list_values(operator_meta, value)
+        if not json_path:
+            # 스칼라 컬럼에서 "all"은 값이 모두 동일할 때만 만족 가능
+            if len(values) == 1:
+                placeholder = binder.bind(values[0])
+                return f"{field} = {placeholder}"
+            return "1=0"
+
+        placeholders = binder.bind_many(values)
+        json_placeholder = binder.bind(json_path)
+        count_placeholder = binder.bind(len(values))
+        return (
+            "(\n"
+            "  SELECT COUNT(DISTINCT value)\n"
+            f"  FROM json_each(original_metadata, {json_placeholder})\n"
+            f"  WHERE value IN ({placeholders})\n"
+            f") = {count_placeholder}"
+        )
+
+    def _build_string_list_not_all_clause(
+        self,
+        binder: _ParamBinder,
+        field: str,
+        mapping: SystemPropertyAttribute,
+        operator_meta: ConditionOperator,
+        value: Any,
+        json_path: str | None,
+    ) -> str:
+        values = self._normalize_string_list_values(operator_meta, value)
+        if not json_path:
+            if len(values) == 1:
+                placeholder = binder.bind(values[0])
+                return f"{field} != {placeholder}"
+            return "1=1"
+
+        clause = self._build_string_list_all_clause(
+            binder=binder,
+            field=field,
+            mapping=mapping,
+            operator_meta=operator_meta,
+            value=value,
+            json_path=json_path,
+        )
+        return f"NOT ({clause})"
+
+    def _json_path_for_system_keys(self, system_keys: list[str]) -> str | None:
+        if not system_keys:
+            return None
+        preferred: str | None = None
+        for system_key in system_keys:
+            if system_key.startswith("mditem:"):
+                preferred = system_key
+                break
+        if not preferred:
+            for system_key in system_keys:
+                if not system_key.startswith("nsurl:"):
+                    preferred = system_key
+                    break
+        if not preferred:
+            preferred = system_keys[0]
+        return f"$.{preferred.split(':', 1)[1]}" if ":" in preferred else f"$.{preferred}"
+
+    def _require_json_path(self, mapping: SystemPropertyAttribute) -> str:
+        json_path = self._json_path_for_system_keys(mapping.system_keys)
+        if not json_path:
+            raise ConditionBuilderError(f"Missing JSON path for '{mapping.key}'")
+        return json_path
+
+    def _normalize_string_list_values(
+        self,
+        operator_meta: ConditionOperator,
+        value: Any,
+    ) -> list[Any]:
+        values: list[Any]
+        if isinstance(value, (list, tuple)):
+            values = list(cast(Sequence[Any], value))
+        elif value is None:
+            values = []
+        else:
+            values = [value]
+
+        if not values:
+            raise ConditionBuilderError(
+                f"'{operator_meta.code}' operator requires non-empty value, got: {value}"
+            )
+        return list(dict.fromkeys(values))
+
+    def _normalize_like_pattern_value(
+        self,
+        operator_meta: ConditionOperator,
+        value: Any,
+    ) -> Any:
+        if not isinstance(value, str):
+            return value
+        if operator_meta.code in {"cn", "nc"} and "%" not in value:
+            return f"%{value}%"
+        return value
+
+    def _resolve_sql_operator(self, operator_meta: ConditionOperator) -> str:
+        sql_kind = operator_meta.sql_kind
+        if operator_meta.sql_operator:
+            return operator_meta.sql_operator
+        if not sql_kind:
+            return ""
+        return SQL_KIND_DEFAULT_OPERATORS.get(sql_kind, "")
 
     def _build_json_presence_clause(self, binder: _ParamBinder, json_path: str) -> str:
         placeholder = binder.bind(json_path)
@@ -315,15 +505,16 @@ class ConditionBuilder:
                 )
             return
         if value_count == "n":
-            if not isinstance(value, (list, tuple)):
+            if value is None:
                 raise ConditionBuilderError(
-                    f"Operator '{operator}' requires non-empty array for '{property_key}'."
+                    f"Operator '{operator}' requires non-empty value for '{property_key}'."
                 )
-            values = list(cast(Sequence[Any], value))
-            if len(values) == 0:
-                raise ConditionBuilderError(
-                    f"Operator '{operator}' requires non-empty array for '{property_key}'."
-                )
+            if isinstance(value, (list, tuple)):
+                values = list(cast(Sequence[Any], value))
+                if len(values) == 0:
+                    raise ConditionBuilderError(
+                        f"Operator '{operator}' requires non-empty array for '{property_key}'."
+                    )
             return
         if value_count == 2:
             if not isinstance(value, (list, tuple)):
