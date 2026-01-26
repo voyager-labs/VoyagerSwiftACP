@@ -8,6 +8,6 @@ from core.search import ConditionBuilder
 
 builder = ConditionBuilder()
 # contact_keywords is a string_list
-clause, params = builder.build_clause("contact_keywords", "contains_all", ["alpha", "alpha"])
+clause, params = builder.build_clause("contact_keywords", "all", ["alpha", "alpha"])
 print(f"Clause: {clause}")
 print(f"Params: {params}")
