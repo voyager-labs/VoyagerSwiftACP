@@ -1,12 +1,7 @@
 """Search 서비스 레이어"""
 
-import asyncio
 import logging
-import time
-from typing import Any, cast
-
-from sqlalchemy import text
-from sqlmodel import select
+from typing import cast
 
 from app.config import load_config
 from app.search.schemas import (
@@ -19,8 +14,8 @@ from app.search.schemas import (
 )
 from core.llm.langchain_provider import LangChainProvider
 from core.llm.search_condition_converter import CachedSearchConditionConverter
-from core.search.condition_builder import ConditionBuilder, ConditionBuilderError
-from core.search.scope_builder import ScopeBuilder
+from core.search import ConditionBuilder, ScopeBuilder, execute_search
+from core.search.condition_builder import ConditionBuilderError
 from infra.db.engine import engine_manager
 from infra.schemas.entry_schema import EntrySchema
 
@@ -70,9 +65,8 @@ class SearchService:
                 existing_scopes = filters.scopes
 
         # 2. query + 기존 조건/스코프 → 최적 결과 생성
-        llm_start = time.perf_counter()
         llm_result = await self.converter.convert(query, existing_conditions, existing_scopes)
-        llm_error = llm_result.get("error")
+        llm_error = llm_result.error
 
         # 3. 결과 조건 생성
         if llm_error:
@@ -89,24 +83,48 @@ class SearchService:
                 error=SearchError(code="LLM_CONVERSION_FAILED", details=llm_error),
             )
 
-        applied_conditions = [SearchCondition(**c) for c in llm_result["conditions"]]
+        applied_conditions = [SearchCondition(**c.model_dump()) for c in llm_result.conditions]
 
         # 4. Scopes 설정: LLM이 새 스코프를 반환하면 사용, 아니면 기존 스코프 유지
         applied_scopes = (
-            llm_result["scopes"] if llm_result["scopes"] is not None else (existing_scopes or [])
+            llm_result.scopes if llm_result.scopes is not None else (existing_scopes or [])
         )
 
         # 5. SQL 생성 및 실행
-        items, error = await self._execute_search(
-            scopes=applied_scopes,
-            conditions=[c.model_dump() for c in applied_conditions],
-        )
-        _tag_search_result(
-            items,
-            error,
-            conditions_count=len(applied_conditions),
-            scopes_count=len(applied_scopes),
-        )
+        condition_dicts = [c.model_dump() for c in applied_conditions]
+        try:
+            entries = await execute_search(
+                model=EntrySchema,
+                session_context=lambda: engine_manager.session(autocommit=False),
+                scopes=applied_scopes,
+                conditions=condition_dicts,
+                scope_builder=self.scope_builder,
+                condition_builder=self.condition_builder,
+            )
+            items = [
+                SearchItem(
+                    id=cast(int, entry.id),
+                    path=entry.path,
+                    name=entry.name_full,
+                    size=entry.size,
+                    extension=entry.extension,
+                    fileKind=entry.file_kind,
+                    modificationDate=str(entry.modification_date)
+                    if entry.modification_date
+                    else None,
+                )
+                for entry in entries
+            ]
+            error: SearchError | None = None
+        except ConditionBuilderError as e:
+            logger.error("[SearchService] Condition error: %s", e)
+            items = []
+            error = SearchError(code="CONDITION_BUILD_FAILED", details=str(e))
+        except Exception as e:
+            logger.exception("[SearchService] Search error: %s", e)
+            items = []
+            error = SearchError(code="SEARCH_EXECUTION_FAILED", details=str(e))
+
         return SearchResponse(
             itemCount=len(items),
             appliedFilters=AppliedFilters(
@@ -130,17 +148,40 @@ class SearchService:
             SearchResponse
         """
         # 직접 필터 적용
-        start = time.perf_counter()
-        items, error = await self._execute_search(
-            scopes=filters.scopes,
-            conditions=[c.model_dump() for c in filters.conditions],
-        )
-        _tag_search_result(
-            items,
-            error,
-            conditions_count=len(filters.conditions),
-            scopes_count=len(filters.scopes),
-        )
+        condition_dicts = [c.model_dump() for c in filters.conditions]
+        try:
+            entries = await execute_search(
+                model=EntrySchema,
+                session_context=lambda: engine_manager.session(autocommit=False),
+                scopes=filters.scopes,
+                conditions=condition_dicts,
+                scope_builder=self.scope_builder,
+                condition_builder=self.condition_builder,
+            )
+            items = [
+                SearchItem(
+                    id=cast(int, entry.id),
+                    path=entry.path,
+                    name=entry.name_full,
+                    size=entry.size,
+                    extension=entry.extension,
+                    fileKind=entry.file_kind,
+                    modificationDate=str(entry.modification_date)
+                    if entry.modification_date
+                    else None,
+                )
+                for entry in entries
+            ]
+            error: SearchError | None = None
+        except ConditionBuilderError as e:
+            logger.error("[SearchService] Condition error: %s", e)
+            items = []
+            error = SearchError(code="CONDITION_BUILD_FAILED", details=str(e))
+        except Exception as e:
+            logger.exception("[SearchService] Search error: %s", e)
+            items = []
+            error = SearchError(code="SEARCH_EXECUTION_FAILED", details=str(e))
+
         return SearchResponse(
             itemCount=len(items),
             appliedFilters=AppliedFilters(
@@ -150,58 +191,6 @@ class SearchService:
             items=items,
             error=error,
         )
-
-    async def _execute_search(
-        self,
-        scopes: list[str],
-        conditions: list[dict[str, Any]],
-    ) -> tuple[list[SearchItem], SearchError | None]:
-        """SQL 실행 및 결과 반환"""
-        try:
-            # Scope 조건 생성
-            scope_clause, scope_params = self.scope_builder.build_scope_clause(scopes)
-
-            # Condition 조건 생성
-            condition_clause, condition_params = self.condition_builder.build_where(conditions)
-
-            # WHERE절 결합
-            where_clause = f"{scope_clause} AND {condition_clause}"
-            all_params: dict[str, Any] = {**scope_params, **condition_params}
-
-            def _run_query() -> list[EntrySchema]:
-                where_text = text(where_clause).bindparams(**all_params)
-                statement = select(EntrySchema).where(where_text)
-                with engine_manager.session(autocommit=False) as session:
-                    result = session.exec(statement)
-                    return list(result.all())
-
-            sql_start = time.perf_counter()
-            entries: list[EntrySchema] = await asyncio.to_thread(_run_query)
-            items: list[SearchItem] = []
-            for entry in entries:
-                entry_id = cast(int, entry.id)
-                items.append(
-                    SearchItem(
-                        id=entry_id,
-                        path=entry.path,
-                        name=entry.name_full,
-                        size=entry.size,
-                        extension=entry.extension,
-                        fileKind=entry.file_kind,
-                        modificationDate=str(entry.modification_date)
-                        if entry.modification_date
-                        else None,
-                    )
-                )
-
-            return items, None
-
-        except ConditionBuilderError as e:
-            logger.error("[SearchService] Condition error: %s", e)
-            return [], SearchError(code="CONDITION_BUILD_FAILED", details=str(e))
-        except Exception as e:
-            logger.exception("[SearchService] Search error: %s", e)
-            return [], SearchError(code="SEARCH_EXECUTION_FAILED", details=str(e))
 
 
 # 싱글톤 인스턴스
@@ -217,25 +206,3 @@ def get_search_service() -> SearchService:
 
 
 logger = logging.getLogger("uvicorn.error")
-
-
-def _tag_search_result(
-    items: list[SearchItem],
-    error: SearchError | None,
-    conditions_count: int,
-    scopes_count: int,
-) -> None:
-    if error:
-        return
-
-
-def _bucket_for_count(value: int) -> str:
-    if value <= 0:
-        return "0"
-    if value <= 1:
-        return "1"
-    if value <= 10:
-        return "2-10"
-    if value <= 50:
-        return "11-50"
-    return "51+"
