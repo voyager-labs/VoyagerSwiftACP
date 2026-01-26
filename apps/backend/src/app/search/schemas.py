@@ -15,11 +15,11 @@ class SearchCondition(BaseModel):
     operator: str = Field(
         ...,
         description=(
-            "연산자 (eq, neq, gt, gte, lt, lte, between, not_between, empty, exists, "
-            "starts_with, ends_with, matches, contains_any, contains_all, "
-            "not_contains_any, not_contains_all)"
+            "연산자 (eq, neq, gt, gte, lt, lte, btw, nbtw, sw, ew, rx, cn, nc, "
+            "any, all, none, miss, empty, exists)"
         ),
     )
+    # NOTE: rx는 아직 지원하지 않음
     value: str | int | float | list[str] | list[int] | list[float] | None = Field(
         None, description="값 (단일값, 배열, [min, max]) - empty/exists는 생략 가능"
     )

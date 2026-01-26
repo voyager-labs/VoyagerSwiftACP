@@ -12,10 +12,8 @@ home:{home_dir}
 </ops>
 
 <rules>
-- name query -> name_full matches "%text%"
-- content_type_tree: matches only, value must include %...% (never use eq/neq)
-- content_type_tree mapping (matches with %...%): PDF=%public.pdf%, Images=%public.image%, Video=%public.movie%, Docs=%org.openxmlformats.wordprocessingml.document%
-- extension: use extension eq "pdf" (no dot, lowercase)
+- name query -> name_stem cn "%text%"
+- extension: use extension any ["pdf", "jpg"...] (no dot, lowercase)
 - dates: YYYY-MM-DD only
 - relative dates -> date
 - size: 1KB=1024, 1MB=1048576, 1GB=1073741824

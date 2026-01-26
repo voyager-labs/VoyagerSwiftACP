@@ -99,15 +99,11 @@ class SearchConditionConverter:
 
     def _build_system_prompt(self) -> str:
         """LLM 시스템 프롬프트 생성"""
-        property_info = self._build_property_info()
         template = _read_prompt_template(self.prompt_template_file)
         return template.format(
             home_dir=self.home_dir,
-            property_info=property_info,
+            property_info="keys from user prompt",
         )
-
-    def _build_property_info(self) -> str:
-        return "keys from user prompt"
 
     def _extract_candidate_keys(
         self,
@@ -289,7 +285,7 @@ class SearchConditionConverter:
         value = condition.get("value")
         if operator == "eq" and value is None:
             return None
-        if operator == "matches" and isinstance(value, str):
+        if operator == "rx" and isinstance(value, str):
             condition["value"] = self._normalize_matches_value(value)
         return condition
 

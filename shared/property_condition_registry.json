@@ -3,7 +3,7 @@
   "$version": "2.0.2",
   "property_types": {
     "string": {
-      "operators": ["any", "all", "sw", "ew", "eq", "neq"],
+      "operators": ["cn", "nc", "sw", "ew", "eq", "neq"],
       "sql_cast": "TEXT"
     },
     "number": {
@@ -203,6 +203,30 @@
       "value_count": 1,
       "allowed_types": ["string"],
       "aliases": ["matches", "regex"],
+      "ui_value_kind": {
+        "string": "singleText"
+      }
+    },
+    "cn": {
+      "ui_label": "Contains",
+      "sql_operator": "LIKE",
+      "sql_kind": "like_pattern",
+      "value_shape": "single",
+      "value_count": 1,
+      "allowed_types": ["string"],
+      "aliases": ["contains", "in", "is in", "is any of"],
+      "ui_value_kind": {
+        "string": "singleText"
+      }
+    },
+    "nc": {
+      "ui_label": "Does not contain",
+      "sql_operator": "NOT LIKE",
+      "sql_kind": "like_pattern",
+      "value_shape": "single",
+      "value_count": 1,
+      "allowed_types": ["string"],
+      "aliases": ["not contains", "not in", "is not in", "is not any of"],
       "ui_value_kind": {
         "string": "singleText"
       }
