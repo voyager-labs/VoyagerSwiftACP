@@ -18,7 +18,6 @@ from pydantic import BaseModel, Field
 
 from core.metadata.registry_loader import (
     SYSTEM_PROPERTY_REGISTRY,
-    get_visible_property_keys,
     load_condition_registry,
 )
 
@@ -66,6 +65,22 @@ class SearchConditionsOutput(BaseModel):
     conditions: list[SearchCondition] = Field(default_factory=list, description="검색 조건 배열")
     scopes: list[str] | None = Field(None, description="쿼리에서 추출한 폴더 경로 (언급된 경우만)")
     error: str | None = Field(None, description="에러 메시지")
+
+
+class SearchConditionPayload(BaseModel):
+    """검색 조건 페이로드"""
+
+    propertyKey: str
+    operator: str
+    value: str | int | float | list[str] | list[int] | list[float] | None
+
+
+class SearchConversionResult(BaseModel):
+    """변환 결과"""
+
+    conditions: list[SearchConditionPayload]
+    scopes: list[str] | None
+    error: str | None
 
 
 class SearchConditionConverter:
@@ -149,6 +164,7 @@ class SearchConditionConverter:
             grouped.setdefault(mapping.type.value, []).append(key)
         return grouped
 
+    # 안쓰이는 중
     def _build_keys_payload(
         self,
         query: str,
@@ -230,7 +246,7 @@ class SearchConditionConverter:
         query: str,
         existing_conditions: list[dict[str, Any]] | None = None,
         existing_scopes: list[str] | None = None,
-    ) -> dict[str, Any]:
+    ) -> SearchConversionResult:
         """자연어 → 조건 배열 + 스코프 변환
 
         Args:
@@ -260,25 +276,25 @@ class SearchConditionConverter:
 
             if result.error:
                 logger.error("[SearchConditionConverter] %s", result.error)
-                return {"conditions": [], "scopes": None, "error": result.error}
+                return SearchConversionResult(conditions=[], scopes=None, error=result.error)
 
             normalized_conditions = [
                 self._normalize_condition(c.model_dump()) for c in result.conditions
             ]
             filtered_conditions = [
-                c
+                SearchConditionPayload(**c)
                 for c in normalized_conditions
                 if c is not None and self._is_visible_key(str(c.get("propertyKey", "")))
             ]
-            return {
-                "conditions": filtered_conditions,
-                "scopes": result.scopes,
-                "error": None,
-            }
+            return SearchConversionResult(
+                conditions=filtered_conditions,
+                scopes=result.scopes,
+                error=None,
+            )
 
         except Exception as e:
             logger.exception("[SearchConditionConverter] 변환 실패: %s", e)
-            return {"conditions": [], "scopes": None, "error": str(e)}
+            return SearchConversionResult(conditions=[], scopes=None, error=str(e))
 
     def _normalize_condition(self, condition: dict[str, Any]) -> dict[str, Any] | None:
         operator = condition.get("operator")
@@ -317,21 +333,6 @@ class SearchConditionConverter:
             return value.replace(".*", "%")
         return value
 
-    async def convert_with_metadata(self, query: str) -> dict[str, Any]:
-        """변환 + 메타데이터 반환"""
-        result = await self.convert(query)
-
-        return {
-            "method": "llm_structured",
-            "description": "LLM 기반 구조화된 조건 생성",
-            "query": query,
-            "conditions": result["conditions"],
-            "scopes": result["scopes"],
-            "success": not result.get("error") and len(result["conditions"]) > 0,
-            "supported_properties": get_visible_property_keys(),
-            "error": result.get("error"),
-        }
-
 
 class CachedSearchConditionConverter(SearchConditionConverter):
     """캐싱 기능이 있는 SearchConditionConverter"""
@@ -342,7 +343,7 @@ class CachedSearchConditionConverter(SearchConditionConverter):
         cache_size: int = 100,
     ):
         super().__init__(llm_provider)
-        self._cache: dict[str, dict[str, Any]] = {}
+        self._condition_cache = {}
         self._cache_size = cache_size
 
     async def convert(
@@ -350,7 +351,7 @@ class CachedSearchConditionConverter(SearchConditionConverter):
         query: str,
         existing_conditions: list[dict[str, Any]] | None = None,
         existing_scopes: list[str] | None = None,
-    ) -> dict[str, Any]:
+    ) -> SearchConversionResult:
         """캐시된 변환 결과 반환
 
         Note: existing_conditions나 existing_scopes가 있으면 캐시를 사용하지 않음
@@ -360,21 +361,21 @@ class CachedSearchConditionConverter(SearchConditionConverter):
             return await super().convert(query, existing_conditions, existing_scopes)
 
         # 캐시 히트
-        if query in self._cache:
-            return self._cache[query]
+        if query in self._condition_cache:
+            return SearchConversionResult.model_validate(self._condition_cache[query])
 
         # 변환 실행
         result = await super().convert(query)
 
         # 캐시 저장 (크기 제한)
-        if len(self._cache) >= self._cache_size:
+        if len(self._condition_cache) >= self._cache_size:
             # 가장 오래된 항목 제거 (간단한 FIFO)
-            oldest_key = next(iter(self._cache))
-            del self._cache[oldest_key]
+            oldest_key = next(iter(self._condition_cache))
+            del self._condition_cache[oldest_key]
 
-        self._cache[query] = result
+        self._condition_cache[query] = result
         return result
 
     def clear_cache(self) -> None:
         """캐시 초기화"""
-        self._cache.clear()
+        self._condition_cache.clear()
