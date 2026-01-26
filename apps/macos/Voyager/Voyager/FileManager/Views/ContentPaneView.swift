@@ -46,7 +46,7 @@ struct ContentPaneView: View {
                 } else {
                     switch store.viewLayout {
                     case .list:
-                        ContentPaneListView(store: store)
+                        ContentPaneListTableView(store: store)
                     case .grid:
                         ContentPaneGridView(store: store)
                     }
@@ -58,17 +58,21 @@ struct ContentPaneView: View {
                 breadcrumbStatusBar
             }
 
-            KeyCommandView { event in
-                handleKeyboardEvent(event)
+            if store.viewLayout == .grid {
+                KeyCommandView { event in
+                    handleKeyboardEvent(event)
+                }
+                .focusable()
+                .focused($isKeyCommandFocused)
+                .allowsHitTesting(false)
             }
-            .focusable()
-            .focused($isKeyCommandFocused)
-            .allowsHitTesting(false)
         }
         .onChange(of: store.entries.selectedIds) { _ in
+            guard store.viewLayout == .grid else { return }
             restoreKeyCommandFocus()
         }
         .onChange(of: store.entries.isRenaming) { isRenaming in
+            guard store.viewLayout == .grid else { return }
             if !isRenaming {
                 DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
                     restoreKeyCommandFocus()
@@ -76,6 +80,7 @@ struct ContentPaneView: View {
             }
         }
         .onAppear {
+            guard store.viewLayout == .grid else { return }
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) {
                 restoreKeyCommandFocus()
             }
@@ -84,6 +89,7 @@ struct ContentPaneView: View {
             Color.clear
                 .contentShape(Rectangle())
                 .onTapGesture {
+                    guard store.viewLayout == .grid else { return }
                     restoreKeyCommandFocus()
                 },
         )

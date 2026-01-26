@@ -207,6 +207,7 @@ struct EntriesFeature {
         case toggleGroup(String)
         case setCollectionMode(Bool)
         case setDropTargeted(Bool)
+        case setSelectedIds(ids: Set<String>, lastSelectedId: String?)
         case selectItem(id: String, isCommandPressed: Bool, isShiftPressed: Bool)
         case selectAll
         case clearSelection
@@ -676,6 +677,42 @@ struct EntriesFeature {
                 state.clearSelection()
                 state.operations.commonApplicationsForSelectedFiles = []
                 return generateThumbnailsEffect(for: sorted)
+
+            case let .setSelectedIds(ids, lastSelectedId):
+                var renameEffect: Effect<Action> = .none
+                let displayItems = state.displayItems
+
+                if state.isRenaming {
+                    renameEffect = .send(.commitRename)
+                }
+
+                let validIds = Set(displayItems.map(\.id))
+                let normalizedIds = ids.intersection(validIds)
+
+                state.shouldScrollToSelection = false
+                state.selectedIds = normalizedIds
+
+                let normalizedLastId: String? = if let lastSelectedId, normalizedIds.contains(lastSelectedId) {
+                    lastSelectedId
+                } else {
+                    normalizedIds.first
+                }
+
+                state.lastSelectedId = normalizedLastId
+                state.rangeAnchorId = normalizedLastId
+
+                if normalizedIds.isEmpty {
+                    state.operations.commonApplicationsForSelectedFiles = []
+                }
+
+                return .merge(
+                    renameEffect,
+                    preloadApplicationsEffect(
+                        selectedIds: state.selectedIds,
+                        items: displayItems,
+                        currentItemId: normalizedLastId,
+                    ),
+                )
 
             case let .selectItem(id, isCommandPressed, isShiftPressed):
                 var renameEffect: Effect<Action> = .none
