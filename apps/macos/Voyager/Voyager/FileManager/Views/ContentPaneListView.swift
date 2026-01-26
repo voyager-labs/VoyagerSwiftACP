@@ -112,7 +112,7 @@ struct ContentPaneListView: View {
         isTrashFolder: Bool,
         context: ItemRenderContext,
     ) -> ItemRowProps {
-        let handlers = makeContextMenuHandlers(
+        let handlers = makeContextMenuHandlers(context: EntryContextMenuContext(
             item: item,
             fsStore: fsStore,
             saveScrollPosition: saveScrollPosition,
@@ -124,7 +124,7 @@ struct ContentPaneListView: View {
                     _ = await fileManagerWindowClient.openWindow(path)
                 }
             },
-        )
+        ))
 
         let width = contentWidth > 0 ? contentWidth : geometry.size.width
 

@@ -1684,7 +1684,7 @@ struct EntriesFeature {
 
     private struct EntryActionOperation {
         let operationPath: String
-        let operationKind: OperationKind
+        let operationKind: EntriesOperationsFeature.OperationKind
         let perform: @Sendable () async throws -> EntryActionRecord.Target
     }
 

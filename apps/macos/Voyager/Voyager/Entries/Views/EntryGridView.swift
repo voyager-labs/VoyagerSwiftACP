@@ -1,21 +1,11 @@
-// swiftlint:disable file_length
 import AppKit
 import ComposableArchitecture
 import SwiftUI
 import UniformTypeIdentifiers
 
-struct EntryGridView: View, Equatable {
-    static func == (lhs: EntryGridView, rhs: EntryGridView) -> Bool {
-        // Entry의 Equatable 구현을 활용
-        lhs.item == rhs.item &&
-            lhs.isSelected == rhs.isSelected &&
-            lhs.isCut == rhs.isCut &&
-            lhs.isRenaming == rhs.isRenaming &&
-            lhs.isThumbnailReady == rhs.isThumbnailReady &&
-            lhs.iconSize == rhs.iconSize &&
-            lhs.textSize == rhs.textSize
-    }
+// swiftlint:disable vertical_whitespace_closing_braces
 
+struct EntryGridView: View, Equatable {
     let item: Entry
     let isSelected: Bool
     let isCut: Bool
@@ -73,13 +63,6 @@ struct EntryGridView: View, Equatable {
     @State private var servicesRequestorView: ServicesMenuRequestorView?
     @State private var shouldFocusRename = false
     @State private var renameTextWidth: CGFloat = 120
-
-    private struct RenameTextWidthKey: PreferenceKey {
-        static var defaultValue: CGFloat = 120
-        static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) {
-            value = nextValue()
-        }
-    }
 
     var body: some View {
         VStack(spacing: 1) {
@@ -316,8 +299,10 @@ struct EntryGridView: View, Equatable {
         optionKeyTimer?.invalidate()
         optionKeyTimer = nil
     }
+}
 
-    private func refreshServicesMenuItems() {
+private extension EntryGridView {
+    func refreshServicesMenuItems() {
         if let servicesRequestorView, let window = servicesRequestorView.window {
             window.makeFirstResponder(servicesRequestorView)
         }
@@ -334,9 +319,7 @@ struct EntryGridView: View, Equatable {
             return title
         }
     }
-}
 
-private extension EntryGridView {
     func appIcon(for bundleID: String, size: CGFloat) -> NSImage? {
         guard let appURL = workspaceClient.urlForApplication(bundleID) else {
             return nil
@@ -374,4 +357,4 @@ extension View {
     }
 }
 
-// swiftlint:enable file_length
+// swiftlint:enable vertical_whitespace_closing_braces

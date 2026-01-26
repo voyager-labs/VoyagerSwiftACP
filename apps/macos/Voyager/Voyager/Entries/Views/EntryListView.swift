@@ -4,16 +4,6 @@ import SwiftUI
 import UniformTypeIdentifiers
 
 struct EntryListView: View, Equatable {
-    static func == (lhs: EntryListView, rhs: EntryListView) -> Bool {
-        lhs.item == rhs.item &&
-            lhs.isSelected == rhs.isSelected &&
-            lhs.isCut == rhs.isCut &&
-            lhs.isRenaming == rhs.isRenaming &&
-            lhs.isThumbnailReady == rhs.isThumbnailReady &&
-            lhs.iconSize == rhs.iconSize &&
-            lhs.textSize == rhs.textSize
-    }
-
     let item: Entry
     let isSelected: Bool
     let isCut: Bool

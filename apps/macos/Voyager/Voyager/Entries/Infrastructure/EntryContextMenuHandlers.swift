@@ -3,6 +3,16 @@ import Foundation
 import IdentifiedCollections
 import SwiftUI
 
+struct EntryContextMenuContext {
+    let item: Entry
+    let fsStore: Store<EntriesFeature.State, EntriesFeature.Action>
+    let saveScrollPosition: () -> Void
+    let shareAnchorProvider: () -> CGPoint?
+    let isTrashFolder: Bool
+    let onEmptyTrash: () -> Void
+    let openWindow: (String) -> Void
+}
+
 struct EntryContextMenuHandlers {
     let onSelect: (Bool, Bool) -> Void
     let onOpen: () -> Void
@@ -36,16 +46,15 @@ struct EntryContextMenuHandlers {
     let onRevealInFinder: () -> Void
 }
 
-// swiftlint:disable function_body_length
-func makeContextMenuHandlers(
-    item: Entry,
-    fsStore: Store<EntriesFeature.State, EntriesFeature.Action>,
-    saveScrollPosition: @escaping () -> Void,
-    shareAnchorProvider: @escaping () -> CGPoint?,
-    isTrashFolder: Bool,
-    onEmptyTrash: @escaping () -> Void,
-    openWindow: @escaping (String) -> Void,
-) -> EntryContextMenuHandlers {
+// swiftlint:disable:next function_body_length
+func makeContextMenuHandlers(context: EntryContextMenuContext) -> EntryContextMenuHandlers {
+    let item = context.item
+    let fsStore = context.fsStore
+    let saveScrollPosition = context.saveScrollPosition
+    let shareAnchorProvider = context.shareAnchorProvider
+    let isTrashFolder = context.isTrashFolder
+    let onEmptyTrash = context.onEmptyTrash
+    let openWindow = context.openWindow
     let onSelect: (Bool, Bool) -> Void = { isCommandPressed, isShiftPressed in
         if !isCommandPressed, !isShiftPressed, fsStore.selectedIds.contains(item.id), fsStore.selectedIds.count > 1 {
             restoreFileManagerFocus()

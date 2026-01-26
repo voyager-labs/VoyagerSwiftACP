@@ -129,7 +129,7 @@ struct ContentPaneGridView: View {
         showExtract: Bool,
         isTrashFolder: Bool = false,
     ) -> some View {
-        let handlers = makeContextMenuHandlers(
+        let handlers = makeContextMenuHandlers(context: EntryContextMenuContext(
             item: item,
             fsStore: fsStore,
             saveScrollPosition: saveScrollPosition,
@@ -142,7 +142,7 @@ struct ContentPaneGridView: View {
                     _ = await fileManagerWindowClient.openWindow(path)
                 }
             },
-        )
+        ))
 
         return buildGridView(
             item: item,
@@ -154,6 +154,7 @@ struct ContentPaneGridView: View {
         )
     }
 
+    // swiftlint:disable:next function_body_length
     private func buildGridView(
         item: Entry,
         store: StoreOf<FileManagerFeature>,

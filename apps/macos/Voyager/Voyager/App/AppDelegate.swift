@@ -123,6 +123,36 @@ class AppDelegate: NSObject, NSApplicationDelegate, ObservableObject {
         return true
     }
 
+    private func activeWindowController() -> FileManagerWindowController? {
+        if let keyWindow = NSApp.keyWindow {
+            return windowControllers.first { $0.window == keyWindow }
+        }
+        return windowControllers.first
+    }
+
+    private func checkIndexingStatus() -> Bool {
+        false
+    }
+
+    private func showQuitAlert(isIndexing: Bool, completion: @escaping (Bool) -> Void) {
+        Task { @MainActor in
+            let alert = NSAlert()
+            alert.alertStyle = .warning
+            if isIndexing {
+                alert.messageText = "Indexing in Progress"
+                alert.informativeText = "Indexing is still running. Quitting now may pause background work."
+            } else {
+                alert.messageText = "Quit Voyager?"
+                alert.informativeText = "Are you sure you want to quit?"
+            }
+            alert.addButton(withTitle: "Quit")
+            alert.addButton(withTitle: "Cancel")
+            alert.buttons.first?.hasDestructiveAction = true
+            let response = alert.runModal()
+            completion(response == .alertFirstButtonReturn)
+        }
+    }
+
     func applicationShouldTerminate(_: NSApplication) -> NSApplication.TerminateReply {
         if terminationAttemptId != nil {
             return .terminateLater
@@ -322,92 +352,5 @@ class AppDelegate: NSObject, NSApplicationDelegate, ObservableObject {
                 updateMenuState(store: nil)
             }
         }
-    }
-
-    func application(_: NSApplication, openFile filename: String) -> Bool {
-        let url = URL(fileURLWithPath: filename)
-        guard isVoyagerCollectionURL(url) else { return false }
-        Task { @MainActor in
-            openCollectionFiles(urls: [url])
-        }
-        return true
-    }
-
-    func application(_ sender: NSApplication, openFiles filenames: [String]) {
-        let urls = filenames.map { URL(fileURLWithPath: $0) }.filter(isVoyagerCollectionURL)
-
-        Task { @MainActor in
-            openCollectionFiles(urls: urls)
-            sender.reply(toOpenOrPrint: .success)
-        }
-    }
-
-    func application(_: NSApplication, open urls: [URL]) {
-        let voyagerURLs = urls.filter(isVoyagerCollectionURL)
-        guard !voyagerURLs.isEmpty else { return }
-
-        Task { @MainActor in
-            openCollectionFiles(urls: voyagerURLs)
-        }
-    }
-
-    private func checkIndexingStatus() -> Bool {
-        // TODO: 추후 인덱싱 기능 구현 시 실제 상태 확인
-        false
-    }
-
-    private func showQuitAlert(isIndexing: Bool, completion: @escaping (Bool) -> Void) {
-        let alert = NSAlert()
-        alert.messageText = isIndexing
-            ? "Indexing is in progress. Quitting will stop the indexing process."
-            : "Are you sure you want to quit Voyager?"
-        alert.informativeText = isIndexing
-            ? "To stop indexing and quit, click 'Quit'."
-            : "You may have unsaved work."
-
-        alert.addButton(withTitle: "Quit")
-        alert.addButton(withTitle: "Cancel")
-        alert.alertStyle = .warning
-        alert.showsSuppressionButton = true
-        if let suppressionButton = alert.suppressionButton {
-            suppressionButton.title = "Alert before app quit"
-            suppressionButton.state = UserDefaults.standard.bool(forKey: SettingsKeys.alertBeforeQuit) ? .on : .off
-        }
-
-        let response = alert.runModal()
-        if let suppressionButton = alert.suppressionButton {
-            let shouldAlert = suppressionButton.state == .on
-            UserDefaults.standard.set(shouldAlert, forKey: SettingsKeys.alertBeforeQuit)
-        }
-        completion(response == .alertFirstButtonReturn)
-    }
-
-    private func isVoyagerCollectionURL(_ url: URL) -> Bool {
-        url.pathExtension.lowercased() == "voycoll"
-    }
-
-    @MainActor
-    private func openCollectionFile(url: URL) {
-        if onboardingWindowClient.showIfNeeded() {
-            return
-        }
-        guard let controller = activeWindowController() ?? createNewWindow() else { return }
-        controller.window?.makeKeyAndOrderFront(nil)
-        controller.store.send(.openCollectionFile(url))
-    }
-
-    @MainActor
-    private func openCollectionFiles(urls: [URL]) {
-        for url in urls {
-            openCollectionFile(url: url)
-        }
-    }
-
-    @MainActor
-    private func activeWindowController() -> FileManagerWindowController? {
-        guard let keyWindow = NSApp.keyWindow else {
-            return windowControllers.first
-        }
-        return windowControllers.first { $0.window == keyWindow } ?? windowControllers.first
     }
 }

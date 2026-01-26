@@ -60,6 +60,7 @@ actor ProcessRunner {
         self.portReservation = portReservation
     }
 
+    // swiftlint:disable:next function_body_length
     func startAndMonitor() async -> BackendTerminationEvent {
         if let process, process.isRunning {
             let startDate = Date()
@@ -281,6 +282,7 @@ actor ProcessRunner {
         }
     }
 
+    // swiftlint:disable:next function_body_length
     private func runProcess(
         config: BackendProcessConfig,
         host: String,

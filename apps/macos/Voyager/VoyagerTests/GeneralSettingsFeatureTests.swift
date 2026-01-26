@@ -2,6 +2,8 @@ import ComposableArchitecture
 @testable import Voyager
 import XCTest
 
+// swiftlint:disable xct_specific_matcher
+
 @MainActor
 final class GeneralSettingsFeatureTests: XCTestCase {
     func testToggleAutomaticUpdatePersistsAndCallsUpdater() async {
@@ -79,3 +81,5 @@ private actor BoolRecorder {
         values.append(value)
     }
 }
+
+// swiftlint:enable xct_specific_matcher

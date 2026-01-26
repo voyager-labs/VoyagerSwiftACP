@@ -443,7 +443,6 @@
 /* Begin PBXShellScriptBuildPhase section */
 		7E6AF6B12E8BB003005DC7D3 /* Run Lint and Format */ = {
 			isa = PBXShellScriptBuildPhase;
-			basedOnDependencyAnalysis = 0;
 			buildActionMask = 2147483647;
 			files = (
 			);
@@ -458,7 +457,7 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 			shellPath = /bin/sh;
-			shellScript = "#!/bin/bash\nset -euo pipefail\n\nROOT=\"$SRCROOT\"\n\necho \"================================\"\necho \"🔍 SwiftLint: using system installation...\"\necho \"================================\"\n\n# 시스템에 설치된 SwiftLint 사용\nif command -v swiftlint >/dev/null 2>&1; then\n  echo \"✓ Running SwiftLint at: $(which swiftlint)\"\n  swiftlint --config \"$ROOT/.swiftlint.yml\" --reporter xcode || true\n  echo \"✓ SwiftLint completed\"\nelse\n  echo \"⚠️ SwiftLint not found in PATH\"\nfi\n\necho \"================================\"\necho \"🔧 SwiftFormat: using system installation...\"\necho \"================================\"\n\n# 시스템에 설치된 SwiftFormat 사용\nif command -v swiftformat >/dev/null 2>&1; then\n  echo \"✓ Running SwiftFormat at: $(which swiftformat)\"\n  swiftformat --config \"$ROOT/.swiftformat\" \"$ROOT\" --verbose || true\n  echo \"✓ SwiftFormat completed\"\nelse\n  echo \"⚠️ SwiftFormat not found in PATH\"\nfi\n\necho \"================================\"\n";
+			shellScript = "#!/bin/bash\nset -euo pipefail\n\nROOT=\"$SRCROOT\"\n\necho \"================================\"\necho \"🔍 SwiftLint: using system installation...\"\necho \"================================\"\n\n# 시스템에 설치된 SwiftLint 사용\nif command -v swiftlint >/dev/null 2>&1; then\n  echo \"✓ Running SwiftLint at: $(which swiftlint)\"\n  swiftlint --config \"$ROOT/.swiftlint.yml\" --reporter xcode\n  echo \"✓ SwiftLint completed\"\nelse\n  echo \"⚠️ SwiftLint not found in PATH\"\nfi\n\necho \"================================\"\necho \"🔧 SwiftFormat: using system installation...\"\necho \"================================\"\n\n# 시스템에 설치된 SwiftFormat 사용\nif command -v swiftformat >/dev/null 2>&1; then\n  echo \"✓ Running SwiftFormat at: $(which swiftformat)\"\n  swiftformat --config \"$ROOT/.swiftformat\" \"$ROOT\" --verbose || true\n  echo \"✓ SwiftFormat completed\"\nelse\n  echo \"⚠️ SwiftFormat not found in PATH\"\nfi\n\necho \"================================\"\n";
 		};
 		7EC6B03F2E8CE43B00379B56 /* Run Lint and Format */ = {
 			isa = PBXShellScriptBuildPhase;
@@ -476,7 +475,7 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 			shellPath = /bin/sh;
-			shellScript = "#!/bin/bash\nset -euo pipefail\n\nROOT=\"$SRCROOT\"\n\necho \"================================\"\necho \"🔍 SwiftLint: using system installation...\"\necho \"================================\"\n\n# 시스템에 설치된 SwiftLint 사용\nif command -v swiftlint >/dev/null 2>&1; then\n  echo \"✓ Running SwiftLint at: $(which swiftlint)\"\n  swiftlint --config \"$ROOT/.swiftlint.yml\" --reporter xcode || true\n  echo \"✓ SwiftLint completed\"\nelse\n  echo \"⚠️ SwiftLint not found in PATH\"\nfi\n\necho \"================================\"\necho \"🔧 SwiftFormat: using system installation...\"\necho \"================================\"\n\n# 시스템에 설치된 SwiftFormat 사용\nif command -v swiftformat >/dev/null 2>&1; then\n  echo \"✓ Running SwiftFormat at: $(which swiftformat)\"\n  swiftformat --config \"$ROOT/.swiftformat\" \"$ROOT\" --verbose || true\n  echo \"✓ SwiftFormat completed\"\nelse\n  echo \"⚠️ SwiftFormat not found in PATH\"\nfi\n\necho \"================================\"\n";
+			shellScript = "#!/bin/bash\nset -euo pipefail\n\nROOT=\"$SRCROOT\"\n\necho \"================================\"\necho \"🔍 SwiftLint: using system installation...\"\necho \"================================\"\n\n# 시스템에 설치된 SwiftLint 사용\nif command -v swiftlint >/dev/null 2>&1; then\n  echo \"✓ Running SwiftLint at: $(which swiftlint)\"\n  swiftlint --config \"$ROOT/.swiftlint.yml\" --reporter xcode\n  echo \"✓ SwiftLint completed\"\nelse\n  echo \"⚠️ SwiftLint not found in PATH\"\nfi\n\necho \"================================\"\necho \"🔧 SwiftFormat: using system installation...\"\necho \"================================\"\n\n# 시스템에 설치된 SwiftFormat 사용\nif command -v swiftformat >/dev/null 2>&1; then\n  echo \"✓ Running SwiftFormat at: $(which swiftformat)\"\n  swiftformat --config \"$ROOT/.swiftformat\" \"$ROOT\" --verbose || true\n  echo \"✓ SwiftFormat completed\"\nelse\n  echo \"⚠️ SwiftFormat not found in PATH\"\nfi\n\necho \"================================\"\n";
 		};
 		AFB0BEEF33B27A4C00A1F900 /* Build Backend Binary */ = {
 			isa = PBXShellScriptBuildPhase;
