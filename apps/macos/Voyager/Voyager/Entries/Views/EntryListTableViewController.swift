@@ -49,6 +49,8 @@ final class EntryListTableViewController: NSViewController {
     private var isUpdatingSelectionFromStore = false
     private var hasRestoredScrollPosition = false
 
+    private var lastRenamingItemId: String?
+
     private var contextMenuAnchor: CGPoint?
 
     @Dependency(\.entryClient)
@@ -227,6 +229,14 @@ final class EntryListTableViewController: NSViewController {
             }
             .store(in: &cancellables)
 
+        store.publisher.entries.renamingItemId
+            .removeDuplicates()
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] _ in
+                self?.syncRenamingFromStore()
+            }
+            .store(in: &cancellables)
+
         store.publisher.columnWidths
             .receive(on: DispatchQueue.main)
             .sink { [weak self] _ in
@@ -383,6 +393,55 @@ final class EntryListTableViewController: NSViewController {
         isUpdatingSelectionFromStore = true
         tableView.selectRowIndexes(indexes, byExtendingSelection: false)
         isUpdatingSelectionFromStore = false
+    }
+
+    private func syncRenamingFromStore() {
+        let renamingItemId = store.state.entries.renamingItemId
+        let previousRenamingItemId = lastRenamingItemId
+        lastRenamingItemId = renamingItemId
+
+        let nameColumnIndexes = IndexSet(integer: 0)
+
+        if let previousRenamingItemId,
+           let row = rowIndexByEntryId[previousRenamingItemId]
+        {
+            tableView.reloadData(forRowIndexes: IndexSet(integer: row), columnIndexes: nameColumnIndexes)
+        }
+
+        guard let renamingItemId,
+              let row = rowIndexByEntryId[renamingItemId]
+        else {
+            view.window?.makeFirstResponder(tableView)
+            return
+        }
+
+        tableView.reloadData(forRowIndexes: IndexSet(integer: row), columnIndexes: nameColumnIndexes)
+        beginRenaming(row: row)
+    }
+
+    private func beginRenaming(row: Int) {
+        guard row >= 0, row < rows.count else { return }
+
+        tableView.scrollRowToVisible(row)
+
+        DispatchQueue.main.async { [weak self] in
+            guard let self else { return }
+
+            // 셀 생성/업데이트 이후에 first responder를 잡아야 editColumn이 안정적으로 동작함
+            _ = tableView.view(atColumn: 0, row: row, makeIfNecessary: true)
+            tableView.editColumn(0, row: row, with: nil, select: true)
+
+            guard let cell = tableView.view(atColumn: 0, row: row, makeIfNecessary: false) as? NSTableCellView,
+                  let textField = cell.textField
+            else {
+                return
+            }
+
+            textField.stringValue = store.state.entries.renamingText
+            textField.delegate = self
+            view.window?.makeFirstResponder(textField)
+            textField.selectText(nil)
+        }
     }
 
     private func restoreScrollPositionIfNeeded() {
@@ -634,6 +693,15 @@ extension EntryListTableViewController: NSTableViewDataSource {
 }
 
 extension EntryListTableViewController: NSTableViewDelegate {
+    func tableView(_: NSTableView, shouldEdit tableColumn: NSTableColumn?, row: Int) -> Bool {
+        guard let tableColumn else { return false }
+        guard tableColumn.identifier.rawValue == Column.name.rawValue else { return false }
+        guard row >= 0, row < rows.count else { return false }
+        guard case let .entry(entry) = rows[row].kind else { return false }
+        guard store.state.entries.renamingItemId == entry.id else { return false }
+        return true
+    }
+
     func tableView(
         _: NSTableView,
         draggingSession _: NSDraggingSession,
@@ -722,7 +790,8 @@ extension EntryListTableViewController: NSTableViewDelegate {
             ?? NSTableCellView()
         view.identifier = cellIdentifier
 
-        func setText(_ text: String, font: NSFont = .systemFont(ofSize: 12)) {
+        @discardableResult
+        func setText(_ text: String, font: NSFont = .systemFont(ofSize: 12)) -> NSTextField {
             let label = view.textField ?? {
                 let tf = NSTextField(labelWithString: "")
                 tf.translatesAutoresizingMaskIntoConstraints = false
@@ -737,23 +806,31 @@ extension EntryListTableViewController: NSTableViewDelegate {
             }()
             label.font = font
             label.stringValue = text
+            return label
         }
 
         switch rows[row].kind {
         case let .groupHeader(title, colorCode):
-            let prefix = if let colorCode {
-                "● "
-            } else {
-                ""
-            }
-            _ = prefix
-            setText(title, font: .systemFont(ofSize: 12, weight: .semibold))
+            let prefix = colorCode != nil ? "● " : ""
+            setText(prefix + title, font: .systemFont(ofSize: 12, weight: .semibold))
             return view
 
         case let .entry(entry):
             switch Column(rawValue: identifier ?? "") {
             case .name:
-                setText(entry.name, font: .systemFont(ofSize: store.state.listTextSize))
+                let isRenaming = store.state.entries.renamingItemId == entry.id
+                let nameText = isRenaming ? store.state.entries.renamingText : entry.name
+                let textField = setText(nameText, font: .systemFont(ofSize: store.state.listTextSize))
+                textField.lineBreakMode = .byTruncatingMiddle
+                textField.usesSingleLineMode = true
+
+                textField.isEditable = isRenaming
+                textField.isSelectable = isRenaming
+                textField.isBordered = isRenaming
+                textField.drawsBackground = isRenaming
+                textField.backgroundColor = isRenaming ? .textBackgroundColor : .clear
+                textField.focusRingType = isRenaming ? .default : .none
+                textField.delegate = isRenaming ? self : nil
             case .dateModified:
                 setText(entry.formattedModifiedDate, font: .systemFont(ofSize: max(10, store.state.listTextSize - 1)))
             case .size:
@@ -797,6 +874,43 @@ extension EntryListTableViewController: NSTableViewDelegate {
         }
 
         fsStore.send(.setSelectedIds(ids: selectedIds, lastSelectedId: lastSelectedId))
+    }
+}
+
+extension EntryListTableViewController: NSTextFieldDelegate {
+    func controlTextDidChange(_ notification: Notification) {
+        guard store.state.entries.renamingItemId != nil else { return }
+        guard let textField = notification.object as? NSTextField else { return }
+        guard (textField.delegate as AnyObject?) === self else { return }
+        fsStore.send(.updateRenamingText(textField.stringValue))
+    }
+
+    func control(_ control: NSControl, textView _: NSTextView, doCommandBy commandSelector: Selector) -> Bool {
+        guard store.state.entries.renamingItemId != nil else { return false }
+        guard let textField = control as? NSTextField else { return false }
+        guard (textField.delegate as AnyObject?) === self else { return false }
+
+        if commandSelector == #selector(NSResponder.insertNewline(_:)) {
+            fsStore.send(.commitRename)
+            return true
+        }
+        if commandSelector == #selector(NSResponder.cancelOperation(_:)) {
+            fsStore.send(.cancelRename)
+            return true
+        }
+        if commandSelector == #selector(NSResponder.insertTab(_:)) {
+            fsStore.send(.commitRename)
+            return true
+        }
+
+        return false
+    }
+
+    func controlTextDidEndEditing(_ notification: Notification) {
+        guard store.state.entries.renamingItemId != nil else { return }
+        guard let textField = notification.object as? NSTextField else { return }
+        guard (textField.delegate as AnyObject?) === self else { return }
+        fsStore.send(.commitRename)
     }
 }
 
