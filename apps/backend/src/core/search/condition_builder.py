@@ -1,6 +1,8 @@
 """SQL 조건 빌더
 
 Search API의 conditions를 SQL WHERE절로 변환합니다.
+
+- TODO: Swift Voyager Helper로 이관 [VOY-152]
 """
 
 from typing import Any, Sequence, cast

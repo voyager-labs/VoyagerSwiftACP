@@ -3,6 +3,7 @@
 Scope/condition builder 결과로 SQLModel SELECT를 실행합니다.
 
 - core는 app/infra 스키마에 의존하지 않도록 모델/세션을 주입받습니다.
+- TODO: Swift Voyager Helper로 이관 [VOY-152]
 """
 
 from __future__ import annotations

@@ -31,6 +31,7 @@ async def query_search(
     )
 
 
+# TODO: Swift Voyager Helper로 이관 [VOY-152]
 @router.post("/filters", response_model=SearchResponse)
 async def filter_search(
     request: FilterSearchRequest,

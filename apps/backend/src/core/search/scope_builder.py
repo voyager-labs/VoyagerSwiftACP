@@ -1,6 +1,7 @@
 """Scope 빌더
 
 Search API의 scopes(경로 범위)를 SQL WHERE절로 변환합니다.
+- TODO: Swift Voyager Helper로 이관 [VOY-152]
 """
 
 
