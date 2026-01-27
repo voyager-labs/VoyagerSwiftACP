@@ -27,6 +27,10 @@ struct AppLifecycleFeature {
 
     @Dependency(\.onboardingWindowClient)
     var onboardingWindowClient
+    @Dependency(\.onboardingProgressStore)
+    var onboardingProgressStore
+    @Dependency(\.indexingClient)
+    var indexingClient
 
     var body: some Reducer<State, Action> {
         Reduce { state, action in
@@ -48,6 +52,8 @@ struct AppLifecycleFeature {
                 state.didStartHelper = true
                 let helperClient = helperAppClient
                 let stateClient = helperStateClient
+                let onboardingProgressStore = onboardingProgressStore
+                let indexingClient = indexingClient
                 return .run { _ in
                     let logger = Logger(label: "Voyager")
 
@@ -92,6 +98,18 @@ struct AppLifecycleFeature {
                         logger: logger,
                     )
                     _ = initialState
+                    let onboardingComplete: Bool = switch onboardingProgressStore.load() {
+                    case let .success(snapshot):
+                        snapshot.stepState.completeComplete
+                    case .empty, .resetRequired:
+                        false
+                    }
+                    if onboardingComplete {
+                        logger.info("Onboarding complete; requesting initial indexing on launch")
+                        await indexingClient.start()
+                    } else {
+                        logger.info("Onboarding incomplete; skip initial indexing request on launch")
+                    }
                     _ = await monitor
                 }
                 .cancellable(id: CancelID.helperMonitor, cancelInFlight: true)
