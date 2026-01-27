@@ -7,7 +7,7 @@ Search API의 conditions를 SQL WHERE절로 변환합니다.
 
 from typing import Any, Sequence, cast
 
-from pydantic import BaseModel
+from pydantic import BaseModel, ConfigDict
 
 from core.metadata.registry_loader import (
     CONDITION_REGISTRY,
@@ -64,6 +64,8 @@ class _ParamBinder:
 
 
 class BuilderClauseParams(BaseModel):
+    model_config = ConfigDict(arbitrary_types_allowed=True)
+
     binder: _ParamBinder
     mapping: SystemPropertyAttribute
     operator_meta: ConditionOperator
