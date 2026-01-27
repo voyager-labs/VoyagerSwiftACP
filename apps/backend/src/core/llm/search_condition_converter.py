@@ -10,7 +10,7 @@ import logging
 import re
 from importlib import resources
 from pathlib import Path
-from typing import Any, TypeVar, cast
+from typing import Any, Sequence, TypeVar, cast
 
 from langchain_core.messages import BaseMessage, HumanMessage, SystemMessage
 from langchain_core.runnables import Runnable
@@ -305,7 +305,7 @@ class SearchConditionConverter:
 
     def _filter_valid_conditions(
         self,
-        conditions: list[dict[str, Any] | None] | None,
+        conditions: Sequence[dict[str, Any] | None] | None,
     ) -> list[SearchConditionPayload]:
         if not conditions:
             return []
