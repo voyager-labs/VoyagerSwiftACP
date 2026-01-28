@@ -8,6 +8,7 @@
 
 /* Begin PBXBuildFile section */
 		11884BDAA11DD6217EEF5014 /* system_property_registry.json in Resources */ = {isa = PBXBuildFile; fileRef = A68896D2BA838902604FD30A /* system_property_registry.json */; };
+		A332223B67D84E9E9BA1DFB7 /* system_property_registry.json in Resources */ = {isa = PBXBuildFile; fileRef = A68896D2BA838902604FD30A /* system_property_registry.json */; };
 		6C57FBA92F02111500D85C72 /* Sparkle in Frameworks */ = {isa = PBXBuildFile; productRef = 6C57FBA82F02111500D85C72 /* Sparkle */; };
 		6C727A2D2F0DF4A10012D44A /* Logging in Frameworks */ = {isa = PBXBuildFile; productRef = 6C727A2C2F0DF4A10012D44A /* Logging */; };
 		6C727A2F2F0DF4AA0012D44A /* Logging in Frameworks */ = {isa = PBXBuildFile; productRef = 6C727A2E2F0DF4AA0012D44A /* Logging */; };
@@ -25,6 +26,7 @@
 		A1B2C3D4E5F60708192A3B4D /* Migrations in Resources */ = {isa = PBXBuildFile; fileRef = A1B2C3D4E5F60708192A3B4C /* Migrations */; };
 		AF0F1E7B33B24D4A00A1F123 /* VoyagerHelper.app in Copy Helper into App */ = {isa = PBXBuildFile; fileRef = 7E14EE232E866E82005AC834 /* VoyagerHelper.app */; settings = {ATTRIBUTES = (CodeSignOnCopy, ); }; };
 		B2AD8C7BD69A51C61EF4D9FC /* property_condition_registry.json in Resources */ = {isa = PBXBuildFile; fileRef = 60F570BDE5ECDE55DC1C7E60 /* property_condition_registry.json */; };
+		A63E25704AD24423A15E5733 /* property_condition_registry.json in Resources */ = {isa = PBXBuildFile; fileRef = 60F570BDE5ECDE55DC1C7E60 /* property_condition_registry.json */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -427,6 +429,8 @@
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				A332223B67D84E9E9BA1DFB7 /* system_property_registry.json in Resources */,
+				A63E25704AD24423A15E5733 /* property_condition_registry.json in Resources */,
 				A1B2C3D4E5F60708192A3B4D /* Migrations in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
