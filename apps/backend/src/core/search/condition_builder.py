@@ -324,8 +324,8 @@ class ConditionBuilder:
 
     def _build_string_list_any_clause(self, params: BuilderClauseDetailParams) -> str:
         values = self._normalize_string_list_values(params.operator_meta, params.value)
-        # db_indexed 컬럼인 경우 JSON array membership가 아니라 IN(...)로 처리합니다.
-        if not params.json_path:
+        # db_indexed 컬럼 또는 categorical 스칼라 값은 JSON array membership가 아니라 IN(...)로 처리합니다.
+        if not params.json_path or params.mapping.type == SystemPropertyType.CATEGORICAL:
             if len(values) == 1:
                 placeholder = params.binder.bind(values[0])
                 return f"{params.field} = {placeholder}"
@@ -341,7 +341,7 @@ class ConditionBuilder:
 
     def _build_string_list_not_any_clause(self, params: BuilderClauseDetailParams) -> str:
         values = self._normalize_string_list_values(params.operator_meta, params.value)
-        if not params.json_path:
+        if not params.json_path or params.mapping.type == SystemPropertyType.CATEGORICAL:
             if len(values) == 1:
                 placeholder = params.binder.bind(values[0])
                 return f"{params.field} != {placeholder}"

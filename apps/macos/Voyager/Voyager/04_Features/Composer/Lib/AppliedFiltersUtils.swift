@@ -177,6 +177,8 @@ enum AppliedFiltersUtils {
             "boolean"
         case "string_list":
             "string_list"
+        case "categorical":
+            "categorical"
         default:
             "unknown"
         }

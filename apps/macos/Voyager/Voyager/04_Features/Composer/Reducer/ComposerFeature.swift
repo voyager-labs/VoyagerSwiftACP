@@ -295,10 +295,11 @@ struct ComposerFeature {
                     )
                     state.conditions[idx].operatorCode = operatorCode
                     state.conditions[idx].operatorLabel = registryClient.operatorLabel(for: operatorCode)
-                    state.conditions[idx].operatorValueArity = registryClient.valueArity(for: uiValueKind)
+                    let valueArity = registryClient.valueArity(for: uiValueKind)
+                    state.conditions[idx].operatorValueArity = valueArity
                     state.conditions[idx].operatorValueUIKind = uiValueKind
                     state.conditions[idx].valueType = registryClient.valueType(for: uiValueKind)
-                    state.conditions[idx].values = nil
+                    state.conditions[idx].values = valueArity == 0 ? [] : nil
                     if state.valuePicker.propertyKey == propertyKey {
                         state.valuePicker.isPresented = false
                         state.valuePicker.propertyKey = nil
@@ -310,6 +311,9 @@ struct ComposerFeature {
                             count: registryClient.valueArity(for: uiValueKind),
                         )
                         state.valuePicker.errorMessage = nil
+                    }
+                    if valueArity == 0 {
+                        return applyFiltersIfNeeded(state: &state, searchClient: searchClient)
                     }
                 }
                 return .none
@@ -633,7 +637,7 @@ private func buildFilters(from state: ComposerFeature.State) -> SearchFiltersPay
 
 private func valueType(for propertyType: String) -> String {
     switch propertyType {
-    case "string", "number", "date", "datetime", "boolean", "string_list":
+    case "string", "number", "date", "datetime", "boolean", "string_list", "categorical":
         propertyType
     default:
         "unknown"
@@ -652,6 +656,8 @@ private func conditionTypeKey(for rawType: String) -> String {
         "boolean"
     case "string_list":
         "string_list"
+    case "categorical":
+        "categorical"
     default:
         "unknown"
     }

@@ -74,6 +74,30 @@ def test_build_json_string_list_contains_any() -> None:
     assert params == {"p0": "alpha", "p1": "beta", "p2": mapping.json_path}
 
 
+def test_build_json_categorical_any() -> None:
+    builder = _builder()
+    mapping = _registry_mapping("city")
+
+    clause, params = builder.build_clause("city", "any", ["Seoul", "Busan"])
+
+    assert clause == (
+        f"CAST(json_extract(original_metadata, '{mapping.json_path}') AS TEXT) IN (:p0, :p1)"
+    )
+    assert params == {"p0": "Seoul", "p1": "Busan"}
+
+
+def test_build_json_categorical_none() -> None:
+    builder = _builder()
+    mapping = _registry_mapping("city")
+
+    clause, params = builder.build_clause("city", "none", ["Seoul", "Busan"])
+
+    assert clause == (
+        f"CAST(json_extract(original_metadata, '{mapping.json_path}') AS TEXT) NOT IN (:p0, :p1)"
+    )
+    assert params == {"p0": "Seoul", "p1": "Busan"}
+
+
 def test_build_db_string_any_of_clause() -> None:
     builder = _builder()
 
@@ -115,7 +139,7 @@ def test_build_db_string_list_none_uses_not_in_clause() -> None:
 
     clause, params = builder.build_clause("uniform_type_identifier", "none", ["public.png"])
 
-    assert clause == "uniform_type_identifier NOT IN (:p0)"
+    assert clause == "uniform_type_identifier != :p0"
     assert params == {"p0": "public.png"}
 
 

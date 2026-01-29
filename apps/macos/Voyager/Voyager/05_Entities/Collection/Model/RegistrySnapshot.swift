@@ -137,6 +137,7 @@ struct RegistrySnapshot: Sendable {
         case "date", "datetime": "date"
         case "boolean": "boolean"
         case "string_list": "string_list"
+        case "categorical": "categorical"
         default: nil
         }
     }
