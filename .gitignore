@@ -108,3 +108,4 @@ apps/backend/alembic.ini.bak
 .serena/*
 
 !scripts/build
+!apps/macos/**/Lib
