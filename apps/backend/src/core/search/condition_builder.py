@@ -3,11 +3,11 @@
 Search API의 conditions를 SQL WHERE절로 변환합니다.
 
 - TODO: Swift Voyager Helper로 이관 [VOY-152]
+- TODO: Swift Voyager Helper 이관 시 SQL 구문을 문자열로 반환하는 대신, Swift의 ORM 쿼리 객체를 반환하도록 변경
 """
 
+from dataclasses import dataclass
 from typing import Any, Sequence, cast
-
-from pydantic import BaseModel, ConfigDict
 
 from core.metadata.registry_loader import (
     CONDITION_REGISTRY,
@@ -63,15 +63,15 @@ class _ParamBinder:
         return ", ".join(self.bind(value) for value in values)
 
 
-class BuilderClauseParams(BaseModel):
-    model_config = ConfigDict(arbitrary_types_allowed=True)
-
+@dataclass(slots=True)
+class BuilderClauseParams:
     binder: _ParamBinder
     mapping: SystemPropertyAttribute
     operator_meta: ConditionOperator
     value: Any
 
 
+@dataclass(slots=True)
 class BuilderClauseDetailParams(BuilderClauseParams):
     field: str
     json_path: str | None
@@ -86,6 +86,8 @@ class ConditionBuilder:
             registry: PropertyKey 레지스트리 (기본: SYSTEM_PROPERTY_REGISTRY)
         """
         self.registry = registry or SYSTEM_PROPERTY_REGISTRY
+        self._json_path_cache: dict[str, str | None] = {}
+        self._operator_cache: dict[str, ConditionOperator] = {}
 
     def build_clause(
         self, property_key: str, operator: str, value: Any
@@ -123,7 +125,11 @@ class ConditionBuilder:
                 f"Supported: {mapping.supported_operators}"
             )
 
-        operator_meta = CONDITION_REGISTRY.operators.get(operator)
+        operator_meta = self._operator_cache.get(operator)
+        if not operator_meta:
+            operator_meta = CONDITION_REGISTRY.operators.get(operator)
+            if operator_meta:
+                self._operator_cache[operator] = operator_meta
         if not operator_meta:
             raise ConditionBuilderError(f"Unknown operator: {operator}")
 
@@ -172,7 +178,10 @@ class ConditionBuilder:
         if not property_types or not property_types.sql_cast:
             raise ConditionBuilderError(f"Missing sql_cast for type '{params.mapping.type.value}'.")
         cast_type = property_types.sql_cast
-        json_path = self._json_path_for_system_keys(params.mapping.system_keys)
+        json_path = self._json_path_cache.get(params.mapping.key)
+        if json_path is None:
+            json_path = self._json_path_for_system_keys(params.mapping.system_keys)
+            self._json_path_cache[params.mapping.key] = json_path
         if not json_path:
             raise ConditionBuilderError(f"Missing JSON path for '{params.mapping.key}'")
         field = f"CAST(json_extract(original_metadata, '{json_path}') AS {cast_type})"
@@ -262,13 +271,14 @@ class ConditionBuilder:
             return f"({params.field} IS NULL OR {params.field} = '')"
 
         values: list[Any]
-        if isinstance(params.value, (list, tuple)):
-            values = list(cast(Sequence[Any], params.value))
+        raw_value = params.value
+        if isinstance(raw_value, (list, tuple)):
+            values = list(cast(Sequence[Any], raw_value))
         else:
             values = []
         if not values:
             raise ConditionBuilderError(
-                f"'{params.operator_meta.code}' operator requires non-empty array value, got: {params.value}"
+                f"'{params.operator_meta.code}' operator requires non-empty array value, got: {raw_value}"
             )
 
         if sql_kind == "string_list_any":
@@ -287,14 +297,15 @@ class ConditionBuilder:
         raise ConditionBuilderError(f"Unsupported string_list sql_kind: {sql_kind}")
 
     def _build_range_clause(self, params: BuilderClauseDetailParams) -> str:
-        if not isinstance(params.value, (list, tuple)):
+        raw_value: Any = params.value
+        if not isinstance(raw_value, (list, tuple)):
             raise ConditionBuilderError(
-                f"'{params.operator_meta.code}' operator requires [min, max] array, got: {params.value}"
+                f"'{params.operator_meta.code}' operator requires [min, max] array, got: {raw_value}"
             )
-        range_values = list(cast(Sequence[Any], params.value))
+        range_values = list(cast(Sequence[Any], raw_value))
         if len(range_values) != 2:
             raise ConditionBuilderError(
-                f"'{params.operator_meta.code}' operator requires [min, max] array, got: {params.value}"
+                f"'{params.operator_meta.code}' operator requires [min, max] array, got: {raw_value}"
             )
         start = params.binder.bind(range_values[0])
         end = params.binder.bind(range_values[1])
@@ -505,7 +516,9 @@ class ConditionBuilder:
             value = condition.get("value")
 
             if not property_key or not operator:
-                continue
+                raise ConditionBuilderError(
+                    f"Missing propertyKey/operator in condition: {condition}"
+                )
 
             clause = self._build_clause_with_binder(binder, property_key, operator, value)
             clauses.append(clause)

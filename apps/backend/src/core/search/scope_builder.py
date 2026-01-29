@@ -2,6 +2,7 @@
 
 Search API의 scopes(경로 범위)를 SQL WHERE절로 변환합니다.
 - TODO: Swift Voyager Helper로 이관 [VOY-152]
+- TODO: Swift Voyager Helper 이관 시 SQL 구문을 문자열로 반환하는 대신, Swift의 ORM 쿼리 객체를 반환하도록 변경
 """
 
 import os
