@@ -69,6 +69,7 @@ def test_build_json_string_list_contains_any() -> None:
     clause, params = builder.build_clause("contact_keywords", "any", ["alpha", "beta"])
 
     assert clause == (
+        "json_type(original_metadata, :p2) = 'array' AND "
         "EXISTS (SELECT 1 FROM json_each(original_metadata, :p2) WHERE value IN (:p0, :p1))"
     )
     assert params == {"p0": "alpha", "p1": "beta", "p2": mapping.json_path}
@@ -115,7 +116,7 @@ def test_build_json_string_list_contains_all_dedupes_values() -> None:
 
     assert clause == (
         "(\n"
-        "  SELECT COUNT(DISTINCT value)\n"
+        "  SELECT (json_type(original_metadata, :p1) = 'array') AND COUNT(DISTINCT value)\n"
         "  FROM json_each(original_metadata, :p1)\n"
         "  WHERE value IN (:p0)\n"
         ") = :p2"
@@ -143,6 +144,17 @@ def test_build_db_string_list_none_uses_not_in_clause() -> None:
     assert params == {"p0": "public.png"}
 
 
+def test_build_db_string_list_none_uses_not_in_clause_for_multi_value() -> None:
+    builder = _builder()
+
+    clause, params = builder.build_clause(
+        "uniform_type_identifier", "none", ["public.png", "public.jpeg"]
+    )
+
+    assert clause == "uniform_type_identifier NOT IN (:p0, :p1)"
+    assert params == {"p0": "public.png", "p1": "public.jpeg"}
+
+
 def test_build_contains_wraps_like_pattern() -> None:
     builder = _builder()
 
@@ -159,10 +171,11 @@ def test_build_json_string_list_empty() -> None:
     clause, params = builder.build_clause("contact_keywords", "empty", None)
 
     assert clause == (
-        "(json_array_length(original_metadata, :p0) IS NULL OR "
-        "json_array_length(original_metadata, :p1) = 0)"
+        "(json_type(original_metadata, :p0) IS NULL OR "
+        "(json_type(original_metadata, :p0) = 'array' AND "
+        "json_array_length(original_metadata, :p0) = 0))"
     )
-    assert params == {"p0": mapping.json_path, "p1": mapping.json_path}
+    assert params == {"p0": mapping.json_path}
 
 
 def test_build_json_exists() -> None:
@@ -173,6 +186,65 @@ def test_build_json_exists() -> None:
 
     assert clause == "json_type(original_metadata, :p0) IS NOT NULL"
     assert params == {"p0": mapping.json_path}
+
+
+def test_build_json_string_list_not_any() -> None:
+    builder = _builder()
+    mapping = _registry_mapping("contact_keywords")
+
+    clause, params = builder.build_clause("contact_keywords", "none", ["alpha", "beta"])
+
+    assert clause == (
+        "NOT (json_type(original_metadata, :p2) = 'array' AND "
+        "EXISTS (SELECT 1 FROM json_each(original_metadata, :p2) WHERE value IN (:p0, :p1)))"
+    )
+    assert params == {"p0": "alpha", "p1": "beta", "p2": mapping.json_path}
+
+
+def test_build_where_missing_property_key_raises() -> None:
+    builder = _builder()
+
+    repo_root = _repo_root()
+    sys.path.insert(0, str(repo_root / "apps" / "backend" / "src"))
+    from core.search.condition_builder import ConditionBuilderError
+
+    with pytest.raises(ConditionBuilderError):
+        builder.build_where([{"operator": "eq", "value": "png"}])
+
+
+def test_build_json_categorical_empty() -> None:
+    builder = _builder()
+    mapping = _registry_mapping("city")
+
+    clause, params = builder.build_clause("city", "empty", None)
+
+    assert clause == (
+        f"(CAST(json_extract(original_metadata, '{mapping.json_path}') AS TEXT) IS NULL "
+        f"OR CAST(json_extract(original_metadata, '{mapping.json_path}') AS TEXT) = '')"
+    )
+    assert params == {}
+
+
+def test_build_where_missing_operator_raises() -> None:
+    builder = _builder()
+
+    repo_root = _repo_root()
+    sys.path.insert(0, str(repo_root / "apps" / "backend" / "src"))
+    from core.search.condition_builder import ConditionBuilderError
+
+    with pytest.raises(ConditionBuilderError):
+        builder.build_where([{"propertyKey": "extension", "value": "png"}])
+
+
+def test_build_categorical_all_raises() -> None:
+    builder = _builder()
+
+    repo_root = _repo_root()
+    sys.path.insert(0, str(repo_root / "apps" / "backend" / "src"))
+    from core.search.condition_builder import ConditionBuilderError
+
+    with pytest.raises(ConditionBuilderError):
+        builder.build_clause("city", "all", ["Seoul"])
 
 
 def test_between_value_validation() -> None:

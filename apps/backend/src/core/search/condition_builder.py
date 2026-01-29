@@ -255,10 +255,10 @@ class ConditionBuilder:
 
     def _build_empty_clause(self, params: BuilderClauseDetailParams) -> str:
         if params.mapping.type == SystemPropertyType.STRING_LIST and params.json_path:
-            length_clause = "json_array_length(original_metadata, {})"
-            first = params.binder.bind(params.json_path)
-            second = params.binder.bind(params.json_path)
-            return f"({length_clause.format(first)} IS NULL OR {length_clause.format(second)} = 0)"
+            placeholder = params.binder.bind(params.json_path)
+            length_clause = f"json_array_length(original_metadata, {placeholder})"
+            type_clause = f"json_type(original_metadata, {placeholder})"
+            return f"({type_clause} IS NULL OR ({type_clause} = 'array' AND {length_clause} = 0))"
         return f"({params.field} IS NULL OR {params.field} = '')"
 
     def _build_db_string_list_clause(self, params: BuilderClauseDetailParams) -> str:
@@ -345,8 +345,9 @@ class ConditionBuilder:
 
         placeholders = params.binder.bind_many(values)
         json_placeholder = params.binder.bind(params.json_path)
+        type_clause = f"json_type(original_metadata, {json_placeholder}) = 'array'"
         return (
-            f"EXISTS (SELECT 1 FROM json_each(original_metadata, {json_placeholder}) "
+            f"{type_clause} AND EXISTS (SELECT 1 FROM json_each(original_metadata, {json_placeholder}) "
             f"WHERE value IN ({placeholders}))"
         )
 
@@ -360,9 +361,13 @@ class ConditionBuilder:
             return f"{params.field} NOT IN ({placeholders})"
 
         clause = self._build_string_list_any_clause(params)
-        return f"NOT {clause}"
+        return f"NOT ({clause})"
 
     def _build_string_list_all_clause(self, params: BuilderClauseDetailParams) -> str:
+        if params.mapping.type == SystemPropertyType.CATEGORICAL:
+            raise ConditionBuilderError(
+                f"Operator '{params.operator_meta.code}' is not supported for categorical fields."
+            )
         values = self._normalize_string_list_values(params.operator_meta, params.value)
         if not params.json_path:
             # 스칼라 컬럼에서 "all"은 값이 모두 동일할 때만 만족 가능
@@ -374,15 +379,20 @@ class ConditionBuilder:
         placeholders = params.binder.bind_many(values)
         json_placeholder = params.binder.bind(params.json_path)
         count_placeholder = params.binder.bind(len(values))
+        type_clause = f"json_type(original_metadata, {json_placeholder}) = 'array'"
         return (
             "(\n"
-            "  SELECT COUNT(DISTINCT value)\n"
+            f"  SELECT ({type_clause}) AND COUNT(DISTINCT value)\n"
             f"  FROM json_each(original_metadata, {json_placeholder})\n"
             f"  WHERE value IN ({placeholders})\n"
             f") = {count_placeholder}"
         )
 
     def _build_string_list_not_all_clause(self, params: BuilderClauseDetailParams) -> str:
+        if params.mapping.type == SystemPropertyType.CATEGORICAL:
+            raise ConditionBuilderError(
+                f"Operator '{params.operator_meta.code}' is not supported for categorical fields."
+            )
         values = self._normalize_string_list_values(params.operator_meta, params.value)
         if not params.json_path:
             if len(values) == 1:
