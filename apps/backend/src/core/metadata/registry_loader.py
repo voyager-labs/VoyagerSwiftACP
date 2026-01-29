@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import json
-import os
 import sys
 from dataclasses import dataclass
 from enum import Enum
@@ -181,6 +180,7 @@ class SystemPropertyType(Enum):
     DATE = "date"
     BOOLEAN = "boolean"
     STRING_LIST = "string_list"
+    CATEGORICAL = "categorical"
 
 
 @dataclass

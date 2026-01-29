@@ -62,6 +62,7 @@ enum ConditionPropertyIconUtils {
         case "boolean": "checkmark.circle"
         case "string": "textformat"
         case "string_list": "tag"
+        case "categorical": "tag"
         default: "slider.horizontal.3"
         }
     }

@@ -36,5 +36,5 @@ def test_loader_reads_registry() -> None:
 
     mapping = SYSTEM_PROPERTY_REGISTRY.get("uniform_type_identifier")
     assert mapping is not None
-    assert mapping.type.value == "string_list"
+    assert mapping.type.value == "categorical"
     assert mapping.system_keys

@@ -57,7 +57,7 @@ enum ConditionValueEncoder {
         case "date", "datetime":
             encodeDateValues(values)
 
-        case "string_list", "string", "unknown":
+        case "string_list", "categorical", "string", "unknown":
             encodeStringValues(values, operatorCode: operatorCode)
 
         default:

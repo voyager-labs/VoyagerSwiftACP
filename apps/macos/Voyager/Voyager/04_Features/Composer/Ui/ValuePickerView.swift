@@ -82,6 +82,8 @@ struct ValuePickerView: View {
             "Boolean"
         case "string_list":
             "List"
+        case "categorical":
+            "List"
         default:
             "Value"
         }
