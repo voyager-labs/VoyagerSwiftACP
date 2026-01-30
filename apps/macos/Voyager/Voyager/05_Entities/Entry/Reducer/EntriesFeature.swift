@@ -19,8 +19,6 @@ struct EntriesFeature {
     var entryClient
     @Dependency(\.fileManagerWindowClient)
     var fileManagerWindowClient
-    @Dependency(\.fileManagerWindowFocusClient)
-    var fileManagerWindowFocusClient
     @Dependency(\.sidebarClient)
     var sidebarClient
     @Dependency(\.undoManagerClient)
@@ -1406,7 +1404,7 @@ struct EntriesFeature {
                     // 윈도우 포커싱 (destinationPath의 윈도우 찾기)
                     .run { [destinationPath] _ in
                         try? await Task.sleep(nanoseconds: 500_000_000)
-                        await fileManagerWindowFocusClient.focusWindow(destinationPath)
+                        await fileManagerWindowClient.focusWindow(destinationPath)
                     },
                 )
 

@@ -115,10 +115,13 @@ final class OnboardingFeatureTests: XCTestCase {
                 },
                 reset: {},
             )
-            $0.fileManagerWindowClient = FileManagerWindowClient(openWindow: { path in
-                await pathRecorder.append(path)
-                return true
-            })
+            $0.fileManagerWindowClient = FileManagerWindowClient(
+                openWindow: { path in
+                    await pathRecorder.append(path)
+                    return true
+                },
+                focusWindow: { _ in },
+            )
         }
 
         await store.send(.complete(.startUsingTapped)) { state in

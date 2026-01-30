@@ -93,7 +93,6 @@ private func makeStore(
         $0.collectionFileClient = .testValue
         $0.entryClient = .testValue
         $0.fileManagerWindowClient = .testValue
-        $0.fileManagerWindowFocusClient = .testValue
         $0.registryClient = .testValue
         $0.sidebarClient = .testValue
         $0.undoManagerClient = .testValue
