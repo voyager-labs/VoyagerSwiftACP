@@ -1,4 +1,3 @@
-import AppKit
 import ComposableArchitecture
 import SwiftUI
 
@@ -17,26 +16,6 @@ struct ContentPaneView: View {
     @FocusState private var isKeyCommandFocused: Bool
     private static let undoSelector = Selector(("undo:"))
     private static let redoSelector = Selector(("redo:"))
-
-    private var statusText: String {
-        let total = store.entries.displayItems.count
-        let selected = store.entries.selectedIds.count
-
-        if selected == 0 {
-            return "\(total) items"
-        } else {
-            return "\(selected) of \(total) selected"
-        }
-    }
-
-    private var isCollectionSearching: Bool {
-        let isSearching = store.composer.isLoadingSearch || store.composer.isLoadingFilters
-        let hasContext = store.entries.isCollectionMode
-            || store.pendingSearchQuery != nil
-            || !store.composer.scopes.isEmpty
-            || !store.composer.conditions.isEmpty
-        return isSearching && hasContext
-    }
 
     var body: some View {
         ZStack {
@@ -88,8 +67,32 @@ struct ContentPaneView: View {
                 },
         )
     }
+}
 
-    @ViewBuilder private var breadcrumbStatusBar: some View {
+// MARK: - 레이아웃
+
+private extension ContentPaneView {
+    var statusText: String {
+        let total = store.entries.displayItems.count
+        let selected = store.entries.selectedIds.count
+
+        if selected == 0 {
+            return "\(total) items"
+        } else {
+            return "\(selected) of \(total) selected"
+        }
+    }
+
+    var isCollectionSearching: Bool {
+        let isSearching = store.composer.isLoadingSearch || store.composer.isLoadingFilters
+        let hasContext = store.entries.isCollectionMode
+            || store.pendingSearchQuery != nil
+            || !store.composer.scopes.isEmpty
+            || !store.composer.conditions.isEmpty
+        return isSearching && hasContext
+    }
+
+    @ViewBuilder var breadcrumbStatusBar: some View {
         GeometryReader { proxy in
             let totalWidth = max(proxy.size.width - 32, 0)
             let leftWidth = max(totalWidth * 0.5, 0)
@@ -127,11 +130,11 @@ struct ContentPaneView: View {
         .frame(height: 24)
     }
 
-    private var separatorColor: Color {
+    var separatorColor: Color {
         Color.primary.opacity(0.12)
     }
 
-    private var collectionLoadingView: some View {
+    var collectionLoadingView: some View {
         GeometryReader { _ in
             ZStack {
                 Color.clear
@@ -145,12 +148,16 @@ struct ContentPaneView: View {
         }
     }
 
-    private func restoreKeyCommandFocus() {
+    func restoreKeyCommandFocus() {
         isKeyCommandFocused = true
         restoreFileManagerFocus()
     }
+}
 
-    private func handleKeyboardEvent(_ event: NSEvent) {
+// MARK: - 키보드 입력
+
+private extension ContentPaneView {
+    func handleKeyboardEvent(_ event: NSEvent) {
         if handleEscapeKey(event) { return }
         if handleEnterKey(event) { return }
         if handleSpaceKey(event) { return }
@@ -160,13 +167,13 @@ struct ContentPaneView: View {
         handleCommandKeys(event)
     }
 
-    private func handleEscapeKey(_ event: NSEvent) -> Bool {
+    func handleEscapeKey(_ event: NSEvent) -> Bool {
         guard event.keyCode == 53, store.entries.isRenaming else { return false }
         store.send(.entries(.cancelRename))
         return true
     }
 
-    private func handleEnterKey(_ event: NSEvent) -> Bool {
+    func handleEnterKey(_ event: NSEvent) -> Bool {
         guard event.keyCode == 36,
               event.modifierFlags.isDisjoint(with: [.command, .option, .control, .shift])
         else { return false }
@@ -184,7 +191,7 @@ struct ContentPaneView: View {
         return true
     }
 
-    private func handleSpaceKey(_ event: NSEvent) -> Bool {
+    func handleSpaceKey(_ event: NSEvent) -> Bool {
         guard event.keyCode == 49,
               event.modifierFlags.isDisjoint(with: [.command, .option, .control, .shift])
         else { return false }
@@ -195,12 +202,12 @@ struct ContentPaneView: View {
         return true
     }
 
-    private func handleCommandOptionKeys(_ event: NSEvent) -> Bool {
+    func handleCommandOptionKeys(_ event: NSEvent) -> Bool {
         _ = event
         return false
     }
 
-    private func handleDeleteKeys(_ event: NSEvent) -> Bool {
+    func handleDeleteKeys(_ event: NSEvent) -> Bool {
         guard event.keyCode == 51,
               event.modifierFlags.contains(.command)
         else { return false }
@@ -218,7 +225,7 @@ struct ContentPaneView: View {
         }
     }
 
-    private func handleArrowKeys(_ event: NSEvent) -> Bool {
+    func handleArrowKeys(_ event: NSEvent) -> Bool {
         guard event.modifierFlags.isDisjoint(with: [.command, .option, .control]) else { return false }
 
         let isShiftPressed = event.modifierFlags.contains(.shift)
@@ -250,7 +257,7 @@ struct ContentPaneView: View {
         return true
     }
 
-    private func handleCommandKeys(_ event: NSEvent) {
+    func handleCommandKeys(_ event: NSEvent) {
         guard event.modifierFlags.contains(.command) else { return }
 
         if handleUndoRedoKeys(event) { return }
@@ -260,7 +267,7 @@ struct ContentPaneView: View {
         }
     }
 
-    private func handleUndoRedoKeys(_ event: NSEvent) -> Bool {
+    func handleUndoRedoKeys(_ event: NSEvent) -> Bool {
         guard event.modifierFlags.isDisjoint(with: [.option, .control]),
               event.charactersIgnoringModifiers == "z"
         else { return false }
@@ -288,23 +295,27 @@ struct ContentPaneView: View {
         return true
     }
 
-    private func isTextEditingResponder() -> Bool {
+    func isTextEditingResponder() -> Bool {
         guard let responder = NSApp.keyWindow?.firstResponder else { return false }
         return responder is NSTextView || responder is NSTextField
     }
 
-    private func canUndoInTextResponder() -> Bool {
+    func canUndoInTextResponder() -> Bool {
         guard isTextEditingResponder() else { return false }
         return (NSApp.keyWindow?.firstResponder as? NSResponder)?.undoManager?.canUndo == true
     }
 
-    private func canRedoInTextResponder() -> Bool {
+    func canRedoInTextResponder() -> Bool {
         guard isTextEditingResponder() else { return false }
         return (NSApp.keyWindow?.firstResponder as? NSResponder)?.undoManager?.canRedo == true
     }
+}
 
+// MARK: - 브레드크럼
+
+private extension ContentPaneView {
     // swiftlint:disable function_body_length
-    private func breadcrumbItems(for state: FileManagerFeature.State) -> [BreadcrumbUtils.Item] {
+    func breadcrumbItems(for state: FileManagerFeature.State) -> [BreadcrumbUtils.Item] {
         switch state.navigationState {
         case .recents, .tags:
             return []
@@ -375,7 +386,7 @@ struct ContentPaneView: View {
         }
     }
 
-    private func selectedBreadcrumbItem(for state: FileManagerFeature.State) -> BreadcrumbUtils.Item? {
+    func selectedBreadcrumbItem(for state: FileManagerFeature.State) -> BreadcrumbUtils.Item? {
         guard state.entries.selectedIds.count == 1,
               let selectedItem = state.entries.displayItems.first(where: { $0.id == state.entries.selectedIds.first })
         else { return nil }

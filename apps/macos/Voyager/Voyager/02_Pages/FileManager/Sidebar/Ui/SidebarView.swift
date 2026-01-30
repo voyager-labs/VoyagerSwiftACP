@@ -4,213 +4,6 @@ import ComposableArchitecture
 import SwiftUI
 import UniformTypeIdentifiers
 
-struct SidebarItemView: View {
-    let iconName: String
-    let title: String
-    let isSelected: Bool
-    let isContextMenuTarget: Bool
-    let contextMenuTargetWasSelected: Bool
-    let isFavorite: Bool
-    let iconColor: Color?
-    let targetURL: URL?
-    let action: () -> Void
-    let onDrop: (([NSItemProvider], URL) -> Void)?
-    let onContextMenuOpen: (() -> Void)?
-
-    @Environment(\.colorScheme)
-    private var colorScheme
-    @State private var isDropTarget = false
-
-    @ViewBuilder private var backgroundView: some View {
-        RoundedRectangle(cornerRadius: 6)
-            .fill(backgroundColor)
-            .overlay(
-                RoundedRectangle(cornerRadius: 6)
-                    .stroke(
-                        isContextMenuTarget ? contextMenuOutlineColor : Color.clear,
-                        lineWidth: isContextMenuTarget ? 1 : 0,
-                    ),
-            )
-    }
-
-    private var backgroundColor: Color {
-        if isDropTarget {
-            Color.accentColor
-        } else if isSelected {
-            VoyagerDS.Surface.sidebarSelectionBackground(for: colorScheme)
-        } else {
-            Color.clear
-        }
-    }
-
-    private var contextMenuOutlineColor: Color {
-        Color(nsColor: contextMenuTargetWasSelected ? .secondaryLabelColor : .tertiaryLabelColor)
-    }
-
-    private func applicationsIcon() -> NSImage? {
-        let appIcon = NSImage(
-            contentsOfFile: "/System/Library/CoreServices/CoreTypes.bundle/Contents/Resources/SidebarApplicationsFolder.icns",
-        )
-        appIcon?.isTemplate = true
-        return appIcon
-    }
-
-    var body: some View {
-        HStack(spacing: 8) {
-            if targetURL?.path == "/Applications",
-               let appIcon = applicationsIcon()
-            {
-                // Applications는 시스템 사이드바 아이콘을 사용
-                Image(nsImage: appIcon)
-                    .resizable()
-                    .scaledToFit()
-                    .foregroundColor(isDropTarget ? .white : (iconColor ?? .accentColor))
-                    .frame(width: 16, height: 16)
-            } else {
-                Image(systemName: iconName)
-                    .symbolRenderingMode(.hierarchical)
-                    .foregroundColor(isDropTarget ? .white : (iconColor ?? .accentColor))
-                    .frame(width: 16)
-            }
-            Text(title)
-                .foregroundColor(isDropTarget ? .white : .primary)
-                .lineLimit(1)
-                .truncationMode(.tail)
-            Spacer()
-        }
-        .padding(.horizontal, 12)
-        .padding(.vertical, 4)
-        .background(backgroundView)
-        .padding(.horizontal, 8)
-        .contentShape(Rectangle())
-        .onTapGesture {
-            action()
-            restoreFileManagerFocus()
-        }
-        .onDrop(of: [.fileURL], isTargeted: $isDropTarget) { providers in
-            guard let targetURL, let onDrop else { return false }
-            onDrop(providers, targetURL)
-            return true
-        }
-        .overlay(
-            Group {
-                if let onContextMenuOpen {
-                    RightClickCaptureView(onRightClick: onContextMenuOpen)
-                        .allowsHitTesting(false)
-                }
-            },
-        )
-    }
-}
-
-struct TagItemView: View {
-    let tag: SidebarUtils.TagItem
-    let isSelected: Bool
-    let isContextMenuTarget: Bool
-    let contextMenuTargetWasSelected: Bool
-    let action: () -> Void
-    let onDrop: (([NSItemProvider], String) -> Void)? // 태그 드롭 콜백 (providers 전달)
-    let onContextMenuOpen: (() -> Void)?
-
-    @Environment(\.colorScheme)
-    private var colorScheme
-    @State private var isDropTarget = false
-
-    @ViewBuilder private var backgroundView: some View {
-        RoundedRectangle(cornerRadius: 6)
-            .fill(backgroundColor)
-            .overlay(
-                RoundedRectangle(cornerRadius: 6)
-                    .stroke(
-                        isContextMenuTarget ? contextMenuOutlineColor : Color.clear,
-                        lineWidth: isContextMenuTarget ? 1 : 0,
-                    ),
-            )
-    }
-
-    private var backgroundColor: Color {
-        if isDropTarget {
-            Color.accentColor
-        } else if isSelected {
-            VoyagerDS.Surface.sidebarSelectionBackground(for: colorScheme)
-        } else {
-            Color.clear
-        }
-    }
-
-    private var contextMenuOutlineColor: Color {
-        Color(nsColor: contextMenuTargetWasSelected ? .secondaryLabelColor : .tertiaryLabelColor)
-    }
-
-    var body: some View {
-        HStack(spacing: 8) {
-            Circle()
-                .fill(tag.color)
-                .frame(width: 8, height: 8)
-            Text(tag.name)
-                .foregroundColor(isDropTarget ? .white : .primary)
-                .lineLimit(1)
-                .truncationMode(.tail)
-            Spacer()
-        }
-        .padding(.horizontal, 12)
-        .padding(.vertical, 4)
-        .background(backgroundView)
-        .padding(.horizontal, 8)
-        .contentShape(Rectangle())
-        .onTapGesture {
-            action()
-            restoreFileManagerFocus()
-        }
-        .onDrop(of: [.fileURL], isTargeted: $isDropTarget) { providers in
-            guard let onDrop else { return false }
-            onDrop(providers, tag.name)
-            return true
-        }
-        .overlay(
-            Group {
-                if let onContextMenuOpen {
-                    RightClickCaptureView(onRightClick: onContextMenuOpen)
-                        .allowsHitTesting(false)
-                }
-            },
-        )
-    }
-}
-
-private struct SidebarSectionHeader: View {
-    let title: String
-    let isCollapsed: Bool
-    let onToggle: () -> Void
-
-    @State private var isHovered = false
-
-    var body: some View {
-        HStack(spacing: 4) {
-            Text(title)
-                .font(.caption)
-                .foregroundColor(.secondary)
-            Spacer()
-            Image(systemName: isCollapsed ? "chevron.right" : "chevron.down")
-                .font(.system(size: 11, weight: .semibold))
-                .foregroundColor(.secondary)
-                .opacity(isHovered ? 1 : 0)
-        }
-        .padding(.leading, 12)
-        .padding(.trailing, 20)
-        .padding(.vertical, 4)
-        .contentShape(Rectangle())
-        .onTapGesture {
-            onToggle()
-        }
-        .onHover { hovering in
-            withAnimation(.easeInOut(duration: 0.1)) {
-                isHovered = hovering
-            }
-        }
-    }
-}
-
 struct SidebarView: View {
     let store: StoreOf<FileManagerFeature>
     @Dependency(\.entryClient)
@@ -229,7 +22,7 @@ struct SidebarView: View {
 
             ScrollView {
                 VStack(alignment: .leading, spacing: 0) {
-                    SidebarItemView(
+                    FileManagerSidebarItemView(
                         iconName: "clock",
                         title: "Recents",
                         isSelected: store.selectedSidebarItem == "Recents",
@@ -295,7 +88,7 @@ struct SidebarView: View {
         Group {
             if !store.favorites.isEmpty {
                 VStack(alignment: .leading, spacing: 0) {
-                    SidebarSectionHeader(
+                    FileManagerSidebarSectionHeader(
                         title: "Favorites",
                         isCollapsed: store.isFavoritesCollapsed,
                         onToggle: {
@@ -308,7 +101,7 @@ struct SidebarView: View {
                         favoriteDropIndicator(at: 0)
 
                         ForEach(Array(store.favorites.enumerated()), id: \.element.url) { index, favorite in
-                            SidebarItemView(
+                            FileManagerSidebarItemView(
                                 iconName: favorite.iconName,
                                 title: favorite.displayName,
                                 isSelected: store.selectedSidebarItem == favorite.displayName,
@@ -373,7 +166,7 @@ struct SidebarView: View {
             .contentShape(Rectangle())
             .onDrop(
                 of: [UTType.fileURL],
-                delegate: FavoriteDropDelegate(
+                delegate: FileManagerFavoriteDropDelegate(
                     index: index,
                     dropTargetIndex: $dropTargetIndex,
                     entryClient: entryClient,
@@ -440,60 +233,11 @@ struct SidebarView: View {
         completion(nil)
     }
 
-    private struct FavoriteDropDelegate: DropDelegate {
-        let index: Int
-        @Binding var dropTargetIndex: Int?
-        let entryClient: EntryClient
-        let resolveURL: (_ providers: [NSItemProvider], _ completion: @escaping (URL?) -> Void) -> Void
-        let onDrop: (_ providers: [NSItemProvider], _ index: Int) -> Bool
-
-        func dropEntered(info: DropInfo) {
-            updateTargetIndicator(with: info)
-        }
-
-        func dropUpdated(info _: DropInfo) -> DropProposal? {
-            DropProposal(operation: .copy)
-        }
-
-        func dropExited(info _: DropInfo) {
-            if dropTargetIndex == index {
-                dropTargetIndex = nil
-            }
-        }
-
-        func performDrop(info: DropInfo) -> Bool {
-            dropTargetIndex = nil
-            return onDrop(info.itemProviders(for: [UTType.fileURL]), index)
-        }
-
-        private func updateTargetIndicator(with info: DropInfo) {
-            let providers = info.itemProviders(for: [UTType.fileURL])
-            resolveURL(providers) { url in
-                guard let url else {
-                    return
-                }
-
-                var isDirectory: ObjCBool = false
-                let isVoycoll = url.pathExtension.lowercased() == "voycoll"
-                let exists = entryClient.fileExistsAtPath(url.path, &isDirectory)
-                let canDrop = exists && (isDirectory.boolValue || isVoycoll)
-
-                DispatchQueue.main.async {
-                    if canDrop {
-                        dropTargetIndex = index
-                    } else if dropTargetIndex == index {
-                        dropTargetIndex = nil
-                    }
-                }
-            }
-        }
-    }
-
     private var locationsSection: some View {
         Group {
             if !store.locations.isEmpty {
                 VStack(alignment: .leading, spacing: 0) {
-                    SidebarSectionHeader(
+                    FileManagerSidebarSectionHeader(
                         title: "Locations",
                         isCollapsed: store.isLocationsCollapsed,
                         onToggle: {
@@ -504,7 +248,7 @@ struct SidebarView: View {
 
                     if !store.isLocationsCollapsed {
                         ForEach(store.locations, id: \.url) { location in
-                            SidebarItemView(
+                            FileManagerSidebarItemView(
                                 iconName: location.iconName,
                                 title: location.name,
                                 isSelected: store.selectedSidebarItem == location.name,
@@ -537,7 +281,7 @@ struct SidebarView: View {
         Group {
             if !store.tags.isEmpty {
                 VStack(alignment: .leading, spacing: 0) {
-                    SidebarSectionHeader(
+                    FileManagerSidebarSectionHeader(
                         title: "Tags",
                         isCollapsed: store.isTagsCollapsed,
                         onToggle: {
@@ -548,7 +292,7 @@ struct SidebarView: View {
 
                     if !store.isTagsCollapsed {
                         ForEach(store.tags, id: \.name) { tag in
-                            TagItemView(
+                            FileManagerTagItemView(
                                 tag: tag,
                                 isSelected: store.selectedSidebarItem == tag.name,
                                 isContextMenuTarget: contextMenuTargetId == tag.name,
@@ -564,52 +308,6 @@ struct SidebarView: View {
                             )
                         }
                     }
-                }
-            }
-        }
-    }
-}
-
-private struct RightClickCaptureView: NSViewRepresentable {
-    let onRightClick: () -> Void
-
-    func makeNSView(context _: Context) -> CaptureView {
-        let view = CaptureView()
-        view.onRightClick = onRightClick
-        return view
-    }
-
-    func updateNSView(_ nsView: CaptureView, context _: Context) {
-        nsView.onRightClick = onRightClick
-    }
-
-    @MainActor
-    final class CaptureView: NSView {
-        var onRightClick: (() -> Void)?
-        private var monitor: Any?
-
-        override func viewDidMoveToWindow() {
-            super.viewDidMoveToWindow()
-            if let monitor {
-                NSEvent.removeMonitor(monitor)
-                self.monitor = nil
-            }
-            guard window != nil else { return }
-
-            monitor = NSEvent.addLocalMonitorForEvents(matching: [.rightMouseDown]) { [weak self] event in
-                guard let self else { return event }
-                let location = convert(event.locationInWindow, from: nil)
-                if bounds.contains(location) {
-                    onRightClick?()
-                }
-                return event
-            }
-        }
-
-        deinit {
-            MainActor.assumeIsolated {
-                if let monitor {
-                    NSEvent.removeMonitor(monitor)
                 }
             }
         }

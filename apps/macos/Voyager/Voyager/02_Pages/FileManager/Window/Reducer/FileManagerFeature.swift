@@ -30,6 +30,27 @@ struct FileManagerFeature {
         var viewLayout: ViewLayout
     }
 
+    func makeWindowTitle(for path: String) -> String {
+        if path == "/" {
+            return sidebarClient.computerName()
+        }
+        if path == sidebarClient.computerName() {
+            return path
+        }
+        return entryClient.displayName(path)
+    }
+
+    static func makeWindowTitle(for path: String) -> String {
+        let sidebarClient = SidebarClient.liveValue
+        if path == "/" {
+            return sidebarClient.computerName()
+        }
+        if path == sidebarClient.computerName() {
+            return path
+        }
+        return EntryClient.liveValue.displayName(path)
+    }
+
     @ObservableState
     struct State: Equatable {
         var navigationState: FileManagerNavigationUtils.NavigationState = .folder(SettingsDefaults.defaultTabPath())
@@ -310,7 +331,7 @@ struct FileManagerFeature {
         case collection(CollectionFeature.Action)
     }
 
-    nonisolated enum CancelID: Hashable, Sendable {
+    private nonisolated enum CancelID: Hashable, Sendable {
         case openCollectionFile
     }
 
@@ -1332,6 +1353,304 @@ struct FileManagerFeature {
                 return .none
             }
         }
+    }
+
+    private func exitCollectionMode(state: inout State) -> Effect<Action> {
+        let wasCollection = if case .collection = state.navigationState { true } else { false }
+        let clearEffect = Self.clearCollectionMode(state: &state)
+
+        guard wasCollection else {
+            return clearEffect
+        }
+
+        state.navigationState = FileManagerNavigationUtils.navigationStateFromPath(
+            state.titlePath,
+            computerName: sidebarClient.computerName(),
+        )
+        matchSidebarToPath(
+            state: &state,
+            path: state.currentPath,
+            favorites: state.favorites,
+            locations: state.locations,
+        )
+        return clearEffect
+    }
+
+    private static func applyShowHiddenFilesChange(state: inout State) -> Effect<Action> {
+        switch state.navigationState {
+        case .recents:
+            .merge(
+                .send(.entries(.setShowHidden(state.showHiddenFiles))),
+                .send(.entries(.loadRecentItems(showHidden: state.showHiddenFiles))),
+            )
+        case let .tags(tagName):
+            .merge(
+                .send(.entries(.setShowHidden(state.showHiddenFiles))),
+                .send(.entries(.loadTagItems(tagName: tagName, showHidden: state.showHiddenFiles))),
+            )
+        case .computer:
+            .merge(
+                .send(.entries(.setShowHidden(state.showHiddenFiles))),
+                .send(.entries(.loadComputerItems)),
+            )
+        case .folder, .collection:
+            .merge(
+                .send(.entries(.setShowHidden(state.showHiddenFiles))),
+                .send(.entries(.loadItems(path: state.currentPath))),
+            )
+        }
+    }
+
+    private static func shouldPromptForUnsavedNavigation(state: State) -> Bool {
+        state.entries.isCollectionMode && state.canSaveCollection
+    }
+
+    private func performNavigation(
+        _ pending: PendingNavigation,
+        state: inout State,
+    ) -> Effect<Action> {
+        switch pending {
+        case .back:
+            performBackNavigation(state: &state)
+
+        case .forward:
+            performForwardNavigation(state: &state)
+
+        case let .history(index, isBackHistory):
+            performHistoryNavigation(
+                index: index,
+                isBackHistory: isBackHistory,
+                state: &state,
+            )
+
+        case .enclosingDirectory:
+            performEnclosingDirectoryNavigation(state: &state)
+        }
+    }
+
+    private func performBackNavigation(state: inout State) -> Effect<Action> {
+        guard let entry = state.backHistory.popLast() else { return .none }
+        let currentSnapshot = state.makeHistoryEntry()
+        state.appendForwardHistory(currentSnapshot)
+        applyHistoryEntry(
+            state: &state,
+            entry: entry,
+            favorites: state.favorites,
+            locations: state.locations,
+        )
+        Self.resetComposerAfterAlertNavigation(state: &state)
+        let exitEffect = Self.clearCollectionMode(state: &state)
+        return .concatenate(
+            exitEffect,
+            navigateToState(
+                state.navigationState,
+                showHidden: state.showHiddenFiles,
+            ),
+        )
+    }
+
+    private func performForwardNavigation(state: inout State) -> Effect<Action> {
+        guard let entry = state.forwardHistory.popLast() else { return .none }
+        let currentSnapshot = state.makeHistoryEntry()
+        state.appendBackHistory(currentSnapshot)
+        applyHistoryEntry(
+            state: &state,
+            entry: entry,
+            favorites: state.favorites,
+            locations: state.locations,
+        )
+        Self.resetComposerAfterAlertNavigation(state: &state)
+        let exitEffect = Self.clearCollectionMode(state: &state)
+        return .concatenate(
+            exitEffect,
+            navigateToState(
+                state.navigationState,
+                showHidden: state.showHiddenFiles,
+            ),
+        )
+    }
+
+    private func performHistoryNavigation(
+        index: Int,
+        isBackHistory: Bool,
+        state: inout State,
+    ) -> Effect<Action> {
+        if isBackHistory {
+            guard index < state.backHistory.count else { return .none }
+            let targetIndex = state.backHistory.count - 1 - index
+            let targetEntry = state.backHistory[targetIndex]
+            let trailing = Array(state.backHistory[(targetIndex + 1)...])
+
+            state.backHistory.removeLast(state.backHistory.count - targetIndex)
+
+            let currentSnapshot = state.makeHistoryEntry()
+            state.appendForwardHistory(currentSnapshot)
+            state.forwardHistory.append(contentsOf: trailing.reversed())
+            state.trimHistory()
+
+            applyHistoryEntry(
+                state: &state,
+                entry: targetEntry,
+                favorites: state.favorites,
+                locations: state.locations,
+            )
+            Self.resetComposerAfterAlertNavigation(state: &state)
+            let exitEffect = Self.clearCollectionMode(state: &state)
+            return .concatenate(
+                exitEffect,
+                navigateToState(
+                    state.navigationState,
+                    showHidden: state.showHiddenFiles,
+                ),
+            )
+        }
+
+        guard index < state.forwardHistory.count else { return .none }
+        let targetIndex = state.forwardHistory.count - 1 - index
+        let targetEntry = state.forwardHistory[targetIndex]
+        let trailing = Array(state.forwardHistory[(targetIndex + 1)...])
+
+        state.forwardHistory.removeLast(state.forwardHistory.count - targetIndex)
+
+        let currentSnapshot = state.makeHistoryEntry()
+        state.appendBackHistory(currentSnapshot)
+        state.backHistory.append(contentsOf: trailing.reversed())
+        state.trimHistory()
+
+        applyHistoryEntry(
+            state: &state,
+            entry: targetEntry,
+            favorites: state.favorites,
+            locations: state.locations,
+        )
+        Self.resetComposerAfterAlertNavigation(state: &state)
+        let exitEffect = Self.clearCollectionMode(state: &state)
+        return .concatenate(
+            exitEffect,
+            navigateToState(
+                state.navigationState,
+                showHidden: state.showHiddenFiles,
+            ),
+        )
+    }
+
+    private func performEnclosingDirectoryNavigation(state: inout State) -> Effect<Action> {
+        guard let parentPath = state.enclosingDirectoryPath else { return .none }
+        let parentURL = URL(fileURLWithPath: parentPath)
+        let childName = URL(fileURLWithPath: state.currentPath).lastPathComponent
+        if !childName.isEmpty {
+            state.entries.selectAfterLoadFileNames = [childName]
+        }
+        let previousNavigationState = state.navigationState
+        state.navigateToFolder(parentURL.path, sidebarItemName: parentURL.lastPathComponent)
+        logDAUNavigationIfNeeded(previous: previousNavigationState, next: state.navigationState)
+        state.resetComposer()
+        state.resetComposerOnNextDirectoryNavigation = false
+        let exitEffect = exitCollectionMode(state: &state)
+        return .concatenate(
+            exitEffect,
+            .send(.entries(.loadItems(path: parentURL.path))),
+        )
+    }
+
+    private static func resetComposerAfterAlertNavigation(state: inout State) {
+        if state.resetComposerOnNextDirectoryNavigation,
+           !state.navigationState.isCollection
+        {
+            state.resetComposer()
+            state.resetComposerOnNextDirectoryNavigation = false
+        }
+    }
+
+    private func navigateToState(
+        _ navigationState: FileManagerNavigationUtils.NavigationState,
+        showHidden: Bool = false,
+    ) -> Effect<Action> {
+        switch navigationState {
+        case .recents:
+            .send(.entries(.loadRecentItems(showHidden: showHidden)))
+        case let .folder(path):
+            .send(.entries(.loadItems(path: path)))
+        case let .tags(tagName):
+            .run { send in
+                let taggedItems = await sidebarClient.loadFilesWithTag(
+                    tagName,
+                    showHidden,
+                    entryClient,
+                    WorkspaceClient.liveValue,
+                )
+                await send(.entries(.itemsLoaded(taggedItems)))
+            }
+        case .computer:
+            .send(.entries(.loadComputerItems))
+        case let .collection(navigation):
+            .send(.navigateToCollection(navigation))
+        }
+    }
+
+    private func logDAUNavigationIfNeeded(
+        previous: FileManagerNavigationUtils.NavigationState,
+        next: FileManagerNavigationUtils.NavigationState,
+    ) {
+        guard previous != next else { return }
+        guard let kind = dauNavigationKind(for: next) else { return }
+        VoyagerSentryMetricLogger.logDAUNavigation(kind: kind)
+    }
+
+    private func dauNavigationKind(
+        for navigationState: FileManagerNavigationUtils.NavigationState,
+    ) -> DAUNavigationKind? {
+        switch navigationState {
+        case .folder:
+            .folder
+        case .collection:
+            .collection
+        default:
+            nil
+        }
+    }
+
+    private static func clearCollectionMode(state: inout State) -> Effect<Action> {
+        state.collectionContext = nil
+        state.pendingSearchQuery = nil
+        state.isOpeningCollectionFile = false
+        state.openedCollectionName = nil
+        state.openedCollectionURL = nil
+        state.openedCollectionBaseline = nil
+        state.collectionOriginURL = nil
+        state.pendingNavigation = nil
+        state.entries.collectionItems = []
+        return .merge(
+            .cancel(id: CancelID.openCollectionFile),
+            .cancel(id: ComposerFeature.CancelID.search),
+            .cancel(id: ComposerFeature.CancelID.filters),
+            .send(.entries(.setCollectionMode(false))),
+        )
+    }
+
+    private func applyHistoryEntry(
+        state: inout State,
+        entry: HistoryEntry,
+        favorites: [SidebarUtils.FavoriteItem],
+        locations: [SidebarUtils.LocationItem],
+    ) {
+        let previousNavigationState = state.navigationState
+        state.navigationState = entry.navigationState
+        logDAUNavigationIfNeeded(previous: previousNavigationState, next: state.navigationState)
+        switch entry.navigationState {
+        case .collection:
+            state.selectedSidebarItem = nil
+        default:
+            state.selectedSidebarItem = entry.sidebarItemName
+            matchSidebarToPath(
+                state: &state,
+                path: state.currentPath,
+                favorites: favorites,
+                locations: locations,
+            )
+        }
+        state.composer = entry.composerState
+        state.composer.isPresented = false
     }
 }
 

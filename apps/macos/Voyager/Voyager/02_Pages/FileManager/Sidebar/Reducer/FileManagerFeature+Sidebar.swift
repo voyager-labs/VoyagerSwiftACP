@@ -1,27 +1,6 @@
 import Foundation
 
 extension FileManagerFeature {
-    func makeWindowTitle(for path: String) -> String {
-        if path == "/" {
-            return sidebarClient.computerName()
-        }
-        if path == sidebarClient.computerName() {
-            return path
-        }
-        return entryClient.displayName(path)
-    }
-
-    static func makeWindowTitle(for path: String) -> String {
-        let sidebarClient = SidebarClient.liveValue
-        if path == "/" {
-            return sidebarClient.computerName()
-        }
-        if path == sidebarClient.computerName() {
-            return path
-        }
-        return EntryClient.liveValue.displayName(path)
-    }
-
     func matchSidebarToPath(
         state: inout State,
         path: String,

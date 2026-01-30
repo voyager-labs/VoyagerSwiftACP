@@ -1,5 +1,8 @@
+// swiftlint:disable file_length
 import AppKit
+import Combine
 import ComposableArchitecture
+import SwiftUI
 
 class AppearanceAwareSplitView: NSSplitView {
     var onAppearanceChanged: (() -> Void)?

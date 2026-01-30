@@ -1,6 +1,6 @@
-import AppKit
 import Combine
 import ComposableArchitecture
+import SwiftUI
 
 class FileManagerWindowController: NSWindowController, NSWindowDelegate {
     private let initialPath: String?
