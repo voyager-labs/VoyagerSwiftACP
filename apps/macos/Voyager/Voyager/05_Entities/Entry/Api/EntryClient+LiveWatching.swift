@@ -5,6 +5,7 @@ extension EntryClient {
     final class FSEventsWatcher: @unchecked Sendable {
         private nonisolated(unsafe) var eventStream: FSEventStreamRef?
         private nonisolated(unsafe) let lock = NSLock()
+        private nonisolated(unsafe) var isTerminated = false
 
         nonisolated init() {}
 
@@ -18,6 +19,27 @@ extension EntryClient {
             lock.lock()
             defer { lock.unlock() }
             return eventStream
+        }
+
+        nonisolated func terminate() {
+            lock.lock()
+            defer { lock.unlock() }
+            isTerminated = true
+        }
+
+        nonisolated func getIsTerminated() -> Bool {
+            lock.lock()
+            defer { lock.unlock() }
+            return isTerminated
+        }
+
+        deinit {
+            // 스트림이 남아있는 경우에만 정리 (중복 해제 방지)
+            if let stream = eventStream {
+                FSEventStreamStop(stream)
+                FSEventStreamInvalidate(stream)
+                FSEventStreamRelease(stream)
+            }
         }
     }
 
@@ -124,6 +146,8 @@ extension EntryClient {
                 watcher.setStream(stream)
 
                 continuation.onTermination = { @Sendable _ in
+                    // 중복 해제 방지를 위해 먼저 terminate 상태로 설정
+                    watcher.terminate()
                     if let stream = watcher.getStream() {
                         FSEventStreamStop(stream)
                         FSEventStreamInvalidate(stream)
@@ -137,7 +161,11 @@ extension EntryClient {
 
     nonisolated static func makeStopWatchingDirectory(watcher: FSEventsWatcher) -> @Sendable () -> Void {
         {
+            // 이미 terminate 상태인 경우 중복 해제 방지
+            guard !watcher.getIsTerminated() else { return }
+
             if let stream = watcher.getStream() {
+                watcher.terminate()
                 FSEventStreamStop(stream)
                 FSEventStreamInvalidate(stream)
                 FSEventStreamRelease(stream)

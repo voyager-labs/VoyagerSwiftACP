@@ -237,8 +237,11 @@ public enum FileOpError: Error, Equatable, Sendable {
 }
 
 extension EntryClient: DependencyKey {
+    // FSEventsWatcher 싱글톤 패턴으로 중복 생성 방지
+    private nonisolated static let sharedWatcher = FSEventsWatcher()
+
     public nonisolated static var liveValue: EntryClient {
-        let watcher = FSEventsWatcher()
+        let watcher = sharedWatcher
         return EntryClient(
             open: liveOpen,
             setDefaultApp: liveSetDefaultApp,
