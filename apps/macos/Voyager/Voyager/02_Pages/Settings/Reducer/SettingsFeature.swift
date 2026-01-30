@@ -9,12 +9,6 @@ struct SettingsFeature {
     @Dependency(\.userDefaultsClient)
     var userDefaultsClient: UserDefaultsClient
 
-    nonisolated static func getDefaultTabPath() -> String {
-        let entryClient = EntryClient.liveValue
-        let userDefaultsClient = UserDefaultsClient.liveValue
-        return userDefaultsClient.string("defaultTabPath") ?? entryClient.homeDirectory()
-    }
-
     @ObservableState
     struct State: Equatable {
         var selectedSection: SettingsSection = .general

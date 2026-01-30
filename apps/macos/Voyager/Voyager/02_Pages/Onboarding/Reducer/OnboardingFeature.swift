@@ -168,7 +168,7 @@ struct OnboardingFeature {
                 return .run { [onboardingProgressStore, fileManagerWindowClient] send in
                     onboardingProgressStore.save(snapshot)
                     let path = await MainActor.run {
-                        SettingsFeature.getDefaultTabPath()
+                        SettingsDefaults.defaultTabPath()
                     }
                     let opened = await fileManagerWindowClient.openWindow(path)
                     await send(.complete(.openWindowResponse(opened)))

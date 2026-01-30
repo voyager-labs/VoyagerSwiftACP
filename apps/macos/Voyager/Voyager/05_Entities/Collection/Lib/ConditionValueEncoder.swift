@@ -1,5 +1,3 @@
-import Foundation
-
 enum ConditionValueEncoder {
     static func encode(condition: Condition, values: [String]) -> JSONValue? {
         encodeValues(

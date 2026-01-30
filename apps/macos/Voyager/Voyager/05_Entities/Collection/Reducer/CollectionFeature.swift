@@ -42,9 +42,6 @@ struct CollectionFeature {
     @Dependency(\.userDefaultsClient)
     var userDefaultsClient
 
-    @Dependency(\.entryClient)
-    var entryClient
-
     var body: some Reducer<State, Action> {
         Reduce { state, action in
             switch action {
@@ -85,7 +82,6 @@ struct CollectionFeature {
                         let initialDirectory = await defaultCollectionSaveDirectory(
                             preferredScopes: context.scopes,
                             userDefaultsClient: userDefaultsClient,
-                            entryClient: entryClient,
                         )
                         let url = await showCollectionSavePanel(initialDirectory: initialDirectory)
                         await send(.savePanelResponse(url))
@@ -174,7 +170,7 @@ struct CollectionFeature {
                 switch result {
                 case let .success(url):
                     let directory = url.deletingLastPathComponent().path
-                    userDefaultsClient.setString(directory, SettingsKeys.lastCollectionSaveDirectory)
+                    userDefaultsClient.setString(directory, CollectionKeys.lastCollectionSaveDirectory)
                     return .none
 
                 case let .failure(error):
@@ -278,27 +274,27 @@ private func resetPendingSave(_ state: inout CollectionFeature.State) {
 private func defaultCollectionSaveDirectory(
     preferredScopes: [String],
     userDefaultsClient: UserDefaultsClient,
-    entryClient: EntryClient,
 ) -> URL? {
+    let fileManager = FileManager.default
     if preferredScopes.count == 1,
        let scope = preferredScopes.first,
-       let url = validDirectoryURL(scope, entryClient: entryClient)
+       let url = validDirectoryURL(scope, fileManager: fileManager)
     {
         return url
     }
 
-    if let saved = userDefaultsClient.string(SettingsKeys.lastCollectionSaveDirectory),
-       let url = validDirectoryURL(saved, entryClient: entryClient)
+    if let saved = userDefaultsClient.string(CollectionKeys.lastCollectionSaveDirectory),
+       let url = validDirectoryURL(saved, fileManager: fileManager)
     {
         return url
     }
 
-    return URL(fileURLWithPath: entryClient.homeDirectory())
+    return URL(fileURLWithPath: NSHomeDirectory())
 }
 
-private func validDirectoryURL(_ path: String, entryClient: EntryClient) -> URL? {
+private func validDirectoryURL(_ path: String, fileManager: FileManager) -> URL? {
     var isDirectory: ObjCBool = false
-    guard entryClient.fileExistsAtPath(path, &isDirectory), isDirectory.boolValue else {
+    guard fileManager.fileExists(atPath: path, isDirectory: &isDirectory), isDirectory.boolValue else {
         return nil
     }
     return URL(fileURLWithPath: path)
