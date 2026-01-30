@@ -16,7 +16,7 @@ description: 'Error handling policy across backend and frontend'
 - Validation
   - Prefer explicit `422` with pydantic validation details (sanitized).
 - Logging
-  - Follow [05-logging-observability.mdc](mdc:.cursor/rules/05-logging-observability.mdc) for detailed logging guidelines.
+  - Follow [05-logging-observability.mdc](mdc:.cursor/rules/00-monorepo/05-logging-observability.mdc) for detailed logging guidelines.
   - Log minimal context; never include secrets or full payloads.
 
 ## Frontend (SwiftUI + TCA)
@@ -32,4 +32,3 @@ description: 'Error handling policy across backend and frontend'
   - Show progress for batch operations; allow user to cancel where feasible.
 - State management
   - Keep errors in state as typed structs/enums; prefer lightweight `message` + optional `suggestion`.
-

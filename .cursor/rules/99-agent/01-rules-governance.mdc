@@ -34,7 +34,7 @@ description: 'Rule-first development, sync triggers, and quality bar.'
 ## Rule consistency & SSOT
 
 - **Single Source of Truth**: Each topic should have one authoritative rule file.
-- **Cross-references**: Use `[rule-name.mdc](mdc:.cursor/rules/rule-name.mdc)` for references between rules.
+- **Cross-references**: Use full paths under `.cursor/rules/` including the numbered directory, e.g. [03-error-handling-policy.mdc](mdc:.cursor/rules/00-monorepo/03-error-handling-policy.mdc).
 - **Avoid duplication**: If content appears in multiple rules, consolidate and reference instead.
 - **Consistency check**: Before creating/updating rules, verify:
   - No conflicting information with existing rules
@@ -62,7 +62,7 @@ description: 'Rule-first development, sync triggers, and quality bar.'
 ### Rule change propagation
 
 - **When renaming/moving rules**: Use `grep` to find all references to the old rule name
-- **Update all references**: Change `[old-name.mdc](mdc:.cursor/rules/old-name.mdc)` to `[new-name.mdc](mdc:.cursor/rules/new-name.mdc)`
+- **Update all references**: Change `[old-name.mdc](mdc:.cursor/rules/<old-dir>/<old-name>.mdc)` to `[new-name.mdc](mdc:.cursor/rules/<new-dir>/<new-name>.mdc)`
 - **Verify completeness**: Ensure no orphaned references remain
 - **Test references**: Confirm all links work after changes
 
