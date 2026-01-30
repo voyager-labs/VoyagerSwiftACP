@@ -207,6 +207,7 @@ struct EntriesFeature {
         case toggleGroup(String)
         case setCollectionMode(Bool)
         case setDropTargeted(Bool)
+        case setSelectedIds(ids: Set<String>, lastSelectedId: String?)
         case selectItem(id: String, isCommandPressed: Bool, isShiftPressed: Bool)
         case selectAll
         case clearSelection
@@ -676,6 +677,42 @@ struct EntriesFeature {
                 state.clearSelection()
                 state.operations.commonApplicationsForSelectedFiles = []
                 return generateThumbnailsEffect(for: sorted)
+
+            case let .setSelectedIds(ids, lastSelectedId):
+                var renameEffect: Effect<Action> = .none
+                let displayItems = state.displayItems
+
+                if state.isRenaming {
+                    renameEffect = .send(.commitRename)
+                }
+
+                let validIds = Set(displayItems.map(\.id))
+                let normalizedIds = ids.intersection(validIds)
+
+                state.shouldScrollToSelection = false
+                state.selectedIds = normalizedIds
+
+                let normalizedLastId: String? = if let lastSelectedId, normalizedIds.contains(lastSelectedId) {
+                    lastSelectedId
+                } else {
+                    normalizedIds.first
+                }
+
+                state.lastSelectedId = normalizedLastId
+                state.rangeAnchorId = normalizedLastId
+
+                if normalizedIds.isEmpty {
+                    state.operations.commonApplicationsForSelectedFiles = []
+                }
+
+                return .merge(
+                    renameEffect,
+                    preloadApplicationsEffect(
+                        selectedIds: state.selectedIds,
+                        items: displayItems,
+                        currentItemId: normalizedLastId,
+                    ),
+                )
 
             case let .selectItem(id, isCommandPressed, isShiftPressed):
                 var renameEffect: Effect<Action> = .none
@@ -1318,6 +1355,19 @@ struct EntriesFeature {
                     return .none
                 }
 
+                func isDescendantPath(_ destinationPath: String, of sourcePath: String) -> Bool {
+                    let destinationComponents = URL(fileURLWithPath: destinationPath)
+                        .standardizedFileURL.pathComponents
+                    let sourceComponents = URL(fileURLWithPath: sourcePath)
+                        .standardizedFileURL.pathComponents
+
+                    guard destinationComponents.count > sourceComponents.count else {
+                        return false
+                    }
+
+                    return Array(destinationComponents.prefix(sourceComponents.count)) == sourceComponents
+                }
+
                 if !isOptionDrag {
                     let sourceParent = URL(fileURLWithPath: sourcePaths[0])
                         .deletingLastPathComponent().path
@@ -1327,7 +1377,7 @@ struct EntriesFeature {
 
                     // 자기 자신의 하위 폴더로 이동 방지
                     for sourcePath in sourcePaths {
-                        if destinationPath.hasPrefix(sourcePath + "/") || destinationPath == sourcePath {
+                        if destinationPath == sourcePath || isDescendantPath(destinationPath, of: sourcePath) {
                             return .none
                         }
                     }
