@@ -3,8 +3,6 @@ import ComposableArchitecture
 import SwiftUI
 import UniformTypeIdentifiers
 
-// swiftlint:disable vertical_whitespace_closing_braces
-
 struct EntryGridView: View, Equatable {
     let item: Entry
     let isSelected: Bool

@@ -2,9 +2,17 @@ import CoreServices
 import Foundation
 
 extension EntryClient {
+    private final class FSEventsContinuationBox: @unchecked Sendable {
+        let continuation: AsyncStream<[String]>.Continuation
+
+        nonisolated init(_ continuation: AsyncStream<[String]>.Continuation) {
+            self.continuation = continuation
+        }
+    }
+
     final class FSEventsWatcher: @unchecked Sendable {
         private nonisolated(unsafe) var eventStream: FSEventStreamRef?
-        private nonisolated(unsafe) let lock = NSLock()
+        private let lock = NSLock()
         private nonisolated(unsafe) var isTerminated = false
 
         nonisolated init() {}
@@ -88,48 +96,11 @@ extension EntryClient {
     ) -> @Sendable (URL) -> AsyncStream<[String]> {
         { url in
             AsyncStream { continuation in
-                final class ContinuationBox {
-                    let continuation: AsyncStream<[String]>.Continuation
-                    init(_ continuation: AsyncStream<[String]>.Continuation) {
-                        self.continuation = continuation
-                    }
-                }
+                let box = FSEventsContinuationBox(continuation)
+                let callback = makeFSEventsCallback()
+                var context = makeStreamContext(box: box)
 
-                let box = ContinuationBox(continuation)
-
-                let callback: FSEventStreamCallback = { _, info, _, eventPaths, _, _ in
-                    guard let info else { return }
-
-                    let box = Unmanaged<ContinuationBox>
-                        .fromOpaque(info)
-                        .takeUnretainedValue()
-
-                    guard let paths = unsafeBitCast(eventPaths, to: NSArray.self) as? [String] else {
-                        return
-                    }
-                    box.continuation.yield(paths)
-                }
-
-                var context = FSEventStreamContext(
-                    version: 0,
-                    info: Unmanaged.passRetained(box).toOpaque(),
-                    retain: nil,
-                    release: { info in
-                        guard let info else { return }
-                        Unmanaged<ContinuationBox>.fromOpaque(info).release()
-                    },
-                    copyDescription: nil,
-                )
-
-                guard let stream = FSEventStreamCreate(
-                    nil,
-                    callback,
-                    &context,
-                    [url.path] as CFArray,
-                    FSEventStreamEventId(kFSEventStreamEventIdSinceNow),
-                    0.3, // 300ms 지연 (배터리 효율)
-                    UInt32(kFSEventStreamCreateFlagFileEvents | kFSEventStreamCreateFlagUseCFTypes),
-                ) else {
+                guard let stream = createStream(url: url, callback: callback, context: &context) else {
                     continuation.finish()
                     return
                 }
@@ -137,8 +108,7 @@ extension EntryClient {
                 FSEventStreamSetDispatchQueue(stream, DispatchQueue.main)
 
                 guard FSEventStreamStart(stream) else {
-                    FSEventStreamInvalidate(stream)
-                    FSEventStreamRelease(stream)
+                    stopStream(stream)
                     continuation.finish()
                     return
                 }
@@ -149,14 +119,64 @@ extension EntryClient {
                     // 중복 해제 방지를 위해 먼저 terminate 상태로 설정
                     watcher.terminate()
                     if let stream = watcher.getStream() {
-                        FSEventStreamStop(stream)
-                        FSEventStreamInvalidate(stream)
-                        FSEventStreamRelease(stream)
+                        stopStream(stream)
                         watcher.setStream(nil)
                     }
                 }
             }
         }
+    }
+
+    private nonisolated static func makeFSEventsCallback() -> FSEventStreamCallback {
+        { _, info, _, eventPaths, _, _ in
+            guard let info else { return }
+
+            let box = Unmanaged<FSEventsContinuationBox>
+                .fromOpaque(info)
+                .takeUnretainedValue()
+
+            guard let paths = unsafeBitCast(eventPaths, to: NSArray.self) as? [String] else {
+                return
+            }
+            box.continuation.yield(paths)
+        }
+    }
+
+    private nonisolated static func makeStreamContext(
+        box: FSEventsContinuationBox,
+    ) -> FSEventStreamContext {
+        FSEventStreamContext(
+            version: 0,
+            info: Unmanaged.passRetained(box).toOpaque(),
+            retain: nil,
+            release: { info in
+                guard let info else { return }
+                Unmanaged<FSEventsContinuationBox>.fromOpaque(info).release()
+            },
+            copyDescription: nil,
+        )
+    }
+
+    private nonisolated static func createStream(
+        url: URL,
+        callback: FSEventStreamCallback,
+        context: inout FSEventStreamContext,
+    ) -> FSEventStreamRef? {
+        FSEventStreamCreate(
+            nil,
+            callback,
+            &context,
+            [url.path] as CFArray,
+            FSEventStreamEventId(kFSEventStreamEventIdSinceNow),
+            0.3, // 300ms 지연 (배터리 효율)
+            UInt32(kFSEventStreamCreateFlagFileEvents | kFSEventStreamCreateFlagUseCFTypes),
+        )
+    }
+
+    private nonisolated static func stopStream(_ stream: FSEventStreamRef) {
+        FSEventStreamStop(stream)
+        FSEventStreamInvalidate(stream)
+        FSEventStreamRelease(stream)
     }
 
     nonisolated static func makeStopWatchingDirectory(watcher: FSEventsWatcher) -> @Sendable () -> Void {

@@ -1,8 +1,6 @@
-// swiftlint:disable file_length
 import AppKit
 import ComposableArchitecture
 
-// swiftlint:disable large_tuple
 import Foundation
 import UniformTypeIdentifiers
 
@@ -17,6 +15,18 @@ public struct ApplicationInfo: Identifiable, Equatable, Sendable {
         self.name = name
         self.bundleID = bundleID
         self.isDefault = isDefault
+    }
+}
+
+public struct EntryItemMetadata: Equatable, Sendable {
+    public let kind: String
+    public let creatorApplication: String?
+    public let lastUsedDate: Date?
+
+    public nonisolated init(kind: String, creatorApplication: String?, lastUsedDate: Date?) {
+        self.kind = kind
+        self.creatorApplication = creatorApplication
+        self.lastUsedDate = lastUsedDate
     }
 }
 
@@ -56,11 +66,7 @@ public struct EntryClient: Sendable {
     public var mountedVolumeURLs: @Sendable ([URLResourceKey], FileManager.VolumeEnumerationOptions) -> [URL]?
     public var contentsOfDirectory: @Sendable (URL, [URLResourceKey], FileManager.DirectoryEnumerationOptions) throws
         -> [URL]
-    public var getItemMetadata: @Sendable (URL, Bool, WorkspaceClient) -> (
-        kind: String,
-        creatorApplication: String?,
-        lastUsedDate: Date?,
-    )
+    public var getItemMetadata: @Sendable (URL, Bool, WorkspaceClient) -> EntryItemMetadata
     public var getImageResolution: @Sendable (URL) -> String?
     public var getFormattedFileSize: @Sendable (URL) -> String?
     public var getFolderItemCount: @Sendable (URL) -> String?
@@ -115,11 +121,7 @@ public struct EntryClient: Sendable {
             [URLResourceKey],
             FileManager.DirectoryEnumerationOptions,
         ) throws -> [URL],
-        getItemMetadata: @escaping @Sendable (URL, Bool, WorkspaceClient) -> (
-            kind: String,
-            creatorApplication: String?,
-            lastUsedDate: Date?,
-        ),
+        getItemMetadata: @escaping @Sendable (URL, Bool, WorkspaceClient) -> EntryItemMetadata,
         getImageResolution: @escaping @Sendable (URL) -> String?,
         getFormattedFileSize: @escaping @Sendable (URL) -> String?,
         getFolderItemCount: @escaping @Sendable (URL) -> String?,
@@ -333,7 +335,7 @@ extension EntryClient: DependencyKey {
             trashDirectoryPath: { nil },
             mountedVolumeURLs: { _, _ in nil },
             contentsOfDirectory: { _, _, _ in [] },
-            getItemMetadata: { _, _, _ in ("File", nil, nil) },
+            getItemMetadata: { _, _, _ in EntryItemMetadata(kind: "File", creatorApplication: nil, lastUsedDate: nil) },
             getImageResolution: { _ in nil },
             getFormattedFileSize: { _ in nil },
             getFolderItemCount: { _ in nil },
@@ -398,7 +400,7 @@ extension EntryClient: DependencyKey {
             trashDirectoryPath: { nil },
             mountedVolumeURLs: { _, _ in nil },
             contentsOfDirectory: { _, _, _ in [] },
-            getItemMetadata: { _, _, _ in ("File", nil, nil) },
+            getItemMetadata: { _, _, _ in EntryItemMetadata(kind: "File", creatorApplication: nil, lastUsedDate: nil) },
             getImageResolution: { _ in nil },
             getFormattedFileSize: { _ in nil },
             getFolderItemCount: { _ in nil },
@@ -415,8 +417,6 @@ extension EntryClient: DependencyKey {
         )
     }
 }
-
-// swiftlint:enable large_tuple
 
 public extension DependencyValues {
     nonisolated var entryClient: EntryClient {

@@ -43,6 +43,7 @@ osxmetadata
 pgrep
 pids
 pipefail
+preconcurrency
 purgeable
 pydantic
 pyproject
@@ -59,6 +60,7 @@ socktype
 sqlalchemy
 sqlmodel
 streamable
+swiftlint
 UNSPEC
 uploadeds
 uvicorn

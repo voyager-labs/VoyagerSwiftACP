@@ -3,16 +3,14 @@ import Combine
 import ComposableArchitecture
 import SwiftUI
 
-// swiftlint:disable type_body_length
-
 final class EntryListTableViewController: NSViewController {
-    struct Row: Equatable {
-        enum Kind: Equatable {
-            case groupHeader(title: String, colorCode: Int?)
-            case entry(Entry)
-        }
+    enum RowKind: Equatable {
+        case groupHeader(title: String, colorCode: Int?)
+        case entry(Entry)
+    }
 
-        let kind: Kind
+    struct Row: Equatable {
+        let kind: RowKind
 
         var id: String {
             switch kind {
@@ -24,39 +22,39 @@ final class EntryListTableViewController: NSViewController {
         }
     }
 
-    private enum Column: String {
+    enum Column: String {
         case name
         case dateModified
         case size
         case kind
     }
 
-    private let store: StoreOf<FileManagerFeature>
-    private let fsStore: StoreOf<EntriesFeature>
+    let store: StoreOf<FileManagerFeature>
+    let fsStore: StoreOf<EntriesFeature>
     private var cancellables: Set<AnyCancellable> = []
 
     private let scrollView = NSScrollView()
-    private let tableView = EntryListTableView()
+    let tableView = EntryListTableView()
 
-    private var rows: [Row] = []
-    private var rowIndexByEntryId: [String: Int] = [:]
+    private(set) var rows: [Row] = []
+    private(set) var rowIndexByEntryId: [String: Int] = [:]
 
     private var columnWidthCache: [Column: CGFloat] = [:]
     private var isUpdatingColumnsFromStore = false
-    private var isUpdatingSortFromStore = false
+    private(set) var isUpdatingSortFromStore = false
 
     private var lastInteractedRow: Int?
-    private var isUpdatingSelectionFromStore = false
+    private(set) var isUpdatingSelectionFromStore = false
     private var hasRestoredScrollPosition = false
 
     private var lastRenamingItemId: String?
 
-    private var contextMenuAnchor: CGPoint?
+    private(set) var contextMenuAnchor: CGPoint?
 
     @Dependency(\.entryClient)
-    private var entryClient
+    var entryClient
 
-    private func isDescendantPath(_ destinationPath: String, of sourcePath: String) -> Bool {
+    func isDescendantPath(_ destinationPath: String, of sourcePath: String) -> Bool {
         let destinationComponents = URL(fileURLWithPath: destinationPath)
             .standardizedFileURL.pathComponents
         let sourceComponents = URL(fileURLWithPath: sourcePath)
@@ -126,7 +124,7 @@ final class EntryListTableViewController: NSViewController {
         ])
     }
 
-    private func updateContextMenuAnchor(forRow row: Int?) {
+    func updateContextMenuAnchor(forRow row: Int?) {
         guard let row, row >= 0 else {
             contextMenuAnchor = nil
             return
@@ -469,449 +467,4 @@ final class EntryListTableViewController: NSViewController {
             self.store.send(.entries(.openSelectedItem))
         })
     }
-
-    @objc
-    private func contextMenuOpenSelectedItem() {
-        fsStore.send(.openSelectedItem)
-    }
-
-    @objc
-    private func contextMenuQuickLookSelectedItem() {
-        fsStore.send(.quickLookSelectedItem)
-    }
-
-    @objc
-    private func contextMenuGetInfoForSelectedItems() {
-        fsStore.send(.getInfoForSelectedItems)
-    }
-
-    @objc
-    private func contextMenuShareSelectedItems() {
-        fsStore.send(.shareSelectedItems(anchor: contextMenuAnchor))
-    }
-
-    @objc
-    private func contextMenuRevealSelectedItemsInFinder() {
-        fsStore.send(.revealSelectedItemsInFinder)
-    }
-
-    @objc
-    private func contextMenuCopySelectedItems() {
-        fsStore.send(.copySelectedItems)
-    }
-
-    @objc
-    private func contextMenuPasteItems() {
-        fsStore.send(.pasteItems(destinationPath: store.state.currentPath))
-    }
-
-    @objc
-    private func contextMenuStartRename() {
-        guard let id = store.state.entries.selectedIds.first else { return }
-        fsStore.send(.startRename(id: id))
-    }
-
-    @objc
-    private func contextMenuMoveSelectedItemsToTrash() {
-        fsStore.send(.moveSelectedItemsToTrash)
-    }
 }
-
-private final class EntryListTableView: NSTableView {
-    weak var contextMenuProvider: EntryListTableViewContextMenuProviding?
-
-    override func mouseDown(with event: NSEvent) {
-        let location = convert(event.locationInWindow, from: nil)
-        if row(at: location) == -1 {
-            deselectAll(nil)
-        }
-        super.mouseDown(with: event)
-    }
-
-    override func rightMouseDown(with event: NSEvent) {
-        let location = convert(event.locationInWindow, from: nil)
-        let row = row(at: location)
-
-        if row != -1, !selectedRowIndexes.contains(row) {
-            selectRowIndexes(IndexSet(integer: row), byExtendingSelection: false)
-        }
-
-        guard let contextMenuProvider else {
-            super.rightMouseDown(with: event)
-            return
-        }
-
-        let menu = contextMenuProvider.contextMenu(forRow: row == -1 ? nil : row, event: event)
-        NSMenu.popUpContextMenu(menu, with: event, for: self)
-    }
-}
-
-private protocol EntryListTableViewContextMenuProviding: AnyObject {
-    func contextMenu(forRow row: Int?, event: NSEvent) -> NSMenu
-}
-
-extension EntryListTableViewController: EntryListTableViewContextMenuProviding {
-    fileprivate func contextMenu(forRow row: Int?, event _: NSEvent) -> NSMenu {
-        updateContextMenuAnchor(forRow: row)
-
-        let menu = NSMenu()
-        let selectedIds = store.state.entries.selectedIds
-
-        menu.addItem(withTitle: "Open", action: #selector(contextMenuOpenSelectedItem), keyEquivalent: "")
-        menu.addItem(withTitle: "Quick Look", action: #selector(contextMenuQuickLookSelectedItem), keyEquivalent: "")
-        menu.addItem(NSMenuItem.separator())
-        menu.addItem(withTitle: "Get Info", action: #selector(contextMenuGetInfoForSelectedItems), keyEquivalent: "")
-        menu.addItem(withTitle: "Share…", action: #selector(contextMenuShareSelectedItems), keyEquivalent: "")
-        menu.addItem(
-            withTitle: "Reveal in Finder",
-            action: #selector(contextMenuRevealSelectedItemsInFinder),
-            keyEquivalent: "",
-        )
-        menu.addItem(NSMenuItem.separator())
-        menu.addItem(withTitle: "Copy", action: #selector(contextMenuCopySelectedItems), keyEquivalent: "")
-        menu.addItem(withTitle: "Paste", action: #selector(contextMenuPasteItems), keyEquivalent: "")
-        menu.addItem(NSMenuItem.separator())
-
-        let renameItem = NSMenuItem(title: "Rename", action: #selector(contextMenuStartRename), keyEquivalent: "")
-        renameItem.isEnabled = selectedIds.count == 1
-        menu.addItem(renameItem)
-
-        menu.addItem(
-            withTitle: "Move to Trash",
-            action: #selector(contextMenuMoveSelectedItemsToTrash),
-            keyEquivalent: "",
-        )
-        return menu
-    }
-}
-
-extension EntryListTableViewController: NSTableViewDataSource {
-    func numberOfRows(in _: NSTableView) -> Int {
-        rows.count
-    }
-
-    func tableView(_: NSTableView, pasteboardWriterForRow row: Int) -> (any NSPasteboardWriting)? {
-        guard row >= 0, row < rows.count else { return nil }
-        guard case let .entry(entry) = rows[row].kind else { return nil }
-        return NSURL(fileURLWithPath: entry.fullPath)
-    }
-
-    func tableView(
-        _ tableView: NSTableView,
-        validateDrop info: any NSDraggingInfo,
-        proposedRow row: Int,
-        proposedDropOperation _: NSTableView.DropOperation,
-    ) -> NSDragOperation {
-        var destinationPath = store.state.currentPath
-        if row >= 0,
-           row < rows.count,
-           case let .entry(entry) = rows[row].kind,
-           entry.isDirectory
-        {
-            tableView.setDropRow(row, dropOperation: .on)
-            destinationPath = entry.fullPath
-        } else {
-            tableView.setDropRow(-1, dropOperation: .on)
-        }
-
-        let sourcePaths = entryClient.loadDragPaths()
-        let isInternalDrag = !sourcePaths.isEmpty
-        let wantsCopy = isInternalDrag ? entryClient.loadDragWithOption() : NSEvent.modifierFlags.contains(.option)
-
-        if isInternalDrag, !wantsCopy {
-            let sourceParent = URL(fileURLWithPath: sourcePaths[0]).deletingLastPathComponent().path
-            if sourceParent == destinationPath {
-                return []
-            }
-
-            // 자기 자신의 하위 폴더로 이동 방지
-            for sourcePath in sourcePaths {
-                if destinationPath == sourcePath || isDescendantPath(destinationPath, of: sourcePath) {
-                    return []
-                }
-            }
-        }
-
-        let allowed = info.draggingSourceOperationMask
-        let preferred: NSDragOperation = wantsCopy ? .copy : .move
-        if !preferred.isDisjoint(with: allowed) {
-            return preferred.intersection(allowed)
-        }
-
-        // 외부 드래그에서 move 불가(copy만 가능 등) fallback
-        return NSDragOperation.copy.intersection(allowed)
-    }
-
-    func tableView(
-        _: NSTableView,
-        acceptDrop info: any NSDraggingInfo,
-        row: Int,
-        dropOperation: NSTableView.DropOperation,
-    ) -> Bool {
-        var destinationPath = store.state.currentPath
-        if dropOperation == .on,
-           row >= 0,
-           row < rows.count,
-           case let .entry(entry) = rows[row].kind,
-           entry.isDirectory
-        {
-            destinationPath = entry.fullPath
-        }
-
-        let internalPaths = entryClient.loadDragPaths()
-        if !internalPaths.isEmpty {
-            fsStore.send(.handleDrop(providers: [], destinationPath: destinationPath))
-            return true
-        }
-
-        let pasteboard = info.draggingPasteboard
-        let options: [NSPasteboard.ReadingOptionKey: Any] = [
-            .urlReadingFileURLsOnly: true,
-        ]
-        guard let urls = pasteboard.readObjects(forClasses: [NSURL.self], options: options) as? [URL],
-              !urls.isEmpty
-        else {
-            return false
-        }
-
-        let allowed = info.draggingSourceOperationMask
-        let preferred: NSDragOperation = NSEvent.modifierFlags.contains(.option) ? .copy : .move
-        let resolved = preferred.isDisjoint(with: allowed)
-            ? NSDragOperation.copy.intersection(allowed)
-            : preferred.intersection(allowed)
-        guard !resolved.isEmpty else {
-            return false
-        }
-        let isOptionPressed = resolved.contains(.copy) && !resolved.contains(.move)
-        fsStore.send(.dropItems(
-            sourcePaths: urls.map(\.path),
-            destinationPath: destinationPath,
-            isOptionDrag: isOptionPressed,
-        ))
-        return true
-    }
-}
-
-extension EntryListTableViewController: NSTableViewDelegate {
-    func tableView(_: NSTableView, shouldEdit tableColumn: NSTableColumn?, row: Int) -> Bool {
-        guard let tableColumn else { return false }
-        guard tableColumn.identifier.rawValue == Column.name.rawValue else { return false }
-        guard row >= 0, row < rows.count else { return false }
-        guard case let .entry(entry) = rows[row].kind else { return false }
-        guard store.state.entries.renamingItemId == entry.id else { return false }
-        return true
-    }
-
-    func tableView(
-        _: NSTableView,
-        draggingSession _: NSDraggingSession,
-        willBeginAt _: NSPoint,
-        forRowsWith rowIndexes: IndexSet,
-    ) {
-        let paths = rowIndexes.compactMap { index -> String? in
-            guard index >= 0, index < rows.count else { return nil }
-            guard case let .entry(entry) = rows[index].kind else { return nil }
-            return entry.fullPath
-        }
-        guard !paths.isEmpty else { return }
-        fsStore.send(.startDrag(paths: paths))
-    }
-
-    func tableView(
-        _: NSTableView,
-        draggingSession _: NSDraggingSession,
-        endedAt _: NSPoint,
-        operation: NSDragOperation,
-    ) {
-        guard operation.isEmpty else { return }
-        fsStore.send(.startDrag(paths: []))
-    }
-
-    func tableView(_ tableView: NSTableView, sortDescriptorsDidChange _: [NSSortDescriptor]) {
-        guard !isUpdatingSortFromStore else { return }
-        guard let descriptor = tableView.sortDescriptors.first else { return }
-        guard let key = descriptor.key else { return }
-        guard let column = Column(rawValue: key) else { return }
-
-        let sortKey: SortKey = switch column {
-        case .name:
-            .name
-        case .dateModified:
-            .dateModified
-        case .size:
-            .size
-        case .kind:
-            .kind
-        }
-        let sortOrder: SortOrder = descriptor.ascending ? .ascending : .descending
-
-        if store.state.sortKey != sortKey {
-            store.send(.changeSortKey(sortKey))
-        }
-        if store.state.sortOrder != sortOrder {
-            store.send(.changeSortOrder(sortOrder))
-        }
-    }
-
-    func tableView(_: NSTableView, isGroupRow row: Int) -> Bool {
-        guard row >= 0, row < rows.count else { return false }
-        if case .groupHeader = rows[row].kind {
-            return true
-        }
-        return false
-    }
-
-    func tableView(_: NSTableView, shouldSelectRow row: Int) -> Bool {
-        guard row >= 0, row < rows.count else { return false }
-        if case .groupHeader = rows[row].kind {
-            return false
-        }
-        return true
-    }
-
-    func tableView(_ tableView: NSTableView, heightOfRow row: Int) -> CGFloat {
-        guard row >= 0, row < rows.count else { return tableView.rowHeight }
-
-        switch rows[row].kind {
-        case .groupHeader:
-            return 32
-        case .entry:
-            return max(24, store.state.listIconSize + 4)
-        }
-    }
-
-    func tableView(_ tableView: NSTableView, viewFor tableColumn: NSTableColumn?, row: Int) -> NSView? {
-        guard row >= 0, row < rows.count else { return nil }
-
-        let identifier = tableColumn?.identifier.rawValue
-        let cellIdentifier = NSUserInterfaceItemIdentifier("cell-\(identifier ?? "unknown")")
-
-        let view = (tableView.makeView(withIdentifier: cellIdentifier, owner: self) as? NSTableCellView)
-            ?? NSTableCellView()
-        view.identifier = cellIdentifier
-
-        @discardableResult
-        func setText(_ text: String, font: NSFont = .systemFont(ofSize: 12)) -> NSTextField {
-            let label = view.textField ?? {
-                let tf = NSTextField(labelWithString: "")
-                tf.translatesAutoresizingMaskIntoConstraints = false
-                view.addSubview(tf)
-                NSLayoutConstraint.activate([
-                    tf.leadingAnchor.constraint(equalTo: view.leadingAnchor),
-                    tf.trailingAnchor.constraint(lessThanOrEqualTo: view.trailingAnchor),
-                    tf.centerYAnchor.constraint(equalTo: view.centerYAnchor),
-                ])
-                view.textField = tf
-                return tf
-            }()
-            label.font = font
-            label.stringValue = text
-            return label
-        }
-
-        switch rows[row].kind {
-        case let .groupHeader(title, colorCode):
-            let prefix = colorCode != nil ? "● " : ""
-            setText(prefix + title, font: .systemFont(ofSize: 12, weight: .semibold))
-            return view
-
-        case let .entry(entry):
-            switch Column(rawValue: identifier ?? "") {
-            case .name:
-                let isRenaming = store.state.entries.renamingItemId == entry.id
-                let nameText = isRenaming ? store.state.entries.renamingText : entry.name
-                let textField = setText(nameText, font: .systemFont(ofSize: store.state.listTextSize))
-                textField.lineBreakMode = .byTruncatingMiddle
-                textField.usesSingleLineMode = true
-
-                textField.isEditable = isRenaming
-                textField.isSelectable = isRenaming
-                textField.isBordered = isRenaming
-                textField.drawsBackground = isRenaming
-                textField.backgroundColor = isRenaming ? .textBackgroundColor : .clear
-                textField.focusRingType = isRenaming ? .default : .none
-                textField.delegate = isRenaming ? self : nil
-            case .dateModified:
-                setText(entry.formattedModifiedDate, font: .systemFont(ofSize: max(10, store.state.listTextSize - 1)))
-            case .size:
-                setText(entry.formattedSize, font: .systemFont(ofSize: max(10, store.state.listTextSize - 1)))
-            case .kind:
-                let kindText = entry.fileExtension.lowercased() == "voycoll" ? "Voyager Collection" : entry.kind
-                setText(kindText, font: .systemFont(ofSize: max(10, store.state.listTextSize - 1)))
-            case .none:
-                setText("")
-            }
-
-            return view
-        }
-    }
-
-    func tableViewSelectionDidChange(_: Notification) {
-        guard !isUpdatingSelectionFromStore else { return }
-
-        let selectedIndexes = tableView.selectedRowIndexes
-        let selectedIds: Set<String> = Set(selectedIndexes.compactMap { index in
-            guard index >= 0, index < rows.count else { return nil }
-            guard case let .entry(entry) = rows[index].kind else { return nil }
-            return entry.id
-        })
-
-        let clickedRow = tableView.clickedRow
-        let lastSelectedId: String? = if selectedIndexes.contains(clickedRow),
-                                         clickedRow >= 0,
-                                         clickedRow < rows.count,
-                                         case let .entry(entry) = rows[clickedRow].kind
-        {
-            entry.id
-        } else if let lastIndex = selectedIndexes.last,
-                  lastIndex >= 0,
-                  lastIndex < rows.count,
-                  case let .entry(entry) = rows[lastIndex].kind
-        {
-            entry.id
-        } else {
-            nil
-        }
-
-        fsStore.send(.setSelectedIds(ids: selectedIds, lastSelectedId: lastSelectedId))
-    }
-}
-
-extension EntryListTableViewController: NSTextFieldDelegate {
-    func controlTextDidChange(_ notification: Notification) {
-        guard store.state.entries.renamingItemId != nil else { return }
-        guard let textField = notification.object as? NSTextField else { return }
-        guard (textField.delegate as AnyObject?) === self else { return }
-        fsStore.send(.updateRenamingText(textField.stringValue))
-    }
-
-    func control(_ control: NSControl, textView _: NSTextView, doCommandBy commandSelector: Selector) -> Bool {
-        guard store.state.entries.renamingItemId != nil else { return false }
-        guard let textField = control as? NSTextField else { return false }
-        guard (textField.delegate as AnyObject?) === self else { return false }
-
-        if commandSelector == #selector(NSResponder.insertNewline(_:)) {
-            fsStore.send(.commitRename)
-            return true
-        }
-        if commandSelector == #selector(NSResponder.cancelOperation(_:)) {
-            fsStore.send(.cancelRename)
-            return true
-        }
-        if commandSelector == #selector(NSResponder.insertTab(_:)) {
-            fsStore.send(.commitRename)
-            return true
-        }
-
-        return false
-    }
-
-    func controlTextDidEndEditing(_ notification: Notification) {
-        guard store.state.entries.renamingItemId != nil else { return }
-        guard let textField = notification.object as? NSTextField else { return }
-        guard (textField.delegate as AnyObject?) === self else { return }
-        fsStore.send(.commitRename)
-    }
-}
-
-// swiftlint:enable type_body_length

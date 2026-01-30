@@ -183,11 +183,7 @@ extension EntryClient {
         }
     }
 
-    nonisolated static var liveGetItemMetadata: @Sendable (URL, Bool, WorkspaceClient) -> (
-        kind: String,
-        creatorApplication: String?,
-        lastUsedDate: Date?,
-    ) {
+    nonisolated static var liveGetItemMetadata: @Sendable (URL, Bool, WorkspaceClient) -> EntryItemMetadata {
         { url, isDirectory, workspaceClient in
             var kind: String
             var creatorApplication: String?
@@ -217,7 +213,11 @@ extension EntryClient {
                 }
             }
 
-            return (kind: kind, creatorApplication: creatorApplication, lastUsedDate: lastUsedDate)
+            return EntryItemMetadata(
+                kind: kind,
+                creatorApplication: creatorApplication,
+                lastUsedDate: lastUsedDate,
+            )
         }
     }
 

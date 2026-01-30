@@ -3,7 +3,6 @@
 import Foundation
 import Logging
 
-// swiftlint:disable file_length
 private let kComposerLogger = Logger(label: "Voyager")
 struct FilterSnapshot: Equatable {
     let scopes: [String]

@@ -1,7 +1,6 @@
 import ComposableArchitecture
 import SwiftUI
 
-// swiftlint:disable type_body_length
 struct ContentPaneView: View {
     let store: StoreOf<FileManagerFeature>
 

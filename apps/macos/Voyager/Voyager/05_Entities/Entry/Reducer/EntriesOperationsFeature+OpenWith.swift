@@ -3,8 +3,6 @@ import ComposableArchitecture
 import Foundation
 import UniformTypeIdentifiers
 
-// swiftlint:disable private_over_fileprivate
-
 extension EntriesOperationsFeature {
     func selectApplicationAndOpenFile(
         for file: Entry,
@@ -239,5 +237,3 @@ private enum OpenWithEnableMode: Int {
     case recommended = 0
     case all = 1
 }
-
-// swiftlint:enable private_over_fileprivate

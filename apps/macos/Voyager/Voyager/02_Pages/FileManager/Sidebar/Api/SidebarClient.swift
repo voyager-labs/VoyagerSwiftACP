@@ -7,12 +7,6 @@ import SwiftUI
 
 @preconcurrency import ObjectiveC
 
-private struct IconMapping {
-    let directory: FileManager.SearchPathDirectory
-    let domain: FileManager.SearchPathDomainMask
-    let iconName: String
-}
-
 struct SidebarClient: Sendable {
     var computerName: @Sendable () -> String
     var loadRecentItems: @Sendable (Bool, EntryClient, WorkspaceClient) async -> [Entry]
@@ -428,31 +422,31 @@ extension SidebarClient: DependencyKey {
 
                 if path.hasPrefix("/Volumes/") { return "externaldrive" }
 
-                let mappings: [IconMapping] = [
-                    IconMapping(
+                let mappings: [SidebarIconMap] = [
+                    SidebarIconMap(
                         directory: .applicationDirectory,
                         domain: .localDomainMask,
                         iconName: "folder.badge.gearshape",
                     ),
-                    IconMapping(
+                    SidebarIconMap(
                         directory: .desktopDirectory,
                         domain: .userDomainMask,
                         iconName: "menubar.dock.rectangle",
                     ),
-                    IconMapping(
+                    SidebarIconMap(
                         directory: .documentDirectory,
                         domain: .userDomainMask,
                         iconName: "doc.text",
                     ),
-                    IconMapping(
+                    SidebarIconMap(
                         directory: .downloadsDirectory,
                         domain: .userDomainMask,
                         iconName: "arrow.down.circle",
                     ),
-                    IconMapping(directory: .moviesDirectory, domain: .userDomainMask, iconName: "film"),
-                    IconMapping(directory: .musicDirectory, domain: .userDomainMask, iconName: "music.note"),
-                    IconMapping(directory: .picturesDirectory, domain: .userDomainMask, iconName: "photo"),
-                    IconMapping(directory: .trashDirectory, domain: .userDomainMask, iconName: "trash"),
+                    SidebarIconMap(directory: .moviesDirectory, domain: .userDomainMask, iconName: "film"),
+                    SidebarIconMap(directory: .musicDirectory, domain: .userDomainMask, iconName: "music.note"),
+                    SidebarIconMap(directory: .picturesDirectory, domain: .userDomainMask, iconName: "photo"),
+                    SidebarIconMap(directory: .trashDirectory, domain: .userDomainMask, iconName: "trash"),
                 ]
 
                 for mapping in mappings
