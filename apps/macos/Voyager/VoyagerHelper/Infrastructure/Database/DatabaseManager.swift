@@ -239,7 +239,30 @@ actor DatabaseManager {
             logger.info("Legacy entries DB backup created at: \(backupURL.path)")
         }
 
+        let appliedCountBefore = try await appliedMigrationCount(pool: pool)
         try migrator.migrate(pool)
+        let appliedCountAfter = try await appliedMigrationCount(pool: pool)
+
+        if appliedCountAfter > appliedCountBefore {
+            logger
+                .info(
+                    "Migrations applied this run (\(appliedCountBefore) → \(appliedCountAfter)); running VACUUM once to reclaim space",
+                )
+            do {
+                try await pool.write { db in
+                    try db.execute(sql: "VACUUM")
+                }
+            } catch {
+                logger.warning("VACUUM failed (non-fatal): \(error)")
+            }
+        }
+    }
+
+    private func appliedMigrationCount(pool: DatabasePool) async throws -> Int {
+        try await pool.read { db in
+            guard try db.tableExists("grdb_migrations") else { return 0 }
+            return try Int.fetchOne(db, sql: "SELECT COUNT(*) FROM grdb_migrations") ?? 0
+        }
     }
 
     enum DatabaseError: Error, Equatable {

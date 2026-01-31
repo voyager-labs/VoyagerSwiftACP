@@ -127,8 +127,13 @@ final class IndexingRequestListener {
                     return
                 }
                 if status == .completed {
-                    logger.info("Initial indexing already completed; request ignored")
-                    return
+                    if await needsReindex() {
+                        logger.warning("Initial indexing state invalid; resetting to pending")
+                        try await resetInitialIndexingState(reason: "validation_failed")
+                    } else {
+                        logger.info("Initial indexing already completed; request ignored")
+                        return
+                    }
                 }
             }
 
@@ -266,6 +271,106 @@ final class IndexingRequestListener {
     private func isIndexingStateReady() async throws -> Bool {
         try await manager.read { db in
             try db.tableExists("indexing_state")
+        }
+    }
+}
+
+private extension IndexingRequestListener {
+    struct IndexingValidationSnapshot {
+        let indexingStateExists: Bool
+        let entriesExists: Bool
+        let completedAt: String?
+        let lastSyncAt: String?
+        let entriesCount: Int
+    }
+
+    func needsReindex() async -> Bool {
+        do {
+            let snapshot = try await fetchValidationSnapshot()
+            var reasons: [String] = []
+
+            if !snapshot.indexingStateExists {
+                reasons.append("missing_indexing_state")
+            }
+            if !snapshot.entriesExists {
+                reasons.append("missing_entries_table")
+            }
+            if snapshot.completedAt == nil || snapshot.completedAt == "null" {
+                reasons.append("missing_completed_at")
+            }
+            if snapshot.lastSyncAt == nil || snapshot.lastSyncAt == "null" {
+                reasons.append("missing_last_sync_at")
+            }
+            if snapshot.entriesCount == 0 {
+                reasons.append("entries_empty")
+            }
+
+            if reasons.isEmpty {
+                logger.info(
+                    "Initial indexing validation passed",
+                    metadata: [
+                        "entries_count": .string("\(snapshot.entriesCount)"),
+                        "completed_at": .string(snapshot.completedAt ?? "nil"),
+                        "last_sync_at": .string(snapshot.lastSyncAt ?? "nil"),
+                    ],
+                )
+                return false
+            }
+
+            logger.warning(
+                "Initial indexing validation failed",
+                metadata: [
+                    "reasons": .string(reasons.joined(separator: ",")),
+                    "entries_count": .string("\(snapshot.entriesCount)"),
+                    "completed_at": .string(snapshot.completedAt ?? "nil"),
+                    "last_sync_at": .string(snapshot.lastSyncAt ?? "nil"),
+                ],
+            )
+            return true
+        } catch {
+            logger.error("Initial indexing validation failed: \(error)")
+            return true
+        }
+    }
+
+    func resetInitialIndexingState(reason: String) async throws {
+        try await setStatus(.pending)
+        try await upsertStateValue(StateKey.initialIndexingResetReason, value: reason)
+        try await upsertStateValue(StateKey.initialIndexingCompletedAt, value: "null")
+        try await upsertStateValue("last_sync_at", value: "null")
+        logger.warning("Initial indexing state reset", metadata: ["reason": .string(reason)])
+    }
+
+    func fetchValidationSnapshot() async throws -> IndexingValidationSnapshot {
+        let completedAtKey = StateKey.initialIndexingCompletedAt
+        let lastSyncKey = "last_sync_at"
+        return try await manager.read { db in
+            let indexingStateExists = try db.tableExists("indexing_state")
+            let entriesExists = try db.tableExists("entries")
+            var completedAt: String?
+            var lastSyncAt: String?
+            if indexingStateExists {
+                completedAt = try String.fetchOne(
+                    db,
+                    sql: "SELECT value FROM indexing_state WHERE key = ?",
+                    arguments: [completedAtKey],
+                )
+                lastSyncAt = try String.fetchOne(
+                    db,
+                    sql: "SELECT value FROM indexing_state WHERE key = ?",
+                    arguments: [lastSyncKey],
+                )
+            }
+            let entriesCount = try entriesExists
+                ? (Int.fetchOne(db, sql: "SELECT COUNT(1) FROM entries") ?? 0)
+                : 0
+            return IndexingValidationSnapshot(
+                indexingStateExists: indexingStateExists,
+                entriesExists: entriesExists,
+                completedAt: completedAt,
+                lastSyncAt: lastSyncAt,
+                entriesCount: entriesCount,
+            )
         }
     }
 }

@@ -1,5 +1,4 @@
 import Foundation
-import GRDB
 
 nonisolated enum EntriesSchema {
     static let tableName = "entries"
@@ -53,34 +52,4 @@ nonisolated enum EntriesSchema {
         "last_used_date": "파일 마지막 실행 시간 (kMDItemLastUsedDate)",
         "original_metadata": "원본 메타데이터 (OSXMetaData)",
     ]
-
-    static func createTable(_ db: Database) throws {
-        try db.create(table: tableName) { table in
-            table.autoIncrementedPrimaryKey("id")
-            table.column("volume_identifier", .text).notNull()
-            table.column("file_resource_identifier", .text).notNull()
-            table.uniqueKey(["volume_identifier", "file_resource_identifier"])
-            table.column("path", .text).notNull()
-            table.column("dir_path", .text).notNull()
-            table.column("name_full", .text).notNull()
-            table.column("name_stem", .text).notNull()
-            table.column("extension", .text).notNull()
-            table.column("parent_dir_name", .text).notNull()
-            table.column("depth_from_home", .integer).notNull()
-            table.column("relative_path_from_home", .text)
-            table.column("size", .integer).notNull()
-            table.column("uniform_type_identifier", .text)
-            table.column("file_kind", .text)
-            table.column("is_invisible", .boolean).notNull().defaults(to: false)
-            table.column("creation_date", .datetime).notNull()
-            table.column("modification_date", .datetime).notNull()
-            table.column("content_creation_date", .datetime).notNull()
-            table.column("content_modification_date", .datetime).notNull()
-            table.column("added_date", .datetime).notNull()
-            table.column("last_used_date", .datetime)
-            table.column("original_metadata", .text).notNull()
-        }
-
-        try db.create(index: "idx_entries_dir_path", on: tableName, columns: ["dir_path"])
-    }
 }
