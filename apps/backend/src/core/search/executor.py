@@ -3,6 +3,8 @@
 Scope/condition builder 결과로 SQLModel SELECT를 실행합니다.
 
 - core는 app/infra 스키마에 의존하지 않도록 모델/세션을 주입받습니다.
+- TODO: Swift Voyager Helper로 이관 [VOY-152]
+- TODO: Swift Voyager Helper 이관 시 SQL 구문을 문자열로 반환하는 대신, Swift의 ORM 쿼리 객체를 반환하도록 변경
 """
 
 from __future__ import annotations
