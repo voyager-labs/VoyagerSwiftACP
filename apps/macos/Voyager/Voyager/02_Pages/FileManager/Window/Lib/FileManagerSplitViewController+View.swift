@@ -4,37 +4,6 @@ import ComposableArchitecture
 import SwiftUI
 
 extension FileManagerSplitViewController {
-    private struct ContentPaneViewState: Equatable {
-        let isComposerPresented: Bool
-        let favorites: [ScopeFavoriteItem]
-        let historyPaths: [String]
-        let isDiscardEnabled: Bool
-        let canSaveCollection: Bool
-        let isTemporaryCollection: Bool
-
-        init(state: FileManagerFeature.State) {
-            isComposerPresented = state.composer.isPresented
-            favorites = state.favorites.map { favorite in
-                ScopeFavoriteItem(
-                    name: favorite.name,
-                    url: favorite.url,
-                    iconName: favorite.iconName,
-                )
-            }
-            historyPaths = state.backHistory.compactMap { entry in
-                if case let .folder(path) = entry.navigationState {
-                    return path
-                }
-                return nil
-            }
-            isDiscardEnabled = state.entries.isCollectionMode
-                && state.openedCollectionBaseline != nil
-                && state.isOpenedCollectionDirty
-            canSaveCollection = state.canSaveCollection
-            isTemporaryCollection = state.openedCollectionURL == nil
-        }
-    }
-
     override func loadView() {
         // 전체 창을 감싸는 NSVisualEffectView
         let backgroundEffect = NSVisualEffectView()
@@ -91,7 +60,8 @@ extension FileManagerSplitViewController {
               let mainSplitView,
               mainSplitView.bounds.width > 0 else { return }
 
-        let savedWidth = userDefaultsClient.object("sidebarWidth") as? Double ?? 220
+        // TODO: Constant 값 이동
+        let savedWidth = userDefaultsClient.object(SettingsKeys.sidebarWidth) as? Double ?? 220
         if store.sidebarVisible {
             mainSplitView.setPosition(CGFloat(savedWidth), ofDividerAt: 0)
         } else {
@@ -121,13 +91,14 @@ extension FileManagerSplitViewController {
                       mainSplitView.bounds.width > 0 else { continue }
 
                 if sidebarVisible {
-                    let savedWidth = userDefaultsClient.object("sidebarWidth") as? Double ?? 220
+                    // TODO: Constant 값 이동
+                    let savedWidth = userDefaultsClient.object(SettingsKeys.sidebarWidth) as? Double ?? 220
                     mainSplitView.setPosition(CGFloat(savedWidth), ofDividerAt: 0)
                     containerLeadingConstraint?.constant = 0
                 } else {
                     let currentWidth = sidebarView.frame.width
                     if currentWidth > 0 {
-                        userDefaultsClient.setObject(currentWidth, "sidebarWidth")
+                        userDefaultsClient.setObject(currentWidth, SettingsKeys.sidebarWidth)
                     }
                     mainSplitView.setPosition(0, ofDividerAt: 0)
                     containerLeadingConstraint?.constant = contentVerticalMargin
@@ -253,73 +224,7 @@ extension FileManagerSplitViewController {
     }
 
     private func makeContentRootView() -> some View {
-        let store = store
-        return WithViewStore(
-            store,
-            observe: { ContentPaneViewState(state: $0) },
-            content: { viewStore in
-                ZStack(alignment: .top) {
-                    VStack(spacing: 0) {
-                        ToolbarView(store: store)
-                        ContentPaneView(store: store)
-                    }
-                    .overlay(
-                        RoundedRectangle(cornerRadius: VoyagerDS.Radius.contentPane, style: .continuous)
-                            .strokeBorder(Color.primary.opacity(0.03), lineWidth: 1),
-                    )
-
-                    if viewStore.isComposerPresented {
-                        Color.clear
-                            .frame(maxWidth: .infinity, maxHeight: .infinity)
-                            .contentShape(Rectangle())
-                            .onTapGesture { store.send(.exitComposer) }
-                    }
-
-                    Group {
-                        if viewStore.isComposerPresented {
-                            ComposerView(
-                                store: store.scope(state: \.composer, action: \.composer),
-                                favorites: viewStore.favorites,
-                                historyPaths: viewStore.historyPaths,
-                                isDiscardEnabled: viewStore.isDiscardEnabled,
-                                canSaveCollection: viewStore.canSaveCollection,
-                                isTemporaryCollection: viewStore.isTemporaryCollection,
-                                onDiscardCollectionChanges: { store.send(.discardCollectionChanges) },
-                                onExitComposer: { store.send(.exitComposer) },
-                            )
-                            .padding(.horizontal, VoyagerDS.Spacing.composerHorizontalPadding)
-                            .padding(.top, VoyagerDS.Spacing.composerTopPadding)
-                            .contentShape(Rectangle())
-                            .onTapGesture {}
-                            .transition(.move(edge: .top).combined(with: .opacity))
-                        }
-                    }
-                    .animation(
-                        .spring(response: 0.25, dampingFraction: 0.75),
-                        value: viewStore.isComposerPresented,
-                    )
-                }
-                .background(.thickMaterial)
-                .overlay(ContentPaneMaterialTint())
-                .ignoresSafeArea(.all, edges: .top)
-            },
-        )
-    }
-
-    private struct ContentPaneMaterialTint: View {
-        @Environment(\.colorScheme)
-        private var colorScheme
-
-        var body: some View {
-            // 다크 모드에서만 머티리얼 대비를 살리는 얇은 틴트
-            if colorScheme == .dark {
-                Color.white.opacity(0.06)
-                    .allowsHitTesting(false)
-            } else {
-                Color.clear
-                    .allowsHitTesting(false)
-            }
-        }
+        FileManagerWindowContentView(store: store)
     }
 
     private func setupContentPaneConstraints(container: NSView, contentView: NSView) {

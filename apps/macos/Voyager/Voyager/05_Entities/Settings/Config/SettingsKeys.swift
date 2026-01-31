@@ -12,4 +12,7 @@ public enum SettingsKeys {
     static let listTextSize = "listTextSize"
     static let gridTextSize = "gridTextSize"
     static let showHiddenFiles = "showHiddenFiles"
+    static let sidebarWidth = "sidebarWidth"
+    static let sidebarVisible = "sidebarVisible"
+    static let viewLayout = "viewLayout"
 }

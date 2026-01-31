@@ -10,6 +10,8 @@ struct FileManagerFeature {
     var entryClient
     @Dependency(\.collectionFileClient)
     var collectionFileClient
+    @Dependency(\.collectionAlertClient)
+    var collectionAlertClient
     @Dependency(\.userDefaultsClient)
     var userDefaultsClient
     @Dependency(\.sidebarClient)
@@ -359,14 +361,14 @@ struct FileManagerFeature {
                     )
                 }
                 state.showHiddenFiles = userDefaultsClient.bool(SettingsKeys.showHiddenFiles)
-                state.sidebarVisible = userDefaultsClient.object("sidebarVisible") as? Bool ?? true
+                state.sidebarVisible = userDefaultsClient.object(SettingsKeys.sidebarVisible) as? Bool ?? true
                 state.sortKey = SortKey(rawValue: userDefaultsClient.string("sortKey") ?? "") ?? .name
                 state
                     .sortOrder = SortOrder(rawValue: userDefaultsClient.string("sortOrder") ?? "") ??
                     .ascending
                 state.entries.groupKey = GroupKey(rawValue: userDefaultsClient.string("groupKey") ?? "") ?? .none
 
-                if let viewLayoutRaw = userDefaultsClient.string("viewLayout"),
+                if let viewLayoutRaw = userDefaultsClient.string(SettingsKeys.viewLayout),
                    let savedLayout = ViewLayout(rawValue: viewLayoutRaw)
                 {
                     state.viewLayout = savedLayout
@@ -572,9 +574,9 @@ struct FileManagerFeature {
                         return .merge(
                             exitEffect,
                             .run { send in
-                                await showCollectionOpenErrorAlert(
-                                    title: "Empty Collection",
-                                    message: "This collection file has no query, scope, or filters.",
+                                await collectionAlertClient.showCollectionOpenErrorAlert(
+                                    "Empty Collection",
+                                    "This collection file has no query, scope, or filters.",
                                 )
                                 await send(.restoreSidebarSelection)
                             },
@@ -629,9 +631,9 @@ struct FileManagerFeature {
                             "\(unknownKeys).",
                         ].joined(separator: " ")
                         mergedEffects.append(.run { _ in
-                            await showCollectionOpenErrorAlert(
-                                title: "Unsupported Filters",
-                                message: warningMessage,
+                            await collectionAlertClient.showCollectionOpenErrorAlert(
+                                "Unsupported Filters",
+                                warningMessage,
                             )
                         })
                     }
@@ -651,9 +653,9 @@ struct FileManagerFeature {
                     return .merge(
                         exitEffect,
                         .run { send in
-                            await showCollectionOpenErrorAlert(
-                                title: "Unable to Open Collection",
-                                message: error.localizedDescription,
+                            await collectionAlertClient.showCollectionOpenErrorAlert(
+                                "Unable to Open Collection",
+                                error.localizedDescription,
                             )
                             await send(.restoreSidebarSelection)
                         },
@@ -706,8 +708,8 @@ struct FileManagerFeature {
 
             case let .showUnsavedNavigationAlert(pending):
                 return .run { send in
-                    let choice = await FileManagerAlertUtils.showUnsavedNavigationAlert()
-                    await send(.unsavedNavigationAlertResponse(pending, choice))
+                    let choice = await collectionAlertClient.showUnsavedNavigationAlert()
+                    await send(.unsavedNavigationAlertResponse(pending, mapCollectionChoice(choice)))
                 }
 
             case let .unsavedNavigationAlertResponse(pending, choice):
@@ -737,7 +739,7 @@ struct FileManagerFeature {
             case let .changeLayout(layout):
                 state.viewLayout = layout
                 state.entries.isListView = layout == .list
-                userDefaultsClient.setString(layout.rawValue, "viewLayout")
+                userDefaultsClient.setString(layout.rawValue, SettingsKeys.viewLayout)
                 return .none
 
             case .toggleShowHiddenFiles:
@@ -764,7 +766,7 @@ struct FileManagerFeature {
 
             case let .setSidebarVisible(visible):
                 state.sidebarVisible = visible
-                userDefaultsClient.setObject(visible, "sidebarVisible")
+                userDefaultsClient.setObject(visible, SettingsKeys.sidebarVisible)
                 return .none
 
             case .toggleFavoritesSection:
@@ -781,7 +783,7 @@ struct FileManagerFeature {
 
             case let .setSidebarWidth(width):
                 let clampedWidth = max(150, min(400, width))
-                userDefaultsClient.setDouble(clampedWidth, "sidebarWidth")
+                userDefaultsClient.setDouble(clampedWidth, SettingsKeys.sidebarWidth)
                 return .none
 
             case let .updateColumnWidth(ctx):
@@ -1172,9 +1174,9 @@ struct FileManagerFeature {
                         return .merge(
                             exitEffect,
                             .run { send in
-                                await showCollectionOpenErrorAlert(
-                                    title: "Unable to Run Collection Search",
-                                    message: """
+                                await collectionAlertClient.showCollectionOpenErrorAlert(
+                                    "Unable to Run Collection Search",
+                                    """
                                     \(error.localizedDescription)
 
                                     Make sure the backend is running and try again.
@@ -1200,9 +1202,9 @@ struct FileManagerFeature {
                         return .merge(
                             exitEffect,
                             .run { send in
-                                await showCollectionOpenErrorAlert(
-                                    title: "Unable to Apply Collection Filters",
-                                    message: """
+                                await collectionAlertClient.showCollectionOpenErrorAlert(
+                                    "Unable to Apply Collection Filters",
+                                    """
                                     \(error.localizedDescription)
 
                                     Make sure the backend is running and try again.
@@ -1403,6 +1405,19 @@ struct FileManagerFeature {
 
     private static func shouldPromptForUnsavedNavigation(state: State) -> Bool {
         state.entries.isCollectionMode && state.canSaveCollection
+    }
+
+    private func mapCollectionChoice(
+        _ choice: CollectionNavigationChoice,
+    ) -> UnsavedNavigationChoice {
+        switch choice {
+        case .save:
+            .save
+        case .discard:
+            .discard
+        case .cancel:
+            .cancel
+        }
     }
 
     private func performNavigation(
@@ -1727,16 +1742,6 @@ private func currentDateKey() -> String {
     formatter.timeZone = TimeZone.current
     formatter.dateFormat = "yyyy-MM-dd"
     return formatter.string(from: Date())
-}
-
-@MainActor
-private func showCollectionOpenErrorAlert(title: String, message: String) {
-    let alert = NSAlert()
-    alert.alertStyle = .warning
-    alert.messageText = title
-    alert.informativeText = message
-    alert.addButton(withTitle: "OK")
-    alert.runModal()
 }
 
 // swiftlint:enable type_body_length

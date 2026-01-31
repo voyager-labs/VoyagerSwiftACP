@@ -66,7 +66,7 @@ struct SidebarView: View {
             contextMenuTargetWasSelected = false
         }
         .navigationSplitViewColumnWidth(ideal: {
-            if let savedWidth = userDefaultsClient.object("sidebarWidth") as? Double,
+            if let savedWidth = userDefaultsClient.object(SettingsKeys.sidebarWidth) as? Double,
                savedWidth > 0
             {
                 return CGFloat(savedWidth)

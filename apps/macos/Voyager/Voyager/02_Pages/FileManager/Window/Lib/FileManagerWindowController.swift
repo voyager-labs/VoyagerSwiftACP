@@ -6,6 +6,7 @@ class FileManagerWindowController: NSWindowController, NSWindowDelegate {
     private let initialPath: String?
     let windowUndoManager: UndoManager
     let store: StoreOf<FileManagerFeature>
+    let windowLifecycleClient: FileManagerWindowLifecycleClient
     var cancellables: Set<AnyCancellable> = []
 
     init(
@@ -13,9 +14,11 @@ class FileManagerWindowController: NSWindowController, NSWindowDelegate {
         path: String? = nil,
         duplicateState: FileManagerFeature.State? = nil,
         asTab: Bool = true,
+        windowLifecycleClient: FileManagerWindowLifecycleClient = .liveValue,
         makeContentViewController: ((StoreOf<FileManagerFeature>, String?) -> NSViewController)? = nil,
     ) {
         initialPath = path
+        self.windowLifecycleClient = windowLifecycleClient
         let state = Self.createInitialState(path: path, duplicateState: duplicateState)
         let undoManager = UndoManager()
         windowUndoManager = undoManager
@@ -35,7 +38,7 @@ class FileManagerWindowController: NSWindowController, NSWindowDelegate {
 
         super.init(window: window)
         window.delegate = self
-        Self.setupWindowFrame(window, path ?? state.currentPath)
+        Self.setupWindowFrame(window, path ?? state.currentPath, windowLifecycleClient: windowLifecycleClient)
         window.title = FileManagerFeature.makeWindowTitle(
             for: path ?? state.currentPath,
         )

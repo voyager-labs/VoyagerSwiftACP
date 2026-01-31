@@ -206,7 +206,7 @@ extension FileManagerSplitViewController {
         let collapseThreshold: CGFloat = 2
 
         if !isCollapsed, sidebarWidth > collapseThreshold {
-            userDefaultsClient.setObject(sidebarWidth, "sidebarWidth")
+            userDefaultsClient.setObject(sidebarWidth, SettingsKeys.sidebarWidth)
         }
 
         let shouldBeVisible = !isCollapsed

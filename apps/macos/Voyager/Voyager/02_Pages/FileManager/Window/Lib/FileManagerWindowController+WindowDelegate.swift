@@ -4,8 +4,8 @@ import ComposableArchitecture
 
 extension FileManagerWindowController {
     func windowDidBecomeKey(_: Notification) {
-        AppDelegate.shared?.updateFocusHistory(window: window)
-        AppDelegate.shared?.updateMenuState(store: store)
+        windowLifecycleClient.updateFocusHistory(window)
+        windowLifecycleClient.updateMenuState(store)
         observeStoreChanges()
     }
 
@@ -25,7 +25,7 @@ extension FileManagerWindowController {
     }
 
     func windowWillClose(_: Notification) {
-        AppDelegate.shared?.windowWillClose(controller: self)
+        windowLifecycleClient.windowWillClose(self)
     }
 
     func windowShouldClose(_: NSWindow) -> Bool {
@@ -78,7 +78,7 @@ extension FileManagerWindowController {
     private func setupMenuStatePublishers() {
         let updateMenuStateIfKeyWindow: () -> Void = { [weak self] in
             guard let self, window?.isKeyWindow == true else { return }
-            AppDelegate.shared?.updateMenuState(store: store)
+            windowLifecycleClient.updateMenuState(store)
         }
 
         store.publisher.entries.selectedIds

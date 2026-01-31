@@ -81,6 +81,47 @@ final class FileManagerFeatureNavigationTests: XCTestCase {
         XCTAssertTrue(store.state.isOpenedCollectionDirty)
         XCTAssertTrue(store.state.canSaveCollection)
     }
+
+    func testGoBackPromptsUnsavedNavigationAlert() async {
+        let alertClient = CollectionAlertClient(
+            showUnsavedNavigationAlert: { .cancel },
+            showCollectionOpenErrorAlert: { _, _ in },
+        )
+
+        var state = makeState(path: "/current")
+        state.entries.isCollectionMode = true
+        state.collectionContext = CollectionContext(query: "", scopes: [], conditions: [])
+        state.backHistory = [
+            FileManagerFeature.HistoryEntry(
+                navigationState: .folder("/previous"),
+                sidebarItemName: nil,
+                composerState: .init(),
+            ),
+        ]
+
+        let store = TestStore(initialState: state) {
+            FileManagerFeature()
+        } withDependencies: {
+            $0.collectionFileClient = .testValue
+            $0.entryClient = .testValue
+            $0.collectionAlertClient = alertClient
+            $0.fileManagerWindowClient = .testValue
+            $0.registryClient = .testValue
+            $0.sidebarClient = .testValue
+            $0.undoManagerClient = .testValue
+            $0.userDefaultsClient = .testValue
+            $0.workspaceClient = .testValue
+        }
+        store.exhaustivity = .off
+
+        await store.send(.goBack)
+        await store.receive(
+            .showUnsavedNavigationAlert(.back),
+        )
+        await store.receive(
+            .unsavedNavigationAlertResponse(.back, .cancel),
+        )
+    }
 }
 
 @MainActor
@@ -92,6 +133,7 @@ private func makeStore(
     } withDependencies: {
         $0.collectionFileClient = .testValue
         $0.entryClient = .testValue
+        $0.collectionAlertClient = .testValue
         $0.fileManagerWindowClient = .testValue
         $0.registryClient = .testValue
         $0.sidebarClient = .testValue

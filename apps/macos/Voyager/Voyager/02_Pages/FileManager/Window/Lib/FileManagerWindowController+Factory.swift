@@ -76,15 +76,16 @@ extension FileManagerWindowController {
         return window
     }
 
-    static func setupWindowFrame(_ window: NSWindow, _: String) {
+    static func setupWindowFrame(
+        _ window: NSWindow,
+        _: String,
+        windowLifecycleClient: FileManagerWindowLifecycleClient,
+    ) {
         window.setFrameAutosaveName("VoyagerMainWindow")
 
         if !window.setFrameUsingName("VoyagerMainWindow") {
-            let desiredSize: NSSize = if let existingWindow = AppDelegate.shared?.windowControllers.first?.window {
-                existingWindow.frame.size
-            } else {
-                NSSize(width: 960, height: 510)
-            }
+            let desiredSize: NSSize = windowLifecycleClient.existingWindowSize()
+                ?? NSSize(width: 960, height: 510)
 
             let screenFrame = NSScreen.main?.visibleFrame ?? NSRect.zero
             let origin = NSPoint(
