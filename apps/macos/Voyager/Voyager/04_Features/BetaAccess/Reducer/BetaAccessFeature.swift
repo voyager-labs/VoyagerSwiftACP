@@ -3,91 +3,11 @@ import Foundation
 
 @Reducer
 struct BetaAccessFeature {
-    @ObservableState
-    struct State: Equatable, Sendable {
-        var email: String = ""
-        var token: String = ""
-        var status: BetaAccessStatus = .notActive
-        var reason: BetaAccessReason = .missingInput
-        var isVerifying: Bool = false
-        var isComplete: Bool = false
-
-        var canSubmit: Bool {
-            !email.isEmpty && !token.isEmpty && !isVerifying
-        }
-
-        var showsRetry: Bool {
-            status == .checkFailed
-        }
-
-        var statusTitle: String {
-            status.rawValue
-        }
-
-        var statusMessage: String? {
-            switch status {
-            case .active:
-                "Your invite is verified and beta access is enabled. You can proceed."
-            case .checkFailed:
-                switch reason {
-                case .missingToken:
-                    "Missing authorization token. Re-enter your invite and try again."
-                case .invalidToken:
-                    "That token is invalid. Check your invite and try again."
-                case .invalidRequest:
-                    "Verification request is invalid. Check your input and try again."
-                case .deviceIdUnavailable:
-                    "Couldn't access the device ID. Check system access and retry."
-                case .internalError:
-                    "We hit an internal error. Try again shortly."
-                case .networkError:
-                    "Network error. Check your connection and try again."
-                case .authBackendError:
-                    "Verification service is unavailable. Try again shortly."
-                default:
-                    "Verification failed. Check your input and try again."
-                }
-            case .notActive:
-                switch reason {
-                case .missingInput:
-                    "Beta access isn't active yet. Enter your email and token, then click Check."
-                case .missingToken:
-                    "Missing authorization token. Re-enter your invite and try again."
-                case .invalidToken:
-                    "That token is invalid. Check your invite and try again."
-                case .emailMismatch:
-                    "That email doesn't match this token. Check your invite and try again."
-                case .deviceMismatch:
-                    "This token is registered to another device. Request a reissue."
-                case .invalidRequest:
-                    "Check your input and try again."
-                case .authBackendError:
-                    "Verification service is unavailable. Try again shortly."
-                default:
-                    nil
-                }
-            }
-        }
-
-        mutating func updateStatus(_ status: BetaAccessStatus, reason: BetaAccessReason = .none) {
-            self.status = status
-            self.reason = reason
-            isComplete = status == .active
-        }
-    }
-
-    enum Action: Sendable {
-        case onAppear
-        case emailChanged(String)
-        case tokenChanged(String)
-        case checkTapped
-        case retryTapped
-        case verificationResponse(BetaAccessVerificationResult)
-    }
-
     @Dependency(\.betaAccessClient)
     var betaAccessClient
 
+    typealias State = BetaAccessState
+    typealias Action = BetaAccessAction
     private enum CancelID {
         static let verification = "betaAccessVerification"
     }

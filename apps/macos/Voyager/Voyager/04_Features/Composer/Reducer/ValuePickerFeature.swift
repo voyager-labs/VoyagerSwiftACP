@@ -3,36 +3,8 @@ import Foundation
 
 @Reducer
 struct ValuePickerFeature {
-    @ObservableState
-    struct State: Equatable {
-        var isPresented: Bool = false
-        var propertyKey: String?
-        var operatorCode: String?
-        var valueType: String = "string"
-        var valueUIKind: String = "singleText"
-        var valueArity: Int = 1
-        var values: [String] = [""]
-        var errorMessage: String?
-        var editingIndex: Int?
-    }
-
-    struct PreparePayload: Sendable, Equatable {
-        let propertyKey: String
-        let operatorCode: String
-        let valueType: String
-        let valueUIKind: String
-        let valueArity: Int
-        let existingValues: [String]?
-        let editingIndex: Int?
-    }
-
-    enum Action: Sendable {
-        case setPresented(Bool)
-        case prepare(PreparePayload)
-        case setValue(index: Int, text: String)
-        case commit
-        case commitResult(propertyKey: String, values: [String])
-    }
+    typealias State = ValuePickerState
+    typealias Action = ValuePickerAction
 
     var body: some Reducer<State, Action> {
         Reduce { state, action in

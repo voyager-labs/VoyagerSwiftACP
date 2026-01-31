@@ -5,36 +5,8 @@ import UniformTypeIdentifiers
 
 @Reducer
 struct CollectionFeature {
-    @ObservableState
-    struct State: Equatable {
-        var pendingSave: CollectionSaveSnapshot?
-        var isSaving: Bool = false
-    }
-
-    struct CollectionSaveSnapshot: Equatable, Sendable {
-        let query: String
-        let scopes: [String]
-        let conditions: [CollectionCondition]
-        let sortKey: String
-        let sortOrder: String
-        let viewLayout: String
-    }
-
-    struct SaveRequestPayload: Equatable, Sendable {
-        let context: CollectionContext?
-        let sortKey: String
-        let sortOrder: String
-        let viewLayout: String
-        let isSearchLoading: Bool
-        let isFiltersLoading: Bool
-    }
-
-    enum Action: Sendable {
-        case saveRequested(SaveRequestPayload)
-        case saveToExisting(SaveRequestPayload, URL)
-        case savePanelResponse(URL?)
-        case saveCompleted(Result<URL, Error>)
-    }
+    typealias State = CollectionState
+    typealias Action = CollectionAction
 
     @Dependency(\.collectionFileClient)
     var collectionFileClient
@@ -330,7 +302,7 @@ private func ensureCollectionFileExtension(_ url: URL) -> URL {
 
 private func makeCollectionFile(
     name: String,
-    snapshot: CollectionFeature.CollectionSaveSnapshot,
+    snapshot: CollectionSaveSnapshot,
     appVersion: String?,
 ) -> VoyagerCollectionFile {
     let timestamp = Date()

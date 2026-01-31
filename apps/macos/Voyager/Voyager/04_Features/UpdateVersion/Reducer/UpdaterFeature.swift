@@ -3,21 +3,11 @@ import Foundation
 
 @Reducer
 struct UpdaterFeature {
-    @ObservableState
-    struct State: Equatable {
-        var didConfigure = false
-        var didStartAtLaunch = false
-    }
-
-    enum Action: Sendable {
-        case configureAtLaunch
-        case startAtLaunch
-        case checkForUpdates
-        case setAutomaticUpdate(Bool)
-    }
-
     @Dependency(\.updaterClient)
     var updaterClient
+
+    typealias State = UpdaterState
+    typealias Action = UpdaterAction
 
     var body: some Reducer<State, Action> {
         Reduce { state, action in
