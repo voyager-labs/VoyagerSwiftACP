@@ -26,7 +26,7 @@ struct ContentPaneView: View {
                     case .list:
                         ContentPaneListTableView(store: store)
                     case .grid:
-                        ContentPaneGridView(store: store)
+                        ContentPaneGridCollectionView(store: store)
                     }
                 }
 

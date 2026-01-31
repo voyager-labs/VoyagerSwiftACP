@@ -4,7 +4,7 @@ protocol EntryListTableViewContextMenuProviding: AnyObject {
     func contextMenu(forRow row: Int?, event: NSEvent) -> NSMenu
 }
 
-final class EntryListTableView: NSTableView {
+final class EntryListTableView: NSOutlineView {
     weak var contextMenuProvider: EntryListTableViewContextMenuProviding?
 
     override func mouseDown(with event: NSEvent) {
