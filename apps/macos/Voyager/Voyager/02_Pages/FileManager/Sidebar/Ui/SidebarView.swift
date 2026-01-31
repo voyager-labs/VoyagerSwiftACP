@@ -21,7 +21,7 @@ struct SidebarView: View {
 
             ScrollView {
                 VStack(alignment: .leading, spacing: 0) {
-                    FileManagerSidebarItemView(
+                    SidebarItemView(
                         iconName: "clock",
                         title: "Recents",
                         isSelected: store.selectedSidebarItem == "Recents",
@@ -87,7 +87,7 @@ struct SidebarView: View {
         Group {
             if !store.favorites.isEmpty {
                 VStack(alignment: .leading, spacing: 0) {
-                    FileManagerSidebarSectionHeader(
+                    SidebarSectionHeader(
                         title: "Favorites",
                         isCollapsed: store.isFavoritesCollapsed,
                         onToggle: {
@@ -100,7 +100,7 @@ struct SidebarView: View {
                         favoriteDropIndicator(at: 0)
 
                         ForEach(Array(store.favorites.enumerated()), id: \.element.url) { index, favorite in
-                            FileManagerSidebarItemView(
+                            SidebarItemView(
                                 iconName: favorite.iconName,
                                 title: favorite.displayName,
                                 isSelected: store.selectedSidebarItem == favorite.displayName,
@@ -236,7 +236,7 @@ struct SidebarView: View {
         Group {
             if !store.locations.isEmpty {
                 VStack(alignment: .leading, spacing: 0) {
-                    FileManagerSidebarSectionHeader(
+                    SidebarSectionHeader(
                         title: "Locations",
                         isCollapsed: store.isLocationsCollapsed,
                         onToggle: {
@@ -247,7 +247,7 @@ struct SidebarView: View {
 
                     if !store.isLocationsCollapsed {
                         ForEach(store.locations, id: \.url) { location in
-                            FileManagerSidebarItemView(
+                            SidebarItemView(
                                 iconName: location.iconName,
                                 title: location.name,
                                 isSelected: store.selectedSidebarItem == location.name,
@@ -280,7 +280,7 @@ struct SidebarView: View {
         Group {
             if !store.tags.isEmpty {
                 VStack(alignment: .leading, spacing: 0) {
-                    FileManagerSidebarSectionHeader(
+                    SidebarSectionHeader(
                         title: "Tags",
                         isCollapsed: store.isTagsCollapsed,
                         onToggle: {
@@ -291,7 +291,7 @@ struct SidebarView: View {
 
                     if !store.isTagsCollapsed {
                         ForEach(store.tags, id: \.name) { tag in
-                            FileManagerTagItemView(
+                            SidebarTagItemView(
                                 tag: tag,
                                 isSelected: store.selectedSidebarItem == tag.name,
                                 isContextMenuTarget: contextMenuTargetId == tag.name,

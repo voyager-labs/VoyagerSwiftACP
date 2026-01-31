@@ -1,13 +1,18 @@
+import AppKit
 import SwiftUI
 import UniformTypeIdentifiers
 
-struct FileManagerTagItemView: View {
-    let tag: SidebarUtils.TagItem
+struct SidebarItemView: View {
+    let iconName: String
+    let title: String
     let isSelected: Bool
     let isContextMenuTarget: Bool
     let contextMenuTargetWasSelected: Bool
+    let isFavorite: Bool
+    let iconColor: Color?
+    let targetURL: URL?
     let action: () -> Void
-    let onDrop: (([NSItemProvider], String) -> Void)? // 태그 드롭 콜백 (providers 전달)
+    let onDrop: (([NSItemProvider], URL) -> Void)?
     let onContextMenuOpen: (() -> Void)?
 
     @Environment(\.colorScheme)
@@ -40,12 +45,32 @@ struct FileManagerTagItemView: View {
         Color(nsColor: contextMenuTargetWasSelected ? .secondaryLabelColor : .tertiaryLabelColor)
     }
 
+    private func applicationsIcon() -> NSImage? {
+        let appIcon = NSImage(
+            contentsOfFile: "/System/Library/CoreServices/CoreTypes.bundle/Contents/Resources/SidebarApplicationsFolder.icns",
+        )
+        appIcon?.isTemplate = true
+        return appIcon
+    }
+
     var body: some View {
         HStack(spacing: 8) {
-            Circle()
-                .fill(tag.color)
-                .frame(width: 8, height: 8)
-            Text(tag.name)
+            if targetURL?.path == "/Applications",
+               let appIcon = applicationsIcon()
+            {
+                // Applications는 시스템 사이드바 아이콘을 사용
+                Image(nsImage: appIcon)
+                    .resizable()
+                    .scaledToFit()
+                    .foregroundColor(isDropTarget ? .white : (iconColor ?? .accentColor))
+                    .frame(width: 16, height: 16)
+            } else {
+                Image(systemName: iconName)
+                    .symbolRenderingMode(.hierarchical)
+                    .foregroundColor(isDropTarget ? .white : (iconColor ?? .accentColor))
+                    .frame(width: 16)
+            }
+            Text(title)
                 .foregroundColor(isDropTarget ? .white : .primary)
                 .lineLimit(1)
                 .truncationMode(.tail)
@@ -61,14 +86,14 @@ struct FileManagerTagItemView: View {
             restoreFileManagerFocus()
         }
         .onDrop(of: [.fileURL], isTargeted: $isDropTarget) { providers in
-            guard let onDrop else { return false }
-            onDrop(providers, tag.name)
+            guard let targetURL, let onDrop else { return false }
+            onDrop(providers, targetURL)
             return true
         }
         .overlay(
             Group {
                 if let onContextMenuOpen {
-                    FileManagerRightClickCaptureView(onRightClick: onContextMenuOpen)
+                    SidebarRightClickCaptureView(onRightClick: onContextMenuOpen)
                         .allowsHitTesting(false)
                 }
             },

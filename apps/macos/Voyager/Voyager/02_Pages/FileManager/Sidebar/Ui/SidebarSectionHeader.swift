@@ -1,6 +1,6 @@
 import SwiftUI
 
-struct FileManagerSidebarSectionHeader: View {
+struct SidebarSectionHeader: View {
     let title: String
     let isCollapsed: Bool
     let onToggle: () -> Void

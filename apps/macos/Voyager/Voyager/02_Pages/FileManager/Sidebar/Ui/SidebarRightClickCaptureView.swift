@@ -1,7 +1,7 @@
 import AppKit
 import SwiftUI
 
-struct FileManagerRightClickCaptureView: NSViewRepresentable {
+struct SidebarRightClickCaptureView: NSViewRepresentable {
     let onRightClick: () -> Void
 
     func makeNSView(context _: Context) -> CaptureView {
