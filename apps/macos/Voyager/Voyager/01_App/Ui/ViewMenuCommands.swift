@@ -3,36 +3,33 @@ import ComposableArchitecture
 import SwiftUI
 
 struct ViewMenuCommands: Commands {
-    @ObservedObject private var appDelegate: AppDelegate
+    @ObservedObject private var fileManagerWindowCoordinator: FileManagerWindowCoordinator
 
     init() {
-        guard let shared = AppDelegate.shared else {
-            fatalError("AppDelegate.shared must be initialized before ViewMenuCommands")
-        }
-        _appDelegate = ObservedObject(wrappedValue: shared)
+        fileManagerWindowCoordinator = FileManagerWindowCoordinator.shared
     }
 
     var body: some Commands {
         CommandGroup(replacing: .sidebar) {
             Button(
-                appDelegate.currentFileManagerStore?.sidebarVisible == true
+                fileManagerWindowCoordinator.currentFileManagerStore?.sidebarVisible == true
                     ? "Hide Sidebar"
                     : "Show Sidebar",
             ) {
-                let newValue = !(appDelegate.currentFileManagerStore?.sidebarVisible ?? true)
-                appDelegate.currentFileManagerStore?.send(.setSidebarVisible(newValue))
+                let newValue = !(fileManagerWindowCoordinator.currentFileManagerStore?.sidebarVisible ?? true)
+                fileManagerWindowCoordinator.currentFileManagerStore?.send(.setSidebarVisible(newValue))
             }
             .keyboardShortcut("s", modifiers: [.command, .control])
-            .disabled(appDelegate.currentFileManagerStore == nil)
+            .disabled(fileManagerWindowCoordinator.currentFileManagerStore == nil)
             Button(
-                appDelegate.currentFileManagerStore?.showHiddenFiles == true
+                fileManagerWindowCoordinator.currentFileManagerStore?.showHiddenFiles == true
                     ? "Hide Hidden Files"
                     : "Show Hidden Files",
             ) {
-                appDelegate.currentFileManagerStore?.send(.toggleShowHiddenFiles)
+                fileManagerWindowCoordinator.currentFileManagerStore?.send(.toggleShowHiddenFiles)
             }
             .keyboardShortcut(".", modifiers: [.command, .shift])
-            .disabled(appDelegate.currentFileManagerStore == nil)
+            .disabled(fileManagerWindowCoordinator.currentFileManagerStore == nil)
             Divider()
         }
 
@@ -79,46 +76,46 @@ struct ViewMenuCommands: Commands {
                 Toggle("Ascending", isOn: sortOrderToggleBinding(.ascending))
                 Toggle("Descending", isOn: sortOrderToggleBinding(.descending))
             }
-            .disabled(appDelegate.currentFileManagerStore?.entries.groupKey != GroupKey.none)
+            .disabled(fileManagerWindowCoordinator.currentFileManagerStore?.entries.groupKey != GroupKey.none)
         }
     }
 
     private func viewLayoutToggleBinding(_ layout: FileManagerFeature.ViewLayout) -> Binding<Bool> {
         Binding(
-            get: { appDelegate.currentFileManagerStore?.viewLayout == layout },
+            get: { fileManagerWindowCoordinator.currentFileManagerStore?.viewLayout == layout },
             set: { isOn in
                 guard isOn else { return }
-                appDelegate.currentFileManagerStore?.send(.changeLayout(layout))
+                fileManagerWindowCoordinator.currentFileManagerStore?.send(.changeLayout(layout))
             },
         )
     }
 
     private func groupKeyToggleBinding(_ key: GroupKey) -> Binding<Bool> {
         Binding(
-            get: { appDelegate.currentFileManagerStore?.entries.groupKey == key },
+            get: { fileManagerWindowCoordinator.currentFileManagerStore?.entries.groupKey == key },
             set: { isOn in
                 guard isOn else { return }
-                appDelegate.currentFileManagerStore?.send(.changeGroupKey(key))
+                fileManagerWindowCoordinator.currentFileManagerStore?.send(.changeGroupKey(key))
             },
         )
     }
 
     private func sortKeyToggleBinding(_ key: SortKey) -> Binding<Bool> {
         Binding(
-            get: { appDelegate.currentFileManagerStore?.sortKey == key },
+            get: { fileManagerWindowCoordinator.currentFileManagerStore?.sortKey == key },
             set: { isOn in
                 guard isOn else { return }
-                appDelegate.currentFileManagerStore?.send(.changeSortKey(key))
+                fileManagerWindowCoordinator.currentFileManagerStore?.send(.changeSortKey(key))
             },
         )
     }
 
     private func sortOrderToggleBinding(_ order: SortOrder) -> Binding<Bool> {
         Binding(
-            get: { appDelegate.currentFileManagerStore?.sortOrder == order },
+            get: { fileManagerWindowCoordinator.currentFileManagerStore?.sortOrder == order },
             set: { isOn in
                 guard isOn else { return }
-                appDelegate.currentFileManagerStore?.send(.changeSortOrder(order))
+                fileManagerWindowCoordinator.currentFileManagerStore?.send(.changeSortOrder(order))
             },
         )
     }

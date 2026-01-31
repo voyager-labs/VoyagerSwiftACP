@@ -1,12 +1,60 @@
 import AppKit
+import Combine
 import ComposableArchitecture
 
-extension AppDelegate {
-    var hasValidFocusHistory: Bool {
-        let validWindows = focusHistory.filter { window in
-            window != NSApp.keyWindow && windowControllers.contains(where: { $0.window == window })
+extension Notification.Name {
+    static let closedTabsChanged = Notification.Name("closedTabsChanged")
+    static let focusHistoryChanged = Notification.Name("focusHistoryChanged")
+}
+
+@MainActor
+final class FileManagerWindowCoordinator: ObservableObject {
+    static let shared = FileManagerWindowCoordinator()
+
+    @Published var hasSelectedItems: Bool = false
+    @Published var hasClipboardItems: Bool = false
+    @Published var hasStore: Bool = false
+    @Published var canUndo: Bool = false
+    @Published var canRedo: Bool = false
+    @Published var currentFileManagerStore: StoreOf<FileManagerFeature>?
+
+    private let onboardingWindowClient: OnboardingWindowClient
+    private let registryClient: RegistryClient
+
+    private(set) var windowControllers: [FileManagerWindowController] = []
+    private var closedTabHistory: [FileManagerFeature.State] = []
+    private var focusHistory: [NSWindow] = []
+    private var isNavigatingFocusHistory: Bool = false
+
+    init(
+        onboardingWindowClient: OnboardingWindowClient = .liveValue,
+        registryClient: RegistryClient = RegistryClient.live(snapshot: RegistrySnapshot.load()),
+    ) {
+        self.onboardingWindowClient = onboardingWindowClient
+        self.registryClient = registryClient
+    }
+
+    func handleAppDidFinishLaunching() {
+        if onboardingWindowClient.showIfNeeded() {
+            return
         }
-        return !validWindows.isEmpty
+        if windowControllers.isEmpty {
+            createNewWindow()
+        }
+    }
+
+    func handleAppReopen(hasVisibleWindows flag: Bool) -> Bool {
+        if onboardingWindowClient.showIfNeeded() {
+            return true
+        }
+        if !flag {
+            if windowControllers.isEmpty {
+                createNewWindow()
+            } else {
+                activeWindowController()?.window?.makeKeyAndOrderFront(nil)
+            }
+        }
+        return true
     }
 
     func updateMenuState(store: StoreOf<FileManagerFeature>?) {
@@ -28,27 +76,11 @@ extension AppDelegate {
         currentFileManagerStore = store
     }
 
-    func applicationShouldHandleReopen(_: NSApplication, hasVisibleWindows flag: Bool) -> Bool {
-        if onboardingWindowClient.showIfNeeded() {
-            return true
-        }
-        if !flag {
-            if windowControllers.isEmpty {
-                createNewWindow()
-            } else {
-                activeWindowController()?.window?.makeKeyAndOrderFront(nil)
-            }
-        }
-        return true
-    }
-
     @discardableResult
-    @objc
     func createNewWindow(path: String? = nil) -> FileManagerWindowController? {
         if onboardingWindowClient.showIfNeeded() {
             return nil
         }
-        // TODO: 모든 윈도우 생성 경로를 여기로 통합해 게이트 적용 지점을 단일화한다.
         let controller = FileManagerWindowController(
             registryClient: registryClient,
             path: path,
@@ -175,6 +207,13 @@ extension AppDelegate {
                 updateMenuState(store: nil)
             }
         }
+    }
+
+    func focusWindow(path: String) {
+        let targetController = windowControllers.first { controller in
+            controller.store.currentPath == path
+        }
+        targetController?.window?.makeKeyAndOrderFront(nil)
     }
 
     private func activeWindowController() -> FileManagerWindowController? {

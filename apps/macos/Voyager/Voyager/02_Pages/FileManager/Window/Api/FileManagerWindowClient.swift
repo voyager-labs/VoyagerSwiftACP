@@ -19,17 +19,12 @@ extension FileManagerWindowClient: DependencyKey {
         FileManagerWindowClient(
             openWindow: { path in
                 await MainActor.run {
-                    guard let delegate = AppDelegate.shared else { return false }
-                    return delegate.createNewWindow(path: path) != nil
+                    FileManagerWindowCoordinator.shared.createNewWindow(path: path) != nil
                 }
             },
             focusWindow: { path in
                 await MainActor.run {
-                    guard let appDelegate = AppDelegate.shared else { return }
-                    let targetController = appDelegate.windowControllers.first { controller in
-                        controller.store.currentPath == path
-                    }
-                    targetController?.window?.makeKeyAndOrderFront(nil)
+                    FileManagerWindowCoordinator.shared.focusWindow(path: path)
                 }
             },
         )

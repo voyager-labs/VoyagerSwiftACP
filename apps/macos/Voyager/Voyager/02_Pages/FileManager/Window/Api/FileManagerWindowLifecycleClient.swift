@@ -25,16 +25,16 @@ extension FileManagerWindowLifecycleClient: DependencyKey {
     static var liveValue: FileManagerWindowLifecycleClient {
         FileManagerWindowLifecycleClient(
             updateFocusHistory: { window in
-                AppDelegate.shared?.updateFocusHistory(window: window)
+                FileManagerWindowCoordinator.shared.updateFocusHistory(window: window)
             },
             updateMenuState: { store in
-                AppDelegate.shared?.updateMenuState(store: store)
+                FileManagerWindowCoordinator.shared.updateMenuState(store: store)
             },
             windowWillClose: { controller in
-                AppDelegate.shared?.windowWillClose(controller: controller)
+                FileManagerWindowCoordinator.shared.windowWillClose(controller: controller)
             },
             existingWindowSize: {
-                AppDelegate.shared?.windowControllers.first?.window?.frame.size
+                FileManagerWindowCoordinator.shared.windowControllers.first?.window?.frame.size
             },
         )
     }

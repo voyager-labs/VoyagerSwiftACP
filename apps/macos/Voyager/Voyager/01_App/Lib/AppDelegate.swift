@@ -1,15 +1,8 @@
 import AppKit
-import Combine
 import ComposableArchitecture
 import Logging
-import SwiftUI
 
-extension Notification.Name {
-    static let closedTabsChanged = Notification.Name("closedTabsChanged")
-    static let focusHistoryChanged = Notification.Name("focusHistoryChanged")
-}
-
-class AppDelegate: NSObject, NSApplicationDelegate, ObservableObject {
+class AppDelegate: NSObject, NSApplicationDelegate {
     static var shared: AppDelegate?
     private lazy var appLifecycleStore = Store(initialState: AppLifecycleFeature.State()) {
         AppLifecycleFeature()
@@ -22,26 +15,9 @@ class AppDelegate: NSObject, NSApplicationDelegate, ObservableObject {
     @Dependency(\.helperAppClient)
     private var helperAppClient
 
-    @Dependency(\.onboardingWindowClient)
-    var onboardingWindowClient
-    // TODO: 온보딩 게이트 판단/표시 호출을 전용 경로로 모아 중복 체크를 제거한다.
-
-    private lazy var registrySnapshot = RegistrySnapshot.load()
-    lazy var registryClient = RegistryClient.live(snapshot: registrySnapshot)
-
-    @Published var hasSelectedItems: Bool = false
-    @Published var hasClipboardItems: Bool = false
-    @Published var hasStore: Bool = false
-    @Published var canUndo: Bool = false
-    @Published var canRedo: Bool = false
-    @Published var currentFileManagerStore: StoreOf<FileManagerFeature>?
-
     private var terminationAttemptId: UUID?
 
-    var windowControllers: [FileManagerWindowController] = []
-    var closedTabHistory: [FileManagerFeature.State] = []
-    var focusHistory: [NSWindow] = []
-    var isNavigatingFocusHistory: Bool = false
+    private let fileManagerWindowCoordinator = FileManagerWindowCoordinator.shared
 
     override init() {
         super.init()
@@ -55,7 +31,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, ObservableObject {
     }
 
     func applicationWillFinishLaunching(_: Notification) {
-        _ = registrySnapshot
+        _ = fileManagerWindowCoordinator
         appLifecycleStore.send(.willFinishLaunching)
         updaterStore.send(.configureAtLaunch)
     }
@@ -63,12 +39,11 @@ class AppDelegate: NSObject, NSApplicationDelegate, ObservableObject {
     func applicationDidFinishLaunching(_: Notification) {
         appLifecycleStore.send(.didFinishLaunching)
         NSWindow.allowsAutomaticWindowTabbing = true
-        if onboardingWindowClient.showIfNeeded() {
-            return
-        }
-        if windowControllers.isEmpty {
-            createNewWindow()
-        }
+        fileManagerWindowCoordinator.handleAppDidFinishLaunching()
+    }
+
+    func applicationShouldHandleReopen(_: NSApplication, hasVisibleWindows flag: Bool) -> Bool {
+        fileManagerWindowCoordinator.handleAppReopen(hasVisibleWindows: flag)
     }
 
     func checkForUpdates() {

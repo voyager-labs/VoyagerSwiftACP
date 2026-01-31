@@ -3,15 +3,12 @@ import ComposableArchitecture
 import SwiftUI
 
 struct EditMenuCommands: Commands {
-    @ObservedObject private var appDelegate: AppDelegate
+    @ObservedObject private var fileManagerWindowCoordinator: FileManagerWindowCoordinator
     private let undoSelector = Selector(("undo:"))
     private let redoSelector = Selector(("redo:"))
 
     init() {
-        guard let shared = AppDelegate.shared else {
-            fatalError("AppDelegate.shared must be initialized before EditMenuCommands")
-        }
-        appDelegate = shared
+        fileManagerWindowCoordinator = FileManagerWindowCoordinator.shared
     }
 
     private func isTextEditingResponder() -> Bool {
@@ -36,10 +33,10 @@ struct EditMenuCommands: Commands {
     var body: some Commands {
         let canUndoResponder = canUndoInTextResponder()
         let canRedoResponder = canRedoInTextResponder()
-        let canUndo = canUndoResponder || appDelegate.canUndo
-        let canRedo = canRedoResponder || appDelegate.canRedo
+        let canUndo = canUndoResponder || fileManagerWindowCoordinator.canUndo
+        let canRedo = canRedoResponder || fileManagerWindowCoordinator.canRedo
 
-        let selectedCount = appDelegate.currentFileManagerStore?.entries.selectedIds.count ?? 0
+        let selectedCount = fileManagerWindowCoordinator.currentFileManagerStore?.entries.selectedIds.count ?? 0
         let copyAbsolutePathTitle = selectedCount == 1 ? "Copy Absolute Path" : "Copy Absolute Paths"
         let copyURLTitle = selectedCount == 1 ? "Copy URL" : "Copy URLs"
 
@@ -50,7 +47,7 @@ struct EditMenuCommands: Commands {
                 {
                     return
                 }
-                appDelegate.currentFileManagerStore?.send(.entries(.requestUndo))
+                fileManagerWindowCoordinator.currentFileManagerStore?.send(.entries(.requestUndo))
             }
             .keyboardShortcut("z", modifiers: .command)
             .disabled(!canUndo)
@@ -61,19 +58,19 @@ struct EditMenuCommands: Commands {
                 {
                     return
                 }
-                appDelegate.currentFileManagerStore?.send(.entries(.requestRedo))
+                fileManagerWindowCoordinator.currentFileManagerStore?.send(.entries(.requestRedo))
             }
             .keyboardShortcut("z", modifiers: [.command, .shift])
             .disabled(!canRedo)
         }
 
         CommandGroup(after: .undoRedo) {
-            let isComposerPresented = appDelegate.currentFileManagerStore?.composer.isPresented == true
+            let isComposerPresented = fileManagerWindowCoordinator.currentFileManagerStore?.composer.isPresented == true
             let composerTitle = isComposerPresented
                 ? "Close Collection Filter Composer"
                 : "Open Collection Filter Composer"
             Button(composerTitle) {
-                guard let store = appDelegate.currentFileManagerStore else { return }
+                guard let store = fileManagerWindowCoordinator.currentFileManagerStore else { return }
                 if store.composer.isPresented {
                     store.send(.exitComposer)
                 } else {
@@ -81,14 +78,14 @@ struct EditMenuCommands: Commands {
                 }
             }
             .keyboardShortcut("f", modifiers: .command)
-            .disabled(appDelegate.currentFileManagerStore == nil)
+            .disabled(fileManagerWindowCoordinator.currentFileManagerStore == nil)
         }
 
         CommandGroup(replacing: .pasteboard) {
             Button("Cut") {
                 if NSApp.sendAction(#selector(NSText.cut(_:)), to: nil, from: nil) {
                 } else {
-                    appDelegate.currentFileManagerStore?.send(.entries(.cutSelectedItems))
+                    fileManagerWindowCoordinator.currentFileManagerStore?.send(.entries(.cutSelectedItems))
                 }
             }
             .keyboardShortcut("x", modifiers: .command)
@@ -97,7 +94,7 @@ struct EditMenuCommands: Commands {
             Button("Copy") {
                 if NSApp.sendAction(#selector(NSText.copy(_:)), to: nil, from: nil) {
                 } else {
-                    appDelegate.currentFileManagerStore?.send(.entries(.copySelectedItems))
+                    fileManagerWindowCoordinator.currentFileManagerStore?.send(.entries(.copySelectedItems))
                 }
             }
             .keyboardShortcut("c", modifiers: .command)
@@ -106,41 +103,42 @@ struct EditMenuCommands: Commands {
             Divider()
 
             Button(copyAbsolutePathTitle) {
-                appDelegate.currentFileManagerStore?.send(.entries(.copySelectedAbsolutePaths))
+                fileManagerWindowCoordinator.currentFileManagerStore?.send(.entries(.copySelectedAbsolutePaths))
             }
-            .disabled(appDelegate.currentFileManagerStore?.entries.selectedIds.isEmpty ?? true)
+            .disabled(fileManagerWindowCoordinator.currentFileManagerStore?.entries.selectedIds.isEmpty ?? true)
 
             Button(copyURLTitle) {
-                appDelegate.currentFileManagerStore?.send(.entries(.copySelectedURLs))
+                fileManagerWindowCoordinator.currentFileManagerStore?.send(.entries(.copySelectedURLs))
             }
-            .disabled(appDelegate.currentFileManagerStore?.entries.selectedIds.isEmpty ?? true)
+            .disabled(fileManagerWindowCoordinator.currentFileManagerStore?.entries.selectedIds.isEmpty ?? true)
 
             Button("Paste") {
                 if NSApp.sendAction(#selector(NSText.paste(_:)), to: nil, from: nil) {
-                } else if let currentPath = appDelegate.currentFileManagerStore?.currentPath {
-                    appDelegate.currentFileManagerStore?.send(.entries(.pasteItems(destinationPath: currentPath)))
+                } else if let currentPath = fileManagerWindowCoordinator.currentFileManagerStore?.currentPath {
+                    fileManagerWindowCoordinator.currentFileManagerStore?
+                        .send(.entries(.pasteItems(destinationPath: currentPath)))
                 }
             }
             .keyboardShortcut("v", modifiers: .command)
             .disabled(false)
 
             Button("Duplicate") {
-                appDelegate.currentFileManagerStore?.send(.entries(.duplicateSelectedItems))
+                fileManagerWindowCoordinator.currentFileManagerStore?.send(.entries(.duplicateSelectedItems))
             }
             .keyboardShortcut("d", modifiers: .command)
-            .disabled(appDelegate.currentFileManagerStore?.entries.selectedIds.isEmpty ?? true)
+            .disabled(fileManagerWindowCoordinator.currentFileManagerStore?.entries.selectedIds.isEmpty ?? true)
 
             Button("Make Alias") {
-                appDelegate.currentFileManagerStore?.send(.entries(.createAliasForSelectedItems))
+                fileManagerWindowCoordinator.currentFileManagerStore?.send(.entries(.createAliasForSelectedItems))
             }
-            .disabled(appDelegate.currentFileManagerStore?.entries.selectedIds.isEmpty ?? true)
+            .disabled(fileManagerWindowCoordinator.currentFileManagerStore?.entries.selectedIds.isEmpty ?? true)
         }
 
         CommandGroup(replacing: .textEditing) {
             Button("Select All") {
                 if NSApp.sendAction(#selector(NSText.selectAll(_:)), to: nil, from: nil) {
                 } else {
-                    appDelegate.currentFileManagerStore?.send(.entries(.selectAll))
+                    fileManagerWindowCoordinator.currentFileManagerStore?.send(.entries(.selectAll))
                 }
             }
             .keyboardShortcut("a", modifiers: .command)
