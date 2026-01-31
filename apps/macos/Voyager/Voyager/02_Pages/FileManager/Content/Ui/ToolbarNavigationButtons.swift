@@ -10,8 +10,8 @@ struct ToolbarNavigationButtons: View {
     let canGoForward: Bool
     let canGoToEnclosingDirectory: Bool
 
-    @Dependency(\.sidebarClient)
-    private var sidebarClient
+    @Dependency(\.fileManagerNavigationClient)
+    private var navigationClient
     @Dependency(\.entryClient)
     private var entryClient
     @Dependency(\.workspaceClient)
@@ -98,7 +98,7 @@ struct ToolbarNavigationButtons: View {
         case let .tags(tagName):
             tagName
         case .computer:
-            sidebarClient.computerName()
+            navigationClient.computerName()
         case let .collection(navigation):
             switch navigation.kind {
             case .temporary:

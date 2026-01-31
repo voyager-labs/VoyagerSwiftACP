@@ -5,7 +5,7 @@ import SwiftUI
 
 @preconcurrency import ObjectiveC
 
-enum SidebarUtils {
+enum SidebarItems {
     struct LocationItem: Equatable {
         let name: String
         let url: URL
@@ -62,7 +62,7 @@ enum SidebarUtils {
         }
 
         var displayName: String {
-            SidebarUtils.favoriteDisplayName(for: self)
+            SidebarItems.favoriteDisplayName(for: self)
         }
     }
 

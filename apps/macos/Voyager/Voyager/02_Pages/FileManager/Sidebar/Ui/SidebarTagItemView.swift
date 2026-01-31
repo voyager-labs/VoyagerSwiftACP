@@ -2,7 +2,7 @@ import SwiftUI
 import UniformTypeIdentifiers
 
 struct SidebarTagItemView: View {
-    let tag: SidebarUtils.TagItem
+    let tag: SidebarItems.TagItem
     let isSelected: Bool
     let isContextMenuTarget: Bool
     let contextMenuTargetWasSelected: Bool

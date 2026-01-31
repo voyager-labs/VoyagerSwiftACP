@@ -14,8 +14,8 @@ struct FileManagerFeature {
     var collectionAlertClient
     @Dependency(\.userDefaultsClient)
     var userDefaultsClient
-    @Dependency(\.sidebarClient)
-    var sidebarClient
+    @Dependency(\.fileManagerNavigationClient)
+    var navigationClient
     @Dependency(\.registryClient)
     var registryClient
 
@@ -34,20 +34,20 @@ struct FileManagerFeature {
 
     func makeWindowTitle(for path: String) -> String {
         if path == "/" {
-            return sidebarClient.computerName()
+            return navigationClient.computerName()
         }
-        if path == sidebarClient.computerName() {
+        if path == navigationClient.computerName() {
             return path
         }
         return entryClient.displayName(path)
     }
 
     static func makeWindowTitle(for path: String) -> String {
-        let sidebarClient = SidebarClient.liveValue
+        let navigationClient = FileManagerNavigationClient.liveValue
         if path == "/" {
-            return sidebarClient.computerName()
+            return navigationClient.computerName()
         }
-        if path == sidebarClient.computerName() {
+        if path == navigationClient.computerName() {
             return path
         }
         return EntryClient.liveValue.displayName(path)
@@ -61,7 +61,7 @@ struct FileManagerFeature {
             case let .folder(path): path
             case .recents: "Recents"
             case let .tags(tagName): tagName
-            case .computer: "" // Will be computed in View using sidebarClient
+            case .computer: "" // Will be computed in View using navigationClient
             case let .collection(navigation):
                 switch navigation.kind {
                 case .temporary:
@@ -85,9 +85,9 @@ struct FileManagerFeature {
         var inspectorVisible: Bool = false
         var inspectorPaneExists: Bool = false
         var selectedSidebarItem: String?
-        var favorites: [SidebarUtils.FavoriteItem] = []
-        var locations: [SidebarUtils.LocationItem] = []
-        var tags: [SidebarUtils.TagItem] = []
+        var favorites: [SidebarItems.FavoriteItem] = []
+        var locations: [SidebarItems.LocationItem] = []
+        var tags: [SidebarItems.TagItem] = []
         var isFavoritesCollapsed: Bool = false
         var isLocationsCollapsed: Bool = false
         var isTagsCollapsed: Bool = false
@@ -242,11 +242,6 @@ struct FileManagerFeature {
         }
     }
 
-    enum ViewLayout: String, Equatable, Codable {
-        case list
-        case grid
-    }
-
     struct ColumnUpdate: Equatable, Sendable {
         let column: ListColumnWidthsUtils.Column
         let delta: CGFloat
@@ -295,19 +290,19 @@ struct FileManagerFeature {
         case showRecents
         case showComputer
         case loadFavorites
-        case favoritesLoaded([SidebarUtils.FavoriteItem])
-        case openFavorite(SidebarUtils.FavoriteItem)
+        case favoritesLoaded([SidebarItems.FavoriteItem])
+        case openFavorite(SidebarItems.FavoriteItem)
         case insertFavorite(url: URL, at: Int)
-        case removeFavorite(SidebarUtils.FavoriteItem)
+        case removeFavorite(SidebarItems.FavoriteItem)
         case reorderFavorites(from: IndexSet, to: Int)
 
         case loadLocations
-        case locationsLoaded([SidebarUtils.LocationItem])
-        case openLocation(SidebarUtils.LocationItem)
+        case locationsLoaded([SidebarItems.LocationItem])
+        case openLocation(SidebarItems.LocationItem)
 
         case loadTags
-        case tagsLoaded([SidebarUtils.TagItem])
-        case showTag(SidebarUtils.TagItem)
+        case tagsLoaded([SidebarItems.TagItem])
+        case showTag(SidebarItems.TagItem)
 
         case changeSortKey(SortKey)
         case changeSortOrder(SortOrder)
@@ -405,6 +400,7 @@ struct FileManagerFeature {
                     .send(.entries(.setShowHidden(state.showHiddenFiles))),
                     .send(.entries(.setSortKey(state.sortKey))),
                     .send(.entries(.setSortOrder(state.sortOrder))),
+                    .send(.entries(.onAppear)),
                     .send(.entries(.loadItems(path: state.currentPath))),
                     .send(.loadFavorites),
                     .send(.loadLocations),
@@ -438,7 +434,7 @@ struct FileManagerFeature {
 
             case let .navigateTo(path):
                 let previousNavigationState = state.navigationState
-                let computerName = sidebarClient.computerName()
+                let computerName = navigationClient.computerName()
                 if path == computerName, state.currentPath == computerName {
                     return .none
                 }
@@ -810,7 +806,7 @@ struct FileManagerFeature {
                 )
 
             case .showComputer:
-                state.navigate(to: .computer, sidebarItemName: sidebarClient.computerName())
+                state.navigate(to: .computer, sidebarItemName: navigationClient.computerName())
                 state.resetComposer()
                 let exitEffect = exitCollectionMode(state: &state)
                 return .concatenate(
@@ -820,7 +816,7 @@ struct FileManagerFeature {
 
             case .loadFavorites:
                 return .run { send in
-                    let favorites = await sidebarClient.loadFavorites(entryClient, userDefaultsClient)
+                    let favorites = await navigationClient.loadFavorites(entryClient, userDefaultsClient)
                     await send(.favoritesLoaded(favorites))
                 }
 
@@ -871,23 +867,23 @@ struct FileManagerFeature {
                 let name = isVoycoll
                     ? url.deletingPathExtension().lastPathComponent
                     : entryClient.displayName(url.path)
-                let iconName = sidebarClient.iconNameForURL(url, isDirectory.boolValue, entryClient)
-                let newFavorite = SidebarUtils.FavoriteItem(name: name, url: url, iconName: iconName)
+                let iconName = navigationClient.iconNameForURL(url, isDirectory.boolValue, entryClient)
+                let newFavorite = SidebarItems.FavoriteItem(name: name, url: url, iconName: iconName)
 
                 let insertIndex = max(0, min(index, state.favorites.count))
                 state.favorites.insert(newFavorite, at: insertIndex)
-                sidebarClient.saveFavorites(state.favorites, userDefaultsClient)
+                navigationClient.saveFavorites(state.favorites, userDefaultsClient)
                 return .none
 
             case let .removeFavorite(favorite):
                 state.favorites.removeAll { $0.url.path == favorite.url.path }
-                sidebarClient.saveFavorites(state.favorites, userDefaultsClient)
+                navigationClient.saveFavorites(state.favorites, userDefaultsClient)
                 return .none
 
             case let .reorderFavorites(source, destination):
                 var reordered = state.favorites
                 let sortedIndices = source.sorted(by: >)
-                var itemsToMove: [SidebarUtils.FavoriteItem] = []
+                var itemsToMove: [SidebarItems.FavoriteItem] = []
                 for index in sortedIndices {
                     itemsToMove.insert(reordered.remove(at: index), at: 0)
                 }
@@ -898,12 +894,12 @@ struct FileManagerFeature {
                 let insertIndex = max(0, min(adjustedDestination, reordered.count))
                 reordered.insert(contentsOf: itemsToMove, at: insertIndex)
                 state.favorites = reordered
-                sidebarClient.saveFavorites(state.favorites, userDefaultsClient)
+                navigationClient.saveFavorites(state.favorites, userDefaultsClient)
                 return .none
 
             case .loadLocations:
                 return .run { send in
-                    let locations = await sidebarClient.loadLocations(entryClient)
+                    let locations = await navigationClient.loadLocations(entryClient)
                     await send(.locationsLoaded(locations))
                 }
 
@@ -931,7 +927,7 @@ struct FileManagerFeature {
 
             case .loadTags:
                 return .run { send in
-                    let tags = await sidebarClient.loadTags()
+                    let tags = await navigationClient.loadTags()
                     await send(.tagsLoaded(tags))
                 }
 
@@ -1367,7 +1363,7 @@ struct FileManagerFeature {
 
         state.navigationState = FileManagerNavigationUtils.navigationStateFromPath(
             state.titlePath,
-            computerName: sidebarClient.computerName(),
+            computerName: navigationClient.computerName(),
         )
         matchSidebarToPath(
             state: &state,
@@ -1588,7 +1584,7 @@ struct FileManagerFeature {
             .send(.entries(.loadItems(path: path)))
         case let .tags(tagName):
             .run { send in
-                let taggedItems = await sidebarClient.loadFilesWithTag(
+                let taggedItems = await navigationClient.loadFilesWithTag(
                     tagName,
                     showHidden,
                     entryClient,
@@ -1646,8 +1642,8 @@ struct FileManagerFeature {
     private func applyHistoryEntry(
         state: inout State,
         entry: HistoryEntry,
-        favorites: [SidebarUtils.FavoriteItem],
-        locations: [SidebarUtils.LocationItem],
+        favorites: [SidebarItems.FavoriteItem],
+        locations: [SidebarItems.LocationItem],
     ) {
         let previousNavigationState = state.navigationState
         state.navigationState = entry.navigationState

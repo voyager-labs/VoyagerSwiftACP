@@ -7,27 +7,27 @@ import SwiftUI
 
 @preconcurrency import ObjectiveC
 
-struct SidebarClient: Sendable {
+struct FileManagerNavigationClient: Sendable {
     var computerName: @Sendable () -> String
     var loadRecentItems: @Sendable (Bool, EntryClient, WorkspaceClient) async -> [Entry]
     var loadFilesWithTag: @Sendable (String, Bool, EntryClient, WorkspaceClient) async -> [Entry]
-    var loadLocations: @Sendable (EntryClient) async -> [SidebarUtils.LocationItem]
-    var loadFavorites: @Sendable (EntryClient, UserDefaultsClient) async -> [SidebarUtils.FavoriteItem]
-    var saveFavorites: @Sendable ([SidebarUtils.FavoriteItem], UserDefaultsClient) -> Void
-    var initializeDefaultFavorites: @Sendable (EntryClient) async -> [SidebarUtils.FavoriteItem]
+    var loadLocations: @Sendable (EntryClient) async -> [SidebarItems.LocationItem]
+    var loadFavorites: @Sendable (EntryClient, UserDefaultsClient) async -> [SidebarItems.FavoriteItem]
+    var saveFavorites: @Sendable ([SidebarItems.FavoriteItem], UserDefaultsClient) -> Void
+    var initializeDefaultFavorites: @Sendable (EntryClient) async -> [SidebarItems.FavoriteItem]
     var iconNameForURL: @Sendable (URL, Bool, EntryClient) -> String
-    var loadTags: @Sendable () async -> [SidebarUtils.TagItem]
+    var loadTags: @Sendable () async -> [SidebarItems.TagItem]
 
     nonisolated init(
         computerName: @escaping @Sendable () -> String,
         loadRecentItems: @escaping @Sendable (Bool, EntryClient, WorkspaceClient) async -> [Entry],
         loadFilesWithTag: @escaping @Sendable (String, Bool, EntryClient, WorkspaceClient) async -> [Entry],
-        loadLocations: @escaping @Sendable (EntryClient) async -> [SidebarUtils.LocationItem],
-        loadFavorites: @escaping @Sendable (EntryClient, UserDefaultsClient) async -> [SidebarUtils.FavoriteItem],
-        saveFavorites: @escaping @Sendable ([SidebarUtils.FavoriteItem], UserDefaultsClient) -> Void,
-        initializeDefaultFavorites: @escaping @Sendable (EntryClient) async -> [SidebarUtils.FavoriteItem],
+        loadLocations: @escaping @Sendable (EntryClient) async -> [SidebarItems.LocationItem],
+        loadFavorites: @escaping @Sendable (EntryClient, UserDefaultsClient) async -> [SidebarItems.FavoriteItem],
+        saveFavorites: @escaping @Sendable ([SidebarItems.FavoriteItem], UserDefaultsClient) -> Void,
+        initializeDefaultFavorites: @escaping @Sendable (EntryClient) async -> [SidebarItems.FavoriteItem],
         iconNameForURL: @escaping @Sendable (URL, Bool, EntryClient) -> String,
-        loadTags: @escaping @Sendable () async -> [SidebarUtils.TagItem],
+        loadTags: @escaping @Sendable () async -> [SidebarItems.TagItem],
     ) {
         self.computerName = computerName
         self.loadRecentItems = loadRecentItems
@@ -90,7 +90,7 @@ private final class ObserverWrapper: @unchecked Sendable {
     }
 }
 
-extension SidebarClient: DependencyKey {
+extension FileManagerNavigationClient: DependencyKey {
     @MainActor
     private static func searchFiles(
         predicate: NSPredicate,
@@ -214,9 +214,9 @@ extension SidebarClient: DependencyKey {
         return showHidden ? items : items.filter { !$0.isHidden }
     }
 
-    nonisolated static var liveValue: SidebarClient {
+    nonisolated static var liveValue: FileManagerNavigationClient {
         nonisolated(unsafe) let fileManager = FileManager.default
-        return SidebarClient(
+        return FileManagerNavigationClient(
             computerName: {
                 fileManager.displayName(atPath: "/")
             },
@@ -237,7 +237,7 @@ extension SidebarClient: DependencyKey {
             },
             loadLocations: { entryClient in
                 await MainActor.run {
-                    var locations: [SidebarUtils.LocationItem] = []
+                    var locations: [SidebarItems.LocationItem] = []
 
                     // Load external volumes
                     if let mountedVolumes = entryClient.mountedVolumeURLs(
@@ -270,7 +270,7 @@ extension SidebarClient: DependencyKey {
                             let isSimulatorMount = simulatorPrefixes.contains { volumeName.hasPrefix($0) }
 
                             if isRemovable || isEjectable, !isSystemMount, !isSimulatorMount {
-                                locations.append(SidebarUtils.LocationItem(
+                                locations.append(SidebarItems.LocationItem(
                                     name: volumeName,
                                     url: volumeURL,
                                     iconName: "externaldrive",
@@ -283,7 +283,7 @@ extension SidebarClient: DependencyKey {
                     let iCloudDrivePath = (NSHomeDirectory() as NSString)
                         .appendingPathComponent("Library/Mobile Documents/com~apple~CloudDocs")
                     if entryClient.fileExists(iCloudDrivePath) {
-                        locations.append(SidebarUtils.LocationItem(
+                        locations.append(SidebarItems.LocationItem(
                             name: "iCloud Drive",
                             url: URL(fileURLWithPath: iCloudDrivePath),
                             iconName: "icloud",
@@ -303,7 +303,7 @@ extension SidebarClient: DependencyKey {
                             if let isDirectory = try? itemURL.resourceValues(forKeys: [.isDirectoryKey]).isDirectory,
                                isDirectory == true
                             {
-                                locations.append(SidebarUtils.LocationItem(
+                                locations.append(SidebarItems.LocationItem(
                                     name: itemURL.lastPathComponent,
                                     url: itemURL,
                                     iconName: "folder",
@@ -314,20 +314,20 @@ extension SidebarClient: DependencyKey {
 
                     // Add system locations
                     let homeURL = URL(fileURLWithPath: NSHomeDirectory())
-                    locations.append(SidebarUtils.LocationItem(
+                    locations.append(SidebarItems.LocationItem(
                         name: NSUserName(),
                         url: homeURL,
                         iconName: "house",
                     ))
 
-                    locations.append(SidebarUtils.LocationItem(
+                    locations.append(SidebarItems.LocationItem(
                         name: entryClient.displayName("/"),
                         url: URL(fileURLWithPath: "/"),
                         iconName: "internaldrive",
                     ))
 
                     if let trashURL = entryClient.urlsForDirectory(.trashDirectory, .userDomainMask).first {
-                        locations.append(SidebarUtils.LocationItem(
+                        locations.append(SidebarItems.LocationItem(
                             name: "Trash",
                             url: trashURL,
                             iconName: "trash",
@@ -341,12 +341,12 @@ extension SidebarClient: DependencyKey {
                 let defaultFavorites = await Self.initializeDefaultFavoritesImpl(entryClient: entryClient)
                 return await MainActor.run {
                     if let data = userDefaultsClient.object("favorites") as? Data,
-                       let favorites = try? JSONDecoder().decode([SidebarUtils.FavoriteItem].self, from: data),
+                       let favorites = try? JSONDecoder().decode([SidebarItems.FavoriteItem].self, from: data),
                        !favorites.isEmpty
                     {
                         let updatedFavorites = favorites.map { favorite in
                             if favorite.url.path == "/Applications" {
-                                return SidebarUtils.FavoriteItem(
+                                return SidebarItems.FavoriteItem(
                                     name: favorite.name,
                                     url: favorite.url,
                                     iconName: "appstore",
@@ -379,9 +379,9 @@ extension SidebarClient: DependencyKey {
                         iconName: String,
                         entryClient: EntryClient,
                         domain: FileManager.SearchPathDomainMask = .userDomainMask,
-                    ) -> SidebarUtils.FavoriteItem? {
+                    ) -> SidebarItems.FavoriteItem? {
                         guard let url = entryClient.urlsForDirectory(directory, domain).first else { return nil }
-                        return SidebarUtils.FavoriteItem(name: name, url: url, iconName: iconName)
+                        return SidebarItems.FavoriteItem(name: name, url: url, iconName: iconName)
                     }
 
                     return [
@@ -466,7 +466,7 @@ extension SidebarClient: DependencyKey {
                         .filter { !$0.isEmpty }
                         .map { name in
                             let colorCode = nameToColorCode[name] ?? 0
-                            return SidebarUtils.TagItem(
+                            return SidebarItems.TagItem(
                                 name: name,
                                 color: EntryTagUtils.getTagColor(colorCode: colorCode),
                             )
@@ -484,7 +484,7 @@ extension SidebarClient: DependencyKey {
         )
     }
 
-    private static func initializeDefaultFavoritesImpl(entryClient: EntryClient) async -> [SidebarUtils.FavoriteItem] {
+    private static func initializeDefaultFavoritesImpl(entryClient: EntryClient) async -> [SidebarItems.FavoriteItem] {
         await MainActor.run {
             func makeFavorite(
                 name: String,
@@ -492,9 +492,9 @@ extension SidebarClient: DependencyKey {
                 iconName: String,
                 entryClient: EntryClient,
                 domain: FileManager.SearchPathDomainMask = .userDomainMask,
-            ) -> SidebarUtils.FavoriteItem? {
+            ) -> SidebarItems.FavoriteItem? {
                 guard let url = entryClient.urlsForDirectory(directory, domain).first else { return nil }
-                return SidebarUtils.FavoriteItem(name: name, url: url, iconName: iconName)
+                return SidebarItems.FavoriteItem(name: name, url: url, iconName: iconName)
             }
 
             return [
@@ -527,8 +527,8 @@ extension SidebarClient: DependencyKey {
         }
     }
 
-    nonisolated static var testValue: SidebarClient {
-        SidebarClient(
+    nonisolated static var testValue: FileManagerNavigationClient {
+        FileManagerNavigationClient(
             computerName: { "" },
             loadRecentItems: { _, _, _ in [] },
             loadFilesWithTag: { _, _, _, _ in [] },
@@ -541,8 +541,8 @@ extension SidebarClient: DependencyKey {
         )
     }
 
-    nonisolated static var previewValue: SidebarClient {
-        SidebarClient(
+    nonisolated static var previewValue: FileManagerNavigationClient {
+        FileManagerNavigationClient(
             computerName: { "" },
             loadRecentItems: { _, _, _ in [] },
             loadFilesWithTag: { _, _, _, _ in [] },
@@ -557,9 +557,9 @@ extension SidebarClient: DependencyKey {
 }
 
 extension DependencyValues {
-    nonisolated var sidebarClient: SidebarClient {
-        get { self[SidebarClient.self] }
-        set { self[SidebarClient.self] = newValue }
+    nonisolated var fileManagerNavigationClient: FileManagerNavigationClient {
+        get { self[FileManagerNavigationClient.self] }
+        set { self[FileManagerNavigationClient.self] = newValue }
     }
 }
 

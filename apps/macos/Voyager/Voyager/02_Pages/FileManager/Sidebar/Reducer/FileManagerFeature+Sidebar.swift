@@ -4,11 +4,11 @@ extension FileManagerFeature {
     func matchSidebarToPath(
         state: inout State,
         path: String,
-        favorites: [SidebarUtils.FavoriteItem],
-        locations: [SidebarUtils.LocationItem],
+        favorites: [SidebarItems.FavoriteItem],
+        locations: [SidebarItems.LocationItem],
     ) {
         state.selectedSidebarItem = {
-            let computerName = sidebarClient.computerName()
+            let computerName = navigationClient.computerName()
             if path == computerName {
                 return locations.first(where: { $0.isComputer })?.name ?? path
             }

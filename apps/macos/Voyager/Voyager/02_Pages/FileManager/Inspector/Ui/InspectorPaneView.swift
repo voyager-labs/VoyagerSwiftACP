@@ -8,8 +8,8 @@ struct InspectorPaneView: View {
     @Environment(\.colorScheme)
     var colorScheme
 
-    @Dependency(\.sidebarClient)
-    private var sidebarClient
+    @Dependency(\.fileManagerNavigationClient)
+    private var navigationClient
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {

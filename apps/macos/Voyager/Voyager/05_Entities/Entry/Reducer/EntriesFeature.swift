@@ -19,8 +19,8 @@ struct EntriesFeature {
     var entryClient
     @Dependency(\.fileManagerWindowClient)
     var fileManagerWindowClient
-    @Dependency(\.sidebarClient)
-    var sidebarClient
+    @Dependency(\.fileManagerNavigationClient)
+    var navigationClient
     @Dependency(\.undoManagerClient)
     var undoManagerClient
     @Dependency(\.workspaceClient)
@@ -297,7 +297,7 @@ struct EntriesFeature {
                 state.clipboardOperation = clipboardOp
 
                 if state.isVirtualFolder {
-                    if state.currentFolderPath == sidebarClient.computerName() {
+                    if state.currentFolderPath == navigationClient.computerName() {
                         return .send(.loadComputerItems)
                     } else if let tagName = state.currentFolderPath {
                         return .send(.loadTagItems(tagName: tagName, showHidden: state.showHiddenFiles))
@@ -553,11 +553,11 @@ struct EntriesFeature {
                 state.currentFolderPath = nil
                 state.isVirtualFolder = true
 
-                let sidebarClient = sidebarClient
+                let navigationClient = navigationClient
                 let entryClient = entryClient
                 let workspaceClient = workspaceClient
-                return .run { [sidebarClient, entryClient, workspaceClient] send in
-                    let recentItems = await sidebarClient.loadRecentItems(showHidden, entryClient, workspaceClient)
+                return .run { [navigationClient, entryClient, workspaceClient] send in
+                    let recentItems = await navigationClient.loadRecentItems(showHidden, entryClient, workspaceClient)
                     await send(.itemsLoaded(recentItems))
                 }
 
@@ -565,12 +565,12 @@ struct EntriesFeature {
                 state.currentFolderPath = tagName
                 state.isVirtualFolder = true
 
-                let sidebarClient = sidebarClient
+                let navigationClient = navigationClient
                 let entryClient = entryClient
                 let workspaceClient = workspaceClient
-                return .run { [sidebarClient, entryClient, workspaceClient] send in
+                return .run { [navigationClient, entryClient, workspaceClient] send in
                     try await Task.sleep(for: .milliseconds(500))
-                    let taggedItems = await sidebarClient.loadFilesWithTag(
+                    let taggedItems = await navigationClient.loadFilesWithTag(
                         tagName,
                         showHidden,
                         entryClient,
@@ -580,7 +580,7 @@ struct EntriesFeature {
                 }
 
             case .loadComputerItems:
-                state.currentFolderPath = sidebarClient.computerName()
+                state.currentFolderPath = navigationClient.computerName()
                 state.isVirtualFolder = true
 
                 let entryClient = entryClient
