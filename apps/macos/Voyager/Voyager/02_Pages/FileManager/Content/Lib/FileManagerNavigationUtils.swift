@@ -26,7 +26,7 @@ enum FileManagerNavigationUtils {
         var context: CollectionContext
         var sortKey: SortKey
         var sortOrder: SortOrder
-        var viewLayout: FileManagerFeature.ViewLayout
+        var viewLayout: ContentViewLayout
     }
 
     static func navigationStateFromPath(_ path: String, computerName: String) -> NavigationState {

@@ -29,7 +29,7 @@ struct FileManagerFeature {
         var context: CollectionContext
         var sortKey: SortKey
         var sortOrder: SortOrder
-        var viewLayout: ViewLayout
+        var viewLayout: ContentViewLayout
     }
 
     func makeWindowTitle(for path: String) -> String {
@@ -79,7 +79,7 @@ struct FileManagerFeature {
         var backHistory: [HistoryEntry] = []
         var forwardHistory: [HistoryEntry] = []
         var entries: EntriesFeature.State = .init()
-        var viewLayout: ViewLayout = .list
+        var viewLayout: ContentViewLayout = .list
         var showHiddenFiles: Bool = false
         var sidebarVisible: Bool = true
         var inspectorVisible: Bool = false
@@ -279,7 +279,7 @@ struct FileManagerFeature {
         case performNavigation(PendingNavigation)
         case showUnsavedNavigationAlert(PendingNavigation)
         case unsavedNavigationAlertResponse(PendingNavigation, UnsavedNavigationChoice)
-        case changeLayout(ViewLayout)
+        case changeLayout(ContentViewLayout)
         case toggleShowHiddenFiles
         case setShowHiddenFiles(Bool)
         case setSidebarVisible(Bool)
@@ -364,7 +364,7 @@ struct FileManagerFeature {
                 state.entries.groupKey = GroupKey(rawValue: userDefaultsClient.string("groupKey") ?? "") ?? .none
 
                 if let viewLayoutRaw = userDefaultsClient.string(SettingsKeys.viewLayout),
-                   let savedLayout = ViewLayout(rawValue: viewLayoutRaw)
+                   let savedLayout = ContentViewLayout(rawValue: viewLayoutRaw)
                 {
                     state.viewLayout = savedLayout
                 } else {
@@ -1715,10 +1715,6 @@ private func sortOrder(from file: VoyagerCollectionFile) -> SortOrder? {
     return SortOrder(rawValue: rawValue)
 }
 
-private func viewLayout(from file: VoyagerCollectionFile) -> FileManagerFeature.ViewLayout? {
-    guard let rawValue = file.viewLayout else { return nil }
-    return FileManagerFeature.ViewLayout(rawValue: rawValue)
-}
 
 private func shouldLogDailyFileManagerOpen(_ userDefaultsClient: UserDefaultsClient) -> Bool {
     let key = "voyager.file_manager.first_open_date"

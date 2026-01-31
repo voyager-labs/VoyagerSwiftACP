@@ -69,7 +69,7 @@ struct ContentPaneContextMenu: View {
         return path == trashPath || path.hasPrefix(trashPath + "/")
     }
 
-    private func viewLayoutToggle(_ title: String, layout: FileManagerFeature.ViewLayout) -> some View {
+    private func viewLayoutToggle(_ title: String, layout: ContentViewLayout) -> some View {
         Toggle(
             title,
             isOn: Binding(

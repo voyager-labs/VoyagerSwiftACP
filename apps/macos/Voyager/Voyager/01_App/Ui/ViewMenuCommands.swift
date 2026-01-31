@@ -80,7 +80,7 @@ struct ViewMenuCommands: Commands {
         }
     }
 
-    private func viewLayoutToggleBinding(_ layout: FileManagerFeature.ViewLayout) -> Binding<Bool> {
+    private func viewLayoutToggleBinding(_ layout: ContentViewLayout) -> Binding<Bool> {
         Binding(
             get: { fileManagerWindowCoordinator.currentFileManagerStore?.viewLayout == layout },
             set: { isOn in
