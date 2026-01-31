@@ -1,8 +1,12 @@
 """SQL 조건 빌더
 
 Search API의 conditions를 SQL WHERE절로 변환합니다.
+
+- TODO: Swift Voyager Helper로 이관 [VOY-152]
+- TODO: Swift Voyager Helper 이관 시 SQL 구문을 문자열로 반환하는 대신, Swift의 ORM 쿼리 객체를 반환하도록 변경
 """
 
+from dataclasses import dataclass
 from typing import Any, Sequence, cast
 
 from core.metadata.registry_loader import (
@@ -36,20 +40,6 @@ SQL_KIND_VALUE_SHAPES: dict[str, set[str]] = {
     "string_list_not_all": {"list"},
 }
 
-SQL_KIND_HANDLERS: dict[str, str] = {
-    "exists": "_build_exists_clause",
-    "empty": "_build_empty_clause",
-    "range": "_build_range_clause",
-    "like_prefix": "_build_like_prefix_clause",
-    "like_suffix": "_build_like_suffix_clause",
-    "like_pattern": "_build_like_pattern_clause",
-    "comparison": "_build_comparison_clause",
-    "string_list_any": "_build_string_list_any_clause",
-    "string_list_not_any": "_build_string_list_not_any_clause",
-    "string_list_all": "_build_string_list_all_clause",
-    "string_list_not_all": "_build_string_list_not_all_clause",
-}
-
 
 class ConditionBuilderError(Exception):
     """조건 빌더 에러"""
@@ -73,6 +63,20 @@ class _ParamBinder:
         return ", ".join(self.bind(value) for value in values)
 
 
+@dataclass(slots=True)
+class BuilderClauseParams:
+    binder: _ParamBinder
+    mapping: SystemPropertyAttribute
+    operator_meta: ConditionOperator
+    value: Any
+
+
+@dataclass(slots=True)
+class BuilderClauseDetailParams(BuilderClauseParams):
+    field: str
+    json_path: str | None
+
+
 class ConditionBuilder:
     """Search conditions를 SQL WHERE절로 변환하는 빌더"""
 
@@ -82,6 +86,8 @@ class ConditionBuilder:
             registry: PropertyKey 레지스트리 (기본: SYSTEM_PROPERTY_REGISTRY)
         """
         self.registry = registry or SYSTEM_PROPERTY_REGISTRY
+        self._json_path_cache: dict[str, str | None] = {}
+        self._operator_cache: dict[str, ConditionOperator] = {}
 
     def build_clause(
         self, property_key: str, operator: str, value: Any
@@ -119,7 +125,11 @@ class ConditionBuilder:
                 f"Supported: {mapping.supported_operators}"
             )
 
-        operator_meta = CONDITION_REGISTRY.operators.get(operator)
+        operator_meta = self._operator_cache.get(operator)
+        if not operator_meta:
+            operator_meta = CONDITION_REGISTRY.operators.get(operator)
+            if operator_meta:
+                self._operator_cache[operator] = operator_meta
         if not operator_meta:
             raise ConditionBuilderError(f"Unknown operator: {operator}")
 
@@ -127,58 +137,65 @@ class ConditionBuilder:
         self._validate_value(operator_meta.value_count, operator, value, property_key)
 
         if mapping.db_indexed:
-            return self._build_db_clause(binder, mapping, operator_meta, value)
-        return self._build_json_clause(binder, mapping, operator_meta, value)
+            return self._build_db_clause(
+                BuilderClauseParams(
+                    binder=binder,
+                    mapping=mapping,
+                    operator_meta=operator_meta,
+                    value=value,
+                )
+            )
+        return self._build_json_clause(
+            BuilderClauseParams(
+                binder=binder,
+                mapping=mapping,
+                operator_meta=operator_meta,
+                value=value,
+            )
+        )
 
-    def _build_db_clause(
-        self,
-        binder: _ParamBinder,
-        mapping: SystemPropertyAttribute,
-        operator_meta: ConditionOperator,
-        value: Any,
-    ) -> str:
+    def _build_db_clause(self, params: BuilderClauseParams) -> str:
         """DB 컬럼 조건 생성"""
-        field = mapping.key
-        if mapping.type == SystemPropertyType.STRING_LIST:
-            return self._build_db_string_list_clause(binder, field, operator_meta, value)
-        # DATE 타입이면 DATE() 함수로 날짜만 비교
-        if mapping.type == SystemPropertyType.DATE:
-            field = f"DATE({field})"
-        return self._build_kind_clause(
-            binder=binder,
+        field = params.mapping.key
+        params = BuilderClauseDetailParams(
+            binder=params.binder,
             field=field,
-            mapping=mapping,
-            operator_meta=operator_meta,
-            value=value,
+            mapping=params.mapping,
+            operator_meta=params.operator_meta,
+            value=params.value,
             json_path=None,
         )
+        if params.mapping.type == SystemPropertyType.STRING_LIST:
+            return self._build_db_string_list_clause(params)
+        # DATE 타입이면 DATE() 함수로 날짜만 비교
+        if params.mapping.type == SystemPropertyType.DATE:
+            params.field = f"DATE({field})"
+        return self._build_kind_clause(params)
 
-    def _build_json_clause(
-        self,
-        binder: _ParamBinder,
-        mapping: SystemPropertyAttribute,
-        operator_meta: ConditionOperator,
-        value: Any,
-    ) -> str:
+    def _build_json_clause(self, params: BuilderClauseParams) -> str:
         """JSON 필드 조건 생성"""
-        property_types = CONDITION_REGISTRY.property_types.get(mapping.type.value)
+        property_types = CONDITION_REGISTRY.property_types.get(params.mapping.type.value)
         if not property_types or not property_types.sql_cast:
-            raise ConditionBuilderError(f"Missing sql_cast for type '{mapping.type.value}'.")
+            raise ConditionBuilderError(f"Missing sql_cast for type '{params.mapping.type.value}'.")
         cast_type = property_types.sql_cast
-        json_path = self._json_path_for_system_keys(mapping.system_keys)
+        json_path = self._json_path_cache.get(params.mapping.key)
+        if json_path is None:
+            json_path = self._json_path_for_system_keys(params.mapping.system_keys)
+            self._json_path_cache[params.mapping.key] = json_path
         if not json_path:
-            raise ConditionBuilderError(f"Missing JSON path for '{mapping.key}'")
+            raise ConditionBuilderError(f"Missing JSON path for '{params.mapping.key}'")
         field = f"CAST(json_extract(original_metadata, '{json_path}') AS {cast_type})"
-        if mapping.type == SystemPropertyType.DATE:
+        if params.mapping.type == SystemPropertyType.DATE:
             field = f"DATE({field})"
-        return self._build_kind_clause(
-            binder=binder,
+        params = BuilderClauseDetailParams(
+            binder=params.binder,
             field=field,
-            mapping=mapping,
-            operator_meta=operator_meta,
-            value=value,
+            mapping=params.mapping,
+            operator_meta=params.operator_meta,
+            value=params.value,
             json_path=json_path,
         )
+        return self._build_kind_clause(params)
 
     def _validate_operator_meta(
         self, operator_meta: ConditionOperator, operator: str, property_key: str
@@ -199,277 +216,191 @@ class ConditionBuilder:
                 f"Operator '{operator}' value_shape mismatch: '{value_shape}' for sql_kind '{sql_kind}'."
             )
 
-    def _build_kind_clause(
-        self,
-        binder: _ParamBinder,
-        field: str,
-        mapping: SystemPropertyAttribute,
-        operator_meta: ConditionOperator,
-        value: Any,
-        json_path: str | None,
-    ) -> str:
-        sql_kind = operator_meta.sql_kind
+    def _build_kind_clause(self, params: BuilderClauseDetailParams) -> str:
+        sql_kind = params.operator_meta.sql_kind
         if not sql_kind:
             raise ConditionBuilderError(
-                f"Missing sql_kind for operator '{operator_meta.code}' (propertyKey: {mapping.key})."
+                f"Missing sql_kind for operator '{params.operator_meta.code}' (propertyKey: {params.mapping.key})."
             )
-        handler_name = SQL_KIND_HANDLERS.get(sql_kind)
-        if not handler_name:
-            raise ConditionBuilderError(f"Unsupported sql_kind: {sql_kind}")
-        handler = getattr(self, handler_name, None)
-        if not handler:
-            raise ConditionBuilderError(f"Unsupported sql_kind: {sql_kind}")
-        return handler(binder, field, mapping, operator_meta, value, json_path)
+        match sql_kind:
+            case "exists":
+                return self._build_exists_clause(params)
+            case "empty":
+                return self._build_empty_clause(params)
+            case "range":
+                return self._build_range_clause(params)
+            case "like_prefix":
+                return self._build_like_prefix_clause(params)
+            case "like_suffix":
+                return self._build_like_suffix_clause(params)
+            case "like_pattern":
+                return self._build_like_pattern_clause(params)
+            case "comparison":
+                return self._build_comparison_clause(params)
+            case "string_list_any":
+                return self._build_string_list_any_clause(params)
+            case "string_list_not_any":
+                return self._build_string_list_not_any_clause(params)
+            case "string_list_all":
+                return self._build_string_list_all_clause(params)
+            case "string_list_not_all":
+                return self._build_string_list_not_all_clause(params)
+            case _:
+                raise ConditionBuilderError(f"Unsupported sql_kind: {sql_kind}")
 
-    def _build_exists_clause(
-        self,
-        binder: _ParamBinder,
-        field: str,
-        mapping: SystemPropertyAttribute,
-        operator_meta: ConditionOperator,
-        value: Any,
-        json_path: str | None,
-    ) -> str:
-        if json_path:
-            return self._build_json_presence_clause(binder, json_path)
-        return f"{field} IS NOT NULL"
+    def _build_exists_clause(self, params: BuilderClauseDetailParams) -> str:
+        if params.json_path:
+            return self._build_json_presence_clause(params.binder, params.json_path)
+        return f"{params.field} IS NOT NULL"
 
-    def _build_empty_clause(
-        self,
-        binder: _ParamBinder,
-        field: str,
-        mapping: SystemPropertyAttribute,
-        operator_meta: ConditionOperator,
-        value: Any,
-        json_path: str | None,
-    ) -> str:
-        if mapping.type == SystemPropertyType.STRING_LIST and json_path:
-            length_clause = "json_array_length(original_metadata, {})"
-            first = binder.bind(json_path)
-            second = binder.bind(json_path)
-            return f"({length_clause.format(first)} IS NULL OR {length_clause.format(second)} = 0)"
-        return f"({field} IS NULL OR {field} = '')"
+    def _build_empty_clause(self, params: BuilderClauseDetailParams) -> str:
+        if params.mapping.type == SystemPropertyType.STRING_LIST and params.json_path:
+            placeholder = params.binder.bind(params.json_path)
+            length_clause = f"json_array_length(original_metadata, {placeholder})"
+            type_clause = f"json_type(original_metadata, {placeholder})"
+            return f"({type_clause} IS NULL OR ({type_clause} = 'array' AND {length_clause} = 0))"
+        return f"({params.field} IS NULL OR {params.field} = '')"
 
-    def _build_db_string_list_clause(
-        self,
-        binder: _ParamBinder,
-        field: str,
-        operator_meta: ConditionOperator,
-        value: Any,
-    ) -> str:
-        sql_kind = operator_meta.sql_kind
+    def _build_db_string_list_clause(self, params: BuilderClauseDetailParams) -> str:
+        sql_kind = params.operator_meta.sql_kind
 
         if sql_kind == "exists":
-            return f"{field} IS NOT NULL"
+            return f"{params.field} IS NOT NULL"
 
         if sql_kind == "empty":
-            return f"({field} IS NULL OR {field} = '')"
+            return f"({params.field} IS NULL OR {params.field} = '')"
 
         values: list[Any]
-        if isinstance(value, (list, tuple)):
-            values = list(cast(Sequence[Any], value))
+        raw_value = params.value
+        if isinstance(raw_value, (list, tuple)):
+            values = list(cast(Sequence[Any], raw_value))
         else:
             values = []
         if not values:
             raise ConditionBuilderError(
-                f"'{operator_meta.code}' operator requires non-empty array value, got: {value}"
+                f"'{params.operator_meta.code}' operator requires non-empty array value, got: {raw_value}"
             )
 
         if sql_kind == "string_list_any":
-            placeholders = binder.bind_many(values)
-            return f"{field} IN ({placeholders})"
+            placeholders = params.binder.bind_many(values)
+            return f"{params.field} IN ({placeholders})"
 
         if sql_kind == "string_list_not_any":
-            placeholders = binder.bind_many(values)
-            return f"{field} NOT IN ({placeholders})"
+            placeholders = params.binder.bind_many(values)
+            return f"{params.field} NOT IN ({placeholders})"
 
         if sql_kind in {"string_list_all", "string_list_not_all"}:
             raise ConditionBuilderError(
-                f"Operator '{operator_meta.code}' is not supported for DB string_list fields."
+                f"Operator '{params.operator_meta.code}' is not supported for DB string_list fields."
             )
 
         raise ConditionBuilderError(f"Unsupported string_list sql_kind: {sql_kind}")
 
-    def _build_range_clause(
-        self,
-        binder: _ParamBinder,
-        field: str,
-        mapping: SystemPropertyAttribute,
-        operator_meta: ConditionOperator,
-        value: Any,
-        json_path: str | None,
-    ) -> str:
-        if not isinstance(value, (list, tuple)):
+    def _build_range_clause(self, params: BuilderClauseDetailParams) -> str:
+        raw_value: Any = params.value
+        if not isinstance(raw_value, (list, tuple)):
             raise ConditionBuilderError(
-                f"'{operator_meta.code}' operator requires [min, max] array, got: {value}"
+                f"'{params.operator_meta.code}' operator requires [min, max] array, got: {raw_value}"
             )
-        range_values = list(cast(Sequence[Any], value))
+        range_values = list(cast(Sequence[Any], raw_value))
         if len(range_values) != 2:
             raise ConditionBuilderError(
-                f"'{operator_meta.code}' operator requires [min, max] array, got: {value}"
+                f"'{params.operator_meta.code}' operator requires [min, max] array, got: {raw_value}"
             )
-        start = binder.bind(range_values[0])
-        end = binder.bind(range_values[1])
-        sql_operator = self._resolve_sql_operator(operator_meta)
-        return f"{field} {sql_operator} {start} AND {end}"
+        start = params.binder.bind(range_values[0])
+        end = params.binder.bind(range_values[1])
+        sql_operator = self._resolve_sql_operator(params.operator_meta)
+        return f"{params.field} {sql_operator} {start} AND {end}"
 
-    def _build_like_prefix_clause(
-        self,
-        binder: _ParamBinder,
-        field: str,
-        mapping: SystemPropertyAttribute,
-        operator_meta: ConditionOperator,
-        value: Any,
-        json_path: str | None,
-    ) -> str:
-        placeholder = binder.bind(f"{value}%")
-        sql_operator = self._resolve_sql_operator(operator_meta)
-        return f"{field} {sql_operator} {placeholder}"
+    def _build_like_prefix_clause(self, params: BuilderClauseDetailParams) -> str:
+        placeholder = params.binder.bind(f"{params.value}%")
+        sql_operator = self._resolve_sql_operator(params.operator_meta)
+        return f"{params.field} {sql_operator} {placeholder}"
 
-    def _build_like_suffix_clause(
-        self,
-        binder: _ParamBinder,
-        field: str,
-        mapping: SystemPropertyAttribute,
-        operator_meta: ConditionOperator,
-        value: Any,
-        json_path: str | None,
-    ) -> str:
-        placeholder = binder.bind(f"%{value}")
-        sql_operator = self._resolve_sql_operator(operator_meta)
-        return f"{field} {sql_operator} {placeholder}"
+    def _build_like_suffix_clause(self, params: BuilderClauseDetailParams) -> str:
+        placeholder = params.binder.bind(f"%{params.value}")
+        sql_operator = self._resolve_sql_operator(params.operator_meta)
+        return f"{params.field} {sql_operator} {placeholder}"
 
-    def _build_like_pattern_clause(
-        self,
-        binder: _ParamBinder,
-        field: str,
-        mapping: SystemPropertyAttribute,
-        operator_meta: ConditionOperator,
-        value: Any,
-        json_path: str | None,
-    ) -> str:
-        normalized = self._normalize_like_pattern_value(operator_meta, value)
-        placeholder = binder.bind(normalized)
-        sql_operator = self._resolve_sql_operator(operator_meta)
-        return f"{field} {sql_operator} {placeholder}"
+    def _build_like_pattern_clause(self, params: BuilderClauseDetailParams) -> str:
+        normalized = self._normalize_like_pattern_value(params.operator_meta, params.value)
+        placeholder = params.binder.bind(normalized)
+        sql_operator = self._resolve_sql_operator(params.operator_meta)
+        return f"{params.field} {sql_operator} {placeholder}"
 
-    def _build_comparison_clause(
-        self,
-        binder: _ParamBinder,
-        field: str,
-        mapping: SystemPropertyAttribute,
-        operator_meta: ConditionOperator,
-        value: Any,
-        json_path: str | None,
-    ) -> str:
-        placeholder = binder.bind(value)
-        sql_operator = self._resolve_sql_operator(operator_meta)
-        return f"{field} {sql_operator} {placeholder}"
+    def _build_comparison_clause(self, params: BuilderClauseDetailParams) -> str:
+        placeholder = params.binder.bind(params.value)
+        sql_operator = self._resolve_sql_operator(params.operator_meta)
+        return f"{params.field} {sql_operator} {placeholder}"
 
-    def _build_string_list_any_clause(
-        self,
-        binder: _ParamBinder,
-        field: str,
-        mapping: SystemPropertyAttribute,
-        operator_meta: ConditionOperator,
-        value: Any,
-        json_path: str | None,
-    ) -> str:
-        values = self._normalize_string_list_values(operator_meta, value)
-        # db_indexed 컬럼인 경우 JSON array membership가 아니라 IN(...)로 처리합니다.
-        if not json_path:
+    def _build_string_list_any_clause(self, params: BuilderClauseDetailParams) -> str:
+        values = self._normalize_string_list_values(params.operator_meta, params.value)
+        # db_indexed 컬럼 또는 categorical 스칼라 값은 JSON array membership가 아니라 IN(...)로 처리합니다.
+        if not params.json_path or params.mapping.type == SystemPropertyType.CATEGORICAL:
             if len(values) == 1:
-                placeholder = binder.bind(values[0])
-                return f"{field} = {placeholder}"
-            placeholders = binder.bind_many(values)
-            return f"{field} IN ({placeholders})"
+                placeholder = params.binder.bind(values[0])
+                return f"{params.field} = {placeholder}"
+            placeholders = params.binder.bind_many(values)
+            return f"{params.field} IN ({placeholders})"
 
-        placeholders = binder.bind_many(values)
-        json_placeholder = binder.bind(json_path)
+        placeholders = params.binder.bind_many(values)
+        json_placeholder = params.binder.bind(params.json_path)
+        type_clause = f"json_type(original_metadata, {json_placeholder}) = 'array'"
         return (
-            f"EXISTS (SELECT 1 FROM json_each(original_metadata, {json_placeholder}) "
+            f"{type_clause} AND EXISTS (SELECT 1 FROM json_each(original_metadata, {json_placeholder}) "
             f"WHERE value IN ({placeholders}))"
         )
 
-    def _build_string_list_not_any_clause(
-        self,
-        binder: _ParamBinder,
-        field: str,
-        mapping: SystemPropertyAttribute,
-        operator_meta: ConditionOperator,
-        value: Any,
-        json_path: str | None,
-    ) -> str:
-        values = self._normalize_string_list_values(operator_meta, value)
-        if not json_path:
+    def _build_string_list_not_any_clause(self, params: BuilderClauseDetailParams) -> str:
+        values = self._normalize_string_list_values(params.operator_meta, params.value)
+        if not params.json_path or params.mapping.type == SystemPropertyType.CATEGORICAL:
             if len(values) == 1:
-                placeholder = binder.bind(values[0])
-                return f"{field} != {placeholder}"
-            placeholders = binder.bind_many(values)
-            return f"{field} NOT IN ({placeholders})"
+                placeholder = params.binder.bind(values[0])
+                return f"{params.field} != {placeholder}"
+            placeholders = params.binder.bind_many(values)
+            return f"{params.field} NOT IN ({placeholders})"
 
-        clause = self._build_string_list_any_clause(
-            binder=binder,
-            field=field,
-            mapping=mapping,
-            operator_meta=operator_meta,
-            value=value,
-            json_path=json_path,
-        )
-        return f"NOT {clause}"
+        clause = self._build_string_list_any_clause(params)
+        return f"NOT ({clause})"
 
-    def _build_string_list_all_clause(
-        self,
-        binder: _ParamBinder,
-        field: str,
-        mapping: SystemPropertyAttribute,
-        operator_meta: ConditionOperator,
-        value: Any,
-        json_path: str | None,
-    ) -> str:
-        values = self._normalize_string_list_values(operator_meta, value)
-        if not json_path:
+    def _build_string_list_all_clause(self, params: BuilderClauseDetailParams) -> str:
+        if params.mapping.type == SystemPropertyType.CATEGORICAL:
+            raise ConditionBuilderError(
+                f"Operator '{params.operator_meta.code}' is not supported for categorical fields."
+            )
+        values = self._normalize_string_list_values(params.operator_meta, params.value)
+        if not params.json_path:
             # 스칼라 컬럼에서 "all"은 값이 모두 동일할 때만 만족 가능
             if len(values) == 1:
-                placeholder = binder.bind(values[0])
-                return f"{field} = {placeholder}"
+                placeholder = params.binder.bind(values[0])
+                return f"{params.field} = {placeholder}"
             return "1=0"
 
-        placeholders = binder.bind_many(values)
-        json_placeholder = binder.bind(json_path)
-        count_placeholder = binder.bind(len(values))
+        placeholders = params.binder.bind_many(values)
+        json_placeholder = params.binder.bind(params.json_path)
+        count_placeholder = params.binder.bind(len(values))
+        type_clause = f"json_type(original_metadata, {json_placeholder}) = 'array'"
         return (
             "(\n"
-            "  SELECT COUNT(DISTINCT value)\n"
+            f"  SELECT ({type_clause}) AND COUNT(DISTINCT value)\n"
             f"  FROM json_each(original_metadata, {json_placeholder})\n"
             f"  WHERE value IN ({placeholders})\n"
             f") = {count_placeholder}"
         )
 
-    def _build_string_list_not_all_clause(
-        self,
-        binder: _ParamBinder,
-        field: str,
-        mapping: SystemPropertyAttribute,
-        operator_meta: ConditionOperator,
-        value: Any,
-        json_path: str | None,
-    ) -> str:
-        values = self._normalize_string_list_values(operator_meta, value)
-        if not json_path:
+    def _build_string_list_not_all_clause(self, params: BuilderClauseDetailParams) -> str:
+        if params.mapping.type == SystemPropertyType.CATEGORICAL:
+            raise ConditionBuilderError(
+                f"Operator '{params.operator_meta.code}' is not supported for categorical fields."
+            )
+        values = self._normalize_string_list_values(params.operator_meta, params.value)
+        if not params.json_path:
             if len(values) == 1:
-                placeholder = binder.bind(values[0])
-                return f"{field} != {placeholder}"
+                placeholder = params.binder.bind(values[0])
+                return f"{params.field} != {placeholder}"
             return "1=1"
 
-        clause = self._build_string_list_all_clause(
-            binder=binder,
-            field=field,
-            mapping=mapping,
-            operator_meta=operator_meta,
-            value=value,
-            json_path=json_path,
-        )
+        clause = self._build_string_list_all_clause(params)
         return f"NOT ({clause})"
 
     def _json_path_for_system_keys(self, system_keys: list[str]) -> str | None:
@@ -595,7 +526,9 @@ class ConditionBuilder:
             value = condition.get("value")
 
             if not property_key or not operator:
-                continue
+                raise ConditionBuilderError(
+                    f"Missing propertyKey/operator in condition: {condition}"
+                )
 
             clause = self._build_clause_with_binder(binder, property_key, operator, value)
             clauses.append(clause)

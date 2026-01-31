@@ -738,7 +738,7 @@
 				ENABLE_RESOURCE_ACCESS_LOCATION = NO;
 				ENABLE_RESOURCE_ACCESS_PHOTO_LIBRARY = NO;
 				GENERATE_INFOPLIST_FILE = YES;
-				INFOPLIST_FILE = Voyager/Info.plist;
+				INFOPLIST_FILE = Voyager/01_App/Config/Info.plist;
 				INFOPLIST_KEY_CFBundleDisplayName = "Voyager (Debug)";
 				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.utilities";
 				INFOPLIST_KEY_NSHumanReadableCopyright = "";
@@ -797,7 +797,7 @@
 				ENABLE_RESOURCE_ACCESS_LOCATION = NO;
 				ENABLE_RESOURCE_ACCESS_PHOTO_LIBRARY = NO;
 				GENERATE_INFOPLIST_FILE = YES;
-				INFOPLIST_FILE = Voyager/Info.plist;
+				INFOPLIST_FILE = Voyager/01_App/Config/Info.plist;
 				INFOPLIST_KEY_CFBundleDisplayName = Voyager;
 				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.utilities";
 				INFOPLIST_KEY_NSHumanReadableCopyright = "";

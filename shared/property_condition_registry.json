@@ -1,6 +1,6 @@
 {
   "$kind": "property_condition_registry",
-  "$version": "2.0.2",
+  "$version": "2.1.0",
   "property_types": {
     "string": {
       "operators": ["cn", "nc", "sw", "ew", "eq", "neq"],
@@ -20,6 +20,10 @@
     },
     "string_list": {
       "operators": ["any", "all", "none", "miss", "exists", "empty"],
+      "sql_cast": "TEXT"
+    },
+    "categorical": {
+      "operators": ["any", "none", "exists", "empty"],
       "sql_cast": "TEXT"
     }
   },
@@ -62,12 +66,13 @@
       "sql_kind": "empty",
       "value_shape": "none",
       "value_count": 0,
-      "allowed_types": ["string", "string_list"],
+      "allowed_types": ["string", "string_list", "categorical"],
       "inverse_of": "exists",
       "aliases": ["is empty", "empty"],
       "ui_value_kind": {
         "string": "none",
-        "string_list": "none"
+        "string_list": "none",
+        "categorical": "none"
       }
     },
     "exists": {
@@ -76,7 +81,14 @@
       "sql_kind": "exists",
       "value_shape": "none",
       "value_count": 0,
-      "allowed_types": ["string", "number", "date", "boolean", "string_list"],
+      "allowed_types": [
+        "string",
+        "number",
+        "date",
+        "boolean",
+        "string_list",
+        "categorical"
+      ],
       "inverse_of": "empty",
       "aliases": ["exists"],
       "ui_value_kind": {
@@ -84,7 +96,8 @@
         "number": "none",
         "date": "none",
         "boolean": "none",
-        "string_list": "none"
+        "string_list": "none",
+        "categorical": "none"
       }
     },
     "gt": {
@@ -237,11 +250,12 @@
       "sql_kind": "string_list_any",
       "value_shape": "list",
       "value_count": "n",
-      "allowed_types": ["string", "string_list"],
+      "allowed_types": ["string", "string_list", "categorical"],
       "aliases": ["contains any"],
       "ui_value_kind": {
         "string": "listText",
-        "string_list": "listText"
+        "string_list": "listText",
+        "categorical": "listText"
       },
       "inverse_of": "none"
     },
@@ -265,11 +279,12 @@
       "sql_kind": "string_list_not_any",
       "value_shape": "list",
       "value_count": "n",
-      "allowed_types": ["string_list"],
+      "allowed_types": ["string_list", "categorical"],
       "inverse_of": "any",
       "aliases": ["contains none", "not contains any"],
       "ui_value_kind": {
-        "string_list": "listText"
+        "string_list": "listText",
+        "categorical": "listText"
       }
     },
     "miss": {
