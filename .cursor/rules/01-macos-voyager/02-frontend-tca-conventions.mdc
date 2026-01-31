@@ -32,4 +32,4 @@ description: 'TCA conventions: reducers, dependencies, effects, and progress pat
 
 ## Related rules
 
-- See [14-macos-fsd-tca-structure.mdc](mdc:.cursor/rules/10-macos-voyager/14-macos-fsd-tca-structure.mdc) for FSD layer mapping and large-feature composition patterns.
+- See [03-macos-fsd-tca-structure.mdc](mdc:.cursor/rules/01-macos-voyager/03-macos-fsd-tca-structure.mdc) for FSD layer mapping and large-feature composition patterns.

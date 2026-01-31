@@ -133,11 +133,11 @@ Only API keys are loaded from environment variables.
 2. Add corresponding field to `VoyagerConfig` dataclass
 3. Update `load_config()` to read the new variable
 4. Update this documentation
-5. Consider impact on data models (see [24-data-modeling-and-schemas.mdc](mdc:.cursor/rules/20-backend/24-data-modeling-and-schemas.mdc))
+5. Consider impact on data models (see [04-data-modeling-and-schemas.mdc](mdc:.cursor/rules/03-backend/04-data-modeling-and-schemas.mdc))
 
 ## Notes
 
-- See [20-backend-overview.mdc](mdc:.cursor/rules/20-backend/20-backend-overview.mdc) for backend overview
+- See [00-backend-overview.mdc](mdc:.cursor/rules/03-backend/00-backend-overview.mdc) for backend overview
 - See [02-architecture-overview.mdc](mdc:.cursor/rules/00-monorepo/02-architecture-overview.mdc) for system architecture
 - See [05-logging-observability.mdc](mdc:.cursor/rules/00-monorepo/05-logging-observability.mdc) for logging configuration
 - See [01-dev-run-and-env.mdc](mdc:.cursor/rules/00-monorepo/01-dev-run-and-env.mdc) for development workflow

@@ -46,4 +46,4 @@ private func loadEnvConfig() {
 
 References
 - Implementation: [Environment.swift](mdc:apps/macos/Voyager/VoyagerHelper/Infrastructure/Environment.swift)
-- Overview: [10-frontend-overview.mdc](mdc:.cursor/rules/10-macos-voyager/10-frontend-overview.mdc)
+- Overview: [00-frontend-overview.mdc](mdc:.cursor/rules/01-macos-voyager/00-frontend-overview.mdc)

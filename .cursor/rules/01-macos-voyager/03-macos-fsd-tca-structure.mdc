@@ -47,5 +47,5 @@ This repo uses an FSD-inspired folder structure for the Voyager target (main mac
 ## References
 
 - Deep-dive + diagrams: [docs/architecture/macos-app.md](mdc:docs/architecture/macos-app.md)
-- Frontend overview/bootstrap: [10-frontend-overview.mdc](mdc:.cursor/rules/10-macos-voyager/10-frontend-overview.mdc)
-- TCA basics: [13-frontend-tca-conventions.mdc](mdc:.cursor/rules/10-macos-voyager/13-frontend-tca-conventions.mdc)
+- Frontend overview/bootstrap: [00-frontend-overview.mdc](mdc:.cursor/rules/01-macos-voyager/00-frontend-overview.mdc)
+- TCA basics: [02-frontend-tca-conventions.mdc](mdc:.cursor/rules/01-macos-voyager/02-frontend-tca-conventions.mdc)

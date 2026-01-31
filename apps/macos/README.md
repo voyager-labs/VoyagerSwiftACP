@@ -57,13 +57,13 @@ brew install swiftformat
 
 ```bash
 # 프로젝트 빌드 (개발)
-xcodebuild -workspace Voyager.xcworkspace -scheme Voyager-Dev -configuration Debug build
+xcodebuild -project Voyager.xcodeproj -scheme Voyager-Dev -configuration Debug build
 
 # 프로젝트 빌드/Archive (배포)
-xcodebuild -workspace Voyager.xcworkspace -scheme Voyager-Prod -configuration Release build
+xcodebuild -project Voyager.xcodeproj -scheme Voyager-Prod -configuration Release build
 
 # 테스트 실행 (개발)
-xcodebuild -workspace Voyager.xcworkspace -scheme Voyager-Dev test
+xcodebuild -project Voyager.xcodeproj -scheme Voyager-Dev test
 ```
 
 ## 테스트
@@ -72,16 +72,16 @@ xcodebuild -workspace Voyager.xcworkspace -scheme Voyager-Dev test
 
 ```bash
 # 모든 테스트 실행(개발)
-xcodebuild test -workspace Voyager.xcworkspace -scheme Voyager-Dev
+xcodebuild test -project Voyager.xcodeproj -scheme Voyager-Dev
 
 # 단위 테스트 실행
-xcodebuild test -workspace Voyager.xcworkspace -scheme Voyager-Dev -only-testing:VoyagerTests
+xcodebuild test -project Voyager.xcodeproj -scheme Voyager-Dev -only-testing:VoyagerTests
 
 # UI 테스트 실행
-xcodebuild test -workspace Voyager.xcworkspace -scheme Voyager-Dev -only-testing:VoyagerUITests
+xcodebuild test -project Voyager.xcodeproj -scheme Voyager-Dev -only-testing:VoyagerUITests
 
 # 헬퍼 앱 테스트 실행
-xcodebuild test -workspace Voyager.xcworkspace -scheme VoyagerHelper-Dev
+xcodebuild test -project Voyager.xcodeproj -scheme VoyagerHelper-Dev
 ```
 
 ### 로그 확인

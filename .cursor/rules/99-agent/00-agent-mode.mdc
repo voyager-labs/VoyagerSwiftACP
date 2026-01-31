@@ -35,7 +35,7 @@ description: 'Agent mode guardrails and governance alignment.'
 ## Rule management
 
 - **Before creating/updating rules**: Check existing rules for conflicts and overlaps.
-- **SSOT principle**: Ensure each topic has one authoritative rule file (see [99-rules-governance.mdc](mdc:.cursor/rules/90-agent/99-rules-governance.mdc) for detailed SSOT enforcement patterns).
+- **SSOT principle**: Ensure each topic has one authoritative rule file (see [01-rules-governance.mdc](mdc:.cursor/rules/99-agent/01-rules-governance.mdc) for detailed SSOT enforcement patterns).
 - **Cross-references**: Use full paths under `.cursor/rules/` (directory + filename), e.g. [03-error-handling-policy.mdc](mdc:.cursor/rules/00-monorepo/03-error-handling-policy.mdc).
 - **Consistency check**: Verify terminology, formatting, and content alignment across all rules.
 - **Avoid duplication**: Consolidate repeated content and reference instead of copying.
