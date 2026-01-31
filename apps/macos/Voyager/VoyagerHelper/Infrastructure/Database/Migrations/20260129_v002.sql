@@ -50,3 +50,5 @@ SET original_metadata = (
   WHERE t.id = entries.id
 )
 WHERE id IN (SELECT id FROM to_update);
+
+CREATE INDEX IF NOT EXISTS idx_entries_dir_path ON entries(dir_path);
