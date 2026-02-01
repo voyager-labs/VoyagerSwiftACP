@@ -65,7 +65,8 @@
   * Tests: `uv run pytest`
 * macOS App
 
-  * Xcode에서 시작: `xed apps/macos/Voyager/Voyager.xcodeproj` (열기 후 `Cmd+R` 실행)
+  * Xcode에서 시작(권장): `xed apps/macos/Voyager/Voyager.xcworkspace` (열기 후 `Cmd+R` 실행)
+  * (대안) Xcode 프로젝트: `xed apps/macos/Voyager/Voyager.xcodeproj`
   * VSCode 류 IDE(Sweetpad Extension)에서 실행:
     * Xcode 프로젝트 열기: Sweetpad로 `apps/macos/Voyager/Voyager.xcodeproj` 오픈
     * 태스크로 실행 (권장):
@@ -118,6 +119,18 @@ xcodebuild -version
 #### 스크립트를 실행해야 하는 시점
 
 * 이 레포를 **처음 클론한 직후**
+
+## Development Bootstrap (Git hooks)
+
+커밋 시점에 Swift/Python 포맷/린트를 자동으로 실행해서 실패하면 커밋을 막습니다.
+
+처음 클론한 후(그리고 새로운 머신에서) **레포 루트에서 한 번만** 실행하세요:
+
+```bash
+make bootstrap
+```
+
+이 설정은 repo-local git config(`core.hooksPath`)에 저장되며, 동일 레포에서 생성한 worktree에도 그대로 적용되는 것을 목표로 합니다.
 * 다른 프로젝트 때문에 Xcode 버전을 변경했다가, **다시 Voyager 앱을 개발하려고 할 때**
 * `.xcode-version`이 변경된 PR이 머지되어, **새로운 공식 Xcode 버전에 맞추어야 할 때**
 

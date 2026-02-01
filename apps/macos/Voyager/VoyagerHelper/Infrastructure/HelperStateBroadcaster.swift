@@ -13,6 +13,8 @@ final class HelperStateBroadcaster {
     }
 
     private var backendState = BackendState()
+    /// DB 초기화/마이그레이션 완료 전에는 false. 완료 후 true로 설정해 메인 앱에 준비 완료를 알린다.
+    private var helperFullyReady = false
     private nonisolated(unsafe) var observer: NSObjectProtocol?
 
     // 등록된 알림 옵저버를 정리한다
@@ -45,6 +47,11 @@ final class HelperStateBroadcaster {
         backendState.host = host
         backendState.port = port
         backendState.startDate = startDate
+    }
+
+    // DB 초기화/마이그레이션 완료 후 호출한다. 이후 postCurrentState()는 helperReady: true로 전송한다.
+    func markHelperFullyReady() {
+        helperFullyReady = true
     }
 
     // Backend 종료 시 상태를 초기화한다
@@ -95,7 +102,7 @@ final class HelperStateBroadcaster {
         var payload: [String: Any] = [
             HelperStateUserInfoKey.schemaVersion: 2,
             HelperStateUserInfoKey.generatedAt: Date().timeIntervalSince1970,
-            HelperStateUserInfoKey.helperReady: true,
+            HelperStateUserInfoKey.helperReady: helperFullyReady,
             HelperStateUserInfoKey.backend: backend,
         ]
 

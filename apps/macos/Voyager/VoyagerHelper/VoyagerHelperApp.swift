@@ -32,36 +32,54 @@ class VoyagerHelperApp {
         VoyagerHelperApp.lifecycle = lifecycle
         VoyagerHelperApp.indexingListener = indexingListener
 
+        // 마이그레이션 등 DB 초기화가 오래 걸려도 메인 앱 타임아웃 전에 상태를 한 번 보내서 재시작되지 않도록 한다.
+        stateBroadcaster.startObservingRequests()
+        stateBroadcaster.postCurrentState()
+
         Task {
-            do {
-                try await DatabaseManager.shared.initialize()
-            } catch {
-                logger.error("Database initialization failed: \(error)")
-                exit(EXIT_FAILURE)
-            }
-            stateBroadcaster.startObservingRequests()
-            stateBroadcaster.postCurrentState()
-            await indexingListener.prepare()
-            indexingListener.startObservingRequests()
-            Task {
-                do {
-                    if await indexingListener.hasCompletedInitialIndexing() {
-                        await IncrementalIndexingValidator.startIfReady(
-                            manager: DatabaseManager.shared,
-                            logger: logger,
-                        )
-                    }
-                } catch {
-                    logger.error("Initial indexing failed: \(error)")
-                    exit(EXIT_FAILURE)
-                }
-            }
-            await lifecycle.start()
+            await runStartupTask(
+                stateBroadcaster: stateBroadcaster,
+                indexingListener: indexingListener,
+                lifecycle: lifecycle,
+                logger: logger,
+            )
         }
         RunLoop.current.run()
         Task {
             await lifecycle.stop()
         }
+    }
+
+    private static func runStartupTask(
+        stateBroadcaster: HelperStateBroadcaster,
+        indexingListener: IndexingRequestListener,
+        lifecycle: HelperLifecycle,
+        logger: Logger,
+    ) async {
+        do {
+            try await DatabaseManager.shared.initialize()
+        } catch {
+            logger.error("Database initialization failed: \(error)")
+            exit(EXIT_FAILURE)
+        }
+        stateBroadcaster.markHelperFullyReady()
+        stateBroadcaster.postCurrentState()
+        await indexingListener.prepare()
+        indexingListener.startObservingRequests()
+        Task {
+            do {
+                if await indexingListener.hasCompletedInitialIndexing() {
+                    await IncrementalIndexingValidator.startIfReady(
+                        manager: DatabaseManager.shared,
+                        logger: logger,
+                    )
+                }
+            } catch {
+                logger.error("Initial indexing failed: \(error)")
+                exit(EXIT_FAILURE)
+            }
+        }
+        await lifecycle.start()
     }
 
     // 로깅 핸들러 구성

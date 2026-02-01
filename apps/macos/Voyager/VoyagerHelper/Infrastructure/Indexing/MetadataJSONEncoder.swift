@@ -210,24 +210,23 @@ enum MetadataJSONEncoder {
         payload.reserveCapacity(metadataKeys.count)
 
         for key in metadataKeys {
-            if key == "_kMDItemUserTags" {
-                payload[key] = XattrMetadataReader.readUserTags(path: path)
-                continue
-            }
-            if key == "kMDItemFinderComment" {
+            let valueToAdd: Any? = if key == "_kMDItemUserTags" {
+                XattrMetadataReader.readUserTags(path: path)
+            } else if key == "kMDItemFinderComment" {
                 if let value = attributes[key] {
-                    payload[key] = jsonValue(from: value)
+                    jsonValue(from: value)
                 } else if let comment = XattrMetadataReader.readComment(path: path) {
-                    payload[key] = comment
+                    comment
                 } else {
-                    payload[key] = NSNull()
+                    nil
                 }
-                continue
-            }
-            if let value = attributes[key] {
-                payload[key] = jsonValue(from: value)
+            } else if let value = attributes[key] {
+                jsonValue(from: value)
             } else {
-                payload[key] = NSNull()
+                nil
+            }
+            if let value = valueToAdd, !(value is NSNull) {
+                payload[key] = value
             }
         }
 

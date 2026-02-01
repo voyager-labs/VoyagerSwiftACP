@@ -10,7 +10,7 @@ import logging
 import re
 from importlib import resources
 from pathlib import Path
-from typing import Any, TypeVar, cast
+from typing import Any, Sequence, TypeVar, cast
 
 from langchain_core.messages import BaseMessage, HumanMessage, SystemMessage
 from langchain_core.runnables import Runnable
@@ -148,7 +148,7 @@ class SearchConditionConverter:
     @staticmethod
     def _is_visible_key(key: str) -> bool:
         mapping = SYSTEM_PROPERTY_REGISTRY.get(key)
-        return bool(mapping) and not mapping.ui_hidden
+        return bool(mapping and not mapping.ui_hidden)
 
     def _build_key_groups(
         self,
@@ -281,11 +281,9 @@ class SearchConditionConverter:
             normalized_conditions = [
                 self._normalize_condition(c.model_dump()) for c in result.conditions
             ]
-            filtered_conditions = [
-                SearchConditionPayload(**c)
-                for c in normalized_conditions
-                if c is not None and self._is_visible_key(str(c.get("propertyKey", "")))
-            ]
+            filtered_conditions = self._filter_valid_conditions(normalized_conditions)
+            if not filtered_conditions and existing_conditions:
+                filtered_conditions = self._filter_valid_conditions(existing_conditions)
             return SearchConversionResult(
                 conditions=filtered_conditions,
                 scopes=result.scopes,
@@ -304,6 +302,47 @@ class SearchConditionConverter:
         if operator == "rx" and isinstance(value, str):
             condition["value"] = self._normalize_matches_value(value)
         return condition
+
+    def _filter_valid_conditions(
+        self,
+        conditions: Sequence[dict[str, Any] | None] | None,
+    ) -> list[SearchConditionPayload]:
+        if not conditions:
+            return []
+        return [
+            SearchConditionPayload(**condition)
+            for condition in conditions
+            if condition is not None and self._is_valid_condition(condition)
+        ]
+
+    def _is_valid_condition(self, condition: dict[str, Any]) -> bool:
+        property_key = condition.get("propertyKey")
+        operator = condition.get("operator")
+        value = condition.get("value")
+        if not isinstance(property_key, str) or not isinstance(operator, str):
+            return False
+        if not self._is_visible_key(property_key):
+            return False
+        mapping = SYSTEM_PROPERTY_REGISTRY.get(property_key)
+        if not mapping or operator not in mapping.supported_operators:
+            return False
+        registry = load_condition_registry()
+        operator_meta = registry.operators.get(operator)
+        if not operator_meta:
+            return False
+        return self._is_value_count_valid(operator_meta.value_count, value)
+
+    @staticmethod
+    def _is_value_count_valid(value_count: int | str | None, value: Any) -> bool:
+        if value_count == 0:
+            return value is None
+        if value_count == "n":
+            return isinstance(value, list) and len(value) > 0
+        if value_count == 2:
+            return isinstance(value, list) and len(value) == 2
+        if value_count == 1:
+            return value is not None
+        return True
 
     async def _request_structured(
         self,
@@ -343,7 +382,7 @@ class CachedSearchConditionConverter(SearchConditionConverter):
         cache_size: int = 100,
     ):
         super().__init__(llm_provider)
-        self._condition_cache = {}
+        self._condition_cache: dict[str, SearchConversionResult] = {}
         self._cache_size = cache_size
 
     async def convert(

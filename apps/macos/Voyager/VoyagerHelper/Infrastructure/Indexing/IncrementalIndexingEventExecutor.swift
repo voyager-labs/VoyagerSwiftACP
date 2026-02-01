@@ -99,11 +99,9 @@ final class IncrementalIndexingEventExecutor {
             ]
             let message = messageParts.joined(separator: ", ")
             eventLogger.info("\(message, privacy: .public)")
-            logIncrementalChangesSummary(upserted: insertedOrUpdated, deleted: deleted)
         }
 
         if let lastError {
-            logIncrementalChangeFailure(context: "incremental_changes", error: lastError)
             throw lastError
         }
     }
@@ -117,7 +115,6 @@ final class IncrementalIndexingEventExecutor {
             eventLogger.error(
                 "Incremental indexing delete failed: \(String(describing: error), privacy: .public)",
             )
-            logIncrementalChangeFailure(context: "delete", error: error)
             return ApplyOutcome(upserted: 0, deleted: 0, error: error)
         }
     }
@@ -149,7 +146,6 @@ final class IncrementalIndexingEventExecutor {
             eventLogger.error(
                 "Incremental indexing upsert failed: \(String(describing: error), privacy: .public)",
             )
-            logIncrementalChangeFailure(context: "upsert", error: error)
             return ApplyOutcome(upserted: 0, deleted: 0, error: error)
         }
     }
@@ -178,7 +174,6 @@ final class IncrementalIndexingEventExecutor {
                 eventLogger.error(
                     "Incremental indexing rescan failed: \(String(describing: error), privacy: .public)",
                 )
-                logIncrementalChangeFailure(context: "rescan", error: error)
             }
         }
         if let lastError {
@@ -266,22 +261,6 @@ private extension IncrementalIndexingEventExecutor {
                 "duration_ms": "\(durationMs)",
             ],
         )
-        VoyagerSentryMetricLogger.logMetric(
-            "voyager_incremental_index_job",
-            value: 1,
-            tags: [
-                "stage": "incremental_apply",
-                "changes": "\(changes)",
-                "rescans": "\(rescans)",
-            ],
-        )
-        VoyagerSentryMetricLogger.logMetric(
-            "voyager_incremental_index_job_duration_ms",
-            value: Double(durationMs),
-            tags: [
-                "scope": "incremental",
-            ],
-        )
     }
 
     func logIncrementalApplyFailure(
@@ -298,50 +277,6 @@ private extension IncrementalIndexingEventExecutor {
                 "duration_ms": "\(durationMs)",
                 "error": "\(String(describing: error))",
             ],
-        )
-        VoyagerSentryMetricLogger.logMetric(
-            "voyager_incremental_index_job",
-            value: 1,
-            tags: [
-                "stage": "failed",
-                "context": "incremental_apply",
-                "error_type": String(describing: error),
-            ],
-            level: .error,
-        )
-        VoyagerSentryMetricLogger.logMetric(
-            "voyager_incremental_index_job_duration_ms",
-            value: Double(durationMs),
-            tags: [
-                "scope": "incremental",
-                "status": "failed",
-            ],
-            level: .error,
-        )
-    }
-
-    func logIncrementalChangesSummary(upserted: Int, deleted: Int) {
-        VoyagerSentryMetricLogger.logMetric(
-            "voyager_incremental_index_job",
-            value: 1,
-            tags: [
-                "stage": "incremental_changes",
-                "upserted": "\(upserted)",
-                "deleted": "\(deleted)",
-            ],
-        )
-    }
-
-    func logIncrementalChangeFailure(context: String, error: Error) {
-        VoyagerSentryMetricLogger.logMetric(
-            "voyager_incremental_index_job",
-            value: 1,
-            tags: [
-                "stage": "failed",
-                "context": context,
-                "error_type": String(describing: error),
-            ],
-            level: .error,
         )
     }
 }

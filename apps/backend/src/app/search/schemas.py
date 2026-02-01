@@ -19,7 +19,6 @@ class SearchCondition(BaseModel):
             "any, all, none, miss, empty, exists)"
         ),
     )
-    # NOTE: rx는 아직 지원하지 않음
     value: str | int | float | list[str] | list[int] | list[float] | None = Field(
         None, description="값 (단일값, 배열, [min, max]) - empty/exists는 생략 가능"
     )
