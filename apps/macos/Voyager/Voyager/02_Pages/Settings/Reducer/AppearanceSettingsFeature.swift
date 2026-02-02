@@ -7,10 +7,10 @@ struct AppearanceSettingsFeature {
     @ObservableState
     struct State: Equatable {
         var theme: AppTheme = .system
-        var listIconSize: CGFloat = 20
-        var gridIconSize: CGFloat = 64
-        var listTextSize: CGFloat = 13
-        var gridTextSize: CGFloat = 12
+        var listIconSize: CGFloat = AppearanceSettingsDefaults.listIconSize
+        var gridIconSize: CGFloat = AppearanceSettingsDefaults.gridIconSize
+        var listTextSize: CGFloat = AppearanceSettingsDefaults.listTextSize
+        var gridTextSize: CGFloat = AppearanceSettingsDefaults.gridTextSize
         var showHiddenFiles: Bool = false
     }
 

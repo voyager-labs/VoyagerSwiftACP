@@ -1,3 +1,4 @@
+import CoreGraphics
 import Foundation
 
 /// 앱 테마 설정 (라이트/다크/시스템)
@@ -42,4 +43,11 @@ enum SettingsSection: String, CaseIterable, Identifiable {
             "paintbrush"
         }
     }
+}
+
+enum AppearanceSettingsDefaults {
+    static let listIconSize: CGFloat = 20
+    static let gridIconSize: CGFloat = 64
+    static let listTextSize: CGFloat = 13
+    static let gridTextSize: CGFloat = 12
 }
