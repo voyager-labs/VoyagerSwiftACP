@@ -9,7 +9,7 @@ struct SortGroupButton: View {
         ToolbarMenuButton(
             systemName: "arrow.up.arrow.down",
             isEnabled: true,
-            font: ToolbarButtonLabel.Metrics.iconFont,
+            font: IconButtonStyle.toolbar.font,
             menuContent: {
                 Menu("Group By") {
                     groupKeyToggle("None", key: .none)

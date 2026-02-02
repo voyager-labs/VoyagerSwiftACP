@@ -7,9 +7,10 @@ struct ViewToggleButton: View {
 
     var body: some View {
         ToolbarMenuButton(
+            // TODO: 아이콘 상수화
             systemName: store.viewLayout == .list ? "list.bullet" : "square.grid.2x2",
             isEnabled: true,
-            font: ToolbarButtonLabel.Metrics.iconFont,
+            font: nil,
             menuContent: {
                 Button(
                     action: { store.send(.changeLayout(.list)) },

@@ -1,34 +1,24 @@
 import SwiftUI
 
 struct ToolbarButtonLabel: View {
-    enum Metrics {
-        static let iconSize = CGFloat(24)
-        static let iconFont = Font.system(size: 13, weight: .medium)
-        static let hoverCornerRadius = VoyagerDS.Radius.toolbarButton
-    }
-
     let systemName: String
     let isEnabled: Bool
     let font: Font?
     let isHovered: Bool
-    @Environment(\.colorScheme)
-    private var colorScheme
 
     var body: some View {
-        ZStack {
-            Image(systemName: systemName)
-                .font(font ?? Metrics.iconFont)
-                .foregroundColor(isEnabled ? .primary : .secondary)
-                .frame(width: Metrics.iconSize, height: Metrics.iconSize)
-            RoundedRectangle(cornerRadius: Metrics.hoverCornerRadius)
-                .fill(
-                    isEnabled && isHovered
-                        ? VoyagerDS.Surface.sidebarSelectionBackground(for: colorScheme)
-                        : .clear,
-                )
-                .frame(width: Metrics.iconSize, height: Metrics.iconSize)
-        }
-        .frame(width: Metrics.iconSize, height: Metrics.iconSize)
+        IconButtonLabel(
+            systemName: systemName,
+            isEnabled: isEnabled,
+            isHovered: isHovered,
+            style: IconButtonStyle.toolbarWithFont(font ?? IconButtonStyle.toolbar.font),
+        )
+    }
+}
+
+extension ToolbarButtonLabel {
+    enum Metrics {
+        static let iconFont: Font = IconButtonStyle.toolbar.font
     }
 }
 
@@ -36,18 +26,13 @@ struct ToolbarHoverButtonLabel: View {
     let systemName: String
     let isEnabled: Bool
     let font: Font?
-    @State private var isHovered: Bool = false
 
     var body: some View {
-        ToolbarButtonLabel(
+        HoverIconButtonLabel(
             systemName: systemName,
             isEnabled: isEnabled,
-            font: font,
-            isHovered: isHovered,
+            style: IconButtonStyle.toolbarWithFont(font ?? IconButtonStyle.toolbar.font),
         )
-        .onHover { hovering in
-            isHovered = hovering
-        }
     }
 }
 
@@ -80,20 +65,8 @@ struct ToolbarMenuButton<Content: View>: View {
 
     var body: some View {
         menuView()
-            .frame(width: ToolbarButtonLabel.Metrics.iconSize, height: ToolbarButtonLabel.Metrics.iconSize)
+            .frame(width: IconButtonStyle.toolbar.size, height: IconButtonStyle.toolbar.size)
             .menuIndicator(.hidden)
-            .background(
-                RoundedRectangle(cornerRadius: ToolbarButtonLabel.Metrics.hoverCornerRadius)
-                    .fill(
-                        isEnabled && isHovered
-                            ? VoyagerDS.Surface.sidebarSelectionBackground(for: colorScheme)
-                            : .clear,
-                    )
-                    .frame(
-                        width: ToolbarButtonLabel.Metrics.iconSize,
-                        height: ToolbarButtonLabel.Metrics.iconSize,
-                    ),
-            )
             .buttonStyle(.borderless)
             .disabled(!isEnabled)
             .id(menuID ?? 0)

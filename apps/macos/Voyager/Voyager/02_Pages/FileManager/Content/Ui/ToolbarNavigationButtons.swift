@@ -29,7 +29,7 @@ struct ToolbarNavigationButtons: View {
         ToolbarMenuButton(
             systemName: "chevron.left",
             isEnabled: canGoBack,
-            font: ToolbarButtonLabel.Metrics.iconFont,
+            font: IconButtonStyle.toolbar.font,
             menuID: backHistory.count,
             primaryAction: { store.send(.goBack) },
             menuContent: {
@@ -53,7 +53,7 @@ struct ToolbarNavigationButtons: View {
         ToolbarMenuButton(
             systemName: "chevron.right",
             isEnabled: canGoForward,
-            font: ToolbarButtonLabel.Metrics.iconFont,
+            font: IconButtonStyle.toolbar.font,
             menuID: forwardHistory.count,
             primaryAction: { store.send(.goForward) },
             menuContent: {
@@ -80,7 +80,7 @@ struct ToolbarNavigationButtons: View {
                 ToolbarHoverButtonLabel(
                     systemName: "chevron.up",
                     isEnabled: canGoToEnclosingDirectory,
-                    font: ToolbarButtonLabel.Metrics.iconFont,
+                    font: IconButtonStyle.toolbar.font,
                 )
             },
         )
