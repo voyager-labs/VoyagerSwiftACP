@@ -8,11 +8,17 @@ struct FilterSnapshot: Equatable {
 
 @ObservableState
 struct ComposerState: Equatable {
+    var collection: CollectionFeature.State = .init()
     var propertyPicker: ConditionPropertyPickerFeature.State = .init()
     var operatorPicker: OperatorPickerFeature.State = .init()
     var valuePicker: ValuePickerFeature.State = .init()
 
     var isPresented: Bool = false
+    var collectionContext: CollectionContext?
+    var openedCollectionURL: URL?
+    var sortKey: SortKey = .name
+    var sortOrder: SortOrder = .ascending
+    var viewLayout: ContentViewLayout = .list
     var text: String = ""
     var scopes: [String] = []
     var conditions: [Condition] = []

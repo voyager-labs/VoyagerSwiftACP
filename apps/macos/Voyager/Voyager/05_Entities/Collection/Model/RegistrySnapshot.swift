@@ -98,7 +98,7 @@ struct RegistrySnapshot: Sendable {
     ) -> [String: [String]] {
         var operatorMap: [String: [String]] = [:]
         for property in properties {
-            let typeKey = conditionTypeKey(for: property.definition.type)
+            let typeKey = SystemPropertyTypeKey.operatorKeyOrNil(from: property.definition.type)
             guard let typeKey else {
                 preconditionFailure("지원하지 않는 타입: \(property.definition.type)")
             }
@@ -128,28 +128,5 @@ struct RegistrySnapshot: Sendable {
         }
         _ = label
         return true
-    }
-
-    private static func conditionTypeKey(for rawType: String) -> String? {
-        switch rawType.lowercased() {
-        case "string": "string"
-        case "number": "number"
-        case "date", "datetime": "date"
-        case "boolean": "boolean"
-        case "string_list": "string_list"
-        case "categorical": "categorical"
-        default: nil
-        }
-    }
-
-    private static func valueArity(for kind: String) -> Int {
-        switch kind {
-        case "rangeNumber", "rangeDate":
-            2
-        case "none":
-            0
-        default:
-            1
-        }
     }
 }

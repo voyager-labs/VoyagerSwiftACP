@@ -22,6 +22,7 @@ enum ComposerAction: CasePathable, Sendable {
     case replaceConditionProperty(originalKey: String, propertyKey: String)
     case undo
     case redo
+    case collection(CollectionFeature.Action)
     case propertyPicker(ConditionPropertyPickerFeature.Action)
     case operatorPicker(OperatorPickerFeature.Action)
     case valuePicker(ValuePickerFeature.Action)

@@ -1,5 +1,5 @@
 // swiftlint:disable file_length attributes
-@preconcurrency import ComposableArchitecture
+import ComposableArchitecture
 import Foundation
 import Logging
 
@@ -22,6 +22,9 @@ struct ComposerFeature {
     }
 
     var body: some Reducer<State, Action> {
+        Scope(state: \.collection, action: \.collection) {
+            CollectionFeature()
+        }
         Scope(state: \.propertyPicker, action: \.propertyPicker) {
             ConditionPropertyPickerFeature()
         }
@@ -158,12 +161,29 @@ struct ComposerFeature {
                 )
 
             case .saveCollection:
-                // TODO: 컬렉션 저장 기능 구현 예정
-                return .none
+                let payload = SaveRequestPayload(
+                    context: state.collectionContext,
+                    sortKey: state.sortKey.rawValue,
+                    sortOrder: state.sortOrder.rawValue,
+                    viewLayout: state.viewLayout.rawValue,
+                    isSearchLoading: state.isLoadingSearch,
+                    isFiltersLoading: state.isLoadingFilters,
+                )
+                if let url = state.openedCollectionURL {
+                    return .send(.collection(.saveToExisting(payload, url)))
+                }
+                return .send(.collection(.saveRequested(payload)))
 
             case .saveCollectionAs:
-                // TODO: 컬렉션 저장 기능 구현 예정
-                return .none
+                let payload = SaveRequestPayload(
+                    context: state.collectionContext,
+                    sortKey: state.sortKey.rawValue,
+                    sortOrder: state.sortOrder.rawValue,
+                    viewLayout: state.viewLayout.rawValue,
+                    isSearchLoading: state.isLoadingSearch,
+                    isFiltersLoading: state.isLoadingFilters,
+                )
+                return .send(.collection(.saveRequested(payload)))
 
             case .focusQueryField:
                 state.focusRequestID += 1
@@ -195,7 +215,7 @@ struct ComposerFeature {
                     operatorLabel: nil,
                     operatorValueArity: nil,
                     operatorValueUIKind: nil,
-                    valueType: valueType(for: propertyType),
+                    valueType: SystemPropertyTypeKey.normalizedValueType(from: propertyType),
                     values: nil,
                 )
                 state.conditions.append(condition)
@@ -218,7 +238,7 @@ struct ComposerFeature {
                 if let idx = state.conditions.firstIndex(where: { $0.propertyKey == propertyKey }) {
                     state.pushHistory()
                     let propertyType = state.conditions[idx].propertyType
-                    let typeKey = conditionTypeKey(for: propertyType)
+                    let typeKey = SystemPropertyTypeKey.operatorKey(from: propertyType)
                     let uiValueKind = registryClient.operatorUIKind(
                         for: operatorCode,
                         typeKey: typeKey,
@@ -275,7 +295,7 @@ struct ComposerFeature {
                 state.conditions[idx].operatorLabel = nil
                 state.conditions[idx].operatorValueArity = nil
                 state.conditions[idx].operatorValueUIKind = nil
-                state.conditions[idx].valueType = valueType(for: propertyType)
+                state.conditions[idx].valueType = SystemPropertyTypeKey.normalizedValueType(from: propertyType)
                 state.conditions[idx].values = nil
                 updateOperatorOptions(state: &state, registryClient: registryClient)
                 state.propertyPicker.editingConditionKey = nil
@@ -283,6 +303,7 @@ struct ComposerFeature {
                 state.propertyPicker.duplicateMessage = nil
                 return .none
 
+            // TODO: UndoManager로 변경
             case .undo:
                 guard !state.isLoadingSearch else { return .none }
                 let before = buildFilters(from: state)
@@ -298,6 +319,7 @@ struct ComposerFeature {
                 }
                 return .none
 
+            // TODO: UndoManager로 변경
             case .redo:
                 guard !state.isLoadingSearch else { return .none }
                 let before = buildFilters(from: state)
@@ -319,6 +341,9 @@ struct ComposerFeature {
                 } else {
                     return .send(.addCondition(propertyKey: property))
                 }
+
+            case .collection:
+                return .none
 
             case let .propertyPicker(.setPresented(isPresented)):
                 if isPresented {
@@ -369,13 +394,10 @@ struct ComposerFeature {
                 return .none
 
             case let .valuePicker(.setPresented(isPresented)):
-                state.valuePicker.isPresented = isPresented
-                if !isPresented {
-                    state.valuePicker.propertyKey = nil
-                    state.valuePicker.operatorCode = nil
-                    state.valuePicker.values = []
-                    state.valuePicker.errorMessage = nil
-                    state.valuePicker.editingIndex = nil
+                if isPresented {
+                    state.valuePicker.isPresented = true
+                } else {
+                    resetValuePicker(state: &state)
                 }
                 return .none
 
@@ -425,11 +447,7 @@ struct ComposerFeature {
                     state.pushHistory()
                     state.conditions[idx].values = values
                 }
-                state.valuePicker.isPresented = false
-                state.valuePicker.propertyKey = nil
-                state.valuePicker.operatorCode = nil
-                state.valuePicker.errorMessage = nil
-                state.valuePicker.editingIndex = nil
+                resetValuePicker(state: &state)
                 return applyFiltersIfNeeded(state: &state, searchClient: searchClient)
 
             case .valuePicker:
@@ -441,11 +459,7 @@ struct ComposerFeature {
                     state.pushHistory()
                     state.conditions[idx].values = values
                 }
-                state.valuePicker.isPresented = false
-                state.valuePicker.propertyKey = nil
-                state.valuePicker.operatorCode = nil
-                state.valuePicker.errorMessage = nil
-                state.valuePicker.editingIndex = nil
+                resetValuePicker(state: &state)
                 return .none
 
             case let .searchResponse(.success(response)):
@@ -518,6 +532,15 @@ private func applyAppliedFilters(
     updateOperatorOptions(state: &state, registryClient: registryClient)
 }
 
+private func resetValuePicker(state: inout ComposerFeature.State) {
+    state.valuePicker.isPresented = false
+    state.valuePicker.propertyKey = nil
+    state.valuePicker.operatorCode = nil
+    state.valuePicker.values = []
+    state.valuePicker.errorMessage = nil
+    state.valuePicker.editingIndex = nil
+}
+
 private func applyFiltersIfNeeded(
     state: inout ComposerFeature.State,
     searchClient: SearchClient,
@@ -563,34 +586,6 @@ private func buildFilters(from state: ComposerFeature.State) -> SearchFiltersPay
         scopes: state.scopes,
         conditions: conditionPayloads,
     )
-}
-
-private func valueType(for propertyType: String) -> String {
-    switch propertyType {
-    case "string", "number", "date", "datetime", "boolean", "string_list", "categorical":
-        propertyType
-    default:
-        "unknown"
-    }
-}
-
-private func conditionTypeKey(for rawType: String) -> String {
-    switch rawType.lowercased() {
-    case "string":
-        "string"
-    case "number":
-        "number"
-    case "date", "datetime":
-        "date"
-    case "boolean":
-        "boolean"
-    case "string_list":
-        "string_list"
-    case "categorical":
-        "categorical"
-    default:
-        "unknown"
-    }
 }
 
 private func updateOperatorOptions(

@@ -20,39 +20,17 @@ struct CollectionFeature {
             case let .saveRequested(payload):
                 guard !state.isSaving else { return .none }
                 guard !payload.isSearchLoading, !payload.isFiltersLoading else { return .none }
-                guard let context = payload.context else {
-                    return .run { _ in
-                        await showCollectionSaveErrorAlert(
-                            title: "No New Collection",
-                            message: "There is no active new collection to save.",
-                        )
-                    }
-                }
 
-                let trimmedQuery = context.query.trimmingCharacters(in: .whitespacesAndNewlines)
-                let validation = validateCollectionContext(
-                    context,
-                    query: trimmedQuery,
-                    sortKey: payload.sortKey,
-                    sortOrder: payload.sortOrder,
-                    viewLayout: payload.viewLayout,
-                )
+                switch validateSavePayload(payload) {
+                case let .failure(failure):
+                    return showSaveError(failure)
 
-                switch validation {
-                case let .failure(error):
-                    return .run { _ in
-                        await showCollectionSaveErrorAlert(
-                            title: "Unable to Save Collection",
-                            message: error.localizedDescription,
-                        )
-                    }
-
-                case let .success(snapshot):
-                    state.pendingSave = snapshot
+                case let .success(result):
+                    state.pendingSave = result.snapshot
                     state.isSaving = true
                     return .run { [userDefaultsClient] send in
                         let initialDirectory = await defaultCollectionSaveDirectory(
-                            preferredScopes: context.scopes,
+                            preferredScopes: result.context.scopes,
                             userDefaultsClient: userDefaultsClient,
                         )
                         let url = await showCollectionSavePanel(initialDirectory: initialDirectory)
@@ -63,50 +41,18 @@ struct CollectionFeature {
             case let .saveToExisting(payload, url):
                 guard !state.isSaving else { return .none }
                 guard !payload.isSearchLoading, !payload.isFiltersLoading else { return .none }
-                guard let context = payload.context else {
-                    return .run { _ in
-                        await showCollectionSaveErrorAlert(
-                            title: "No New Collection",
-                            message: "There is no active new collection to save.",
-                        )
-                    }
-                }
 
-                let trimmedQuery = context.query.trimmingCharacters(in: .whitespacesAndNewlines)
-                let validation = validateCollectionContext(
-                    context,
-                    query: trimmedQuery,
-                    sortKey: payload.sortKey,
-                    sortOrder: payload.sortOrder,
-                    viewLayout: payload.viewLayout,
-                )
+                switch validateSavePayload(payload) {
+                case let .failure(failure):
+                    return showSaveError(failure)
 
-                switch validation {
-                case let .failure(error):
-                    return .run { _ in
-                        await showCollectionSaveErrorAlert(
-                            title: "Unable to Save Collection",
-                            message: error.localizedDescription,
-                        )
-                    }
-
-                case let .success(snapshot):
+                case let .success(result):
                     state.isSaving = true
-                    let finalURL = ensureCollectionFileExtension(url)
-                    let file = makeCollectionFile(
-                        name: finalURL.deletingPathExtension().lastPathComponent,
-                        snapshot: snapshot,
-                        appVersion: currentAppVersion(),
+                    return performSave(
+                        snapshot: result.snapshot,
+                        url: url,
+                        collectionFileClient: collectionFileClient,
                     )
-
-                    return .run { send in
-                        do {
-                            try await collectionFileClient.save(file, finalURL)
-                            await send(.saveCompleted(.success(finalURL)))
-                        } catch {
-                            await send(.saveCompleted(.failure(error)))
-                        }
-                    }
                 }
 
             case let .savePanelResponse(url):
@@ -120,21 +66,11 @@ struct CollectionFeature {
                     return .none
                 }
 
-                let finalURL = ensureCollectionFileExtension(url)
-                let file = makeCollectionFile(
-                    name: finalURL.deletingPathExtension().lastPathComponent,
+                return performSave(
                     snapshot: snapshot,
-                    appVersion: currentAppVersion(),
+                    url: url,
+                    collectionFileClient: collectionFileClient,
                 )
-
-                return .run { send in
-                    do {
-                        try await collectionFileClient.save(file, finalURL)
-                        await send(.saveCompleted(.success(finalURL)))
-                    } catch {
-                        await send(.saveCompleted(.failure(error)))
-                    }
-                }
 
             case let .saveCompleted(result):
                 resetPendingSave(&state)
@@ -146,12 +82,10 @@ struct CollectionFeature {
                     return .none
 
                 case let .failure(error):
-                    return .run { _ in
-                        await showCollectionSaveErrorAlert(
-                            title: "Unable to Save Collection",
-                            message: error.localizedDescription,
-                        )
-                    }
+                    return showSaveError(.init(
+                        title: "Unable to Save Collection",
+                        message: error.localizedDescription,
+                    ))
                 }
             }
         }
@@ -180,13 +114,48 @@ private enum CollectionSaveValidationError: LocalizedError {
     }
 }
 
+private struct CollectionSaveFailure: Equatable, Error {
+    let title: String
+    let message: String
+}
+
+private func validateSavePayload(
+    _ payload: SaveRequestPayload,
+) -> Result<(snapshot: CollectionSaveSnapshot, context: CollectionContext), CollectionSaveFailure> {
+    guard let context = payload.context else {
+        return .failure(.init(
+            title: "No New Collection",
+            message: "There is no active new collection to save.",
+        ))
+    }
+
+    let trimmedQuery = context.query.trimmingCharacters(in: CharacterSet.whitespacesAndNewlines)
+    let validation = validateCollectionContext(
+        context,
+        query: trimmedQuery,
+        sortKey: payload.sortKey,
+        sortOrder: payload.sortOrder,
+        viewLayout: payload.viewLayout,
+    )
+
+    switch validation {
+    case let .failure(error):
+        return .failure(.init(
+            title: "Unable to Save Collection",
+            message: error.localizedDescription,
+        ))
+    case let .success(snapshot):
+        return .success((snapshot: snapshot, context: context))
+    }
+}
+
 private func validateCollectionContext(
     _ context: CollectionContext,
     query: String,
     sortKey: String,
     sortOrder: String,
     viewLayout: String,
-) -> Result<CollectionFeature.CollectionSaveSnapshot, CollectionSaveValidationError> {
+) -> Result<CollectionSaveSnapshot, CollectionSaveValidationError> {
     if query.isEmpty, context.scopes.isEmpty, context.conditions.isEmpty {
         return .failure(.emptyContent)
     }
@@ -347,4 +316,35 @@ private func showCollectionSaveErrorAlert(title: String, message: String) {
     alert.informativeText = message
     alert.addButton(withTitle: "OK")
     alert.runModal()
+}
+
+private func showSaveError(_ failure: CollectionSaveFailure) -> Effect<CollectionFeature.Action> {
+    .run { _ in
+        await showCollectionSaveErrorAlert(
+            title: failure.title,
+            message: failure.message,
+        )
+    }
+}
+
+private func performSave(
+    snapshot: CollectionSaveSnapshot,
+    url: URL,
+    collectionFileClient: CollectionFileClient,
+) -> Effect<CollectionFeature.Action> {
+    let finalURL = ensureCollectionFileExtension(url)
+    let file = makeCollectionFile(
+        name: finalURL.deletingPathExtension().lastPathComponent,
+        snapshot: snapshot,
+        appVersion: currentAppVersion(),
+    )
+
+    return .run { send in
+        do {
+            try await collectionFileClient.save(file, finalURL)
+            await send(.saveCompleted(.success(finalURL)))
+        } catch {
+            await send(.saveCompleted(.failure(error)))
+        }
+    }
 }
