@@ -96,6 +96,54 @@ enum InitialIndexingRecordBuilder {
         }
     }
 
+    nonisolated static func makeDirectoryRecord(
+        path: String,
+        homeURL: URL,
+        cachedVolumeIdentifier: String?,
+    ) async -> DirectoryRecord? {
+        guard let mdItem = MDItemCreate(kCFAllocatorDefault, path as CFString) else {
+            return nil
+        }
+        let dirURL = URL(fileURLWithPath: path).standardizedFileURL
+
+        do {
+            guard let identifiers = try identifiers(
+                for: dirURL,
+                cachedVolumeIdentifier: cachedVolumeIdentifier,
+            ) else {
+                return nil
+            }
+            let names = nameComponents(for: dirURL)
+            guard let attributes = await fileAttributes(mdItem: mdItem, url: dirURL) else {
+                return nil
+            }
+
+            let relativeInfo = relativeInfo(path: dirURL, homeURL: homeURL)
+            let record = DirectoryRecord(
+                id: nil,
+                volumeIdentifier: identifiers.volumeIdentifier,
+                fileResourceIdentifier: identifiers.fileResourceIdentifier,
+                path: dirURL.path,
+                parentId: nil,
+                nameFull: names.nameFull,
+                nameStem: names.nameStem,
+                depthFromHome: relativeInfo.depth,
+                relativePathFromHome: relativeInfo.relative,
+                isInvisible: attributes.isInvisible,
+                creationDate: attributes.creationDate,
+                modificationDate: attributes.modificationDate,
+                contentCreationDate: attributes.contentCreationDate,
+                contentModificationDate: attributes.contentModificationDate,
+                addedDate: attributes.addedDate,
+                lastUsedDate: attributes.lastUsedDate,
+                originalMetadata: attributes.originalMetadata,
+            )
+            return record
+        } catch {
+            return nil
+        }
+    }
+
     private nonisolated static func identifiers(
         for url: URL,
         cachedVolumeIdentifier: String?,
