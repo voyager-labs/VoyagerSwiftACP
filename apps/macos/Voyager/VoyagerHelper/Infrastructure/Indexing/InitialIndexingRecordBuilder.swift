@@ -88,6 +88,7 @@ enum InitialIndexingRecordBuilder {
                 addedDate: attributes.addedDate,
                 lastUsedDate: attributes.lastUsedDate,
                 originalMetadata: attributes.originalMetadata,
+                directoryId: nil,
             )
             return record
         } catch {

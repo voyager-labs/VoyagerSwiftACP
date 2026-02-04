@@ -26,6 +26,7 @@ nonisolated enum EntriesSchema {
         "added_date",
         "last_used_date",
         "original_metadata",
+        "directory_id",
     ]
 
     static let columnDescriptions: [String: String] = [
@@ -51,5 +52,6 @@ nonisolated enum EntriesSchema {
         "added_date": "파일 추가 시간 (kMDItemDateAdded)",
         "last_used_date": "파일 마지막 실행 시간 (kMDItemLastUsedDate)",
         "original_metadata": "원본 메타데이터 (OSXMetaData)",
+        "directory_id": "디렉터리 참조 (directories.id)",
     ]
 }

@@ -1,21 +1,16 @@
 import Foundation
 @preconcurrency import GRDB
 
-nonisolated struct EntryRecord: Codable, FetchableRecord, MutablePersistableRecord, Sendable {
+nonisolated struct DirectoryRecord: Codable, FetchableRecord, MutablePersistableRecord, Sendable {
     var id: Int64?
     var volumeIdentifier: String
     var fileResourceIdentifier: String
     var path: String
-    var dirPath: String
+    var parentId: Int64?
     var nameFull: String
     var nameStem: String
-    var fileExtension: String
-    var parentDirName: String
     var depthFromHome: Int
     var relativePathFromHome: String?
-    var size: Int64
-    var uniformTypeIdentifier: String?
-    var fileKind: String?
     var isInvisible: Bool
     var creationDate: Date
     var modificationDate: Date
@@ -24,23 +19,17 @@ nonisolated struct EntryRecord: Codable, FetchableRecord, MutablePersistableReco
     var addedDate: Date
     var lastUsedDate: Date?
     var originalMetadata: String
-    var directoryId: Int64?
 
-    static let databaseTableName = "entries"
+    static let databaseTableName = "directories"
     static let insertableColumns: [Columns] = [
         .volumeIdentifier,
         .fileResourceIdentifier,
         .path,
-        .dirPath,
+        .parentId,
         .nameFull,
         .nameStem,
-        .fileExtension,
-        .parentDirName,
         .depthFromHome,
         .relativePathFromHome,
-        .size,
-        .uniformTypeIdentifier,
-        .fileKind,
         .isInvisible,
         .creationDate,
         .modificationDate,
@@ -49,7 +38,6 @@ nonisolated struct EntryRecord: Codable, FetchableRecord, MutablePersistableReco
         .addedDate,
         .lastUsedDate,
         .originalMetadata,
-        .directoryId,
     ]
     static let insertableColumnCount = insertableColumns.count
 
@@ -58,16 +46,11 @@ nonisolated struct EntryRecord: Codable, FetchableRecord, MutablePersistableReco
             volumeIdentifier,
             fileResourceIdentifier,
             path,
-            dirPath,
+            parentId,
             nameFull,
             nameStem,
-            fileExtension,
-            parentDirName,
             depthFromHome,
             relativePathFromHome,
-            size,
-            uniformTypeIdentifier,
-            fileKind,
             isInvisible,
             creationDate,
             modificationDate,
@@ -76,7 +59,6 @@ nonisolated struct EntryRecord: Codable, FetchableRecord, MutablePersistableReco
             addedDate,
             lastUsedDate,
             originalMetadata,
-            directoryId,
         ]
     }
 
@@ -85,16 +67,11 @@ nonisolated struct EntryRecord: Codable, FetchableRecord, MutablePersistableReco
         case volumeIdentifier = "volume_identifier"
         case fileResourceIdentifier = "file_resource_identifier"
         case path
-        case dirPath = "dir_path"
+        case parentId = "parent_id"
         case nameFull = "name_full"
         case nameStem = "name_stem"
-        case fileExtension = "extension"
-        case parentDirName = "parent_dir_name"
         case depthFromHome = "depth_from_home"
         case relativePathFromHome = "relative_path_from_home"
-        case size
-        case uniformTypeIdentifier = "uniform_type_identifier"
-        case fileKind = "file_kind"
         case isInvisible = "is_invisible"
         case creationDate = "creation_date"
         case modificationDate = "modification_date"
@@ -103,7 +80,6 @@ nonisolated struct EntryRecord: Codable, FetchableRecord, MutablePersistableReco
         case addedDate = "added_date"
         case lastUsedDate = "last_used_date"
         case originalMetadata = "original_metadata"
-        case directoryId = "directory_id"
     }
 
     enum CodingKeys: String, CodingKey {
@@ -111,16 +87,11 @@ nonisolated struct EntryRecord: Codable, FetchableRecord, MutablePersistableReco
         case volumeIdentifier = "volume_identifier"
         case fileResourceIdentifier = "file_resource_identifier"
         case path
-        case dirPath = "dir_path"
+        case parentId = "parent_id"
         case nameFull = "name_full"
         case nameStem = "name_stem"
-        case fileExtension = "extension"
-        case parentDirName = "parent_dir_name"
         case depthFromHome = "depth_from_home"
         case relativePathFromHome = "relative_path_from_home"
-        case size
-        case uniformTypeIdentifier = "uniform_type_identifier"
-        case fileKind = "file_kind"
         case isInvisible = "is_invisible"
         case creationDate = "creation_date"
         case modificationDate = "modification_date"
@@ -129,7 +100,6 @@ nonisolated struct EntryRecord: Codable, FetchableRecord, MutablePersistableReco
         case addedDate = "added_date"
         case lastUsedDate = "last_used_date"
         case originalMetadata = "original_metadata"
-        case directoryId = "directory_id"
     }
 
     mutating func didInsert(with rowID: Int64, for _: String?) {
@@ -138,7 +108,7 @@ nonisolated struct EntryRecord: Codable, FetchableRecord, MutablePersistableReco
 }
 
 // 논리 키는 유니크 제약 기준으로 사용된다.
-nonisolated struct EntryLogicalKey: Sendable {
+nonisolated struct DirectoryLogicalKey: Sendable {
     let volumeIdentifier: String
     let fileResourceIdentifier: String
 }

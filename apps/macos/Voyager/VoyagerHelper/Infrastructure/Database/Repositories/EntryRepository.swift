@@ -22,6 +22,7 @@ nonisolated struct EntryUpdate: Sendable {
     var addedDate: Date?
     var lastUsedDate: Date?
     var originalMetadata: String?
+    var directoryId: Int64?
 
     func columnAssignments() -> [ColumnAssignment] {
         var assignments: [ColumnAssignment] = []
@@ -61,6 +62,7 @@ nonisolated struct EntryUpdate: Sendable {
 
     private func appendMetadataAssignments(into assignments: inout [ColumnAssignment]) {
         append(&assignments, column: .originalMetadata, value: originalMetadata)
+        append(&assignments, column: .directoryId, value: directoryId)
     }
 
     private func append(
