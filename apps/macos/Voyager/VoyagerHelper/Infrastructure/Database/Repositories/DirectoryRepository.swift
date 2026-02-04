@@ -44,4 +44,30 @@ nonisolated struct DirectoryRepository: Sendable {
             return record
         }
     }
+
+    func upsertByLogicalKey(_ key: DirectoryLogicalKey, record: DirectoryRecord) async throws -> DirectoryRecord {
+        try await manager.write { db in
+            var record = record
+            record.volumeIdentifier = key.volumeIdentifier
+            record.fileResourceIdentifier = key.fileResourceIdentifier
+
+            if let existing = try fetchByLogicalKey(key, db: db) {
+                record.id = existing.id
+                try record.update(db)
+                return record
+            }
+
+            record.id = nil
+            try record.insert(db)
+            return record
+        }
+    }
+
+    private func fetchByLogicalKey(_ key: DirectoryLogicalKey, db: Database) throws -> DirectoryRecord? {
+        let request = DirectoryRecord.filter(
+            DirectoryRecord.Columns.volumeIdentifier == key.volumeIdentifier &&
+                DirectoryRecord.Columns.fileResourceIdentifier == key.fileResourceIdentifier,
+        )
+        return try request.fetchOne(db)
+    }
 }
