@@ -281,7 +281,11 @@ private extension IncrementalIndexingEventExecutor {
         }
 
         do {
-            let upserted = try await directoryRepo.upsertByPath(directoryRecord)
+            let key = DirectoryLogicalKey(
+                volumeIdentifier: directoryRecord.volumeIdentifier,
+                fileResourceIdentifier: directoryRecord.fileResourceIdentifier,
+            )
+            let upserted = try await directoryRepo.upsertByLogicalKey(key, record: directoryRecord)
             if let id = upserted.id {
                 directoryCache[dirPath] = id
                 return id
