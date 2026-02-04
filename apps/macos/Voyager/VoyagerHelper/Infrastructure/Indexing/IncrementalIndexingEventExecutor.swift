@@ -271,14 +271,19 @@ private extension IncrementalIndexingEventExecutor {
             return cached
         }
 
+        let parentId = await resolveParentDirectoryId(
+            dirPath: dirPath,
+            directoryRepo: directoryRepo,
+        )
         let cachedIdentifier = dirPath.hasPrefix(homePath) ? cachedVolumeIdentifier : nil
-        guard let directoryRecord = await InitialIndexingRecordBuilder.makeDirectoryRecord(
+        guard var directoryRecord = await InitialIndexingRecordBuilder.makeDirectoryRecord(
             path: dirPath,
             homeURL: homeURL,
             cachedVolumeIdentifier: cachedIdentifier,
         ) else {
             return nil
         }
+        directoryRecord.parentId = parentId
 
         do {
             let key = DirectoryLogicalKey(
@@ -295,6 +300,21 @@ private extension IncrementalIndexingEventExecutor {
         }
 
         return nil
+    }
+
+    func resolveParentDirectoryId(
+        dirPath: String,
+        directoryRepo: DirectoryRepository,
+    ) async -> Int64? {
+        let parentPath = URL(fileURLWithPath: dirPath)
+            .standardizedFileURL
+            .deletingLastPathComponent()
+            .path
+        guard parentPath != dirPath else { return nil }
+        return await resolveDirectoryId(
+            dirPath: parentPath,
+            directoryRepo: directoryRepo,
+        )
     }
 }
 

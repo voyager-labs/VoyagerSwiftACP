@@ -288,14 +288,22 @@ private extension InitialIndexingRunner {
             return cached
         }
 
+        let parentId = await resolveParentDirectoryId(
+            dirPath: dirPath,
+            homeURL: homeURL,
+            cachedVolumeIdentifier: cachedVolumeIdentifier,
+            directoryRepo: directoryRepo,
+            directoryCache: &directoryCache,
+        )
         let cachedIdentifier = dirPath.hasPrefix(homeURL.path) ? cachedVolumeIdentifier : nil
-        guard let directoryRecord = await InitialIndexingRecordBuilder.makeDirectoryRecord(
+        guard var directoryRecord = await InitialIndexingRecordBuilder.makeDirectoryRecord(
             path: dirPath,
             homeURL: homeURL,
             cachedVolumeIdentifier: cachedIdentifier,
         ) else {
             return nil
         }
+        directoryRecord.parentId = parentId
 
         do {
             let key = DirectoryLogicalKey(
@@ -312,6 +320,27 @@ private extension InitialIndexingRunner {
         }
 
         return nil
+    }
+
+    static func resolveParentDirectoryId(
+        dirPath: String,
+        homeURL: URL,
+        cachedVolumeIdentifier: String?,
+        directoryRepo: DirectoryRepository,
+        directoryCache: inout [String: Int64],
+    ) async -> Int64? {
+        let parentPath = URL(fileURLWithPath: dirPath)
+            .standardizedFileURL
+            .deletingLastPathComponent()
+            .path
+        guard parentPath != dirPath else { return nil }
+        return await resolveDirectoryId(
+            dirPath: parentPath,
+            homeURL: homeURL,
+            cachedVolumeIdentifier: cachedVolumeIdentifier,
+            directoryRepo: directoryRepo,
+            directoryCache: &directoryCache,
+        )
     }
 
     static func fetchExistingPaths(
