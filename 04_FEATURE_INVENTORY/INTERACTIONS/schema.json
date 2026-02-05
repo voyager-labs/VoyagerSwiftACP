@@ -1,0 +1,70 @@
+{
+  "name": "INTERACTIONS",
+  "columns": [
+    {
+      "name": "interaction_title",
+      "type": "string",
+      "description": ""
+    },
+    {
+      "name": "interaction_type",
+      "type": "string",
+      "description": ""
+    },
+    {
+      "name": "feature",
+      "type": "string",
+      "description": ""
+    },
+    {
+      "name": "category_key",
+      "type": "string",
+      "description": ""
+    },
+    {
+      "name": "feature_id",
+      "type": "string",
+      "description": ""
+    },
+    {
+      "name": "status",
+      "type": "string",
+      "description": ""
+    },
+    {
+      "name": "summary",
+      "type": "string",
+      "description": ""
+    },
+    {
+      "name": "related_region",
+      "type": "string",
+      "description": ""
+    },
+    {
+      "name": "menu",
+      "type": "string",
+      "description": ""
+    },
+    {
+      "name": "shortcut",
+      "type": "string",
+      "description": ""
+    },
+    {
+      "name": "preconditions",
+      "type": "string",
+      "description": ""
+    },
+    {
+      "name": "edge_cases",
+      "type": "string",
+      "description": ""
+    },
+    {
+      "name": "acceptance_criteria",
+      "type": "string",
+      "description": ""
+    }
+  ]
+}

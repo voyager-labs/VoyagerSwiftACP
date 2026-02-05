@@ -1,0 +1,45 @@
+{
+  "name": "FEATURES",
+  "columns": [
+    {
+      "name": "feature_category",
+      "type": "string",
+      "description": ""
+    },
+    {
+      "name": "feature_title",
+      "type": "string",
+      "description": ""
+    },
+    {
+      "name": "feature_id",
+      "type": "string",
+      "description": ""
+    },
+    {
+      "name": "release_phase",
+      "type": "string",
+      "description": ""
+    },
+    {
+      "name": "status",
+      "type": "string",
+      "description": ""
+    },
+    {
+      "name": "description",
+      "type": "string",
+      "description": ""
+    },
+    {
+      "name": "related_ui",
+      "type": "string",
+      "description": ""
+    },
+    {
+      "name": "objects",
+      "type": "string",
+      "description": ""
+    }
+  ]
+}

@@ -1,0 +1,35 @@
+{
+  "name": "FEATURE_CATEGORIES",
+  "columns": [
+    {
+      "name": "order",
+      "type": "number",
+      "description": ""
+    },
+    {
+      "name": "category_title",
+      "type": "string",
+      "description": ""
+    },
+    {
+      "name": "category_key",
+      "type": "string",
+      "description": ""
+    },
+    {
+      "name": "status",
+      "type": "string",
+      "description": ""
+    },
+    {
+      "name": "description",
+      "type": "string",
+      "description": ""
+    },
+    {
+      "name": "domain",
+      "type": "string",
+      "description": ""
+    }
+  ]
+}
