@@ -129,6 +129,22 @@ final class IncrementalIndexingEventExecutor {
         guard let mdItem = MDItemCreate(kCFAllocatorDefault, path as CFString) else {
             return ApplyOutcome(upserted: 0, deleted: 0, error: nil)
         }
+        let standardizedPath = URL(fileURLWithPath: path).standardizedFileURL.path
+        if InitialIndexingRecordBuilder.isDirectory(mdItem: mdItem, path: standardizedPath) {
+            do {
+                let directoryRepo = DirectoryRepository(manager: manager, logger: logger)
+                _ = await resolveDirectoryId(
+                    dirPath: standardizedPath,
+                    directoryRepo: directoryRepo,
+                )
+                return ApplyOutcome(upserted: 0, deleted: 0, error: nil)
+            } catch {
+                eventLogger.error(
+                    "Incremental indexing directory upsert failed: \(String(describing: error), privacy: .public)",
+                )
+                return ApplyOutcome(upserted: 0, deleted: 0, error: error)
+            }
+        }
         let cachedIdentifier = path.hasPrefix(homePath) ? cachedVolumeIdentifier : nil
         var entryRecord = await InitialIndexingRecordBuilder.makeRecord(
             mdItem: mdItem,
@@ -142,12 +158,13 @@ final class IncrementalIndexingEventExecutor {
 
         do {
             let directoryRepo = DirectoryRepository(manager: manager, logger: logger)
-            if let directoryId = await resolveDirectoryId(
+            guard let directoryId = await resolveDirectoryId(
                 dirPath: entryRecord.dirPath,
                 directoryRepo: directoryRepo,
-            ) {
-                entryRecord.directoryId = directoryId
+            ) else {
+                return ApplyOutcome(upserted: 0, deleted: 0, error: nil)
             }
+            entryRecord.directoryId = directoryId
             _ = try await entryRepo.upsertByPath(entryRecord)
             return ApplyOutcome(upserted: 1, deleted: 0, error: nil)
         } catch {
@@ -209,6 +226,14 @@ final class IncrementalIndexingEventExecutor {
             guard let item = MDQueryGetResultAtIndex(query, index) else { continue }
             let mdItem = unsafeBitCast(item, to: MDItem.self)
             guard let itemPath = MDItemCopyAttribute(mdItem, kMDItemPath) as? String else { continue }
+            let standardizedPath = URL(fileURLWithPath: itemPath).standardizedFileURL.path
+            if InitialIndexingRecordBuilder.isDirectory(mdItem: mdItem, path: standardizedPath) {
+                _ = await resolveDirectoryId(
+                    dirPath: standardizedPath,
+                    directoryRepo: directoryRepo,
+                )
+                continue
+            }
             scannedPaths.insert(itemPath)
             let cachedIdentifier = itemPath.hasPrefix(homePath) ? cachedVolumeIdentifier : nil
             var entryRecord = await InitialIndexingRecordBuilder.makeRecord(
@@ -218,12 +243,11 @@ final class IncrementalIndexingEventExecutor {
                 cachedVolumeIdentifier: cachedIdentifier,
             )
             guard var entryRecord else { continue }
-            if let directoryId = await resolveDirectoryId(
+            guard let directoryId = await resolveDirectoryId(
                 dirPath: entryRecord.dirPath,
                 directoryRepo: directoryRepo,
-            ) {
-                entryRecord.directoryId = directoryId
-            }
+            ) else { continue }
+            entryRecord.directoryId = directoryId
             _ = try await entryRepo.upsertByPath(entryRecord)
         }
 
