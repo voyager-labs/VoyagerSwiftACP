@@ -246,7 +246,7 @@ enum InitialIndexingRunner {
         directoryCache: inout [String: Int64],
     ) async throws {
         for item in items where !existingPaths.contains(item.path) {
-            var entryRecord = await InitialIndexingRecordBuilder.makeRecord(
+            let entryRecord = await InitialIndexingRecordBuilder.makeRecord(
                 mdItem: item.mdItem,
                 path: item.path,
                 homeURL: context.homeURL,
@@ -304,22 +304,12 @@ private extension InitialIndexingRunner {
             return nil
         }
         directoryRecord.parentId = parentId
-
-        do {
-            let key = DirectoryLogicalKey(
-                volumeIdentifier: directoryRecord.volumeIdentifier,
-                fileResourceIdentifier: directoryRecord.fileResourceIdentifier,
-            )
-            let upserted = try await directoryRepo.upsertByLogicalKey(key, record: directoryRecord)
-            if let id = upserted.id {
-                directoryCache[dirPath] = id
-                return id
-            }
-        } catch {
-            return nil
-        }
-
-        return nil
+        return await upsertDirectoryRecord(
+            dirPath: dirPath,
+            directoryRecord: directoryRecord,
+            directoryRepo: directoryRepo,
+            directoryCache: &directoryCache,
+        )
     }
 
     static func resolveParentDirectoryId(
@@ -340,6 +330,73 @@ private extension InitialIndexingRunner {
             cachedVolumeIdentifier: cachedVolumeIdentifier,
             directoryRepo: directoryRepo,
             directoryCache: &directoryCache,
+        )
+    }
+
+    static func depthDelta(from oldValue: Int?, to newValue: Int?) -> Int? {
+        guard let oldValue, let newValue else { return nil }
+        return newValue - oldValue
+    }
+
+    static func upsertDirectoryRecord(
+        dirPath: String,
+        directoryRecord: DirectoryRecord,
+        directoryRepo: DirectoryRepository,
+        directoryCache: inout [String: Int64],
+    ) async -> Int64? {
+        do {
+            if let volumeIdentifier = directoryRecord.volumeIdentifier,
+               let fileResourceIdentifier = directoryRecord.fileResourceIdentifier
+            {
+                let key = DirectoryLogicalKey(
+                    volumeIdentifier: volumeIdentifier,
+                    fileResourceIdentifier: fileResourceIdentifier,
+                )
+                if let existing = try await directoryRepo.fetchByLogicalKey(key),
+                   existing.path != directoryRecord.path
+                {
+                    let request = buildPathUpdateRequest(
+                        existing: existing,
+                        updated: directoryRecord,
+                    )
+                    try await directoryRepo.updatePathSubtree(request)
+                    directoryCache.removeValue(forKey: existing.path)
+                }
+                let upserted = try await directoryRepo.upsertByLogicalKey(key, record: directoryRecord)
+                if let id = upserted.id {
+                    directoryCache[dirPath] = id
+                    return id
+                }
+            } else {
+                let upserted = try await directoryRepo.upsertByPath(directoryRecord)
+                if let id = upserted.id {
+                    directoryCache[dirPath] = id
+                    return id
+                }
+            }
+        } catch {
+            return nil
+        }
+        return nil
+    }
+
+    static func buildPathUpdateRequest(
+        existing: DirectoryRecord,
+        updated: DirectoryRecord,
+    ) -> DirectoryRepository.PathUpdateRequest {
+        let depthDelta = depthDelta(
+            from: existing.depthFromHome,
+            to: updated.depthFromHome,
+        )
+        return DirectoryRepository.PathUpdateRequest(
+            oldPath: existing.path,
+            newPath: updated.path,
+            newParentId: updated.parentId,
+            newNameFull: updated.nameFull,
+            newNameStem: updated.nameStem,
+            oldRelativePath: existing.relativePathFromHome,
+            newRelativePath: updated.relativePathFromHome,
+            depthDelta: depthDelta,
         )
     }
 

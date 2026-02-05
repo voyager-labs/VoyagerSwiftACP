@@ -3,22 +3,22 @@ import Foundation
 
 nonisolated struct DirectoryRecord: Codable, FetchableRecord, MutablePersistableRecord, Sendable {
     var id: Int64?
-    var volumeIdentifier: String
-    var fileResourceIdentifier: String
+    var volumeIdentifier: String?
+    var fileResourceIdentifier: String?
     var path: String
     var parentId: Int64?
-    var nameFull: String
-    var nameStem: String
-    var depthFromHome: Int
+    var nameFull: String?
+    var nameStem: String?
+    var depthFromHome: Int?
     var relativePathFromHome: String?
-    var isInvisible: Bool
-    var creationDate: Date
-    var modificationDate: Date
-    var contentCreationDate: Date
-    var contentModificationDate: Date
-    var addedDate: Date
+    var isInvisible: Bool?
+    var creationDate: Date?
+    var modificationDate: Date?
+    var contentCreationDate: Date?
+    var contentModificationDate: Date?
+    var addedDate: Date?
     var lastUsedDate: Date?
-    var originalMetadata: String
+    var originalMetadata: String?
 
     static let databaseTableName = "directories"
     static let insertableColumns: [Columns] = [

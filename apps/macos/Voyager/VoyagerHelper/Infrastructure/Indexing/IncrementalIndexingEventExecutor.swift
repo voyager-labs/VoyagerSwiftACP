@@ -284,22 +284,77 @@ private extension IncrementalIndexingEventExecutor {
             return nil
         }
         directoryRecord.parentId = parentId
+        return await upsertDirectoryRecord(
+            dirPath: dirPath,
+            directoryRecord: directoryRecord,
+            directoryRepo: directoryRepo,
+        )
+    }
 
+    func depthDelta(from oldValue: Int?, to newValue: Int?) -> Int? {
+        guard let oldValue, let newValue else { return nil }
+        return newValue - oldValue
+    }
+
+    func upsertDirectoryRecord(
+        dirPath: String,
+        directoryRecord: DirectoryRecord,
+        directoryRepo: DirectoryRepository,
+    ) async -> Int64? {
         do {
-            let key = DirectoryLogicalKey(
-                volumeIdentifier: directoryRecord.volumeIdentifier,
-                fileResourceIdentifier: directoryRecord.fileResourceIdentifier,
-            )
-            let upserted = try await directoryRepo.upsertByLogicalKey(key, record: directoryRecord)
-            if let id = upserted.id {
-                directoryCache[dirPath] = id
-                return id
+            if let volumeIdentifier = directoryRecord.volumeIdentifier,
+               let fileResourceIdentifier = directoryRecord.fileResourceIdentifier
+            {
+                let key = DirectoryLogicalKey(
+                    volumeIdentifier: volumeIdentifier,
+                    fileResourceIdentifier: fileResourceIdentifier,
+                )
+                if let existing = try await directoryRepo.fetchByLogicalKey(key),
+                   existing.path != directoryRecord.path
+                {
+                    let request = buildPathUpdateRequest(
+                        existing: existing,
+                        updated: directoryRecord,
+                    )
+                    try await directoryRepo.updatePathSubtree(request)
+                    directoryCache.removeValue(forKey: existing.path)
+                }
+                let upserted = try await directoryRepo.upsertByLogicalKey(key, record: directoryRecord)
+                if let id = upserted.id {
+                    directoryCache[dirPath] = id
+                    return id
+                }
+            } else {
+                let upserted = try await directoryRepo.upsertByPath(directoryRecord)
+                if let id = upserted.id {
+                    directoryCache[dirPath] = id
+                    return id
+                }
             }
         } catch {
             return nil
         }
-
         return nil
+    }
+
+    func buildPathUpdateRequest(
+        existing: DirectoryRecord,
+        updated: DirectoryRecord,
+    ) -> DirectoryRepository.PathUpdateRequest {
+        let depthDelta = depthDelta(
+            from: existing.depthFromHome,
+            to: updated.depthFromHome,
+        )
+        return DirectoryRepository.PathUpdateRequest(
+            oldPath: existing.path,
+            newPath: updated.path,
+            newParentId: updated.parentId,
+            newNameFull: updated.nameFull,
+            newNameStem: updated.nameStem,
+            oldRelativePath: existing.relativePathFromHome,
+            newRelativePath: updated.relativePathFromHome,
+            depthDelta: depthDelta,
+        )
     }
 
     func resolveParentDirectoryId(
