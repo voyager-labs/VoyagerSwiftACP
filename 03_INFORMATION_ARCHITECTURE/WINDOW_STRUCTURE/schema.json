@@ -1,0 +1,60 @@
+{
+  "name": "WINDOW_STRUCTURE",
+  "columns": [
+    {
+      "name": "window_id",
+      "type": "string",
+      "description": ""
+    },
+    {
+      "name": "parent_region_id",
+      "type": "string",
+      "description": ""
+    },
+    {
+      "name": "region_id",
+      "type": "string",
+      "description": ""
+    },
+    {
+      "name": "region_label",
+      "type": "string",
+      "description": ""
+    },
+    {
+      "name": "region_label_ko",
+      "type": "string",
+      "description": ""
+    },
+    {
+      "name": "level",
+      "type": "number",
+      "description": ""
+    },
+    {
+      "name": "slot_type",
+      "type": "string",
+      "description": ""
+    },
+    {
+      "name": "structure_key",
+      "type": "string",
+      "description": ""
+    },
+    {
+      "name": "description",
+      "type": "string",
+      "description": ""
+    },
+    {
+      "name": "objects",
+      "type": "string",
+      "description": ""
+    },
+    {
+      "name": "release_phase",
+      "type": "string",
+      "description": ""
+    }
+  ]
+}

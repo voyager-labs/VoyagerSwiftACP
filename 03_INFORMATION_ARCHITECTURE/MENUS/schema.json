@@ -1,0 +1,40 @@
+{
+  "name": "MENUS",
+  "columns": [
+    {
+      "name": "menu_node_id",
+      "type": "string",
+      "description": ""
+    },
+    {
+      "name": "menu_scope",
+      "type": "string",
+      "description": ""
+    },
+    {
+      "name": "menu_type",
+      "type": "string",
+      "description": ""
+    },
+    {
+      "name": "parent_menu_node",
+      "type": "string",
+      "description": ""
+    },
+    {
+      "name": "level",
+      "type": "number",
+      "description": ""
+    },
+    {
+      "name": "menu_label",
+      "type": "string",
+      "description": ""
+    },
+    {
+      "name": "description",
+      "type": "string",
+      "description": ""
+    }
+  ]
+}

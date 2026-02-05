@@ -1,0 +1,25 @@
+{
+  "name": "OBJECTS",
+  "columns": [
+    {
+      "name": "category",
+      "type": "string",
+      "description": ""
+    },
+    {
+      "name": "key",
+      "type": "string",
+      "description": ""
+    },
+    {
+      "name": "label_ko",
+      "type": "string",
+      "description": ""
+    },
+    {
+      "name": "summary",
+      "type": "string",
+      "description": ""
+    }
+  ]
+}
