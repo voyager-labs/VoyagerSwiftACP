@@ -1,6 +1,7 @@
 import Foundation
 @preconcurrency import GRDB
 import Logging
+import StructuredQueries
 
 struct FilterSearchService: Sendable {
     private let manager: DatabaseManager
@@ -20,26 +21,30 @@ struct FilterSearchService: Sendable {
     }
 
     func applyFilters(_ filters: SearchFiltersPayload) async throws -> SearchResponsePayload {
-        let (scopeClause, scopeArgs) = scopeBuilder.buildScopeClause(scopes: filters.scopes)
-        let (conditionClause, conditionArgs) = try conditionBuilder.buildWhere(conditions: filters.conditions)
-        let whereClause = "\(scopeClause) AND \(conditionClause)"
-        let arguments = StatementArguments(mergeArguments(scopeArgs, conditionArgs))
+        let scopePredicate = scopeBuilder.buildScopePredicate(scopes: filters.scopes)
+        let conditionPredicate = try conditionBuilder.buildWhere(conditions: filters.conditions)
+        let whereClause = FilterSearchEntryTable.where { _ in
+            let predicates: [QueryFragment] = [scopePredicate, conditionPredicate]
+            return predicates
+        }
+        let select = whereClause.select {
+            (
+                $0.id,
+                $0.path,
+                $0.nameFull,
+                $0.size,
+                $0.fileExtension,
+                $0.fileKind,
+                $0.modificationDate,
+            )
+        }
+        let prepared = select.query.prepare { _ in "?" }
+        let arguments = StatementArguments(prepared.bindings.map(\.databaseValue))
 
         let items = try await manager.read { db in
             let rows = try Row.fetchAll(
                 db,
-                sql: """
-                SELECT
-                    id,
-                    path,
-                    name_full,
-                    size,
-                    extension,
-                    file_kind,
-                    modification_date
-                FROM entries
-                WHERE \(whereClause)
-                """,
+                sql: prepared.sql,
                 arguments: arguments,
             )
             return rows.map { row in
@@ -66,22 +71,38 @@ struct FilterSearchService: Sendable {
         )
     }
 
-    private func mergeArguments(
-        _ first: [String: DatabaseValueConvertible?],
-        _ second: [String: DatabaseValueConvertible?],
-    ) -> [String: DatabaseValueConvertible?] {
-        var merged = first
-        for (key, value) in second {
-            merged[key] = value
-        }
-        return merged
-    }
-
     private nonisolated static func formatDate(_ date: Date) -> String {
         let formatter = DateFormatter()
         formatter.locale = Locale(identifier: "en_US_POSIX")
         formatter.timeZone = .current
         formatter.dateFormat = "yyyy-MM-dd HH:mm:ss"
         return formatter.string(from: date)
+    }
+}
+
+private extension QueryBinding {
+    var databaseValue: DatabaseValueConvertible? {
+        switch self {
+        case let .blob(blob):
+            Data(blob)
+        case let .bool(value):
+            value
+        case let .double(value):
+            value
+        case let .date(value):
+            value
+        case let .int(value):
+            value
+        case .null:
+            nil
+        case let .text(value):
+            value
+        case let .uint(value):
+            Int64(value)
+        case let .uuid(value):
+            value.uuidString.lowercased()
+        case let .invalid(error):
+            error.underlyingError.localizedDescription
+        }
     }
 }
