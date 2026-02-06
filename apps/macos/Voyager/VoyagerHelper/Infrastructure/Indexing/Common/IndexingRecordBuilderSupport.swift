@@ -1,6 +1,6 @@
 import Foundation
 
-extension InitialIndexingRecordBuilder {
+extension IndexingRecordBuilder {
     nonisolated static func identifiers(
         for url: URL,
         cachedVolumeIdentifier: String?,
@@ -36,7 +36,7 @@ extension InitialIndexingRecordBuilder {
     }
 }
 
-extension InitialIndexingRecordBuilder {
+extension IndexingRecordBuilder {
     nonisolated static func resolveIdentifiers(
         for url: URL,
         cachedVolumeIdentifier: String?,
@@ -104,7 +104,7 @@ extension InitialIndexingRecordBuilder {
     }
 }
 
-private extension InitialIndexingRecordBuilder {
+private extension IndexingRecordBuilder {
     nonisolated static func mdItemValues(from attributes: NSDictionary) -> MDItemValues {
         MDItemValues(
             size: int64Value(attributeValue(attributes, key: kMDItemFSSize)),

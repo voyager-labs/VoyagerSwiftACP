@@ -1,7 +1,7 @@
 @preconcurrency import CoreServices
 import Foundation
 
-enum InitialIndexingRecordBuilder {
+enum IndexingRecordBuilder {
     struct IdentifierPair {
         let volumeIdentifier: String
         let fileResourceIdentifier: String

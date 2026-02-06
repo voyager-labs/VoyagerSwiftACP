@@ -1,6 +1,6 @@
 import Foundation
 
-extension InitialIndexingRecordBuilder {
+extension IndexingRecordBuilder {
     nonisolated static func makeLightweightDirectoryRecord(
         path: String,
         homeURL: URL,

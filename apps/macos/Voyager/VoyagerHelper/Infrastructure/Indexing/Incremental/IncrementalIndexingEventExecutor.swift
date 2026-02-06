@@ -132,7 +132,7 @@ final class IncrementalIndexingEventExecutor {
             return ApplyOutcome(upserted: 0, deleted: 0, error: nil)
         }
         let standardizedPath = URL(fileURLWithPath: path).standardizedFileURL.path
-        if InitialIndexingRecordBuilder.isDirectory(mdItem: mdItem, path: standardizedPath) {
+        if IndexingRecordBuilder.isDirectory(mdItem: mdItem, path: standardizedPath) {
             do {
                 let directoryRepo = DirectoryRepository(manager: manager, logger: logger)
                 _ = await resolveDirectoryId(
@@ -148,7 +148,7 @@ final class IncrementalIndexingEventExecutor {
             }
         }
         let cachedIdentifier = path.hasPrefix(homePath) ? cachedVolumeIdentifier : nil
-        var fileRecord = await InitialIndexingRecordBuilder.makeRecord(
+        var fileRecord = await IndexingRecordBuilder.makeRecord(
             mdItem: mdItem,
             path: path,
             homeURL: homeURL,
@@ -232,7 +232,7 @@ final class IncrementalIndexingEventExecutor {
             let mdItem = unsafeBitCast(item, to: MDItem.self)
             guard let itemPath = MDItemCopyAttribute(mdItem, kMDItemPath) as? String else { continue }
             let standardizedPath = URL(fileURLWithPath: itemPath).standardizedFileURL.path
-            if InitialIndexingRecordBuilder.isDirectory(mdItem: mdItem, path: standardizedPath) {
+            if IndexingRecordBuilder.isDirectory(mdItem: mdItem, path: standardizedPath) {
                 _ = await resolveDirectoryId(
                     dirPath: standardizedPath,
                     directoryRepo: directoryRepo,
@@ -241,7 +241,7 @@ final class IncrementalIndexingEventExecutor {
             }
             scannedPaths.insert(standardizedPath)
             let cachedIdentifier = itemPath.hasPrefix(homePath) ? cachedVolumeIdentifier : nil
-            var fileRecord = await InitialIndexingRecordBuilder.makeRecord(
+            var fileRecord = await IndexingRecordBuilder.makeRecord(
                 mdItem: mdItem,
                 path: itemPath,
                 homeURL: homeURL,
@@ -333,7 +333,7 @@ private extension IncrementalIndexingEventExecutor {
             directoryRepo: directoryRepo,
         )
         let cachedIdentifier = dirPath.hasPrefix(homePath) ? cachedVolumeIdentifier : nil
-        guard var directoryRecord = await InitialIndexingRecordBuilder.makeDirectoryRecord(
+        guard var directoryRecord = await IndexingRecordBuilder.makeDirectoryRecord(
             path: dirPath,
             homeURL: homeURL,
             cachedVolumeIdentifier: cachedIdentifier,

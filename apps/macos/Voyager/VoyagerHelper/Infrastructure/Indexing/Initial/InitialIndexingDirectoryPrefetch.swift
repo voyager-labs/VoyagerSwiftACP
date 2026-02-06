@@ -6,7 +6,7 @@ extension InitialIndexingRunner {
         paths.reserveCapacity(items.count)
         for item in items {
             let standardizedPath = URL(fileURLWithPath: item.path).standardizedFileURL.path
-            if InitialIndexingRecordBuilder.isDirectory(mdItem: item.mdItem, path: standardizedPath) {
+            if IndexingRecordBuilder.isDirectory(mdItem: item.mdItem, path: standardizedPath) {
                 paths.insert(standardizedPath)
             } else {
                 let dirPath = URL(fileURLWithPath: standardizedPath)
@@ -58,7 +58,7 @@ extension InitialIndexingRunner {
             directoryCache: &directoryCache,
         )
         let cachedIdentifier = dirPath.hasPrefix(homeURL.path) ? cachedVolumeIdentifier : nil
-        guard var directoryRecord = InitialIndexingRecordBuilder.makeLightweightDirectoryRecord(
+        guard var directoryRecord = IndexingRecordBuilder.makeLightweightDirectoryRecord(
             path: dirPath,
             homeURL: homeURL,
             cachedVolumeIdentifier: cachedIdentifier,

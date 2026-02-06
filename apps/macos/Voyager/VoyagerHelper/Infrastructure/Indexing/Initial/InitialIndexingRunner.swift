@@ -68,7 +68,7 @@ enum InitialIndexingRunner {
     ) async throws -> Int {
         let startedAt = Date()
         let homeURL = FileManager.default.homeDirectoryForCurrentUser
-        let cachedVolumeIdentifier = InitialIndexingRecordBuilder.volumeIdentifier(from: homeURL)
+        let cachedVolumeIdentifier = IndexingRecordBuilder.volumeIdentifier(from: homeURL)
         let query = try makeQuery(homeURL: homeURL)
         let resultCount = Int(MDQueryGetResultCount(query))
         logger.info(
@@ -255,10 +255,10 @@ enum InitialIndexingRunner {
         )
         for item in items where !existingPaths.contains(item.path) {
             let standardizedPath = URL(fileURLWithPath: item.path).standardizedFileURL.path
-            if InitialIndexingRecordBuilder.isDirectory(mdItem: item.mdItem, path: standardizedPath) {
+            if IndexingRecordBuilder.isDirectory(mdItem: item.mdItem, path: standardizedPath) {
                 continue
             }
-            let fileRecord = await InitialIndexingRecordBuilder.makeRecord(
+            let fileRecord = await IndexingRecordBuilder.makeRecord(
                 mdItem: item.mdItem,
                 path: item.path,
                 homeURL: context.homeURL,

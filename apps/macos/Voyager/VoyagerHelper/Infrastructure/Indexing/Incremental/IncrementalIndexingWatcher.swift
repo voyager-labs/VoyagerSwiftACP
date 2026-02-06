@@ -63,7 +63,7 @@ final class IncrementalIndexingWatcher {
         self.watchedPaths = watchedPaths.map {
             URL(fileURLWithPath: $0).standardizedFileURL.path
         }
-        cachedVolumeIdentifier = InitialIndexingRecordBuilder.volumeIdentifier(from: homeURL)
+        cachedVolumeIdentifier = IndexingRecordBuilder.volumeIdentifier(from: homeURL)
         eventExecutor = IncrementalIndexingEventExecutor(
             manager: manager,
             logger: logger,

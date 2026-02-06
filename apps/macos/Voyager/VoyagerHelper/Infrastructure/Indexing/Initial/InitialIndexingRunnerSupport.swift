@@ -58,7 +58,7 @@ extension InitialIndexingRunner {
             directoryCache: &directoryCache,
         )
         let cachedIdentifier = dirPath.hasPrefix(homeURL.path) ? cachedVolumeIdentifier : nil
-        guard var directoryRecord = await InitialIndexingRecordBuilder.makeDirectoryRecord(
+        guard var directoryRecord = await IndexingRecordBuilder.makeDirectoryRecord(
             path: dirPath,
             homeURL: homeURL,
             cachedVolumeIdentifier: cachedIdentifier,
