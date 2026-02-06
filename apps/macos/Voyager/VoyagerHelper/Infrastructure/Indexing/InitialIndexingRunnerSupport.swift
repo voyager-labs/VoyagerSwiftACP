@@ -9,11 +9,14 @@ extension InitialIndexingRunner {
         directoryRepo: DirectoryRepository,
         directoryCache: inout [String: Int64],
     ) async -> Bool {
-        let directoryId: Int64? = if let cached = directoryCache[entryRecord.dirPath] {
+        let directoryPath = parentDirectoryPath(forEntryPath: entryRecord.path)
+        entryRecord.dirPath = directoryPath
+
+        let directoryId: Int64? = if let cached = directoryCache[directoryPath] {
             cached
         } else {
             await resolveDirectoryId(
-                dirPath: entryRecord.dirPath,
+                dirPath: directoryPath,
                 homeURL: homeURL,
                 cachedVolumeIdentifier: cachedVolumeIdentifier,
                 directoryRepo: directoryRepo,
@@ -27,6 +30,13 @@ extension InitialIndexingRunner {
 
         entryRecord.directoryId = directoryId
         return true
+    }
+
+    static func parentDirectoryPath(forEntryPath path: String) -> String {
+        URL(fileURLWithPath: path)
+            .standardizedFileURL
+            .deletingLastPathComponent()
+            .path
     }
 
     static func resolveDirectoryId(

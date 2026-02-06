@@ -296,8 +296,11 @@ private extension IncrementalIndexingEventExecutor {
         to entryRecord: inout EntryRecord,
         directoryRepo: DirectoryRepository,
     ) async -> Bool {
+        let directoryPath = parentDirectoryPath(forEntryPath: entryRecord.path)
+        entryRecord.dirPath = directoryPath
+
         guard let directoryId = await resolveDirectoryId(
-            dirPath: entryRecord.dirPath,
+            dirPath: directoryPath,
             directoryRepo: directoryRepo,
         ) else {
             let entryPath = entryRecord.path
@@ -308,6 +311,13 @@ private extension IncrementalIndexingEventExecutor {
         }
         entryRecord.directoryId = directoryId
         return true
+    }
+
+    func parentDirectoryPath(forEntryPath path: String) -> String {
+        URL(fileURLWithPath: path)
+            .standardizedFileURL
+            .deletingLastPathComponent()
+            .path
     }
 
     func resolveDirectoryId(
