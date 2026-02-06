@@ -280,10 +280,11 @@ final class IncrementalIndexingEventExecutor {
     // 재스캔 경로 목록 로드
     private func fetchExistingPaths(prefix: String) async throws -> [String] {
         let likePrefix = prefix.hasSuffix("/") ? "\(prefix)%" : "\(prefix)/%"
+        let tableName = EntriesSchema.tableName
         return try await manager.read { db in
             try String.fetchAll(
                 db,
-                sql: "SELECT path FROM entries WHERE path = ? OR path LIKE ?",
+                sql: "SELECT path FROM \(tableName) WHERE path = ? OR path LIKE ?",
                 arguments: [prefix, likePrefix],
             )
         }

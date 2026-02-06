@@ -26,7 +26,7 @@ nonisolated struct EntryRecord: Codable, FetchableRecord, MutablePersistableReco
     var originalMetadata: String
     var directoryId: Int64?
 
-    static let databaseTableName = "entries"
+    static let databaseTableName = EntriesSchema.tableName
     static let insertableColumns: [Columns] = [
         .volumeIdentifier,
         .fileResourceIdentifier,

@@ -159,7 +159,7 @@ extension InitialIndexingRunner {
         guard !paths.isEmpty else { return [] }
         return try await manager.read { db in
             let placeholders = Array(repeating: "?", count: paths.count).joined(separator: ", ")
-            let sql = "SELECT path FROM entries WHERE path IN (\(placeholders))"
+            let sql = "SELECT path FROM \(EntriesSchema.tableName) WHERE path IN (\(placeholders))"
             let existing = try String.fetchAll(db, sql: sql, arguments: StatementArguments(paths))
             return Set(existing)
         }

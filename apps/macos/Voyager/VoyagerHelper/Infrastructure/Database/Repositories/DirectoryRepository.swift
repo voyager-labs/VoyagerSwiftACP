@@ -112,7 +112,11 @@ nonisolated struct DirectoryRepository: Sendable {
             db: db,
             request: request,
         )
-        try updateEntriesDirPath(
+        try syncEntriesDirPathByDirectoryId(
+            db: db,
+            newPath: request.newPath,
+        )
+        try updateEntriesDirPathFallback(
             db: db,
             oldPath: request.oldPath,
             newPath: request.newPath,
@@ -243,13 +247,38 @@ nonisolated struct DirectoryRepository: Sendable {
         try db.execute(sql: updateChildrenSql, arguments: StatementArguments(updateChildrenArgs))
     }
 
-    private func updateEntriesDirPath(
+    private func syncEntriesDirPathByDirectoryId(
+        db: Database,
+        newPath: String,
+    ) throws {
+        let entriesTable = EntriesSchema.tableName
+        let syncEntriesSql = """
+        UPDATE \(entriesTable)
+        SET dir_path = (
+            SELECT d.path
+            FROM directories d
+            WHERE d.id = \(entriesTable).directory_id
+        )
+        WHERE directory_id IN (
+            SELECT id
+            FROM directories
+            WHERE path = ? OR path LIKE ? || '/%'
+        )
+        """
+        try db.execute(
+            sql: syncEntriesSql,
+            arguments: [newPath, newPath],
+        )
+    }
+
+    private func updateEntriesDirPathFallback(
         db: Database,
         oldPath: String,
         newPath: String,
     ) throws {
+        let entriesTable = EntriesSchema.tableName
         let updateEntriesSql = """
-        UPDATE entries
+        UPDATE \(entriesTable)
         SET dir_path = CASE
             WHEN dir_path = ?
                 THEN ?
@@ -257,7 +286,8 @@ nonisolated struct DirectoryRepository: Sendable {
                 THEN ? || substr(dir_path, length(?) + 1)
             ELSE dir_path
         END
-        WHERE dir_path = ? OR dir_path LIKE ? || '/%'
+        WHERE directory_id IS NULL
+          AND (dir_path = ? OR dir_path LIKE ? || '/%')
         """
         try db.execute(
             sql: updateEntriesSql,

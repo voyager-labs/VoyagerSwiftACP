@@ -344,9 +344,10 @@ private extension IndexingRequestListener {
     func fetchValidationSnapshot() async throws -> IndexingValidationSnapshot {
         let completedAtKey = StateKey.initialIndexingCompletedAt
         let lastSyncKey = "last_sync_at"
+        let entriesTable = EntriesSchema.tableName
         return try await manager.read { db in
             let indexingStateExists = try db.tableExists("indexing_state")
-            let entriesExists = try db.tableExists("entries")
+            let entriesExists = try db.tableExists(entriesTable)
             var completedAt: String?
             var lastSyncAt: String?
             if indexingStateExists {
@@ -362,7 +363,7 @@ private extension IndexingRequestListener {
                 )
             }
             let entriesCount = try entriesExists
-                ? (Int.fetchOne(db, sql: "SELECT COUNT(1) FROM entries") ?? 0)
+                ? (Int.fetchOne(db, sql: "SELECT COUNT(1) FROM \(entriesTable)") ?? 0)
                 : 0
             return IndexingValidationSnapshot(
                 indexingStateExists: indexingStateExists,
