@@ -7,6 +7,5 @@
 
 ## **Map of Content**
 
-* [Lucas, Early-stage Saas Founder]()  
-* [Eric, Indie Hacker]()
-
+* [Lucas, Early-stage Saas Founder](02_USER_PERSONA/lucas-early_stage_saas_founder.md)  
+* [Eric, Indie Hacker](02_USER_PERSONA/eric-indie_hacker.md)

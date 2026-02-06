@@ -2,8 +2,8 @@
 
 # **Core Flows**
 
-[PRODUCT\_THESIS]()  
-[PREV: Non-Goals]()
+[PRODUCT\_THESIS](01_PRODUCT_THESIS/index.md)  
+[PREV: Non-Goals](01_PRODUCT_THESIS/non_goals.md)
 
 ---
 
@@ -122,4 +122,3 @@
 
 * 새 채팅 세션이 생성되고, 해당 세션에 연결된 초기 작업 범위가 정의되어 보이는 상태  
 * 이후 동일 세션 내 요청에서, 해당 작업 범위를 참조∙활용∙갱신 가능한 상태
-

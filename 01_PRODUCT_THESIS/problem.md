@@ -2,8 +2,8 @@
 
 # **Problem**
 
-[PRODUCT\_THESIS]()  
-[NEXT: Target User & JTBD]()
+[PRODUCT\_THESIS](01_PRODUCT_THESIS/index.md)  
+[NEXT: Target User & JTBD](01_PRODUCT_THESIS/target_user.md)
 
 ---
 
@@ -57,6 +57,5 @@
 
 ---
 
-[NEXT: Target User & JTBD]()  
-[PRODUCT\_THESIS]()
-
+[NEXT: Target User & JTBD](01_PRODUCT_THESIS/target_user.md)  
+[PRODUCT\_THESIS](01_PRODUCT_THESIS/index.md)

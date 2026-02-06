@@ -2,8 +2,8 @@
 
 # **Target User**
 
-[PRODUCT\_THESIS]()  
-[PREV: Problem]() | [NEXT: Product Pillar]()
+[PRODUCT\_THESIS](01_PRODUCT_THESIS/index.md)  
+[PREV: Problem](01_PRODUCT_THESIS/problem.md) | [NEXT: Product Pillar](01_PRODUCT_THESIS/product_pilar.md)
 
 ---
 
@@ -52,4 +52,3 @@
   * AI에게 정리⋅요약을 시켜보지만, 결과가 의도와 달라 프롬프트를 계속 바꿔가며 재요청한다.  
   * AI 응답 결과가 왜 이렇게 나왔는지 근거가 된 파일⋅구절을 보고 싶다.  
   * 파일 정리⋅이동⋅삭제를 AI에게 맡기고 싶지만, 적용 전 무엇이 어떻게 바뀌는지 명확히 보고 승인하는 흐름이 필요하다.
-
