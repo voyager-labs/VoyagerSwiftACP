@@ -46,7 +46,7 @@ enum InitialIndexingRecordBuilder {
     nonisolated static func makeRecord(
         mdItem: MDItem,
         path: String,
-        homeURL: URL,
+        homeURL _: URL,
         cachedVolumeIdentifier: String?,
     ) async -> EntryRecord? {
         let fileURL = URL(fileURLWithPath: path)
@@ -64,7 +64,6 @@ enum InitialIndexingRecordBuilder {
                 return nil
             }
 
-            let relativeInfo = relativeInfo(path: standardizedURL, homeURL: homeURL)
             let record = EntryRecord(
                 id: nil,
                 volumeIdentifier: identifiers.volumeIdentifier,
@@ -74,9 +73,6 @@ enum InitialIndexingRecordBuilder {
                 nameFull: names.nameFull,
                 nameStem: names.nameStem,
                 fileExtension: names.fileExtension,
-                parentDirName: names.dirURL.lastPathComponent,
-                depthFromHome: relativeInfo.depth,
-                relativePathFromHome: relativeInfo.relative,
                 size: attributes.size,
                 uniformTypeIdentifier: attributes.uniformTypeIdentifier,
                 fileKind: attributes.fileKind,

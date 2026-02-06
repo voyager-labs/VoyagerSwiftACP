@@ -10,9 +10,6 @@ nonisolated struct EntryRecord: Codable, FetchableRecord, MutablePersistableReco
     var nameFull: String
     var nameStem: String
     var fileExtension: String
-    var parentDirName: String
-    var depthFromHome: Int
-    var relativePathFromHome: String?
     var size: Int64
     var uniformTypeIdentifier: String?
     var fileKind: String?
@@ -35,9 +32,6 @@ nonisolated struct EntryRecord: Codable, FetchableRecord, MutablePersistableReco
         .nameFull,
         .nameStem,
         .fileExtension,
-        .parentDirName,
-        .depthFromHome,
-        .relativePathFromHome,
         .size,
         .uniformTypeIdentifier,
         .fileKind,
@@ -62,9 +56,6 @@ nonisolated struct EntryRecord: Codable, FetchableRecord, MutablePersistableReco
             nameFull,
             nameStem,
             fileExtension,
-            parentDirName,
-            depthFromHome,
-            relativePathFromHome,
             size,
             uniformTypeIdentifier,
             fileKind,
@@ -89,9 +80,6 @@ nonisolated struct EntryRecord: Codable, FetchableRecord, MutablePersistableReco
         case nameFull = "name_full"
         case nameStem = "name_stem"
         case fileExtension = "extension"
-        case parentDirName = "parent_dir_name"
-        case depthFromHome = "depth_from_home"
-        case relativePathFromHome = "relative_path_from_home"
         case size
         case uniformTypeIdentifier = "uniform_type_identifier"
         case fileKind = "file_kind"
@@ -115,9 +103,6 @@ nonisolated struct EntryRecord: Codable, FetchableRecord, MutablePersistableReco
         case nameFull = "name_full"
         case nameStem = "name_stem"
         case fileExtension = "extension"
-        case parentDirName = "parent_dir_name"
-        case depthFromHome = "depth_from_home"
-        case relativePathFromHome = "relative_path_from_home"
         case size
         case uniformTypeIdentifier = "uniform_type_identifier"
         case fileKind = "file_kind"
