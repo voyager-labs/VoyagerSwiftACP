@@ -116,11 +116,6 @@ nonisolated struct DirectoryRepository: Sendable {
             db: db,
             newPath: request.newPath,
         )
-        try updateEntriesDirPathFallback(
-            db: db,
-            oldPath: request.oldPath,
-            newPath: request.newPath,
-        )
     }
 
     private func updateRootDirectory(
@@ -268,38 +263,6 @@ nonisolated struct DirectoryRepository: Sendable {
         try db.execute(
             sql: syncEntriesSql,
             arguments: [newPath, newPath],
-        )
-    }
-
-    private func updateEntriesDirPathFallback(
-        db: Database,
-        oldPath: String,
-        newPath: String,
-    ) throws {
-        let entriesTable = EntriesSchema.tableName
-        let updateEntriesSql = """
-        UPDATE \(entriesTable)
-        SET dir_path = CASE
-            WHEN dir_path = ?
-                THEN ?
-            WHEN dir_path LIKE ? || '/%'
-                THEN ? || substr(dir_path, length(?) + 1)
-            ELSE dir_path
-        END
-        WHERE directory_id IS NULL
-          AND (dir_path = ? OR dir_path LIKE ? || '/%')
-        """
-        try db.execute(
-            sql: updateEntriesSql,
-            arguments: [
-                oldPath,
-                newPath,
-                oldPath,
-                newPath,
-                oldPath,
-                oldPath,
-                oldPath,
-            ],
         )
     }
 
