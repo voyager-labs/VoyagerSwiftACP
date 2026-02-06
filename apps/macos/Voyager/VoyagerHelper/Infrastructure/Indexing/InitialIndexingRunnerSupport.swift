@@ -3,14 +3,14 @@ import Foundation
 
 extension InitialIndexingRunner {
     static func assignDirectoryId(
-        to entryRecord: inout FileRecord,
+        to fileRecord: inout FileRecord,
         homeURL: URL,
         cachedVolumeIdentifier: String?,
         directoryRepo: DirectoryRepository,
         directoryCache: inout [String: Int64],
     ) async -> Bool {
-        let directoryPath = parentDirectoryPath(forEntryPath: entryRecord.path)
-        entryRecord.dirPath = directoryPath
+        let directoryPath = parentDirectoryPath(forFilePath: fileRecord.path)
+        fileRecord.dirPath = directoryPath
 
         let directoryId: Int64? = if let cached = directoryCache[directoryPath] {
             cached
@@ -28,11 +28,11 @@ extension InitialIndexingRunner {
             return false
         }
 
-        entryRecord.directoryId = directoryId
+        fileRecord.directoryId = directoryId
         return true
     }
 
-    static func parentDirectoryPath(forEntryPath path: String) -> String {
+    static func parentDirectoryPath(forFilePath path: String) -> String {
         URL(fileURLWithPath: path)
             .standardizedFileURL
             .deletingLastPathComponent()

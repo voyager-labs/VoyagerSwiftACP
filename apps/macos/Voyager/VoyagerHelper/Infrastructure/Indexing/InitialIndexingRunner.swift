@@ -258,15 +258,15 @@ enum InitialIndexingRunner {
             if InitialIndexingRecordBuilder.isDirectory(mdItem: item.mdItem, path: standardizedPath) {
                 continue
             }
-            let entryRecord = await InitialIndexingRecordBuilder.makeRecord(
+            let fileRecord = await InitialIndexingRecordBuilder.makeRecord(
                 mdItem: item.mdItem,
                 path: item.path,
                 homeURL: context.homeURL,
                 cachedVolumeIdentifier: context.cachedVolumeIdentifier,
             )
-            guard var entryRecord else { continue }
+            guard var fileRecord else { continue }
             let assigned = await assignDirectoryId(
-                to: &entryRecord,
+                to: &fileRecord,
                 homeURL: context.homeURL,
                 cachedVolumeIdentifier: context.cachedVolumeIdentifier,
                 directoryRepo: context.directoryRepo,
@@ -275,7 +275,7 @@ enum InitialIndexingRunner {
             guard assigned else {
                 continue
             }
-            batch.append(entryRecord)
+            batch.append(fileRecord)
             if batch.count >= context.batchSize {
                 try await flushBatch(
                     &batch,

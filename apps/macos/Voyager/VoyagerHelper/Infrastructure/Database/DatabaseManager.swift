@@ -228,15 +228,15 @@ actor DatabaseManager {
             try DatabaseMigrations.validateMigrationHistory(db)
         }
 
-        let legacyEntries = try await pool.read { db in
+        let legacyFiles = try await pool.read { db in
             let hasMigrations = try db.tableExists("grdb_migrations")
             guard !hasMigrations else { return false }
             return try db.tableExists(FilesSchema.tableName)
         }
-        if legacyEntries {
-            logger.info("Legacy entries DB detected without migrations; applying baseline migrations")
+        if legacyFiles {
+            logger.info("Legacy files DB detected without migrations; applying baseline migrations")
             let backupURL = try await backupDatabaseFile(databaseURL: databaseURL, pool: pool)
-            logger.info("Legacy entries DB backup created at: \(backupURL.path)")
+            logger.info("Legacy files DB backup created at: \(backupURL.path)")
         }
 
         let appliedCountBefore = try await appliedMigrationCount(pool: pool)

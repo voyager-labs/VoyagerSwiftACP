@@ -91,12 +91,12 @@ nonisolated enum DatabaseMigrations {
         return isDirectory.boolValue
     }
 
-    private static func validateExistingEntriesTable(_ db: Database) throws {
+    private static func validateExistingFilesTable(_ db: Database) throws {
         let existingColumns = try Set(db.columns(in: FilesSchema.tableName).map(\.name))
         let missing = FilesSchema.requiredColumns.filter { !existingColumns.contains($0) }
         if !missing.isEmpty {
             throw DatabaseError.migrationFailed(
-                "Legacy entries table missing columns: \(missing.joined(separator: ", "))",
+                "Legacy files table missing columns: \(missing.joined(separator: ", "))",
             )
         }
     }
