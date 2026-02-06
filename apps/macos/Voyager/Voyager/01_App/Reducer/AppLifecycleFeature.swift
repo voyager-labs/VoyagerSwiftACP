@@ -44,7 +44,7 @@ struct AppLifecycleFeature {
                     userId: userId,
                     component: "app",
                 )
-                VoyagerSentryMetricLogger.userIdProvider = { DeviceIdentifierProvider.current() }
+                VoyagerSentryMetricLogger.setUserId(userId)
 
                 if state.didStartHelper {
                     return .none
