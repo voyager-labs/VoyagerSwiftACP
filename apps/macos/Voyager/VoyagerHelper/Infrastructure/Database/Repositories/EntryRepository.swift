@@ -8,9 +8,6 @@ nonisolated struct EntryUpdate: Sendable {
     var nameFull: String?
     var nameStem: String?
     var fileExtension: String?
-    var parentDirName: String?
-    var depthFromHome: Int?
-    var relativePathFromHome: String?
     var size: Int64?
     var uniformTypeIdentifier: String?
     var fileKind: String?
@@ -39,9 +36,6 @@ nonisolated struct EntryUpdate: Sendable {
         append(&assignments, column: .nameFull, value: nameFull)
         append(&assignments, column: .nameStem, value: nameStem)
         append(&assignments, column: .fileExtension, value: fileExtension)
-        append(&assignments, column: .parentDirName, value: parentDirName)
-        append(&assignments, column: .depthFromHome, value: depthFromHome)
-        append(&assignments, column: .relativePathFromHome, value: relativePathFromHome)
     }
 
     private func appendAttributeAssignments(into assignments: inout [ColumnAssignment]) {
