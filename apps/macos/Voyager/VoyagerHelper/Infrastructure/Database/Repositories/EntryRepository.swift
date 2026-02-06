@@ -108,6 +108,17 @@ nonisolated struct EntryRepository: Sendable {
         }
     }
 
+    func deleteByPathPrefix(_ path: String) async throws -> Int {
+        let likePrefix = path.hasSuffix("/") ? "\(path)%" : "\(path)/%"
+        return try await manager.write { db in
+            try db.execute(
+                sql: "DELETE FROM entries WHERE path = ? OR path LIKE ?",
+                arguments: [path, likePrefix],
+            )
+            return db.changesCount
+        }
+    }
+
     func updateById(_ id: Int64, updates: EntryUpdate) async throws -> EntryRecord? {
         try await manager.write { db in
             let assignments = updates.columnAssignments()

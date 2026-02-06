@@ -89,6 +89,17 @@ nonisolated struct DirectoryRepository: Sendable {
         }
     }
 
+    func deleteByPathPrefix(_ path: String) async throws -> Int {
+        let likePrefix = path.hasSuffix("/") ? "\(path)%" : "\(path)/%"
+        return try await manager.write { db in
+            try db.execute(
+                sql: "DELETE FROM directories WHERE path = ? OR path LIKE ?",
+                arguments: [path, likePrefix],
+            )
+            return db.changesCount
+        }
+    }
+
     private func performPathSubtreeUpdate(
         db: Database,
         request: PathUpdateRequest,

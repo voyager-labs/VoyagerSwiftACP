@@ -110,8 +110,10 @@ final class IncrementalIndexingEventExecutor {
     // 삭제 처리
     private func handleDelete(entryRepo: EntryRepository, path: String) async -> ApplyOutcome {
         do {
-            let deleted = try await entryRepo.deleteByPath(path)
-            return ApplyOutcome(upserted: 0, deleted: deleted, error: nil)
+            let directoryRepo = DirectoryRepository(manager: manager, logger: logger)
+            let deletedDirectories = try await directoryRepo.deleteByPathPrefix(path)
+            let deletedEntries = try await entryRepo.deleteByPathPrefix(path)
+            return ApplyOutcome(upserted: 0, deleted: deletedDirectories + deletedEntries, error: nil)
         } catch {
             eventLogger.error(
                 "Incremental indexing delete failed: \(String(describing: error), privacy: .public)",
@@ -210,12 +212,16 @@ final class IncrementalIndexingEventExecutor {
     private func rescanDirectory(path: String) async throws {
         let standardized = URL(fileURLWithPath: path).standardizedFileURL.path
         let entryRepo = EntryRepository(manager: manager, logger: logger)
-        let directoryRepo = DirectoryRepository(manager: manager, logger: logger)
 
         guard FileManager.default.fileExists(atPath: standardized) else {
-            _ = try await entryRepo.deleteByPath(standardized)
+            let outcome = await handleDelete(entryRepo: entryRepo, path: standardized)
+            if let error = outcome.error {
+                throw error
+            }
             return
         }
+
+        let directoryRepo = DirectoryRepository(manager: manager, logger: logger)
 
         let query = try makeQuery(rootPath: standardized)
         let resultCount = Int(MDQueryGetResultCount(query))
@@ -234,7 +240,7 @@ final class IncrementalIndexingEventExecutor {
                 )
                 continue
             }
-            scannedPaths.insert(itemPath)
+            scannedPaths.insert(standardizedPath)
             let cachedIdentifier = itemPath.hasPrefix(homePath) ? cachedVolumeIdentifier : nil
             var entryRecord = await InitialIndexingRecordBuilder.makeRecord(
                 mdItem: mdItem,
