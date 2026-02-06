@@ -2,6 +2,33 @@ import Foundation
 @preconcurrency import GRDB
 
 extension InitialIndexingRunner {
+    static func assignDirectoryId(
+        to entryRecord: inout EntryRecord,
+        homeURL: URL,
+        cachedVolumeIdentifier: String?,
+        directoryRepo: DirectoryRepository,
+        directoryCache: inout [String: Int64],
+    ) async -> Bool {
+        let directoryId: Int64? = if let cached = directoryCache[entryRecord.dirPath] {
+            cached
+        } else {
+            await resolveDirectoryId(
+                dirPath: entryRecord.dirPath,
+                homeURL: homeURL,
+                cachedVolumeIdentifier: cachedVolumeIdentifier,
+                directoryRepo: directoryRepo,
+                directoryCache: &directoryCache,
+            )
+        }
+
+        guard let directoryId else {
+            return false
+        }
+
+        entryRecord.directoryId = directoryId
+        return true
+    }
+
     static func resolveDirectoryId(
         dirPath: String,
         homeURL: URL,

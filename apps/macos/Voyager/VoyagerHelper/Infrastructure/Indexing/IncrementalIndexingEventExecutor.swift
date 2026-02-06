@@ -160,13 +160,12 @@ final class IncrementalIndexingEventExecutor {
 
         do {
             let directoryRepo = DirectoryRepository(manager: manager, logger: logger)
-            guard let directoryId = await resolveDirectoryId(
-                dirPath: entryRecord.dirPath,
+            guard await assignDirectoryId(
+                to: &entryRecord,
                 directoryRepo: directoryRepo,
             ) else {
                 return ApplyOutcome(upserted: 0, deleted: 0, error: nil)
             }
-            entryRecord.directoryId = directoryId
             _ = try await entryRepo.upsertByPath(entryRecord)
             return ApplyOutcome(upserted: 1, deleted: 0, error: nil)
         } catch {
@@ -249,11 +248,10 @@ final class IncrementalIndexingEventExecutor {
                 cachedVolumeIdentifier: cachedIdentifier,
             )
             guard var entryRecord else { continue }
-            guard let directoryId = await resolveDirectoryId(
-                dirPath: entryRecord.dirPath,
+            guard await assignDirectoryId(
+                to: &entryRecord,
                 directoryRepo: directoryRepo,
             ) else { continue }
-            entryRecord.directoryId = directoryId
             _ = try await entryRepo.upsertByPath(entryRecord)
         }
 
@@ -293,6 +291,24 @@ final class IncrementalIndexingEventExecutor {
 }
 
 private extension IncrementalIndexingEventExecutor {
+    func assignDirectoryId(
+        to entryRecord: inout EntryRecord,
+        directoryRepo: DirectoryRepository,
+    ) async -> Bool {
+        guard let directoryId = await resolveDirectoryId(
+            dirPath: entryRecord.dirPath,
+            directoryRepo: directoryRepo,
+        ) else {
+            let entryPath = entryRecord.path
+            eventLogger.error(
+                "Incremental indexing skipped entry without directory_id: \(entryPath, privacy: .public)",
+            )
+            return false
+        }
+        entryRecord.directoryId = directoryId
+        return true
+    }
+
     func resolveDirectoryId(
         dirPath: String,
         directoryRepo: DirectoryRepository,

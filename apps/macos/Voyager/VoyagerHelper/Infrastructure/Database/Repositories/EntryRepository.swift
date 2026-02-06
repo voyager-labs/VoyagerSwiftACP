@@ -75,6 +75,10 @@ nonisolated struct EntryUpdate: Sendable {
     }
 }
 
+enum EntryRepositoryError: Error {
+    case missingDirectoryId(path: String)
+}
+
 nonisolated struct EntryRepository: Sendable {
     private let manager: DatabaseManager
     private let logger: Logger
@@ -134,6 +138,7 @@ nonisolated struct EntryRepository: Sendable {
     }
 
     func insertOne(_ record: EntryRecord) async throws {
+        try Self.ensureDirectoryId(record)
         try await manager.write { db in
             var record = record
             try record.insert(db)
@@ -151,6 +156,7 @@ nonisolated struct EntryRepository: Sendable {
 
     func insertBatch(_ records: [EntryRecord], batchSize: Int) async throws {
         guard !records.isEmpty else { return }
+        try Self.ensureDirectoryIds(records)
 
         let logger = logger
 
@@ -169,7 +175,8 @@ nonisolated struct EntryRepository: Sendable {
     }
 
     func upsertByPath(_ record: EntryRecord) async throws -> EntryRecord {
-        try await manager.write { db in
+        try Self.ensureDirectoryId(record)
+        return try await manager.write { db in
             var record = record
             if let existing = try EntryRecord.filter(EntryRecord.Columns.path == record.path).fetchOne(db) {
                 record.id = existing.id
@@ -259,6 +266,18 @@ nonisolated struct EntryRepository: Sendable {
         }
         if let lastError {
             throw lastError
+        }
+    }
+
+    private static func ensureDirectoryIds(_ records: [EntryRecord]) throws {
+        for record in records {
+            try ensureDirectoryId(record)
+        }
+    }
+
+    private static func ensureDirectoryId(_ record: EntryRecord) throws {
+        guard record.directoryId != nil else {
+            throw EntryRepositoryError.missingDirectoryId(path: record.path)
         }
     }
 }

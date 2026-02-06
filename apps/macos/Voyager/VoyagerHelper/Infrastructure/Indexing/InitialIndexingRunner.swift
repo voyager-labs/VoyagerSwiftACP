@@ -265,21 +265,16 @@ enum InitialIndexingRunner {
                 cachedVolumeIdentifier: context.cachedVolumeIdentifier,
             )
             guard var entryRecord else { continue }
-            let directoryId: Int64? = if let cached = directoryCache[entryRecord.dirPath] {
-                cached
-            } else {
-                await resolveDirectoryId(
-                    dirPath: entryRecord.dirPath,
-                    homeURL: context.homeURL,
-                    cachedVolumeIdentifier: context.cachedVolumeIdentifier,
-                    directoryRepo: context.directoryRepo,
-                    directoryCache: &directoryCache,
-                )
-            }
-            guard let directoryId else {
+            let assigned = await assignDirectoryId(
+                to: &entryRecord,
+                homeURL: context.homeURL,
+                cachedVolumeIdentifier: context.cachedVolumeIdentifier,
+                directoryRepo: context.directoryRepo,
+                directoryCache: &directoryCache,
+            )
+            guard assigned else {
                 continue
             }
-            entryRecord.directoryId = directoryId
             batch.append(entryRecord)
             if batch.count >= context.batchSize {
                 try await flushBatch(
