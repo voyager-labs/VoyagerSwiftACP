@@ -37,9 +37,13 @@ struct EnvironmentLoader {
         /// - `loadEnvFiles`에서 번들 리소스 경로를 직접 사용하므로 project root 탐색이 불필요
         /// - 반환값: `nil` (번들 리소스에서 환경 파일을 로드)
         nonisolated var projectRoot: URL? {
+            projectRoot(environment: ProcessInfo.processInfo.environment)
+        }
+
+        nonisolated func projectRoot(environment: [String: String]) -> URL? {
             switch self {
             case .source:
-                if let envRoot = ProcessInfo.processInfo.environment[BackendMode.projectRootKey],
+                if let envRoot = environment[BackendMode.projectRootKey],
                    !envRoot.isEmpty
                 {
                     return URL(fileURLWithPath: envRoot)
@@ -50,20 +54,23 @@ struct EnvironmentLoader {
             }
         }
 
-        nonisolated static func inferProjectRoot(from start: URL, maxDepth: Int = 8) -> URL? {
+        nonisolated static func inferProjectRoot(from start: URL) -> URL? {
             let fm = FileManager.default
             var current = start
+            let rootPath = current.pathComponents.first ?? "/"
 
-            for _ in 0 ..< maxDepth {
+            while true {
                 let backendPath = current.appendingPathComponent("apps/backend")
                 let macosPath = current.appendingPathComponent("apps/macos/Voyager")
                 if fm.fileExists(atPath: backendPath.path) || fm.fileExists(atPath: macosPath.path) {
                     return current
                 }
+
+                if current.path == rootPath {
+                    return nil
+                }
                 current.deleteLastPathComponent()
             }
-
-            return nil
         }
     }
 
@@ -114,6 +121,22 @@ struct EnvironmentLoader {
         return appEnv
     }
 
+    nonisolated static func loadEnvFilesWithProjectRootInference(
+        environment: [String: String] = ProcessInfo.processInfo.environment,
+        bundle: Bundle = .main,
+    ) throws {
+        let projectRootKey = "VOYAGER_PROJECT_ROOT"
+        var resolvedEnvironment = environment
+
+        if resolvedEnvironment[projectRootKey]?.isEmpty != false {
+            if let inferredFromBundle = BackendMode.inferProjectRoot(from: bundle.bundleURL) {
+                resolvedEnvironment[projectRootKey] = inferredFromBundle.path
+            }
+        }
+
+        try loadEnvFiles(environment: resolvedEnvironment, bundle: bundle)
+    }
+
     /// `appEnv`와 `backendMode`를 자동으로 감지한 후 해당하는 환경 파일들을 로드합니다.
     ///
     /// - Throws: `LoadError` 환경 파일을 찾을 수 없거나 로드에 실패한 경우
@@ -127,7 +150,7 @@ struct EnvironmentLoader {
         let baseURL: URL
         switch backendMode {
         case .source:
-            guard let projectRoot = backendMode.projectRoot else {
+            guard let projectRoot = backendMode.projectRoot(environment: environment) else {
                 throw LoadError.projectRootNotFound
             }
             baseURL = projectRoot
