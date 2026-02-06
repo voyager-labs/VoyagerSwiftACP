@@ -57,6 +57,7 @@ private let kRegistryLabels: [String: String] = [
 private let kRegistryOperatorDefinition = OperatorDefinition(
     uiLabel: "Equals",
     sqlOperator: nil,
+    sqlKind: nil,
     valueShape: nil,
     valueCount: nil,
     allowedTypes: nil,
