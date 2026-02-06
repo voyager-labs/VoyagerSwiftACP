@@ -1,5 +1,4 @@
 import Foundation
-@preconcurrency import GRDB
 
 extension FilterSearchConditionBuilder {
     func validateOperatorMeta(_ operatorMeta: OperatorDefinition, operatorCode: String) throws {
@@ -64,6 +63,7 @@ extension FilterSearchConditionBuilder {
     func conditionTypeKey(for rawType: String) -> String? {
         switch rawType.lowercased() {
         case "string": "string"
+        case "categorical": "categorical"
         case "number": "number"
         case "date", "datetime": "date"
         case "boolean": "boolean"

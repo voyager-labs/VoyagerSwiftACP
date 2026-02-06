@@ -1,32 +1,11 @@
 import Foundation
-@preconcurrency import GRDB
+import StructuredQueries
 
 struct FilterSearchConditionBuilder: Sendable {
     struct BuilderError: Error, CustomStringConvertible {
         let message: String
 
         var description: String { message }
-    }
-
-    struct ParamBinder {
-        private(set) var arguments: [String: DatabaseValueConvertible?] = [:]
-        private var index = 0
-        private let prefix: String
-
-        init(prefix: String = "p") {
-            self.prefix = prefix
-        }
-
-        mutating func bind(_ value: DatabaseValueConvertible?) -> String {
-            let name = "\(prefix)\(index)"
-            index += 1
-            arguments[name] = value
-            return ":\(name)"
-        }
-
-        mutating func bindMany(_ values: [DatabaseValueConvertible?]) -> String {
-            values.map { bind($0) }.joined(separator: ", ")
-        }
     }
 
     struct PropertyMapping: Sendable {
@@ -49,35 +28,33 @@ struct FilterSearchConditionBuilder: Sendable {
         propertyMap = FilterSearchConditionBuilder.buildPropertyMap(systemRegistry: systemRegistry)
     }
 
-    func buildWhere(conditions: [SearchConditionPayload]) throws -> (String, [String: DatabaseValueConvertible?]) {
+    init(registry: PropertyConditionRegistry, systemRegistry: SystemPropertyRegistry) {
+        self.registry = registry
+        propertyMap = FilterSearchConditionBuilder.buildPropertyMap(systemRegistry: systemRegistry)
+    }
+
+    func buildWhere(conditions: [SearchConditionPayload]) throws -> QueryFragment {
         guard !conditions.isEmpty else {
-            return ("1=1", [:])
+            return .alwaysTrue
         }
 
-        var clauses: [String] = []
-        var binder = ParamBinder()
+        var clauses: [QueryFragment] = []
 
         for condition in conditions {
-            guard let clause = try buildClause(
-                condition: condition,
-                binder: &binder,
-            ) else {
+            guard let clause = try buildClause(condition: condition) else {
                 continue
             }
             clauses.append(clause)
         }
 
         guard !clauses.isEmpty else {
-            return ("1=1", [:])
+            return .alwaysTrue
         }
 
-        return (clauses.joined(separator: " AND "), binder.arguments)
+        return clauses.joinedWithAnd()
     }
 
-    func buildClause(
-        condition: SearchConditionPayload,
-        binder: inout ParamBinder,
-    ) throws -> String? {
+    func buildClause(condition: SearchConditionPayload) throws -> QueryFragment? {
         let propertyKey = condition.propertyKey
         let operatorCode = condition.operator
         let value = condition.value
@@ -111,7 +88,6 @@ struct FilterSearchConditionBuilder: Sendable {
                 operatorMeta: operatorMeta,
                 operatorCode: operatorCode,
                 value: value,
-                binder: &binder,
             )
         }
         return try buildJsonClause(
@@ -119,7 +95,6 @@ struct FilterSearchConditionBuilder: Sendable {
             operatorMeta: operatorMeta,
             operatorCode: operatorCode,
             value: value,
-            binder: &binder,
         )
     }
 }

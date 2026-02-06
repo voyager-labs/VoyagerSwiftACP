@@ -1,9 +1,9 @@
 import Foundation
-@preconcurrency import GRDB
+import StructuredQueries
 
 extension FilterSearchConditionBuilder {
     private struct KindClauseInput {
-        let field: String
+        let field: QueryFragment
         let mapping: PropertyMapping
         let operatorMeta: OperatorDefinition
         let operatorCode: String
@@ -16,11 +16,10 @@ extension FilterSearchConditionBuilder {
         operatorMeta: OperatorDefinition,
         operatorCode: String,
         value: JSONValue?,
-        binder: inout ParamBinder,
-    ) throws -> String {
-        var field = mapping.key
+    ) throws -> QueryFragment {
+        var field = columnFragment(for: mapping.key)
         if mapping.type == "date" || mapping.type == "datetime" {
-            field = "DATE(\(field))"
+            field = QueryFragment.date(field)
         }
 
         if mapping.type == "string_list" {
@@ -28,7 +27,6 @@ extension FilterSearchConditionBuilder {
                 field: field,
                 operatorMeta: operatorMeta,
                 value: value,
-                binder: &binder,
             )
         }
 
@@ -41,7 +39,6 @@ extension FilterSearchConditionBuilder {
                 value: value,
                 jsonPath: nil,
             ),
-            binder: &binder,
         )
     }
 
@@ -50,8 +47,7 @@ extension FilterSearchConditionBuilder {
         operatorMeta: OperatorDefinition,
         operatorCode: String,
         value: JSONValue?,
-        binder: inout ParamBinder,
-    ) throws -> String {
+    ) throws -> QueryFragment {
         guard let propertyType = registry.propertyTypes[conditionTypeKey(for: mapping.type) ?? ""] else {
             throw BuilderError(message: "Missing property_types for \(mapping.type)")
         }
@@ -61,9 +57,14 @@ extension FilterSearchConditionBuilder {
         guard let jsonPath = jsonPath(for: mapping.systemKeys) else {
             throw BuilderError(message: "Missing JSON path for '\(mapping.key)'")
         }
-        var field = "CAST(json_extract(original_metadata, '\(jsonPath)') AS \(castType))"
+        let jsonPathBinding = QueryBinding.text(jsonPath)
+        let metadataColumn: QueryFragment = "\(FilterSearchEntryTable.originalMetadata)"
+        var field = QueryFragment.cast(
+            QueryFragment.jsonExtract(metadataColumn, jsonPathBinding),
+            as: castType,
+        )
         if mapping.type == "date" || mapping.type == "datetime" {
-            field = "DATE(\(field))"
+            field = QueryFragment.date(field)
         }
         return try buildKindClause(
             input: KindClauseInput(
@@ -74,19 +75,17 @@ extension FilterSearchConditionBuilder {
                 value: value,
                 jsonPath: jsonPath,
             ),
-            binder: &binder,
         )
     }
 
     private func buildKindClause(
         input: KindClauseInput,
-        binder: inout ParamBinder,
-    ) throws -> String {
+    ) throws -> QueryFragment {
         guard let sqlKind = input.operatorMeta.sqlKind else {
             throw BuilderError(message: "Missing sql_kind for operator '\(input.operatorCode)'")
         }
 
-        let handlers: [String: (KindClauseInput, inout ParamBinder) throws -> String] = [
+        let handlers: [String: (KindClauseInput) throws -> QueryFragment] = [
             "exists": buildExistsKindClause,
             "empty": buildEmptyKindClause,
             "range": buildRangeKindClause,
@@ -103,193 +102,191 @@ extension FilterSearchConditionBuilder {
         guard let handler = handlers[sqlKind] else {
             throw BuilderError(message: "Unsupported sql_kind: \(sqlKind)")
         }
-        return try handler(input, &binder)
+        return try handler(input)
     }
 
     private func buildExistsKindClause(
         input: KindClauseInput,
-        binder: inout ParamBinder,
-    ) -> String {
-        buildExistsClause(field: input.field, jsonPath: input.jsonPath, binder: &binder)
+    ) -> QueryFragment {
+        buildExistsClause(field: input.field, jsonPath: input.jsonPath)
     }
 
     private func buildEmptyKindClause(
         input: KindClauseInput,
-        binder: inout ParamBinder,
-    ) -> String {
+    ) -> QueryFragment {
         buildEmptyClause(
             field: input.field,
             mapping: input.mapping,
             jsonPath: input.jsonPath,
-            binder: &binder,
         )
     }
 
     private func buildRangeKindClause(
         input: KindClauseInput,
-        binder: inout ParamBinder,
-    ) throws -> String {
+    ) throws -> QueryFragment {
         try buildRangeClause(
             field: input.field,
             operatorMeta: input.operatorMeta,
             value: input.value,
-            binder: &binder,
         )
     }
 
     private func buildLikePrefixKindClause(
         input: KindClauseInput,
-        binder: inout ParamBinder,
-    ) throws -> String {
+    ) throws -> QueryFragment {
         try buildLikeClause(
             field: input.field,
             operatorMeta: input.operatorMeta,
             value: input.value,
             prefix: true,
             suffix: false,
-            binder: &binder,
         )
     }
 
     private func buildLikeSuffixKindClause(
         input: KindClauseInput,
-        binder: inout ParamBinder,
-    ) throws -> String {
+    ) throws -> QueryFragment {
         try buildLikeClause(
             field: input.field,
             operatorMeta: input.operatorMeta,
             value: input.value,
             prefix: false,
             suffix: true,
-            binder: &binder,
         )
     }
 
     private func buildLikePatternKindClause(
         input: KindClauseInput,
-        binder: inout ParamBinder,
-    ) throws -> String {
+    ) throws -> QueryFragment {
         try buildLikePatternClause(
             field: input.field,
             operatorMeta: input.operatorMeta,
             operatorCode: input.operatorCode,
             value: input.value,
-            binder: &binder,
         )
     }
 
     private func buildComparisonKindClause(
         input: KindClauseInput,
-        binder: inout ParamBinder,
-    ) throws -> String {
+    ) throws -> QueryFragment {
         try buildComparisonClause(
             field: input.field,
             operatorMeta: input.operatorMeta,
             value: input.value,
-            binder: &binder,
         )
     }
 
     private func buildStringListAnyKindClause(
         input: KindClauseInput,
-        binder: inout ParamBinder,
-    ) throws -> String {
+    ) throws -> QueryFragment {
         try buildStringListAnyClause(
             field: input.field,
             value: input.value,
             jsonPath: input.jsonPath,
-            binder: &binder,
         )
     }
 
     private func buildStringListNotAnyKindClause(
         input: KindClauseInput,
-        binder: inout ParamBinder,
-    ) throws -> String {
+    ) throws -> QueryFragment {
         try buildStringListNotAnyClause(
             field: input.field,
             value: input.value,
             jsonPath: input.jsonPath,
-            binder: &binder,
         )
     }
 
     private func buildStringListAllKindClause(
         input: KindClauseInput,
-        binder: inout ParamBinder,
-    ) throws -> String {
+    ) throws -> QueryFragment {
         try buildStringListAllClause(
             field: input.field,
             value: input.value,
             jsonPath: input.jsonPath,
-            binder: &binder,
         )
     }
 
     private func buildStringListNotAllKindClause(
         input: KindClauseInput,
-        binder: inout ParamBinder,
-    ) throws -> String {
+    ) throws -> QueryFragment {
         try buildStringListNotAllClause(
             field: input.field,
             value: input.value,
             jsonPath: input.jsonPath,
-            binder: &binder,
         )
     }
 
     private func buildExistsClause(
-        field: String,
+        field: QueryFragment,
         jsonPath: String?,
-        binder: inout ParamBinder,
-    ) -> String {
+    ) -> QueryFragment {
         guard let jsonPath else {
-            return "\(field) IS NOT NULL"
+            return QueryFragment.isNotNull(field)
         }
-        let placeholder = binder.bind(jsonPath)
-        return "json_type(original_metadata, \(placeholder)) IS NOT NULL"
+        let jsonPathBinding = QueryBinding.text(jsonPath)
+        let metadataColumn: QueryFragment = "\(FilterSearchEntryTable.originalMetadata)"
+        return QueryFragment.isNotNull(
+            QueryFragment.jsonType(metadataColumn, jsonPathBinding),
+        )
     }
 
     private func buildEmptyClause(
-        field: String,
+        field: QueryFragment,
         mapping: PropertyMapping,
         jsonPath: String?,
-        binder: inout ParamBinder,
-    ) -> String {
+    ) -> QueryFragment {
         if mapping.type == "string_list", jsonPath != nil {
-            let first = binder.bind(jsonPath)
-            let second = binder.bind(jsonPath)
-            let lengthClause = "json_array_length(original_metadata, {})"
-            return "(\(String(format: lengthClause, first)) IS NULL OR \(String(format: lengthClause, second)) = 0)"
+            let jsonPathBinding = QueryBinding.text(jsonPath ?? "")
+            let metadataColumn: QueryFragment = "\(FilterSearchEntryTable.originalMetadata)"
+            let lengthClause = QueryFragment.jsonArrayLength(
+                metadataColumn,
+                jsonPathBinding,
+            )
+            let emptyClause = QueryFragment.eq(lengthClause, QueryBinding.int(0))
+            return QueryFragment.group(
+                [
+                    QueryFragment.isNull(lengthClause),
+                    emptyClause,
+                ].joinedWithOr(),
+            )
         }
-        return "(\(field) IS NULL OR \(field) = '')"
+        return QueryFragment.group(
+            [
+                QueryFragment.isNull(field),
+                QueryFragment.eq(field, QueryBinding.text("")),
+            ].joinedWithOr(),
+        )
     }
 
     private func buildDbStringListClause(
-        field: String,
+        field: QueryFragment,
         operatorMeta: OperatorDefinition,
         value: JSONValue?,
-        binder: inout ParamBinder,
-    ) throws -> String {
+    ) throws -> QueryFragment {
         guard let sqlKind = operatorMeta.sqlKind else {
             throw BuilderError(message: "Missing sql_kind for string_list operator")
         }
 
         if sqlKind == "exists" {
-            return "\(field) IS NOT NULL"
+            return QueryFragment.isNotNull(field)
         }
         if sqlKind == "empty" {
-            return "(\(field) IS NULL OR \(field) = '')"
+            return QueryFragment.group(
+                [
+                    QueryFragment.isNull(field),
+                    QueryFragment.eq(field, QueryBinding.text("")),
+                ].joinedWithOr(),
+            )
         }
 
         let values = try normalizeStringListValues(value)
         switch sqlKind {
         case "string_list_any":
-            let placeholders = binder.bindMany(values)
-            return "\(field) IN (\(placeholders))"
+            let placeholders = bindMany(values)
+            return QueryFragment.inList(field, placeholders)
         case "string_list_not_any":
-            let placeholders = binder.bindMany(values)
-            return "\(field) NOT IN (\(placeholders))"
+            let placeholders = bindMany(values)
+            return QueryFragment.notInList(field, placeholders)
         case "string_list_all", "string_list_not_all":
             throw BuilderError(message: "Operator '\(operatorMeta.uiLabel ?? "")' not supported for DB string_list")
         default:
@@ -298,28 +295,26 @@ extension FilterSearchConditionBuilder {
     }
 
     private func buildRangeClause(
-        field: String,
+        field: QueryFragment,
         operatorMeta: OperatorDefinition,
         value: JSONValue?,
-        binder: inout ParamBinder,
-    ) throws -> String {
+    ) throws -> QueryFragment {
         guard case let .array(values)? = value, values.count == 2 else {
             throw BuilderError(message: "'\(operatorMeta.uiLabel ?? "")' requires [min, max]")
         }
-        let start = binder.bind(values[0].databaseValue)
-        let end = binder.bind(values[1].databaseValue)
+        let start = bind(values[0])
+        let end = bind(values[1])
         let sqlOperator = resolveSqlOperator(operatorMeta)
-        return "\(field) \(sqlOperator) \(start) AND \(end)"
+        return QueryFragment.between(field, op: sqlOperator, start: start, end: end)
     }
 
     private func buildLikeClause(
-        field: String,
+        field: QueryFragment,
         operatorMeta: OperatorDefinition,
         value: JSONValue?,
         prefix: Bool,
         suffix: Bool,
-        binder: inout ParamBinder,
-    ) throws -> String {
+    ) throws -> QueryFragment {
         guard case let .string(text)? = value else {
             throw BuilderError(message: "'\(operatorMeta.uiLabel ?? "")' requires string value")
         }
@@ -330,106 +325,109 @@ extension FilterSearchConditionBuilder {
         if suffix {
             pattern = "%\(pattern)"
         }
-        let placeholder = binder.bind(pattern)
+        let placeholder = bind(.string(pattern))
         let sqlOperator = resolveSqlOperator(operatorMeta)
-        return "\(field) \(sqlOperator) \(placeholder)"
+        return QueryFragment.compare(field, op: sqlOperator, rhs: placeholder)
     }
 
     private func buildLikePatternClause(
-        field: String,
+        field: QueryFragment,
         operatorMeta: OperatorDefinition,
         operatorCode: String,
         value: JSONValue?,
-        binder: inout ParamBinder,
-    ) throws -> String {
+    ) throws -> QueryFragment {
         let normalized = normalizeLikePatternValue(operatorCode, value: value)
-        let placeholder = binder.bind(normalized)
+        let placeholder = bind(normalized)
         let sqlOperator = resolveSqlOperator(operatorMeta)
-        return "\(field) \(sqlOperator) \(placeholder)"
+        return QueryFragment.compare(field, op: sqlOperator, rhs: placeholder)
     }
 
     private func buildComparisonClause(
-        field: String,
+        field: QueryFragment,
         operatorMeta: OperatorDefinition,
         value: JSONValue?,
-        binder: inout ParamBinder,
-    ) throws -> String {
-        let placeholder = binder.bind(value?.databaseValue)
+    ) throws -> QueryFragment {
+        let placeholder = bind(value)
         let sqlOperator = resolveSqlOperator(operatorMeta)
-        return "\(field) \(sqlOperator) \(placeholder)"
+        return QueryFragment.compare(field, op: sqlOperator, rhs: placeholder)
     }
 
     private func buildStringListAnyClause(
-        field: String,
+        field: QueryFragment,
         value: JSONValue?,
         jsonPath: String?,
-        binder: inout ParamBinder,
-    ) throws -> String {
+    ) throws -> QueryFragment {
         let values = try normalizeStringListValues(value)
         if jsonPath == nil {
             if values.count == 1 {
-                let placeholder = binder.bind(values[0])
-                return "\(field) = \(placeholder)"
+                let placeholder = bind(values[0])
+                return QueryFragment.eq(field, placeholder)
             }
-            let placeholders = binder.bindMany(values)
-            return "\(field) IN (\(placeholders))"
+            let placeholders = bindMany(values)
+            return QueryFragment.inList(field, placeholders)
         }
-        let placeholders = binder.bindMany(values)
-        let jsonPlaceholder = binder.bind(jsonPath)
-        return "EXISTS (SELECT 1 FROM json_each(original_metadata, \(jsonPlaceholder)) WHERE value IN (\(placeholders)))"
+        let placeholders = bindMany(values)
+        let jsonPlaceholder = QueryBinding.text(jsonPath ?? "")
+        let metadataColumn: QueryFragment = "\(FilterSearchEntryTable.originalMetadata)"
+        return QueryFragment.jsonEachExists(
+            field: metadataColumn,
+            path: jsonPlaceholder,
+            values: placeholders,
+        )
     }
 
     private func buildStringListNotAnyClause(
-        field: String,
+        field: QueryFragment,
         value: JSONValue?,
         jsonPath: String?,
-        binder: inout ParamBinder,
-    ) throws -> String {
+    ) throws -> QueryFragment {
         let clause = try buildStringListAnyClause(
             field: field,
             value: value,
             jsonPath: jsonPath,
-            binder: &binder,
         )
-        return "NOT \(clause)"
+        return QueryFragment.not(clause)
     }
 
     private func buildStringListAllClause(
-        field: String,
+        field: QueryFragment,
         value: JSONValue?,
         jsonPath: String?,
-        binder: inout ParamBinder,
-    ) throws -> String {
+    ) throws -> QueryFragment {
         let values = try normalizeStringListValues(value)
         if jsonPath == nil {
             if values.count == 1 {
-                let placeholder = binder.bind(values[0])
-                return "\(field) = \(placeholder)"
+                let placeholder = bind(values[0])
+                return QueryFragment.eq(field, placeholder)
             }
-            return "1=0"
+            return QueryFragment.alwaysFalse
         }
-        let placeholders = binder.bindMany(values)
-        let jsonPlaceholder = binder.bind(jsonPath)
-        let countPlaceholder = binder.bind(values.count)
-        return "(SELECT COUNT(DISTINCT value) FROM json_each(original_metadata, \(jsonPlaceholder)) WHERE value IN (\(placeholders))) = \(countPlaceholder)"
+        let placeholders = bindMany(values)
+        let jsonPlaceholder = QueryBinding.text(jsonPath ?? "")
+        let countPlaceholder = bind(QueryBinding.int(Int64(values.count)))
+        let metadataColumn: QueryFragment = "\(FilterSearchEntryTable.originalMetadata)"
+        return QueryFragment.jsonEachCountDistinctEquals(
+            field: metadataColumn,
+            path: jsonPlaceholder,
+            values: placeholders,
+            count: countPlaceholder,
+        )
     }
 
     private func buildStringListNotAllClause(
-        field: String,
+        field: QueryFragment,
         value: JSONValue?,
         jsonPath: String?,
-        binder: inout ParamBinder,
-    ) throws -> String {
+    ) throws -> QueryFragment {
         let clause = try buildStringListAllClause(
             field: field,
             value: value,
             jsonPath: jsonPath,
-            binder: &binder,
         )
-        return "NOT (\(clause))"
+        return QueryFragment.not(clause)
     }
 
-    private func normalizeStringListValues(_ value: JSONValue?) throws -> [DatabaseValueConvertible?] {
+    private func normalizeStringListValues(_ value: JSONValue?) throws -> [QueryBinding] {
         let values: [JSONValue] = if case let .array(items)? = value {
             items
         } else if let value {
@@ -441,17 +439,17 @@ extension FilterSearchConditionBuilder {
         guard !values.isEmpty else {
             throw BuilderError(message: "string_list operator requires non-empty value")
         }
-        return values.map(\.databaseValue)
+        return values.map { binding(from: $0) }
     }
 
-    private func normalizeLikePatternValue(_ operatorCode: String, value: JSONValue?) -> DatabaseValueConvertible? {
+    private func normalizeLikePatternValue(_ operatorCode: String, value: JSONValue?) -> QueryBinding {
         guard case let .string(text)? = value else {
-            return value?.databaseValue
+            return binding(from: value)
         }
         if ["cn", "nc"].contains(operatorCode), !text.contains("%") {
-            return "%\(text)%"
+            return .text("%\(text)%")
         }
-        return text
+        return .text(text)
     }
 
     private func resolveSqlOperator(_ operatorMeta: OperatorDefinition) -> String {
@@ -462,21 +460,5 @@ extension FilterSearchConditionBuilder {
             return ""
         }
         return kSqlKindDefaultOperators[sqlKind] ?? ""
-    }
-}
-
-private extension JSONValue {
-    var databaseValue: DatabaseValueConvertible? {
-        switch self {
-        case let .string(value): value
-        case let .number(value): value
-        case let .bool(value): value
-        case .array:
-            nil
-        case .object:
-            nil
-        case .null:
-            nil
-        }
     }
 }
