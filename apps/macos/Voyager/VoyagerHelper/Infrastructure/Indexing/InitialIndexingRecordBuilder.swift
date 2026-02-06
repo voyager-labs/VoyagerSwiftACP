@@ -48,7 +48,7 @@ enum InitialIndexingRecordBuilder {
         path: String,
         homeURL _: URL,
         cachedVolumeIdentifier: String?,
-    ) async -> EntryRecord? {
+    ) async -> FileRecord? {
         let fileURL = URL(fileURLWithPath: path)
         let standardizedURL = fileURL.standardizedFileURL
 
@@ -64,7 +64,7 @@ enum InitialIndexingRecordBuilder {
                 return nil
             }
 
-            let record = EntryRecord(
+            let record = FileRecord(
                 id: nil,
                 volumeIdentifier: identifiers.volumeIdentifier,
                 fileResourceIdentifier: identifiers.fileResourceIdentifier,

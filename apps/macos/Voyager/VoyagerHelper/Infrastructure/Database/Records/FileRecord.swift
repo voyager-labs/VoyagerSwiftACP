@@ -1,7 +1,7 @@
 import Foundation
 @preconcurrency import GRDB
 
-nonisolated struct EntryRecord: Codable, FetchableRecord, MutablePersistableRecord, Sendable {
+nonisolated struct FileRecord: Codable, FetchableRecord, MutablePersistableRecord, Sendable {
     var id: Int64?
     var volumeIdentifier: String
     var fileResourceIdentifier: String
@@ -23,7 +23,7 @@ nonisolated struct EntryRecord: Codable, FetchableRecord, MutablePersistableReco
     var originalMetadata: String
     var directoryId: Int64?
 
-    static let databaseTableName = EntriesSchema.tableName
+    static let databaseTableName = FilesSchema.tableName
     static let insertableColumns: [Columns] = [
         .volumeIdentifier,
         .fileResourceIdentifier,
@@ -123,7 +123,7 @@ nonisolated struct EntryRecord: Codable, FetchableRecord, MutablePersistableReco
 }
 
 // 논리 키는 유니크 제약 기준으로 사용된다.
-nonisolated struct EntryLogicalKey: Sendable {
+nonisolated struct FileLogicalKey: Sendable {
     let volumeIdentifier: String
     let fileResourceIdentifier: String
 }

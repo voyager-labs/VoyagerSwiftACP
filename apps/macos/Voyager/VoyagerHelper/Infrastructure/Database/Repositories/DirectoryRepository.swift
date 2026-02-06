@@ -246,13 +246,13 @@ nonisolated struct DirectoryRepository: Sendable {
         db: Database,
         newPath: String,
     ) throws {
-        let entriesTable = EntriesSchema.tableName
+        let filesTable = FilesSchema.tableName
         let syncEntriesSql = """
-        UPDATE \(entriesTable)
+        UPDATE \(filesTable)
         SET dir_path = (
             SELECT d.path
             FROM directories d
-            WHERE d.id = \(entriesTable).directory_id
+            WHERE d.id = \(filesTable).directory_id
         )
         WHERE directory_id IN (
             SELECT id

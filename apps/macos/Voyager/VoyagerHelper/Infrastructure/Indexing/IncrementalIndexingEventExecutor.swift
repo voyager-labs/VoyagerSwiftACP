@@ -70,7 +70,7 @@ final class IncrementalIndexingEventExecutor {
 
     // 변경 경로 DB 반영
     private func applyChanges(_ changes: [IncrementalIndexingPlannedChange]) async throws {
-        let entryRepo = EntryRepository(manager: manager, logger: logger)
+        let fileRepo = FileRepository(manager: manager, logger: logger)
         var insertedOrUpdated = 0
         var deleted = 0
         var lastError: Error?
@@ -78,13 +78,13 @@ final class IncrementalIndexingEventExecutor {
         for change in changes {
             switch change.action {
             case .delete:
-                let outcome = await handleDelete(entryRepo: entryRepo, path: change.path)
+                let outcome = await handleDelete(fileRepo: fileRepo, path: change.path)
                 deleted += outcome.deleted
                 if let error = outcome.error {
                     lastError = error
                 }
             case .upsert:
-                let outcome = await handleUpsert(entryRepo: entryRepo, path: change.path)
+                let outcome = await handleUpsert(fileRepo: fileRepo, path: change.path)
                 insertedOrUpdated += outcome.upserted
                 deleted += outcome.deleted
                 if let error = outcome.error {
@@ -108,11 +108,11 @@ final class IncrementalIndexingEventExecutor {
     }
 
     // 삭제 처리
-    private func handleDelete(entryRepo: EntryRepository, path: String) async -> ApplyOutcome {
+    private func handleDelete(fileRepo: FileRepository, path: String) async -> ApplyOutcome {
         do {
             let directoryRepo = DirectoryRepository(manager: manager, logger: logger)
             let deletedDirectories = try await directoryRepo.deleteByPathPrefix(path)
-            let deletedEntries = try await entryRepo.deleteByPathPrefix(path)
+            let deletedEntries = try await fileRepo.deleteByPathPrefix(path)
             return ApplyOutcome(upserted: 0, deleted: deletedDirectories + deletedEntries, error: nil)
         } catch {
             eventLogger.error(
@@ -123,9 +123,9 @@ final class IncrementalIndexingEventExecutor {
     }
 
     // 업서트 처리
-    private func handleUpsert(entryRepo: EntryRepository, path: String) async -> ApplyOutcome {
+    private func handleUpsert(fileRepo: FileRepository, path: String) async -> ApplyOutcome {
         if !FileManager.default.fileExists(atPath: path) {
-            return await handleDelete(entryRepo: entryRepo, path: path)
+            return await handleDelete(fileRepo: fileRepo, path: path)
         }
 
         guard let mdItem = MDItemCreate(kCFAllocatorDefault, path as CFString) else {
@@ -166,7 +166,7 @@ final class IncrementalIndexingEventExecutor {
             ) else {
                 return ApplyOutcome(upserted: 0, deleted: 0, error: nil)
             }
-            _ = try await entryRepo.upsertByPath(entryRecord)
+            _ = try await fileRepo.upsertByPath(entryRecord)
             return ApplyOutcome(upserted: 1, deleted: 0, error: nil)
         } catch {
             eventLogger.error(
@@ -210,10 +210,10 @@ final class IncrementalIndexingEventExecutor {
     // 단일 경로 재스캔
     private func rescanDirectory(path: String) async throws {
         let standardized = URL(fileURLWithPath: path).standardizedFileURL.path
-        let entryRepo = EntryRepository(manager: manager, logger: logger)
+        let fileRepo = FileRepository(manager: manager, logger: logger)
 
         guard FileManager.default.fileExists(atPath: standardized) else {
-            let outcome = await handleDelete(entryRepo: entryRepo, path: standardized)
+            let outcome = await handleDelete(fileRepo: fileRepo, path: standardized)
             if let error = outcome.error {
                 throw error
             }
@@ -252,12 +252,12 @@ final class IncrementalIndexingEventExecutor {
                 to: &entryRecord,
                 directoryRepo: directoryRepo,
             ) else { continue }
-            _ = try await entryRepo.upsertByPath(entryRecord)
+            _ = try await fileRepo.upsertByPath(entryRecord)
         }
 
         let existingPaths = try await fetchExistingPaths(prefix: standardized)
         for existingPath in existingPaths where !scannedPaths.contains(existingPath) {
-            _ = try await entryRepo.deleteByPath(existingPath)
+            _ = try await fileRepo.deleteByPath(existingPath)
         }
     }
 
@@ -280,7 +280,7 @@ final class IncrementalIndexingEventExecutor {
     // 재스캔 경로 목록 로드
     private func fetchExistingPaths(prefix: String) async throws -> [String] {
         let likePrefix = prefix.hasSuffix("/") ? "\(prefix)%" : "\(prefix)/%"
-        let tableName = EntriesSchema.tableName
+        let tableName = FilesSchema.tableName
         return try await manager.read { db in
             try String.fetchAll(
                 db,
@@ -293,7 +293,7 @@ final class IncrementalIndexingEventExecutor {
 
 private extension IncrementalIndexingEventExecutor {
     func assignDirectoryId(
-        to entryRecord: inout EntryRecord,
+        to entryRecord: inout FileRecord,
         directoryRepo: DirectoryRepository,
     ) async -> Bool {
         let directoryPath = parentDirectoryPath(forEntryPath: entryRecord.path)

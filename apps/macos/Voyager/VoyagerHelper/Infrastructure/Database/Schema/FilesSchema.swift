@@ -1,7 +1,7 @@
 import Foundation
 
-nonisolated enum EntriesSchema {
-    static let tableName = "entries"
+nonisolated enum FilesSchema {
+    static let tableName = "files"
 
     static let requiredColumns = [
         "id",

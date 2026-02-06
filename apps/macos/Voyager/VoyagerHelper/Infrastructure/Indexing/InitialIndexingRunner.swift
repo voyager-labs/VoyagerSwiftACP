@@ -125,7 +125,7 @@ enum InitialIndexingRunner {
     }
 
     private struct BatchPlan {
-        let entryRepo: EntryRepository
+        let fileRepo: FileRepository
         let directoryRepo: DirectoryRepository
         let effectiveBatchSize: Int
         let pathBatchSize: Int
@@ -142,7 +142,7 @@ enum InitialIndexingRunner {
     private struct AppendContext {
         let homeURL: URL
         let cachedVolumeIdentifier: String?
-        let entryRepo: EntryRepository
+        let fileRepo: FileRepository
         let directoryRepo: DirectoryRepository
         let batchSize: Int
     }
@@ -152,11 +152,11 @@ enum InitialIndexingRunner {
         resultCount: Int,
         context: ProcessContext,
     ) async throws -> Int {
-        let entryRepo = context.plan.entryRepo
+        let fileRepo = context.plan.fileRepo
         let directoryRepo = context.plan.directoryRepo
         let effectiveBatchSize = context.plan.effectiveBatchSize
         var inserted = 0
-        var batch: [EntryRecord] = []
+        var batch: [FileRecord] = []
         batch.reserveCapacity(effectiveBatchSize)
         var directoryCache: [String: Int64] = [:]
 
@@ -164,7 +164,7 @@ enum InitialIndexingRunner {
         let appendContext = AppendContext(
             homeURL: context.homeURL,
             cachedVolumeIdentifier: context.cachedVolumeIdentifier,
-            entryRepo: entryRepo,
+            fileRepo: fileRepo,
             directoryRepo: directoryRepo,
             batchSize: effectiveBatchSize,
         )
@@ -189,7 +189,7 @@ enum InitialIndexingRunner {
 
         try await flushBatch(
             &batch,
-            entryRepo: entryRepo,
+            fileRepo: fileRepo,
             inserted: &inserted,
             batchSize: effectiveBatchSize,
             keepCapacity: false,
@@ -203,10 +203,10 @@ enum InitialIndexingRunner {
         logger: Logger,
         batchSize: Int?,
     ) async throws -> BatchPlan {
-        let entryRepo = EntryRepository(manager: manager, logger: logger)
+        let fileRepo = FileRepository(manager: manager, logger: logger)
         let directoryRepo = DirectoryRepository(manager: manager, logger: logger)
         let maxBatchSize = try await manager.read { db in
-            try EntryRepository.maxBatchSize(in: db)
+            try FileRepository.maxBatchSize(in: db)
         }
         let maxPathBatchSize = try await manager.read { db in
             try Int.fetchOne(db, sql: "PRAGMA max_variable_number") ?? 999
@@ -214,7 +214,7 @@ enum InitialIndexingRunner {
         let effectiveBatchSize = batchSize ?? maxBatchSize
         let pathBatchSize = min(maxPathBatchSize, max(1000, effectiveBatchSize))
         return BatchPlan(
-            entryRepo: entryRepo,
+            fileRepo: fileRepo,
             directoryRepo: directoryRepo,
             effectiveBatchSize: effectiveBatchSize,
             pathBatchSize: pathBatchSize,
@@ -241,7 +241,7 @@ enum InitialIndexingRunner {
         items: [IndexedItem],
         existingPaths: Set<String>,
         context: AppendContext,
-        batch: inout [EntryRecord],
+        batch: inout [FileRecord],
         inserted: inout Int,
         directoryCache: inout [String: Int64],
     ) async throws {
@@ -279,7 +279,7 @@ enum InitialIndexingRunner {
             if batch.count >= context.batchSize {
                 try await flushBatch(
                     &batch,
-                    entryRepo: context.entryRepo,
+                    fileRepo: context.fileRepo,
                     inserted: &inserted,
                     batchSize: context.batchSize,
                     keepCapacity: true,

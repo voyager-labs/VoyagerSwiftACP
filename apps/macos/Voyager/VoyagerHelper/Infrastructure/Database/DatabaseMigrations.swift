@@ -92,8 +92,8 @@ nonisolated enum DatabaseMigrations {
     }
 
     private static func validateExistingEntriesTable(_ db: Database) throws {
-        let existingColumns = try Set(db.columns(in: EntriesSchema.tableName).map(\.name))
-        let missing = EntriesSchema.requiredColumns.filter { !existingColumns.contains($0) }
+        let existingColumns = try Set(db.columns(in: FilesSchema.tableName).map(\.name))
+        let missing = FilesSchema.requiredColumns.filter { !existingColumns.contains($0) }
         if !missing.isEmpty {
             throw DatabaseError.migrationFailed(
                 "Legacy entries table missing columns: \(missing.joined(separator: ", "))",

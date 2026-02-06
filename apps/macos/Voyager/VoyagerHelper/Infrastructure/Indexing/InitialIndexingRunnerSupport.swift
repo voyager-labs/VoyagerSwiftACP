@@ -3,7 +3,7 @@ import Foundation
 
 extension InitialIndexingRunner {
     static func assignDirectoryId(
-        to entryRecord: inout EntryRecord,
+        to entryRecord: inout FileRecord,
         homeURL: URL,
         cachedVolumeIdentifier: String?,
         directoryRepo: DirectoryRepository,
@@ -169,7 +169,7 @@ extension InitialIndexingRunner {
         guard !paths.isEmpty else { return [] }
         return try await manager.read { db in
             let placeholders = Array(repeating: "?", count: paths.count).joined(separator: ", ")
-            let sql = "SELECT path FROM \(EntriesSchema.tableName) WHERE path IN (\(placeholders))"
+            let sql = "SELECT path FROM \(FilesSchema.tableName) WHERE path IN (\(placeholders))"
             let existing = try String.fetchAll(db, sql: sql, arguments: StatementArguments(paths))
             return Set(existing)
         }
@@ -196,14 +196,14 @@ extension InitialIndexingRunner {
     }
 
     static func flushBatch(
-        _ batch: inout [EntryRecord],
-        entryRepo: EntryRepository,
+        _ batch: inout [FileRecord],
+        fileRepo: FileRepository,
         inserted: inout Int,
         batchSize: Int,
         keepCapacity: Bool,
     ) async throws {
         guard !batch.isEmpty else { return }
-        try await entryRepo.insertBatch(batch, batchSize: batchSize)
+        try await fileRepo.insertBatch(batch, batchSize: batchSize)
         inserted += batch.count
         batch.removeAll(keepingCapacity: keepCapacity)
     }

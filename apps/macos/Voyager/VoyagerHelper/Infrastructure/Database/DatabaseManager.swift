@@ -231,7 +231,7 @@ actor DatabaseManager {
         let legacyEntries = try await pool.read { db in
             let hasMigrations = try db.tableExists("grdb_migrations")
             guard !hasMigrations else { return false }
-            return try db.tableExists(EntriesSchema.tableName)
+            return try db.tableExists(FilesSchema.tableName)
         }
         if legacyEntries {
             logger.info("Legacy entries DB detected without migrations; applying baseline migrations")
