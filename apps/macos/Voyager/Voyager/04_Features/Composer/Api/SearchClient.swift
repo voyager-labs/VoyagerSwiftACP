@@ -1,88 +1,11 @@
 import ComposableArchitecture
 import Foundation
+import Logging
 import SwiftDotenv
-
-struct SearchFiltersPayload: Codable, Equatable, Sendable {
-    let scopes: [String]
-    let conditions: [SearchConditionPayload]
-}
-
-struct SearchConditionPayload: Codable, Equatable, Sendable {
-    let propertyKey: String
-    let `operator`: String
-    let value: JSONValue?
-
-    enum CodingKeys: String, CodingKey {
-        case propertyKey
-        case `operator`
-        case value
-    }
-}
 
 struct SearchRequestPayload: Codable, Equatable, Sendable {
     let query: String
     let filters: SearchFiltersPayload
-}
-
-struct FiltersOnlyRequestPayload: Codable, Equatable, Sendable {
-    let filters: SearchFiltersPayload
-}
-
-struct SearchResponsePayload: Codable, Equatable, Sendable {
-    let itemCount: Int
-    let appliedFilters: AppliedFiltersPayload?
-    let items: [JSONValue]?
-}
-
-struct AppliedFiltersPayload: Codable, Equatable, Sendable {
-    let scopes: [String]?
-    let conditions: [SearchConditionPayload]?
-}
-
-enum JSONValue: Codable, Equatable, Sendable {
-    case string(String)
-    case number(Double)
-    case bool(Bool)
-    case array([JSONValue])
-    case object([String: JSONValue])
-    case null
-
-    init(from decoder: Decoder) throws {
-        let container = try decoder.singleValueContainer()
-        if container.decodeNil() {
-            self = .null
-        } else if let boolValue = try? container.decode(Bool.self) {
-            self = .bool(boolValue)
-        } else if let numberValue = try? container.decode(Double.self) {
-            self = .number(numberValue)
-        } else if let stringValue = try? container.decode(String.self) {
-            self = .string(stringValue)
-        } else if let arr = try? container.decode([JSONValue].self) {
-            self = .array(arr)
-        } else if let obj = try? container.decode([String: JSONValue].self) {
-            self = .object(obj)
-        } else {
-            throw DecodingError.dataCorruptedError(in: container, debugDescription: "Unsupported JSONValue")
-        }
-    }
-
-    func encode(to encoder: Encoder) throws {
-        var container = encoder.singleValueContainer()
-        switch self {
-        case let .string(value):
-            try container.encode(value)
-        case let .number(value):
-            try container.encode(value)
-        case let .bool(value):
-            try container.encode(value)
-        case let .array(value):
-            try container.encode(value)
-        case let .object(value):
-            try container.encode(value)
-        case .null:
-            try container.encodeNil()
-        }
-    }
 }
 
 struct SearchClient: Sendable {
@@ -123,7 +46,7 @@ extension SearchClient: DependencyKey {
                 try await post(path: "api/collection", body: request)
             },
             applyFilters: { request in
-                try await post(path: "api/collection/filters", body: request)
+                try await applyFiltersViaHelper(request)
             },
         )
     }()
@@ -135,6 +58,177 @@ extension SearchClient: DependencyKey {
 }
 
 extension SearchClient: TestDependencyKey {}
+
+private extension SearchClient {
+    static func applyFiltersViaHelper(_ request: FiltersOnlyRequestPayload) async throws -> SearchResponsePayload {
+        try await FilterSearchXPCClient.applyFilters(request)
+    }
+}
+
+private enum FilterSearchXPCClient {
+    private nonisolated(unsafe) static let logger = Logger(label: "Voyager.FilterSearchXPC")
+    private nonisolated(unsafe) static let timeoutSeconds: TimeInterval = 8
+
+    static func applyFilters(
+        _ request: FiltersOnlyRequestPayload,
+    ) async throws -> SearchResponsePayload {
+        let requestId = UUID().uuidString
+        logger.info("Dispatching filter search XPC request: id=\(requestId)")
+        let requestData = try encodeRequestData(from: request)
+
+        return try await withCheckedThrowingContinuation(isolation: nil) { @Sendable continuation in
+            let context = RequestContext(
+                requestId: requestId,
+                logger: logger,
+                continuation: continuation,
+            )
+            context.start(requestData: requestData, timeout: timeoutSeconds)
+        }
+    }
+}
+
+private extension FilterSearchXPCClient {
+    static func encodeRequestData(from request: FiltersOnlyRequestPayload) throws -> Data {
+        do {
+            return try JSONEncoder().encode(request)
+        } catch {
+            throw HelperSearchError(code: "ENCODE_FAILED", message: error.localizedDescription)
+        }
+    }
+
+    final class RequestContext: @unchecked Sendable {
+        private nonisolated(unsafe) let requestId: String
+        private nonisolated(unsafe) let logger: Logger
+        private nonisolated(unsafe) let queue: DispatchQueue
+        private nonisolated(unsafe) let lock = NSLock()
+
+        private nonisolated(unsafe) var continuation: CheckedContinuation<SearchResponsePayload, Error>?
+        private nonisolated(unsafe) var connection: NSXPCConnection?
+        private nonisolated(unsafe) var timeoutWorkItem: DispatchWorkItem?
+
+        nonisolated init(
+            requestId: String,
+            logger: Logger,
+            continuation: CheckedContinuation<SearchResponsePayload, Error>,
+        ) {
+            self.requestId = requestId
+            self.logger = logger
+            self.continuation = continuation
+            queue = DispatchQueue(label: "fm.voyager.search.filter.xpc.\(requestId)")
+        }
+
+        nonisolated func start(requestData: Data, timeout: TimeInterval) {
+            queue.async {
+                let connection = NSXPCConnection(serviceName: FilterSearchXPCServiceConstants.machServiceName)
+                self.storeConnection(connection)
+                connection.remoteObjectInterface = NSXPCInterface(with: FilterSearchXPCServiceProtocol.self)
+                connection.interruptionHandler = { [self] in
+                    logger.warning("Filter search XPC interrupted: id=\(requestId)")
+                    finish(.failure(HelperSearchError(code: "HELPER_INTERRUPTED", message: nil)))
+                }
+                connection.invalidationHandler = { [self] in
+                    logger.info("Filter search XPC invalidated: id=\(requestId)")
+                }
+                connection.resume()
+
+                let timeoutWorkItem = DispatchWorkItem { [self] in
+                    logger.warning("Filter search helper timeout: id=\(requestId)")
+                    finish(.failure(HelperSearchError(code: "HELPER_TIMEOUT", message: nil)))
+                }
+                self.storeTimeoutWorkItem(timeoutWorkItem)
+                self.queue.asyncAfter(deadline: .now() + timeout, execute: timeoutWorkItem)
+
+                guard let proxy = connection.remoteObjectProxyWithErrorHandler({ [self] error in
+                    self.logger.warning(
+                        "Filter search XPC transport failed: id=\(self.requestId) error=\(error)",
+                    )
+                    self.finish(.failure(error))
+                }) as? FilterSearchXPCServiceProtocol
+                else {
+                    self.finish(.failure(HelperSearchError(code: "PROXY_UNAVAILABLE", message: nil)))
+                    return
+                }
+
+                proxy.applyFilters(requestData) { [self] responseData, error in
+                    queue.async {
+                        self.handleReply(responseData: responseData, error: error)
+                    }
+                }
+            }
+        }
+
+        private nonisolated func handleReply(responseData: Data?, error: NSError?) {
+            if let error {
+                logger.warning(
+                    "Filter search XPC failed: id=\(requestId) error=\(error)",
+                )
+                finish(.failure(error))
+                return
+            }
+
+            guard let responseData else {
+                finish(.failure(HelperSearchError(code: "EMPTY_RESPONSE", message: nil)))
+                return
+            }
+
+            Task { @MainActor [self, responseData] in
+                do {
+                    let response = try JSONDecoder().decode(SearchResponsePayload.self, from: responseData)
+                    logger.info(
+                        "Filter search response received: id=\(requestId) items=\(response.itemCount)",
+                    )
+                    finish(.success(response))
+                } catch {
+                    finish(
+                        .failure(
+                            HelperSearchError(code: "DECODE_FAILED", message: error.localizedDescription),
+                        ),
+                    )
+                }
+            }
+        }
+
+        private nonisolated func finish(_ result: Result<SearchResponsePayload, Error>) {
+            lock.lock()
+            let currentContinuation = continuation
+            let currentConnection = connection
+            let currentTimeoutWorkItem = timeoutWorkItem
+            continuation = nil
+            connection = nil
+            timeoutWorkItem = nil
+            lock.unlock()
+
+            guard let currentContinuation else { return }
+            currentTimeoutWorkItem?.cancel()
+            currentConnection?.invalidate()
+            currentContinuation.resume(with: result)
+        }
+
+        private nonisolated func storeConnection(_ connection: NSXPCConnection) {
+            lock.lock()
+            self.connection = connection
+            lock.unlock()
+        }
+
+        private nonisolated func storeTimeoutWorkItem(_ timeoutWorkItem: DispatchWorkItem) {
+            lock.lock()
+            self.timeoutWorkItem = timeoutWorkItem
+            lock.unlock()
+        }
+    }
+}
+
+private struct HelperSearchError: LocalizedError {
+    let code: String
+    let message: String?
+
+    var errorDescription: String? {
+        if let message {
+            return "\(code): \(message)"
+        }
+        return code
+    }
+}
 
 extension DependencyValues {
     nonisolated var searchClient: SearchClient {

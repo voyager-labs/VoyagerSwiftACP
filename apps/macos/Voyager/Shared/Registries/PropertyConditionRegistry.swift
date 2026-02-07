@@ -27,6 +27,7 @@ struct PropertyType: Decodable, Sendable {
 struct OperatorDefinition: Decodable, Sendable {
     let uiLabel: String?
     let sqlOperator: String?
+    let sqlKind: String?
     let valueShape: ValueShape?
     let valueCount: ValueCount?
     let allowedTypes: [String]?
@@ -37,6 +38,7 @@ struct OperatorDefinition: Decodable, Sendable {
     private enum CodingKeys: String, CodingKey {
         case uiLabel = "ui_label"
         case sqlOperator = "sql_operator"
+        case sqlKind = "sql_kind"
         case valueShape = "value_shape"
         case valueCount = "value_count"
         case allowedTypes = "allowed_types"

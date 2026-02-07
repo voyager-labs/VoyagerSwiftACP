@@ -48,7 +48,11 @@ enum DAUEntryActionKind: String {
 }
 
 enum VoyagerSentryMetricLogger {
-    static var userIdProvider: (() -> String?)?
+    private static let userIdStore = UserIdStore()
+
+    static func setUserId(_ userId: String?) {
+        userIdStore.set(userId)
+    }
 
     static func logMetric(
         _ name: String,
@@ -60,7 +64,7 @@ enum VoyagerSentryMetricLogger {
             "metric.name": name,
             "metric.value": value,
         ]
-        if let userId = userIdProvider?() {
+        if let userId = userIdStore.get() {
             attributes["metric.user_id"] = userId
         }
         if let tags {
@@ -112,5 +116,23 @@ enum VoyagerSentryMetricLogger {
         event.message = SentryMessage(formatted: name)
         event.tags = tags
         SentrySDK.capture(event: event)
+    }
+}
+
+private final class UserIdStore: @unchecked Sendable {
+    private nonisolated(unsafe) let lock = NSLock()
+    private nonisolated(unsafe) var value: String?
+
+    nonisolated func set(_ value: String?) {
+        lock.lock()
+        self.value = value
+        lock.unlock()
+    }
+
+    nonisolated func get() -> String? {
+        lock.lock()
+        let current = value
+        lock.unlock()
+        return current
     }
 }
