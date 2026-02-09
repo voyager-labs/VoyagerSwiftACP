@@ -230,6 +230,22 @@ private extension FilterSearchXPCClient {
             Task { @MainActor [self, responseData] in
                 do {
                     let response = try JSONDecoder().decode(SearchResponsePayload.self, from: responseData)
+
+                    if let payloadError = response.error {
+                        logger.warning(
+                            "\(operationLabel) payload error: id=\(requestId) code=\(payloadError.code)",
+                        )
+                        finish(
+                            .failure(
+                                HelperSearchError(
+                                    code: payloadError.code,
+                                    message: payloadError.details,
+                                ),
+                            ),
+                        )
+                        return
+                    }
+
                     logger.info(
                         "\(operationLabel) response received: id=\(requestId) items=\(response.itemCount)",
                     )
