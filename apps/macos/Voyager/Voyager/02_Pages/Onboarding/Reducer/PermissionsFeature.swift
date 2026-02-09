@@ -76,11 +76,11 @@ struct PermissionsFeature {
             case (.notGranted, .notGranted):
                 return
                     "No folders were granted for Voyager and Voyager Helper. "
-                    + "You can enable them later in System Settings."
+                        + "You can enable them later in System Settings."
             default:
                 return
                     "Some folders are still off for Voyager or Voyager Helper. "
-                    + "You can enable them later in System Settings."
+                        + "You can enable them later in System Settings."
             }
         }
 
