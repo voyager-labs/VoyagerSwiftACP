@@ -1,16 +1,15 @@
 menu_node_id	menu_scope	menu_type	parent_menu_node	level	menu_label	description
-app_menu_bar	app_main	menu_bar		1	-	앱 전체 상단 메뉴 바 루트
-voyager_menu	app_main	main_menu	app_menu_bar	2	Voyager	앱 이름 메뉴(About, Preferences, Quit 등)
-file_menu	app_main	main_menu	app_menu_bar	2	File	파일 생성·열기·저장·윈도우 관련 메뉴 컨테이너
-edit_menu	app_main	main_menu	app_menu_bar	2	Edit	편집 공통(복사, 붙여넣기 등) 메뉴 컨테이너
-view_menu	app_main	main_menu	app_menu_bar	2	View	레이아웃, 패널 토글, 정렬 방식 등 뷰 관련 메뉴 컨테이너
-go_menu	app_main	main_menu	app_menu_bar	2	Go	위치 이동·탐색 관련 메뉴 컨테이너
-window_menu	app_main	main_menu	app_menu_bar	2	Window	윈도우 관리 관련 메뉴 컨테이너
-help_menu	app_main	main_menu	app_menu_bar	2	Help	도움말, 피드백, 문서 링크 관련 메뉴 컨테이너
-
-entry_context_menu_root	entry_context	context_menu		1		Entry 우클릭 컨텍스트 메뉴 루트
-entry_context_automation_submenu	entry_context	submenu	entry_context_menu_root	2
-entry_context_metadata_group	entry_context	section	entry_context_menu_root	2
-sidebar_context
-tab_context
-page_context
+app_menu_bar	app_main	menu_bar	-	1	-	<<AI>> 앱 전체 상단 메뉴 바 루트
+voyager_menu	app_main	main_menu	app_menu_bar	2	Voyager	"<<AI>>앱 이름 메뉴(About, Preferences, Quit 등)"
+file_menu	app_main	main_menu	app_menu_bar	2	File	<<AI>>파일 생성·열기·저장·윈도우 관련 메뉴 컨테이너
+edit_menu	app_main	main_menu	app_menu_bar	2	Edit	"<<AI>>편집 공통(복사, 붙여넣기 등) 메뉴 컨테이너"
+view_menu	app_main	main_menu	app_menu_bar	2	View	"<<AI>>레이아웃, 패널 토글, 정렬 방식 등 뷰 관련 메뉴 컨테이너"
+go_menu	app_main	main_menu	app_menu_bar	2	Go	<<AI>>위치 이동·탐색 관련 메뉴 컨테이너
+window_menu	app_main	main_menu	app_menu_bar	2	Window	<<AI>>윈도우 관리 관련 메뉴 컨테이너
+help_menu	app_main	main_menu	app_menu_bar	2	Help	"<<AI>>도움말, 피드백, 문서 링크 관련 메뉴 컨테이너"
+entry_context_menu_root	entry_context	context_menu	-	1	-	<<AI>>Entry 우클릭 컨텍스트 메뉴 루트
+entry_context_automation_submenu	entry_context	submenu	entry_context_menu_root	2	-	TBD
+entry_context_metadata_group	entry_context	section	entry_context_menu_root	2	-	TBD
+sidebar_context	TBD	context_menu	TBD	TBD	TBD	TBD
+tab_context	TBD	context_menu	TBD	TBD	TBD	TBD
+page_context	TBD	context_menu	TBD	TBD	TBD	TBD
