@@ -1,45 +1,59 @@
 {
+  "schema_version": "1.0",
   "name": "FEATURES",
+  "primary_key": ["feature_id"],
   "columns": [
     {
       "name": "feature_category",
       "type": "string",
-      "description": ""
+      "required": true,
+      "description": "카테고리 제목(표시용)."
     },
     {
       "name": "feature_title",
       "type": "string",
-      "description": ""
+      "required": true,
+      "description": "기능 제목."
     },
     {
       "name": "feature_id",
       "type": "string",
-      "description": ""
+      "required": true,
+      "description": "기능 ID(PK)."
     },
     {
       "name": "release_phase",
       "type": "string",
-      "description": ""
+      "required": false,
+      "description": "릴리즈 단계 태그."
     },
     {
       "name": "status",
       "type": "string",
-      "description": ""
+      "required": false,
+      "description": "상태."
     },
     {
       "name": "description",
       "type": "string",
-      "description": ""
+      "required": false,
+      "description": "한 줄 설명."
     },
     {
       "name": "related_ui",
       "type": "string",
-      "description": ""
+      "required": false,
+      "ref": {
+        "table": "WINDOW_STRUCTURE",
+        "column": "structure_key"
+      },
+      "description": "UI 구조 참조(옵션, FK -> WINDOW_STRUCTURE.structure_key)."
     },
     {
       "name": "objects",
       "type": "string",
-      "description": ""
+      "required": false,
+      "description": "연관 오브젝트 키(자유 형식/TBD)."
     }
   ]
 }

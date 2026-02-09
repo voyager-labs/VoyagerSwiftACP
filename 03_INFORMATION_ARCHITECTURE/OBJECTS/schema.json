@@ -1,25 +1,31 @@
 {
+  "schema_version": "1.0",
   "name": "OBJECTS",
+  "primary_key": ["key"],
   "columns": [
     {
       "name": "category",
       "type": "string",
-      "description": ""
+      "required": true,
+      "description": "오브젝트 상위 분류."
     },
     {
       "name": "key",
       "type": "string",
-      "description": ""
+      "required": true,
+      "description": "오브젝트 식별자(PK)."
     },
     {
       "name": "label_ko",
       "type": "string",
-      "description": ""
+      "required": false,
+      "description": "한글 라벨."
     },
     {
       "name": "summary",
       "type": "string",
-      "description": ""
+      "required": false,
+      "description": "한 줄 정의."
     }
   ]
 }

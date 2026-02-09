@@ -1,35 +1,31 @@
 {
+  "schema_version": "1.0",
   "name": "FEATURE_CATEGORIES",
+  "primary_key": ["category_key"],
   "columns": [
     {
       "name": "order",
       "type": "number",
-      "description": ""
+      "required": false,
+      "description": "표시 순서."
     },
     {
       "name": "category_title",
       "type": "string",
-      "description": ""
+      "required": true,
+      "description": "카테고리 제목."
     },
     {
       "name": "category_key",
       "type": "string",
-      "description": ""
-    },
-    {
-      "name": "status",
-      "type": "string",
-      "description": ""
+      "required": true,
+      "description": "카테고리 키(PK)."
     },
     {
       "name": "description",
       "type": "string",
-      "description": ""
-    },
-    {
-      "name": "domain",
-      "type": "string",
-      "description": ""
+      "required": false,
+      "description": "카테고리 설명."
     }
   ]
 }

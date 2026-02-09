@@ -19,6 +19,7 @@
   - row를 유일하게 식별하는 컬럼 이름 목록
 - `null_values` (string[] | optional)
   - 테이블 전체에서 "빈 값"으로 취급할 센티넬(sentinel) 값 목록
+  - 이 레포의 기본 센티넬은 `-`이며, 별도 지정이 없으면 `-`를 빈 값으로 간주합니다.
 
 ## 컬럼 필드
 
@@ -28,9 +29,11 @@
 - `type` (string)
   - 현재 지원하는 primitive: `string`, `number`
 - `required` (boolean | optional)
-  - 컬럼이 존재해야 하고, 값이 비어 있으면 안 되는지
-- `nullable` (boolean | optional)
-  - null/빈 값 허용 여부 (`null_values`에 포함된 값 포함)
+  - row에서 값이 반드시 필요(필수 입력)한 컬럼인지
+  - `required: true`인 컬럼은 `-`(= `null_values`, 기본값) 표기를 사용하지 않습니다.
+  - `TBD`는 "아직 작성하지 못했지만 채워야 하는 값"을 의미하며, `required: true`인 컬럼에서도 사용할 수 있습니다.
+    - 단, `primary_key`로 지정된 컬럼에는 `TBD`를 사용하지 않습니다(안정적인 식별자 필요).
+  - `required: false`인 컬럼은 `-`/`TBD` 표기를 사용할 수 있습니다.
 - `description` (string | optional)
 - `ref` (object | optional)
   - 외래키(foreign-key) 유사 참조를 선언

@@ -7,21 +7,18 @@
       "name": "menu_node_id",
       "type": "string",
       "required": true,
-      "nullable": false,
       "description": "메뉴 노드 식별자(PK)."
     },
     {
       "name": "menu_scope",
       "type": "string",
       "required": false,
-      "nullable": false,
       "description": "메뉴를 묶기 위한 스코프 키(예: app_main, entry_context)."
     },
     {
       "name": "menu_type",
       "type": "string",
       "required": false,
-      "nullable": false,
       "enum": [
         "menu_bar",
         "main_menu",
@@ -35,7 +32,6 @@
       "name": "parent_menu_node",
       "type": "string",
       "required": false,
-      "nullable": true,
       "ref": {
         "table": "MENUS",
         "column": "menu_node_id"
@@ -46,21 +42,18 @@
       "name": "level",
       "type": "number",
       "required": false,
-      "nullable": false,
       "description": "메뉴 계층 레벨(1 = 루트)."
     },
     {
       "name": "menu_label",
       "type": "string",
       "required": false,
-      "nullable": false,
       "description": "표시 라벨(해당 없으면 '-')."
     },
     {
       "name": "description",
       "type": "string",
       "required": false,
-      "nullable": false,
       "description": "메뉴 노드 설명."
     }
   ]
