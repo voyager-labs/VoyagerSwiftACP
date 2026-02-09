@@ -1,7 +1,6 @@
 import ComposableArchitecture
 import Foundation
 import Logging
-import SwiftDotenv
 
 struct SearchClient: Sendable {
     var search: @Sendable (_ request: SearchRequestPayload) async throws -> SearchResponsePayload
@@ -65,16 +64,7 @@ private enum FilterSearchXPCClient {
     ) async throws -> SearchResponsePayload {
         let requestId = UUID().uuidString
         logger.info("Dispatching query search XPC request: id=\(requestId)")
-        let backendURL = await MainActor.run {
-            Dotenv["PUBLIC_BACKEND_URL"]?.stringValue
-        }
-        let requestData = try encodeRequestData(
-            from: QuerySearchXPCRequestPayload(
-                query: request.query,
-                filters: request.filters,
-                backendURL: backendURL,
-            ),
-        )
+        let requestData = try encodeRequestData(from: request)
 
         return try await withCheckedThrowingContinuation(isolation: nil) { @Sendable continuation in
             let context = RequestContext(
@@ -88,7 +78,7 @@ private enum FilterSearchXPCClient {
 }
 
 private extension FilterSearchXPCClient {
-    static func encodeRequestData(from request: QuerySearchXPCRequestPayload) throws -> Data {
+    static func encodeRequestData(from request: SearchRequestPayload) throws -> Data {
         do {
             return try JSONEncoder().encode(request)
         } catch {

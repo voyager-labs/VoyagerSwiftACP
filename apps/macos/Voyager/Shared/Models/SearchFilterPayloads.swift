@@ -3,16 +3,6 @@ struct SearchRequestPayload: Codable, Equatable, Sendable {
     let filters: SearchFiltersPayload
 }
 
-struct QuerySearchXPCRequestPayload: Codable, Equatable, Sendable {
-    let query: String
-    let filters: SearchFiltersPayload
-    let backendURL: String?
-
-    var searchRequest: SearchRequestPayload {
-        SearchRequestPayload(query: query, filters: filters)
-    }
-}
-
 struct SearchFiltersPayload: Codable, Equatable, Sendable {
     let scopes: [String]
     let conditions: [SearchConditionPayload]

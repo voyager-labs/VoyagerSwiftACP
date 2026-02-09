@@ -41,10 +41,7 @@ final class FilterSearchXPCService: NSObject, FilterSearchXPCServiceProtocol {
             do {
                 let request = try Self.decodeQueryRequest(from: requestData)
                 let queryService = QuerySearchService(filterService: service)
-                let response = try await queryService.querySearch(
-                    request.searchRequest,
-                    backendURLOverride: request.backendURL,
-                )
+                let response = try await queryService.querySearch(request)
                 let responseData = try Self.encodeResponse(response)
                 replyBox.call(responseData, nil)
             } catch {
@@ -70,9 +67,9 @@ final class FilterSearchXPCService: NSObject, FilterSearchXPCServiceProtocol {
         }
     }
 
-    private static func decodeQueryRequest(from data: Data) throws -> QuerySearchXPCRequestPayload {
+    private static func decodeQueryRequest(from data: Data) throws -> SearchRequestPayload {
         do {
-            return try JSONDecoder().decode(QuerySearchXPCRequestPayload.self, from: data)
+            return try JSONDecoder().decode(SearchRequestPayload.self, from: data)
         } catch {
             throw ServiceError.invalidRequest(details: error.localizedDescription)
         }
