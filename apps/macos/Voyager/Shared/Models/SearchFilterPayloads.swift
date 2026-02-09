@@ -38,11 +38,17 @@ struct SearchResponsePayload: Codable, Equatable, Sendable {
     let itemCount: Int
     let appliedFilters: AppliedFiltersPayload?
     let items: [JSONValue]?
+    let error: SearchErrorPayload?
 }
 
 struct AppliedFiltersPayload: Codable, Equatable, Sendable {
     let scopes: [String]?
     let conditions: [SearchConditionPayload]?
+}
+
+struct SearchErrorPayload: Codable, Equatable, Sendable {
+    let code: String
+    let details: String?
 }
 
 enum JSONValue: Codable, Equatable, Sendable {

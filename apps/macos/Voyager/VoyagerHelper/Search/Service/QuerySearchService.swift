@@ -26,7 +26,36 @@ struct QuerySearchService: Sendable {
             return try await filterService.applyFilters(request.filters)
         }
 
-        return try await requestBackendQuerySearch(request, backendURLOverride: backendURLOverride)
+        let plannedResponse: SearchResponsePayload
+        do {
+            plannedResponse = try await requestBackendQuerySearch(
+                request,
+                backendURLOverride: backendURLOverride,
+            )
+        } catch {
+            logger.warning("Backend query planning failed: \(error)")
+            return makeErrorResponse(
+                from: error,
+                fallbackFilters: request.filters,
+            )
+        }
+
+        if plannedResponse.error != nil {
+            return plannedResponse
+        }
+
+        let plannedFilters: SearchFiltersPayload
+        do {
+            plannedFilters = try makePlannedFilters(from: plannedResponse.appliedFilters)
+        } catch {
+            logger.warning("Backend query planning output invalid: \(error)")
+            return makeErrorResponse(
+                from: error,
+                fallbackFilters: request.filters,
+            )
+        }
+
+        return try await filterService.applyFilters(plannedFilters)
     }
 
     private func requestBackendQuerySearch(
@@ -86,24 +115,89 @@ struct QuerySearchService: Sendable {
         }
         return baseURL
     }
+
+    private func makePlannedFilters(from appliedFilters: AppliedFiltersPayload?) throws -> SearchFiltersPayload {
+        guard let appliedFilters else {
+            logger.error("Backend query search response missing appliedFilters")
+            throw QuerySearchError.appliedFiltersMissing
+        }
+
+        return SearchFiltersPayload(
+            scopes: appliedFilters.scopes ?? [],
+            conditions: appliedFilters.conditions ?? [],
+        )
+    }
+
+    private func makeErrorResponse(
+        from error: Error,
+        fallbackFilters: SearchFiltersPayload,
+    ) -> SearchResponsePayload {
+        let payloadError = mapErrorPayload(from: error)
+        return SearchResponsePayload(
+            itemCount: 0,
+            appliedFilters: AppliedFiltersPayload(
+                scopes: fallbackFilters.scopes,
+                conditions: fallbackFilters.conditions,
+            ),
+            items: [],
+            error: payloadError,
+        )
+    }
+
+    private func mapErrorPayload(from error: Error) -> SearchErrorPayload {
+        if let queryError = error as? QuerySearchError {
+            return SearchErrorPayload(
+                code: queryError.payloadCode,
+                details: queryError.payloadDetails,
+            )
+        }
+
+        if let urlError = error as? URLError {
+            switch urlError.code {
+            case .timedOut:
+                return SearchErrorPayload(code: "BACKEND_TIMEOUT", details: urlError.localizedDescription)
+            default:
+                return SearchErrorPayload(
+                    code: "BACKEND_REQUEST_FAILED",
+                    details: urlError.localizedDescription,
+                )
+            }
+        }
+
+        return SearchErrorPayload(code: "QUERY_SEARCH_FAILED", details: String(describing: error))
+    }
 }
 
-private enum QuerySearchError: LocalizedError {
+private enum QuerySearchError: Error {
     case backendURLMissing
     case backendURLInvalid(String)
     case backendResponseInvalid
     case backendDecodeFailed(String)
+    case appliedFiltersMissing
 
-    var errorDescription: String? {
+    var payloadCode: String {
         switch self {
         case .backendURLMissing:
             "BACKEND_URL_MISSING"
-        case let .backendURLInvalid(rawValue):
-            "BACKEND_URL_INVALID: \(rawValue)"
+        case .backendURLInvalid:
+            "BACKEND_URL_INVALID"
         case .backendResponseInvalid:
             "BACKEND_RESPONSE_INVALID"
+        case .backendDecodeFailed:
+            "BACKEND_DECODE_FAILED"
+        case .appliedFiltersMissing:
+            "APPLIED_FILTERS_MISSING"
+        }
+    }
+
+    var payloadDetails: String? {
+        switch self {
+        case .backendURLMissing, .backendResponseInvalid, .appliedFiltersMissing:
+            nil
+        case let .backendURLInvalid(rawValue):
+            rawValue
         case let .backendDecodeFailed(details):
-            "BACKEND_DECODE_FAILED: \(details)"
+            details
         }
     }
 }

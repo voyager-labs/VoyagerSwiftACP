@@ -68,6 +68,7 @@ struct FilterSearchService: Sendable {
                 conditions: filters.conditions,
             ),
             items: items,
+            error: nil,
         )
     }
 
