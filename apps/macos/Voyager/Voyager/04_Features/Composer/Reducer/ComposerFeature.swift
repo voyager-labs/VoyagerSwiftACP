@@ -163,9 +163,6 @@ struct ComposerFeature {
             case .saveCollection:
                 let payload = SaveRequestPayload(
                     context: state.collectionContext,
-                    sortKey: state.sortKey.rawValue,
-                    sortOrder: state.sortOrder.rawValue,
-                    viewLayout: state.viewLayout.rawValue,
                     isSearchLoading: state.isLoadingSearch,
                     isFiltersLoading: state.isLoadingFilters,
                 )
@@ -177,9 +174,6 @@ struct ComposerFeature {
             case .saveCollectionAs:
                 let payload = SaveRequestPayload(
                     context: state.collectionContext,
-                    sortKey: state.sortKey.rawValue,
-                    sortOrder: state.sortOrder.rawValue,
-                    viewLayout: state.viewLayout.rawValue,
                     isSearchLoading: state.isLoadingSearch,
                     isFiltersLoading: state.isLoadingFilters,
                 )

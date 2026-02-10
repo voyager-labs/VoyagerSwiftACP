@@ -133,9 +133,6 @@ private func validateSavePayload(
     let validation = validateCollectionContext(
         context,
         query: trimmedQuery,
-        sortKey: payload.sortKey,
-        sortOrder: payload.sortOrder,
-        viewLayout: payload.viewLayout,
     )
 
     switch validation {
@@ -152,9 +149,6 @@ private func validateSavePayload(
 private func validateCollectionContext(
     _ context: CollectionContext,
     query: String,
-    sortKey: String,
-    sortOrder: String,
-    viewLayout: String,
 ) -> Result<CollectionSaveSnapshot, CollectionSaveValidationError> {
     if query.isEmpty, context.scopes.isEmpty, context.conditions.isEmpty {
         return .failure(.emptyContent)
@@ -166,9 +160,6 @@ private func validateCollectionContext(
             query: query,
             scopes: context.scopes,
             conditions: conditions,
-            sortKey: sortKey,
-            sortOrder: sortOrder,
-            viewLayout: viewLayout,
         ))
     } catch let error as CollectionSaveValidationError {
         return .failure(error)
@@ -284,9 +275,6 @@ private func makeCollectionFile(
         query: snapshot.query,
         scopes: snapshot.scopes,
         conditions: snapshot.conditions,
-        sortKey: snapshot.sortKey,
-        sortOrder: snapshot.sortOrder,
-        viewLayout: snapshot.viewLayout,
         appVersion: appVersion,
     )
 }

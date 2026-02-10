@@ -16,9 +16,6 @@ struct ComposerState: Equatable {
     var isPresented: Bool = false
     var collectionContext: CollectionContext?
     var openedCollectionURL: URL?
-    var sortKey: SortKey = .name
-    var sortOrder: SortOrder = .ascending
-    var viewLayout: ContentViewLayout = .list
     var text: String = ""
     var scopes: [String] = []
     var conditions: [Condition] = []

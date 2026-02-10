@@ -11,9 +11,6 @@ enum CollectionAction: CasePathable, Sendable {
 
 struct SaveRequestPayload: Equatable, Sendable {
     let context: CollectionContext?
-    let sortKey: String
-    let sortOrder: String
-    let viewLayout: String
     let isSearchLoading: Bool
     let isFiltersLoading: Bool
 }

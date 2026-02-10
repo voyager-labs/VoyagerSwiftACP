@@ -74,9 +74,6 @@ extension CollectionFileClient: DependencyKey {
                 query: "",
                 scopes: [],
                 conditions: [],
-                sortKey: nil,
-                sortOrder: nil,
-                viewLayout: nil,
                 appVersion: nil,
             )
         },
