@@ -1109,8 +1109,11 @@ struct FileManagerFeature {
                     }
                     return .concatenate(
                         .send(.entries(.setCollectionMode(true))),
-                        .send(.entries(.collectionItemsLoadedFromSearch(items))),
-                        .send(.composer(.searchListApplied)),
+                        .run { send in
+                            await Task.yield()
+                            await send(.entries(.collectionItemsLoadedFromSearch(items)))
+                            await send(.composer(.searchListApplied))
+                        },
                     )
 
                 case let .filtersResponse(.success(response)):
