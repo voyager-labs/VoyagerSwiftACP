@@ -6,6 +6,7 @@ import SwiftDotenv
 class VoyagerHelperApp {
     private static var lifecycle: HelperLifecycle?
     private static var indexingListener: IndexingRequestListener?
+    private static var helperFolderAccessListener: HelperFolderAccessListener?
 
     @MainActor
     static func main() {
@@ -22,6 +23,7 @@ class VoyagerHelperApp {
             manager: DatabaseManager.shared,
             logger: logger,
         )
+        let helperFolderAccessListener = HelperFolderAccessListener()
 
         logger.info(
             "Starting (APP_ENV=\(Dotenv.appEnv?.rawValue ?? "nil"), BACKEND_MODE=\(Dotenv.backendMode?.rawValue ?? "nil"))",
@@ -31,10 +33,12 @@ class VoyagerHelperApp {
         let lifecycle = HelperLifecycle(processRunner: runner)
         VoyagerHelperApp.lifecycle = lifecycle
         VoyagerHelperApp.indexingListener = indexingListener
+        VoyagerHelperApp.helperFolderAccessListener = helperFolderAccessListener
 
         // 마이그레이션 등 DB 초기화가 오래 걸려도 메인 앱 타임아웃 전에 상태를 한 번 보내서 재시작되지 않도록 한다.
         stateBroadcaster.startObservingRequests()
         stateBroadcaster.postCurrentState()
+        helperFolderAccessListener.startObservingRequests()
 
         Task {
             await runStartupTask(

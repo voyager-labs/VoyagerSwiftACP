@@ -54,11 +54,11 @@ struct PermissionsStepView: View {
                         .foregroundStyle(.secondary)
 
                     HStack(spacing: 8) {
-                        Button(viewStore.filesAndFoldersStatus == .granted ? "Done" : "Grant Access") {
+                        Button(viewStore.allFilesAndFoldersGranted ? "Done" : "Grant Access") {
                             viewStore.send(.requestFilesAndFoldersTapped)
                         }
                         .disabled(
-                            viewStore.isRequestingFilesAndFolders || viewStore.filesAndFoldersStatus == .granted,
+                            viewStore.isRequestingFilesAndFolders || viewStore.allFilesAndFoldersGranted,
                         )
 
                         if viewStore.isRequestingFilesAndFolders {
@@ -71,11 +71,40 @@ struct PermissionsStepView: View {
                         .font(.system(size: 12))
                         .foregroundStyle(.secondary)
 
-                    if !viewStore.folderAccessItems.isEmpty,
-                       viewStore.filesAndFoldersStatus != .granted
-                    {
-                        VStack(alignment: .leading, spacing: 4) {
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text("Voyager")
+                            .font(.system(size: 12, weight: .semibold))
+                            .foregroundStyle(.secondary)
+
+                        if viewStore.folderAccessItems.isEmpty {
+                            Text("No permission result yet.")
+                                .font(.system(size: 12))
+                                .foregroundStyle(.secondary)
+                        } else {
                             ForEach(viewStore.folderAccessItems) { item in
+                                HStack {
+                                    Text(item.title)
+                                        .font(.system(size: 13))
+                                    Spacer()
+                                    Text(item.status.rawValue)
+                                        .font(.system(size: 13, weight: .semibold))
+                                        .foregroundStyle(.secondary)
+                                }
+                            }
+                        }
+                    }
+
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text("Voyager Helper")
+                            .font(.system(size: 12, weight: .semibold))
+                            .foregroundStyle(.secondary)
+
+                        if viewStore.helperFolderAccessItems.isEmpty {
+                            Text("No permission result yet.")
+                                .font(.system(size: 12))
+                                .foregroundStyle(.secondary)
+                        } else {
+                            ForEach(viewStore.helperFolderAccessItems) { item in
                                 HStack {
                                     Text(item.title)
                                         .font(.system(size: 13))
