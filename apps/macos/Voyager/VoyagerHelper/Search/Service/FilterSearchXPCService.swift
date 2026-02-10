@@ -30,6 +30,27 @@ final class FilterSearchXPCService: NSObject, FilterSearchXPCServiceProtocol {
         }
     }
 
+    nonisolated func querySearch(
+        _ requestData: Data,
+        withReply reply: @escaping (Data?, NSError?) -> Void,
+    ) {
+        let replyBox = ReplyBox(reply)
+        let service = service
+        let logger = logger
+        Task { @MainActor in
+            do {
+                let request = try Self.decodeQueryRequest(from: requestData)
+                let queryService = QuerySearchService(filterService: service)
+                let response = try await queryService.querySearch(request)
+                let responseData = try Self.encodeResponse(response)
+                replyBox.call(responseData, nil)
+            } catch {
+                logger.error("Query search XPC failed: \(error)")
+                replyBox.call(nil, Self.makeNSError(from: error))
+            }
+        }
+    }
+
     private static func decodeRequest(from data: Data) throws -> FiltersOnlyRequestPayload {
         do {
             return try JSONDecoder().decode(FiltersOnlyRequestPayload.self, from: data)
@@ -43,6 +64,14 @@ final class FilterSearchXPCService: NSObject, FilterSearchXPCServiceProtocol {
             return try JSONEncoder().encode(response)
         } catch {
             throw ServiceError.responseEncodingFailed(details: error.localizedDescription)
+        }
+    }
+
+    private static func decodeQueryRequest(from data: Data) throws -> SearchRequestPayload {
+        do {
+            return try JSONDecoder().decode(SearchRequestPayload.self, from: data)
+        } catch {
+            throw ServiceError.invalidRequest(details: error.localizedDescription)
         }
     }
 

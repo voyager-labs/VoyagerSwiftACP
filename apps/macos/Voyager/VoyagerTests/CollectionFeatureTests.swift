@@ -249,6 +249,7 @@ private let kEmptySearchResponse = SearchResponsePayload(
     itemCount: 0,
     appliedFilters: nil,
     items: nil,
+    error: nil,
 )
 
 private let kEmptyCollectionFile = VoyagerCollectionFile(

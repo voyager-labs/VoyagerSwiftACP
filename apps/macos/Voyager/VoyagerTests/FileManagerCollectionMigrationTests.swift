@@ -75,6 +75,7 @@ private let kEmptySearchResponse = SearchResponsePayload(
     itemCount: 0,
     appliedFilters: nil,
     items: nil,
+    error: nil,
 )
 
 private func makeRegistryClient() -> RegistryClient {

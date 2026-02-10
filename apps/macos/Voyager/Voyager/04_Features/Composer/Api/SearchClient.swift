@@ -1,12 +1,6 @@
 import ComposableArchitecture
 import Foundation
 import Logging
-import SwiftDotenv
-
-struct SearchRequestPayload: Codable, Equatable, Sendable {
-    let query: String
-    let filters: SearchFiltersPayload
-}
 
 struct SearchClient: Sendable {
     var search: @Sendable (_ request: SearchRequestPayload) async throws -> SearchResponsePayload
@@ -15,35 +9,9 @@ struct SearchClient: Sendable {
 
 extension SearchClient: DependencyKey {
     static let liveValue: SearchClient = {
-        @Sendable
-        func post<U: Decodable>(path: String, body: some Encodable) async throws -> U {
-            let encoder = JSONEncoder()
-            let decoder = JSONDecoder()
-            let baseURL = await MainActor.run { Dotenv.publicBackendURL }
-            let appVersion = await MainActor.run { AppVersionInfo.shortVersion }
-            let deviceId = await MainActor.run { DeviceIdentifierProvider.current() }
-            let osVersion = ProcessInfo.processInfo.operatingSystemVersionString
-            let url = baseURL.appendingPathComponent(path)
-            var request = URLRequest(url: url)
-            request.httpMethod = "POST"
-            request.setValue("application/json", forHTTPHeaderField: "Content-Type")
-            if let deviceId {
-                request.setValue(deviceId, forHTTPHeaderField: "X-Voyager-Device-Id")
-            }
-            request.setValue(appVersion, forHTTPHeaderField: "X-Voyager-App-Version")
-            request.setValue(osVersion, forHTTPHeaderField: "X-Voyager-OS-Version")
-            request.httpBody = try encoder.encode(body)
-
-            let (data, response) = try await URLSession.shared.data(for: request)
-            guard let http = response as? HTTPURLResponse, 200 ..< 300 ~= http.statusCode else {
-                throw URLError(.badServerResponse)
-            }
-            return try decoder.decode(U.self, from: data)
-        }
-
-        return SearchClient(
+        SearchClient(
             search: { request in
-                try await post(path: "api/collection", body: request)
+                try await searchViaHelper(request)
             },
             applyFilters: { request in
                 try await applyFiltersViaHelper(request)
@@ -52,14 +20,18 @@ extension SearchClient: DependencyKey {
     }()
 
     nonisolated(unsafe) static var testValue: SearchClient = .init(
-        search: { _ in .init(itemCount: 0, appliedFilters: nil, items: nil) },
-        applyFilters: { _ in .init(itemCount: 0, appliedFilters: nil, items: nil) },
+        search: { _ in .init(itemCount: 0, appliedFilters: nil, items: nil, error: nil) },
+        applyFilters: { _ in .init(itemCount: 0, appliedFilters: nil, items: nil, error: nil) },
     )
 }
 
 extension SearchClient: TestDependencyKey {}
 
 private extension SearchClient {
+    static func searchViaHelper(_ request: SearchRequestPayload) async throws -> SearchResponsePayload {
+        try await FilterSearchXPCClient.querySearch(request)
+    }
+
     static func applyFiltersViaHelper(_ request: FiltersOnlyRequestPayload) async throws -> SearchResponsePayload {
         try await FilterSearchXPCClient.applyFilters(request)
     }
@@ -67,7 +39,8 @@ private extension SearchClient {
 
 private enum FilterSearchXPCClient {
     private nonisolated(unsafe) static let logger = Logger(label: "Voyager.FilterSearchXPC")
-    private nonisolated(unsafe) static let timeoutSeconds: TimeInterval = 8
+    private nonisolated(unsafe) static let filterTimeoutSeconds: TimeInterval = 8
+    private nonisolated(unsafe) static let queryTimeoutSeconds: TimeInterval = 25
 
     static func applyFilters(
         _ request: FiltersOnlyRequestPayload,
@@ -82,17 +55,56 @@ private enum FilterSearchXPCClient {
                 logger: logger,
                 continuation: continuation,
             )
-            context.start(requestData: requestData, timeout: timeoutSeconds)
+            context.start(requestData: requestData, timeout: filterTimeoutSeconds)
+        }
+    }
+
+    static func querySearch(
+        _ request: SearchRequestPayload,
+    ) async throws -> SearchResponsePayload {
+        let requestId = UUID().uuidString
+        logger.info("Dispatching query search XPC request: id=\(requestId)")
+        let requestData = try encodeRequestData(from: request)
+
+        return try await withCheckedThrowingContinuation(isolation: nil) { @Sendable continuation in
+            let context = RequestContext(
+                requestId: requestId,
+                logger: logger,
+                continuation: continuation,
+            )
+            context.startQuery(requestData: requestData, timeout: queryTimeoutSeconds)
         }
     }
 }
 
 private extension FilterSearchXPCClient {
+    static func encodeRequestData(from request: SearchRequestPayload) throws -> Data {
+        do {
+            return try JSONEncoder().encode(request)
+        } catch {
+            throw HelperSearchError(code: "ENCODE_FAILED", message: error.localizedDescription)
+        }
+    }
+
     static func encodeRequestData(from request: FiltersOnlyRequestPayload) throws -> Data {
         do {
             return try JSONEncoder().encode(request)
         } catch {
             throw HelperSearchError(code: "ENCODE_FAILED", message: error.localizedDescription)
+        }
+    }
+
+    enum OperationKind {
+        case filter
+        case query
+
+        var label: String {
+            switch self {
+            case .filter:
+                "Filter search"
+            case .query:
+                "Query search"
+            }
         }
     }
 
@@ -118,21 +130,42 @@ private extension FilterSearchXPCClient {
         }
 
         nonisolated func start(requestData: Data, timeout: TimeInterval) {
+            startOperation(
+                kind: .filter,
+                requestData: requestData,
+                timeout: timeout,
+            )
+        }
+
+        nonisolated func startQuery(requestData: Data, timeout: TimeInterval) {
+            startOperation(
+                kind: .query,
+                requestData: requestData,
+                timeout: timeout,
+            )
+        }
+
+        private nonisolated func startOperation(
+            kind: OperationKind,
+            requestData: Data,
+            timeout: TimeInterval,
+        ) {
             queue.async {
+                let operationLabel = kind.label
                 let connection = NSXPCConnection(serviceName: FilterSearchXPCServiceConstants.machServiceName)
                 self.storeConnection(connection)
                 connection.remoteObjectInterface = NSXPCInterface(with: FilterSearchXPCServiceProtocol.self)
                 connection.interruptionHandler = { [self] in
-                    logger.warning("Filter search XPC interrupted: id=\(requestId)")
+                    logger.warning("\(operationLabel) XPC interrupted: id=\(requestId)")
                     finish(.failure(HelperSearchError(code: "HELPER_INTERRUPTED", message: nil)))
                 }
                 connection.invalidationHandler = { [self] in
-                    logger.info("Filter search XPC invalidated: id=\(requestId)")
+                    logger.info("\(operationLabel) XPC invalidated: id=\(requestId)")
                 }
                 connection.resume()
 
                 let timeoutWorkItem = DispatchWorkItem { [self] in
-                    logger.warning("Filter search helper timeout: id=\(requestId)")
+                    logger.warning("\(operationLabel) helper timeout: id=\(requestId)")
                     finish(.failure(HelperSearchError(code: "HELPER_TIMEOUT", message: nil)))
                 }
                 self.storeTimeoutWorkItem(timeoutWorkItem)
@@ -140,7 +173,7 @@ private extension FilterSearchXPCClient {
 
                 guard let proxy = connection.remoteObjectProxyWithErrorHandler({ [self] error in
                     self.logger.warning(
-                        "Filter search XPC transport failed: id=\(self.requestId) error=\(error)",
+                        "\(operationLabel) XPC transport failed: id=\(self.requestId) error=\(error)",
                     )
                     self.finish(.failure(error))
                 }) as? FilterSearchXPCServiceProtocol
@@ -149,18 +182,31 @@ private extension FilterSearchXPCClient {
                     return
                 }
 
-                proxy.applyFilters(requestData) { [self] responseData, error in
-                    queue.async {
-                        self.handleReply(responseData: responseData, error: error)
+                switch kind {
+                case .filter:
+                    proxy.applyFilters(requestData) { [self] responseData, error in
+                        queue.async {
+                            self.handleReply(responseData: responseData, error: error, operationLabel: operationLabel)
+                        }
+                    }
+                case .query:
+                    proxy.querySearch(requestData) { [self] responseData, error in
+                        queue.async {
+                            self.handleReply(responseData: responseData, error: error, operationLabel: operationLabel)
+                        }
                     }
                 }
             }
         }
 
-        private nonisolated func handleReply(responseData: Data?, error: NSError?) {
+        private nonisolated func handleReply(
+            responseData: Data?,
+            error: NSError?,
+            operationLabel: String,
+        ) {
             if let error {
                 logger.warning(
-                    "Filter search XPC failed: id=\(requestId) error=\(error)",
+                    "\(operationLabel) XPC failed: id=\(requestId) error=\(error)",
                 )
                 finish(.failure(error))
                 return
@@ -174,8 +220,24 @@ private extension FilterSearchXPCClient {
             Task { @MainActor [self, responseData] in
                 do {
                     let response = try JSONDecoder().decode(SearchResponsePayload.self, from: responseData)
+
+                    if let payloadError = response.error {
+                        logger.warning(
+                            "\(operationLabel) payload error: id=\(requestId) code=\(payloadError.code)",
+                        )
+                        finish(
+                            .failure(
+                                HelperSearchError(
+                                    code: payloadError.code,
+                                    message: payloadError.details,
+                                ),
+                            ),
+                        )
+                        return
+                    }
+
                     logger.info(
-                        "Filter search response received: id=\(requestId) items=\(response.itemCount)",
+                        "\(operationLabel) response received: id=\(requestId) items=\(response.itemCount)",
                     )
                     finish(.success(response))
                 } catch {
