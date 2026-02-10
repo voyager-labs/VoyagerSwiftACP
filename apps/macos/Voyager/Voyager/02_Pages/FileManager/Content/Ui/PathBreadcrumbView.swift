@@ -32,7 +32,7 @@ private struct ItemPosition {
 }
 
 private struct BreadcrumbItemView: View {
-    let item: BreadcrumbUtils.Item
+    let item: BreadcrumbItem
     let width: CGFloat
     let needsFixedSize: Bool
     let truncationMode: Text.TruncationMode
@@ -62,8 +62,8 @@ private struct BreadcrumbButtonStyle: ButtonStyle {
 }
 
 struct PathBreadcrumbView: View {
-    let breadcrumbItems: [BreadcrumbUtils.Item]
-    let selectedItem: BreadcrumbUtils.Item?
+    let breadcrumbItems: [BreadcrumbItem]
+    let selectedItem: BreadcrumbItem?
     let availableWidth: CGFloat
     let onNavigate: (String) -> Void
     let onOpenInNewWindow: (String) -> Void
@@ -118,7 +118,7 @@ struct PathBreadcrumbView: View {
         return space
     }
 
-    private func calculateDynamicMaxWidth(for item: BreadcrumbUtils.Item, at index: Int) -> CGFloat {
+    private func calculateDynamicMaxWidth(for item: BreadcrumbItem, at index: Int) -> CGFloat {
         guard availableWidth > 0 else {
             return item.name.width()
         }
