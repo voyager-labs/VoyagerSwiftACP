@@ -3,11 +3,18 @@
 import Foundation
 import Logging
 
-// swiftlint:disable file_length
 private let kComposerLogger = Logger(label: "Voyager")
 struct FilterSnapshot: Equatable {
     let scopes: [String]
     let conditions: [Condition]
+}
+
+enum ComposerQueryRenderPhase: Equatable, Sendable {
+    case idle
+    case searching
+    case chipsAppliedPendingList
+    case listApplied
+    case failed
 }
 
 @Reducer
@@ -40,6 +47,7 @@ struct ComposerFeature {
         var searchStartedAt: Date?
         var filtersStartedAt: Date?
         var hasSubmittedInSession: Bool = false
+        var queryRenderPhase: ComposerQueryRenderPhase = .idle
 
         var canUndo: Bool { !history.isEmpty }
         var canRedo: Bool { !redoHistory.isEmpty }
@@ -84,6 +92,7 @@ struct ComposerFeature {
         case valuePicker(ValuePickerFeature.Action)
         case searchResponse(Result<SearchResponsePayload, Error>)
         case filtersResponse(Result<SearchResponsePayload, Error>)
+        case searchListApplied
     }
 
     nonisolated enum CancelID: Hashable, Sendable {
@@ -110,6 +119,7 @@ struct ComposerFeature {
                     state.hasSubmittedInSession = false
                     state.searchStartedAt = nil
                     state.filtersStartedAt = nil
+                    state.queryRenderPhase = .idle
                 }
                 return .none
 
@@ -151,6 +161,7 @@ struct ComposerFeature {
                 state.valuePicker = .init()
                 state.isLoadingFilters = false
                 state.lastFiltersResponse = nil
+                state.queryRenderPhase = .idle
                 return .cancel(id: CancelID.filters)
 
             case .submit:
@@ -176,6 +187,7 @@ struct ComposerFeature {
                 state.isLoadingSearch = true
                 state.isLoadingFilters = false
                 state.lastFiltersResponse = nil
+                state.queryRenderPhase = .searching
                 state.text = ""
                 let searchEffect: Effect<Action> = .run { send in
                     do {
@@ -195,6 +207,7 @@ struct ComposerFeature {
 
             case .cancelSearch:
                 state.isLoadingSearch = false
+                state.queryRenderPhase = .idle
                 VoyagerSentryMetricLogger.logMetric(
                     "voyager_search_cancel",
                     value: 1,
@@ -217,6 +230,7 @@ struct ComposerFeature {
                 state.lastSearchResponse = nil
                 state.isLoadingFilters = true
                 state.isFilteringInFlight = true
+                state.queryRenderPhase = .idle
                 VoyagerSentryMetricLogger.logMetric(
                     "voyager_composer_filters_apply",
                     value: 1,
@@ -522,6 +536,7 @@ struct ComposerFeature {
                 state.isLoadingSearch = false
                 state.lastSearchResponse = response
                 state.lastFiltersResponse = nil
+                state.queryRenderPhase = .chipsAppliedPendingList
                 applyAppliedFilters(response.appliedFilters, state: &state, registryClient: registryClient)
                 if let startedAt = state.searchStartedAt {
                     VoyagerSentryMetricLogger.logMetric(
@@ -539,6 +554,7 @@ struct ComposerFeature {
 
             case .searchResponse(.failure):
                 state.isLoadingSearch = false
+                state.queryRenderPhase = .failed
                 VoyagerSentryMetricLogger.logMetric(
                     "voyager_search_result",
                     value: 1,
@@ -566,6 +582,12 @@ struct ComposerFeature {
                 state.isLoadingFilters = false
                 state.isFilteringInFlight = false
                 state.filtersStartedAt = nil
+                return .none
+
+            case .searchListApplied:
+                if state.queryRenderPhase == .chipsAppliedPendingList {
+                    state.queryRenderPhase = .listApplied
+                }
                 return .none
             }
         }
