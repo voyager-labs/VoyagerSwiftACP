@@ -7,5 +7,5 @@ protocol FilterSearchXPCServiceProtocol {
 }
 
 enum FilterSearchXPCServiceConstants {
-    static let machServiceName = "fm.voyager.Voyager.FilterSearchXPC"
+    nonisolated static let machServiceName = "fm.voyager.Voyager.FilterSearchXPC"
 }
