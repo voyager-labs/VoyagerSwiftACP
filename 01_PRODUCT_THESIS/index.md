@@ -2,16 +2,16 @@
 
 # PRODUCT_THESIS**
 
-* Version: 1.5.0  
-* Updated at: Dec 18, 2025
+- Version: 1.5.0  
+- Updated at: Dec 18, 2025
 
 ## **Map of Content**
 
-* [Problem](01_PRODUCT_THESIS/problem.md)  
-* [Target User & JTBD](01_PRODUCT_THESIS/target_user.md)  
-* [Product Pillar](01_PRODUCT_THESIS/product_pilar.md)  
-* [Non-Goals](01_PRODUCT_THESIS/non_goals.md)  
-* [Core Flows](01_PRODUCT_THESIS/core_flow.md)
+- [Problem](01_PRODUCT_THESIS/problem.md)  
+- [Target User & JTBD](01_PRODUCT_THESIS/target_user.md)  
+- [Product Pillar](01_PRODUCT_THESIS/product_pilar.md)  
+- [Non-Goals](01_PRODUCT_THESIS/non_goals.md)  
+- [Core Flows](01_PRODUCT_THESIS/core_flow.md)
 
 ## **TL;DR**
 
@@ -21,13 +21,13 @@
 
 ### **타깃 유저**
 
-* 1차 타깃:   
-  * macOS 기반 인디 솔로프리너 및 Pre-Seed \- Seed 단계 소규모 테크 / SaaS 팀 리더  
-  * 제품·비즈니스 관련 파일을 직접 만들고 관리하며, 그 결과물로 의사결정을 내려야 하는 사람  
-* 2차 타깃  
-  * 팀 내에서 리서치·기획·분석·리뷰 등 파일 기반 산출물과 의사결정을 함께 책임지는 지식 노동자  
-* 3차 타깃  
-  * macOS에서 여러 도구와 포맷의 파일을 오가며 일하지만, Finder와 폴더 구조만으로는 작업 단위 정리와 재사용이 어려운 일반 지식 노동자
+- 1차 타깃:   
+  - macOS 기반 인디 솔로프리너 및 Pre-Seed \- Seed 단계 소규모 테크 / SaaS 팀 리더  
+  - 제품·비즈니스 관련 파일을 직접 만들고 관리하며, 그 결과물로 의사결정을 내려야 하는 사람  
+- 2차 타깃  
+  - 팀 내에서 리서치·기획·분석·리뷰 등 파일 기반 산출물과 의사결정을 함께 책임지는 지식 노동자  
+- 3차 타깃  
+  - macOS에서 여러 도구와 포맷의 파일을 오가며 일하지만, Finder와 폴더 구조만으로는 작업 단위 정리와 재사용이 어려운 일반 지식 노동자
 
 ### **핵심 문제**
 
