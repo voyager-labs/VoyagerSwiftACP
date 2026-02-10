@@ -9,7 +9,7 @@ final class FilterSearchQueryBuilderTests: XCTestCase {
         let predicate = builder.buildScopePredicate(scopes: ["/Users/test/Downloads/"])
         let prepared = predicate.prepare { _ in "?" }
 
-        XCTAssertTrue(prepared.sql.contains("\"entries\".\"dir_path\""))
+        XCTAssertTrue(prepared.sql.contains("\"files\".\"dir_path\""))
         XCTAssertTrue(prepared.sql.contains("LIKE"))
         XCTAssertTrue(prepared.sql.contains("="))
         XCTAssertEqual(prepared.bindings.count, 2)
@@ -26,7 +26,7 @@ final class FilterSearchQueryBuilderTests: XCTestCase {
         let predicate = try builder.buildWhere(conditions: [condition])
         let prepared = predicate.prepare { _ in "?" }
 
-        XCTAssertTrue(prepared.sql.contains("\"entries\".\"name_full\""))
+        XCTAssertTrue(prepared.sql.contains("\"files\".\"name_full\""))
         XCTAssertTrue(prepared.sql.contains(" = "))
         XCTAssertEqual(prepared.bindings.count, 1)
     }
@@ -42,7 +42,7 @@ final class FilterSearchQueryBuilderTests: XCTestCase {
         let predicate = try builder.buildWhere(conditions: [condition])
         let prepared = predicate.prepare { _ in "?" }
 
-        XCTAssertTrue(prepared.sql.contains("\"entries\".\"size\""))
+        XCTAssertTrue(prepared.sql.contains("\"files\".\"size\""))
         XCTAssertTrue(prepared.sql.contains("BETWEEN"))
         XCTAssertEqual(prepared.bindings.count, 2)
     }
@@ -58,7 +58,7 @@ final class FilterSearchQueryBuilderTests: XCTestCase {
         let predicate = try builder.buildWhere(conditions: [condition])
         let prepared = predicate.prepare { _ in "?" }
 
-        XCTAssertTrue(prepared.sql.contains("\"entries\".\"extension\""))
+        XCTAssertTrue(prepared.sql.contains("\"files\".\"extension\""))
         XCTAssertTrue(prepared.sql.contains(" = "))
         XCTAssertEqual(prepared.bindings.count, 1)
     }
@@ -74,7 +74,7 @@ final class FilterSearchQueryBuilderTests: XCTestCase {
         let predicate = try builder.buildWhere(conditions: [condition])
         let prepared = predicate.prepare { _ in "?" }
 
-        XCTAssertTrue(prepared.sql.contains("\"entries\".\"extension\""))
+        XCTAssertTrue(prepared.sql.contains("\"files\".\"extension\""))
         XCTAssertTrue(prepared.sql.contains(" IN "))
         XCTAssertEqual(prepared.bindings.count, 2)
     }

@@ -1,7 +1,7 @@
 import Foundation
 import StructuredQueries
 
-@Table("entries")
+@Table("files")
 struct FilterSearchEntryTable: Sendable {
     @Column("id")
     var id: Int64?
