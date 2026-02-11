@@ -44,6 +44,54 @@ final class FilterSearchQueryBuilderTests: XCTestCase {
         XCTAssertEqual(prepared.bindings.count, 2)
     }
 
+    func testScopePredicateRootScopeOverridesSubScopes() {
+        let builder = FilterSearchScopeBuilder()
+        let predicate = builder.buildScopePredicate(
+            scopes: [
+                "/Users/test",
+                "/",
+                "/Users/test/Downloads",
+            ],
+        )
+        let prepared = predicate.prepare { _ in "?" }
+
+        XCTAssertTrue(prepared.sql.contains("\"directories\".\"path\""))
+        XCTAssertEqual(prepared.bindings.count, 2)
+    }
+
+    func testScopePredicateExpandsTildeAndReducesHomeSubScopes() {
+        let builder = FilterSearchScopeBuilder()
+        let homePath = FileManager.default.homeDirectoryForCurrentUser.path
+        let predicate = builder.buildScopePredicate(
+            scopes: [
+                "~/Documents",
+                homePath + "/Documents/subfolder",
+            ],
+        )
+        let prepared = predicate.prepare { _ in "?" }
+
+        XCTAssertTrue(prepared.sql.contains("\"directories\".\"path\""))
+        XCTAssertEqual(prepared.bindings.count, 2)
+    }
+
+    func testScopePredicateHandlesNonexistentScopeWithoutFailure() {
+        let builder = FilterSearchScopeBuilder()
+        let predicate = builder.buildScopePredicate(scopes: ["/this/path/does/not/exist"])
+        let prepared = predicate.prepare { _ in "?" }
+
+        XCTAssertTrue(prepared.sql.contains("SELECT"))
+        XCTAssertEqual(prepared.bindings.count, 2)
+    }
+
+    func testScopePredicateReturnsAlwaysTrueWhenScopesAreEmpty() {
+        let builder = FilterSearchScopeBuilder()
+        let predicate = builder.buildScopePredicate(scopes: ["", "   "])
+        let prepared = predicate.prepare { _ in "?" }
+
+        XCTAssertFalse(prepared.sql.contains("\"files\".\"directory_id\""))
+        XCTAssertEqual(prepared.bindings.count, 0)
+    }
+
     func testConditionBuilderEqOnNameFull() throws {
         let builder = try makeConditionBuilder()
         let condition = SearchConditionPayload(

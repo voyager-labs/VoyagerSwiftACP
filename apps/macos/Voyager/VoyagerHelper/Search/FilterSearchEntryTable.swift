@@ -9,8 +9,6 @@ struct FilterSearchEntryTable: Sendable {
     var directoryId: Int64?
     @Column("path")
     var path: String
-    @Column("dir_path")
-    var dirPath: String
     @Column("name_full")
     var nameFull: String
     @Column("extension")
