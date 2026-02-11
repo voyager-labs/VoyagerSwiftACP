@@ -5,6 +5,8 @@ import StructuredQueries
 struct FilterSearchEntryTable: Sendable {
     @Column("id")
     var id: Int64?
+    @Column("directory_id")
+    var directoryId: Int64?
     @Column("path")
     var path: String
     @Column("dir_path")

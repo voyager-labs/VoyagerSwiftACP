@@ -9,7 +9,10 @@ final class FilterSearchQueryBuilderTests: XCTestCase {
         let predicate = builder.buildScopePredicate(scopes: ["/Users/test/Downloads/"])
         let prepared = predicate.prepare { _ in "?" }
 
-        XCTAssertTrue(prepared.sql.contains("\"files\".\"dir_path\""))
+        XCTAssertTrue(prepared.sql.contains("\"files\".\"directory_id\""))
+        XCTAssertTrue(prepared.sql.contains("FROM directories"))
+        XCTAssertTrue(prepared.sql.contains("\"directories\".\"path\""))
+        XCTAssertFalse(prepared.sql.contains("\"files\".\"dir_path\""))
         XCTAssertTrue(prepared.sql.contains("LIKE"))
         XCTAssertTrue(prepared.sql.contains("="))
         XCTAssertEqual(prepared.bindings.count, 2)
@@ -27,7 +30,8 @@ final class FilterSearchQueryBuilderTests: XCTestCase {
         )
         let prepared = predicate.prepare { _ in "?" }
 
-        XCTAssertTrue(prepared.sql.contains("\"files\".\"dir_path\""))
+        XCTAssertTrue(prepared.sql.contains("\"directories\".\"path\""))
+        XCTAssertFalse(prepared.sql.contains("\"files\".\"dir_path\""))
         XCTAssertEqual(prepared.bindings.count, 2)
     }
 
