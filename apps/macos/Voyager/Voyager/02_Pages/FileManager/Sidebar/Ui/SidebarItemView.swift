@@ -90,13 +90,11 @@ struct SidebarItemView: View {
             onDrop(providers, targetURL)
             return true
         }
-        .overlay(
-            Group {
-                if let onContextMenuOpen {
-                    SidebarRightClickCaptureView(onRightClick: onContextMenuOpen)
-                        .allowsHitTesting(false)
-                }
-            },
-        )
+        .overlay {
+            if let onContextMenuOpen {
+                SidebarRightClickCaptureView(onRightClick: onContextMenuOpen)
+                    .allowsHitTesting(false)
+            }
+        }
     }
 }

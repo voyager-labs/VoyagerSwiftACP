@@ -3,11 +3,6 @@ import ComposableArchitecture
 import SwiftUI
 
 struct SidebarView: View {
-    @Dependency(\.entryClient)
-    private var entryClient
-    @Dependency(\.userDefaultsClient)
-    private var userDefaultsClient
-
     @State private var contextMenuTargetId: String?
     @State private var contextMenuTargetWasSelected = false
 
@@ -41,31 +36,35 @@ struct SidebarView: View {
                     Spacer()
                         .frame(height: 8)
 
-                    SidebarFavoritesSectionView(
-                        dropTargetIndex: .constant(nil),
-                        draggingFavoriteURL: .constant(nil),
-                        contextMenuTargetId: $contextMenuTargetId,
-                        contextMenuTargetWasSelected: $contextMenuTargetWasSelected,
-                        store: store,
-                    )
+                    if !store.favorites.isEmpty {
+                        SidebarFavoritesSectionView(
+                            contextMenuTargetId: $contextMenuTargetId,
+                            contextMenuTargetWasSelected: $contextMenuTargetWasSelected,
+                            store: store,
+                        )
+                    }
 
                     Spacer()
                         .frame(height: 8)
 
-                    SidebarLocationsSectionView(
-                        contextMenuTargetId: $contextMenuTargetId,
-                        contextMenuTargetWasSelected: $contextMenuTargetWasSelected,
-                        store: store,
-                    )
+                    if !store.locations.isEmpty {
+                        SidebarLocationsSectionView(
+                            contextMenuTargetId: $contextMenuTargetId,
+                            contextMenuTargetWasSelected: $contextMenuTargetWasSelected,
+                            store: store,
+                        )
+                    }
 
                     Spacer()
                         .frame(height: 8)
 
-                    SidebarTagsSectionView(
-                        contextMenuTargetId: $contextMenuTargetId,
-                        contextMenuTargetWasSelected: $contextMenuTargetWasSelected,
-                        store: store,
-                    )
+                    if !store.tags.isEmpty {
+                        SidebarTagsSectionView(
+                            contextMenuTargetId: $contextMenuTargetId,
+                            contextMenuTargetWasSelected: $contextMenuTargetWasSelected,
+                            store: store,
+                        )
+                    }
 
                     Spacer()
                 }
@@ -78,14 +77,7 @@ struct SidebarView: View {
             contextMenuTargetId = nil
             contextMenuTargetWasSelected = false
         }
-        .navigationSplitViewColumnWidth(ideal: {
-            if let savedWidth = userDefaultsClient.object(SettingsKeys.sidebarWidth) as? Double,
-               savedWidth > 0
-            {
-                return CGFloat(savedWidth)
-            }
-            return 200
-        }())
+        .navigationSplitViewColumnWidth(ideal: store.sidebarWidth)
         .background(
             GeometryReader { geometry in
                 Color.clear

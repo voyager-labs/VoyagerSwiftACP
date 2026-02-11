@@ -1,3 +1,4 @@
+import AppKit
 import SwiftUI
 import UniformTypeIdentifiers
 
@@ -43,7 +44,7 @@ struct SidebarTagItemView: View {
     var body: some View {
         HStack(spacing: 8) {
             Circle()
-                .fill(tag.color)
+                .fill(Color(nsColor: EntryTagUtils.getTagColor(colorCode: tag.colorCode)))
                 .frame(width: 8, height: 8)
             Text(tag.name)
                 .foregroundColor(isDropTarget ? .white : .primary)
@@ -65,13 +66,11 @@ struct SidebarTagItemView: View {
             onDrop(providers, tag.name)
             return true
         }
-        .overlay(
-            Group {
-                if let onContextMenuOpen {
-                    SidebarRightClickCaptureView(onRightClick: onContextMenuOpen)
-                        .allowsHitTesting(false)
-                }
-            },
-        )
+        .overlay {
+            if let onContextMenuOpen {
+                SidebarRightClickCaptureView(onRightClick: onContextMenuOpen)
+                    .allowsHitTesting(false)
+            }
+        }
     }
 }

@@ -1,9 +1,4 @@
-import AppKit
-import CoreServices
 import Foundation
-import SwiftUI
-
-@preconcurrency import ObjectiveC
 
 enum SidebarItems {
     struct LocationItem: Equatable {
@@ -18,20 +13,22 @@ enum SidebarItems {
 
     struct TagItem: Equatable {
         let name: String
-        let color: Color
+        let colorCode: Int
+    }
+
+    private enum FavoriteItemCodingKeys: String, CodingKey {
+        case name
+        case url
+    }
+
+    private enum FavoriteItemLegacyCodingKeys: String, CodingKey {
+        case iconName
     }
 
     struct FavoriteItem: Equatable, Codable {
         let name: String
         let url: URL
         let iconName: String
-
-        // swiftlint:disable:next nesting
-        enum CodingKeys: String, CodingKey {
-            case name
-            case url
-            case iconName
-        }
 
         nonisolated init(name: String, url: URL, iconName: String) {
             self.name = name
@@ -40,7 +37,7 @@ enum SidebarItems {
         }
 
         init(from decoder: Decoder) throws {
-            let container = try decoder.container(keyedBy: CodingKeys.self)
+            let container = try decoder.container(keyedBy: FavoriteItemCodingKeys.self)
             name = try container.decode(String.self, forKey: .name)
             let urlString = try container.decode(String.self, forKey: .url)
             guard let decodedURL = URL(string: urlString) else {
@@ -51,25 +48,24 @@ enum SidebarItems {
                 )
             }
             url = decodedURL
-            iconName = try container.decode(String.self, forKey: .iconName)
+
+            // 과거 favorites 데이터와의 호환을 위해 legacy iconName을 읽고, 없으면 기본 아이콘을 사용한다.
+            let legacyContainer = try decoder.container(keyedBy: FavoriteItemLegacyCodingKeys.self)
+            iconName = try legacyContainer.decodeIfPresent(String.self, forKey: .iconName) ?? "folder"
         }
 
         func encode(to encoder: Encoder) throws {
-            var container = encoder.container(keyedBy: CodingKeys.self)
+            var container = encoder.container(keyedBy: FavoriteItemCodingKeys.self)
             try container.encode(name, forKey: .name)
             try container.encode(url.absoluteString, forKey: .url)
-            try container.encode(iconName, forKey: .iconName)
         }
 
         var displayName: String {
-            SidebarItems.favoriteDisplayName(for: self)
+            // TODO(Collection): Collection 관련 상수 이관, displayName 구조 변경
+            if url.pathExtension.lowercased() == "voycoll" {
+                return url.deletingPathExtension().lastPathComponent
+            }
+            return name
         }
-    }
-
-    static func favoriteDisplayName(for favorite: FavoriteItem) -> String {
-        if favorite.url.pathExtension.lowercased() == "voycoll" {
-            return favorite.url.deletingPathExtension().lastPathComponent
-        }
-        return favorite.name
     }
 }
