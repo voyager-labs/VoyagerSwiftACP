@@ -1,12 +1,19 @@
 {
   "schema_version": "1.0",
   "name": "INTERACTIONS",
+  "primary_key": ["interaction_id"],
   "columns": [
     {
       "name": "interaction_title",
       "type": "string",
       "required": true,
       "description": "인터랙션 제목."
+    },
+    {
+      "name": "interaction_id",
+      "type": "string",
+      "required": true,
+      "description": "인터랙션 ID(PK). 예: INT.FMW.OpenNewFileManagerWindow"
     },
     {
       "name": "interaction_type",

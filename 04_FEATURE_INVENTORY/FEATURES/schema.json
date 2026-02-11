@@ -7,7 +7,17 @@
       "name": "feature_category",
       "type": "string",
       "required": true,
-      "description": "카테고리 제목(표시용)."
+      "description": "카테고리 제목(표시용, FK -> FEATURE_CATEGORIES.category_title)."
+    },
+    {
+      "name": "category_key",
+      "type": "string",
+      "required": true,
+      "ref": {
+        "table": "FEATURE_CATEGORIES",
+        "column": "category_key"
+      },
+      "description": "기능 카테고리 키(FK -> FEATURE_CATEGORIES.category_key)."
     },
     {
       "name": "feature_title",
