@@ -4,12 +4,6 @@ import SwiftUI
 
 struct GeneralSettingsView: View {
     let store: StoreOf<GeneralSettingsFeature>
-    @Dependency(\.entryClient)
-    private var entryClient: EntryClient
-    @Dependency(\.workspaceClient)
-    private var workspaceClient: WorkspaceClient
-    @Dependency(\.updaterClient)
-    private var updaterClient: UpdaterClient
 
     var body: some View {
         Form {
@@ -47,9 +41,7 @@ struct GeneralSettingsView: View {
                         Spacer()
 
                         Button("Check for updates...") {
-                            Task {
-                                await updaterClient.checkForUpdates()
-                            }
+                            store.send(.checkForUpdates)
                         }
                     }
                 }
@@ -76,9 +68,9 @@ struct GeneralSettingsView: View {
                                 },
                                 label: {
                                     HStack {
-                                        selected.icon(entryClient: entryClient, workspaceClient: workspaceClient)
+                                        Image(systemName: selected.iconName)
                                             .frame(width: 14, height: 14)
-                                        Text("\(selected.displayName(entryClient: entryClient)) (default)")
+                                        Text("\(selected.displayName) (default)")
                                     }
                                 },
                             )
@@ -95,9 +87,9 @@ struct GeneralSettingsView: View {
                                 },
                                 label: {
                                     HStack {
-                                        selected.icon(entryClient: entryClient, workspaceClient: workspaceClient)
+                                        Image(systemName: selected.iconName)
                                             .frame(width: 14, height: 14)
-                                        Text("\(selected.displayName(entryClient: entryClient)) (default)")
+                                        Text("\(selected.displayName) (default)")
                                     }
                                 },
                             )
@@ -112,9 +104,9 @@ struct GeneralSettingsView: View {
                                 },
                                 label: {
                                     HStack {
-                                        option.icon(entryClient: entryClient, workspaceClient: workspaceClient)
+                                        Image(systemName: option.iconName)
                                             .frame(width: 14, height: 14)
-                                        Text(option.displayName(entryClient: entryClient))
+                                        Text(option.displayName)
                                     }
                                 },
                             )
@@ -127,12 +119,9 @@ struct GeneralSettingsView: View {
                         }
                     } label: {
                         HStack(spacing: 4) {
-                            store.selectedDirectoryOption.icon(
-                                entryClient: entryClient,
-                                workspaceClient: workspaceClient,
-                            )
-                            .frame(width: 14, height: 14)
-                            Text(store.selectedDirectoryOption.displayName(entryClient: entryClient))
+                            Image(systemName: store.selectedDirectoryOption.iconName)
+                                .frame(width: 14, height: 14)
+                            Text(store.selectedDirectoryOption.displayName)
                             Image(systemName: "chevron.up.chevron.down")
                                 .font(.caption2)
                                 .foregroundColor(.secondary)

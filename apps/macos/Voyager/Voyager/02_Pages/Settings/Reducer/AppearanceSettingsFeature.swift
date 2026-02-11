@@ -4,26 +4,8 @@ import Foundation
 
 @Reducer
 struct AppearanceSettingsFeature {
-    @ObservableState
-    struct State: Equatable {
-        var theme: AppTheme = .system
-        var listIconSize: CGFloat = AppearanceSettingsDefaults.listIconSize
-        var gridIconSize: CGFloat = AppearanceSettingsDefaults.gridIconSize
-        var listTextSize: CGFloat = AppearanceSettingsDefaults.listTextSize
-        var gridTextSize: CGFloat = AppearanceSettingsDefaults.gridTextSize
-        var showHiddenFiles: Bool = false
-    }
-
-    enum Action: Sendable {
-        case onAppear
-        case loadSettings
-        case setTheme(AppTheme)
-        case setListIconSize(CGFloat)
-        case setGridIconSize(CGFloat)
-        case setListTextSize(CGFloat)
-        case setGridTextSize(CGFloat)
-        case setShowHiddenFiles(Bool)
-    }
+    typealias State = AppearanceSettingsState
+    typealias Action = AppearanceSettingsAction
 
     @Dependency(\.appearanceSettingsClient)
     var appearanceSettingsClient: AppearanceSettingsClient
@@ -33,14 +15,9 @@ struct AppearanceSettingsFeature {
     var body: some Reducer<State, Action> {
         Reduce { state, action in
             switch action {
-            case .onAppear:
-                return .send(.loadSettings)
-
             case .loadSettings:
-                // 테마 로드
                 state.theme = appearanceSettingsClient.loadTheme()
 
-                // 아이콘 크기 로드
                 let savedListIconSize = userDefaultsClient.object(SettingsKeys.listIconSize) as? CGFloat
                 if let listIconSize = savedListIconSize {
                     state.listIconSize = listIconSize
@@ -51,7 +28,6 @@ struct AppearanceSettingsFeature {
                     state.gridIconSize = gridIconSize
                 }
 
-                // 텍스트 크기 로드
                 let savedListTextSize = userDefaultsClient.object(SettingsKeys.listTextSize) as? CGFloat
                 if let listTextSize = savedListTextSize {
                     state.listTextSize = listTextSize

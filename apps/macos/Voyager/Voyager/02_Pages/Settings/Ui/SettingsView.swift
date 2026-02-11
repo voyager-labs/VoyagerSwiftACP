@@ -6,39 +6,44 @@ struct SettingsView: View {
 
     @MainActor
     init() {
-        let state = SettingsFeature.State()
+        let state = SettingsState()
         store = Store(initialState: state) {
             SettingsFeature()
         }
     }
 
     var body: some View {
-        TabView(selection: Binding(
-            get: { store.selectedSection },
-            set: { store.send(.selectSection($0)) },
-        )) {
-            GeneralSettingsView(store: store.scope(state: \.generalSettings, action: \.general))
-                .tabItem {
-                    Label("General", systemImage: "gear")
+        WithViewStore(store, observe: { $0 }) { viewStore in
+            TabView(selection: viewStore.binding(get: \.selectedSection, send: SettingsAction.selectSection)) {
+                ForEach(SettingsSection.allCases) { section in
+                    tabContent(for: section)
+                        .tabItem {
+                            Label(section.title, systemImage: section.iconName)
+                        }
+                        .tag(section)
                 }
-                .tag(SettingsSection.general)
-
-            AppearanceSettingsView(store: store.scope(state: \.appearanceSettings, action: \.appearance))
-                .tabItem {
-                    Label("Appearance", systemImage: SettingsSection.appearance.iconName)
-                }
-                .tag(SettingsSection.appearance)
-        }
-        .frame(width: 600, height: 400)
-        .onAppear {
-            store.send(.onAppear)
-        }
-        .background(
-            Button("") {
-                store.send(.closeWindow)
             }
-            .keyboardShortcut("w", modifiers: .command)
-            .hidden(),
-        )
+            .frame(width: 600, height: 400)
+            .onAppear {
+                store.send(.onAppear)
+            }
+            .background(
+                Button("") {
+                    store.send(.closeWindow)
+                }
+                .keyboardShortcut("w", modifiers: .command)
+                .hidden(),
+            )
+        }
+    }
+
+    @ViewBuilder
+    private func tabContent(for section: SettingsSection) -> some View {
+        switch section {
+        case .general:
+            GeneralSettingsView(store: store.scope(state: \ .generalSettings, action: \ .general))
+        case .appearance:
+            AppearanceSettingsView(store: store.scope(state: \ .appearanceSettings, action: \ .appearance))
+        }
     }
 }

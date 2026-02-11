@@ -4,25 +4,8 @@ import Foundation
 
 @Reducer
 struct SettingsFeature {
-    @Dependency(\.entryClient)
-    var entryClient: EntryClient
-    @Dependency(\.userDefaultsClient)
-    var userDefaultsClient: UserDefaultsClient
-
-    @ObservableState
-    struct State: Equatable {
-        var selectedSection: SettingsSection = .general
-        var generalSettings = GeneralSettingsFeature.State()
-        var appearanceSettings = AppearanceSettingsFeature.State()
-    }
-
-    enum Action: Sendable {
-        case onAppear
-        case selectSection(SettingsSection)
-        case closeWindow
-        case general(GeneralSettingsFeature.Action)
-        case appearance(AppearanceSettingsFeature.Action)
-    }
+    typealias State = SettingsState
+    typealias Action = SettingsAction
 
     var body: some Reducer<State, Action> {
         Scope(state: \.generalSettings, action: \.general) {
