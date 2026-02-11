@@ -32,7 +32,7 @@ Voyager 앱의 기획/문서 자료를 GitHub SSOT로 운영하는 레포입니�
 | IA(UI 구조/메뉴) 편집 | `03_INFORMATION_ARCHITECTURE/index.md` | `WINDOW_STRUCTURE.structure_key`는 참조 키 |
 | 기능/인터랙션 편집 | `04_FEATURE_INVENTORY/index.md` | FEATURES/INTERACTIONS에서 다른 문서로 확장 예정 |
 | 유즈케이스 흐름 확인 | `05_USE_CASES/index.md` | PREV/NEXT 내비, Invoked Interaction/UISurface 컬럼 |
-| 특정 feature_id 검증 | `.agents/skills/voyager-feature-inventory-checker/SKILL.md` | 빠른 lookup/정합성 체크 |
+| 특정 feature_id 검증 | `.agents/skills/voyager-feature-inventory/voyager-feature-inventory-checker/SKILL.md` | 빠른 lookup/정합성 체크 |
 
 ## CONVENTIONS (THIS REPO)
 
@@ -71,7 +71,7 @@ Voyager 앱의 기획/문서 자료를 GitHub SSOT로 운영하는 레포입니�
 
 ```bash
 # 특정 feature_id를 FEATURES/INTERACTIONS/WINDOW_STRUCTURE 기준으로 빠르게 점검
-python3 .agents/skills/voyager-feature-inventory-checker/scripts/check_feature.py FMW-001
+python3 .agents/skills/voyager-feature-inventory/voyager-feature-inventory-checker/scripts/check_feature.py FMW-001
 
 # 다른 레포에서 이 레포를 subtree로 벤더링(소비자 레포에서 실행)
 git remote add -f voyager-docs git@github.com:voyager-labs/voyager-documentation.git

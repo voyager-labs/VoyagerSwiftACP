@@ -15,7 +15,7 @@
 ## CONVENTIONS
 
 - 문서 상단/하단에 PREV/NEXT 내비게이션 링크를 둡니다.
-- Happy Path 테이블의 `Invoked Interaction` 컬럼은 `INT.*` 키를 사용합니다.
+- Happy Path 테이블의 `Invoked Interaction` 컬럼은 `04_FEATURE_INVENTORY/INTERACTIONS/data.tsv`의 `interaction_id`(예: `FMW-001-open_new_file_manager_window`)를 사용합니다.
 - `UI Surface`는 `WINDOW_STRUCTURE.structure_key`를 사용하거나, 임시로 사람이 읽는 라벨을 사용하되 이후 키로 정규화합니다.
 
 ## ANTI-PATTERNS
