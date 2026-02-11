@@ -15,6 +15,31 @@ final class FilterSearchQueryBuilderTests: XCTestCase {
         XCTAssertEqual(prepared.bindings.count, 2)
     }
 
+    func testScopePredicateNormalizesAndReducesScopes() {
+        let builder = FilterSearchScopeBuilder()
+        let predicate = builder.buildScopePredicate(
+            scopes: [
+                "  /Users/test/Downloads/  ",
+                "/Users/test/Downloads/subfolder",
+                "/Users/test/Downloads",
+                "",
+            ],
+        )
+        let prepared = predicate.prepare { _ in "?" }
+
+        XCTAssertTrue(prepared.sql.contains("\"files\".\"dir_path\""))
+        XCTAssertEqual(prepared.bindings.count, 2)
+    }
+
+    func testScopePredicateHandlesRootScope() {
+        let builder = FilterSearchScopeBuilder()
+        let predicate = builder.buildScopePredicate(scopes: ["/"])
+        let prepared = predicate.prepare { _ in "?" }
+
+        XCTAssertTrue(prepared.sql.contains("LIKE"))
+        XCTAssertEqual(prepared.bindings.count, 2)
+    }
+
     func testConditionBuilderEqOnNameFull() throws {
         let builder = try makeConditionBuilder()
         let condition = SearchConditionPayload(
