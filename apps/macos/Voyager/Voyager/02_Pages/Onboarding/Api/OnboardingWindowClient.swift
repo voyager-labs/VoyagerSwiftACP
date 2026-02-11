@@ -33,7 +33,7 @@ extension OnboardingWindowClient: DependencyKey {
     nonisolated static func makeLive(
         openMainWindow: @escaping @Sendable (_ path: String?) async -> Bool,
     ) -> OnboardingWindowClient {
-        let progressStore = OnboardingProgressStore.liveValue
+        let progressClient = OnboardingProgressClient.liveValue
         let showWindow: @Sendable () async -> Void = {
             await MainActor.run {
                 if onboardingWindowController == nil {
@@ -54,7 +54,7 @@ extension OnboardingWindowClient: DependencyKey {
 
         return OnboardingWindowClient(
             showIfNeeded: {
-                let required: Bool = switch progressStore.load() {
+                let required: Bool = switch progressClient.load() {
                 case let .success(snapshot):
                     !snapshot.stepState.completeComplete
                 case .empty, .resetRequired:

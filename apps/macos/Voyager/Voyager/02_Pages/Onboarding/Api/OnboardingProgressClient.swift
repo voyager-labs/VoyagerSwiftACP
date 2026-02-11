@@ -1,31 +1,7 @@
 import ComposableArchitecture
 import Foundation
 
-nonisolated struct OnboardingStepState: Codable, Equatable, Sendable {
-    var welcomeComplete: Bool
-    var betaAccessComplete: Bool
-    var permissionsComplete: Bool
-    var completeComplete: Bool
-
-    init(
-        welcomeComplete: Bool = true,
-        betaAccessComplete: Bool = false,
-        permissionsComplete: Bool = false,
-        completeComplete: Bool = false,
-    ) {
-        self.welcomeComplete = welcomeComplete
-        self.betaAccessComplete = betaAccessComplete
-        self.permissionsComplete = permissionsComplete
-        self.completeComplete = completeComplete
-    }
-}
-
-nonisolated struct OnboardingProgressSnapshot: Equatable, Sendable {
-    var currentStep: OnboardingStep
-    var stepState: OnboardingStepState
-}
-
-struct OnboardingProgressStore: Sendable {
+struct OnboardingProgressClient: Sendable {
     enum LoadResult: Equatable, Sendable {
         case empty
         case resetRequired
@@ -37,7 +13,7 @@ struct OnboardingProgressStore: Sendable {
     var reset: @Sendable () -> Void
 }
 
-extension OnboardingProgressStore: DependencyKey {
+extension OnboardingProgressClient: DependencyKey {
     private nonisolated enum Keys {
         static let version = "onboardingProgressVersion"
         static let currentStep = "onboardingCurrentStep"
@@ -46,8 +22,8 @@ extension OnboardingProgressStore: DependencyKey {
 
     nonisolated static let currentVersion = 1.1
 
-    nonisolated static var liveValue: OnboardingProgressStore {
-        OnboardingProgressStore(
+    nonisolated static var liveValue: OnboardingProgressClient {
+        OnboardingProgressClient(
             load: {
                 let defaults = UserDefaults.standard
 
@@ -100,22 +76,22 @@ extension OnboardingProgressStore: DependencyKey {
         )
     }
 
-    nonisolated static var testValue: OnboardingProgressStore {
-        OnboardingProgressStore(
+    nonisolated static var testValue: OnboardingProgressClient {
+        OnboardingProgressClient(
             load: { .empty },
             save: { _ in },
             reset: {},
         )
     }
 
-    nonisolated static var previewValue: OnboardingProgressStore {
+    nonisolated static var previewValue: OnboardingProgressClient {
         testValue
     }
 }
 
 extension DependencyValues {
-    nonisolated var onboardingProgressStore: OnboardingProgressStore {
-        get { self[OnboardingProgressStore.self] }
-        set { self[OnboardingProgressStore.self] = newValue }
+    nonisolated var onboardingProgressClient: OnboardingProgressClient {
+        get { self[OnboardingProgressClient.self] }
+        set { self[OnboardingProgressClient.self] = newValue }
     }
 }

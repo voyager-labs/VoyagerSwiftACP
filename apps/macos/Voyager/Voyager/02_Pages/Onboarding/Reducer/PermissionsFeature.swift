@@ -2,90 +2,10 @@ import ComposableArchitecture
 import Foundation
 import Logging
 
-enum FullDiskAccessStatus: String, Equatable, Sendable {
-    case granted = "Granted"
-    case needsAction = "Needs Action"
-    case denied = "Denied"
-    case unknown = "Unknown"
-
-    var message: String {
-        switch self {
-        case .granted:
-            "You're all set for Full Disk Access."
-        case .needsAction:
-            "Turn on Full Disk Access to keep going."
-        case .denied:
-            "Full Disk Access is off. You can enable it anytime."
-        case .unknown:
-            "Check Full Disk Access in System Settings."
-        }
-    }
-}
-
-struct FolderAccessItem: Equatable, Identifiable, Sendable {
-    let id: String
-    let title: String
-    let status: FolderAccessPermission
-}
-
 @Reducer
 struct PermissionsFeature {
-    @ObservableState
-    struct State: Equatable, Sendable {
-        var isComplete: Bool = false
-        var fullDiskAccessStatus: FullDiskAccessStatus = .unknown
-        var systemSettingsError: String?
-        var filesAndFoldersStatus: FilesAndFoldersStatus = .idle
-        var folderAccessResult: FolderAccessResult?
-        var isRequestingFilesAndFolders: Bool = false
-        var isIndexingInBackground: Bool = false
-        var launchAtLoginEnabled: Bool = false
-        var launchAtLoginError: String?
-        var hasAttemptedFullDiskAccessEnable: Bool = false
-
-        var fullDiskAccessStatusMessage: String {
-            fullDiskAccessStatus.message
-        }
-
-        var showsFullDiskAccessAction: Bool {
-            fullDiskAccessStatus != .granted
-        }
-
-        var nextDisabledMessage: String? {
-            fullDiskAccessStatus == .granted ? nil : "Turn on Full Disk Access to continue."
-        }
-
-        var filesAndFoldersMessage: String {
-            if isRequestingFilesAndFolders {
-                return "Requesting access…"
-            }
-            return filesAndFoldersStatus.message
-        }
-
-        var folderAccessItems: [FolderAccessItem] {
-            guard let result = folderAccessResult else { return [] }
-            return [
-                FolderAccessItem(id: "desktop", title: "Desktop", status: result.desktop),
-                FolderAccessItem(id: "documents", title: "Documents", status: result.documents),
-                FolderAccessItem(id: "downloads", title: "Downloads", status: result.downloads),
-            ]
-        }
-    }
-
-    // TODO: VOY-88 정식 인덱싱 엔드포인트 구현 이후 요청 경로와 인덱싱 패스를 수정한다.
-    enum Action: Sendable {
-        case onAppear
-        case appDidBecomeActive
-        case fullDiskAccessStatusResponse(FullDiskAccessStatus)
-        case openSystemSettingsTapped
-        case systemSettingsOpenResult(Bool)
-        case requestFilesAndFoldersTapped
-        case filesAndFoldersResponse(FolderAccessResult)
-        case launchAtLoginToggled(Bool)
-        case launchAtLoginUpdateSucceeded
-        case launchAtLoginUpdateFailed(Bool)
-        case launchAtLoginStateLoaded(Bool)
-    }
+    typealias State = PermissionsState
+    typealias Action = PermissionsAction
 
     @Dependency(\.folderAccessClient)
     var folderAccessClient

@@ -3,14 +3,8 @@ import Foundation
 
 @Reducer
 struct WelcomeFeature {
-    @ObservableState
-    struct State: Equatable, Sendable {
-        var isComplete: Bool = true
-    }
-
-    enum Action: Sendable {
-        case setCompleted(Bool)
-    }
+    typealias State = WelcomeState
+    typealias Action = WelcomeAction
 
     var body: some Reducer<State, Action> {
         Reduce { state, action in

@@ -23,6 +23,19 @@ enum OnboardingStep: String, CaseIterable, Codable, Sendable {
         }
     }
 
+    var subtitle: String {
+        switch self {
+        case .welcome:
+            "A quick setup before you dive in."
+        case .betaAccess:
+            "Confirm your invite to continue."
+        case .permissions:
+            "Just a couple of permissions to get you going."
+        case .complete:
+            "All set. You're ready to start."
+        }
+    }
+
     var next: OnboardingStep? {
         let nextIndex = index + 1
         guard nextIndex < Self.allCases.count else { return nil }

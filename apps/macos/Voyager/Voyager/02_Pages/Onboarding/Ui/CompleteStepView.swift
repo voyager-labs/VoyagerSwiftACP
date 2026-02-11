@@ -3,11 +3,10 @@ import SwiftUI
 
 struct CompleteStepView: View {
     let store: StoreOf<CompleteFeature>
-    var isCentered: Bool = false
 
     var body: some View {
         WithViewStore(store, observe: { $0 }, content: { viewStore in
-            VStack(alignment: isCentered ? .center : .leading, spacing: 12) {
+            VStack(alignment: .center, spacing: 12) {
                 if viewStore.isOpeningWindow {
                     ProgressView()
                         .controlSize(.small)
@@ -22,7 +21,7 @@ struct CompleteStepView: View {
                     }
                 }
             }
-            .frame(maxWidth: .infinity, alignment: isCentered ? .center : .leading)
+            .frame(maxWidth: .infinity, alignment: .center)
         })
     }
 }

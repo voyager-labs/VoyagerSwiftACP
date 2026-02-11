@@ -5,6 +5,7 @@ import SwiftUI
 struct OnboardingView: View {
     let store: StoreOf<OnboardingFeature>
 
+    // TODO(DS): 디자인시스템 적용
     private let accentColor = Color(
         red: 252 / 255,
         green: 154 / 255,
@@ -14,6 +15,7 @@ struct OnboardingView: View {
     var body: some View {
         WithViewStore(store, observe: { $0 }, content: { viewStore in
             GeometryReader { proxy in
+                // NOTE: 상태로 뺴는게 맞을지?
                 let isWideLayout = proxy.size.width >= 900
                 let horizontalPadding: CGFloat = 24
                 let availableWidth = proxy.size.width - horizontalPadding * 2
@@ -22,14 +24,23 @@ struct OnboardingView: View {
                 let availableColumnWidth = max(contentWidth - columnSpacing, 0)
                 let leftColumnWidth = availableColumnWidth * 0.4
                 let rightColumnWidth = availableColumnWidth * 0.6
-                let isCenteredLayout = viewStore.currentStep == .welcome || viewStore.currentStep == .complete
                 let centeredContentWidth = min(max(contentWidth * 0.7, 560), min(contentWidth, 720))
-                let contentSpacing: CGFloat = isCenteredLayout ? 16 : 16
                 let topInsetPadding: CGFloat = 26
                 let topBarWidth = contentWidth
 
                 ZStack {
-                    backgroundView
+                    ZStack {
+                        VisualEffectBackgroundView(material: .hudWindow, blendingMode: .behindWindow)
+                        LinearGradient(
+                            colors: [
+                                accentColor.opacity(0.18),
+                                Color(nsColor: .windowBackgroundColor).opacity(0.18),
+                                Color.clear,
+                            ],
+                            startPoint: .topLeading,
+                            endPoint: .bottomTrailing,
+                        )
+                    }
 
                     VStack(spacing: 12) {
                         topInsetBar(viewStore: viewStore)
@@ -46,20 +57,7 @@ struct OnboardingView: View {
                         }
 
                         Group {
-                            if isCenteredLayout {
-                                VStack(spacing: 0) {
-                                    Spacer(minLength: 0)
-                                    VStack(spacing: contentSpacing) {
-                                        stepSummaryView(viewStore: viewStore, isCentered: true)
-                                        stepContent(for: viewStore.currentStep, isCentered: true)
-                                            .frame(maxWidth: .infinity, alignment: .center)
-                                            .multilineTextAlignment(.center)
-                                    }
-                                    .frame(width: centeredContentWidth, alignment: .center)
-                                    .frame(maxWidth: .infinity, alignment: .center)
-                                    Spacer(minLength: 0)
-                                }
-                            } else if isWideLayout {
+                            if isWideLayout {
                                 HStack(alignment: .center, spacing: columnSpacing) {
                                     stepSummaryView(viewStore: viewStore, isCentered: false)
                                         .frame(width: leftColumnWidth, alignment: .leading)
@@ -69,18 +67,20 @@ struct OnboardingView: View {
                                 .frame(width: contentWidth, alignment: .center)
                                 .frame(maxHeight: .infinity, alignment: .center)
                             } else {
-                                VStack(alignment: .leading, spacing: 16) {
-                                    stepSummaryView(viewStore: viewStore, isCentered: false)
-                                        .frame(maxWidth: .infinity, alignment: .leading)
-                                    stepContent(for: viewStore.currentStep, isCentered: false)
-                                        .frame(maxWidth: .infinity, alignment: .leading)
+                                VStack(spacing: 0) {
+                                    Spacer(minLength: 0)
+                                    VStack(spacing: 16) {
+                                        stepSummaryView(viewStore: viewStore, isCentered: true)
+                                        stepContent(for: viewStore.currentStep, isCentered: true)
+                                            .frame(maxWidth: .infinity, alignment: .center)
+                                            .multilineTextAlignment(.center)
+                                    }
+                                    .frame(width: centeredContentWidth, alignment: .center)
+                                    .frame(maxWidth: .infinity, alignment: .center)
+                                    Spacer(minLength: 0)
                                 }
-                                .frame(width: contentWidth, alignment: .center)
+                                Spacer(minLength: 0)
                             }
-                        }
-
-                        if !isCenteredLayout {
-                            Spacer(minLength: 0)
                         }
                     }
                     .padding(.horizontal, horizontalPadding)
@@ -94,21 +94,6 @@ struct OnboardingView: View {
                 viewStore.send(.onAppear)
             }
         })
-    }
-
-    private var backgroundView: some View {
-        ZStack {
-            VisualEffectBackgroundView(material: .hudWindow, blendingMode: .behindWindow)
-            LinearGradient(
-                colors: [
-                    accentColor.opacity(0.18),
-                    Color(nsColor: .windowBackgroundColor).opacity(0.18),
-                    Color.clear,
-                ],
-                startPoint: .topLeading,
-                endPoint: .bottomTrailing,
-            )
-        }
     }
 
     private func topInsetBar(viewStore: ViewStore<OnboardingFeature.State, OnboardingFeature.Action>) -> some View {
@@ -232,7 +217,7 @@ struct OnboardingView: View {
                 .frame(maxWidth: .infinity, alignment: alignment)
                 .multilineTextAlignment(textAlignment)
 
-            Text(stepSubtitle(for: viewStore.currentStep))
+            Text(viewStore.currentStep.subtitle)
                 .font(.system(size: subtitleSize))
                 .foregroundStyle(.secondary)
                 .frame(maxWidth: .infinity, alignment: alignment)
@@ -241,36 +226,17 @@ struct OnboardingView: View {
         .frame(maxWidth: .infinity, alignment: alignment)
     }
 
-    private func stepSubtitle(for step: OnboardingStep) -> String {
-        switch step {
-        case .welcome:
-            "A quick setup before you dive in."
-        case .betaAccess:
-            "Confirm your invite to continue."
-        case .permissions:
-            "Just a couple of permissions to get you going."
-        case .complete:
-            "All set. You're ready to start."
-        }
-    }
-
     @ViewBuilder
-    private func stepContent(for step: OnboardingStep, isCentered: Bool) -> some View {
+    private func stepContent(for step: OnboardingStep, isCentered _: Bool) -> some View {
         switch step {
         case .welcome:
-            WelcomeStepView(
-                store: store.scope(state: \.welcome, action: \.welcome),
-                isCentered: isCentered,
-            )
+            WelcomeStepView(store: store.scope(state: \.welcome, action: \.welcome))
         case .betaAccess:
             BetaAccessStepView(store: store.scope(state: \.betaAccess, action: \.betaAccess))
         case .permissions:
             PermissionsStepView(store: store.scope(state: \.permissions, action: \.permissions))
         case .complete:
-            CompleteStepView(
-                store: store.scope(state: \.complete, action: \.complete),
-                isCentered: isCentered,
-            )
+            CompleteStepView(store: store.scope(state: \.complete, action: \.complete))
         }
     }
 }
