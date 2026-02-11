@@ -75,15 +75,15 @@
 | Happy Path |  |  |  |  |
 | ----- | :---- | :---- | :---- | :---- |
 | **Step** | **User Intent** |  **System behavior** | **Invoked Interaction** | **UI Surface** |
-| 1 | 새 채팅을 시작하거나 기존 채팅을 이어가며 메시지를 제출한다. | 메시지를 수신하고, 의도 분류를 수행한다. 검색 의도로 판정되면 검색 플로우로 진입한다. | Submit Message | Chat Pane (Input) |
-| 2 | 내 메시지가 검색으로 처리되는지, 어떤 기준으로 해석됐는지 확인한다. | 현재 컨텍스트와 메시지 단서를 바탕으로 콜렉션 필터 초안을 생성하고 채팅에 표시한다. | Show Collection Filter Draft | Chat Pane (Message Area) |
+| 1 | 새 채팅을 시작하거나 기존 채팅을 이어가며 메시지를 제출한다. | 메시지를 수신하고, 의도 분류를 수행한다. 검색 의도로 판정되면 검색 플로우로 진입한다. | CDA-001-submit_message | Chat Pane (Input) |
+| 2 | 내 메시지가 검색으로 처리되는지, 어떤 기준으로 해석됐는지 확인한다. | 현재 컨텍스트와 메시지 단서를 바탕으로 콜렉션 필터 초안을 생성하고 채팅에 표시한다. | CDA-003-show_collection_filter_draft | Chat Pane (Message Area) |
 | 3 | 표시된 콜렉션 필터 초안이 의도와 일치하는지 검토한다. | 콜렉션 필터 초안을 유지한 채, 사용자의 다음 입력(조작/후속 메시지)을 받을 준비 상태로 둔다. | \- | Chat Pane (Message Area) |
-| 4 | 필요하면 조건을 조작하거나 후속 메시지로 조건을 보정한다. | 사용자의 조작 또는 후속 메시지를 반영해 콜렉션 필터 초안을 업데이트하고, 갱신된 초안을 다시 표시한다. | Update Collection Filter Draft | Chat Pane (Collection Filter Draft) |
-| 5 | 현재 필터로 나올 결과를 미리 확인한다. | 콜렉션 필터 초안 기준으로 워킹셋 프리뷰(결과 수, 대표 샘플 등)를 생성해 표시한다. | Show Working Set Preview | Chat Pane (Message Thread) |
-| 6 | 프리뷰가 의도에 맞아 필터를 확정한다. | 사용자의 확정 액션을 수신해 콜렉션 필터를 확정 상태로 전환한다. | Confirm Collection Filter | Chat Pane (Message Thread) |
-| 7 | 확정된 기준의 최종 결과를 워킹셋으로 확인한다. | 확정된 콜렉션 필터 결과를 워킹셋으로 생성해 응답으로 반환하고, 워킹셋을 표시한다. | Show Working Set | Chat Pane (Message Thread) |
-| 8 | 워킹셋을 펼쳐 결과 리스트를 브라우징한다. | 선택된 워킹셋을 메인 뷰로 확장해 결과 리스트를 표시한다. | Expand Working Set | Chat Pane (Working Set) → Content Pane (Entries View) |
-| 9 | 필요한 엔트리를 연다. | 선택된 엔트리를 열거나 미리보기를 표시한다. | Open Entry | Content Pane (Entries View) |
+| 4 | 필요하면 조건을 조작하거나 후속 메시지로 조건을 보정한다. | 사용자의 조작 또는 후속 메시지를 반영해 콜렉션 필터 초안을 업데이트하고, 갱신된 초안을 다시 표시한다. | CDA-003-update_collection_filter_draft | Chat Pane (Collection Filter Draft) |
+| 5 | 현재 필터로 나올 결과를 미리 확인한다. | 콜렉션 필터 초안 기준으로 워킹셋 프리뷰(결과 수, 대표 샘플 등)를 생성해 표시한다. | CDA-003-show_collection_preview | Chat Pane (Message Thread) |
+| 6 | 프리뷰가 의도에 맞아 필터를 확정한다. | 사용자의 확정 액션을 수신해 콜렉션 필터를 확정 상태로 전환한다. | CDA-003-confirm_collection_filter | Chat Pane (Message Thread) |
+| 7 | 확정된 기준의 최종 결과를 워킹셋으로 확인한다. | 확정된 콜렉션 필터 결과를 워킹셋으로 생성해 응답으로 반환하고, 워킹셋을 표시한다. | CDA-003-show_retrieval_results | Chat Pane (Message Thread) |
+| 8 | 워킹셋을 펼쳐 결과 리스트를 브라우징한다. | 선택된 워킹셋을 메인 뷰로 확장해 결과 리스트를 표시한다. | CDA-003-expand_temporary_collection_as_page | Chat Pane (Working Set) → Content Pane (Entries View) |
+| 9 | 필요한 엔트리를 연다. | 선택된 엔트리를 열거나 미리보기를 표시한다. | EAC-001-open_entry_with_default_app | Content Pane (Entries View) |
 
 ### 
 

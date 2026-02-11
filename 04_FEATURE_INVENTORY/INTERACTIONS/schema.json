@@ -13,7 +13,7 @@
       "name": "interaction_id",
       "type": "string",
       "required": true,
-      "description": "인터랙션 ID(PK). 예: INT.FMW.OpenNewFileManagerWindow"
+      "description": "인터랙션 ID(PK). 예: FMW-001-open_new_file_manager_window"
     },
     {
       "name": "interaction_type",
