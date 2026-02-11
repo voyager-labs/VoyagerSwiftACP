@@ -2,6 +2,7 @@ import AppKit
 import ComposableArchitecture
 import SwiftUI
 
+// TODO: AppKit으로 변경 및 점검 필요
 struct InspectorPaneView: View {
     let store: StoreOf<FileManagerFeature>
     @State private var chatInput: String = ""
@@ -25,7 +26,7 @@ struct InspectorPaneView: View {
                 .buttonStyle(.plain)
 
                 Button {
-                    store.send(.toggleInspector)
+                    store.send(.inspector(.toggleInspector))
                 } label: {
                     Image(systemName: "xmark")
                         .foregroundColor(.secondary)
@@ -46,7 +47,7 @@ struct InspectorPaneView: View {
     private var chatInputArea: some View {
         VStack(alignment: .leading, spacing: 0) {
             HStack(spacing: 6) {
-                folderScopeChip
+                // folderScopeChip
                 Spacer()
             }
             .padding(.horizontal, 10)
@@ -119,8 +120,9 @@ struct InspectorPaneView: View {
         HStack(spacing: 4) {
             Image(systemName: "folder")
                 .font(.system(size: 11))
-            Text(folderDisplayName)
-                .font(.system(size: 12, weight: .light))
+            // 임시 주석 처리
+            // Text(folderDisplayName)
+            //     .font(.system(size: 12, weight: .light))
         }
         .foregroundColor(VoyagerDS.Surface.statusButtonText(for: colorScheme))
         .padding(.horizontal, 6)
@@ -133,10 +135,6 @@ struct InspectorPaneView: View {
                         .strokeBorder(VoyagerDS.Surface.statusButtonBorder(for: colorScheme), lineWidth: 1),
                 ),
         )
-    }
-
-    private var folderDisplayName: String {
-        FileManagerFeature.makeWindowTitle(for: store.currentPath)
     }
 
     private var singleLineHeight: CGFloat {
