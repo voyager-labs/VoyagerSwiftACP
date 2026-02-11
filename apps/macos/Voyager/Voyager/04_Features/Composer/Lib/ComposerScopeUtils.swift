@@ -70,9 +70,8 @@ enum ComposerScopeUtils {
             return
         }
 
-        guard let pathURL = URL(string: "file://\(path)"),
-              let contents = try? entryClient.contentsOfDirectory(pathURL, [], [])
-        else { return }
+        let pathURL = URL(fileURLWithPath: path, isDirectory: true)
+        guard let contents = try? entryClient.contentsOfDirectory(pathURL, [], []) else { return }
 
         for item in contents {
             if Date().timeIntervalSince(params.startTime) > params.timeout {
@@ -81,7 +80,12 @@ enum ComposerScopeUtils {
 
             guard results.count < params.maxResults else { break }
 
-            let fullPath = (path as NSString).appendingPathComponent(item.path)
+            let itemPath = item.path
+            let fullPath: String = if itemPath.hasPrefix("/") {
+                itemPath
+            } else {
+                (path as NSString).appendingPathComponent(itemPath)
+            }
             var isDirectory: ObjCBool = false
             guard entryClient.fileExistsAtPath(fullPath, &isDirectory),
                   isDirectory.boolValue
@@ -156,10 +160,11 @@ enum ComposerScopeUtils {
         initialMaxDepth: Int = 2,
         timeout: TimeInterval = 2.0,
     ) async throws -> [DirectoryItem] {
-        guard !query.isEmpty else { return [] }
+        let normalizedQuery = query.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !normalizedQuery.isEmpty else { return [] }
 
         return try await withThrowingTaskGroup(of: [DirectoryItem].self) { group in
-            let queryLower = query.lowercased()
+            let queryLower = normalizedQuery.lowercased()
             var allResults: [DirectoryItem] = []
             let startTime = Date()
             let homeDir = entryClient.homeDirectory()
