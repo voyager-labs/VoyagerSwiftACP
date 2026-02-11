@@ -8,6 +8,8 @@ struct GeneralSettingsView: View {
     private var entryClient: EntryClient
     @Dependency(\.workspaceClient)
     private var workspaceClient: WorkspaceClient
+    @Dependency(\.updaterClient)
+    private var updaterClient: UpdaterClient
 
     var body: some View {
         Form {
@@ -45,7 +47,9 @@ struct GeneralSettingsView: View {
                         Spacer()
 
                         Button("Check for updates...") {
-                            AppDelegate.shared?.checkForUpdates()
+                            Task {
+                                await updaterClient.checkForUpdates()
+                            }
                         }
                     }
                 }
