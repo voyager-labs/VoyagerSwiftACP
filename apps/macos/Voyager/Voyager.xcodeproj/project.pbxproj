@@ -230,6 +230,16 @@
 /* End PBXFrameworksBuildPhase section */
 
 /* Begin PBXGroup section */
+		6C37996C2F3E32BD0044D1A9 /* Recovered References */ = {
+			isa = PBXGroup;
+			children = (
+				B7A1F2E233C9F5AB00C0FFEE /* VoyagerHelperTests.swift */,
+				F10000000000000000000041 /* VoyagerHelper/Search */,
+				F10000000000000000000042 /* VoyagerHelper/Infrastructure/Database */,
+			);
+			name = "Recovered References";
+			sourceTree = "<group>";
+		};
 		7E14EDC32E86622C005AC834 = {
 			isa = PBXGroup;
 			children = (
@@ -244,6 +254,7 @@
 				7E14EE242E866E82005AC834 /* VoyagerHelper */,
 				7E14EE322E866E85005AC834 /* VoyagerHelperTests */,
 				7E14EDCD2E86622C005AC834 /* Products */,
+				6C37996C2F3E32BD0044D1A9 /* Recovered References */,
 			);
 			sourceTree = "<group>";
 		};
@@ -1194,6 +1205,7 @@
 				CURRENT_PROJECT_VERSION = 0;
 				DEAD_CODE_STRIPPING = YES;
 				DEVELOPMENT_TEAM = "";
+				"DEVELOPMENT_TEAM[sdk=macosx*]" = L6G32Y9LKG;
 				GENERATE_INFOPLIST_FILE = NO;
 				INFOPLIST_FILE = FilterSearchXPC/Info.plist;
 				LD_RUNPATH_SEARCH_PATHS = (
