@@ -158,6 +158,10 @@ def main() -> int:
     index_path = _run_git(["rev-parse", "--git-path", "index"]).strip()
     _print_cmd("git rev-parse --git-path index", index_path)
 
+    _print_section("Preflight (refresh index)")
+    _ = _run_git(["update-index", "-q", "--refresh"], check=False)
+    _print_cmd("git update-index -q --refresh", "(done)")
+
     _print_section("Branch")
     branch = _run_git(["rev-parse", "--abbrev-ref", "HEAD"]).strip()
     _print_cmd("git rev-parse --abbrev-ref HEAD", branch)
