@@ -10,11 +10,10 @@ from app.config import load_env
 from app.main import app
 
 os.environ.setdefault("APP_ENV", "prod")
-os.environ.setdefault("BACKEND_MODE", "bundled")
 
 load_env()
 
 if __name__ == "__main__":
-    host = os.environ["PUBLIC_BACKEND_HOST"]
-    port = int(os.environ["PUBLIC_BACKEND_PORT"])
+    host = os.environ.get("BACKEND_HOST", "127.0.0.1")
+    port = int(os.environ.get("BACKEND_PORT", "8000"))
     uvicorn.run(app, host=host, port=port, log_level="info")

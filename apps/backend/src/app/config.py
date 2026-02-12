@@ -23,11 +23,6 @@ class VoyagerConfig:
     gateway_url: str  # PUBLIC_GATEWAY_URL
     web_base_url: str  # PUBLIC_WEB_BASE_URL
 
-    # Backend 설정
-    backend_host: str  # PUBLIC_BACKEND_HOST
-    backend_port: str  # PUBLIC_BACKEND_PORT (0이면 동적 할당)
-    backend_process_name: str  # PUBLIC_BACKEND_PROCESS_NAME
-
     # SQLite 설정
     sqlite_protocol: str  # PUBLIC_SQLITE_PROTOCOL
     sqlite_echo: bool  # PUBLIC_SQLITE_ECHO
@@ -54,16 +49,11 @@ def load_env() -> None:
 
     로딩 순서 (override=False이므로 먼저 로드된 값 우선):
     1. 프로세스 환경 변수 (이미 설정됨, 최우선)
-    2. .env.{BACKEND_MODE} (존재 시)
-    3. .env.{APP_ENV} (존재 시)
+    2. .env.{APP_ENV} (존재 시)
     """
     app_env = os.getenv("APP_ENV", "dev")
-    backend_mode = os.getenv("BACKEND_MODE", "source")
-
-    backend_env_file = find_dotenv(filename=f".env.{backend_mode}")
     app_env_file = find_dotenv(filename=f".env.{app_env}")
 
-    load_dotenv(dotenv_path=backend_env_file, override=False)
     load_dotenv(dotenv_path=app_env_file, override=False)
 
 
@@ -124,10 +114,6 @@ def load_config() -> VoyagerConfig:
         # Gateway/Web 설정
         gateway_url=_require_env("PUBLIC_GATEWAY_URL"),
         web_base_url=_require_env("PUBLIC_WEB_BASE_URL"),
-        # Backend 설정
-        backend_host=_require_env("PUBLIC_BACKEND_HOST"),
-        backend_port=_require_env("PUBLIC_BACKEND_PORT"),
-        backend_process_name=_require_env("PUBLIC_BACKEND_PROCESS_NAME"),
         # SQLite 설정
         sqlite_protocol=_require_env("PUBLIC_SQLITE_PROTOCOL"),
         sqlite_echo=_require_bool("PUBLIC_SQLITE_ECHO"),

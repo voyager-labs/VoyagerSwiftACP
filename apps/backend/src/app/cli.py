@@ -14,13 +14,12 @@ MAIN_FILE = Path(__file__).parent / "main.py"
 
 def _with_env(default_env: str) -> dict[str, str]:
     os.environ.setdefault("APP_ENV", default_env)
-    os.environ.setdefault("BACKEND_MODE", "source")
     load_env()
     return os.environ.copy()
 
 
 def _set_supervisor_title(env: dict[str, str]) -> None:
-    process_title = env.get("PUBLIC_BACKEND_PROCESS_NAME")
+    process_title = env.get("BACKEND_PROCESS_NAME") or env.get("PUBLIC_APP_NAME")
     if process_title:
         setproctitle.setproctitle(f"{process_title} (Supervisor)")
 
@@ -34,8 +33,8 @@ def dev() -> None:
 
     _set_supervisor_title(env)
 
-    host = env["PUBLIC_BACKEND_HOST"]
-    port = env["PUBLIC_BACKEND_PORT"]
+    host = env.get("BACKEND_HOST", "127.0.0.1")
+    port = env.get("BACKEND_PORT", "8000")
 
     # sys.argv 조작하여 FastAPI CLI 호출
     original_argv = sys.argv.copy()
@@ -55,8 +54,8 @@ def prod() -> None:
 
     _set_supervisor_title(env)
 
-    host = env["PUBLIC_BACKEND_HOST"]
-    port = env["PUBLIC_BACKEND_PORT"]
+    host = env.get("BACKEND_HOST", "127.0.0.1")
+    port = env.get("BACKEND_PORT", "8000")
 
     # sys.argv 조작하여 FastAPI CLI 호출
     original_argv = sys.argv.copy()

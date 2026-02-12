@@ -1,5 +1,4 @@
 import logging
-import os
 import platform
 import time
 from collections.abc import Awaitable, Callable
@@ -19,9 +18,7 @@ async def lifespan(app: FastAPI):
     # 환경 변수 기반 설정 로드
     cfg = load_config()
     app.state.config = cfg
-
-    process_title = os.environ["PUBLIC_BACKEND_PROCESS_NAME"]
-    setproctitle.setproctitle(process_title)
+    setproctitle.setproctitle(f"{cfg.app_name}-server")
 
     # DB 엔진 초기화
     db_cfg = get_db_config(cfg)
@@ -35,10 +32,6 @@ async def lifespan(app: FastAPI):
         f"app = {cfg.app_name} env = {cfg.app_env} \n"
         f"python = {py_ver} \n"
         f"gateway_url = {cfg.gateway_url} \n"
-        f"backend_host = {cfg.backend_host} \n"
-        f"backend_port = {cfg.backend_port} \n"
-        f"backend_url =  http://{cfg.backend_host}:{cfg.backend_port} \n"
-        f"backend_process_name = {cfg.backend_process_name} \n"
         f"sqlite_protocol = {cfg.sqlite_protocol} \n"
         f"sqlite_echo = {cfg.sqlite_echo} \n"
         f"sqlite_check_same_thread = {cfg.sqlite_check_same_thread} \n"
@@ -69,11 +62,11 @@ async def add_request_observability(
     call_next: Callable[[Request], Awaitable[Response]],
 ) -> Response:
     start = time.perf_counter()
-    route = request.url.path
-    method = request.method
 
     response: Response = await call_next(request)
-    duration_ms = (time.perf_counter() - start) * 1000
+    _ = request.url.path
+    _ = request.method
+    _ = (time.perf_counter() - start) * 1000
     return response
 
 
