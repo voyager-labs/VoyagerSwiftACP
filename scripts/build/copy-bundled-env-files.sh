@@ -10,13 +10,6 @@ if [[ "${CONFIGURATION:-}" != "Release" ]]; then
   exit 0
 fi
 
-MODE_SCRIPT="${REPO_ROOT}/scripts/build/handle-backend-mode.sh"
-BACKEND_MODE="$("${MODE_SCRIPT}" read)"
-if [[ "${BACKEND_MODE}" != "bundled" ]]; then
-  echo "[Voyager] BACKEND_MODE=${BACKEND_MODE}: skip env copy" >&2
-  exit 0
-fi
-
 DEST_DIR="${1:-}"
 if [[ -z "${DEST_DIR}" ]]; then
   if [[ -z "${TARGET_BUILD_DIR:-}" || -z "${UNLOCALIZED_RESOURCES_FOLDER_PATH:-}" ]]; then
@@ -31,15 +24,7 @@ if [[ ! -d "${DEST_DIR}" ]]; then
   exit 0
 fi
 
-ENV_BUNDLED_SRC="${REPO_ROOT}/.env.bundled"
 ENV_PROD_SRC="${REPO_ROOT}/.env.prod"
-
-if [[ -f "${ENV_BUNDLED_SRC}" ]]; then
-  cp "${ENV_BUNDLED_SRC}" "${DEST_DIR}/.env.bundled"
-  echo "[Voyager] .env.bundled 복사 완료: ${DEST_DIR}/.env.bundled" >&2
-else
-  echo "[Voyager] .env.bundled not found: ${ENV_BUNDLED_SRC}" >&2
-fi
 
 if [[ -f "${ENV_PROD_SRC}" ]]; then
   cp "${ENV_PROD_SRC}" "${DEST_DIR}/.env.prod"

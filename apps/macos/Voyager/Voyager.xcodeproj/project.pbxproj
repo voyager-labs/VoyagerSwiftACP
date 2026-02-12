@@ -354,7 +354,6 @@
 				7EC6B03F2E8CE43B00379B56 /* Run Lint and Format */,
 				7E14EE202E866E82005AC834 /* Frameworks */,
 				7E14EE212E866E82005AC834 /* Resources */,
-				AFB0BEEF33B27A4C00A1F900 /* Build Backend Binary */,
 			);
 			buildRules = (
 			);
@@ -590,26 +589,6 @@
 			shellPath = /bin/sh;
 			shellScript = "#!/bin/bash\nset -euo pipefail\n\nROOT=\"$SRCROOT\"\n\necho \"================================\"\necho \"🔍 SwiftLint: using system installation...\"\necho \"================================\"\n\n# 시스템에 설치된 SwiftLint 사용\nif command -v swiftlint >/dev/null 2>&1; then\n  echo \"✓ Running SwiftLint at: $(which swiftlint)\"\n  swiftlint --config \"$ROOT/.swiftlint.yml\" --reporter xcode\n  echo \"✓ SwiftLint completed\"\nelse\n  echo \"⚠️ SwiftLint not found in PATH\"\nfi\n\necho \"================================\"\necho \"🔧 SwiftFormat: using system installation...\"\necho \"================================\"\n\n# 시스템에 설치된 SwiftFormat 사용\nif command -v swiftformat >/dev/null 2>&1; then\n  echo \"✓ Running SwiftFormat at: $(which swiftformat)\"\n  swiftformat --config \"$ROOT/.swiftformat\" \"$ROOT\" --verbose || true\n  echo \"✓ SwiftFormat completed\"\nelse\n  echo \"⚠️ SwiftFormat not found in PATH\"\nfi\n\necho \"================================\"\n";
 		};
-		AFB0BEEF33B27A4C00A1F900 /* Build Backend Binary */ = {
-			isa = PBXShellScriptBuildPhase;
-			alwaysOutOfDate = 1;
-			buildActionMask = 2147483647;
-			files = (
-			);
-			inputFileListPaths = (
-			);
-			inputPaths = (
-				"$SRCROOT/../../../scripts/build/build-backend-binary.sh",
-			);
-			name = "Build Backend Binary";
-			outputFileListPaths = (
-			);
-			outputPaths = (
-			);
-			runOnlyForDeploymentPostprocessing = 0;
-			shellPath = /bin/sh;
-			shellScript = "set -euo pipefail\nREPO_ROOT=\"$(cd \"$SRCROOT/../../..\" && pwd)\"\nSCRIPT=\"${REPO_ROOT}/scripts/build/build-backend-binary.sh\"\nif [ ! -x \"${SCRIPT}\" ]; then\n  echo \"[VoyagerHelper] build-backend-binary.sh not found or not executable: ${SCRIPT}\" >&2\n  exit 1\nfi\nPATH=\"/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/sbin:$PATH\"\nexport PATH\necho \"[VoyagerHelper] Build Backend Binary Phase Start\" >&2\n\"${SCRIPT}\" 2>&1\necho \"[VoyagerHelper] Build Backend Binary Phase Complete\" >&2\n";
-		};
 		AFB0BEF033B7C0F100A1F901 /* Copy Bundled Env */ = {
 			isa = PBXShellScriptBuildPhase;
 			alwaysOutOfDate = 1;
@@ -624,7 +603,6 @@
 			outputFileListPaths = (
 			);
 			outputPaths = (
-				"$(TARGET_BUILD_DIR)/$(UNLOCALIZED_RESOURCES_FOLDER_PATH)/.env.bundled",
 				"$(TARGET_BUILD_DIR)/$(UNLOCALIZED_RESOURCES_FOLDER_PATH)/.env.prod",
 			);
 			runOnlyForDeploymentPostprocessing = 0;
@@ -842,7 +820,6 @@
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
 				ASSETCATALOG_COMPILER_INCLUDE_ALL_APPICON_ASSETS = YES;
 				AUTOMATION_APPLE_EVENTS = YES;
-				BACKEND_MODE = source;
 				CODE_SIGN_IDENTITY = "-";
 				CODE_SIGN_STYLE = Manual;
 				COMBINE_HIDPI_IMAGES = YES;
@@ -900,7 +877,6 @@
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
 				ASSETCATALOG_COMPILER_INCLUDE_ALL_APPICON_ASSETS = YES;
-				BACKEND_MODE = bundled;
 				"CODE_SIGN_IDENTITY[sdk=macosx*]" = "Developer ID Application";
 				CODE_SIGN_STYLE = Manual;
 				COMBINE_HIDPI_IMAGES = YES;
@@ -1038,7 +1014,6 @@
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
 				AUTOMATION_APPLE_EVENTS = YES;
-				BACKEND_MODE = source;
 				"CODE_SIGN_IDENTITY[sdk=macosx*]" = "-";
 				CODE_SIGN_STYLE = Manual;
 				COMBINE_HIDPI_IMAGES = YES;
@@ -1093,7 +1068,6 @@
 				APP_ENV = prod;
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
-				BACKEND_MODE = bundled;
 				"CODE_SIGN_IDENTITY[sdk=macosx*]" = "Developer ID Application";
 				CODE_SIGN_STYLE = Manual;
 				COMBINE_HIDPI_IMAGES = YES;
@@ -1188,7 +1162,6 @@
 			isa = XCBuildConfiguration;
 			buildSettings = {
 				APP_ENV = dev;
-				BACKEND_MODE = source;
 				"CODE_SIGN_IDENTITY[sdk=macosx*]" = "-";
 				CODE_SIGN_STYLE = Manual;
 				CURRENT_PROJECT_VERSION = 0;
@@ -1216,7 +1189,6 @@
 			isa = XCBuildConfiguration;
 			buildSettings = {
 				APP_ENV = prod;
-				BACKEND_MODE = bundled;
 				"CODE_SIGN_IDENTITY[sdk=macosx*]" = "Developer ID Application";
 				CODE_SIGN_STYLE = Manual;
 				CURRENT_PROJECT_VERSION = 0;
