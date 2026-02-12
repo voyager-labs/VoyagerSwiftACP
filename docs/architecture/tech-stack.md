@@ -132,31 +132,17 @@ Helper는 (1) 백엔드 프로세스 실행/상태 브로드캐스트, (2) 파�
 
 - `apps/macos/Voyager/VoyagerHelper/Infrastructure/HelperStateBroadcaster.swift`
 
-### ProcessRunner (백엔드 실행)
+### FilterSearchXPC (검색 실행 경로)
 
-- 역할: 백엔드 실행 모드에 따라 프로세스를 실행/관찰
-    - source 모드: `uv run <env>` 실행
-    - bundled 모드: 앱 번들 리소스의 `server/server.bin` 실행
-- 선정 이유: 개발(빠른 반복)과 배포(독립 실행) 요구를 같은 코드 경로로 묶기 위함
-- 주의점
-    - 백엔드 stdout/stderr를 그대로 전달하면 민감 정보가 로그에 남을 수 있음
-    - 프로세스 크래시/포트 충돌/헬스체크 실패에 대한 재시도 정책이 필요
+- 역할: 앱 검색 요청을 XPC 서비스로 전달하여 로컬 검색을 실행
+- 선정 이유: 앱 프로세스와 검색 실행 런타임을 분리해 안정성과 권한 경계를 확보
+- 주의점: XPC 인터럽트/타임아웃 에러를 앱 UX에서 명확히 구분해 처리해야 함
 - 버전: 내부 구현
 
 관련 코드
 
-- `apps/macos/Voyager/VoyagerHelper/Infrastructure/ProcessRunner.swift`
-
-### PortReservationService (동적 포트 예약)
-
-- 역할: 로컬 백엔드의 포트를 동적으로 할당하고 충돌을 방지
-- 선정 이유: 기본값을 `PUBLIC_BACKEND_PORT=0`으로 두고, 여러 실행 환경에서 안전하게 포트를 확보
-- 주의점: 예약-실행 사이 레이스 컨디션에 취약할 수 있으므로 예약/검증/재시도를 함께 설계
-- 버전: 내부 구현
-
-관련 코드
-
-- `apps/macos/Voyager/VoyagerHelper/Infrastructure/PortReservationService.swift`
+- `apps/macos/Voyager/Voyager/04_Features/Composer/Api/SearchClient.swift`
+- `apps/macos/Voyager/FilterSearchXPC/FilterSearchXPCServiceMain.swift`
 
 ### SwiftDotenv (환경 파일 로딩)
 
@@ -170,7 +156,7 @@ Helper는 (1) 백엔드 프로세스 실행/상태 브로드캐스트, (2) 파�
 관련 코드
 
 - `apps/macos/Voyager/Shared/EnvironmentLoader.swift`
-- `apps/macos/Voyager/VoyagerHelper/Infrastructure/Environment.swift`
+- `apps/macos/Voyager/FilterSearchXPC/FilterSearchXPCServiceMain.swift`
 
 ### GRDB (SQLite)
 
@@ -274,17 +260,16 @@ Helper는 (1) 백엔드 프로세스 실행/상태 브로드캐스트, (2) 파�
 - `pytest 9.0.2`
 - `pre-commit 4.3.0`
 
-### Nuitka (백엔드 번들링)
+### Release Env Copy Script
 
-- 역할: 백엔드를 독립 실행 바이너리(`server.bin`)로 컴파일(배포용)
-- 선정 이유: Python 런타임/의존성을 앱 번들에 포함해 배포를 단순화
-- 주의점: 빌드 시간이 길고 플랫폼 차이가 있어 smoke test 필수
-- 버전: `2.8.9` (`apps/backend/uv.lock`)
+- 역할: Release 빌드에서 `.env.prod`를 앱 리소스로 복사
+- 선정 이유: 앱 런타임에 필요한 공개 설정을 번들에 포함하기 위함
+- 주의점: `.env.prod`에는 시크릿을 포함하지 않아야 함
+- 버전: 내부 스크립트
 
 관련 파일
 
-- `scripts/build/compile-nuitka-binary.sh`
-- `scripts/build/build-backend-binary.sh`
+- `scripts/build/copy-bundled-env-files.sh`
 
 ---
 

@@ -307,15 +307,11 @@ apps/macos/Voyager/VoyagerHelper/
 │  │  │  └─ EntryRecord.swift
 │  │  └─ Migrations/            # SQL 마이그레이션
 │  │     └─ 20260120_v001.sql
-│  ├─ HelperLifecycle.swift     # Helper 라이프사이클
 │  ├─ HelperStateBroadcaster.swift
-│  ├─ PortReservationService.swift
-│  ├─ ProcessRunner.swift
-│  └─ Environment.swift
+│  └─ HelperFolderAccessListener.swift
 ├─ Assets.xcassets/             # 에셋
 ├─ Info.plist                   # Info.plist
 ├─ VoyagerHelperApp.swift       # @main 엔트리포인트
-└─ .backend_mode                # 백엔드 모드 표시 파일
 ```
 
 ---
@@ -374,11 +370,7 @@ shared/
 ```
 scripts/
 ├─ build/                       # 빌드 스크립트
-│  ├─ build-backend-binary.sh       # 백엔드 바이너리 빌드
-│  ├─ compile-nuitka-binary.sh      # Nuitka 컴파일
-│  ├─ copy-bundled-env-files.sh     # 환경 파일 복사
-│  ├─ handle-backend-mode.sh        # 백엔드 모드 처리
-│  └─ prepare-helper-runtime.sh     # Helper 런타임 준비
+│  └─ copy-bundled-env-files.sh     # 환경 파일 복사
 ├─ ci/                          # CI 스크립트
 │  ├─ build-archive.sh              # 아카이브 빌드
 │  ├─ create-dmg.sh                 # DMG 생성

@@ -95,7 +95,7 @@ log stream --predicate 'subsystem == "com.voyager.app"'
 ### 타겟 설명
 
 -   **Voyager**: 메인 macOS 파일 관리자 앱
--   **VoyagerHelper**: 백엔드 서비스를 관리하는 헬퍼 앱
+-   **VoyagerHelper**: 인덱싱/검색 런타임(XPC, DB)을 관리하는 헬퍼 앱
 
 ## 의존성 관리
 

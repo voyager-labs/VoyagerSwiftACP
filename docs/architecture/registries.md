@@ -25,13 +25,9 @@ Xcode 프로젝트 리소스로 `shared/*.json`이 포함됩니다.
 
 - `apps/macos/Voyager/Shared/Registries/RegistryLoader.swift`
 
-### 1.3 Backend 바이너리(번들) 포함
+### 1.3 Backend 런타임 사용
 
-Nuitka 빌드 시 `shared/` 경로로 데이터 파일이 포함됩니다.
-
-- `scripts/build/compile-nuitka-binary.sh`
-  - `--include-data-files=...=shared/system_property_registry.json`
-  - `--include-data-files=...=shared/property_condition_registry.json`
+서버 백엔드(`apps/backend`)는 실행 시점에 레포의 `shared/` 레지스트리를 로드해 사용합니다.
 
 ## 2. system_property_registry.json
 
@@ -238,9 +234,8 @@ backend는 레지스트리를 파일 시스템에서 찾고 로드합니다.
 
 `registry_loader.resolve_registry_path()`가 여러 후보 경로를 탐색한 뒤 실패할 수 있습니다.
 
-- source 모드: repo 루트에 `shared/`가 존재해야 함
-- bundled 모드: Nuitka dist에 `shared/*.json`이 포함되어야 함
-  - 빌드 스크립트: `scripts/build/compile-nuitka-binary.sh`
+- repo 루트에 `shared/`가 존재해야 함
+- 작업 디렉터리가 바뀌는 실행 환경에서는 절대 경로/배포 경로를 명시적으로 설정해야 함
 
 ---
 

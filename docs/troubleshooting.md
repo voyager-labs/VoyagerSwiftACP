@@ -22,10 +22,9 @@ Voyager에서 문제가 생겼을 때는 "어느 레이어에서 실패했는지
 
 - 메인 앱 로그에서 helper launch 관련 로그가 보이는지 확인
 
-2) Backend가 준비 상태인가?
+2) Helper가 준비 상태인가?
 
-- Helper 상태 브로드캐스트에서 `backend.ready=true`인지 확인
-- 또는 `PUBLIC_BACKEND_URL`로 curl이 되는지 확인
+- Helper 상태 브로드캐스트에서 `helper_ready=true`인지 확인
 
 3) DB에 데이터가 있는가?
 
@@ -48,57 +47,52 @@ log stream --predicate 'subsystem == "com.voyager.app"'
 
 ---
 
-## 2) 백엔드가 뜨지 않음
+## 2) 검색 런타임이 동작하지 않음
 
-### 2.1 source 모드(개발)
+### 2.1 개발 환경
 
 체크리스트
 
-- `BACKEND_MODE=source`인지 확인(Dev 스킴)
-- `.env.source` + `.env.dev` 파일이 존재하는지 확인
+- `.env.dev` 파일이 존재하는지 확인
 - `VOYAGER_PROJECT_ROOT`가 설정되어 있는지 확인(Helper가 `.env`를 찾는 데 필요할 수 있음)
-- `uv` 설치 및 PATH 확인 (source 모드에서 필요)
 - `PUBLIC_GATEWAY_URL`, `OPENAI_API_KEY` 등 LLM 관련 키 누락 여부 확인
 
 관련 코드
 
-- `apps/macos/Voyager/VoyagerHelper/Infrastructure/ProcessRunner.swift`
-- `apps/backend/src/app/config.py`
+- `apps/macos/Voyager/Shared/EnvironmentLoader.swift`
+- `apps/macos/Voyager/FilterSearchXPC/FilterSearchXPCServiceMain.swift`
 
-### 2.2 bundled 모드(배포)
+### 2.2 배포 환경
 
 체크리스트
 
-- `BACKEND_MODE=bundled`인지 확인(Prod 스킴)
-- Helper 번들 리소스에 `server/` 디렉터리가 포함됐는지
-  - 빌드 스크립트: `scripts/build/build-backend-binary.sh`
-- `PUBLIC_BACKEND_PROCESS_NAME`이 올바른지
-- 코드 서명/격리(quarantine) 문제로 실행이 막히지 않는지
+- `.env.prod`가 번들 리소스로 복사되었는지
+- Helper/XPC 코드 서명 문제로 실행이 막히지 않는지
 
 ---
 
-## 3) 포트 연결 실패(검색이 안 됨)
+## 3) XPC/Gateway 연결 실패(검색이 안 됨)
 
 현상
 
 - UI에서는 검색이 멈추거나 결과가 비어 있음
-- 백엔드가 뜬 것 같지만, 실제로는 다른 포트를 보고 있음
+- Helper는 떠 있지만 XPC 또는 Gateway 호출이 실패함
 
 원인 패턴
 
-- `PUBLIC_BACKEND_PORT=0`(동적 포트)인데 앱이 "초기값" 포트로 호출하는 경우
-- Helper가 포트는 예약했지만 준비 확인(verifyListening) 전에 앱이 호출한 경우
+- XPC 서비스가 초기화되지 않았거나 인터럽트됨
+- Gateway URL/인증 정보가 잘못되어 변환 요청이 실패함
 
 체크 포인트
 
-- Helper 상태 브로드캐스트 payload에서 `backend.endpoint.url`을 확인
-- `PUBLIC_BACKEND_URL`이 런타임에 Helper 상태로 덮어써졌는지 확인
+- Helper 상태 브로드캐스트 payload에서 `helper_ready`를 확인
+- XPC 서비스 로그(`Voyager.FilterSearchXPC`)를 확인
 - 방화벽/권한 이슈로 loopback 접근이 막히지 않았는지
 
 관련 코드
 
-- `apps/macos/Voyager/VoyagerHelper/Infrastructure/PortReservationService.swift`
-- `apps/macos/Voyager/VoyagerHelper/Infrastructure/HelperStateBroadcaster.swift`
+- `apps/macos/Voyager/FilterSearchXPC/FilterSearchXPCServiceMain.swift`
+- `apps/macos/Voyager/Voyager/04_Features/Composer/Api/SearchClient.swift`
 
 ---
 

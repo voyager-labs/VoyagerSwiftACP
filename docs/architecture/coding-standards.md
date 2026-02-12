@@ -701,10 +701,9 @@ jobs:
 **예시**:
 
 ```bash
-# Backend Configuration
-PUBLIC_BACKEND_HOST=127.0.0.1
-PUBLIC_BACKEND_PORT=0
-PUBLIC_BACKEND_PROCESS_NAME=voyager-server
+# Runtime Configuration
+APP_ENV=dev
+PUBLIC_GATEWAY_URL=https://gateway.example.com
 
 # Database
 PUBLIC_SQLITE_FILE_NAME=voyager.db
