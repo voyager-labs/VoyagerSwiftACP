@@ -77,7 +77,7 @@ xcodebuild -project apps/macos/Voyager/Voyager.xcodeproj -scheme Voyager-Dev -co
 
 ### 3.2 주의사항
 
-- source 모드에서 `.env.dev`/`.env.prod`를 찾기 위해 `VOYAGER_PROJECT_ROOT`가 필요할 수 있습니다.
+- 로컬 실행 환경에서 `.env.dev`/`.env.prod`를 찾기 위해 `VOYAGER_PROJECT_ROOT`가 필요할 수 있습니다.
 - Debug/Release에 따라 `APP_ENV`가 자동으로 결정됩니다.
 
 ---

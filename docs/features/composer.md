@@ -9,7 +9,7 @@ Composer가 하는 일
 - 검색 query 입력/제출(`submit`)
 - 스코프(검색 경로 범위) 관리(`scopes`)
 - 조건(속성/연산자/값) 관리(`conditions`)
-- 조건/스코프 변경 시 “필터만 적용” 요청으로 결과 및 `appliedFilters` 반영
+- 조건/스코프 변경 시 검색 요청 payload를 갱신하고, submit 요청 결과의 `appliedFilters`를 반영
 
 Composer가 하지 않는 일
 
@@ -75,13 +75,13 @@ Composer는 두 가지 API 요청을 구분해서 실행합니다.
   - 현재 UI 상태에서 `SearchFiltersPayload`를 만들고(`buildFilters(from:)`) query + filters로 검색
   - 검색 요청을 시작할 때, 진행 중인 필터 요청은 취소
 
-### 2) 필터만 적용(조건/스코프만)
+### 2) 필터 변경 반영(조건/스코프)
 
 - 액션: `ComposerFeature.Action.applyFilters` 및 스코프/조건 변경 후 내부적으로 `applyFiltersIfNeeded(...)`
-- API: POST `api/collection/filters`
+- API: `POST /api/collection` 계약과 동일한 filters 구조를 사용
 - 동작:
   - 현재 UI 상태에서 `SearchFiltersPayload` 생성
-  - 생성된 payload의 `conditions`가 비어 있으면 요청을 스킵하고 in-flight 필터 요청 취소
+  - 생성된 payload의 `conditions`가 비어 있으면 요청을 스킵하고 in-flight 요청 취소
 
 ### 취소/중복 방지 정책
 
@@ -105,8 +105,8 @@ sequenceDiagram
   alt conditions is empty
     Composer-->>Client: cancel(id: CancelID.filters)
   else conditions not empty
-    Composer->>Client: applyFilters(FiltersOnlyRequestPayload)
-    Client->>API: POST api/collection/filters
+    Composer->>Client: applyFilters(SearchFiltersPayload)
+    Client->>API: POST api/collection
     API-->>Client: SearchResponsePayload(appliedFilters)
     Client-->>Composer: filtersResponse(.success)
     Composer->>Composer: applyAppliedFilters(appliedFilters)

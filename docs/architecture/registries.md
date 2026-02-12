@@ -6,7 +6,7 @@ macOS(UI/Helper)와 Backend가 동일한 정의를 공유합니다.
 레지스트리는 크게 2개입니다.
 
 - `shared/system_property_registry.json`: "무엇을" 검색할 수 있는가(속성 키/타입/라벨/메타데이터 키)
-- `shared/property_condition_registry.json`: "어떻게" 비교할 것인가(연산자/값 형태/SQL 변환 규칙)
+- `shared/property_condition_registry.json`: "어떻게" 비교할 것인가(연산자/값 형태/검증 규칙)
 
 ## 1. 배치 위치/배포
 
@@ -179,12 +179,10 @@ backend는 레지스트리를 파일 시스템에서 찾고 로드합니다.
   - `system_keys`에서 `json_path` 유도
   - 타입별 기본 연산자/allowed_types를 기반으로 `supported_operators` 계산
 
-검색 조건 → SQL 변환은 아래에서 수행합니다.
+검색 조건 검증/정규화는 LLM 변환 단계와 레지스트리 로더를 통해 수행합니다.
 
-- `apps/backend/src/core/search/condition_builder.py`
-  - `db_indexed=true`: 컬럼 비교
-  - `db_indexed=false`: `original_metadata` JSON에서 `json_extract` + `sql_cast`
-  - `string_list_*`: SQLite JSON1 함수(`json_each`, `json_array_length`) 기반
+- `apps/backend/src/core/llm/search_condition_converter.py`
+- `apps/backend/src/core/metadata/registry_loader.py`
 
 ## 5. 운영 가이드
 
@@ -211,7 +209,7 @@ backend는 레지스트리를 파일 시스템에서 찾고 로드합니다.
 
 1) `shared/property_condition_registry.json`에 `operators.<code>` 추가
 
-- `sql_kind`는 backend 구현(ConditionBuilder)의 분기와 정합해야 함
+- `sql_kind`는 레지스트리 계약 필드이므로 값 형태/연산자 제약과 정합해야 함
 - `ui_value_kind`는 macOS에서 입력 UI를 결정하므로 type별 키를 빠뜨리면 UI 옵션에서 제외될 수 있음
 
 2) 노출할 타입의 `property_types.<typeKey>.operators`에 code를 추가
@@ -276,8 +274,7 @@ backend는 레지스트리를 파일 시스템에서 찾고 로드합니다.
 - macOS: 번들 리소스 로딩이 성공하는지 확인
   - 실패 시: `RegistryLoader.LoadError.*` 에러를 우선 확인
 - Backend:
-  - source 모드에서 repo 루트 `shared/` 경로를 제대로 찾는지
-  - bundled 모드에서 Nuitka dist에 데이터 파일이 포함되는지
+  - 서버 런타임에서 repo 루트 `shared/` 경로를 제대로 찾는지
 
 ### 8.3 기능 검증(권장)
 

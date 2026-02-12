@@ -4,7 +4,7 @@ Voyager에서 문제가 생겼을 때는 "어느 레이어에서 실패했는지
 
 - UI/앱 상태 문제: `Voyager` (SwiftUI + TCA)
 - 프로세스/포트/인덱싱 문제: `VoyagerHelper`
-- API/LLM/DB 문제: Backend (FastAPI)
+- API/LLM 변환 문제: Backend (FastAPI)
 
 관련 문서
 
@@ -111,9 +111,9 @@ log stream --predicate 'subsystem == "com.voyager.app"'
 
 ### 4.2 원인 분리 방법
 
-1) LLM 변환을 배제
+1) LLM 변환 결과 확인
 
-- `/api/collection/filters`로 동일 조건을 보내서 "조건/DB 문제"인지 확인
+- 동일 요청을 `/api/collection`으로 보내고 `appliedFilters`/`error`를 함께 확인
 
 2) scopes를 배제
 
@@ -122,7 +122,7 @@ log stream --predicate 'subsystem == "com.voyager.app"'
 3) 레지스트리/조건 불일치
 
 - `propertyKey`가 `ui_hidden`인 경우 서버가 조건 빌드에서 실패할 수 있음
-- operator/value shape이 맞지 않으면 `CONDITION_BUILD_FAILED`
+- operator/value shape이 맞지 않으면 변환 결과에서 조건이 제외되거나 `LLM_CONVERSION_FAILED`로 반환될 수 있음
 
 ---
 

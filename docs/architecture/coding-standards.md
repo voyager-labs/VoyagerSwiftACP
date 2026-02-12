@@ -163,31 +163,31 @@ def process_data(data):  # ❌ 타입 없음
 
 **클래스**:
 
-- **명명**: `UpperCamelCase` (예: `SearchService`, `ConditionBuilder`)
-- **메서드**: `lower_snake_case` (예: `build_clause`, `query_search`)
+- **명명**: `UpperCamelCase` (예: `SearchService`, `SearchConditionConverter`)
+- **메서드**: `lower_snake_case` (예: `query_search`, `convert`)
 - **상수**: `UPPER_SNAKE_CASE` (모듈 레벨)
 
 **예시**:
 
 ```python
-class ConditionBuilder:
-    """검색 조건을 SQL 절로 변환하는 빌더"""
+class SearchConditionConverter:
+    """자연어 쿼리를 검색 조건으로 변환"""
 
-    def build_clause(
+    async def convert(
         self,
-        property_key: str,
-        operator: str,
-        value: list[str] | str | None,
-    ) -> tuple[str, dict[str, Any]]:
-        """단일 조건을 SQL 절과 파라미터로 변환
+        query: str,
+        existing_conditions: list[dict[str, Any]] | None = None,
+        existing_scopes: list[str] | None = None,
+    ) -> SearchConversionResult:
+        """자연어를 구조화된 조건으로 변환
 
         Args:
-            property_key: 속성 키
-            operator: 연산자 (eq, ne, gt, lt, btw 등)
-            value: 비교 값
+            query: 사용자 자연어 입력
+            existing_conditions: 기존 조건
+            existing_scopes: 기존 스코프
 
         Returns:
-            (SQL 절, 파라미터 딕셔너리) 튜플
+            SearchConversionResult
         """
         # 구현...
 ```
@@ -483,27 +483,17 @@ return .run { send in
 import pytest
 
 
-def test_build_db_comparison_clause() -> None:
-    """DB 비교 절 생성 테스트"""
+@pytest.mark.anyio
+async def test_query_search_returns_convert_only_response() -> None:
     # Given
-    builder = ConditionBuilder()
+    service = SearchService()
 
     # When
-    clause, params = builder.build_clause(
-        "uniform_type_identifier", "any", ["public.png", "public.jpeg"]
-    )
+    response = await service.query_search(query="report 파일")
 
     # Then
-    assert clause == "uniform_type_identifier IN (:p0, :p1)"
-    assert params == {"p0": "public.png", "p1": "public.jpeg"}
-
-
-def test_build_where_missing_property_key_raises() -> None:
-    """속성 키 누락 시 예외 발생 테스트"""
-    builder = ConditionBuilder()
-
-    with pytest.raises(ConditionBuilderError):
-        builder.build_where([{"operator": "eq", "value": "png"}])
+    assert response.itemCount == 0
+    assert response.items == []
 ```
 
 **실행**:

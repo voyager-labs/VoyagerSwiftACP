@@ -16,9 +16,7 @@
 현재 백엔드 테스트는 주로 다음을 검증합니다.
 
 - 레지스트리 로딩/검증
-- 조건(conditions) → SQL WHERE 변환
-- 스코프(scopes) → SQL WHERE 변환
-- 검색 실행기(executor) 동작
+- LLM 변환 결과 기반 convert-only 응답 계약
 
 테스트 위치
 
@@ -39,7 +37,7 @@ uv run pytest
 cd apps/backend
 
 # 특정 테스트 파일만
-uv run pytest tests/test_execute_search.py
+uv run pytest tests/test_search_service_convert_only.py
 
 # 이름으로 필터링
 uv run pytest -k "condition_builder"
@@ -110,7 +108,6 @@ xcodebuild test -project apps/macos/Voyager/Voyager.xcodeproj -scheme Voyager-De
 ## 3. 실패했을 때 체크리스트
 
 - Xcode 버전이 `.xcode-version`과 일치하는지
-- source 모드에서 `uv` 실행이 필요한 경우, Xcode 실행 환경의 PATH 문제는 없는지
 - Helper/Backend 통합이 포함된 테스트라면 포트/ENV 충돌이 없는지
 
 추가 확인

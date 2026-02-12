@@ -63,7 +63,7 @@ sequenceDiagram
 ### 4.1 Helper의 dotenv 로딩(Swift)
 
 - Helper는 부팅 과정에서 `.env.{APP_ENV}`를 로딩합니다.
-- source 모드에서는 `.env` 파일 탐색을 위해 `VOYAGER_PROJECT_ROOT`가 필요할 수 있습니다.
+- 로컬 개발 실행에서는 `.env` 파일 탐색을 위해 `VOYAGER_PROJECT_ROOT`가 필요할 수 있습니다.
 
 관련 코드
 
