@@ -3,16 +3,6 @@
 // Helper 상태를 캐시하고 알림으로 브로드캐스트하는 관리자
 @MainActor
 final class HelperStateBroadcaster {
-    // Backend 상태 캐시용 구조체
-    private struct BackendState: Sendable {
-        var ready = false
-        var pid: Int?
-        var host: String?
-        var port: Int?
-        var startDate: Date?
-    }
-
-    private var backendState = BackendState()
     /// DB 초기화/마이그레이션 완료 전에는 false. 완료 후 true로 설정해 메인 앱에 준비 완료를 알린다.
     private var helperFullyReady = false
     private nonisolated(unsafe) var observer: NSObjectProtocol?
@@ -29,7 +19,7 @@ final class HelperStateBroadcaster {
     func startObservingRequests() {
         guard observer == nil else { return }
         let token = DistributedNotificationCenter.default().addObserver(
-            forName: .voyagerHelperStateRequest,
+            forName: Notification.Name("voyagerHelperStateRequest"),
             object: nil,
             queue: .main,
         ) { [weak self] _ in
@@ -40,34 +30,16 @@ final class HelperStateBroadcaster {
         observer = token
     }
 
-    // Backend 준비 완료 시 상태를 갱신한다
-    func updateBackendReady(host: String, port: Int, pid: Int, startDate: Date) {
-        backendState.ready = true
-        backendState.pid = pid
-        backendState.host = host
-        backendState.port = port
-        backendState.startDate = startDate
-    }
-
     // DB 초기화/마이그레이션 완료 후 호출한다. 이후 postCurrentState()는 helperReady: true로 전송한다.
     func markHelperFullyReady() {
         helperFullyReady = true
-    }
-
-    // Backend 종료 시 상태를 초기화한다
-    func markBackendStopped() {
-        backendState.ready = false
-        backendState.pid = nil
-        backendState.host = nil
-        backendState.port = nil
-        backendState.startDate = nil
     }
 
     // 현재 상태를 알림으로 전송한다
     func postCurrentState() {
         let payload = buildPayload()
         DistributedNotificationCenter.default().post(
-            name: .voyagerHelperStateDidUpdate,
+            name: Notification.Name("voyagerHelperStateDidUpdate"),
             object: nil,
             userInfo: payload,
         )
@@ -77,37 +49,14 @@ final class HelperStateBroadcaster {
     private func buildPayload() -> [String: Any] {
         let helperBundleVersion = Bundle.main.infoDictionary?["CFBundleVersion"] as? String
 
-        var backend: [String: Any] = [
-            HelperStateUserInfoKey.Backend.ready: backendState.ready,
-        ]
-
-        if let pid = backendState.pid {
-            backend[HelperStateUserInfoKey.Backend.pid] = pid
-        }
-
-        if let startDate = backendState.startDate {
-            let uptime = Date().timeIntervalSince(startDate)
-            backend[HelperStateUserInfoKey.Backend.uptimeSeconds] = uptime
-        }
-
-        if let host = backendState.host, let port = backendState.port {
-            let url = "http://\(host):\(port)"
-            backend[HelperStateUserInfoKey.Backend.endpoint] = [
-                HelperStateUserInfoKey.Endpoint.host: host,
-                HelperStateUserInfoKey.Endpoint.port: port,
-                HelperStateUserInfoKey.Endpoint.url: url,
-            ]
-        }
-
         var payload: [String: Any] = [
-            HelperStateUserInfoKey.schemaVersion: 2,
-            HelperStateUserInfoKey.generatedAt: Date().timeIntervalSince1970,
-            HelperStateUserInfoKey.helperReady: helperFullyReady,
-            HelperStateUserInfoKey.backend: backend,
+            "schema_version": 3,
+            "generated_at": Date().timeIntervalSince1970,
+            "helper_ready": helperFullyReady,
         ]
 
         if let helperBundleVersion {
-            payload[HelperStateUserInfoKey.helperBundleVersion] = helperBundleVersion
+            payload["helper_bundle_version"] = helperBundleVersion
         }
 
         return payload

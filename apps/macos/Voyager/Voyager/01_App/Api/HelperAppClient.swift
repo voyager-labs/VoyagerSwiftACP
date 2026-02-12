@@ -269,12 +269,8 @@ private func terminateHelperGracefully(_ info: HelperLifecycleInfo) async {
 
 private let kHelperEnvironmentKeys: [String] = [
     "APP_ENV",
-    "BACKEND_MODE",
     "PATH",
     "PUBLIC_APP_NAME",
-    "PUBLIC_BACKEND_HOST",
-    "PUBLIC_BACKEND_PORT",
-    "PUBLIC_BACKEND_PROCESS_NAME",
     "PUBLIC_GATEWAY_URL",
     "PUBLIC_HELPER_NAME",
     "PUBLIC_LOG_LEVEL",
@@ -286,7 +282,6 @@ private let kHelperEnvironmentKeys: [String] = [
     "PUBLIC_SQLITE_FILE_NAME",
     "PUBLIC_SQLITE_PROTOCOL",
     "PUBLIC_WEB_BASE_URL",
-    "VOYAGER_DISABLE_BACKEND",
     "VOYAGER_PROJECT_ROOT",
 ]
 

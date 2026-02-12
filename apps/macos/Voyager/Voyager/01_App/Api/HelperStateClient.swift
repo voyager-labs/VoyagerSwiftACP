@@ -1,25 +1,10 @@
 import ComposableArchitecture
 import Foundation
 import Logging
-import SwiftDotenv
-
-public struct HelperEndpoint: Sendable, Equatable {
-    public let host: String
-    public let port: Int
-    public let url: URL
-}
 
 public struct HelperState: Sendable, Equatable {
-    public struct Backend: Sendable, Equatable {
-        public let ready: Bool
-        public let pid: Int?
-        public let uptimeSeconds: TimeInterval?
-        public let endpoint: HelperEndpoint?
-    }
-
     public let helperReady: Bool
     public let helperBundleVersion: String?
-    public let backend: Backend
 }
 
 public struct HelperStateClient: Sendable {
@@ -93,7 +78,6 @@ private actor HelperStateResolver {
 
         cachedState = state
         cancelTimeouts()
-        updateDotenv(state: state)
 
         if !waiters.isEmpty {
             let currentWaiters = waiters
@@ -194,8 +178,7 @@ private actor HelperStateResolver {
         let info = info ?? [:]
 
         if let schemaVersion = Parser.parseInt(from: info[HelperStateUserInfoKey.schemaVersion]),
-           schemaVersion != 1,
-           schemaVersion != 2
+           schemaVersion != 3
         {
             return nil
         }
@@ -204,62 +187,8 @@ private actor HelperStateResolver {
             return nil
         }
 
-        guard let backendInfo = info[HelperStateUserInfoKey.backend] as? [String: Any] else {
-            return nil
-        }
-
-        guard let backendReady = backendInfo[HelperStateUserInfoKey.Backend.ready] as? Bool else {
-            return nil
-        }
-
-        let pid = Parser.parseInt(from: backendInfo[HelperStateUserInfoKey.Backend.pid])
-        let uptimeSeconds = Parser.parseDouble(from: backendInfo[HelperStateUserInfoKey.Backend.uptimeSeconds])
-        let endpoint = parseEndpoint(from: backendInfo[HelperStateUserInfoKey.Backend.endpoint])
-
-        let backend = HelperState.Backend(
-            ready: backendReady,
-            pid: pid,
-            uptimeSeconds: uptimeSeconds,
-            endpoint: endpoint,
-        )
-
         let helperBundleVersion = info[HelperStateUserInfoKey.helperBundleVersion] as? String
-        return HelperState(helperReady: helperReady, helperBundleVersion: helperBundleVersion, backend: backend)
-    }
-
-    // endpoint payload를 파싱한다
-    private nonisolated static func parseEndpoint(from value: Any?) -> HelperEndpoint? {
-        guard let endpointInfo = value as? [String: Any] else {
-            return nil
-        }
-
-        guard let host = endpointInfo[HelperStateUserInfoKey.Endpoint.host] as? String else {
-            return nil
-        }
-
-        guard let port = Parser.parseInt(from: endpointInfo[HelperStateUserInfoKey.Endpoint.port]) else {
-            return nil
-        }
-
-        if let urlString = endpointInfo[HelperStateUserInfoKey.Endpoint.url] as? String,
-           let url = URL(string: urlString)
-        {
-            return HelperEndpoint(host: host, port: port, url: url)
-        }
-
-        let url = URL(string: "http://\(host):\(port)")
-        return url.map { HelperEndpoint(host: host, port: port, url: $0) }
-    }
-
-    private func updateDotenv(state: HelperState) {
-        guard let endpoint = state.backend.endpoint else {
-            return
-        }
-
-        Dotenv.set(value: endpoint.host, forKey: "PUBLIC_BACKEND_HOST", overwrite: true)
-        Dotenv.set(value: String(endpoint.port), forKey: "PUBLIC_BACKEND_PORT", overwrite: true)
-        Dotenv.set(value: endpoint.url.absoluteString, forKey: "PUBLIC_BACKEND_URL", overwrite: true)
-        logger.info("Backend endpoint updated: \(endpoint.url.absoluteString)")
+        return HelperState(helperReady: helperReady, helperBundleVersion: helperBundleVersion)
     }
 
     // 로그 출력용으로 userInfo 타입 정보를 요약한다
@@ -297,23 +226,6 @@ private nonisolated enum Parser {
         }
         if let stringValue = value as? String {
             return Int(stringValue)
-        }
-        return nil
-    }
-
-    // 숫자형 Double 변환 유틸
-    static func parseDouble(from value: Any?) -> Double? {
-        if let doubleValue = value as? Double {
-            return doubleValue
-        }
-        if let number = value as? NSNumber {
-            return number.doubleValue
-        }
-        if let intValue = value as? Int {
-            return Double(intValue)
-        }
-        if let stringValue = value as? String {
-            return Double(stringValue)
         }
         return nil
     }

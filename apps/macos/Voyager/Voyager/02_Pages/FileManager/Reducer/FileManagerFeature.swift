@@ -1181,7 +1181,7 @@ struct FileManagerFeature {
                                     message: """
                                     \(error.localizedDescription)
 
-                                    Make sure the backend is running and try again.
+                                    Check Gateway/Helper status and try again.
                                     """,
                                 )
                                 await send(.restoreSidebarSelection)
@@ -1209,7 +1209,7 @@ struct FileManagerFeature {
                                     message: """
                                     \(error.localizedDescription)
 
-                                    Make sure the backend is running and try again.
+                                    Check Gateway/Helper status and try again.
                                     """,
                                 )
                                 await send(.restoreSidebarSelection)

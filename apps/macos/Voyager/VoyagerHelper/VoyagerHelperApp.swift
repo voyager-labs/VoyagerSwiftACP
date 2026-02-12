@@ -4,7 +4,6 @@ import SwiftDotenv
 
 @main
 class VoyagerHelperApp {
-    private static var lifecycle: HelperLifecycle?
     private static var indexingListener: IndexingRequestListener?
     private static var helperFolderAccessListener: HelperFolderAccessListener?
 
@@ -12,7 +11,7 @@ class VoyagerHelperApp {
     static func main() {
         bootstrapLogging()
         let logger = Logger(label: "VoyagerHelper")
-        let environment = Environment()
+        try? EnvironmentLoader.loadEnvFiles()
         SentryBootstrap.startIfNeeded(
             appVersion: helperAppVersion(),
             userId: nil,
@@ -26,12 +25,8 @@ class VoyagerHelperApp {
         let helperFolderAccessListener = HelperFolderAccessListener()
 
         logger.info(
-            "Starting (APP_ENV=\(Dotenv.appEnv?.rawValue ?? "nil"), BACKEND_MODE=\(Dotenv.backendMode?.rawValue ?? "nil"))",
+            "Starting (APP_ENV=\(Dotenv.appEnv?.rawValue ?? "nil"))",
         )
-
-        let runner = ProcessRunner(environment: environment, stateBroadcaster: stateBroadcaster)
-        let lifecycle = HelperLifecycle(processRunner: runner)
-        VoyagerHelperApp.lifecycle = lifecycle
         VoyagerHelperApp.indexingListener = indexingListener
         VoyagerHelperApp.helperFolderAccessListener = helperFolderAccessListener
 
@@ -44,20 +39,15 @@ class VoyagerHelperApp {
             await runStartupTask(
                 stateBroadcaster: stateBroadcaster,
                 indexingListener: indexingListener,
-                lifecycle: lifecycle,
                 logger: logger,
             )
         }
         RunLoop.current.run()
-        Task {
-            await lifecycle.stop()
-        }
     }
 
     private static func runStartupTask(
         stateBroadcaster: HelperStateBroadcaster,
         indexingListener: IndexingRequestListener,
-        lifecycle: HelperLifecycle,
         logger: Logger,
     ) async {
         do {
@@ -83,7 +73,6 @@ class VoyagerHelperApp {
                 exit(EXIT_FAILURE)
             }
         }
-        await lifecycle.start()
     }
 
     // 로깅 핸들러 구성
