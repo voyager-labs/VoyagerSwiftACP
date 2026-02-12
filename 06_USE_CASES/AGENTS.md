@@ -8,9 +8,9 @@
 
 | 작업 | 위치 | 노트 |
 |------|------|------|
-| 섹션 진입점 | `05_USE_CASES/index.md` | 유즈케이스 목록 |
-| 템플릿 | `05_USE_CASES/templates.md` | 표 포맷 기준 |
-| UC 흐름 | `05_USE_CASES/mvp.md` | UC04 역할 포함 |
+| 섹션 진입점 | `06_USE_CASES/index.md` | 유즈케이스 목록 |
+| 템플릿 | `06_USE_CASES/templates.md` | 표 포맷 기준 |
+| UC 흐름 | `06_USE_CASES/mvp.md` | UC04 역할 포함 |
 
 ## CONVENTIONS
 

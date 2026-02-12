@@ -9,7 +9,8 @@
 - 페르소나: `02_USER_PERSONA/index.md`
 - 정보 구조(IA) 테이블: `03_INFORMATION_ARCHITECTURE/`
 - 기능 인벤토리: `04_FEATURE_INVENTORY/`
-- 유즈케이스: `05_USE_CASES/index.md`
+- 기능 스펙: `05_FEATURE_SPECS/`
+- 유즈케이스: `06_USE_CASES/index.md`
 
 ## 운영 규칙
 
@@ -57,6 +58,49 @@ git subtree push --prefix=docs/voyager-docs <DOCS_REPO_URL> main
 - `--squash`를 쓰면 개발 레포 히스토리가 문서 커밋으로 과도하게 오염되는 것을 줄일 수 있습니다.
 - subtree로 포함된 경로(`docs/voyager-docs/`)는 개발 레포에서 직접 수정하지 않는 규칙을 두는 것이 안전합니다.
 - 새로 클론한 환경에서는 `git remote add ...`로 등록한 리모트가 자동으로 생기지 않을 수 있습니다(필요 시 다시 추가).
+
+### 다운스트림 업데이트 PR 자동 생성(GitHub Actions)
+
+이 레포에는 다운스트림(서브트리 소비자) 레포로 업데이트 PR을 자동 생성하는 워크플로가 포함되어 있습니다.
+
+- 워크플로 파일: `.github/workflows/sync-subtree-prs.yml`
+- 대상 레포 설정: `.github/downstreams.json`
+
+`downstreams.json`에서 `enabled: true`인 항목만 처리합니다.
+
+```json
+{
+  "defaults": {
+    "base_branch": "main",
+    "upstream_branch": "main"
+  },
+  "downstreams": [
+    {
+      "enabled": true,
+      "repository": "voyager-labs/your-downstream-repo",
+      "prefix": "docs/voyager-docs",
+      "base_branch": "main",
+      "upstream_branch": "main"
+    }
+  ]
+}
+```
+
+필수 시크릿:
+
+- `DOWNSTREAM_SYNC_TOKEN`: 다운스트림 레포에 push/PR 생성 권한이 있는 토큰
+  - 권장 권한: `contents:write`, `pull-requests:write`
+
+동작 방식:
+
+1. 이 레포 `main`에 push(또는 수동 실행) 시 워크플로 실행
+2. 각 다운스트림에서 `git subtree pull --prefix=<prefix> ... --squash` 수행
+3. 변경이 있으면 브랜치를 push하고 PR을 생성/업데이트
+
+주의:
+
+- 대상 다운스트림은 해당 `prefix`에 대해 최초 `git subtree add`가 이미 완료되어 있어야 합니다.
+- `enabled: true`로 켜기 전, `repository`와 `prefix`가 정확한지 먼저 검증하세요.
 
 ## 어디에 무엇을 둘지
 

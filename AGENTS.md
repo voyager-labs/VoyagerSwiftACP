@@ -18,7 +18,8 @@ Voyager 앱의 기획/문서 자료를 GitHub SSOT로 운영하는 레포입니�
 ├── 02_USER_PERSONA/               # 페르소나
 ├── 03_INFORMATION_ARCHITECTURE/   # IA 테이블(MENUS/WINDOW_STRUCTURE/OBJECTS)
 ├── 04_FEATURE_INVENTORY/          # 기능/인터랙션 인벤토리 테이블
-├── 05_USE_CASES/                  # 유즈케이스(테이블 기반)
+├── 05_FEATURE_SPECS/              # 인터랙션 기반 기능 스펙 문서
+├── 06_USE_CASES/                  # 유즈케이스(테이블 기반)
 └── .agents/                       # 로컬 검증/조회 스크립트(스킬)
 ```
 
@@ -31,7 +32,8 @@ Voyager 앱의 기획/문서 자료를 GitHub SSOT로 운영하는 레포입니�
 | schema.json 포맷 | `META/schema_format.md` | `required`만 사용(= nullable 없음). `-`는 null, `TBD`는 작성 필요 |
 | IA(UI 구조/메뉴) 편집 | `03_INFORMATION_ARCHITECTURE/index.md` | `WINDOW_STRUCTURE.structure_key`는 참조 키 |
 | 기능/인터랙션 편집 | `04_FEATURE_INVENTORY/index.md` | FEATURES/INTERACTIONS에서 다른 문서로 확장 예정 |
-| 유즈케이스 흐름 확인 | `05_USE_CASES/index.md` | PREV/NEXT 내비, Invoked Interaction/UISurface 컬럼 |
+| 기능 스펙 확인/편집 | `05_FEATURE_SPECS/index.md` | 카테고리/feature 기준 스펙 문서 |
+| 유즈케이스 흐름 확인 | `06_USE_CASES/index.md` | PREV/NEXT 내비, Invoked Interaction/UISurface 컬럼 |
 | 특정 feature_id 검증 | `.agents/skills/voyager-feature-inventory/voyager-feature-inventory-checker/SKILL.md` | 빠른 lookup/정합성 체크 |
 
 ## CONVENTIONS (THIS REPO)
@@ -81,5 +83,5 @@ git subtree pull --prefix=docs/voyager voyager-docs main --squash
 
 ## NOTES
 
-- `PRODUCT/`는 현재 비어 있음(레거시 자리). 신규 문서는 01~05 및 META 아래에 추가.
+- `PRODUCT/`는 현재 비어 있음(레거시 자리). 신규 문서는 01~06 및 META 아래에 추가.
 - `.agents/`는 스킬/스크립트 묶음이라 파일 수가 많음. 목적 없이 대규모 변경하지 않기.

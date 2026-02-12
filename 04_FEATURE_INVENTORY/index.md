@@ -24,7 +24,7 @@ Voyager의 기능/인터랙션 인벤토리를 표 형태(TSV)로 관리합니�
 
 ## 인터랙션 키
 
-- 유즈케이스 문서(예: `05_USE_CASES/`)의 Happy Path 테이블에서 `Invoked Interaction`은 `INTERACTIONS.interaction_id`를 사용합니다.
+- 유즈케이스 문서(예: `06_USE_CASES/`)의 Happy Path 테이블에서 `Invoked Interaction`은 `INTERACTIONS.interaction_id`를 사용합니다.
 
 ## UI 참조 키
 
