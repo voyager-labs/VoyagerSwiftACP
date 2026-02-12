@@ -43,7 +43,7 @@ Conversation-driven Actions	CDA	Manage Message Context	CDA-005	MVP	준비 완료
 Conversation-driven Actions	CDA	Handle Conversion Intent	CDA-006	LATER	아이디어	사용자의 변환 의도를 해석해, Entry의 크기·해상도·확장자·포맷 등 표현 방식을 변경하는 변환 액션을 구성·실행하는 것과 관련된 기능	file_manager_window.inspector_pane.inspector_mode_chat	
 Conversation-driven Actions	CDA	Handle Edit Intent	CDA-007	LATER	아이디어	사용자의 편집 의도를 해석해, Entry의 콘텐츠를 수정·리라이트·구조 변경하는 편집 액션으로 수행하는 것과 관련된 기능	file_manager_window.inspector_pane.inspector_mode_chat	
 Conversation-driven Actions	CDA	Handle Generation Intent	CDA-008	LATER	아이디어	사용자의 생성 의도를 해석해, 요청된 타입에 맞는 도구·모델로 새로운 Entry를 생성하는 것과 관련된 기능	file_manager_window.inspector_pane.inspector_mode_chat	
-Custom Entry Properties	CEP	Manage Custom Entry Properties	CEP-001	OBT	준비 완료	Entry 단위로 사용자가 정의한 커스텀 프로퍼티를 추가·수정·삭제하고 해당 값들을 관리하는 것과 관련된 기능		
+Custom Entry Properties	CEP	Manage Custom Entry Properties	CEP-001	OBT	준비 완료	Entry 단위로 사용자가 정의한 커스텀 프로퍼티를 추가·수정·삭제하고 해당 값들을 관리하는 것과 관련된 기능	-	-
 Custom Entry Properties	CEP	Define Custom Property Schema	CEP-002	OBT	아이디어	Entry에 사용할 커스텀 프로퍼티의 타입·필수 여부·옵션 값 등 스키마를 정의·편집하는 것과 관련된 기능		
 Custom Entry Properties	CEP	Computed Properties	CEP-003	LATER	아이디어	다른 프로퍼티 값을 기반으로 자동 계산되는 프로퍼티를 정의·적용해 Entry에 계산된 속성을 부여하는 것과 관련된 기능		
 User Settings	SET	Control Settings Window	SET-001	CBT-W1	개발 완료	설정 창을 열기·전환·닫기 등 설정 인터페이스의 표시 상태와 탐색 흐름을 제어하는 것과 관련된 기능	settings_window	
