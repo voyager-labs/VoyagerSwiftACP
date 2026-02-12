@@ -58,12 +58,6 @@
         "column": "structure_key"
       },
       "description": "UI 구조 참조(옵션, FK -> WINDOW_STRUCTURE.structure_key)."
-    },
-    {
-      "name": "objects",
-      "type": "string",
-      "required": false,
-      "description": "연관 오브젝트 키(자유 형식/TBD)."
     }
   ]
 }

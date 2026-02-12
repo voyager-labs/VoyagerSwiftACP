@@ -80,24 +80,6 @@
       "type": "string",
       "required": false,
       "description": "단축키(자유 형식)."
-    },
-    {
-      "name": "preconditions",
-      "type": "string",
-      "required": false,
-      "description": "사전 조건(자유 형식)."
-    },
-    {
-      "name": "edge_cases",
-      "type": "string",
-      "required": false,
-      "description": "엣지 케이스(자유 형식)."
-    },
-    {
-      "name": "acceptance_criteria",
-      "type": "string",
-      "required": false,
-      "description": "수용 기준(자유 형식)."
     }
   ]
 }
