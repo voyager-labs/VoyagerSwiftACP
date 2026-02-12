@@ -7,10 +7,8 @@ from contextlib import asynccontextmanager
 import setproctitle
 from fastapi import FastAPI, Request, Response
 
-from app.config import get_db_config, load_config
+from app.config import load_config
 from app.search.routes import router as search_router
-from infra.db.engine import engine_manager
-from infra.db.utils import ensure_parent_dir
 
 
 @asynccontextmanager
@@ -20,11 +18,6 @@ async def lifespan(app: FastAPI):
     app.state.config = cfg
     setproctitle.setproctitle(f"{cfg.app_name}-server")
 
-    # DB 엔진 초기화
-    db_cfg = get_db_config(cfg)
-    ensure_parent_dir(db_cfg.db_file)
-    engine_manager.initialize(db_cfg)
-
     logger = logging.getLogger("uvicorn.error")
     py_ver = platform.python_version()
     message = (
@@ -32,24 +25,17 @@ async def lifespan(app: FastAPI):
         f"app = {cfg.app_name} env = {cfg.app_env} \n"
         f"python = {py_ver} \n"
         f"gateway_url = {cfg.gateway_url} \n"
-        f"sqlite_protocol = {cfg.sqlite_protocol} \n"
-        f"sqlite_echo = {cfg.sqlite_echo} \n"
-        f"sqlite_check_same_thread = {cfg.sqlite_check_same_thread} \n"
-        f"sqlite_file_location = {cfg.sqlite_file_location} \n"
-        f"sqlite_file_name = {cfg.sqlite_file_name} \n"
     )
     bar = "=" * max(60, len(message))
     logger.warning(f"\n{bar}\n{message}\n{bar}")
 
     yield
 
-    # 종료 시 DB 연결 정리
-    engine_manager.dispose()
+    return
 
 
 app = FastAPI(
     title="Voyager File Manager API",
-    description="macOS 파일 메타데이터 수집 및 검색 API",
     version="0.1.0",
     lifespan=lifespan,
 )

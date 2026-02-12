@@ -5,7 +5,10 @@ from __future__ import annotations
 from pydantic import BaseModel, Field, field_validator
 
 
-# TODO: Collection으로 변경 모듈 이름 변경
+def _empty_conditions() -> list[SearchCondition]:
+    return []
+
+
 class SearchCondition(BaseModel):
     """단일 검색 조건"""
 
@@ -28,11 +31,14 @@ class SearchFilters(BaseModel):
     """검색 필터"""
 
     scopes: list[str] = Field(default_factory=list, description="검색 경로 범위")
-    conditions: list[SearchCondition] = Field(default_factory=list, description="검색 조건 목록")
+    conditions: list[SearchCondition] = Field(
+        default_factory=_empty_conditions,
+        description="검색 조건 목록",
+    )
 
 
 class QuerySearchRequest(BaseModel):
-    """POST /api/search 요청"""
+    """POST /api/collection 요청"""
 
     query: str = Field(..., min_length=1, description="자연어 검색 쿼리")
     filters: SearchFilters | None = Field(None, description="선택적 필터")
@@ -44,12 +50,6 @@ class QuerySearchRequest(BaseModel):
         if not trimmed:
             raise ValueError("query는 공백만 포함할 수 없습니다.")
         return trimmed
-
-
-class FilterSearchRequest(BaseModel):
-    """POST /api/search/filters 요청"""
-
-    filters: SearchFilters = Field(..., description="필수 필터")
 
 
 class SearchItem(BaseModel):
@@ -68,7 +68,7 @@ class AppliedFilters(BaseModel):
     """적용된 필터"""
 
     scopes: list[str] = Field(default_factory=list)
-    conditions: list[SearchCondition] = Field(default_factory=list)
+    conditions: list[SearchCondition] = Field(default_factory=_empty_conditions)
 
 
 class SearchError(BaseModel):

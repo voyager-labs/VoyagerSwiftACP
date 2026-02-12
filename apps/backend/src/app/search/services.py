@@ -15,7 +15,6 @@ from core.llm.langchain_provider import LangChainProvider
 from core.llm.search_condition_converter import CachedSearchConditionConverter
 
 
-# TODO: Collection으로 변경 모듈 이름 변경
 class SearchService:
     """검색 서비스"""
 
@@ -102,28 +101,6 @@ class SearchService:
             appliedFilters=AppliedFilters(
                 scopes=applied_scopes,
                 conditions=applied_conditions,
-            ),
-            items=[],
-            error=None,
-        )
-
-    async def filter_search(
-        self,
-        filters: SearchFilters,
-    ) -> SearchResponse:
-        """필터 기반 검색 (LLM 없음)
-
-        Args:
-            filters: 필수 필터 (scopes, conditions)
-
-        Returns:
-            SearchResponse
-        """
-        return SearchResponse(
-            itemCount=0,
-            appliedFilters=AppliedFilters(
-                scopes=filters.scopes,
-                conditions=list(filters.conditions),
             ),
             items=[],
             error=None,

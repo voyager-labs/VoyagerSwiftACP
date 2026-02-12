@@ -26,6 +26,10 @@ logger = logging.getLogger("uvicorn.error")
 TStructured = TypeVar("TStructured", bound=BaseModel)
 
 
+def _empty_conditions() -> list[SearchCondition]:
+    return []
+
+
 def _read_prompt_template(filename: str) -> str:
     try:
         template = (
@@ -62,7 +66,10 @@ class SearchCondition(BaseModel):
 class SearchConditionsOutput(BaseModel):
     """LLM 출력 스키마"""
 
-    conditions: list[SearchCondition] = Field(default_factory=list, description="검색 조건 배열")
+    conditions: list[SearchCondition] = Field(
+        default_factory=_empty_conditions,
+        description="검색 조건 배열",
+    )
     scopes: list[str] | None = Field(None, description="쿼리에서 추출한 폴더 경로 (언급된 경우만)")
     error: str | None = Field(None, description="에러 메시지")
 
@@ -337,9 +344,15 @@ class SearchConditionConverter:
         if value_count == 0:
             return value is None
         if value_count == "n":
-            return isinstance(value, list) and len(value) > 0
+            if not isinstance(value, list):
+                return False
+            values = cast(list[Any], value)
+            return len(values) > 0
         if value_count == 2:
-            return isinstance(value, list) and len(value) == 2
+            if not isinstance(value, list):
+                return False
+            values = cast(list[Any], value)
+            return len(values) == 2
         if value_count == 1:
             return value is not None
         return True

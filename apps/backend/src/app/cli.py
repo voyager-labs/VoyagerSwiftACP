@@ -19,7 +19,7 @@ def _with_env(default_env: str) -> dict[str, str]:
 
 
 def _set_supervisor_title(env: dict[str, str]) -> None:
-    process_title = env.get("BACKEND_PROCESS_NAME") or env.get("PUBLIC_APP_NAME")
+    process_title = env.get("PUBLIC_APP_NAME")
     if process_title:
         setproctitle.setproctitle(f"{process_title} (Supervisor)")
 
@@ -33,13 +33,10 @@ def dev() -> None:
 
     _set_supervisor_title(env)
 
-    host = env.get("BACKEND_HOST", "127.0.0.1")
-    port = env.get("BACKEND_PORT", "8000")
-
     # sys.argv 조작하여 FastAPI CLI 호출
     original_argv = sys.argv.copy()
     try:
-        sys.argv = ["fastapi", "dev", str(MAIN_FILE), "--host", host, "--port", port]
+        sys.argv = ["fastapi", "dev", str(MAIN_FILE)]
         fastapi_main()
     finally:
         sys.argv = original_argv
@@ -54,13 +51,10 @@ def prod() -> None:
 
     _set_supervisor_title(env)
 
-    host = env.get("BACKEND_HOST", "127.0.0.1")
-    port = env.get("BACKEND_PORT", "8000")
-
     # sys.argv 조작하여 FastAPI CLI 호출
     original_argv = sys.argv.copy()
     try:
-        sys.argv = ["fastapi", "run", str(MAIN_FILE), "--host", host, "--port", port]
+        sys.argv = ["fastapi", "run", str(MAIN_FILE)]
         fastapi_main()
     finally:
         sys.argv = original_argv
