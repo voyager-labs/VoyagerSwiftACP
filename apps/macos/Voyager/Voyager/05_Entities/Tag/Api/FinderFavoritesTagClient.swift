@@ -1,0 +1,61 @@
+import ComposableArchitecture
+import Foundation
+
+struct FinderFavoritesTagClient: Sendable {
+    var favoriteTagNames: @Sendable () -> [String]
+    var favoriteTags: @Sendable () -> [Tag]
+
+    nonisolated init(
+        favoriteTagNames: @escaping @Sendable () -> [String],
+        favoriteTags: @escaping @Sendable () -> [Tag],
+    ) {
+        self.favoriteTagNames = favoriteTagNames
+        self.favoriteTags = favoriteTags
+    }
+}
+
+extension FinderFavoritesTagClient: DependencyKey {
+    nonisolated static var liveValue: FinderFavoritesTagClient {
+        let favoriteTagNamesLoader: @Sendable () -> [String] = {
+            guard let finderDefaults = UserDefaults(suiteName: "com.apple.finder"),
+                  let tagNames = finderDefaults.array(forKey: "FavoriteTagNames") as? [String]
+            else {
+                return []
+            }
+            return tagNames
+        }
+
+        let favoriteTagsLoader: @Sendable () -> [Tag] = {
+            favoriteTagNamesLoader().compactMap { rawTag in
+                if let parsedTag = TagMDItemUserTagParser.parse(rawTag) {
+                    return parsedTag
+                }
+
+                let name = rawTag.trimmingCharacters(in: .whitespacesAndNewlines)
+                guard !name.isEmpty else { return nil }
+                return Tag(name: name, colorCode: 0)
+            }
+        }
+
+        return FinderFavoritesTagClient(
+            favoriteTagNames: { favoriteTagsLoader().map(\.name) },
+            favoriteTags: favoriteTagsLoader,
+        )
+    }
+
+    nonisolated static var testValue: FinderFavoritesTagClient {
+        FinderFavoritesTagClient(
+            favoriteTagNames: { [] },
+            favoriteTags: { [] },
+        )
+    }
+
+    nonisolated static var previewValue: FinderFavoritesTagClient { testValue }
+}
+
+extension DependencyValues {
+    nonisolated var finderFavoritesTagClient: FinderFavoritesTagClient {
+        get { self[FinderFavoritesTagClient.self] }
+        set { self[FinderFavoritesTagClient.self] = newValue }
+    }
+}
