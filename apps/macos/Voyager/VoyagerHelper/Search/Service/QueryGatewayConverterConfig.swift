@@ -14,7 +14,6 @@ enum QueryGatewayConverterConfig {
         "downloaded_date",
         "modification_date",
         "creation_date",
-        "dir_path",
         "path",
     ]
 

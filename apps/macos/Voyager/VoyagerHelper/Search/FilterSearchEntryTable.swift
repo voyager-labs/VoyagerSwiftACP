@@ -1,14 +1,14 @@
 import Foundation
 import StructuredQueries
 
-@Table("entries")
+@Table("files")
 struct FilterSearchEntryTable: Sendable {
     @Column("id")
     var id: Int64?
+    @Column("directory_id")
+    var directoryId: Int64?
     @Column("path")
     var path: String
-    @Column("dir_path")
-    var dirPath: String
     @Column("name_full")
     var nameFull: String
     @Column("extension")

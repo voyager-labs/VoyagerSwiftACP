@@ -33,8 +33,6 @@ extension FilterSearchConditionBuilder {
             "\(FilterSearchEntryTable.id)"
         case "path":
             "\(FilterSearchEntryTable.path)"
-        case "dir_path":
-            "\(FilterSearchEntryTable.dirPath)"
         case "name_full":
             "\(FilterSearchEntryTable.nameFull)"
         case "extension":

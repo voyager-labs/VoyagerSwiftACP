@@ -9,10 +9,87 @@ final class FilterSearchQueryBuilderTests: XCTestCase {
         let predicate = builder.buildScopePredicate(scopes: ["/Users/test/Downloads/"])
         let prepared = predicate.prepare { _ in "?" }
 
-        XCTAssertTrue(prepared.sql.contains("\"entries\".\"dir_path\""))
+        XCTAssertTrue(prepared.sql.contains("\"files\".\"directory_id\""))
+        XCTAssertTrue(prepared.sql.contains("FROM directories"))
+        XCTAssertTrue(prepared.sql.contains("\"directories\".\"path\""))
+        XCTAssertFalse(prepared.sql.contains("\"files\".\"dir_path\""))
         XCTAssertTrue(prepared.sql.contains("LIKE"))
         XCTAssertTrue(prepared.sql.contains("="))
         XCTAssertEqual(prepared.bindings.count, 2)
+    }
+
+    func testScopePredicateNormalizesAndReducesScopes() {
+        let builder = FilterSearchScopeBuilder()
+        let predicate = builder.buildScopePredicate(
+            scopes: [
+                "  /Users/test/Downloads/  ",
+                "/Users/test/Downloads/subfolder",
+                "/Users/test/Downloads",
+                "",
+            ],
+        )
+        let prepared = predicate.prepare { _ in "?" }
+
+        XCTAssertTrue(prepared.sql.contains("\"directories\".\"path\""))
+        XCTAssertFalse(prepared.sql.contains("\"files\".\"dir_path\""))
+        XCTAssertEqual(prepared.bindings.count, 2)
+    }
+
+    func testScopePredicateHandlesRootScope() {
+        let builder = FilterSearchScopeBuilder()
+        let predicate = builder.buildScopePredicate(scopes: ["/"])
+        let prepared = predicate.prepare { _ in "?" }
+
+        XCTAssertTrue(prepared.sql.contains("LIKE"))
+        XCTAssertEqual(prepared.bindings.count, 2)
+    }
+
+    func testScopePredicateRootScopeOverridesSubScopes() {
+        let builder = FilterSearchScopeBuilder()
+        let predicate = builder.buildScopePredicate(
+            scopes: [
+                "/Users/test",
+                "/",
+                "/Users/test/Downloads",
+            ],
+        )
+        let prepared = predicate.prepare { _ in "?" }
+
+        XCTAssertTrue(prepared.sql.contains("\"directories\".\"path\""))
+        XCTAssertEqual(prepared.bindings.count, 2)
+    }
+
+    func testScopePredicateExpandsTildeAndReducesHomeSubScopes() {
+        let builder = FilterSearchScopeBuilder()
+        let homePath = FileManager.default.homeDirectoryForCurrentUser.path
+        let predicate = builder.buildScopePredicate(
+            scopes: [
+                "~/Documents",
+                homePath + "/Documents/subfolder",
+            ],
+        )
+        let prepared = predicate.prepare { _ in "?" }
+
+        XCTAssertTrue(prepared.sql.contains("\"directories\".\"path\""))
+        XCTAssertEqual(prepared.bindings.count, 2)
+    }
+
+    func testScopePredicateHandlesNonexistentScopeWithoutFailure() {
+        let builder = FilterSearchScopeBuilder()
+        let predicate = builder.buildScopePredicate(scopes: ["/this/path/does/not/exist"])
+        let prepared = predicate.prepare { _ in "?" }
+
+        XCTAssertTrue(prepared.sql.contains("SELECT"))
+        XCTAssertEqual(prepared.bindings.count, 2)
+    }
+
+    func testScopePredicateReturnsAlwaysTrueWhenScopesAreEmpty() {
+        let builder = FilterSearchScopeBuilder()
+        let predicate = builder.buildScopePredicate(scopes: ["", "   "])
+        let prepared = predicate.prepare { _ in "?" }
+
+        XCTAssertFalse(prepared.sql.contains("\"files\".\"directory_id\""))
+        XCTAssertEqual(prepared.bindings.count, 0)
     }
 
     func testConditionBuilderEqOnNameFull() throws {
@@ -26,7 +103,7 @@ final class FilterSearchQueryBuilderTests: XCTestCase {
         let predicate = try builder.buildWhere(conditions: [condition])
         let prepared = predicate.prepare { _ in "?" }
 
-        XCTAssertTrue(prepared.sql.contains("\"entries\".\"name_full\""))
+        XCTAssertTrue(prepared.sql.contains("\"files\".\"name_full\""))
         XCTAssertTrue(prepared.sql.contains(" = "))
         XCTAssertEqual(prepared.bindings.count, 1)
     }
@@ -42,7 +119,7 @@ final class FilterSearchQueryBuilderTests: XCTestCase {
         let predicate = try builder.buildWhere(conditions: [condition])
         let prepared = predicate.prepare { _ in "?" }
 
-        XCTAssertTrue(prepared.sql.contains("\"entries\".\"size\""))
+        XCTAssertTrue(prepared.sql.contains("\"files\".\"size\""))
         XCTAssertTrue(prepared.sql.contains("BETWEEN"))
         XCTAssertEqual(prepared.bindings.count, 2)
     }
@@ -58,7 +135,7 @@ final class FilterSearchQueryBuilderTests: XCTestCase {
         let predicate = try builder.buildWhere(conditions: [condition])
         let prepared = predicate.prepare { _ in "?" }
 
-        XCTAssertTrue(prepared.sql.contains("\"entries\".\"extension\""))
+        XCTAssertTrue(prepared.sql.contains("\"files\".\"extension\""))
         XCTAssertTrue(prepared.sql.contains(" = "))
         XCTAssertEqual(prepared.bindings.count, 1)
     }
@@ -74,7 +151,7 @@ final class FilterSearchQueryBuilderTests: XCTestCase {
         let predicate = try builder.buildWhere(conditions: [condition])
         let prepared = predicate.prepare { _ in "?" }
 
-        XCTAssertTrue(prepared.sql.contains("\"entries\".\"extension\""))
+        XCTAssertTrue(prepared.sql.contains("\"files\".\"extension\""))
         XCTAssertTrue(prepared.sql.contains(" IN "))
         XCTAssertEqual(prepared.bindings.count, 2)
     }
