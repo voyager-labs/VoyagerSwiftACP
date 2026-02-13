@@ -3,7 +3,7 @@ import StructuredQueries
 
 struct FilterSearchScopeBuilder: Sendable {
     func buildScopePredicate(scopes: [String]) -> QueryFragment {
-        let normalizedScopes = normalizeScopes(scopes)
+        let normalizedScopes = Self.normalizeScopes(scopes)
 
         guard !normalizedScopes.isEmpty else {
             return .alwaysTrue
@@ -50,7 +50,7 @@ struct FilterSearchScopeBuilder: Sendable {
         return QueryFragment.group(clauses.joinedWithOr())
     }
 
-    private nonisolated func normalizeScopes(_ scopes: [String]) -> [String] {
+    static func normalizeScopes(_ scopes: [String]) -> [String] {
         var orderedUnique: [String] = []
         var seen: Set<String> = []
 
@@ -85,7 +85,7 @@ struct FilterSearchScopeBuilder: Sendable {
         return reduced
     }
 
-    private nonisolated func normalizeOne(_ raw: String) -> String? {
+    private static func normalizeOne(_ raw: String) -> String? {
         let trimmed = raw.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else {
             return nil
@@ -116,7 +116,7 @@ struct FilterSearchScopeBuilder: Sendable {
         return normalized
     }
 
-    private nonisolated func isContained(path: String, in parent: String) -> Bool {
+    private static func isContained(path: String, in parent: String) -> Bool {
         if parent == "/" {
             return true
         }
