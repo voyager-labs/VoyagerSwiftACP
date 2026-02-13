@@ -1,7 +1,7 @@
 import Foundation
 
-nonisolated enum EntriesSchema {
-    static let tableName = "entries"
+nonisolated enum FilesSchema {
+    static let tableName = "files"
 
     static let requiredColumns = [
         "id",
@@ -12,9 +12,6 @@ nonisolated enum EntriesSchema {
         "name_full",
         "name_stem",
         "extension",
-        "parent_dir_name",
-        "depth_from_home",
-        "relative_path_from_home",
         "size",
         "uniform_type_identifier",
         "file_kind",
@@ -26,6 +23,7 @@ nonisolated enum EntriesSchema {
         "added_date",
         "last_used_date",
         "original_metadata",
+        "directory_id",
     ]
 
     static let columnDescriptions: [String: String] = [
@@ -37,9 +35,6 @@ nonisolated enum EntriesSchema {
         "name_full": "파일 이름(확장자 포함) (Path.name)",
         "name_stem": "파일 이름(확장자 제외) (Path.stem)",
         "extension": "파일 확장자 (Path.suffix)",
-        "parent_dir_name": "파일이 속한 부모 디렉토리 이름 (Path.parent.name)",
-        "depth_from_home": "$HOME 기준 파일 경로 깊이",
-        "relative_path_from_home": "$HOME 기준 상대 경로",
         "size": "파일 크기 (kMDItemFSSize)",
         "uniform_type_identifier": "유니폼 타입 식별자 (kMDItemContentType)",
         "file_kind": "파일 종류 (kMDItemKind)",
@@ -51,5 +46,6 @@ nonisolated enum EntriesSchema {
         "added_date": "파일 추가 시간 (kMDItemDateAdded)",
         "last_used_date": "파일 마지막 실행 시간 (kMDItemLastUsedDate)",
         "original_metadata": "원본 메타데이터 (OSXMetaData)",
+        "directory_id": "디렉터리 참조 (directories.id)",
     ]
 }

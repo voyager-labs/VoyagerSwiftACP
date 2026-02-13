@@ -278,10 +278,10 @@ final class IndexingRequestListener {
 private extension IndexingRequestListener {
     struct IndexingValidationSnapshot {
         let indexingStateExists: Bool
-        let entriesExists: Bool
+        let filesExists: Bool
         let completedAt: String?
         let lastSyncAt: String?
-        let entriesCount: Int
+        let filesCount: Int
     }
 
     func needsReindex() async -> Bool {
@@ -292,8 +292,8 @@ private extension IndexingRequestListener {
             if !snapshot.indexingStateExists {
                 reasons.append("missing_indexing_state")
             }
-            if !snapshot.entriesExists {
-                reasons.append("missing_entries_table")
+            if !snapshot.filesExists {
+                reasons.append("missing_files_table")
             }
             if snapshot.completedAt == nil || snapshot.completedAt == "null" {
                 reasons.append("missing_completed_at")
@@ -301,15 +301,15 @@ private extension IndexingRequestListener {
             if snapshot.lastSyncAt == nil || snapshot.lastSyncAt == "null" {
                 reasons.append("missing_last_sync_at")
             }
-            if snapshot.entriesCount == 0 {
-                reasons.append("entries_empty")
+            if snapshot.filesCount == 0 {
+                reasons.append("files_empty")
             }
 
             if reasons.isEmpty {
                 logger.info(
                     "Initial indexing validation passed",
                     metadata: [
-                        "entries_count": .string("\(snapshot.entriesCount)"),
+                        "files_count": .string("\(snapshot.filesCount)"),
                         "completed_at": .string(snapshot.completedAt ?? "nil"),
                         "last_sync_at": .string(snapshot.lastSyncAt ?? "nil"),
                     ],
@@ -321,7 +321,7 @@ private extension IndexingRequestListener {
                 "Initial indexing validation failed",
                 metadata: [
                     "reasons": .string(reasons.joined(separator: ",")),
-                    "entries_count": .string("\(snapshot.entriesCount)"),
+                    "files_count": .string("\(snapshot.filesCount)"),
                     "completed_at": .string(snapshot.completedAt ?? "nil"),
                     "last_sync_at": .string(snapshot.lastSyncAt ?? "nil"),
                 ],
@@ -344,9 +344,10 @@ private extension IndexingRequestListener {
     func fetchValidationSnapshot() async throws -> IndexingValidationSnapshot {
         let completedAtKey = StateKey.initialIndexingCompletedAt
         let lastSyncKey = "last_sync_at"
+        let filesTable = FilesSchema.tableName
         return try await manager.read { db in
             let indexingStateExists = try db.tableExists("indexing_state")
-            let entriesExists = try db.tableExists("entries")
+            let filesExists = try db.tableExists(filesTable)
             var completedAt: String?
             var lastSyncAt: String?
             if indexingStateExists {
@@ -361,15 +362,15 @@ private extension IndexingRequestListener {
                     arguments: [lastSyncKey],
                 )
             }
-            let entriesCount = try entriesExists
-                ? (Int.fetchOne(db, sql: "SELECT COUNT(1) FROM entries") ?? 0)
+            let filesCount = try filesExists
+                ? (Int.fetchOne(db, sql: "SELECT COUNT(1) FROM \(filesTable)") ?? 0)
                 : 0
             return IndexingValidationSnapshot(
                 indexingStateExists: indexingStateExists,
-                entriesExists: entriesExists,
+                filesExists: filesExists,
                 completedAt: completedAt,
                 lastSyncAt: lastSyncAt,
-                entriesCount: entriesCount,
+                filesCount: filesCount,
             )
         }
     }

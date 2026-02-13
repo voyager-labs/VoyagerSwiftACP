@@ -1,7 +1,7 @@
 import Foundation
 @preconcurrency import GRDB
 
-nonisolated struct EntryRecord: Codable, FetchableRecord, MutablePersistableRecord, Sendable {
+nonisolated struct FileRecord: Codable, FetchableRecord, MutablePersistableRecord, Sendable {
     var id: Int64?
     var volumeIdentifier: String
     var fileResourceIdentifier: String
@@ -10,9 +10,6 @@ nonisolated struct EntryRecord: Codable, FetchableRecord, MutablePersistableReco
     var nameFull: String
     var nameStem: String
     var fileExtension: String
-    var parentDirName: String
-    var depthFromHome: Int
-    var relativePathFromHome: String?
     var size: Int64
     var uniformTypeIdentifier: String?
     var fileKind: String?
@@ -24,8 +21,9 @@ nonisolated struct EntryRecord: Codable, FetchableRecord, MutablePersistableReco
     var addedDate: Date
     var lastUsedDate: Date?
     var originalMetadata: String
+    var directoryId: Int64?
 
-    static let databaseTableName = "entries"
+    static let databaseTableName = FilesSchema.tableName
     static let insertableColumns: [Columns] = [
         .volumeIdentifier,
         .fileResourceIdentifier,
@@ -34,9 +32,6 @@ nonisolated struct EntryRecord: Codable, FetchableRecord, MutablePersistableReco
         .nameFull,
         .nameStem,
         .fileExtension,
-        .parentDirName,
-        .depthFromHome,
-        .relativePathFromHome,
         .size,
         .uniformTypeIdentifier,
         .fileKind,
@@ -48,6 +43,7 @@ nonisolated struct EntryRecord: Codable, FetchableRecord, MutablePersistableReco
         .addedDate,
         .lastUsedDate,
         .originalMetadata,
+        .directoryId,
     ]
     static let insertableColumnCount = insertableColumns.count
 
@@ -60,9 +56,6 @@ nonisolated struct EntryRecord: Codable, FetchableRecord, MutablePersistableReco
             nameFull,
             nameStem,
             fileExtension,
-            parentDirName,
-            depthFromHome,
-            relativePathFromHome,
             size,
             uniformTypeIdentifier,
             fileKind,
@@ -74,6 +67,7 @@ nonisolated struct EntryRecord: Codable, FetchableRecord, MutablePersistableReco
             addedDate,
             lastUsedDate,
             originalMetadata,
+            directoryId,
         ]
     }
 
@@ -86,9 +80,6 @@ nonisolated struct EntryRecord: Codable, FetchableRecord, MutablePersistableReco
         case nameFull = "name_full"
         case nameStem = "name_stem"
         case fileExtension = "extension"
-        case parentDirName = "parent_dir_name"
-        case depthFromHome = "depth_from_home"
-        case relativePathFromHome = "relative_path_from_home"
         case size
         case uniformTypeIdentifier = "uniform_type_identifier"
         case fileKind = "file_kind"
@@ -100,6 +91,7 @@ nonisolated struct EntryRecord: Codable, FetchableRecord, MutablePersistableReco
         case addedDate = "added_date"
         case lastUsedDate = "last_used_date"
         case originalMetadata = "original_metadata"
+        case directoryId = "directory_id"
     }
 
     enum CodingKeys: String, CodingKey {
@@ -111,9 +103,6 @@ nonisolated struct EntryRecord: Codable, FetchableRecord, MutablePersistableReco
         case nameFull = "name_full"
         case nameStem = "name_stem"
         case fileExtension = "extension"
-        case parentDirName = "parent_dir_name"
-        case depthFromHome = "depth_from_home"
-        case relativePathFromHome = "relative_path_from_home"
         case size
         case uniformTypeIdentifier = "uniform_type_identifier"
         case fileKind = "file_kind"
@@ -125,6 +114,7 @@ nonisolated struct EntryRecord: Codable, FetchableRecord, MutablePersistableReco
         case addedDate = "added_date"
         case lastUsedDate = "last_used_date"
         case originalMetadata = "original_metadata"
+        case directoryId = "directory_id"
     }
 
     mutating func didInsert(with rowID: Int64, for _: String?) {
@@ -133,7 +123,7 @@ nonisolated struct EntryRecord: Codable, FetchableRecord, MutablePersistableReco
 }
 
 // 논리 키는 유니크 제약 기준으로 사용된다.
-nonisolated struct EntryLogicalKey: Sendable {
+nonisolated struct FileLogicalKey: Sendable {
     let volumeIdentifier: String
     let fileResourceIdentifier: String
 }

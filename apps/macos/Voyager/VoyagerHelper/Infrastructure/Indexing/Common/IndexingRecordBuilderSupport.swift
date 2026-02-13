@@ -1,101 +1,43 @@
-@preconcurrency import CoreServices
 import Foundation
 
-enum InitialIndexingRecordBuilder {
-    private struct IdentifierPair {
-        let volumeIdentifier: String
-        let fileResourceIdentifier: String
-    }
-
-    private struct NameComponents {
-        let dirURL: URL
-        let nameFull: String
-        let nameStem: String
-        let fileExtension: String
-    }
-
-    private struct FileAttributes {
-        let size: Int64
-        let creationDate: Date
-        let modificationDate: Date
-        let contentCreationDate: Date
-        let contentModificationDate: Date
-        let addedDate: Date
-        let uniformTypeIdentifier: String?
-        let fileKind: String?
-        let isInvisible: Bool
-        let lastUsedDate: Date?
-        let originalMetadata: String
-    }
-
-    private struct MDItemValues {
-        let size: Int64?
-        let creationDate: Date?
-        let modificationDate: Date?
-        let addedDate: Date?
-    }
-
-    private struct ResolvedDates {
-        let creationDate: Date
-        let modificationDate: Date
-        let contentCreationDate: Date
-        let contentModificationDate: Date
-        let addedDate: Date
-    }
-
-    nonisolated static func makeRecord(
-        mdItem: MDItem,
-        path: String,
-        homeURL: URL,
+extension IndexingRecordBuilder {
+    nonisolated static func identifiers(
+        for url: URL,
         cachedVolumeIdentifier: String?,
-    ) async -> EntryRecord? {
-        let fileURL = URL(fileURLWithPath: path)
-        let standardizedURL = fileURL.standardizedFileURL
-
-        do {
-            guard let identifiers = try identifiers(
-                for: standardizedURL,
-                cachedVolumeIdentifier: cachedVolumeIdentifier,
-            ) else {
-                return nil
-            }
-            let names = nameComponents(for: standardizedURL)
-            guard let attributes = await fileAttributes(mdItem: mdItem, url: standardizedURL) else {
-                return nil
-            }
-
-            let relativeInfo = relativeInfo(path: standardizedURL, homeURL: homeURL)
-            let record = EntryRecord(
-                id: nil,
-                volumeIdentifier: identifiers.volumeIdentifier,
-                fileResourceIdentifier: identifiers.fileResourceIdentifier,
-                path: standardizedURL.path,
-                dirPath: names.dirURL.path,
-                nameFull: names.nameFull,
-                nameStem: names.nameStem,
-                fileExtension: names.fileExtension,
-                parentDirName: names.dirURL.lastPathComponent,
-                depthFromHome: relativeInfo.depth,
-                relativePathFromHome: relativeInfo.relative,
-                size: attributes.size,
-                uniformTypeIdentifier: attributes.uniformTypeIdentifier,
-                fileKind: attributes.fileKind,
-                isInvisible: attributes.isInvisible,
-                creationDate: attributes.creationDate,
-                modificationDate: attributes.modificationDate,
-                contentCreationDate: attributes.contentCreationDate,
-                contentModificationDate: attributes.contentModificationDate,
-                addedDate: attributes.addedDate,
-                lastUsedDate: attributes.lastUsedDate,
-                originalMetadata: attributes.originalMetadata,
-            )
-            return record
-        } catch {
-            return nil
-        }
+    ) throws -> IdentifierPair? {
+        try resolveIdentifiers(for: url, cachedVolumeIdentifier: cachedVolumeIdentifier)
     }
 
-    private nonisolated static func identifiers(
+    nonisolated static func nameComponents(for url: URL) -> NameComponents {
+        buildNameComponents(for: url)
+    }
+
+    nonisolated static func fileAttributes(mdItem: MDItem, url: URL) async -> FileAttributes? {
+        await buildFileAttributes(mdItem: mdItem, url: url)
+    }
+
+    nonisolated static func volumeIdentifier(from url: URL) -> String? {
+        let values = try? url.resourceValues(forKeys: [.volumeIdentifierKey])
+        return identifierString(values?.volumeIdentifier)
+    }
+
+    nonisolated static func relativeInfo(path: URL, homeURL: URL) -> (depth: Int, relative: String?) {
+        let homePath = homeURL.standardizedFileURL.path
+        let targetPath = path.standardizedFileURL.path
+        guard targetPath == homePath || targetPath.hasPrefix(homePath + "/") else {
+            return (-1, nil)
+        }
+        let relative = targetPath.dropFirst(homePath.count).trimmingCharacters(
+            in: CharacterSet(charactersIn: "/"),
+        )
+        guard !relative.isEmpty else { return (-1, "~/") }
+        let depth = max(-1, relative.split(separator: "/").count - 1)
+        return (depth, "~/" + relative)
+    }
+}
+
+extension IndexingRecordBuilder {
+    nonisolated static func resolveIdentifiers(
         for url: URL,
         cachedVolumeIdentifier: String?,
     ) throws -> IdentifierPair? {
@@ -112,7 +54,7 @@ enum InitialIndexingRecordBuilder {
         )
     }
 
-    private nonisolated static func nameComponents(for url: URL) -> NameComponents {
+    nonisolated static func buildNameComponents(for url: URL) -> NameComponents {
         let dirURL = url.deletingLastPathComponent()
         return NameComponents(
             dirURL: dirURL,
@@ -122,7 +64,7 @@ enum InitialIndexingRecordBuilder {
         )
     }
 
-    private nonisolated static func fileAttributes(mdItem: MDItem, url: URL) async -> FileAttributes? {
+    nonisolated static func buildFileAttributes(mdItem: MDItem, url: URL) async -> FileAttributes? {
         let attributes = MetadataJSONEncoder.attributes(from: mdItem)
         let mdItemValues = mdItemValues(from: attributes)
         let fallbackValues = fallbackValuesIfNeeded(url: url, values: mdItemValues)
@@ -139,10 +81,12 @@ enum InitialIndexingRecordBuilder {
         let fileKind = stringValue(attributeValue(attributes, key: kMDItemKind))
         let isInvisible = boolValue(attributeValue(attributes, key: kMDItemFSInvisible))
         let lastUsedDate = dateValue(attributeValue(attributes, key: kMDItemLastUsedDate))
-        let originalMetadata = await MetadataJSONEncoder.encode(
-            attributes: attributes,
-            path: url.path,
-        ) ?? "{}"
+        let originalMetadata = await MainActor.run {
+            guard let mainItem = MDItemCreate(kCFAllocatorDefault, url.path as CFString) else {
+                return nil
+            }
+            return MetadataJSONEncoder.encode(mdItem: mainItem, path: url.path)
+        } ?? "{}"
 
         return FileAttributes(
             size: size,
@@ -158,8 +102,10 @@ enum InitialIndexingRecordBuilder {
             originalMetadata: originalMetadata,
         )
     }
+}
 
-    private nonisolated static func mdItemValues(from attributes: NSDictionary) -> MDItemValues {
+private extension IndexingRecordBuilder {
+    nonisolated static func mdItemValues(from attributes: NSDictionary) -> MDItemValues {
         MDItemValues(
             size: int64Value(attributeValue(attributes, key: kMDItemFSSize)),
             creationDate: dateValue(attributeValue(attributes, key: kMDItemFSCreationDate)),
@@ -168,7 +114,7 @@ enum InitialIndexingRecordBuilder {
         )
     }
 
-    private nonisolated static func fallbackValuesIfNeeded(
+    nonisolated static func fallbackValuesIfNeeded(
         url: URL,
         values: MDItemValues,
     ) -> URLResourceValues? {
@@ -182,7 +128,7 @@ enum InitialIndexingRecordBuilder {
         )
     }
 
-    private nonisolated static func resolvedSize(
+    nonisolated static func resolvedSize(
         values: MDItemValues,
         fallbackValues: URLResourceValues?,
     ) -> Int64 {
@@ -191,7 +137,7 @@ enum InitialIndexingRecordBuilder {
             ?? 0
     }
 
-    private nonisolated static func resolvedDates(
+    nonisolated static func resolvedDates(
         values: MDItemValues,
         fallbackValues: URLResourceValues?,
         attributes: NSDictionary,
@@ -220,19 +166,19 @@ enum InitialIndexingRecordBuilder {
         )
     }
 
-    private nonisolated static func attributeValue(_ attributes: NSDictionary, key: CFString) -> Any? {
+    nonisolated static func attributeValue(_ attributes: NSDictionary, key: CFString) -> Any? {
         attributes[key as String]
     }
 
-    private nonisolated static func stringValue(_ value: Any?) -> String? {
+    nonisolated static func stringValue(_ value: Any?) -> String? {
         value as? String
     }
 
-    private nonisolated static func int64Value(_ value: Any?) -> Int64? {
+    nonisolated static func int64Value(_ value: Any?) -> Int64? {
         (value as? NSNumber)?.int64Value
     }
 
-    private nonisolated static func boolValue(_ value: Any?) -> Bool {
+    nonisolated static func boolValue(_ value: Any?) -> Bool {
         if let value = value as? Bool {
             return value
         }
@@ -242,11 +188,11 @@ enum InitialIndexingRecordBuilder {
         return false
     }
 
-    private nonisolated static func dateValue(_ value: Any?) -> Date? {
+    nonisolated static func dateValue(_ value: Any?) -> Date? {
         value as? Date
     }
 
-    private nonisolated static func identifierString(_ value: Any?) -> String? {
+    nonisolated static func identifierString(_ value: Any?) -> String? {
         guard let value else { return nil }
         if let string = value as? String {
             return string
@@ -261,24 +207,5 @@ enum InitialIndexingRecordBuilder {
             return number.stringValue
         }
         return String(describing: value)
-    }
-
-    nonisolated static func volumeIdentifier(from url: URL) -> String? {
-        let values = try? url.resourceValues(forKeys: [.volumeIdentifierKey])
-        return identifierString(values?.volumeIdentifier)
-    }
-
-    private nonisolated static func relativeInfo(path: URL, homeURL: URL) -> (depth: Int, relative: String?) {
-        let homePath = homeURL.standardizedFileURL.path
-        let targetPath = path.standardizedFileURL.path
-        guard targetPath == homePath || targetPath.hasPrefix(homePath + "/") else {
-            return (-1, nil)
-        }
-        let relative = targetPath.dropFirst(homePath.count).trimmingCharacters(
-            in: CharacterSet(charactersIn: "/"),
-        )
-        guard !relative.isEmpty else { return (-1, "~/") }
-        let depth = max(-1, relative.split(separator: "/").count - 1)
-        return (depth, "~/" + relative)
     }
 }

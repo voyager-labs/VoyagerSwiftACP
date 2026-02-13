@@ -68,7 +68,7 @@ enum InitialIndexingRunner {
     ) async throws -> Int {
         let startedAt = Date()
         let homeURL = FileManager.default.homeDirectoryForCurrentUser
-        let cachedVolumeIdentifier = InitialIndexingRecordBuilder.volumeIdentifier(from: homeURL)
+        let cachedVolumeIdentifier = IndexingRecordBuilder.volumeIdentifier(from: homeURL)
         let query = try makeQuery(homeURL: homeURL)
         let resultCount = Int(MDQueryGetResultCount(query))
         logger.info(
@@ -119,13 +119,14 @@ enum InitialIndexingRunner {
         return inserted
     }
 
-    private struct IndexedItem {
+    struct IndexedItem {
         let mdItem: MDItem
         let path: String
     }
 
     private struct BatchPlan {
-        let repo: EntryRepository
+        let fileRepo: FileRepository
+        let directoryRepo: DirectoryRepository
         let effectiveBatchSize: Int
         let pathBatchSize: Int
     }
@@ -141,7 +142,8 @@ enum InitialIndexingRunner {
     private struct AppendContext {
         let homeURL: URL
         let cachedVolumeIdentifier: String?
-        let repo: EntryRepository
+        let fileRepo: FileRepository
+        let directoryRepo: DirectoryRepository
         let batchSize: Int
     }
 
@@ -150,17 +152,20 @@ enum InitialIndexingRunner {
         resultCount: Int,
         context: ProcessContext,
     ) async throws -> Int {
-        let repo = context.plan.repo
+        let fileRepo = context.plan.fileRepo
+        let directoryRepo = context.plan.directoryRepo
         let effectiveBatchSize = context.plan.effectiveBatchSize
         var inserted = 0
-        var batch: [EntryRecord] = []
+        var batch: [FileRecord] = []
         batch.reserveCapacity(effectiveBatchSize)
+        var directoryCache: [String: Int64] = [:]
 
         let pathBatchSize = context.plan.pathBatchSize
         let appendContext = AppendContext(
             homeURL: context.homeURL,
             cachedVolumeIdentifier: context.cachedVolumeIdentifier,
-            repo: repo,
+            fileRepo: fileRepo,
+            directoryRepo: directoryRepo,
             batchSize: effectiveBatchSize,
         )
         var index = 0
@@ -175,6 +180,7 @@ enum InitialIndexingRunner {
                 context: appendContext,
                 batch: &batch,
                 inserted: &inserted,
+                directoryCache: &directoryCache,
             )
 
             await emitHeartbeat(context.heartbeat)
@@ -183,7 +189,7 @@ enum InitialIndexingRunner {
 
         try await flushBatch(
             &batch,
-            repo: repo,
+            fileRepo: fileRepo,
             inserted: &inserted,
             batchSize: effectiveBatchSize,
             keepCapacity: false,
@@ -197,9 +203,10 @@ enum InitialIndexingRunner {
         logger: Logger,
         batchSize: Int?,
     ) async throws -> BatchPlan {
-        let repo = EntryRepository(manager: manager, logger: logger)
+        let fileRepo = FileRepository(manager: manager, logger: logger)
+        let directoryRepo = DirectoryRepository(manager: manager, logger: logger)
         let maxBatchSize = try await manager.read { db in
-            try EntryRepository.maxBatchSize(in: db)
+            try FileRepository.maxBatchSize(in: db)
         }
         let maxPathBatchSize = try await manager.read { db in
             try Int.fetchOne(db, sql: "PRAGMA max_variable_number") ?? 999
@@ -207,7 +214,8 @@ enum InitialIndexingRunner {
         let effectiveBatchSize = batchSize ?? maxBatchSize
         let pathBatchSize = min(maxPathBatchSize, max(1000, effectiveBatchSize))
         return BatchPlan(
-            repo: repo,
+            fileRepo: fileRepo,
+            directoryRepo: directoryRepo,
             effectiveBatchSize: effectiveBatchSize,
             pathBatchSize: pathBatchSize,
         )
@@ -233,73 +241,50 @@ enum InitialIndexingRunner {
         items: [IndexedItem],
         existingPaths: Set<String>,
         context: AppendContext,
-        batch: inout [EntryRecord],
+        batch: inout [FileRecord],
         inserted: inout Int,
+        directoryCache: inout [String: Int64],
     ) async throws {
+        let directoryPaths = collectDirectoryPaths(items: items)
+        await resolveDirectoryPaths(
+            directoryPaths,
+            homeURL: context.homeURL,
+            cachedVolumeIdentifier: context.cachedVolumeIdentifier,
+            directoryRepo: context.directoryRepo,
+            directoryCache: &directoryCache,
+        )
         for item in items where !existingPaths.contains(item.path) {
-            let record = await InitialIndexingRecordBuilder.makeRecord(
+            let standardizedPath = URL(fileURLWithPath: item.path).standardizedFileURL.path
+            if IndexingRecordBuilder.isDirectory(mdItem: item.mdItem, path: standardizedPath) {
+                continue
+            }
+            let fileRecord = await IndexingRecordBuilder.makeRecord(
                 mdItem: item.mdItem,
                 path: item.path,
                 homeURL: context.homeURL,
                 cachedVolumeIdentifier: context.cachedVolumeIdentifier,
             )
-            guard let record else { continue }
-            batch.append(record)
+            guard var fileRecord else { continue }
+            let assigned = await assignDirectoryId(
+                to: &fileRecord,
+                homeURL: context.homeURL,
+                cachedVolumeIdentifier: context.cachedVolumeIdentifier,
+                directoryRepo: context.directoryRepo,
+                directoryCache: &directoryCache,
+            )
+            guard assigned else {
+                continue
+            }
+            batch.append(fileRecord)
             if batch.count >= context.batchSize {
                 try await flushBatch(
                     &batch,
-                    repo: context.repo,
+                    fileRepo: context.fileRepo,
                     inserted: &inserted,
                     batchSize: context.batchSize,
                     keepCapacity: true,
                 )
             }
         }
-    }
-
-    private static func fetchExistingPaths(
-        manager: DatabaseManager,
-        paths: [String],
-    ) async throws -> Set<String> {
-        guard !paths.isEmpty else { return [] }
-        return try await manager.read { db in
-            let placeholders = Array(repeating: "?", count: paths.count).joined(separator: ", ")
-            let sql = "SELECT path FROM entries WHERE path IN (\(placeholders))"
-            let existing = try String.fetchAll(db, sql: sql, arguments: StatementArguments(paths))
-            return Set(existing)
-        }
-    }
-
-    private static func updateLastSyncAt(manager: DatabaseManager) async throws {
-        let formatter = ISO8601DateFormatter()
-        formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
-        let value = formatter.string(from: Date())
-
-        try await manager.write { db in
-            let sql = """
-            INSERT INTO indexing_state (key, value, updated_at)
-            VALUES (?, ?, CURRENT_TIMESTAMP)
-            ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at
-            """
-            try db.execute(sql: sql, arguments: ["last_sync_at", value])
-        }
-    }
-
-    private static func emitHeartbeat(_ heartbeat: (@Sendable () async -> Void)?) async {
-        guard let heartbeat else { return }
-        await heartbeat()
-    }
-
-    private static func flushBatch(
-        _ batch: inout [EntryRecord],
-        repo: EntryRepository,
-        inserted: inout Int,
-        batchSize: Int,
-        keepCapacity: Bool,
-    ) async throws {
-        guard !batch.isEmpty else { return }
-        try await repo.insertBatch(batch, batchSize: batchSize)
-        inserted += batch.count
-        batch.removeAll(keepingCapacity: keepCapacity)
     }
 }

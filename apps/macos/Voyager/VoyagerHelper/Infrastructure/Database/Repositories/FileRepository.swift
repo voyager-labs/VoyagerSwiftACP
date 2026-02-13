@@ -2,15 +2,12 @@ import Foundation
 @preconcurrency import GRDB
 import Logging
 
-nonisolated struct EntryUpdate: Sendable {
+nonisolated struct FileUpdate: Sendable {
     var path: String?
     var dirPath: String?
     var nameFull: String?
     var nameStem: String?
     var fileExtension: String?
-    var parentDirName: String?
-    var depthFromHome: Int?
-    var relativePathFromHome: String?
     var size: Int64?
     var uniformTypeIdentifier: String?
     var fileKind: String?
@@ -22,6 +19,7 @@ nonisolated struct EntryUpdate: Sendable {
     var addedDate: Date?
     var lastUsedDate: Date?
     var originalMetadata: String?
+    var directoryId: Int64?
 
     func columnAssignments() -> [ColumnAssignment] {
         var assignments: [ColumnAssignment] = []
@@ -38,9 +36,6 @@ nonisolated struct EntryUpdate: Sendable {
         append(&assignments, column: .nameFull, value: nameFull)
         append(&assignments, column: .nameStem, value: nameStem)
         append(&assignments, column: .fileExtension, value: fileExtension)
-        append(&assignments, column: .parentDirName, value: parentDirName)
-        append(&assignments, column: .depthFromHome, value: depthFromHome)
-        append(&assignments, column: .relativePathFromHome, value: relativePathFromHome)
     }
 
     private func appendAttributeAssignments(into assignments: inout [ColumnAssignment]) {
@@ -61,11 +56,12 @@ nonisolated struct EntryUpdate: Sendable {
 
     private func appendMetadataAssignments(into assignments: inout [ColumnAssignment]) {
         append(&assignments, column: .originalMetadata, value: originalMetadata)
+        append(&assignments, column: .directoryId, value: directoryId)
     }
 
     private func append(
         _ assignments: inout [ColumnAssignment],
-        column: EntryRecord.Columns,
+        column: FileRecord.Columns,
         value: (some DatabaseValueConvertible)?,
     ) {
         guard let value else { return }
@@ -73,43 +69,59 @@ nonisolated struct EntryUpdate: Sendable {
     }
 }
 
-nonisolated struct EntryRepository: Sendable {
+enum FileRepositoryError: Error {
+    case missingDirectoryId(path: String)
+}
+
+nonisolated struct FileRepository: Sendable {
     private let manager: DatabaseManager
     private let logger: Logger
 
-    init(manager: DatabaseManager, logger: Logger = Logger(label: "VoyagerHelper.EntryRepository")) {
+    init(manager: DatabaseManager, logger: Logger = Logger(label: "VoyagerHelper.FileRepository")) {
         self.manager = manager
         self.logger = logger
     }
 
-    func fetchById(_ id: Int64) async throws -> EntryRecord? {
+    func fetchById(_ id: Int64) async throws -> FileRecord? {
         try await manager.read { db in
-            try EntryRecord.filter(EntryRecord.Columns.id == id).fetchOne(db)
+            try FileRecord.filter(FileRecord.Columns.id == id).fetchOne(db)
         }
     }
 
-    func fetchByPath(_ path: String) async throws -> EntryRecord? {
+    func fetchByPath(_ path: String) async throws -> FileRecord? {
         try await manager.read { db in
-            try EntryRecord.filter(EntryRecord.Columns.path == path).fetchOne(db)
+            try FileRecord.filter(FileRecord.Columns.path == path).fetchOne(db)
         }
     }
 
     func deleteById(_ id: Int64) async throws -> Int {
         try await manager.write { db in
-            try EntryRecord.filter(EntryRecord.Columns.id == id).deleteAll(db)
+            try FileRecord.filter(FileRecord.Columns.id == id).deleteAll(db)
         }
     }
 
     func deleteByPath(_ path: String) async throws -> Int {
         try await manager.write { db in
-            try EntryRecord.filter(EntryRecord.Columns.path == path).deleteAll(db)
+            try FileRecord.filter(FileRecord.Columns.path == path).deleteAll(db)
         }
     }
 
-    func updateById(_ id: Int64, updates: EntryUpdate) async throws -> EntryRecord? {
+    func deleteByPathPrefix(_ path: String) async throws -> Int {
+        let likePrefix = path.hasSuffix("/") ? "\(path)%" : "\(path)/%"
+        let tableName = FileRecord.databaseTableName
+        return try await manager.write { db in
+            try db.execute(
+                sql: "DELETE FROM \(tableName) WHERE path = ? OR path LIKE ?",
+                arguments: [path, likePrefix],
+            )
+            return db.changesCount
+        }
+    }
+
+    func updateById(_ id: Int64, updates: FileUpdate) async throws -> FileRecord? {
         try await manager.write { db in
             let assignments = updates.columnAssignments()
-            let request = EntryRecord.filter(EntryRecord.Columns.id == id)
+            let request = FileRecord.filter(FileRecord.Columns.id == id)
             if assignments.isEmpty {
                 return try request.fetchOne(db)
             }
@@ -120,14 +132,15 @@ nonisolated struct EntryRepository: Sendable {
         }
     }
 
-    func insertOne(_ record: EntryRecord) async throws {
+    func insertOne(_ record: FileRecord) async throws {
+        try Self.ensureDirectoryId(record)
         try await manager.write { db in
             var record = record
             try record.insert(db)
         }
     }
 
-    func insertBatch(_ records: [EntryRecord]) async throws {
+    func insertBatch(_ records: [FileRecord]) async throws {
         guard !records.isEmpty else { return }
 
         let batchSize = try await manager.read { db in
@@ -136,8 +149,9 @@ nonisolated struct EntryRepository: Sendable {
         try await insertBatch(records, batchSize: batchSize)
     }
 
-    func insertBatch(_ records: [EntryRecord], batchSize: Int) async throws {
+    func insertBatch(_ records: [FileRecord], batchSize: Int) async throws {
         guard !records.isEmpty else { return }
+        try Self.ensureDirectoryIds(records)
 
         let logger = logger
 
@@ -155,10 +169,11 @@ nonisolated struct EntryRepository: Sendable {
         }
     }
 
-    func upsertByPath(_ record: EntryRecord) async throws -> EntryRecord {
-        try await manager.write { db in
+    func upsertByPath(_ record: FileRecord) async throws -> FileRecord {
+        try Self.ensureDirectoryId(record)
+        return try await manager.write { db in
             var record = record
-            if let existing = try EntryRecord.filter(EntryRecord.Columns.path == record.path).fetchOne(db) {
+            if let existing = try FileRecord.filter(FileRecord.Columns.path == record.path).fetchOne(db) {
                 record.id = existing.id
                 try record.update(db)
                 return record
@@ -170,7 +185,7 @@ nonisolated struct EntryRepository: Sendable {
         }
     }
 
-    func upsertByLogicalKey(_ key: EntryLogicalKey, record: EntryRecord) async throws -> EntryRecord {
+    func upsertByLogicalKey(_ key: FileLogicalKey, record: FileRecord) async throws -> FileRecord {
         try await manager.write { db in
             var record = record
             record.volumeIdentifier = key.volumeIdentifier
@@ -188,23 +203,23 @@ nonisolated struct EntryRepository: Sendable {
         }
     }
 
-    private func fetchByLogicalKey(_ key: EntryLogicalKey, db: Database) throws -> EntryRecord? {
-        let request = EntryRecord.filter(
-            EntryRecord.Columns.volumeIdentifier == key.volumeIdentifier &&
-                EntryRecord.Columns.fileResourceIdentifier == key.fileResourceIdentifier,
+    private func fetchByLogicalKey(_ key: FileLogicalKey, db: Database) throws -> FileRecord? {
+        let request = FileRecord.filter(
+            FileRecord.Columns.volumeIdentifier == key.volumeIdentifier &&
+                FileRecord.Columns.fileResourceIdentifier == key.fileResourceIdentifier,
         )
         return try request.fetchOne(db)
     }
 
     static func maxBatchSize(in db: Database) throws -> Int {
         let maxVariables = try Int.fetchOne(db, sql: "PRAGMA max_variable_number") ?? 999
-        let columnsPerRow = EntryRecord.insertableColumnCount
+        let columnsPerRow = FileRecord.insertableColumnCount
         guard columnsPerRow > 0 else { return 1 }
         return max(1, maxVariables / columnsPerRow)
     }
 
-    private func insertChunk(_ records: [EntryRecord], db: Database) throws {
-        let columns = EntryRecord.insertableColumns
+    private func insertChunk(_ records: [FileRecord], db: Database) throws {
+        let columns = FileRecord.insertableColumns
         guard !columns.isEmpty else { return }
 
         let updatableColumns = columns.filter {
@@ -218,7 +233,7 @@ nonisolated struct EntryRepository: Sendable {
         let placeholder = "(" + Array(repeating: "?", count: columns.count).joined(separator: ", ") + ")"
         let placeholders = Array(repeating: placeholder, count: records.count).joined(separator: ", ")
         let sql = """
-        INSERT INTO \(EntryRecord.databaseTableName) (\(columnList))
+        INSERT INTO \(FileRecord.databaseTableName) (\(columnList))
         VALUES \(placeholders)
         ON CONFLICT(volume_identifier, file_resource_identifier)
         DO UPDATE SET \(updateAssignments)
@@ -234,18 +249,30 @@ nonisolated struct EntryRepository: Sendable {
         try statement.execute(arguments: StatementArguments(arguments))
     }
 
-    private func insertChunkIndividually(_ records: [EntryRecord], db: Database) throws {
+    private func insertChunkIndividually(_ records: [FileRecord], db: Database) throws {
         var lastError: Error?
         for record in records {
             do {
                 try insertChunk([record], db: db)
             } catch {
                 lastError = error
-                logger.warning("Entry insert failed: \(error)")
+                logger.warning("File insert failed: \(error)")
             }
         }
         if let lastError {
             throw lastError
+        }
+    }
+
+    private static func ensureDirectoryIds(_ records: [FileRecord]) throws {
+        for record in records {
+            try ensureDirectoryId(record)
+        }
+    }
+
+    private static func ensureDirectoryId(_ record: FileRecord) throws {
+        guard record.directoryId != nil else {
+            throw FileRepositoryError.missingDirectoryId(path: record.path)
         }
     }
 }

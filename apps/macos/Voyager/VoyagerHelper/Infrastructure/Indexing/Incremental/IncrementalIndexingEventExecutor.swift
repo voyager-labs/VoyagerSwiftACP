@@ -17,6 +17,7 @@ final class IncrementalIndexingEventExecutor {
     private let homeURL: URL
     private let homePath: String
     private let cachedVolumeIdentifier: String?
+    private var directoryCache: [String: Int64] = [:]
 
     // DB 반영 실행기 초기화
     init(
@@ -69,7 +70,7 @@ final class IncrementalIndexingEventExecutor {
 
     // 변경 경로 DB 반영
     private func applyChanges(_ changes: [IncrementalIndexingPlannedChange]) async throws {
-        let repo = EntryRepository(manager: manager, logger: logger)
+        let fileRepo = FileRepository(manager: manager, logger: logger)
         var insertedOrUpdated = 0
         var deleted = 0
         var lastError: Error?
@@ -77,13 +78,13 @@ final class IncrementalIndexingEventExecutor {
         for change in changes {
             switch change.action {
             case .delete:
-                let outcome = await handleDelete(repo: repo, path: change.path)
+                let outcome = await handleDelete(fileRepo: fileRepo, path: change.path)
                 deleted += outcome.deleted
                 if let error = outcome.error {
                     lastError = error
                 }
             case .upsert:
-                let outcome = await handleUpsert(repo: repo, path: change.path)
+                let outcome = await handleUpsert(fileRepo: fileRepo, path: change.path)
                 insertedOrUpdated += outcome.upserted
                 deleted += outcome.deleted
                 if let error = outcome.error {
@@ -107,10 +108,12 @@ final class IncrementalIndexingEventExecutor {
     }
 
     // 삭제 처리
-    private func handleDelete(repo: EntryRepository, path: String) async -> ApplyOutcome {
+    private func handleDelete(fileRepo: FileRepository, path: String) async -> ApplyOutcome {
         do {
-            let deleted = try await repo.deleteByPath(path)
-            return ApplyOutcome(upserted: 0, deleted: deleted, error: nil)
+            let directoryRepo = DirectoryRepository(manager: manager, logger: logger)
+            let deletedDirectories = try await directoryRepo.deleteByPathPrefix(path)
+            let deletedEntries = try await fileRepo.deleteByPathPrefix(path)
+            return ApplyOutcome(upserted: 0, deleted: deletedDirectories + deletedEntries, error: nil)
         } catch {
             eventLogger.error(
                 "Incremental indexing delete failed: \(String(describing: error), privacy: .public)",
@@ -120,27 +123,50 @@ final class IncrementalIndexingEventExecutor {
     }
 
     // 업서트 처리
-    private func handleUpsert(repo: EntryRepository, path: String) async -> ApplyOutcome {
+    private func handleUpsert(fileRepo: FileRepository, path: String) async -> ApplyOutcome {
         if !FileManager.default.fileExists(atPath: path) {
-            return await handleDelete(repo: repo, path: path)
+            return await handleDelete(fileRepo: fileRepo, path: path)
         }
 
         guard let mdItem = MDItemCreate(kCFAllocatorDefault, path as CFString) else {
             return ApplyOutcome(upserted: 0, deleted: 0, error: nil)
         }
+        let standardizedPath = URL(fileURLWithPath: path).standardizedFileURL.path
+        if IndexingRecordBuilder.isDirectory(mdItem: mdItem, path: standardizedPath) {
+            do {
+                let directoryRepo = DirectoryRepository(manager: manager, logger: logger)
+                _ = await resolveDirectoryId(
+                    dirPath: standardizedPath,
+                    directoryRepo: directoryRepo,
+                )
+                return ApplyOutcome(upserted: 0, deleted: 0, error: nil)
+            } catch {
+                eventLogger.error(
+                    "Incremental indexing directory upsert failed: \(String(describing: error), privacy: .public)",
+                )
+                return ApplyOutcome(upserted: 0, deleted: 0, error: error)
+            }
+        }
         let cachedIdentifier = path.hasPrefix(homePath) ? cachedVolumeIdentifier : nil
-        let record = await InitialIndexingRecordBuilder.makeRecord(
+        var fileRecord = await IndexingRecordBuilder.makeRecord(
             mdItem: mdItem,
             path: path,
             homeURL: homeURL,
             cachedVolumeIdentifier: cachedIdentifier,
         )
-        guard let record else {
+        guard var fileRecord else {
             return ApplyOutcome(upserted: 0, deleted: 0, error: nil)
         }
 
         do {
-            _ = try await repo.upsertByPath(record)
+            let directoryRepo = DirectoryRepository(manager: manager, logger: logger)
+            guard await assignDirectoryId(
+                to: &fileRecord,
+                directoryRepo: directoryRepo,
+            ) else {
+                return ApplyOutcome(upserted: 0, deleted: 0, error: nil)
+            }
+            _ = try await fileRepo.upsertByPath(fileRecord)
             return ApplyOutcome(upserted: 1, deleted: 0, error: nil)
         } catch {
             eventLogger.error(
@@ -184,12 +210,17 @@ final class IncrementalIndexingEventExecutor {
     // 단일 경로 재스캔
     private func rescanDirectory(path: String) async throws {
         let standardized = URL(fileURLWithPath: path).standardizedFileURL.path
-        let repo = EntryRepository(manager: manager, logger: logger)
+        let fileRepo = FileRepository(manager: manager, logger: logger)
 
         guard FileManager.default.fileExists(atPath: standardized) else {
-            _ = try await repo.deleteByPath(standardized)
+            let outcome = await handleDelete(fileRepo: fileRepo, path: standardized)
+            if let error = outcome.error {
+                throw error
+            }
             return
         }
+
+        let directoryRepo = DirectoryRepository(manager: manager, logger: logger)
 
         let query = try makeQuery(rootPath: standardized)
         let resultCount = Int(MDQueryGetResultCount(query))
@@ -200,21 +231,33 @@ final class IncrementalIndexingEventExecutor {
             guard let item = MDQueryGetResultAtIndex(query, index) else { continue }
             let mdItem = unsafeBitCast(item, to: MDItem.self)
             guard let itemPath = MDItemCopyAttribute(mdItem, kMDItemPath) as? String else { continue }
-            scannedPaths.insert(itemPath)
+            let standardizedPath = URL(fileURLWithPath: itemPath).standardizedFileURL.path
+            if IndexingRecordBuilder.isDirectory(mdItem: mdItem, path: standardizedPath) {
+                _ = await resolveDirectoryId(
+                    dirPath: standardizedPath,
+                    directoryRepo: directoryRepo,
+                )
+                continue
+            }
+            scannedPaths.insert(standardizedPath)
             let cachedIdentifier = itemPath.hasPrefix(homePath) ? cachedVolumeIdentifier : nil
-            let record = await InitialIndexingRecordBuilder.makeRecord(
+            var fileRecord = await IndexingRecordBuilder.makeRecord(
                 mdItem: mdItem,
                 path: itemPath,
                 homeURL: homeURL,
                 cachedVolumeIdentifier: cachedIdentifier,
             )
-            guard let record else { continue }
-            _ = try await repo.upsertByPath(record)
+            guard var fileRecord else { continue }
+            guard await assignDirectoryId(
+                to: &fileRecord,
+                directoryRepo: directoryRepo,
+            ) else { continue }
+            _ = try await fileRepo.upsertByPath(fileRecord)
         }
 
         let existingPaths = try await fetchExistingPaths(prefix: standardized)
         for existingPath in existingPaths where !scannedPaths.contains(existingPath) {
-            _ = try await repo.deleteByPath(existingPath)
+            _ = try await fileRepo.deleteByPath(existingPath)
         }
     }
 
@@ -237,13 +280,153 @@ final class IncrementalIndexingEventExecutor {
     // 재스캔 경로 목록 로드
     private func fetchExistingPaths(prefix: String) async throws -> [String] {
         let likePrefix = prefix.hasSuffix("/") ? "\(prefix)%" : "\(prefix)/%"
+        let tableName = FilesSchema.tableName
         return try await manager.read { db in
             try String.fetchAll(
                 db,
-                sql: "SELECT path FROM entries WHERE path = ? OR path LIKE ?",
+                sql: "SELECT path FROM \(tableName) WHERE path = ? OR path LIKE ?",
                 arguments: [prefix, likePrefix],
             )
         }
+    }
+}
+
+private extension IncrementalIndexingEventExecutor {
+    func assignDirectoryId(
+        to fileRecord: inout FileRecord,
+        directoryRepo: DirectoryRepository,
+    ) async -> Bool {
+        let directoryPath = parentDirectoryPath(forFilePath: fileRecord.path)
+        fileRecord.dirPath = directoryPath
+
+        guard let directoryId = await resolveDirectoryId(
+            dirPath: directoryPath,
+            directoryRepo: directoryRepo,
+        ) else {
+            let filePath = fileRecord.path
+            eventLogger.error(
+                "Incremental indexing skipped file without directory_id: \(filePath, privacy: .public)",
+            )
+            return false
+        }
+        fileRecord.directoryId = directoryId
+        return true
+    }
+
+    func parentDirectoryPath(forFilePath path: String) -> String {
+        URL(fileURLWithPath: path)
+            .standardizedFileURL
+            .deletingLastPathComponent()
+            .path
+    }
+
+    func resolveDirectoryId(
+        dirPath: String,
+        directoryRepo: DirectoryRepository,
+    ) async -> Int64? {
+        if let cached = directoryCache[dirPath] {
+            return cached
+        }
+
+        let parentId = await resolveParentDirectoryId(
+            dirPath: dirPath,
+            directoryRepo: directoryRepo,
+        )
+        let cachedIdentifier = dirPath.hasPrefix(homePath) ? cachedVolumeIdentifier : nil
+        guard var directoryRecord = await IndexingRecordBuilder.makeDirectoryRecord(
+            path: dirPath,
+            homeURL: homeURL,
+            cachedVolumeIdentifier: cachedIdentifier,
+        ) else {
+            return nil
+        }
+        directoryRecord.parentId = parentId
+        return await upsertDirectoryRecord(
+            dirPath: dirPath,
+            directoryRecord: directoryRecord,
+            directoryRepo: directoryRepo,
+        )
+    }
+
+    func depthDelta(from oldValue: Int?, to newValue: Int?) -> Int? {
+        guard let oldValue, let newValue else { return nil }
+        return newValue - oldValue
+    }
+
+    func upsertDirectoryRecord(
+        dirPath: String,
+        directoryRecord: DirectoryRecord,
+        directoryRepo: DirectoryRepository,
+    ) async -> Int64? {
+        do {
+            if let volumeIdentifier = directoryRecord.volumeIdentifier,
+               let fileResourceIdentifier = directoryRecord.fileResourceIdentifier
+            {
+                let key = DirectoryLogicalKey(
+                    volumeIdentifier: volumeIdentifier,
+                    fileResourceIdentifier: fileResourceIdentifier,
+                )
+                if let existing = try await directoryRepo.fetchByLogicalKey(key),
+                   existing.path != directoryRecord.path
+                {
+                    let request = buildPathUpdateRequest(
+                        existing: existing,
+                        updated: directoryRecord,
+                    )
+                    try await directoryRepo.updatePathSubtree(request)
+                    directoryCache.removeValue(forKey: existing.path)
+                }
+                let upserted = try await directoryRepo.upsertByLogicalKey(key, record: directoryRecord)
+                if let id = upserted.id {
+                    directoryCache[dirPath] = id
+                    return id
+                }
+            } else {
+                let upserted = try await directoryRepo.upsertByPath(directoryRecord)
+                if let id = upserted.id {
+                    directoryCache[dirPath] = id
+                    return id
+                }
+            }
+        } catch {
+            return nil
+        }
+        return nil
+    }
+
+    func buildPathUpdateRequest(
+        existing: DirectoryRecord,
+        updated: DirectoryRecord,
+    ) -> DirectoryRepository.PathUpdateRequest {
+        let depthDelta = depthDelta(
+            from: existing.depthFromHome,
+            to: updated.depthFromHome,
+        )
+        return DirectoryRepository.PathUpdateRequest(
+            oldPath: existing.path,
+            newPath: updated.path,
+            newParentId: updated.parentId,
+            newNameFull: updated.nameFull,
+            newNameStem: updated.nameStem,
+            oldRelativePath: existing.relativePathFromHome,
+            newRelativePath: updated.relativePathFromHome,
+            depthDelta: depthDelta,
+        )
+    }
+
+    func resolveParentDirectoryId(
+        dirPath: String,
+        directoryRepo: DirectoryRepository,
+    ) async -> Int64? {
+        let parentPath = URL(fileURLWithPath: dirPath)
+            .standardizedFileURL
+            .deletingLastPathComponent()
+            .path
+        guard parentPath != dirPath else { return nil }
+        return await resolveDirectoryId(
+            dirPath: parentPath,
+            directoryRepo: directoryRepo,
+        )
     }
 }
 
