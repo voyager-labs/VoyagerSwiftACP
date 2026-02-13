@@ -27,17 +27,7 @@ struct FilterSearchService: Sendable {
             let predicates: [QueryFragment] = [scopePredicate, conditionPredicate]
             return predicates
         }
-        let select = whereClause.select {
-            (
-                $0.id,
-                $0.path,
-                $0.nameFull,
-                $0.size,
-                $0.fileExtension,
-                $0.fileKind,
-                $0.modificationDate,
-            )
-        }
+        let select = whereClause.select { $0.path }
         let prepared = select.query.prepare { _ in "?" }
         let arguments = StatementArguments(prepared.bindings.map(\.databaseValue))
 
@@ -47,17 +37,12 @@ struct FilterSearchService: Sendable {
                 sql: prepared.sql,
                 arguments: arguments,
             )
-            return rows.map { row in
-                let modificationDate = row["modification_date"] as? Date
-                return JSONValue.object([
-                    "id": .number(Double(row["id"] as? Int64 ?? 0)),
-                    "path": .string(row["path"] as? String ?? ""),
-                    "name": .string(row["name_full"] as? String ?? ""),
-                    "size": .number(Double(row["size"] as? Int64 ?? 0)),
-                    "extension": .string(row["extension"] as? String ?? ""),
-                    "fileKind": .string(row["file_kind"] as? String ?? ""),
-                    "modificationDate": modificationDate.map { .string(Self.formatDate($0)) } ?? .null,
-                ])
+            return rows.compactMap { row -> JSONValue? in
+                let path: String = row["path"]
+                guard path.isEmpty == false else {
+                    return nil
+                }
+                return JSONValue.string(path)
             }
         }
 
@@ -70,14 +55,6 @@ struct FilterSearchService: Sendable {
             items: items,
             error: nil,
         )
-    }
-
-    private nonisolated static func formatDate(_ date: Date) -> String {
-        let formatter = DateFormatter()
-        formatter.locale = Locale(identifier: "en_US_POSIX")
-        formatter.timeZone = .current
-        formatter.dateFormat = "yyyy-MM-dd HH:mm:ss"
-        return formatter.string(from: date)
     }
 }
 
