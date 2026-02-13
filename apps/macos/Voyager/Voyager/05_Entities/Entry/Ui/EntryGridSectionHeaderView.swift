@@ -1,11 +1,10 @@
 import AppKit
-import SwiftUI
 
 final class EntryGridSectionHeaderView: NSView {
     private let titleLabel = NSTextField(labelWithString: "")
     private let countLabel = NSTextField(labelWithString: "")
     private let toggleButton = NSButton()
-    private let colorDotView = NSView()
+    private let colorDotView = TagDotNSView(tagColor: .none, size: 8)
     private var onToggle: (() -> Void)?
 
     override init(frame frameRect: NSRect) {
@@ -37,8 +36,7 @@ final class EntryGridSectionHeaderView: NSView {
 
         if let colorCode {
             colorDotView.isHidden = false
-            let color = EntryTagUtils.getTagColor(colorCode: colorCode)
-            colorDotView.layer?.backgroundColor = NSColor(color).cgColor
+            colorDotView.update(tagColor: TagColor(colorCode: colorCode))
         } else {
             colorDotView.isHidden = true
         }
@@ -62,8 +60,6 @@ final class EntryGridSectionHeaderView: NSView {
         toggleButton.action = #selector(handleToggle)
         toggleButton.translatesAutoresizingMaskIntoConstraints = false
 
-        colorDotView.wantsLayer = true
-        colorDotView.layer?.cornerRadius = 4
         colorDotView.translatesAutoresizingMaskIntoConstraints = false
 
         let stack = NSStackView(views: [colorDotView, titleLabel, countLabel, toggleButton])
@@ -74,9 +70,6 @@ final class EntryGridSectionHeaderView: NSView {
         addSubview(stack)
 
         NSLayoutConstraint.activate([
-            colorDotView.widthAnchor.constraint(equalToConstant: 8),
-            colorDotView.heightAnchor.constraint(equalToConstant: 8),
-
             stack.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 16),
             stack.trailingAnchor.constraint(lessThanOrEqualTo: trailingAnchor, constant: -16),
             stack.centerYAnchor.constraint(equalTo: centerYAnchor),

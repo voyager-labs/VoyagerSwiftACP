@@ -1,5 +1,4 @@
 import AppKit
-import SwiftUI
 import UniformTypeIdentifiers
 
 final class EntryGridCollectionViewItem: NSCollectionViewItem {
@@ -7,7 +6,7 @@ final class EntryGridCollectionViewItem: NSCollectionViewItem {
         let entry: Entry
         let iconSize: CGFloat
         let textSize: CGFloat
-        let isThumbnailReady: Bool
+        let thumbnail: NSImage?
         let isCut: Bool
         let isHidden: Bool
         let isRenaming: Bool
@@ -72,7 +71,11 @@ final class EntryGridCollectionViewItem: NSCollectionViewItem {
         onRenameCommit = configuration.onRenameCommit
         onRenameCancel = configuration.onRenameCancel
 
-        iconView.image = makeIcon(for: configuration.entry, isThumbnailReady: configuration.isThumbnailReady)
+        iconView.image = EntryIconUtils.icon(
+            for: configuration.entry,
+            thumbnail: configuration.thumbnail,
+            workspaceClient: configuration.workspaceClient,
+        )
         iconView.imageScaling = .scaleProportionallyUpOrDown
 
         nameField.font = NSFont.systemFont(ofSize: textSize)
@@ -111,6 +114,7 @@ final class EntryGridCollectionViewItem: NSCollectionViewItem {
         view.layer?.cornerRadius = 8
 
         backgroundView.wantsLayer = true
+        backgroundView.layer?.cornerRadius = 8
         backgroundView.translatesAutoresizingMaskIntoConstraints = false
         view.addSubview(backgroundView)
 
@@ -188,17 +192,40 @@ final class EntryGridCollectionViewItem: NSCollectionViewItem {
     }
 
     private func updateAppearance() {
-        let highlight = isSelected || isDropTargeted
-        backgroundView.layer?.backgroundColor = highlight
-            ? NSColor.selectedContentBackgroundColor.withAlphaComponent(0.35).cgColor
-            : NSColor.clear.cgColor
-        iconBackgroundView.layer?.backgroundColor = highlight
-            ? NSColor.controlAccentColor.withAlphaComponent(0.18).cgColor
-            : NSColor.clear.cgColor
-        let nameColor: NSColor = highlight && !isRenaming ? .white : .labelColor
-        let infoColor: NSColor = highlight ? .white : .systemBlue
-        nameField.textColor = nameColor
-        infoField.textColor = infoColor
+        let isHighlighted = isSelected
+        let dropHighlighted = isDropTargeted
+        let selectionBackground = (view.window?.isKeyWindow ?? true)
+            ? NSColor.selectedTextBackgroundColor
+            : NSColor.unemphasizedSelectedTextBackgroundColor
+        let dropBackground = NSColor.selectedTextBackgroundColor.withAlphaComponent(0.22)
+
+        // 선택 스타일은 라벨(name/info) 강조를 기본으로 하고,
+        // drop target 하이라이트만 타일(border/background)을 사용합니다.
+        if dropHighlighted {
+            backgroundView.layer?.backgroundColor = dropBackground.cgColor
+            backgroundView.layer?.borderWidth = 1.5
+            backgroundView.layer?.borderColor = NSColor.controlAccentColor.cgColor
+        } else {
+            backgroundView.layer?.backgroundColor = NSColor.clear.cgColor
+            backgroundView.layer?.borderWidth = 0
+            backgroundView.layer?.borderColor = nil
+        }
+        iconBackgroundView.layer?.backgroundColor = NSColor.clear.cgColor
+
+        if isHighlighted, !isRenaming {
+            nameField.drawsBackground = true
+            nameField.backgroundColor = selectionBackground
+            nameField.textColor = .selectedTextColor
+        } else if !isRenaming {
+            nameField.drawsBackground = false
+            nameField.backgroundColor = .clear
+            nameField.textColor = .labelColor
+        }
+
+        infoField.isBordered = false
+        infoField.drawsBackground = isHighlighted
+        infoField.backgroundColor = isHighlighted ? selectionBackground : .clear
+        infoField.textColor = isHighlighted ? .selectedTextColor : .systemBlue
 
         let alpha: CGFloat = (isHiddenEntry || isCut) ? 0.5 : 1.0
         iconView.alphaValue = alpha
@@ -230,7 +257,7 @@ final class EntryGridCollectionViewItem: NSCollectionViewItem {
         nameField.delegate = nil
     }
 
-    private func updateTags(_ tags: [FileTag]?) {
+    private func updateTags(_ tags: [Tag]?) {
         for view in tagStackView.arrangedSubviews {
             tagStackView.removeArrangedSubview(view)
             view.removeFromSuperview()
@@ -244,54 +271,12 @@ final class EntryGridCollectionViewItem: NSCollectionViewItem {
         tagStackView.isHidden = false
         let visibleTags = tags.prefix(3)
         for tag in visibleTags {
-            let color = EntryTagUtils.getTagColor(colorCode: tag.colorCode)
-            let dot = TagDotView(color: NSColor(color), size: 8)
+            let dot = TagDotNSView(tagColor: tag.tagColor, size: 8)
             tagStackView.addArrangedSubview(dot)
         }
     }
 
-    private func makeIcon(for entry: Entry, isThumbnailReady: Bool) -> NSImage {
-        if let cached = EntryIconUtils.getThumbnail(for: entry.fullPath), isThumbnailReady {
-            return cached
-        }
-
-        let cacheKey: String = if entry.fullPath == "/" {
-            "root:/"
-        } else if entry.fileExtension.lowercased() == "voycoll" {
-            "asset:\(EntryIconUtils.voycollIconName)"
-        } else if entry.isDirectory {
-            "dir:\(entry.fullPath)"
-        } else {
-            UTType(filenameExtension: entry.fileExtension)
-                .map { "type:\($0.identifier)" }
-                ?? "generic:file"
-        }
-
-        if let cached = EntryIconUtils.getCachedIcon(for: cacheKey) {
-            return cached
-        }
-
-        let icon: NSImage = if entry.fullPath == "/" {
-            workspaceClient?.iconForFile("/") ?? NSImage()
-        } else if entry.fileExtension.lowercased() == "voycoll" {
-            NSImage(named: EntryIconUtils.voycollIconName)
-                ?? workspaceClient?.iconForType(.data)
-                ?? NSImage()
-        } else if entry.isDirectory {
-            workspaceClient?.iconForFile(entry.fullPath) ?? NSImage()
-        } else {
-            if let utType = UTType(filenameExtension: entry.fileExtension) {
-                workspaceClient?.iconForType(utType) ?? NSImage()
-            } else {
-                workspaceClient?.iconForType(.data) ?? NSImage()
-            }
-        }
-
-        if icon.size != .zero {
-            EntryIconUtils.setCachedIcon(icon, for: cacheKey)
-        }
-        return icon
-    }
+    // icon 생성/캐시는 EntryIconUtils로 이동
 }
 
 extension EntryGridCollectionViewItem: NSTextFieldDelegate {
@@ -326,31 +311,5 @@ extension EntryGridCollectionViewItem: NSTextFieldDelegate {
         guard isRenaming else { return }
         guard let textField = notification.object as? NSTextField, textField === nameField else { return }
         onRenameCommit?()
-    }
-}
-
-private final class TagDotView: NSView {
-    private let dotSize: CGFloat
-
-    init(color: NSColor, size: CGFloat) {
-        dotSize = size
-        super.init(frame: .zero)
-        wantsLayer = true
-        layer?.backgroundColor = color.cgColor
-        layer?.cornerRadius = size / 2
-        translatesAutoresizingMaskIntoConstraints = false
-        NSLayoutConstraint.activate([
-            widthAnchor.constraint(equalToConstant: size),
-            heightAnchor.constraint(equalToConstant: size),
-        ])
-    }
-
-    @available(*, unavailable)
-    required init?(coder _: NSCoder) {
-        fatalError("init(coder:) has not been implemented")
-    }
-
-    override var intrinsicContentSize: NSSize {
-        NSSize(width: dotSize, height: dotSize)
     }
 }
