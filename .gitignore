@@ -93,7 +93,6 @@ buildServer.json
 # Environment variables
 .env
 .env.dev
-.backend_mode
 
 .history/
 

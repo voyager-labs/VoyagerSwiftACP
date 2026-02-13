@@ -1,7 +1,7 @@
 """Search 서비스 레이어"""
 
 import logging
-from typing import cast
+from typing import Any
 
 from app.config import load_config
 from app.search.schemas import (
@@ -9,24 +9,16 @@ from app.search.schemas import (
     SearchCondition,
     SearchError,
     SearchFilters,
-    SearchItem,
     SearchResponse,
 )
 from core.llm.langchain_provider import LangChainProvider
 from core.llm.search_condition_converter import CachedSearchConditionConverter
-from core.search import ConditionBuilder, ScopeBuilder, execute_search
-from core.search.condition_builder import ConditionBuilderError
-from infra.db.engine import engine_manager
-from infra.schemas.entry_schema import EntrySchema
 
 
-# TODO: Collection으로 변경 모듈 이름 변경
 class SearchService:
     """검색 서비스"""
 
     def __init__(self):
-        self.condition_builder = ConditionBuilder()
-        self.scope_builder = ScopeBuilder()
         self._converter: CachedSearchConditionConverter | None = None
 
     @property
@@ -56,11 +48,18 @@ class SearchService:
             SearchResponse
         """
         # 1. 사용자가 보낸 기존 조건/스코프 추출
-        existing_conditions = None
-        existing_scopes = None
+        existing_conditions: list[dict[str, Any]] | None = None
+        existing_scopes: list[str] | None = None
         if filters:
             if filters.conditions:
-                existing_conditions = [c.model_dump() for c in filters.conditions]
+                existing_conditions = [
+                    {
+                        "propertyKey": c.propertyKey,
+                        "operator": c.operator,
+                        "value": c.value,
+                    }
+                    for c in filters.conditions
+                ]
             if filters.scopes:
                 existing_scopes = filters.scopes
 
@@ -83,113 +82,28 @@ class SearchService:
                 error=SearchError(code="LLM_CONVERSION_FAILED", details=llm_error),
             )
 
-        applied_conditions = [SearchCondition(**c.model_dump()) for c in llm_result.conditions]
+        applied_conditions = [
+            SearchCondition(
+                propertyKey=c.propertyKey,
+                operator=c.operator,
+                value=c.value,
+            )
+            for c in llm_result.conditions
+        ]
 
         # 4. Scopes 설정: LLM이 새 스코프를 반환하면 사용, 아니면 기존 스코프 유지
         applied_scopes = (
             llm_result.scopes if llm_result.scopes is not None else (existing_scopes or [])
         )
 
-        # 5. SQL 생성 및 실행
-        condition_dicts = [c.model_dump() for c in applied_conditions]
-        try:
-            entries = await execute_search(
-                model=EntrySchema,
-                session_context=lambda: engine_manager.session(autocommit=False),
-                scopes=applied_scopes,
-                conditions=condition_dicts,
-                scope_builder=self.scope_builder,
-                condition_builder=self.condition_builder,
-            )
-            items = [
-                SearchItem(
-                    id=cast(int, entry.id),
-                    path=entry.path,
-                    name=entry.name_full,
-                    size=entry.size,
-                    extension=entry.extension,
-                    fileKind=entry.file_kind,
-                    modificationDate=str(entry.modification_date)
-                    if entry.modification_date
-                    else None,
-                )
-                for entry in entries
-            ]
-            error: SearchError | None = None
-        except ConditionBuilderError as e:
-            logger.error("[SearchService] Condition error: %s", e)
-            items = []
-            error = SearchError(code="CONDITION_BUILD_FAILED", details=str(e))
-        except Exception as e:
-            logger.exception("[SearchService] Search error: %s", e)
-            items = []
-            error = SearchError(code="SEARCH_EXECUTION_FAILED", details=str(e))
-
         return SearchResponse(
-            itemCount=len(items),
+            itemCount=0,
             appliedFilters=AppliedFilters(
                 scopes=applied_scopes,
                 conditions=applied_conditions,
             ),
-            items=items,
-            error=error,
-        )
-
-    async def filter_search(
-        self,
-        filters: SearchFilters,
-    ) -> SearchResponse:
-        """필터 기반 검색 (LLM 없음)
-
-        Args:
-            filters: 필수 필터 (scopes, conditions)
-
-        Returns:
-            SearchResponse
-        """
-        # 직접 필터 적용
-        condition_dicts = [c.model_dump() for c in filters.conditions]
-        try:
-            entries = await execute_search(
-                model=EntrySchema,  # TODO: 아이템 조회 필드 최적화 [VOY-147]
-                session_context=lambda: engine_manager.session(autocommit=False),
-                scopes=filters.scopes,
-                conditions=condition_dicts,
-                scope_builder=self.scope_builder,
-                condition_builder=self.condition_builder,
-            )
-            items = [
-                SearchItem(
-                    id=cast(int, entry.id),
-                    path=entry.path,
-                    name=entry.name_full,
-                    size=entry.size,
-                    extension=entry.extension,
-                    fileKind=entry.file_kind,
-                    modificationDate=str(entry.modification_date)
-                    if entry.modification_date
-                    else None,
-                )
-                for entry in entries
-            ]
-            error: SearchError | None = None
-        except ConditionBuilderError as e:
-            logger.error("[SearchService] Condition error: %s", e)
-            items = []
-            error = SearchError(code="CONDITION_BUILD_FAILED", details=str(e))
-        except Exception as e:
-            logger.exception("[SearchService] Search error: %s", e)
-            items = []
-            error = SearchError(code="SEARCH_EXECUTION_FAILED", details=str(e))
-
-        return SearchResponse(
-            itemCount=len(items),
-            appliedFilters=AppliedFilters(
-                scopes=filters.scopes,
-                conditions=list(filters.conditions),
-            ),
-            items=items,
-            error=error,
+            items=[],
+            error=None,
         )
 
 

@@ -6,7 +6,7 @@
 
 - ENV 로딩/키 목록: `docs/architecture/environment.md`
 - macOS 구조(TCA/FSD): `docs/architecture/macos-app.md`
-- Helper 상세(백엔드 실행/인덱싱): `docs/macos/voyager-helper.md`
+- Helper 상세(인덱싱/상태 브로드캐스트): `docs/macos/voyager-helper.md`
 - 트러블슈팅: `docs/troubleshooting.md`
 
 ---
@@ -37,10 +37,11 @@ chmod +x scripts/xcodes.sh
 
 ## 3. 스킴/모드 개념
 
-Voyager는 두 축으로 실행 환경이 결정됩니다.
+Voyager는 `APP_ENV` 축으로 실행 환경이 결정됩니다.
 
 - `APP_ENV` (dev/prod): Debug -> dev, Release -> prod (빌드 설정 기반)
-- `BACKEND_MODE` (source/bundled): Dev 스킴 -> source, Prod 스킴 -> bundled (스킴 기반)
+
+dotenv 로딩은 `APP_ENV`에 따라 `.env.{APP_ENV}`만 사용합니다.
 
 세부 규칙은 `docs/architecture/environment.md`를 SSOT로 봅니다.
 

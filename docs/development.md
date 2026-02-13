@@ -43,10 +43,9 @@ Voyager는 macOS 앱/Helper/Backend가 같은 키 체계를 공유하도록 설�
 
 환경 파일 역할(요약)
 
-- `.env.source`: source 모드에서 사용하는 PUBLIC 설정 (시크릿 금지)
-- `.env.bundled`: bundled 모드에서 사용하는 PUBLIC 설정 (시크릿 금지)
-- `.env.dev` (Git ignored): 로컬 개발 환경 (시크릿 포함 가능)
-- `.env.prod` (Git tracked): 프로덕션 템플릿 (시크릿 금지; CI/런타임에서 주입)
+- `.env.dev` (Git ignored): 로컬 개발 환경 (필요 시 시크릿 포함 가능)
+- `.env.prod` (Git tracked): 프로덕션용 PUBLIC 설정/템플릿 (시크릿 금지)
+- `.env.example`: `.env.dev` 생성용 템플릿
 
 가장 먼저 할 일
 
@@ -78,7 +77,7 @@ xcodebuild -project apps/macos/Voyager/Voyager.xcodeproj -scheme Voyager-Dev -co
 
 ### 3.2 주의사항
 
-- source 모드에서 `.env.*`를 찾기 위해 `VOYAGER_PROJECT_ROOT`가 필요할 수 있습니다.
+- 로컬 실행 환경에서 `.env.dev`/`.env.prod`를 찾기 위해 `VOYAGER_PROJECT_ROOT`가 필요할 수 있습니다.
 - Debug/Release에 따라 `APP_ENV`가 자동으로 결정됩니다.
 
 ---

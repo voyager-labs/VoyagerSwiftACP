@@ -53,44 +53,18 @@ apps/backend/
 │  │     ├─ schemas.py          # Pydantic 스키마
 │  │     └─ __init__.py
 │  ├─ core/                     # 핵심 도메인 로직
-│  │  ├─ search/                # 검색 엔진
-│  │  │  ├─ condition_builder.py    # 조건 빌더
-│  │  │  ├─ scope_builder.py        # 스코프 빌더
-│  │  │  ├─ executor.py             # 검색 실행기
-│  │  │  └─ __init__.py
 │  │  ├─ metadata/              # 메타데이터 처리
 │  │  │  ├─ registry_loader.py    # 레지스트리 로더
-│  │  │  ├─ mditem_registry.py    # MDItem 레지스트리
 │  │  │  └─ __init__.py
 │  │  └─ llm/                   # LLM 통합
 │  │     ├─ search_condition_converter.py  # 검색 조건 변환
 │  │     ├─ langchain_provider.py          # LangChain 프로바이더
-│  │     ├─ llm_provider.py                # LLM 프로바이더
 │  │     └─ prompts/                       # 프롬프트 템플릿
-│  ├─ infra/                    # 인프라스트럭처 레이어
-│  │  ├─ db/                    # 데이터베이스
-│  │  │  ├─ engine.py           # DB 엔진
-│  │  │  ├─ models.py           # SQLAlchemy 모델
-│  │  │  ├─ utils.py            # DB 유틸리티
-│  │  │  ├─ migrations/         # Alembic 마이그레이션
-│  │  │  │  ├─ env.py
-│  │  │  │  └─ versions/        # 마이그레이션 버전
-│  │  │  └─ bootstrap/          # DB 부트스트랩
-│  │  │     └─ offline_snapshot.py
-│  │  └─ schemas/               # Pydantic 스키마
-│  │     ├─ entry_schema.py
-│  │     ├─ file_entry_schema.py
-│  │     ├─ beta_access_schema.py
-│  │     └─ __init__.py
-│  └─ utils/                    # 공유 유틸리티
-│     ├─ paths.py               # 경로 유틸리티
-│     ├─ telemetry.py           # 텔레메트리
-│     ├─ runtime_assets.py      # 런타임 에셋
+│  └─ infra/                    # 인프라스트럭처 레이어
 │     └─ __init__.py
 ├─ tests/                       # 테스트
-│  ├─ test_condition_builder.py
+│  ├─ test_search_service_convert_only.py
 │  ├─ test_system_property_registry.py
-│  ├─ test_execute_search.py
 │  └─ __pycache__/
 ├─ notebooks/                   # Jupyter 노트북
 │  └─ voy-*/                    # 이슈별 실험 노트북
@@ -121,11 +95,11 @@ apps/backend/
 
 ```python
 # 절대 임포트 권장
-from src.core.search.condition_builder import ConditionBuilder
-from src.infra.db.models import FileEntry
+from app.search.services import SearchService
+from core.metadata.registry_loader import load_system_property_registry
 
 # 상대 임포트는 같은 패키지 내에서만
-from .schemas import SearchRequest
+from .schemas import QuerySearchRequest
 ```
 
 ---
@@ -307,15 +281,11 @@ apps/macos/Voyager/VoyagerHelper/
 │  │  │  └─ EntryRecord.swift
 │  │  └─ Migrations/            # SQL 마이그레이션
 │  │     └─ 20260120_v001.sql
-│  ├─ HelperLifecycle.swift     # Helper 라이프사이클
 │  ├─ HelperStateBroadcaster.swift
-│  ├─ PortReservationService.swift
-│  ├─ ProcessRunner.swift
-│  └─ Environment.swift
+│  └─ HelperFolderAccessListener.swift
 ├─ Assets.xcassets/             # 에셋
 ├─ Info.plist                   # Info.plist
 ├─ VoyagerHelperApp.swift       # @main 엔트리포인트
-└─ .backend_mode                # 백엔드 모드 표시 파일
 ```
 
 ---
@@ -374,11 +344,7 @@ shared/
 ```
 scripts/
 ├─ build/                       # 빌드 스크립트
-│  ├─ build-backend-binary.sh       # 백엔드 바이너리 빌드
-│  ├─ compile-nuitka-binary.sh      # Nuitka 컴파일
-│  ├─ copy-bundled-env-files.sh     # 환경 파일 복사
-│  ├─ handle-backend-mode.sh        # 백엔드 모드 처리
-│  └─ prepare-helper-runtime.sh     # Helper 런타임 준비
+│  └─ copy-bundled-env-files.sh     # 환경 파일 복사
 ├─ ci/                          # CI 스크립트
 │  ├─ build-archive.sh              # 아카이브 빌드
 │  ├─ create-dmg.sh                 # DMG 생성

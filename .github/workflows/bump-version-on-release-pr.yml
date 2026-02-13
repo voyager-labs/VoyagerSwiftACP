@@ -88,71 +88,6 @@ jobs:
 
           echo "::notice::Updated MARKETING_VERSION to ${VERSION} in Xcode project"
 
-      - name: Update backend package version (pyproject.toml)
-        if: steps.version.outputs.version != ''
-        id: update-backend
-        shell: bash
-        env:
-          VERSION: ${{ steps.version.outputs.version }}
-        run: |
-          set -euo pipefail
-
-          pyproject="apps/backend/pyproject.toml"
-          if [[ ! -f "${pyproject}" ]]; then
-            echo "::error::pyproject.toml not found: ${pyproject}" >&2
-            exit 1
-          fi
-
-          python3 - <<'PY'
-          import os
-          from pathlib import Path
-
-          version = os.environ["VERSION"]
-          path = Path("apps/backend/pyproject.toml")
-
-          lines = path.read_text(encoding="utf-8").splitlines(keepends=True)
-          out = []
-          in_project = False
-          updated = False
-
-          for line in lines:
-              stripped = line.strip()
-              if stripped == "[project]":
-                  in_project = True
-                  out.append(line)
-                  continue
-              if in_project and stripped.startswith("[") and stripped.endswith("]") and stripped != "[project]":
-                  in_project = False
-              if in_project and stripped.startswith("version ="):
-                  out.append(f'version = "{version}"\n')
-                  updated = True
-              else:
-                  out.append(line)
-
-          if not updated:
-              raise SystemExit("Failed to update [project].version in apps/backend/pyproject.toml")
-
-          path.write_text("".join(out), encoding="utf-8")
-          print(f'Updated backend version -> {version} in {path}')
-          PY
-
-          echo "::notice::Updated backend package version to ${VERSION} in pyproject.toml"
-
-      - name: Setup uv
-        if: steps.version.outputs.version != ''
-        uses: astral-sh/setup-uv@v7
-        with:
-          version: "0.8.13"
-          enable-cache: "false"
-
-      - name: Sync backend lockfile
-        if: steps.version.outputs.version != ''
-        shell: bash
-        run: |
-          set -euo pipefail
-          cd apps/backend
-          uv sync
-
       - name: Commit & push (if changed)
         if: steps.version.outputs.version != ''
         shell: bash
@@ -170,8 +105,6 @@ jobs:
           git config user.email "github-actions[bot]@users.noreply.github.com"
 
           git add \
-            apps/backend/pyproject.toml \
-            apps/backend/uv.lock \
             apps/macos/Voyager/Voyager.xcodeproj/project.pbxproj
           git commit -m "chore(release): set version to ${VERSION}"
           git push origin HEAD

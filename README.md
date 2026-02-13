@@ -34,21 +34,10 @@
 
 ### 백엔드 실행 방식
 
-스킴에 따라 백엔드 실행 방식이 결정됩니다:
+macOS 앱 검색 경로는 Helper/XPC + Gateway를 사용하며, 로컬 FastAPI 프로세스를 앱 번들에서 직접 실행하지 않습니다.
 
-- **`*-Dev` 스킴** (`BACKEND_MODE=source`): 로컬 `uv` 환경 사용
-  - `apps/backend` 디렉토리에서 `uv run dev` 실행
-  - 로컬 개발 시 빠른 반복 가능
-- **`*-Prod` 스킴** (`BACKEND_MODE=bundled`): 번들된 서버 바이너리 사용
-  - `VoyagerHelper.app/Contents/Resources/server/server.bin` 실행
-  - 독립형 앱 번들 (배포용)
-
-### 필수 환경 변수
-
-백엔드 기동에 필요한 기본 키:
-
-- `PUBLIC_BACKEND_HOST=127.0.0.1`
-- `PUBLIC_BACKEND_PORT=0` (0이면 동적 할당)
+- **Dev/Prod 공통**: Helper 및 XPC 서비스가 검색/인덱싱 런타임을 담당
+- 백엔드(`apps/backend`)는 별도 서버 런타임으로 독립 운영
 
 ### 보안
 
