@@ -1,0 +1,45 @@
+window_id	parent_region_id	region_id	region_label	region_label_ko	level	slot_type	structure_key	description	objects	release_phase
+file_manager_window	-	root	File Manager Window	파일 관리자 창	1	root	file_manager_window	엔트리 탐색·정리·질의 작업을 수행하는 메인 윈도우	TBD	CBT
+file_manager_window	root	sidebar	Sidebar	사이드바	2	pane	file_manager_window.sidebar	[CBT] 파인더형 즐겨찾기 내비게이션으로 디렉토리 진입점을 제공하는 좌측 패인 [OBT] 페이지 브라우징 생명주기를 갖는 콘텐트 탭을 전환·정리하는 좌측 패인	TBD	CBT
+file_manager_window	root	content_pane	Content Pane	콘텐트 패인	2	pane	file_manager_window.content_pane	현재 페이지 타입별 콘텐츠를 표시하는 메인 패인	TBD	CBT
+file_manager_window	root	inspector_pane	Inspector Pane	인스펙터 패인	2	pane	file_manager_window.inspector_pane	챗·프로퍼티·프리뷰 등 보조 작업 모드를 제공하는 우측 패인	TBD	OBT
+file_manager_window	root	command_palette	Command Palette	커맨드 팔레트	2	overlay	file_manager_window.command_palette	전역 커맨드·검색 등 명령을 입력해 실행하는 오버레이 모달	TBD	MVP
+file_manager_window	root	content_tabs_switcher	Content Tabs Switcher	콘텐트 탭 스위처	2	overlay	file_manager_window.content_tabs_switcher	열려 있는 콘텐츠 탭을 빠르게 전환·관리하는 오버레이 모달	TBD	MVP
+file_manager_window	sidebar	sidebar_header	Sidebar Header	사이드바 헤더	3	section	file_manager_window.sidebar.sidebar_header	사이드바 제목과 전역 액션·뷰 토글 등 상단 컨트롤 영역	TBD	CBT
+file_manager_window	sidebar	sidebar_body	Sidebar Body	사이드바 바디	3	section	file_manager_window.sidebar.sidebar_body	[CBT] 즐겨찾기 내비게이션 항목을 나열하고 선택 상태를 유지하는 본문 영역 [OBT] 스토리지 영역과 콘텐트 탭 영역으로 분리되어, 내비게이션·탭 항목을 나열하고 전환·정리하는 본문 영역	TBD	CBT
+file_manager_window	sidebar	sidebar_footer	Sidebar Footer	사이드바 푸터	3	section	file_manager_window.sidebar.sidebar_footer	인덱싱 등 백그라운드 상태와 알림을 표시하는 하단 영역	TBD	CBT
+file_manager_window	content_pane	content_header	Content Pane Header	콘텐트 패인 헤더	3	section	file_manager_window.content_pane.content_header	페이지 네비게이션, 제목·경로·컨텍스트 요약, 페이지 액션을 제공하는 헤더 영역	TBD	CBT
+file_manager_window	content_pane	page_container	Page Container	콘텐츠 페이지 컨테이너	3	section	file_manager_window.content_pane.page_container	현재 페이지 모드의 콘텐츠를 렌더링하는 본문 컨테이너 영역	TBD	CBT
+file_manager_window	sidebar_body	storage_area	Storage Area	스토리지 영역	4	section	file_manager_window.sidebar.sidebar_body.storage_area	로컬·클라우드 스토리지 및 최상위 탐색 시작점을 나열하는 영역	TBD	OBT
+file_manager_window	sidebar_body	content_tabs_area	Content Tabs Area	콘텐트 탭 영역	4	section	file_manager_window.sidebar.sidebar_body.content_tabs_area	열려 있는 콘텐트 탭 목록을 표시하고 전환·정리하는 영역	TBD	OBT
+file_manager_window	content_header	page_nav_area	Page Nav Area	페이지 네비 영역	4	section	file_manager_window.content_pane.content_header.page_nav_area	뒤로/앞으로, 상위 이동 등 페이지 네비게이션 컨트롤 영역	TBD	CBT
+file_manager_window	content_header	page_info_area	Page Info Area	페이지 정보 영역	4	section	file_manager_window.content_pane.content_header.page_info_area	현재 페이지의 제목·경로·선택된 콜렉션 등 컨텍스트 정보를 요약 표시하는 영역	TBD	CBT
+file_manager_window	content_header	page_menu_area	Page Menu Area	페이지 메뉴 영역	4	section	file_manager_window.content_pane.content_header.page_menu_area	현재 페이지에 대한 주요 액션을 제공하는 메뉴 영역	TBD	CBT
+file_manager_window	content_header	collection_fillter_composer	Collection Filter Composer	콜렉션 필터 컴포저	4	overlay	file_manager_window.content_pane.content_header.collection_fillter_composer	콜렉션 필터를 편집·적용하는 오버레이 모달	TBD	CBT
+file_manager_window	page_container	page_mode_home	Home Page	홈 페이지	4	mode	file_manager_window.content_pane.page_container.page_mode_home	최근 작업·고정 항목 등 시작 지점을 제공하는 홈 페이지 모드	TBD	OBT
+file_manager_window	page_container	page_mode_directory	Directory Page	디렉토리 페이지	4	mode	file_manager_window.content_pane.page_container.page_mode_directory	선택한 디렉토리의 엔트리 목록을 탐색하는 페이지 모드	TBD	CBT
+file_manager_window	page_container	page_mode_collection	Collection Page	콜렉션 페이지	4	mode	file_manager_window.content_pane.page_container.page_mode_collection	설정된 콜렉션 필터를 통해 검색된 엔트리 결과 목록을 탐색·관리하는 페이지 모드	TBD	CBT
+file_manager_window	page_container	page_mode_chat	Chat Page	채팅 페이지	4	mode	file_manager_window.content_pane.page_container.page_mode_chat	컨텍스트를 기반으로 대화 작업을 수행하는 페이지 모드	TBD	OBT
+file_manager_window	inspector_pane	inspector_mode_chat	Chat Pane	챗 패인	3	mode	file_manager_window.inspector_pane.inspector_mode_chat	컨텍스트에서 대화를 수행하는 인스펙터 모드	TBD	OBT
+file_manager_window	inspector_pane	inspector_mode_property	Property Pane	프로퍼티 패인	3	mode	file_manager_window.inspector_pane.inspector_mode_property	선택된 엔트리의 시스템 속성·사용자 프로퍼티를 조회·편집하는 인스펙터 모드	TBD	OBT
+file_manager_window	inspector_pane	inspector_mode_preview	Preview Pane	프리뷰 패인	3	mode	file_manager_window.inspector_pane.inspector_mode_preview	선택된 엔트리 콘텐츠를 빠르게 미리보는 인스펙터 모드	TBD	MVP
+file_manager_window	inspector_pane	inspector_mode_relations	Relations Pane	릴레이션 패인	3	mode	file_manager_window.inspector_pane.inspector_mode_relations	선택된 엔트리의 연관 콜렉션·엔트리 관계를 탐색하는 인스펙터 모드	TBD	LATER
+file_manager_window	inspector_mode_chat	chat_menu_area	chat_menu_area	챗 메뉴 영역	4	section	file_manager_window.inspector_pane.inspector_mode_chat.chat_menu_area	대화 관련 액션과 옵션을 제공하는 메뉴 영역	TBD	OBT
+file_manager_window	inspector_mode_chat	message_area	Message Area	메시지 영역	4	section	file_manager_window.inspector_pane.inspector_mode_chat.message_area	요청·응답 메시지와 실행 결과를 시간순으로 나열하는 영역	TBD	OBT
+file_manager_window	inspector_mode_chat	chat_field	Chat Field	챗 필드	4	section	file_manager_window.inspector_pane.inspector_mode_chat.chat_field	메시지 입력·전송 및 컨텍스트 조정 컨트롤을 제공하는 입력 영역	TBD	OBT
+settings_window	-	root	Settings Window	세팅 창	1	root	settings_window	앱 전역 설정을 조회·변경하는 세팅 윈도우	TBD	CBT
+settings_window	root	toolbar	Settings Toolbar	세팅 툴바	2	pane	settings_window.toolbar	세팅의 공통 네비게이션과 액션을 제공하는 상단 툴바 영역	TBD	CBT
+settings_window	root	settings_body	Settings Body	세팅 바디	2	pane	settings_window.settings_body	현재 선택된 설정 탭의 실제 설정 폼·콘텐츠를 표시하는 본문 영역	TBD	CBT
+settings_window	toolbar	title_area	Settings Title Area	타이틀 영역	3	section	settings_window.toolbar.title_area	세팅 탭의 제목을 표시하는 영역	TBD	CBT
+settings_window	toolbar	tabs_area	Settings Tabs	탭 영역	3	section	settings_window.toolbar.tabs_area	세팅 탭을 전환하는 탭 스위처 영역	TBD	CBT
+settings_window	settings_body	tab_general	Settings General Tab	세팅 제너럴 탭	3	mode	settings_window.settings_body.tab_general	기본 동작과 앱 사용 경험 관련 일반 설정 탭	TBD	CBT
+settings_window	settings_body	tab_indexing	Settings Indexing Tab	세팅 인덱싱 탭	3	mode	settings_window.settings_body.tab_indexing	인덱싱 소스·범위·빈도·리소스 제한과 상태 모니터링·재빌드 작업을 관리하는 탭	TBD	CBT
+settings_window	settings_body	tab_appearance	Settings Appearance Tab	세팅 어피어런스 탭	3	mode	settings_window.settings_body.tab_appearance	테마·폰트·레이아웃 밀도 등 UI 외관 설정을 관리하는 탭	TBD	CBT
+settings_window	settings_body	tab_shortcuts	Settings Shortcuts Tab	세팅 숏컷 탭	3	mode	settings_window.settings_body.tab_shortcuts	키보드 단축키를 확인하고 커스터마이징하는 설정 탭	TBD	OBT
+settings_window	settings_body	tab_account	Settings Account Tab	세팅 어카운트 탭	3	mode	settings_window.settings_body.tab_account	계정 정보, 구독 상태, 라이선스 등을 관리하는 설정 탭	TBD	CBT
+settings_window	settings_body	tab_about	Settings About Tab	세팅 어바웃 탭	3	mode	settings_window.settings_body.tab_about	앱 버전, 라이선스 등 메타 정보를 표시하는 설정 탭	TBD	CBT
+onboarding_window	-	root	Onboarding Window	온보딩 스크린	1	root	onboarding_window	최초 실행·주요 업데이트 시 온보딩 플로우를 진행하는 온보딩 화면 루트	TBD	CBT
+onboarding_window	root	welcome_screen	Welcome Screen	웰컴 스크린	2	mode	onboarding_window.welcome_screen	제품 소개와 기본 안내, 시작 액션을 제공하는 온보딩 첫 화면	TBD	CBT
+onboarding_window	root	beta_access_screen	Beta Access Screen	베타 검증 스크린	2	mode	onboarding_window.beta_access_screen	<<AI>> [CBT 한정] 초대 코드·계정 상태로 클로즈 베타 접근 권한을 검증하고 다음 단계 진입을 제어하는 화면	TBD	CBT
+onboarding_window	root	permission_screen	Permission Screen	권한 요청 스크린	2	mode	onboarding_window.permission_screen	<<AI>> Full Disk Access 필요 사유 안내, FDA/알림 권한 요청·상태 라벨링·재검증 및 시스템 설정 이동까지 한 화면 처리	TBD	CBT
+onboarding_window	root	indexing_preset_screen	Indexing Presset Screen	인덱싱 프리셋 스크린	2	mode	onboarding_window.indexing_preset_screen	<<AI>> 제외 규칙 프리셋 확인·편집 UI를 제공하는 온보딩 단계. 현재 빌드에는 기본 프리셋만 적용, 편집 UI는 OBT로 예정	TBD	OBT
