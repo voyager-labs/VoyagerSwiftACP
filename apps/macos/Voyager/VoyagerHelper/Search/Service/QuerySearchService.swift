@@ -2,15 +2,15 @@ import Foundation
 import Logging
 
 struct QuerySearchService: Sendable {
-    private let filterService: FilterSearchService
+    private let searchService: MDQuerySearchService
     private let converter: QueryGatewayConverter
     private let logger: Logger
 
     init(
-        filterService: FilterSearchService,
+        searchService: MDQuerySearchService,
         logger: Logger = Logger(label: "VoyagerHelper.QuerySearchService"),
     ) {
-        self.filterService = filterService
+        self.searchService = searchService
         self.logger = logger
         converter = QueryGatewayConverter(logger: Logger(label: "VoyagerHelper.QueryGatewayConverter"))
     }
@@ -21,7 +21,7 @@ struct QuerySearchService: Sendable {
         let trimmedQuery = request.query.trimmingCharacters(in: .whitespacesAndNewlines)
 
         guard trimmedQuery.isEmpty == false else {
-            return try await filterService.applyFilters(request.filters)
+            return try await searchService.applyFilters(request.filters)
         }
 
         let conversion = await converter.convert(query: trimmedQuery, existingFilters: request.filters)
@@ -43,7 +43,7 @@ struct QuerySearchService: Sendable {
         )
 
         do {
-            return try await filterService.applyFilters(plannedFilters)
+            return try await searchService.applyFilters(plannedFilters)
         } catch {
             logger.warning("Local query execution failed: \(error)")
             return makeErrorResponse(
