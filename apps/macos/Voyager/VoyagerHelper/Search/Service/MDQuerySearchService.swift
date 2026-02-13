@@ -4,14 +4,11 @@ import Logging
 
 struct MDQuerySearchService: Sendable {
     enum SearchError: Error, LocalizedError {
-        case conditionsNotSupportedYet
         case queryCreationFailed
         case queryExecutionFailed
 
         var errorDescription: String? {
             switch self {
-            case .conditionsNotSupportedYet:
-                "MDQuery adapter does not support conditions yet"
             case .queryCreationFailed:
                 "MDQuery creation failed"
             case .queryExecutionFailed:
@@ -23,24 +20,29 @@ struct MDQuerySearchService: Sendable {
     private let logger: Logger
     private let maxCandidates: Int
     private let defaultScopeURL: @Sendable () -> URL
+    private let compilerFactory: @Sendable () async throws -> FilterSearchMDQueryCompiler
 
     init(
         logger: Logger = Logger(label: "VoyagerHelper.MDQuerySearchService"),
         maxCandidates: Int = 20000,
         defaultScopeURL: @Sendable @escaping () -> URL = { FileManager.default.homeDirectoryForCurrentUser },
+        compilerFactory: @Sendable @escaping () async throws -> FilterSearchMDQueryCompiler = {
+            try await MainActor.run {
+                try FilterSearchMDQueryCompiler()
+            }
+        },
     ) {
         self.logger = logger
         self.maxCandidates = max(1, maxCandidates)
         self.defaultScopeURL = defaultScopeURL
+        self.compilerFactory = compilerFactory
     }
 
     func applyFilters(_ filters: SearchFiltersPayload) async throws -> SearchResponsePayload {
-        guard filters.conditions.isEmpty else {
-            throw SearchError.conditionsNotSupportedYet
-        }
-
+        let compiler = try await compilerFactory()
+        let queryString = try compiler.compile(conditions: filters.conditions)
         let scopeURLs = Self.resolveScopeURLs(filters.scopes, defaultScopeURL: defaultScopeURL)
-        let query = try makeQuery(scopes: scopeURLs)
+        let query = try makeQuery(queryString: queryString, scopes: scopeURLs)
         let paths = loadPaths(query: query, limit: maxCandidates)
         if paths.count == maxCandidates {
             logger.warning("MDQuery result truncated at maxCandidates=\(maxCandidates)")
@@ -58,8 +60,7 @@ struct MDQuerySearchService: Sendable {
         )
     }
 
-    private func makeQuery(scopes: [URL]) throws -> MDQuery {
-        let queryString = "kMDItemContentTypeTree == \"public.item\""
+    private func makeQuery(queryString: String, scopes: [URL]) throws -> MDQuery {
         guard let query = MDQueryCreate(kCFAllocatorDefault, queryString as CFString, nil, nil) else {
             throw SearchError.queryCreationFailed
         }
