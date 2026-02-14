@@ -23,7 +23,7 @@ enum QueryGatewaySystemPrompt {
     - if scopes has Downloads + time range -> downloaded_date
     - modified -> modification_date
     - created -> creation_date
-    - rx uses SQL LIKE pattern only (% and _); not regex.
+    - rx uses wildcard pattern only (% and _); not regex.
     </rules>
 
     <keys>
