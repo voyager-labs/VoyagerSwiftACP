@@ -4,7 +4,176 @@ import Foundation
 import ImageIO
 import UniformTypeIdentifiers
 
-extension EntryClient {
+private final class CompletionState: @unchecked Sendable {
+    private let lock = NSLock()
+    private nonisolated(unsafe) var _hasCompleted = false
+
+    nonisolated func setCompleted() -> Bool {
+        lock.lock()
+        defer { lock.unlock() }
+        if _hasCompleted {
+            return false
+        }
+        _hasCompleted = true
+        return true
+    }
+}
+
+private final class QueryWrapper: @unchecked Sendable {
+    nonisolated(unsafe) let query: NSMetadataQuery
+    init(_ query: NSMetadataQuery) {
+        self.query = query
+    }
+}
+
+private final class ObserverWrapper: @unchecked Sendable {
+    private let lock = NSLock()
+    private nonisolated(unsafe) var _observer: NSObjectProtocol?
+
+    init(_ observer: NSObjectProtocol?) {
+        _observer = observer
+    }
+
+    nonisolated func setObserver(_ observer: NSObjectProtocol?) {
+        lock.lock()
+        defer { lock.unlock() }
+        if let oldObserver = _observer {
+            NotificationCenter.default.removeObserver(oldObserver)
+        }
+        _observer = observer
+    }
+
+    nonisolated func remove() {
+        lock.lock()
+        defer { lock.unlock() }
+        if let observer = _observer {
+            NotificationCenter.default.removeObserver(observer)
+            _observer = nil
+        }
+    }
+}
+
+extension EntrySystemPrimitives {
+    @MainActor
+    private static func searchFiles(
+        predicate: NSPredicate,
+        fileExistsAtPath: @escaping @Sendable (String, UnsafeMutablePointer<ObjCBool>?) -> Bool,
+        sortDescriptors: [NSSortDescriptor] = [],
+        timeout: TimeInterval = 5,
+        filterFiles: Bool = false,
+    ) async -> [URL] {
+        await withCheckedContinuation { continuation in
+            DispatchQueue.main.async {
+                let query = NSMetadataQuery()
+                query.searchScopes = []
+                query.predicate = predicate
+                query.sortDescriptors = sortDescriptors
+
+                let completionState = CompletionState()
+                let queryWrapper = QueryWrapper(query)
+                let observerWrapper = ObserverWrapper(nil)
+
+                let observer = NotificationCenter.default.addObserver(
+                    forName: .NSMetadataQueryDidFinishGathering,
+                    object: queryWrapper.query,
+                    queue: .main,
+                ) { _ in
+                    let capturedQuery = queryWrapper.query
+                    Task { @MainActor in
+                        guard completionState.setCompleted() else { return }
+                        capturedQuery.stop()
+
+                        let urls: [URL] = Array(capturedQuery.results
+                            .compactMap { $0 as? NSMetadataItem }
+                            .compactMap { item -> URL? in
+                                guard let path = item.value(forAttribute: "kMDItemPath") as? String
+                                else { return nil }
+
+                                if filterFiles {
+                                    var isDirectory: ObjCBool = false
+                                    if fileExistsAtPath(path, &isDirectory) {
+                                        if isDirectory.boolValue { return nil }
+                                    }
+                                }
+
+                                return URL(fileURLWithPath: path)
+                            }
+                            .prefix(100))
+
+                        continuation.resume(returning: urls)
+
+                        observerWrapper.remove()
+                    }
+                }
+
+                observerWrapper.setObserver(observer)
+
+                query.start()
+
+                DispatchQueue.main.asyncAfter(deadline: .now() + timeout) {
+                    let capturedQuery = queryWrapper.query
+                    Task { @MainActor in
+                        guard completionState.setCompleted() else { return }
+                        capturedQuery.stop()
+                        continuation.resume(returning: [])
+
+                        observerWrapper.remove()
+                    }
+                }
+            }
+        }
+    }
+
+    nonisolated static var liveLoadRecentItems: @Sendable (Bool, WorkspaceClient) async -> [Entry] {
+        { showHidden, workspaceClient in
+            let entryLoadingClient = EntryLoadingClient.liveValue
+            let predicate = NSPredicate(format: "kMDItemLastUsedDate > %@", Date.distantPast as NSDate)
+            let sortDescriptors = [NSSortDescriptor(key: "kMDItemLastUsedDate", ascending: false)]
+
+            let recentFiles = await searchFiles(
+                predicate: predicate,
+                fileExistsAtPath: liveFileExistsAtPath,
+                sortDescriptors: sortDescriptors,
+                filterFiles: true,
+            )
+
+            let items = recentFiles.compactMap { url in
+                EntryLoadUtils.convertURLToEntry(
+                    url,
+                    entryLoadingClient: entryLoadingClient,
+                    workspaceClient: workspaceClient,
+                )
+            }
+            return showHidden ? items : items.filter { !$0.isHidden }
+        }
+    }
+
+    nonisolated static var liveLoadFilesWithTag: @Sendable (String, Bool, WorkspaceClient) async -> [Entry] {
+        { tag, showHidden, workspaceClient in
+            let entryLoadingClient = EntryLoadingClient.liveValue
+            let predicate = NSPredicate(format: "kMDItemUserTags CONTAINS %@", tag)
+            let sortDescriptors = [NSSortDescriptor(key: "kMDItemLastUsedDate", ascending: false)]
+
+            let taggedFiles = await searchFiles(
+                predicate: predicate,
+                fileExistsAtPath: liveFileExistsAtPath,
+                sortDescriptors: sortDescriptors,
+            )
+
+            let items: [Entry] = taggedFiles.compactMap { url in
+                guard let item = EntryLoadUtils.convertURLToEntry(
+                    url,
+                    entryLoadingClient: entryLoadingClient,
+                    workspaceClient: workspaceClient,
+                ) else { return nil }
+
+                let hasTags = item.tags?.contains(where: { $0.name == tag }) ?? false
+                return hasTags ? item : nil
+            }
+            return showHidden ? items : items.filter { !$0.isHidden }
+        }
+    }
+
     nonisolated static var liveSetDefaultApp: @Sendable (UTType, String) async throws -> Void {
         { type, bundleID in
             let status = LSSetDefaultRoleHandlerForContentType(
@@ -64,8 +233,6 @@ extension EntryClient {
             let name = await MainActor.run {
                 FileManager.default.displayName(atPath: defaultAppURL.path)
             }
-            // TODO: displayName을 EntryClient 메서드로 전환할 때 변경
-
             return await MainActor.run {
                 ApplicationInfo(id: bundleID, name: name, bundleID: bundleID)
             }
@@ -75,11 +242,11 @@ extension EntryClient {
     nonisolated static var liveLoadItems: @Sendable (URL, Bool) async throws -> [Entry] {
         { directoryURL, showHidden in
             try await Task.detached {
-                let entryClient = EntryClient.liveValue
+                let entryLoadingClient = EntryLoadingClient.liveValue
                 let workspaceClient = WorkspaceClient.liveValue
                 let options: FileManager.DirectoryEnumerationOptions = showHidden ? [] : [.skipsHiddenFiles]
 
-                let contents = try entryClient.contentsOfDirectory(
+                let contents = try liveContentsOfDirectory(
                     directoryURL,
                     [
                         .nameKey,
@@ -100,7 +267,7 @@ extension EntryClient {
                 return contents.compactMap { url in
                     EntryLoadUtils.convertURLToEntry(
                         url,
-                        entryClient: entryClient,
+                        entryLoadingClient: entryLoadingClient,
                         workspaceClient: workspaceClient,
                     )
                 }

@@ -1,5 +1,6 @@
 import Foundation
 
+// NOTE: 이건 뭐지?
 enum EntrySearchUtils {
     static func convertCollectionItems(
         _ items: [JSONValue],

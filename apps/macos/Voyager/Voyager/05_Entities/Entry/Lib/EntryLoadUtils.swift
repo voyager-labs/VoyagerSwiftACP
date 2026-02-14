@@ -19,11 +19,11 @@ enum EntryLoadUtils {
 
     nonisolated static func convertURLToEntry(
         _ itemURL: URL,
-        entryClient: EntryClient,
+        entryLoadingClient: EntryLoadingClient,
         workspaceClient: WorkspaceClient,
     ) -> Entry? {
         var isDirectory: ObjCBool = false
-        guard entryClient.fileExistsAtPath(itemURL.path, &isDirectory) else {
+        guard entryLoadingClient.fileExistsAtPath(itemURL.path, &isDirectory) else {
             return nil
         }
 
@@ -45,14 +45,14 @@ enum EntryLoadUtils {
 
         let isHidden = resourceValues?.isHidden ?? false || name.hasPrefix(".")
 
-        let metadata = entryClient.getItemMetadata(itemURL, isDirectory.boolValue, workspaceClient)
+        let metadata = entryLoadingClient.getItemMetadata(itemURL, isDirectory.boolValue, workspaceClient)
         let lastOpenedDate = metadata.lastUsedDate
         let tags = getTags(from: itemURL)
 
         let additionalInfo = calculateAdditionalInfo(
             url: itemURL,
             isDirectory: isDirectory.boolValue,
-            entryClient: entryClient,
+            entryLoadingClient: entryLoadingClient,
         )
 
         let formattedSize = isDirectory.boolValue ? "--" : byteFormatter.string(fromByteCount: size)
@@ -80,13 +80,17 @@ enum EntryLoadUtils {
         )
     }
 
-    private nonisolated static func getTags(from itemURL: URL) -> [FileTag]? {
+    private nonisolated static func getTags(from itemURL: URL) -> [Tag]? {
+        if let tags = TagMetadataClient.loadTags(from: itemURL) {
+            return tags
+        }
+
         if let tagNames = try? itemURL.resourceValues(forKeys: [.tagNamesKey]).tagNames {
-            let nameToColorCode = EntryTagUtils.getTagNameToColorCodeMapping()
-            return tagNames.map { tagString in
-                let colorCode = nameToColorCode[tagString] ?? 0
-                return FileTag(name: tagString, colorCode: colorCode)
-            }
+            let tags = tagNames
+                .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+                .filter { !$0.isEmpty }
+                .map { Tag(name: $0, colorCode: 0) }
+            return tags.isEmpty ? nil : tags
         }
         return nil
     }
@@ -94,27 +98,27 @@ enum EntryLoadUtils {
     private nonisolated static func calculateAdditionalInfo(
         url: URL,
         isDirectory: Bool,
-        entryClient: EntryClient,
+        entryLoadingClient: EntryLoadingClient,
     ) -> String? {
         if isDirectory {
-            if entryClient.isPackageDirectory(url) {
+            if entryLoadingClient.isPackageDirectory(url) {
                 return nil
             }
             let ext = url.pathExtension.lowercased()
             if ext == "voycoll" {
                 return nil
             }
-            return entryClient.getFolderItemCount(url)
+            return entryLoadingClient.getFolderItemCount(url)
         }
 
         let ext = url.pathExtension.lowercased()
 
         if ["jpg", "jpeg", "png", "heic", "gif", "webp", "bmp", "tiff"].contains(ext) {
-            return entryClient.getImageResolution(url)
+            return entryLoadingClient.getImageResolution(url)
         }
 
         if ["zip", "tar", "gz", "bz2", "xz", "rar", "7z", "dmg", "pkg"].contains(ext) {
-            return entryClient.getFormattedFileSize(url)
+            return entryLoadingClient.getFormattedFileSize(url)
         }
 
         return nil

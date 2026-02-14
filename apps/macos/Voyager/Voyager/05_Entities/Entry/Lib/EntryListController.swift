@@ -1,0 +1,1166 @@
+// swiftlint:disable file_length
+import AppKit
+import Combine
+import ComposableArchitecture
+
+@MainActor
+final class EntryListController: NSObject {
+    final class OutlineItem: Hashable {
+        enum Kind {
+            case group(name: String, colorCode: Int?, isCollapsed: Bool)
+            case entry(Entry)
+        }
+
+        let kind: Kind
+        let children: [OutlineItem]
+        let id: String
+
+        init(kind: Kind, children: [OutlineItem] = []) {
+            self.kind = kind
+            self.children = children
+            switch kind {
+            case let .group(name, _, _):
+                id = "group:\(name)"
+            case let .entry(entry):
+                id = entry.id
+            }
+        }
+
+        static func == (lhs: OutlineItem, rhs: OutlineItem) -> Bool {
+            lhs.id == rhs.id
+        }
+
+        func hash(into hasher: inout Hasher) {
+            hasher.combine(id)
+        }
+    }
+
+    enum Column: String {
+        case name
+        case dateModified
+        case size
+        case kind
+    }
+
+    let store: StoreOf<FileManagerContentFeature>
+    let fsStore: StoreOf<EntryFeature>
+    private var cancellables: Set<AnyCancellable> = []
+
+    private weak var rootView: EntryListRootView?
+    private var didBind = false
+
+    private var scrollView: NSScrollView {
+        guard let rootView else { preconditionFailure("EntryListRootView is not bound") }
+        return rootView.scrollView
+    }
+
+    private var tableView: EntryListRootView.EntryListTableView {
+        guard let rootView else { preconditionFailure("EntryListRootView is not bound") }
+        return rootView.tableView
+    }
+
+    private var outlineItems: [OutlineItem] = []
+    private var entryItemById: [String: OutlineItem] = [:]
+    private var groupItemByName: [String: OutlineItem] = [:]
+
+    private var isUpdatingSortFromStore = false
+
+    private var isUpdatingSelectionFromStore = false
+    private var hasRestoredScrollPosition = false
+    private var isUpdatingGroupExpansion = false
+
+    private var lastRenamingItemId: String?
+    private var contextMenuAnchor: CGPoint?
+    private var contextMenuController: EntryContextMenuController?
+
+    @Dependency(\.entryOpenClient)
+    private var entryOpenClient
+    @Dependency(\.entryFileOpsClient)
+    private var entryFileOpsClient
+
+    @Dependency(\.workspaceClient)
+    private var workspaceClient
+    @Dependency(\.entryThumbnailCacheClient)
+    private var entryThumbnailCacheClient
+    @Dependency(\.fileManagerWindowClient)
+    private var fileManagerWindowClient
+
+    init(store: StoreOf<FileManagerContentFeature>) {
+        self.store = store
+        fsStore = store.scope(state: \.entries, action: \.entries)
+        super.init()
+    }
+
+    func bind(to view: EntryListRootView) {
+        rootView = view
+
+        tableView.delegate = self
+        tableView.dataSource = self
+        tableView.contextMenuProvider = self
+        tableView.target = self
+        tableView.doubleAction = #selector(handleDoubleClick)
+
+        guard !didBind else {
+            updateDropTargetBorder(isTargeted: store.state.entries.isDropTargeted)
+            return
+        }
+
+        didBind = true
+        observeListStore()
+        observeTableView()
+        rebuildRowsAndReload()
+        updateDropTargetBorder(isTargeted: store.state.entries.isDropTargeted)
+    }
+
+    func updateRootView(_ view: EntryListRootView) {
+        guard rootView !== view else { return }
+        rootView = view
+        tableView.delegate = self
+        tableView.dataSource = self
+        tableView.contextMenuProvider = self
+        tableView.target = self
+        tableView.doubleAction = #selector(handleDoubleClick)
+    }
+
+    private func observeTableView() {
+        NotificationCenter.default.publisher(for: NSView.boundsDidChangeNotification, object: scrollView.contentView)
+            .receive(on: DispatchQueue.main)
+            .throttle(for: .milliseconds(150), scheduler: DispatchQueue.main, latest: true)
+            .sink { [weak self] _ in
+                self?.requestThumbnailsForVisibleRows()
+            }
+            .store(in: &cancellables)
+    }
+
+    private func rebuildRowsAndReload() {
+        outlineItems = makeOutlineItems(state: store.state)
+        entryItemById = Dictionary(uniqueKeysWithValues: outlineItems.flatMap { $0.flattenEntries() })
+        groupItemByName = Dictionary(uniqueKeysWithValues: outlineItems.compactMap { item in
+            if case let .group(name, _, _) = item.kind {
+                return (name, item)
+            }
+            return nil
+        })
+
+        tableView.reloadData()
+        syncListSelectionFromStore()
+        applyGroupExpansionState()
+        scrollToSelectionIfNeeded()
+        restoreScrollPositionIfNeeded()
+        requestThumbnailsForVisibleRows()
+    }
+
+    private func requestThumbnailsForVisibleRows() {
+        guard tableView.numberOfRows > 0 else { return }
+
+        let visibleRange = tableView.rows(in: tableView.visibleRect)
+        guard visibleRange.length > 0 else { return }
+
+        let extraRows = max(visibleRange.length, 20)
+        let startRow = max(0, visibleRange.location - extraRows)
+        let endRow = min(tableView.numberOfRows, visibleRange.location + visibleRange.length + extraRows)
+
+        var paths: Set<String> = []
+        paths.reserveCapacity(visibleRange.length)
+
+        for row in startRow ..< endRow {
+            guard let outlineItem = tableView.item(atRow: row) as? OutlineItem else { continue }
+            guard case let .entry(entry) = outlineItem.kind else { continue }
+            guard !entry.isDirectory else { continue }
+            paths.insert(entry.fullPath)
+        }
+
+        guard !paths.isEmpty else { return }
+        fsStore.send(.requestThumbnails(paths: Array(paths)))
+    }
+
+    private func saveScrollPosition() {
+        let offset = scrollView.contentView.bounds.origin
+        store.send(.saveScrollOffset(offset, forPath: store.state.navigation.currentPath))
+    }
+
+    private func scrollToSelectionIfNeeded() {
+        guard store.state.entries.shouldScrollToSelection else { return }
+
+        let targetId = store.state.entries.lastSelectedId
+            ?? store.state.entries.selectedIds.first
+        guard let targetId, let item = entryItemById[targetId] else {
+            fsStore.send(.resetScrollFlag)
+            return
+        }
+        let row = tableView.row(forItem: item)
+        guard row >= 0 else {
+            fsStore.send(.resetScrollFlag)
+            return
+        }
+
+        tableView.scrollRowToVisible(row)
+        fsStore.send(.resetScrollFlag)
+    }
+
+    private func updateDropTargetBorder(isTargeted: Bool) {
+        scrollView.layer?.borderWidth = isTargeted ? 2 : 0
+        scrollView.layer?.borderColor = isTargeted ? NSColor.controlAccentColor.cgColor : nil
+    }
+
+    private func makeOutlineItems(state: FileManagerContentState) -> [OutlineItem] {
+        let entries = state.entries
+
+        if state.entryArrangements.groupKey == .none {
+            return entries.displayItems.map { OutlineItem(kind: .entry($0)) }
+        }
+
+        var result: [OutlineItem] = []
+        for group in state.entryArrangements.groupedItems {
+            let items = group.items.map { OutlineItem(kind: .entry($0)) }
+            if !group.groupName.isEmpty, state.entryArrangements.groupKey != .name {
+                let colorCode: Int? = if state.entryArrangements.groupKey == .tags {
+                    resolveTagColorCode(tagName: group.groupName, items: group.items)
+                } else {
+                    nil
+                }
+                let isCollapsed = state.entryArrangements.collapsedGroups.contains(group.groupName)
+                let groupItem = OutlineItem(
+                    kind: .group(name: group.groupName, colorCode: colorCode, isCollapsed: isCollapsed),
+                    children: items,
+                )
+                result.append(groupItem)
+            } else {
+                result.append(contentsOf: items)
+            }
+        }
+
+        return result
+    }
+
+    private func resolveTagColorCode(tagName: String, items: [Entry]) -> Int? {
+        for item in items {
+            if let colorCode = item.tags?.first(where: { $0.name == tagName })?.colorCode {
+                return colorCode
+            }
+        }
+        return nil
+    }
+
+    private func applyGroupExpansionState() {
+        isUpdatingGroupExpansion = true
+        for (name, item) in groupItemByName {
+            if store.state.entryArrangements.collapsedGroups.contains(name) {
+                tableView.collapseItem(item)
+            } else {
+                tableView.expandItem(item)
+            }
+        }
+        isUpdatingGroupExpansion = false
+    }
+
+    private func restoreScrollPositionIfNeeded() {
+        let itemCount = store.state.entries.displayItems.count
+        guard itemCount != 0 else { return }
+
+        guard !hasRestoredScrollPosition,
+              let savedOffset = store.state.navigation.scrollPositions[store.state.navigation.currentPath]
+        else {
+            return
+        }
+
+        scrollView.contentView.scroll(to: savedOffset)
+        hasRestoredScrollPosition = true
+    }
+
+    @objc
+    private func handleDoubleClick() {
+        let clickedRow = tableView.clickedRow
+        guard clickedRow >= 0 else { return }
+        guard let item = tableView.item(atRow: clickedRow) as? OutlineItem else { return }
+        guard case let .entry(entry) = item.kind else { return }
+        EntryContextMenuUtils.sendWithSelection(entry, fsStore: fsStore, action: { [weak self] in
+            guard let self else { return }
+            saveScrollPosition()
+            store.send(.entries(.openSelectedItem))
+        })
+    }
+}
+
+private extension EntryListController {
+    func updateContextMenuAnchor(forRow row: Int?) {
+        guard let row, row >= 0 else {
+            contextMenuAnchor = nil
+            return
+        }
+        guard let window = rootView?.window else {
+            contextMenuAnchor = nil
+            return
+        }
+
+        let rectInTable = tableView.rect(ofRow: row)
+        let rectInWindow = tableView.convert(rectInTable, to: nil)
+        let rectInScreen = window.convertToScreen(rectInWindow)
+        contextMenuAnchor = CGPoint(x: rectInScreen.midX, y: rectInScreen.midY)
+    }
+
+    func beginRenaming(row: Int) {
+        guard row >= 0, row < tableView.numberOfRows else { return }
+
+        tableView.scrollRowToVisible(row)
+
+        DispatchQueue.main.async { [weak self] in
+            guard let self else { return }
+
+            _ = tableView.view(atColumn: 0, row: row, makeIfNecessary: true)
+            tableView.editColumn(0, row: row, with: nil, select: true)
+
+            guard let cell = tableView.view(atColumn: 0, row: row, makeIfNecessary: false) as? NSTableCellView,
+                  let textField = cell.textField
+            else {
+                return
+            }
+
+            textField.stringValue = store.state.entries.renamingText
+            textField.delegate = self
+            rootView?.window?.makeFirstResponder(textField)
+            textField.selectText(nil)
+        }
+    }
+}
+
+private extension EntryListController.OutlineItem {
+    func flattenEntries() -> [(String, EntryListController.OutlineItem)] {
+        switch kind {
+        case .entry:
+            [(id, self)]
+        case .group:
+            children.flatMap { $0.flattenEntries() }
+        }
+    }
+}
+
+extension EntryListController: NSOutlineViewDelegate {
+    func outlineView(_: NSOutlineView, shouldEdit tableColumn: NSTableColumn?, item: Any) -> Bool {
+        guard let tableColumn else { return false }
+        guard tableColumn.identifier.rawValue == Column.name.rawValue else { return false }
+        guard let outlineItem = item as? OutlineItem else { return false }
+        guard case let .entry(entry) = outlineItem.kind else { return false }
+        guard store.state.entries.renamingItemId == entry.id else { return false }
+        return true
+    }
+
+    func outlineView(
+        _: NSOutlineView,
+        draggingSession _: NSDraggingSession,
+        willBeginAt _: NSPoint,
+        forItems items: [Any],
+    ) {
+        let paths = items.compactMap { item -> String? in
+            guard let outlineItem = item as? OutlineItem else { return nil }
+            guard case let .entry(entry) = outlineItem.kind else { return nil }
+            return entry.fullPath
+        }
+        guard !paths.isEmpty else { return }
+        fsStore.send(.startDrag(paths: paths))
+    }
+
+    func outlineView(
+        _: NSOutlineView,
+        draggingSession _: NSDraggingSession,
+        endedAt _: NSPoint,
+        operation: NSDragOperation,
+    ) {
+        guard operation.isEmpty else { return }
+        fsStore.send(.startDrag(paths: []))
+        fsStore.send(.setDropTargeted(false))
+    }
+
+    func outlineView(_ outlineView: NSOutlineView, sortDescriptorsDidChange _: [NSSortDescriptor]) {
+        guard !isUpdatingSortFromStore else { return }
+        guard let descriptor = outlineView.sortDescriptors.first else { return }
+        guard let key = descriptor.key else { return }
+        guard let column = Column(rawValue: key) else { return }
+
+        let sortKey: SortKey = switch column {
+        case .name:
+            .name
+        case .dateModified:
+            .dateModified
+        case .size:
+            .size
+        case .kind:
+            .kind
+        }
+        let sortOrder: SortOrder = descriptor.ascending ? .ascending : .descending
+
+        if store.state.entryArrangements.sortKey != sortKey {
+            store.send(.entryArrangements(.setSortKey(sortKey)))
+        }
+        if store.state.entryArrangements.sortOrder != sortOrder {
+            store.send(.entryArrangements(.setSortOrder(sortOrder)))
+        }
+    }
+
+    func outlineView(_: NSOutlineView, isGroupItem item: Any) -> Bool {
+        guard let outlineItem = item as? OutlineItem else { return false }
+        if case .group = outlineItem.kind {
+            return true
+        }
+        return false
+    }
+
+    func outlineView(_: NSOutlineView, shouldSelectItem item: Any) -> Bool {
+        guard let outlineItem = item as? OutlineItem else { return false }
+        if case .group = outlineItem.kind {
+            return false
+        }
+        return true
+    }
+
+    func outlineView(_ outlineView: NSOutlineView, heightOfRowByItem item: Any) -> CGFloat {
+        guard let outlineItem = item as? OutlineItem else { return outlineView.rowHeight }
+        switch outlineItem.kind {
+        case .group:
+            return 32
+        case .entry:
+            return max(24, store.state.listIconSize + 4)
+        }
+    }
+
+    func outlineView(_ outlineView: NSOutlineView, viewFor tableColumn: NSTableColumn?, item: Any) -> NSView? {
+        guard let outlineItem = item as? OutlineItem else { return nil }
+
+        let columnId = tableColumn?.identifier.rawValue ?? "unknown"
+        let cellIdentifier = NSUserInterfaceItemIdentifier("cell-\(columnId)")
+        let view = makeCellView(tableView: outlineView, identifier: cellIdentifier)
+
+        switch outlineItem.kind {
+        case let .group(title, colorCode, _):
+            configureGroupHeaderCell(view, title: title, colorCode: colorCode)
+            return view
+        case let .entry(entry):
+            configureEntryCell(view, entry: entry, columnId: columnId)
+            return view
+        }
+    }
+
+    func outlineViewSelectionDidChange(_: Notification) {
+        guard !isUpdatingSelectionFromStore else { return }
+
+        let selectedIndexes = tableView.selectedRowIndexes
+        let selectedIds: Set<String> = Set(selectedIndexes.compactMap { index in
+            guard let outlineItem = tableView.item(atRow: index) as? OutlineItem else { return nil }
+            guard case let .entry(entry) = outlineItem.kind else { return nil }
+            return entry.id
+        })
+
+        let clickedRow = tableView.clickedRow
+        let lastSelectedId: String? = if selectedIndexes.contains(clickedRow),
+                                         let item = tableView.item(atRow: clickedRow) as? OutlineItem,
+                                         case let .entry(entry) = item.kind
+        {
+            entry.id
+        } else if let lastIndex = selectedIndexes.last,
+                  let item = tableView.item(atRow: lastIndex) as? OutlineItem,
+                  case let .entry(entry) = item.kind
+        {
+            entry.id
+        } else {
+            nil
+        }
+
+        fsStore.send(.setSelectedIds(ids: selectedIds, lastSelectedId: lastSelectedId))
+    }
+
+    func outlineViewItemDidExpand(_ notification: Notification) {
+        guard !isUpdatingGroupExpansion else { return }
+        guard let item = notification.userInfo?["NSObject"] as? OutlineItem else { return }
+        guard case let .group(name, _, _) = item.kind else { return }
+        if store.state.entryArrangements.collapsedGroups.contains(name) {
+            store.send(.entryArrangements(.toggleCollapsedGroup(name)))
+        }
+    }
+
+    func outlineViewItemDidCollapse(_ notification: Notification) {
+        guard !isUpdatingGroupExpansion else { return }
+        guard let item = notification.userInfo?["NSObject"] as? OutlineItem else { return }
+        guard case let .group(name, _, _) = item.kind else { return }
+        if !store.state.entryArrangements.collapsedGroups.contains(name) {
+            store.send(.entryArrangements(.toggleCollapsedGroup(name)))
+        }
+    }
+}
+
+extension EntryListController: NSOutlineViewDataSource {
+    func outlineView(_: NSOutlineView, numberOfChildrenOfItem item: Any?) -> Int {
+        guard let item else { return outlineItems.count }
+        guard let outlineItem = item as? OutlineItem else { return 0 }
+        return outlineItem.children.count
+    }
+
+    func outlineView(_: NSOutlineView, isItemExpandable item: Any) -> Bool {
+        guard let outlineItem = item as? OutlineItem else { return false }
+        switch outlineItem.kind {
+        case .group:
+            return !outlineItem.children.isEmpty
+        case .entry:
+            return false
+        }
+    }
+
+    func outlineView(_: NSOutlineView, child index: Int, ofItem item: Any?) -> Any {
+        guard let item else { return outlineItems[index] }
+        guard let outlineItem = item as? OutlineItem else { return outlineItems[index] }
+        return outlineItem.children[index]
+    }
+
+    func outlineView(_: NSOutlineView, pasteboardWriterForItem item: Any) -> (any NSPasteboardWriting)? {
+        guard let outlineItem = item as? OutlineItem else { return nil }
+        guard case let .entry(entry) = outlineItem.kind else { return nil }
+        return NSURL(fileURLWithPath: entry.fullPath)
+    }
+
+    func outlineView(
+        _ outlineView: NSOutlineView,
+        validateDrop info: any NSDraggingInfo,
+        proposedItem item: Any?,
+        proposedChildIndex _: Int,
+    ) -> NSDragOperation {
+        var destinationPath = store.state.navigation.currentPath
+        if let outlineItem = item as? OutlineItem,
+           case let .entry(entry) = outlineItem.kind,
+           entry.isDirectory
+        {
+            outlineView.setDropItem(outlineItem, dropChildIndex: NSOutlineViewDropOnItemIndex)
+            destinationPath = entry.fullPath
+        } else {
+            outlineView.setDropItem(nil, dropChildIndex: -1)
+        }
+
+        let sourcePaths = entryFileOpsClient.loadDragPaths()
+        let isInternalDrag = !sourcePaths.isEmpty
+        let wantsCopy = isInternalDrag
+            ? entryFileOpsClient.loadDragWithOption()
+            : NSEvent.modifierFlags.contains(.option)
+
+        if isInternalDrag, !wantsCopy {
+            let sourceParent = URL(fileURLWithPath: sourcePaths[0]).deletingLastPathComponent().path
+            if sourceParent == destinationPath {
+                fsStore.send(.setDropTargeted(false))
+                return []
+            }
+
+            for sourcePath in sourcePaths {
+                if destinationPath == sourcePath || isDescendantPath(destinationPath, of: sourcePath) {
+                    fsStore.send(.setDropTargeted(false))
+                    return []
+                }
+            }
+        }
+
+        let allowed = info.draggingSourceOperationMask
+        let preferred: NSDragOperation = wantsCopy ? .copy : .move
+        if !preferred.isDisjoint(with: allowed) {
+            let operation = preferred.intersection(allowed)
+            fsStore.send(.setDropTargeted(!operation.isEmpty))
+            return operation
+        }
+
+        let fallback = NSDragOperation.copy.intersection(allowed)
+        fsStore.send(.setDropTargeted(!fallback.isEmpty))
+        return fallback
+    }
+
+    func outlineView(
+        _: NSOutlineView,
+        acceptDrop info: any NSDraggingInfo,
+        item: Any?,
+        childIndex _: Int,
+    ) -> Bool {
+        var destinationPath = store.state.navigation.currentPath
+        if let outlineItem = item as? OutlineItem,
+           case let .entry(entry) = outlineItem.kind,
+           entry.isDirectory
+        {
+            destinationPath = entry.fullPath
+        }
+
+        let internalPaths = entryFileOpsClient.loadDragPaths()
+        if !internalPaths.isEmpty {
+            fsStore.send(.handleDrop(providers: [], destinationPath: destinationPath))
+            fsStore.send(.setDropTargeted(false))
+            return true
+        }
+
+        let pasteboard = info.draggingPasteboard
+        let options: [NSPasteboard.ReadingOptionKey: Any] = [
+            .urlReadingFileURLsOnly: true,
+        ]
+        guard let urls = pasteboard.readObjects(forClasses: [NSURL.self], options: options) as? [URL],
+              !urls.isEmpty
+        else {
+            fsStore.send(.setDropTargeted(false))
+            return false
+        }
+
+        let allowed = info.draggingSourceOperationMask
+        let preferred: NSDragOperation = NSEvent.modifierFlags.contains(.option) ? .copy : .move
+        let resolved = preferred.isDisjoint(with: allowed)
+            ? NSDragOperation.copy.intersection(allowed)
+            : preferred.intersection(allowed)
+        guard !resolved.isEmpty else {
+            fsStore.send(.setDropTargeted(false))
+            return false
+        }
+        let isOptionPressed = resolved.contains(.copy) && !resolved.contains(.move)
+        fsStore.send(.dropItems(
+            sourcePaths: urls.map(\.path),
+            destinationPath: destinationPath,
+            isOptionDrag: isOptionPressed,
+        ))
+        fsStore.send(.setDropTargeted(false))
+        return true
+    }
+}
+
+private extension EntryListController {
+    enum NameCellConstraintId {
+        static let iconLeading = "EntryList.name.icon.leading"
+        static let iconCenterY = "EntryList.name.icon.centerY"
+        static let iconWidth = "EntryList.name.icon.width"
+        static let iconHeight = "EntryList.name.icon.height"
+
+        static let textLeading = "EntryList.name.text.leading"
+        static let textTrailing = "EntryList.name.text.trailing"
+        static let textCenterY = "EntryList.name.text.centerY"
+    }
+
+    func makeCellView(
+        tableView: NSTableView,
+        identifier: NSUserInterfaceItemIdentifier,
+    ) -> NSTableCellView {
+        let view = (tableView.makeView(withIdentifier: identifier, owner: self) as? NSTableCellView)
+            ?? NSTableCellView()
+        view.identifier = identifier
+        return view
+    }
+
+    @discardableResult
+    func setText(
+        _ text: String,
+        in view: NSTableCellView,
+        font: NSFont = .systemFont(ofSize: 12),
+    ) -> NSTextField {
+        let label = view.textField ?? {
+            let textField = NSTextField(labelWithString: "")
+            textField.translatesAutoresizingMaskIntoConstraints = false
+            view.addSubview(textField)
+            NSLayoutConstraint.activate([
+                textField.leadingAnchor.constraint(equalTo: view.leadingAnchor),
+                textField.trailingAnchor.constraint(lessThanOrEqualTo: view.trailingAnchor),
+                textField.centerYAnchor.constraint(equalTo: view.centerYAnchor),
+            ])
+            view.textField = textField
+            return textField
+        }()
+        label.font = font
+        label.stringValue = text
+        return label
+    }
+
+    @discardableResult
+    func ensureNameCellLayout(_ view: NSTableCellView) -> (iconView: NSImageView, textField: NSTextField) {
+        let iconView: NSImageView = view.imageView ?? {
+            let imageView = NSImageView()
+            imageView.translatesAutoresizingMaskIntoConstraints = false
+            imageView.imageScaling = .scaleProportionallyUpOrDown
+            view.addSubview(imageView)
+            view.imageView = imageView
+            return imageView
+        }()
+        iconView.translatesAutoresizingMaskIntoConstraints = false
+        iconView.imageScaling = .scaleProportionallyUpOrDown
+
+        let textField: NSTextField = view.textField ?? {
+            let field = NSTextField(labelWithString: "")
+            field.translatesAutoresizingMaskIntoConstraints = false
+            field.lineBreakMode = .byTruncatingMiddle
+            field.usesSingleLineMode = true
+            view.addSubview(field)
+            view.textField = field
+            return field
+        }()
+        textField.translatesAutoresizingMaskIntoConstraints = false
+
+        let hasLayoutConstraints = view.constraints.contains { $0.identifier == NameCellConstraintId.iconLeading }
+        if !hasLayoutConstraints {
+            // 기존 텍스트 전용 제약(leading = view.leading 등)을 제거하고 아이콘 + 텍스트 레이아웃으로 재구성합니다.
+            for constraint in view.constraints {
+                let first = constraint.firstItem as? NSView
+                let second = constraint.secondItem as? NSView
+                if first === iconView || first === textField || second === iconView || second === textField {
+                    view.removeConstraint(constraint)
+                }
+            }
+
+            let spacing: CGFloat = 6
+            let iconLeading = iconView.leadingAnchor.constraint(equalTo: view.leadingAnchor)
+            iconLeading.identifier = NameCellConstraintId.iconLeading
+            let iconCenterY = iconView.centerYAnchor.constraint(equalTo: view.centerYAnchor)
+            iconCenterY.identifier = NameCellConstraintId.iconCenterY
+            let iconWidth = iconView.widthAnchor.constraint(equalToConstant: store.state.listIconSize)
+            iconWidth.identifier = NameCellConstraintId.iconWidth
+            let iconHeight = iconView.heightAnchor.constraint(equalToConstant: store.state.listIconSize)
+            iconHeight.identifier = NameCellConstraintId.iconHeight
+
+            let textLeading = textField.leadingAnchor.constraint(equalTo: iconView.trailingAnchor, constant: spacing)
+            textLeading.identifier = NameCellConstraintId.textLeading
+            let textTrailing = textField.trailingAnchor.constraint(lessThanOrEqualTo: view.trailingAnchor)
+            textTrailing.identifier = NameCellConstraintId.textTrailing
+            let textCenterY = textField.centerYAnchor.constraint(equalTo: view.centerYAnchor)
+            textCenterY.identifier = NameCellConstraintId.textCenterY
+
+            NSLayoutConstraint.activate([
+                iconLeading,
+                iconCenterY,
+                iconWidth,
+                iconHeight,
+                textLeading,
+                textTrailing,
+                textCenterY,
+            ])
+        }
+
+        // 아이콘 크기는 설정 변경에 따라 유동적이므로 항상 업데이트합니다.
+        if let iconWidth = view.constraints.first(where: { $0.identifier == NameCellConstraintId.iconWidth }) {
+            iconWidth.constant = store.state.listIconSize
+        }
+        if let iconHeight = view.constraints.first(where: { $0.identifier == NameCellConstraintId.iconHeight }) {
+            iconHeight.constant = store.state.listIconSize
+        }
+
+        return (iconView: iconView, textField: textField)
+    }
+
+    // icon 생성/캐시는 EntryIconUtils로 통일
+
+    func configureGroupHeaderCell(_ view: NSTableCellView, title: String, colorCode: Int?) {
+        view.imageView?.image = nil
+        view.imageView?.isHidden = true
+        let font = NSFont.systemFont(ofSize: 12, weight: .semibold)
+        let textField = setText(title, in: view, font: font)
+
+        guard let colorCode else {
+            textField.stringValue = title
+            return
+        }
+
+        let attachment = NSTextAttachment()
+        attachment.image = TagDotImageFactory.make(
+            tagColor: TagColor(colorCode: colorCode),
+            size: 10,
+            inset: 1,
+        )
+        attachment.bounds = NSRect(x: 0, y: -1, width: 10, height: 10)
+
+        let attributed = NSMutableAttributedString(attachment: attachment)
+        attributed.append(NSAttributedString(string: " "))
+        attributed.append(NSAttributedString(string: title, attributes: [.font: font]))
+        textField.attributedStringValue = attributed
+    }
+
+    func configureEntryCell(_ view: NSTableCellView, entry: Entry, columnId: String) {
+        switch Column(rawValue: columnId) {
+        case .name:
+            let (iconView, _) = ensureNameCellLayout(view)
+            iconView.isHidden = false
+            let isThumbnailReady = store.state.entryThumbnails.thumbnailsReady.contains(entry.fullPath)
+            let thumbnail = isThumbnailReady
+                ? entryThumbnailCacheClient.getThumbnail(for: entry.fullPath)
+                : nil
+            iconView.image = EntryIconUtils.icon(
+                for: entry,
+                thumbnail: thumbnail,
+                workspaceClient: workspaceClient,
+            )
+
+            let isRenaming = store.state.entries.renamingItemId == entry.id
+            let nameText = isRenaming ? store.state.entries.renamingText : entry.name
+            let textField = setText(nameText, in: view, font: .systemFont(ofSize: store.state.listTextSize))
+            textField.lineBreakMode = .byTruncatingMiddle
+            textField.usesSingleLineMode = true
+
+            textField.isEditable = isRenaming
+            textField.isSelectable = isRenaming
+            textField.isBordered = isRenaming
+            textField.drawsBackground = isRenaming
+            textField.backgroundColor = isRenaming ? .textBackgroundColor : .clear
+            textField.focusRingType = isRenaming ? .default : .none
+            textField.delegate = isRenaming ? self : nil
+
+        case .dateModified:
+            setText(
+                entry.formattedModifiedDate,
+                in: view,
+                font: .systemFont(ofSize: max(10, store.state.listTextSize - 1)),
+            )
+
+        case .size:
+            setText(
+                entry.formattedSize,
+                in: view,
+                font: .systemFont(ofSize: max(10, store.state.listTextSize - 1)),
+            )
+
+        case .kind:
+            let kindText = entry.fileExtension.lowercased() == "voycoll" ? "Voyager Collection" : entry.kind
+            setText(
+                kindText,
+                in: view,
+                font: .systemFont(ofSize: max(10, store.state.listTextSize - 1)),
+            )
+
+        case .none:
+            setText("", in: view)
+        }
+    }
+}
+
+extension EntryListController {
+    func observeListStore() {
+        observeDisplayItems()
+        observeGroupKey()
+        observeGroupedItems()
+        observeCurrentPath()
+        observeSelectedIds()
+        observeRenamingItemId()
+        observeThumbnailsReady()
+        observeSortIndicators()
+        observeShowHiddenFiles()
+        observeShouldScrollToSelection()
+        observeDropTargeted()
+    }
+
+    func syncListSortIndicators(sortKey: SortKey, sortOrder: SortOrder) {
+        guard !isUpdatingSortFromStore else { return }
+
+        let ascending = sortOrder == .ascending
+        let descriptorKey: String? = switch sortKey {
+        case .name:
+            Column.name.rawValue
+        case .dateModified:
+            Column.dateModified.rawValue
+        case .size:
+            Column.size.rawValue
+        case .kind:
+            Column.kind.rawValue
+        default:
+            nil
+        }
+
+        isUpdatingSortFromStore = true
+        if let descriptorKey {
+            tableView.sortDescriptors = [NSSortDescriptor(key: descriptorKey, ascending: ascending)]
+        } else {
+            tableView.sortDescriptors = []
+        }
+        isUpdatingSortFromStore = false
+    }
+
+    func syncListSelectionFromStore() {
+        let selectedIds = store.state.entries.selectedIds
+        let indexes = IndexSet(selectedIds.compactMap { id in
+            guard let item = entryItemById[id] else { return nil }
+            let row = tableView.row(forItem: item)
+            return row >= 0 ? row : nil
+        })
+
+        isUpdatingSelectionFromStore = true
+        tableView.selectRowIndexes(indexes, byExtendingSelection: false)
+        isUpdatingSelectionFromStore = false
+    }
+
+    func syncListRenamingFromStore() {
+        let renamingItemId = store.state.entries.renamingItemId
+        let previousRenamingItemId = lastRenamingItemId
+        lastRenamingItemId = renamingItemId
+
+        let nameColumnIndexes = IndexSet(integer: 0)
+
+        if let previousRenamingItemId,
+           let item = entryItemById[previousRenamingItemId]
+        {
+            let row = tableView.row(forItem: item)
+            if row >= 0 {
+                tableView.reloadData(forRowIndexes: IndexSet(integer: row), columnIndexes: nameColumnIndexes)
+            }
+        }
+
+        guard let renamingItemId,
+              let item = entryItemById[renamingItemId]
+        else {
+            rootView?.window?.makeFirstResponder(tableView)
+            return
+        }
+
+        let row = tableView.row(forItem: item)
+        guard row >= 0 else {
+            rootView?.window?.makeFirstResponder(tableView)
+            return
+        }
+        tableView.reloadData(forRowIndexes: IndexSet(integer: row), columnIndexes: nameColumnIndexes)
+        beginRenaming(row: row)
+    }
+
+    func observeDisplayItems() {
+        store.publisher.entries.displayItems
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] _ in
+                self?.rebuildRowsAndReload()
+            }
+            .store(in: &cancellables)
+    }
+
+    func observeGroupKey() {
+        store.publisher.entryArrangements.groupKey
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] _ in
+                self?.rebuildRowsAndReload()
+            }
+            .store(in: &cancellables)
+    }
+
+    func observeGroupedItems() {
+        store.publisher.entryArrangements.groupedItems
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] _ in
+                self?.rebuildRowsAndReload()
+            }
+            .store(in: &cancellables)
+    }
+
+    func observeCurrentPath() {
+        store.publisher.navigation.currentPath
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] _ in
+                self?.hasRestoredScrollPosition = false
+            }
+            .store(in: &cancellables)
+    }
+
+    func observeSelectedIds() {
+        store.publisher.entries.selectedIds
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] _ in
+                self?.syncListSelectionFromStore()
+            }
+            .store(in: &cancellables)
+    }
+
+    func observeRenamingItemId() {
+        store.publisher.entries.renamingItemId
+            .removeDuplicates()
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] _ in
+                self?.syncListRenamingFromStore()
+            }
+            .store(in: &cancellables)
+    }
+
+    func observeThumbnailsReady() {
+        store.publisher.entryThumbnails.thumbnailsReady
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] _ in
+                self?.refreshVisibleNameCellIcons()
+            }
+            .store(in: &cancellables)
+    }
+
+    func observeSortIndicators() {
+        Publishers.CombineLatest(
+            store.publisher.entryArrangements.sortKey,
+            store.publisher.entryArrangements.sortOrder,
+        )
+        .receive(on: DispatchQueue.main)
+        .sink { [weak self] sortKey, sortOrder in
+            self?.syncListSortIndicators(sortKey: sortKey, sortOrder: sortOrder)
+        }
+        .store(in: &cancellables)
+    }
+
+    func observeShowHiddenFiles() {
+        store.publisher.entries.showHiddenFiles
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] _ in
+                self?.saveScrollPosition()
+            }
+            .store(in: &cancellables)
+    }
+
+    func observeShouldScrollToSelection() {
+        store.publisher.entries.shouldScrollToSelection
+            .removeDuplicates()
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] shouldScroll in
+                guard shouldScroll else { return }
+                self?.scrollToSelectionIfNeeded()
+            }
+            .store(in: &cancellables)
+    }
+
+    func observeDropTargeted() {
+        store.publisher.entries.isDropTargeted
+            .removeDuplicates()
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] isTargeted in
+                self?.updateDropTargetBorder(isTargeted: isTargeted)
+            }
+            .store(in: &cancellables)
+    }
+}
+
+private extension EntryListController {
+    func refreshVisibleNameCellIcons() {
+        guard tableView.numberOfRows > 0 else { return }
+
+        let visibleRange = tableView.rows(in: tableView.visibleRect)
+        guard visibleRange.length > 0 else { return }
+
+        // Name column is fixed as the outline column.
+        let nameColumnIndex = 0
+
+        for row in visibleRange.location ..< (visibleRange.location + visibleRange.length) {
+            guard let cell = tableView
+                .view(atColumn: nameColumnIndex, row: row, makeIfNecessary: false) as? NSTableCellView
+            else {
+                continue
+            }
+            guard let outlineItem = tableView.item(atRow: row) as? OutlineItem else { continue }
+
+            switch outlineItem.kind {
+            case .group:
+                cell.imageView?.image = nil
+                cell.imageView?.isHidden = true
+
+            case let .entry(entry):
+                if cell.imageView == nil || cell.textField == nil {
+                    _ = ensureNameCellLayout(cell)
+                }
+
+                let isThumbnailReady = store.state.entryThumbnails.thumbnailsReady.contains(entry.fullPath)
+                let thumbnail = isThumbnailReady
+                    ? entryThumbnailCacheClient.getThumbnail(for: entry.fullPath)
+                    : nil
+                cell.imageView?.isHidden = false
+                cell.imageView?.image = EntryIconUtils.icon(
+                    for: entry,
+                    thumbnail: thumbnail,
+                    workspaceClient: workspaceClient,
+                )
+            }
+        }
+    }
+}
+
+extension EntryListController: EntryListRootView.EntryListTableViewContextMenuProviding {
+    func contextMenu(forRow row: Int?, event _: NSEvent) -> NSMenu {
+        updateContextMenuAnchor(forRow: row)
+        let rowEntry = entryForRow(row)
+        let composed = EntryContextMenuBuilder.makeMenu(input: .init(
+            contentStore: store,
+            fsStore: fsStore,
+            fileManagerWindowClient: fileManagerWindowClient,
+            selectedIds: store.state.entries.selectedIds,
+            selectedEntries: selectedEntries(fallback: rowEntry),
+            rowEntry: rowEntry,
+            isTrashFolder: isTrashFolder,
+            canPaste: !store.state.entryOperations.clipboardItems.isEmpty,
+            currentPath: { [weak self] in
+                self?.store.state.navigation.currentPath ?? ""
+            },
+            selectedItemId: { [weak self] in
+                self?.store.state.entries.selectedIds.first
+            },
+            contextMenuAnchor: { [weak self] in
+                self?.contextMenuAnchor
+            },
+            saveScrollPosition: { [weak self] in
+                self?.saveScrollPosition()
+            },
+        ))
+        contextMenuController = composed.controller
+        return composed.menu
+    }
+}
+
+private extension EntryListController {
+    func entryForRow(_ row: Int?) -> Entry? {
+        guard let row, row >= 0 else { return nil }
+        guard let item = tableView.item(atRow: row) as? OutlineItem else { return nil }
+        guard case let .entry(entry) = item.kind else { return nil }
+        return entry
+    }
+
+    func selectedEntries(fallback: Entry?) -> [Entry] {
+        let selectedIds = store.state.entries.selectedIds
+        if selectedIds.isEmpty {
+            return fallback.map { [$0] } ?? []
+        }
+        return store.state.entries.displayItems.filter { selectedIds.contains($0.id) }
+    }
+
+    var isTrashFolder: Bool {
+        guard case let .folder(path) = store.state.navigation.navigationState,
+              let trashPath = entryOpenClient.trashDirectoryPath()
+        else {
+            return false
+        }
+        return path == trashPath || path.hasPrefix(trashPath + "/")
+    }
+
+    func isDescendantPath(_ destinationPath: String, of sourcePath: String) -> Bool {
+        let destinationComponents = URL(fileURLWithPath: destinationPath)
+            .standardizedFileURL.pathComponents
+        let sourceComponents = URL(fileURLWithPath: sourcePath)
+            .standardizedFileURL.pathComponents
+
+        guard destinationComponents.count > sourceComponents.count else {
+            return false
+        }
+
+        return Array(destinationComponents.prefix(sourceComponents.count)) == sourceComponents
+    }
+}
+
+extension EntryListController: NSTextFieldDelegate {
+    func controlTextDidChange(_ notification: Notification) {
+        guard store.state.entries.renamingItemId != nil else { return }
+        guard let textField = notification.object as? NSTextField else { return }
+        guard (textField.delegate as AnyObject?) === self else { return }
+        fsStore.send(.updateRenamingText(textField.stringValue))
+    }
+
+    func control(_ control: NSControl, textView _: NSTextView, doCommandBy commandSelector: Selector) -> Bool {
+        guard store.state.entries.renamingItemId != nil else { return false }
+        guard let textField = control as? NSTextField else { return false }
+        guard (textField.delegate as AnyObject?) === self else { return false }
+
+        if commandSelector == #selector(NSResponder.insertNewline(_:)) {
+            fsStore.send(.commitRename)
+            return true
+        }
+        if commandSelector == #selector(NSResponder.cancelOperation(_:)) {
+            fsStore.send(.cancelRename)
+            return true
+        }
+        if commandSelector == #selector(NSResponder.insertTab(_:)) {
+            fsStore.send(.commitRename)
+            return true
+        }
+
+        return false
+    }
+
+    func controlTextDidEndEditing(_ notification: Notification) {
+        guard store.state.entries.renamingItemId != nil else { return }
+        guard let textField = notification.object as? NSTextField else { return }
+        guard (textField.delegate as AnyObject?) === self else { return }
+        fsStore.send(.commitRename)
+    }
+}

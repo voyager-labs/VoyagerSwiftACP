@@ -1,6 +1,6 @@
 import Foundation
 
-extension EntryClient {
+extension EntrySystemPrimitives {
     nonisolated static var liveCreateFolder: @Sendable (URL, String) async throws -> Void {
         { parentURL, folderName in
             let folderURL = parentURL.appendingPathComponent(folderName)
@@ -217,60 +217,35 @@ extension EntryClient {
 
     nonisolated static var liveGetTags: @Sendable (URL) async throws -> [String] {
         { url in
-            let values = try url.resourceValues(forKeys: [.tagNamesKey])
-            return values.tagNames ?? []
+            try TagMetadataClient.loadTagNames(from: url)
         }
     }
 
     nonisolated static var liveSetTags: @Sendable (URL, [String]) async throws -> Void {
         { url, tags in
-            try setFileTags(url: url, tags: tags)
+            do {
+                try TagMetadataClient.setTagNames(tags, for: url)
+            } catch TagMetadataClient.Error.failedToRemoveTags {
+                throw FileOpError.system(message: "Failed to remove tags")
+            } catch TagMetadataClient.Error.failedToSetTags {
+                throw FileOpError.system(message: "Failed to set tags")
+            } catch {
+                throw error
+            }
         }
     }
 
     nonisolated static var liveToggleTag: @Sendable (URL, String) async throws -> Void {
         { url, tag in
-            var currentTags = try url.resourceValues(forKeys: [.tagNamesKey]).tagNames ?? []
-
-            if currentTags.contains(tag) {
-                currentTags.removeAll { $0 == tag }
-            } else {
-                currentTags.append(tag)
+            do {
+                try TagMetadataClient.toggleTag(tag, for: url)
+            } catch TagMetadataClient.Error.failedToRemoveTags {
+                throw FileOpError.system(message: "Failed to remove tags")
+            } catch TagMetadataClient.Error.failedToSetTags {
+                throw FileOpError.system(message: "Failed to set tags")
+            } catch {
+                throw error
             }
-
-            try setFileTags(url: url, tags: currentTags)
-        }
-    }
-}
-
-private nonisolated func setFileTags(url: URL, tags: [String]) throws {
-    if tags.isEmpty {
-        let result = removexattr(
-            url.path,
-            "com.apple.metadata:_kMDItemUserTags",
-            XATTR_NOFOLLOW,
-        )
-        if result != 0, errno != ENOATTR {
-            throw FileOpError.system(message: "Failed to remove tags")
-        }
-    } else {
-        let tagData = try PropertyListSerialization.data(
-            fromPropertyList: tags,
-            format: .binary,
-            options: 0,
-        )
-
-        let result = setxattr(
-            url.path,
-            "com.apple.metadata:_kMDItemUserTags",
-            (tagData as NSData).bytes,
-            tagData.count,
-            0,
-            XATTR_NOFOLLOW,
-        )
-
-        if result != 0 {
-            throw FileOpError.system(message: "Failed to set tags")
         }
     }
 }

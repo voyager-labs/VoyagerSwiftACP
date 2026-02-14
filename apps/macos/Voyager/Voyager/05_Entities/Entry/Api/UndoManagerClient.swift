@@ -4,21 +4,23 @@ import ObjectiveC
 
 struct UndoManagerClient: Sendable {
     var registerUndo: @Sendable (
+        _ windowID: UUID?,
         _ record: EntryActionRecord,
         _ onUndo: @escaping @Sendable (EntryActionRecord) async -> Void,
         _ onRedo: @escaping @Sendable (EntryActionRecord) async -> Void,
     ) async -> Void
-    var undo: @Sendable () async -> Void
-    var redo: @Sendable () async -> Void
+    var undo: @Sendable (_ windowID: UUID?) async -> Void
+    var redo: @Sendable (_ windowID: UUID?) async -> Void
 
     nonisolated init(
         registerUndo: @escaping @Sendable (
+            _ windowID: UUID?,
             _ record: EntryActionRecord,
             _ onUndo: @escaping @Sendable (EntryActionRecord) async -> Void,
             _ onRedo: @escaping @Sendable (EntryActionRecord) async -> Void,
         ) async -> Void,
-        undo: @escaping @Sendable () async -> Void,
-        redo: @escaping @Sendable () async -> Void,
+        undo: @escaping @Sendable (_ windowID: UUID?) async -> Void,
+        redo: @escaping @Sendable (_ windowID: UUID?) async -> Void,
     ) {
         self.registerUndo = registerUndo
         self.undo = undo
@@ -29,17 +31,29 @@ struct UndoManagerClient: Sendable {
 extension UndoManagerClient: DependencyKey {
     nonisolated static var liveValue: UndoManagerClient {
         .init(
-            registerUndo: { _, _, _ in },
-            undo: {},
-            redo: {},
+            registerUndo: { _, _, _, _ in
+                fatalError("undoManagerClient.registerUndo live dependency is not configured")
+            },
+            undo: { _ in
+                fatalError("undoManagerClient.undo live dependency is not configured")
+            },
+            redo: { _ in
+                fatalError("undoManagerClient.redo live dependency is not configured")
+            },
         )
     }
 
     nonisolated static var testValue: UndoManagerClient {
         .init(
-            registerUndo: { _, _, _ in },
-            undo: {},
-            redo: {},
+            registerUndo: { _, _, _, _ in
+                fatalError("undoManagerClient.registerUndo test dependency is not configured")
+            },
+            undo: { _ in
+                fatalError("undoManagerClient.undo test dependency is not configured")
+            },
+            redo: { _ in
+                fatalError("undoManagerClient.redo test dependency is not configured")
+            },
         )
     }
 }
@@ -54,7 +68,7 @@ extension DependencyValues {
 extension UndoManagerClient {
     static func live(undoManager: UndoManager) -> UndoManagerClient {
         .init(
-            registerUndo: { record, onUndo, onRedo in
+            registerUndo: { _, record, onUndo, onRedo in
                 await MainActor.run {
                     let handlerStore = UndoManagerHandlerStore.store(for: undoManager)
                     let handler = UndoManagerHandler(
@@ -69,12 +83,12 @@ extension UndoManagerClient {
                     }
                 }
             },
-            undo: {
+            undo: { _ in
                 await MainActor.run {
                     undoManager.undo()
                 }
             },
-            redo: {
+            redo: { _ in
                 await MainActor.run {
                     undoManager.redo()
                 }

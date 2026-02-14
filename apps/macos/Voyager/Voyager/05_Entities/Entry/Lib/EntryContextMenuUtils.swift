@@ -5,7 +5,7 @@ import IdentifiedCollections
 enum EntryContextMenuUtils {
     static func sendWithSelection(
         _ item: Entry,
-        fsStore: Store<EntriesFeature.State, EntriesFeature.Action>,
+        fsStore: Store<EntryFeature.State, EntryFeature.Action>,
         action: @escaping () -> Void,
     ) {
         if !fsStore.selectedIds.contains(item.id) {
