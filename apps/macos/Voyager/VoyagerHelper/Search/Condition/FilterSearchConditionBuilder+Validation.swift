@@ -1,18 +1,6 @@
 import Foundation
 
 extension FilterSearchConditionBuilder {
-    func validateOperatorMeta(_ operatorMeta: OperatorDefinition, operatorCode: String) throws {
-        guard let sqlKind = operatorMeta.sqlKind else {
-            throw BuilderError(message: "Missing sql_kind for operator '\(operatorCode)'")
-        }
-        guard let valueShape = operatorMeta.valueShape else { return }
-        if let allowedShapes = kSqlKindValueShapes[sqlKind], !allowedShapes.contains(valueShape) {
-            throw BuilderError(
-                message: "Operator '\(operatorCode)' value_shape mismatch: '\(valueShape)' for sql_kind '\(sqlKind)'",
-            )
-        }
-    }
-
     func validateValue(
         _ valueCount: ValueCount?,
         operatorCode: String,
@@ -36,30 +24,6 @@ extension FilterSearchConditionBuilder {
         }
     }
 
-    func jsonPath(for systemKeys: [String]) -> String? {
-        guard !systemKeys.isEmpty else { return nil }
-        var preferred: String?
-        for key in systemKeys where key.hasPrefix("mditem:") {
-            preferred = key
-            break
-        }
-        if preferred == nil {
-            for key in systemKeys where !key.hasPrefix("nsurl:") {
-                preferred = key
-                break
-            }
-        }
-        if preferred == nil {
-            preferred = systemKeys.first
-        }
-        guard let target = preferred else { return nil }
-        if let colonIndex = target.firstIndex(of: ":") {
-            let suffix = target[target.index(after: colonIndex)...]
-            return "$.\(suffix)"
-        }
-        return "$.\(target)"
-    }
-
     func conditionTypeKey(for rawType: String) -> String? {
         switch rawType.lowercased() {
         case "string": "string"
@@ -80,7 +44,6 @@ extension FilterSearchConditionBuilder {
                     key: key,
                     type: definition.type,
                     systemKeys: definition.systemKeys,
-                    dbIndexed: definition.dbIndexed ?? false,
                     uiHidden: definition.uiHidden ?? false,
                 )
             }

@@ -1,55 +1,6 @@
 import Foundation
-import StructuredQueries
 
 struct FilterSearchScopeBuilder: Sendable {
-    func buildScopePredicate(scopes: [String]) -> QueryFragment {
-        let normalizedScopes = Self.normalizeScopes(scopes)
-
-        guard !normalizedScopes.isEmpty else {
-            return .alwaysTrue
-        }
-
-        let directoryIdColumn: QueryFragment = "\(FilterSearchEntryTable.directoryId)"
-        let directoryIdSubquery = buildDirectoryIdsSubquery(scopes: normalizedScopes)
-        let byDirectoryId = QueryFragment.inList(directoryIdColumn, directoryIdSubquery)
-
-        return byDirectoryId
-    }
-
-    private func buildDirectoryIdsSubquery(scopes: [String]) -> QueryFragment {
-        let directoryPathColumn: QueryFragment = "\(quote: DirectoriesSchema.tableName).\(quote: "path")"
-        let directoryIdColumn: QueryFragment = "\(quote: DirectoriesSchema.tableName).\(quote: "id")"
-        let directoryPredicate = buildPathOrDescendantPredicate(
-            scopes: scopes,
-            field: directoryPathColumn,
-        )
-        return "SELECT \(directoryIdColumn) FROM \(raw: DirectoriesSchema.tableName) WHERE \(directoryPredicate)"
-    }
-
-    private func buildPathOrDescendantPredicate(
-        scopes: [String],
-        field: QueryFragment,
-    ) -> QueryFragment {
-        var clauses: [QueryFragment] = []
-
-        for normalized in scopes {
-            let baseBinding = QueryBinding.text(normalized)
-            let childBinding = QueryBinding.text(normalized == "/" ? "/%" : "\(normalized)/%")
-            let clause = QueryFragment.group(
-                [
-                    QueryFragment.eq(field, baseBinding),
-                    QueryFragment.like(field, childBinding),
-                ].joinedWithOr(),
-            )
-            clauses.append(clause)
-        }
-
-        if clauses.count == 1 {
-            return clauses[0]
-        }
-        return QueryFragment.group(clauses.joinedWithOr())
-    }
-
     static func normalizeScopes(_ scopes: [String]) -> [String] {
         var orderedUnique: [String] = []
         var seen: Set<String> = []
