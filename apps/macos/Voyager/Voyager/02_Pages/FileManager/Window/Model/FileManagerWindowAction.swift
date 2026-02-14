@@ -8,14 +8,8 @@ enum FileManagerWindowAction: CasePathable, Sendable {
     case inspector(FileManagerInspectorFeature.Action)
 
     case navigation(FileManagerContentNavigationAction)
-    case navigateTo(String)
-    case openCollectionFile(URL)
-    case collectionFileLoaded(Result<VoyagerCollectionFile, Error>)
-    case navigateToCollection(FileManagerNavigationUtils.CollectionNavigation)
-    case showRecents
-    case showComputer
-    case showTag(String)
 
     case onAppear
+    case onDisappear
     case closeWindow
 }
