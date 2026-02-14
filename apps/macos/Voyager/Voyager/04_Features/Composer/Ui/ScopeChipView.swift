@@ -13,8 +13,8 @@ struct ScopeChipView: View {
     @State private var nameHoverPath: String?
     @Environment(\.colorScheme)
     private var colorScheme: ColorScheme
-    @Dependency(\.entryClient)
-    private var entryClient
+    @Dependency(\.entryLoadingClient)
+    private var entryLoadingClient
 
     var body: some View {
         let isRootPlaceholder = paths.isEmpty
@@ -86,7 +86,7 @@ struct ScopeChipView: View {
 
     @ViewBuilder
     private func directoryNameChip(path: String, index _: Int) -> some View {
-        let displayName = entryClient.displayName(path)
+        let displayName = entryLoadingClient.displayName(path)
 
         HStack(spacing: 4) {
             Button {

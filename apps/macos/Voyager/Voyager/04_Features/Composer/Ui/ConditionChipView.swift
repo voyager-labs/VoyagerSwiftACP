@@ -77,6 +77,7 @@ struct ConditionChipView: View {
         .frame(height: defaultChipHeight)
         .background(
             RoundedRectangle(cornerRadius: 6)
+                // TODO: 프로퍼티 카테고리별 칩 배경색 매핑을 도입하고(SSOT), category에 따라 일관된 컬러를 적용한다.
                 .fill(isDark ? Color.white.opacity(0.1) : Color.black.opacity(0.08)),
         )
         .overlay(alignment: .topTrailing) {

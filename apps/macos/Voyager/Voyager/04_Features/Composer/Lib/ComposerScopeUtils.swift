@@ -16,10 +16,10 @@ enum ComposerScopeUtils {
         let iconName: String
     }
 
-    private nonisolated static func iconNameForPath(_ path: String, entryClient: EntryClient)
+    private nonisolated static func iconNameForPath(_ path: String, entryLoadingClient: EntryLoadingClient)
         -> String
     {
-        if path == entryClient.homeDirectory() { return "house" }
+        if path == entryLoadingClient.homeDirectory() { return "house" }
         if path.hasPrefix("/Volumes/") { return "externaldrive" }
 
         let mappings: [IconMapping] = [
@@ -34,7 +34,7 @@ enum ComposerScopeUtils {
         ]
 
         for mapping in mappings
-            where entryClient.urlsForDirectory(mapping.directory, mapping.domain).first?.path == path
+            where entryLoadingClient.urlsForDirectory(mapping.directory, mapping.domain).first?.path == path
         {
             return mapping.iconName
         }
@@ -55,7 +55,7 @@ enum ComposerScopeUtils {
         params: SearchParams,
         results: inout [DirectoryItem],
         currentDepth: Int,
-        entryClient: EntryClient,
+        entryLoadingClient: EntryLoadingClient,
     ) {
         if Date().timeIntervalSince(params.startTime) > params.timeout {
             return
@@ -71,7 +71,7 @@ enum ComposerScopeUtils {
         }
 
         guard let pathURL = URL(string: "file://\(path)"),
-              let contents = try? entryClient.contentsOfDirectory(pathURL, [], [])
+              let contents = try? entryLoadingClient.contentsOfDirectory(pathURL, [], [])
         else { return }
 
         for item in contents {
@@ -83,7 +83,7 @@ enum ComposerScopeUtils {
 
             let fullPath = (path as NSString).appendingPathComponent(item.path)
             var isDirectory: ObjCBool = false
-            guard entryClient.fileExistsAtPath(fullPath, &isDirectory),
+            guard entryLoadingClient.fileExistsAtPath(fullPath, &isDirectory),
                   isDirectory.boolValue
             else { continue }
 
@@ -92,7 +92,7 @@ enum ComposerScopeUtils {
                 query: params.query,
                 results: &results,
                 maxResults: params.maxResults,
-                entryClient: entryClient,
+                entryLoadingClient: entryLoadingClient,
             )
 
             searchRecursive(
@@ -100,7 +100,7 @@ enum ComposerScopeUtils {
                 params: params,
                 results: &results,
                 currentDepth: currentDepth + 1,
-                entryClient: entryClient,
+                entryLoadingClient: entryLoadingClient,
             )
         }
     }
@@ -110,16 +110,16 @@ enum ComposerScopeUtils {
         query: String,
         results: inout [DirectoryItem],
         maxResults: Int,
-        entryClient: EntryClient,
+        entryLoadingClient: EntryLoadingClient,
     ) {
         guard results.count < maxResults else { return }
 
-        let displayName = entryClient.displayName(fullPath)
+        let displayName = entryLoadingClient.displayName(fullPath)
         let nameLower = displayName.lowercased()
 
         guard nameLower.contains(query) else { return }
 
-        let iconName = iconNameForPath(fullPath, entryClient: entryClient)
+        let iconName = iconNameForPath(fullPath, entryLoadingClient: entryLoadingClient)
         results.append(
             DirectoryItem(
                 id: fullPath,
@@ -151,7 +151,7 @@ enum ComposerScopeUtils {
 
     nonisolated static func searchDirectories(
         query: String,
-        entryClient: EntryClient,
+        entryLoadingClient: EntryLoadingClient,
         maxResults: Int = 50,
         initialMaxDepth: Int = 2,
         timeout: TimeInterval = 2.0,
@@ -162,7 +162,7 @@ enum ComposerScopeUtils {
             let queryLower = query.lowercased()
             var allResults: [DirectoryItem] = []
             let startTime = Date()
-            let homeDir = entryClient.homeDirectory()
+            let homeDir = entryLoadingClient.homeDirectory()
             let searchPaths = [
                 "/",
                 homeDir,
@@ -188,7 +188,7 @@ enum ComposerScopeUtils {
                         params: params,
                         results: &results,
                         currentDepth: 0,
-                        entryClient: entryClient,
+                        entryLoadingClient: entryLoadingClient,
                     )
                     return results
                 }
@@ -214,7 +214,7 @@ enum ComposerScopeUtils {
     static func buildCombinedList(
         history: [String],
         favorites: [ScopeFavoriteItem],
-        entryClient: EntryClient,
+        entryLoadingClient: EntryLoadingClient,
         maxCount: Int = 10,
     ) -> [DirectoryItem] {
         var result: [DirectoryItem] = []
@@ -225,10 +225,10 @@ enum ComposerScopeUtils {
         for path in historyItems {
             if (path as NSString).pathExtension.lowercased() == collectionsExtension { continue }
             guard !seenPaths.contains(path) else { continue }
-            guard entryClient.fileExists(path) else { continue }
+            guard entryLoadingClient.fileExists(path) else { continue }
 
-            let displayName = entryClient.displayName(path)
-            let iconName = iconNameForPath(path, entryClient: entryClient)
+            let displayName = entryLoadingClient.displayName(path)
+            let iconName = iconNameForPath(path, entryLoadingClient: entryLoadingClient)
 
             result.append(
                 DirectoryItem(
@@ -248,7 +248,7 @@ enum ComposerScopeUtils {
                 let path = favorite.url.path
                 if favorite.url.pathExtension.lowercased() == collectionsExtension { continue }
                 guard !seenPaths.contains(path) else { continue }
-                guard entryClient.fileExists(path) else { continue }
+                guard entryLoadingClient.fileExists(path) else { continue }
 
                 result.append(
                     DirectoryItem(
