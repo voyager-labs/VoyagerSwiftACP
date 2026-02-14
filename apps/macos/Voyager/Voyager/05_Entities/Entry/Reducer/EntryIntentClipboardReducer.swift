@@ -1,7 +1,6 @@
 import ComposableArchitecture
 import Foundation
 
-// TODO(voy-142): 타입명과 맞추기 위해 파일명을 EntryIntentClipboardReducer.swift로 변경 필요.
 @Reducer
 struct EntryIntentClipboardReducer {
     typealias State = EntryState

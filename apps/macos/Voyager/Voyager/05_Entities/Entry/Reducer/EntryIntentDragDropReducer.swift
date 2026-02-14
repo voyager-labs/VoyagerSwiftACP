@@ -3,7 +3,6 @@ import ComposableArchitecture
 import Foundation
 import UniformTypeIdentifiers
 
-// TODO(voy-142): 타입명과 맞추기 위해 파일명을 EntryIntentDragDropReducer.swift로 변경 필요.
 @Reducer
 struct EntryIntentDragDropReducer {
     typealias State = EntryState

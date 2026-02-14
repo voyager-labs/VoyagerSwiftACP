@@ -4,7 +4,6 @@ import IdentifiedCollections
 import OSLog
 import UniformTypeIdentifiers
 
-// TODO(voy-142): 타입명과 맞추기 위해 파일명을 EntryReducerSupport.swift로 변경 필요.
 enum EntryReducerSupport {
     static let entryActionLogger = Logger(subsystem: "com.voyager", category: "entry-actions")
     static let entryLoadLogger = Logger(subsystem: "com.voyager", category: "entry-load")

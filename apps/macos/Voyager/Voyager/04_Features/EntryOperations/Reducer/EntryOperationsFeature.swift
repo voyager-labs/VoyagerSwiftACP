@@ -3,7 +3,6 @@ import ComposableArchitecture
 import Foundation
 import UniformTypeIdentifiers
 
-/// Entries의 파일 시스템 작업 관리
 @Reducer
 struct EntryOperationsFeature {
     typealias State = EntryOperationsState

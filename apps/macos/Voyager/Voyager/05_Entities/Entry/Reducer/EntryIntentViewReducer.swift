@@ -1,6 +1,5 @@
 import ComposableArchitecture
 
-// TODO(voy-142): 타입명과 맞추기 위해 파일명을 EntryIntentViewReducer.swift로 변경 필요.
 @Reducer
 struct EntryIntentViewReducer {
     typealias State = EntryState
