@@ -1,0 +1,458 @@
+@preconcurrency import CoreServices
+import Foundation
+
+struct FilterSearchMDQueryPostFilterEvaluator: Sendable {
+    enum EvaluationError: Error, LocalizedError {
+        case unknownPropertyKey(String)
+        case unsupportedPropertyType(String)
+        case unsupportedOperator(propertyKey: String, operatorCode: String)
+        case invalidValue(propertyKey: String, operatorCode: String)
+
+        var errorDescription: String? {
+            switch self {
+            case let .unknownPropertyKey(propertyKey):
+                "Unknown property key: \(propertyKey)"
+            case let .unsupportedPropertyType(type):
+                "Unsupported property type: \(type)"
+            case let .unsupportedOperator(propertyKey, operatorCode):
+                "Operator '\(operatorCode)' is not supported for '\(propertyKey)'"
+            case let .invalidValue(propertyKey, operatorCode):
+                "Invalid value for '\(propertyKey)' with operator '\(operatorCode)'"
+            }
+        }
+    }
+
+    private let conditionBuilder: FilterSearchConditionBuilder
+    private let homeDirectoryPath: String
+
+    init(bundle: Bundle = .main) throws {
+        try self.init(conditionBuilder: FilterSearchConditionBuilder(bundle: bundle))
+    }
+
+    init(
+        conditionBuilder: FilterSearchConditionBuilder,
+        homeDirectoryPath: String = FileManager.default.homeDirectoryForCurrentUser.standardizedFileURL.path,
+    ) {
+        self.conditionBuilder = conditionBuilder
+        self.homeDirectoryPath = homeDirectoryPath
+    }
+
+    func filter(paths: [String], conditions: [SearchConditionPayload]) throws -> [String] {
+        guard conditions.isEmpty == false else {
+            return paths
+        }
+
+        let specs = try conditions.map(prepareSpec)
+        var filtered: [String] = []
+        filtered.reserveCapacity(paths.count)
+
+        for path in paths {
+            let standardizedPath = URL(fileURLWithPath: path).standardizedFileURL.path
+            var context = PathContext(path: standardizedPath)
+            if try matchesAll(specs: specs, context: &context) {
+                filtered.append(standardizedPath)
+            }
+        }
+
+        return filtered
+    }
+}
+
+private extension FilterSearchMDQueryPostFilterEvaluator {
+    struct ConditionSpec {
+        let condition: SearchConditionPayload
+        let mapping: FilterSearchConditionBuilder.PropertyMapping
+        let typeKey: String
+    }
+
+    enum CachedValue {
+        case missing
+        case value(Any)
+    }
+
+    struct PathContext {
+        let path: String
+        let url: URL
+        var mdItem: MDItem?
+        var propertyCache: [String: CachedValue]
+        var resourceCache: [String: CachedValue]
+
+        init(path: String) {
+            self.path = path
+            url = URL(fileURLWithPath: path)
+            mdItem = nil
+            propertyCache = [:]
+            resourceCache = [:]
+        }
+
+        mutating func loadMDItem() -> MDItem? {
+            if let mdItem {
+                return mdItem
+            }
+            guard let created = MDItemCreate(kCFAllocatorDefault, path as CFString) else {
+                return nil
+            }
+            mdItem = created
+            return created
+        }
+    }
+
+    func prepareSpec(_ condition: SearchConditionPayload) throws -> ConditionSpec {
+        guard let mapping = conditionBuilder.propertyMap[condition.propertyKey] else {
+            throw EvaluationError.unknownPropertyKey(condition.propertyKey)
+        }
+
+        guard let typeKey = conditionBuilder.conditionTypeKey(for: mapping.type),
+              let propertyType = conditionBuilder.registry.propertyTypes[typeKey]
+        else {
+            throw EvaluationError.unsupportedPropertyType(mapping.type)
+        }
+
+        guard propertyType.operators.contains(condition.operator),
+              let operatorMeta = conditionBuilder.registry.operators[condition.operator]
+        else {
+            throw EvaluationError.unsupportedOperator(
+                propertyKey: condition.propertyKey,
+                operatorCode: condition.operator,
+            )
+        }
+
+        if let allowedTypes = operatorMeta.allowedTypes,
+           allowedTypes.contains(typeKey) == false
+        {
+            throw EvaluationError.unsupportedOperator(
+                propertyKey: condition.propertyKey,
+                operatorCode: condition.operator,
+            )
+        }
+
+        do {
+            try conditionBuilder.validateValue(
+                operatorMeta.valueCount,
+                operatorCode: condition.operator,
+                value: condition.value,
+                propertyKey: condition.propertyKey,
+            )
+        } catch {
+            throw EvaluationError.invalidValue(
+                propertyKey: condition.propertyKey,
+                operatorCode: condition.operator,
+            )
+        }
+
+        return ConditionSpec(condition: condition, mapping: mapping, typeKey: typeKey)
+    }
+
+    func matchesAll(specs: [ConditionSpec], context: inout PathContext) throws -> Bool {
+        for spec in specs where try evaluate(spec: spec, context: &context) == false {
+            return false
+        }
+        return true
+    }
+
+    func evaluate(spec: ConditionSpec, context: inout PathContext) throws -> Bool {
+        let operatorCode = spec.condition.operator
+        let rawValue = resolvePropertyValue(spec: spec, context: &context)
+
+        if operatorCode == "exists" {
+            return isPresent(rawValue, typeKey: spec.typeKey)
+        }
+        if operatorCode == "empty" {
+            return isEmpty(rawValue, typeKey: spec.typeKey)
+        }
+
+        switch spec.typeKey {
+        case "string":
+            return try evaluateString(spec: spec, rawValue: rawValue)
+        case "categorical":
+            return try evaluateCategorical(spec: spec, rawValue: rawValue)
+        case "string_list":
+            return try evaluateStringList(spec: spec, rawValue: rawValue)
+        case "number":
+            return try evaluateNumber(spec: spec, rawValue: rawValue)
+        case "date":
+            return try evaluateDate(spec: spec, rawValue: rawValue)
+        case "boolean":
+            return try evaluateBoolean(spec: spec, rawValue: rawValue)
+        default:
+            throw EvaluationError.unsupportedPropertyType(spec.mapping.type)
+        }
+    }
+
+    func evaluateString(spec: ConditionSpec, rawValue: Any?) throws -> Bool {
+        let lhs = normalizedString(rawValue) ?? ""
+        let rhs = try readString(spec.condition)
+
+        switch spec.condition.operator {
+        case "eq":
+            return equals(lhs, rhs)
+        case "neq":
+            return !equals(lhs, rhs)
+        case "cn":
+            return contains(lhs, rhs)
+        case "nc":
+            return !contains(lhs, rhs)
+        case "sw":
+            return lhs.lowercased().hasPrefix(rhs.lowercased())
+        case "ew":
+            return lhs.lowercased().hasSuffix(rhs.lowercased())
+        case "rx":
+            return wildcardMatch(lhs, pattern: rhs)
+        default:
+            throw EvaluationError.unsupportedOperator(
+                propertyKey: spec.condition.propertyKey,
+                operatorCode: spec.condition.operator,
+            )
+        }
+    }
+
+    func evaluateCategorical(spec: ConditionSpec, rawValue: Any?) throws -> Bool {
+        switch spec.condition.operator {
+        case "any", "none", "all", "miss":
+            let lhs = normalizedStringList(rawValue)
+            let rhs = try readStringList(spec.condition)
+            let matchAny = containsAny(lhs, rhs)
+            let matchAll = containsAll(lhs, rhs)
+
+            switch spec.condition.operator {
+            case "any": return matchAny
+            case "none": return !matchAny
+            case "all": return matchAll
+            case "miss": return !matchAll
+            default: return false
+            }
+        default:
+            return try evaluateString(spec: spec, rawValue: rawValue)
+        }
+    }
+
+    func evaluateStringList(spec: ConditionSpec, rawValue: Any?) throws -> Bool {
+        let lhs = normalizedStringList(rawValue)
+
+        switch spec.condition.operator {
+        case "any", "none", "all", "miss":
+            let rhs = try readStringList(spec.condition)
+            let matchAny = containsAny(lhs, rhs)
+            let matchAll = containsAll(lhs, rhs)
+
+            switch spec.condition.operator {
+            case "any": return matchAny
+            case "none": return !matchAny
+            case "all": return matchAll
+            case "miss": return !matchAll
+            default: return false
+            }
+        default:
+            throw EvaluationError.unsupportedOperator(
+                propertyKey: spec.condition.propertyKey,
+                operatorCode: spec.condition.operator,
+            )
+        }
+    }
+
+    func evaluateNumber(spec: ConditionSpec, rawValue: Any?) throws -> Bool {
+        guard let lhs = normalizedNumber(rawValue) else {
+            return false
+        }
+
+        switch spec.condition.operator {
+        case "eq":
+            return try lhs == readNumber(spec.condition)
+        case "neq":
+            return try lhs != readNumber(spec.condition)
+        case "gt":
+            return try lhs > readNumber(spec.condition)
+        case "gte":
+            return try lhs >= readNumber(spec.condition)
+        case "lt":
+            return try lhs < readNumber(spec.condition)
+        case "lte":
+            return try lhs <= readNumber(spec.condition)
+        case "btw", "nbtw":
+            let (lower, upper) = try readNumberRange(spec.condition)
+            let inRange = lhs >= lower && lhs <= upper
+            return spec.condition.operator == "btw" ? inRange : !inRange
+        default:
+            throw EvaluationError.unsupportedOperator(
+                propertyKey: spec.condition.propertyKey,
+                operatorCode: spec.condition.operator,
+            )
+        }
+    }
+
+    func evaluateDate(spec: ConditionSpec, rawValue: Any?) throws -> Bool {
+        guard let lhs = normalizedDate(rawValue) else {
+            return false
+        }
+
+        switch spec.condition.operator {
+        case "eq":
+            return try lhs == readDate(spec.condition)
+        case "neq":
+            return try lhs != readDate(spec.condition)
+        case "gt":
+            return try lhs > readDate(spec.condition)
+        case "gte":
+            return try lhs >= readDate(spec.condition)
+        case "lt":
+            return try lhs < readDate(spec.condition)
+        case "lte":
+            return try lhs <= readDate(spec.condition)
+        case "btw", "nbtw":
+            let (start, end) = try readDateRange(spec.condition)
+            let inRange = lhs >= start && lhs <= end
+            return spec.condition.operator == "btw" ? inRange : !inRange
+        default:
+            throw EvaluationError.unsupportedOperator(
+                propertyKey: spec.condition.propertyKey,
+                operatorCode: spec.condition.operator,
+            )
+        }
+    }
+
+    func evaluateBoolean(spec: ConditionSpec, rawValue: Any?) throws -> Bool {
+        guard spec.condition.operator == "eq" else {
+            throw EvaluationError.unsupportedOperator(
+                propertyKey: spec.condition.propertyKey,
+                operatorCode: spec.condition.operator,
+            )
+        }
+
+        guard let lhs = normalizedBoolean(rawValue) else {
+            return false
+        }
+
+        return try lhs == readBool(spec.condition)
+    }
+}
+
+private extension FilterSearchMDQueryPostFilterEvaluator {
+    func resolvePropertyValue(spec: ConditionSpec, context: inout PathContext) -> Any? {
+        if let cached = context.propertyCache[spec.condition.propertyKey] {
+            switch cached {
+            case let .value(value): return value
+            case .missing: return nil
+            }
+        }
+
+        if let derived = derivedValue(for: spec.condition.propertyKey, context: context) {
+            context.propertyCache[spec.condition.propertyKey] = .value(derived)
+            return derived
+        }
+
+        let parsed = spec.mapping.systemKeys.map(parseSystemKey)
+        let ordered =
+            parsed.filter { $0.prefix == "mditem" } +
+            parsed.filter { $0.prefix == "mdimporter" } +
+            parsed.filter { $0.prefix == "nsurl" } +
+            parsed.filter { ["mditem", "mdimporter", "nsurl"].contains($0.prefix) == false }
+
+        for key in ordered {
+            if let value = valueForSystemKey(key, context: &context) {
+                context.propertyCache[spec.condition.propertyKey] = .value(value)
+                return value
+            }
+        }
+
+        context.propertyCache[spec.condition.propertyKey] = .missing
+        return nil
+    }
+
+    func valueForSystemKey(
+        _ key: (prefix: String, symbol: String),
+        context: inout PathContext,
+    ) -> Any? {
+        switch key.prefix {
+        case "nsurl":
+            return valueForNSURLSymbol(key.symbol, context: &context)
+
+        default:
+            return valueForMDItemSymbol(key.symbol, context: &context)
+        }
+    }
+
+    func valueForNSURLSymbol(_ symbol: String, context: inout PathContext) -> Any? {
+        if let cached = context.resourceCache[symbol] {
+            switch cached {
+            case let .value(value): return value
+            case .missing: return nil
+            }
+        }
+
+        let resourceKey = URLResourceKey(rawValue: symbol)
+        do {
+            let values = try context.url.resourceValues(forKeys: [resourceKey])
+            if let value = values.allValues[resourceKey] {
+                context.resourceCache[symbol] = .value(value)
+                return value
+            }
+        } catch {}
+
+        context.resourceCache[symbol] = .missing
+        return nil
+    }
+
+    func valueForMDItemSymbol(_ symbol: String, context: inout PathContext) -> Any? {
+        guard symbol.hasPrefix("kMD"), let mdItem = context.loadMDItem() else {
+            return nil
+        }
+        return MDItemCopyAttribute(mdItem, symbol as CFString)
+    }
+
+    func parseSystemKey(_ key: String) -> (prefix: String, symbol: String) {
+        let trimmed = key.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard let index = trimmed.firstIndex(of: ":") else {
+            return ("", trimmed)
+        }
+        let prefix = trimmed[..<index].trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        let symbol = trimmed[trimmed.index(after: index)...].trimmingCharacters(in: .whitespacesAndNewlines)
+        return (prefix, symbol)
+    }
+
+    func derivedValue(for propertyKey: String, context: PathContext) -> Any? {
+        switch propertyKey {
+        case "path":
+            context.path
+        case "dir_path":
+            context.url.deletingLastPathComponent().path
+        case "parent_dir_name":
+            context.url.deletingLastPathComponent().lastPathComponent
+        case "extension":
+            context.url.pathExtension
+        case "name_stem":
+            context.url.deletingPathExtension().lastPathComponent
+        case "relative_path_from_home":
+            relativePathFromHome(path: context.path)
+        case "depth_from_home":
+            depthFromHome(path: context.path)
+        default:
+            nil
+        }
+    }
+
+    func relativePathFromHome(path: String) -> String? {
+        if path == homeDirectoryPath {
+            return "~"
+        }
+        let prefix = homeDirectoryPath.hasSuffix("/") ? homeDirectoryPath : homeDirectoryPath + "/"
+        guard path.hasPrefix(prefix) else {
+            return nil
+        }
+        let suffix = String(path.dropFirst(prefix.count))
+        return suffix.isEmpty ? "~" : "~/\(suffix)"
+    }
+
+    func depthFromHome(path: String) -> Double? {
+        guard let relative = relativePathFromHome(path: path),
+              relative != "~"
+        else {
+            return nil
+        }
+        let trimmed = relative.hasPrefix("~/") ? String(relative.dropFirst(2)) : relative
+        let components = trimmed.split(separator: "/")
+        guard components.isEmpty == false else {
+            return 0
+        }
+        return Double(max(components.count - 1, 0))
+    }
+}

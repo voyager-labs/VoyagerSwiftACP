@@ -21,6 +21,7 @@ struct MDQuerySearchService: Sendable {
     private let maxCandidates: Int
     private let defaultScopeURL: @Sendable () -> URL
     private let compilerFactory: @Sendable () async throws -> FilterSearchMDQueryCompiler
+    private let postFilterFactory: @Sendable () async throws -> FilterSearchMDQueryPostFilterEvaluator
 
     init(
         logger: Logger = Logger(label: "VoyagerHelper.MDQuerySearchService"),
@@ -31,19 +32,50 @@ struct MDQuerySearchService: Sendable {
                 try FilterSearchMDQueryCompiler()
             }
         },
+        postFilterFactory: @Sendable @escaping () async throws -> FilterSearchMDQueryPostFilterEvaluator = {
+            try await MainActor.run {
+                try FilterSearchMDQueryPostFilterEvaluator()
+            }
+        },
     ) {
         self.logger = logger
         self.maxCandidates = max(1, maxCandidates)
         self.defaultScopeURL = defaultScopeURL
         self.compilerFactory = compilerFactory
+        self.postFilterFactory = postFilterFactory
     }
 
     func applyFilters(_ filters: SearchFiltersPayload) async throws -> SearchResponsePayload {
         let compiler = try await compilerFactory()
-        let queryString = try compiler.compile(conditions: filters.conditions)
+        var plan = try compiler.compilePlan(conditions: filters.conditions)
+        let postFilter = try await postFilterFactory()
         let scopeURLs = Self.resolveScopeURLs(filters.scopes, defaultScopeURL: defaultScopeURL)
-        let query = try makeQuery(queryString: queryString, scopes: scopeURLs)
-        let paths = loadPaths(query: query, limit: maxCandidates)
+        var paths: [String]
+
+        do {
+            let query = try makeQuery(queryString: plan.predicate, scopes: scopeURLs)
+            paths = loadPaths(query: query, limit: maxCandidates)
+        } catch let error as SearchError {
+            guard plan.pushdownConditions.isEmpty == false else {
+                throw error
+            }
+
+            logger.warning(
+                "MDQuery pushdown failed. Falling back to post-filter mode: \(error.localizedDescription)",
+            )
+            let fallbackQuery = try makeQuery(queryString: FilterSearchMDQueryCompiler.basePredicate, scopes: scopeURLs)
+            paths = loadPaths(query: fallbackQuery, limit: maxCandidates)
+            plan = FilterSearchMDQueryCompiler.CompilePlan(
+                predicate: FilterSearchMDQueryCompiler.basePredicate,
+                pushdownConditions: [],
+                postFilterConditions: filters.conditions,
+            )
+        }
+
+        if plan.postFilterConditions.isEmpty == false {
+            paths = try postFilter.filter(paths: paths, conditions: plan.postFilterConditions)
+        }
+
         if paths.count == maxCandidates {
             logger.warning("MDQuery result truncated at maxCandidates=\(maxCandidates)")
         }
