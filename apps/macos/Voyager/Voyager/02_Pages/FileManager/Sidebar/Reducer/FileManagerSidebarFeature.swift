@@ -5,12 +5,18 @@ import UniformTypeIdentifiers
 
 @Reducer
 struct FileManagerSidebarFeature {
-    @Dependency(\.entryClient)
-    var entryClient
+    @Dependency(\.entryLoadingClient)
+    var entryLoadingClient
     @Dependency(\.userDefaultsClient)
     var userDefaultsClient
-    @Dependency(\.fileManagerNavigationClient)
-    var navigationClient
+    @Dependency(\.fileManagerFavoritesClient)
+    var favoritesClient
+    @Dependency(\.fileManagerLocationsClient)
+    var locationsClient
+    @Dependency(\.fileManagerIconClient)
+    var iconClient
+    @Dependency(\.finderFavoritesTagClient)
+    var finderFavoritesTagClient
 
     typealias State = FileManagerSidebarState
     typealias Action = FileManagerSidebarAction
@@ -32,7 +38,7 @@ struct FileManagerSidebarFeature {
 
             case .loadFavorites:
                 return .run { send in
-                    let favorites = await navigationClient.loadFavorites(entryClient, userDefaultsClient)
+                    let favorites = await favoritesClient.loadFavorites(entryLoadingClient, userDefaultsClient)
                     await send(.favoritesLoaded(favorites))
                 }
 
@@ -83,7 +89,7 @@ struct FileManagerSidebarFeature {
                 }
 
                 var isDirectory: ObjCBool = false
-                guard entryClient.fileExistsAtPath(url.path, &isDirectory) else {
+                guard entryLoadingClient.fileExistsAtPath(url.path, &isDirectory) else {
                     return .none
                 }
 
@@ -95,18 +101,18 @@ struct FileManagerSidebarFeature {
 
                 let name = isVoycoll
                     ? url.deletingPathExtension().lastPathComponent
-                    : entryClient.displayName(url.path)
-                let iconName = navigationClient.iconNameForURL(url, isDirectory.boolValue, entryClient)
+                    : entryLoadingClient.displayName(url.path)
+                let iconName = iconClient.iconNameForURL(url, isDirectory.boolValue, entryLoadingClient)
                 let newFavorite = SidebarItems.FavoriteItem(name: name, url: url, iconName: iconName)
 
                 let insertIndex = max(0, min(index, state.favorites.count))
                 state.favorites.insert(newFavorite, at: insertIndex)
-                navigationClient.saveFavorites(state.favorites, userDefaultsClient)
+                favoritesClient.saveFavorites(state.favorites, userDefaultsClient)
                 return .none
 
             case let .removeFavorite(favorite):
                 state.favorites.removeAll { $0.url.path == favorite.url.path }
-                navigationClient.saveFavorites(state.favorites, userDefaultsClient)
+                favoritesClient.saveFavorites(state.favorites, userDefaultsClient)
                 return .none
 
             case let .reorderFavorites(source, destination):
@@ -123,12 +129,12 @@ struct FileManagerSidebarFeature {
                 let insertIndex = max(0, min(adjustedDestination, reordered.count))
                 reordered.insert(contentsOf: itemsToMove, at: insertIndex)
                 state.favorites = reordered
-                navigationClient.saveFavorites(state.favorites, userDefaultsClient)
+                favoritesClient.saveFavorites(state.favorites, userDefaultsClient)
                 return .none
 
             case .loadLocations:
                 return .run { send in
-                    let locations = await navigationClient.loadLocations(entryClient)
+                    let locations = await locationsClient.loadLocations(entryLoadingClient)
                     await send(.locationsLoaded(locations))
                 }
 
@@ -137,10 +143,7 @@ struct FileManagerSidebarFeature {
                 return .none
 
             case .loadTags:
-                return .run { send in
-                    let tags = await navigationClient.loadTags()
-                    await send(.tagsLoaded(tags))
-                }
+                return .send(.tagsLoaded(finderFavoritesTagClient.favoriteTags()))
 
             case let .tagsLoaded(tags):
                 state.tags = tags

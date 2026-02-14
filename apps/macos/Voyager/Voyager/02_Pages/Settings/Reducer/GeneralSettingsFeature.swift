@@ -8,8 +8,8 @@ struct GeneralSettingsFeature {
     typealias State = GeneralSettingsState
     typealias Action = GeneralSettingsAction
 
-    @Dependency(\.entryClient)
-    var entryClient: EntryClient
+    @Dependency(\.entryLoadingClient)
+    var entryLoadingClient: EntryLoadingClient
     @Dependency(\.userDefaultsClient)
     var userDefaultsClient: UserDefaultsClient
     @Dependency(\.updaterClient)
@@ -21,7 +21,7 @@ struct GeneralSettingsFeature {
             case .loadSettings:
                 // 시작 디렉토리 로드
                 let startingDir = userDefaultsClient.string(SettingsKeys.defaultTabPath)
-                    ?? entryClient.homeDirectory()
+                    ?? entryLoadingClient.homeDirectory()
                 state.startingDirectory = startingDir
                 state.selectedDirectoryOption = DirectoryOption.from(path: startingDir)
 
@@ -78,9 +78,9 @@ struct GeneralSettingsFeature {
                     return .none
                 }
 
-                if entryClient.fileExists(path) {
+                if entryLoadingClient.fileExists(path) {
                     var isDirectory: ObjCBool = false
-                    if entryClient.fileExistsAtPath(path, &isDirectory),
+                    if entryLoadingClient.fileExistsAtPath(path, &isDirectory),
                        isDirectory.boolValue
                     {
                         return .send(.setStartingDirectory(path))

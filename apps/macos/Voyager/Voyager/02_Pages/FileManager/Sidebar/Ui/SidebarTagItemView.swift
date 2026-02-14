@@ -3,7 +3,7 @@ import SwiftUI
 import UniformTypeIdentifiers
 
 struct SidebarTagItemView: View {
-    let tag: SidebarItems.TagItem
+    let tag: Tag
     let isSelected: Bool
     let isContextMenuTarget: Bool
     let contextMenuTargetWasSelected: Bool
@@ -43,9 +43,7 @@ struct SidebarTagItemView: View {
 
     var body: some View {
         HStack(spacing: 8) {
-            Circle()
-                .fill(Color(nsColor: EntryTagUtils.getTagColor(colorCode: tag.colorCode)))
-                .frame(width: 8, height: 8)
+            TagDotView(tagColor: tag.tagColor, size: 8)
             Text(tag.name)
                 .foregroundColor(isDropTarget ? .white : .primary)
                 .lineLimit(1)
@@ -59,7 +57,7 @@ struct SidebarTagItemView: View {
         .contentShape(Rectangle())
         .onTapGesture {
             action()
-            restoreFileManagerFocus()
+            KeyCommandHostingView.restoreCurrentFocus()
         }
         .onDrop(of: [.fileURL], isTargeted: $isDropTarget) { providers in
             guard let onDrop else { return false }

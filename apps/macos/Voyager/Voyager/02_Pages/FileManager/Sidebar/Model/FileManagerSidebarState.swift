@@ -8,7 +8,7 @@ struct FileManagerSidebarState: Equatable {
     var selectedSidebarItem: String?
     var favorites: [SidebarItems.FavoriteItem] = []
     var locations: [SidebarItems.LocationItem] = []
-    var tags: [SidebarItems.TagItem] = []
+    var tags: [Tag] = []
     var isFavoritesCollapsed: Bool = false
     var isLocationsCollapsed: Bool = false
     var isTagsCollapsed: Bool = false

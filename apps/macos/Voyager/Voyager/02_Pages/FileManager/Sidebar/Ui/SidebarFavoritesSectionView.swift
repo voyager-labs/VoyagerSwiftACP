@@ -90,8 +90,8 @@ struct SidebarFavoritesSectionView: View {
             .onDrop(
                 of: [UTType.fileURL],
                 delegate: FileManagerFavoriteDropDelegate(
-                    index: index,
                     dropTargetIndex: $dropTargetIndex,
+                    index: index,
                     onDrop: handleFavoriteInsert(providers:at:),
                 ),
             )

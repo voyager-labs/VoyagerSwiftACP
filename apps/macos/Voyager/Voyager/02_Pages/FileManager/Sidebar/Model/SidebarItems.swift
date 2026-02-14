@@ -11,11 +11,6 @@ enum SidebarItems {
         }
     }
 
-    struct TagItem: Equatable {
-        let name: String
-        let colorCode: Int
-    }
-
     private enum FavoriteItemCodingKeys: String, CodingKey {
         case name
         case url

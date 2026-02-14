@@ -9,9 +9,6 @@ struct InspectorPaneView: View {
     @Environment(\.colorScheme)
     var colorScheme
 
-    @Dependency(\.fileManagerNavigationClient)
-    private var navigationClient
-
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             HStack {

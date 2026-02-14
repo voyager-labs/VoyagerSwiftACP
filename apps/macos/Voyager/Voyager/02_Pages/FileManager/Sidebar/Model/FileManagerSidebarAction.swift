@@ -14,14 +14,14 @@ enum FileManagerSidebarAction: CasePathable {
     case loadLocations
     case locationsLoaded([SidebarItems.LocationItem])
     case loadTags
-    case tagsLoaded([SidebarItems.TagItem])
+    case tagsLoaded([Tag])
     case toggleFavoritesSection
     case toggleLocationsSection
     case toggleTagsSection
     case setSidebarWidth(CGFloat)
     case openFavorite(SidebarItems.FavoriteItem)
     case openLocation(SidebarItems.LocationItem)
-    case showTag(SidebarItems.TagItem)
+    case showTag(Tag)
     case showRecents
     case showComputer
     case dropItemsToSidebarFolder(providers: [NSItemProvider], targetURL: URL)

@@ -83,7 +83,7 @@ struct SidebarItemView: View {
         .contentShape(Rectangle())
         .onTapGesture {
             action()
-            restoreFileManagerFocus()
+            KeyCommandHostingView.restoreCurrentFocus()
         }
         .onDrop(of: [.fileURL], isTargeted: $isDropTarget) { providers in
             guard let targetURL, let onDrop else { return false }

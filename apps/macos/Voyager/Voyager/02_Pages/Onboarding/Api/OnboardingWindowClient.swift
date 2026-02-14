@@ -25,8 +25,7 @@ struct OnboardingWindowClient: Sendable {
 extension OnboardingWindowClient: DependencyKey {
     nonisolated static var liveValue: OnboardingWindowClient {
         makeLive(openMainWindow: { _ in
-            assertionFailure("onboardingWindowClient.openMainWindow 구현이 주입되지 않았습니다.")
-            return false
+            fatalError("onboardingWindowClient.openMainWindow live dependency is not configured")
         })
     }
 
@@ -75,7 +74,20 @@ extension OnboardingWindowClient: DependencyKey {
     }
 
     nonisolated static var testValue: OnboardingWindowClient {
-        OnboardingWindowClient(showIfNeeded: { false }, showWindow: {}, closeWindow: {}, openMainWindow: { _ in false })
+        OnboardingWindowClient(
+            showIfNeeded: {
+                fatalError("onboardingWindowClient.showIfNeeded test dependency is not configured")
+            },
+            showWindow: {
+                fatalError("onboardingWindowClient.showWindow test dependency is not configured")
+            },
+            closeWindow: {
+                fatalError("onboardingWindowClient.closeWindow test dependency is not configured")
+            },
+            openMainWindow: { _ in
+                fatalError("onboardingWindowClient.openMainWindow test dependency is not configured")
+            },
+        )
     }
 
     nonisolated static var previewValue: OnboardingWindowClient {
