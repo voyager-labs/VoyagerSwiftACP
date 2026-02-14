@@ -6,6 +6,12 @@ private final class FilterSearchMDQueryCompilerBundleToken {}
 struct FilterSearchMDQueryCompiler: Sendable {
     static let basePredicate = "kMDItemContentTypeTree == \"public.item\""
 
+    struct CompilePlan: Sendable {
+        let predicate: String
+        let pushdownConditions: [SearchConditionPayload]
+        let postFilterConditions: [SearchConditionPayload]
+    }
+
     enum CompileError: Error, LocalizedError {
         case unknownPropertyKey(String)
         case hiddenPropertyKey(String)
@@ -69,26 +75,67 @@ struct FilterSearchMDQueryCompiler: Sendable {
     }
 
     func compile(conditions: [SearchConditionPayload]) throws -> String {
+        try compilePlan(conditions: conditions).predicate
+    }
+
+    func compilePlan(conditions: [SearchConditionPayload]) throws -> CompilePlan {
         guard conditions.isEmpty == false else {
-            return Self.basePredicate
+            return CompilePlan(
+                predicate: Self.basePredicate,
+                pushdownConditions: [],
+                postFilterConditions: [],
+            )
         }
 
         var clauses: [String] = [Self.basePredicate]
         clauses.reserveCapacity(conditions.count + 1)
+        var pushdownConditions: [SearchConditionPayload] = []
+        pushdownConditions.reserveCapacity(conditions.count)
+        var postFilterConditions: [SearchConditionPayload] = []
+        postFilterConditions.reserveCapacity(conditions.count)
+
         for condition in conditions {
-            try clauses.append(compileCondition(condition))
+            let validated = try validateCondition(condition)
+            guard let attribute = resolveAttributeName(
+                mapping: validated.mapping,
+                propertyKey: condition.propertyKey,
+            ) else {
+                postFilterConditions.append(condition)
+                continue
+            }
+
+            let clause = try buildClause(
+                attribute: attribute,
+                typeKey: validated.typeKey,
+                condition: condition,
+            )
+            clauses.append(clause)
+            pushdownConditions.append(condition)
         }
-        return clauses.joined(separator: " && ")
+
+        if postFilterConditions.isEmpty == false {
+            logger.info(
+                "MDQuery pushdown skipped for \(postFilterConditions.count) conditions",
+            )
+        }
+
+        return CompilePlan(
+            predicate: clauses.joined(separator: " && "),
+            pushdownConditions: pushdownConditions,
+            postFilterConditions: postFilterConditions,
+        )
     }
 }
 
 extension FilterSearchMDQueryCompiler {
-    private func compileCondition(_ condition: SearchConditionPayload) throws -> String {
+    private struct ValidatedCondition {
+        let mapping: FilterSearchConditionBuilder.PropertyMapping
+        let typeKey: String
+    }
+
+    private func validateCondition(_ condition: SearchConditionPayload) throws -> ValidatedCondition {
         guard let mapping = conditionBuilder.propertyMap[condition.propertyKey] else {
             throw CompileError.unknownPropertyKey(condition.propertyKey)
-        }
-        if mapping.uiHidden {
-            throw CompileError.hiddenPropertyKey(condition.propertyKey)
         }
 
         guard let typeKey = conditionBuilder.conditionTypeKey(for: mapping.type),
@@ -129,26 +176,21 @@ extension FilterSearchMDQueryCompiler {
             )
         }
 
-        let attribute = try resolveAttributeName(mapping: mapping, propertyKey: condition.propertyKey)
-        return try buildClause(attribute: attribute, typeKey: typeKey, condition: condition)
+        return ValidatedCondition(mapping: mapping, typeKey: typeKey)
     }
 
     private func resolveAttributeName(
         mapping: FilterSearchConditionBuilder.PropertyMapping,
         propertyKey: String,
-    ) throws -> String {
-        if propertyKey == "extension" || propertyKey == "name_stem" {
-            return "kMDItemFSName"
+    ) -> String? {
+        if let resolved = MDQueryAttributeResolver.resolve(
+            propertyKey: propertyKey,
+            systemKeys: mapping.systemKeys,
+        ) {
+            return resolved
         }
 
-        if let jsonPath = conditionBuilder.jsonPath(for: mapping.systemKeys),
-           jsonPath.hasPrefix("$."),
-           jsonPath.count > 2
-        {
-            return String(jsonPath.dropFirst(2))
-        }
-
-        throw CompileError.missingMDItemAttribute(propertyKey)
+        return nil
     }
 
     private func buildClause(
@@ -196,28 +238,33 @@ extension FilterSearchMDQueryCompiler {
 
         let eqClause: String
         if condition.propertyKey == "name_stem" {
-            let exact = "\(attribute) ==[cd] \"\(escaped)\""
-            let withExtension = "\(attribute) ==[cd] \"\(escaped).*\""
+            let exact = "\(attribute) == \"\(escaped)\""
+            let withExtension = "\(attribute) == \"\(escaped).*\""
             eqClause = "(\(exact) || \(withExtension))"
         } else {
-            eqClause = "\(attribute) ==[cd] \"\(escaped)\""
+            eqClause = "\(attribute) == \"\(escaped)\""
         }
 
         switch condition.operator {
         case "eq":
             return eqClause
         case "neq":
-            return "NOT (\(eqClause))"
+            if condition.propertyKey == "name_stem" {
+                let exact = "\(attribute) != \"\(escaped)\""
+                let withExtension = "\(attribute) != \"\(escaped).*\""
+                return "(\(exact) && \(withExtension))"
+            }
+            return "\(attribute) != \"\(escaped)\""
         case "cn":
-            return "\(attribute) ==[cd] \"*\(escaped)*\""
+            return "\(attribute) == \"*\(escaped)*\""
         case "nc":
-            return "NOT (\(attribute) ==[cd] \"*\(escaped)*\")"
+            return "\(attribute) != \"*\(escaped)*\""
         case "sw":
-            return "\(attribute) ==[cd] \"\(escaped)*\""
+            return "\(attribute) == \"\(escaped)*\""
         case "ew":
-            return "\(attribute) ==[cd] \"*\(escaped)\""
+            return "\(attribute) == \"*\(escaped)\""
         case "rx":
-            return "\(attribute) ==[cd] \"\(normalizeWildcardPattern(escaped))\""
+            return "\(attribute) == \"\(normalizeWildcardPattern(escaped))\""
         default:
             throw CompileError.unsupportedOperator(
                 propertyKey: condition.propertyKey,
@@ -239,12 +286,13 @@ extension FilterSearchMDQueryCompiler {
             )
             let comparisons = values
                 .map { token(for: $0, propertyKey: condition.propertyKey) }
-                .map { "\(attribute) ==[cd] \"\(escapeLiteral($0))\"" }
-            let grouped = "(" + comparisons.joined(separator: " || ") + ")"
+                .map { "\(attribute) == \"\(escapeLiteral($0))\"" }
             if condition.operator == "none" {
-                return "NOT \(grouped)"
+                return "(" + comparisons
+                    .map { $0.replacingOccurrences(of: "==", with: "!=") }
+                    .joined(separator: " && ") + ")"
             }
-            return grouped
+            return "(" + comparisons.joined(separator: " || ") + ")"
         case "eq", "neq", "cn", "nc", "sw", "ew", "rx":
             return try buildStringClause(attribute: attribute, condition: condition)
         default:
@@ -266,17 +314,21 @@ extension FilterSearchMDQueryCompiler {
         )
         let comparisons = values
             .map { token(for: $0, propertyKey: condition.propertyKey) }
-            .map { "\(attribute) ==[cd] \"\(escapeLiteral($0))\"" }
+            .map { "\(attribute) == \"\(escapeLiteral($0))\"" }
 
         switch condition.operator {
         case "any":
             return "(" + comparisons.joined(separator: " || ") + ")"
         case "none":
-            return "NOT (" + comparisons.joined(separator: " || ") + ")"
+            return "(" + comparisons
+                .map { $0.replacingOccurrences(of: "==", with: "!=") }
+                .joined(separator: " && ") + ")"
         case "all":
             return "(" + comparisons.joined(separator: " && ") + ")"
         case "miss":
-            return "NOT (" + comparisons.joined(separator: " && ") + ")"
+            return "(" + comparisons
+                .map { $0.replacingOccurrences(of: "==", with: "!=") }
+                .joined(separator: " || ") + ")"
         default:
             throw CompileError.unsupportedOperator(
                 propertyKey: condition.propertyKey,
@@ -298,7 +350,7 @@ extension FilterSearchMDQueryCompiler {
             )
             let between = "(\(attribute) >= \(formatNumber(lower)) && \(attribute) <= \(formatNumber(upper)))"
             if condition.operator == "nbtw" {
-                return "NOT \(between)"
+                return "(\(attribute) < \(formatNumber(lower)) || \(attribute) > \(formatNumber(upper)))"
             }
             return between
         default:
@@ -341,9 +393,11 @@ extension FilterSearchMDQueryCompiler {
                 propertyKey: condition.propertyKey,
                 operatorCode: condition.operator,
             )
-            let between = "(\(attribute) >= \"\(escapeLiteral(start))\" && \(attribute) <= \"\(escapeLiteral(end))\")"
+            let startExpr = dateExpression(start)
+            let endExpr = dateExpression(end)
+            let between = "(\(attribute) >= \(startExpr) && \(attribute) <= \(endExpr))"
             if condition.operator == "nbtw" {
-                return "NOT \(between)"
+                return "(\(attribute) < \(startExpr) || \(attribute) > \(endExpr))"
             }
             return between
         default:
@@ -352,7 +406,7 @@ extension FilterSearchMDQueryCompiler {
                 propertyKey: condition.propertyKey,
                 operatorCode: condition.operator,
             )
-            let rhs = "\"\(escapeLiteral(literal))\""
+            let rhs = dateExpression(literal)
             switch condition.operator {
             case "eq":
                 return "\(attribute) == \(rhs)"
@@ -373,6 +427,38 @@ extension FilterSearchMDQueryCompiler {
                 )
             }
         }
+    }
+
+    private func dateExpression(_ literal: String) -> String {
+        let trimmed = literal.trimmingCharacters(in: .whitespacesAndNewlines)
+        if trimmed.hasPrefix("$time.") {
+            return trimmed
+        }
+
+        let primary = trimmed
+            .split(whereSeparator: { $0 == "T" || $0 == " " })
+            .first
+            .map(String.init) ?? trimmed
+
+        if isISODateOnly(primary) {
+            return "$time.iso(\(primary))"
+        }
+
+        return "\"\(escapeLiteral(trimmed))\""
+    }
+
+    private func isISODateOnly(_ value: String) -> Bool {
+        let chars = Array(value)
+        guard chars.count == 10 else { return false }
+        for (index, char) in chars.enumerated() {
+            switch index {
+            case 4, 7:
+                if char != "-" { return false }
+            default:
+                if char.isNumber == false { return false }
+            }
+        }
+        return true
     }
 
     private func buildBooleanClause(
