@@ -162,7 +162,7 @@ struct WindowManagerFeature {
             windowState.content.entryOperations.windowID = id
             if let path {
                 windowState.content.navigation.navigationState =
-                    FileManagerNavigationUtils.NavigationState.folder(path)
+                    ContentPageNavigationUtils.NavigationState.folder(path)
                 windowState.content.navigation.titlePath = path
             }
 
@@ -182,7 +182,7 @@ struct WindowManagerFeature {
             windowState.content.entryOperations.windowID = id
             if let path {
                 windowState.content.navigation.navigationState =
-                    FileManagerNavigationUtils.NavigationState.folder(path)
+                    ContentPageNavigationUtils.NavigationState.folder(path)
                 windowState.content.navigation.titlePath = path
             }
 

@@ -29,35 +29,36 @@ struct FileManagerWindowNavigationFeature {
                 if favorite.url.pathExtension.lowercased() == "voycoll" {
                     state.sidebar.pendingSidebarSelectionRestore = state.sidebar.selectedSidebarItem
                     state.sidebar.selectedSidebarItem = favorite.displayName
-                    return .send(.navigation(FileManagerContentNavigationAction.openCollectionFile(favorite.url)))
+                    return .send(.navigation(ContentPageNavigationAction.openCollectionFile(favorite.url)))
                 }
-                return .send(.navigation(FileManagerContentNavigationAction.navigateToPath(favorite.url.path)))
+                return .send(.navigation(ContentPageNavigationAction.navigateToPath(favorite.url.path)))
 
             case let .sidebar(.openLocation(location)):
-                return .send(.navigation(FileManagerContentNavigationAction.navigateToPath(location.url.path)))
+                return .send(.navigation(ContentPageNavigationAction.navigateToPath(location.url.path)))
 
             case let .sidebar(.showTag(tag)):
-                return .send(.navigation(FileManagerContentNavigationAction.showTag(tag.name)))
+                return .send(.navigation(ContentPageNavigationAction.showTag(tag.name)))
 
             case .sidebar(.showRecents):
-                return .send(.navigation(FileManagerContentNavigationAction.showRecents))
+                return .send(.navigation(ContentPageNavigationAction.showRecents))
 
             case .sidebar(.showComputer):
-                return .send(.navigation(FileManagerContentNavigationAction.showComputer))
+                return .send(.navigation(ContentPageNavigationAction.showComputer))
 
             case let .content(.entries(.navigateFolder(id: id))):
                 guard let entry = state.content.entries.displayItems[id: id] else {
                     return .none
                 }
-                return .send(.navigation(FileManagerContentNavigationAction.navigateToPath(entry.fullPath)))
+                return .send(.navigation(ContentPageNavigationAction.navigateToPath(entry.fullPath)))
 
             case let .content(.entries(.openCollectionFile(url))):
-                return .send(.navigation(FileManagerContentNavigationAction.openCollectionFile(url)))
+                return .send(.navigation(ContentPageNavigationAction.openCollectionFile(url)))
 
             case let .content(.performPendingNavigation(pending)):
-                return .send(.navigation(FileManagerContentNavigationAction.performNavigation(
+                return .send(.navigation(ContentPageNavigationAction.performNavigation(
                     pending,
-                    currentSnapshot: state.content.navigation.makeContentPageHistory(composer: state.content.composer),
+                    currentSnapshot: state.content.navigation
+                        .makeContentPageNavigationHistorySnapshot(composer: state.content.composer),
                 )))
 
             case let .navigation(navigationAction):
@@ -84,7 +85,7 @@ struct FileManagerWindowNavigationFeature {
 
     // swiftlint:disable:next cyclomatic_complexity
     func handleNavigationAction(
-        _ action: FileManagerContentNavigationAction,
+        _ action: ContentPageNavigationAction,
         state: inout State,
     ) -> Effect<Action> {
         if let effect = handleDirectNavigationAction(action, state: &state) {
@@ -110,7 +111,7 @@ struct FileManagerWindowNavigationFeature {
         case let .showUnsavedNavigationAlert(pending):
             return .run { send in
                 let choice = await collectionAlertClient.showUnsavedNavigationAlert()
-                await send(.navigation(FileManagerContentNavigationAction.unsavedNavigationAlertResponse(
+                await send(.navigation(ContentPageNavigationAction.unsavedNavigationAlertResponse(
                     pending,
                     choice,
                 )))
@@ -122,9 +123,10 @@ struct FileManagerWindowNavigationFeature {
                 return .none
             case .discard:
                 state.content.resetComposerOnNextDirectoryNavigation = true
-                return .send(.navigation(FileManagerContentNavigationAction.performNavigation(
+                return .send(.navigation(ContentPageNavigationAction.performNavigation(
                     pending,
-                    currentSnapshot: state.content.navigation.makeContentPageHistory(composer: state.content.composer),
+                    currentSnapshot: state.content.navigation
+                        .makeContentPageNavigationHistorySnapshot(composer: state.content.composer),
                 )))
             case .save:
                 state.content.resetComposerOnNextDirectoryNavigation = true
@@ -154,7 +156,7 @@ struct FileManagerWindowNavigationFeature {
     }
 
     func handleDirectNavigationAction(
-        _ action: FileManagerContentNavigationAction,
+        _ action: ContentPageNavigationAction,
         state: inout State,
     ) -> Effect<Action>? {
         switch action {
@@ -193,25 +195,26 @@ struct FileManagerWindowNavigationFeature {
     }
 
     func handleNavigationRequest(
-        _ pending: ContentPendingNavigation,
+        _ pending: ContentPageNavigationPending,
         state: inout State,
     ) -> Effect<Action> {
         if shouldPromptForUnsavedNavigation(state.content) {
-            return .send(.navigation(FileManagerContentNavigationAction.showUnsavedNavigationAlert(pending)))
+            return .send(.navigation(ContentPageNavigationAction.showUnsavedNavigationAlert(pending)))
         }
-        return .send(.navigation(FileManagerContentNavigationAction.performNavigation(
+        return .send(.navigation(ContentPageNavigationAction.performNavigation(
             pending,
-            currentSnapshot: state.content.navigation.makeContentPageHistory(composer: state.content.composer),
+            currentSnapshot: state.content.navigation
+                .makeContentPageNavigationHistorySnapshot(composer: state.content.composer),
         )))
     }
 
     func handleNavigationDelegate(
-        _ delegateAction: FileManagerContentNavigationDelegate,
+        _ delegateAction: ContentPageNavigationDelegate,
         state: inout State,
     ) -> Effect<Action> {
         switch delegateAction {
-        case let .applyContentPageHistory(entry):
-            applyContentPageHistory(entry, state: &state)
+        case let .applyContentPageNavigationHistorySnapshot(entry):
+            applyContentPageNavigationHistorySnapshot(entry, state: &state)
             syncSidebarSelection(state: &state)
             return .send(.content(.entryArrangements(.reapply)))
 
@@ -219,7 +222,7 @@ struct FileManagerWindowNavigationFeature {
             return handleNavigateToState(navigationState, state: &state)
 
         case let .logDAUNavigation(previous, next):
-            logDAUNavigationIfNeeded(previous: previous, next: next)
+            logContentPageNavigationDAUIfNeeded(previous: previous, next: next)
             return .none
 
         case .resetComposer:
@@ -232,11 +235,11 @@ struct FileManagerWindowNavigationFeature {
         }
     }
 
-    func applyContentPageHistory(
-        _ entry: ContentPageHistory,
+    func applyContentPageNavigationHistorySnapshot(
+        _ entry: ContentPageNavigationHistorySnapshot,
         state: inout State,
     ) {
-        state.content.composer = entry.composerState
+        state.content.composer = entry.composerSnapshot
         state.content.composer.isPresented = false
         switch entry.navigationState {
         case let .collection(navigation):
@@ -268,7 +271,7 @@ struct FileManagerWindowNavigationFeature {
     }
 
     func handleNavigateToState(
-        _ navigationState: FileManagerNavigationUtils.NavigationState,
+        _ navigationState: ContentPageNavigationUtils.NavigationState,
         state: inout State,
     ) -> Effect<Action> {
         switch navigationState {
@@ -304,13 +307,17 @@ struct FileManagerWindowNavigationFeature {
             return .none
         }
         if path != state.content.navigation.currentPath {
-            let previousSnapshot = state.content.navigation.makeContentPageHistory(composer: state.content.composer)
+            let previousSnapshot = state.content.navigation
+                .makeContentPageNavigationHistorySnapshot(composer: state.content.composer)
             state.content.resetComposer()
             state.content.navigation.appendBackHistory(previousSnapshot)
             state.content.navigation.forwardHistory = []
         }
-        state.content.navigation.navigationState = FileManagerNavigationUtils.NavigationState.folder(path)
-        logDAUNavigationIfNeeded(previous: previousNavigationState, next: state.content.navigation.navigationState)
+        state.content.navigation.navigationState = ContentPageNavigationUtils.NavigationState.folder(path)
+        logContentPageNavigationDAUIfNeeded(
+            previous: previousNavigationState,
+            next: state.content.navigation.navigationState,
+        )
         let exitEffect = exitCollectionMode(
             state: &state.content,
             computerName: computerName,
@@ -326,12 +333,16 @@ struct FileManagerWindowNavigationFeature {
         if case .recents = state.content.navigation.navigationState {
             return .none
         }
-        let previousSnapshot = state.content.navigation.makeContentPageHistory(composer: state.content.composer)
+        let previousSnapshot = state.content.navigation
+            .makeContentPageNavigationHistorySnapshot(composer: state.content.composer)
         state.content.resetComposer()
         state.content.navigation.appendBackHistory(previousSnapshot)
         state.content.navigation.forwardHistory = []
         state.content.navigation.navigationState = .recents
-        logDAUNavigationIfNeeded(previous: previousNavigationState, next: state.content.navigation.navigationState)
+        logContentPageNavigationDAUIfNeeded(
+            previous: previousNavigationState,
+            next: state.content.navigation.navigationState,
+        )
         let exitEffect = exitCollectionMode(
             state: &state.content,
             computerName: computerNameClient.computerName(),
@@ -347,12 +358,16 @@ struct FileManagerWindowNavigationFeature {
         if case .computer = state.content.navigation.navigationState {
             return .none
         }
-        let previousSnapshot = state.content.navigation.makeContentPageHistory(composer: state.content.composer)
+        let previousSnapshot = state.content.navigation
+            .makeContentPageNavigationHistorySnapshot(composer: state.content.composer)
         state.content.resetComposer()
         state.content.navigation.appendBackHistory(previousSnapshot)
         state.content.navigation.forwardHistory = []
         state.content.navigation.navigationState = .computer
-        logDAUNavigationIfNeeded(previous: previousNavigationState, next: state.content.navigation.navigationState)
+        logContentPageNavigationDAUIfNeeded(
+            previous: previousNavigationState,
+            next: state.content.navigation.navigationState,
+        )
         let exitEffect = exitCollectionMode(
             state: &state.content,
             computerName: computerNameClient.computerName(),
@@ -371,12 +386,16 @@ struct FileManagerWindowNavigationFeature {
         if case let .tags(currentTagName) = state.content.navigation.navigationState, currentTagName == tagName {
             return .none
         }
-        let previousSnapshot = state.content.navigation.makeContentPageHistory(composer: state.content.composer)
+        let previousSnapshot = state.content.navigation
+            .makeContentPageNavigationHistorySnapshot(composer: state.content.composer)
         state.content.resetComposer()
         state.content.navigation.appendBackHistory(previousSnapshot)
         state.content.navigation.forwardHistory = []
         state.content.navigation.navigationState = .tags(tagName)
-        logDAUNavigationIfNeeded(previous: previousNavigationState, next: state.content.navigation.navigationState)
+        logContentPageNavigationDAUIfNeeded(
+            previous: previousNavigationState,
+            next: state.content.navigation.navigationState,
+        )
         let exitEffect = exitCollectionMode(
             state: &state.content,
             computerName: computerNameClient.computerName(),
@@ -402,10 +421,11 @@ struct FileManagerWindowNavigationFeature {
             // 이미 콜렉션 상태면 히스토리에는 중복 추가하지 않음
         } else {
             let directoryPath = url.deletingLastPathComponent().path
-            var previousSnapshot = state.content.navigation.makeContentPageHistory(composer: state.content.composer)
-            previousSnapshot = ContentPageHistory(
-                navigationState: FileManagerNavigationUtils.NavigationState.folder(directoryPath),
-                composerState: previousSnapshot.composerState,
+            var previousSnapshot = state.content.navigation
+                .makeContentPageNavigationHistorySnapshot(composer: state.content.composer)
+            previousSnapshot = ContentPageNavigationHistorySnapshot(
+                navigationState: ContentPageNavigationUtils.NavigationState.folder(directoryPath),
+                composerSnapshot: previousSnapshot.composerSnapshot,
             )
             state.content.navigation.appendBackHistory(previousSnapshot)
             state.content.navigation.forwardHistory = []
@@ -420,11 +440,11 @@ struct FileManagerWindowNavigationFeature {
             do {
                 let file = try await collectionFileClient.load(url)
                 try Task.checkCancellation()
-                await send(.navigation(FileManagerContentNavigationAction.collectionFileLoaded(.success(file))))
+                await send(.navigation(ContentPageNavigationAction.collectionFileLoaded(.success(file))))
             } catch is CancellationError {
                 return
             } catch {
-                await send(.navigation(FileManagerContentNavigationAction.collectionFileLoaded(.failure(error))))
+                await send(.navigation(ContentPageNavigationAction.collectionFileLoaded(.failure(error))))
             }
         }
         .cancellable(id: "openCollectionFile", cancelInFlight: true)
@@ -448,7 +468,7 @@ struct FileManagerWindowNavigationFeature {
     }
 
     func handleNavigateToCollection(
-        _ navigation: FileManagerNavigationUtils.CollectionNavigation,
+        _ navigation: ContentPageNavigationUtils.CollectionNavigation,
         state: inout State,
     ) -> Effect<Action> {
         state.content.composer.isPresented = false

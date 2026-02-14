@@ -168,7 +168,7 @@ struct FileManagerContentComposerFeature {
     ) -> Effect<Action> {
         let wasOpeningCollectionFile = state.collectionSession.isOpening
         state.collectionSession.isOpening = false
-        let previousSnapshot = state.navigation.makeContentPageHistory(composer: state.composer)
+        let previousSnapshot = state.navigation.makeContentPageNavigationHistorySnapshot(composer: state.composer)
         let previousNavigationState = state.navigation.navigationState
         state.pendingSearchQuery = nil
         state.collectionContext = CollectionContext(
@@ -182,7 +182,7 @@ struct FileManagerContentComposerFeature {
                 context: state.collectionContext ?? .init(query: "", scopes: [], conditions: []),
             )
         }
-        let nextNavigationState = FileManagerNavigationUtils.NavigationState.collection(
+        let nextNavigationState = ContentPageNavigationUtils.NavigationState.collection(
             makeCollectionNavigation(state: state),
         )
         if !wasOpeningCollectionFile,
@@ -194,7 +194,7 @@ struct FileManagerContentComposerFeature {
         }
         state.navigation.navigationState = nextNavigationState
         if !wasOpeningCollectionFile, !previousNavigationState.isCollection {
-            logDAUNavigationIfNeeded(previous: previousNavigationState, next: nextNavigationState)
+            logContentPageNavigationDAUIfNeeded(previous: previousNavigationState, next: nextNavigationState)
         }
         return .concatenate(
             .send(.entries(.setCollectionMode(true))),
@@ -257,7 +257,7 @@ struct FileManagerContentComposerFeature {
     }
 
     private func handleCollectionSaveSuccess(url: URL, state: inout State) -> Effect<Action> {
-        let previousSnapshot = state.navigation.makeContentPageHistory(composer: state.composer)
+        let previousSnapshot = state.navigation.makeContentPageNavigationHistorySnapshot(composer: state.composer)
         let previousCollectionURL = state.collectionSession.openedURL
         let previousCollectionName = state.collectionSession.openedName
         let previousBaseline = state.collectionSession.baseline
@@ -282,16 +282,16 @@ struct FileManagerContentComposerFeature {
             {
                 let name = previousCollectionName
                     ?? previousURL.deletingPathExtension().lastPathComponent
-                let navigation = FileManagerNavigationUtils.CollectionNavigation(
+                let navigation = ContentPageNavigationUtils.CollectionNavigation(
                     kind: .file(url: previousURL, name: name),
                     context: baseline.context,
                     sortKey: state.entryArrangements.sortKey,
                     sortOrder: state.entryArrangements.sortOrder,
                     viewLayout: state.viewLayout,
                 )
-                let entry = ContentPageHistory(
+                let entry = ContentPageNavigationHistorySnapshot(
                     navigationState: .collection(navigation),
-                    composerState: state.composer,
+                    composerSnapshot: state.composer,
                 )
                 state.navigation.appendBackHistory(entry)
             } else {

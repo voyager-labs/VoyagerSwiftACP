@@ -12,7 +12,7 @@ func exitCollectionMode(
         return clearEffect
     }
 
-    state.navigation.navigationState = FileManagerNavigationUtils.navigationStateFromPath(
+    state.navigation.navigationState = ContentPageNavigationUtils.navigationStateFromPath(
         state.navigation.titlePath,
         computerName: computerName,
     )
@@ -21,8 +21,8 @@ func exitCollectionMode(
 
 func makeCollectionNavigation(
     state: FileManagerContentState,
-) -> FileManagerNavigationUtils.CollectionNavigation {
-    let kind: FileManagerNavigationUtils.CollectionKind
+) -> ContentPageNavigationUtils.CollectionNavigation {
+    let kind: ContentPageNavigationUtils.CollectionKind
     if let url = state.collectionSession.openedURL {
         let name = state.collectionSession.openedName ?? url.deletingPathExtension().lastPathComponent
         kind = .file(url: url, name: name)
@@ -32,7 +32,7 @@ func makeCollectionNavigation(
 
     let context = state.collectionContext
         ?? CollectionContext(query: "", scopes: [], conditions: [])
-    return FileManagerNavigationUtils.CollectionNavigation(
+    return ContentPageNavigationUtils.CollectionNavigation(
         kind: kind,
         context: context,
         sortKey: state.entryArrangements.sortKey,

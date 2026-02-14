@@ -1,23 +1,17 @@
-// TODO(ContentPageNavigation): 2차 네이밍 정리
-// - 파일명 변경: FileManagerContentNavigationState.swift -> ContentPageNavigationState.swift
-// - 타입명 변경:
-//   - FileManagerContentNavigationState -> ContentPageNavigationState
-// - 주의:
-//   - 이 단계에서는 동작 변경 금지(로직 수정 금지). 네이밍만 정리한다.
 import ComposableArchitecture
 import Foundation
 import SwiftUI
 
 @ObservableState
-struct FileManagerContentNavigationState: Equatable {
-    var navigationState: FileManagerNavigationUtils.NavigationState =
+struct ContentPageNavigationState: Equatable {
+    var navigationState: ContentPageNavigationUtils.NavigationState =
         .folder(SettingsDefaults.defaultTabPath())
     var titlePath: String = SettingsDefaults.defaultTabPath()
     var scrollPositions: [String: CGPoint] = [:]
 
-    var backHistory: [ContentPageHistory] = []
-    var forwardHistory: [ContentPageHistory] = []
-    var pendingNavigation: ContentPendingNavigation?
+    var backHistory: [ContentPageNavigationHistorySnapshot] = []
+    var forwardHistory: [ContentPageNavigationHistorySnapshot] = []
+    var pendingNavigation: ContentPageNavigationPending?
 
     var currentPath: String {
         switch navigationState {
@@ -70,7 +64,7 @@ struct FileManagerContentNavigationState: Equatable {
 
     mutating func navigateToFolder(_ path: String, composer: inout ComposerFeature.State) {
         let previousPath = currentPath
-        let snapshot = makeContentPageHistory(composer: composer)
+        let snapshot = makeContentPageNavigationHistorySnapshot(composer: composer)
         composer = .init()
         appendBackHistory(snapshot)
         forwardHistory = []
@@ -85,22 +79,22 @@ struct FileManagerContentNavigationState: Equatable {
     }
 
     mutating func navigate(
-        to navigationState: FileManagerNavigationUtils.NavigationState,
+        to navigationState: ContentPageNavigationUtils.NavigationState,
         composer: inout ComposerFeature.State,
     ) {
-        let snapshot = makeContentPageHistory(composer: composer)
+        let snapshot = makeContentPageNavigationHistorySnapshot(composer: composer)
         composer = .init()
         appendBackHistory(snapshot)
         forwardHistory = []
         self.navigationState = navigationState
     }
 
-    mutating func appendBackHistory(_ entry: ContentPageHistory) {
+    mutating func appendBackHistory(_ entry: ContentPageNavigationHistorySnapshot) {
         backHistory.append(entry)
         trimHistory()
     }
 
-    mutating func appendForwardHistory(_ entry: ContentPageHistory) {
+    mutating func appendForwardHistory(_ entry: ContentPageNavigationHistorySnapshot) {
         forwardHistory.append(entry)
         trimHistory()
     }
@@ -114,10 +108,12 @@ struct FileManagerContentNavigationState: Equatable {
         }
     }
 
-    func makeContentPageHistory(composer: ComposerFeature.State) -> ContentPageHistory {
-        ContentPageHistory(
+    func makeContentPageNavigationHistorySnapshot(composer: ComposerFeature
+        .State) -> ContentPageNavigationHistorySnapshot
+    {
+        ContentPageNavigationHistorySnapshot(
             navigationState: navigationState,
-            composerState: composer,
+            composerSnapshot: composer,
         )
     }
 }

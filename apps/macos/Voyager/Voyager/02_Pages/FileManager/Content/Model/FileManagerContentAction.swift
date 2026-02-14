@@ -20,7 +20,7 @@ enum FileManagerContentAction: CasePathable, Sendable {
     case dropItemsToSidebarFolder(providers: [NSItemProvider], targetURL: URL)
     case dropItemsToTag(providers: [NSItemProvider], tagName: String)
 
-    case performPendingNavigation(ContentPendingNavigation)
+    case performPendingNavigation(ContentPageNavigationPending)
     // TODO(Collection): Collection으로 이동
     case discardCollectionChanges
 

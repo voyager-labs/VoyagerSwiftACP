@@ -1,25 +1,18 @@
-// TODO(ContentPageNavigation): 2차 네이밍 정리
-// - 파일명 변경: FileManagerContentNavigationAction.swift -> ContentPageNavigationAction.swift
-// - 타입명 변경:
-//   - FileManagerContentNavigationAction -> ContentPageNavigationAction
-//   - FileManagerContentNavigationDelegate -> ContentPageNavigationDelegate
-// - 주의:
-//   - 이 단계에서는 동작 변경 금지(로직 수정 금지). 네이밍만 정리한다.
 import ComposableArchitecture
 import Foundation
 
-enum FileManagerContentNavigationDelegate: Equatable, Sendable {
-    case applyContentPageHistory(ContentPageHistory)
-    case navigateToState(FileManagerNavigationUtils.NavigationState)
+enum ContentPageNavigationDelegate: Equatable, Sendable {
+    case applyContentPageNavigationHistorySnapshot(ContentPageNavigationHistorySnapshot)
+    case navigateToState(ContentPageNavigationUtils.NavigationState)
     case logDAUNavigation(
-        previous: FileManagerNavigationUtils.NavigationState,
-        next: FileManagerNavigationUtils.NavigationState,
+        previous: ContentPageNavigationUtils.NavigationState,
+        next: ContentPageNavigationUtils.NavigationState,
     )
     case resetComposer
 }
 
 @CasePathable
-enum FileManagerContentNavigationAction: Equatable, Sendable {
+enum ContentPageNavigationAction: Equatable, Sendable {
     case goBack
     case goForward
     case goToHistoryIndex(Int, isBackHistory: Bool)
@@ -30,17 +23,17 @@ enum FileManagerContentNavigationAction: Equatable, Sendable {
     case showTag(String)
     case openCollectionFile(URL)
     case collectionFileLoaded(Result<VoyagerCollectionFile, Error>)
-    case navigateToCollection(FileManagerNavigationUtils.CollectionNavigation)
-    case performNavigation(ContentPendingNavigation, currentSnapshot: ContentPageHistory)
-    case showUnsavedNavigationAlert(ContentPendingNavigation)
-    case unsavedNavigationAlertResponse(ContentPendingNavigation, CollectionNavigationChoice)
-    case delegate(FileManagerContentNavigationDelegate)
+    case navigateToCollection(ContentPageNavigationUtils.CollectionNavigation)
+    case performNavigation(ContentPageNavigationPending, currentSnapshot: ContentPageNavigationHistorySnapshot)
+    case showUnsavedNavigationAlert(ContentPageNavigationPending)
+    case unsavedNavigationAlertResponse(ContentPageNavigationPending, CollectionNavigationChoice)
+    case delegate(ContentPageNavigationDelegate)
 }
 
-extension FileManagerContentNavigationAction {
+extension ContentPageNavigationAction {
     static func == (
-        lhs: FileManagerContentNavigationAction,
-        rhs: FileManagerContentNavigationAction,
+        lhs: ContentPageNavigationAction,
+        rhs: ContentPageNavigationAction,
     ) -> Bool {
         switch (lhs, rhs) {
         case (.goBack, .goBack),

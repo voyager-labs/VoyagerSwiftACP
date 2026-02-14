@@ -10,7 +10,7 @@ struct FileManagerContentState: Equatable {
         var thumbnailRequestsFailed: Set<String> = []
     }
 
-    var navigation: FileManagerContentNavigationFeature.State = .init()
+    var navigation: ContentPageNavigationFeature.State = .init()
     var entries: EntryFeature.State = .init()
     var entryArrangements: EntryArrangementsState = .init()
     var entryOperations: EntryOperationsFeature.State = .init()

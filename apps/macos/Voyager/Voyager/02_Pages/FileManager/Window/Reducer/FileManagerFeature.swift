@@ -25,7 +25,7 @@ struct FileManagerFeature {
         }
 
         Scope(state: \.content.navigation, action: \.navigation) {
-            FileManagerContentNavigationFeature()
+            ContentPageNavigationFeature()
         }
 
         Scope(state: \.sidebar, action: \.sidebar) {

@@ -17,8 +17,8 @@ struct ToolbarView: View {
 
     // NOTE: ViewState가 내부에 왜 있는지 체크
     private struct ViewState: Equatable {
-        let backHistory: [ContentPageHistory]
-        let forwardHistory: [ContentPageHistory]
+        let backHistory: [ContentPageNavigationHistorySnapshot]
+        let forwardHistory: [ContentPageNavigationHistorySnapshot]
         let canGoBack: Bool
         let canGoForward: Bool
         let canGoToEnclosingDirectory: Bool
@@ -31,7 +31,7 @@ struct ToolbarView: View {
     }
 
     let store: StoreOf<FileManagerContentFeature>
-    let onNavigationAction: (FileManagerContentNavigationAction) -> Void
+    let onNavigationAction: (ContentPageNavigationAction) -> Void
 
     @Environment(\.colorScheme)
     private var colorScheme

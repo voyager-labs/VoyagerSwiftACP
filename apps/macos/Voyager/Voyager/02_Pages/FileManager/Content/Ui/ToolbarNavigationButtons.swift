@@ -4,9 +4,9 @@ import Foundation
 import SwiftUI
 
 struct ToolbarNavigationButtons: View {
-    let onNavigationAction: (FileManagerContentNavigationAction) -> Void
-    let backHistory: [ContentPageHistory]
-    let forwardHistory: [ContentPageHistory]
+    let onNavigationAction: (ContentPageNavigationAction) -> Void
+    let backHistory: [ContentPageNavigationHistorySnapshot]
+    let forwardHistory: [ContentPageNavigationHistorySnapshot]
     let canGoBack: Bool
     let canGoForward: Bool
     let canGoToEnclosingDirectory: Bool
@@ -87,7 +87,7 @@ struct ToolbarNavigationButtons: View {
         .buttonStyle(.borderless)
     }
 
-    private func historyDisplayName(for entry: ContentPageHistory) -> String {
+    private func historyDisplayName(for entry: ContentPageNavigationHistorySnapshot) -> String {
         switch entry.navigationState {
         case let .folder(path):
             FileManager.default.displayName(atPath: path)
@@ -107,7 +107,7 @@ struct ToolbarNavigationButtons: View {
         }
     }
 
-    private func historyMenuLabel(for entry: ContentPageHistory) -> some View {
+    private func historyMenuLabel(for entry: ContentPageNavigationHistorySnapshot) -> some View {
         HStack(spacing: 6) {
             if let icon = historyIcon(for: entry) {
                 Image(nsImage: resizedHistoryIcon(from: icon))
@@ -117,7 +117,7 @@ struct ToolbarNavigationButtons: View {
         }
     }
 
-    private func historyIcon(for entry: ContentPageHistory) -> NSImage? {
+    private func historyIcon(for entry: ContentPageNavigationHistorySnapshot) -> NSImage? {
         switch entry.navigationState {
         case let .folder(path):
             return NSWorkspace.shared.icon(forFile: path)
