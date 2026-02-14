@@ -1,6 +1,4 @@
-import AppKit
 import Foundation
-import UniformTypeIdentifiers
 
 enum BreadcrumbBuilder {
     /// breadcrumb root가 특별 취급되는 경로(Trash/iCloud Drive/CloudStorage 등)를 해석하는 리졸버.
@@ -71,28 +69,24 @@ enum BreadcrumbBuilder {
     }
 
     static func breadcrumbItems(
-        for state: FileManagerContentFeature.State,
+        navigationState: FileManagerNavigationUtils.NavigationState,
+        selectedPath: String?,
         computerName: String,
         homePath: String,
         trashPath: String?,
-        entryClient: EntryClient,
-        workspaceClient: WorkspaceClient,
+        displayName: (String) -> String,
     ) -> [BreadcrumbItem] {
-        switch state.navigationState {
+        switch navigationState {
         case .recents, .tags, .collection:
             return []
         case .computer:
-            if state.entries.selectedIds.count == 1,
-               let selectedItem = state.entries.displayItems.first(where: { $0.id == state.entries.selectedIds.first }),
-               selectedItem.fullPath == "/"
-            {
+            if selectedPath == "/" {
                 return []
             }
             return [
                 BreadcrumbItem(
-                    path: computerName,
+                    path: "/",
                     name: computerName,
-                    icon: NSImage(named: "NSComputer") ?? workspaceClient.iconForFile("/"),
                 ),
             ]
         case let .folder(path):
@@ -106,29 +100,24 @@ enum BreadcrumbBuilder {
             return paths.map { breadcrumbPath in
                 makeBreadcrumbItem(
                     path: breadcrumbPath,
-                    computerName: computerName,
-                    trashPath: trashPath,
-                    entryClient: entryClient,
-                    workspaceClient: workspaceClient,
+                    displayName: displayName,
                 )
             }
         }
     }
 
     static func selectedBreadcrumbItem(
-        for state: FileManagerContentFeature.State,
-        workspaceClient: WorkspaceClient,
+        selectedPath: String?,
+        selectedName: String?,
+        currentPath: String,
     ) -> BreadcrumbItem? {
-        guard state.entries.selectedIds.count == 1,
-              let selectedItem = state.entries.displayItems.first(where: { $0.id == state.entries.selectedIds.first })
+        guard let selectedPath,
+              let selectedName
         else { return nil }
 
-        let selectedBreadcrumb = makeBreadcrumbItem(
-            entry: selectedItem,
-            workspaceClient: workspaceClient,
-        )
+        let selectedBreadcrumb = BreadcrumbItem(path: selectedPath, name: selectedName)
 
-        if selectedBreadcrumb.fullPath == state.currentPath {
+        if selectedBreadcrumb.fullPath == currentPath {
             return nil
         }
 
@@ -137,77 +126,8 @@ enum BreadcrumbBuilder {
 
     private static func makeBreadcrumbItem(
         path: String,
-        computerName: String,
-        trashPath: String?,
-        entryClient: EntryClient,
-        workspaceClient: WorkspaceClient,
+        displayName: (String) -> String,
     ) -> BreadcrumbItem {
-        if path == computerName {
-            return BreadcrumbItem(
-                path: computerName,
-                name: computerName,
-                icon: NSImage(named: "NSComputer") ?? workspaceClient.iconForFile("/"),
-            )
-        }
-
-        let name = entryClient.displayName(path)
-        let icon: NSImage = if let trashPath,
-                               path == trashPath
-        {
-            NSImage(named: NSImage.trashFullName) ?? workspaceClient.iconForFile(path)
-        } else {
-            workspaceClient.iconForFile(path)
-        }
-
-        return BreadcrumbItem(path: path, name: name, icon: icon)
-    }
-
-    private static func makeBreadcrumbItem(
-        entry: Entry,
-        workspaceClient: WorkspaceClient,
-    ) -> BreadcrumbItem {
-        let fullPath = entry.fullPath
-        let name = entry.name
-
-        // 아이콘 캐싱 키 생성
-        let cacheKey: String = if entry.fullPath == "/" {
-            "root:/"
-        } else if entry.fileExtension.lowercased() == "voycoll" {
-            "asset:\(EntryIconUtils.voycollIconName)"
-        } else if entry.isDirectory {
-            "dir:\(entry.fullPath)"
-        } else {
-            UTType(filenameExtension: entry.fileExtension)
-                .map { "type:\($0.identifier)" }
-                ?? "generic:file"
-        }
-
-        // 캐시 확인
-        if let cached = EntryIconUtils.getCachedIcon(for: cacheKey) {
-            return BreadcrumbItem(path: fullPath, name: name, icon: cached)
-        }
-
-        // 아이콘 가져오기
-        let fetchedIcon: NSImage = if entry.fullPath == "/" {
-            workspaceClient.iconForFile("/")
-        } else if entry.fileExtension.lowercased() == "voycoll" {
-            if let voycollIcon = NSImage(named: EntryIconUtils.voycollIconName) {
-                voycollIcon
-            } else {
-                workspaceClient.iconForType(.data)
-            }
-        } else if entry.isDirectory {
-            workspaceClient.iconForFile(entry.fullPath)
-        } else {
-            if let utType = UTType(filenameExtension: entry.fileExtension) {
-                workspaceClient.iconForType(utType)
-            } else {
-                workspaceClient.iconForType(.data)
-            }
-        }
-
-        // 캐시 저장
-        EntryIconUtils.setCachedIcon(fetchedIcon, for: cacheKey)
-        return BreadcrumbItem(path: fullPath, name: name, icon: fetchedIcon)
+        BreadcrumbItem(path: path, name: displayName(path))
     }
 }

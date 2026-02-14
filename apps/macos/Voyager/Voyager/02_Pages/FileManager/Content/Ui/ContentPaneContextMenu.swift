@@ -1,11 +1,9 @@
 import ComposableArchitecture
+import Foundation
 import SwiftUI
 
 struct ContentPaneContextMenu: View {
-    let store: StoreOf<FileManagerFeature>
-
-    @Dependency(\.entryClient)
-    private var entryClient
+    let store: StoreOf<FileManagerContentFeature>
 
     var body: some View {
         if isTrashFolder {
@@ -14,7 +12,7 @@ struct ContentPaneContextMenu: View {
             }
         } else {
             Button("New Folder") {
-                store.send(.entries(.createNewFolder(currentPath: store.currentPath)))
+                store.send(.entries(.createNewFolder(currentPath: store.navigation.currentPath)))
             }
             .keyboardShortcut("n", modifiers: [.command, .shift])
         }
@@ -27,15 +25,9 @@ struct ContentPaneContextMenu: View {
         }
 
         Menu("Sort By") {
-            sortKeyToggle("Name", key: .name)
-            sortKeyToggle("Kind", key: .kind)
-            sortKeyToggle("Application", key: .application)
-            sortKeyToggle("Date Last Opened", key: .dateLastOpened)
-            sortKeyToggle("Date Added", key: .dateAdded)
-            sortKeyToggle("Date Modified", key: .dateModified)
-            sortKeyToggle("Date Created", key: .dateCreated)
-            sortKeyToggle("Size", key: .size)
-            sortKeyToggle("Tags", key: .tags)
+            ForEach(EntryArrangementMenuItems.sortItems) { item in
+                sortKeyToggle(item.title, key: item.key)
+            }
 
             Divider()
 
@@ -48,21 +40,15 @@ struct ContentPaneContextMenu: View {
 
             Divider()
 
-            groupKeyToggle("Name", key: .name)
-            groupKeyToggle("Kind", key: .kind)
-            groupKeyToggle("Application", key: .application)
-            groupKeyToggle("Date Last Opened", key: .dateLastOpened)
-            groupKeyToggle("Date Added", key: .dateAdded)
-            groupKeyToggle("Date Modified", key: .dateModified)
-            groupKeyToggle("Date Created", key: .dateCreated)
-            groupKeyToggle("Size", key: .size)
-            groupKeyToggle("Tags", key: .tags)
+            ForEach(EntryArrangementMenuItems.groupItems) { item in
+                groupKeyToggle(item.title, key: item.key)
+            }
         }
     }
 
     private var isTrashFolder: Bool {
-        guard case let .folder(path) = store.navigationState,
-              let trashPath = entryClient.trashDirectoryPath()
+        guard case let .folder(path) = store.navigation.navigationState,
+              let trashPath = FileManager.default.urls(for: .trashDirectory, in: .userDomainMask).first?.path
         else {
             return false
         }
@@ -87,10 +73,10 @@ struct ContentPaneContextMenu: View {
         Toggle(
             title,
             isOn: Binding(
-                get: { store.sortKey == key },
+                get: { store.entryArrangements.sortKey == key },
                 set: { isOn in
                     if isOn {
-                        store.send(.changeSortKey(key))
+                        store.send(.entryArrangements(.setSortKey(key)))
                     }
                 },
             ),
@@ -101,10 +87,10 @@ struct ContentPaneContextMenu: View {
         Toggle(
             title,
             isOn: Binding(
-                get: { store.sortOrder == order },
+                get: { store.entryArrangements.sortOrder == order },
                 set: { isOn in
                     if isOn {
-                        store.send(.changeSortOrder(order))
+                        store.send(.entryArrangements(.setSortOrder(order)))
                     }
                 },
             ),
@@ -115,10 +101,10 @@ struct ContentPaneContextMenu: View {
         Toggle(
             title,
             isOn: Binding(
-                get: { store.entries.groupKey == key },
+                get: { store.entryArrangements.groupKey == key },
                 set: { isOn in
                     if isOn {
-                        store.send(.changeGroupKey(key))
+                        store.send(.entryArrangements(.setGroupKey(key)))
                     }
                 },
             ),

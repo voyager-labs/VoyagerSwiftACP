@@ -3,7 +3,7 @@ import ComposableArchitecture
 import SwiftUI
 
 struct ViewToggleButton: View {
-    let store: StoreOf<FileManagerFeature>
+    let store: StoreOf<FileManagerContentFeature>
 
     var body: some View {
         ToolbarMenuButton(

@@ -1,3 +1,4 @@
+import AppKit
 import SwiftUI
 
 private extension String {
@@ -33,13 +34,14 @@ private struct ItemPosition {
 
 private struct BreadcrumbItemView: View {
     let item: BreadcrumbItem
+    let icon: NSImage
     let width: CGFloat
     let needsFixedSize: Bool
     let truncationMode: Text.TruncationMode
 
     var body: some View {
         HStack(spacing: 0) {
-            Image(nsImage: item.icon)
+            Image(nsImage: icon)
                 .resizable()
                 .scaledToFit()
                 .frame(width: 14, height: 14)
@@ -74,6 +76,24 @@ struct PathBreadcrumbView: View {
     private let itemSpacing: CGFloat = 4
     private let chevronSize: CGFloat = 14
     private let minTextWidth: CGFloat = 1
+
+    private var computerName: String {
+        FileManager.default.displayName(atPath: "/")
+    }
+
+    private var trashPath: String? {
+        FileManager.default.urls(for: .trashDirectory, in: .userDomainMask).first?.path
+    }
+
+    private func icon(for item: BreadcrumbItem) -> NSImage {
+        if item.fullPath == "/", item.name == computerName {
+            return NSImage(named: "NSComputer") ?? NSWorkspace.shared.icon(forFile: "/")
+        }
+        if let trashPath, item.fullPath == trashPath {
+            return NSImage(named: NSImage.trashFullName) ?? NSWorkspace.shared.icon(forFile: item.fullPath)
+        }
+        return NSWorkspace.shared.icon(forFile: item.fullPath)
+    }
 
     private func calculateTotalFullWidth() -> CGFloat {
         var total: CGFloat = 0
@@ -164,6 +184,7 @@ struct PathBreadcrumbView: View {
                     } label: {
                         BreadcrumbItemView(
                             item: item,
+                            icon: icon(for: item),
                             width: calculateDynamicMaxWidth(for: item, at: index),
                             needsFixedSize: position.needsFixedSize(hasSelectedItem: selectedItem != nil),
                             truncationMode: .tail,
@@ -207,6 +228,7 @@ struct PathBreadcrumbView: View {
 
                 BreadcrumbItemView(
                     item: selectedItem,
+                    icon: icon(for: selectedItem),
                     width: selectedItem.name.width(),
                     needsFixedSize: true,
                     truncationMode: .middle,

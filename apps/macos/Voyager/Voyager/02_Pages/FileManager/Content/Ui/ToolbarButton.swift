@@ -1,27 +1,5 @@
 import SwiftUI
 
-struct ToolbarButtonLabel: View {
-    let systemName: String
-    let isEnabled: Bool
-    let font: Font?
-    let isHovered: Bool
-
-    var body: some View {
-        IconButtonLabel(
-            systemName: systemName,
-            isEnabled: isEnabled,
-            isHovered: isHovered,
-            style: IconButtonStyle.toolbarWithFont(font ?? IconButtonStyle.toolbar.font),
-        )
-    }
-}
-
-extension ToolbarButtonLabel {
-    enum Metrics {
-        static let iconFont: Font = IconButtonStyle.toolbar.font
-    }
-}
-
 struct ToolbarHoverButtonLabel: View {
     let systemName: String
     let isEnabled: Bool
@@ -43,8 +21,6 @@ struct ToolbarMenuButton<Content: View>: View {
     let menuID: Int?
     let primaryAction: (() -> Void)?
     let menuContent: () -> Content
-    @Environment(\.colorScheme)
-    private var colorScheme
     @State private var isHovered: Bool = false
 
     init(
@@ -85,11 +61,11 @@ struct ToolbarMenuButton<Content: View>: View {
             Menu {
                 menuContent()
             } label: {
-                ToolbarButtonLabel(
+                IconButtonLabel(
                     systemName: systemName,
                     isEnabled: isEnabled,
-                    font: font,
                     isHovered: isHovered,
+                    style: IconButtonStyle.toolbarWithFont(font ?? IconButtonStyle.toolbar.font),
                 )
             } primaryAction: {
                 primaryAction()
@@ -98,11 +74,11 @@ struct ToolbarMenuButton<Content: View>: View {
             Menu {
                 menuContent()
             } label: {
-                ToolbarButtonLabel(
+                IconButtonLabel(
                     systemName: systemName,
                     isEnabled: isEnabled,
-                    font: font,
                     isHovered: isHovered,
+                    style: IconButtonStyle.toolbarWithFont(font ?? IconButtonStyle.toolbar.font),
                 )
             }
         }

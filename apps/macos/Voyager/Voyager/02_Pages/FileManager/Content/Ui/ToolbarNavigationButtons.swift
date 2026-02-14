@@ -1,21 +1,15 @@
 import AppKit
 import ComposableArchitecture
+import Foundation
 import SwiftUI
 
 struct ToolbarNavigationButtons: View {
-    let store: StoreOf<FileManagerFeature>
-    let backHistory: [FileManagerFeature.HistoryEntry]
-    let forwardHistory: [FileManagerFeature.HistoryEntry]
+    let onNavigationAction: (FileManagerContentNavigationAction) -> Void
+    let backHistory: [ContentPageHistory]
+    let forwardHistory: [ContentPageHistory]
     let canGoBack: Bool
     let canGoForward: Bool
     let canGoToEnclosingDirectory: Bool
-
-    @Dependency(\.fileManagerNavigationClient)
-    private var navigationClient
-    @Dependency(\.entryClient)
-    private var entryClient
-    @Dependency(\.workspaceClient)
-    private var workspaceClient
 
     var body: some View {
         HStack(spacing: 0) {
@@ -31,7 +25,7 @@ struct ToolbarNavigationButtons: View {
             isEnabled: canGoBack,
             font: IconButtonStyle.toolbar.font,
             menuID: backHistory.count,
-            primaryAction: { store.send(.goBack) },
+            primaryAction: { onNavigationAction(.goBack) },
             menuContent: {
                 if backHistory.isEmpty {
                     Text("No history")
@@ -39,7 +33,9 @@ struct ToolbarNavigationButtons: View {
                 } else {
                     ForEach(Array(backHistory.enumerated().reversed()), id: \.offset) { index, entry in
                         Button(
-                            action: { store.send(.goToHistoryIndex(index, isBackHistory: true)) },
+                            action: {
+                                onNavigationAction(.goToHistoryIndex(index, isBackHistory: true))
+                            },
                             label: { historyMenuLabel(for: entry) },
                         )
                     }
@@ -55,7 +51,7 @@ struct ToolbarNavigationButtons: View {
             isEnabled: canGoForward,
             font: IconButtonStyle.toolbar.font,
             menuID: forwardHistory.count,
-            primaryAction: { store.send(.goForward) },
+            primaryAction: { onNavigationAction(.goForward) },
             menuContent: {
                 if forwardHistory.isEmpty {
                     Text("No history")
@@ -63,7 +59,9 @@ struct ToolbarNavigationButtons: View {
                 } else {
                     ForEach(Array(forwardHistory.enumerated().reversed()), id: \.offset) { index, entry in
                         Button(
-                            action: { store.send(.goToHistoryIndex(index, isBackHistory: false)) },
+                            action: {
+                                onNavigationAction(.goToHistoryIndex(index, isBackHistory: false))
+                            },
                             label: { historyMenuLabel(for: entry) },
                         )
                     }
@@ -75,7 +73,7 @@ struct ToolbarNavigationButtons: View {
 
     private func enclosingDirectoryButton() -> some View {
         Button(
-            action: { store.send(.goToEnclosingDirectory) },
+            action: { onNavigationAction(.goToEnclosingDirectory) },
             label: {
                 ToolbarHoverButtonLabel(
                     systemName: "chevron.up",
@@ -89,16 +87,16 @@ struct ToolbarNavigationButtons: View {
         .buttonStyle(.borderless)
     }
 
-    private func historyDisplayName(for entry: FileManagerFeature.HistoryEntry) -> String {
+    private func historyDisplayName(for entry: ContentPageHistory) -> String {
         switch entry.navigationState {
         case let .folder(path):
-            entryClient.displayName(path)
+            FileManager.default.displayName(atPath: path)
         case .recents:
             "Recents"
         case let .tags(tagName):
             tagName
         case .computer:
-            navigationClient.computerName()
+            FileManager.default.displayName(atPath: "/")
         case let .collection(navigation):
             switch navigation.kind {
             case .temporary:
@@ -109,7 +107,7 @@ struct ToolbarNavigationButtons: View {
         }
     }
 
-    private func historyMenuLabel(for entry: FileManagerFeature.HistoryEntry) -> some View {
+    private func historyMenuLabel(for entry: ContentPageHistory) -> some View {
         HStack(spacing: 6) {
             if let icon = historyIcon(for: entry) {
                 Image(nsImage: resizedHistoryIcon(from: icon))
@@ -119,13 +117,13 @@ struct ToolbarNavigationButtons: View {
         }
     }
 
-    private func historyIcon(for entry: FileManagerFeature.HistoryEntry) -> NSImage? {
+    private func historyIcon(for entry: ContentPageHistory) -> NSImage? {
         switch entry.navigationState {
         case let .folder(path):
-            return workspaceClient.iconForFile(path)
+            return NSWorkspace.shared.icon(forFile: path)
         case let .collection(navigation):
             if case let .file(url, _) = navigation.kind {
-                return workspaceClient.iconForFile(url.path)
+                return NSWorkspace.shared.icon(forFile: url.path)
             }
             return nil
         case .recents:

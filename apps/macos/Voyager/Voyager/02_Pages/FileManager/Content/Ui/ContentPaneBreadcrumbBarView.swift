@@ -1,17 +1,11 @@
 import ComposableArchitecture
+import Foundation
 import SwiftUI
 
 @MainActor
 struct ContentPaneBreadcrumbBarView: View {
     let store: StoreOf<FileManagerContentFeature>
     let onNavigate: (String) -> Void
-
-    @Dependency(\.entryClient)
-    private var entryClient
-    @Dependency(\.workspaceClient)
-    private var workspaceClient
-    @Dependency(\.fileManagerNavigationClient)
-    private var navigationClient
 
     private var statusText: String {
         let total = store.entries.displayItems.count
@@ -31,16 +25,17 @@ struct ContentPaneBreadcrumbBarView: View {
 
             HStack(spacing: 0) {
                 let breadcrumbItems = BreadcrumbBuilder.breadcrumbItems(
-                    for: store.state,
-                    computerName: navigationClient.computerName(),
-                    homePath: entryClient.homeDirectory(),
-                    trashPath: entryClient.urlsForDirectory(.trashDirectory, .userDomainMask).first?.path,
-                    entryClient: entryClient,
-                    workspaceClient: workspaceClient,
+                    navigationState: store.navigation.navigationState,
+                    selectedPath: selectedPath,
+                    computerName: computerName,
+                    homePath: homePath,
+                    trashPath: trashPath,
+                    displayName: { path in FileManager.default.displayName(atPath: path) },
                 )
                 let selectedBreadcrumbItem = BreadcrumbBuilder.selectedBreadcrumbItem(
-                    for: store.state,
-                    workspaceClient: workspaceClient,
+                    selectedPath: selectedPath,
+                    selectedName: selectedName,
+                    currentPath: store.navigation.currentPath,
                 )
 
                 if !breadcrumbItems.isEmpty || selectedBreadcrumbItem != nil {
@@ -50,11 +45,7 @@ struct ContentPaneBreadcrumbBarView: View {
                         availableWidth: leftWidth,
                         onNavigate: { path in onNavigate(path) },
                         onOpenInNewWindow: { path in
-                            Task {
-                                await MainActor.run {
-                                    _ = FileManagerWindowSessionCoordinator.shared.createNewWindow(path: path)
-                                }
-                            }
+                            store.send(.openPathInNewWindow(path))
                         },
                     )
                     .frame(width: leftWidth, alignment: .leading)
@@ -73,5 +64,34 @@ struct ContentPaneBreadcrumbBarView: View {
             .padding(.vertical, 2)
         }
         .frame(height: 24)
+    }
+
+    private var computerName: String {
+        FileManager.default.displayName(atPath: "/")
+    }
+
+    private var homePath: String {
+        NSHomeDirectory()
+    }
+
+    private var trashPath: String? {
+        FileManager.default.urls(for: .trashDirectory, in: .userDomainMask).first?.path
+    }
+
+    private var selectedEntry: Entry? {
+        guard store.entries.selectedIds.count == 1,
+              let selectedId = store.entries.selectedIds.first
+        else {
+            return nil
+        }
+        return store.entries.displayItems[id: selectedId]
+    }
+
+    private var selectedPath: String? {
+        selectedEntry?.fullPath
+    }
+
+    private var selectedName: String? {
+        selectedEntry?.name
     }
 }

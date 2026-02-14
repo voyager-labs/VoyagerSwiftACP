@@ -1,5 +1,6 @@
 import AppKit
 import ComposableArchitecture
+import Foundation
 import SwiftUI
 
 struct ToolbarView: View {
@@ -14,13 +15,13 @@ struct ToolbarView: View {
         }
     }
 
+    // NOTE: ViewState가 내부에 왜 있는지 체크
     private struct ViewState: Equatable {
-        let backHistory: [FileManagerFeature.HistoryEntry]
-        let forwardHistory: [FileManagerFeature.HistoryEntry]
+        let backHistory: [ContentPageHistory]
+        let forwardHistory: [ContentPageHistory]
         let canGoBack: Bool
         let canGoForward: Bool
         let canGoToEnclosingDirectory: Bool
-        let sidebarVisible: Bool
         let currentPath: String
         let isCollectionMode: Bool
         let isOpeningCollectionFile: Bool
@@ -29,11 +30,12 @@ struct ToolbarView: View {
         let isOpenedCollectionDirty: Bool
     }
 
-    let store: StoreOf<FileManagerFeature>
+    let store: StoreOf<FileManagerContentFeature>
+    let onNavigationAction: (FileManagerContentNavigationAction) -> Void
+
     @Environment(\.colorScheme)
     private var colorScheme
-    @Dependency(\.entryClient)
-    private var entryClient
+
     @State private var isTitleAreaHovered: Bool = false
 
     var body: some View {
@@ -41,17 +43,16 @@ struct ToolbarView: View {
             store,
             observe: {
                 ViewState(
-                    backHistory: $0.backHistory,
-                    forwardHistory: $0.forwardHistory,
-                    canGoBack: $0.canGoBack,
-                    canGoForward: $0.canGoForward,
-                    canGoToEnclosingDirectory: $0.canGoToEnclosingDirectory,
-                    sidebarVisible: $0.sidebarVisible,
-                    currentPath: $0.currentPath,
+                    backHistory: $0.navigation.backHistory,
+                    forwardHistory: $0.navigation.forwardHistory,
+                    canGoBack: $0.navigation.canGoBack,
+                    canGoForward: $0.navigation.canGoForward,
+                    canGoToEnclosingDirectory: $0.navigation.canGoToEnclosingDirectory,
+                    currentPath: $0.navigation.currentPath,
                     isCollectionMode: $0.entries.isCollectionMode,
-                    isOpeningCollectionFile: $0.isOpeningCollectionFile,
-                    openedCollectionName: $0.openedCollectionName,
-                    openedCollectionURLExists: $0.openedCollectionURL != nil,
+                    isOpeningCollectionFile: $0.collectionSession.isOpening,
+                    openedCollectionName: $0.collectionSession.openedName,
+                    openedCollectionURLExists: $0.collectionSession.openedURL != nil,
                     isOpenedCollectionDirty: $0.isOpenedCollectionDirty,
                 )
             },
@@ -73,10 +74,10 @@ struct ToolbarView: View {
         )
     }
 
-    private func normalModeContent(viewStore: ViewStore<ViewState, FileManagerFeature.Action>) -> some View {
+    private func normalModeContent(viewStore: ViewStore<ViewState, FileManagerContentFeature.Action>) -> some View {
         HStack(spacing: 0) {
             ToolbarNavigationButtons(
-                store: store,
+                onNavigationAction: onNavigationAction,
                 backHistory: viewStore.backHistory,
                 forwardHistory: viewStore.forwardHistory,
                 canGoBack: viewStore.canGoBack,
@@ -86,7 +87,7 @@ struct ToolbarView: View {
 
             HStack(spacing: 8) {
                 Button(
-                    action: { store.send(.enterComposer) },
+                    action: { store.send(.composer(.setPresented(true))) },
                     label: {
                         HStack(spacing: 4) {
                             titleContent(viewStore: viewStore)
@@ -126,13 +127,13 @@ struct ToolbarView: View {
         Color.primary.opacity(0.12)
     }
 
-    private func titleContent(viewStore: ViewStore<ViewState, FileManagerFeature.Action>) -> some View {
+    private func titleContent(viewStore: ViewStore<ViewState, FileManagerContentFeature.Action>) -> some View {
         let isShowingCollection = viewStore
             .isCollectionMode || (viewStore.isOpeningCollectionFile && viewStore.openedCollectionName != nil)
         let titleText = viewStore.openedCollectionName
             ?? (viewStore.isCollectionMode
                 ? "New Collection"
-                : entryClient.displayName(viewStore.currentPath))
+                : FileManager.default.displayName(atPath: viewStore.currentPath))
         let composeSuffix = "/ Compose a filter"
         let showUnsavedIndicator = viewStore.isCollectionMode
             && (!viewStore.openedCollectionURLExists || viewStore.isOpenedCollectionDirty)
