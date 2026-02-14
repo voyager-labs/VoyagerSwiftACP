@@ -57,6 +57,7 @@ private let kRegistryLabels: [String: String] = [
 private let kRegistryOperatorDefinition = OperatorDefinition(
     uiLabel: "Equals",
     sqlOperator: nil,
+    sqlKind: nil,
     valueShape: nil,
     valueCount: nil,
     allowedTypes: nil,
@@ -74,6 +75,7 @@ private let kEmptySearchResponse = SearchResponsePayload(
     itemCount: 0,
     appliedFilters: nil,
     items: nil,
+    error: nil,
 )
 
 private func makeRegistryClient() -> RegistryClient {

@@ -9,6 +9,7 @@ enum PermissionsAction: CasePathable, Sendable {
     case systemSettingsOpenResult(Bool)
     case requestFilesAndFoldersTapped
     case filesAndFoldersResponse(FolderAccessResult)
+    case helperFilesAndFoldersResponse(FolderAccessResult)
 
     case launchAtLoginToggled(Bool)
     case launchAtLoginUpdateSucceeded

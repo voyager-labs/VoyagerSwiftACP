@@ -198,7 +198,11 @@ struct FileManagerContentComposerFeature {
         }
         return .concatenate(
             .send(.entries(.setCollectionMode(true))),
-            .send(.entries(.collectionItemsLoadedFromSearch(items))),
+            .run { send in
+                await Task.yield()
+                await send(.entries(.collectionItemsLoadedFromSearch(items)))
+                await send(.composer(.searchListApplied))
+            },
         )
     }
 
@@ -228,7 +232,7 @@ struct FileManagerContentComposerFeature {
                     """
                     \(error.localizedDescription)
 
-                    Make sure the backend is running and try again.
+                    Check Gateway/Helper status and try again.
                     """,
                 )
             },

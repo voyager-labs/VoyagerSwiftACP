@@ -209,34 +209,29 @@ private func resolveHelperInfo() -> HelperLifecycleInfo {
 @MainActor
 private func launchHelper(_ info: HelperLifecycleInfo) {
     let logger = Logger(label: "Voyager")
-
-    let runningApps = NSWorkspace.shared.runningApplications
-    let isHelperRunning = runningApps.contains { app in
-        app.bundleIdentifier == info.bundleId
-    }
-    if isHelperRunning {
-        return
-    }
-
     logger.info("helper_launch_begin")
-    let config = NSWorkspace.OpenConfiguration()
+    let configuration = NSWorkspace.OpenConfiguration()
+    configuration.activates = false
     if let helperEnvironment = resolveHelperEnvironment() {
-        config.environment = helperEnvironment
+        configuration.environment = helperEnvironment
     }
-    NSWorkspace.shared.openApplication(at: info.url, configuration: config) { _, error in
-        if let error {
-            logger.error("helper_launch_failed -- \(String(describing: error))")
-        }
+    do {
+        try NSWorkspace.shared.openApplication(at: info.url, configuration: configuration)
+    } catch {
+        logger.error("helper_launch_failed -- \(String(describing: error))")
     }
 }
 
 @MainActor
 private func resolveHelperEnvironment() -> [String: String]? {
     let environment = ProcessInfo.processInfo.environment
-    if let projectRoot = environment["VOYAGER_PROJECT_ROOT"], !projectRoot.isEmpty {
-        return environment
+    var filtered: [String: String] = [:]
+    for key in kHelperEnvironmentKeys {
+        if let value = environment[key], !value.isEmpty {
+            filtered[key] = value
+        }
     }
-    return nil
+    return filtered.isEmpty ? nil : filtered
 }
 
 @MainActor
@@ -279,6 +274,24 @@ private func terminateHelperGracefully(_ info: HelperLifecycleInfo) async {
         logger.error("helper_stop_failed")
     }
 }
+
+private let kHelperEnvironmentKeys: [String] = [
+    "APP_ENV",
+    "PATH",
+    "PUBLIC_APP_NAME",
+    "PUBLIC_GATEWAY_URL",
+    "PUBLIC_HELPER_NAME",
+    "PUBLIC_LOG_LEVEL",
+    "PUBLIC_SENTRY_DSN",
+    "PUBLIC_SENTRY_TRACES_SAMPLE_RATE",
+    "PUBLIC_SQLITE_CHECK_SAME_THREAD",
+    "PUBLIC_SQLITE_ECHO",
+    "PUBLIC_SQLITE_FILE_LOCATION",
+    "PUBLIC_SQLITE_FILE_NAME",
+    "PUBLIC_SQLITE_PROTOCOL",
+    "PUBLIC_WEB_BASE_URL",
+    "VOYAGER_PROJECT_ROOT",
+]
 
 @MainActor
 private func findRunningHelper(bundleId: String) -> NSRunningApplication? {

@@ -16,9 +16,8 @@
       "scheme": "Voyager-Dev",
       "configuration": "Debug",
       "launchEnv": {
-        "BACKEND_MODE": "source",
         "VOYAGER_PROJECT_ROOT": "${workspaceFolder}"
-      },
+      }
     },
     {
       "type": "sweetpad",
@@ -34,9 +33,8 @@
       "scheme": "Voyager-Dev",
       "configuration": "Release",
       "launchEnv": {
-        "BACKEND_MODE": "source",
         "VOYAGER_PROJECT_ROOT": "${workspaceFolder}"
-      },
+      }
     },
     {
       "type": "sweetpad",
@@ -51,9 +49,7 @@
       "detail": "Build and Run the Production environment on Debug mode",
       "scheme": "Voyager-Prod",
       "configuration": "Debug",
-      "launchEnv": {
-        "BACKEND_MODE": "bundled",
-      },
+      "launchEnv": {}
     },
     {
       "type": "sweetpad",
@@ -68,9 +64,7 @@
       "detail": "Build and Run the Production environment on Release mode",
       "scheme": "Voyager-Prod",
       "configuration": "Release",
-      "launchEnv": {
-        "BACKEND_MODE": "bundled",
-      },
+      "launchEnv": {}
     },
     {
       "type": "sweetpad",
@@ -87,9 +81,8 @@
       "scheme": "VoyagerHelper-Dev",
       "configuration": "Debug",
       "launchEnv": {
-        "BACKEND_MODE": "source",
         "VOYAGER_PROJECT_ROOT": "${workspaceFolder}"
-      },
+      }
     },
     {
       "type": "sweetpad",
@@ -105,9 +98,8 @@
       "scheme": "VoyagerHelper-Dev",
       "configuration": "Release",
       "launchEnv": {
-        "BACKEND_MODE": "source",
         "VOYAGER_PROJECT_ROOT": "${workspaceFolder}"
-      },
-    },
+      }
+    }
   ]
 }

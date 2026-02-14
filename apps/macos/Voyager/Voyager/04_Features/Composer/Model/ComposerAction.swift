@@ -28,4 +28,5 @@ enum ComposerAction: CasePathable, Sendable {
     case valuePicker(ValuePickerFeature.Action)
     case searchResponse(Result<SearchResponsePayload, Error>)
     case filtersResponse(Result<SearchResponsePayload, Error>)
+    case searchListApplied
 }

@@ -1,5 +1,4 @@
 import logging
-import os
 import platform
 import time
 from collections.abc import Awaitable, Callable
@@ -8,10 +7,8 @@ from contextlib import asynccontextmanager
 import setproctitle
 from fastapi import FastAPI, Request, Response
 
-from app.config import get_db_config, load_config
+from app.config import load_config
 from app.search.routes import router as search_router
-from infra.db.engine import engine_manager
-from infra.db.utils import ensure_parent_dir
 
 
 @asynccontextmanager
@@ -19,14 +16,7 @@ async def lifespan(app: FastAPI):
     # 환경 변수 기반 설정 로드
     cfg = load_config()
     app.state.config = cfg
-
-    process_title = os.environ["PUBLIC_BACKEND_PROCESS_NAME"]
-    setproctitle.setproctitle(process_title)
-
-    # DB 엔진 초기화
-    db_cfg = get_db_config(cfg)
-    ensure_parent_dir(db_cfg.db_file)
-    engine_manager.initialize(db_cfg)
+    setproctitle.setproctitle(f"{cfg.app_name}-server")
 
     logger = logging.getLogger("uvicorn.error")
     py_ver = platform.python_version()
@@ -35,28 +25,17 @@ async def lifespan(app: FastAPI):
         f"app = {cfg.app_name} env = {cfg.app_env} \n"
         f"python = {py_ver} \n"
         f"gateway_url = {cfg.gateway_url} \n"
-        f"backend_host = {cfg.backend_host} \n"
-        f"backend_port = {cfg.backend_port} \n"
-        f"backend_url =  http://{cfg.backend_host}:{cfg.backend_port} \n"
-        f"backend_process_name = {cfg.backend_process_name} \n"
-        f"sqlite_protocol = {cfg.sqlite_protocol} \n"
-        f"sqlite_echo = {cfg.sqlite_echo} \n"
-        f"sqlite_check_same_thread = {cfg.sqlite_check_same_thread} \n"
-        f"sqlite_file_location = {cfg.sqlite_file_location} \n"
-        f"sqlite_file_name = {cfg.sqlite_file_name} \n"
     )
     bar = "=" * max(60, len(message))
     logger.warning(f"\n{bar}\n{message}\n{bar}")
 
     yield
 
-    # 종료 시 DB 연결 정리
-    engine_manager.dispose()
+    return
 
 
 app = FastAPI(
     title="Voyager File Manager API",
-    description="macOS 파일 메타데이터 수집 및 검색 API",
     version="0.1.0",
     lifespan=lifespan,
 )
@@ -69,11 +48,11 @@ async def add_request_observability(
     call_next: Callable[[Request], Awaitable[Response]],
 ) -> Response:
     start = time.perf_counter()
-    route = request.url.path
-    method = request.method
 
     response: Response = await call_next(request)
-    duration_ms = (time.perf_counter() - start) * 1000
+    _ = request.url.path
+    _ = request.method
+    _ = (time.perf_counter() - start) * 1000
     return response
 
 

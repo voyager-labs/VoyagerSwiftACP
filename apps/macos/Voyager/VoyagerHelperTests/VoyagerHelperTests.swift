@@ -1,28 +1,107 @@
+import StructuredQueries
 @testable import VoyagerHelper
 import XCTest
 
-final class VoyagerHelperTests: XCTestCase {
-    override func setUpWithError() throws {
-        // Put setup code here. This method is called before the invocation of each test method in the class.
+@MainActor
+final class FilterSearchQueryBuilderTests: XCTestCase {
+    func testScopePredicateBuildsSqlAndBindings() {
+        let builder = FilterSearchScopeBuilder()
+        let predicate = builder.buildScopePredicate(scopes: ["/Users/test/Downloads/"])
+        let prepared = predicate.prepare { _ in "?" }
+
+        XCTAssertTrue(prepared.sql.contains("\"entries\".\"dir_path\""))
+        XCTAssertTrue(prepared.sql.contains("LIKE"))
+        XCTAssertTrue(prepared.sql.contains("="))
+        XCTAssertEqual(prepared.bindings.count, 2)
     }
 
-    override func tearDownWithError() throws {
-        // Put teardown code here. This method is called after the invocation of each test method in the class.
+    func testConditionBuilderEqOnNameFull() throws {
+        let builder = try makeConditionBuilder()
+        let condition = SearchConditionPayload(
+            propertyKey: "name_full",
+            operator: "eq",
+            value: .string("report"),
+        )
+
+        let predicate = try builder.buildWhere(conditions: [condition])
+        let prepared = predicate.prepare { _ in "?" }
+
+        XCTAssertTrue(prepared.sql.contains("\"entries\".\"name_full\""))
+        XCTAssertTrue(prepared.sql.contains(" = "))
+        XCTAssertEqual(prepared.bindings.count, 1)
     }
 
-    func testExample() throws {
-        // This is an example of a functional test case.
-        // Use XCTAssert and related functions to verify your tests produce the correct results.
-        // Any test you write for XCTest can be annotated as throws and async.
-        // Mark your test throws to produce an unexpected failure when your test encounters an uncaught error.
-        // Mark your test async to allow awaiting for asynchronous code to complete. Check the results with assertions
-        // afterwards.
+    func testConditionBuilderRangeOnSize() throws {
+        let builder = try makeConditionBuilder()
+        let condition = SearchConditionPayload(
+            propertyKey: "size",
+            operator: "btw",
+            value: .array([.number(100), .number(200)]),
+        )
+
+        let predicate = try builder.buildWhere(conditions: [condition])
+        let prepared = predicate.prepare { _ in "?" }
+
+        XCTAssertTrue(prepared.sql.contains("\"entries\".\"size\""))
+        XCTAssertTrue(prepared.sql.contains("BETWEEN"))
+        XCTAssertEqual(prepared.bindings.count, 2)
     }
 
-    func testPerformanceExample() throws {
-        // This is an example of a performance test case.
-        measure {
-            // Put the code you want to measure the time of here.
-        }
+    func testConditionBuilderEqOnExtension() throws {
+        let builder = try makeConditionBuilder()
+        let condition = SearchConditionPayload(
+            propertyKey: "extension",
+            operator: "eq",
+            value: .string("pdf"),
+        )
+
+        let predicate = try builder.buildWhere(conditions: [condition])
+        let prepared = predicate.prepare { _ in "?" }
+
+        XCTAssertTrue(prepared.sql.contains("\"entries\".\"extension\""))
+        XCTAssertTrue(prepared.sql.contains(" = "))
+        XCTAssertEqual(prepared.bindings.count, 1)
+    }
+
+    func testConditionBuilderAnyOnExtension() throws {
+        let builder = try makeConditionBuilder()
+        let condition = SearchConditionPayload(
+            propertyKey: "extension",
+            operator: "any",
+            value: .array([.string("pdf"), .string("docx")]),
+        )
+
+        let predicate = try builder.buildWhere(conditions: [condition])
+        let prepared = predicate.prepare { _ in "?" }
+
+        XCTAssertTrue(prepared.sql.contains("\"entries\".\"extension\""))
+        XCTAssertTrue(prepared.sql.contains(" IN "))
+        XCTAssertEqual(prepared.bindings.count, 2)
+    }
+}
+
+private extension FilterSearchQueryBuilderTests {
+    func makeConditionBuilder() throws -> FilterSearchConditionBuilder {
+        let registry = try loadRegistry(
+            fileName: "property_condition_registry.json",
+            type: PropertyConditionRegistry.self,
+        )
+        let systemRegistry = try loadRegistry(
+            fileName: "system_property_registry.json",
+            type: SystemPropertyRegistry.self,
+        )
+        return FilterSearchConditionBuilder(registry: registry, systemRegistry: systemRegistry)
+    }
+
+    func loadRegistry<T: Decodable>(fileName: String, type _: T.Type) throws -> T {
+        let rootURL = URL(fileURLWithPath: #filePath)
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+        let fileURL = rootURL.appendingPathComponent("shared").appendingPathComponent(fileName)
+        let data = try Data(contentsOf: fileURL)
+        return try JSONDecoder().decode(T.self, from: data)
     }
 }

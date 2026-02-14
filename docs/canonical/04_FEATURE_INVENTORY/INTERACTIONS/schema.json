@@ -1,0 +1,85 @@
+{
+  "schema_version": "1.0",
+  "name": "INTERACTIONS",
+  "primary_key": ["interaction_id"],
+  "columns": [
+    {
+      "name": "interaction_title",
+      "type": "string",
+      "required": true,
+      "description": "인터랙션 제목."
+    },
+    {
+      "name": "interaction_id",
+      "type": "string",
+      "required": true,
+      "description": "인터랙션 ID(PK). 예: FMW-001-open_new_file_manager_window"
+    },
+    {
+      "name": "interaction_type",
+      "type": "string",
+      "required": false,
+      "description": "인터랙션 타입(예: command, input)."
+    },
+    {
+      "name": "feature",
+      "type": "string",
+      "required": false,
+      "description": "기능 제목(표시용)."
+    },
+    {
+      "name": "category_key",
+      "type": "string",
+      "required": false,
+      "ref": {
+        "table": "FEATURE_CATEGORIES",
+        "column": "category_key"
+      },
+      "description": "기능 카테고리 키(FK -> FEATURE_CATEGORIES.category_key)."
+    },
+    {
+      "name": "feature_id",
+      "type": "string",
+      "required": false,
+      "ref": {
+        "table": "FEATURES",
+        "column": "feature_id"
+      },
+      "description": "기능 ID(FK -> FEATURES.feature_id)."
+    },
+    {
+      "name": "status",
+      "type": "string",
+      "required": false,
+      "description": "상태."
+    },
+    {
+      "name": "summary",
+      "type": "string",
+      "required": false,
+      "description": "요약."
+    },
+    {
+      "name": "related_region",
+      "type": "string",
+      "required": false,
+      "ref": {
+        "table": "WINDOW_STRUCTURE",
+        "column": "structure_key"
+      },
+      "description": "UI 영역 참조(옵션, FK -> WINDOW_STRUCTURE.structure_key)."
+    },
+    {
+      "name": "menu",
+      "type": "string",
+      "required": false,
+      "description": "메뉴 라벨/참조(자유 형식)."
+    },
+    {
+      "name": "shortcut",
+      "type": "string",
+      "required": false,
+      "description": "단축키(자유 형식)."
+    }
+  ]
+}

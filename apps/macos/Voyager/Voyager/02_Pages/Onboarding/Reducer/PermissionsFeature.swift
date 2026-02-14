@@ -11,6 +11,8 @@ struct PermissionsFeature {
     var folderAccessClient
     @Dependency(\.fullDiskAccessClient)
     var fullDiskAccessClient
+    @Dependency(\.helperFolderAccessClient)
+    var helperFolderAccessClient
     @Dependency(\.launchAtLoginClient)
     var launchAtLoginClient
     @Dependency(\.systemSettingsClient)
@@ -34,7 +36,7 @@ struct PermissionsFeature {
                     hasAttempted: state.hasAttemptedFullDiskAccessEnable,
                 )
                 state.fullDiskAccessStatus = resolvedStatus
-                state.isComplete = resolvedStatus == .granted
+                refreshCompletionState(state: &state)
                 return startIndexingIfReady(state: &state)
 
             case .openSystemSettingsTapped:
@@ -56,15 +58,26 @@ struct PermissionsFeature {
                 state.isRequestingFilesAndFolders = true
                 state.filesAndFoldersStatus = .idle
                 state.folderAccessResult = nil
-                return .run { [folderAccessClient] send in
+                state.helperFilesAndFoldersStatus = .idle
+                state.helperFolderAccessResult = nil
+                return .run { [folderAccessClient, helperFolderAccessClient] send in
                     let result = await folderAccessClient.requestAccess()
+                    let helperResult = await helperFolderAccessClient.requestAccess()
                     await send(.filesAndFoldersResponse(result))
+                    await send(.helperFilesAndFoldersResponse(helperResult))
                 }
 
             case let .filesAndFoldersResponse(result):
-                state.isRequestingFilesAndFolders = false
                 state.folderAccessResult = result
                 state.filesAndFoldersStatus = result.status
+                refreshCompletionState(state: &state)
+                return startIndexingIfReady(state: &state)
+
+            case let .helperFilesAndFoldersResponse(result):
+                state.isRequestingFilesAndFolders = false
+                state.helperFolderAccessResult = result
+                state.helperFilesAndFoldersStatus = result.status
+                refreshCompletionState(state: &state)
                 return startIndexingIfReady(state: &state)
 
             case let .launchAtLoginToggled(enabled):
@@ -125,10 +138,11 @@ struct PermissionsFeature {
 
     private func startIndexingIfReady(state: inout State) -> Effect<Action> {
         logger.info(
-            "Onboarding indexing check: fullDiskAccess=\(state.fullDiskAccessStatus), filesAndFolders=\(state.filesAndFoldersStatus), inBackground=\(state.isIndexingInBackground)",
+            "Onboarding indexing check: fullDiskAccess=\(state.fullDiskAccessStatus), filesAndFolders=\(state.filesAndFoldersStatus), helperFilesAndFolders=\(state.helperFilesAndFoldersStatus), inBackground=\(state.isIndexingInBackground)",
         )
         guard state.fullDiskAccessStatus == .granted,
               state.filesAndFoldersStatus == .granted,
+              state.helperFilesAndFoldersStatus == .granted,
               !state.isIndexingInBackground
         else {
             return .none
@@ -139,5 +153,9 @@ struct PermissionsFeature {
             logger.info("Onboarding indexing triggered.")
             await indexingClient.start()
         }
+    }
+
+    private func refreshCompletionState(state: inout State) {
+        state.isComplete = state.fullDiskAccessStatus == .granted && state.allFilesAndFoldersGranted
     }
 }

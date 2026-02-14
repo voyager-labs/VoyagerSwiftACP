@@ -35,6 +35,8 @@ struct ComposerState: Equatable {
     var canUndo: Bool { !history.isEmpty }
     var canRedo: Bool { !redoHistory.isEmpty }
 
+    var queryRenderPhase: ComposerQueryRenderPhase = .idle
+
     mutating func pushHistory() {
         history.append(FilterSnapshot(scopes: scopes, conditions: conditions))
         if history.count > 100 {

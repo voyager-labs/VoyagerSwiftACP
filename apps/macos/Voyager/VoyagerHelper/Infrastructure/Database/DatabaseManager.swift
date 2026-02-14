@@ -228,18 +228,41 @@ actor DatabaseManager {
             try DatabaseMigrations.validateMigrationHistory(db)
         }
 
-        let legacyEntries = try await pool.read { db in
+        let legacyFiles = try await pool.read { db in
             let hasMigrations = try db.tableExists("grdb_migrations")
             guard !hasMigrations else { return false }
-            return try db.tableExists("entries")
+            return try db.tableExists(FilesSchema.tableName)
         }
-        if legacyEntries {
-            logger.info("Legacy entries DB detected without migrations; applying baseline migrations")
+        if legacyFiles {
+            logger.info("Legacy files DB detected without migrations; applying baseline migrations")
             let backupURL = try await backupDatabaseFile(databaseURL: databaseURL, pool: pool)
-            logger.info("Legacy entries DB backup created at: \(backupURL.path)")
+            logger.info("Legacy files DB backup created at: \(backupURL.path)")
         }
 
+        let appliedCountBefore = try await appliedMigrationCount(pool: pool)
         try migrator.migrate(pool)
+        let appliedCountAfter = try await appliedMigrationCount(pool: pool)
+
+        if appliedCountAfter > appliedCountBefore {
+            logger
+                .info(
+                    "Migrations applied this run (\(appliedCountBefore) → \(appliedCountAfter)); running VACUUM once to reclaim space",
+                )
+            do {
+                try await pool.write { db in
+                    try db.execute(sql: "VACUUM")
+                }
+            } catch {
+                logger.warning("VACUUM failed (non-fatal): \(error)")
+            }
+        }
+    }
+
+    private func appliedMigrationCount(pool: DatabasePool) async throws -> Int {
+        try await pool.read { db in
+            guard try db.tableExists("grdb_migrations") else { return 0 }
+            return try Int.fetchOne(db, sql: "SELECT COUNT(*) FROM grdb_migrations") ?? 0
+        }
     }
 
     enum DatabaseError: Error, Equatable {

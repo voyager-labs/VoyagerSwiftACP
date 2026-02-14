@@ -1,0 +1,33 @@
+# Close Selected Content Tabs
+
+## Metadata
+
+| Field | Value |
+| --- | --- |
+| Interaction ID | CTM-001-close_selected_content_tabs |
+| Interaction Type | command |
+| Feature | Handle Content Tab |
+| Category Key | CTM |
+| Feature ID | CTM-001 |
+| Status | 준비 완료 |
+| Summary | 선택한 Content Tab들을 닫음 |
+| Related Region | file_manager_window.sidebar.sidebar_body.content_tabs_area |
+| Menu | Context |
+| Shortcut | ⌘W |
+
+## Preconditions
+
+- -
+
+## Edge Cases
+
+- -
+
+## Acceptance Criteria
+
+- -
+
+## Source
+
+- Inventory: `04_FEATURE_INVENTORY/INTERACTIONS/data.tsv`
+- Source line: `202`

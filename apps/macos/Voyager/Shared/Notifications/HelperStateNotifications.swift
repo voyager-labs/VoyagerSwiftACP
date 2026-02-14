@@ -12,20 +12,4 @@ nonisolated enum HelperStateUserInfoKey {
     static let generatedAt = "generated_at"
     static let helperReady = "helper_ready"
     static let helperBundleVersion = "helper_bundle_version"
-    static let backend = "backend"
-
-    // Backend 상태 영역 key 정의
-    enum Backend {
-        static let ready = "ready"
-        static let pid = "pid"
-        static let uptimeSeconds = "uptime_seconds"
-        static let endpoint = "endpoint"
-    }
-
-    // Endpoint 정보 영역 key 정의
-    enum Endpoint {
-        static let host = "host"
-        static let port = "port"
-        static let url = "url"
-    }
 }

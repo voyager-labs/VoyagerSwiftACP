@@ -8,6 +8,7 @@
 
 /* Begin PBXBuildFile section */
 		11884BDAA11DD6217EEF5014 /* system_property_registry.json in Resources */ = {isa = PBXBuildFile; fileRef = A68896D2BA838902604FD30A /* system_property_registry.json */; };
+		3B378A28A482423D9B847800 /* StructuredQueries in Frameworks */ = {isa = PBXBuildFile; productRef = 319E52B31FBB4D8FA03D33B9 /* StructuredQueries */; };
 		6C57FBA92F02111500D85C72 /* Sparkle in Frameworks */ = {isa = PBXBuildFile; productRef = 6C57FBA82F02111500D85C72 /* Sparkle */; };
 		6C727A2D2F0DF4A10012D44A /* Logging in Frameworks */ = {isa = PBXBuildFile; productRef = 6C727A2C2F0DF4A10012D44A /* Logging */; };
 		6C727A2F2F0DF4AA0012D44A /* Logging in Frameworks */ = {isa = PBXBuildFile; productRef = 6C727A2E2F0DF4AA0012D44A /* Logging */; };
@@ -22,9 +23,21 @@
 		7E9D64952E8CDDC8006CB69F /* SwiftDotenv in Frameworks */ = {isa = PBXBuildFile; productRef = 7E9D64942E8CDDC8006CB69F /* SwiftDotenv */; };
 		7EEC64512E8CE684004ACEA5 /* SwiftDotenv in Frameworks */ = {isa = PBXBuildFile; productRef = 7EEC64502E8CE684004ACEA5 /* SwiftDotenv */; };
 		7EEC64532E8CE6E3004ACEA5 /* InjectionNext in Frameworks */ = {isa = PBXBuildFile; productRef = 7EEC64522E8CE6E3004ACEA5 /* InjectionNext */; };
+		A018A998CD9F45ABB1050941 /* StructuredQueries in Frameworks */ = {isa = PBXBuildFile; productRef = 319E52B31FBB4D8FA03D33B9 /* StructuredQueries */; };
 		A1B2C3D4E5F60708192A3B4D /* Migrations in Resources */ = {isa = PBXBuildFile; fileRef = A1B2C3D4E5F60708192A3B4C /* Migrations */; };
+		A332223B67D84E9E9BA1DFB7 /* system_property_registry.json in Resources */ = {isa = PBXBuildFile; fileRef = A68896D2BA838902604FD30A /* system_property_registry.json */; };
+		A63E25704AD24423A15E5733 /* property_condition_registry.json in Resources */ = {isa = PBXBuildFile; fileRef = 60F570BDE5ECDE55DC1C7E60 /* property_condition_registry.json */; };
 		AF0F1E7B33B24D4A00A1F123 /* VoyagerHelper.app in Copy Helper into App */ = {isa = PBXBuildFile; fileRef = 7E14EE232E866E82005AC834 /* VoyagerHelper.app */; settings = {ATTRIBUTES = (CodeSignOnCopy, ); }; };
 		B2AD8C7BD69A51C61EF4D9FC /* property_condition_registry.json in Resources */ = {isa = PBXBuildFile; fileRef = 60F570BDE5ECDE55DC1C7E60 /* property_condition_registry.json */; };
+		B7A1F2E133C9F5AB00C0FFEE /* VoyagerHelperTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = B7A1F2E233C9F5AB00C0FFEE /* VoyagerHelperTests.swift */; };
+		F1000000000000000000000A /* FilterSearchXPC.xpc in Copy XPC Services */ = {isa = PBXBuildFile; fileRef = F10000000000000000000002 /* FilterSearchXPC.xpc */; settings = {ATTRIBUTES = (CodeSignOnCopy, ); }; };
+		F10000000000000000000020 /* system_property_registry.json in Resources */ = {isa = PBXBuildFile; fileRef = A68896D2BA838902604FD30A /* system_property_registry.json */; };
+		F10000000000000000000021 /* property_condition_registry.json in Resources */ = {isa = PBXBuildFile; fileRef = 60F570BDE5ECDE55DC1C7E60 /* property_condition_registry.json */; };
+		F10000000000000000000022 /* Migrations in Resources */ = {isa = PBXBuildFile; fileRef = A1B2C3D4E5F60708192A3B4C /* Migrations */; };
+		F10000000000000000000030 /* Logging in Frameworks */ = {isa = PBXBuildFile; productRef = 6C727A2C2F0DF4A10012D44A /* Logging */; };
+		F10000000000000000000031 /* SwiftDotenv in Frameworks */ = {isa = PBXBuildFile; productRef = 7E9D64942E8CDDC8006CB69F /* SwiftDotenv */; };
+		F10000000000000000000032 /* GRDB in Frameworks */ = {isa = PBXBuildFile; productRef = 7E8B3C4E2F1A2B3C400D9E8F1 /* GRDB */; };
+		F10000000000000000000033 /* StructuredQueries in Frameworks */ = {isa = PBXBuildFile; productRef = 319E52B31FBB4D8FA03D33B9 /* StructuredQueries */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -56,6 +69,13 @@
 			remoteGlobalIDString = 7E14EE222E866E82005AC834;
 			remoteInfo = VoyagerHelper;
 		};
+		F1000000000000000000000C /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = 7E14EDC42E86622C005AC834 /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = F10000000000000000000001;
+			remoteInfo = FilterSearchXPC;
+		};
 /* End PBXContainerItemProxy section */
 
 /* Begin PBXCopyFilesBuildPhase section */
@@ -70,6 +90,17 @@
 			name = "Copy Helper into App";
 			runOnlyForDeploymentPostprocessing = 0;
 		};
+		F10000000000000000000009 /* Copy XPC Services */ = {
+			isa = PBXCopyFilesBuildPhase;
+			buildActionMask = 2147483647;
+			dstPath = Contents/XPCServices;
+			dstSubfolderSpec = 1;
+			files = (
+				F1000000000000000000000A /* FilterSearchXPC.xpc in Copy XPC Services */,
+			);
+			name = "Copy XPC Services";
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 /* End PBXCopyFilesBuildPhase section */
 
 /* Begin PBXFileReference section */
@@ -81,6 +112,8 @@
 		7E14EE2F2E866E85005AC834 /* VoyagerHelperTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = VoyagerHelperTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		A1B2C3D4E5F60708192A3B4C /* Migrations */ = {isa = PBXFileReference; lastKnownFileType = folder; name = Migrations; path = VoyagerHelper/Infrastructure/Database/Migrations; sourceTree = "<group>"; };
 		A68896D2BA838902604FD30A /* system_property_registry.json */ = {isa = PBXFileReference; lastKnownFileType = text.json; name = system_property_registry.json; path = ../../../shared/system_property_registry.json; sourceTree = SOURCE_ROOT; };
+		B7A1F2E233C9F5AB00C0FFEE /* VoyagerHelperTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = VoyagerHelperTests.swift; path = VoyagerHelperTests/VoyagerHelperTests.swift; sourceTree = SOURCE_ROOT; };
+		F10000000000000000000002 /* FilterSearchXPC.xpc */ = {isa = PBXFileReference; explicitFileType = "wrapper.xpc-service"; includeInIndex = 0; path = FilterSearchXPC.xpc; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedRootGroup section */
@@ -112,6 +145,21 @@
 		7E14EE322E866E85005AC834 /* VoyagerHelperTests */ = {
 			isa = PBXFileSystemSynchronizedRootGroup;
 			path = VoyagerHelperTests;
+			sourceTree = "<group>";
+		};
+		F10000000000000000000040 /* FilterSearchXPC */ = {
+			isa = PBXFileSystemSynchronizedRootGroup;
+			path = FilterSearchXPC;
+			sourceTree = "<group>";
+		};
+		F10000000000000000000041 /* VoyagerHelper/Search */ = {
+			isa = PBXFileSystemSynchronizedRootGroup;
+			path = VoyagerHelper/Search;
+			sourceTree = "<group>";
+		};
+		F10000000000000000000042 /* VoyagerHelper/Infrastructure/Database */ = {
+			isa = PBXFileSystemSynchronizedRootGroup;
+			path = VoyagerHelper/Infrastructure/Database;
 			sourceTree = "<group>";
 		};
 /* End PBXFileSystemSynchronizedRootGroup section */
@@ -155,6 +203,7 @@
 				7E9D64952E8CDDC8006CB69F /* SwiftDotenv in Frameworks */,
 				7EEC64532E8CE6E3004ACEA5 /* InjectionNext in Frameworks */,
 				7E8B3C4F2F1A2B3C400D9E8F2 /* GRDB in Frameworks */,
+				A018A998CD9F45ABB1050941 /* StructuredQueries in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -163,12 +212,34 @@
 			buildActionMask = 2147483647;
 			files = (
 				7E8B3C502F1A2B3C400D9E8F3 /* GRDB in Frameworks */,
+				3B378A28A482423D9B847800 /* StructuredQueries in Frameworks */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		F10000000000000000000004 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				F10000000000000000000030 /* Logging in Frameworks */,
+				F10000000000000000000031 /* SwiftDotenv in Frameworks */,
+				F10000000000000000000032 /* GRDB in Frameworks */,
+				F10000000000000000000033 /* StructuredQueries in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
 /* End PBXFrameworksBuildPhase section */
 
 /* Begin PBXGroup section */
+		6C37996C2F3E32BD0044D1A9 /* Recovered References */ = {
+			isa = PBXGroup;
+			children = (
+				B7A1F2E233C9F5AB00C0FFEE /* VoyagerHelperTests.swift */,
+				F10000000000000000000041 /* VoyagerHelper/Search */,
+				F10000000000000000000042 /* VoyagerHelper/Infrastructure/Database */,
+			);
+			name = "Recovered References";
+			sourceTree = "<group>";
+		};
 		7E14EDC32E86622C005AC834 = {
 			isa = PBXGroup;
 			children = (
@@ -177,11 +248,13 @@
 				A1B2C3D4E5F60708192A3B4C /* Migrations */,
 				7E14EDCE2E86622C005AC834 /* Voyager */,
 				24DD04D6008045F2B081D402 /* Shared */,
+				F10000000000000000000040 /* FilterSearchXPC */,
 				7E14EDDE2E86622E005AC834 /* VoyagerTests */,
 				7E14EDE82E86622E005AC834 /* VoyagerUITests */,
 				7E14EE242E866E82005AC834 /* VoyagerHelper */,
 				7E14EE322E866E85005AC834 /* VoyagerHelperTests */,
 				7E14EDCD2E86622C005AC834 /* Products */,
+				6C37996C2F3E32BD0044D1A9 /* Recovered References */,
 			);
 			sourceTree = "<group>";
 		};
@@ -193,6 +266,7 @@
 				7E14EDE52E86622E005AC834 /* VoyagerUITests.xctest */,
 				7E14EE232E866E82005AC834 /* VoyagerHelper.app */,
 				7E14EE2F2E866E85005AC834 /* VoyagerHelperTests.xctest */,
+				F10000000000000000000002 /* FilterSearchXPC.xpc */,
 			);
 			name = Products;
 			sourceTree = "<group>";
@@ -209,12 +283,14 @@
 				7E14EDC92E86622C005AC834 /* Frameworks */,
 				7E14EDCA2E86622C005AC834 /* Resources */,
 				AFB0BEF033B7C0F100A1F901 /* Copy Bundled Env */,
+				F10000000000000000000009 /* Copy XPC Services */,
 				AF0F1E7A33B24D3000A1F123 /* Copy Helper into App */,
 			);
 			buildRules = (
 			);
 			dependencies = (
 				AF0F1E7D33B2530900A1F123 /* PBXTargetDependency */,
+				F1000000000000000000000B /* PBXTargetDependency */,
 			);
 			fileSystemSynchronizedGroups = (
 				24DD04D6008045F2B081D402 /* Shared */,
@@ -289,7 +365,6 @@
 				7EC6B03F2E8CE43B00379B56 /* Run Lint and Format */,
 				7E14EE202E866E82005AC834 /* Frameworks */,
 				7E14EE212E866E82005AC834 /* Resources */,
-				AFB0BEEF33B27A4C00A1F900 /* Build Backend Binary */,
 			);
 			buildRules = (
 			);
@@ -306,6 +381,7 @@
 				7EEC64522E8CE6E3004ACEA5 /* InjectionNext */,
 				6C727A2E2F0DF4AA0012D44A /* Logging */,
 				7E8B3C4E2F1A2B3C400D9E8F1 /* GRDB */,
+				319E52B31FBB4D8FA03D33B9 /* StructuredQueries */,
 			);
 			productName = VoyagerHelper;
 			productReference = 7E14EE232E866E82005AC834 /* VoyagerHelper.app */;
@@ -330,10 +406,40 @@
 			name = VoyagerHelperTests;
 			packageProductDependencies = (
 				7E8B3C4E2F1A2B3C400D9E8F1 /* GRDB */,
+				319E52B31FBB4D8FA03D33B9 /* StructuredQueries */,
 			);
 			productName = VoyagerHelperTests;
 			productReference = 7E14EE2F2E866E85005AC834 /* VoyagerHelperTests.xctest */;
 			productType = "com.apple.product-type.bundle.unit-test";
+		};
+		F10000000000000000000001 /* FilterSearchXPC */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = F10000000000000000000006 /* Build configuration list for PBXNativeTarget "FilterSearchXPC" */;
+			buildPhases = (
+				F10000000000000000000003 /* Sources */,
+				F10000000000000000000004 /* Frameworks */,
+				F10000000000000000000005 /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			fileSystemSynchronizedGroups = (
+				24DD04D6008045F2B081D402 /* Shared */,
+				F10000000000000000000040 /* FilterSearchXPC */,
+				F10000000000000000000041 /* VoyagerHelper/Search */,
+				F10000000000000000000042 /* VoyagerHelper/Infrastructure/Database */,
+			);
+			name = FilterSearchXPC;
+			packageProductDependencies = (
+				6C727A2C2F0DF4A10012D44A /* Logging */,
+				7E9D64942E8CDDC8006CB69F /* SwiftDotenv */,
+				7E8B3C4E2F1A2B3C400D9E8F1 /* GRDB */,
+				319E52B31FBB4D8FA03D33B9 /* StructuredQueries */,
+			);
+			productName = FilterSearchXPC;
+			productReference = F10000000000000000000002 /* FilterSearchXPC.xpc */;
+			productType = "com.apple.product-type.xpc-service";
 		};
 /* End PBXNativeTarget section */
 
@@ -363,6 +469,9 @@
 						CreatedOnToolsVersion = 26.0.1;
 						TestTargetID = 7E14EE222E866E82005AC834;
 					};
+					F10000000000000000000001 = {
+						CreatedOnToolsVersion = 26.0.1;
+					};
 				};
 			};
 			buildConfigurationList = 7E14EDC72E86622C005AC834 /* Build configuration list for PBXProject "Voyager" */;
@@ -384,6 +493,7 @@
 				6C727A2B2F0DF4A10012D44A /* XCRemoteSwiftPackageReference "swift-log" */,
 				7E8B3C4D2F1A2B3C400D9E8F0 /* XCRemoteSwiftPackageReference "GRDB" */,
 				7E17C11F2F24CB7500F6BD2B /* XCRemoteSwiftPackageReference "sentry-cocoa" */,
+				08631B7042D24536AA083429 /* XCRemoteSwiftPackageReference "swift-structured-queries" */,
 			);
 			preferredProjectObjectVersion = 77;
 			productRefGroup = 7E14EDCD2E86622C005AC834 /* Products */;
@@ -395,6 +505,7 @@
 				7E14EDE42E86622E005AC834 /* VoyagerUITests */,
 				7E14EE222E866E82005AC834 /* VoyagerHelper */,
 				7E14EE2E2E866E85005AC834 /* VoyagerHelperTests */,
+				F10000000000000000000001 /* FilterSearchXPC */,
 			);
 		};
 /* End PBXProject section */
@@ -427,6 +538,8 @@
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				A332223B67D84E9E9BA1DFB7 /* system_property_registry.json in Resources */,
+				A63E25704AD24423A15E5733 /* property_condition_registry.json in Resources */,
 				A1B2C3D4E5F60708192A3B4D /* Migrations in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
@@ -435,6 +548,16 @@
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		F10000000000000000000005 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				F10000000000000000000020 /* system_property_registry.json in Resources */,
+				F10000000000000000000021 /* property_condition_registry.json in Resources */,
+				F10000000000000000000022 /* Migrations in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -477,26 +600,6 @@
 			shellPath = /bin/sh;
 			shellScript = "#!/bin/bash\nset -euo pipefail\n\nROOT=\"$SRCROOT\"\n\necho \"================================\"\necho \"🔍 SwiftLint: using system installation...\"\necho \"================================\"\n\n# 시스템에 설치된 SwiftLint 사용\nif command -v swiftlint >/dev/null 2>&1; then\n  echo \"✓ Running SwiftLint at: $(which swiftlint)\"\n  swiftlint --config \"$ROOT/.swiftlint.yml\" --reporter xcode\n  echo \"✓ SwiftLint completed\"\nelse\n  echo \"⚠️ SwiftLint not found in PATH\"\nfi\n\necho \"================================\"\necho \"🔧 SwiftFormat: using system installation...\"\necho \"================================\"\n\n# 시스템에 설치된 SwiftFormat 사용\nif command -v swiftformat >/dev/null 2>&1; then\n  echo \"✓ Running SwiftFormat at: $(which swiftformat)\"\n  swiftformat --config \"$ROOT/.swiftformat\" \"$ROOT\" --verbose || true\n  echo \"✓ SwiftFormat completed\"\nelse\n  echo \"⚠️ SwiftFormat not found in PATH\"\nfi\n\necho \"================================\"\n";
 		};
-		AFB0BEEF33B27A4C00A1F900 /* Build Backend Binary */ = {
-			isa = PBXShellScriptBuildPhase;
-			alwaysOutOfDate = 1;
-			buildActionMask = 2147483647;
-			files = (
-			);
-			inputFileListPaths = (
-			);
-			inputPaths = (
-				"$SRCROOT/../../../scripts/build/build-backend-binary.sh",
-			);
-			name = "Build Backend Binary";
-			outputFileListPaths = (
-			);
-			outputPaths = (
-			);
-			runOnlyForDeploymentPostprocessing = 0;
-			shellPath = /bin/sh;
-			shellScript = "set -euo pipefail\nREPO_ROOT=\"$(cd \"$SRCROOT/../../..\" && pwd)\"\nSCRIPT=\"${REPO_ROOT}/scripts/build/build-backend-binary.sh\"\nif [ ! -x \"${SCRIPT}\" ]; then\n  echo \"[VoyagerHelper] build-backend-binary.sh not found or not executable: ${SCRIPT}\" >&2\n  exit 1\nfi\nPATH=\"/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/sbin:$PATH\"\nexport PATH\necho \"[VoyagerHelper] Build Backend Binary Phase Start\" >&2\n\"${SCRIPT}\" 2>&1\necho \"[VoyagerHelper] Build Backend Binary Phase Complete\" >&2\n";
-		};
 		AFB0BEF033B7C0F100A1F901 /* Copy Bundled Env */ = {
 			isa = PBXShellScriptBuildPhase;
 			alwaysOutOfDate = 1;
@@ -511,7 +614,6 @@
 			outputFileListPaths = (
 			);
 			outputPaths = (
-				"$(TARGET_BUILD_DIR)/$(UNLOCALIZED_RESOURCES_FOLDER_PATH)/.env.bundled",
 				"$(TARGET_BUILD_DIR)/$(UNLOCALIZED_RESOURCES_FOLDER_PATH)/.env.prod",
 			);
 			runOnlyForDeploymentPostprocessing = 0;
@@ -553,6 +655,14 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				B7A1F2E133C9F5AB00C0FFEE /* VoyagerHelperTests.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		F10000000000000000000003 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -578,6 +688,11 @@
 			isa = PBXTargetDependency;
 			target = 7E14EE222E866E82005AC834 /* VoyagerHelper */;
 			targetProxy = AF0F1E7C33B2530900A1F123 /* PBXContainerItemProxy */;
+		};
+		F1000000000000000000000B /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = F10000000000000000000001 /* FilterSearchXPC */;
+			targetProxy = F1000000000000000000000C /* PBXContainerItemProxy */;
 		};
 /* End PBXTargetDependency section */
 
@@ -716,7 +831,6 @@
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
 				ASSETCATALOG_COMPILER_INCLUDE_ALL_APPICON_ASSETS = YES;
 				AUTOMATION_APPLE_EVENTS = YES;
-				BACKEND_MODE = source;
 				CODE_SIGN_IDENTITY = "-";
 				CODE_SIGN_STYLE = Manual;
 				COMBINE_HIDPI_IMAGES = YES;
@@ -743,7 +857,7 @@
 					"@executable_path/../Frameworks",
 				);
 				MACOSX_DEPLOYMENT_TARGET = 13.5;
-				MARKETING_VERSION = 0.1.1;
+				MARKETING_VERSION = 0.1.2;
 				"OTHER_LDFLAGS[arch=*]" = (
 					"-Xlinker",
 					"-interposable",
@@ -774,7 +888,6 @@
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
 				ASSETCATALOG_COMPILER_INCLUDE_ALL_APPICON_ASSETS = YES;
-				BACKEND_MODE = bundled;
 				"CODE_SIGN_IDENTITY[sdk=macosx*]" = "Developer ID Application";
 				CODE_SIGN_STYLE = Manual;
 				COMBINE_HIDPI_IMAGES = YES;
@@ -802,7 +915,7 @@
 					"@executable_path/../Frameworks",
 				);
 				MACOSX_DEPLOYMENT_TARGET = 13.5;
-				MARKETING_VERSION = 0.1.1;
+				MARKETING_VERSION = 0.1.2;
 				PRODUCT_BUNDLE_IDENTIFIER = fm.voyager.Voyager;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				PROVISIONING_PROFILE_SPECIFIER = "";
@@ -827,7 +940,7 @@
 				DEVELOPMENT_TEAM = "";
 				GENERATE_INFOPLIST_FILE = YES;
 				MACOSX_DEPLOYMENT_TARGET = 13.5;
-				MARKETING_VERSION = 0.1.1;
+				MARKETING_VERSION = 0.1.2;
 				PRODUCT_BUNDLE_IDENTIFIER = fm.voyager.VoyagerTests;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				PROVISIONING_PROFILE_SPECIFIER = "";
@@ -850,7 +963,7 @@
 				DEVELOPMENT_TEAM = "";
 				GENERATE_INFOPLIST_FILE = YES;
 				MACOSX_DEPLOYMENT_TARGET = 13.5;
-				MARKETING_VERSION = 0.1.1;
+				MARKETING_VERSION = 0.1.2;
 				PRODUCT_BUNDLE_IDENTIFIER = fm.voyager.VoyagerTests;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				PROVISIONING_PROFILE_SPECIFIER = "";
@@ -871,7 +984,7 @@
 				DEAD_CODE_STRIPPING = YES;
 				DEVELOPMENT_TEAM = "";
 				GENERATE_INFOPLIST_FILE = YES;
-				MARKETING_VERSION = 0.1.1;
+				MARKETING_VERSION = 0.1.2;
 				PRODUCT_BUNDLE_IDENTIFIER = fm.voyager.VoyagerUITests;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				PROVISIONING_PROFILE_SPECIFIER = "";
@@ -892,7 +1005,7 @@
 				DEAD_CODE_STRIPPING = YES;
 				DEVELOPMENT_TEAM = "";
 				GENERATE_INFOPLIST_FILE = YES;
-				MARKETING_VERSION = 0.1.1;
+				MARKETING_VERSION = 0.1.2;
 				PRODUCT_BUNDLE_IDENTIFIER = fm.voyager.VoyagerUITests;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				PROVISIONING_PROFILE_SPECIFIER = "";
@@ -912,7 +1025,6 @@
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
 				AUTOMATION_APPLE_EVENTS = YES;
-				BACKEND_MODE = source;
 				"CODE_SIGN_IDENTITY[sdk=macosx*]" = "-";
 				CODE_SIGN_STYLE = Manual;
 				COMBINE_HIDPI_IMAGES = YES;
@@ -940,7 +1052,7 @@
 					"$(inherited)",
 					"@executable_path/../Frameworks",
 				);
-				MARKETING_VERSION = 0.1.1;
+				MARKETING_VERSION = 0.1.2;
 				PRODUCT_BUNDLE_IDENTIFIER = fm.voyager.VoyagerHelper;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				PROVISIONING_PROFILE_SPECIFIER = "";
@@ -967,7 +1079,6 @@
 				APP_ENV = prod;
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
-				BACKEND_MODE = bundled;
 				"CODE_SIGN_IDENTITY[sdk=macosx*]" = "Developer ID Application";
 				CODE_SIGN_STYLE = Manual;
 				COMBINE_HIDPI_IMAGES = YES;
@@ -996,7 +1107,7 @@
 					"$(inherited)",
 					"@executable_path/../Frameworks",
 				);
-				MARKETING_VERSION = 0.1.1;
+				MARKETING_VERSION = 0.1.2;
 				PRODUCT_BUNDLE_IDENTIFIER = fm.voyager.VoyagerHelper;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				PROVISIONING_PROFILE_SPECIFIER = "";
@@ -1022,7 +1133,7 @@
 				DEVELOPMENT_TEAM = "";
 				GENERATE_INFOPLIST_FILE = YES;
 				MACOSX_DEPLOYMENT_TARGET = 13.5;
-				MARKETING_VERSION = 0.1.1;
+				MARKETING_VERSION = 0.1.2;
 				PRODUCT_BUNDLE_IDENTIFIER = fm.voyager.VoyagerHelperTests;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				PROVISIONING_PROFILE_SPECIFIER = "";
@@ -1045,7 +1156,7 @@
 				DEVELOPMENT_TEAM = "";
 				GENERATE_INFOPLIST_FILE = YES;
 				MACOSX_DEPLOYMENT_TARGET = 13.5;
-				MARKETING_VERSION = 0.1.1;
+				MARKETING_VERSION = 0.1.2;
 				PRODUCT_BUNDLE_IDENTIFIER = fm.voyager.VoyagerHelperTests;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				PROVISIONING_PROFILE_SPECIFIER = "";
@@ -1055,6 +1166,61 @@
 				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
 				SWIFT_VERSION = 6.0;
 				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/VoyagerHelper.app/$(BUNDLE_EXECUTABLE_FOLDER_PATH)/Voyager Helper";
+			};
+			name = Release;
+		};
+		F10000000000000000000007 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				APP_ENV = dev;
+				"CODE_SIGN_IDENTITY[sdk=macosx*]" = "-";
+				CODE_SIGN_STYLE = Manual;
+				CURRENT_PROJECT_VERSION = 0;
+				DEAD_CODE_STRIPPING = YES;
+				DEVELOPMENT_TEAM = "";
+				GENERATE_INFOPLIST_FILE = NO;
+				INFOPLIST_FILE = FilterSearchXPC/Info.plist;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/../Frameworks",
+				);
+				MARKETING_VERSION = 0.1.1;
+				PRODUCT_BUNDLE_IDENTIFIER = fm.voyager.Voyager.FilterSearchXPC;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				PROVISIONING_PROFILE_SPECIFIER = "";
+				SKIP_INSTALL = YES;
+				SWIFT_APPROACHABLE_CONCURRENCY = YES;
+				SWIFT_EMIT_LOC_STRINGS = NO;
+				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
+				SWIFT_VERSION = 6.0;
+			};
+			name = Debug;
+		};
+		F10000000000000000000008 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				APP_ENV = prod;
+				"CODE_SIGN_IDENTITY[sdk=macosx*]" = "Developer ID Application";
+				CODE_SIGN_STYLE = Manual;
+				CURRENT_PROJECT_VERSION = 0;
+				DEAD_CODE_STRIPPING = YES;
+				DEVELOPMENT_TEAM = "";
+				"DEVELOPMENT_TEAM[sdk=macosx*]" = L6G32Y9LKG;
+				GENERATE_INFOPLIST_FILE = NO;
+				INFOPLIST_FILE = FilterSearchXPC/Info.plist;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/../Frameworks",
+				);
+				MARKETING_VERSION = 0.1.1;
+				PRODUCT_BUNDLE_IDENTIFIER = fm.voyager.Voyager.FilterSearchXPC;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				PROVISIONING_PROFILE_SPECIFIER = "";
+				SKIP_INSTALL = YES;
+				SWIFT_APPROACHABLE_CONCURRENCY = YES;
+				SWIFT_EMIT_LOC_STRINGS = NO;
+				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
+				SWIFT_VERSION = 6.0;
 			};
 			name = Release;
 		};
@@ -1115,9 +1281,26 @@
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Release;
 		};
+		F10000000000000000000006 /* Build configuration list for PBXNativeTarget "FilterSearchXPC" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				F10000000000000000000007 /* Debug */,
+				F10000000000000000000008 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
 /* End XCConfigurationList section */
 
 /* Begin XCRemoteSwiftPackageReference section */
+		08631B7042D24536AA083429 /* XCRemoteSwiftPackageReference "swift-structured-queries" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/pointfreeco/swift-structured-queries";
+			requirement = {
+				branch = main;
+				kind = branch;
+			};
+		};
 		6C57FBA72F02111500D85C72 /* XCRemoteSwiftPackageReference "Sparkle" */ = {
 			isa = XCRemoteSwiftPackageReference;
 			repositoryURL = "https://github.com/sparkle-project/Sparkle";
@@ -1193,6 +1376,11 @@
 /* End XCRemoteSwiftPackageReference section */
 
 /* Begin XCSwiftPackageProductDependency section */
+		319E52B31FBB4D8FA03D33B9 /* StructuredQueries */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 08631B7042D24536AA083429 /* XCRemoteSwiftPackageReference "swift-structured-queries" */;
+			productName = StructuredQueries;
+		};
 		6C57FBA82F02111500D85C72 /* Sparkle */ = {
 			isa = XCSwiftPackageProductDependency;
 			package = 6C57FBA72F02111500D85C72 /* XCRemoteSwiftPackageReference "Sparkle" */;
