@@ -74,8 +74,12 @@ extension HelperAppClient: DependencyKey {
 
     public nonisolated static var testValue: HelperAppClient {
         HelperAppClient(
-            start: {},
-            stop: {},
+            start: {
+                fatalError("helperAppClient.start test dependency is not configured")
+            },
+            stop: {
+                fatalError("helperAppClient.stop test dependency is not configured")
+            },
             isRunning: { false },
             terminationEvents: { AsyncStream { $0.finish() } },
         )
@@ -83,8 +87,12 @@ extension HelperAppClient: DependencyKey {
 
     public nonisolated static var previewValue: HelperAppClient {
         HelperAppClient(
-            start: {},
-            stop: {},
+            start: {
+                fatalError("helperAppClient.start preview dependency is not configured")
+            },
+            stop: {
+                fatalError("helperAppClient.stop preview dependency is not configured")
+            },
             isRunning: { false },
             terminationEvents: { AsyncStream { $0.finish() } },
         )

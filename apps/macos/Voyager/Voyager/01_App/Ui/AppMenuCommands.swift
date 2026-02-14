@@ -3,114 +3,92 @@ import ComposableArchitecture
 import SwiftUI
 
 struct AppMenuCommands: Commands {
-    @ObservedObject private var fileManagerWindowCoordinator: FileManagerWindowCoordinator
-    private let appDelegate: AppDelegate?
+    @ObservedObject private var viewStore: ViewStore<MenuCommandsState, MenuCommandsAction>
 
-    init() {
-        fileManagerWindowCoordinator = FileManagerWindowCoordinator.shared
-        appDelegate = AppDelegate.shared
+    init(appRootStore: StoreOf<AppRootFeature>) {
+        viewStore = ViewStore(
+            appRootStore.scope(state: \.menuCommands, action: \.menuCommands),
+            observe: { $0 },
+        )
     }
 
     var body: some Commands {
         CommandGroup(after: .appInfo) {
             Button("Check for Updates...") {
-                appDelegate?.checkForUpdates()
+                viewStore.send(.perform(.app(.checkForUpdates)))
             }
         }
 
         CommandGroup(replacing: .newItem) {
             Button("New Window") {
-                fileManagerWindowCoordinator.createNewWindow()
+                viewStore.send(.perform(.app(.newWindow(path: nil))))
             }
             .keyboardShortcut("n", modifiers: .command)
 
             Button("New Folder") {
-                if let currentPath = fileManagerWindowCoordinator.currentFileManagerStore?.currentPath {
-                    fileManagerWindowCoordinator.currentFileManagerStore?
-                        .send(.entries(.createNewFolder(currentPath: currentPath)))
-                }
+                viewStore.send(.perform(.app(.newFolder)))
             }
             .keyboardShortcut("n", modifiers: [.command, .shift])
+            .disabled(!viewStore.hasFocusedWindow)
 
             Button("Open") {
-                fileManagerWindowCoordinator.currentFileManagerStore?.send(.entries(.openSelectedItem))
+                viewStore.send(.perform(.app(.open)))
             }
             .keyboardShortcut(.downArrow, modifiers: .command)
-            .disabled(fileManagerWindowCoordinator.currentFileManagerStore?.canOpenSelectedItem == false)
+            .disabled(!viewStore.canOpen)
 
             Button("Quick Look") {
-                fileManagerWindowCoordinator.currentFileManagerStore?.send(.entries(.quickLookSelectedItem))
+                viewStore.send(.perform(.app(.quickLook)))
             }
             .keyboardShortcut(.space, modifiers: [])
-            .disabled(fileManagerWindowCoordinator.currentFileManagerStore?.canQuickLookSelectedItem == false)
+            .disabled(!viewStore.canQuickLook)
         }
 
         CommandGroup(replacing: .saveItem) {
             Button("Save Collection Filter Changes") {
-                fileManagerWindowCoordinator.currentFileManagerStore?.send(.composer(.saveCollection))
+                viewStore.send(.perform(.app(.saveCollection)))
             }
             .keyboardShortcut("s", modifiers: .command)
-            .disabled({
-                guard let store = fileManagerWindowCoordinator.currentFileManagerStore else { return true }
-                guard store.entries.isCollectionMode else { return true }
-                return !store.canSaveCollection
-            }())
+            .disabled(!viewStore.canSaveCollection)
 
             Button("Save Current Filter As New Collection") {
-                fileManagerWindowCoordinator.currentFileManagerStore?.send(.composer(.saveCollectionAs))
+                viewStore.send(.perform(.app(.saveCollectionAs)))
             }
             .keyboardShortcut("s", modifiers: [.command, .shift])
-            .disabled({
-                guard let store = fileManagerWindowCoordinator.currentFileManagerStore else { return true }
-                guard store.entries.isCollectionMode else { return true }
-                return !store.canSaveCollection
-            }())
+            .disabled(!viewStore.canSaveCollection)
 
             Divider()
 
             Button("Close Window") {
-                NSApp.keyWindow?.close()
+                viewStore.send(.perform(.app(.closeFocusedWindow)))
             }
             .keyboardShortcut("w", modifiers: .command)
+            .disabled(!viewStore.hasFocusedWindow)
 
             Button("Close All") {
-                var processedTabGroups = Set<NSWindow>()
-
-                for window in NSApp.windows {
-                    if let tabGroup = window.tabGroup,
-                       let firstWindow = tabGroup.windows.first
-                    {
-                        guard !processedTabGroups.contains(firstWindow) else { continue }
-                        processedTabGroups.insert(firstWindow)
-                        for tabWindow in tabGroup.windows {
-                            tabWindow.close()
-                        }
-                    } else {
-                        window.close()
-                    }
-                }
+                viewStore.send(.perform(.app(.closeAllWindows)))
             }
             .keyboardShortcut("w", modifiers: [.command, .option])
         }
 
         CommandMenu("Go") {
             Button("Back") {
-                fileManagerWindowCoordinator.currentFileManagerStore?.send(.goBack)
+                viewStore.send(.perform(.app(.goBack)))
             }
             .keyboardShortcut("[", modifiers: .command)
-            .disabled(fileManagerWindowCoordinator.currentFileManagerStore?.canGoBack == false)
+            .disabled(!viewStore.canGoBack)
 
             Button("Forward") {
-                fileManagerWindowCoordinator.currentFileManagerStore?.send(.goForward)
+                viewStore.send(.perform(.app(.goForward)))
             }
             .keyboardShortcut("]", modifiers: .command)
-            .disabled(fileManagerWindowCoordinator.currentFileManagerStore?.canGoForward == false)
+            .disabled(!viewStore.canGoForward)
 
             Button("Enclosing Folder") {
-                fileManagerWindowCoordinator.currentFileManagerStore?.send(.goToEnclosingDirectory)
+                viewStore.send(.perform(.app(.goToEnclosingDirectory)))
             }
             .keyboardShortcut(.upArrow, modifiers: .command)
-            .disabled(fileManagerWindowCoordinator.currentFileManagerStore?.canGoToEnclosingDirectory == false)
+            .disabled(!viewStore.canGoToEnclosingDirectory)
         }
     }
 }

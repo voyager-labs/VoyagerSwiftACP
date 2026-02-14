@@ -3,12 +3,16 @@ import ComposableArchitecture
 import SwiftUI
 
 struct EditMenuCommands: Commands {
-    @ObservedObject private var fileManagerWindowCoordinator: FileManagerWindowCoordinator
+    @ObservedObject private var viewStore: ViewStore<MenuCommandsState, MenuCommandsAction>
+
     private let undoSelector = Selector(("undo:"))
     private let redoSelector = Selector(("redo:"))
 
-    init() {
-        fileManagerWindowCoordinator = FileManagerWindowCoordinator.shared
+    init(appRootStore: StoreOf<AppRootFeature>) {
+        viewStore = ViewStore(
+            appRootStore.scope(state: \.menuCommands, action: \.menuCommands),
+            observe: { $0 },
+        )
     }
 
     private func isTextEditingResponder() -> Bool {
@@ -30,119 +34,119 @@ struct EditMenuCommands: Commands {
         return textResponderUndoManager()?.canRedo == true
     }
 
+    private func sendEditCommand(_ command: MenuCommandItem.EditCommand) {
+        viewStore.send(.perform(.edit(command)))
+    }
+
+    private func sendTextResponderAction(_ selector: Selector, fallback command: MenuCommandItem.EditCommand) {
+        guard !NSApp.sendAction(selector, to: nil, from: nil) else { return }
+        sendEditCommand(command)
+    }
+
+    private func sendUndoRedoAction(
+        canHandleByTextResponder: Bool,
+        selector: Selector,
+        fallback command: MenuCommandItem.EditCommand,
+    ) {
+        if canHandleByTextResponder,
+           NSApp.sendAction(selector, to: nil, from: nil)
+        {
+            return
+        }
+
+        sendEditCommand(command)
+    }
+
     var body: some Commands {
         let canUndoResponder = canUndoInTextResponder()
         let canRedoResponder = canRedoInTextResponder()
-        let canUndo = canUndoResponder || fileManagerWindowCoordinator.canUndo
-        let canRedo = canRedoResponder || fileManagerWindowCoordinator.canRedo
+        let canUndo = canUndoResponder || viewStore.canUndo
+        let canRedo = canRedoResponder || viewStore.canRedo
 
-        let selectedCount = fileManagerWindowCoordinator.currentFileManagerStore?.entries.selectedIds.count ?? 0
+        let selectedCount = viewStore.selectedItemCount
+        let hasSelectedItems = selectedCount > 0
         let copyAbsolutePathTitle = selectedCount == 1 ? "Copy Absolute Path" : "Copy Absolute Paths"
         let copyURLTitle = selectedCount == 1 ? "Copy URL" : "Copy URLs"
 
         CommandGroup(replacing: .undoRedo) {
             Button("Undo") {
-                if canUndoInTextResponder(),
-                   NSApp.sendAction(undoSelector, to: nil, from: nil)
-                {
-                    return
-                }
-                fileManagerWindowCoordinator.currentFileManagerStore?.send(.entries(.requestUndo))
+                sendUndoRedoAction(
+                    canHandleByTextResponder: canUndoInTextResponder(),
+                    selector: undoSelector,
+                    fallback: .requestUndo,
+                )
             }
             .keyboardShortcut("z", modifiers: .command)
             .disabled(!canUndo)
 
             Button("Redo") {
-                if canRedoInTextResponder(),
-                   NSApp.sendAction(redoSelector, to: nil, from: nil)
-                {
-                    return
-                }
-                fileManagerWindowCoordinator.currentFileManagerStore?.send(.entries(.requestRedo))
+                sendUndoRedoAction(
+                    canHandleByTextResponder: canRedoInTextResponder(),
+                    selector: redoSelector,
+                    fallback: .requestRedo,
+                )
             }
             .keyboardShortcut("z", modifiers: [.command, .shift])
             .disabled(!canRedo)
         }
 
         CommandGroup(after: .undoRedo) {
-            let isComposerPresented = fileManagerWindowCoordinator.currentFileManagerStore?.composer.isPresented == true
+            let isComposerPresented = viewStore.isComposerPresented
             let composerTitle = isComposerPresented
                 ? "Close Collection Filter Composer"
                 : "Open Collection Filter Composer"
             Button(composerTitle) {
-                guard let store = fileManagerWindowCoordinator.currentFileManagerStore else { return }
-                if store.composer.isPresented {
-                    store.send(.exitComposer)
-                } else {
-                    store.send(.enterComposer)
-                }
+                sendEditCommand(.toggleComposer)
             }
             .keyboardShortcut("f", modifiers: .command)
-            .disabled(fileManagerWindowCoordinator.currentFileManagerStore == nil)
+            .disabled(!viewStore.hasFocusedWindow)
         }
 
         CommandGroup(replacing: .pasteboard) {
             Button("Cut") {
-                if NSApp.sendAction(#selector(NSText.cut(_:)), to: nil, from: nil) {
-                } else {
-                    fileManagerWindowCoordinator.currentFileManagerStore?.send(.entries(.cutSelectedItems))
-                }
+                sendTextResponderAction(#selector(NSText.cut(_:)), fallback: .cut)
             }
             .keyboardShortcut("x", modifiers: .command)
-            .disabled(false)
 
             Button("Copy") {
-                if NSApp.sendAction(#selector(NSText.copy(_:)), to: nil, from: nil) {
-                } else {
-                    fileManagerWindowCoordinator.currentFileManagerStore?.send(.entries(.copySelectedItems))
-                }
+                sendTextResponderAction(#selector(NSText.copy(_:)), fallback: .copy)
             }
             .keyboardShortcut("c", modifiers: .command)
-            .disabled(false)
 
             Divider()
 
             Button(copyAbsolutePathTitle) {
-                fileManagerWindowCoordinator.currentFileManagerStore?.send(.entries(.copySelectedAbsolutePaths))
+                sendEditCommand(.copyAbsolutePaths)
             }
-            .disabled(fileManagerWindowCoordinator.currentFileManagerStore?.entries.selectedIds.isEmpty ?? true)
+            .disabled(!hasSelectedItems)
 
             Button(copyURLTitle) {
-                fileManagerWindowCoordinator.currentFileManagerStore?.send(.entries(.copySelectedURLs))
+                sendEditCommand(.copyURLs)
             }
-            .disabled(fileManagerWindowCoordinator.currentFileManagerStore?.entries.selectedIds.isEmpty ?? true)
+            .disabled(!hasSelectedItems)
 
             Button("Paste") {
-                if NSApp.sendAction(#selector(NSText.paste(_:)), to: nil, from: nil) {
-                } else if let currentPath = fileManagerWindowCoordinator.currentFileManagerStore?.currentPath {
-                    fileManagerWindowCoordinator.currentFileManagerStore?
-                        .send(.entries(.pasteItems(destinationPath: currentPath)))
-                }
+                sendTextResponderAction(#selector(NSText.paste(_:)), fallback: .paste)
             }
             .keyboardShortcut("v", modifiers: .command)
-            .disabled(false)
 
             Button("Duplicate") {
-                fileManagerWindowCoordinator.currentFileManagerStore?.send(.entries(.duplicateSelectedItems))
+                sendEditCommand(.duplicate)
             }
             .keyboardShortcut("d", modifiers: .command)
-            .disabled(fileManagerWindowCoordinator.currentFileManagerStore?.entries.selectedIds.isEmpty ?? true)
+            .disabled(!hasSelectedItems)
 
             Button("Make Alias") {
-                fileManagerWindowCoordinator.currentFileManagerStore?.send(.entries(.createAliasForSelectedItems))
+                sendEditCommand(.makeAlias)
             }
-            .disabled(fileManagerWindowCoordinator.currentFileManagerStore?.entries.selectedIds.isEmpty ?? true)
+            .disabled(!hasSelectedItems)
         }
 
         CommandGroup(replacing: .textEditing) {
             Button("Select All") {
-                if NSApp.sendAction(#selector(NSText.selectAll(_:)), to: nil, from: nil) {
-                } else {
-                    fileManagerWindowCoordinator.currentFileManagerStore?.send(.entries(.selectAll))
-                }
+                sendTextResponderAction(#selector(NSText.selectAll(_:)), fallback: .selectAll)
             }
             .keyboardShortcut("a", modifiers: .command)
-            .disabled(false)
         }
     }
 }
