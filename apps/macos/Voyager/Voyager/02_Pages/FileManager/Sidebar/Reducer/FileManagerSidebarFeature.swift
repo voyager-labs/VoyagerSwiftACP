@@ -94,7 +94,7 @@ struct FileManagerSidebarFeature {
                 }
 
                 // TODO(Collection): Collection 처리 도메인 이동
-                let isVoycoll = url.pathExtension.lowercased() == "voycoll"
+                let isVoycoll = url.pathExtension.lowercased() == CollectionConstants.fileExtension
                 guard isDirectory.boolValue || isVoycoll else {
                     return .none
                 }

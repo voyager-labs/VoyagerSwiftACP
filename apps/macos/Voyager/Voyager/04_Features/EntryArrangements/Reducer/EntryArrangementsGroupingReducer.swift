@@ -176,7 +176,7 @@ private extension EntryArrangementsGroupingReducer {
             return "Folders"
         }
 
-        if entry.fileExtension.lowercased() == "voycoll" {
+        if entry.fileExtension.lowercased() == CollectionConstants.fileExtension {
             return "Collections"
         }
 

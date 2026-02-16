@@ -26,7 +26,7 @@ struct FileManagerWindowNavigationFeature {
                 return .none
 
             case let .sidebar(.openFavorite(favorite)):
-                if favorite.url.pathExtension.lowercased() == "voycoll" {
+                if favorite.url.pathExtension.lowercased() == CollectionConstants.fileExtension {
                     state.sidebar.pendingSidebarSelectionRestore = state.sidebar.selectedSidebarItem
                     state.sidebar.selectedSidebarItem = favorite.displayName
                     return .send(.navigation(ContentPageNavigationAction.openCollectionFile(favorite.url)))

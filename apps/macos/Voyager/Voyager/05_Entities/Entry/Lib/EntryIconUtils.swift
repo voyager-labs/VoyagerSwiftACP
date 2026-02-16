@@ -4,8 +4,6 @@ import UniformTypeIdentifiers
 
 enum EntryIconUtils {
     private static let iconCache = NSCache<NSString, NSImage>()
-    // TODO: Collection Constants로 이동
-    static let voycollIconName = "voycollFileIcon"
 
     static func icon(for entry: Entry, thumbnail: NSImage?, workspaceClient: WorkspaceClient) -> NSImage {
         if let thumbnail {
@@ -19,8 +17,8 @@ enum EntryIconUtils {
 
         let icon: NSImage = if entry.fullPath == "/" {
             workspaceClient.iconForFile("/")
-        } else if entry.fileExtension.lowercased() == "voycoll" {
-            NSImage(named: voycollIconName)
+        } else if entry.fileExtension.lowercased() == CollectionConstants.fileExtension {
+            NSImage(named: CollectionConstants.fileIconName)
                 ?? workspaceClient.iconForType(.data)
         } else if entry.isDirectory {
             workspaceClient.iconForFile(entry.fullPath)
@@ -40,8 +38,8 @@ enum EntryIconUtils {
         if entry.fullPath == "/" {
             return "root:/"
         }
-        if entry.fileExtension.lowercased() == "voycoll" {
-            return "asset:\(voycollIconName)"
+        if entry.fileExtension.lowercased() == CollectionConstants.fileExtension {
+            return "asset:\(CollectionConstants.fileIconName)"
         }
         if entry.isDirectory {
             return "dir:\(entry.fullPath)"

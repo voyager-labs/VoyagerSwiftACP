@@ -219,7 +219,7 @@ enum ComposerScopeUtils {
     ) -> [DirectoryItem] {
         var result: [DirectoryItem] = []
         var seenPaths: Set<String> = []
-        let collectionsExtension = "voycoll"
+        let collectionsExtension = CollectionConstants.fileExtension
 
         let historyItems = history.reversed().prefix(maxCount)
         for path in historyItems {

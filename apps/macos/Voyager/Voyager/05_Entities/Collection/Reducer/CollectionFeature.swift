@@ -241,7 +241,7 @@ private func showCollectionSavePanel(initialDirectory: URL?) -> URL? {
     panel.allowsOtherFileTypes = false
     panel.allowedContentTypes = [
         UTType("fm.voyager.collection")
-            ?? UTType(filenameExtension: "voycoll")
+            ?? UTType(filenameExtension: CollectionConstants.fileExtension)
             ?? .data,
     ]
     panel.isExtensionHidden = false
@@ -254,10 +254,10 @@ private func showCollectionSavePanel(initialDirectory: URL?) -> URL? {
 }
 
 private func ensureCollectionFileExtension(_ url: URL) -> URL {
-    if url.pathExtension.lowercased() == "voycoll" {
+    if url.pathExtension.lowercased() == CollectionConstants.fileExtension {
         return url
     }
-    return url.deletingPathExtension().appendingPathExtension("voycoll")
+    return url.deletingPathExtension().appendingPathExtension(CollectionConstants.fileExtension)
 }
 
 private func makeCollectionFile(

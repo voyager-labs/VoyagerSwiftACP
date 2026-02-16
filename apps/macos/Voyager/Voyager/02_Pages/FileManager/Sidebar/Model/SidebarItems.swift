@@ -56,8 +56,8 @@ enum SidebarItems {
         }
 
         var displayName: String {
-            // TODO(Collection): Collection 관련 상수 이관, displayName 구조 변경
-            if url.pathExtension.lowercased() == "voycoll" {
+            // TODO(Collection): displayName 구조 변경
+            if url.pathExtension.lowercased() == CollectionConstants.fileExtension {
                 return url.deletingPathExtension().lastPathComponent
             }
             return name

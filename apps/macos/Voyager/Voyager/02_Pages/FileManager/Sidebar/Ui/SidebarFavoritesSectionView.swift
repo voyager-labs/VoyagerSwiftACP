@@ -34,8 +34,7 @@ struct SidebarFavoritesSectionView: View {
                         contextMenuTargetWasSelected: contextMenuTargetId == favorite.displayName
                             ? contextMenuTargetWasSelected : false,
                         isFavorite: true,
-                        // TODO(Collection): Collection 관련 상수 이관
-                        iconColor: favorite.url.pathExtension.lowercased() == "voycoll"
+                        iconColor: favorite.url.pathExtension.lowercased() == CollectionConstants.fileExtension
                             ? VoyagerDS.BrandSecondaryColor.c600
                             : nil,
                         targetURL: favorite.url,

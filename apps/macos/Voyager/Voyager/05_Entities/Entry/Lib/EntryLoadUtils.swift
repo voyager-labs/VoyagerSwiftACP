@@ -105,7 +105,7 @@ enum EntryLoadUtils {
                 return nil
             }
             let ext = url.pathExtension.lowercased()
-            if ext == "voycoll" {
+            if ext == CollectionConstants.fileExtension {
                 return nil
             }
             return entryLoadingClient.getFolderItemCount(url)

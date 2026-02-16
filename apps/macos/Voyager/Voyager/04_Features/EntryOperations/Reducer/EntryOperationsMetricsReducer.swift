@@ -177,7 +177,7 @@ struct EntryOperationsMetricsReducer {
     }
 
     private func entryKind(for entry: Entry) -> DAUEntryKind {
-        if entry.fileExtension.lowercased() == "voycoll" {
+        if entry.fileExtension.lowercased() == CollectionConstants.fileExtension {
             return .collection
         }
         return entry.isDirectory ? .directory : .file
@@ -198,7 +198,7 @@ struct EntryOperationsMetricsReducer {
 
     private func entryKind(forPath path: String) -> DAUEntryKind {
         let pathExtension = URL(fileURLWithPath: path).pathExtension.lowercased()
-        if pathExtension == "voycoll" {
+        if pathExtension == CollectionConstants.fileExtension {
             return .collection
         }
         return .file
