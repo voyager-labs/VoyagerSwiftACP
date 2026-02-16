@@ -16,6 +16,8 @@ struct ComposerState: Equatable {
     var isPresented: Bool = false
     var collectionContext: CollectionContext?
     var openedCollectionURL: URL?
+    var isCollectionMode: Bool = false
+    var pendingSearchQuery: String?
     var text: String = ""
     var scopes: [String] = []
     var conditions: [Condition] = []
@@ -34,6 +36,16 @@ struct ComposerState: Equatable {
 
     var canUndo: Bool { !history.isEmpty }
     var canRedo: Bool { !redoHistory.isEmpty }
+    var isCollectionSearching: Bool {
+        let isSearching = isLoadingSearch
+            || isLoadingFilters
+            || queryRenderPhase == .chipsAppliedPendingList
+        let hasContext = isCollectionMode
+            || pendingSearchQuery != nil
+            || !scopes.isEmpty
+            || !conditions.isEmpty
+        return isSearching && hasContext
+    }
 
     var queryRenderPhase: ComposerQueryRenderPhase = .idle
 

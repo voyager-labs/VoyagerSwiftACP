@@ -43,15 +43,16 @@ func makeCollectionNavigation(
 
 func clearCollectionMode(state: inout FileManagerContentState) -> Effect<FileManagerContentAction> {
     state.collectionContext = nil
-    state.pendingSearchQuery = nil
+    state.composer.pendingSearchQuery = nil
     state.collectionSession = .init()
     state.navigation.pendingNavigation = nil
-    state.entries.collectionItems = []
+    state.entryOperations.loadingContext.collectionItems = []
     state.syncComposerCollectionState()
     return .merge(
         .cancel(id: "openCollectionFile"),
         .cancel(id: ComposerFeature.CancelID.search),
         .cancel(id: ComposerFeature.CancelID.filters),
         .send(.entries(.setCollectionMode(false))),
+        .send(.entries(.clearCollectionItems)),
     )
 }

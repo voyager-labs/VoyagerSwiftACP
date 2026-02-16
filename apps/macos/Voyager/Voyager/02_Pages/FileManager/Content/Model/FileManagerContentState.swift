@@ -12,6 +12,7 @@ struct FileManagerContentState: Equatable {
 
     var navigation: ContentPageNavigationFeature.State = .init()
     var entries: EntryFeature.State = .init()
+    var entryViewLayout: EntryViewLayoutState = .init()
     var entryArrangements: EntryArrangementsState = .init()
     var entryOperations: EntryOperationsFeature.State = .init()
     var entryThumbnails: EntryThumbnailState = .init()
@@ -24,7 +25,6 @@ struct FileManagerContentState: Equatable {
     var gridTextSize: CGFloat = AppearanceSettingsDefaults.gridTextSize
 
     // 컴포저 관련 //
-    var pendingSearchQuery: String?
     var collectionContext: CollectionContext?
 
     var resetComposerOnNextDirectoryNavigation: Bool = false
@@ -40,10 +40,13 @@ struct FileManagerContentState: Equatable {
     mutating func syncComposerCollectionState() {
         composer.collectionContext = collectionContext
         composer.openedCollectionURL = collectionSession.openedURL
+        composer.isCollectionMode = entryOperations.loadingContext.isCollectionMode
     }
 
+    mutating func syncEntryViewLayoutStateFromEntries() {}
+
     var canSaveCollection: Bool {
-        guard entries.isCollectionMode, collectionContext != nil else { return false }
+        guard entryOperations.loadingContext.isCollectionMode, collectionContext != nil else { return false }
         if collectionSession.baseline == nil {
             return true
         }
@@ -66,7 +69,7 @@ struct FileManagerContentState: Equatable {
     }
 
     var hasSelectedItems: Bool {
-        !entries.selectedIds.isEmpty
+        !entryViewLayout.selectedIds.isEmpty
     }
 
     var hasClipboardItems: Bool {
@@ -74,7 +77,7 @@ struct FileManagerContentState: Equatable {
     }
 
     private var hasSelectableEntries: Bool {
-        guard !entries.selectedIds.isEmpty else { return false }
-        return entries.displayItems.contains { entries.selectedIds.contains($0.id) }
+        guard !entryViewLayout.selectedIds.isEmpty else { return false }
+        return entryOperations.displayItems.contains { entryViewLayout.selectedIds.contains($0.id) }
     }
 }

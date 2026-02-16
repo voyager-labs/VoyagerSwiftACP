@@ -43,11 +43,11 @@ struct ContentPageView: View {
                 .allowsHitTesting(false)
             }
         }
-        .onChange(of: store.entries.selectedIds) { _ in
+        .onChange(of: store.entryViewLayout.selectedIds) { _ in
             guard store.viewLayout == .grid else { return }
             restoreKeyCommandFocus()
         }
-        .onChange(of: store.entries.isRenaming) { isRenaming in
+        .onChange(of: store.entryViewLayout.isRenaming) { isRenaming in
             guard store.viewLayout == .grid else { return }
             if !isRenaming {
                 DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
@@ -84,16 +84,8 @@ struct ContentPageView: View {
         store.send(.handleKeyCommand(command))
     }
 
-    // TODO(Collection): Collection 상태로 이동
     private var isCollectionSearching: Bool {
-        let isSearching = store.composer.isLoadingSearch
-            || store.composer.isLoadingFilters
-            || store.composer.queryRenderPhase == .chipsAppliedPendingList
-        let hasContext = store.entries.isCollectionMode
-            || store.pendingSearchQuery != nil
-            || !store.composer.scopes.isEmpty
-            || !store.composer.conditions.isEmpty
-        return isSearching && hasContext
+        store.composer.isCollectionSearching
     }
 
     // TODO: 이름에서 Collection 내용 제외

@@ -56,14 +56,14 @@ struct FileManagerContentComposerFeature {
             return handleSetText(text, state: &state)
 
         case .cancelSearch:
-            state.pendingSearchQuery = nil
+            state.composer.pendingSearchQuery = nil
             state.collectionSession.isOpening = false
             state.collectionSession.openedName = nil
             return .none
 
         case .clearAll:
-            if state.entries.isCollectionMode {
-                state.pendingSearchQuery = nil
+            if state.entryOperations.loadingContext.isCollectionMode {
+                state.composer.pendingSearchQuery = nil
                 state.collectionContext = CollectionContext(
                     query: "",
                     scopes: [ComposerScopeUtils.rootScopePath],
@@ -90,7 +90,7 @@ struct FileManagerContentComposerFeature {
         case let .searchResponse(.success(response)):
             handleSearchSuccess(
                 items: response.items ?? [],
-                query: state.pendingSearchQuery ?? "",
+                query: state.composer.pendingSearchQuery ?? "",
                 state: &state,
             )
 
@@ -151,7 +151,7 @@ struct FileManagerContentComposerFeature {
 
     private func handleSetText(_ text: String, state: inout State) -> Effect<Action> {
         let query = text.trimmingCharacters(in: .whitespacesAndNewlines)
-        state.pendingSearchQuery = query.isEmpty ? nil : query
+        state.composer.pendingSearchQuery = query.isEmpty ? nil : query
         if query.isEmpty, state.composer.conditions.isEmpty, state.composer.scopes.isEmpty {
             return exitCollectionMode(
                 state: &state,
@@ -170,7 +170,7 @@ struct FileManagerContentComposerFeature {
         state.collectionSession.isOpening = false
         let previousSnapshot = state.navigation.makeContentPageNavigationHistorySnapshot(composer: state.composer)
         let previousNavigationState = state.navigation.navigationState
-        state.pendingSearchQuery = nil
+        state.composer.pendingSearchQuery = nil
         state.collectionContext = CollectionContext(
             query: query,
             scopes: state.composer.scopes,
@@ -211,7 +211,7 @@ struct FileManagerContentComposerFeature {
         title: String,
         state: inout State,
     ) -> Effect<Action> {
-        state.pendingSearchQuery = nil
+        state.composer.pendingSearchQuery = nil
         guard state.collectionSession.isOpening else {
             return .none
         }

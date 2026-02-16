@@ -46,7 +46,7 @@ struct FileManagerWindowNavigationFeature {
                 return .send(.navigation(ContentPageNavigationAction.showComputer))
 
             case let .content(.entries(.navigateFolder(id: id))):
-                guard let entry = state.content.entries.displayItems[id: id] else {
+                guard let entry = state.content.entryOperations.displayItems[id: id] else {
                     return .none
                 }
                 return .send(.navigation(ContentPageNavigationAction.navigateToPath(entry.fullPath)))
@@ -264,7 +264,7 @@ struct FileManagerWindowNavigationFeature {
 
         default:
             state.content.collectionContext = nil
-            state.content.pendingSearchQuery = nil
+            state.content.composer.pendingSearchQuery = nil
             state.content.collectionSession = .init()
             state.content.syncComposerCollectionState()
         }
@@ -278,11 +278,12 @@ struct FileManagerWindowNavigationFeature {
         case let .folder(path):
             return .send(.content(.entries(.loadItems(path: path))))
         case .recents:
-            return .send(.content(.entries(.loadRecentItems(showHidden: state.content.entries.showHiddenFiles))))
+            return .send(.content(.entries(.loadRecentItems(showHidden: state.content.entryViewLayout
+                    .showHiddenFiles))))
         case let .tags(tagName):
             return .send(.content(.entries(.loadTagItems(
                 tagName: tagName,
-                showHidden: state.content.entries.showHiddenFiles,
+                showHidden: state.content.entryViewLayout.showHiddenFiles,
             ))))
         case .computer:
             return .send(.content(.entries(.loadComputerItems)))
@@ -349,7 +350,7 @@ struct FileManagerWindowNavigationFeature {
         )
         return .concatenate(
             exitEffect.map(Action.content),
-            .send(.content(.entries(.loadRecentItems(showHidden: state.content.entries.showHiddenFiles)))),
+            .send(.content(.entries(.loadRecentItems(showHidden: state.content.entryViewLayout.showHiddenFiles)))),
         )
     }
 
@@ -404,7 +405,7 @@ struct FileManagerWindowNavigationFeature {
             exitEffect.map(Action.content),
             .send(.content(.entries(.loadTagItems(
                 tagName: tagName,
-                showHidden: state.content.entries.showHiddenFiles,
+                showHidden: state.content.entryViewLayout.showHiddenFiles,
             )))),
         )
     }
@@ -473,7 +474,7 @@ struct FileManagerWindowNavigationFeature {
     ) -> Effect<Action> {
         state.content.composer.isPresented = false
         state.content.collectionContext = navigation.context
-        state.content.pendingSearchQuery = navigation.context.query.isEmpty ? nil : navigation.context.query
+        state.content.composer.pendingSearchQuery = navigation.context.query.isEmpty ? nil : navigation.context.query
         state.content.entryArrangements.updateSortKey(navigation.sortKey)
         state.content.entryArrangements.updateSortOrder(navigation.sortOrder)
         state.content.viewLayout = navigation.viewLayout
@@ -517,7 +518,7 @@ struct FileManagerWindowNavigationFeature {
     }
 
     func shouldPromptForUnsavedNavigation(_ state: FileManagerContentState) -> Bool {
-        state.entries.isCollectionMode && state.canSaveCollection
+        state.entryOperations.loadingContext.isCollectionMode && state.canSaveCollection
     }
 
     func syncSidebarSelection(state: inout State) {
@@ -571,7 +572,7 @@ struct FileManagerWindowNavigationFeature {
     ) -> Effect<Action> {
         state.content.composer.isPresented = false
         let trimmedQuery = file.query.trimmingCharacters(in: .whitespacesAndNewlines)
-        state.content.pendingSearchQuery = trimmedQuery.isEmpty ? nil : trimmedQuery
+        state.content.composer.pendingSearchQuery = trimmedQuery.isEmpty ? nil : trimmedQuery
 
         let resolved = file.resolveCollectionFilters(registryClient: registryClient)
         if trimmedQuery.isEmpty, resolved.scopes.isEmpty, resolved.conditions.isEmpty {

@@ -21,6 +21,10 @@ struct FileManagerContentFeature {
             EntryFeature()
         }
 
+        Scope(state: \.entryViewLayout, action: \.entryViewLayout) {
+            EntryViewLayoutFeature()
+        }
+
         Scope(state: \.entryOperations, action: \.entryOperations) {
             EntryOperationsFeature()
         }
@@ -46,6 +50,9 @@ struct FileManagerContentFeature {
 
             case .entries:
                 return .none
+
+            case let .entryViewLayout(action):
+                return routeEntryViewLayoutAction(action, state: &state)
 
             case .entryOperations:
                 return .none
@@ -95,14 +102,14 @@ struct FileManagerContentFeature {
 
     private func restoreCollectionDraft(state: inout State) -> Effect<Action> {
         guard let baseline = state.collectionSession.baseline,
-              state.entries.isCollectionMode,
+              state.entryOperations.loadingContext.isCollectionMode,
               state.isOpenedCollectionDirty
         else {
             return .none
         }
 
         let trimmedQuery = baseline.context.query.trimmingCharacters(in: .whitespacesAndNewlines)
-        state.pendingSearchQuery = trimmedQuery.isEmpty ? nil : trimmedQuery
+        state.composer.pendingSearchQuery = trimmedQuery.isEmpty ? nil : trimmedQuery
         state.collectionContext = baseline.context
         state.syncComposerCollectionState()
 
@@ -119,5 +126,86 @@ struct FileManagerContentFeature {
         state.composer.clearHistory()
 
         return .none
+    }
+
+    private func routeEntryViewLayoutAction(
+        _ action: EntryViewLayoutAction,
+        state: inout State,
+    ) -> Effect<Action> {
+        switch action {
+        case let .setSelectedIds(ids, lastSelectedId):
+            return .send(.entries(.setSelectedIds(ids: ids, lastSelectedId: lastSelectedId)))
+
+        case let .setSelectedIdsFromLasso(ids, lastSelectedId):
+            return .send(.entries(.setSelectedIdsFromLasso(ids: ids, lastSelectedId: lastSelectedId)))
+
+        case let .selectNextItem(isShiftPressed):
+            return .send(.entries(.selectNextItem(isShiftPressed: isShiftPressed)))
+
+        case let .selectPreviousItem(isShiftPressed):
+            return .send(.entries(.selectPreviousItem(isShiftPressed: isShiftPressed)))
+
+        case let .selectByOffset(offset, isShiftPressed):
+            return .send(.entries(.selectByOffset(offset: offset, isShiftPressed: isShiftPressed)))
+
+        case let .updateGridColumnCount(count):
+            return .send(.entries(.updateGridColumnCount(count)))
+
+        case .resetScrollFlag:
+            return .send(.entries(.resetScrollFlag))
+
+        case let .setDropTargeted(isTargeted):
+            return .send(.entries(.setDropTargeted(isTargeted)))
+
+        case let .startDrag(paths):
+            return .send(.entries(.startDrag(paths: paths)))
+
+        case let .handleDrop(providers, destinationPath):
+            return .send(.entries(.handleDrop(providers: providers, destinationPath: destinationPath)))
+
+        case let .dropItems(sourcePaths, destinationPath, isOptionDrag):
+            return .send(.entries(.dropItems(
+                sourcePaths: sourcePaths,
+                destinationPath: destinationPath,
+                isOptionDrag: isOptionDrag,
+            )))
+
+        case let .startRename(id):
+            return .send(.entries(.startRename(id: id)))
+
+        case let .updateRenamingText(text):
+            return .send(.entries(.updateRenamingText(text)))
+
+        case .commitRename:
+            return .send(.entries(.commitRename))
+
+        case .cancelRename:
+            return .send(.entries(.cancelRename))
+
+        case .openSelectedItem:
+            return .send(.entries(.openSelectedItem))
+
+        case .toggleShowHiddenFiles:
+            state.entryViewLayout.showHiddenFiles.toggle()
+            return reloadEntryItemsEffect(state: state)
+        }
+    }
+
+    private func reloadEntryItemsEffect(state: State) -> Effect<Action> {
+        switch state.navigation.navigationState {
+        case let .folder(path):
+            .send(.entries(.loadItems(path: path)))
+        case .recents:
+            .send(.entries(.loadRecentItems(showHidden: state.entryViewLayout.showHiddenFiles)))
+        case let .tags(tagName):
+            .send(.entries(.loadTagItems(
+                tagName: tagName,
+                showHidden: state.entryViewLayout.showHiddenFiles,
+            )))
+        case .computer:
+            .send(.entries(.loadComputerItems))
+        case .collection:
+            .none
+        }
     }
 }
