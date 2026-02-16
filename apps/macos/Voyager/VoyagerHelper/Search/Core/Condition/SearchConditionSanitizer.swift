@@ -1,9 +1,9 @@
 import Foundation
 
-struct FilterSearchConditionSanitizer: Sendable {
-    private let conditionBuilder: FilterSearchConditionBuilder
+struct SearchConditionSanitizer: Sendable {
+    private let conditionBuilder: SearchConditionBuilder
 
-    init(conditionBuilder: FilterSearchConditionBuilder) {
+    init(conditionBuilder: SearchConditionBuilder) {
         self.conditionBuilder = conditionBuilder
     }
 
@@ -32,7 +32,7 @@ struct FilterSearchConditionSanitizer: Sendable {
     }
 }
 
-private extension FilterSearchConditionSanitizer {
+private extension SearchConditionSanitizer {
     func normalize(_ condition: SearchConditionPayload) -> SearchConditionPayload? {
         if condition.operator == "eq", condition.value == nil {
             return nil

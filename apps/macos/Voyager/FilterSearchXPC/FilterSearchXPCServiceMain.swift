@@ -28,9 +28,9 @@ struct FilterSearchXPCServiceMain {
         }
     }
 
-    private static func initializeService(logger: Logger) -> MDQuerySearchService {
-        logger.info("Filter search service initialized with MDQuerySearchService")
-        return MDQuerySearchService()
+    private static func initializeService(logger: Logger) -> SpotlightSearchService {
+        logger.info("Filter search service initialized with SpotlightSearchService")
+        return SpotlightSearchService()
     }
 
     private static func bootstrapLogging() {
@@ -48,9 +48,9 @@ struct FilterSearchXPCServiceMain {
 
 final class FilterSearchXPCServiceDelegate: NSObject, NSXPCListenerDelegate {
     private let logger: Logger
-    private let service: MDQuerySearchService
+    private let service: SpotlightSearchService
 
-    init(logger: Logger, service: MDQuerySearchService) {
+    init(logger: Logger, service: SpotlightSearchService) {
         self.logger = logger
         self.service = service
         super.init()
@@ -61,7 +61,7 @@ final class FilterSearchXPCServiceDelegate: NSObject, NSXPCListenerDelegate {
         shouldAcceptNewConnection newConnection: NSXPCConnection,
     ) -> Bool {
         newConnection.exportedInterface = NSXPCInterface(with: FilterSearchXPCServiceProtocol.self)
-        newConnection.exportedObject = FilterSearchXPCService(service: service, logger: logger)
+        newConnection.exportedObject = XPCSearchService(service: service, logger: logger)
         newConnection.resume()
         return true
     }

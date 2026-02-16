@@ -1,6 +1,6 @@
 import Foundation
 
-enum MDQueryAttributeResolver {
+enum SpotlightAttributeResolver {
     private static let derivedAttributeOverrides: [String: String] = [
         "extension": "kMDItemFSName",
         "name_stem": "kMDItemFSName",
@@ -34,7 +34,7 @@ enum MDQueryAttributeResolver {
         var nsurlCandidate: String?
 
         for rawKey in systemKeys {
-            let parsed = SearchSystemKeyParser.parse(rawKey)
+            let parsed = SystemKeyParser.parse(rawKey)
             let prefix = parsed.prefix
             let symbol = parsed.symbol
 

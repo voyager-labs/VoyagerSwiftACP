@@ -1,7 +1,7 @@
 @preconcurrency import CoreServices
 import Foundation
 
-struct MDQueryExecutionEngine: Sendable {
+struct SpotlightQueryEngine: Sendable {
     private let maxCandidates: Int
 
     init(maxCandidates: Int) {
@@ -14,17 +14,17 @@ struct MDQueryExecutionEngine: Sendable {
     }
 }
 
-private extension MDQueryExecutionEngine {
+private extension SpotlightQueryEngine {
     func makeQuery(queryString: String, scopes: [URL]) throws -> MDQuery {
         guard let query = MDQueryCreate(kCFAllocatorDefault, queryString as CFString, nil, nil) else {
-            throw MDQuerySearchService.SearchError.queryCreationFailed
+            throw SpotlightSearchService.SearchError.queryCreationFailed
         }
         let scopeRefs = scopes.map { $0 as CFURL } as CFArray
         MDQuerySetSearchScope(query, scopeRefs, 0)
 
         let executed = MDQueryExecute(query, CFOptionFlags(kMDQuerySynchronous.rawValue))
         guard executed else {
-            throw MDQuerySearchService.SearchError.queryExecutionFailed
+            throw SpotlightSearchService.SearchError.queryExecutionFailed
         }
         return query
     }

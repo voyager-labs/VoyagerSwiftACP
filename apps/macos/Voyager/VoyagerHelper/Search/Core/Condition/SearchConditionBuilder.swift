@@ -1,6 +1,6 @@
 import Foundation
 
-struct FilterSearchConditionBuilder: Sendable {
+struct SearchConditionBuilder: Sendable {
     struct BuilderError: Error, CustomStringConvertible {
         let message: String
 
@@ -23,11 +23,11 @@ struct FilterSearchConditionBuilder: Sendable {
             resourceName: "system_property_registry",
             bundle: bundle,
         )
-        propertyMap = FilterSearchConditionBuilder.buildPropertyMap(systemRegistry: systemRegistry)
+        propertyMap = SearchConditionBuilder.buildPropertyMap(systemRegistry: systemRegistry)
     }
 
     init(registry: PropertyConditionRegistry, systemRegistry: SystemPropertyRegistry) {
         self.registry = registry
-        propertyMap = FilterSearchConditionBuilder.buildPropertyMap(systemRegistry: systemRegistry)
+        propertyMap = SearchConditionBuilder.buildPropertyMap(systemRegistry: systemRegistry)
     }
 }

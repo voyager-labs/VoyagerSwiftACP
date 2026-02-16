@@ -1,17 +1,17 @@
 import Foundation
 import Logging
 
-struct QuerySearchService: Sendable {
-    private let searchService: MDQuerySearchService
-    private let converter: QueryGatewayConverter
+struct SearchQueryService: Sendable {
+    private let searchService: SpotlightSearchService
+    private let converter: GatewayQueryConverter
     private let logger: Logger
 
     init(
-        searchService: MDQuerySearchService,
-        converter: QueryGatewayConverter = QueryGatewayConverter(
-            logger: Logger(label: "VoyagerHelper.QueryGatewayConverter"),
+        searchService: SpotlightSearchService,
+        converter: GatewayQueryConverter = GatewayQueryConverter(
+            logger: Logger(label: "VoyagerHelper.GatewayQueryConverter"),
         ),
-        logger: Logger = Logger(label: "VoyagerHelper.QuerySearchService"),
+        logger: Logger = Logger(label: "VoyagerHelper.SearchQueryService"),
     ) {
         self.searchService = searchService
         self.converter = converter

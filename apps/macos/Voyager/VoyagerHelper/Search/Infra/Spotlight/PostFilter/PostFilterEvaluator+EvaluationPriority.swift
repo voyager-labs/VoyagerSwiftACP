@@ -1,6 +1,6 @@
 import Foundation
 
-extension FilterSearchMDQueryPostFilterEvaluator {
+extension PostFilterEvaluator {
     func shouldEvaluateFirst(_ lhs: ConditionSpec, _ rhs: ConditionSpec) -> Bool {
         if lhs.evaluationPriority != rhs.evaluationPriority {
             return lhs.evaluationPriority > rhs.evaluationPriority
@@ -10,7 +10,7 @@ extension FilterSearchMDQueryPostFilterEvaluator {
 
     func orderedSystemKeys(from rawKeys: [String]) -> [SystemKey] {
         let parsed = rawKeys.map { rawKey in
-            let parsed = SearchSystemKeyParser.parse(rawKey)
+            let parsed = SystemKeyParser.parse(rawKey)
             return SystemKey(prefix: parsed.prefix, symbol: parsed.symbol)
         }
         return parsed.sorted { lhs, rhs in

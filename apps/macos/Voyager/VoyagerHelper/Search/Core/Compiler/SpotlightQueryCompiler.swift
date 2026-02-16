@@ -1,9 +1,9 @@
 import Foundation
 import Logging
 
-private final class FilterSearchMDQueryCompilerBundleToken {}
+private final class SpotlightQueryCompilerBundleToken {}
 
-struct FilterSearchMDQueryCompiler: Sendable {
+struct SpotlightQueryCompiler: Sendable {
     static let basePredicate = "kMDItemContentTypeTree == \"public.item\""
 
     struct CompilePlan: Sendable {
@@ -39,11 +39,11 @@ struct FilterSearchMDQueryCompiler: Sendable {
     }
 
     private let logger: Logger
-    private let conditionBuilder: FilterSearchConditionBuilder
+    private let conditionBuilder: SearchConditionBuilder
 
     init(
         bundle: Bundle,
-        logger: Logger = Logger(label: "VoyagerHelper.FilterSearchMDQueryCompiler"),
+        logger: Logger = Logger(label: "VoyagerHelper.SpotlightQueryCompiler"),
     ) throws {
         self.logger = logger
         let conditionRegistry: PropertyConditionRegistry = try RegistryLoader.load(
@@ -54,21 +54,21 @@ struct FilterSearchMDQueryCompiler: Sendable {
             resourceName: "system_property_registry",
             bundle: bundle,
         )
-        conditionBuilder = FilterSearchConditionBuilder(
+        conditionBuilder = SearchConditionBuilder(
             registry: conditionRegistry,
             systemRegistry: systemRegistry,
         )
     }
 
     init(
-        logger: Logger = Logger(label: "VoyagerHelper.FilterSearchMDQueryCompiler"),
+        logger: Logger = Logger(label: "VoyagerHelper.SpotlightQueryCompiler"),
     ) throws {
-        try self.init(bundle: Bundle(for: FilterSearchMDQueryCompilerBundleToken.self), logger: logger)
+        try self.init(bundle: Bundle(for: SpotlightQueryCompilerBundleToken.self), logger: logger)
     }
 
     init(
-        conditionBuilder: FilterSearchConditionBuilder,
-        logger: Logger = Logger(label: "VoyagerHelper.FilterSearchMDQueryCompiler"),
+        conditionBuilder: SearchConditionBuilder,
+        logger: Logger = Logger(label: "VoyagerHelper.SpotlightQueryCompiler"),
     ) {
         self.logger = logger
         self.conditionBuilder = conditionBuilder
@@ -127,9 +127,9 @@ struct FilterSearchMDQueryCompiler: Sendable {
     }
 }
 
-extension FilterSearchMDQueryCompiler {
+extension SpotlightQueryCompiler {
     private struct ValidatedCondition {
-        let mapping: FilterSearchConditionBuilder.PropertyMapping
+        let mapping: SearchConditionBuilder.PropertyMapping
         let typeKey: String
     }
 
@@ -180,10 +180,10 @@ extension FilterSearchMDQueryCompiler {
     }
 
     private func resolveAttributeName(
-        mapping: FilterSearchConditionBuilder.PropertyMapping,
+        mapping: SearchConditionBuilder.PropertyMapping,
         propertyKey: String,
     ) -> String? {
-        if let resolved = MDQueryAttributeResolver.resolve(
+        if let resolved = SpotlightAttributeResolver.resolve(
             propertyKey: propertyKey,
             systemKeys: mapping.systemKeys,
         ) {

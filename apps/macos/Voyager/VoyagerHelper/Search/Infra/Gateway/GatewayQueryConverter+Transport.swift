@@ -1,19 +1,19 @@
 import Foundation
 import SwiftDotenv
 
-extension QueryGatewayConverter {
+extension GatewayQueryConverter {
     func requestGateway(systemPrompt: String, userPrompt: String) async throws -> String {
         let baseURL = try resolveGatewayURL()
         let endpoint = baseURL.appendingPathComponent("gateway/openai/v1/chat/completions")
 
         var request = URLRequest(url: endpoint)
         request.httpMethod = "POST"
-        request.timeoutInterval = QueryGatewayConverterConfig.requestTimeout
+        request.timeoutInterval = GatewayQueryConfig.requestTimeout
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
-        request.setValue("Bearer \(QueryGatewayConverterConfig.gatewayToken)", forHTTPHeaderField: "Authorization")
+        request.setValue("Bearer \(GatewayQueryConfig.gatewayToken)", forHTTPHeaderField: "Authorization")
 
         let payload = GatewayChatRequest(
-            model: QueryGatewayConverterConfig.modelName,
+            model: GatewayQueryConfig.modelName,
             messages: [
                 .init(role: "system", content: systemPrompt),
                 .init(role: "user", content: userPrompt),
@@ -22,7 +22,7 @@ extension QueryGatewayConverter {
                 type: "json_schema",
                 jsonSchema: .init(
                     name: "search_conditions_output",
-                    schema: QueryGatewayConverterConfig.outputSchema,
+                    schema: GatewayQueryConfig.outputSchema,
                     strict: true,
                 ),
             ),
@@ -31,16 +31,16 @@ extension QueryGatewayConverter {
         do {
             request.httpBody = try JSONEncoder().encode(payload)
         } catch {
-            throw QueryGatewayError.gatewayRequestEncodingFailed(error.localizedDescription)
+            throw GatewayQueryError.gatewayRequestEncodingFailed(error.localizedDescription)
         }
 
         let (data, response) = try await URLSession.shared.data(for: request)
         guard let http = response as? HTTPURLResponse else {
-            throw QueryGatewayError.gatewayResponseInvalid(statusCode: nil, details: nil)
+            throw GatewayQueryError.gatewayResponseInvalid(statusCode: nil, details: nil)
         }
         guard 200 ..< 300 ~= http.statusCode else {
             let details = extractGatewayErrorMessage(from: data)
-            throw QueryGatewayError.gatewayResponseInvalid(statusCode: http.statusCode, details: details)
+            throw GatewayQueryError.gatewayResponseInvalid(statusCode: http.statusCode, details: details)
         }
 
         return try extractMessageContent(from: data)
@@ -49,13 +49,13 @@ extension QueryGatewayConverter {
     func resolveGatewayURL() throws -> URL {
         let raw = Dotenv["PUBLIC_GATEWAY_URL"]?.stringValue.trimmingCharacters(in: .whitespacesAndNewlines)
         guard let raw else {
-            throw QueryGatewayError.gatewayURLMissing
+            throw GatewayQueryError.gatewayURLMissing
         }
         guard raw.isEmpty == false else {
-            throw QueryGatewayError.gatewayURLMissing
+            throw GatewayQueryError.gatewayURLMissing
         }
         guard let url = URL(string: raw) else {
-            throw QueryGatewayError.gatewayURLInvalid(raw)
+            throw GatewayQueryError.gatewayURLInvalid(raw)
         }
         return url
     }
@@ -78,14 +78,14 @@ extension QueryGatewayConverter {
         guard let object = try? JSONSerialization.jsonObject(with: data),
               let root = object as? [String: Any]
         else {
-            throw QueryGatewayError.gatewayResponseInvalid(statusCode: nil, details: nil)
+            throw GatewayQueryError.gatewayResponseInvalid(statusCode: nil, details: nil)
         }
 
         guard let choices = root["choices"] as? [[String: Any]],
               let first = choices.first,
               let message = first["message"] as? [String: Any]
         else {
-            throw QueryGatewayError.gatewayOutputMissing
+            throw GatewayQueryError.gatewayOutputMissing
         }
 
         if let content = message["content"] as? String,
@@ -107,18 +107,18 @@ extension QueryGatewayConverter {
             }
         }
 
-        throw QueryGatewayError.gatewayOutputMissing
+        throw GatewayQueryError.gatewayOutputMissing
     }
 
     func decodeGatewayOutput(from content: String) throws -> GatewayOutput {
         let normalized = stripCodeFence(content)
         guard let data = normalized.data(using: .utf8) else {
-            throw QueryGatewayError.gatewayDecodeFailed("invalid utf8 content")
+            throw GatewayQueryError.gatewayDecodeFailed("invalid utf8 content")
         }
         do {
             return try JSONDecoder().decode(GatewayOutput.self, from: data)
         } catch {
-            throw QueryGatewayError.gatewayDecodeFailed(error.localizedDescription)
+            throw GatewayQueryError.gatewayDecodeFailed(error.localizedDescription)
         }
     }
 
@@ -175,13 +175,13 @@ struct GatewayOutput: Decodable {
     let error: String?
 }
 
-struct QueryGatewayConversionResult: Sendable {
+struct GatewayQueryResult: Sendable {
     let conditions: [SearchConditionPayload]
     let scopes: [String]?
     let error: String?
 }
 
-enum QueryGatewayError: Error {
+enum GatewayQueryError: Error {
     case registryUnavailable
     case gatewayURLMissing
     case gatewayURLInvalid(String)

@@ -1,6 +1,6 @@
 import Foundation
 
-extension FilterSearchMDQueryPostFilterEvaluator {
+extension PostFilterEvaluator {
     func isPresent(_ value: Any?, typeKey: String) -> Bool {
         switch typeKey {
         case "string", "categorical":

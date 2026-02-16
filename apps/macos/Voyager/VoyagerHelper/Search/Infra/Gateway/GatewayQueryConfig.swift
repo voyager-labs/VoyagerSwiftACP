@@ -1,6 +1,6 @@
 import Foundation
 
-enum QueryGatewayConverterConfig {
+enum GatewayQueryConfig {
     static let requestTimeout: TimeInterval = 20
     static let modelName = "gpt-5-mini-2025-08-07"
     static let gatewayToken = "gateway"

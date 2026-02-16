@@ -1,8 +1,8 @@
 import Foundation
 
-extension QueryGatewayConverter {
+extension GatewayQueryConverter {
     func buildSystemPrompt() -> String {
-        QueryGatewaySystemPrompt.template
+        GatewayPromptTemplate.template
             .replacingOccurrences(of: "{home_dir}", with: homeDir)
             .replacingOccurrences(of: "{property_info}", with: "keys from user prompt")
     }
@@ -67,7 +67,7 @@ extension QueryGatewayConverter {
         query: String,
         existingConditions: [SearchConditionPayload],
     ) -> [String: [String]] {
-        var candidates = QueryGatewayConverterConfig.coreKeys
+        var candidates = GatewayQueryConfig.coreKeys
         for condition in existingConditions {
             candidates.insert(condition.propertyKey)
         }
@@ -134,7 +134,7 @@ extension QueryGatewayConverter {
         let lower = query.lowercased()
         var scopes: [String] = []
 
-        for pattern in QueryGatewayConverterConfig.scopePatterns {
+        for pattern in GatewayQueryConfig.scopePatterns {
             guard containsWordPattern(pattern.pattern, in: lower) else {
                 continue
             }

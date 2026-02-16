@@ -1,6 +1,6 @@
 import Foundation
 
-extension FilterSearchMDQueryPostFilterEvaluator {
+extension PostFilterEvaluator {
     func batchedNSURLSymbols(from specs: [ConditionSpec]) -> Set<String> {
         var symbols: Set<String> = []
 

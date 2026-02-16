@@ -5,7 +5,7 @@ struct ParsedSystemKey: Sendable {
     let symbol: String
 }
 
-enum SearchSystemKeyParser {
+enum SystemKeyParser {
     static func parse(_ key: String) -> ParsedSystemKey {
         let trimmed = key.trimmingCharacters(in: .whitespacesAndNewlines)
         guard let separatorIndex = trimmed.firstIndex(of: ":") else {

@@ -1,6 +1,6 @@
 import Foundation
 
-extension FilterSearchMDQueryCompiler {
+extension SpotlightQueryCompiler {
     func readString(
         _ value: JSONValue?,
         propertyKey: String,

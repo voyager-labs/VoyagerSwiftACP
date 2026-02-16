@@ -1,7 +1,7 @@
 import Foundation
 import Logging
 
-struct MDQuerySearchService: Sendable {
+struct SpotlightSearchService: Sendable {
     enum SearchError: Error, LocalizedError {
         case queryCreationFailed
         case queryExecutionFailed
@@ -19,31 +19,31 @@ struct MDQuerySearchService: Sendable {
     private let logger: Logger
     private let maxCandidates: Int
     private let defaultScopeURL: @Sendable () -> URL
-    private let executionEngine: MDQueryExecutionEngine
-    private let compilerTask: Task<FilterSearchMDQueryCompiler, Error>
-    private let postFilterTask: Task<FilterSearchMDQueryPostFilterEvaluator, Error>
+    private let executionEngine: SpotlightQueryEngine
+    private let compilerTask: Task<SpotlightQueryCompiler, Error>
+    private let postFilterTask: Task<PostFilterEvaluator, Error>
 
     private struct PlanExecutionResult {
-        var plan: FilterSearchMDQueryCompiler.CompilePlan
+        var plan: SpotlightQueryCompiler.CompilePlan
         let paths: [String]
         let usedFallback: Bool
     }
 
     init(
-        logger: Logger = Logger(label: "VoyagerHelper.MDQuerySearchService"),
+        logger: Logger = Logger(label: "VoyagerHelper.SpotlightSearchService"),
         maxCandidates: Int = 20000,
         defaultScopeURL: @Sendable @escaping () -> URL = { FileManager.default.homeDirectoryForCurrentUser },
-        compilerFactory: @Sendable @escaping () async throws -> FilterSearchMDQueryCompiler = {
-            try FilterSearchMDQueryCompiler()
+        compilerFactory: @Sendable @escaping () async throws -> SpotlightQueryCompiler = {
+            try SpotlightQueryCompiler()
         },
-        postFilterFactory: @Sendable @escaping () async throws -> FilterSearchMDQueryPostFilterEvaluator = {
-            try FilterSearchMDQueryPostFilterEvaluator()
+        postFilterFactory: @Sendable @escaping () async throws -> PostFilterEvaluator = {
+            try PostFilterEvaluator()
         },
     ) {
         self.logger = logger
         self.maxCandidates = max(1, maxCandidates)
         self.defaultScopeURL = defaultScopeURL
-        executionEngine = MDQueryExecutionEngine(maxCandidates: self.maxCandidates)
+        executionEngine = SpotlightQueryEngine(maxCandidates: self.maxCandidates)
         compilerTask = Task(priority: .utility) {
             try await compilerFactory()
         }
@@ -96,7 +96,7 @@ struct MDQuerySearchService: Sendable {
     }
 
     private func executePlan(
-        _ initialPlan: FilterSearchMDQueryCompiler.CompilePlan,
+        _ initialPlan: SpotlightQueryCompiler.CompilePlan,
         filters: SearchFiltersPayload,
         scopeURLs: [URL],
         requestId: String,
@@ -122,13 +122,13 @@ struct MDQuerySearchService: Sendable {
             )
 
             let paths = try executionEngine.loadPaths(
-                queryString: FilterSearchMDQueryCompiler.basePredicate,
+                queryString: SpotlightQueryCompiler.basePredicate,
                 scopes: scopeURLs,
             )
 
             return PlanExecutionResult(
-                plan: FilterSearchMDQueryCompiler.CompilePlan(
-                    predicate: FilterSearchMDQueryCompiler.basePredicate,
+                plan: SpotlightQueryCompiler.CompilePlan(
+                    predicate: SpotlightQueryCompiler.basePredicate,
                     pushdownConditions: [],
                     postFilterConditions: filters.conditions,
                 ),
@@ -139,7 +139,7 @@ struct MDQuerySearchService: Sendable {
     }
 
     private func resolveScopeURLs(_ scopes: [String]) -> [URL] {
-        let normalized = FilterSearchScopeBuilder.normalizeScopes(scopes)
+        let normalized = SearchScopeNormalizer.normalizeScopes(scopes)
         if normalized.isEmpty {
             return [defaultScopeURL().standardizedFileURL]
         }
@@ -147,7 +147,7 @@ struct MDQuerySearchService: Sendable {
     }
 }
 
-private extension MDQuerySearchService {
+private extension SpotlightSearchService {
     func makeJSONItems(from paths: [String]) -> [JSONValue] {
         var items: [JSONValue] = []
         items.reserveCapacity(paths.count)

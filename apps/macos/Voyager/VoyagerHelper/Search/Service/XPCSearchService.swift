@@ -1,11 +1,11 @@
 import Foundation
 import Logging
 
-final class FilterSearchXPCService: NSObject, FilterSearchXPCServiceProtocol {
-    private let service: MDQuerySearchService
+final class XPCSearchService: NSObject, FilterSearchXPCServiceProtocol {
+    private let service: SpotlightSearchService
     private let logger: Logger
 
-    nonisolated init(service: MDQuerySearchService, logger: Logger) {
+    nonisolated init(service: SpotlightSearchService, logger: Logger) {
         self.service = service
         self.logger = logger
     }
@@ -43,7 +43,7 @@ final class FilterSearchXPCService: NSObject, FilterSearchXPCServiceProtocol {
         Task { @MainActor in
             do {
                 let request = try Self.decodeQueryRequest(from: requestData)
-                let queryService = QuerySearchService(searchService: service)
+                let queryService = SearchQueryService(searchService: service)
                 let response = try await Task.detached(priority: .userInitiated) {
                     try await queryService.querySearch(request)
                 }

@@ -1,6 +1,6 @@
 import Foundation
 
-struct FilterSearchScopeBuilder: Sendable {
+struct SearchScopeNormalizer: Sendable {
     static func normalizeScopes(_ scopes: [String]) -> [String] {
         var orderedUnique: [String] = []
         var seen: Set<String> = []

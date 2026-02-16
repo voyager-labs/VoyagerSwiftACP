@@ -1,6 +1,6 @@
 import Foundation
 
-extension FilterSearchMDQueryPostFilterEvaluator {
+extension PostFilterEvaluator {
     func shouldEvaluateInParallel(pathCount: Int) -> Bool {
         pathCount >= 1024 && ProcessInfo.processInfo.activeProcessorCount > 1
     }

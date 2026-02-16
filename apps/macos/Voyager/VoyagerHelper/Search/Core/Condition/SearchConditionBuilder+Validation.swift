@@ -1,6 +1,6 @@
 import Foundation
 
-extension FilterSearchConditionBuilder {
+extension SearchConditionBuilder {
     func validateValue(
         _ valueCount: ValueCount?,
         operatorCode: String,

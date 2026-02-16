@@ -1,16 +1,16 @@
 import Foundation
 import Logging
 
-struct QueryGatewayConverter: Sendable {
+struct GatewayQueryConverter: Sendable {
     private let logger: Logger
     let homeDir: String
     private let conditionRegistry: PropertyConditionRegistry?
-    private let conditionSanitizer: FilterSearchConditionSanitizer?
+    private let conditionSanitizer: SearchConditionSanitizer?
     let systemPropertyMap: [String: SystemPropertyDefinition]
 
     init(
         bundle: Bundle = .main,
-        logger: Logger = Logger(label: "VoyagerHelper.QueryGatewayConverter"),
+        logger: Logger = Logger(label: "VoyagerHelper.GatewayQueryConverter"),
     ) {
         self.logger = logger
         homeDir = NSHomeDirectory()
@@ -24,13 +24,13 @@ struct QueryGatewayConverter: Sendable {
                 resourceName: "system_property_registry",
                 bundle: bundle,
             )
-            let conditionBuilder = FilterSearchConditionBuilder(
+            let conditionBuilder = SearchConditionBuilder(
                 registry: loadedConditionRegistry,
                 systemRegistry: systemRegistry,
             )
             conditionRegistry = loadedConditionRegistry
-            conditionSanitizer = FilterSearchConditionSanitizer(conditionBuilder: conditionBuilder)
-            systemPropertyMap = QueryGatewayConverter.buildSystemPropertyMap(systemRegistry: systemRegistry)
+            conditionSanitizer = SearchConditionSanitizer(conditionBuilder: conditionBuilder)
+            systemPropertyMap = GatewayQueryConverter.buildSystemPropertyMap(systemRegistry: systemRegistry)
         } catch {
             conditionRegistry = nil
             conditionSanitizer = nil
@@ -42,12 +42,12 @@ struct QueryGatewayConverter: Sendable {
     func convert(
         query: String,
         existingFilters: SearchFiltersPayload,
-    ) async -> QueryGatewayConversionResult {
+    ) async -> GatewayQueryResult {
         do {
             guard let conditionRegistry,
                   let conditionSanitizer
             else {
-                throw QueryGatewayError.registryUnavailable
+                throw GatewayQueryError.registryUnavailable
             }
 
             let visibleExistingConditions = existingFilters.conditions.filter {
@@ -67,22 +67,22 @@ struct QueryGatewayConverter: Sendable {
             if let outputError = output.error,
                outputError.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty == false
             {
-                logger.error("[QueryGatewayConverter] \(outputError)")
-                return QueryGatewayConversionResult(conditions: [], scopes: nil, error: outputError)
+                logger.error("[GatewayQueryConverter] \(outputError)")
+                return GatewayQueryResult(conditions: [], scopes: nil, error: outputError)
             }
 
             let normalizedConditions = conditionSanitizer.normalizeAndValidate(output.conditions ?? [])
             let fallbackConditions = conditionSanitizer.normalizeAndValidate(visibleExistingConditions)
             let finalConditions = normalizedConditions.isEmpty ? fallbackConditions : normalizedConditions
 
-            return QueryGatewayConversionResult(
+            return GatewayQueryResult(
                 conditions: finalConditions,
                 scopes: output.scopes,
                 error: nil,
             )
         } catch {
-            logger.error("[QueryGatewayConverter] conversion failed: \(error)")
-            return QueryGatewayConversionResult(conditions: [], scopes: nil, error: String(describing: error))
+            logger.error("[GatewayQueryConverter] conversion failed: \(error)")
+            return GatewayQueryResult(conditions: [], scopes: nil, error: String(describing: error))
         }
     }
 }

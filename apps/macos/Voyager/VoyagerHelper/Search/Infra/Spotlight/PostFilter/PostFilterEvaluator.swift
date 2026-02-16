@@ -1,7 +1,7 @@
 @preconcurrency import CoreServices
 import Foundation
 
-struct FilterSearchMDQueryPostFilterEvaluator: Sendable {
+struct PostFilterEvaluator: Sendable {
     enum EvaluationError: Error, LocalizedError {
         case unknownPropertyKey(String)
         case unsupportedPropertyType(String)
@@ -22,15 +22,15 @@ struct FilterSearchMDQueryPostFilterEvaluator: Sendable {
         }
     }
 
-    private let conditionBuilder: FilterSearchConditionBuilder
+    private let conditionBuilder: SearchConditionBuilder
     private let homeDirectoryPath: String
 
     init(bundle: Bundle = .main) throws {
-        try self.init(conditionBuilder: FilterSearchConditionBuilder(bundle: bundle))
+        try self.init(conditionBuilder: SearchConditionBuilder(bundle: bundle))
     }
 
     init(
-        conditionBuilder: FilterSearchConditionBuilder,
+        conditionBuilder: SearchConditionBuilder,
         homeDirectoryPath: String = FileManager.default.homeDirectoryForCurrentUser.standardizedFileURL.path,
     ) {
         self.conditionBuilder = conditionBuilder
@@ -53,10 +53,10 @@ struct FilterSearchMDQueryPostFilterEvaluator: Sendable {
     }
 }
 
-extension FilterSearchMDQueryPostFilterEvaluator {
+extension PostFilterEvaluator {
     struct ConditionSpec: Sendable {
         let condition: SearchConditionPayload
-        let mapping: FilterSearchConditionBuilder.PropertyMapping
+        let mapping: SearchConditionBuilder.PropertyMapping
         let typeKey: String
         let orderedSystemKeys: [SystemKey]
         let evaluationPriority: Int
@@ -341,7 +341,7 @@ extension FilterSearchMDQueryPostFilterEvaluator {
     }
 }
 
-private extension FilterSearchMDQueryPostFilterEvaluator {
+private extension PostFilterEvaluator {
     func resolvePropertyValue(spec: ConditionSpec, context: inout PathContext) -> Any? {
         if let cached = context.propertyCache[spec.condition.propertyKey] {
             switch cached {
