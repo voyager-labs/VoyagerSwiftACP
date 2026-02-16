@@ -14,7 +14,7 @@ enum QueryGatewaySystemPrompt {
     </ops>
 
     <rules>
-    - name query -> name_stem cn "%text%"
+    - name query -> name_stem cn "text" (no wildcard wrappers)
     - extension: use extension any ["pdf", "jpg"...] (no dot, lowercase)
     - dates: YYYY-MM-DD only
     - relative dates -> date
