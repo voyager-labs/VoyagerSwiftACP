@@ -53,12 +53,12 @@ nonisolated enum JSONValue: Codable, Equatable, Sendable {
         let container = try decoder.singleValueContainer()
         if container.decodeNil() {
             self = .null
+        } else if let stringValue = try? container.decode(String.self) {
+            self = .string(stringValue)
         } else if let boolValue = try? container.decode(Bool.self) {
             self = .bool(boolValue)
         } else if let numberValue = try? container.decode(Double.self) {
             self = .number(numberValue)
-        } else if let stringValue = try? container.decode(String.self) {
-            self = .string(stringValue)
         } else if let arr = try? container.decode([JSONValue].self) {
             self = .array(arr)
         } else if let obj = try? container.decode([String: JSONValue].self) {

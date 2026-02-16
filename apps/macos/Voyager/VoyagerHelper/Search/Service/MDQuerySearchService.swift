@@ -77,7 +77,7 @@ struct MDQuerySearchService: Sendable {
             logger.warning("MDQuery result truncated at maxCandidates=\(maxCandidates): id=\(requestId)")
         }
 
-        let items = paths.map(JSONValue.string)
+        let items = makeJSONItems(from: paths)
 
         logger.info(
             "MDQuery applyFilters completed: id=\(requestId) scopes=\(scopeURLs.count) pushdown_conditions=\(plan.pushdownConditions.count) postfilter_conditions=\(plan.postFilterConditions.count) items=\(items.count) fallback=\(execution.usedFallback)",
@@ -218,5 +218,18 @@ struct MDQuerySearchService: Sendable {
         }
 
         return false
+    }
+}
+
+private extension MDQuerySearchService {
+    func makeJSONItems(from paths: [String]) -> [JSONValue] {
+        var items: [JSONValue] = []
+        items.reserveCapacity(paths.count)
+
+        for path in paths {
+            items.append(.string(path))
+        }
+
+        return items
     }
 }
