@@ -2,7 +2,7 @@ import AppKit
 import ComposableArchitecture
 import SwiftUI
 
-enum FileManagerMainContainerLayout {
+enum FileManagerWindowMainContainerLayout {
     struct Components {
         let containerView: NSView
         let splitView: NSSplitView

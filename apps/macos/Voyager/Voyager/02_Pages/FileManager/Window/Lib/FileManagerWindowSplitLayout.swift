@@ -2,19 +2,19 @@ import AppKit
 import ComposableArchitecture
 import SwiftUI
 
-enum FileManagerWindowSplitViewLayout {
+enum FileManagerWindowSplitLayout {
     struct Components {
         let rootView: NSVisualEffectView
         let splitView: NSSplitView
         let sidebarHosting: NSHostingController<SidebarView>
-        let mainContainerHosting: NSHostingController<FileManagerMainContainerRepresentable>
+        let mainContainerHosting: NSHostingController<FileManagerWindowMainContainerView>
         let mainContainerView: NSView
         let mainContainerLeading: NSLayoutConstraint
     }
 
     static func build(
         store: StoreOf<FileManagerFeature>,
-        mainContainerRootView: FileManagerMainContainerRepresentable,
+        mainContainerRootView: FileManagerWindowMainContainerView,
         contentVerticalMargin: CGFloat,
         isSidebarVisible: Bool,
     ) -> Components {
@@ -76,11 +76,11 @@ enum FileManagerWindowSplitViewLayout {
     }
 
     private static func makeMainContainerHosting(
-        rootView: FileManagerMainContainerRepresentable,
+        rootView: FileManagerWindowMainContainerView,
         in splitView: NSSplitView,
         contentVerticalMargin: CGFloat,
         isSidebarVisible: Bool,
-    ) -> (NSHostingController<FileManagerMainContainerRepresentable>, NSLayoutConstraint) {
+    ) -> (NSHostingController<FileManagerWindowMainContainerView>, NSLayoutConstraint) {
         let mainContainerWrapper = NSView()
         mainContainerWrapper.wantsLayer = true
         mainContainerWrapper.layer?.backgroundColor = NSColor.clear.cgColor

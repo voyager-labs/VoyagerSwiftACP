@@ -4,7 +4,7 @@ import ComposableArchitecture
 import SwiftUI
 
 @MainActor
-final class FileManagerMainContainerSplitController: NSViewController, NSSplitViewDelegate {
+final class FileManagerWindowMainContainerSplitCoordinator: NSViewController, NSSplitViewDelegate {
     private enum Constants {
         static let defaultInspectorWidth: CGFloat = 300
         static let inspectorMinWidth: CGFloat = 200
@@ -40,10 +40,10 @@ final class FileManagerMainContainerSplitController: NSViewController, NSSplitVi
     }
 
     override func loadView() {
-        let paneState = FileManagerContentPaneViewState.from(windowState: store.state)
+        let paneState = makeContentPaneViewState(from: store.state)
         currentContentPaneState = paneState
 
-        let components = FileManagerMainContainerLayout.build(
+        let components = FileManagerWindowMainContainerLayout.build(
             contentRootView: makeContentRootView(paneState: paneState),
         )
         components.splitView.delegate = self
@@ -70,7 +70,7 @@ final class FileManagerMainContainerSplitController: NSViewController, NSSplitVi
 
     func updateAppearance(isDark: Bool) {
         currentIsDark = isDark
-        FileManagerMainContainerLayout.applyAppearance(
+        FileManagerWindowMainContainerLayout.applyAppearance(
             splitView: mainSplitView,
             containerView: containerView,
             contentView: contentHosting?.view,
@@ -119,10 +119,34 @@ final class FileManagerMainContainerSplitController: NSViewController, NSSplitVi
     }
 
     private func updateContentRootViewIfNeeded(state: FileManagerWindowState) {
-        let paneState = FileManagerContentPaneViewState.from(windowState: state)
+        let paneState = makeContentPaneViewState(from: state)
         guard paneState != currentContentPaneState else { return }
         currentContentPaneState = paneState
         contentHosting?.rootView = makeContentRootView(paneState: paneState)
+    }
+
+    private func makeContentPaneViewState(from state: FileManagerWindowState) -> FileManagerContentPaneViewState {
+        FileManagerContentPaneViewState(
+            isComposerPresented: state.content.composer.isPresented,
+            favorites: state.sidebar.favorites.map { favorite in
+                ScopeFavoriteItem(
+                    name: favorite.name,
+                    url: favorite.url,
+                    iconName: favorite.iconName,
+                )
+            },
+            historyPaths: state.content.navigation.backHistory.compactMap { entry in
+                if case let .folder(path) = entry.navigationState {
+                    return path
+                }
+                return nil
+            },
+            isDiscardEnabled: state.content.entryOperations.loadingContext.isCollectionMode
+                && state.content.collectionSession.baseline != nil
+                && state.content.isOpenedCollectionDirty,
+            canSaveCollection: state.content.canSaveCollection,
+            isTemporaryCollection: state.content.collectionSession.openedURL == nil,
+        )
     }
 
     private func makeContentRootView(paneState: FileManagerContentPaneViewState) -> FileManagerContentPaneView {
@@ -150,7 +174,7 @@ final class FileManagerMainContainerSplitController: NSViewController, NSSplitVi
 
         if visible {
             guard inspectorHosting == nil else { return }
-            let hosting = FileManagerMainContainerLayout.makeInspectorHosting(
+            let hosting = FileManagerWindowMainContainerLayout.makeInspectorHosting(
                 store: store,
                 isDark: currentIsDark,
             )

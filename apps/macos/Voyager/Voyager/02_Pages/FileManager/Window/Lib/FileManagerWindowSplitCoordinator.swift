@@ -4,7 +4,7 @@ import ComposableArchitecture
 import SwiftUI
 
 @MainActor
-final class FileManagerWindowSplitController: NSViewController, NSSplitViewDelegate {
+final class FileManagerWindowSplitCoordinator: NSViewController, NSSplitViewDelegate {
     private enum Constants {
         static let contentVerticalMargin: CGFloat = 4
 
@@ -29,7 +29,7 @@ final class FileManagerWindowSplitController: NSViewController, NSSplitViewDeleg
     private var currentIsDark: Bool
 
     private var sidebarHosting: NSHostingController<SidebarView>?
-    private var mainContainerHosting: NSHostingController<FileManagerMainContainerRepresentable>?
+    private var mainContainerHosting: NSHostingController<FileManagerWindowMainContainerView>?
 
     private weak var windowSplitView: NSSplitView?
     private weak var mainContainerView: NSView?
@@ -52,7 +52,7 @@ final class FileManagerWindowSplitController: NSViewController, NSSplitViewDeleg
     }
 
     override func loadView() {
-        let components = FileManagerWindowSplitViewLayout.build(
+        let components = FileManagerWindowSplitLayout.build(
             store: store,
             mainContainerRootView: makeMainContainerRootView(),
             contentVerticalMargin: Constants.contentVerticalMargin,
@@ -88,7 +88,7 @@ final class FileManagerWindowSplitController: NSViewController, NSSplitViewDeleg
 
     func updateAppearance(isDark: Bool) {
         currentIsDark = isDark
-        FileManagerWindowSplitViewLayout.applySplitBackground(windowSplitView)
+        FileManagerWindowSplitLayout.applySplitBackground(windowSplitView)
         mainContainerHosting?.rootView = makeMainContainerRootView()
     }
 
@@ -131,8 +131,8 @@ final class FileManagerWindowSplitController: NSViewController, NSSplitViewDeleg
             .store(in: &cancellables)
     }
 
-    private func makeMainContainerRootView() -> FileManagerMainContainerRepresentable {
-        FileManagerMainContainerRepresentable(
+    private func makeMainContainerRootView() -> FileManagerWindowMainContainerView {
+        FileManagerWindowMainContainerView(
             store: store,
             isDark: currentIsDark,
         )
@@ -166,14 +166,14 @@ final class FileManagerWindowSplitController: NSViewController, NSSplitViewDeleg
 
         if sidebarVisible {
             splitView.setPosition(sidebarWidth, ofDividerAt: 0)
-            FileManagerWindowSplitViewLayout.updateMainContainerLeading(
+            FileManagerWindowSplitLayout.updateMainContainerLeading(
                 constraints.mainContainerLeading,
                 isSidebarVisible: true,
                 contentVerticalMargin: Constants.contentVerticalMargin,
             )
         } else {
             splitView.setPosition(0, ofDividerAt: 0)
-            FileManagerWindowSplitViewLayout.updateMainContainerLeading(
+            FileManagerWindowSplitLayout.updateMainContainerLeading(
                 constraints.mainContainerLeading,
                 isSidebarVisible: false,
                 contentVerticalMargin: Constants.contentVerticalMargin,
@@ -192,7 +192,7 @@ final class FileManagerWindowSplitController: NSViewController, NSSplitViewDeleg
 
         if isVisible {
             splitView.setPosition(sidebarWidth, ofDividerAt: 0)
-            FileManagerWindowSplitViewLayout.updateMainContainerLeading(
+            FileManagerWindowSplitLayout.updateMainContainerLeading(
                 constraints.mainContainerLeading,
                 isSidebarVisible: true,
                 contentVerticalMargin: Constants.contentVerticalMargin,
@@ -203,7 +203,7 @@ final class FileManagerWindowSplitController: NSViewController, NSSplitViewDeleg
                 syncSidebarWidthToStore(currentWidth)
             }
             splitView.setPosition(0, ofDividerAt: 0)
-            FileManagerWindowSplitViewLayout.updateMainContainerLeading(
+            FileManagerWindowSplitLayout.updateMainContainerLeading(
                 constraints.mainContainerLeading,
                 isSidebarVisible: false,
                 contentVerticalMargin: Constants.contentVerticalMargin,
@@ -274,7 +274,7 @@ final class FileManagerWindowSplitController: NSViewController, NSSplitViewDeleg
         let shouldBeVisible = !isCollapsed
         if store.sidebar.sidebarVisible != shouldBeVisible {
             store.send(.sidebar(.setSidebarVisible(shouldBeVisible)))
-            FileManagerWindowSplitViewLayout.updateMainContainerLeading(
+            FileManagerWindowSplitLayout.updateMainContainerLeading(
                 constraints.mainContainerLeading,
                 isSidebarVisible: shouldBeVisible,
                 contentVerticalMargin: Constants.contentVerticalMargin,
