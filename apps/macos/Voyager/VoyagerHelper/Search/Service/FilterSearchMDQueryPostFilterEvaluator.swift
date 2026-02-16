@@ -43,14 +43,15 @@ struct FilterSearchMDQueryPostFilterEvaluator: Sendable {
         }
 
         let specs = try conditions.map(prepareSpec).sorted(by: shouldEvaluateFirst)
+        let nsurlSymbols = batchedNSURLSymbols(from: specs)
         var filtered: [String] = []
         filtered.reserveCapacity(paths.count)
 
         for path in paths {
-            let standardizedPath = URL(fileURLWithPath: path).standardizedFileURL.path
-            var context = PathContext(path: standardizedPath)
+            var context = PathContext(path: path)
+            preloadNSURLResourceValues(symbols: nsurlSymbols, context: &context)
             if try matchesAll(specs: specs, context: &context) {
-                filtered.append(standardizedPath)
+                filtered.append(path)
             }
         }
 
@@ -59,7 +60,7 @@ struct FilterSearchMDQueryPostFilterEvaluator: Sendable {
 }
 
 extension FilterSearchMDQueryPostFilterEvaluator {
-    struct ConditionSpec {
+    struct ConditionSpec: Sendable {
         let condition: SearchConditionPayload
         let mapping: FilterSearchConditionBuilder.PropertyMapping
         let typeKey: String
@@ -67,7 +68,7 @@ extension FilterSearchMDQueryPostFilterEvaluator {
         let evaluationPriority: Int
     }
 
-    struct SystemKey {
+    struct SystemKey: Sendable {
         let prefix: String
         let symbol: String
     }
