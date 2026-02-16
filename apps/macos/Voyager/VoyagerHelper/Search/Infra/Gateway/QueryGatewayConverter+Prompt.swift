@@ -73,7 +73,7 @@ extension QueryGatewayConverter {
         }
 
         let lower = query.lowercased()
-        for (key, mapping) in propertyMap {
+        for (key, mapping) in systemPropertyMap {
             if isVisible(mapping) == false {
                 continue
             }
@@ -92,7 +92,7 @@ extension QueryGatewayConverter {
 
         var groups: [String: [String]] = [:]
         for key in candidates.sorted() {
-            guard let mapping = propertyMap[key], isVisible(mapping) else {
+            guard let mapping = systemPropertyMap[key], isVisible(mapping) else {
                 continue
             }
             groups[mapping.type, default: []].append(key)
@@ -161,126 +161,11 @@ extension QueryGatewayConverter {
         return regex.firstMatch(in: text, range: range) != nil
     }
 
-    func normalizeAndValidateConditions(
-        _ conditions: [SearchConditionPayload],
-        conditionRegistry: PropertyConditionRegistry,
-    ) -> [SearchConditionPayload] {
-        var result: [SearchConditionPayload] = []
-
-        for condition in conditions {
-            guard let normalized = normalizeCondition(condition) else {
-                continue
-            }
-            guard isValidCondition(normalized, conditionRegistry: conditionRegistry) else {
-                continue
-            }
-            result.append(normalized)
-        }
-
-        return result
-    }
-
-    func normalizeCondition(_ condition: SearchConditionPayload) -> SearchConditionPayload? {
-        if condition.operator == "eq", condition.value == nil {
-            return nil
-        }
-
-        if condition.operator == "rx", case let .string(text)? = condition.value {
-            let normalized: String = if text.contains("%") {
-                text
-            } else if text.contains(".*") {
-                text.replacingOccurrences(of: ".*", with: "%")
-            } else {
-                text
-            }
-
-            return SearchConditionPayload(
-                propertyKey: condition.propertyKey,
-                operator: condition.operator,
-                value: .string(normalized),
-            )
-        }
-
-        return condition
-    }
-
-    func isValidCondition(
-        _ condition: SearchConditionPayload,
-        conditionRegistry: PropertyConditionRegistry,
-    ) -> Bool {
-        guard let mapping = propertyMap[condition.propertyKey], isVisible(mapping) else {
-            return false
-        }
-        guard let typeKey = conditionTypeKey(for: mapping.type),
-              let propertyType = conditionRegistry.propertyTypes[typeKey]
-        else {
-            return false
-        }
-        guard propertyType.operators.contains(condition.operator) else {
-            return false
-        }
-        guard let operatorMeta = conditionRegistry.operators[condition.operator] else {
-            return false
-        }
-        return isValidValueCount(operatorMeta.valueCount, value: condition.value)
-    }
-
-    func conditionTypeKey(for rawType: String) -> String? {
-        switch rawType.lowercased() {
-        case "string":
-            "string"
-        case "categorical":
-            "categorical"
-        case "number":
-            "number"
-        case "date", "datetime":
-            "date"
-        case "boolean":
-            "boolean"
-        case "string_list":
-            "string_list"
-        default:
-            nil
-        }
-    }
-
-    func isValidValueCount(_ valueCount: ValueCount?, value: JSONValue?) -> Bool {
-        guard let valueCount else {
-            return true
-        }
-
-        switch valueCount {
-        case .fixed(0):
-            return value == nil
-        case .fixed(1):
-            return value != nil
-        case .fixed(2):
-            if case let .array(values)? = value {
-                return values.count == 2
-            }
-            return false
-        case .multiple:
-            if case let .array(values)? = value {
-                return values.isEmpty == false
-            }
-            return false
-        default:
-            return true
-        }
-    }
-
     func isVisible(_ definition: SystemPropertyDefinition) -> Bool {
         definition.uiHidden != true
     }
 
-    func isVisibleKey(_ key: String) -> Bool {
-        guard let definition = propertyMap[key] else {
-            return false
-        }
-        return isVisible(definition)
-    }
-
-    static func buildPropertyMap(systemRegistry: SystemPropertyRegistry) -> [String: SystemPropertyDefinition] {
+    static func buildSystemPropertyMap(systemRegistry: SystemPropertyRegistry) -> [String: SystemPropertyDefinition] {
         var map: [String: SystemPropertyDefinition] = [:]
         for (_, entries) in systemRegistry.categories {
             for (key, definition) in entries {

@@ -9,7 +9,10 @@ extension FilterSearchMDQueryPostFilterEvaluator {
     }
 
     func orderedSystemKeys(from rawKeys: [String]) -> [SystemKey] {
-        let parsed = rawKeys.map(parseOptimizationSystemKey)
+        let parsed = rawKeys.map { rawKey in
+            let parsed = SearchSystemKeyParser.parse(rawKey)
+            return SystemKey(prefix: parsed.prefix, symbol: parsed.symbol)
+        }
         return parsed.sorted { lhs, rhs in
             systemKeyRank(lhs.prefix) < systemKeyRank(rhs.prefix)
         }
@@ -76,15 +79,5 @@ extension FilterSearchMDQueryPostFilterEvaluator {
             return 30
         }
         return 0
-    }
-
-    private func parseOptimizationSystemKey(_ key: String) -> SystemKey {
-        let trimmed = key.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard let index = trimmed.firstIndex(of: ":") else {
-            return SystemKey(prefix: "", symbol: trimmed)
-        }
-        let prefix = trimmed[..<index].trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
-        let symbol = trimmed[trimmed.index(after: index)...].trimmingCharacters(in: .whitespacesAndNewlines)
-        return SystemKey(prefix: prefix, symbol: symbol)
     }
 }

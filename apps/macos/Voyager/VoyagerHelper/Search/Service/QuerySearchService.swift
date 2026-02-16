@@ -8,11 +8,14 @@ struct QuerySearchService: Sendable {
 
     init(
         searchService: MDQuerySearchService,
+        converter: QueryGatewayConverter = QueryGatewayConverter(
+            logger: Logger(label: "VoyagerHelper.QueryGatewayConverter"),
+        ),
         logger: Logger = Logger(label: "VoyagerHelper.QuerySearchService"),
     ) {
         self.searchService = searchService
+        self.converter = converter
         self.logger = logger
-        converter = QueryGatewayConverter(logger: Logger(label: "VoyagerHelper.QueryGatewayConverter"))
     }
 
     nonisolated func querySearch(

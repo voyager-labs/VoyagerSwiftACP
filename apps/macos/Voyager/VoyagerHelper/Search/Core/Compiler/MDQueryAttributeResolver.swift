@@ -34,7 +34,9 @@ enum MDQueryAttributeResolver {
         var nsurlCandidate: String?
 
         for rawKey in systemKeys {
-            let (prefix, symbol) = parseSystemKey(rawKey)
+            let parsed = SearchSystemKeyParser.parse(rawKey)
+            let prefix = parsed.prefix
+            let symbol = parsed.symbol
 
             if symbol.hasPrefix("kMDItem") {
                 if prefix == "mditem" {
@@ -55,19 +57,5 @@ enum MDQueryAttributeResolver {
         }
 
         return mdimporterCandidate ?? nsurlCandidate
-    }
-
-    private static func parseSystemKey(_ key: String) -> (prefix: String, symbol: String) {
-        let trimmed = key.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard let separatorIndex = trimmed.firstIndex(of: ":") else {
-            return ("", trimmed)
-        }
-
-        let prefix = trimmed[..<separatorIndex]
-            .trimmingCharacters(in: .whitespacesAndNewlines)
-            .lowercased()
-        let symbol = trimmed[trimmed.index(after: separatorIndex)...]
-            .trimmingCharacters(in: .whitespacesAndNewlines)
-        return (prefix, symbol)
     }
 }

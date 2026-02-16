@@ -5,7 +5,8 @@ struct QueryGatewayConverter: Sendable {
     private let logger: Logger
     let homeDir: String
     private let conditionRegistry: PropertyConditionRegistry?
-    let propertyMap: [String: SystemPropertyDefinition]
+    private let conditionSanitizer: FilterSearchConditionSanitizer?
+    let systemPropertyMap: [String: SystemPropertyDefinition]
 
     init(
         bundle: Bundle = .main,
@@ -23,11 +24,17 @@ struct QueryGatewayConverter: Sendable {
                 resourceName: "system_property_registry",
                 bundle: bundle,
             )
+            let conditionBuilder = FilterSearchConditionBuilder(
+                registry: loadedConditionRegistry,
+                systemRegistry: systemRegistry,
+            )
             conditionRegistry = loadedConditionRegistry
-            propertyMap = QueryGatewayConverter.buildPropertyMap(systemRegistry: systemRegistry)
+            conditionSanitizer = FilterSearchConditionSanitizer(conditionBuilder: conditionBuilder)
+            systemPropertyMap = QueryGatewayConverter.buildSystemPropertyMap(systemRegistry: systemRegistry)
         } catch {
             conditionRegistry = nil
-            propertyMap = [:]
+            conditionSanitizer = nil
+            systemPropertyMap = [:]
             logger.error("Query converter registry load failed: \(error)")
         }
     }
@@ -37,11 +44,15 @@ struct QueryGatewayConverter: Sendable {
         existingFilters: SearchFiltersPayload,
     ) async -> QueryGatewayConversionResult {
         do {
-            guard let conditionRegistry else {
+            guard let conditionRegistry,
+                  let conditionSanitizer
+            else {
                 throw QueryGatewayError.registryUnavailable
             }
 
-            let visibleExistingConditions = existingFilters.conditions.filter { isVisibleKey($0.propertyKey) }
+            let visibleExistingConditions = existingFilters.conditions.filter {
+                conditionSanitizer.isVisiblePropertyKey($0.propertyKey)
+            }
             let userPrompt = buildUserPrompt(
                 query: query,
                 existingConditions: visibleExistingConditions,
@@ -60,14 +71,8 @@ struct QueryGatewayConverter: Sendable {
                 return QueryGatewayConversionResult(conditions: [], scopes: nil, error: outputError)
             }
 
-            let normalizedConditions = normalizeAndValidateConditions(
-                output.conditions ?? [],
-                conditionRegistry: conditionRegistry,
-            )
-            let fallbackConditions = normalizeAndValidateConditions(
-                visibleExistingConditions,
-                conditionRegistry: conditionRegistry,
-            )
+            let normalizedConditions = conditionSanitizer.normalizeAndValidate(output.conditions ?? [])
+            let fallbackConditions = conditionSanitizer.normalizeAndValidate(visibleExistingConditions)
             let finalConditions = normalizedConditions.isEmpty ? fallbackConditions : normalizedConditions
 
             return QueryGatewayConversionResult(

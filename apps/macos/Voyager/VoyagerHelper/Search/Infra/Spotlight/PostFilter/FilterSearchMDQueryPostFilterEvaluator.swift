@@ -423,16 +423,6 @@ private extension FilterSearchMDQueryPostFilterEvaluator {
         return value
     }
 
-    func parseSystemKey(_ key: String) -> SystemKey {
-        let trimmed = key.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard let index = trimmed.firstIndex(of: ":") else {
-            return SystemKey(prefix: "", symbol: trimmed)
-        }
-        let prefix = trimmed[..<index].trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
-        let symbol = trimmed[trimmed.index(after: index)...].trimmingCharacters(in: .whitespacesAndNewlines)
-        return SystemKey(prefix: prefix, symbol: symbol)
-    }
-
     func derivedValue(for propertyKey: String, context: PathContext) -> Any? {
         switch propertyKey {
         case "path":

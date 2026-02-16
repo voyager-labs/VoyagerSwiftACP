@@ -1,4 +1,3 @@
-@preconcurrency import CoreServices
 import Foundation
 import Logging
 
@@ -20,6 +19,7 @@ struct MDQuerySearchService: Sendable {
     private let logger: Logger
     private let maxCandidates: Int
     private let defaultScopeURL: @Sendable () -> URL
+    private let executionEngine: MDQueryExecutionEngine
     private let compilerTask: Task<FilterSearchMDQueryCompiler, Error>
     private let postFilterTask: Task<FilterSearchMDQueryPostFilterEvaluator, Error>
 
@@ -43,6 +43,7 @@ struct MDQuerySearchService: Sendable {
         self.logger = logger
         self.maxCandidates = max(1, maxCandidates)
         self.defaultScopeURL = defaultScopeURL
+        executionEngine = MDQueryExecutionEngine(maxCandidates: self.maxCandidates)
         compilerTask = Task(priority: .utility) {
             try await compilerFactory()
         }
@@ -58,7 +59,7 @@ struct MDQuerySearchService: Sendable {
         let postFilter = try await postFilterTask.value
         let compiledPlan = try compiler.compilePlan(conditions: filters.conditions)
 
-        let scopeURLs = Self.resolveScopeURLs(filters.scopes, defaultScopeURL: defaultScopeURL)
+        let scopeURLs = resolveScopeURLs(filters.scopes)
         let execution = try executePlan(
             compiledPlan,
             filters: filters,
@@ -66,7 +67,7 @@ struct MDQuerySearchService: Sendable {
             requestId: requestId,
         )
 
-        var plan = execution.plan
+        let plan = execution.plan
         var paths = execution.paths
 
         if plan.postFilterConditions.isEmpty == false {
@@ -101,8 +102,10 @@ struct MDQuerySearchService: Sendable {
         requestId: String,
     ) throws -> PlanExecutionResult {
         do {
-            let query = try makeQuery(queryString: initialPlan.predicate, scopes: scopeURLs)
-            let paths = loadPaths(query: query, limit: maxCandidates)
+            let paths = try executionEngine.loadPaths(
+                queryString: initialPlan.predicate,
+                scopes: scopeURLs,
+            )
 
             return PlanExecutionResult(
                 plan: initialPlan,
@@ -118,8 +121,10 @@ struct MDQuerySearchService: Sendable {
                 "MDQuery pushdown failed. Falling back to post-filter mode: id=\(requestId) error=\(error.localizedDescription)",
             )
 
-            let fallbackQuery = try makeQuery(queryString: FilterSearchMDQueryCompiler.basePredicate, scopes: scopeURLs)
-            let paths = loadPaths(query: fallbackQuery, limit: maxCandidates)
+            let paths = try executionEngine.loadPaths(
+                queryString: FilterSearchMDQueryCompiler.basePredicate,
+                scopes: scopeURLs,
+            )
 
             return PlanExecutionResult(
                 plan: FilterSearchMDQueryCompiler.CompilePlan(
@@ -133,91 +138,12 @@ struct MDQuerySearchService: Sendable {
         }
     }
 
-    private func makeQuery(queryString: String, scopes: [URL]) throws -> MDQuery {
-        guard let query = MDQueryCreate(kCFAllocatorDefault, queryString as CFString, nil, nil) else {
-            throw SearchError.queryCreationFailed
-        }
-        let scopeRefs = scopes.map { $0 as CFURL } as CFArray
-        MDQuerySetSearchScope(query, scopeRefs, 0)
-
-        let executed = MDQueryExecute(query, CFOptionFlags(kMDQuerySynchronous.rawValue))
-        guard executed else {
-            throw SearchError.queryExecutionFailed
-        }
-        return query
-    }
-
-    private func loadPaths(query: MDQuery, limit: Int) -> [String] {
-        let resultCount = Int(MDQueryGetResultCount(query))
-        let upperBound = min(resultCount, limit)
-
-        var seen: Set<String> = []
-        var paths: [String] = []
-        paths.reserveCapacity(upperBound)
-
-        for index in 0 ..< upperBound {
-            guard let item = MDQueryGetResultAtIndex(query, index) else {
-                continue
-            }
-            let mdItem = unsafeBitCast(item, to: MDItem.self)
-            guard let rawPath = MDItemCopyAttribute(mdItem, kMDItemPath) as? String else {
-                continue
-            }
-
-            let standardizedPath = URL(fileURLWithPath: rawPath).standardizedFileURL.path
-            if isDirectory(mdItem: mdItem, path: standardizedPath) {
-                continue
-            }
-            guard seen.insert(standardizedPath).inserted else {
-                continue
-            }
-            paths.append(standardizedPath)
-        }
-
-        return paths
-    }
-
-    static func resolveScopeURLs(
-        _ scopes: [String],
-        defaultScopeURL: @Sendable () -> URL,
-    ) -> [URL] {
-        let normalized = normalizeScopes(scopes)
+    private func resolveScopeURLs(_ scopes: [String]) -> [URL] {
+        let normalized = FilterSearchScopeBuilder.normalizeScopes(scopes)
         if normalized.isEmpty {
             return [defaultScopeURL().standardizedFileURL]
         }
         return normalized.map { URL(fileURLWithPath: $0).standardizedFileURL }
-    }
-
-    static func normalizeScopes(_ scopes: [String]) -> [String] {
-        FilterSearchScopeBuilder.normalizeScopes(scopes)
-    }
-
-    private func isDirectory(mdItem: MDItem, path: String) -> Bool {
-        if let contentType = MDItemCopyAttribute(mdItem, kMDItemContentType) as? String,
-           contentType == "public.folder"
-        {
-            return true
-        }
-        if let contentTypeTree = MDItemCopyAttribute(mdItem, kMDItemContentTypeTree) as? [String],
-           contentTypeTree.contains("public.folder")
-        {
-            return true
-        }
-        if let fileKind = MDItemCopyAttribute(mdItem, kMDItemKind) as? String {
-            let lowered = fileKind.lowercased()
-            if lowered.contains("folder") || lowered.contains("directory") {
-                return true
-            }
-        }
-
-        var isDirectory = ObjCBool(false)
-        if FileManager.default.fileExists(atPath: path, isDirectory: &isDirectory),
-           isDirectory.boolValue
-        {
-            return true
-        }
-
-        return false
     }
 }
 

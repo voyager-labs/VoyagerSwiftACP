@@ -58,11 +58,7 @@ final class FilterSearchXPCService: NSObject, FilterSearchXPCServiceProtocol {
     }
 
     private static func decodeRequest(from data: Data) throws -> FiltersOnlyRequestPayload {
-        do {
-            return try JSONDecoder().decode(FiltersOnlyRequestPayload.self, from: data)
-        } catch {
-            throw ServiceError.invalidRequest(details: error.localizedDescription)
-        }
+        try decodePayload(FiltersOnlyRequestPayload.self, from: data)
     }
 
     private static func encodeResponse(_ response: SearchResponsePayload) throws -> Data {
@@ -74,8 +70,12 @@ final class FilterSearchXPCService: NSObject, FilterSearchXPCServiceProtocol {
     }
 
     private static func decodeQueryRequest(from data: Data) throws -> SearchRequestPayload {
+        try decodePayload(SearchRequestPayload.self, from: data)
+    }
+
+    private static func decodePayload<T: Decodable>(_: T.Type, from data: Data) throws -> T {
         do {
-            return try JSONDecoder().decode(SearchRequestPayload.self, from: data)
+            return try JSONDecoder().decode(T.self, from: data)
         } catch {
             throw ServiceError.invalidRequest(details: error.localizedDescription)
         }
