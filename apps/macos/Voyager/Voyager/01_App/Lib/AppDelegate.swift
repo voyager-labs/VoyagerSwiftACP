@@ -13,17 +13,25 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     func applicationWillFinishLaunching(_: Notification) {
-        requireRootStore().send(.lifecycle(.willFinishLaunching))
-        requireRootStore().send(.updater(.configureAtLaunch))
+        withAppRootStore {
+            $0.send(.lifecycle(.willFinishLaunching))
+            $0.send(.updater(.configureAtLaunch))
+        }
     }
 
     func applicationDidFinishLaunching(_: Notification) {
-        requireRootStore().send(.lifecycle(.didFinishLaunching))
+        withAppRootStore {
+            $0.send(.lifecycle(.didFinishLaunching))
+        }
     }
 
     func applicationShouldHandleReopen(_: NSApplication, hasVisibleWindows flag: Bool) -> Bool {
-        requireRootStore().send(.lifecycle(.appReopen(hasVisibleWindows: flag)))
-        return true
+        withAppRootStore {
+            $0.send(.lifecycle(.appReopen(hasVisibleWindows: flag)))
+            return true
+        } onMissing: {
+            true
+        }
     }
 
     func applicationSupportsSecureRestorableState(_: NSApplication) -> Bool {
@@ -31,14 +39,31 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     func applicationShouldTerminate(_: NSApplication) -> NSApplication.TerminateReply {
-        requireRootStore().send(.lifecycle(.requestTermination))
-        return .terminateLater
+        withAppRootStore {
+            $0.send(.lifecycle(.requestTermination))
+            return .terminateLater
+        } onMissing: {
+            .terminateNow
+        }
     }
 
-    private func requireRootStore() -> StoreOf<AppRootFeature> {
+    @discardableResult
+    private func withAppRootStore<T>(
+        _ operation: (StoreOf<AppRootFeature>) -> T,
+        onMissing: (() -> T)? = nil,
+    ) -> T {
         guard let appRootStore else {
-            fatalError("appRootStore가 설정되지 않았습니다.")
+            assertionFailure("appRootStore가 설정되지 않았습니다.")
+            if let onMissing {
+                return onMissing()
+            }
+
+            if let voidValue = () as? T {
+                return voidValue
+            }
+
+            preconditionFailure("onMissing 콜백이 필요한 반환 타입입니다.")
         }
-        return appRootStore
+        return operation(appRootStore)
     }
 }
