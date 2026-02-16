@@ -15,7 +15,7 @@ struct QuerySearchService: Sendable {
         converter = QueryGatewayConverter(logger: Logger(label: "VoyagerHelper.QueryGatewayConverter"))
     }
 
-    func querySearch(
+    nonisolated func querySearch(
         _ request: SearchRequestPayload,
     ) async throws -> SearchResponsePayload {
         let trimmedQuery = request.query.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -54,7 +54,7 @@ struct QuerySearchService: Sendable {
         }
     }
 
-    private func makeErrorResponse(
+    private nonisolated func makeErrorResponse(
         code: String,
         details: String?,
         fallbackFilters: SearchFiltersPayload,

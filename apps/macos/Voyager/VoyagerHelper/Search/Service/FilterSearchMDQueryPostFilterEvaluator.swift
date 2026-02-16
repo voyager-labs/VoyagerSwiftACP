@@ -42,7 +42,7 @@ struct FilterSearchMDQueryPostFilterEvaluator: Sendable {
             return paths
         }
 
-        let specs = try conditions.map(prepareSpec)
+        let specs = try conditions.map(prepareSpec).sorted(by: shouldEvaluateFirst)
         var filtered: [String] = []
         filtered.reserveCapacity(paths.count)
 
@@ -58,11 +58,18 @@ struct FilterSearchMDQueryPostFilterEvaluator: Sendable {
     }
 }
 
-private extension FilterSearchMDQueryPostFilterEvaluator {
+extension FilterSearchMDQueryPostFilterEvaluator {
     struct ConditionSpec {
         let condition: SearchConditionPayload
         let mapping: FilterSearchConditionBuilder.PropertyMapping
         let typeKey: String
+        let orderedSystemKeys: [SystemKey]
+        let evaluationPriority: Int
+    }
+
+    struct SystemKey {
+        let prefix: String
+        let symbol: String
     }
 
     enum CachedValue {
@@ -76,6 +83,7 @@ private extension FilterSearchMDQueryPostFilterEvaluator {
         var mdItem: MDItem?
         var propertyCache: [String: CachedValue]
         var resourceCache: [String: CachedValue]
+        var mdItemAttributeCache: [String: CachedValue]
 
         init(path: String) {
             self.path = path
@@ -83,6 +91,7 @@ private extension FilterSearchMDQueryPostFilterEvaluator {
             mdItem = nil
             propertyCache = [:]
             resourceCache = [:]
+            mdItemAttributeCache = [:]
         }
 
         mutating func loadMDItem() -> MDItem? {
@@ -140,7 +149,18 @@ private extension FilterSearchMDQueryPostFilterEvaluator {
             )
         }
 
-        return ConditionSpec(condition: condition, mapping: mapping, typeKey: typeKey)
+        let orderedSystemKeys = orderedSystemKeys(from: mapping.systemKeys)
+        return ConditionSpec(
+            condition: condition,
+            mapping: mapping,
+            typeKey: typeKey,
+            orderedSystemKeys: orderedSystemKeys,
+            evaluationPriority: evaluationPriority(
+                typeKey: typeKey,
+                operatorCode: condition.operator,
+                orderedSystemKeys: orderedSystemKeys,
+            ),
+        )
     }
 
     func matchesAll(specs: [ConditionSpec], context: inout PathContext) throws -> Bool {
@@ -340,14 +360,7 @@ private extension FilterSearchMDQueryPostFilterEvaluator {
             return derived
         }
 
-        let parsed = spec.mapping.systemKeys.map(parseSystemKey)
-        let ordered =
-            parsed.filter { $0.prefix == "mditem" } +
-            parsed.filter { $0.prefix == "mdimporter" } +
-            parsed.filter { $0.prefix == "nsurl" } +
-            parsed.filter { ["mditem", "mdimporter", "nsurl"].contains($0.prefix) == false }
-
-        for key in ordered {
+        for key in spec.orderedSystemKeys {
             if let value = valueForSystemKey(key, context: &context) {
                 context.propertyCache[spec.condition.propertyKey] = .value(value)
                 return value
@@ -359,15 +372,15 @@ private extension FilterSearchMDQueryPostFilterEvaluator {
     }
 
     func valueForSystemKey(
-        _ key: (prefix: String, symbol: String),
+        _ key: SystemKey,
         context: inout PathContext,
     ) -> Any? {
         switch key.prefix {
         case "nsurl":
-            return valueForNSURLSymbol(key.symbol, context: &context)
+            valueForNSURLSymbol(key.symbol, context: &context)
 
         default:
-            return valueForMDItemSymbol(key.symbol, context: &context)
+            valueForMDItemSymbol(key.symbol, context: &context)
         }
     }
 
@@ -386,27 +399,43 @@ private extension FilterSearchMDQueryPostFilterEvaluator {
                 context.resourceCache[symbol] = .value(value)
                 return value
             }
-        } catch {}
+        } catch {
+            context.resourceCache[symbol] = .missing
+            return nil
+        }
 
         context.resourceCache[symbol] = .missing
         return nil
     }
 
     func valueForMDItemSymbol(_ symbol: String, context: inout PathContext) -> Any? {
+        if let cached = context.mdItemAttributeCache[symbol] {
+            switch cached {
+            case let .value(value): return value
+            case .missing: return nil
+            }
+        }
+
         guard symbol.hasPrefix("kMD"), let mdItem = context.loadMDItem() else {
+            context.mdItemAttributeCache[symbol] = .missing
             return nil
         }
-        return MDItemCopyAttribute(mdItem, symbol as CFString)
+        guard let value = MDItemCopyAttribute(mdItem, symbol as CFString) else {
+            context.mdItemAttributeCache[symbol] = .missing
+            return nil
+        }
+        context.mdItemAttributeCache[symbol] = .value(value)
+        return value
     }
 
-    func parseSystemKey(_ key: String) -> (prefix: String, symbol: String) {
+    func parseSystemKey(_ key: String) -> SystemKey {
         let trimmed = key.trimmingCharacters(in: .whitespacesAndNewlines)
         guard let index = trimmed.firstIndex(of: ":") else {
-            return ("", trimmed)
+            return SystemKey(prefix: "", symbol: trimmed)
         }
         let prefix = trimmed[..<index].trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
         let symbol = trimmed[trimmed.index(after: index)...].trimmingCharacters(in: .whitespacesAndNewlines)
-        return (prefix, symbol)
+        return SystemKey(prefix: prefix, symbol: symbol)
     }
 
     func derivedValue(for propertyKey: String, context: PathContext) -> Any? {
