@@ -44,18 +44,12 @@ struct FilterSearchMDQueryPostFilterEvaluator: Sendable {
 
         let specs = try conditions.map(prepareSpec).sorted(by: shouldEvaluateFirst)
         let nsurlSymbols = batchedNSURLSymbols(from: specs)
-        var filtered: [String] = []
-        filtered.reserveCapacity(paths.count)
 
-        for path in paths {
-            var context = PathContext(path: path)
-            preloadNSURLResourceValues(symbols: nsurlSymbols, context: &context)
-            if try matchesAll(specs: specs, context: &context) {
-                filtered.append(path)
-            }
+        if shouldEvaluateInParallel(pathCount: paths.count) {
+            return try filterPathsInParallel(paths: paths, specs: specs, nsurlSymbols: nsurlSymbols)
         }
 
-        return filtered
+        return try filterPathsSequentially(paths: paths, specs: specs, nsurlSymbols: nsurlSymbols)
     }
 }
 
