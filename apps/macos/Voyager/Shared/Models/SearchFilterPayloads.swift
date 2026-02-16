@@ -1,14 +1,14 @@
-struct SearchRequestPayload: Codable, Equatable, Sendable {
+nonisolated struct SearchRequestPayload: Codable, Equatable, Sendable {
     let query: String
     let filters: SearchFiltersPayload
 }
 
-struct SearchFiltersPayload: Codable, Equatable, Sendable {
+nonisolated struct SearchFiltersPayload: Codable, Equatable, Sendable {
     let scopes: [String]
     let conditions: [SearchConditionPayload]
 }
 
-struct SearchConditionPayload: Codable, Equatable, Sendable {
+nonisolated struct SearchConditionPayload: Codable, Equatable, Sendable {
     let propertyKey: String
     let `operator`: String
     let value: JSONValue?
@@ -20,28 +20,28 @@ struct SearchConditionPayload: Codable, Equatable, Sendable {
     }
 }
 
-struct FiltersOnlyRequestPayload: Codable, Equatable, Sendable {
+nonisolated struct FiltersOnlyRequestPayload: Codable, Equatable, Sendable {
     let filters: SearchFiltersPayload
 }
 
-struct SearchResponsePayload: Codable, Equatable, Sendable {
+nonisolated struct SearchResponsePayload: Codable, Equatable, Sendable {
     let itemCount: Int
     let appliedFilters: AppliedFiltersPayload?
     let items: [JSONValue]?
     let error: SearchErrorPayload?
 }
 
-struct AppliedFiltersPayload: Codable, Equatable, Sendable {
+nonisolated struct AppliedFiltersPayload: Codable, Equatable, Sendable {
     let scopes: [String]?
     let conditions: [SearchConditionPayload]?
 }
 
-struct SearchErrorPayload: Codable, Equatable, Sendable {
+nonisolated struct SearchErrorPayload: Codable, Equatable, Sendable {
     let code: String
     let details: String?
 }
 
-enum JSONValue: Codable, Equatable, Sendable {
+nonisolated enum JSONValue: Codable, Equatable, Sendable {
     case string(String)
     case number(Double)
     case bool(Bool)
