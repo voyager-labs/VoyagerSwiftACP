@@ -158,8 +158,8 @@ struct EntryOperationsMetricsReducer {
 
     private func payloadForTagActions(_ action: Action) -> EntryActionPayload? {
         switch action {
-        case let .setTagsForItems(targets):
-            guard let entryKind = entryKind(for: targets) else { return nil }
+        case let .requestTagMutation(request):
+            guard let entryKind = entryKind(for: request.paths) else { return nil }
             return EntryActionPayload(actionKind: .setTags, entryKind: entryKind)
 
         default:
@@ -167,7 +167,7 @@ struct EntryOperationsMetricsReducer {
         }
     }
 
-    private func entryKind(for entries: [Entry]) -> DAUEntryKind? {
+    private func entryKind(for entries: [EntryModel]) -> DAUEntryKind? {
         guard !entries.isEmpty else { return nil }
         let kinds = Set(entries.map(entryKind(for:)))
         if kinds.count == 1, let kind = kinds.first {
@@ -176,15 +176,11 @@ struct EntryOperationsMetricsReducer {
         return .mixed
     }
 
-    private func entryKind(for entry: Entry) -> DAUEntryKind {
+    private func entryKind(for entry: EntryModel) -> DAUEntryKind {
         if entry.fileExtension.lowercased() == CollectionConstants.fileExtension {
             return .collection
         }
         return entry.isDirectory ? .directory : .file
-    }
-
-    private func entryKind(for targets: [TagChangeTarget]) -> DAUEntryKind? {
-        entryKind(for: targets.map(\.file))
     }
 
     private func entryKind(for paths: [String]) -> DAUEntryKind? {

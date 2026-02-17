@@ -7,6 +7,7 @@ enum FileManagerWindowAction: CasePathable, Sendable {
     case sidebar(FileManagerSidebarFeature.Action)
     case inspector(FileManagerInspectorFeature.Action)
     case navigation(ContentPageNavigationFeature.Action)
+    case applyAppPreferences(AppPreferencesState)
 
     case onAppear
     case onDisappear

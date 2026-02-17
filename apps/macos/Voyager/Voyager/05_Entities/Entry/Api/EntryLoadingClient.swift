@@ -2,10 +2,10 @@ import ComposableArchitecture
 import Foundation
 
 public struct EntryLoadingClient: Sendable {
-    public var loadItems: @Sendable (URL, Bool) async throws -> [Entry]
-    public var loadComputerItems: @Sendable () async throws -> [Entry]
-    public var loadRecentItems: @Sendable (Bool, WorkspaceClient) async -> [Entry]
-    public var loadFilesWithTag: @Sendable (String, Bool, WorkspaceClient) async -> [Entry]
+    public var loadItems: @Sendable (URL, Bool) async throws -> [EntryModel]
+    public var loadComputerItems: @Sendable () async throws -> [EntryModel]
+    public var loadRecentItems: @Sendable (Bool, WorkspaceClient) async -> [EntryModel]
+    public var loadFilesWithTag: @Sendable (String, Bool, WorkspaceClient) async -> [EntryModel]
     public var fileExists: @Sendable (String) -> Bool
     public var fileExistsAtPath: @Sendable (String, UnsafeMutablePointer<ObjCBool>?) -> Bool
     public var contentsOfDirectory: @Sendable (
@@ -31,10 +31,10 @@ public struct EntryLoadingClient: Sendable {
     public var displayName: @Sendable (String) -> String
 
     public nonisolated init(
-        loadItems: @escaping @Sendable (URL, Bool) async throws -> [Entry],
-        loadComputerItems: @escaping @Sendable () async throws -> [Entry],
-        loadRecentItems: @escaping @Sendable (Bool, WorkspaceClient) async -> [Entry],
-        loadFilesWithTag: @escaping @Sendable (String, Bool, WorkspaceClient) async -> [Entry],
+        loadItems: @escaping @Sendable (URL, Bool) async throws -> [EntryModel],
+        loadComputerItems: @escaping @Sendable () async throws -> [EntryModel],
+        loadRecentItems: @escaping @Sendable (Bool, WorkspaceClient) async -> [EntryModel],
+        loadFilesWithTag: @escaping @Sendable (String, Bool, WorkspaceClient) async -> [EntryModel],
         fileExists: @escaping @Sendable (String) -> Bool,
         fileExistsAtPath: @escaping @Sendable (
             String,
@@ -77,23 +77,23 @@ public struct EntryLoadingClient: Sendable {
 extension EntryLoadingClient: DependencyKey {
     public nonisolated static var liveValue: EntryLoadingClient {
         EntryLoadingClient(
-            loadItems: EntrySystemPrimitives.liveLoadItems,
-            loadComputerItems: EntrySystemPrimitives.liveLoadComputerItems,
-            loadRecentItems: EntrySystemPrimitives.liveLoadRecentItems,
-            loadFilesWithTag: EntrySystemPrimitives.liveLoadFilesWithTag,
-            fileExists: EntrySystemPrimitives.liveFileExists,
-            fileExistsAtPath: EntrySystemPrimitives.liveFileExistsAtPath,
-            contentsOfDirectory: EntrySystemPrimitives.liveContentsOfDirectory,
-            mountedVolumeURLs: EntrySystemPrimitives.liveMountedVolumeURLs,
-            urlsForDirectory: EntrySystemPrimitives.liveUrlsForDirectory,
-            homeDirectory: EntrySystemPrimitives.liveHomeDirectory,
-            loadDragPaths: EntrySystemPrimitives.liveLoadDragPaths,
-            getItemMetadata: EntrySystemPrimitives.liveGetItemMetadata,
-            getImageResolution: EntrySystemPrimitives.liveGetImageResolution,
-            getFormattedFileSize: EntrySystemPrimitives.liveGetFormattedFileSize,
-            getFolderItemCount: EntrySystemPrimitives.liveGetFolderItemCount,
-            isPackageDirectory: EntrySystemPrimitives.liveIsPackageDirectory,
-            displayName: EntrySystemPrimitives.liveDisplayName,
+            loadItems: EntryLoadingLive.loadItems,
+            loadComputerItems: EntryLoadingLive.loadComputerItems,
+            loadRecentItems: EntryLoadingLive.loadRecentItems,
+            loadFilesWithTag: EntryLoadingLive.loadFilesWithTag,
+            fileExists: EntryLoadingLive.fileExists,
+            fileExistsAtPath: EntryLoadingLive.fileExistsAtPath,
+            contentsOfDirectory: EntryLoadingLive.contentsOfDirectory,
+            mountedVolumeURLs: EntryLoadingLive.mountedVolumeURLs,
+            urlsForDirectory: EntryLoadingLive.urlsForDirectory,
+            homeDirectory: EntryLoadingLive.homeDirectory,
+            loadDragPaths: EntryFileOpsLive.loadDragPaths,
+            getItemMetadata: EntryLoadingLive.getItemMetadata,
+            getImageResolution: EntryLoadingLive.getImageResolution,
+            getFormattedFileSize: EntryLoadingLive.getFormattedFileSize,
+            getFolderItemCount: EntryLoadingLive.getFolderItemCount,
+            isPackageDirectory: EntryLoadingLive.isPackageDirectory,
+            displayName: EntryLoadingLive.displayName,
         )
     }
 

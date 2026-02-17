@@ -11,7 +11,6 @@ struct FileManagerContentState: Equatable {
     }
 
     var navigation: ContentPageNavigationFeature.State = .init()
-    var entries: EntryFeature.State = .init()
     var entryViewLayout: EntryViewLayoutState = .init()
     var entryArrangements: EntryArrangementsState = .init()
     var entryOperations: EntryOperationsFeature.State = .init()

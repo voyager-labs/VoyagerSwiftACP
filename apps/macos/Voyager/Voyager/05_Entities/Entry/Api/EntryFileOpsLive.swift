@@ -1,7 +1,8 @@
+import AppKit
 import Foundation
 
-extension EntrySystemPrimitives {
-    nonisolated static var liveCreateFolder: @Sendable (URL, String) async throws -> Void {
+enum EntryFileOpsLive {
+    nonisolated static var createFolder: @Sendable (URL, String) async throws -> Void {
         { parentURL, folderName in
             let folderURL = parentURL.appendingPathComponent(folderName)
             try FileManager.default.createDirectory(
@@ -12,7 +13,7 @@ extension EntrySystemPrimitives {
         }
     }
 
-    nonisolated static var livePasteFile: @Sendable (URL, URL) async throws -> Void {
+    nonisolated static var pasteFile: @Sendable (URL, URL) async throws -> Void {
         { sourceURL, destinationURL in
             if FileManager.default.fileExists(atPath: destinationURL.path) {
                 throw FileOpError.fileExists(itemName: destinationURL.lastPathComponent)
@@ -21,7 +22,7 @@ extension EntrySystemPrimitives {
         }
     }
 
-    nonisolated static var liveMoveFile: @Sendable (URL, URL) async throws -> Void {
+    nonisolated static var moveFile: @Sendable (URL, URL) async throws -> Void {
         { sourceURL, destinationURL in
             if FileManager.default.fileExists(atPath: destinationURL.path) {
                 throw FileOpError.fileExists(itemName: destinationURL.lastPathComponent)
@@ -30,7 +31,7 @@ extension EntrySystemPrimitives {
         }
     }
 
-    nonisolated static var liveRenameFile: @Sendable (URL, URL) async throws -> Void {
+    nonisolated static var renameFile: @Sendable (URL, URL) async throws -> Void {
         { sourceURL, destinationURL in
             if FileManager.default.fileExists(atPath: destinationURL.path) {
                 throw FileOpError.fileExists(itemName: destinationURL.lastPathComponent)
@@ -39,7 +40,7 @@ extension EntrySystemPrimitives {
         }
     }
 
-    nonisolated static var liveCreateAlias: @Sendable (URL, URL) async throws -> Void {
+    nonisolated static var createAlias: @Sendable (URL, URL) async throws -> Void {
         { sourceURL, aliasURL in
             if FileManager.default.fileExists(atPath: aliasURL.path) {
                 throw FileOpError.fileExists(itemName: aliasURL.lastPathComponent)
@@ -53,16 +54,7 @@ extension EntrySystemPrimitives {
         }
     }
 
-    nonisolated static var liveMoveToTrash: @Sendable (URL) async throws -> Void {
-        { url in
-            try await MainActor.run {
-                var result: NSURL?
-                try FileManager.default.trashItem(at: url, resultingItemURL: &result)
-            }
-        }
-    }
-
-    nonisolated static var liveMoveToTrashAndReturnURL: @Sendable (URL) async throws -> URL {
+    nonisolated static var moveToTrashAndReturnURL: @Sendable (URL) async throws -> URL {
         { url in
             try await MainActor.run {
                 var result: NSURL?
@@ -75,13 +67,13 @@ extension EntrySystemPrimitives {
         }
     }
 
-    nonisolated static var liveDeleteImmediately: @Sendable (URL) async throws -> Void {
+    nonisolated static var deleteImmediately: @Sendable (URL) async throws -> Void {
         { url in
             try FileManager.default.removeItem(at: url)
         }
     }
 
-    nonisolated static var livePutBackFromTrash: @Sendable (URL, String) async throws -> Void {
+    nonisolated static var putBackFromTrash: @Sendable (URL, String) async throws -> Void {
         { trashURL, originalPath in
             let originalURL = URL(fileURLWithPath: originalPath)
 
@@ -103,7 +95,7 @@ extension EntrySystemPrimitives {
         }
     }
 
-    nonisolated static var liveCompressItems: @Sendable ([URL]) async throws -> URL {
+    nonisolated static var compressItems: @Sendable ([URL]) async throws -> URL {
         { itemURLs in
             guard !itemURLs.isEmpty else {
                 throw FileOpError.system(message: "No items to compress")
@@ -148,7 +140,7 @@ extension EntrySystemPrimitives {
         }
     }
 
-    nonisolated static var liveExtractCompressedFile: @Sendable (URL) async throws -> Void {
+    nonisolated static var extractCompressedFile: @Sendable (URL) async throws -> Void {
         { zipURL in
             guard zipURL.pathExtension.lowercased() == "zip" else {
                 throw FileOpError.unsupportedType
@@ -215,13 +207,13 @@ extension EntrySystemPrimitives {
         }
     }
 
-    nonisolated static var liveGetTags: @Sendable (URL) async throws -> [String] {
+    nonisolated static var getTags: @Sendable (URL) async throws -> [String] {
         { url in
             try TagMetadataClient.loadTagNames(from: url)
         }
     }
 
-    nonisolated static var liveSetTags: @Sendable (URL, [String]) async throws -> Void {
+    nonisolated static var setTags: @Sendable (URL, [String]) async throws -> Void {
         { url, tags in
             do {
                 try TagMetadataClient.setTagNames(tags, for: url)
@@ -235,7 +227,7 @@ extension EntrySystemPrimitives {
         }
     }
 
-    nonisolated static var liveToggleTag: @Sendable (URL, String) async throws -> Void {
+    nonisolated static var toggleTag: @Sendable (URL, String) async throws -> Void {
         { url, tag in
             do {
                 try TagMetadataClient.toggleTag(tag, for: url)
@@ -246,6 +238,79 @@ extension EntrySystemPrimitives {
             } catch {
                 throw error
             }
+        }
+    }
+
+    nonisolated static var fileExists: @Sendable (String) -> Bool {
+        { path in
+            FileManager.default.fileExists(atPath: path)
+        }
+    }
+
+    nonisolated static var saveDragPaths: @Sendable ([String]) -> Void {
+        { paths in
+            let pasteboard = NSPasteboard(name: NSPasteboard.Name("VoyagerDragDrop"))
+            pasteboard.clearContents()
+            let pathString = paths.joined(separator: "\n")
+            pasteboard.setString(pathString, forType: .string)
+        }
+    }
+
+    nonisolated static var loadDragPaths: @Sendable () -> [String] {
+        {
+            let pasteboard = NSPasteboard(name: NSPasteboard.Name("VoyagerDragDrop"))
+            guard let pathString = pasteboard.string(forType: .string),
+                  !pathString.isEmpty
+            else {
+                return []
+            }
+            return pathString.split(separator: "\n").map(String.init)
+        }
+    }
+
+    nonisolated static var saveDragWithOption: @Sendable (Bool) -> Void {
+        { isOptionPressed in
+            let pasteboard = NSPasteboard(name: NSPasteboard.Name("VoyagerDragDrop"))
+            pasteboard.setString(
+                isOptionPressed ? "true" : "false",
+                forType: NSPasteboard.PasteboardType("VoyagerDragOption"),
+            )
+        }
+    }
+
+    nonisolated static var loadDragWithOption: @Sendable () -> Bool {
+        {
+            let pasteboard = NSPasteboard(name: NSPasteboard.Name("VoyagerDragDrop"))
+            let optionString = pasteboard.string(forType: NSPasteboard.PasteboardType("VoyagerDragOption"))
+            return optionString == "true"
+        }
+    }
+
+    nonisolated static var loadClipboardPaths: @Sendable () -> ([String], ClipboardOperation) {
+        {
+            let pasteboard = NSPasteboard.general
+
+            guard let urls = pasteboard.readObjects(forClasses: [NSURL.self]) as? [URL] else {
+                return ([], .copy)
+            }
+
+            let paths = urls.map(\.path)
+
+            let opString = pasteboard
+                .string(forType: NSPasteboard.PasteboardType("com.voyager.clipboard.operation"))
+            let operation: ClipboardOperation = opString == "cut" ? .cut : .copy
+
+            return (paths, operation)
+        }
+    }
+
+    nonisolated static var postFileSystemChanged: @Sendable ([String]) -> Void {
+        { paths in
+            NotificationCenter.default.post(
+                name: EntryWatchingLive.fileSystemChangedNotificationName,
+                object: nil,
+                userInfo: ["paths": paths],
+            )
         }
     }
 }

@@ -4,6 +4,7 @@ import ComposableArchitecture
 enum WindowManagerAction: CasePathable, Sendable {
     case openInitialWindowIfNeeded
     case reopenWindowIfNeeded(hasVisibleWindows: Bool)
+    case applyAppPreferences(AppPreferencesState)
 
     case newWindow(path: String? = nil)
     case newTab(path: String? = nil)

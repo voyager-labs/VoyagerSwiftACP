@@ -6,10 +6,8 @@ struct MenuCommandsFeature {
     typealias Action = MenuCommandsAction
 
     var body: some Reducer<State, Action> {
-        CombineReducers {
-            MenuCommandsAppFeature()
-            MenuCommandsEditFeature()
-            MenuCommandsViewFeature()
+        Reduce { _, _ in
+            .none
         }
     }
 }

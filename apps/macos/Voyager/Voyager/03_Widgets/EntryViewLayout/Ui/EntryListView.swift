@@ -3,25 +3,25 @@ import ComposableArchitecture
 import SwiftUI
 
 @MainActor
-struct EntryListView: NSViewRepresentable {
+struct EntryListViewRepresentable: NSViewRepresentable {
     let store: StoreOf<FileManagerContentFeature>
 
-    func makeCoordinator() -> EntryListController {
-        EntryListController(store: store)
+    func makeCoordinator() -> EntryListCoordinator {
+        EntryListCoordinator(store: store)
     }
 
-    func makeNSView(context: Context) -> EntryListRootView {
-        let view = EntryListRootView()
+    func makeNSView(context: Context) -> EntryListView {
+        let view = EntryListView()
         context.coordinator.bind(to: view)
         return view
     }
 
-    func updateNSView(_ view: EntryListRootView, context: Context) {
+    func updateNSView(_ view: EntryListView, context: Context) {
         context.coordinator.updateRootView(view)
     }
 }
 
-final class EntryListRootView: NSView {
+final class EntryListView: NSView {
     protocol EntryListTableViewContextMenuProviding: AnyObject {
         func contextMenu(forRow row: Int?, event: NSEvent) -> NSMenu
     }

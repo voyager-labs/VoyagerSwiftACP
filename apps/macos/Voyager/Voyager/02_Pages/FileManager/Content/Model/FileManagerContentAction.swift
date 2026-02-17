@@ -6,7 +6,8 @@ import SwiftUI
 @CasePathable
 enum FileManagerContentAction: CasePathable, Sendable {
     case entryArrangements(EntryArrangementsAction)
-    case entries(EntryFeature.Action)
+    case entries(EntryCommandAction)
+    case entryViewLayout(EntryViewLayoutAction)
     case entryOperations(EntryOperationsFeature.Action)
     case composer(ComposerFeature.Action)
 
@@ -21,6 +22,7 @@ enum FileManagerContentAction: CasePathable, Sendable {
     case dropItemsToTag(providers: [NSItemProvider], tagName: String)
 
     case performPendingNavigation(ContentPageNavigationPending)
+    case requestNavigation(ContentPageNavigationAction)
     // TODO(Collection): Collection으로 이동
     case discardCollectionChanges
 

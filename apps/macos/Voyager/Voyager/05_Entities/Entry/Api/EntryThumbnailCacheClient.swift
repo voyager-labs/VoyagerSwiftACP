@@ -1,5 +1,7 @@
 import AppKit
+#if canImport(ComposableArchitecture)
 import ComposableArchitecture
+#endif
 
 struct EntryThumbnailCacheClient: Sendable {
     var getThumbnail: @Sendable (_ path: String) -> NSImage?
@@ -24,6 +26,8 @@ struct EntryThumbnailCacheClient: Sendable {
         saveThumbnail(image, path)
     }
 }
+
+#if canImport(ComposableArchitecture)
 
 extension EntryThumbnailCacheClient: DependencyKey {
     private nonisolated(unsafe) static let thumbnailCache = NSCache<NSString, NSImage>()
@@ -59,3 +63,5 @@ extension DependencyValues {
         set { self[EntryThumbnailCacheClient.self] = newValue }
     }
 }
+
+#endif

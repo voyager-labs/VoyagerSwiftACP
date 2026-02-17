@@ -69,7 +69,7 @@ enum BreadcrumbBuilder {
     }
 
     static func breadcrumbItems(
-        navigationState: ContentPageNavigationUtils.NavigationState,
+        navigationState: ContentPageNavigationRoute,
         selectedPath: String?,
         computerName: String,
         homePath: String,

@@ -25,7 +25,6 @@ struct FileManagerContentEntryThumbnailFeature {
                     !state.entryThumbnails.thumbnailsReady.contains(path)
                         && !state.entryThumbnails.thumbnailRequestsInFlight.contains(path)
                         && !state.entryThumbnails.thumbnailRequestsFailed.contains(path)
-                        && !EntryReducerSupport.shouldExcludeThumbnailPath(path)
                 }
 
                 let pathsToRequest = Array(filtered.prefix(200))

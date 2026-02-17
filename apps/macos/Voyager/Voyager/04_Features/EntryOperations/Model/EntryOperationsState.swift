@@ -1,8 +1,13 @@
 import ComposableArchitecture
 import Foundation
+import IdentifiedCollections
 
 @ObservableState
 struct EntryOperationsState: Equatable {
+    var loadingContext: EntryLoadingContextState = .init()
+    var isLoading: Bool = false
+    var isReloading: Bool = false
+
     var windowID: UUID?
     var itemStates: [String: ItemOperationState] = [:]
     var undoRecords: [EntryActionRecord] = []
@@ -13,6 +18,14 @@ struct EntryOperationsState: Equatable {
     var emptyTrashCompletedCount: Int = 0
     var applicationsForItems: [String: [ApplicationInfo]] = [:]
     var commonApplicationsForSelectedFiles: [ApplicationInfo] = []
+
+    var displayItems: IdentifiedArrayOf<EntryModel> {
+        loadingContext.isCollectionMode ? loadingContext.collectionItems : loadingContext.items
+    }
+
+    var displayOrderItems: [EntryModel] {
+        Array(displayItems)
+    }
 
     mutating func appendUndoRecord(_ record: EntryActionRecord) {
         undoRecords.append(record)
@@ -42,6 +55,29 @@ struct EntryOperationsState: Equatable {
             .flatMap { [$0.beforePath, $0.afterPath] }
             .compactMap(\.self)
         return paths.contains { itemStates[$0]?.isBusy == true }
+    }
+}
+
+struct EntryLoadingContextState: Equatable {
+    var items: IdentifiedArrayOf<EntryModel> = []
+    var collectionItems: IdentifiedArrayOf<EntryModel> = []
+    var isCollectionMode: Bool = false
+}
+
+extension EntryOperationsState {
+    var items: IdentifiedArrayOf<EntryModel> {
+        get { loadingContext.items }
+        set { loadingContext.items = newValue }
+    }
+
+    var collectionItems: IdentifiedArrayOf<EntryModel> {
+        get { loadingContext.collectionItems }
+        set { loadingContext.collectionItems = newValue }
+    }
+
+    var isCollectionMode: Bool {
+        get { loadingContext.isCollectionMode }
+        set { loadingContext.isCollectionMode = newValue }
     }
 }
 

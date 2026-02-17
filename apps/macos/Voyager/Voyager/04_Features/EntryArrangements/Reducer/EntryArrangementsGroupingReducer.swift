@@ -39,21 +39,21 @@ struct EntryArrangementsGroupingReducer {
             state.entryArrangements.groupedItems = [
                 GroupedItems(
                     groupName: "",
-                    items: Array(state.entries.displayItems),
+                    items: Array(state.entryOperations.displayItems),
                 ),
             ]
             return
         }
 
         state.entryArrangements.groupedItems = groupItems(
-            Array(state.entries.displayItems),
+            Array(state.entryOperations.displayItems),
             by: arrangements.groupKey,
         )
     }
 }
 
 private extension EntryArrangementsGroupingReducer {
-    func groupByName(_ items: [Entry]) -> [GroupedItems] {
+    func groupByName(_ items: [EntryModel]) -> [GroupedItems] {
         let dictionary = Dictionary(grouping: items) { item -> String in
             guard let firstChar = item.name.uppercased().first else { return "#" }
             if firstChar.isLetter {
@@ -75,8 +75,8 @@ private extension EntryArrangementsGroupingReducer {
     }
 
     func groupByDate(
-        _ files: [Entry],
-        dateKeyPath: KeyPath<Entry, Date> = \.modifiedDate,
+        _ files: [EntryModel],
+        dateKeyPath: KeyPath<EntryModel, Date> = \.modifiedDate,
     ) -> [GroupedItems] {
         let calendar = Calendar.current
         let now = Date()
@@ -161,7 +161,7 @@ private extension EntryArrangementsGroupingReducer {
         }
     }
 
-    func groupBySize(_ files: [Entry]) -> [GroupedItems] {
+    func groupBySize(_ files: [EntryModel]) -> [GroupedItems] {
         let dictionary = Dictionary(grouping: files) { item in
             ByteSizeBucket.bucket(for: item.size)
         }
@@ -171,7 +171,7 @@ private extension EntryArrangementsGroupingReducer {
         }
     }
 
-    func categoryForEntry(_ entry: Entry) -> String {
+    func categoryForEntry(_ entry: EntryModel) -> String {
         if entry.isDirectory {
             return "Folders"
         }
@@ -184,7 +184,7 @@ private extension EntryArrangementsGroupingReducer {
         return normalizedKind.isEmpty ? "Other" : normalizedKind
     }
 
-    func groupByKind(_ files: [Entry]) -> [GroupedItems] {
+    func groupByKind(_ files: [EntryModel]) -> [GroupedItems] {
         Dictionary(grouping: files) { categoryForEntry($0) }
             .map { GroupedItems(groupName: $0.key, items: $0.value) }
             .sorted(by: sortCategoryGroups)
@@ -209,7 +209,7 @@ private extension EntryArrangementsGroupingReducer {
     }
 
     func groupItems(
-        _ items: [Entry],
+        _ items: [EntryModel],
         by groupKey: GroupKey,
     ) -> [GroupedItems] {
         guard groupKey != .none else {
@@ -219,7 +219,7 @@ private extension EntryArrangementsGroupingReducer {
         return groupItemsByKey(items, groupKey: groupKey)
     }
 
-    func groupItemsByKey(_ items: [Entry], groupKey: GroupKey) -> [GroupedItems] {
+    func groupItemsByKey(_ items: [EntryModel], groupKey: GroupKey) -> [GroupedItems] {
         switch groupKey {
         case .none:
             [GroupedItems(groupName: "", items: items)]
@@ -244,14 +244,14 @@ private extension EntryArrangementsGroupingReducer {
         }
     }
 
-    func groupItemsByName(_ items: [Entry]) -> [GroupedItems] {
+    func groupItemsByName(_ items: [EntryModel]) -> [GroupedItems] {
         let sortedItems = items.sorted { $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending }
         return [GroupedItems(groupName: "", items: sortedItems)]
     }
 
-    func groupItemsByDateLastOpened(_ items: [Entry]) -> [GroupedItems] {
+    func groupItemsByDateLastOpened(_ items: [EntryModel]) -> [GroupedItems] {
         var result: [GroupedItems] = []
-        let itemsWithDates = items.compactMap { item -> Entry? in
+        let itemsWithDates = items.compactMap { item -> EntryModel? in
             guard item.lastOpenedDate != nil else { return nil }
             return item
         }
@@ -266,7 +266,7 @@ private extension EntryArrangementsGroupingReducer {
         return result
     }
 
-    func groupItemsByApplication(_ items: [Entry]) -> [GroupedItems] {
+    func groupItemsByApplication(_ items: [EntryModel]) -> [GroupedItems] {
         let grouped = Dictionary(grouping: items) { item -> String in
             if item.isDirectory || item.creatorApplication == nil {
                 return "Other"
@@ -289,7 +289,7 @@ private extension EntryArrangementsGroupingReducer {
         return result
     }
 
-    func groupItemsBySize(_ items: [Entry]) -> [GroupedItems] {
+    func groupItemsBySize(_ items: [EntryModel]) -> [GroupedItems] {
         var result: [GroupedItems] = []
         let files = items.filter { !$0.isDirectory }
         result.append(contentsOf: groupBySize(files))
@@ -300,11 +300,11 @@ private extension EntryArrangementsGroupingReducer {
         return result
     }
 
-    func groupItemsByTags(_ items: [Entry]) -> [GroupedItems] {
+    func groupItemsByTags(_ items: [EntryModel]) -> [GroupedItems] {
         var result: [GroupedItems] = []
 
-        var tagToItems: [String: [Entry]] = [:]
-        var itemsWithoutTags: [Entry] = []
+        var tagToItems: [String: [EntryModel]] = [:]
+        var itemsWithoutTags: [EntryModel] = []
 
         for item in items {
             if let itemTags = item.tags, !itemTags.isEmpty {

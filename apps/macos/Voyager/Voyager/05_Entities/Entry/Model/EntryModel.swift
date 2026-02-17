@@ -1,7 +1,7 @@
 import Foundation
 
-public struct Entry: Identifiable, Sendable {
-    public let id: String // fullPath를 ID로 사용
+public struct EntryModel: Identifiable, Sendable {
+    public let id: String
     public let name: String
     public let fullPath: String
     public let isDirectory: Bool
@@ -22,10 +22,10 @@ public struct Entry: Identifiable, Sendable {
     public let formattedCreatedDate: String
 
     public nonisolated init(
-        name: String,
-        fullPath: String,
-        isDirectory: Bool,
-        isHidden: Bool,
+        name: String = "",
+        fullPath: String = "",
+        isDirectory: Bool = false,
+        isHidden: Bool = false,
         size: Int64 = 0,
         modifiedDate: Date = Date(),
         createdDate: Date = Date(),
@@ -61,16 +61,16 @@ public struct Entry: Identifiable, Sendable {
     }
 }
 
-extension Entry: Equatable {
-    public static func == (lhs: Entry, rhs: Entry) -> Bool {
+extension EntryModel: Equatable {
+    public static func == (lhs: EntryModel, rhs: EntryModel) -> Bool {
         lhs.id == rhs.id &&
             lhs.modifiedDate == rhs.modifiedDate &&
             lhs.size == rhs.size &&
             lhs.tags == rhs.tags
     }
 
-    public static func temporaryFolder(id: String, name: String) -> Entry {
-        Entry(
+    public static func temporaryFolder(id: String, name: String) -> EntryModel {
+        EntryModel(
             name: name,
             fullPath: id,
             isDirectory: true,

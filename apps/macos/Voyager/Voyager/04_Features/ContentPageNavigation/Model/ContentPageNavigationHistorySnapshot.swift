@@ -1,4 +1,4 @@
 struct ContentPageNavigationHistorySnapshot: Equatable {
-    let navigationState: ContentPageNavigationUtils.NavigationState
+    let navigationState: ContentPageNavigationRoute
     let composerSnapshot: ComposerFeature.State
 }

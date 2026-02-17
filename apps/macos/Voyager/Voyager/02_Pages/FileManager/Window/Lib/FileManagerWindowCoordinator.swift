@@ -98,7 +98,6 @@ final class FileManagerWindowCoordinator: NSWindowController, NSWindowDelegate {
         var state: FileManagerFeature.State
         if let duplicateState {
             var newState = duplicateState
-            newState.content.entries = EntryFeature.State()
             newState.content.entryOperations = EntryOperationsState()
             newState.content.entryOperations.windowID = windowID
             state = newState
@@ -108,8 +107,7 @@ final class FileManagerWindowCoordinator: NSWindowController, NSWindowDelegate {
         }
 
         if duplicateState == nil, let path {
-            state.content.navigation.navigationState = ContentPageNavigationUtils.NavigationState.folder(path)
-            state.content.navigation.titlePath = path
+            state.content.navigation.seedInitialFolderPath(path)
         }
 
         return state

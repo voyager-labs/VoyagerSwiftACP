@@ -7,14 +7,6 @@ import SwiftUI
 struct FileManagerFeature {
     @Dependency(\.userDefaultsClient)
     var userDefaultsClient
-    @Dependency(\.collectionFileClient)
-    var collectionFileClient
-    @Dependency(\.collectionAlertClient)
-    var collectionAlertClient
-    @Dependency(\.registryClient)
-    var registryClient
-
-    private let userDefaultsObserverCancelID = "fileManager.userDefaultsObserver"
 
     typealias State = FileManagerWindowState
     typealias Action = FileManagerWindowAction
@@ -36,7 +28,7 @@ struct FileManagerFeature {
             FileManagerInspectorFeature()
         }
 
-        FileManagerWindowNavigationFeature()
+        FileManagerWindowNavigationReducer()
 
         Reduce { state, action in
             switch action {
@@ -49,76 +41,40 @@ struct FileManagerFeature {
                     )
                 }
 
-                state.content.entries.showHiddenFiles = userDefaultsClient.bool(SettingsKeys.showHiddenFiles)
-                state.sidebar.sidebarVisible = userDefaultsClient.object(SettingsKeys.sidebarVisible) as? Bool ?? true
-                if let sidebarWidth = userDefaultsClient.object(SettingsKeys.sidebarWidth) as? Double,
-                   sidebarWidth > 0
-                {
-                    state.sidebar.sidebarWidth = CGFloat(sidebarWidth)
-                }
-                let persistedSortKey = SortKey(
-                    rawValue: userDefaultsClient.string(EntryArrangementsPersistenceKey.sortKey) ?? "",
-                ) ?? .name
-                let persistedSortOrder = SortOrder(
-                    rawValue: userDefaultsClient.string(EntryArrangementsPersistenceKey.sortOrder) ?? "",
-                ) ?? .ascending
-                let persistedGroupKey = GroupKey(
-                    rawValue: userDefaultsClient.string(EntryArrangementsPersistenceKey.groupKey) ?? "",
-                ) ?? .none
-                state.content.viewLayout = ContentViewLayout(
-                    rawValue: userDefaultsClient.string(SettingsKeys.viewLayout) ?? "",
-                ) ?? .list
-                state.content.syncComposerCollectionState()
-
-                if let listIconSize = userDefaultsClient.object(SettingsKeys.listIconSize) as? CGFloat {
-                    state.content.listIconSize = listIconSize
-                }
-                if let gridIconSize = userDefaultsClient.object(SettingsKeys.gridIconSize) as? CGFloat {
-                    state.content.gridIconSize = gridIconSize
-                }
-
-                if let listTextSize = userDefaultsClient.object(SettingsKeys.listTextSize) as? CGFloat {
-                    state.content.listTextSize = listTextSize
-                }
-                if let gridTextSize = userDefaultsClient.object(SettingsKeys.gridTextSize) as? CGFloat {
-                    state.content.gridTextSize = gridTextSize
-                }
-
                 return .merge(
-                    .send(.content(.entries(.setShowHidden(state.content.entries.showHiddenFiles)))),
-                    .send(.content(.entryArrangements(.setSortKey(persistedSortKey)))),
-                    .send(.content(.entryArrangements(.setSortOrder(persistedSortOrder)))),
-                    .send(.content(.entryArrangements(.setGroupKey(persistedGroupKey)))),
-                    .send(.content(.entries(.onAppear))),
+                    .send(.content(.entryArrangements(.setSortKey(state.content.entryArrangements.sortKey)))),
+                    .send(.content(.entryArrangements(.setSortOrder(state.content.entryArrangements.sortOrder)))),
+                    .send(.content(.entryArrangements(.setGroupKey(state.content.entryArrangements.groupKey)))),
                     .send(.content(.entries(.loadItems(path: state.content.navigation.currentPath)))),
                     .send(.sidebar(.loadFavorites)),
                     .send(.sidebar(.loadLocations)),
                     .send(.sidebar(.loadTags)),
-                    .run { [userDefaultsClient] send in
-                        for await _ in NotificationCenter.default.notifications(
-                            named: UserDefaults.didChangeNotification,
-                        ) {
-                            if let listIconSize = userDefaultsClient.object("listIconSize") as? CGFloat {
-                                await send(.content(.entries(.setListIconSize(listIconSize))))
-                            }
-                            if let gridIconSize = userDefaultsClient.object("gridIconSize") as? CGFloat {
-                                await send(.content(.entries(.setGridIconSize(gridIconSize))))
-                            }
-                            if let listTextSize = userDefaultsClient.object("listTextSize") as? CGFloat {
-                                await send(.content(.entries(.setListTextSize(listTextSize))))
-                            }
-                            if let gridTextSize = userDefaultsClient.object("gridTextSize") as? CGFloat {
-                                await send(.content(.entries(.setGridTextSize(gridTextSize))))
-                            }
-                            let showHiddenFiles = userDefaultsClient.bool("showHiddenFiles")
-                            await send(.content(.entries(.applyShowHiddenFiles(showHiddenFiles))))
-                        }
-                    }
-                    .cancellable(id: userDefaultsObserverCancelID, cancelInFlight: true),
                 )
 
             case .onDisappear:
-                return .cancel(id: userDefaultsObserverCancelID)
+                return .none
+
+            case let .applyAppPreferences(preferences):
+                state.sidebar.sidebarVisible = preferences.sidebarVisible
+                state.sidebar.sidebarWidth = preferences.sidebarWidth
+
+                state.content.viewLayout = preferences.viewLayout
+                state.content.listIconSize = preferences.listIconSize
+                state.content.gridIconSize = preferences.gridIconSize
+                state.content.listTextSize = preferences.listTextSize
+                state.content.gridTextSize = preferences.gridTextSize
+
+                state.content.entryViewLayout.showHiddenFiles = preferences.showHiddenFiles
+                state.content.entryArrangements.updateSortKey(preferences.sortKey)
+                state.content.entryArrangements.updateSortOrder(preferences.sortOrder)
+                state.content.entryArrangements.updateGroupKey(preferences.groupKey)
+                state.content.syncComposerCollectionState()
+
+                return .merge(
+                    .send(.content(.entryArrangements(.setSortKey(preferences.sortKey)))),
+                    .send(.content(.entryArrangements(.setSortOrder(preferences.sortOrder)))),
+                    .send(.content(.entryArrangements(.setGroupKey(preferences.groupKey)))),
+                )
 
             case let .sidebar(.dropItemsToSidebarFolder(providers, targetURL)):
                 return .send(.content(.dropItemsToSidebarFolder(
@@ -136,14 +92,11 @@ struct FileManagerFeature {
                 return .send(.closeWindow)
 
             case .closeWindow:
-                return .merge(
-                    .cancel(id: userDefaultsObserverCancelID),
-                    .run { _ in
-                        await MainActor.run {
-                            NSApp.keyWindow?.close()
-                        }
-                    },
-                )
+                return .run { _ in
+                    await MainActor.run {
+                        NSApp.keyWindow?.close()
+                    }
+                }
 
             default:
                 return .none
@@ -163,7 +116,6 @@ private func shouldLogDailyFileManagerOpen(_ userDefaultsClient: UserDefaultsCli
     return true
 }
 
-// TODO(shared): 공유 유틸 성격이 강하므로 분리 필요
 private func currentDateKey() -> String {
     let formatter = DateFormatter()
     formatter.calendar = Calendar(identifier: .gregorian)

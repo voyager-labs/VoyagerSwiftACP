@@ -137,7 +137,7 @@ struct EntryOpenWithOperationsReducer {
     }
 
     private func selectApplicationAndOpenFile(
-        for files: [Entry],
+        for files: [EntryModel],
         defaultChecked: Bool,
     ) -> Effect<Action> {
         let fileURLs = files.map { URL(fileURLWithPath: $0.fullPath) }
