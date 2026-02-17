@@ -4,11 +4,10 @@ import ComposableArchitecture
 enum EntryContextMenuBuilder {
     struct Input {
         let contentStore: StoreOf<FileManagerContentFeature>
-        let fsStore: StoreOf<EntryFeature>
         let fileManagerWindowClient: FileManagerWindowClient
         let selectedIds: Set<String>
-        let selectedEntries: [Entry]
-        let rowEntry: Entry?
+        let selectedEntries: [EntryModel]
+        let rowEntry: EntryModel?
         let isTrashFolder: Bool
         let canPaste: Bool
         let currentPath: () -> String
@@ -18,7 +17,7 @@ enum EntryContextMenuBuilder {
     }
 
     struct Configuration {
-        let target: EntryContextMenuController
+        let target: EntryContextMenuCoordinator
         let selectedCount: Int
         let rowEntryPathForOpenInNewTab: String?
         let canPaste: Bool
@@ -30,14 +29,14 @@ enum EntryContextMenuBuilder {
         let tags: [EntryContextMenuTagItem]
     }
 
-    static func makeMenu(input: Input) -> (menu: NSMenu, controller: EntryContextMenuController) {
+    static func makeMenu(input: Input) -> (menu: NSMenu, coordinator: EntryContextMenuCoordinator) {
         let selectedCount = EntryContextMenuDataResolver.selectedCount(
             selectedIds: input.selectedIds,
             fallbackEntry: input.rowEntry,
         )
 
-        let controller = EntryContextMenuController.make(context: .init(
-            fsStore: input.fsStore,
+        let coordinator = EntryContextMenuCoordinator.make(context: .init(
+            contentStore: input.contentStore,
             fileManagerWindowClient: input.fileManagerWindowClient,
             currentPath: input.currentPath,
             selectedItemId: input.selectedItemId,
@@ -55,7 +54,7 @@ enum EntryContextMenuBuilder {
         let tags = EntryContextMenuDataResolver.resolveTags(selectedEntries: input.selectedEntries)
 
         let menu = makeMenu(configuration: .init(
-            target: controller,
+            target: coordinator,
             selectedCount: selectedCount,
             rowEntryPathForOpenInNewTab: input.rowEntry?.isDirectory == true ? input.rowEntry?.fullPath : nil,
             canPaste: input.canPaste,
@@ -67,7 +66,7 @@ enum EntryContextMenuBuilder {
             tags: tags,
         ))
 
-        return (menu, controller)
+        return (menu, coordinator)
     }
 
     static func makeMenu(configuration: Configuration) -> NSMenu {
@@ -88,14 +87,14 @@ enum EntryContextMenuBuilder {
     private static func addOpenItems(to menu: NSMenu, configuration: Configuration) {
         menu.addItem(menuItem(
             title: "Open",
-            action: #selector(EntryContextMenuController.contextMenuOpenSelectedItem),
+            action: #selector(EntryContextMenuCoordinator.contextMenuOpenSelectedItem),
             target: configuration.target,
         ))
 
         if let path = configuration.rowEntryPathForOpenInNewTab {
             let openInNewTab = menuItem(
                 title: "Open in New Tab",
-                action: #selector(EntryContextMenuController.contextMenuOpenSelectedItemInNewTab(_:)),
+                action: #selector(EntryContextMenuCoordinator.contextMenuOpenSelectedItemInNewTab(_:)),
                 target: configuration.target,
             )
             openInNewTab.representedObject = path
@@ -110,26 +109,26 @@ enum EntryContextMenuBuilder {
 
         menu.addItem(menuItem(
             title: "Quick Look",
-            action: #selector(EntryContextMenuController.contextMenuQuickLookSelectedItem),
+            action: #selector(EntryContextMenuCoordinator.contextMenuQuickLookSelectedItem),
             target: configuration.target,
         ))
         menu.addItem(NSMenuItem.separator())
     }
 
-    private static func addInfoItems(to menu: NSMenu, target: EntryContextMenuController) {
+    private static func addInfoItems(to menu: NSMenu, target: EntryContextMenuCoordinator) {
         menu.addItem(menuItem(
             title: "Get Info",
-            action: #selector(EntryContextMenuController.contextMenuGetInfoForSelectedItems),
+            action: #selector(EntryContextMenuCoordinator.contextMenuGetInfoForSelectedItems),
             target: target,
         ))
         menu.addItem(menuItem(
             title: "Share…",
-            action: #selector(EntryContextMenuController.contextMenuShareSelectedItems),
+            action: #selector(EntryContextMenuCoordinator.contextMenuShareSelectedItems),
             target: target,
         ))
         menu.addItem(menuItem(
             title: "Reveal in Finder",
-            action: #selector(EntryContextMenuController.contextMenuRevealSelectedItemsInFinder),
+            action: #selector(EntryContextMenuCoordinator.contextMenuRevealSelectedItemsInFinder),
             target: target,
         ))
         menu.addItem(NSMenuItem.separator())
@@ -138,28 +137,28 @@ enum EntryContextMenuBuilder {
     private static func addClipboardItems(to menu: NSMenu, configuration: Configuration) {
         menu.addItem(menuItem(
             title: "Copy",
-            action: #selector(EntryContextMenuController.contextMenuCopySelectedItems),
+            action: #selector(EntryContextMenuCoordinator.contextMenuCopySelectedItems),
             target: configuration.target,
         ))
         menu.addItem(menuItem(
             title: "Copy Absolute Paths",
-            action: #selector(EntryContextMenuController.contextMenuCopySelectedAbsolutePaths),
+            action: #selector(EntryContextMenuCoordinator.contextMenuCopySelectedAbsolutePaths),
             target: configuration.target,
         ))
         menu.addItem(menuItem(
             title: "Copy URLs",
-            action: #selector(EntryContextMenuController.contextMenuCopySelectedURLs),
+            action: #selector(EntryContextMenuCoordinator.contextMenuCopySelectedURLs),
             target: configuration.target,
         ))
         menu.addItem(menuItem(
             title: "Cut",
-            action: #selector(EntryContextMenuController.contextMenuCutSelectedItems),
+            action: #selector(EntryContextMenuCoordinator.contextMenuCutSelectedItems),
             target: configuration.target,
         ))
 
         let pasteItem = menuItem(
             title: "Paste",
-            action: #selector(EntryContextMenuController.contextMenuPasteItems),
+            action: #selector(EntryContextMenuCoordinator.contextMenuPasteItems),
             target: configuration.target,
         )
         pasteItem.isEnabled = configuration.canPaste
@@ -170,22 +169,22 @@ enum EntryContextMenuBuilder {
     private static func addRenameItems(to menu: NSMenu, configuration: Configuration) {
         let renameItem = menuItem(
             title: "Rename",
-            action: #selector(EntryContextMenuController.contextMenuStartRename),
+            action: #selector(EntryContextMenuCoordinator.contextMenuStartRename),
             target: configuration.target,
         )
         renameItem.isEnabled = configuration.selectedCount == 1
         menu.addItem(renameItem)
     }
 
-    private static func addDuplicateItems(to menu: NSMenu, target: EntryContextMenuController) {
+    private static func addDuplicateItems(to menu: NSMenu, target: EntryContextMenuCoordinator) {
         menu.addItem(menuItem(
             title: "Duplicate",
-            action: #selector(EntryContextMenuController.contextMenuDuplicateSelectedItems),
+            action: #selector(EntryContextMenuCoordinator.contextMenuDuplicateSelectedItems),
             target: target,
         ))
         menu.addItem(menuItem(
             title: "Make Alias",
-            action: #selector(EntryContextMenuController.contextMenuCreateAliasForSelectedItems),
+            action: #selector(EntryContextMenuCoordinator.contextMenuCreateAliasForSelectedItems),
             target: target,
         ))
         menu.addItem(NSMenuItem.separator())
@@ -195,14 +194,14 @@ enum EntryContextMenuBuilder {
         if configuration.showCompress {
             menu.addItem(menuItem(
                 title: "Compress",
-                action: #selector(EntryContextMenuController.contextMenuCompressSelectedItems),
+                action: #selector(EntryContextMenuCoordinator.contextMenuCompressSelectedItems),
                 target: configuration.target,
             ))
         }
         if configuration.showExtract {
             menu.addItem(menuItem(
                 title: "Extract",
-                action: #selector(EntryContextMenuController.contextMenuExtractSelectedItem),
+                action: #selector(EntryContextMenuCoordinator.contextMenuExtractSelectedItem),
                 target: configuration.target,
             ))
         }
@@ -224,24 +223,24 @@ enum EntryContextMenuBuilder {
         if configuration.isTrashFolder {
             menu.addItem(menuItem(
                 title: "Put Back",
-                action: #selector(EntryContextMenuController.contextMenuPutBackSelectedItems),
+                action: #selector(EntryContextMenuCoordinator.contextMenuPutBackSelectedItems),
                 target: configuration.target,
             ))
             menu.addItem(menuItem(
                 title: "Delete Immediately",
-                action: #selector(EntryContextMenuController.contextMenuDeleteSelectedItemsImmediately),
+                action: #selector(EntryContextMenuCoordinator.contextMenuDeleteSelectedItemsImmediately),
                 target: configuration.target,
             ))
             menu.addItem(NSMenuItem.separator())
             menu.addItem(menuItem(
                 title: "Empty Trash",
-                action: #selector(EntryContextMenuController.contextMenuEmptyTrash),
+                action: #selector(EntryContextMenuCoordinator.contextMenuEmptyTrash),
                 target: configuration.target,
             ))
         } else {
             menu.addItem(menuItem(
                 title: "Move to Trash",
-                action: #selector(EntryContextMenuController.contextMenuMoveSelectedItemsToTrash),
+                action: #selector(EntryContextMenuCoordinator.contextMenuMoveSelectedItemsToTrash),
                 target: configuration.target,
             ))
         }
@@ -252,7 +251,7 @@ enum EntryContextMenuBuilder {
 
         menu.addItem(menuItem(
             title: "Other…",
-            action: #selector(EntryContextMenuController.contextMenuOpenWithOther),
+            action: #selector(EntryContextMenuCoordinator.contextMenuOpenWithOther),
             target: configuration.target,
         ))
 
@@ -261,7 +260,7 @@ enum EntryContextMenuBuilder {
             for app in configuration.openWithApplications {
                 let item = menuItem(
                     title: app.name,
-                    action: #selector(EntryContextMenuController.contextMenuOpenWithApp(_:)),
+                    action: #selector(EntryContextMenuCoordinator.contextMenuOpenWithApp(_:)),
                     target: configuration.target,
                 )
                 item.representedObject = app.bundleID
@@ -279,7 +278,7 @@ enum EntryContextMenuBuilder {
         for tag in configuration.tags {
             let item = menuItem(
                 title: tag.name,
-                action: #selector(EntryContextMenuController.contextMenuToggleTag(_:)),
+                action: #selector(EntryContextMenuCoordinator.contextMenuToggleTag(_:)),
                 target: configuration.target,
             )
             item.representedObject = tag.name

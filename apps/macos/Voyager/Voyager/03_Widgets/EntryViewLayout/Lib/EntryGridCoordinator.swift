@@ -3,35 +3,34 @@ import AppKit
 import Combine
 import ComposableArchitecture
 
-final class EntryGridController: NSObject {
+final class EntryGridCoordinator: NSObject {
     struct Section {
         let title: String?
         let colorCode: Int?
         let count: Int
-        let items: [Entry]
+        let items: [EntryModel]
         let isCollapsed: Bool
     }
 
     let store: StoreOf<FileManagerContentFeature>
-    let fsStore: StoreOf<EntryFeature>
     private var cancellables: Set<AnyCancellable> = []
 
-    private weak var rootView: EntryGridRootView?
+    private weak var view: EntryGridView?
     private var didBind = false
 
     private var scrollView: NSScrollView {
-        guard let rootView else { preconditionFailure("EntryGridRootView is not bound") }
-        return rootView.scrollView
+        guard let view else { preconditionFailure("EntryGridView is not bound") }
+        return view.scrollView
     }
 
-    private var collectionView: EntryGridRootView.EntryGridCollectionView {
-        guard let rootView else { preconditionFailure("EntryGridRootView is not bound") }
-        return rootView.collectionView
+    private var collectionView: EntryGridView.EntryGridCollectionView {
+        guard let view else { preconditionFailure("EntryGridView is not bound") }
+        return view.collectionView
     }
 
     private var flowLayout: NSCollectionViewFlowLayout {
-        guard let rootView else { preconditionFailure("EntryGridRootView is not bound") }
-        return rootView.flowLayout
+        guard let view else { preconditionFailure("EntryGridView is not bound") }
+        return view.flowLayout
     }
 
     private var sections: [Section] = []
@@ -43,7 +42,7 @@ final class EntryGridController: NSObject {
     private var dropTargetEntryId: String?
     private var contextMenuAnchor: CGPoint?
     private var lastLassoSelectedIds: Set<String> = []
-    private var contextMenuController: EntryContextMenuController?
+    private var contextMenuCoordinator: EntryContextMenuCoordinator?
 
     @Dependency(\.entryOpenClient)
     private var entryOpenClient
@@ -64,12 +63,11 @@ final class EntryGridController: NSObject {
 
     init(store: StoreOf<FileManagerContentFeature>) {
         self.store = store
-        fsStore = store.scope(state: \.entries, action: \.entries)
         super.init()
     }
 
-    func bind(to view: EntryGridRootView) {
-        rootView = view
+    func bind(to view: EntryGridView) {
+        self.view = view
 
         collectionView.dataSource = self
         collectionView.delegate = self
@@ -90,19 +88,19 @@ final class EntryGridController: NSObject {
         ensureDoubleClickGesture()
 
         guard !didBind else {
-            updateDropTargetBorder(isTargeted: store.state.entries.isDropTargeted)
+            updateDropTargetBorder(isTargeted: store.state.entryViewLayout.isDropTargeted)
             return
         }
 
         didBind = true
         observeStore()
         rebuildSectionsAndReload()
-        updateDropTargetBorder(isTargeted: store.state.entries.isDropTargeted)
+        updateDropTargetBorder(isTargeted: store.state.entryViewLayout.isDropTargeted)
     }
 
-    func updateRootView(_ view: EntryGridRootView) {
-        guard rootView !== view else { return }
-        rootView = view
+    func updateView(_ view: EntryGridView) {
+        guard view !== view else { return }
+        self.view = view
         collectionView.dataSource = self
         collectionView.delegate = self
         collectionView.contextMenuProvider = self
@@ -136,7 +134,7 @@ final class EntryGridController: NSObject {
     }
 
     private func rebuildSectionsAndReload() {
-        sections = makeSections(state: store.state.entries)
+        sections = makeSections(state: store.state)
         indexPathByEntryId = [:]
         for (sectionIndex, section) in sections.enumerated() {
             for (itemIndex, entry) in section.items.enumerated() {
@@ -148,7 +146,7 @@ final class EntryGridController: NSObject {
         syncSelectionFromStore()
         scrollToSelectionIfNeeded()
         restoreScrollPositionIfNeeded()
-        if let width = rootView?.bounds.width {
+        if let width = view?.bounds.width {
             updateGridColumnCountIfNeeded(for: width)
         }
 
@@ -158,14 +156,14 @@ final class EntryGridController: NSObject {
         }
     }
 
-    private func makeSections(state: EntryFeature.State) -> [Section] {
+    private func makeSections(state: FileManagerContentState) -> [Section] {
         if store.state.entryArrangements.groupKey == .none {
             return [
                 Section(
                     title: nil,
                     colorCode: nil,
-                    count: state.displayItems.count,
-                    items: Array(state.displayItems),
+                    count: state.entryOperations.displayItems.count,
+                    items: Array(state.entryOperations.displayItems),
                     isCollapsed: false,
                 ),
             ]
@@ -189,7 +187,7 @@ final class EntryGridController: NSObject {
         }
     }
 
-    private func resolveTagColorCode(tagName: String, items: [Entry]) -> Int? {
+    private func resolveTagColorCode(tagName: String, items: [EntryModel]) -> Int? {
         for item in items {
             if let colorCode = item.tags?.first(where: { $0.name == tagName })?.colorCode {
                 return colorCode
@@ -226,13 +224,13 @@ final class EntryGridController: NSObject {
         let availableWidth = max(1, width - (horizontalPadding * 2))
         let itemWidth = makeItemSize().width
         let columns = max(1, Int((availableWidth + minSpacing) / (itemWidth + minSpacing)))
-        if store.state.entries.gridColumnCount != columns {
-            fsStore.send(.updateGridColumnCount(columns))
+        if store.state.entryViewLayout.gridColumnCount != columns {
+            store.send(.entryViewLayout(.updateGridColumnCount(columns)))
         }
     }
 
     private func syncSelectionFromStore() {
-        let selectedIds = store.state.entries.selectedIds
+        let selectedIds = store.state.entryViewLayout.selectedIds
         let indexPaths = Set(selectedIds.compactMap { indexPathByEntryId[$0] })
 
         isUpdatingSelectionFromStore = true
@@ -241,7 +239,7 @@ final class EntryGridController: NSObject {
     }
 
     private func syncRenamingFromStore() {
-        let renamingItemId = store.state.entries.renamingItemId
+        let renamingItemId = store.state.entryViewLayout.renamingItemId
         let previousRenamingItemId = lastRenamingItemId
         lastRenamingItemId = renamingItemId
 
@@ -250,7 +248,7 @@ final class EntryGridController: NSObject {
         }
 
         guard let renamingItemId, let indexPath = indexPathByEntryId[renamingItemId] else {
-            rootView?.window?.makeFirstResponder(collectionView)
+            view?.window?.makeFirstResponder(collectionView)
             return
         }
 
@@ -269,7 +267,7 @@ final class EntryGridController: NSObject {
     }
 
     private func restoreScrollPositionIfNeeded() {
-        let itemCount = store.state.entries.displayItems.count
+        let itemCount = store.state.entryOperations.displayItems.count
         guard itemCount != 0 else { return }
 
         guard !hasRestoredScrollPosition,
@@ -283,14 +281,14 @@ final class EntryGridController: NSObject {
     }
 
     private func scrollToSelectionIfNeeded() {
-        guard store.state.entries.shouldScrollToSelection else { return }
-        let targetId = store.state.entries.lastSelectedId ?? store.state.entries.selectedIds.first
+        guard store.state.entryViewLayout.shouldScrollToSelection else { return }
+        let targetId = store.state.entryViewLayout.lastSelectedId ?? store.state.entryViewLayout.selectedIds.first
         guard let targetId, let indexPath = indexPathByEntryId[targetId] else {
-            fsStore.send(.resetScrollFlag)
+            store.send(.entryViewLayout(.resetScrollFlag))
             return
         }
         collectionView.scrollToItems(at: [indexPath], scrollPosition: .centeredVertically)
-        fsStore.send(.resetScrollFlag)
+        store.send(.entryViewLayout(.resetScrollFlag))
     }
 
     private func reloadVisibleItems() {
@@ -320,7 +318,7 @@ final class EntryGridController: NSObject {
         }
     }
 
-    private func entry(at indexPath: IndexPath?) -> Entry? {
+    private func entry(at indexPath: IndexPath?) -> EntryModel? {
         guard let indexPath,
               indexPath.section >= 0,
               indexPath.section < sections.count
@@ -332,12 +330,12 @@ final class EntryGridController: NSObject {
         return section.items[indexPath.item]
     }
 
-    private func selectedEntries(fallback: Entry?) -> [Entry] {
-        let selectedIds = store.state.entries.selectedIds
+    private func selectedEntries(fallback: EntryModel?) -> [EntryModel] {
+        let selectedIds = store.state.entryViewLayout.selectedIds
         if selectedIds.isEmpty {
             return fallback.map { [$0] } ?? []
         }
-        return store.state.entries.displayItems.filter { selectedIds.contains($0.id) }
+        return store.state.entryOperations.displayItems.filter { selectedIds.contains($0.id) }
     }
 
     private var isTrashFolder: Bool {
@@ -354,11 +352,16 @@ final class EntryGridController: NSObject {
         let point = recognizer.location(in: collectionView)
         guard let indexPath = collectionView.indexPathForItem(at: point) else { return }
         guard let entry = entry(at: indexPath) else { return }
-        EntryContextMenuUtils.sendWithSelection(entry, fsStore: fsStore, action: { [weak self] in
-            guard let self else { return }
-            saveScrollPosition()
-            store.send(.entries(.openSelectedItem))
-        })
+        EntryContextMenuUtils.sendWithSelection(
+            entry,
+            selectedIds: store.state.entryViewLayout.selectedIds,
+            contentStore: store,
+            action: { [weak self] in
+                guard let self else { return }
+                saveScrollPosition()
+                store.send(.entryViewLayout(.openSelectedItem))
+            },
+        )
     }
 
     private func handleLassoSelection(indexPaths: Set<IndexPath>, isFinal: Bool) {
@@ -375,12 +378,12 @@ final class EntryGridController: NSObject {
             // 중복 send 방지(드래그 중 이벤트가 많음)
             guard ids != lastLassoSelectedIds else { return }
             lastLassoSelectedIds = ids
-            fsStore.send(.setSelectedIdsFromLasso(ids: ids, lastSelectedId: lastSelectedId))
+            store.send(.entryViewLayout(.setSelectedIdsFromLasso(ids: ids, lastSelectedId: lastSelectedId)))
             return
         }
 
         lastLassoSelectedIds = []
-        fsStore.send(.setSelectedIds(ids: ids, lastSelectedId: lastSelectedId))
+        store.send(.entryViewLayout(.setSelectedIds(ids: ids, lastSelectedId: lastSelectedId)))
     }
 
     func applySelection(_ indexPaths: Set<IndexPath>) {
@@ -396,7 +399,7 @@ final class EntryGridController: NSObject {
     }
 }
 
-private extension EntryGridController {
+private extension EntryGridCoordinator {
     func observeStore() {
         observeDisplayItems()
         observeGroupKey()
@@ -450,11 +453,11 @@ private extension EntryGridController {
         }
 
         guard !paths.isEmpty else { return }
-        fsStore.send(.requestThumbnails(paths: Array(paths)))
+        store.send(.entries(.requestThumbnails(paths: Array(paths))))
     }
 
     func observeDisplayItems() {
-        store.publisher.entries.displayItems
+        store.publisher.entryOperations.displayItems
             .receive(on: DispatchQueue.main)
             .sink { [weak self] _ in
                 self?.rebuildSectionsAndReload()
@@ -490,7 +493,7 @@ private extension EntryGridController {
     }
 
     func observeSelectedIds() {
-        store.publisher.entries.selectedIds
+        store.publisher.entryViewLayout.selectedIds
             .receive(on: DispatchQueue.main)
             .sink { [weak self] _ in
                 self?.syncSelectionFromStore()
@@ -499,7 +502,7 @@ private extension EntryGridController {
     }
 
     func observeRenamingItemId() {
-        store.publisher.entries.renamingItemId
+        store.publisher.entryViewLayout.renamingItemId
             .removeDuplicates()
             .receive(on: DispatchQueue.main)
             .sink { [weak self] _ in
@@ -522,7 +525,7 @@ private extension EntryGridController {
             .receive(on: DispatchQueue.main)
             .sink { [weak self] _ in
                 guard let self else { return }
-                if let width = rootView?.bounds.width {
+                if let width = view?.bounds.width {
                     updateLayout(for: width)
                 }
                 reloadVisibleItems()
@@ -535,7 +538,7 @@ private extension EntryGridController {
             .receive(on: DispatchQueue.main)
             .sink { [weak self] _ in
                 guard let self else { return }
-                if let width = rootView?.bounds.width {
+                if let width = view?.bounds.width {
                     updateLayout(for: width)
                 }
                 reloadVisibleItems()
@@ -544,7 +547,7 @@ private extension EntryGridController {
     }
 
     func observeShowHiddenFiles() {
-        store.publisher.entries.showHiddenFiles
+        store.publisher.entryViewLayout.showHiddenFiles
             .receive(on: DispatchQueue.main)
             .sink { [weak self] _ in
                 self?.saveScrollPosition()
@@ -553,7 +556,7 @@ private extension EntryGridController {
     }
 
     func observeShouldScrollToSelection() {
-        store.publisher.entries.shouldScrollToSelection
+        store.publisher.entryViewLayout.shouldScrollToSelection
             .removeDuplicates()
             .receive(on: DispatchQueue.main)
             .sink { [weak self] shouldScroll in
@@ -564,7 +567,7 @@ private extension EntryGridController {
     }
 
     func observeDropTargeted() {
-        store.publisher.entries.isDropTargeted
+        store.publisher.entryViewLayout.isDropTargeted
             .removeDuplicates()
             .receive(on: DispatchQueue.main)
             .sink { [weak self] isTargeted in
@@ -583,7 +586,7 @@ private extension EntryGridController {
     }
 
     func observeDisplayItemCountForScrollRestore() {
-        store.publisher.entries.displayItems
+        store.publisher.entryOperations.displayItems
             .map(\.count)
             .removeDuplicates()
             .receive(on: DispatchQueue.main)
@@ -594,7 +597,7 @@ private extension EntryGridController {
     }
 }
 
-extension EntryGridController: NSCollectionViewDataSource {
+extension EntryGridCoordinator: NSCollectionViewDataSource {
     func numberOfSections(in _: NSCollectionView) -> Int {
         sections.count
     }
@@ -617,7 +620,7 @@ extension EntryGridController: NSCollectionViewDataSource {
         let entry = sections[indexPath.section].items[indexPath.item]
         let isCut = store.state.entryOperations.clipboardItems.contains(entry.fullPath)
             && store.state.entryOperations.clipboardOperation == .cut
-        let isRenaming = store.state.entries.renamingItemId == entry.id
+        let isRenaming = store.state.entryViewLayout.renamingItemId == entry.id
         let isThumbnailReady = store.state.entryThumbnails.thumbnailsReady.contains(entry.fullPath)
         let thumbnail = isThumbnailReady ? entryThumbnailCacheClient.getThumbnail(for: entry.fullPath) : nil
         let isDropTargeted = dropTargetEntryId == entry.id
@@ -630,17 +633,17 @@ extension EntryGridController: NSCollectionViewDataSource {
             isCut: isCut,
             isHidden: entry.isHidden,
             isRenaming: isRenaming,
-            renamingText: store.state.entries.renamingText,
+            renamingText: store.state.entryViewLayout.renamingText,
             isDropTargeted: isDropTargeted,
             workspaceClient: workspaceClient,
             onRenameUpdate: { [weak self] text in
-                self?.fsStore.send(.updateRenamingText(text))
+                self?.store.send(.entryViewLayout(.updateRenamingText(text)))
             },
             onRenameCommit: { [weak self] in
-                self?.fsStore.send(.commitRename)
+                self?.store.send(.entryViewLayout(.commitRename))
             },
             onRenameCancel: { [weak self] in
-                self?.fsStore.send(.cancelRename)
+                self?.store.send(.entryViewLayout(.cancelRename))
             },
         ))
 
@@ -689,7 +692,7 @@ extension EntryGridController: NSCollectionViewDataSource {
     }
 }
 
-extension EntryGridController: NSCollectionViewDelegate, NSCollectionViewDelegateFlowLayout {
+extension EntryGridCoordinator: NSCollectionViewDelegate, NSCollectionViewDelegateFlowLayout {
     func collectionView(_ collectionView: NSCollectionView, didSelectItemsAt _: Set<IndexPath>) {
         guard !isLassoSelecting else { return }
         updateSelectionFromCollectionView(collectionView)
@@ -728,7 +731,7 @@ extension EntryGridController: NSCollectionViewDelegate, NSCollectionViewDelegat
             return entry.fullPath
         }
         guard !paths.isEmpty else { return }
-        fsStore.send(.startDrag(paths: paths))
+        store.send(.entryViewLayout(.startDrag(paths: paths)))
     }
 
     func collectionView(
@@ -738,8 +741,8 @@ extension EntryGridController: NSCollectionViewDelegate, NSCollectionViewDelegat
         dragOperation operation: NSDragOperation,
     ) {
         guard operation.isEmpty else { return }
-        fsStore.send(.startDrag(paths: []))
-        fsStore.send(.setDropTargeted(false))
+        store.send(.entryViewLayout(.startDrag(paths: [])))
+        store.send(.entryViewLayout(.setDropTargeted(false)))
     }
 
     @MainActor
@@ -784,7 +787,7 @@ extension EntryGridController: NSCollectionViewDelegate, NSCollectionViewDelegat
             let sourceParent = URL(fileURLWithPath: sourcePaths[0]).deletingLastPathComponent().path
             if sourceParent == destinationPath {
                 setDropTargetEntryId(nil)
-                fsStore.send(.setDropTargeted(false))
+                store.send(.entryViewLayout(.setDropTargeted(false)))
                 return []
             }
 
@@ -793,7 +796,7 @@ extension EntryGridController: NSCollectionViewDelegate, NSCollectionViewDelegat
             for sourcePath in sourcePaths {
                 if destinationPath == sourcePath {
                     setDropTargetEntryId(nil)
-                    fsStore.send(.setDropTargeted(false))
+                    store.send(.entryViewLayout(.setDropTargeted(false)))
                     return []
                 }
 
@@ -803,7 +806,7 @@ extension EntryGridController: NSCollectionViewDelegate, NSCollectionViewDelegat
                    Array(destinationComponents.prefix(sourceComponents.count)) == sourceComponents
                 {
                     setDropTargetEntryId(nil)
-                    fsStore.send(.setDropTargeted(false))
+                    store.send(.entryViewLayout(.setDropTargeted(false)))
                     return []
                 }
             }
@@ -816,7 +819,7 @@ extension EntryGridController: NSCollectionViewDelegate, NSCollectionViewDelegat
             : preferred.intersection(allowed)
 
         setDropTargetEntryId(targetEntryId)
-        fsStore.send(.setDropTargeted(!resolved.isEmpty))
+        store.send(.entryViewLayout(.setDropTargeted(!resolved.isEmpty)))
         return resolved
     }
 
@@ -837,9 +840,9 @@ extension EntryGridController: NSCollectionViewDelegate, NSCollectionViewDelegat
 
         let internalPaths = entryFileOpsClient.loadDragPaths()
         if !internalPaths.isEmpty {
-            fsStore.send(.handleDrop(providers: [], destinationPath: destinationPath))
+            store.send(.entryViewLayout(.handleDrop(providers: [], destinationPath: destinationPath)))
             setDropTargetEntryId(nil)
-            fsStore.send(.setDropTargeted(false))
+            store.send(.entryViewLayout(.setDropTargeted(false)))
             return true
         }
 
@@ -849,7 +852,7 @@ extension EntryGridController: NSCollectionViewDelegate, NSCollectionViewDelegat
               !urls.isEmpty
         else {
             setDropTargetEntryId(nil)
-            fsStore.send(.setDropTargeted(false))
+            store.send(.entryViewLayout(.setDropTargeted(false)))
             return false
         }
 
@@ -860,18 +863,18 @@ extension EntryGridController: NSCollectionViewDelegate, NSCollectionViewDelegat
             : preferred.intersection(allowed)
         guard !resolved.isEmpty else {
             setDropTargetEntryId(nil)
-            fsStore.send(.setDropTargeted(false))
+            store.send(.entryViewLayout(.setDropTargeted(false)))
             return false
         }
 
         let isOptionPressed = resolved.contains(.copy) && !resolved.contains(.move)
-        fsStore.send(.dropItems(
+        store.send(.entryViewLayout(.dropItems(
             sourcePaths: urls.map(\.path),
             destinationPath: destinationPath,
             isOptionDrag: isOptionPressed,
-        ))
+        )))
         setDropTargetEntryId(nil)
-        fsStore.send(.setDropTargeted(false))
+        store.send(.entryViewLayout(.setDropTargeted(false)))
         return true
     }
 
@@ -887,19 +890,18 @@ extension EntryGridController: NSCollectionViewDelegate, NSCollectionViewDelegat
             .max()
             .flatMap { entry(at: $0)?.id }
 
-        fsStore.send(.setSelectedIds(ids: selectedIds, lastSelectedId: lastSelectedId))
+        store.send(.entryViewLayout(.setSelectedIds(ids: selectedIds, lastSelectedId: lastSelectedId)))
     }
 }
 
-extension EntryGridController: EntryGridRootView.EntryGridCollectionViewMenuProviding {
+extension EntryGridCoordinator: EntryGridView.EntryGridCollectionViewMenuProviding {
     func contextMenu(for indexPath: IndexPath?, event: NSEvent) -> NSMenu {
         updateContextMenuAnchor(event)
         let rowEntry = entry(at: indexPath)
         let composed = EntryContextMenuBuilder.makeMenu(input: .init(
             contentStore: store,
-            fsStore: fsStore,
             fileManagerWindowClient: fileManagerWindowClient,
-            selectedIds: store.state.entries.selectedIds,
+            selectedIds: store.state.entryViewLayout.selectedIds,
             selectedEntries: selectedEntries(fallback: rowEntry),
             rowEntry: rowEntry,
             isTrashFolder: isTrashFolder,
@@ -908,7 +910,7 @@ extension EntryGridController: EntryGridRootView.EntryGridCollectionViewMenuProv
                 self?.store.state.navigation.currentPath ?? ""
             },
             selectedItemId: { [weak self] in
-                self?.store.state.entries.selectedIds.first
+                self?.store.state.entryViewLayout.selectedIds.first
             },
             contextMenuAnchor: { [weak self] in
                 self?.contextMenuAnchor
@@ -917,14 +919,14 @@ extension EntryGridController: EntryGridRootView.EntryGridCollectionViewMenuProv
                 self?.saveScrollPosition()
             },
         ))
-        contextMenuController = composed.controller
+        contextMenuCoordinator = composed.coordinator
         return composed.menu
     }
 }
 
-private extension EntryGridController {
+private extension EntryGridCoordinator {
     func updateContextMenuAnchor(_ event: NSEvent) {
-        if let window = rootView?.window {
+        if let window = view?.window {
             let screenPoint = window.convertPoint(toScreen: event.locationInWindow)
             contextMenuAnchor = screenPoint
         } else {

@@ -3,25 +3,25 @@ import ComposableArchitecture
 import SwiftUI
 
 @MainActor
-struct EntryGridView: NSViewRepresentable {
+struct EntryGridViewRepresentable: NSViewRepresentable {
     let store: StoreOf<FileManagerContentFeature>
 
-    func makeCoordinator() -> EntryGridController {
-        EntryGridController(store: store)
+    func makeCoordinator() -> EntryGridCoordinator {
+        EntryGridCoordinator(store: store)
     }
 
-    func makeNSView(context: Context) -> EntryGridRootView {
-        let view = EntryGridRootView()
+    func makeNSView(context: Context) -> EntryGridView {
+        let view = EntryGridView()
         context.coordinator.bind(to: view)
         return view
     }
 
-    func updateNSView(_ view: EntryGridRootView, context: Context) {
-        context.coordinator.updateRootView(view)
+    func updateNSView(_ view: EntryGridView, context: Context) {
+        context.coordinator.updateView(view)
     }
 }
 
-final class EntryGridRootView: NSView {
+final class EntryGridView: NSView {
     protocol EntryGridCollectionViewMenuProviding: AnyObject {
         func contextMenu(for indexPath: IndexPath?, event: NSEvent) -> NSMenu
     }

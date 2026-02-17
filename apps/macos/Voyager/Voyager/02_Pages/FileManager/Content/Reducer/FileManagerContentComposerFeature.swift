@@ -72,10 +72,7 @@ struct FileManagerContentComposerFeature {
                 state.syncComposerCollectionState()
                 return .none
             }
-            return exitCollectionMode(
-                state: &state,
-                computerName: computerNameClient.computerName(),
-            )
+            return state.exitCollectionMode(computerName: computerNameClient.computerName())
 
         default:
             return nil
@@ -153,10 +150,7 @@ struct FileManagerContentComposerFeature {
         let query = text.trimmingCharacters(in: .whitespacesAndNewlines)
         state.composer.pendingSearchQuery = query.isEmpty ? nil : query
         if query.isEmpty, state.composer.conditions.isEmpty, state.composer.scopes.isEmpty {
-            return exitCollectionMode(
-                state: &state,
-                computerName: computerNameClient.computerName(),
-            )
+            return state.exitCollectionMode(computerName: computerNameClient.computerName())
         }
         return .none
     }
@@ -182,21 +176,23 @@ struct FileManagerContentComposerFeature {
                 context: state.collectionContext ?? .init(query: "", scopes: [], conditions: []),
             )
         }
-        let nextNavigationState = ContentPageNavigationUtils.NavigationState.collection(
-            makeCollectionNavigation(state: state),
-        )
-        if !wasOpeningCollectionFile,
-           previousNavigationState != nextNavigationState,
-           !(previousNavigationState.isCollection && nextNavigationState.isCollection)
-        {
-            state.navigation.appendBackHistory(previousSnapshot)
-            state.navigation.forwardHistory = []
+        let nextNavigationState = ContentPageNavigationRoute.collection(state.makeCollectionNavigation())
+        let shouldAppendHistory = !wasOpeningCollectionFile
+            && previousNavigationState != nextNavigationState
+            && !(previousNavigationState.isCollection && nextNavigationState.isCollection)
+
+        var navigationEffects: [Effect<Action>] = []
+        if shouldAppendHistory {
+            navigationEffects.append(.send(.requestNavigation(.appendBackHistory(previousSnapshot))))
+            navigationEffects.append(.send(.requestNavigation(.clearForwardHistory)))
         }
-        state.navigation.navigationState = nextNavigationState
+        navigationEffects.append(.send(.requestNavigation(.setNavigationState(nextNavigationState))))
+
         if !wasOpeningCollectionFile, !previousNavigationState.isCollection {
             logContentPageNavigationDAUIfNeeded(previous: previousNavigationState, next: nextNavigationState)
         }
         return .concatenate(
+            .concatenate(navigationEffects),
             .send(.entries(.setCollectionMode(true))),
             .run { send in
                 await Task.yield()
@@ -215,27 +211,24 @@ struct FileManagerContentComposerFeature {
         guard state.collectionSession.isOpening else {
             return .none
         }
-        if !state.navigation.backHistory.isEmpty {
-            state.navigation.backHistory.removeLast()
-        }
         state.collectionSession = .init()
         state.resetComposer()
-        let exitEffect = exitCollectionMode(
-            state: &state,
-            computerName: computerNameClient.computerName(),
-        )
-        return .merge(
-            exitEffect,
-            .run { _ in
-                await collectionAlertClient.showCollectionOpenErrorAlert(
-                    title,
-                    """
-                    \(error.localizedDescription)
+        let exitEffect = state.exitCollectionMode(computerName: computerNameClient.computerName())
+        return .concatenate(
+            .send(.requestNavigation(.rollbackBackHistoryOnce)),
+            .merge(
+                exitEffect,
+                .run { _ in
+                    await collectionAlertClient.showCollectionOpenErrorAlert(
+                        title,
+                        """
+                        \(error.localizedDescription)
 
-                    Check Gateway/Helper status and try again.
-                    """,
-                )
-            },
+                        Check Gateway/Helper status and try again.
+                        """,
+                    )
+                },
+            ),
         )
     }
 
@@ -245,14 +238,13 @@ struct FileManagerContentComposerFeature {
     ) -> Effect<Action> {
         switch action {
         case .saveRequested, .saveToExisting, .savePanelResponse:
-            return .none
+            .none
 
         case let .saveCompleted(.success(url)):
-            return handleCollectionSaveSuccess(url: url, state: &state)
+            handleCollectionSaveSuccess(url: url, state: &state)
 
         case .saveCompleted(.failure):
-            state.navigation.pendingNavigation = nil
-            return .none
+            .send(.requestNavigation(.setPendingNavigation(nil)))
         }
     }
 
@@ -275,14 +267,17 @@ struct FileManagerContentComposerFeature {
             state.collectionSession.baseline = nil
         }
 
-        state.navigation.navigationState = .collection(makeCollectionNavigation(state: state))
+        var navigationEffects: [Effect<Action>] = [
+            .send(.requestNavigation(.setNavigationState(.collection(state.makeCollectionNavigation())))),
+        ]
+
         if shouldAppendHistory {
             if let baseline = previousBaseline,
                let previousURL = previousCollectionURL
             {
                 let name = previousCollectionName
                     ?? previousURL.deletingPathExtension().lastPathComponent
-                let navigation = ContentPageNavigationUtils.CollectionNavigation(
+                let navigation = ContentPageCollectionNavigation(
                     kind: .file(url: previousURL, name: name),
                     context: baseline.context,
                     sortKey: state.entryArrangements.sortKey,
@@ -293,19 +288,23 @@ struct FileManagerContentComposerFeature {
                     navigationState: .collection(navigation),
                     composerSnapshot: state.composer,
                 )
-                state.navigation.appendBackHistory(entry)
+                navigationEffects.append(.send(.requestNavigation(.appendBackHistory(entry))))
             } else {
-                state.navigation.appendBackHistory(previousSnapshot)
+                navigationEffects.append(.send(.requestNavigation(.appendBackHistory(previousSnapshot))))
             }
-            state.navigation.forwardHistory = []
+            navigationEffects.append(.send(.requestNavigation(.clearForwardHistory)))
         }
 
         state.syncComposerCollectionState()
 
         if let pending = state.navigation.pendingNavigation {
-            state.navigation.pendingNavigation = nil
-            return .send(.performPendingNavigation(pending))
+            return .concatenate(
+                .concatenate(navigationEffects),
+                .send(.requestNavigation(.setPendingNavigation(nil))),
+                .send(.performPendingNavigation(pending)),
+            )
         }
-        return .none
+
+        return .concatenate(navigationEffects)
     }
 }

@@ -4,18 +4,19 @@ import IdentifiedCollections
 
 enum EntryContextMenuUtils {
     static func sendWithSelection(
-        _ item: Entry,
-        fsStore: Store<EntryFeature.State, EntryFeature.Action>,
+        _ item: EntryModel,
+        selectedIds: Set<String>,
+        contentStore: StoreOf<FileManagerContentFeature>,
         action: @escaping () -> Void,
     ) {
-        if !fsStore.selectedIds.contains(item.id) {
-            fsStore.send(.selectItem(id: item.id, isCommandPressed: false, isShiftPressed: false))
+        if !selectedIds.contains(item.id) {
+            contentStore.send(.entryViewLayout(.setSelectedIds(ids: [item.id], lastSelectedId: item.id)))
         }
         action()
     }
 
     static func calculateCompressExtractOptions(
-        selectedItems: IdentifiedArrayOf<Entry>,
+        selectedItems: IdentifiedArrayOf<EntryModel>,
     ) -> (showCompress: Bool, showExtract: Bool) {
         let containsZipFiles = selectedItems.contains { $0.fileExtension.lowercased() == "zip" }
         let containsNonZipFiles = selectedItems.contains { $0.fileExtension.lowercased() != "zip" }

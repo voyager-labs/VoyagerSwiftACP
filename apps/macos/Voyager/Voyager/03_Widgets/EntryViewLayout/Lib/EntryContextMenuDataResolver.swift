@@ -14,17 +14,17 @@ struct EntryContextMenuTagItem {
 }
 
 enum EntryContextMenuDataResolver {
-    static func selectedCount(selectedIds: Set<String>, fallbackEntry: Entry?) -> Int {
+    static func selectedCount(selectedIds: Set<String>, fallbackEntry: EntryModel?) -> Int {
         selectedIds.isEmpty ? (fallbackEntry == nil ? 0 : 1) : selectedIds.count
     }
 
-    static func resolveCompressExtract(selectedEntries: [Entry]) -> (Bool, Bool) {
+    static func resolveCompressExtract(selectedEntries: [EntryModel]) -> (Bool, Bool) {
         EntryContextMenuUtils.calculateCompressExtractOptions(
             selectedItems: IdentifiedArrayOf(uniqueElements: selectedEntries),
         )
     }
 
-    static func resolveTags(selectedEntries: [Entry]) -> [EntryContextMenuTagItem] {
+    static func resolveTags(selectedEntries: [EntryModel]) -> [EntryContextMenuTagItem] {
         let finderFavoritesTagClient = FinderFavoritesTagClient.liveValue
         return finderFavoritesTagClient.favoriteTags()
             .map { favoriteTag in
@@ -60,7 +60,7 @@ enum EntryContextMenuDataResolver {
 
     static func resolveOpenWithMenuData(
         contentStore: StoreOf<FileManagerContentFeature>,
-        selectedEntries: [Entry],
+        selectedEntries: [EntryModel],
     ) -> (Bool, [ApplicationInfo]) {
         let selectedFiles = selectedEntries.filter { !$0.isDirectory }
         if selectedFiles.isEmpty {
@@ -68,11 +68,11 @@ enum EntryContextMenuDataResolver {
         }
 
         if selectedFiles.count > 1 {
-            contentStore.send(.entries(.delegate(.intent(.loadCommonApplicationsForFiles(files: selectedFiles)))))
+            contentStore.send(.entryOperations(.loadCommonApplicationsForFiles(files: selectedFiles)))
         } else if let file = selectedFiles.first,
                   contentStore.state.entryOperations.applicationsForItems[file.fullPath] == nil
         {
-            contentStore.send(.entries(.delegate(.intent(.loadApplicationsForFile(file: file)))))
+            contentStore.send(.entryOperations(.loadApplicationsForFile(file: file)))
         }
 
         let applications: [ApplicationInfo] = if selectedFiles.count > 1 {

@@ -11,67 +11,85 @@ struct ContentPageView: View {
     static let redoSelector = Selector(("redo:"))
 
     var body: some View {
-        ZStack {
-            VStack(spacing: 0) {
-                if isCollectionSearching {
-                    collectionLoadingView
-                } else {
-                    switch store.viewLayout {
-                    case .list:
-                        EntryListView(store: store)
-                    case .grid:
-                        EntryGridView(store: store)
+        mainContent
+            .onChange(of: store.entryViewLayout.selectedIds) { _ in
+                guard isGridLayout else { return }
+                restoreKeyCommandFocus()
+            }
+            .onChange(of: store.entryViewLayout.isRenaming) { isRenaming in
+                guard isGridLayout else { return }
+                if !isRenaming {
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
+                        restoreKeyCommandFocus()
                     }
                 }
+            }
+            .onAppear {
+                guard isGridLayout else { return }
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) {
+                    restoreKeyCommandFocus()
+                }
+            }
+            .background(backgroundInteractionLayer)
+    }
 
-                Rectangle()
-                    .fill(Color.primary.opacity(0.12))
-                    .frame(height: 1)
-
+    private var mainContent: some View {
+        ZStack {
+            VStack(spacing: 0) {
+                entryContainerView
+                separatorView
                 ContentPaneBreadcrumbBarView(
                     store: store,
                     onNavigate: onNavigate,
                 )
             }
 
-            if store.viewLayout == .grid {
-                KeyCommandView { event in
-                    handleKeyboardEvent(event)
-                }
-                .focusable()
-                .focused($isKeyCommandFocused)
-                .allowsHitTesting(false)
+            keyCommandOverlay
+        }
+    }
+
+    @ViewBuilder
+    private var entryContainerView: some View {
+        if isCollectionSearching {
+            collectionLoadingView
+        } else {
+            switch store.viewLayout {
+            case .list:
+                EntryListViewRepresentable(store: store)
+            case .grid:
+                EntryGridViewRepresentable(store: store)
             }
         }
-        .onChange(of: store.entryViewLayout.selectedIds) { _ in
-            guard store.viewLayout == .grid else { return }
-            restoreKeyCommandFocus()
-        }
-        .onChange(of: store.entryViewLayout.isRenaming) { isRenaming in
-            guard store.viewLayout == .grid else { return }
-            if !isRenaming {
-                DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
-                    restoreKeyCommandFocus()
-                }
+    }
+
+    private var separatorView: some View {
+        Rectangle()
+            .fill(Color.primary.opacity(0.12))
+            .frame(height: 1)
+    }
+
+    @ViewBuilder
+    private var keyCommandOverlay: some View {
+        if isGridLayout {
+            KeyCommandView { event in
+                handleKeyboardEvent(event)
             }
+            .focusable()
+            .focused($isKeyCommandFocused)
+            .allowsHitTesting(false)
         }
-        .onAppear {
-            guard store.viewLayout == .grid else { return }
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) {
+    }
+
+    private var backgroundInteractionLayer: some View {
+        Color.clear
+            .contentShape(Rectangle())
+            .contextMenu {
+                ContentPaneContextMenu(store: store)
+            }
+            .onTapGesture {
+                guard isGridLayout else { return }
                 restoreKeyCommandFocus()
             }
-        }
-        .background(
-            Color.clear
-                .contentShape(Rectangle())
-                .contextMenu {
-                    ContentPaneContextMenu(store: store)
-                }
-                .onTapGesture {
-                    guard store.viewLayout == .grid else { return }
-                    restoreKeyCommandFocus()
-                },
-        )
     }
 
     private func handleKeyboardEvent(_ event: NSEvent) {
@@ -86,6 +104,10 @@ struct ContentPageView: View {
 
     private var isCollectionSearching: Bool {
         store.composer.isCollectionSearching
+    }
+
+    private var isGridLayout: Bool {
+        store.viewLayout == .grid
     }
 
     // TODO: 이름에서 Collection 내용 제외

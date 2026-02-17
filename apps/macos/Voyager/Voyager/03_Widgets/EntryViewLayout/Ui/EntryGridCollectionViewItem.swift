@@ -3,7 +3,7 @@ import UniformTypeIdentifiers
 
 final class EntryGridCollectionViewItem: NSCollectionViewItem {
     struct Configuration {
-        let entry: Entry
+        let entry: EntryModel
         let iconSize: CGFloat
         let textSize: CGFloat
         let thumbnail: NSImage?
@@ -30,7 +30,7 @@ final class EntryGridCollectionViewItem: NSCollectionViewItem {
     private var iconBackgroundWidthConstraint: NSLayoutConstraint?
     private var iconBackgroundHeightConstraint: NSLayoutConstraint?
 
-    private var entry: Entry?
+    private var entry: EntryModel?
     private var iconSize: CGFloat = 64
     private var textSize: CGFloat = 12
     private var isCut: Bool = false
@@ -71,10 +71,9 @@ final class EntryGridCollectionViewItem: NSCollectionViewItem {
         onRenameCommit = configuration.onRenameCommit
         onRenameCancel = configuration.onRenameCancel
 
-        iconView.image = EntryIconUtils.icon(
+        iconView.image = configuration.workspaceClient.entryIcon(
             for: configuration.entry,
             thumbnail: configuration.thumbnail,
-            workspaceClient: configuration.workspaceClient,
         )
         iconView.imageScaling = .scaleProportionallyUpOrDown
 
@@ -275,8 +274,6 @@ final class EntryGridCollectionViewItem: NSCollectionViewItem {
             tagStackView.addArrangedSubview(dot)
         }
     }
-
-    // icon 생성/캐시는 EntryIconUtils로 이동
 }
 
 extension EntryGridCollectionViewItem: NSTextFieldDelegate {

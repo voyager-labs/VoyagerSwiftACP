@@ -8,8 +8,8 @@ struct ContentPaneBreadcrumbBarView: View {
     let onNavigate: (String) -> Void
 
     private var statusText: String {
-        let total = store.entries.displayItems.count
-        let selected = store.entries.selectedIds.count
+        let total = store.entryOperations.displayItems.count
+        let selected = store.entryViewLayout.selectedIds.count
 
         if selected == 0 {
             return "\(total) items"
@@ -78,13 +78,13 @@ struct ContentPaneBreadcrumbBarView: View {
         FileManager.default.urls(for: .trashDirectory, in: .userDomainMask).first?.path
     }
 
-    private var selectedEntry: Entry? {
-        guard store.entries.selectedIds.count == 1,
-              let selectedId = store.entries.selectedIds.first
+    private var selectedEntry: EntryModel? {
+        guard store.entryViewLayout.selectedIds.count == 1,
+              let selectedId = store.entryViewLayout.selectedIds.first
         else {
             return nil
         }
-        return store.entries.displayItems[id: selectedId]
+        return store.entryOperations.displayItems[id: selectedId]
     }
 
     private var selectedPath: String? {

@@ -6,26 +6,56 @@ struct FileManagerContentEntryOperationsFeature {
     typealias Action = FileManagerContentAction
 
     var body: some Reducer<State, Action> {
-        Reduce { _, action in
+        Reduce { state, action in
             guard case let .entryOperations(entryOperationsAction) = action else {
                 return .none
             }
 
-            return handleEntryOperationsAction(entryOperationsAction)
+            return handleEntryOperationsAction(entryOperationsAction, state: state)
         }
     }
 
     private func handleEntryOperationsAction(
         _ action: EntryOperationsAction,
+        state: State,
     ) -> Effect<Action> {
         switch action {
-        case let .operationFinished(filePath, kind, result):
-            .send(.entries(.operationFinished(filePath, kind, result)))
+        case .itemsLoaded,
+             .collectionItemsLoadedFromSearch,
+             .setCollectionMode:
+            .send(.entryArrangements(.reapply))
+
+        case .operationFinished:
+            .merge(
+                .send(.entryArrangements(.reapply)),
+                reloadEntryItemsEffect(state: state),
+            )
 
         case .emptyTrashCompleted:
             .send(.emptyTrashCompleted)
 
         default:
+            .none
+        }
+    }
+
+    private func reloadEntryItemsEffect(state: State) -> Effect<Action> {
+        switch state.navigation.navigationState {
+        case let .folder(path):
+            .send(.entryOperations(.loadItems(
+                path: path,
+                showHidden: state.entryViewLayout.showHiddenFiles,
+            )))
+        case .recents:
+            .send(.entryOperations(.loadRecentItems(showHidden: state.entryViewLayout.showHiddenFiles)))
+        case let .tags(tagName):
+            .send(.entryOperations(.loadTagItems(
+                tagName: tagName,
+                showHidden: state.entryViewLayout.showHiddenFiles,
+            )))
+        case .computer:
+            .send(.entryOperations(.loadComputerItems))
+        case .collection:
             .none
         }
     }

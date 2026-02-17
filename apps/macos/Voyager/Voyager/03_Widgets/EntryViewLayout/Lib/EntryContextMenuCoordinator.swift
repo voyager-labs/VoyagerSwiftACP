@@ -1,7 +1,7 @@
 import AppKit
 import ComposableArchitecture
 
-final class EntryContextMenuController: NSObject {
+final class EntryContextMenuCoordinator: NSObject {
     var onOpenSelectedItem: () -> Void = {}
     var onOpenSelectedItemInNewTab: (String) -> Void = { _ in }
     var onQuickLookSelectedItem: () -> Void = {}
@@ -145,9 +145,9 @@ final class EntryContextMenuController: NSObject {
 }
 
 @MainActor
-extension EntryContextMenuController {
+extension EntryContextMenuCoordinator {
     struct Context {
-        let fsStore: StoreOf<EntryFeature>
+        let contentStore: StoreOf<FileManagerContentFeature>
         let fileManagerWindowClient: FileManagerWindowClient
         let currentPath: () -> String
         let selectedItemId: () -> String?
@@ -156,12 +156,12 @@ extension EntryContextMenuController {
     }
 
     // swiftlint:disable function_body_length
-    static func make(context: Context) -> EntryContextMenuController {
-        let controller = EntryContextMenuController()
+    static func make(context: Context) -> EntryContextMenuCoordinator {
+        let controller = EntryContextMenuCoordinator()
 
         controller.onOpenSelectedItem = {
             context.saveScrollPosition()
-            context.fsStore.send(.openSelectedItem)
+            context.contentStore.send(.entries(.openSelectedItem))
         }
         controller.onOpenSelectedItemInNewTab = { path in
             Task {
@@ -169,65 +169,65 @@ extension EntryContextMenuController {
             }
         }
         controller.onQuickLookSelectedItem = {
-            context.fsStore.send(.quickLookSelectedItem)
+            context.contentStore.send(.entries(.quickLookSelectedItem))
         }
         controller.onGetInfoForSelectedItems = {
-            context.fsStore.send(.getInfoForSelectedItems)
+            context.contentStore.send(.entries(.getInfoForSelectedItems))
         }
         controller.onShareSelectedItems = {
-            context.fsStore.send(.shareSelectedItems(anchor: context.contextMenuAnchor()))
+            context.contentStore.send(.entries(.shareSelectedItems(anchor: context.contextMenuAnchor())))
         }
         controller.onRevealSelectedItemsInFinder = {
-            context.fsStore.send(.revealSelectedItemsInFinder)
+            context.contentStore.send(.entries(.revealSelectedItemsInFinder))
         }
         controller.onCopySelectedItems = {
-            context.fsStore.send(.copySelectedItems)
+            context.contentStore.send(.entries(.copySelectedItems))
         }
         controller.onCopySelectedAbsolutePaths = {
-            context.fsStore.send(.copySelectedAbsolutePaths)
+            context.contentStore.send(.entries(.copySelectedAbsolutePaths))
         }
         controller.onCopySelectedURLs = {
-            context.fsStore.send(.copySelectedURLs)
+            context.contentStore.send(.entries(.copySelectedURLs))
         }
         controller.onCutSelectedItems = {
-            context.fsStore.send(.cutSelectedItems)
+            context.contentStore.send(.entries(.cutSelectedItems))
         }
         controller.onPasteItems = {
-            context.fsStore.send(.pasteItems(destinationPath: context.currentPath()))
+            context.contentStore.send(.entries(.pasteItems(destinationPath: context.currentPath())))
         }
         controller.onStartRename = {
             guard let id = context.selectedItemId() else { return }
-            context.fsStore.send(.startRename(id: id))
+            context.contentStore.send(.entries(.startRename(id: id)))
         }
         controller.onDuplicateSelectedItems = {
-            context.fsStore.send(.duplicateSelectedItems)
+            context.contentStore.send(.entries(.duplicateSelectedItems))
         }
         controller.onCreateAliasForSelectedItems = {
-            context.fsStore.send(.createAliasForSelectedItems)
+            context.contentStore.send(.entries(.createAliasForSelectedItems))
         }
         controller.onCompressSelectedItems = {
-            context.fsStore.send(.compressSelectedItems)
+            context.contentStore.send(.entries(.compressSelectedItems))
         }
         controller.onExtractSelectedItem = {
-            context.fsStore.send(.extractSelectedItem)
+            context.contentStore.send(.entries(.extractSelectedItem))
         }
         controller.onMoveSelectedItemsToTrash = {
-            context.fsStore.send(.moveSelectedItemsToTrash)
+            context.contentStore.send(.entries(.moveSelectedItemsToTrash))
         }
         controller.onDeleteSelectedItemsImmediately = {
-            context.fsStore.send(.deleteSelectedItemsImmediately)
+            context.contentStore.send(.entries(.deleteSelectedItemsImmediately))
         }
         controller.onPutBackSelectedItems = {
-            context.fsStore.send(.putBackSelectedItems)
+            context.contentStore.send(.entries(.putBackSelectedItems))
         }
         controller.onEmptyTrash = {
-            context.fsStore.send(.emptyTrash)
+            context.contentStore.send(.entries(.emptyTrash))
         }
         controller.onOpenWithSelectedItem = { bundleID in
-            context.fsStore.send(.openWithSelectedItem(bundleID: bundleID, shouldSetAsDefault: false))
+            context.contentStore.send(.entries(.openWithSelectedItem(bundleID: bundleID, shouldSetAsDefault: false)))
         }
         controller.onToggleTagForSelectedItem = { tagName in
-            context.fsStore.send(.toggleTagForSelectedItem(tag: tagName))
+            context.contentStore.send(.entries(.toggleTagForSelectedItem(tag: tagName)))
         }
 
         return controller

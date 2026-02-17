@@ -8,11 +8,14 @@ struct ContentPaneContextMenu: View {
     var body: some View {
         if isTrashFolder {
             Button("Empty Trash") {
-                store.send(.entries(.emptyTrash))
+                store.send(.entryOperations(.emptyTrash(items: store.entryOperations.displayOrderItems)))
             }
         } else {
             Button("New Folder") {
-                store.send(.entries(.createNewFolder(currentPath: store.navigation.currentPath)))
+                store.send(.entryOperations(.createNewFolder(
+                    name: defaultNewFolderName,
+                    parentPath: store.navigation.currentPath,
+                )))
             }
             .keyboardShortcut("n", modifiers: [.command, .shift])
         }
@@ -53,6 +56,16 @@ struct ContentPaneContextMenu: View {
             return false
         }
         return path == trashPath || path.hasPrefix(trashPath + "/")
+    }
+
+    private var defaultNewFolderName: String {
+        var folderName = "untitled folder"
+        var counter = 2
+        while store.entryOperations.displayItems.contains(where: { $0.name == folderName }) {
+            folderName = "untitled folder \(counter)"
+            counter += 1
+        }
+        return folderName
     }
 
     private func viewLayoutToggle(_ title: String, layout: ContentViewLayout) -> some View {

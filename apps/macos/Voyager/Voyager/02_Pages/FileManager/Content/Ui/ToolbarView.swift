@@ -49,7 +49,7 @@ struct ToolbarView: View {
                     canGoForward: $0.navigation.canGoForward,
                     canGoToEnclosingDirectory: $0.navigation.canGoToEnclosingDirectory,
                     currentPath: $0.navigation.currentPath,
-                    isCollectionMode: $0.entries.isCollectionMode,
+                    isCollectionMode: $0.entryOperations.loadingContext.isCollectionMode,
                     isOpeningCollectionFile: $0.collectionSession.isOpening,
                     openedCollectionName: $0.collectionSession.openedName,
                     openedCollectionURLExists: $0.collectionSession.openedURL != nil,
