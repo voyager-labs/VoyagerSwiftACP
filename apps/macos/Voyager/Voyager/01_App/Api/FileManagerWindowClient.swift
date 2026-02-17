@@ -98,8 +98,8 @@ extension DependencyValues {
 @MainActor
 final class FileManagerWindowClientLiveContext {
     private var appStore: StoreOf<AppRootFeature>?
-    private var windowControllersByID: [UUID: FileManagerWindowController] = [:]
-    private var windowControllers: [FileManagerWindowController] = []
+    private var windowControllersByID: [UUID: FileManagerWindowCoordinator] = [:]
+    private var windowControllers: [FileManagerWindowCoordinator] = []
 
     var client: FileManagerWindowClient {
         .init(
@@ -228,7 +228,7 @@ final class FileManagerWindowClientLiveContext {
         targetController?.window?.makeKeyAndOrderFront(nil)
     }
 
-    private func registerWindowController(_ controller: FileManagerWindowController) {
+    private func registerWindowController(_ controller: FileManagerWindowCoordinator) {
         windowControllers.append(controller)
         windowControllersByID[controller.windowID] = controller
     }
@@ -250,8 +250,8 @@ final class FileManagerWindowClientLiveContext {
         windowID: UUID,
         fileManagerStore: StoreOf<FileManagerFeature>,
         undoManager: UndoManager,
-    ) -> FileManagerWindowController {
-        FileManagerWindowController(
+    ) -> FileManagerWindowCoordinator {
+        FileManagerWindowCoordinator(
             windowID: windowID,
             store: fileManagerStore,
             windowUndoManager: undoManager,

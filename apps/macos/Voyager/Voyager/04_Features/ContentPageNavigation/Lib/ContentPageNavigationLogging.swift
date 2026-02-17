@@ -1,8 +1,8 @@
 import Foundation
 
 func logContentPageNavigationDAUIfNeeded(
-    previous: ContentPageNavigationUtils.NavigationState,
-    next: ContentPageNavigationUtils.NavigationState,
+    previous: ContentPageNavigationRoute,
+    next: ContentPageNavigationRoute,
 ) {
     guard previous != next else { return }
 

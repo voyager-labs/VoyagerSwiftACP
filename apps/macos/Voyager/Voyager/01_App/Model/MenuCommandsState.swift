@@ -64,14 +64,14 @@ struct MenuCommandsState: Equatable {
         canGoToEnclosingDirectory = windowState.content.navigation.canGoToEnclosingDirectory
         canSaveCollection = windowState.content.canSaveCollection
         sidebarVisible = windowState.sidebar.sidebarVisible
-        showHiddenFiles = windowState.content.entries.showHiddenFiles
+        showHiddenFiles = windowState.content.entryViewLayout.showHiddenFiles
         viewLayout = windowState.content.viewLayout
         groupKey = windowState.content.entryArrangements.groupKey
         sortKey = windowState.content.entryArrangements.sortKey
         sortOrder = windowState.content.entryArrangements.sortOrder
         canUndo = windowState.content.entryOperations.canUndoEntryAction
         canRedo = windowState.content.entryOperations.canRedoEntryAction
-        selectedItemCount = windowState.content.entries.selectedIds.count
+        selectedItemCount = windowState.content.entryViewLayout.selectedIds.count
         isComposerPresented = windowState.content.composer.isPresented
     }
 }

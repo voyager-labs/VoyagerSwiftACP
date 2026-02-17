@@ -30,6 +30,18 @@ struct WindowManagerFeature {
                 }
                 return .none
 
+            case let .applyAppPreferences(preferences):
+                state.appPreferences = preferences
+                for index in state.windows.indices {
+                    applyAppPreferences(preferences, to: &state.windows[index].window)
+                }
+
+                return .merge(
+                    state.windows.ids.map { id in
+                        .send(.windows(.element(id: id, action: .window(.applyAppPreferences(preferences)))))
+                    },
+                )
+
             case .newWindow,
                  .newTab,
                  .closeFocusedWindow,
@@ -68,7 +80,7 @@ struct WindowManagerFeature {
                 }
 
             case .toggleShowHiddenFiles:
-                return sendActionToFocusedWindow(state, .content(.entries(.toggleShowHiddenFiles)))
+                return sendActionToFocusedWindow(state, .content(.entryViewLayout(.toggleShowHiddenFiles)))
 
             case let .setViewLayout(layout):
                 return sendActionToFocusedWindow(state, .content(.changeLayout(layout)))
@@ -160,10 +172,9 @@ struct WindowManagerFeature {
             let id = uuid()
             var windowState = FileManagerWindowFeature.State()
             windowState.content.entryOperations.windowID = id
+            applyAppPreferences(state.appPreferences, to: &windowState)
             if let path {
-                windowState.content.navigation.navigationState =
-                    ContentPageNavigationUtils.NavigationState.folder(path)
-                windowState.content.navigation.titlePath = path
+                windowState.content.navigation.seedInitialFolderPath(path)
             }
 
             state.windows.append(.init(id: id, window: windowState))
@@ -180,10 +191,9 @@ struct WindowManagerFeature {
             let id = uuid()
             var windowState = FileManagerWindowFeature.State()
             windowState.content.entryOperations.windowID = id
+            applyAppPreferences(state.appPreferences, to: &windowState)
             if let path {
-                windowState.content.navigation.navigationState =
-                    ContentPageNavigationUtils.NavigationState.folder(path)
-                windowState.content.navigation.titlePath = path
+                windowState.content.navigation.seedInitialFolderPath(path)
             }
 
             state.windows.append(.init(id: id, window: windowState))
@@ -230,6 +240,26 @@ struct WindowManagerFeature {
     ) -> Effect<Action> {
         guard let focused = focusedWindow(state) else { return .none }
         return .send(.windows(.element(id: focused.id, action: .window(buildAction(focused)))))
+    }
+
+    private func applyAppPreferences(
+        _ preferences: AppPreferencesState,
+        to windowState: inout FileManagerWindowFeature.State,
+    ) {
+        windowState.sidebar.sidebarVisible = preferences.sidebarVisible
+        windowState.sidebar.sidebarWidth = preferences.sidebarWidth
+
+        windowState.content.viewLayout = preferences.viewLayout
+        windowState.content.listIconSize = preferences.listIconSize
+        windowState.content.gridIconSize = preferences.gridIconSize
+        windowState.content.listTextSize = preferences.listTextSize
+        windowState.content.gridTextSize = preferences.gridTextSize
+
+        windowState.content.entryViewLayout.showHiddenFiles = preferences.showHiddenFiles
+        windowState.content.entryArrangements.updateSortKey(preferences.sortKey)
+        windowState.content.entryArrangements.updateSortOrder(preferences.sortOrder)
+        windowState.content.entryArrangements.updateGroupKey(preferences.groupKey)
+        windowState.content.syncComposerCollectionState()
     }
 }
 

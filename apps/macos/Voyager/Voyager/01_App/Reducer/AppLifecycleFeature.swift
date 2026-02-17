@@ -36,6 +36,10 @@ struct AppLifecycleFeature {
                 let theme = appearanceSettingsClient.loadTheme()
                 appearanceSettingsClient.applyThemeSync(theme)
 
+                if isRunningXCTest() {
+                    return .none
+                }
+
                 try? EnvironmentLoader.loadEnvFiles()
                 let userId = DeviceIdentifierProvider.current()
                 let appVersion = AppVersionInfo.shortVersion
@@ -102,12 +106,18 @@ struct AppLifecycleFeature {
                 .cancellable(id: CancelID.helperMonitor, cancelInFlight: true)
 
             case .didFinishLaunching:
+                if isRunningXCTest() {
+                    return .none
+                }
                 if onboardingWindowClient.showIfNeeded() {
                     return .none
                 }
                 return .send(.delegate(.openInitialWindowIfNeeded))
 
             case let .appReopen(hasVisibleWindows: flag):
+                if isRunningXCTest() {
+                    return .none
+                }
                 if onboardingWindowClient.showIfNeeded() {
                     return .none
                 }
@@ -197,6 +207,10 @@ struct AppLifecycleFeature {
             }
         }
     }
+}
+
+private func isRunningXCTest() -> Bool {
+    ProcessInfo.processInfo.environment["XCTestConfigurationFilePath"] != nil
 }
 
 actor VoyagerTerminationCoordinator {
