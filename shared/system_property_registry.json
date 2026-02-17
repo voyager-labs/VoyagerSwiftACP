@@ -1,6 +1,6 @@
 {
   "$kind": "system_property_registry",
-  "$version": "2.2.0",
+  "$version": "2.3.0",
   "categories": {
     "audio": {
       "apple_loop_descriptors": {
@@ -788,19 +788,6 @@
       }
     },
     "filesystem": {
-      "depth_from_home": {
-        "description": "Directory depth from the user's home (excluding the file itself).",
-        "search_aliases": [
-          "home depth",
-          "home folder depth",
-          "depths from home"
-        ],
-        "system_keys": [],
-        "type": "number",
-        "ui_hidden": true,
-        "ui_label": "Depth from home",
-        "db_indexed": true
-      },
       "dir_path": {
         "description": "Absolute directory path containing the file.",
         "search_aliases": ["folder path", "dir paths", "directory paths"],
@@ -830,7 +817,7 @@
           "extensions",
           "file extensions"
         ],
-        "system_keys": [],
+        "system_keys": ["mditem:kMDItemFSName"],
         "type": "categorical",
         "ui_label": "Extension",
         "ui_pinned": true,
@@ -940,7 +927,7 @@
       "name_stem": {
         "description": "File name without extension.",
         "search_aliases": ["name stems"],
-        "system_keys": [],
+        "system_keys": ["mditem:kMDItemFSName"],
         "legacy_keys": ["name"],
         "type": "string",
         "ui_label": "Name",
@@ -1476,6 +1463,7 @@
         "description": "The key for the file's size, in bytes.",
         "search_aliases": ["sizes", "file bytes", "file sizes"],
         "system_keys": [
+          "mditem:kMDItemFSSize",
           "nsurl:NSURLFileSizeKey",
           "nsurl:NSURLTotalFileSizeKey"
         ],

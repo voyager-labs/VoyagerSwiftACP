@@ -407,8 +407,6 @@ private extension PostFilterEvaluator {
             context.url.deletingPathExtension().lastPathComponent
         case "relative_path_from_home":
             relativePathFromHome(path: context.path)
-        case "depth_from_home":
-            depthFromHome(path: context.path)
         default:
             nil
         }
@@ -424,19 +422,5 @@ private extension PostFilterEvaluator {
         }
         let suffix = String(path.dropFirst(prefix.count))
         return suffix.isEmpty ? "~" : "~/\(suffix)"
-    }
-
-    func depthFromHome(path: String) -> Double? {
-        guard let relative = relativePathFromHome(path: path),
-              relative != "~"
-        else {
-            return nil
-        }
-        let trimmed = relative.hasPrefix("~/") ? String(relative.dropFirst(2)) : relative
-        let components = trimmed.split(separator: "/")
-        guard components.isEmpty == false else {
-            return 0
-        }
-        return Double(max(components.count - 1, 0))
     }
 }

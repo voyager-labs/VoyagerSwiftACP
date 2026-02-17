@@ -98,7 +98,6 @@ struct SpotlightQueryCompiler: Sendable {
             let validated = try validateCondition(condition)
             guard let attribute = resolveAttributeName(
                 mapping: validated.mapping,
-                propertyKey: condition.propertyKey,
             ) else {
                 postFilterConditions.append(condition)
                 continue
@@ -179,18 +178,25 @@ extension SpotlightQueryCompiler {
         return ValidatedCondition(mapping: mapping, typeKey: typeKey)
     }
 
-    private func resolveAttributeName(
-        mapping: SearchConditionBuilder.PropertyMapping,
-        propertyKey: String,
-    ) -> String? {
-        if let resolved = SpotlightAttributeResolver.resolve(
-            propertyKey: propertyKey,
-            systemKeys: mapping.systemKeys,
-        ) {
-            return resolved
+    private func resolveAttributeName(mapping: SearchConditionBuilder.PropertyMapping) -> String? {
+        var mdimporterCandidate: String?
+
+        for rawKey in mapping.systemKeys {
+            let parsed = SystemKeyParser.parse(rawKey)
+            let prefix = parsed.prefix
+            let symbol = parsed.symbol
+
+            if symbol.hasPrefix("kMDItem") {
+                if prefix == "mditem" {
+                    return symbol
+                }
+                if prefix == "mdimporter", mdimporterCandidate == nil {
+                    mdimporterCandidate = symbol
+                }
+            }
         }
 
-        return nil
+        return mdimporterCandidate
     }
 
     private func buildClause(
