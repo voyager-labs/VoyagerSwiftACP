@@ -203,12 +203,9 @@ private func runApplyFiltersTest(
     await store.finish()
 }
 
-private func makeSavePayload(conditions: [Condition]) -> CollectionFeature.SaveRequestPayload {
-    CollectionFeature.SaveRequestPayload(
+private func makeSavePayload(conditions: [Condition]) -> SaveRequestPayload {
+    SaveRequestPayload(
         context: CollectionContext(query: "Report", scopes: ["/tmp"], conditions: conditions),
-        sortKey: "name",
-        sortOrder: "asc",
-        viewLayout: "grid",
         isSearchLoading: false,
         isFiltersLoading: false,
     )
@@ -237,7 +234,7 @@ private func makeCollectionStore(
 @MainActor
 private func runSaveToExistingTest(
     store: TestStore<CollectionFeature.State, CollectionFeature.Action>,
-    payload: CollectionFeature.SaveRequestPayload,
+    payload: SaveRequestPayload,
     url: URL,
 ) async {
     await store.send(.saveToExisting(payload, url))
@@ -261,9 +258,6 @@ private let kEmptyCollectionFile = VoyagerCollectionFile(
     query: "",
     scopes: [],
     conditions: [],
-    sortKey: nil,
-    sortOrder: nil,
-    viewLayout: nil,
     appVersion: nil,
 )
 

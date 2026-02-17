@@ -7,7 +7,7 @@ final class EntryClientFileOpsTests: XCTestCase {
         defer { tempDirectory.cleanup() }
 
         let folderName = "New Folder"
-        try await EntryClient.liveValue.createFolder(tempDirectory.url, folderName)
+        try await EntryFileOpsClient.liveValue.createFolder(tempDirectory.url, folderName)
 
         let folderURL = tempDirectory.url.appendingPathComponent(folderName)
         XCTAssertTrue(FileManager.default.fileExists(atPath: folderURL.path))
@@ -20,7 +20,7 @@ final class EntryClientFileOpsTests: XCTestCase {
         let sourceURL = try makeFile(in: tempDirectory.url, name: "source.txt")
         let destinationURL = tempDirectory.url.appendingPathComponent("destination.txt")
 
-        try await EntryClient.liveValue.moveFile(sourceURL, destinationURL)
+        try await EntryFileOpsClient.liveValue.moveFile(sourceURL, destinationURL)
 
         XCTAssertFalse(FileManager.default.fileExists(atPath: sourceURL.path))
         XCTAssertTrue(FileManager.default.fileExists(atPath: destinationURL.path))
@@ -33,7 +33,7 @@ final class EntryClientFileOpsTests: XCTestCase {
         let sourceURL = try makeFile(in: tempDirectory.url, name: "old.txt")
         let destinationURL = tempDirectory.url.appendingPathComponent("new.txt")
 
-        try await EntryClient.liveValue.renameFile(sourceURL, destinationURL)
+        try await EntryFileOpsClient.liveValue.renameFile(sourceURL, destinationURL)
 
         XCTAssertFalse(FileManager.default.fileExists(atPath: sourceURL.path))
         XCTAssertTrue(FileManager.default.fileExists(atPath: destinationURL.path))
@@ -45,7 +45,7 @@ final class EntryClientFileOpsTests: XCTestCase {
 
         let fileURL = try makeFile(in: tempDirectory.url, name: "delete.txt")
 
-        try await EntryClient.liveValue.deleteImmediately(fileURL)
+        try await EntryFileOpsClient.liveValue.deleteImmediately(fileURL)
 
         XCTAssertFalse(FileManager.default.fileExists(atPath: fileURL.path))
     }

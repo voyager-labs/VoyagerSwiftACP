@@ -8,7 +8,7 @@ final class OnboardingFeatureTests: XCTestCase {
         let store = TestStore(initialState: OnboardingFeature.State()) {
             OnboardingFeature()
         } withDependencies: {
-            $0.onboardingProgressStore = OnboardingProgressStore(
+            $0.onboardingProgressClient = OnboardingProgressClient(
                 load: { .empty },
                 save: { _ in },
                 reset: {},
@@ -54,7 +54,7 @@ final class OnboardingFeatureTests: XCTestCase {
         let store = TestStore(initialState: OnboardingFeature.State()) {
             OnboardingFeature()
         } withDependencies: {
-            $0.onboardingProgressStore = OnboardingProgressStore(
+            $0.onboardingProgressClient = OnboardingProgressClient(
                 load: { .success(snapshot) },
                 save: { _ in },
                 reset: {},
@@ -78,7 +78,7 @@ final class OnboardingFeatureTests: XCTestCase {
         let store = TestStore(initialState: OnboardingFeature.State()) {
             OnboardingFeature()
         } withDependencies: {
-            $0.onboardingProgressStore = OnboardingProgressStore(
+            $0.onboardingProgressClient = OnboardingProgressClient(
                 load: { .resetRequired },
                 save: { _ in },
                 reset: {},
@@ -106,7 +106,7 @@ final class OnboardingFeatureTests: XCTestCase {
         let store = TestStore(initialState: initialState) {
             OnboardingFeature()
         } withDependencies: {
-            $0.onboardingProgressStore = OnboardingProgressStore(
+            $0.onboardingProgressClient = OnboardingProgressClient(
                 load: { .empty },
                 save: { snapshot in
                     Task {
@@ -115,12 +115,14 @@ final class OnboardingFeatureTests: XCTestCase {
                 },
                 reset: {},
             )
-            $0.fileManagerWindowClient = FileManagerWindowClient(
-                openWindow: { path in
+            $0.onboardingWindowClient = OnboardingWindowClient(
+                showIfNeeded: { false },
+                showWindow: {},
+                closeWindow: {},
+                openMainWindow: { path in
                     await pathRecorder.append(path)
                     return true
                 },
-                focusWindow: { _ in },
             )
         }
 
@@ -155,7 +157,7 @@ final class OnboardingFeatureTests: XCTestCase {
         let store = TestStore(initialState: OnboardingFeature.State()) {
             OnboardingFeature()
         } withDependencies: {
-            $0.onboardingProgressStore = OnboardingProgressStore(
+            $0.onboardingProgressClient = OnboardingProgressClient(
                 load: { .success(snapshot) },
                 save: { _ in },
                 reset: {},
@@ -185,13 +187,13 @@ private actor SnapshotRecorder {
 }
 
 private actor PathRecorder {
-    private var paths: [String] = []
+    private var paths: [String?] = []
 
-    func append(_ path: String) {
+    func append(_ path: String?) {
         paths.append(path)
     }
 
-    func snapshot() -> [String] {
+    func snapshot() -> [String?] {
         paths
     }
 }

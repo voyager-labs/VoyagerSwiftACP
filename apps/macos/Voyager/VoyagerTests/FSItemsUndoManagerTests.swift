@@ -23,18 +23,18 @@ final class FSItemsUndoManagerTests: XCTestCase {
         let registered = RegisteredRecords()
 
         let store = TestStore(initialState: {
-            var state = EntriesFeature.State()
+            var state = EntryOperationsFeature.State()
             state.redoRecords = [redoRecord]
             return state
         }()) {
-            EntriesFeature()
+            EntryOperationsFeature()
         } withDependencies: {
-            $0.undoManagerClient.registerUndo = { record, _, _ in
+            $0.undoManagerClient.registerUndo = { _, record, _, _ in
                 await registered.append(record)
             }
         }
 
-        await store.send(.operations(.entryActionCompleted(record))) {
+        await store.send(.entryActionCompleted(record)) {
             $0.undoRecords = [record]
             $0.redoRecords = []
         }
@@ -56,13 +56,13 @@ final class FSItemsUndoManagerTests: XCTestCase {
         let undoCalls = CallCounter()
 
         let store = TestStore(initialState: {
-            var state = EntriesFeature.State()
+            var state = EntryOperationsFeature.State()
             state.undoRecords = [record]
             return state
         }()) {
-            EntriesFeature()
+            EntryOperationsFeature()
         } withDependencies: {
-            $0.undoManagerClient.undo = {
+            $0.undoManagerClient.undo = { _ in
                 await undoCalls.increment()
             }
         }
@@ -86,14 +86,14 @@ final class FSItemsUndoManagerTests: XCTestCase {
         let undoCalls = CallCounter()
 
         let store = TestStore(initialState: {
-            var state = EntriesFeature.State()
+            var state = EntryOperationsFeature.State()
             state.undoRecords = [record]
-            state.operations.itemStates["/tmp/a.txt"] = EntriesOperationsFeature.ItemOperationState(isBusy: true)
+            state.itemStates["/tmp/a.txt"] = ItemOperationState(isBusy: true)
             return state
         }()) {
-            EntriesFeature()
+            EntryOperationsFeature()
         } withDependencies: {
-            $0.undoManagerClient.undo = {
+            $0.undoManagerClient.undo = { _ in
                 await undoCalls.increment()
             }
         }
@@ -117,13 +117,13 @@ final class FSItemsUndoManagerTests: XCTestCase {
         let renameCalls = RenameRecorder()
 
         let store = TestStore(initialState: {
-            var state = EntriesFeature.State()
+            var state = EntryOperationsFeature.State()
             state.undoRecords = [record]
             return state
         }()) {
-            EntriesFeature()
+            EntryOperationsFeature()
         } withDependencies: {
-            $0.entryClient.renameFile = { source, destination in
+            $0.entryFileOpsClient.renameFile = { source, destination in
                 await renameCalls.append(source.path, destination.path)
             }
         }
@@ -151,13 +151,13 @@ final class FSItemsUndoManagerTests: XCTestCase {
         let renameCalls = RenameRecorder()
 
         let store = TestStore(initialState: {
-            var state = EntriesFeature.State()
+            var state = EntryOperationsFeature.State()
             state.redoRecords = [record]
             return state
         }()) {
-            EntriesFeature()
+            EntryOperationsFeature()
         } withDependencies: {
-            $0.entryClient.renameFile = { source, destination in
+            $0.entryFileOpsClient.renameFile = { source, destination in
                 await renameCalls.append(source.path, destination.path)
             }
         }
