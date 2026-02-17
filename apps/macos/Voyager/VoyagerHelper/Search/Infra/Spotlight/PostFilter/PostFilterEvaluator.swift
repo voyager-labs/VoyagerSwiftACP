@@ -295,36 +295,6 @@ extension PostFilterEvaluator {
         }
     }
 
-    func evaluateDate(spec: ConditionSpec, rawValue: Any?) throws -> Bool {
-        guard let lhs = normalizedDate(rawValue) else {
-            return false
-        }
-
-        switch spec.condition.operator {
-        case "eq":
-            return try lhs == readDate(spec.condition)
-        case "neq":
-            return try lhs != readDate(spec.condition)
-        case "gt":
-            return try lhs > readDate(spec.condition)
-        case "gte":
-            return try lhs >= readDate(spec.condition)
-        case "lt":
-            return try lhs < readDate(spec.condition)
-        case "lte":
-            return try lhs <= readDate(spec.condition)
-        case "btw", "nbtw":
-            let (start, end) = try readDateRange(spec.condition)
-            let inRange = lhs >= start && lhs <= end
-            return spec.condition.operator == "btw" ? inRange : !inRange
-        default:
-            throw EvaluationError.unsupportedOperator(
-                propertyKey: spec.condition.propertyKey,
-                operatorCode: spec.condition.operator,
-            )
-        }
-    }
-
     func evaluateBoolean(spec: ConditionSpec, rawValue: Any?) throws -> Bool {
         guard spec.condition.operator == "eq" else {
             throw EvaluationError.unsupportedOperator(

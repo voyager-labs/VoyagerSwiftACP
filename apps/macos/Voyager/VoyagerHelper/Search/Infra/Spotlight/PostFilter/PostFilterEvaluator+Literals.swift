@@ -103,7 +103,7 @@ extension PostFilterEvaluator {
             return Date(timeIntervalSince1970: number.doubleValue)
         }
         if let string = value as? String {
-            return parseDateLiteral(string)
+            return SearchDateUtils.parseDateLiteral(string)
         }
         return nil
     }
@@ -232,7 +232,7 @@ extension PostFilterEvaluator {
             )
         }
 
-        guard let parsed = parseDateLiteral(literal) else {
+        guard let parsed = SearchDateUtils.parseDateLiteral(literal) else {
             throw EvaluationError.invalidValue(
                 propertyKey: condition.propertyKey,
                 operatorCode: condition.operator,
@@ -280,36 +280,6 @@ extension PostFilterEvaluator {
             propertyKey: condition.propertyKey,
             operatorCode: condition.operator,
         )
-    }
-
-    func parseDateLiteral(_ literal: String) -> Date? {
-        var text = literal.trimmingCharacters(in: .whitespacesAndNewlines)
-        if text.hasPrefix("$time.iso("), text.hasSuffix(")") {
-            text = String(text.dropFirst(10).dropLast())
-        }
-
-        if text.count == 10, text[text.index(text.startIndex, offsetBy: 4)] == "-", text[text.index(
-            text.startIndex,
-            offsetBy: 7,
-        )] == "-" {
-            let formatter = DateFormatter()
-            formatter.calendar = Calendar(identifier: .iso8601)
-            formatter.locale = Locale(identifier: "en_US_POSIX")
-            formatter.timeZone = TimeZone(secondsFromGMT: 0)
-            formatter.dateFormat = "yyyy-MM-dd"
-            return formatter.date(from: text)
-        }
-
-        let iso8601 = ISO8601DateFormatter()
-        iso8601.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
-        if let date = iso8601.date(from: text) {
-            return date
-        }
-        iso8601.formatOptions = [.withInternetDateTime]
-        if let date = iso8601.date(from: text) {
-            return date
-        }
-        return nil
     }
 
     func equals(_ lhs: String, _ rhs: String) -> Bool {
