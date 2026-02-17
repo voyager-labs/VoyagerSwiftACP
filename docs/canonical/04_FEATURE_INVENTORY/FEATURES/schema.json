@@ -1,0 +1,63 @@
+{
+  "schema_version": "1.0",
+  "name": "FEATURES",
+  "primary_key": ["feature_id"],
+  "columns": [
+    {
+      "name": "feature_category",
+      "type": "string",
+      "required": true,
+      "description": "카테고리 제목(표시용, FK -> FEATURE_CATEGORIES.category_title)."
+    },
+    {
+      "name": "category_key",
+      "type": "string",
+      "required": true,
+      "ref": {
+        "table": "FEATURE_CATEGORIES",
+        "column": "category_key"
+      },
+      "description": "기능 카테고리 키(FK -> FEATURE_CATEGORIES.category_key)."
+    },
+    {
+      "name": "feature_title",
+      "type": "string",
+      "required": true,
+      "description": "기능 제목."
+    },
+    {
+      "name": "feature_id",
+      "type": "string",
+      "required": true,
+      "description": "기능 ID(PK)."
+    },
+    {
+      "name": "release_phase",
+      "type": "string",
+      "required": false,
+      "description": "릴리즈 단계 태그."
+    },
+    {
+      "name": "status",
+      "type": "string",
+      "required": false,
+      "description": "상태."
+    },
+    {
+      "name": "description",
+      "type": "string",
+      "required": false,
+      "description": "한 줄 설명."
+    },
+    {
+      "name": "related_ui",
+      "type": "string",
+      "required": false,
+      "ref": {
+        "table": "WINDOW_STRUCTURE",
+        "column": "structure_key"
+      },
+      "description": "UI 구조 참조(옵션, FK -> WINDOW_STRUCTURE.structure_key)."
+    }
+  ]
+}

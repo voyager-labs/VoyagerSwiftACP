@@ -3,7 +3,6 @@
 from fastapi import APIRouter, Depends
 
 from app.search.schemas import (
-    FilterSearchRequest,
     QuerySearchRequest,
     SearchResponse,
 )
@@ -27,24 +26,5 @@ async def query_search(
     """
     return await service.query_search(
         query=request.query,
-        filters=request.filters,
-    )
-
-
-# TODO: Swift Voyager Helper로 이관 [VOY-152]
-@router.post("/filters", response_model=SearchResponse)
-async def filter_search(
-    request: FilterSearchRequest,
-    service: SearchService = Depends(get_search_service),
-) -> SearchResponse:
-    """필터 기반 검색
-
-    LLM 없이 제공된 필터를 직접 적용합니다.
-
-    - **filters**: 검색 필터 (필수)
-        - **scopes**: 검색 경로 범위
-        - **conditions**: 검색 조건 목록
-    """
-    return await service.filter_search(
         filters=request.filters,
     )

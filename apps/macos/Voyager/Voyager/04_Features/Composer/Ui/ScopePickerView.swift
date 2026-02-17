@@ -44,7 +44,9 @@ struct ScopePickerView: View {
         .onChange(of: searchText) { _ in
             searchTask?.cancel()
 
-            if searchText.isEmpty {
+            let query = searchText.trimmingCharacters(in: .whitespacesAndNewlines)
+
+            if query.isEmpty {
                 searchResults = []
             } else {
                 searchTask = Task {
@@ -52,16 +54,13 @@ struct ScopePickerView: View {
 
                     guard !Task.isCancelled else { return }
 
-                    let entryClient = entryClient
-                    let results = try? await Task.detached(priority: .userInitiated) {
-                        try await ComposerScopeUtils.searchDirectories(
-                            query: searchText,
-                            entryClient: entryClient,
-                            maxResults: 50,
-                            initialMaxDepth: 2,
-                            timeout: 2.0,
-                        )
-                    }.value
+                    let results = try? await ComposerScopeUtils.searchDirectories(
+                        query: query,
+                        entryClient: entryClient,
+                        maxResults: 60,
+                        initialMaxDepth: 6,
+                        timeout: 2.2,
+                    )
 
                     guard !Task.isCancelled else { return }
 

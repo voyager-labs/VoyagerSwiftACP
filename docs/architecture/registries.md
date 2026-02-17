@@ -6,7 +6,7 @@ macOS(UI/Helper)와 Backend가 동일한 정의를 공유합니다.
 레지스트리는 크게 2개입니다.
 
 - `shared/system_property_registry.json`: "무엇을" 검색할 수 있는가(속성 키/타입/라벨/메타데이터 키)
-- `shared/property_condition_registry.json`: "어떻게" 비교할 것인가(연산자/값 형태/SQL 변환 규칙)
+- `shared/property_condition_registry.json`: "어떻게" 비교할 것인가(연산자/값 형태/검증 규칙)
 
 ## 1. 배치 위치/배포
 
@@ -25,13 +25,9 @@ Xcode 프로젝트 리소스로 `shared/*.json`이 포함됩니다.
 
 - `apps/macos/Voyager/Shared/Registries/RegistryLoader.swift`
 
-### 1.3 Backend 바이너리(번들) 포함
+### 1.3 Backend 런타임 사용
 
-Nuitka 빌드 시 `shared/` 경로로 데이터 파일이 포함됩니다.
-
-- `scripts/build/compile-nuitka-binary.sh`
-  - `--include-data-files=...=shared/system_property_registry.json`
-  - `--include-data-files=...=shared/property_condition_registry.json`
+서버 백엔드(`apps/backend`)는 실행 시점에 레포의 `shared/` 레지스트리를 로드해 사용합니다.
 
 ## 2. system_property_registry.json
 
@@ -48,7 +44,7 @@ Nuitka 빌드 시 `shared/` 경로로 데이터 파일이 포함됩니다.
 ```json
 {
   "$kind": "system_property_registry",
-  "$version": "2.2.0",
+  "$version": "2.3.0",
   "categories": {
     "common": {
       "uniform_type_identifier": {
@@ -104,15 +100,14 @@ Nuitka 빌드 시 `shared/` 경로로 데이터 파일이 포함됩니다.
 ```json
 {
   "$kind": "property_condition_registry",
-  "$version": "2.1.0",
+  "$version": "2.2.0",
   "property_types": {
-    "string": {"operators": ["cn", "eq"], "sql_cast": "TEXT"}
+    "string": {"operators": ["cn", "eq"]}
   },
   "operators": {
     "eq": {
       "ui_label": "Is",
-      "sql_operator": "=",
-      "sql_kind": "comparison",
+      "mdquery_operator": "==",
       "value_shape": "single",
       "value_count": 1,
       "allowed_types": ["string", "number"],
@@ -134,16 +129,13 @@ Nuitka 빌드 시 `shared/` 경로로 데이터 파일이 포함됩니다.
 ### 3.3 property_types.<typeKey>
 
 - `operators`: 해당 타입에서 기본 제공할 연산자 코드 목록
-- `sql_cast`: JSON 추출 시 캐스팅 타입(backend에서 사용)
   - 예: `TEXT`, `REAL`, `INTEGER`
 
 ### 3.4 operators.<operatorCode>
 
 - `ui_label`: UI에 표시할 연산자 이름
-- `sql_operator`: SQL operator 또는 템플릿(backend에서 사용)
-- `sql_kind`: backend가 clause를 생성하는 방식
-  - 예: `comparison`, `range`, `like_prefix`, `like_suffix`, `like_pattern`,
-    `exists`, `empty`, `string_list_any`, `string_list_all`, `string_list_not_any`, `string_list_not_all`
+- `mdquery_operator`: MDQuery predicate operator 또는 템플릿
+  - 예: `==`, `!= nil`, `== "*value*"`, `OR(==)`, `AND(!=)`
 - `value_shape`: 값 형태
   - `none` / `single` / `list` / `range`
 - `value_count`: 값 개수
@@ -183,12 +175,10 @@ backend는 레지스트리를 파일 시스템에서 찾고 로드합니다.
   - `system_keys`에서 `json_path` 유도
   - 타입별 기본 연산자/allowed_types를 기반으로 `supported_operators` 계산
 
-검색 조건 → SQL 변환은 아래에서 수행합니다.
+검색 조건 검증/정규화는 LLM 변환 단계와 레지스트리 로더를 통해 수행합니다.
 
-- `apps/backend/src/core/search/condition_builder.py`
-  - `db_indexed=true`: 컬럼 비교
-  - `db_indexed=false`: `original_metadata` JSON에서 `json_extract` + `sql_cast`
-  - `string_list_*`: SQLite JSON1 함수(`json_each`, `json_array_length`) 기반
+- `apps/backend/src/core/llm/search_condition_converter.py`
+- `apps/backend/src/core/metadata/registry_loader.py`
 
 ## 5. 운영 가이드
 
@@ -215,7 +205,6 @@ backend는 레지스트리를 파일 시스템에서 찾고 로드합니다.
 
 1) `shared/property_condition_registry.json`에 `operators.<code>` 추가
 
-- `sql_kind`는 backend 구현(ConditionBuilder)의 분기와 정합해야 함
 - `ui_value_kind`는 macOS에서 입력 UI를 결정하므로 type별 키를 빠뜨리면 UI 옵션에서 제외될 수 있음
 
 2) 노출할 타입의 `property_types.<typeKey>.operators`에 code를 추가
@@ -238,9 +227,8 @@ backend는 레지스트리를 파일 시스템에서 찾고 로드합니다.
 
 `registry_loader.resolve_registry_path()`가 여러 후보 경로를 탐색한 뒤 실패할 수 있습니다.
 
-- source 모드: repo 루트에 `shared/`가 존재해야 함
-- bundled 모드: Nuitka dist에 `shared/*.json`이 포함되어야 함
-  - 빌드 스크립트: `scripts/build/compile-nuitka-binary.sh`
+- repo 루트에 `shared/`가 존재해야 함
+- 작업 디렉터리가 바뀌는 실행 환경에서는 절대 경로/배포 경로를 명시적으로 설정해야 함
 
 ---
 
@@ -281,8 +269,7 @@ backend는 레지스트리를 파일 시스템에서 찾고 로드합니다.
 - macOS: 번들 리소스 로딩이 성공하는지 확인
   - 실패 시: `RegistryLoader.LoadError.*` 에러를 우선 확인
 - Backend:
-  - source 모드에서 repo 루트 `shared/` 경로를 제대로 찾는지
-  - bundled 모드에서 Nuitka dist에 데이터 파일이 포함되는지
+  - 서버 런타임에서 repo 루트 `shared/` 경로를 제대로 찾는지
 
 ### 8.3 기능 검증(권장)
 

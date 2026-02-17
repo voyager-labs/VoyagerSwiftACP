@@ -30,7 +30,9 @@ struct ContentPaneView: View {
     }
 
     private var isCollectionSearching: Bool {
-        let isSearching = store.composer.isLoadingSearch || store.composer.isLoadingFilters
+        let isSearching = store.composer.isLoadingSearch
+            || store.composer.isLoadingFilters
+            || store.composer.queryRenderPhase == .chipsAppliedPendingList
         let hasContext = store.entries.isCollectionMode
             || store.pendingSearchQuery != nil
             || !store.composer.scopes.isEmpty

@@ -130,21 +130,12 @@ class AppDelegate: NSObject, NSApplicationDelegate, ObservableObject {
         return windowControllers.first
     }
 
-    private func checkIndexingStatus() -> Bool {
-        false
-    }
-
-    private func showQuitAlert(isIndexing: Bool, completion: @escaping (Bool) -> Void) {
+    private func showQuitAlert(completion: @escaping (Bool) -> Void) {
         Task { @MainActor in
             let alert = NSAlert()
             alert.alertStyle = .warning
-            if isIndexing {
-                alert.messageText = "Indexing in Progress"
-                alert.informativeText = "Indexing is still running. Quitting now may pause background work."
-            } else {
-                alert.messageText = "Quit Voyager?"
-                alert.informativeText = "Are you sure you want to quit?"
-            }
+            alert.messageText = "Quit Voyager?"
+            alert.informativeText = "Are you sure you want to quit?"
             alert.addButton(withTitle: "Quit")
             alert.addButton(withTitle: "Cancel")
             alert.buttons.first?.hasDestructiveAction = true
@@ -163,9 +154,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, ObservableObject {
 
         let shouldAlert = UserDefaults.standard.bool(forKey: SettingsKeys.alertBeforeQuit)
         if shouldAlert {
-            let isIndexing = checkIndexingStatus()
-
-            showQuitAlert(isIndexing: isIndexing) { [weak self] shouldQuit in
+            showQuitAlert { [weak self] shouldQuit in
                 guard let self else { return }
 
                 if shouldQuit {

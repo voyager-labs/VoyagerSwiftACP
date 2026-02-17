@@ -16,12 +16,24 @@ enum ComposerScopeUtils {
         let iconName: String
     }
 
-    private nonisolated static func iconNameForPath(_ path: String, entryClient: EntryClient)
-        -> String
-    {
-        if path == entryClient.homeDirectory() { return "house" }
-        if path.hasPrefix("/Volumes/") { return "externaldrive" }
+    private struct DirectoryMatchContext {
+        let query: String
+        let maxResults: Int
+        let homePath: String
+        let iconPathMap: [String: String]
+    }
 
+    private struct SearchExecutionContext {
+        let match: DirectoryMatchContext
+        let maxDepth: Int
+        let startTime: Date
+        let timeout: TimeInterval
+        let resourceKeys: [URLResourceKey]
+        let resourceKeySet: Set<URLResourceKey>
+        let options: FileManager.DirectoryEnumerationOptions
+    }
+
+    private nonisolated static func buildIconPathMapping(entryClient: EntryClient) -> [String: String] {
         let mappings: [IconMapping] = [
             IconMapping(directory: .applicationDirectory, domain: .localDomainMask, iconName: "folder.badge.gearshape"),
             IconMapping(directory: .desktopDirectory, domain: .userDomainMask, iconName: "menubar.dock.rectangle"),
@@ -33,93 +45,63 @@ enum ComposerScopeUtils {
             IconMapping(directory: .trashDirectory, domain: .userDomainMask, iconName: "trash"),
         ]
 
-        for mapping in mappings
-            where entryClient.urlsForDirectory(mapping.directory, mapping.domain).first?.path == path
-        {
-            return mapping.iconName
+        var pathMap: [String: String] = [:]
+        for mapping in mappings {
+            if let path = entryClient.urlsForDirectory(mapping.directory, mapping.domain).first?.path {
+                pathMap[path] = mapping.iconName
+            }
         }
+
+        return pathMap
+    }
+
+    private nonisolated static func iconNameForPath(
+        _ path: String,
+        homePath: String,
+        iconPathMap: [String: String],
+    ) -> String {
+        if path == homePath { return "house" }
+        if path.hasPrefix("/Volumes/") { return "externaldrive" }
+        if let mapped = iconPathMap[path] { return mapped }
 
         return "folder"
     }
 
-    private struct SearchParams {
-        let query: String
-        let maxResults: Int
-        let maxDepth: Int
-        let startTime: Date
-        let timeout: TimeInterval
-    }
-
-    private nonisolated static func searchRecursive(
-        at path: String,
-        params: SearchParams,
-        results: inout [DirectoryItem],
-        currentDepth: Int,
-        entryClient: EntryClient,
-    ) {
-        if Date().timeIntervalSince(params.startTime) > params.timeout {
-            return
-        }
-
-        guard results.count < params.maxResults else { return }
-        guard currentDepth < params.maxDepth else { return }
-
-        // 시스템 디렉토리 제외 (성능 최적화)
-        let systemPrefixes = ["/System", "/Library", "/private", "/usr", "/bin", "/sbin", "/var"]
-        if currentDepth == 0, systemPrefixes.contains(where: { path.hasPrefix($0) }) {
-            return
-        }
-
-        guard let pathURL = URL(string: "file://\(path)"),
-              let contents = try? entryClient.contentsOfDirectory(pathURL, [], [])
-        else { return }
-
-        for item in contents {
-            if Date().timeIntervalSince(params.startTime) > params.timeout {
-                return
+    private nonisolated static func isTraversalExcluded(_ path: String, currentDepth: Int) -> Bool {
+        if currentDepth == 0 {
+            let systemPrefixes = ["/System", "/Library", "/private", "/usr", "/bin", "/sbin", "/var"]
+            if systemPrefixes.contains(where: { path.hasPrefix($0) }) {
+                return true
             }
-
-            guard results.count < params.maxResults else { break }
-
-            let fullPath = (path as NSString).appendingPathComponent(item.path)
-            var isDirectory: ObjCBool = false
-            guard entryClient.fileExistsAtPath(fullPath, &isDirectory),
-                  isDirectory.boolValue
-            else { continue }
-
-            processDirectoryItem(
-                at: fullPath,
-                query: params.query,
-                results: &results,
-                maxResults: params.maxResults,
-                entryClient: entryClient,
-            )
-
-            searchRecursive(
-                at: fullPath,
-                params: params,
-                results: &results,
-                currentDepth: currentDepth + 1,
-                entryClient: entryClient,
-            )
         }
+
+        let name = (path as NSString).lastPathComponent
+        if name.hasPrefix(".") {
+            return true
+        }
+
+        let excludedNames: Set<String> = ["build", "DerivedData", "node_modules"]
+        return excludedNames.contains(name)
     }
 
     private nonisolated static func processDirectoryItem(
         at fullPath: String,
-        query: String,
+        quickName: String,
         results: inout [DirectoryItem],
-        maxResults: Int,
+        context: DirectoryMatchContext,
         entryClient: EntryClient,
     ) {
-        guard results.count < maxResults else { return }
+        guard results.count < context.maxResults else { return }
+
+        guard quickName.lowercased().contains(context.query) else { return }
 
         let displayName = entryClient.displayName(fullPath)
-        let nameLower = displayName.lowercased()
 
-        guard nameLower.contains(query) else { return }
-
-        let iconName = iconNameForPath(fullPath, entryClient: entryClient)
+        let iconName = iconNameForPath(
+            fullPath,
+            homePath: context.homePath,
+            iconPathMap: context.iconPathMap,
+        )
         results.append(
             DirectoryItem(
                 id: fullPath,
@@ -149,66 +131,148 @@ enum ComposerScopeUtils {
         }
     }
 
+    private nonisolated static func makeSearchPaths(homeDir: String) -> [String] {
+        var searchPaths = [
+            FileManager.default.currentDirectoryPath,
+            homeDir,
+            (homeDir as NSString).appendingPathComponent("Desktop"),
+            (homeDir as NSString).appendingPathComponent("Documents"),
+            (homeDir as NSString).appendingPathComponent("Downloads"),
+        ]
+        var seenSearchPaths = Set<String>()
+        searchPaths = searchPaths.filter { seenSearchPaths.insert($0).inserted }
+        return searchPaths
+    }
+
+    private nonisolated static func shouldStopSearch(
+        resultsCount: Int,
+        context: SearchExecutionContext,
+    ) -> Bool {
+        if Task.isCancelled { return true }
+        if Date().timeIntervalSince(context.startTime) > context.timeout { return true }
+        return resultsCount >= context.match.maxResults
+    }
+
+    private nonisolated static func shouldSkipNode(
+        _ node: (path: String, depth: Int),
+        seenPaths: inout Set<String>,
+        context: SearchExecutionContext,
+    ) -> Bool {
+        if node.depth >= context.maxDepth { return true }
+        if !seenPaths.insert(node.path).inserted { return true }
+        return isTraversalExcluded(node.path, currentDepth: node.depth)
+    }
+
+    private nonisolated static func directoryContents(
+        at path: String,
+        entryClient: EntryClient,
+        context: SearchExecutionContext,
+    ) -> [URL]? {
+        let pathURL = URL(fileURLWithPath: path, isDirectory: true)
+        return try? entryClient.contentsOfDirectory(pathURL, context.resourceKeys, context.options)
+    }
+
+    private nonisolated static func processDirectoryContents(
+        _ contents: [URL],
+        currentDepth: Int,
+        queue: inout [(path: String, depth: Int)],
+        results: inout [DirectoryItem],
+        context: SearchExecutionContext,
+        entryClient: EntryClient,
+    ) {
+        for item in contents {
+            if shouldStopSearch(resultsCount: results.count, context: context) {
+                break
+            }
+
+            guard let values = try? item.resourceValues(forKeys: context.resourceKeySet),
+                  values.isDirectory == true
+            else {
+                continue
+            }
+
+            let fullPath = item.path
+            processDirectoryItem(
+                at: fullPath,
+                quickName: item.lastPathComponent,
+                results: &results,
+                context: context.match,
+                entryClient: entryClient,
+            )
+            queue.append((fullPath, currentDepth + 1))
+        }
+    }
+
+    private nonisolated static func bfsSearchDirectories(
+        searchPaths: [String],
+        context: SearchExecutionContext,
+        entryClient: EntryClient,
+    ) -> [DirectoryItem] {
+        var queue: [(path: String, depth: Int)] = searchPaths.map { ($0, 0) }
+        var cursor = 0
+        var seenPaths = Set<String>()
+        var results: [DirectoryItem] = []
+
+        while cursor < queue.count {
+            if shouldStopSearch(resultsCount: results.count, context: context) {
+                break
+            }
+
+            let current = queue[cursor]
+            cursor += 1
+
+            if shouldSkipNode(current, seenPaths: &seenPaths, context: context) {
+                continue
+            }
+
+            guard let contents = directoryContents(at: current.path, entryClient: entryClient, context: context)
+            else {
+                continue
+            }
+
+            processDirectoryContents(
+                contents,
+                currentDepth: current.depth,
+                queue: &queue,
+                results: &results,
+                context: context,
+                entryClient: entryClient,
+            )
+        }
+
+        return results
+    }
+
     nonisolated static func searchDirectories(
         query: String,
         entryClient: EntryClient,
-        maxResults: Int = 50,
-        initialMaxDepth: Int = 2,
-        timeout: TimeInterval = 2.0,
+        maxResults: Int = 100,
+        initialMaxDepth: Int = 8,
+        timeout: TimeInterval = 4.0,
     ) async throws -> [DirectoryItem] {
-        guard !query.isEmpty else { return [] }
+        let normalizedQuery = query.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !normalizedQuery.isEmpty else { return [] }
 
-        return try await withThrowingTaskGroup(of: [DirectoryItem].self) { group in
-            let queryLower = query.lowercased()
-            var allResults: [DirectoryItem] = []
-            let startTime = Date()
-            let homeDir = entryClient.homeDirectory()
-            let searchPaths = [
-                "/",
-                homeDir,
-                (homeDir as NSString).appendingPathComponent("Desktop"),
-                (homeDir as NSString).appendingPathComponent("Documents"),
-                (homeDir as NSString).appendingPathComponent("Downloads"),
-            ]
+        let queryLower = normalizedQuery.lowercased()
+        let homeDir = entryClient.homeDirectory()
+        let context = SearchExecutionContext(
+            match: DirectoryMatchContext(
+                query: queryLower,
+                maxResults: maxResults,
+                homePath: homeDir,
+                iconPathMap: buildIconPathMapping(entryClient: entryClient),
+            ),
+            maxDepth: initialMaxDepth,
+            startTime: Date(),
+            timeout: timeout,
+            resourceKeys: [.isDirectoryKey],
+            resourceKeySet: Set([.isDirectoryKey]),
+            options: [.skipsHiddenFiles, .skipsPackageDescendants],
+        )
 
-            for searchPath in searchPaths {
-                group.addTask {
-                    await Task.yield()
-
-                    var results: [DirectoryItem] = []
-                    let params = SearchParams(
-                        query: queryLower,
-                        maxResults: maxResults,
-                        maxDepth: initialMaxDepth,
-                        startTime: startTime,
-                        timeout: timeout,
-                    )
-                    searchRecursive(
-                        at: searchPath,
-                        params: params,
-                        results: &results,
-                        currentDepth: 0,
-                        entryClient: entryClient,
-                    )
-                    return results
-                }
-            }
-
-            for try await results in group {
-                allResults.append(contentsOf: results)
-
-                if Date().timeIntervalSince(startTime) > timeout {
-                    break
-                }
-
-                if allResults.count >= maxResults {
-                    group.cancelAll()
-                    break
-                }
-            }
-
-            return Array(sortSearchResults(allResults, query: queryLower).prefix(maxResults))
-        }
+        let searchPaths = makeSearchPaths(homeDir: homeDir)
+        let results = bfsSearchDirectories(searchPaths: searchPaths, context: context, entryClient: entryClient)
+        return Array(sortSearchResults(results, query: queryLower).prefix(maxResults))
     }
 
     static func buildCombinedList(
@@ -220,6 +284,8 @@ enum ComposerScopeUtils {
         var result: [DirectoryItem] = []
         var seenPaths: Set<String> = []
         let collectionsExtension = "voycoll"
+        let homePath = entryClient.homeDirectory()
+        let iconPathMap = buildIconPathMapping(entryClient: entryClient)
 
         let historyItems = history.reversed().prefix(maxCount)
         for path in historyItems {
@@ -228,7 +294,7 @@ enum ComposerScopeUtils {
             guard entryClient.fileExists(path) else { continue }
 
             let displayName = entryClient.displayName(path)
-            let iconName = iconNameForPath(path, entryClient: entryClient)
+            let iconName = iconNameForPath(path, homePath: homePath, iconPathMap: iconPathMap)
 
             result.append(
                 DirectoryItem(

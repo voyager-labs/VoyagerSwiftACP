@@ -663,7 +663,12 @@ struct EntriesFeature {
                 return generateThumbnailsEffect(for: sorted)
 
             case let .collectionItemsLoadedFromSearch(items):
-                let converted = EntrySearchUtils.convertCollectionItems(items, showHidden: state.showHiddenFiles)
+                let converted = EntrySearchUtils.convertCollectionItems(
+                    items,
+                    showHidden: state.showHiddenFiles,
+                    entryClient: entryClient,
+                    workspaceClient: workspaceClient,
+                )
                 let uniqueItems = Self.deduplicateById(converted)
                 let sorted = EntriesSortingUtils.sortItems(uniqueItems, by: state.sortKey, order: state.sortOrder)
                 state.collectionItems = IdentifiedArray(uniqueElements: sorted)

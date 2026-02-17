@@ -107,13 +107,6 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Setup uv (GitHub-hosted only)
-        if: ${{ !contains(vars.RELEASE_MACOS_RUNS_ON || '["self-hosted","macOS","ARM64"]', 'self-hosted') }}
-        uses: astral-sh/setup-uv@v7
-        with:
-          version: "0.8.13"
-          enable-cache: "false"
-
       - name: Resolve version from tag
         id: version
         shell: bash
