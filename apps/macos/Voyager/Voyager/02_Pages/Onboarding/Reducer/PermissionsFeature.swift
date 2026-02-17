@@ -1,6 +1,5 @@
 import ComposableArchitecture
 import Foundation
-import Logging
 
 @Reducer
 struct PermissionsFeature {
@@ -17,9 +16,6 @@ struct PermissionsFeature {
     var launchAtLoginClient
     @Dependency(\.systemSettingsClient)
     var systemSettingsClient
-    @Dependency(\.indexingClient)
-    var indexingClient
-    private let logger = Logger(label: "Voyager")
 
     var body: some Reducer<State, Action> {
         Reduce { state, action in
@@ -37,7 +33,7 @@ struct PermissionsFeature {
                 )
                 state.fullDiskAccessStatus = resolvedStatus
                 refreshCompletionState(state: &state)
-                return startIndexingIfReady(state: &state)
+                return .none
 
             case .openSystemSettingsTapped:
                 state.systemSettingsError = nil
@@ -71,14 +67,14 @@ struct PermissionsFeature {
                 state.folderAccessResult = result
                 state.filesAndFoldersStatus = result.status
                 refreshCompletionState(state: &state)
-                return startIndexingIfReady(state: &state)
+                return .none
 
             case let .helperFilesAndFoldersResponse(result):
                 state.isRequestingFilesAndFolders = false
                 state.helperFolderAccessResult = result
                 state.helperFilesAndFoldersStatus = result.status
                 refreshCompletionState(state: &state)
-                return startIndexingIfReady(state: &state)
+                return .none
 
             case let .launchAtLoginToggled(enabled):
                 let previousValue = state.launchAtLoginEnabled
@@ -134,25 +130,6 @@ struct PermissionsFeature {
             return .denied
         }
         return status
-    }
-
-    private func startIndexingIfReady(state: inout State) -> Effect<Action> {
-        logger.info(
-            "Onboarding indexing check: fullDiskAccess=\(state.fullDiskAccessStatus), filesAndFolders=\(state.filesAndFoldersStatus), helperFilesAndFolders=\(state.helperFilesAndFoldersStatus), inBackground=\(state.isIndexingInBackground)",
-        )
-        guard state.fullDiskAccessStatus == .granted,
-              state.filesAndFoldersStatus == .granted,
-              state.helperFilesAndFoldersStatus == .granted,
-              !state.isIndexingInBackground
-        else {
-            return .none
-        }
-
-        state.isIndexingInBackground = true
-        return .run { [indexingClient] _ in
-            logger.info("Onboarding indexing triggered.")
-            await indexingClient.start()
-        }
     }
 
     private func refreshCompletionState(state: inout State) {

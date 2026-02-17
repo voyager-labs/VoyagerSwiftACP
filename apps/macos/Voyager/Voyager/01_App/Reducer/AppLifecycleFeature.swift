@@ -1,7 +1,6 @@
 import ComposableArchitecture
 import Foundation
 import Logging
-import SwiftDotenv
 
 @Reducer
 struct AppLifecycleFeature {

@@ -39,7 +39,7 @@ private extension SearchClient {
 
 private enum FilterSearchXPCClient {
     private nonisolated static let logger = Logger(label: "Voyager.FilterSearchXPC")
-    private nonisolated static let filterTimeoutSeconds: TimeInterval = 8
+    private nonisolated static let filterTimeoutSeconds: TimeInterval = 20
     private nonisolated static let queryTimeoutSeconds: TimeInterval = 25
 
     static func applyFilters(
@@ -161,27 +161,23 @@ private extension FilterSearchXPCClient {
 
                 switch kind {
                 case .filter:
-                    Task { @MainActor in
-                        proxy.applyFilters(requestData) { [self] responseData, error in
-                            queue.async {
-                                self.handleReply(
-                                    responseData: responseData,
-                                    error: error,
-                                    operationLabel: operationLabel,
-                                )
-                            }
+                    proxy.applyFilters(requestData) { [self] responseData, error in
+                        queue.async {
+                            self.handleReply(
+                                responseData: responseData,
+                                error: error,
+                                operationLabel: operationLabel,
+                            )
                         }
                     }
                 case .query:
-                    Task { @MainActor in
-                        proxy.querySearch(requestData) { [self] responseData, error in
-                            queue.async {
-                                self.handleReply(
-                                    responseData: responseData,
-                                    error: error,
-                                    operationLabel: operationLabel,
-                                )
-                            }
+                    proxy.querySearch(requestData) { [self] responseData, error in
+                        queue.async {
+                            self.handleReply(
+                                responseData: responseData,
+                                error: error,
+                                operationLabel: operationLabel,
+                            )
                         }
                     }
                 }
@@ -250,36 +246,34 @@ private extension FilterSearchXPCClient {
                 return
             }
 
-            Task { @MainActor [self, responseData] in
-                do {
-                    let response = try JSONDecoder().decode(SearchResponsePayload.self, from: responseData)
+            do {
+                let response = try JSONDecoder().decode(SearchResponsePayload.self, from: responseData)
 
-                    if let payloadError = response.error {
-                        logger.warning(
-                            "\(operationLabel) payload error: id=\(requestId) code=\(payloadError.code)",
-                        )
-                        finish(
-                            .failure(
-                                HelperSearchError(
-                                    code: payloadError.code,
-                                    message: payloadError.details,
-                                ),
-                            ),
-                        )
-                        return
-                    }
-
-                    logger.info(
-                        "\(operationLabel) response received: id=\(requestId) items=\(response.itemCount)",
+                if let payloadError = response.error {
+                    logger.warning(
+                        "\(operationLabel) payload error: id=\(requestId) code=\(payloadError.code)",
                     )
-                    finish(.success(response))
-                } catch {
                     finish(
                         .failure(
-                            HelperSearchError(code: "DECODE_FAILED", message: error.localizedDescription),
+                            HelperSearchError(
+                                code: payloadError.code,
+                                message: payloadError.details,
+                            ),
                         ),
                     )
+                    return
                 }
+
+                logger.info(
+                    "\(operationLabel) response received: id=\(requestId) items=\(response.itemCount)",
+                )
+                finish(.success(response))
+            } catch {
+                finish(
+                    .failure(
+                        HelperSearchError(code: "DECODE_FAILED", message: error.localizedDescription),
+                    ),
+                )
             }
         }
 
@@ -296,6 +290,7 @@ private extension FilterSearchXPCClient {
             guard let currentContinuation else { return }
             currentTimeoutWorkItem?.cancel()
             currentConnection?.invalidate()
+
             currentContinuation.resume(with: result)
         }
 

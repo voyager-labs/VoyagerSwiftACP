@@ -25,10 +25,20 @@ struct WindowManagerFeature {
                 return .send(.newWindow(path: nil))
 
             case let .reopenWindowIfNeeded(hasVisibleWindows: flag):
-                if !flag, state.windows.isEmpty {
+                guard !flag else { return .none }
+
+                if state.windows.isEmpty {
                     return .send(.newWindow(path: nil))
                 }
-                return .none
+
+                guard let reopenWindowID = state.focusedWindowID ?? state.windows.first?.id else {
+                    return .none
+                }
+
+                state.focusedWindowID = reopenWindowID
+                return .run { [fileManagerWindowClient, reopenWindowID] _ in
+                    await fileManagerWindowClient.open(reopenWindowID)
+                }
 
             case .newWindow,
                  .newTab,

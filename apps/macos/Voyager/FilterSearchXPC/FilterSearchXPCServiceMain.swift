@@ -28,20 +28,9 @@ struct FilterSearchXPCServiceMain {
         }
     }
 
-    private static func initializeService(logger: Logger) -> FilterSearchService? {
-        let semaphore = DispatchSemaphore(value: 0)
-        let serviceBox = ServiceBox()
-        Task(priority: .userInitiated) { @Sendable in
-            do {
-                try await DatabaseManager.shared.initialize()
-                try serviceBox.setService(FilterSearchService(manager: DatabaseManager.shared))
-            } catch {
-                logger.error("Filter search service init failed: \(error)")
-            }
-            semaphore.signal()
-        }
-        semaphore.wait()
-        return serviceBox.service
+    private static func initializeService(logger: Logger) -> SpotlightSearchService {
+        logger.info("Filter search service initialized with SpotlightSearchService")
+        return SpotlightSearchService()
     }
 
     private static func bootstrapLogging() {
@@ -57,28 +46,11 @@ struct FilterSearchXPCServiceMain {
     }
 }
 
-private final class ServiceBox: @unchecked Sendable {
-    private let lock = NSLock()
-    private var stored: FilterSearchService?
-
-    var service: FilterSearchService? {
-        lock.lock()
-        defer { lock.unlock() }
-        return stored
-    }
-
-    func setService(_ service: FilterSearchService?) {
-        lock.lock()
-        stored = service
-        lock.unlock()
-    }
-}
-
 final class FilterSearchXPCServiceDelegate: NSObject, NSXPCListenerDelegate {
     private let logger: Logger
-    private let service: FilterSearchService?
+    private let service: SpotlightSearchService
 
-    init(logger: Logger, service: FilterSearchService?) {
+    init(logger: Logger, service: SpotlightSearchService) {
         self.logger = logger
         self.service = service
         super.init()
@@ -88,13 +60,8 @@ final class FilterSearchXPCServiceDelegate: NSObject, NSXPCListenerDelegate {
         _: NSXPCListener,
         shouldAcceptNewConnection newConnection: NSXPCConnection,
     ) -> Bool {
-        guard let service else {
-            logger.error("Filter search service unavailable")
-            return false
-        }
-
         newConnection.exportedInterface = NSXPCInterface(with: FilterSearchXPCServiceProtocol.self)
-        newConnection.exportedObject = FilterSearchXPCService(service: service, logger: logger)
+        newConnection.exportedObject = XPCSearchService(service: service, logger: logger)
         newConnection.resume()
         return true
     }

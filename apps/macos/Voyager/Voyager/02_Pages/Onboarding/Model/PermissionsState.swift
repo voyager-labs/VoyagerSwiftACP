@@ -11,7 +11,6 @@ struct PermissionsState: Equatable, Sendable {
     var helperFilesAndFoldersStatus: FilesAndFoldersStatus = .idle
     var helperFolderAccessResult: FolderAccessResult?
     var isRequestingFilesAndFolders: Bool = false
-    var isIndexingInBackground: Bool = false
     var launchAtLoginEnabled: Bool = false
     var launchAtLoginError: String?
     var hasAttemptedFullDiskAccessEnable: Bool = false
