@@ -44,7 +44,7 @@ Xcode 프로젝트 리소스로 `shared/*.json`이 포함됩니다.
 ```json
 {
   "$kind": "system_property_registry",
-  "$version": "2.2.0",
+  "$version": "2.3.0",
   "categories": {
     "common": {
       "uniform_type_identifier": {
@@ -100,15 +100,14 @@ Xcode 프로젝트 리소스로 `shared/*.json`이 포함됩니다.
 ```json
 {
   "$kind": "property_condition_registry",
-  "$version": "2.1.0",
+  "$version": "2.2.0",
   "property_types": {
-    "string": {"operators": ["cn", "eq"], "sql_cast": "TEXT"}
+    "string": {"operators": ["cn", "eq"]}
   },
   "operators": {
     "eq": {
       "ui_label": "Is",
-      "sql_operator": "=",
-      "sql_kind": "comparison",
+      "mdquery_operator": "==",
       "value_shape": "single",
       "value_count": 1,
       "allowed_types": ["string", "number"],
@@ -130,16 +129,13 @@ Xcode 프로젝트 리소스로 `shared/*.json`이 포함됩니다.
 ### 3.3 property_types.<typeKey>
 
 - `operators`: 해당 타입에서 기본 제공할 연산자 코드 목록
-- `sql_cast`: JSON 추출 시 캐스팅 타입(backend에서 사용)
   - 예: `TEXT`, `REAL`, `INTEGER`
 
 ### 3.4 operators.<operatorCode>
 
 - `ui_label`: UI에 표시할 연산자 이름
-- `sql_operator`: SQL operator 또는 템플릿(backend에서 사용)
-- `sql_kind`: backend가 clause를 생성하는 방식
-  - 예: `comparison`, `range`, `like_prefix`, `like_suffix`, `like_pattern`,
-    `exists`, `empty`, `string_list_any`, `string_list_all`, `string_list_not_any`, `string_list_not_all`
+- `mdquery_operator`: MDQuery predicate operator 또는 템플릿
+  - 예: `==`, `!= nil`, `== "*value*"`, `OR(==)`, `AND(!=)`
 - `value_shape`: 값 형태
   - `none` / `single` / `list` / `range`
 - `value_count`: 값 개수
@@ -209,7 +205,6 @@ backend는 레지스트리를 파일 시스템에서 찾고 로드합니다.
 
 1) `shared/property_condition_registry.json`에 `operators.<code>` 추가
 
-- `sql_kind`는 레지스트리 계약 필드이므로 값 형태/연산자 제약과 정합해야 함
 - `ui_value_kind`는 macOS에서 입력 UI를 결정하므로 type별 키를 빠뜨리면 UI 옵션에서 제외될 수 있음
 
 2) 노출할 타입의 `property_types.<typeKey>.operators`에 code를 추가

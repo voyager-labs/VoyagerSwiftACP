@@ -1,42 +1,83 @@
 {
   "$kind": "property_condition_registry",
-  "$version": "2.1.0",
+  "$version": "2.2.0",
   "property_types": {
     "string": {
-      "operators": ["cn", "nc", "sw", "ew", "eq", "neq"],
-      "sql_cast": "TEXT"
+      "operators": [
+        "cn",
+        "nc",
+        "sw",
+        "ew",
+        "eq",
+        "neq"
+      ]
     },
     "number": {
-      "operators": ["eq", "gt", "lt", "btw", "neq", "gte", "lte", "nbtw"],
-      "sql_cast": "REAL"
+      "operators": [
+        "eq",
+        "gt",
+        "lt",
+        "btw",
+        "neq",
+        "gte",
+        "lte",
+        "nbtw"
+      ]
     },
     "date": {
-      "operators": ["eq", "neq", "gt", "gte", "lt", "lte", "btw", "nbtw"],
-      "sql_cast": "TEXT"
+      "operators": [
+        "eq",
+        "neq",
+        "gt",
+        "gte",
+        "lt",
+        "lte",
+        "btw",
+        "nbtw"
+      ]
     },
     "boolean": {
-      "operators": ["eq"],
-      "sql_cast": "INTEGER"
+      "operators": [
+        "eq"
+      ]
     },
     "string_list": {
-      "operators": ["any", "all", "none", "miss", "exists", "empty"],
-      "sql_cast": "TEXT"
+      "operators": [
+        "any",
+        "all",
+        "none",
+        "miss",
+        "exists",
+        "empty"
+      ]
     },
     "categorical": {
-      "operators": ["any", "none", "exists", "empty"],
-      "sql_cast": "TEXT"
+      "operators": [
+        "any",
+        "none",
+        "exists",
+        "empty"
+      ]
     }
   },
   "operators": {
     "eq": {
       "ui_label": "Is",
-      "sql_operator": "=",
-      "sql_kind": "comparison",
+      "mdquery_operator": "==",
       "value_shape": "single",
       "value_count": 1,
-      "allowed_types": ["string", "number", "date", "boolean"],
+      "allowed_types": [
+        "string",
+        "number",
+        "date",
+        "boolean"
+      ],
       "inverse_of": "neq",
-      "aliases": ["is", "equals", "="],
+      "aliases": [
+        "is",
+        "equals",
+        "="
+      ],
       "ui_value_kind": {
         "string": "singleText",
         "number": "singleNumber",
@@ -46,13 +87,20 @@
     },
     "neq": {
       "ui_label": "Is not",
-      "sql_operator": "!=",
-      "sql_kind": "comparison",
+      "mdquery_operator": "!=",
       "value_shape": "single",
       "value_count": 1,
-      "allowed_types": ["string", "number", "date"],
+      "allowed_types": [
+        "string",
+        "number",
+        "date"
+      ],
       "inverse_of": "eq",
-      "aliases": ["is not", "not equals", "!="],
+      "aliases": [
+        "is not",
+        "not equals",
+        "!="
+      ],
       "ui_value_kind": {
         "string": "singleText",
         "number": "singleNumber",
@@ -62,13 +110,19 @@
     },
     "empty": {
       "ui_label": "Is empty",
-      "sql_operator": "IS NULL OR = ''",
-      "sql_kind": "empty",
+      "mdquery_operator": "== nil || == \"\"",
       "value_shape": "none",
       "value_count": 0,
-      "allowed_types": ["string", "string_list", "categorical"],
+      "allowed_types": [
+        "string",
+        "string_list",
+        "categorical"
+      ],
       "inverse_of": "exists",
-      "aliases": ["is empty", "empty"],
+      "aliases": [
+        "is empty",
+        "empty"
+      ],
       "ui_value_kind": {
         "string": "none",
         "string_list": "none",
@@ -77,8 +131,7 @@
     },
     "exists": {
       "ui_label": "Exists",
-      "sql_operator": "IS NOT NULL",
-      "sql_kind": "exists",
+      "mdquery_operator": "!= nil",
       "value_shape": "none",
       "value_count": 0,
       "allowed_types": [
@@ -90,7 +143,9 @@
         "categorical"
       ],
       "inverse_of": "empty",
-      "aliases": ["exists"],
+      "aliases": [
+        "exists"
+      ],
       "ui_value_kind": {
         "string": "none",
         "number": "none",
@@ -102,13 +157,19 @@
     },
     "gt": {
       "ui_label": "Is greater than",
-      "sql_operator": ">",
-      "sql_kind": "comparison",
+      "mdquery_operator": ">",
       "value_shape": "single",
       "value_count": 1,
-      "allowed_types": ["number", "date"],
+      "allowed_types": [
+        "number",
+        "date"
+      ],
       "inverse_of": "lte",
-      "aliases": [">", "after", "greater than"],
+      "aliases": [
+        ">",
+        "after",
+        "greater than"
+      ],
       "ui_value_kind": {
         "number": "singleNumber",
         "date": "singleDate"
@@ -116,13 +177,19 @@
     },
     "gte": {
       "ui_label": "Is at least",
-      "sql_operator": ">=",
-      "sql_kind": "comparison",
+      "mdquery_operator": ">=",
       "value_shape": "single",
       "value_count": 1,
-      "allowed_types": ["number", "date"],
+      "allowed_types": [
+        "number",
+        "date"
+      ],
       "inverse_of": "lt",
-      "aliases": [">=", "on or after", "greater or equal"],
+      "aliases": [
+        ">=",
+        "on or after",
+        "greater or equal"
+      ],
       "ui_value_kind": {
         "number": "singleNumber",
         "date": "singleDate"
@@ -130,13 +197,19 @@
     },
     "lt": {
       "ui_label": "Is less than",
-      "sql_operator": "<",
-      "sql_kind": "comparison",
+      "mdquery_operator": "<",
       "value_shape": "single",
       "value_count": 1,
-      "allowed_types": ["number", "date"],
+      "allowed_types": [
+        "number",
+        "date"
+      ],
       "inverse_of": "gte",
-      "aliases": ["<", "before", "less than"],
+      "aliases": [
+        "<",
+        "before",
+        "less than"
+      ],
       "ui_value_kind": {
         "number": "singleNumber",
         "date": "singleDate"
@@ -144,13 +217,19 @@
     },
     "lte": {
       "ui_label": "Is at most",
-      "sql_operator": "<=",
-      "sql_kind": "comparison",
+      "mdquery_operator": "<=",
       "value_shape": "single",
       "value_count": 1,
-      "allowed_types": ["number", "date"],
+      "allowed_types": [
+        "number",
+        "date"
+      ],
       "inverse_of": "gt",
-      "aliases": ["<=", "on or before", "less or equal"],
+      "aliases": [
+        "<=",
+        "on or before",
+        "less or equal"
+      ],
       "ui_value_kind": {
         "number": "singleNumber",
         "date": "singleDate"
@@ -158,13 +237,17 @@
     },
     "btw": {
       "ui_label": "Is between",
-      "sql_operator": "BETWEEN",
-      "sql_kind": "range",
+      "mdquery_operator": "RANGE",
       "value_shape": "range",
       "value_count": 2,
-      "allowed_types": ["number", "date"],
+      "allowed_types": [
+        "number",
+        "date"
+      ],
       "inverse_of": "nbtw",
-      "aliases": ["between"],
+      "aliases": [
+        "between"
+      ],
       "ui_value_kind": {
         "number": "rangeNumber",
         "date": "rangeDate"
@@ -172,13 +255,17 @@
     },
     "nbtw": {
       "ui_label": "Is not between",
-      "sql_operator": "NOT BETWEEN",
-      "sql_kind": "range",
+      "mdquery_operator": "NOT_RANGE",
       "value_shape": "range",
       "value_count": 2,
-      "allowed_types": ["number", "date"],
+      "allowed_types": [
+        "number",
+        "date"
+      ],
       "inverse_of": "btw",
-      "aliases": ["not between"],
+      "aliases": [
+        "not between"
+      ],
       "ui_value_kind": {
         "number": "rangeNumber",
         "date": "rangeDate"
@@ -186,72 +273,99 @@
     },
     "sw": {
       "ui_label": "Begins with",
-      "sql_operator": "LIKE",
-      "sql_kind": "like_prefix",
+      "mdquery_operator": "== \"value*\"",
       "value_shape": "single",
       "value_count": 1,
-      "allowed_types": ["string"],
-      "aliases": ["starts with"],
+      "allowed_types": [
+        "string"
+      ],
+      "aliases": [
+        "starts with"
+      ],
       "ui_value_kind": {
         "string": "singleText"
       }
     },
     "ew": {
       "ui_label": "Ends with",
-      "sql_operator": "LIKE",
-      "sql_kind": "like_suffix",
+      "mdquery_operator": "== \"*value\"",
       "value_shape": "single",
       "value_count": 1,
-      "allowed_types": ["string"],
-      "aliases": ["ends with"],
+      "allowed_types": [
+        "string"
+      ],
+      "aliases": [
+        "ends with"
+      ],
       "ui_value_kind": {
         "string": "singleText"
       }
     },
     "rx": {
       "ui_label": "Matches pattern",
-      "sql_operator": "LIKE",
-      "sql_kind": "like_pattern",
+      "mdquery_operator": "== \"wildcard_pattern\"",
       "value_shape": "single",
       "value_count": 1,
-      "allowed_types": ["string"],
-      "aliases": ["matches", "regex"],
+      "allowed_types": [
+        "string"
+      ],
+      "aliases": [
+        "matches",
+        "regex"
+      ],
       "ui_value_kind": {
         "string": "singleText"
       }
     },
     "cn": {
       "ui_label": "Contains",
-      "sql_operator": "LIKE",
-      "sql_kind": "like_pattern",
+      "mdquery_operator": "== \"*value*\"",
       "value_shape": "single",
       "value_count": 1,
-      "allowed_types": ["string"],
-      "aliases": ["contains", "in", "is in", "is any of"],
+      "allowed_types": [
+        "string"
+      ],
+      "aliases": [
+        "contains",
+        "in",
+        "is in",
+        "is any of"
+      ],
       "ui_value_kind": {
         "string": "singleText"
       }
     },
     "nc": {
       "ui_label": "Does not contain",
-      "sql_operator": "NOT LIKE",
-      "sql_kind": "like_pattern",
+      "mdquery_operator": "!= \"*value*\"",
       "value_shape": "single",
       "value_count": 1,
-      "allowed_types": ["string"],
-      "aliases": ["not contains", "not in", "is not in", "is not any of"],
+      "allowed_types": [
+        "string"
+      ],
+      "aliases": [
+        "not contains",
+        "not in",
+        "is not in",
+        "is not any of"
+      ],
       "ui_value_kind": {
         "string": "singleText"
       }
     },
     "any": {
       "ui_label": "Contains any",
-      "sql_operator": "EXISTS (json_each)",
-      "sql_kind": "string_list_any",
+      "mdquery_operator": "OR(==)",
       "value_shape": "list",
       "value_count": "n",
-      "allowed_types": ["string", "string_list", "categorical"],
-      "aliases": ["contains any"],
+      "allowed_types": [
+        "string",
+        "string_list",
+        "categorical"
+      ],
+      "aliases": [
+        "contains any"
+      ],
       "ui_value_kind": {
         "string": "listText",
         "string_list": "listText",
@@ -261,12 +375,16 @@
     },
     "all": {
       "ui_label": "Contains all",
-      "sql_operator": "COUNT_DISTINCT = N (json_each)",
-      "sql_kind": "string_list_all",
+      "mdquery_operator": "AND(==)",
       "value_shape": "list",
       "value_count": "n",
-      "allowed_types": ["string", "string_list"],
-      "aliases": ["contains all"],
+      "allowed_types": [
+        "string",
+        "string_list"
+      ],
+      "aliases": [
+        "contains all"
+      ],
       "ui_value_kind": {
         "string": "listText",
         "string_list": "listText"
@@ -275,13 +393,18 @@
     },
     "none": {
       "ui_label": "Contains none",
-      "sql_operator": "NOT EXISTS (json_each)",
-      "sql_kind": "string_list_not_any",
+      "mdquery_operator": "AND(!=)",
       "value_shape": "list",
       "value_count": "n",
-      "allowed_types": ["string_list", "categorical"],
+      "allowed_types": [
+        "string_list",
+        "categorical"
+      ],
       "inverse_of": "any",
-      "aliases": ["contains none", "not contains any"],
+      "aliases": [
+        "contains none",
+        "not contains any"
+      ],
       "ui_value_kind": {
         "string_list": "listText",
         "categorical": "listText"
@@ -289,13 +412,17 @@
     },
     "miss": {
       "ui_label": "Missing any",
-      "sql_operator": "COUNT_DISTINCT != N (json_each)",
-      "sql_kind": "string_list_not_all",
+      "mdquery_operator": "OR(!=)",
       "value_shape": "list",
       "value_count": "n",
-      "allowed_types": ["string_list"],
+      "allowed_types": [
+        "string_list"
+      ],
       "inverse_of": "all",
-      "aliases": ["missing any", "not contains all"],
+      "aliases": [
+        "missing any",
+        "not contains all"
+      ],
       "ui_value_kind": {
         "string_list": "listText"
       }
