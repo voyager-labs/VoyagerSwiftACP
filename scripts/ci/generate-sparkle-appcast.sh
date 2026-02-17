@@ -8,6 +8,7 @@ DOWNLOADS_BASE_URL="${DOWNLOADS_BASE_URL:-}"
 SPARKLE_PRIVATE_KEY="${SPARKLE_PRIVATE_KEY:-}"
 SPARKLE_BIN="${SPARKLE_BIN:-${BUILD_DIR}/SourcePackages/artifacts/sparkle/Sparkle/bin}"
 SPARKLE_BASELINE_COUNT="${SPARKLE_BASELINE_COUNT:-}"
+SPARKLE_MAXIMUM_DELTAS="${SPARKLE_MAXIMUM_DELTAS:-0}"
 
 if [[ -z "${DOWNLOADS_BASE_URL}" ]]; then
   echo "Missing DOWNLOADS_BASE_URL." >&2
@@ -27,7 +28,6 @@ if [[ -n "${SPARKLE_BASELINE_COUNT}" ]]; then
     exit 1
   fi
 fi
-
 DOWNLOADS_BASE_URL="${DOWNLOADS_BASE_URL%/}"
 APPCAST_PATH="${BUILD_DIR}/appcast.xml"
 SPARKLE_WORK_DIR="${BUILD_DIR}/.sparkle"
@@ -73,7 +73,9 @@ fi
 # appcast에 아직 이번 버전이 없더라도, 해당 버전은 제외 대상으로만 사용된다.
 baseline_versions=()
 if [[ -n "${SPARKLE_BASELINE_COUNT}" && "${SPARKLE_BASELINE_COUNT}" != "0" && -f "${APPCAST_PATH}" ]]; then
-  readarray -t baseline_versions < <(
+  while IFS= read -r version; do
+    [[ -n "${version}" ]] && baseline_versions+=("${version}")
+  done < <(
     python3 "${SCRIPT_DIR}/resolve-sparkle-baseline-versions.py" \
       "${APPCAST_PATH}" "${VERSION}" "${SPARKLE_BASELINE_COUNT}"
   )
@@ -101,6 +103,7 @@ cp "${CURRENT_ZIP}" "${SPARKLE_WORK_DIR}/"
 
 printf "%s" "${SPARKLE_PRIVATE_KEY}" | "${SPARKLE_BIN}/generate_appcast" \
   --ed-key-file - \
+  --maximum-deltas "${SPARKLE_MAXIMUM_DELTAS}" \
   --download-url-prefix "${DOWNLOAD_PREFIX}" \
   "${SPARKLE_WORK_DIR}"
 
