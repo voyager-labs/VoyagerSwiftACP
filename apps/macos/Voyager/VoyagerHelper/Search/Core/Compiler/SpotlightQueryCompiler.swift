@@ -106,6 +106,7 @@ struct SpotlightQueryCompiler: Sendable {
             let clause = try buildClause(
                 attribute: attribute,
                 typeKey: validated.typeKey,
+                dateMdqueryOperator: validated.dateMdqueryOperator,
                 condition: condition,
             )
             clauses.append(clause)
@@ -127,9 +128,21 @@ struct SpotlightQueryCompiler: Sendable {
 }
 
 extension SpotlightQueryCompiler {
+    enum DateMdqueryOperator: String, Sendable {
+        case eq = "=="
+        case neq = "!="
+        case gt = ">"
+        case gte = ">="
+        case lt = "<"
+        case lte = "<="
+        case range = "RANGE"
+        case notRange = "NOT_RANGE"
+    }
+
     private struct ValidatedCondition {
         let mapping: SearchConditionBuilder.PropertyMapping
         let typeKey: String
+        let dateMdqueryOperator: DateMdqueryOperator?
     }
 
     private func validateCondition(_ condition: SearchConditionPayload) throws -> ValidatedCondition {
@@ -175,7 +188,36 @@ extension SpotlightQueryCompiler {
             )
         }
 
-        return ValidatedCondition(mapping: mapping, typeKey: typeKey)
+        let dateMdqueryOperator = try resolveDateMdqueryOperator(
+            typeKey: typeKey,
+            operatorMeta: operatorMeta,
+            condition: condition,
+        )
+
+        return ValidatedCondition(
+            mapping: mapping,
+            typeKey: typeKey,
+            dateMdqueryOperator: dateMdqueryOperator,
+        )
+    }
+
+    private func resolveDateMdqueryOperator(
+        typeKey: String,
+        operatorMeta: OperatorDefinition,
+        condition: SearchConditionPayload,
+    ) throws -> DateMdqueryOperator? {
+        guard typeKey == "date" else {
+            return nil
+        }
+        guard let rawOperator = operatorMeta.mdqueryOperator,
+              let parsedOperator = DateMdqueryOperator(rawValue: rawOperator)
+        else {
+            throw CompileError.unsupportedOperator(
+                propertyKey: condition.propertyKey,
+                operatorCode: condition.operator,
+            )
+        }
+        return parsedOperator
     }
 
     private func resolveAttributeName(mapping: SearchConditionBuilder.PropertyMapping) -> String? {
@@ -202,6 +244,7 @@ extension SpotlightQueryCompiler {
     private func buildClause(
         attribute: String,
         typeKey: String,
+        dateMdqueryOperator: DateMdqueryOperator?,
         condition: SearchConditionPayload,
     ) throws -> String {
         let operatorCode = condition.operator
@@ -223,7 +266,17 @@ extension SpotlightQueryCompiler {
         case "number":
             return try buildNumberClause(attribute: attribute, condition: condition)
         case "date":
-            return try buildDateClause(attribute: attribute, condition: condition)
+            guard let dateMdqueryOperator else {
+                throw CompileError.unsupportedOperator(
+                    propertyKey: condition.propertyKey,
+                    operatorCode: condition.operator,
+                )
+            }
+            return try buildDateClause(
+                attribute: attribute,
+                condition: condition,
+                dateMdqueryOperator: dateMdqueryOperator,
+            )
         case "boolean":
             return try buildBooleanClause(attribute: attribute, condition: condition)
         default:

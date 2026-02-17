@@ -4,16 +4,20 @@ extension SpotlightQueryCompiler {
     func buildDateClause(
         attribute: String,
         condition: SearchConditionPayload,
+        dateMdqueryOperator: DateMdqueryOperator,
     ) throws -> String {
-        switch condition.operator {
-        case "btw", "nbtw":
-            return try buildDateRangeClause(attribute: attribute, condition: condition)
-        case "eq", "neq", "gt", "gte", "lt", "lte":
-            return try buildDateComparisonClause(attribute: attribute, condition: condition)
-        default:
-            throw CompileError.unsupportedOperator(
-                propertyKey: condition.propertyKey,
-                operatorCode: condition.operator,
+        switch dateMdqueryOperator {
+        case .range, .notRange:
+            try buildDateRangeClause(
+                attribute: attribute,
+                condition: condition,
+                dateMdqueryOperator: dateMdqueryOperator,
+            )
+        case .eq, .neq, .gt, .gte, .lt, .lte:
+            try buildDateComparisonClause(
+                attribute: attribute,
+                condition: condition,
+                dateMdqueryOperator: dateMdqueryOperator,
             )
         }
     }
@@ -21,6 +25,7 @@ extension SpotlightQueryCompiler {
     private func buildDateRangeClause(
         attribute: String,
         condition: SearchConditionPayload,
+        dateMdqueryOperator: DateMdqueryOperator,
     ) throws -> String {
         let (firstLiteral, secondLiteral) = try readDateRange(
             condition.value,
@@ -43,7 +48,7 @@ extension SpotlightQueryCompiler {
         let startExpr = dateExpression(SearchDateUtils.dayLiteral(startDate))
         let endExpr = dateExpression(SearchDateUtils.dayLiteral(endDate))
 
-        if condition.operator == "nbtw" {
+        if dateMdqueryOperator == .notRange {
             return "(\(attribute) < \(startExpr) || \(attribute) >= \(endExpr))"
         }
         return "(\(attribute) >= \(startExpr) && \(attribute) < \(endExpr))"
@@ -52,6 +57,7 @@ extension SpotlightQueryCompiler {
     private func buildDateComparisonClause(
         attribute: String,
         condition: SearchConditionPayload,
+        dateMdqueryOperator: DateMdqueryOperator,
     ) throws -> String {
         let literal = try readDateLiteral(
             condition.value,
@@ -67,20 +73,20 @@ extension SpotlightQueryCompiler {
         let startExpr = dateExpression(SearchDateUtils.dayLiteral(dayRange.start))
         let endExpr = dateExpression(SearchDateUtils.dayLiteral(dayRange.endExclusive))
 
-        switch condition.operator {
-        case "eq":
+        switch dateMdqueryOperator {
+        case .eq:
             return "(\(attribute) >= \(startExpr) && \(attribute) < \(endExpr))"
-        case "neq":
+        case .neq:
             return "(\(attribute) < \(startExpr) || \(attribute) >= \(endExpr))"
-        case "gt":
+        case .gt:
             return "\(attribute) >= \(endExpr)"
-        case "gte":
+        case .gte:
             return "\(attribute) >= \(startExpr)"
-        case "lt":
+        case .lt:
             return "\(attribute) < \(startExpr)"
-        case "lte":
+        case .lte:
             return "\(attribute) < \(endExpr)"
-        default:
+        case .range, .notRange:
             throw CompileError.unsupportedOperator(
                 propertyKey: condition.propertyKey,
                 operatorCode: condition.operator,
