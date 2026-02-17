@@ -3,6 +3,7 @@ import Logging
 
 struct GatewayQueryConverter: Sendable {
     private let logger: Logger
+    let resourceBundle: Bundle
     let homeDir: String
     private let conditionRegistry: PropertyConditionRegistry?
     private let conditionSanitizer: SearchConditionSanitizer?
@@ -13,6 +14,7 @@ struct GatewayQueryConverter: Sendable {
         logger: Logger = Logger(label: "VoyagerHelper.GatewayQueryConverter"),
     ) {
         self.logger = logger
+        resourceBundle = bundle
         homeDir = NSHomeDirectory()
 
         do {
@@ -59,7 +61,7 @@ struct GatewayQueryConverter: Sendable {
                 existingScopes: existingFilters.scopes,
                 conditionRegistry: conditionRegistry,
             )
-            let systemPrompt = buildSystemPrompt()
+            let systemPrompt = try buildSystemPrompt()
 
             let content = try await requestGateway(systemPrompt: systemPrompt, userPrompt: userPrompt)
             let output = try decodeGatewayOutput(from: content)

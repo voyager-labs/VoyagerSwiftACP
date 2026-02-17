@@ -24,6 +24,8 @@
 		A018A998CD9F45ABB1050941 /* StructuredQueries in Frameworks */ = {isa = PBXBuildFile; productRef = 319E52B31FBB4D8FA03D33B9 /* StructuredQueries */; };
 		A332223B67D84E9E9BA1DFB7 /* system_property_registry.json in Resources */ = {isa = PBXBuildFile; fileRef = A68896D2BA838902604FD30A /* system_property_registry.json */; };
 		A63E25704AD24423A15E5733 /* property_condition_registry.json in Resources */ = {isa = PBXBuildFile; fileRef = 60F570BDE5ECDE55DC1C7E60 /* property_condition_registry.json */; };
+		C1A2B3C4D5E6F7890A1B2C3D /* compose_filter_system.md in Resources */ = {isa = PBXBuildFile; fileRef = D1E2F3A4B5C6D7E8F9012345 /* compose_filter_system.md */; };
+		E4F8A1B2C3D4E5F60718293A /* compose_filter_system.md in Resources */ = {isa = PBXBuildFile; fileRef = D1E2F3A4B5C6D7E8F9012345 /* compose_filter_system.md */; };
 		AF0F1E7B33B24D4A00A1F123 /* VoyagerHelper.app in Copy Helper into App */ = {isa = PBXBuildFile; fileRef = 7E14EE232E866E82005AC834 /* VoyagerHelper.app */; settings = {ATTRIBUTES = (CodeSignOnCopy, ); }; };
 		B2AD8C7BD69A51C61EF4D9FC /* property_condition_registry.json in Resources */ = {isa = PBXBuildFile; fileRef = 60F570BDE5ECDE55DC1C7E60 /* property_condition_registry.json */; };
 		B7A1F2E133C9F5AB00C0FFEE /* VoyagerHelperTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = B7A1F2E233C9F5AB00C0FFEE /* VoyagerHelperTests.swift */; };
@@ -107,6 +109,7 @@
 		7E14EE2F2E866E85005AC834 /* VoyagerHelperTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = VoyagerHelperTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		A68896D2BA838902604FD30A /* system_property_registry.json */ = {isa = PBXFileReference; lastKnownFileType = text.json; name = system_property_registry.json; path = ../../../shared/system_property_registry.json; sourceTree = SOURCE_ROOT; };
 		B7A1F2E233C9F5AB00C0FFEE /* VoyagerHelperTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = VoyagerHelperTests.swift; path = VoyagerHelperTests/VoyagerHelperTests.swift; sourceTree = SOURCE_ROOT; };
+		D1E2F3A4B5C6D7E8F9012345 /* compose_filter_system.md */ = {isa = PBXFileReference; lastKnownFileType = text; name = compose_filter_system.md; path = ../../../apps/backend/src/core/llm/prompts/compose_filter_system.md; sourceTree = SOURCE_ROOT; };
 		F10000000000000000000002 /* FilterSearchXPC.xpc */ = {isa = PBXFileReference; explicitFileType = "wrapper.xpc-service"; includeInIndex = 0; path = FilterSearchXPC.xpc; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
 
@@ -230,6 +233,7 @@
 			children = (
 				A68896D2BA838902604FD30A /* system_property_registry.json */,
 				60F570BDE5ECDE55DC1C7E60 /* property_condition_registry.json */,
+				D1E2F3A4B5C6D7E8F9012345 /* compose_filter_system.md */,
 				7E14EDCE2E86622C005AC834 /* Voyager */,
 				24DD04D6008045F2B081D402 /* Shared */,
 				F10000000000000000000040 /* FilterSearchXPC */,
@@ -519,6 +523,7 @@
 			files = (
 				A332223B67D84E9E9BA1DFB7 /* system_property_registry.json in Resources */,
 				A63E25704AD24423A15E5733 /* property_condition_registry.json in Resources */,
+				C1A2B3C4D5E6F7890A1B2C3D /* compose_filter_system.md in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -535,6 +540,7 @@
 			files = (
 				F10000000000000000000020 /* system_property_registry.json in Resources */,
 				F10000000000000000000021 /* property_condition_registry.json in Resources */,
+				E4F8A1B2C3D4E5F60718293A /* compose_filter_system.md in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

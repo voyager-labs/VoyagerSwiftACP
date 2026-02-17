@@ -305,7 +305,7 @@ extension PostFilterEvaluator {
     func normalizeToken(_ value: String) -> String {
         value.trimmingCharacters(in: .whitespacesAndNewlines).folding(
             options: [.caseInsensitive, .diacriticInsensitive],
-            locale: .current,
+            locale: nil,
         )
     }
 

@@ -1,9 +1,11 @@
 import Foundation
 
 enum SearchDateUtils {
+    private nonisolated static let utcTimeZone: TimeZone = .init(secondsFromGMT: 0) ?? .gmt
+
     private nonisolated static let calendar: Calendar = {
         var calendar = Calendar(identifier: .iso8601)
-        calendar.timeZone = TimeZone(secondsFromGMT: 0) ?? .gmt
+        calendar.timeZone = utcTimeZone
         return calendar
     }()
 
@@ -14,11 +16,9 @@ enum SearchDateUtils {
         }
 
         if isDateOnlyLiteral(text) {
-            let formatter = DateFormatter()
-            formatter.calendar = calendar
-            formatter.locale = Locale(identifier: "en_US_POSIX")
-            formatter.timeZone = TimeZone(secondsFromGMT: 0)
-            formatter.dateFormat = "yyyy-MM-dd"
+            let formatter = ISO8601DateFormatter()
+            formatter.timeZone = utcTimeZone
+            formatter.formatOptions = [.withFullDate]
             return formatter.date(from: text)
         }
 
@@ -53,11 +53,9 @@ enum SearchDateUtils {
     }
 
     static func dayLiteral(_ date: Date) -> String {
-        let formatter = DateFormatter()
-        formatter.calendar = calendar
-        formatter.locale = Locale(identifier: "en_US_POSIX")
-        formatter.timeZone = TimeZone(secondsFromGMT: 0)
-        formatter.dateFormat = "yyyy-MM-dd"
+        let formatter = ISO8601DateFormatter()
+        formatter.timeZone = utcTimeZone
+        formatter.formatOptions = [.withFullDate]
         return formatter.string(from: date)
     }
 

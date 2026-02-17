@@ -183,6 +183,9 @@ struct GatewayQueryResult: Sendable {
 
 enum GatewayQueryError: Error {
     case registryUnavailable
+    case promptTemplateMissing(String)
+    case promptTemplateLoadFailed(String)
+    case promptTemplateInvalid(String)
     case gatewayURLMissing
     case gatewayURLInvalid(String)
     case gatewayRequestEncodingFailed(String)

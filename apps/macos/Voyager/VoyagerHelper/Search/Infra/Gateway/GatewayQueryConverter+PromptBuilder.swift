@@ -1,8 +1,26 @@
 import Foundation
 
 extension GatewayQueryConverter {
-    func buildSystemPrompt() -> String {
-        GatewayPromptTemplate.template
+    func buildSystemPrompt() throws -> String {
+        guard let promptURL = resourceBundle.url(
+            forResource: "compose_filter_system",
+            withExtension: "md",
+        ) else {
+            throw GatewayQueryError.promptTemplateMissing("compose_filter_system.md")
+        }
+
+        let template: String
+        do {
+            template = try String(contentsOf: promptURL, encoding: .utf8)
+        } catch {
+            throw GatewayQueryError.promptTemplateLoadFailed(error.localizedDescription)
+        }
+
+        guard template.contains("{home_dir}") else {
+            throw GatewayQueryError.promptTemplateInvalid("missing {home_dir}")
+        }
+
+        return template
             .replacingOccurrences(of: "{home_dir}", with: homeDir)
             .replacingOccurrences(of: "{property_info}", with: "keys from user prompt")
     }
