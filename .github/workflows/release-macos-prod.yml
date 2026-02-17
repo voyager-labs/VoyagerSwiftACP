@@ -38,7 +38,7 @@ jobs:
           apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
           command: |
-            r2 object get ${{ env.R2_BUCKET }}/${{ env.SPARKLE_APPCAST_KEY }} --file ${{ env.BUILD_DIR }}/appcast.xml
+            r2 object get ${{ env.R2_BUCKET }}/${{ env.SPARKLE_APPCAST_KEY }} --remote --file ${{ env.BUILD_DIR }}/appcast.xml
 
       - name: Resolve version from tag
         id: version
@@ -69,13 +69,14 @@ jobs:
           apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
           command: |
-            r2 object get ${{ env.R2_BUCKET }}/${{ steps.baseline-meta.outputs.prev_key }} --file ${{ env.BUILD_DIR }}/baseline/${{ steps.baseline-meta.outputs.prev_name }}
+            r2 object get ${{ env.R2_BUCKET }}/${{ steps.baseline-meta.outputs.prev_key }} --remote --file ${{ env.BUILD_DIR }}/baseline/${{ steps.baseline-meta.outputs.prev_name }}
 
       - name: Upload Sparkle baseline artifacts
         if: ${{ steps.baseline-meta.outputs.has_baseline == 'true' }}
         uses: actions/upload-artifact@v4
         with:
           name: sparkle-baseline
+          retention-days: 1
           if-no-files-found: warn
           path: |
             build/ci/appcast.xml
@@ -122,36 +123,6 @@ jobs:
           keychain: ${{ env.SIGNING_KEYCHAIN }}
           keychain-password: ${{ github.run_id }}-${{ github.run_attempt }}
 
-      - name: Build archive
-        shell: bash
-        run: |
-          set -euo pipefail
-          ./scripts/ci/build-archive.sh
-
-      - name: Export app
-        shell: bash
-        run: |
-          set -euo pipefail
-          ./scripts/ci/export-macos-app.sh "${BUILD_DIR}/Voyager.xcarchive" "${BUILD_DIR}/export"
-
-      - name: Create DMG
-        shell: bash
-        run: |
-          set -euo pipefail
-          APP_PATH="${BUILD_DIR}/export/Voyager.app"
-          DMG_PATH="${BUILD_DIR}/Voyager.dmg"
-          ./scripts/ci/create-dmg.sh "${APP_PATH}" "${DMG_PATH}"
-
-      - name: Notarize + staple (App Store Connect API Key)
-        shell: bash
-        env:
-          ASC_ISSUER_ID: ${{ secrets.ASC_ISSUER_ID }}
-          ASC_KEY_ID: ${{ secrets.ASC_KEY_ID }}
-          ASC_PRIVATE_KEY_P8: ${{ secrets.ASC_PRIVATE_KEY_P8 }}
-        run: |
-          set -euo pipefail
-          ./scripts/ci/notarize-and-staple-dmg.sh "${BUILD_DIR}/Voyager.dmg"
-
       - name: Download Sparkle baseline artifacts
         if: ${{ needs.fetch-sparkle-baseline.outputs.has_baseline == 'true' }}
         uses: actions/download-artifact@v4
@@ -159,24 +130,24 @@ jobs:
           name: sparkle-baseline
           path: .
 
-      - name: Create Sparkle update zip
-        shell: bash
-        run: |
-          set -euo pipefail
-          ./scripts/ci/create-sparkle-zip.sh
-
-      - name: Generate Sparkle appcast
+      - name: Build, notarize, package release payload
         shell: bash
         env:
+          TAG: ${{ github.ref_name }}
+          VERSION: ${{ steps.version.outputs.version }}
           SPARKLE_PRIVATE_KEY: ${{ secrets.SPARKLE_PRIVATE_KEY }}
+          ASC_ISSUER_ID: ${{ secrets.ASC_ISSUER_ID }}
+          ASC_KEY_ID: ${{ secrets.ASC_KEY_ID }}
+          ASC_PRIVATE_KEY_P8: ${{ secrets.ASC_PRIVATE_KEY_P8 }}
         run: |
           set -euo pipefail
-          ./scripts/ci/generate-sparkle-appcast.sh
+          ./scripts/ci/release-macos-prod.sh build-notarize
 
       - name: Upload artifacts
         uses: actions/upload-artifact@v4
         with:
           name: prod-release
+          retention-days: 1
           if-no-files-found: error
           path: |
             ${{ env.BUILD_DIR }}/Voyager.dmg
@@ -236,12 +207,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          ./scripts/ci/generate-latest-json.sh \
-            "${BUILD_DIR}/Voyager.dmg" \
-            "${VERSION}" \
-            "${VERSION_PREFIX}/${VERSION}/Voyager.dmg" \
-            "${RELEASES_PREFIX}/Voyager.dmg" \
-            "${BUILD_DIR}/latest.json"
+          ./scripts/ci/release-macos-prod.sh generate-latest
 
       - name: Upload to R2 (version + latest)
         uses: cloudflare/wrangler-action@v3
@@ -249,8 +215,8 @@ jobs:
           apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
           command: |
-            r2 object put ${{ env.R2_BUCKET }}/${{ env.VERSION_PREFIX }}/${{ env.VERSION }}/Voyager.dmg --file ${{ env.BUILD_DIR }}/Voyager.dmg
-            r2 object put ${{ env.R2_BUCKET }}/${{ env.RELEASES_PREFIX }}/Voyager.dmg --file ${{ env.BUILD_DIR }}/Voyager.dmg
-            r2 object put ${{ env.R2_BUCKET }}/${{ env.RELEASES_PREFIX }}/latest.json --file ${{ env.BUILD_DIR }}/latest.json
-            r2 object put ${{ env.R2_BUCKET }}/${{ env.VERSION_PREFIX }}/${{ env.VERSION }}/Voyager-${{ env.VERSION }}.zip --file ${{ env.BUILD_DIR }}/Voyager-${{ env.VERSION }}.zip
-            r2 object put ${{ env.R2_BUCKET }}/${{ env.SPARKLE_APPCAST_KEY }} --file ${{ env.BUILD_DIR }}/appcast.xml
+            r2 object put ${{ env.R2_BUCKET }}/${{ env.VERSION_PREFIX }}/${{ env.VERSION }}/Voyager.dmg --remote --file ${{ env.BUILD_DIR }}/Voyager.dmg
+            r2 object put ${{ env.R2_BUCKET }}/${{ env.RELEASES_PREFIX }}/Voyager.dmg --remote --file ${{ env.BUILD_DIR }}/Voyager.dmg
+            r2 object put ${{ env.R2_BUCKET }}/${{ env.RELEASES_PREFIX }}/latest.json --remote --file ${{ env.BUILD_DIR }}/latest.json
+            r2 object put ${{ env.R2_BUCKET }}/${{ env.VERSION_PREFIX }}/${{ env.VERSION }}/Voyager-${{ env.VERSION }}.zip --remote --file ${{ env.BUILD_DIR }}/Voyager-${{ env.VERSION }}.zip
+            r2 object put ${{ env.R2_BUCKET }}/${{ env.SPARKLE_APPCAST_KEY }} --remote --file ${{ env.BUILD_DIR }}/appcast.xml

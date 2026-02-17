@@ -33,7 +33,7 @@ def main() -> int:
         if len(versions) >= count:
             break
 
-    sys.stdout.write("\n".join(versions)
+    sys.stdout.write("\n".join(versions))
     return 0
 
 

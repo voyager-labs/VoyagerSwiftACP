@@ -14,7 +14,10 @@ prev_key=""
 prev_name=""
 
 if [[ -f "${APPCAST_PATH}" ]]; then
-  readarray -t versions < <(
+  versions=()
+  while IFS= read -r version; do
+    [[ -n "${version}" ]] && versions+=("${version}")
+  done < <(
     python3 - "${APPCAST_PATH}" <<'PY'
 import re
 import sys
