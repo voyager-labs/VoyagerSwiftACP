@@ -4,7 +4,7 @@ import SwiftUI
 
 @ObservableState
 struct ContentPageNavigationState: Equatable {
-    var navigationState: ContentPageNavigationUtils.NavigationState =
+    var navigationState: ContentPageNavigationRoute =
         .folder(SettingsDefaults.defaultTabPath())
     var titlePath: String = SettingsDefaults.defaultTabPath()
     var scrollPositions: [String: CGPoint] = [:]
@@ -62,31 +62,9 @@ struct ContentPageNavigationState: Equatable {
         }
     }
 
-    mutating func navigateToFolder(_ path: String, composer: inout ComposerFeature.State) {
-        let previousPath = currentPath
-        let snapshot = makeContentPageNavigationHistorySnapshot(composer: composer)
-        composer = .init()
-        appendBackHistory(snapshot)
-        forwardHistory = []
+    mutating func seedInitialFolderPath(_ path: String) {
         navigationState = .folder(path)
-
-        if composer.isPresented,
-           !composer.scopes.isEmpty,
-           composer.scopes[0] == previousPath
-        {
-            composer.scopes[0] = path
-        }
-    }
-
-    mutating func navigate(
-        to navigationState: ContentPageNavigationUtils.NavigationState,
-        composer: inout ComposerFeature.State,
-    ) {
-        let snapshot = makeContentPageNavigationHistorySnapshot(composer: composer)
-        composer = .init()
-        appendBackHistory(snapshot)
-        forwardHistory = []
-        self.navigationState = navigationState
+        titlePath = path
     }
 
     mutating func appendBackHistory(_ entry: ContentPageNavigationHistorySnapshot) {

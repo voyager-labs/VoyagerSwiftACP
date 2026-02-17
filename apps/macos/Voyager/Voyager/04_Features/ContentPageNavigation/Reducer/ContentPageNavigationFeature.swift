@@ -8,6 +8,171 @@ struct ContentPageNavigationFeature {
     typealias Action = ContentPageNavigationAction
 
     var body: some Reducer<State, Action> {
+        ContentPageNavigationDirectReducer()
+        ContentPageNavigationHistoryReducer()
+        ContentPageNavigationStateReducer()
+    }
+}
+
+@Reducer
+private struct ContentPageNavigationDirectReducer {
+    typealias State = ContentPageNavigationState
+    typealias Action = ContentPageNavigationAction
+
+    var body: some Reducer<State, Action> {
+        Reduce { state, action in
+            switch action {
+            case let .performNavigateToPath(path, currentSnapshot):
+                performNavigateToPath(path, currentSnapshot: currentSnapshot, state: &state)
+
+            case let .performShowRecents(currentSnapshot):
+                performShowRecents(currentSnapshot: currentSnapshot, state: &state)
+
+            case let .performShowComputer(currentSnapshot):
+                performShowComputer(currentSnapshot: currentSnapshot, state: &state)
+
+            case let .performShowTag(tagName, currentSnapshot):
+                performShowTag(tagName, currentSnapshot: currentSnapshot, state: &state)
+
+            case let .prepareCollectionFileOpen(url, currentSnapshot):
+                performPrepareCollectionFileOpen(url, currentSnapshot: currentSnapshot, state: &state)
+
+            default:
+                .none
+            }
+        }
+    }
+
+    private func performNavigateToPath(
+        _ path: String,
+        currentSnapshot: ContentPageNavigationHistorySnapshot,
+        state: inout State,
+    ) -> Effect<Action> {
+        let previousNavigationState = state.navigationState
+        let shouldRecordHistory = path != state.currentPath
+
+        if shouldRecordHistory {
+            state.appendBackHistory(currentSnapshot)
+            state.forwardHistory = []
+        }
+
+        state.navigationState = .folder(path)
+
+        return directNavigationEffect(
+            previousNavigationState: previousNavigationState,
+            nextNavigationState: state.navigationState,
+            shouldResetComposer: shouldRecordHistory,
+        )
+    }
+
+    private func performShowRecents(
+        currentSnapshot: ContentPageNavigationHistorySnapshot,
+        state: inout State,
+    ) -> Effect<Action> {
+        if case .recents = state.navigationState {
+            return .none
+        }
+
+        let previousNavigationState = state.navigationState
+        state.appendBackHistory(currentSnapshot)
+        state.forwardHistory = []
+        state.navigationState = .recents
+
+        return directNavigationEffect(
+            previousNavigationState: previousNavigationState,
+            nextNavigationState: state.navigationState,
+            shouldResetComposer: true,
+        )
+    }
+
+    private func performShowComputer(
+        currentSnapshot: ContentPageNavigationHistorySnapshot,
+        state: inout State,
+    ) -> Effect<Action> {
+        if case .computer = state.navigationState {
+            return .none
+        }
+
+        let previousNavigationState = state.navigationState
+        state.appendBackHistory(currentSnapshot)
+        state.forwardHistory = []
+        state.navigationState = .computer
+
+        return directNavigationEffect(
+            previousNavigationState: previousNavigationState,
+            nextNavigationState: state.navigationState,
+            shouldResetComposer: true,
+        )
+    }
+
+    private func performShowTag(
+        _ tagName: String,
+        currentSnapshot: ContentPageNavigationHistorySnapshot,
+        state: inout State,
+    ) -> Effect<Action> {
+        if case let .tags(currentTagName) = state.navigationState,
+           currentTagName == tagName
+        {
+            return .none
+        }
+
+        let previousNavigationState = state.navigationState
+        state.appendBackHistory(currentSnapshot)
+        state.forwardHistory = []
+        state.navigationState = .tags(tagName)
+
+        return directNavigationEffect(
+            previousNavigationState: previousNavigationState,
+            nextNavigationState: state.navigationState,
+            shouldResetComposer: true,
+        )
+    }
+
+    private func performPrepareCollectionFileOpen(
+        _ url: URL,
+        currentSnapshot: ContentPageNavigationHistorySnapshot,
+        state: inout State,
+    ) -> Effect<Action> {
+        if case .collection = state.navigationState {
+            return .none
+        }
+
+        let directoryPath = url.deletingLastPathComponent().path
+        let previousSnapshot = ContentPageNavigationHistorySnapshot(
+            navigationState: .folder(directoryPath),
+            composerSnapshot: currentSnapshot.composerSnapshot,
+        )
+        state.appendBackHistory(previousSnapshot)
+        state.forwardHistory = []
+        return .none
+    }
+
+    private func directNavigationEffect(
+        previousNavigationState: ContentPageNavigationRoute,
+        nextNavigationState: ContentPageNavigationRoute,
+        shouldResetComposer: Bool,
+    ) -> Effect<Action> {
+        var effects: [Effect<Action>] = []
+
+        if shouldResetComposer {
+            effects.append(.send(.delegate(.resetComposer)))
+        }
+
+        effects.append(
+            .send(.delegate(.logDAUNavigation(previous: previousNavigationState, next: nextNavigationState))),
+        )
+        effects.append(.send(.delegate(.navigateToState(nextNavigationState))))
+
+        return .concatenate(effects)
+    }
+}
+
+@Reducer
+private struct ContentPageNavigationHistoryReducer {
+    typealias State = ContentPageNavigationState
+    typealias Action = ContentPageNavigationAction
+
+    var body: some Reducer<State, Action> {
         Reduce { state, action in
             switch action {
             case let .performNavigation(pending, currentSnapshot):
@@ -133,9 +298,79 @@ struct ContentPageNavigationFeature {
     private func applyContentPageNavigationHistorySnapshot(
         state: inout State,
         entry: ContentPageNavigationHistorySnapshot,
-    ) -> ContentPageNavigationUtils.NavigationState {
+    ) -> ContentPageNavigationRoute {
         let previousNavigationState = state.navigationState
         state.navigationState = entry.navigationState
         return previousNavigationState
+    }
+}
+
+@Reducer
+private struct ContentPageNavigationStateReducer {
+    typealias State = ContentPageNavigationState
+    typealias Action = ContentPageNavigationAction
+
+    var body: some Reducer<State, Action> {
+        Reduce { state, action in
+            switch action {
+            case .rollbackBackHistoryOnce:
+                rollbackBackHistoryOnce(state: &state)
+
+            case let .appendBackHistory(entry):
+                appendBackHistory(entry, state: &state)
+
+            case .clearForwardHistory:
+                clearForwardHistory(state: &state)
+
+            case let .setNavigationState(navigationState):
+                setNavigationState(navigationState, state: &state)
+
+            case let .setPendingNavigation(pending):
+                setPendingNavigation(pending, state: &state)
+
+            default:
+                .none
+            }
+        }
+    }
+
+    private func rollbackBackHistoryOnce(
+        state: inout State,
+    ) -> Effect<Action> {
+        if !state.backHistory.isEmpty {
+            state.backHistory.removeLast()
+        }
+        return .none
+    }
+
+    private func appendBackHistory(
+        _ entry: ContentPageNavigationHistorySnapshot,
+        state: inout State,
+    ) -> Effect<Action> {
+        state.appendBackHistory(entry)
+        return .none
+    }
+
+    private func clearForwardHistory(
+        state: inout State,
+    ) -> Effect<Action> {
+        state.forwardHistory = []
+        return .none
+    }
+
+    private func setNavigationState(
+        _ navigationState: ContentPageNavigationRoute,
+        state: inout State,
+    ) -> Effect<Action> {
+        state.navigationState = navigationState
+        return .none
+    }
+
+    private func setPendingNavigation(
+        _ pending: ContentPageNavigationPending?,
+        state: inout State,
+    ) -> Effect<Action> {
+        state.pendingNavigation = pending
+        return .none
     }
 }
