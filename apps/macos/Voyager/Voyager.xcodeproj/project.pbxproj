@@ -109,7 +109,7 @@
 		7E14EE2F2E866E85005AC834 /* VoyagerHelperTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = VoyagerHelperTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		A68896D2BA838902604FD30A /* system_property_registry.json */ = {isa = PBXFileReference; lastKnownFileType = text.json; name = system_property_registry.json; path = ../../../shared/system_property_registry.json; sourceTree = SOURCE_ROOT; };
 		B7A1F2E233C9F5AB00C0FFEE /* VoyagerHelperTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = VoyagerHelperTests.swift; path = VoyagerHelperTests/VoyagerHelperTests.swift; sourceTree = SOURCE_ROOT; };
-		D1E2F3A4B5C6D7E8F9012345 /* compose_filter_system.md */ = {isa = PBXFileReference; lastKnownFileType = text; name = compose_filter_system.md; path = Shared/compose_filter_system.md; sourceTree = SOURCE_ROOT; };
+		D1E2F3A4B5C6D7E8F9012345 /* compose_filter_system.md */ = {isa = PBXFileReference; lastKnownFileType = text; name = compose_filter_system.md; path = ../../../shared/compose_filter_system.md; sourceTree = SOURCE_ROOT; };
 		F10000000000000000000002 /* FilterSearchXPC.xpc */ = {isa = PBXFileReference; explicitFileType = "wrapper.xpc-service"; includeInIndex = 0; path = FilterSearchXPC.xpc; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
 
