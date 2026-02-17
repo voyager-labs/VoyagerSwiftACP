@@ -1,14 +1,13 @@
 import Foundation
 
-// NOTE: 이건 뭐지?
-enum EntrySearchUtils {
-    nonisolated static func convertCollectionItems(
+enum EntryCollectionItemsConverter {
+    static func convert(
         _ items: [JSONValue],
         showHidden: Bool,
-        entryClient: EntryClient,
+        entryLoadingClient: EntryLoadingClient,
         workspaceClient: WorkspaceClient,
-    ) -> [Entry] {
-        let converted: [Entry] = items.compactMap { value -> Entry? in
+    ) -> [EntryModel] {
+        let converted: [EntryModel] = items.compactMap { value -> EntryModel? in
             guard case let .string(path) = value,
                   path.isEmpty == false
             else {
@@ -16,9 +15,9 @@ enum EntrySearchUtils {
             }
 
             let url = URL(fileURLWithPath: path)
-            return EntryLoadUtils.convertURLToEntry(
+            return EntryModelConverterLive.convertURLToEntry(
                 url,
-                entryClient: entryClient,
+                entryLoadingClient: entryLoadingClient,
                 workspaceClient: workspaceClient,
             )
         }

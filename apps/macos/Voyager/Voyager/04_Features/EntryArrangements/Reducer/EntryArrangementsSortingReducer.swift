@@ -37,30 +37,30 @@ struct EntryArrangementsSortingReducer {
     private func applySorting(state: inout State) {
         let arrangements = state.entryArrangements
         let sortedItems = sortItems(
-            Array(state.entries.displayItems),
+            Array(state.entryOperations.displayItems),
             by: arrangements.sortKey,
             order: arrangements.sortOrder,
         )
 
-        if state.entries.isCollectionMode {
-            state.entries.collectionItems = IdentifiedArray(uniqueElements: sortedItems)
+        if state.entryOperations.loadingContext.isCollectionMode {
+            state.entryOperations.loadingContext.collectionItems = IdentifiedArray(uniqueElements: sortedItems)
         } else {
-            state.entries.items = IdentifiedArray(uniqueElements: sortedItems)
+            state.entryOperations.loadingContext.items = IdentifiedArray(uniqueElements: sortedItems)
         }
     }
 
     private func sortItems(
-        _ items: [Entry],
+        _ items: [EntryModel],
         by sortKey: SortKey,
         order: SortOrder,
-    ) -> [Entry] {
+    ) -> [EntryModel] {
         items.sorted { item1, item2 in
             let comparison = compareItems(item1, item2, by: sortKey)
             return order == .ascending ? comparison == .orderedAscending : comparison == .orderedDescending
         }
     }
 
-    private func compareItems(_ item1: Entry, _ item2: Entry, by sortKey: SortKey) -> ComparisonResult {
+    private func compareItems(_ item1: EntryModel, _ item2: EntryModel, by sortKey: SortKey) -> ComparisonResult {
         switch sortKey {
         case .name:
             return item1.name.localizedCaseInsensitiveCompare(item2.name)

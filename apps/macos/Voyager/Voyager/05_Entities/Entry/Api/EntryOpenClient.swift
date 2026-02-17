@@ -46,17 +46,17 @@ public struct EntryOpenClient: Sendable {
 extension EntryOpenClient: DependencyKey {
     public nonisolated static var liveValue: EntryOpenClient {
         EntryOpenClient(
-            open: EntrySystemPrimitives.liveOpen,
-            setDefaultApp: EntrySystemPrimitives.liveSetDefaultApp,
-            quickLook: EntrySystemPrimitives.liveQuickLook,
-            quickLookFiles: EntrySystemPrimitives.liveQuickLookFiles,
-            openFinderInfo: EntrySystemPrimitives.liveOpenFinderInfo,
-            shareItems: EntrySystemPrimitives.liveShareItems,
-            performService: EntrySystemPrimitives.livePerformService,
-            revealInFinder: EntrySystemPrimitives.liveRevealInFinder,
-            applicationsForFile: EntrySystemPrimitives.liveApplicationsForFile,
-            defaultApplication: EntrySystemPrimitives.liveDefaultApplication,
-            trashDirectoryPath: EntrySystemPrimitives.liveTrashDirectoryPath,
+            open: EntryOpenLive.open,
+            setDefaultApp: EntryOpenLive.setDefaultApp,
+            quickLook: EntryOpenLive.quickLook,
+            quickLookFiles: EntryOpenLive.quickLookFiles,
+            openFinderInfo: EntryOpenLive.openFinderInfo,
+            shareItems: EntryOpenLive.shareItems,
+            performService: EntryOpenLive.performService,
+            revealInFinder: EntryOpenLive.revealInFinder,
+            applicationsForFile: EntryOpenLive.applicationsForFile,
+            defaultApplication: EntryOpenLive.defaultApplication,
+            trashDirectoryPath: EntryLoadingLive.trashDirectoryPath,
         )
     }
 

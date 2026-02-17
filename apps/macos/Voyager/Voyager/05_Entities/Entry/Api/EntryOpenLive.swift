@@ -1,11 +1,17 @@
 import AppKit
+import CoreServices
 import Foundation
+import UniformTypeIdentifiers
 
-extension EntrySystemPrimitives {
-    nonisolated static var liveOpen: @Sendable (URL, OpenKind) async throws -> Void {
+enum EntryOpenLive {
+    nonisolated static var open: @Sendable (URL, OpenKind) async throws -> Void {
         { url, kind in
             let scoped = url.startAccessingSecurityScopedResource()
-            defer { if scoped { url.stopAccessingSecurityScopedResource() } }
+            defer {
+                if scoped {
+                    url.stopAccessingSecurityScopedResource()
+                }
+            }
 
             let workspace = NSWorkspace.shared
             switch kind {
@@ -23,17 +29,21 @@ extension EntrySystemPrimitives {
         }
     }
 
-    nonisolated static var liveQuickLook: @Sendable (URL) async throws -> Void {
+    nonisolated static var quickLook: @Sendable (URL) async throws -> Void {
         { url in
             let scoped = url.startAccessingSecurityScopedResource()
-            defer { if scoped { url.stopAccessingSecurityScopedResource() } }
+            defer {
+                if scoped {
+                    url.stopAccessingSecurityScopedResource()
+                }
+            }
 
             let token = await MainActor.run { EntryQuickLookSecurityScopedURLToken(url: url) }
             await EntryQuickLookController.shared.present(url: url, scopeToken: token)
         }
     }
 
-    nonisolated static var liveQuickLookFiles: @Sendable ([URL]) async throws -> Void {
+    nonisolated static var quickLookFiles: @Sendable ([URL]) async throws -> Void {
         { urls in
             let scoped = urls.map { $0.startAccessingSecurityScopedResource() }
             defer {
@@ -47,7 +57,7 @@ extension EntrySystemPrimitives {
         }
     }
 
-    nonisolated static var liveOpenFinderInfo: @Sendable ([URL]) async throws -> Void {
+    nonisolated static var openFinderInfo: @Sendable ([URL]) async throws -> Void {
         { urls in
             guard !urls.isEmpty else { return }
             let scoped = urls.map { $0.startAccessingSecurityScopedResource() }
@@ -58,16 +68,12 @@ extension EntrySystemPrimitives {
             }
 
             let error = await MainActor.run { () -> FileOpError? in
-                // Use NSPerformService instead of AppleScript to avoid requiring
-                // NSAppleEventsUsageDescription and Automation permissions
                 let pasteboard = NSPasteboard(name: NSPasteboard.Name("VoyagerGetInfo-\(UUID().uuidString)"))
                 pasteboard.clearContents()
 
-                // Set file paths to pasteboard
                 let paths = urls.map(\.path)
                 pasteboard.setPropertyList(paths, forType: NSPasteboard.PasteboardType("NSFilenamesPboardType"))
 
-                // Invoke Finder's "Show Info" service
                 let success = NSPerformService("Finder/Show Info", pasteboard)
 
                 if !success {
@@ -83,7 +89,7 @@ extension EntrySystemPrimitives {
         }
     }
 
-    nonisolated static var liveShareItems: @Sendable ([URL], CGPoint?) async throws -> Void {
+    nonisolated static var shareItems: @Sendable ([URL], CGPoint?) async throws -> Void {
         { urls, anchor in
             guard !urls.isEmpty else { return }
             let scoped = urls.map { $0.startAccessingSecurityScopedResource() }
@@ -117,7 +123,7 @@ extension EntrySystemPrimitives {
         }
     }
 
-    nonisolated static var livePerformService: @Sendable (String, [URL]) async throws -> Void {
+    nonisolated static var performService: @Sendable (String, [URL]) async throws -> Void {
         { serviceName, urls in
             guard !urls.isEmpty else { return }
             let scoped = urls.map { $0.startAccessingSecurityScopedResource() }
@@ -150,7 +156,7 @@ extension EntrySystemPrimitives {
         }
     }
 
-    nonisolated static var liveRevealInFinder: @Sendable ([URL]) async throws -> Void {
+    nonisolated static var revealInFinder: @Sendable ([URL]) async throws -> Void {
         { urls in
             guard !urls.isEmpty else { return }
             let scoped = urls.map { $0.startAccessingSecurityScopedResource() }
@@ -166,61 +172,68 @@ extension EntrySystemPrimitives {
         }
     }
 
-    nonisolated static var liveSaveDragPaths: @Sendable ([String]) -> Void {
-        { paths in
-            // 커스텀 Pasteboard 사용 (drag는 시스템 전용)
-            let pasteboard = NSPasteboard(name: NSPasteboard.Name("VoyagerDragDrop"))
-            pasteboard.clearContents()
-            let pathString = paths.joined(separator: "\n")
-            pasteboard.setString(pathString, forType: .string)
-        }
-    }
-
-    nonisolated static var liveLoadDragPaths: @Sendable () -> [String] {
-        {
-            let pasteboard = NSPasteboard(name: NSPasteboard.Name("VoyagerDragDrop"))
-            guard let pathString = pasteboard.string(forType: .string),
-                  !pathString.isEmpty
-            else {
-                return []
-            }
-            return pathString.split(separator: "\n").map(String.init)
-        }
-    }
-
-    nonisolated static var liveSaveDragWithOption: @Sendable (Bool) -> Void {
-        { isOptionPressed in
-            let pasteboard = NSPasteboard(name: NSPasteboard.Name("VoyagerDragDrop"))
-            pasteboard.setString(
-                isOptionPressed ? "true" : "false",
-                forType: NSPasteboard.PasteboardType("VoyagerDragOption"),
+    nonisolated static var setDefaultApp: @Sendable (UTType, String) async throws -> Void {
+        { type, bundleID in
+            let status = LSSetDefaultRoleHandlerForContentType(
+                type.identifier as CFString,
+                .all,
+                bundleID as CFString,
             )
+            guard status == noErr else {
+                throw FileOpError.system(message: "Failed to set default app.")
+            }
         }
     }
 
-    nonisolated static var liveLoadDragWithOption: @Sendable () -> Bool {
-        {
-            let pasteboard = NSPasteboard(name: NSPasteboard.Name("VoyagerDragDrop"))
-            let optionString = pasteboard.string(forType: NSPasteboard.PasteboardType("VoyagerDragOption"))
-            return optionString == "true"
-        }
-    }
+    nonisolated static var applicationsForFile: @Sendable (URL) async -> [ApplicationInfo] {
+        { url in
+            let workspace = NSWorkspace.shared
+            let appURLs = workspace.urlsForApplications(toOpen: url)
 
-    nonisolated static var liveLoadClipboardPaths: @Sendable () -> ([String], ClipboardOperation) {
-        {
-            let pasteboard = NSPasteboard.general
+            var seen = Set<String>()
+            var apps: [ApplicationInfo] = []
 
-            guard let urls = pasteboard.readObjects(forClasses: [NSURL.self]) as? [URL] else {
-                return ([], .copy)
+            await withTaskGroup(of: ApplicationInfo?.self) { group in
+                for appURL in appURLs {
+                    guard let bundleID = Bundle(url: appURL)?.bundleIdentifier,
+                          seen.insert(bundleID).inserted
+                    else { continue }
+
+                    group.addTask { @MainActor in
+                        let name = FileManager.default.displayName(atPath: appURL.path)
+                        return ApplicationInfo(id: bundleID, name: name, bundleID: bundleID)
+                    }
+                }
+
+                for await app in group {
+                    if let app {
+                        apps.append(app)
+                    }
+                }
             }
 
-            let paths = urls.map(\.path)
+            return apps
+        }
+    }
 
-            let opString = pasteboard
-                .string(forType: NSPasteboard.PasteboardType("com.voyager.clipboard.operation"))
-            let operation: ClipboardOperation = opString == "cut" ? .cut : .copy
+    nonisolated static var defaultApplication: @Sendable (UTType) async -> ApplicationInfo? {
+        { fileType in
+            guard #available(macOS 13.0, *) else { return nil }
 
-            return (paths, operation)
+            guard let defaultAppURL = LSCopyDefaultApplicationURLForContentType(
+                fileType.identifier as CFString,
+                .all,
+                nil,
+            )?.takeRetainedValue() as URL?,
+                let bundleID = Bundle(url: defaultAppURL)?.bundleIdentifier
+            else { return nil }
+
+            let name = await MainActor.run {
+                FileManager.default.displayName(atPath: defaultAppURL.path)
+            }
+            return await MainActor.run {
+                ApplicationInfo(id: bundleID, name: name, bundleID: bundleID)
+            }
         }
     }
 }
@@ -232,7 +245,6 @@ private func shareAnchorRect(
     event: NSEvent?,
     screenPoint: CGPoint?,
 ) -> CGRect {
-    // TODO: 좌표 기반 앵커링을 엔트리(셀/행) 프레임 기준으로 전환해야 함
     if let screenPoint {
         let windowPoint = window.convertPoint(fromScreen: screenPoint)
         let viewPoint = view.convert(windowPoint, from: nil)

@@ -39,7 +39,7 @@ struct EntryOpenOperationsReducer {
                         return
                     }
 
-                    var groupedFiles: [String: [(Entry, Int)]] = [:]
+                    var groupedFiles: [String: [(EntryModel, Int)]] = [:]
                     for (index, file) in files.enumerated() {
                         let ext = file.fileExtension.lowercased()
                         groupedFiles[ext, default: []].append((file, index))

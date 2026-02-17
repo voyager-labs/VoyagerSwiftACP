@@ -1,16 +1,14 @@
-import AppKit
 import Foundation
-import UniformTypeIdentifiers
 
-enum EntryLoadUtils {
-    private nonisolated static let dateFormatter: DateFormatter = {
+enum EntryModelConverterLive {
+    private nonisolated static let entryDateFormatter: DateFormatter = {
         let formatter = DateFormatter()
         formatter.dateStyle = .medium
         formatter.timeStyle = .short
         return formatter
     }()
 
-    private nonisolated(unsafe) static let byteFormatter: ByteCountFormatter = {
+    private nonisolated(unsafe) static let entryByteFormatter: ByteCountFormatter = {
         let formatter = ByteCountFormatter()
         formatter.allowedUnits = [.useBytes, .useKB, .useMB, .useGB]
         formatter.countStyle = .file
@@ -21,7 +19,7 @@ enum EntryLoadUtils {
         _ itemURL: URL,
         entryLoadingClient: EntryLoadingClient,
         workspaceClient: WorkspaceClient,
-    ) -> Entry? {
+    ) -> EntryModel? {
         var isDirectory: ObjCBool = false
         guard entryLoadingClient.fileExistsAtPath(itemURL.path, &isDirectory) else {
             return nil
@@ -47,19 +45,19 @@ enum EntryLoadUtils {
 
         let metadata = entryLoadingClient.getItemMetadata(itemURL, isDirectory.boolValue, workspaceClient)
         let lastOpenedDate = metadata.lastUsedDate
-        let tags = getTags(from: itemURL)
+        let tags = entryTags(from: itemURL)
 
-        let additionalInfo = calculateAdditionalInfo(
+        let additionalInfo = entryAdditionalInfo(
             url: itemURL,
             isDirectory: isDirectory.boolValue,
             entryLoadingClient: entryLoadingClient,
         )
 
-        let formattedSize = isDirectory.boolValue ? "--" : byteFormatter.string(fromByteCount: size)
-        let formattedModifiedDate = dateFormatter.string(from: modifiedDate)
-        let formattedCreatedDate = dateFormatter.string(from: createdDate)
+        let formattedSize = isDirectory.boolValue ? "--" : entryByteFormatter.string(fromByteCount: size)
+        let formattedModifiedDate = entryDateFormatter.string(from: modifiedDate)
+        let formattedCreatedDate = entryDateFormatter.string(from: createdDate)
 
-        return Entry(
+        return EntryModel(
             name: name,
             fullPath: itemURL.path,
             isDirectory: isDirectory.boolValue,
@@ -80,7 +78,7 @@ enum EntryLoadUtils {
         )
     }
 
-    private nonisolated static func getTags(from itemURL: URL) -> [Tag]? {
+    private nonisolated static func entryTags(from itemURL: URL) -> [Tag]? {
         if let tags = TagMetadataClient.loadTags(from: itemURL) {
             return tags
         }
@@ -95,7 +93,7 @@ enum EntryLoadUtils {
         return nil
     }
 
-    private nonisolated static func calculateAdditionalInfo(
+    private nonisolated static func entryAdditionalInfo(
         url: URL,
         isDirectory: Bool,
         entryLoadingClient: EntryLoadingClient,
@@ -122,13 +120,5 @@ enum EntryLoadUtils {
         }
 
         return nil
-    }
-
-    nonisolated static func formatSize(size: Int64, isDirectory: Bool) -> String {
-        isDirectory ? "--" : byteFormatter.string(fromByteCount: size)
-    }
-
-    nonisolated static func formatDate(_ date: Date) -> String {
-        dateFormatter.string(from: date)
     }
 }

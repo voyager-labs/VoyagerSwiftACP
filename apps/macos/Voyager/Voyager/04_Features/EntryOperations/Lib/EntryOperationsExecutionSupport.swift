@@ -50,7 +50,7 @@ enum EntryOperationsExecutionSupport {
         return destinations
     }
 
-    static func validateDefaultAppSetting(file: Entry, capabilities: EntryCapabilities) -> FileOpError? {
+    static func validateDefaultAppSetting(file: EntryModel, capabilities: EntryCapabilities) -> FileOpError? {
         guard !file.isDirectory else {
             return .unsupportedType
         }
@@ -80,7 +80,7 @@ enum EntryOperationsExecutionSupport {
     }
 
     static func runParallel(
-        items: [Entry],
+        items: [EntryModel],
         kind: OperationKind,
         operation: @escaping @Sendable (URL) async throws -> Void,
         onComplete: (@Sendable () async -> Void)? = nil,
@@ -111,7 +111,7 @@ enum EntryOperationsExecutionSupport {
     }
 
     static func runParallelWithTargets(
-        items: [Entry],
+        items: [EntryModel],
         kind: OperationKind,
         actionKind: EntryActionRecord.ActionKind,
         operation: @escaping @Sendable (URL) async throws -> EntryActionRecord.Target?,
@@ -177,7 +177,7 @@ enum EntryOperationsExecutionSupport {
     }
 
     static func loadCommonApplications(
-        for files: [Entry],
+        for files: [EntryModel],
         entryOpenClient: EntryOpenClient,
     ) -> Effect<EntryOperationsAction> {
         .run { send in
@@ -190,7 +190,7 @@ enum EntryOperationsExecutionSupport {
     }
 
     static func computeCommonApplications(
-        files: [Entry],
+        files: [EntryModel],
         entryOpenClient: EntryOpenClient,
     ) async -> [ApplicationInfo] {
         let fileInfos = prepareFileInfos(from: files)
@@ -210,7 +210,7 @@ enum EntryOperationsExecutionSupport {
     }
 
     private struct FileInfo {
-        let file: Entry
+        let file: EntryModel
         let fileType: UTType
         let url: URL
     }
@@ -227,7 +227,7 @@ enum EntryOperationsExecutionSupport {
         }
     }
 
-    private static func prepareFileInfos(from files: [Entry]) -> [FileInfo] {
+    private static func prepareFileInfos(from files: [EntryModel]) -> [FileInfo] {
         files.compactMap { file in
             guard !file.isDirectory,
                   let fileType = UTType(filenameExtension: file.fileExtension)
