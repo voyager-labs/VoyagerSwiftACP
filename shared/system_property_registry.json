@@ -788,15 +788,6 @@
       }
     },
     "filesystem": {
-      "dir_path": {
-        "description": "Absolute directory path containing the file.",
-        "search_aliases": ["folder path", "dir paths", "directory paths"],
-        "system_keys": [],
-        "type": "string",
-        "ui_hidden": true,
-        "ui_label": "Directory path",
-        "db_indexed": true
-      },
       "display_name": {
         "availability": "macOS 10.4+",
         "description": "The localized version of the file name.",
@@ -934,19 +925,6 @@
         "ui_pinned": true,
         "db_indexed": true
       },
-      "parent_dir_name": {
-        "description": "Name of the parent directory.",
-        "search_aliases": [
-          "parent folder name",
-          "parent dir names",
-          "parent directory names"
-        ],
-        "system_keys": [],
-        "type": "string",
-        "ui_hidden": true,
-        "ui_label": "Parent directory name",
-        "db_indexed": true
-      },
       "path": {
         "availability": "macOS 10.4+",
         "description": "The complete path to the file.",
@@ -955,19 +933,6 @@
         "type": "string",
         "ui_hidden": true,
         "ui_label": "Path",
-        "db_indexed": true
-      },
-      "relative_path_from_home": {
-        "description": "Path relative to the user's home (~/...).",
-        "search_aliases": [
-          "relative home path",
-          "home relative path",
-          "relative paths from home"
-        ],
-        "system_keys": [],
-        "type": "string",
-        "ui_hidden": true,
-        "ui_label": "Relative path from home",
         "db_indexed": true
       }
     },

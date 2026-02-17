@@ -23,7 +23,6 @@ struct PostFilterEvaluator: Sendable {
     }
 
     private let conditionBuilder: SearchConditionBuilder
-    private let homeDirectoryPath: String
 
     init(bundle: Bundle = .main) throws {
         try self.init(conditionBuilder: SearchConditionBuilder(bundle: bundle))
@@ -31,10 +30,8 @@ struct PostFilterEvaluator: Sendable {
 
     init(
         conditionBuilder: SearchConditionBuilder,
-        homeDirectoryPath: String = FileManager.default.homeDirectoryForCurrentUser.standardizedFileURL.path,
     ) {
         self.conditionBuilder = conditionBuilder
-        self.homeDirectoryPath = homeDirectoryPath
     }
 
     func filter(paths: [String], conditions: [SearchConditionPayload]) throws -> [String] {
@@ -397,30 +394,12 @@ private extension PostFilterEvaluator {
         switch propertyKey {
         case "path":
             context.path
-        case "dir_path":
-            context.url.deletingLastPathComponent().path
-        case "parent_dir_name":
-            context.url.deletingLastPathComponent().lastPathComponent
         case "extension":
             context.url.pathExtension
         case "name_stem":
             context.url.deletingPathExtension().lastPathComponent
-        case "relative_path_from_home":
-            relativePathFromHome(path: context.path)
         default:
             nil
         }
-    }
-
-    func relativePathFromHome(path: String) -> String? {
-        if path == homeDirectoryPath {
-            return "~"
-        }
-        let prefix = homeDirectoryPath.hasSuffix("/") ? homeDirectoryPath : homeDirectoryPath + "/"
-        guard path.hasPrefix(prefix) else {
-            return nil
-        }
-        let suffix = String(path.dropFirst(prefix.count))
-        return suffix.isEmpty ? "~" : "~/\(suffix)"
     }
 }
