@@ -93,6 +93,8 @@ buildServer.json
 # Environment variables
 .env
 .env.dev
+.env.ci
+
 .backend_mode
 
 .history/
@@ -109,3 +111,5 @@ apps/backend/alembic.ini.bak
 
 !scripts/build
 !apps/macos/**/Lib
+
+node_modules/
