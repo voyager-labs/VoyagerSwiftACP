@@ -1,5 +1,6 @@
 import AppKit
 import ComposableArchitecture
+import Foundation
 import Logging
 import SwiftUI
 
@@ -12,21 +13,44 @@ struct VoyagerApp: App {
 
     @MainActor
     init() {
-        let windowContext = FileManagerWindowClientLiveContext()
+        let fileManagerWindowClient = makeFileManagerWindowClientLive()
 
         appRootStore = Store(initialState: AppRootState()) {
             AppRootFeature()
         } withDependencies: {
             $0.onboardingWindowClient = OnboardingWindowClient.makeLive(openMainWindow: { path in
                 await MainActor.run {
-                    windowContext.sendNewWindow(path: path)
+                    requestFileManagerNewWindow(path: path)
                     return true
                 }
             })
-            $0.fileManagerWindowClient = windowContext.client
+            $0.fileManagerWindowClient = fileManagerWindowClient
         }
 
-        windowContext.bind(appStore: appRootStore)
+        configureFileManagerWindowClientLive(
+            requestNewWindow: { [appRootStore] path in
+                appRootStore.send(.windowManager(.newWindow(path: path)))
+            },
+            requestNewTab: { [appRootStore] path in
+                appRootStore.send(.windowManager(.newTab(path: path)))
+            },
+            resolveFileManagerStore: { [appRootStore] windowID in
+                let sessionStores = Array(
+                    appRootStore.scope(state: \.windowManager.windows, action: \.windowManager.windows),
+                )
+                return sessionStores.first(where: { $0.state.id == windowID })?
+                    .scope(state: \.window, action: \.window)
+            },
+            onWindowBecameKey: { [appRootStore] id in
+                appRootStore.send(.windowManager(.windowBecameKey(id)))
+            },
+            onWindowResignedKey: { [appRootStore] id in
+                appRootStore.send(.windowManager(.windowResignedKey(id)))
+            },
+            onWindowClosed: { [appRootStore] id in
+                appRootStore.send(.windowManager(.windowClosed(id)))
+            },
+        )
         appDelegate.configure(appRootStore: appRootStore)
 
         LoggingSystem.bootstrap { label in

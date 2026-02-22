@@ -90,7 +90,7 @@ struct WindowManagerFeature {
                 }
 
             case .toggleShowHiddenFiles:
-                return sendActionToFocusedWindow(state, .content(.entryViewLayout(.toggleShowHiddenFiles)))
+                return sendActionToFocusedWindow(state, .content(.entries(.toggleShowHiddenFiles)))
 
             case let .setViewLayout(layout):
                 return sendActionToFocusedWindow(state, .content(.changeLayout(layout)))
@@ -163,6 +163,12 @@ struct WindowManagerFeature {
                 return .run { _ in
                     await fileManagerWindowClient.focusPath(path)
                 }
+
+            case let .windows(.element(id: _, action: .window(.content(.openPathInNewWindow(path))))):
+                return .send(.newWindow(path: path))
+
+            case let .windows(.element(id: _, action: .window(.content(.openPathInNewTab(path))))):
+                return .send(.newTab(path: path))
 
             case .windows:
                 return .none
