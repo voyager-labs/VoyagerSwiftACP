@@ -7,7 +7,7 @@
       "name": "menu_node_id",
       "type": "string",
       "required": true,
-      "description": "메뉴 노드 식별자(PK)."
+      "description": "메뉴 노드 식별자(PK). 안정적인 참조 키."
     },
     {
       "name": "menu_scope",
@@ -48,7 +48,7 @@
       "name": "menu_label",
       "type": "string",
       "required": false,
-      "description": "표시 라벨(해당 없으면 '-')."
+      "description": "표시 라벨(해당 없으면 '-'). 예: File, Edit, View."
     },
     {
       "name": "description",

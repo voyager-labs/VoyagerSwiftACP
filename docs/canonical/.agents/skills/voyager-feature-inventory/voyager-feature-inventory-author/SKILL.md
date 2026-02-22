@@ -21,6 +21,8 @@ This skill is for "authoring" tasks (drafting new rows, allocating IDs, suggesti
   - No multi-line cells
   - Use `-` for not-applicable, `TBD` for not-yet-written
 - Use `<<AI>> ` only at the start of a cell (single space after), and only for long-text fields.
+  - If AI newly writes or edits a long-text TSV cell (including edits to existing rows), prefix that cell with `<<AI>> `.
+  - Keep/remove `<<AI>> ` only by explicit user request or after confirmed human review.
   - Do not use `<<AI>>` in key/ID/enum columns (ex: `feature_id`, `category_key`, `interaction_id`, `status`).
 - Do not write `TBD` into primary keys.
 - Keep output deterministic and diff-friendly (avoid reformatting unrelated rows).
@@ -43,7 +45,7 @@ Draft a TSV row for `04_FEATURE_INVENTORY/FEATURES/data.tsv`.
 - `feature_title`: short English title
 - `feature_id`: stable ID
 - `release_phase`, `status`
-- `description`: Korean one-liner; if drafted, prefix `<<AI>> `
+- `description`: Korean one-liner; if AI-drafted or AI-edited, prefix `<<AI>> `
 - `related_ui`: if known, set a `structure_key`; else `-`
 - `objects`: `-` unless you have specific keys
 
@@ -56,7 +58,7 @@ Propose atomic interactions in the existing style for `04_FEATURE_INVENTORY/INTE
 - `feature`: feature title (display)
 - `category_key`, `feature_id`
 - `status`
-- `summary`: Korean one-liner; if drafted, prefix `<<AI>> `
+- `summary`: Korean one-liner; if AI-drafted or AI-edited, prefix `<<AI>> `
 - `related_region`: `WINDOW_STRUCTURE.structure_key` when known; else `-`
 - `menu`/`shortcut`: `-` if unknown
 

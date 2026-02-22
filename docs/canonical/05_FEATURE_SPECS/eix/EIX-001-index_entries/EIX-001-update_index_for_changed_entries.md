@@ -10,7 +10,7 @@
 | Category Key | EIX |
 | Feature ID | EIX-001 |
 | Status | 배포 완료 |
-| Summary | 수정·이동·삭제된 Entry를 감지해 해당 Entry에 대해 시스템·콘텐츠·임베딩 인덱스를 증분 갱신하거나 제거 |
+| Summary | 수정·이동·삭제된 Entry를 감지해 해당 Entry에 대해 내용 기반 프로퍼티·임베딩 인덱스를 증분 갱신하거나 제거 |
 | Related Region | - |
 | Menu | - |
 | Shortcut | - |
