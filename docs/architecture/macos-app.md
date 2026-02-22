@@ -65,7 +65,7 @@ Voyager 타깃은 메인 프론트엔드 앱입니다. TCA를 기반으로 하�
 | --------- | ----------------------------------------- | -------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | App       | `apps/macos/Voyager/Voyager/01_App/`      | `Config/`, `Ui/`, `Lib/`, `Reducer/`, `Api/`                   | `apps/macos/Voyager/Voyager/01_App/Ui/VoyagerApp.swift`, `apps/macos/Voyager/Voyager/01_App/Reducer/AppLifecycleFeature.swift`                                                                                                                            |
 | Pages     | `apps/macos/Voyager/Voyager/02_Pages/`    | 페이지별 `Api/`, `Lib/`, `Model/`, `Reducer/`, `Ui/`           | `apps/macos/Voyager/Voyager/02_Pages/FileManager/Reducer/FileManagerFeature.swift`, `apps/macos/Voyager/Voyager/02_Pages/Onboarding/Reducer/OnboardingFeature.swift`, `apps/macos/Voyager/Voyager/02_Pages/Settings/Reducer/SettingsFeature.swift`        |
-| Widgets   | `apps/macos/Voyager/Voyager/03_Widgets/`  | (현재 `.gitkeep`만 존재)                                       | `apps/macos/Voyager/Voyager/03_Widgets/.gitkeep`                                                                                                                                                                                                          |
+| Widgets   | `apps/macos/Voyager/Voyager/03_Widgets/`  | 위젯별 `Api?`, `Lib/`, `Model/`, `Reducer/`, `Ui/`              | `apps/macos/Voyager/Voyager/03_Widgets/EntryViewLayout/Reducer/EntryViewLayoutFeature.swift`, `apps/macos/Voyager/Voyager/03_Widgets/EntryViewLayout/Ui/EntryListView.swift`                                                                              |
 | Features  | `apps/macos/Voyager/Voyager/04_Features/` | 기능별 `Api/`, `Lib/`, `Model/`, `Reducer/`, `Ui/`             | `apps/macos/Voyager/Voyager/04_Features/Composer/Reducer/ComposerFeature.swift`, `apps/macos/Voyager/Voyager/04_Features/UpdateVersion/Reducer/UpdaterFeature.swift`, `apps/macos/Voyager/Voyager/04_Features/BetaAccess/Reducer/BetaAccessFeature.swift` |
 | Entities  | `apps/macos/Voyager/Voyager/05_Entities/` | 엔티티별 `Api/`, `Lib/`, `Model/`, `Reducer/`, `Ui/`/`Config/` | `apps/macos/Voyager/Voyager/05_Entities/Entry/Reducer/EntriesFeature.swift`, `apps/macos/Voyager/Voyager/05_Entities/Collection/Reducer/CollectionFeature.swift`                                                                                          |
 | Shared    | `apps/macos/Voyager/Voyager/06_Shared/`   | `Api/`, `Config/`, `Lib/`, `Model/`, `Assets/`                 | `apps/macos/Voyager/Voyager/06_Shared/Api/UserDefaultsClient.swift`, `apps/macos/Voyager/Voyager/06_Shared/Config/VoyagerDS.swift`                                                                                                                        |
@@ -76,6 +76,11 @@ Voyager 타깃은 메인 프론트엔드 앱입니다. TCA를 기반으로 하�
 
 - 원칙: 위 레이어는 아래 레이어에 의존할 수 있지만, 역방향 의존은 금지합니다.
 - `01_App`/`02_Pages`는 오케스트레이션 레이어로 유지하고, 실제 도메인 로직은 `04_Features`/`05_Entities`로 내려보냅니다.
+
+의존성 방향의 의미(명확화)
+
+- `A -> B`는 "A 레이어 코드가 B 레이어 타입/함수/리듀서를 import/참조해 조립할 수 있다"는 의미입니다.
+- 반대로 `B -> A` 참조가 생기면 역방향 의존 위반으로 봅니다.
 
 레이어 순서(상위 -> 하위)
 
@@ -344,6 +349,24 @@ Voyager는 TCA Dependencies 패턴으로 "외부 세계"를 캡슐화합니다.
 - 도메인에 가까운 클라이언트는 해당 Slice의 `Api/`에 둡니다.
     - 예: `apps/macos/Voyager/Voyager/04_Features/Composer/Api/SearchClient.swift`
     - 예: `apps/macos/Voyager/Voyager/05_Entities/Collection/Api/RegistryClient.swift`
+
+### Client 도입 판정 기준(중요)
+
+아래 중 하나라도 해당하면 Client(`Api/*Client.swift`)로 캡슐화합니다.
+
+- 시스템 API/IO/외부 통신/프로세스 경계 접근
+    - 파일시스템 읽기/쓰기/이동/삭제, 디렉토리 스캔, 메타데이터 조회
+    - 권한/시스템 상태(Full Disk Access, Launch at Login, System Settings)
+    - IPC/XPC/Helper 프로세스, 네트워크 호출
+    - OS 전역 서비스(NSWorkspace, pasteboard, 전역 Notification)
+- 비결정 값/환경 의존 값
+    - 시간, UUID, 랜덤, 타이머/스케줄러
+- 테스트에서 fake/stub로 대체해야 안정적으로 검증 가능한 의존성
+
+아래는 기본적으로 Client 대상이 아닙니다.
+
+- 순수 계산/정렬/필터링 같은 도메인 로직
+- 외부 경계 없는 로컬 UI 상태/레이아웃/렌더링
 
 ### live/test 값 제공
 

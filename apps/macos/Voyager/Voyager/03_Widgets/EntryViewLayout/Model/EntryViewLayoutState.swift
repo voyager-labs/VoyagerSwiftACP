@@ -8,6 +8,7 @@ struct EntryViewLayoutState: Equatable {
     var rangeAnchorId: String?
     var shouldScrollToSelection: Bool = false
     var gridColumnCount: Int = 1
+    var listVisibleColumns: [EntryListColumn] = EntryListColumn.defaultVisibleColumns
 
     var renamingItemId: String?
     var renamingText: String = ""

@@ -1,8 +1,9 @@
+import AppKit
 import ComposableArchitecture
 import Foundation
 
 @Reducer
-struct FileManagerContentEntryFeature {
+struct EntryCommandRoutingReducer {
     typealias State = FileManagerContentState
     typealias Action = FileManagerContentAction
 
@@ -11,6 +12,8 @@ struct FileManagerContentEntryFeature {
 
     var body: some Reducer<State, Action> {
         Reduce { state, action in
+            if let effect = routeSidebarDropAction(action) { return effect }
+
             guard case let .entries(entriesAction) = action else {
                 return .none
             }
@@ -20,7 +23,24 @@ struct FileManagerContentEntryFeature {
     }
 }
 
-private extension FileManagerContentEntryFeature {
+private extension EntryCommandRoutingReducer {
+    private func routeSidebarDropAction(_ action: Action) -> Effect<Action>? {
+        switch action {
+        case let .dropItemsToSidebarFolder(providers, targetURL):
+            .send(.entries(.handleDrop(
+                providers: providers,
+                destinationPath: targetURL.path,
+            )))
+        case let .dropItemsToTag(providers, tagName):
+            .send(.entries(.handleDropToTag(
+                providers: providers,
+                tagName: tagName,
+            )))
+        default:
+            nil
+        }
+    }
+
     private func handleEntryAction(
         _ action: EntryCommandAction,
         state: inout State,
@@ -30,8 +50,7 @@ private extension FileManagerContentEntryFeature {
         if let effect = handleReloadAndVisibilityActions(action, state: &state) { return effect }
         if let effect = handleSelectionActions(action, state: state) { return effect }
         if let effect = handleRenameAndCreationActions(action, state: &state) { return effect }
-        if let effect = handleOpenAndClipboardActions(action, state: state) { return effect }
-        if let effect = handleTrashActions(action, state: state) { return effect }
+        if let effect = handleEntryOperationCommandActions(action, state: state) { return effect }
         return .none
     }
 
@@ -221,162 +240,107 @@ private extension FileManagerContentEntryFeature {
         }
     }
 
-    private func handleOpenAndClipboardActions(
+    private func handleEntryOperationCommandActions(
         _ action: EntryCommandAction,
         state: State,
     ) -> Effect<Action>? {
-        if let effect = handleOpenActions(action, state: state) { return effect }
-        if let effect = handleClipboardActions(action, state: state) { return effect }
-        if let effect = handleAliasAndTagActions(action, state: state) { return effect }
+        guard let command = mapEntryOperationCommand(action) else { return nil }
+
+        let outputs = EntryOperationsCommandPlanner.plan(
+            command: command,
+            context: .init(
+                selectedIds: state.entryViewLayout.selectedIds,
+                displayItems: state.entryOperations.displayOrderItems,
+                currentPath: state.navigation.currentPath,
+            ),
+        )
+
+        guard !outputs.isEmpty else { return .none }
+        return .merge(outputs.map(effect(for:)))
+    }
+
+    private func mapEntryOperationCommand(_ action: EntryCommandAction) -> EntryOperationsCommand? {
+        if let command = mapNavigationCommand(action) {
+            return .navigation(command)
+        }
+        if let command = mapClipboardCommand(action) {
+            return .clipboard(command)
+        }
+        if let command = mapMutationCommand(action) {
+            return .mutation(command)
+        }
         return nil
     }
 
-    private func handleOpenActions(
-        _ action: EntryCommandAction,
-        state: State,
-    ) -> Effect<Action>? {
+    private func mapNavigationCommand(_ action: EntryCommandAction) -> EntryOperationsNavigationCommand? {
         switch action {
         case .openSelectedItem:
-            let selectedIds = state.entryViewLayout.selectedIds
-            let selected = Array(state.entryOperations.displayItems.filter { selectedIds.contains($0.id) })
-            guard !selected.isEmpty else { return .none }
-            if selected.count == 1, let entry = selected.first, entry.isDirectory {
-                return .send(.entries(.navigateFolder(id: entry.id)))
-            }
-            return .send(.entryOperations(.openFiles(files: selected)))
+            .openSelectedItem
         case .quickLookSelectedItem:
-            let selectedIds = state.entryViewLayout.selectedIds
-            let selected = Array(state.entryOperations.displayItems.filter { selectedIds.contains($0.id) })
-            if selected.count == 1, let file = selected.first {
-                return .send(.entryOperations(.quickLookFile(file: file)))
-            }
-            guard !selected.isEmpty else { return .none }
-            return .send(.entryOperations(.quickLookFiles(files: selected)))
+            .quickLookSelectedItem
+        case .getInfoForSelectedItems:
+            .getInfoForSelectedItems
+        case let .shareSelectedItems(anchor):
+            .shareSelectedItems(anchor: anchor)
+        case .revealSelectedItemsInFinder:
+            .revealSelectedItemsInFinder
+        case let .performService(serviceName):
+            .performService(serviceName: serviceName)
+        case let .openWithSelectedItem(bundleID, shouldSetAsDefault):
+            .openWithSelectedItem(bundleID: bundleID, shouldSetAsDefault: shouldSetAsDefault)
         default:
-            return nil
+            nil
         }
     }
 
-    private func handleClipboardActions(
-        _ action: EntryCommandAction,
-        state: State,
-    ) -> Effect<Action>? {
-        if let effect = handleCopyPasteActions(action, state: state) { return effect }
-        if let effect = handleDuplicateAndPathCopyActions(action, state: state) { return effect }
-        return nil
-    }
-
-    private func handleCopyPasteActions(
-        _ action: EntryCommandAction,
-        state: State,
-    ) -> Effect<Action>? {
+    private func mapClipboardCommand(_ action: EntryCommandAction) -> EntryOperationsClipboardCommand? {
         switch action {
         case .copySelectedItems:
-            let selectedIds = state.entryViewLayout.selectedIds
-            let selected = Array(state.entryOperations.displayItems.filter { selectedIds.contains($0.id) })
-            guard !selected.isEmpty else { return .none }
-            return .send(.entryOperations(.copySelectedItems(files: selected)))
+            .copySelectedItems
         case .cutSelectedItems:
-            let selectedIds = state.entryViewLayout.selectedIds
-            let selected = Array(state.entryOperations.displayItems.filter { selectedIds.contains($0.id) })
-            guard !selected.isEmpty else { return .none }
-            return .merge(
-                .send(.entryOperations(.copySelectedItems(files: selected))),
-                .send(.entryOperations(.setClipboardOperation(operation: .cut))),
-            )
+            .cutSelectedItems
         case let .pasteItems(destinationPath):
-            return .send(.entryOperations(.pasteItemsFromClipboard(destinationPath: destinationPath)))
-        default:
-            return nil
-        }
-    }
-
-    private func handleDuplicateAndPathCopyActions(
-        _ action: EntryCommandAction,
-        state: State,
-    ) -> Effect<Action>? {
-        switch action {
+            .pasteItems(destinationPath: destinationPath)
         case .duplicateSelectedItems:
-            let selectedIds = state.entryViewLayout.selectedIds
-            let selectedPaths = state.entryOperations.displayItems
-                .filter { selectedIds.contains($0.id) }
-                .map(\.fullPath)
-            guard !selectedPaths.isEmpty else { return .none }
-            return .send(.entryOperations(.pasteItems(
-                sourcePaths: selectedPaths,
-                destinationPath: state.navigation.currentPath,
-                operation: .copy,
-                actionKind: .duplicate,
-            )))
+            .duplicateSelectedItems
         case .copySelectedAbsolutePaths:
-            let selectedIds = state.entryViewLayout.selectedIds
-            let selectedPaths = state.entryOperations.displayItems
-                .filter { selectedIds.contains($0.id) }
-                .map(\.fullPath)
-            guard !selectedPaths.isEmpty else { return .none }
-            return .send(.entryOperations(.copyAbsolutePaths(paths: selectedPaths)))
+            .copySelectedAbsolutePaths
         case .copySelectedURLs:
-            let selectedIds = state.entryViewLayout.selectedIds
-            let selectedPaths = state.entryOperations.displayItems
-                .filter { selectedIds.contains($0.id) }
-                .map(\.fullPath)
-            guard !selectedPaths.isEmpty else { return .none }
-            return .send(.entryOperations(.copyURLs(paths: selectedPaths)))
+            .copySelectedURLs
         default:
-            return nil
+            nil
         }
     }
 
-    private func handleAliasAndTagActions(
-        _ action: EntryCommandAction,
-        state: State,
-    ) -> Effect<Action>? {
+    private func mapMutationCommand(_ action: EntryCommandAction) -> EntryOperationsMutationCommand? {
         switch action {
         case .createAliasForSelectedItems:
-            let selectedIds = state.entryViewLayout.selectedIds
-            let selected = Array(state.entryOperations.displayItems.filter { selectedIds.contains($0.id) })
-            guard !selected.isEmpty else { return .none }
-            return .send(.entryOperations(.createAliases(items: selected)))
+            .createAliasForSelectedItems
+        case .compressSelectedItems:
+            .compressSelectedItems
+        case .extractSelectedItem:
+            .extractSelectedItem
         case let .toggleTagForSelectedItem(tag):
-            let selectedIds = state.entryViewLayout.selectedIds
-            let selectedPaths = state.entryOperations.displayItems
-                .filter { selectedIds.contains($0.id) }
-                .map(\.fullPath)
-            guard !selectedPaths.isEmpty else { return .none }
-            return .send(.entryOperations(.requestTagMutation(request: .init(
-                mode: .toggle,
-                tagName: tag,
-                paths: selectedPaths,
-            ))))
+            .toggleTagForSelectedItem(tag: tag)
+        case .moveSelectedItemsToTrash:
+            .moveSelectedItemsToTrash
+        case .deleteSelectedItemsImmediately:
+            .deleteSelectedItemsImmediately
+        case .putBackSelectedItems:
+            .putBackSelectedItems
+        case .emptyTrash:
+            .emptyTrash
         default:
-            return nil
+            nil
         }
     }
 
-    private func handleTrashActions(
-        _ action: EntryCommandAction,
-        state: State,
-    ) -> Effect<Action>? {
-        switch action {
-        case .moveSelectedItemsToTrash:
-            let selectedIds = state.entryViewLayout.selectedIds
-            let selected = Array(state.entryOperations.displayItems.filter { selectedIds.contains($0.id) })
-            guard !selected.isEmpty else { return .none }
-            return .send(.entryOperations(.moveToTrash(items: selected)))
-        case .deleteSelectedItemsImmediately:
-            let selectedIds = state.entryViewLayout.selectedIds
-            let selected = Array(state.entryOperations.displayItems.filter { selectedIds.contains($0.id) })
-            guard !selected.isEmpty else { return .none }
-            return .send(.entryOperations(.deleteImmediately(items: selected)))
-        case .putBackSelectedItems:
-            let selectedIds = state.entryViewLayout.selectedIds
-            let selected = Array(state.entryOperations.displayItems.filter { selectedIds.contains($0.id) })
-            guard !selected.isEmpty else { return .none }
-            return .send(.entryOperations(.putBackFromTrash(items: selected)))
-        case .emptyTrash:
-            return .send(.entryOperations(.emptyTrash(items: state.entryOperations.displayOrderItems)))
-        default:
-            return nil
+    private func effect(for output: EntryOperationsCommandOutput) -> Effect<Action> {
+        switch output {
+        case let .entryOperations(action):
+            .send(.entryOperations(action))
+        case let .navigateFolder(id):
+            .send(.entries(.navigateFolder(id: id)))
         }
     }
 

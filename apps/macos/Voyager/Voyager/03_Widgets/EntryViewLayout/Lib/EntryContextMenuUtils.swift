@@ -6,11 +6,11 @@ enum EntryContextMenuUtils {
     static func sendWithSelection(
         _ item: EntryModel,
         selectedIds: Set<String>,
-        contentStore: StoreOf<FileManagerContentFeature>,
+        entryViewLayoutStore: StoreOf<EntryViewLayoutFeature>,
         action: @escaping () -> Void,
     ) {
         if !selectedIds.contains(item.id) {
-            contentStore.send(.entryViewLayout(.setSelectedIds(ids: [item.id], lastSelectedId: item.id)))
+            entryViewLayoutStore.send(.setSelectedIds(ids: [item.id], lastSelectedId: item.id))
         }
         action()
     }

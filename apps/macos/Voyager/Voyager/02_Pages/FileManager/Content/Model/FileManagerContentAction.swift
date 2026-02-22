@@ -27,6 +27,7 @@ enum FileManagerContentAction: CasePathable, Sendable {
     case discardCollectionChanges
 
     case openPathInNewWindow(String)
+    case openPathInNewTab(String)
 
     // TODO(EntryOperations): EntryOperations로 이동
     case emptyTrashCompleted

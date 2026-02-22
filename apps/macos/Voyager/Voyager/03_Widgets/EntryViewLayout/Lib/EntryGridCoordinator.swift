@@ -12,8 +12,11 @@ final class EntryGridCoordinator: NSObject {
         let isCollapsed: Bool
     }
 
-    let store: StoreOf<FileManagerContentFeature>
+    let adapter: EntryViewLayoutAdapter
     private var cancellables: Set<AnyCancellable> = []
+
+    private var store: StoreOf<EntryViewLayoutFeature> { adapter.entryViewLayoutStore }
+    private var pageState: EntryViewLayoutAdapter.PageState { adapter.pageState() }
 
     private weak var view: EntryGridView?
     private var didBind = false
@@ -54,15 +57,13 @@ final class EntryGridCoordinator: NSObject {
     private var workspaceClient
     @Dependency(\.entryThumbnailCacheClient)
     private var entryThumbnailCacheClient
-    @Dependency(\.fileManagerWindowClient)
-    private var fileManagerWindowClient
 
     private let horizontalPadding: CGFloat = 12
     private let minSpacing: CGFloat = 2
     private let verticalSpacing: CGFloat = 8
 
-    init(store: StoreOf<FileManagerContentFeature>) {
-        self.store = store
+    init(adapter: EntryViewLayoutAdapter) {
+        self.adapter = adapter
         super.init()
     }
 
@@ -88,14 +89,14 @@ final class EntryGridCoordinator: NSObject {
         ensureDoubleClickGesture()
 
         guard !didBind else {
-            updateDropTargetBorder(isTargeted: store.state.entryViewLayout.isDropTargeted)
+            updateDropTargetBorder(isTargeted: pageState.isDropTargeted)
             return
         }
 
         didBind = true
         observeStore()
         rebuildSectionsAndReload()
-        updateDropTargetBorder(isTargeted: store.state.entryViewLayout.isDropTargeted)
+        updateDropTargetBorder(isTargeted: pageState.isDropTargeted)
     }
 
     func updateView(_ view: EntryGridView) {
@@ -134,7 +135,7 @@ final class EntryGridCoordinator: NSObject {
     }
 
     private func rebuildSectionsAndReload() {
-        sections = makeSections(state: store.state)
+        sections = makeSections(state: pageState)
         indexPathByEntryId = [:]
         for (sectionIndex, section) in sections.enumerated() {
             for (itemIndex, entry) in section.items.enumerated() {
@@ -156,27 +157,27 @@ final class EntryGridCoordinator: NSObject {
         }
     }
 
-    private func makeSections(state: FileManagerContentState) -> [Section] {
-        if store.state.entryArrangements.groupKey == .none {
+    private func makeSections(state: EntryViewLayoutAdapter.PageState) -> [Section] {
+        if pageState.groupKey == .none {
             return [
                 Section(
                     title: nil,
                     colorCode: nil,
-                    count: state.entryOperations.displayItems.count,
-                    items: Array(state.entryOperations.displayItems),
+                    count: state.entries.count,
+                    items: Array(state.entries),
                     isCollapsed: false,
                 ),
             ]
         }
 
-        return store.state.entryArrangements.groupedItems.map { group in
-            let showHeader = !group.groupName.isEmpty && store.state.entryArrangements.groupKey != .name
-            let colorCode: Int? = if store.state.entryArrangements.groupKey == .tags {
+        return pageState.groupedItems.map { group in
+            let showHeader = !group.groupName.isEmpty && pageState.groupKey != .name
+            let colorCode: Int? = if pageState.groupKey == .tags {
                 resolveTagColorCode(tagName: group.groupName, items: group.items)
             } else {
                 nil
             }
-            let isCollapsed = store.state.entryArrangements.collapsedGroups.contains(group.groupName)
+            let isCollapsed = pageState.collapsedGroups.contains(group.groupName)
             return Section(
                 title: showHeader ? group.groupName : nil,
                 colorCode: colorCode,
@@ -212,8 +213,8 @@ final class EntryGridCoordinator: NSObject {
     }
 
     private func makeItemSize() -> NSSize {
-        let iconSize = store.state.gridIconSize
-        let textSize = store.state.gridTextSize
+        let iconSize = pageState.gridIconSize
+        let textSize = pageState.gridTextSize
         let itemWidth = max(120, max(iconSize + 16, 112))
         let textHeight = max(50, textSize * 3 + 18)
         let totalHeight = iconSize + textHeight + 32
@@ -224,13 +225,13 @@ final class EntryGridCoordinator: NSObject {
         let availableWidth = max(1, width - (horizontalPadding * 2))
         let itemWidth = makeItemSize().width
         let columns = max(1, Int((availableWidth + minSpacing) / (itemWidth + minSpacing)))
-        if store.state.entryViewLayout.gridColumnCount != columns {
-            store.send(.entryViewLayout(.updateGridColumnCount(columns)))
+        if pageState.gridColumnCount != columns {
+            store.send(.updateGridColumnCount(columns))
         }
     }
 
     private func syncSelectionFromStore() {
-        let selectedIds = store.state.entryViewLayout.selectedIds
+        let selectedIds = pageState.selectedIds
         let indexPaths = Set(selectedIds.compactMap { indexPathByEntryId[$0] })
 
         isUpdatingSelectionFromStore = true
@@ -239,7 +240,7 @@ final class EntryGridCoordinator: NSObject {
     }
 
     private func syncRenamingFromStore() {
-        let renamingItemId = store.state.entryViewLayout.renamingItemId
+        let renamingItemId = pageState.renamingItemId
         let previousRenamingItemId = lastRenamingItemId
         lastRenamingItemId = renamingItemId
 
@@ -263,15 +264,15 @@ final class EntryGridCoordinator: NSObject {
 
     private func saveScrollPosition() {
         let offset = scrollView.contentView.bounds.origin
-        store.send(.saveScrollOffset(offset, forPath: store.state.navigation.currentPath))
+        adapter.actions.saveScrollOffset(offset, pageState.currentPath)
     }
 
     private func restoreScrollPositionIfNeeded() {
-        let itemCount = store.state.entryOperations.displayItems.count
+        let itemCount = pageState.entries.count
         guard itemCount != 0 else { return }
 
         guard !hasRestoredScrollPosition,
-              let savedOffset = store.state.navigation.scrollPositions[store.state.navigation.currentPath]
+              let savedOffset = pageState.savedScrollOffset
         else {
             return
         }
@@ -281,14 +282,14 @@ final class EntryGridCoordinator: NSObject {
     }
 
     private func scrollToSelectionIfNeeded() {
-        guard store.state.entryViewLayout.shouldScrollToSelection else { return }
-        let targetId = store.state.entryViewLayout.lastSelectedId ?? store.state.entryViewLayout.selectedIds.first
+        guard pageState.shouldScrollToSelection else { return }
+        let targetId = pageState.lastSelectedId ?? pageState.selectedIds.first
         guard let targetId, let indexPath = indexPathByEntryId[targetId] else {
-            store.send(.entryViewLayout(.resetScrollFlag))
+            store.send(.resetScrollFlag)
             return
         }
         collectionView.scrollToItems(at: [indexPath], scrollPosition: .centeredVertically)
-        store.send(.entryViewLayout(.resetScrollFlag))
+        store.send(.resetScrollFlag)
     }
 
     private func reloadVisibleItems() {
@@ -331,19 +332,19 @@ final class EntryGridCoordinator: NSObject {
     }
 
     private func selectedEntries(fallback: EntryModel?) -> [EntryModel] {
-        let selectedIds = store.state.entryViewLayout.selectedIds
+        let selectedIds = pageState.selectedIds
         if selectedIds.isEmpty {
             return fallback.map { [$0] } ?? []
         }
-        return store.state.entryOperations.displayItems.filter { selectedIds.contains($0.id) }
+        return pageState.entries.filter { selectedIds.contains($0.id) }
     }
 
     private var isTrashFolder: Bool {
-        guard case let .folder(path) = store.state.navigation.navigationState,
-              let trashPath = entryOpenClient.trashDirectoryPath()
+        guard let trashPath = entryOpenClient.trashDirectoryPath()
         else {
             return false
         }
+        let path = pageState.currentPath
         return path == trashPath || path.hasPrefix(trashPath + "/")
     }
 
@@ -354,12 +355,12 @@ final class EntryGridCoordinator: NSObject {
         guard let entry = entry(at: indexPath) else { return }
         EntryContextMenuUtils.sendWithSelection(
             entry,
-            selectedIds: store.state.entryViewLayout.selectedIds,
-            contentStore: store,
+            selectedIds: pageState.selectedIds,
+            entryViewLayoutStore: store,
             action: { [weak self] in
                 guard let self else { return }
                 saveScrollPosition()
-                store.send(.entryViewLayout(.openSelectedItem))
+                adapter.actions.openSelectedItem()
             },
         )
     }
@@ -378,12 +379,12 @@ final class EntryGridCoordinator: NSObject {
             // 중복 send 방지(드래그 중 이벤트가 많음)
             guard ids != lastLassoSelectedIds else { return }
             lastLassoSelectedIds = ids
-            store.send(.entryViewLayout(.setSelectedIdsFromLasso(ids: ids, lastSelectedId: lastSelectedId)))
+            store.send(.setSelectedIdsFromLasso(ids: ids, lastSelectedId: lastSelectedId))
             return
         }
 
         lastLassoSelectedIds = []
-        store.send(.entryViewLayout(.setSelectedIds(ids: ids, lastSelectedId: lastSelectedId)))
+        store.send(.setSelectedIds(ids: ids, lastSelectedId: lastSelectedId))
     }
 
     func applySelection(_ indexPaths: Set<IndexPath>) {
@@ -453,11 +454,13 @@ private extension EntryGridCoordinator {
         }
 
         guard !paths.isEmpty else { return }
-        store.send(.entries(.requestThumbnails(paths: Array(paths))))
+        adapter.actions.requestThumbnails(Array(paths))
     }
 
     func observeDisplayItems() {
-        store.publisher.entryOperations.displayItems
+        adapter.pageStatePublisher
+            .map(\.entries)
+            .removeDuplicates()
             .receive(on: DispatchQueue.main)
             .sink { [weak self] _ in
                 self?.rebuildSectionsAndReload()
@@ -466,7 +469,9 @@ private extension EntryGridCoordinator {
     }
 
     func observeGroupKey() {
-        store.publisher.entryArrangements.groupKey
+        adapter.pageStatePublisher
+            .map(\.groupKey)
+            .removeDuplicates()
             .receive(on: DispatchQueue.main)
             .sink { [weak self] _ in
                 self?.rebuildSectionsAndReload()
@@ -475,7 +480,9 @@ private extension EntryGridCoordinator {
     }
 
     func observeGroupedItems() {
-        store.publisher.entryArrangements.groupedItems
+        adapter.pageStatePublisher
+            .map(\.groupedItems)
+            .removeDuplicates()
             .receive(on: DispatchQueue.main)
             .sink { [weak self] _ in
                 self?.rebuildSectionsAndReload()
@@ -484,7 +491,9 @@ private extension EntryGridCoordinator {
     }
 
     func observeCollapsedGroups() {
-        store.publisher.entryArrangements.collapsedGroups
+        adapter.pageStatePublisher
+            .map(\.collapsedGroups)
+            .removeDuplicates()
             .receive(on: DispatchQueue.main)
             .sink { [weak self] _ in
                 self?.rebuildSectionsAndReload()
@@ -493,7 +502,7 @@ private extension EntryGridCoordinator {
     }
 
     func observeSelectedIds() {
-        store.publisher.entryViewLayout.selectedIds
+        store.publisher.selectedIds
             .receive(on: DispatchQueue.main)
             .sink { [weak self] _ in
                 self?.syncSelectionFromStore()
@@ -502,7 +511,7 @@ private extension EntryGridCoordinator {
     }
 
     func observeRenamingItemId() {
-        store.publisher.entryViewLayout.renamingItemId
+        store.publisher.renamingItemId
             .removeDuplicates()
             .receive(on: DispatchQueue.main)
             .sink { [weak self] _ in
@@ -512,7 +521,9 @@ private extension EntryGridCoordinator {
     }
 
     func observeThumbnailsReady() {
-        store.publisher.entryThumbnails.thumbnailsReady
+        adapter.pageStatePublisher
+            .map(\.thumbnailsReady)
+            .removeDuplicates()
             .receive(on: DispatchQueue.main)
             .sink { [weak self] _ in
                 self?.reloadVisibleItems()
@@ -521,7 +532,9 @@ private extension EntryGridCoordinator {
     }
 
     func observeGridIconSize() {
-        store.publisher.gridIconSize
+        adapter.pageStatePublisher
+            .map(\.gridIconSize)
+            .removeDuplicates()
             .receive(on: DispatchQueue.main)
             .sink { [weak self] _ in
                 guard let self else { return }
@@ -534,7 +547,9 @@ private extension EntryGridCoordinator {
     }
 
     func observeGridTextSize() {
-        store.publisher.gridTextSize
+        adapter.pageStatePublisher
+            .map(\.gridTextSize)
+            .removeDuplicates()
             .receive(on: DispatchQueue.main)
             .sink { [weak self] _ in
                 guard let self else { return }
@@ -547,7 +562,7 @@ private extension EntryGridCoordinator {
     }
 
     func observeShowHiddenFiles() {
-        store.publisher.entryViewLayout.showHiddenFiles
+        store.publisher.showHiddenFiles
             .receive(on: DispatchQueue.main)
             .sink { [weak self] _ in
                 self?.saveScrollPosition()
@@ -556,7 +571,7 @@ private extension EntryGridCoordinator {
     }
 
     func observeShouldScrollToSelection() {
-        store.publisher.entryViewLayout.shouldScrollToSelection
+        store.publisher.shouldScrollToSelection
             .removeDuplicates()
             .receive(on: DispatchQueue.main)
             .sink { [weak self] shouldScroll in
@@ -567,7 +582,7 @@ private extension EntryGridCoordinator {
     }
 
     func observeDropTargeted() {
-        store.publisher.entryViewLayout.isDropTargeted
+        store.publisher.isDropTargeted
             .removeDuplicates()
             .receive(on: DispatchQueue.main)
             .sink { [weak self] isTargeted in
@@ -577,7 +592,9 @@ private extension EntryGridCoordinator {
     }
 
     func observeCurrentPath() {
-        store.publisher.navigation.currentPath
+        adapter.pageStatePublisher
+            .map(\.currentPath)
+            .removeDuplicates()
             .receive(on: DispatchQueue.main)
             .sink { [weak self] _ in
                 self?.hasRestoredScrollPosition = false
@@ -586,7 +603,8 @@ private extension EntryGridCoordinator {
     }
 
     func observeDisplayItemCountForScrollRestore() {
-        store.publisher.entryOperations.displayItems
+        adapter.pageStatePublisher
+            .map(\.entries)
             .map(\.count)
             .removeDuplicates()
             .receive(on: DispatchQueue.main)
@@ -618,32 +636,32 @@ extension EntryGridCoordinator: NSCollectionViewDataSource {
         }
 
         let entry = sections[indexPath.section].items[indexPath.item]
-        let isCut = store.state.entryOperations.clipboardItems.contains(entry.fullPath)
-            && store.state.entryOperations.clipboardOperation == .cut
-        let isRenaming = store.state.entryViewLayout.renamingItemId == entry.id
-        let isThumbnailReady = store.state.entryThumbnails.thumbnailsReady.contains(entry.fullPath)
+        let isCut = pageState.clipboardItems.contains(entry.fullPath)
+            && pageState.clipboardOperation == .cut
+        let isRenaming = pageState.renamingItemId == entry.id
+        let isThumbnailReady = pageState.thumbnailsReady.contains(entry.fullPath)
         let thumbnail = isThumbnailReady ? entryThumbnailCacheClient.getThumbnail(for: entry.fullPath) : nil
         let isDropTargeted = dropTargetEntryId == entry.id
 
         item.configure(.init(
             entry: entry,
-            iconSize: store.state.gridIconSize,
-            textSize: store.state.gridTextSize,
+            iconSize: pageState.gridIconSize,
+            textSize: pageState.gridTextSize,
             thumbnail: thumbnail,
             isCut: isCut,
             isHidden: entry.isHidden,
             isRenaming: isRenaming,
-            renamingText: store.state.entryViewLayout.renamingText,
+            renamingText: pageState.renamingText,
             isDropTargeted: isDropTargeted,
             workspaceClient: workspaceClient,
             onRenameUpdate: { [weak self] text in
-                self?.store.send(.entryViewLayout(.updateRenamingText(text)))
+                self?.store.send(.updateRenamingText(text))
             },
             onRenameCommit: { [weak self] in
-                self?.store.send(.entryViewLayout(.commitRename))
+                self?.adapter.actions.commitRename()
             },
             onRenameCancel: { [weak self] in
-                self?.store.send(.entryViewLayout(.cancelRename))
+                self?.store.send(.cancelRename)
             },
         ))
 
@@ -684,7 +702,7 @@ extension EntryGridCoordinator: NSCollectionViewDataSource {
             onToggle: { [weak self] in
                 guard let self else { return }
                 if let title = section.title {
-                    store.send(.entryArrangements(.toggleCollapsedGroup(title)))
+                    adapter.actions.toggleCollapsedGroup(title)
                 }
             },
         )
@@ -731,7 +749,7 @@ extension EntryGridCoordinator: NSCollectionViewDelegate, NSCollectionViewDelega
             return entry.fullPath
         }
         guard !paths.isEmpty else { return }
-        store.send(.entryViewLayout(.startDrag(paths: paths)))
+        adapter.actions.startDrag(paths)
     }
 
     func collectionView(
@@ -741,8 +759,8 @@ extension EntryGridCoordinator: NSCollectionViewDelegate, NSCollectionViewDelega
         dragOperation operation: NSDragOperation,
     ) {
         guard operation.isEmpty else { return }
-        store.send(.entryViewLayout(.startDrag(paths: [])))
-        store.send(.entryViewLayout(.setDropTargeted(false)))
+        adapter.actions.startDrag([])
+        store.send(.setDropTargeted(false))
     }
 
     @MainActor
@@ -763,7 +781,7 @@ extension EntryGridCoordinator: NSCollectionViewDelegate, NSCollectionViewDelega
         }
 
         let indexPath = hoverIndexPath ?? (proposedDropIndexPath.pointee as IndexPath)
-        var destinationPath = store.state.navigation.currentPath
+        var destinationPath = pageState.currentPath
         var targetEntryId: String?
 
         if let entry = entry(at: indexPath),
@@ -787,7 +805,7 @@ extension EntryGridCoordinator: NSCollectionViewDelegate, NSCollectionViewDelega
             let sourceParent = URL(fileURLWithPath: sourcePaths[0]).deletingLastPathComponent().path
             if sourceParent == destinationPath {
                 setDropTargetEntryId(nil)
-                store.send(.entryViewLayout(.setDropTargeted(false)))
+                store.send(.setDropTargeted(false))
                 return []
             }
 
@@ -796,7 +814,7 @@ extension EntryGridCoordinator: NSCollectionViewDelegate, NSCollectionViewDelega
             for sourcePath in sourcePaths {
                 if destinationPath == sourcePath {
                     setDropTargetEntryId(nil)
-                    store.send(.entryViewLayout(.setDropTargeted(false)))
+                    store.send(.setDropTargeted(false))
                     return []
                 }
 
@@ -806,7 +824,7 @@ extension EntryGridCoordinator: NSCollectionViewDelegate, NSCollectionViewDelega
                    Array(destinationComponents.prefix(sourceComponents.count)) == sourceComponents
                 {
                     setDropTargetEntryId(nil)
-                    store.send(.entryViewLayout(.setDropTargeted(false)))
+                    store.send(.setDropTargeted(false))
                     return []
                 }
             }
@@ -819,7 +837,7 @@ extension EntryGridCoordinator: NSCollectionViewDelegate, NSCollectionViewDelega
             : preferred.intersection(allowed)
 
         setDropTargetEntryId(targetEntryId)
-        store.send(.entryViewLayout(.setDropTargeted(!resolved.isEmpty)))
+        store.send(.setDropTargeted(!resolved.isEmpty))
         return resolved
     }
 
@@ -829,7 +847,7 @@ extension EntryGridCoordinator: NSCollectionViewDelegate, NSCollectionViewDelega
         indexPath: IndexPath,
         dropOperation: NSCollectionView.DropOperation,
     ) -> Bool {
-        var destinationPath = store.state.navigation.currentPath
+        var destinationPath = pageState.currentPath
         if dropOperation == .on,
            let entry = entry(at: indexPath),
            entry.isDirectory,
@@ -840,9 +858,9 @@ extension EntryGridCoordinator: NSCollectionViewDelegate, NSCollectionViewDelega
 
         let internalPaths = entryFileOpsClient.loadDragPaths()
         if !internalPaths.isEmpty {
-            store.send(.entryViewLayout(.handleDrop(providers: [], destinationPath: destinationPath)))
+            adapter.actions.handleDrop([], destinationPath)
             setDropTargetEntryId(nil)
-            store.send(.entryViewLayout(.setDropTargeted(false)))
+            store.send(.setDropTargeted(false))
             return true
         }
 
@@ -852,7 +870,7 @@ extension EntryGridCoordinator: NSCollectionViewDelegate, NSCollectionViewDelega
               !urls.isEmpty
         else {
             setDropTargetEntryId(nil)
-            store.send(.entryViewLayout(.setDropTargeted(false)))
+            store.send(.setDropTargeted(false))
             return false
         }
 
@@ -863,18 +881,14 @@ extension EntryGridCoordinator: NSCollectionViewDelegate, NSCollectionViewDelega
             : preferred.intersection(allowed)
         guard !resolved.isEmpty else {
             setDropTargetEntryId(nil)
-            store.send(.entryViewLayout(.setDropTargeted(false)))
+            store.send(.setDropTargeted(false))
             return false
         }
 
         let isOptionPressed = resolved.contains(.copy) && !resolved.contains(.move)
-        store.send(.entryViewLayout(.dropItems(
-            sourcePaths: urls.map(\.path),
-            destinationPath: destinationPath,
-            isOptionDrag: isOptionPressed,
-        )))
+        adapter.actions.dropItems(urls.map(\.path), destinationPath, isOptionPressed)
         setDropTargetEntryId(nil)
-        store.send(.entryViewLayout(.setDropTargeted(false)))
+        store.send(.setDropTargeted(false))
         return true
     }
 
@@ -890,7 +904,7 @@ extension EntryGridCoordinator: NSCollectionViewDelegate, NSCollectionViewDelega
             .max()
             .flatMap { entry(at: $0)?.id }
 
-        store.send(.entryViewLayout(.setSelectedIds(ids: selectedIds, lastSelectedId: lastSelectedId)))
+        store.send(.setSelectedIds(ids: selectedIds, lastSelectedId: lastSelectedId))
     }
 }
 
@@ -899,18 +913,17 @@ extension EntryGridCoordinator: EntryGridView.EntryGridCollectionViewMenuProvidi
         updateContextMenuAnchor(event)
         let rowEntry = entry(at: indexPath)
         let composed = EntryContextMenuBuilder.makeMenu(input: .init(
-            contentStore: store,
-            fileManagerWindowClient: fileManagerWindowClient,
-            selectedIds: store.state.entryViewLayout.selectedIds,
+            adapter: adapter,
+            selectedIds: pageState.selectedIds,
             selectedEntries: selectedEntries(fallback: rowEntry),
             rowEntry: rowEntry,
             isTrashFolder: isTrashFolder,
-            canPaste: !store.state.entryOperations.clipboardItems.isEmpty,
+            canPaste: pageState.canPaste,
             currentPath: { [weak self] in
-                self?.store.state.navigation.currentPath ?? ""
+                self?.pageState.currentPath ?? ""
             },
             selectedItemId: { [weak self] in
-                self?.store.state.entryViewLayout.selectedIds.first
+                self?.pageState.selectedIds.first
             },
             contextMenuAnchor: { [weak self] in
                 self?.contextMenuAnchor

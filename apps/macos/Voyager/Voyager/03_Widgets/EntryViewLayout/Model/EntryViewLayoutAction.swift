@@ -19,6 +19,10 @@ enum EntryViewLayoutAction: CasePathable, Sendable {
     case selectByOffset(offset: Int, isShiftPressed: Bool)
     case applySelectionOffset(offset: Int, isShiftPressed: Bool, orderedItemIds: [String])
     case updateGridColumnCount(Int)
+    case setListVisibleColumns([EntryListColumn])
+    case setListColumnVisibility(column: EntryListColumn, isVisible: Bool)
+    case moveListColumn(from: Int, to: Int)
+    case resetListVisibleColumns
     case resetScrollFlag
 
     case setDropTargeted(Bool)

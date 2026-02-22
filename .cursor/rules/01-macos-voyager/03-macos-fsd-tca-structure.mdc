@@ -24,6 +24,11 @@ This repo uses an FSD-inspired folder structure for the Voyager target (main mac
 - Allowed: `Entities -> Shared`
 - Forbidden: reverse dependencies (e.g., `Entities` importing `Features/Pages`; `Shared` importing higher layers)
 
+Interpretation:
+
+- `A -> B` means code in layer A may import/reference B types and compose them.
+- `B -> A` references are considered reverse-dependency violations.
+
 ## Segment conventions
 
 - `Ui/`: SwiftUI views
@@ -32,6 +37,11 @@ This repo uses an FSD-inspired folder structure for the Voyager target (main mac
 - `Api/`: TCA dependency clients (`DependencyKey`/`DependencyValues`)
 - `Lib/`: utilities/extensions (use `Domain+Category.swift` naming)
 - `Config/`: design tokens and configuration objects
+
+`Api/` usage boundary:
+
+- Use client abstraction when crossing external boundaries (system APIs, IO, network, IPC, process boundaries, non-deterministic runtime values like time/UUID).
+- Do not move pure domain calculation or local UI rendering concerns into `Api/`.
 
 ## Reducer conventions (preferred)
 
