@@ -147,8 +147,7 @@ final class EntryContextMenuCoordinator: NSObject {
 @MainActor
 extension EntryContextMenuCoordinator {
     struct Context {
-        let contentStore: StoreOf<FileManagerContentFeature>
-        let fileManagerWindowClient: FileManagerWindowClient
+        let adapter: EntryViewLayoutAdapter
         let currentPath: () -> String
         let selectedItemId: () -> String?
         let contextMenuAnchor: () -> CGPoint?
@@ -161,73 +160,71 @@ extension EntryContextMenuCoordinator {
 
         controller.onOpenSelectedItem = {
             context.saveScrollPosition()
-            context.contentStore.send(.entries(.openSelectedItem))
+            context.adapter.actions.openSelectedItem()
         }
         controller.onOpenSelectedItemInNewTab = { path in
-            Task {
-                await context.fileManagerWindowClient.openPathInNewTab(path)
-            }
+            context.adapter.actions.openPathInNewTab(path)
         }
         controller.onQuickLookSelectedItem = {
-            context.contentStore.send(.entries(.quickLookSelectedItem))
+            context.adapter.actions.quickLookSelectedItem()
         }
         controller.onGetInfoForSelectedItems = {
-            context.contentStore.send(.entries(.getInfoForSelectedItems))
+            context.adapter.actions.getInfoForSelectedItems()
         }
         controller.onShareSelectedItems = {
-            context.contentStore.send(.entries(.shareSelectedItems(anchor: context.contextMenuAnchor())))
+            context.adapter.actions.shareSelectedItems(context.contextMenuAnchor())
         }
         controller.onRevealSelectedItemsInFinder = {
-            context.contentStore.send(.entries(.revealSelectedItemsInFinder))
+            context.adapter.actions.revealSelectedItemsInFinder()
         }
         controller.onCopySelectedItems = {
-            context.contentStore.send(.entries(.copySelectedItems))
+            context.adapter.actions.copySelectedItems()
         }
         controller.onCopySelectedAbsolutePaths = {
-            context.contentStore.send(.entries(.copySelectedAbsolutePaths))
+            context.adapter.actions.copySelectedAbsolutePaths()
         }
         controller.onCopySelectedURLs = {
-            context.contentStore.send(.entries(.copySelectedURLs))
+            context.adapter.actions.copySelectedURLs()
         }
         controller.onCutSelectedItems = {
-            context.contentStore.send(.entries(.cutSelectedItems))
+            context.adapter.actions.cutSelectedItems()
         }
         controller.onPasteItems = {
-            context.contentStore.send(.entries(.pasteItems(destinationPath: context.currentPath())))
+            context.adapter.actions.pasteItems(context.currentPath())
         }
         controller.onStartRename = {
             guard let id = context.selectedItemId() else { return }
-            context.contentStore.send(.entries(.startRename(id: id)))
+            context.adapter.actions.startRename(id)
         }
         controller.onDuplicateSelectedItems = {
-            context.contentStore.send(.entries(.duplicateSelectedItems))
+            context.adapter.actions.duplicateSelectedItems()
         }
         controller.onCreateAliasForSelectedItems = {
-            context.contentStore.send(.entries(.createAliasForSelectedItems))
+            context.adapter.actions.createAliasForSelectedItems()
         }
         controller.onCompressSelectedItems = {
-            context.contentStore.send(.entries(.compressSelectedItems))
+            context.adapter.actions.compressSelectedItems()
         }
         controller.onExtractSelectedItem = {
-            context.contentStore.send(.entries(.extractSelectedItem))
+            context.adapter.actions.extractSelectedItem()
         }
         controller.onMoveSelectedItemsToTrash = {
-            context.contentStore.send(.entries(.moveSelectedItemsToTrash))
+            context.adapter.actions.moveSelectedItemsToTrash()
         }
         controller.onDeleteSelectedItemsImmediately = {
-            context.contentStore.send(.entries(.deleteSelectedItemsImmediately))
+            context.adapter.actions.deleteSelectedItemsImmediately()
         }
         controller.onPutBackSelectedItems = {
-            context.contentStore.send(.entries(.putBackSelectedItems))
+            context.adapter.actions.putBackSelectedItems()
         }
         controller.onEmptyTrash = {
-            context.contentStore.send(.entries(.emptyTrash))
+            context.adapter.actions.emptyTrash()
         }
         controller.onOpenWithSelectedItem = { bundleID in
-            context.contentStore.send(.entries(.openWithSelectedItem(bundleID: bundleID, shouldSetAsDefault: false)))
+            context.adapter.actions.openWithSelectedItem(bundleID, false)
         }
         controller.onToggleTagForSelectedItem = { tagName in
-            context.contentStore.send(.entries(.toggleTagForSelectedItem(tag: tagName)))
+            context.adapter.actions.toggleTagForSelectedItem(tagName)
         }
 
         return controller

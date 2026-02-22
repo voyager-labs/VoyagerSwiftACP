@@ -59,30 +59,9 @@ enum EntryContextMenuDataResolver {
     }
 
     static func resolveOpenWithMenuData(
-        contentStore: StoreOf<FileManagerContentFeature>,
+        adapter: EntryViewLayoutAdapter,
         selectedEntries: [EntryModel],
     ) -> (Bool, [ApplicationInfo]) {
-        let selectedFiles = selectedEntries.filter { !$0.isDirectory }
-        if selectedFiles.isEmpty {
-            return (false, [])
-        }
-
-        if selectedFiles.count > 1 {
-            contentStore.send(.entryOperations(.loadCommonApplicationsForFiles(files: selectedFiles)))
-        } else if let file = selectedFiles.first,
-                  contentStore.state.entryOperations.applicationsForItems[file.fullPath] == nil
-        {
-            contentStore.send(.entryOperations(.loadApplicationsForFile(file: file)))
-        }
-
-        let applications: [ApplicationInfo] = if selectedFiles.count > 1 {
-            contentStore.state.entryOperations.commonApplicationsForSelectedFiles
-        } else if let file = selectedFiles.first {
-            contentStore.state.entryOperations.applicationsForItems[file.fullPath] ?? []
-        } else {
-            []
-        }
-
-        return (true, applications)
+        adapter.actions.resolveOpenWithMenuData(selectedEntries)
     }
 }

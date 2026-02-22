@@ -100,6 +100,41 @@ struct EntryViewLayoutFeature {
                 state.gridColumnCount = max(1, count)
                 return .none
 
+            case let .setListVisibleColumns(columns):
+                state.listVisibleColumns = EntryListColumn.normalizeVisibleColumns(columns)
+                return .none
+
+            case let .setListColumnVisibility(column, isVisible):
+                var nextColumns = state.listVisibleColumns
+                if isVisible {
+                    if !nextColumns.contains(column) {
+                        nextColumns.append(column)
+                    }
+                } else if !EntryListColumn.requiredColumns.contains(column) {
+                    nextColumns.removeAll { $0 == column }
+                }
+                state.listVisibleColumns = EntryListColumn.normalizeVisibleColumns(nextColumns)
+                return .none
+
+            case let .moveListColumn(from, to):
+                var nextColumns = EntryListColumn.normalizeVisibleColumns(state.listVisibleColumns)
+                guard nextColumns.indices.contains(from) else { return .none }
+
+                let boundedDestination = max(0, min(to, nextColumns.count))
+                if from == boundedDestination || from + 1 == boundedDestination {
+                    return .none
+                }
+
+                let moved = nextColumns.remove(at: from)
+                let destination = from < boundedDestination ? boundedDestination - 1 : boundedDestination
+                nextColumns.insert(moved, at: destination)
+                state.listVisibleColumns = EntryListColumn.normalizeVisibleColumns(nextColumns)
+                return .none
+
+            case .resetListVisibleColumns:
+                state.listVisibleColumns = EntryListColumn.defaultVisibleColumns
+                return .none
+
             case .resetScrollFlag:
                 state.shouldScrollToSelection = false
                 return .none

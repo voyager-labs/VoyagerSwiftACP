@@ -1,10 +1,8 @@
 import AppKit
-import ComposableArchitecture
 
 enum EntryContextMenuBuilder {
     struct Input {
-        let contentStore: StoreOf<FileManagerContentFeature>
-        let fileManagerWindowClient: FileManagerWindowClient
+        let adapter: EntryViewLayoutAdapter
         let selectedIds: Set<String>
         let selectedEntries: [EntryModel]
         let rowEntry: EntryModel?
@@ -36,8 +34,7 @@ enum EntryContextMenuBuilder {
         )
 
         let coordinator = EntryContextMenuCoordinator.make(context: .init(
-            contentStore: input.contentStore,
-            fileManagerWindowClient: input.fileManagerWindowClient,
+            adapter: input.adapter,
             currentPath: input.currentPath,
             selectedItemId: input.selectedItemId,
             contextMenuAnchor: input.contextMenuAnchor,
@@ -48,7 +45,7 @@ enum EntryContextMenuBuilder {
             selectedEntries: input.selectedEntries,
         )
         let (showOpenWith, openWithApplications) = EntryContextMenuDataResolver.resolveOpenWithMenuData(
-            contentStore: input.contentStore,
+            adapter: input.adapter,
             selectedEntries: input.selectedEntries,
         )
         let tags = EntryContextMenuDataResolver.resolveTags(selectedEntries: input.selectedEntries)

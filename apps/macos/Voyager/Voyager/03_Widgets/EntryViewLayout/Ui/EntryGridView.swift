@@ -1,13 +1,12 @@
 import AppKit
-import ComposableArchitecture
 import SwiftUI
 
 @MainActor
 struct EntryGridViewRepresentable: NSViewRepresentable {
-    let store: StoreOf<FileManagerContentFeature>
+    let adapter: EntryViewLayoutAdapter
 
     func makeCoordinator() -> EntryGridCoordinator {
-        EntryGridCoordinator(store: store)
+        EntryGridCoordinator(adapter: adapter)
     }
 
     func makeNSView(context: Context) -> EntryGridView {

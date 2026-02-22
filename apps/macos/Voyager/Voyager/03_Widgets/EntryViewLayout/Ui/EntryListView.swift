@@ -1,13 +1,12 @@
 import AppKit
-import ComposableArchitecture
 import SwiftUI
 
 @MainActor
 struct EntryListViewRepresentable: NSViewRepresentable {
-    let store: StoreOf<FileManagerContentFeature>
+    let adapter: EntryViewLayoutAdapter
 
     func makeCoordinator() -> EntryListCoordinator {
-        EntryListCoordinator(store: store)
+        EntryListCoordinator(adapter: adapter)
     }
 
     func makeNSView(context: Context) -> EntryListView {
@@ -57,6 +56,7 @@ final class EntryListView: NSView {
 
     let scrollView = NSScrollView()
     let tableView = EntryListTableView()
+    private var availableColumns: [EntryListColumn: NSTableColumn] = [:]
 
     override init(frame frameRect: NSRect) {
         super.init(frame: frameRect)
@@ -94,8 +94,10 @@ final class EntryListView: NSView {
         tableView.registerForDraggedTypes([.fileURL])
         tableView.setDraggingSourceOperationMask([.copy, .move], forLocal: true)
         tableView.setDraggingSourceOperationMask([.copy], forLocal: false)
-
-        setupColumns()
+        tableView.columnAutoresizingStyle = .lastColumnOnlyAutoresizingStyle
+        tableView.autosaveName = "FileManager.EntryList.Columns"
+        tableView.autosaveTableColumns = true
+        applyColumns(EntryListColumn.defaultVisibleColumns)
 
         scrollView.documentView = tableView
 
@@ -108,47 +110,59 @@ final class EntryListView: NSView {
         ])
     }
 
-    private func setupColumns() {
-        let nameColumn = NSTableColumn(identifier: NSUserInterfaceItemIdentifier("name"))
-        nameColumn.title = "Name"
-        nameColumn.minWidth = 220
-        nameColumn.maxWidth = 2400
-        nameColumn.width = 420
-        nameColumn.resizingMask = [.userResizingMask, .autoresizingMask]
-        nameColumn.sortDescriptorPrototype = NSSortDescriptor(key: "name", ascending: true)
+    func applyColumns(_ visibleColumns: [EntryListColumn]) {
+        let normalizedColumns = EntryListColumn.normalizeVisibleColumns(visibleColumns)
+        let visibleIdentifiers = Set(normalizedColumns.map(\.rawValue))
 
-        let dateColumn = NSTableColumn(identifier: NSUserInterfaceItemIdentifier("dateModified"))
-        dateColumn.title = "Date Modified"
-        dateColumn.minWidth = 150
-        dateColumn.maxWidth = 420
-        dateColumn.width = 220
-        dateColumn.resizingMask = [.userResizingMask, .autoresizingMask]
-        dateColumn.sortDescriptorPrototype = NSSortDescriptor(key: "dateModified", ascending: true)
+        for tableColumn in tableView.tableColumns where !visibleIdentifiers.contains(tableColumn.identifier.rawValue) {
+            tableView.removeTableColumn(tableColumn)
+        }
 
-        let sizeColumn = NSTableColumn(identifier: NSUserInterfaceItemIdentifier("size"))
-        sizeColumn.title = "Size"
-        sizeColumn.minWidth = 90
-        sizeColumn.maxWidth = 220
-        sizeColumn.width = 110
-        sizeColumn.resizingMask = [.userResizingMask, .autoresizingMask]
-        sizeColumn.sortDescriptorPrototype = NSSortDescriptor(key: "size", ascending: true)
+        for column in normalizedColumns {
+            let identifier = NSUserInterfaceItemIdentifier(column.rawValue)
+            if tableView.tableColumn(withIdentifier: identifier) == nil {
+                tableView.addTableColumn(resolvedTableColumn(for: column))
+            }
+        }
 
-        let kindColumn = NSTableColumn(identifier: NSUserInterfaceItemIdentifier("kind"))
-        kindColumn.title = "Kind"
-        kindColumn.minWidth = 120
-        kindColumn.maxWidth = 360
-        kindColumn.width = 180
-        kindColumn.resizingMask = [.userResizingMask, .autoresizingMask]
-        kindColumn.sortDescriptorPrototype = NSSortDescriptor(key: "kind", ascending: true)
+        for (targetIndex, column) in normalizedColumns.enumerated() {
+            let identifier = NSUserInterfaceItemIdentifier(column.rawValue)
+            let currentIndex = tableView.column(withIdentifier: identifier)
+            guard currentIndex >= 0, currentIndex != targetIndex else { continue }
+            tableView.moveColumn(currentIndex, toColumn: targetIndex)
+        }
 
-        tableView.addTableColumn(nameColumn)
-        tableView.addTableColumn(dateColumn)
-        tableView.addTableColumn(sizeColumn)
-        tableView.addTableColumn(kindColumn)
+        if let outlineColumn = tableView.tableColumn(
+            withIdentifier: NSUserInterfaceItemIdentifier(EntryListColumn.name.rawValue),
+        ) {
+            tableView.outlineTableColumn = outlineColumn
+        }
 
-        tableView.outlineTableColumn = nameColumn
-        tableView.columnAutoresizingStyle = .lastColumnOnlyAutoresizingStyle
-        tableView.autosaveName = "FileManager.EntryList.Columns"
-        tableView.autosaveTableColumns = true
+        tableView.sortDescriptors = tableView.sortDescriptors.filter { descriptor in
+            guard let key = descriptor.key else { return false }
+            return visibleIdentifiers.contains(key)
+        }
+    }
+
+    private func resolvedTableColumn(for column: EntryListColumn) -> NSTableColumn {
+        if let cached = availableColumns[column] {
+            return cached
+        }
+
+        let tableColumn = NSTableColumn(identifier: NSUserInterfaceItemIdentifier(column.rawValue))
+        tableColumn.title = column.title
+        tableColumn.minWidth = column.minWidth
+        tableColumn.maxWidth = column.maxWidth
+        tableColumn.width = column.defaultWidth
+        tableColumn.resizingMask = [.userResizingMask, .autoresizingMask]
+
+        if let sortDescriptorKey = column.sortDescriptorKey {
+            tableColumn.sortDescriptorPrototype = NSSortDescriptor(key: sortDescriptorKey, ascending: true)
+        } else {
+            tableColumn.sortDescriptorPrototype = nil
+        }
+
+        availableColumns[column] = tableColumn
+        return tableColumn
     }
 }
