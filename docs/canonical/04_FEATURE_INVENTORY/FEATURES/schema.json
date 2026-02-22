@@ -7,7 +7,11 @@
       "name": "feature_category",
       "type": "string",
       "required": true,
-      "description": "카테고리 제목(표시용, FK -> FEATURE_CATEGORIES.category_title)."
+      "ref": {
+        "table": "FEATURE_CATEGORIES",
+        "column": "category_title"
+      },
+      "description": "카테고리 제목(표시용, FEATURE_CATEGORIES.category_title)."
     },
     {
       "name": "category_key",
@@ -23,31 +27,33 @@
       "name": "feature_title",
       "type": "string",
       "required": true,
-      "description": "기능 제목."
+      "description": "기능 제목(사람이 읽는 라벨)."
     },
     {
       "name": "feature_id",
       "type": "string",
       "required": true,
-      "description": "기능 ID(PK)."
+      "description": "기능 ID(PK). 안정적인 참조 키."
     },
     {
       "name": "release_phase",
       "type": "string",
       "required": false,
-      "description": "릴리즈 단계 태그."
-    },
-    {
-      "name": "status",
-      "type": "string",
-      "required": false,
-      "description": "상태."
+      "enum": [
+        "BACKLOG",
+        "CBT-W1",
+        "CBT-NEXT",
+        "OBT",
+        "MVP",
+        "LATER"
+      ],
+      "description": "릴리즈 단계 태그(예: BACKLOG, CBT-W1, CBT-NEXT, OBT, MVP, LATER)."
     },
     {
       "name": "description",
       "type": "string",
       "required": false,
-      "description": "한 줄 설명."
+      "description": "기능 한 줄 설명(무엇을 하는지)."
     },
     {
       "name": "related_ui",
@@ -57,7 +63,7 @@
         "table": "WINDOW_STRUCTURE",
         "column": "structure_key"
       },
-      "description": "UI 구조 참조(옵션, FK -> WINDOW_STRUCTURE.structure_key)."
+      "description": "UI 구조 참조(옵션, FK -> WINDOW_STRUCTURE.structure_key). 기능과 가장 연관이 높은 대표 UI 영역."
     }
   ]
 }
