@@ -5,6 +5,9 @@ struct FileManagerContentFeature {
     typealias State = FileManagerContentState
     typealias Action = FileManagerContentAction
 
+    @Dependency(\.userDefaultsClient)
+    private var userDefaultsClient
+
     var body: some Reducer<State, Action> {
         Scope(state: \.composer, action: \.composer) {
             ComposerFeature()
@@ -21,13 +24,39 @@ struct FileManagerContentFeature {
         Scope(state: \.self, action: \.entryArrangements) {
             EntryArrangementsFeature()
         }
-        FileManagerContentEntryFeature()
+
+        EntryCommandRoutingReducer()
         FileManagerContentEntryAppearanceFeature()
         FileManagerContentEntryOperationsFeature()
         FileManagerContentEntryThumbnailFeature()
         FileManagerContentComposerFeature()
-        FileManagerContentLayoutRoutingFeature()
         FileManagerContentCollectionDraftFeature()
-        FileManagerContentWindowBridgeFeature()
+
+        Reduce { state, action in
+            switch action {
+            case let .handleKeyCommand(command):
+                return FileManagerContentKeyCommandHandler.effect(for: command, state: state)
+
+            case .openPathInNewWindow,
+                 .openPathInNewTab:
+                return .none
+
+            case .emptyTrashCompleted:
+                return .send(.closeWindow)
+
+            case let .changeLayout(layout):
+                state.viewLayout = layout
+                state.syncComposerCollectionState()
+                userDefaultsClient.setString(layout.rawValue, SettingsKeys.viewLayout)
+                return .none
+
+            case let .saveScrollOffset(offset, forPath: path):
+                state.navigation.scrollPositions[path] = offset
+                return .none
+
+            default:
+                return .none
+            }
+        }
     }
 }
