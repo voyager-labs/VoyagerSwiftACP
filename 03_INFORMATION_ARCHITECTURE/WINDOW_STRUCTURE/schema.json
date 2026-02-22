@@ -8,7 +8,7 @@
       "name": "window_id",
       "type": "string",
       "required": true,
-      "description": "윈도우 식별자."
+      "description": "윈도우 식별자(예: file_manager_window)."
     },
     {
       "name": "parent_region_id",
@@ -49,13 +49,20 @@
       "name": "slot_type",
       "type": "string",
       "required": false,
+      "enum": [
+        "root",
+        "pane",
+        "section",
+        "overlay",
+        "mode"
+      ],
       "description": "영역 역할/타입(예: root, pane, section, overlay, mode)."
     },
     {
       "name": "structure_key",
       "type": "string",
       "required": true,
-      "description": "안정적인 계층 키(PK)."
+      "description": "안정적인 계층 키(PK). 다른 테이블에서 UI 참조 키로 사용(예: FEATURES.related_ui, INTERACTIONS.related_region)."
     },
     {
       "name": "description",
@@ -67,12 +74,22 @@
       "name": "objects",
       "type": "string",
       "required": false,
-      "description": "연관 오브젝트 키(자유 형식/TBD)."
+      "ref": {
+        "table": "OBJECTS",
+        "column": "key"
+      },
+      "description": "연관 오브젝트 키(OBJECTS.key). 다중 값이 필요하면 '|'로 구분."
     },
     {
       "name": "release_phase",
       "type": "string",
       "required": false,
+      "enum": [
+        "CBT",
+        "OBT",
+        "MVP",
+        "LATER"
+      ],
       "description": "릴리즈 단계 태그(예: CBT, OBT, MVP, LATER)."
     }
   ]

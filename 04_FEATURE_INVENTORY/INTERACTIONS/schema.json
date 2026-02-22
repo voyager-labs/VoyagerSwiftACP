@@ -7,35 +7,45 @@
       "name": "interaction_title",
       "type": "string",
       "required": true,
-      "description": "인터랙션 제목."
+      "description": "인터랙션 제목(사람이 읽는 라벨)."
     },
     {
       "name": "interaction_id",
       "type": "string",
       "required": true,
-      "description": "인터랙션 ID(PK). 예: FMW-001-open_new_file_manager_window"
+      "description": "인터랙션 ID(PK). 안정적인 참조 키. 예: FMW-001-open_new_file_manager_window"
     },
     {
       "name": "interaction_type",
       "type": "string",
       "required": false,
-      "description": "인터랙션 타입(예: command, input)."
+      "enum": [
+        "command",
+        "input",
+        "display",
+        "background"
+      ],
+      "description": "인터랙션 타입. command=사용자 호출/실행, input=값/상태 변경 입력, display=정보 표시, background=백그라운드 작업."
     },
     {
       "name": "feature",
       "type": "string",
       "required": false,
-      "description": "기능 제목(표시용)."
+      "ref": {
+        "table": "FEATURES",
+        "column": "feature_title"
+      },
+      "description": "기능 제목(FEATURES.feature_title). 보통 feature_id로 참조된 기능과 동일한 제목을 적습니다."
     },
     {
       "name": "category_key",
       "type": "string",
       "required": false,
       "ref": {
-        "table": "FEATURE_CATEGORIES",
+        "table": "FEATURES",
         "column": "category_key"
       },
-      "description": "기능 카테고리 키(FK -> FEATURE_CATEGORIES.category_key)."
+      "description": "기능 카테고리 키(FEATURES.category_key)."
     },
     {
       "name": "feature_id",
@@ -51,13 +61,21 @@
       "name": "status",
       "type": "string",
       "required": false,
-      "description": "상태."
+      "enum": [
+        "아이디어",
+        "드래프트",
+        "기획 완료",
+        "준비 완료",
+        "배포 완료",
+        "취소"
+      ],
+      "description": "상태. 아이디어=후보, 드래프트=초안, 기획 완료=스펙 확정, 준비 완료=구현/출시 준비, 배포 완료=사용 가능, 취소=더 이상 진행하지 않음."
     },
     {
       "name": "summary",
       "type": "string",
       "required": false,
-      "description": "요약."
+      "description": "인터랙션 한 줄 요약(무엇을 하는지)."
     },
     {
       "name": "related_region",
@@ -67,19 +85,23 @@
         "table": "WINDOW_STRUCTURE",
         "column": "structure_key"
       },
-      "description": "UI 영역 참조(옵션, FK -> WINDOW_STRUCTURE.structure_key)."
+      "description": "UI 영역 참조(옵션, FK -> WINDOW_STRUCTURE.structure_key). 인터랙션이 발생/노출되는 대표 UI 영역."
     },
     {
       "name": "menu",
       "type": "string",
       "required": false,
-      "description": "메뉴 라벨/참조(자유 형식)."
+      "ref": {
+        "table": "MENUS",
+        "column": "menu_node_id"
+      },
+      "description": "메뉴 노드 ID(FK -> MENUS.menu_node_id)."
     },
     {
       "name": "shortcut",
       "type": "string",
       "required": false,
-      "description": "단축키(자유 형식)."
+      "description": "단축키(자유 형식). 예: ⌘N, ⌘⇧W, ESC."
     }
   ]
 }
