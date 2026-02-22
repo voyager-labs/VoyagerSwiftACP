@@ -32,13 +32,13 @@ enum FileManagerContentKeyCommandHandler {
         }
 
         if state.entryViewLayout.isRenaming {
-            return .send(.entryViewLayout(.commitRename))
+            return .send(.entries(.commitRename))
         }
 
         if state.entryViewLayout.selectedIds.count == 1,
            let selectedId = state.entryViewLayout.selectedIds.first
         {
-            return .send(.entryViewLayout(.startRename(id: selectedId)))
+            return .send(.entries(.startRename(id: selectedId)))
         }
 
         return .none
@@ -98,7 +98,7 @@ enum FileManagerContentKeyCommandHandler {
         }
 
         if command.characters == ".", command.modifiers.contains(.shift) {
-            return .send(.entryViewLayout(.toggleShowHiddenFiles))
+            return .send(.entries(.toggleShowHiddenFiles))
         }
 
         return nil
@@ -135,23 +135,23 @@ enum FileManagerContentKeyCommandHandler {
 
         switch command.keyCode {
         case 123 where state.viewLayout == .grid:
-            return .send(.entryViewLayout(.selectPreviousItem(isShiftPressed: isShiftPressed)))
+            return .send(.entries(.selectPreviousItem(isShiftPressed: isShiftPressed)))
         case 124 where state.viewLayout == .grid:
-            return .send(.entryViewLayout(.selectNextItem(isShiftPressed: isShiftPressed)))
+            return .send(.entries(.selectNextItem(isShiftPressed: isShiftPressed)))
         case 126 where state.viewLayout == .grid:
-            return .send(.entryViewLayout(.selectByOffset(
+            return .send(.entries(.selectByOffset(
                 offset: -state.entryViewLayout.gridColumnCount,
                 isShiftPressed: isShiftPressed,
             )))
         case 125 where state.viewLayout == .grid:
-            return .send(.entryViewLayout(.selectByOffset(
+            return .send(.entries(.selectByOffset(
                 offset: state.entryViewLayout.gridColumnCount,
                 isShiftPressed: isShiftPressed,
             )))
         case 126:
-            return .send(.entryViewLayout(.selectPreviousItem(isShiftPressed: isShiftPressed)))
+            return .send(.entries(.selectPreviousItem(isShiftPressed: isShiftPressed)))
         case 125:
-            return .send(.entryViewLayout(.selectNextItem(isShiftPressed: isShiftPressed)))
+            return .send(.entries(.selectNextItem(isShiftPressed: isShiftPressed)))
         default:
             return nil
         }
