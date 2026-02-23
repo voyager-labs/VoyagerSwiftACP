@@ -185,18 +185,12 @@ struct WindowManagerFeature {
             if onboardingWindowClient.showIfNeeded() {
                 return .none
             }
-            let id = uuid()
-            var windowState = FileManagerWindowFeature.State()
-            windowState.content.entryOperations.windowID = id
-            applyAppPreferences(state.appPreferences, to: &windowState)
-            if let path {
-                windowState.content.navigation.seedInitialFolderPath(path)
-            }
+            let windowSession = makeWindowSession(path: path, appPreferences: state.appPreferences)
 
-            state.windows.append(.init(id: id, window: windowState))
-            state.focusedWindowID = id
+            state.windows.append(windowSession)
+            state.focusedWindowID = windowSession.id
 
-            return .run { [id] _ in
+            return .run { [id = windowSession.id] _ in
                 await fileManagerWindowClient.open(id)
             }
 
@@ -204,18 +198,12 @@ struct WindowManagerFeature {
             if onboardingWindowClient.showIfNeeded() {
                 return .none
             }
-            let id = uuid()
-            var windowState = FileManagerWindowFeature.State()
-            windowState.content.entryOperations.windowID = id
-            applyAppPreferences(state.appPreferences, to: &windowState)
-            if let path {
-                windowState.content.navigation.seedInitialFolderPath(path)
-            }
+            let windowSession = makeWindowSession(path: path, appPreferences: state.appPreferences)
 
-            state.windows.append(.init(id: id, window: windowState))
-            state.focusedWindowID = id
+            state.windows.append(windowSession)
+            state.focusedWindowID = windowSession.id
 
-            return .run { [id] _ in
+            return .run { [id = windowSession.id] _ in
                 await fileManagerWindowClient.openTab(id)
             }
 
@@ -276,6 +264,19 @@ struct WindowManagerFeature {
         windowState.content.entryArrangements.updateSortOrder(preferences.sortOrder)
         windowState.content.entryArrangements.updateGroupKey(preferences.groupKey)
         windowState.content.syncComposerCollectionState()
+    }
+
+    private func makeWindowSession(path: String?, appPreferences: AppPreferencesState) -> WindowSessionState {
+        let id = uuid()
+        var windowState = FileManagerWindowFeature.State()
+        windowState.content.entryOperations.windowID = id
+        applyAppPreferences(appPreferences, to: &windowState)
+
+        if let path {
+            windowState.content.navigation.seedInitialFolderPath(path)
+        }
+
+        return .init(id: id, window: windowState)
     }
 }
 
