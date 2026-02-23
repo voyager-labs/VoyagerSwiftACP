@@ -21,10 +21,24 @@ struct SearchQueryService: Sendable {
     nonisolated func querySearch(
         _ request: SearchRequestPayload,
     ) async throws -> SearchResponsePayload {
+        await convertQuery(request)
+    }
+
+    nonisolated func convertQuery(
+        _ request: SearchRequestPayload,
+    ) async -> SearchResponsePayload {
         let trimmedQuery = request.query.trimmingCharacters(in: .whitespacesAndNewlines)
 
         guard trimmedQuery.isEmpty == false else {
-            return try await searchService.applyFilters(request.filters)
+            return SearchResponsePayload(
+                itemCount: 0,
+                appliedFilters: AppliedFiltersPayload(
+                    scopes: request.filters.scopes,
+                    conditions: request.filters.conditions,
+                ),
+                items: nil,
+                error: nil,
+            )
         }
 
         let conversion = await converter.convert(query: trimmedQuery, existingFilters: request.filters)
@@ -45,16 +59,21 @@ struct SearchQueryService: Sendable {
             conditions: conversion.conditions,
         )
 
-        do {
-            return try await searchService.applyFilters(plannedFilters)
-        } catch {
-            logger.warning("Local query execution failed: \(error)")
-            return makeErrorResponse(
-                code: "QUERY_SEARCH_FAILED",
-                details: String(describing: error),
-                fallbackFilters: plannedFilters,
-            )
-        }
+        return SearchResponsePayload(
+            itemCount: 0,
+            appliedFilters: AppliedFiltersPayload(
+                scopes: plannedFilters.scopes,
+                conditions: plannedFilters.conditions,
+            ),
+            items: nil,
+            error: nil,
+        )
+    }
+
+    nonisolated func executeQuery(
+        _ filters: SearchFiltersPayload,
+    ) async throws -> SearchResponsePayload {
+        try await searchService.applyFilters(filters)
     }
 
     private nonisolated func makeErrorResponse(
