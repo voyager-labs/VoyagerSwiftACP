@@ -475,6 +475,10 @@ struct ComposerFeature {
                 state.lastFiltersResponse = nil
                 state.queryRenderPhase = .chipsAppliedPendingList
                 applyAppliedFilters(response.appliedFilters, state: &state, registryClient: registryClient)
+                state.isLoadingFilters = true
+                state.isFilteringInFlight = true
+                state.filtersStartedAt = Date()
+                let executionFilters = buildFilters(from: state)
                 if let startedAt = state.searchStartedAt {
                     VoyagerSentryMetricLogger.logMetric(
                         "voyager_search_roundtrip_duration_ms",
@@ -487,7 +491,17 @@ struct ComposerFeature {
                     tags: ["result": response.itemCount > 0 ? "success" : "empty"],
                 )
                 state.searchStartedAt = nil
-                return .none
+                return .run { send in
+                    do {
+                        let executionResponse = try await searchClient.applyFilters(
+                            .init(filters: executionFilters),
+                        )
+                        await send(.filtersResponse(.success(executionResponse)))
+                    } catch {
+                        await send(.filtersResponse(.failure(error)))
+                    }
+                }
+                .cancellable(id: CancelID.filters, cancelInFlight: true)
 
             case .searchResponse(.failure):
                 state.isLoadingSearch = false
