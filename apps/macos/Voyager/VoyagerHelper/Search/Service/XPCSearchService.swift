@@ -20,8 +20,9 @@ final class XPCSearchService: NSObject, FilterSearchXPCServiceProtocol {
         Task { @MainActor in
             do {
                 let request = try Self.decodeRequest(from: requestData)
+                let queryService = SearchQueryService(searchService: service)
                 let response = try await Task.detached(priority: .userInitiated) {
-                    try await service.applyFilters(request.filters)
+                    try await queryService.executeQuery(request.filters)
                 }
                 .value
                 let responseData = try Self.encodeResponse(response)
