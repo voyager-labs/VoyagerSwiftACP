@@ -2,12 +2,16 @@ import AppKit
 import ComposableArchitecture
 import SwiftUI
 
+@ViewAction(for: MenuCommandsFeature.self)
 struct AppMenuCommands: Commands {
+    let store: StoreOf<MenuCommandsFeature>
     @ObservedObject private var viewStore: ViewStore<MenuCommandsState, MenuCommandsAction>
 
     init(appRootStore: StoreOf<AppRootFeature>) {
+        let menuStore = appRootStore.scope(state: \.menuCommands, action: \.menuCommands)
+        store = menuStore
         viewStore = ViewStore(
-            appRootStore.scope(state: \.menuCommands, action: \.menuCommands),
+            menuStore,
             observe: { $0 },
         )
     }
@@ -15,30 +19,30 @@ struct AppMenuCommands: Commands {
     var body: some Commands {
         CommandGroup(after: .appInfo) {
             Button("Check for Updates...") {
-                viewStore.send(.perform(.app(.checkForUpdates)))
+                send(.app(.checkForUpdates))
             }
         }
 
         CommandGroup(replacing: .newItem) {
             Button("New Window") {
-                viewStore.send(.perform(.app(.newWindow(path: nil))))
+                send(.app(.newWindow(path: nil)))
             }
             .keyboardShortcut("n", modifiers: .command)
 
             Button("New Folder") {
-                viewStore.send(.perform(.app(.newFolder)))
+                send(.app(.newFolder))
             }
             .keyboardShortcut("n", modifiers: [.command, .shift])
             .disabled(!viewStore.hasFocusedWindow)
 
             Button("Open") {
-                viewStore.send(.perform(.app(.open)))
+                send(.app(.open))
             }
             .keyboardShortcut(.downArrow, modifiers: .command)
             .disabled(!viewStore.canOpen)
 
             Button("Quick Look") {
-                viewStore.send(.perform(.app(.quickLook)))
+                send(.app(.quickLook))
             }
             .keyboardShortcut(.space, modifiers: [])
             .disabled(!viewStore.canQuickLook)
@@ -46,13 +50,13 @@ struct AppMenuCommands: Commands {
 
         CommandGroup(replacing: .saveItem) {
             Button("Save Collection Filter Changes") {
-                viewStore.send(.perform(.app(.saveCollection)))
+                send(.app(.saveCollection))
             }
             .keyboardShortcut("s", modifiers: .command)
             .disabled(!viewStore.canSaveCollection)
 
             Button("Save Current Filter As New Collection") {
-                viewStore.send(.perform(.app(.saveCollectionAs)))
+                send(.app(.saveCollectionAs))
             }
             .keyboardShortcut("s", modifiers: [.command, .shift])
             .disabled(!viewStore.canSaveCollection)
@@ -60,32 +64,32 @@ struct AppMenuCommands: Commands {
             Divider()
 
             Button("Close Window") {
-                viewStore.send(.perform(.app(.closeFocusedWindow)))
+                send(.app(.closeFocusedWindow))
             }
             .keyboardShortcut("w", modifiers: .command)
             .disabled(!viewStore.hasFocusedWindow)
 
             Button("Close All") {
-                viewStore.send(.perform(.app(.closeAllWindows)))
+                send(.app(.closeAllWindows))
             }
             .keyboardShortcut("w", modifiers: [.command, .option])
         }
 
         CommandMenu("Go") {
             Button("Back") {
-                viewStore.send(.perform(.app(.goBack)))
+                send(.app(.goBack))
             }
             .keyboardShortcut("[", modifiers: .command)
             .disabled(!viewStore.canGoBack)
 
             Button("Forward") {
-                viewStore.send(.perform(.app(.goForward)))
+                send(.app(.goForward))
             }
             .keyboardShortcut("]", modifiers: .command)
             .disabled(!viewStore.canGoForward)
 
             Button("Enclosing Folder") {
-                viewStore.send(.perform(.app(.goToEnclosingDirectory)))
+                send(.app(.goToEnclosingDirectory))
             }
             .keyboardShortcut(.upArrow, modifiers: .command)
             .disabled(!viewStore.canGoToEnclosingDirectory)

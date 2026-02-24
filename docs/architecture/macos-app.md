@@ -394,11 +394,20 @@ Voyager는 TCA Dependencies 패턴으로 "외부 세계"를 캡슐화합니다.
 
 | 주제              | 권장                                                             | 금지                                                                |
 | ----------------- | ---------------------------------------------------------------- | ------------------------------------------------------------------- |
-| 액션 설계         | View는 `StoreOf<ParentFeature>`에만 `send(Parent.Action)`        | View가 내부 세부 리듀서(서비스/헬퍼)의 액션을 직접 발화             |
+| 액션 설계         | `view/delegate/internal` 3계층(`Action.view`, `Action.delegate`, `Action`의 internal 계층)으로 분리 | View가 내부 세부 리듀서(서비스/헬퍼) 액션을 직접 발화하거나 `internal` 액션을 직접 발화 |
 | 대형 Feature 분해 | 부모(오케스트레이터)에서 `Scope`/서브리듀서 주입으로 관심사 분리 | `Feature+Something.swift` 확장이 무제한으로 늘어나 로직 위치가 분산 |
 | 외부 의존성       | `Api/*Client.swift` + `@Dependency`로 캡슐화                     | 전역 싱글톤/정적 함수로 외부 호출을 흩뿌리기                        |
 | Effect 수명       | `.cancellable(id:)`로 취소 가능한 구조                           | 장기 실행 Task/Notification 스트림을 방치                           |
 | 레이어 의존성     | `App/Pages`는 조립, `Features/Entities`에 로직 집중              | `Entities`가 `Pages`에 의존하거나 `Shared`가 상위 레이어를 참조     |
+
+### View 액션 경계 통일 계획 (`WithViewStore` -> `@ViewAction`)
+
+- 기본 원칙: 신규 View/수정 View는 `@ViewAction`을 우선 사용합니다.
+- 전환 원칙: 기존 `WithViewStore` 기반 화면도 기능 변경 시점에 함께 `@ViewAction`으로 점진 전환합니다.
+- 액션 모델: `Action.view(View)` + `Action.delegate(Delegate)` + `Action`의 internal 계층(`Internal`)을 기본 골격으로 사용합니다.
+- `internal` 액션은 Effect 결과/시스템 이벤트/비동기 콜백 처리 전용이며, View에서 직접 `send`하지 않습니다.
+- 지양 패턴: UI 이벤트 전달 목적의 커스텀 래퍼(예: `perform(...)`)를 새로 늘리지 않습니다.
+- 리뷰 체크: PR에서 View가 `send(.view...)` 또는 `send(...)`(`@ViewAction`) 경계만 호출하는지 확인합니다.
 
 ### 새 모듈 추가 체크리스트
 
