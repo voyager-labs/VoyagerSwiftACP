@@ -59,10 +59,7 @@ private struct FileManagerNavigationBridgeReducer {
                 return .send(.navigation(navigationAction))
 
             case let .content(.performPendingNavigation(pending)):
-                return .send(.navigation(.performNavigation(
-                    pending,
-                    currentSnapshot: currentNavigationSnapshot(state),
-                )))
+                return .send(.navigation(.performNavigation(pending)))
 
             case .content(.composer(.searchResponse(.success))),
                  .content(.composer(.filtersResponse(.success))),
@@ -81,10 +78,6 @@ private struct FileManagerNavigationBridgeReducer {
                 return .none
             }
         }
-    }
-
-    private func currentNavigationSnapshot(_ state: State) -> ContentPageNavigationHistorySnapshot {
-        state.content.navigation.makeContentPageNavigationHistorySnapshot(composer: state.content.composer)
     }
 
     private func syncSidebarSelection(state: inout State) {
@@ -177,56 +170,23 @@ func matchedSidebarItemName(
         ?? locations.first(where: { $0.url.path == path })?.name
 }
 
-func applyContentPageNavigationHistorySnapshot(
-    _ entry: ContentPageNavigationHistorySnapshot,
-    state: inout FileManagerWindowState,
-) {
-    state.content.composer = entry.composerSnapshot
-
-    switch entry.navigationState {
-    case let .collection(navigation):
-        state.content.collectionContext = navigation.context
-        state.content.entryArrangements.updateSortKey(navigation.sortKey)
-        state.content.entryArrangements.updateSortOrder(navigation.sortOrder)
-        state.content.viewLayout = navigation.viewLayout
-        state.content.collectionSession.isOpening = false
-        switch navigation.kind {
-        case .temporary:
-            state.content.collectionSession.openedURL = nil
-            state.content.collectionSession.openedName = nil
-            state.content.collectionSession.originURL = nil
-            state.content.collectionSession.baseline = nil
-        case let .file(url, name):
-            state.content.collectionSession.openedURL = url
-            state.content.collectionSession.openedName = name
-            state.content.collectionSession.originURL = url
-            state.content.collectionSession.baseline = CollectionBaseline(context: navigation.context)
-        }
-    case .folder, .recents, .tags, .computer:
-        state.content.collectionContext = nil
-        state.content.collectionSession = .init()
-    }
-
-    state.content.syncComposerCollectionState()
-}
-
 func handleNavigateToState(
     _ navigationState: ContentPageNavigationRoute,
     state: inout FileManagerWindowState,
 ) -> Effect<FileManagerWindowAction> {
     switch navigationState {
     case let .folder(path):
-        .merge(
+        .concatenate(
             .send(.content(.entries(.setCollectionMode(false)))),
             .send(.content(.entries(.loadItems(path: path)))),
         )
     case .recents:
-        .merge(
+        .concatenate(
             .send(.content(.entries(.setCollectionMode(false)))),
             .send(.content(.entries(.loadRecentItems(showHidden: state.content.entryViewLayout.showHiddenFiles)))),
         )
     case let .tags(tagName):
-        .merge(
+        .concatenate(
             .send(.content(.entries(.setCollectionMode(false)))),
             .send(.content(.entries(.loadTagItems(
                 tagName: tagName,
@@ -234,7 +194,7 @@ func handleNavigateToState(
             )))),
         )
     case .computer:
-        .merge(
+        .concatenate(
             .send(.content(.entries(.setCollectionMode(false)))),
             .send(.content(.entries(.loadComputerItems))),
         )

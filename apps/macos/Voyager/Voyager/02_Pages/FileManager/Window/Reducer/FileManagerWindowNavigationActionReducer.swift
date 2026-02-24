@@ -83,16 +83,16 @@ struct FileManagerNavigationActionReducer {
             if path == computerName, state.content.navigation.currentPath == computerName {
                 return .none
             }
-            return .send(.navigation(.performNavigateToPath(path, currentSnapshot: currentNavigationSnapshot(state))))
+            return .send(.navigation(.performNavigateToPath(path)))
 
         case .showRecents:
-            return .send(.navigation(.performShowRecents(currentSnapshot: currentNavigationSnapshot(state))))
+            return .send(.navigation(.performShowRecents))
 
         case .showComputer:
-            return .send(.navigation(.performShowComputer(currentSnapshot: currentNavigationSnapshot(state))))
+            return .send(.navigation(.performShowComputer))
 
         case let .showTag(tagName):
-            return .send(.navigation(.performShowTag(tagName, currentSnapshot: currentNavigationSnapshot(state))))
+            return .send(.navigation(.performShowTag(tagName)))
 
         default:
             return .none
@@ -150,7 +150,7 @@ struct FileManagerNavigationActionReducer {
         if shouldPromptForUnsavedNavigation(state.content) {
             return .send(.navigation(.showUnsavedNavigationAlert(pending)))
         }
-        return .send(.navigation(.performNavigation(pending, currentSnapshot: currentNavigationSnapshot(state))))
+        return .send(.navigation(.performNavigation(pending)))
     }
 
     private func handleUnsavedNavigationAction(
@@ -186,7 +186,7 @@ struct FileManagerNavigationActionReducer {
             return .none
         case .discard:
             state.content.resetComposerOnNextDirectoryNavigation = true
-            return .send(.navigation(.performNavigation(pending, currentSnapshot: currentNavigationSnapshot(state))))
+            return .send(.navigation(.performNavigation(pending)))
         case .save:
             state.content.resetComposerOnNextDirectoryNavigation = true
             return .concatenate(
@@ -194,10 +194,6 @@ struct FileManagerNavigationActionReducer {
                 .send(.content(.composer(.saveCollection))),
             )
         }
-    }
-
-    private func currentNavigationSnapshot(_ state: State) -> ContentPageNavigationHistorySnapshot {
-        state.content.navigation.makeContentPageNavigationHistorySnapshot(composer: state.content.composer)
     }
 
     private func shouldPromptForUnsavedNavigation(_ state: FileManagerContentState) -> Bool {
@@ -215,11 +211,7 @@ private func handleOpenCollectionFile(
     }
 
     let prepareHistoryEffect: Effect<FileManagerWindowAction> = .send(
-        .navigation(.prepareCollectionFileOpen(
-            url,
-            currentSnapshot: state.content.navigation.makeContentPageNavigationHistorySnapshot(composer: state.content
-                .composer),
-        )),
+        .navigation(.prepareCollectionFileOpen(url)),
     )
 
     let clearEffect = state.content.clearCollectionMode()
@@ -441,12 +433,8 @@ private func handleNavigationDelegate(
     computerName: String,
 ) -> Effect<FileManagerWindowAction> {
     switch delegateAction {
-    case let .applyContentPageNavigationHistorySnapshot(entry):
-        applyContentPageNavigationHistorySnapshot(entry, state: &state)
-        syncSidebarSelection(state: &state, computerName: computerName)
-        return .send(.content(.entryArrangements(.reapply)))
-
     case let .navigateToState(navigationState):
+        syncSidebarSelection(state: &state, computerName: computerName)
         return handleNavigateToState(navigationState, state: &state)
 
     case let .logDAUNavigation(previous, next):
