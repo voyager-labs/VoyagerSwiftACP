@@ -280,7 +280,6 @@ final class PermissionsFeatureTests: XCTestCase {
             state.helperFolderAccessResult = helperResult
             state.helperFilesAndFoldersStatus = .granted
             state.isComplete = true
-            state.isIndexingInBackground = true
         }
 
         await store.finish()
