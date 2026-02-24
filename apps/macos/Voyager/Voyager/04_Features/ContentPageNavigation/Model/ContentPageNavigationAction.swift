@@ -2,7 +2,6 @@ import ComposableArchitecture
 import Foundation
 
 enum ContentPageNavigationDelegate: Equatable, Sendable {
-    case applyContentPageNavigationHistorySnapshot(ContentPageNavigationHistorySnapshot)
     case navigateToState(ContentPageNavigationRoute)
     case logDAUNavigation(
         previous: ContentPageNavigationRoute,
@@ -39,11 +38,11 @@ enum ContentPageNavigationAction: Equatable, Sendable {
     case showRecents
     case showComputer
     case showTag(String)
-    case performNavigateToPath(String, currentSnapshot: ContentPageNavigationHistorySnapshot)
-    case performShowRecents(currentSnapshot: ContentPageNavigationHistorySnapshot)
-    case performShowComputer(currentSnapshot: ContentPageNavigationHistorySnapshot)
-    case performShowTag(String, currentSnapshot: ContentPageNavigationHistorySnapshot)
-    case prepareCollectionFileOpen(URL, currentSnapshot: ContentPageNavigationHistorySnapshot)
+    case performNavigateToPath(String)
+    case performShowRecents
+    case performShowComputer
+    case performShowTag(String)
+    case prepareCollectionFileOpen(URL)
     case rollbackBackHistoryOnce
     case appendBackHistory(ContentPageNavigationHistorySnapshot)
     case clearForwardHistory
@@ -52,7 +51,7 @@ enum ContentPageNavigationAction: Equatable, Sendable {
     case openCollectionFile(URL)
     case collectionFileLoaded(ContentPageCollectionFileLoadResult)
     case navigateToCollection(ContentPageCollectionNavigation)
-    case performNavigation(ContentPageNavigationPending, currentSnapshot: ContentPageNavigationHistorySnapshot)
+    case performNavigation(ContentPageNavigationPending)
     case showUnsavedNavigationAlert(ContentPageNavigationPending)
     case unsavedNavigationAlertResponse(ContentPageNavigationPending, CollectionNavigationChoice)
     case delegate(ContentPageNavigationDelegate)
