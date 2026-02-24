@@ -1,3 +1,4 @@
+#if canImport(ComposableArchitecture)
 import ComposableArchitecture
 
 @Reducer
@@ -32,7 +33,7 @@ struct FileManagerContentEntryOperationsFeature {
             )
 
         case .emptyTrashCompleted:
-            .send(.emptyTrashCompleted)
+            .send(.closeWindow)
 
         default:
             .none
@@ -60,3 +61,9 @@ struct FileManagerContentEntryOperationsFeature {
         }
     }
 }
+
+#else
+
+struct FileManagerContentEntryOperationsFeature {}
+
+#endif

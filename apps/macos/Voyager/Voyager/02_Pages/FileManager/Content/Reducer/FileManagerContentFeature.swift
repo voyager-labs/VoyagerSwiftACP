@@ -1,3 +1,4 @@
+#if canImport(ComposableArchitecture)
 import ComposableArchitecture
 
 @Reducer
@@ -21,9 +22,11 @@ struct FileManagerContentFeature {
             EntryOperationsFeature()
         }
 
-        Scope(state: \.self, action: \.entryArrangements) {
+        Scope(state: \.entryArrangements, action: \.entryArrangements) {
             EntryArrangementsFeature()
         }
+
+        FileManagerEntryArrangementsBridge()
 
         EntryCommandRoutingReducer()
         FileManagerContentEntryAppearanceFeature()
@@ -41,9 +44,6 @@ struct FileManagerContentFeature {
                  .openPathInNewTab:
                 return .none
 
-            case .emptyTrashCompleted:
-                return .send(.closeWindow)
-
             case let .changeLayout(layout):
                 state.viewLayout = layout
                 state.syncComposerCollectionState()
@@ -60,3 +60,9 @@ struct FileManagerContentFeature {
         }
     }
 }
+
+#else
+
+struct FileManagerContentFeature {}
+
+#endif

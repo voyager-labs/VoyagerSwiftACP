@@ -1,7 +1,9 @@
 import AppKit
-import ComposableArchitecture
 import Foundation
 import SwiftUI
+
+#if canImport(ComposableArchitecture)
+import ComposableArchitecture
 
 @CasePathable
 enum FileManagerContentAction: CasePathable, Sendable {
@@ -23,15 +25,16 @@ enum FileManagerContentAction: CasePathable, Sendable {
 
     case performPendingNavigation(ContentPageNavigationPending)
     case requestNavigation(ContentPageNavigationAction)
-    // TODO(Collection): Collection으로 이동
     case discardCollectionChanges
 
     case openPathInNewWindow(String)
     case openPathInNewTab(String)
 
-    // TODO(EntryOperations): EntryOperations로 이동
-    case emptyTrashCompleted
-
-    // TODO(Window): Window로 이동
     case closeWindow
 }
+
+#else
+
+enum FileManagerContentAction {}
+
+#endif

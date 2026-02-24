@@ -1,3 +1,4 @@
+#if canImport(ComposableArchitecture)
 import AppKit
 import ComposableArchitecture
 import Foundation
@@ -365,3 +366,9 @@ private extension EntryCommandRoutingReducer {
         }
     }
 }
+
+#else
+
+struct EntryCommandRoutingReducer {}
+
+#endif
