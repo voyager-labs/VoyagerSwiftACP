@@ -54,6 +54,9 @@ struct FileManagerFeature {
             case .onDisappear:
                 return .none
 
+            case let .request(command):
+                return handleRequestedCommand(command, state: &state)
+
             case let .applyAppPreferences(preferences):
                 state.sidebar.sidebarVisible = preferences.sidebarVisible
                 state.sidebar.sidebarWidth = preferences.sidebarWidth
@@ -88,6 +91,12 @@ struct FileManagerFeature {
                     tagName: tagName,
                 )))
 
+            case let .content(.openPathInNewWindow(path)):
+                return .send(.delegate(.openPathInNewWindow(path)))
+
+            case let .content(.openPathInNewTab(path)):
+                return .send(.delegate(.openPathInNewTab(path)))
+
             case .content(.closeWindow):
                 return .send(.closeWindow)
 
@@ -101,6 +110,130 @@ struct FileManagerFeature {
             default:
                 return .none
             }
+        }
+    }
+
+    private func handleRequestedCommand(_ command: Action.WindowCommand, state: inout State) -> Effect<Action> {
+        switch command {
+        case .newFolder,
+             .openSelectedItem,
+             .quickLookSelectedItem,
+             .toggleShowHiddenFiles,
+             .cut,
+             .copy,
+             .paste,
+             .duplicate,
+             .makeAlias,
+             .selectAll,
+             .copyAbsolutePaths,
+             .copyURLs:
+            handleEntryRequest(command, state: &state)
+
+        case .saveCollection,
+             .saveCollectionAs,
+             .toggleComposer:
+            handleComposerRequest(command, state: &state)
+
+        case .goBack,
+             .goForward,
+             .goToEnclosingDirectory:
+            handleNavigationRequest(command)
+
+        case .toggleSidebar,
+             .setViewLayout,
+             .setGroupKey,
+             .setSortKey,
+             .setSortOrder:
+            handleLayoutRequest(command, state: &state)
+
+        case .requestUndo,
+             .requestRedo:
+            handleUndoRedoRequest(command)
+        }
+    }
+
+    private func handleEntryRequest(_ command: Action.WindowCommand, state: inout State) -> Effect<Action> {
+        switch command {
+        case .newFolder:
+            .send(.content(.entries(.createNewFolder(currentPath: state.content.navigation.currentPath))))
+        case .openSelectedItem:
+            .send(.content(.entries(.openSelectedItem)))
+        case .quickLookSelectedItem:
+            .send(.content(.entries(.quickLookSelectedItem)))
+        case .toggleShowHiddenFiles:
+            .send(.content(.entries(.toggleShowHiddenFiles)))
+        case .cut:
+            .send(.content(.entries(.cutSelectedItems)))
+        case .copy:
+            .send(.content(.entries(.copySelectedItems)))
+        case .paste:
+            .send(.content(.entries(.pasteItems(destinationPath: state.content.navigation.currentPath))))
+        case .duplicate:
+            .send(.content(.entries(.duplicateSelectedItems)))
+        case .makeAlias:
+            .send(.content(.entries(.createAliasForSelectedItems)))
+        case .selectAll:
+            .send(.content(.entries(.selectAll)))
+        case .copyAbsolutePaths:
+            .send(.content(.entries(.copySelectedAbsolutePaths)))
+        case .copyURLs:
+            .send(.content(.entries(.copySelectedURLs)))
+        default:
+            .none
+        }
+    }
+
+    private func handleComposerRequest(_ command: Action.WindowCommand, state: inout State) -> Effect<Action> {
+        switch command {
+        case .saveCollection:
+            .send(.content(.composer(.saveCollection)))
+        case .saveCollectionAs:
+            .send(.content(.composer(.saveCollectionAs)))
+        case .toggleComposer:
+            .send(.content(.composer(.setPresented(!state.content.composer.isPresented))))
+        default:
+            .none
+        }
+    }
+
+    private func handleNavigationRequest(_ command: Action.WindowCommand) -> Effect<Action> {
+        switch command {
+        case .goBack:
+            .send(.navigation(.goBack))
+        case .goForward:
+            .send(.navigation(.goForward))
+        case .goToEnclosingDirectory:
+            .send(.navigation(.goToEnclosingDirectory))
+        default:
+            .none
+        }
+    }
+
+    private func handleLayoutRequest(_ command: Action.WindowCommand, state: inout State) -> Effect<Action> {
+        switch command {
+        case .toggleSidebar:
+            .send(.sidebar(.setSidebarVisible(!state.sidebar.sidebarVisible)))
+        case let .setViewLayout(layout):
+            .send(.content(.changeLayout(layout)))
+        case let .setGroupKey(key):
+            .send(.content(.entryArrangements(.setGroupKey(key))))
+        case let .setSortKey(key):
+            .send(.content(.entryArrangements(.setSortKey(key))))
+        case let .setSortOrder(order):
+            .send(.content(.entryArrangements(.setSortOrder(order))))
+        default:
+            .none
+        }
+    }
+
+    private func handleUndoRedoRequest(_ command: Action.WindowCommand) -> Effect<Action> {
+        switch command {
+        case .requestUndo:
+            .send(.content(.entryOperations(.requestUndo)))
+        case .requestRedo:
+            .send(.content(.entryOperations(.requestRedo)))
+        default:
+            .none
         }
     }
 }

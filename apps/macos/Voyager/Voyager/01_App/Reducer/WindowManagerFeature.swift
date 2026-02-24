@@ -42,10 +42,6 @@ struct WindowManagerFeature {
 
             case let .applyAppPreferences(preferences):
                 state.appPreferences = preferences
-                for index in state.windows.indices {
-                    applyAppPreferences(preferences, to: &state.windows[index].window)
-                }
-
                 return .merge(
                     state.windows.ids.map { id in
                         .send(.windows(.element(id: id, action: .window(.applyAppPreferences(preferences)))))
@@ -59,87 +55,79 @@ struct WindowManagerFeature {
                 return handleWindowCommand(action, state: &state)
 
             case .newFolder:
-                return sendActionToFocusedWindow(state) { focused in
-                    .content(.entries(.createNewFolder(currentPath: focused.window.content.navigation.currentPath)))
-                }
+                return sendCommandToFocusedWindow(state, .newFolder)
 
             case .open:
-                return sendActionToFocusedWindow(state, .content(.entries(.openSelectedItem)))
+                return sendCommandToFocusedWindow(state, .openSelectedItem)
 
             case .quickLook:
-                return sendActionToFocusedWindow(state, .content(.entries(.quickLookSelectedItem)))
+                return sendCommandToFocusedWindow(state, .quickLookSelectedItem)
 
             case .saveCollection:
-                return sendActionToFocusedWindow(state, .content(.composer(.saveCollection)))
+                return sendCommandToFocusedWindow(state, .saveCollection)
 
             case .saveCollectionAs:
-                return sendActionToFocusedWindow(state, .content(.composer(.saveCollectionAs)))
+                return sendCommandToFocusedWindow(state, .saveCollectionAs)
 
             case .goBack:
-                return sendActionToFocusedWindow(state, .navigation(.goBack))
+                return sendCommandToFocusedWindow(state, .goBack)
 
             case .goForward:
-                return sendActionToFocusedWindow(state, .navigation(.goForward))
+                return sendCommandToFocusedWindow(state, .goForward)
 
             case .goToEnclosingDirectory:
-                return sendActionToFocusedWindow(state, .navigation(.goToEnclosingDirectory))
+                return sendCommandToFocusedWindow(state, .goToEnclosingDirectory)
 
             case .toggleSidebar:
-                return sendActionToFocusedWindow(state) { focused in
-                    .sidebar(.setSidebarVisible(!focused.window.sidebar.sidebarVisible))
-                }
+                return sendCommandToFocusedWindow(state, .toggleSidebar)
 
             case .toggleShowHiddenFiles:
-                return sendActionToFocusedWindow(state, .content(.entries(.toggleShowHiddenFiles)))
+                return sendCommandToFocusedWindow(state, .toggleShowHiddenFiles)
 
             case let .setViewLayout(layout):
-                return sendActionToFocusedWindow(state, .content(.changeLayout(layout)))
+                return sendCommandToFocusedWindow(state, .setViewLayout(layout))
 
             case let .setGroupKey(key):
-                return sendActionToFocusedWindow(state, .content(.entryArrangements(.setGroupKey(key))))
+                return sendCommandToFocusedWindow(state, .setGroupKey(key))
 
             case let .setSortKey(key):
-                return sendActionToFocusedWindow(state, .content(.entryArrangements(.setSortKey(key))))
+                return sendCommandToFocusedWindow(state, .setSortKey(key))
 
             case let .setSortOrder(order):
-                return sendActionToFocusedWindow(state, .content(.entryArrangements(.setSortOrder(order))))
+                return sendCommandToFocusedWindow(state, .setSortOrder(order))
 
             case .requestUndo:
-                return sendActionToFocusedWindow(state, .content(.entryOperations(.requestUndo)))
+                return sendCommandToFocusedWindow(state, .requestUndo)
 
             case .requestRedo:
-                return sendActionToFocusedWindow(state, .content(.entryOperations(.requestRedo)))
+                return sendCommandToFocusedWindow(state, .requestRedo)
 
             case .toggleComposer:
-                return sendActionToFocusedWindow(state) { focused in
-                    .content(.composer(.setPresented(!focused.window.content.composer.isPresented)))
-                }
+                return sendCommandToFocusedWindow(state, .toggleComposer)
 
             case .cut:
-                return sendActionToFocusedWindow(state, .content(.entries(.cutSelectedItems)))
+                return sendCommandToFocusedWindow(state, .cut)
 
             case .copy:
-                return sendActionToFocusedWindow(state, .content(.entries(.copySelectedItems)))
+                return sendCommandToFocusedWindow(state, .copy)
 
             case .paste:
-                return sendActionToFocusedWindow(state) { focused in
-                    .content(.entries(.pasteItems(destinationPath: focused.window.content.navigation.currentPath)))
-                }
+                return sendCommandToFocusedWindow(state, .paste)
 
             case .duplicate:
-                return sendActionToFocusedWindow(state, .content(.entries(.duplicateSelectedItems)))
+                return sendCommandToFocusedWindow(state, .duplicate)
 
             case .makeAlias:
-                return sendActionToFocusedWindow(state, .content(.entries(.createAliasForSelectedItems)))
+                return sendCommandToFocusedWindow(state, .makeAlias)
 
             case .selectAll:
-                return sendActionToFocusedWindow(state, .content(.entries(.selectAll)))
+                return sendCommandToFocusedWindow(state, .selectAll)
 
             case .copyAbsolutePaths:
-                return sendActionToFocusedWindow(state, .content(.entries(.copySelectedAbsolutePaths)))
+                return sendCommandToFocusedWindow(state, .copyAbsolutePaths)
 
             case .copyURLs:
-                return sendActionToFocusedWindow(state, .content(.entries(.copySelectedURLs)))
+                return sendCommandToFocusedWindow(state, .copyURLs)
 
             case let .windowBecameKey(id):
                 state.focusedWindowID = id
@@ -164,10 +152,10 @@ struct WindowManagerFeature {
                     await fileManagerWindowClient.focusPath(path)
                 }
 
-            case let .windows(.element(id: _, action: .window(.content(.openPathInNewWindow(path))))):
+            case let .windows(.element(id: _, action: .window(.delegate(.openPathInNewWindow(path))))):
                 return .send(.newWindow(path: path))
 
-            case let .windows(.element(id: _, action: .window(.content(.openPathInNewTab(path))))):
+            case let .windows(.element(id: _, action: .window(.delegate(.openPathInNewTab(path))))):
                 return .send(.newTab(path: path))
 
             case .windows:
@@ -185,39 +173,39 @@ struct WindowManagerFeature {
             if onboardingWindowClient.showIfNeeded() {
                 return .none
             }
-            let id = uuid()
-            var windowState = FileManagerWindowFeature.State()
-            windowState.content.entryOperations.windowID = id
-            applyAppPreferences(state.appPreferences, to: &windowState)
-            if let path {
-                windowState.content.navigation.seedInitialFolderPath(path)
-            }
+            let windowSession = makeWindowSession(path: path)
 
-            state.windows.append(.init(id: id, window: windowState))
-            state.focusedWindowID = id
+            state.windows.append(windowSession)
+            state.focusedWindowID = windowSession.id
 
-            return .run { [id] _ in
-                await fileManagerWindowClient.open(id)
-            }
+            return .concatenate(
+                .send(.windows(.element(
+                    id: windowSession.id,
+                    action: .window(.applyAppPreferences(state.appPreferences)),
+                ))),
+                .run { [id = windowSession.id] _ in
+                    await fileManagerWindowClient.open(id)
+                },
+            )
 
         case let .newTab(path):
             if onboardingWindowClient.showIfNeeded() {
                 return .none
             }
-            let id = uuid()
-            var windowState = FileManagerWindowFeature.State()
-            windowState.content.entryOperations.windowID = id
-            applyAppPreferences(state.appPreferences, to: &windowState)
-            if let path {
-                windowState.content.navigation.seedInitialFolderPath(path)
-            }
+            let windowSession = makeWindowSession(path: path)
 
-            state.windows.append(.init(id: id, window: windowState))
-            state.focusedWindowID = id
+            state.windows.append(windowSession)
+            state.focusedWindowID = windowSession.id
 
-            return .run { [id] _ in
-                await fileManagerWindowClient.openTab(id)
-            }
+            return .concatenate(
+                .send(.windows(.element(
+                    id: windowSession.id,
+                    action: .window(.applyAppPreferences(state.appPreferences)),
+                ))),
+                .run { [id = windowSession.id] _ in
+                    await fileManagerWindowClient.openTab(id)
+                },
+            )
 
         case .closeFocusedWindow:
             guard let id = state.focusedWindowID else { return .none }
@@ -237,45 +225,18 @@ struct WindowManagerFeature {
         }
     }
 
-    private func focusedWindow(_ state: State) -> WindowSessionState? {
-        guard let id = state.focusedWindowID else { return nil }
-        return state.windows[id: id]
-    }
-
-    private func sendActionToFocusedWindow(
+    private func sendCommandToFocusedWindow(
         _ state: State,
-        _ windowAction: FileManagerWindowAction,
+        _ command: FileManagerWindowAction.WindowCommand,
     ) -> Effect<Action> {
-        guard let focused = focusedWindow(state) else { return .none }
-        return .send(.windows(.element(id: focused.id, action: .window(windowAction))))
+        guard let id = state.focusedWindowID else { return .none }
+        return .send(.windows(.element(id: id, action: .window(.request(command)))))
     }
 
-    private func sendActionToFocusedWindow(
-        _ state: State,
-        _ buildAction: (WindowSessionState) -> FileManagerWindowAction,
-    ) -> Effect<Action> {
-        guard let focused = focusedWindow(state) else { return .none }
-        return .send(.windows(.element(id: focused.id, action: .window(buildAction(focused)))))
-    }
-
-    private func applyAppPreferences(
-        _ preferences: AppPreferencesState,
-        to windowState: inout FileManagerWindowFeature.State,
-    ) {
-        windowState.sidebar.sidebarVisible = preferences.sidebarVisible
-        windowState.sidebar.sidebarWidth = preferences.sidebarWidth
-
-        windowState.content.viewLayout = preferences.viewLayout
-        windowState.content.listIconSize = preferences.listIconSize
-        windowState.content.gridIconSize = preferences.gridIconSize
-        windowState.content.listTextSize = preferences.listTextSize
-        windowState.content.gridTextSize = preferences.gridTextSize
-
-        windowState.content.entryViewLayout.showHiddenFiles = preferences.showHiddenFiles
-        windowState.content.entryArrangements.updateSortKey(preferences.sortKey)
-        windowState.content.entryArrangements.updateSortOrder(preferences.sortOrder)
-        windowState.content.entryArrangements.updateGroupKey(preferences.groupKey)
-        windowState.content.syncComposerCollectionState()
+    private func makeWindowSession(path: String?) -> WindowSessionState {
+        let id = uuid()
+        let windowState = FileManagerWindowFeature.State.makeInitial(windowID: id, path: path)
+        return .init(id: id, window: windowState)
     }
 }
 

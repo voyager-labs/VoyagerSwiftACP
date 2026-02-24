@@ -3,6 +3,44 @@ import Foundation
 
 @CasePathable
 enum FileManagerWindowAction: CasePathable, Sendable {
+    @CasePathable
+    enum WindowCommand: Sendable {
+        case newFolder
+        case openSelectedItem
+        case quickLookSelectedItem
+        case saveCollection
+        case saveCollectionAs
+        case goBack
+        case goForward
+        case goToEnclosingDirectory
+        case toggleSidebar
+        case toggleShowHiddenFiles
+        case setViewLayout(ContentViewLayout)
+        case setGroupKey(GroupKey)
+        case setSortKey(SortKey)
+        case setSortOrder(SortOrder)
+        case requestUndo
+        case requestRedo
+        case toggleComposer
+        case cut
+        case copy
+        case paste
+        case duplicate
+        case makeAlias
+        case selectAll
+        case copyAbsolutePaths
+        case copyURLs
+    }
+
+    @CasePathable
+    enum Delegate: Sendable {
+        case openPathInNewWindow(String)
+        case openPathInNewTab(String)
+    }
+
+    case delegate(Delegate)
+
+    case request(WindowCommand)
     case content(FileManagerContentFeature.Action)
     case sidebar(FileManagerSidebarFeature.Action)
     case inspector(FileManagerInspectorFeature.Action)
