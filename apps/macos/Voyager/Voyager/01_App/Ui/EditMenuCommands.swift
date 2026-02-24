@@ -2,15 +2,19 @@ import AppKit
 import ComposableArchitecture
 import SwiftUI
 
+@ViewAction(for: MenuCommandsFeature.self)
 struct EditMenuCommands: Commands {
+    let store: StoreOf<MenuCommandsFeature>
     @ObservedObject private var viewStore: ViewStore<MenuCommandsState, MenuCommandsAction>
 
     private let undoSelector = Selector(("undo:"))
     private let redoSelector = Selector(("redo:"))
 
     init(appRootStore: StoreOf<AppRootFeature>) {
+        let menuStore = appRootStore.scope(state: \.menuCommands, action: \.menuCommands)
+        store = menuStore
         viewStore = ViewStore(
-            appRootStore.scope(state: \.menuCommands, action: \.menuCommands),
+            menuStore,
             observe: { $0 },
         )
     }
@@ -35,7 +39,7 @@ struct EditMenuCommands: Commands {
     }
 
     private func sendEditCommand(_ command: MenuCommandItem.EditCommand) {
-        viewStore.send(.perform(.edit(command)))
+        send(.edit(command))
     }
 
     private func sendTextResponderAction(_ selector: Selector, fallback command: MenuCommandItem.EditCommand) {

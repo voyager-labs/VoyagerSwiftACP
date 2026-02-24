@@ -2,12 +2,16 @@ import AppKit
 import ComposableArchitecture
 import SwiftUI
 
+@ViewAction(for: MenuCommandsFeature.self)
 struct ViewMenuCommands: Commands {
+    let store: StoreOf<MenuCommandsFeature>
     @ObservedObject private var viewStore: ViewStore<MenuCommandsState, MenuCommandsAction>
 
     init(appRootStore: StoreOf<AppRootFeature>) {
+        let menuStore = appRootStore.scope(state: \.menuCommands, action: \.menuCommands)
+        store = menuStore
         viewStore = ViewStore(
-            appRootStore.scope(state: \.menuCommands, action: \.menuCommands),
+            menuStore,
             observe: { $0 },
         )
     }
@@ -105,6 +109,6 @@ struct ViewMenuCommands: Commands {
     }
 
     private func sendViewCommand(_ command: MenuCommandItem.ViewCommand) {
-        viewStore.send(.perform(.view(command)))
+        send(.viewCommand(command))
     }
 }
