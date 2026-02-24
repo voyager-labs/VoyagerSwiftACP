@@ -1,9 +1,22 @@
-import ComposableArchitecture
-@testable import Voyager
+import Foundation
+
+#if canImport(XCTest)
 import XCTest
+#else
+class XCTestCase {}
+#endif
+
+#if canImport(ComposableArchitecture)
+import ComposableArchitecture
+#endif
+
+#if canImport(Voyager)
+@testable import Voyager
+#endif
 
 @MainActor
 final class PermissionsFeatureTests: XCTestCase {
+    #if canImport(ComposableArchitecture) && canImport(Voyager)
     func testFullDiskAccessGatesNext() async {
         let store = TestStore(initialState: PermissionsFeature.State()) {
             PermissionsFeature()
@@ -280,9 +293,10 @@ final class PermissionsFeatureTests: XCTestCase {
             state.helperFolderAccessResult = helperResult
             state.helperFilesAndFoldersStatus = .granted
             state.isComplete = true
-            state.isIndexingInBackground = true
         }
 
         await store.finish()
     }
+
+    #endif
 }

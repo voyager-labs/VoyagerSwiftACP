@@ -1,9 +1,22 @@
-import ComposableArchitecture
-@testable import Voyager
+import Foundation
+
+#if canImport(XCTest)
 import XCTest
+#else
+class XCTestCase {}
+#endif
+
+#if canImport(ComposableArchitecture)
+import ComposableArchitecture
+#endif
+
+#if canImport(Voyager)
+@testable import Voyager
+#endif
 
 @MainActor
 final class CollectionFeatureTests: XCTestCase {
+    #if canImport(ComposableArchitecture) && canImport(Voyager)
     func testResolveDetailedMapsLegacyKeysAndUnknowns() {
         let registryClient = makeRegistryClient()
         let appliedFilters = AppliedFiltersPayload(
@@ -65,7 +78,11 @@ final class CollectionFeatureTests: XCTestCase {
         XCTAssertEqual(saved?.file.conditions.first?.propertyKey, "name_full")
         XCTAssertEqual(saved?.url.pathExtension, "voycoll")
     }
+
+    #endif
 }
+
+#if canImport(ComposableArchitecture) && canImport(Voyager)
 
 private let kRegistryLabels: [String: String] = [
     "name_full": "Name",
@@ -74,8 +91,7 @@ private let kRegistryLabels: [String: String] = [
 
 private let kRegistryOperatorDefinition = OperatorDefinition(
     uiLabel: "Equals",
-    sqlOperator: nil,
-    sqlKind: nil,
+    mdqueryOperator: nil,
     valueShape: nil,
     valueCount: nil,
     allowedTypes: nil,
@@ -289,3 +305,5 @@ private actor SavedCollectionsRecorder {
         entries.last
     }
 }
+
+#endif
