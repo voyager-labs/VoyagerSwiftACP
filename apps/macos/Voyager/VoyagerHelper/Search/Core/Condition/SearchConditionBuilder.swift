@@ -16,6 +16,7 @@ struct SearchConditionBuilder: Sendable {
 
     let registry: PropertyConditionRegistry
     let propertyMap: [String: PropertyMapping]
+    let legacyKeyMap: [String: String]
 
     init(bundle: Bundle = .main) throws {
         registry = try RegistryLoader.load(resourceName: "property_condition_registry", bundle: bundle)
@@ -24,10 +25,12 @@ struct SearchConditionBuilder: Sendable {
             bundle: bundle,
         )
         propertyMap = SearchConditionBuilder.buildPropertyMap(systemRegistry: systemRegistry)
+        legacyKeyMap = SearchConditionBuilder.buildLegacyKeyMap(systemRegistry: systemRegistry)
     }
 
     init(registry: PropertyConditionRegistry, systemRegistry: SystemPropertyRegistry) {
         self.registry = registry
         propertyMap = SearchConditionBuilder.buildPropertyMap(systemRegistry: systemRegistry)
+        legacyKeyMap = SearchConditionBuilder.buildLegacyKeyMap(systemRegistry: systemRegistry)
     }
 }

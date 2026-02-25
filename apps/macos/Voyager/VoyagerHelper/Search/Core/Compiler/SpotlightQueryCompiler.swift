@@ -228,13 +228,15 @@ extension SpotlightQueryCompiler {
             let prefix = parsed.prefix
             let symbol = parsed.symbol
 
-            if symbol.hasPrefix("kMDItem") {
-                if prefix == "mditem" {
-                    return symbol
-                }
-                if prefix == "mdimporter", mdimporterCandidate == nil {
-                    mdimporterCandidate = symbol
-                }
+            if prefix == "mditem", symbol.hasPrefix("kMD") {
+                return symbol
+            }
+            if prefix == "mdimporter", symbol.isEmpty == false, mdimporterCandidate == nil {
+                mdimporterCandidate = symbol
+                continue
+            }
+            if prefix.isEmpty, symbol.hasPrefix("kMDItem") {
+                return symbol
             }
         }
 

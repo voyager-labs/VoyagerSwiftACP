@@ -1,6 +1,19 @@
 import Foundation
 
 extension SearchConditionBuilder {
+    func canonicalVisiblePropertyKey(for rawKey: String) -> String? {
+        if let mapping = propertyMap[rawKey], mapping.uiHidden == false {
+            return rawKey
+        }
+        guard let canonicalKey = legacyKeyMap[rawKey],
+              let mapping = propertyMap[canonicalKey],
+              mapping.uiHidden == false
+        else {
+            return nil
+        }
+        return canonicalKey
+    }
+
     func validateValue(
         _ valueCount: ValueCount?,
         operatorCode: String,
@@ -46,6 +59,21 @@ extension SearchConditionBuilder {
                     systemKeys: definition.systemKeys,
                     uiHidden: definition.uiHidden ?? false,
                 )
+            }
+        }
+        return map
+    }
+
+    static func buildLegacyKeyMap(systemRegistry: SystemPropertyRegistry) -> [String: String] {
+        var map: [String: String] = [:]
+        for (_, entries) in systemRegistry.categories {
+            for (canonicalKey, definition) in entries {
+                guard let legacyKeys = definition.legacyKeys else {
+                    continue
+                }
+                for legacyKey in legacyKeys where map[legacyKey] == nil {
+                    map[legacyKey] = canonicalKey
+                }
             }
         }
         return map

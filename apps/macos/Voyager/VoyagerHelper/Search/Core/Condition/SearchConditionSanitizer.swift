@@ -8,7 +8,9 @@ struct SearchConditionSanitizer: Sendable {
     }
 
     func isVisiblePropertyKey(_ key: String) -> Bool {
-        guard let mapping = conditionBuilder.propertyMap[key] else {
+        guard let canonicalKey = canonicalPropertyKey(for: key),
+              let mapping = conditionBuilder.propertyMap[canonicalKey]
+        else {
             return false
         }
         return mapping.uiHidden == false
@@ -34,11 +36,21 @@ struct SearchConditionSanitizer: Sendable {
 
 private extension SearchConditionSanitizer {
     func normalize(_ condition: SearchConditionPayload) -> SearchConditionPayload? {
-        if condition.operator == "eq", condition.value == nil {
+        guard let canonicalKey = canonicalPropertyKey(for: condition.propertyKey) else {
             return nil
         }
 
-        if condition.operator == "rx", case let .string(text)? = condition.value {
+        let normalizedCondition = SearchConditionPayload(
+            propertyKey: canonicalKey,
+            operator: condition.operator,
+            value: condition.value,
+        )
+
+        if normalizedCondition.operator == "eq", normalizedCondition.value == nil {
+            return nil
+        }
+
+        if normalizedCondition.operator == "rx", case let .string(text)? = normalizedCondition.value {
             let normalized: String = if text.contains("%") {
                 text
             } else if text.contains(".*") {
@@ -48,13 +60,17 @@ private extension SearchConditionSanitizer {
             }
 
             return SearchConditionPayload(
-                propertyKey: condition.propertyKey,
-                operator: condition.operator,
+                propertyKey: normalizedCondition.propertyKey,
+                operator: normalizedCondition.operator,
                 value: .string(normalized),
             )
         }
 
-        return condition
+        return normalizedCondition
+    }
+
+    func canonicalPropertyKey(for rawKey: String) -> String? {
+        conditionBuilder.canonicalVisiblePropertyKey(for: rawKey)
     }
 
     func isValid(_ condition: SearchConditionPayload) -> Bool {
