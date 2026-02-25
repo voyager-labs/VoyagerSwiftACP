@@ -50,15 +50,9 @@ enum EntryOperationsExecutionSupport {
         return destinations
     }
 
-    static func validateDefaultAppSetting(file: EntryModel, capabilities: EntryCapabilities) -> FileOpError? {
+    static func validateDefaultAppSetting(file: EntryModel) -> FileOpError? {
         guard !file.isFolder else {
             return .unsupportedType
-        }
-        guard capabilities.supportsDefaultAppManagement else {
-            return .system(
-                message: "Setting default apps is not supported yet.",
-                suggestion: "Enable default-app capability before using this action.",
-            )
         }
         return nil
     }
