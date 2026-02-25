@@ -49,8 +49,7 @@ struct ContentPageView: View {
         }
     }
 
-    @ViewBuilder
-    private var entryContainerView: some View {
+    @ViewBuilder private var entryContainerView: some View {
         if isCollectionSearching {
             collectionLoadingView
         } else {
@@ -69,8 +68,7 @@ struct ContentPageView: View {
             .frame(height: 1)
     }
 
-    @ViewBuilder
-    private var keyCommandOverlay: some View {
+    @ViewBuilder private var keyCommandOverlay: some View {
         if isGridLayout {
             KeyCommandView { event in
                 handleKeyboardEvent(event)
