@@ -56,7 +56,7 @@ struct EntryTaggingOperationsReducer {
             }
 
             guard !completedTargets.isEmpty else { return }
-            let record = EntryActionRecord(actionKind: .setTags, targets: completedTargets)
+            let record = EntryActionRecord(operationKind: .setTags, targets: completedTargets)
             await send(.entryActionCompleted(record))
         }
     }

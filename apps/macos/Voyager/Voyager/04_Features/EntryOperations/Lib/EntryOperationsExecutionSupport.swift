@@ -107,7 +107,7 @@ enum EntryOperationsExecutionSupport {
     static func runParallelWithTargets(
         items: [EntryModel],
         kind: OperationKind,
-        actionKind: EntryActionRecord.ActionKind,
+        operationKind: OperationKind,
         operation: @escaping @Sendable (URL) async throws -> EntryActionRecord.Target?,
     ) -> Effect<EntryOperationsAction> {
         .run { send in
@@ -137,8 +137,8 @@ enum EntryOperationsExecutionSupport {
             }
 
             let targets = await accumulator.targets
-            guard !targets.isEmpty else { return }
-            let record = EntryActionRecord(actionKind: actionKind, targets: targets)
+            guard !targets.isEmpty, operationKind.isUndoable else { return }
+            let record = EntryActionRecord(operationKind: operationKind, targets: targets)
             await send(.entryActionCompleted(record))
         }
     }

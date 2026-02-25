@@ -214,7 +214,7 @@ enum EntryOperationsCommandPlanner {
                 sourcePaths: selectedPaths,
                 destinationPath: context.currentPath,
                 operation: .copy,
-                actionKind: .duplicate,
+                operationKind: .pasteFileDuplicate,
             )),
         ]
     }

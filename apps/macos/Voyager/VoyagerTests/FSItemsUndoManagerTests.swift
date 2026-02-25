@@ -8,13 +8,13 @@ final class FSItemsUndoManagerTests: XCTestCase {
         let recordId = try XCTUnwrap(UUID(uuidString: "00000000-0000-0000-0000-000000000001"))
         let redoRecordId = try XCTUnwrap(UUID(uuidString: "00000000-0000-0000-0000-000000000002"))
         let record = EntryActionRecord(
-            actionKind: .rename,
+            operationKind: .rename,
             targets: [.init(beforePath: "/tmp/a.txt", afterPath: "/tmp/b.txt")],
             id: recordId,
             timestamp: Date(timeIntervalSince1970: 0),
         )
         let redoRecord = EntryActionRecord(
-            actionKind: .move,
+            operationKind: .pasteFileMove,
             targets: [.init(beforePath: "/tmp/c.txt", afterPath: "/tmp/d.txt")],
             id: redoRecordId,
             timestamp: Date(timeIntervalSince1970: 1),
@@ -47,7 +47,7 @@ final class FSItemsUndoManagerTests: XCTestCase {
     func testRequestUndoTriggersUndoManager() async throws {
         let recordId = try XCTUnwrap(UUID(uuidString: "00000000-0000-0000-0000-000000000010"))
         let record = EntryActionRecord(
-            actionKind: .rename,
+            operationKind: .rename,
             targets: [.init(beforePath: "/tmp/a.txt", afterPath: "/tmp/b.txt")],
             id: recordId,
             timestamp: Date(timeIntervalSince1970: 10),
@@ -77,7 +77,7 @@ final class FSItemsUndoManagerTests: XCTestCase {
     func testRequestUndoSkipsWhenBusy() async throws {
         let recordId = try XCTUnwrap(UUID(uuidString: "00000000-0000-0000-0000-000000000011"))
         let record = EntryActionRecord(
-            actionKind: .rename,
+            operationKind: .rename,
             targets: [.init(beforePath: "/tmp/a.txt", afterPath: "/tmp/b.txt")],
             id: recordId,
             timestamp: Date(timeIntervalSince1970: 11),
@@ -108,7 +108,7 @@ final class FSItemsUndoManagerTests: XCTestCase {
     func testUndoEntryActionRenamesAndRegistersRedo() async throws {
         let recordId = try XCTUnwrap(UUID(uuidString: "00000000-0000-0000-0000-000000000012"))
         let record = EntryActionRecord(
-            actionKind: .rename,
+            operationKind: .rename,
             targets: [.init(beforePath: "/tmp/a.txt", afterPath: "/tmp/b.txt")],
             id: recordId,
             timestamp: Date(timeIntervalSince1970: 12),
@@ -142,7 +142,7 @@ final class FSItemsUndoManagerTests: XCTestCase {
     func testRedoEntryActionRenamesAndRegistersUndo() async throws {
         let recordId = try XCTUnwrap(UUID(uuidString: "00000000-0000-0000-0000-000000000013"))
         let record = EntryActionRecord(
-            actionKind: .rename,
+            operationKind: .rename,
             targets: [.init(beforePath: "/tmp/a.txt", afterPath: "/tmp/b.txt")],
             id: recordId,
             timestamp: Date(timeIntervalSince1970: 13),

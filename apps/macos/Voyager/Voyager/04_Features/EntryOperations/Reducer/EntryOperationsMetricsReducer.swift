@@ -106,9 +106,10 @@ struct EntryOperationsMetricsReducer {
             guard let entryKind = entryKind(for: files) else { return nil }
             return EntryActionPayload(actionKind: .copy, entryKind: entryKind)
 
-        case let .pasteItems(sourcePaths, _, _, actionKind):
+        case let .pasteItems(sourcePaths, _, _, operationKind):
             guard let entryKind = entryKind(for: sourcePaths) else { return nil }
-            return EntryActionPayload(actionKind: dauActionKind(for: actionKind), entryKind: entryKind)
+            guard let actionKind = dauActionKind(for: operationKind) else { return nil }
+            return EntryActionPayload(actionKind: actionKind, entryKind: entryKind)
 
         case let .renameItem(oldPath, _):
             guard let entryKind = entryKind(for: [oldPath]) else { return nil }
@@ -200,15 +201,17 @@ struct EntryOperationsMetricsReducer {
         return .file
     }
 
-    private func dauActionKind(for actionKind: EntryActionRecord.ActionKind) -> DAUEntryActionKind {
-        switch actionKind {
+    private func dauActionKind(for operationKind: OperationKind) -> DAUEntryActionKind? {
+        guard operationKind.isUndoable else { return nil }
+
+        switch operationKind {
         case .rename:
             .rename
-        case .move:
+        case .pasteFileMove:
             .move
-        case .duplicate:
+        case .pasteFileDuplicate:
             .duplicate
-        case .paste:
+        case .pasteFileCopy:
             .paste
         case .createFolder:
             .createFolder
@@ -220,6 +223,18 @@ struct EntryOperationsMetricsReducer {
             .putBack
         case .setTags:
             .setTags
+        case .openDefault,
+             .openWithApp,
+             .setDefaultApp,
+             .quickLook,
+             .getInfo,
+             .share,
+             .performService,
+             .revealInFinder,
+             .deleteImmediately,
+             .compress,
+             .extract:
+            nil
         }
     }
 }
