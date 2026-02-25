@@ -1,6 +1,5 @@
 import Foundation
 
-#if canImport(ComposableArchitecture)
 import ComposableArchitecture
 
 @CasePathable
@@ -20,11 +19,3 @@ enum EntryArrangementsDelegate: CasePathable, Equatable, Sendable {
     case requestApply
     case applied(sortedItems: [EntryModel], isCollectionMode: Bool)
 }
-
-#else
-
-enum EntryArrangementsAction: Equatable, Sendable {}
-
-enum EntryArrangementsDelegate: Equatable, Sendable {}
-
-#endif

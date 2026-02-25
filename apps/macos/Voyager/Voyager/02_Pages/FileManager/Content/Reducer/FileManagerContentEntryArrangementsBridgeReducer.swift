@@ -1,4 +1,3 @@
-#if canImport(ComposableArchitecture)
 import ComposableArchitecture
 import IdentifiedCollections
 
@@ -30,9 +29,3 @@ struct FileManagerEntryArrangementsBridge {
         }
     }
 }
-
-#else
-
-struct FileManagerEntryArrangementsBridge {}
-
-#endif

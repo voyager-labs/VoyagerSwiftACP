@@ -1,22 +1,11 @@
 import Foundation
 
-#if canImport(XCTest)
-import XCTest
-#else
-class XCTestCase {}
-#endif
-
-#if canImport(ComposableArchitecture)
 import ComposableArchitecture
-#endif
-
-#if canImport(Voyager)
 @testable import Voyager
-#endif
+import XCTest
 
 @MainActor
 final class EntryArrangementsFeatureTests: XCTestCase {
-    #if canImport(ComposableArchitecture) && canImport(Voyager)
     func testApply_sortsAndUpdatesGroupedItems_whenGroupKeyNone() async {
         let fixedDate = Date(timeIntervalSince1970: 1_700_000_000)
 
@@ -109,5 +98,4 @@ final class EntryArrangementsFeatureTests: XCTestCase {
             ),
         )
     }
-    #endif
 }

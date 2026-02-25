@@ -1,4 +1,3 @@
-#if canImport(ComposableArchitecture)
 import ComposableArchitecture
 
 @Reducer
@@ -61,9 +60,3 @@ struct FileManagerContentEntryOperationsFeature {
         }
     }
 }
-
-#else
-
-struct FileManagerContentEntryOperationsFeature {}
-
-#endif

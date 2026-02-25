@@ -1,7 +1,6 @@
 import AppKit
 import ObjectiveC
 
-#if canImport(ComposableArchitecture)
 import ComposableArchitecture
 
 struct UndoManagerClient: Sendable {
@@ -165,41 +164,3 @@ private final class UndoManagerHandlerStore: @unchecked Sendable {
         lock.unlock()
     }
 }
-
-#else
-
-struct UndoManagerClient: Sendable {
-    var registerUndo: @Sendable (
-        _ windowID: UUID?,
-        _ record: Any,
-        _ onUndo: @escaping @Sendable (Any) async -> Void,
-        _ onRedo: @escaping @Sendable (Any) async -> Void,
-    ) async -> Void
-    var undo: @Sendable (_ windowID: UUID?) async -> Void
-    var redo: @Sendable (_ windowID: UUID?) async -> Void
-
-    nonisolated init(
-        registerUndo: @escaping @Sendable (
-            _ windowID: UUID?,
-            _ record: Any,
-            _ onUndo: @escaping @Sendable (Any) async -> Void,
-            _ onRedo: @escaping @Sendable (Any) async -> Void,
-        ) async -> Void,
-        undo: @escaping @Sendable (_ windowID: UUID?) async -> Void,
-        redo: @escaping @Sendable (_ windowID: UUID?) async -> Void,
-    ) {
-        self.registerUndo = registerUndo
-        self.undo = undo
-        self.redo = redo
-    }
-
-    static func live(undoManager _: UndoManager) -> UndoManagerClient {
-        .init(
-            registerUndo: { _, _, _, _ in },
-            undo: { _ in },
-            redo: { _ in },
-        )
-    }
-}
-
-#endif

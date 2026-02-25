@@ -2,7 +2,6 @@ import AppKit
 import Foundation
 import SwiftUI
 
-#if canImport(ComposableArchitecture)
 import ComposableArchitecture
 
 @CasePathable
@@ -32,9 +31,3 @@ enum FileManagerContentAction: CasePathable, Sendable {
 
     case closeWindow
 }
-
-#else
-
-enum FileManagerContentAction {}
-
-#endif

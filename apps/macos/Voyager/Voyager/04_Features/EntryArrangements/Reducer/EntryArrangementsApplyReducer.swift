@@ -1,4 +1,3 @@
-#if canImport(ComposableArchitecture)
 import ComposableArchitecture
 import Foundation
 
@@ -388,9 +387,3 @@ private extension EntryArrangementsApplyReducer {
         return result
     }
 }
-
-#else
-
-struct EntryArrangementsApplyReducer {}
-
-#endif

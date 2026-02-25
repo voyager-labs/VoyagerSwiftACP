@@ -1,22 +1,11 @@
 import Foundation
 
-#if canImport(XCTest)
-import XCTest
-#else
-class XCTestCase {}
-#endif
-
-#if canImport(ComposableArchitecture)
 import ComposableArchitecture
-#endif
-
-#if canImport(Voyager)
 @testable import Voyager
-#endif
+import XCTest
 
 @MainActor
 final class PermissionsFeatureTests: XCTestCase {
-    #if canImport(ComposableArchitecture) && canImport(Voyager)
     func testFullDiskAccessGatesNext() async {
         let store = TestStore(initialState: PermissionsFeature.State()) {
             PermissionsFeature()
@@ -297,6 +286,4 @@ final class PermissionsFeatureTests: XCTestCase {
 
         await store.finish()
     }
-
-    #endif
 }

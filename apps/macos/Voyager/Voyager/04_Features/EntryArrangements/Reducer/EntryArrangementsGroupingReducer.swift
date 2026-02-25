@@ -1,4 +1,3 @@
-#if canImport(ComposableArchitecture)
 import ComposableArchitecture
 import Foundation
 
@@ -38,10 +37,3 @@ struct EntryArrangementsGroupingReducer {
         }
     }
 }
-#else
-
-import Foundation
-
-struct EntryArrangementsGroupingReducer {}
-
-#endif

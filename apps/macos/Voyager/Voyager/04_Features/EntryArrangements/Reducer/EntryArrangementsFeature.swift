@@ -1,4 +1,3 @@
-#if canImport(ComposableArchitecture)
 import ComposableArchitecture
 
 @Reducer
@@ -14,9 +13,3 @@ struct EntryArrangementsFeature {
         }
     }
 }
-
-#else
-
-struct EntryArrangementsFeature {}
-
-#endif
