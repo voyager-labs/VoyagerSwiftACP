@@ -522,7 +522,7 @@ private extension EntryGridCoordinator {
 
     func observeThumbnailsReady() {
         adapter.pageStatePublisher
-            .map(\.thumbnailsReady)
+            .map(\.thumbnailRenderVersion)
             .removeDuplicates()
             .receive(on: DispatchQueue.main)
             .sink { [weak self] _ in
@@ -639,8 +639,7 @@ extension EntryGridCoordinator: NSCollectionViewDataSource {
         let isCut = pageState.clipboardItems.contains(entry.fullPath)
             && pageState.clipboardOperation == .cut
         let isRenaming = pageState.renamingItemId == entry.id
-        let isThumbnailReady = pageState.thumbnailsReady.contains(entry.fullPath)
-        let thumbnail = isThumbnailReady ? entryThumbnailCacheClient.getThumbnail(for: entry.fullPath) : nil
+        let thumbnail = entryThumbnailCacheClient.getThumbnail(for: entry.fullPath)
         let isDropTargeted = dropTargetEntryId == entry.id
 
         item.configure(.init(

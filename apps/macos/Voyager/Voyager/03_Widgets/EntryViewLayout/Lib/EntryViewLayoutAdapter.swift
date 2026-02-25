@@ -32,7 +32,7 @@ struct EntryViewLayoutAdapter {
         var gridIconSize: CGFloat
         var gridTextSize: CGFloat
 
-        var thumbnailsReady: Set<String>
+        var thumbnailRenderVersion: Int
 
         var clipboardItems: Set<String>
         var clipboardOperation: ClipboardOperation

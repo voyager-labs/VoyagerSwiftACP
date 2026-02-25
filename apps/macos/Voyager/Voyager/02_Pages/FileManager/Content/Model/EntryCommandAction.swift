@@ -64,8 +64,8 @@ enum EntryCommandAction: CasePathable, Sendable {
     case setSelectAfterLoad(fileNames: [String])
 
     case requestThumbnails(paths: [String])
-    case thumbnailsReady(paths: [String])
-    case thumbnailRequestFailed(paths: [String])
+    case thumbnailsUpdated(paths: [String])
+    case thumbnailRequestsCompleted(paths: [String])
     case startRename(id: String)
     case updateRenamingText(String)
     case commitRename
