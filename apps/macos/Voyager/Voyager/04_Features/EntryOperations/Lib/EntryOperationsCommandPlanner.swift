@@ -145,7 +145,7 @@ enum EntryOperationsCommandPlanner {
 
     private static func planOpenSelectedItem(_ selected: [EntryModel]) -> [EntryOperationsCommandOutput] {
         guard !selected.isEmpty else { return [] }
-        if selected.count == 1, let entry = selected.first, entry.isDirectory {
+        if selected.count == 1, let entry = selected.first, entry.isFolder {
             return [.navigateFolder(id: entry.id)]
         }
         return [.entryOperations(.openFiles(files: selected))]
@@ -214,7 +214,7 @@ enum EntryOperationsCommandPlanner {
                 sourcePaths: selectedPaths,
                 destinationPath: context.currentPath,
                 operation: .copy,
-                actionKind: .duplicate,
+                operationKind: .pasteFileDuplicate,
             )),
         ]
     }
@@ -302,7 +302,7 @@ enum EntryOperationsCommandPlanner {
         bundleID: String?,
         shouldSetAsDefault: Bool,
     ) -> [EntryOperationsCommandOutput] {
-        let selectedFiles = selectedItems.filter { !$0.isDirectory }
+        let selectedFiles = selectedItems.filter { !$0.isFolder }
         guard !selectedFiles.isEmpty else { return [] }
 
         if let bundleID {

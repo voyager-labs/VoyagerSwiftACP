@@ -77,18 +77,21 @@ private extension EntryCommandRoutingReducer {
             let internalPaths = entryFileOpsClient.loadDragPaths()
             guard !internalPaths.isEmpty else { return .none }
             let operation: ClipboardOperation = entryFileOpsClient.loadDragWithOption() ? .copy : .cut
+            let operationKind: OperationKind = operation == .copy ? .pasteFileCopy : .pasteFileMove
             return .send(.entryOperations(.pasteItems(
                 sourcePaths: internalPaths,
                 destinationPath: destinationPath,
                 operation: operation,
-                actionKind: .paste,
+                operationKind: operationKind,
             )))
         case let .dropItems(sourcePaths, destinationPath, isOptionDrag):
+            let operation: ClipboardOperation = isOptionDrag ? .copy : .cut
+            let operationKind: OperationKind = operation == .copy ? .pasteFileCopy : .pasteFileMove
             return .send(.entryOperations(.pasteItems(
                 sourcePaths: sourcePaths,
                 destinationPath: destinationPath,
-                operation: isOptionDrag ? .copy : .cut,
-                actionKind: .paste,
+                operation: operation,
+                operationKind: operationKind,
             )))
         default:
             return nil

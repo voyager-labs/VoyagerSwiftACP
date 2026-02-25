@@ -21,9 +21,11 @@ struct FileManagerContentFeature {
             EntryOperationsFeature()
         }
 
-        Scope(state: \.self, action: \.entryArrangements) {
+        Scope(state: \.entryArrangements, action: \.entryArrangements) {
             EntryArrangementsFeature()
         }
+
+        FileManagerEntryArrangementsBridge()
 
         EntryCommandRoutingReducer()
         FileManagerContentEntryAppearanceFeature()
@@ -40,9 +42,6 @@ struct FileManagerContentFeature {
             case .openPathInNewWindow,
                  .openPathInNewTab:
                 return .none
-
-            case .emptyTrashCompleted:
-                return .send(.closeWindow)
 
             case let .changeLayout(layout):
                 state.viewLayout = layout

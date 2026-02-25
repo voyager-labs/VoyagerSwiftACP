@@ -173,7 +173,7 @@ final class EntryListCoordinator: NSObject {
         for row in startRow ..< endRow {
             guard let outlineItem = tableView.item(atRow: row) as? OutlineItem else { continue }
             guard case let .entry(entry) = outlineItem.kind else { continue }
-            guard !entry.isDirectory else { continue }
+            guard !entry.isFolder else { continue }
             paths.insert(entry.fullPath)
         }
 
@@ -240,7 +240,7 @@ final class EntryListCoordinator: NSObject {
 
     private func resolveTagColorCode(tagName: String, items: [EntryModel]) -> Int? {
         for item in items {
-            if let colorCode = item.tags?.first(where: { $0.name == tagName })?.colorCode {
+            if let colorCode = item.facets.tags?.first(where: { $0.name == tagName })?.colorCode {
                 return colorCode
             }
         }
@@ -537,7 +537,7 @@ extension EntryListCoordinator: NSOutlineViewDataSource {
         var destinationPath = pageState.currentPath
         if let outlineItem = item as? OutlineItem,
            case let .entry(entry) = outlineItem.kind,
-           entry.isDirectory
+           entry.isFolder
         {
             outlineView.setDropItem(outlineItem, dropChildIndex: NSOutlineViewDropOnItemIndex)
             destinationPath = entry.fullPath
@@ -588,7 +588,7 @@ extension EntryListCoordinator: NSOutlineViewDataSource {
         var destinationPath = pageState.currentPath
         if let outlineItem = item as? OutlineItem,
            case let .entry(entry) = outlineItem.kind,
-           entry.isDirectory
+           entry.isFolder
         {
             destinationPath = entry.fullPath
         }
@@ -772,6 +772,7 @@ private extension EntryListCoordinator {
     }
 
     func configureEntryCell(_ view: NSTableCellView, entry: EntryModel, columnId: String) {
+        let display = EntryDisplayModel(entry: entry)
         switch EntryListColumn(rawValue: columnId) {
         case .name:
             let (iconView, _) = ensureNameCellLayout(view)
@@ -798,21 +799,21 @@ private extension EntryListCoordinator {
 
         case .dateModified:
             setText(
-                entry.formattedModifiedDate,
+                display.formattedModifiedDate,
                 in: view,
                 font: .systemFont(ofSize: max(10, pageState.listTextSize - 1)),
             )
 
         case .size:
             setText(
-                entry.formattedSize,
+                display.formattedSize,
                 in: view,
                 font: .systemFont(ofSize: max(10, pageState.listTextSize - 1)),
             )
 
         case .kind:
             let kindText = entry.fileExtension.lowercased() == CollectionConstants
-                .fileExtension ? "Voyager Collection" : entry.kind
+                .fileExtension ? "Voyager Collection" : entry.facets.kind
             setText(
                 kindText,
                 in: view,

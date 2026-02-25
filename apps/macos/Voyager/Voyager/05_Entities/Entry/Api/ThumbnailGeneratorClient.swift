@@ -1,7 +1,5 @@
 import AppKit
-#if canImport(ComposableArchitecture)
 import ComposableArchitecture
-#endif
 import Foundation
 import QuickLookThumbnailing
 
@@ -22,8 +20,6 @@ struct ThumbnailGeneratorClient: Sendable {
         await generateThumbnail(url, size, scale)
     }
 }
-
-#if canImport(ComposableArchitecture)
 
 extension ThumbnailGeneratorClient: DependencyKey {
     nonisolated static var liveValue: ThumbnailGeneratorClient {
@@ -55,5 +51,3 @@ extension DependencyValues {
         set { self[ThumbnailGeneratorClient.self] = newValue }
     }
 }
-
-#endif

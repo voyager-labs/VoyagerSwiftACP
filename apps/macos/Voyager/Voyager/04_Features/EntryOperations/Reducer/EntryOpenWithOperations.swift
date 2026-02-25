@@ -11,8 +11,6 @@ struct EntryOpenWithOperationsReducer {
     var entryOpenClient
     @Dependency(\.workspaceClient)
     var workspaceClient
-    @Dependency(\.entryCapabilities)
-    var capabilities
     @Dependency(\.openWithPanelClient)
     var openWithPanelClient
     @Dependency(\.entryOperationsAlertClient)
@@ -52,10 +50,7 @@ struct EntryOpenWithOperationsReducer {
                 }
 
             case let .setDefaultAppForFile(type, bundleID, file):
-                if let error = EntryOperationsExecutionSupport.validateDefaultAppSetting(
-                    file: file,
-                    capabilities: capabilities,
-                ) {
+                if let error = EntryOperationsExecutionSupport.validateDefaultAppSetting(file: file) {
                     state.itemStates[file.fullPath] = ItemOperationState(isBusy: false, lastError: error)
                     return .none
                 }
@@ -72,10 +67,7 @@ struct EntryOpenWithOperationsReducer {
                 }
 
             case let .setDefaultAppWithOther(file):
-                if let error = EntryOperationsExecutionSupport.validateDefaultAppSetting(
-                    file: file,
-                    capabilities: capabilities,
-                ) {
+                if let error = EntryOperationsExecutionSupport.validateDefaultAppSetting(file: file) {
                     state.itemStates[file.fullPath] = ItemOperationState(isBusy: false, lastError: error)
                     return .none
                 }
@@ -84,10 +76,7 @@ struct EntryOpenWithOperationsReducer {
 
             case let .openFilesWithAppFromOther(files, shouldSetAsDefault):
                 for file in files {
-                    if let error = EntryOperationsExecutionSupport.validateDefaultAppSetting(
-                        file: file,
-                        capabilities: capabilities,
-                    ) {
+                    if let error = EntryOperationsExecutionSupport.validateDefaultAppSetting(file: file) {
                         state.itemStates[file.fullPath] = ItemOperationState(isBusy: false, lastError: error)
                         return .none
                     }
@@ -99,7 +88,7 @@ struct EntryOpenWithOperationsReducer {
                 )
 
             case let .loadApplicationsForFile(file):
-                guard !file.isDirectory else { return .none }
+                guard !file.isFolder else { return .none }
                 let filePath = file.fullPath
 
                 guard state.applicationsForItems[filePath] == nil else {

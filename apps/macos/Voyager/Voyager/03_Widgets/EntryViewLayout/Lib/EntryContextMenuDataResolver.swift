@@ -30,7 +30,7 @@ enum EntryContextMenuDataResolver {
             .map { favoriteTag in
                 let tagName = favoriteTag.name
                 let taggedCount = selectedEntries.reduce(into: 0) { count, entry in
-                    if entry.tags?.contains(where: { $0.name == tagName }) == true {
+                    if entry.facets.tags?.contains(where: { $0.name == tagName }) == true {
                         count += 1
                     }
                 }
@@ -46,7 +46,7 @@ enum EntryContextMenuDataResolver {
                 let colorCode = selectedEntries
                     .lazy
                     .compactMap { entry in
-                        entry.tags?.first(where: { $0.name == tagName })?.colorCode
+                        entry.facets.tags?.first(where: { $0.name == tagName })?.colorCode
                     }
                     .first ?? favoriteTag.colorCode
 

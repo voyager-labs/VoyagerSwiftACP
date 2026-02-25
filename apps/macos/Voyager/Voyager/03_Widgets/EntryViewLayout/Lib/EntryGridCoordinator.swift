@@ -190,7 +190,7 @@ final class EntryGridCoordinator: NSObject {
 
     private func resolveTagColorCode(tagName: String, items: [EntryModel]) -> Int? {
         for item in items {
-            if let colorCode = item.tags?.first(where: { $0.name == tagName })?.colorCode {
+            if let colorCode = item.facets.tags?.first(where: { $0.name == tagName })?.colorCode {
                 return colorCode
             }
         }
@@ -449,7 +449,7 @@ private extension EntryGridCoordinator {
         paths.reserveCapacity(indexPaths.count)
         for indexPath in indexPaths {
             guard let entry = entry(at: indexPath) else { continue }
-            guard !entry.isDirectory else { continue }
+            guard !entry.isFolder else { continue }
             paths.insert(entry.fullPath)
         }
 
@@ -785,7 +785,7 @@ extension EntryGridCoordinator: NSCollectionViewDelegate, NSCollectionViewDelega
         var targetEntryId: String?
 
         if let entry = entry(at: indexPath),
-           entry.isDirectory,
+           entry.isFolder,
            !entryLoadingClient.isPackageDirectory(URL(fileURLWithPath: entry.fullPath))
         {
             destinationPath = entry.fullPath
@@ -850,7 +850,7 @@ extension EntryGridCoordinator: NSCollectionViewDelegate, NSCollectionViewDelega
         var destinationPath = pageState.currentPath
         if dropOperation == .on,
            let entry = entry(at: indexPath),
-           entry.isDirectory,
+           entry.isFolder,
            !entryLoadingClient.isPackageDirectory(URL(fileURLWithPath: entry.fullPath))
         {
             destinationPath = entry.fullPath

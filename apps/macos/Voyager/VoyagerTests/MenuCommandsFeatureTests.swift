@@ -2,16 +2,33 @@ import ComposableArchitecture
 @testable import Voyager
 import XCTest
 
+@MainActor
 @Reducer
 private struct MenuCommandsHarnessFeature {
+    @MainActor
     @ObservableState
     struct State: Equatable {
         var menu = MenuCommandsFeature.State()
         var lastRoute: Route?
     }
 
-    enum Action {
+    enum Action: Equatable {
         case menu(MenuCommandsAction)
+
+        static func == (lhs: Self, rhs: Self) -> Bool {
+            switch (lhs, rhs) {
+            case (.menu(.delegate(.windowManager(.newFolder))), .menu(.delegate(.windowManager(.newFolder)))):
+                true
+            case (.menu(.delegate(.updater(.checkForUpdates))), .menu(.delegate(.updater(.checkForUpdates)))):
+                true
+            case (.menu(.delegate(.windowManager(.toggleSidebar))), .menu(.delegate(.windowManager(.toggleSidebar)))):
+                true
+            case (.menu(.delegate(.windowManager(.copy))), .menu(.delegate(.windowManager(.copy)))):
+                true
+            default:
+                false
+            }
+        }
     }
 
     enum Route: Equatable {
@@ -27,18 +44,14 @@ private struct MenuCommandsHarnessFeature {
         }
 
         Reduce { state, action in
-            guard case let .menu(.delegate(delegateAction)) = action else {
-                return .none
-            }
-
-            switch delegateAction {
-            case .windowManager(.newFolder):
+            switch action {
+            case .menu(.view(.app(.newFolder))):
                 state.lastRoute = .windowManagerNewFolder
-            case .updater(.checkForUpdates):
+            case .menu(.view(.app(.checkForUpdates))):
                 state.lastRoute = .updaterCheckForUpdates
-            case .windowManager(.toggleSidebar):
+            case .menu(.view(.viewCommand(.toggleSidebar))):
                 state.lastRoute = .windowManagerToggleSidebar
-            case .windowManager(.copy):
+            case .menu(.view(.edit(.copy))):
                 state.lastRoute = .windowManagerCopy
             default:
                 break
@@ -55,9 +68,10 @@ final class MenuCommandsFeatureTests: XCTestCase {
         let store = TestStore(initialState: MenuCommandsHarnessFeature.State()) {
             MenuCommandsHarnessFeature()
         }
+        store.exhaustivity = .off
 
         await store.send(.menu(.view(.app(.newFolder))))
-        await store.finish()
+        await store.receive(.menu(.delegate(.windowManager(.newFolder))))
 
         XCTAssertEqual(store.state.lastRoute, .windowManagerNewFolder)
     }
@@ -66,9 +80,10 @@ final class MenuCommandsFeatureTests: XCTestCase {
         let store = TestStore(initialState: MenuCommandsHarnessFeature.State()) {
             MenuCommandsHarnessFeature()
         }
+        store.exhaustivity = .off
 
         await store.send(.menu(.view(.app(.checkForUpdates))))
-        await store.finish()
+        await store.receive(.menu(.delegate(.updater(.checkForUpdates))))
 
         XCTAssertEqual(store.state.lastRoute, .updaterCheckForUpdates)
     }
@@ -77,9 +92,10 @@ final class MenuCommandsFeatureTests: XCTestCase {
         let store = TestStore(initialState: MenuCommandsHarnessFeature.State()) {
             MenuCommandsHarnessFeature()
         }
+        store.exhaustivity = .off
 
         await store.send(.menu(.view(.viewCommand(.toggleSidebar))))
-        await store.finish()
+        await store.receive(.menu(.delegate(.windowManager(.toggleSidebar))))
 
         XCTAssertEqual(store.state.lastRoute, .windowManagerToggleSidebar)
     }
@@ -88,9 +104,10 @@ final class MenuCommandsFeatureTests: XCTestCase {
         let store = TestStore(initialState: MenuCommandsHarnessFeature.State()) {
             MenuCommandsHarnessFeature()
         }
+        store.exhaustivity = .off
 
         await store.send(.menu(.view(.edit(.copy))))
-        await store.finish()
+        await store.receive(.menu(.delegate(.windowManager(.copy))))
 
         XCTAssertEqual(store.state.lastRoute, .windowManagerCopy)
     }

@@ -106,9 +106,10 @@ struct EntryOperationsMetricsReducer {
             guard let entryKind = entryKind(for: files) else { return nil }
             return EntryActionPayload(actionKind: .copy, entryKind: entryKind)
 
-        case let .pasteItems(sourcePaths, _, _, actionKind):
+        case let .pasteItems(sourcePaths, _, _, operationKind):
             guard let entryKind = entryKind(for: sourcePaths) else { return nil }
-            return EntryActionPayload(actionKind: dauActionKind(for: actionKind), entryKind: entryKind)
+            guard let actionKind = dauActionKind(for: operationKind) else { return nil }
+            return EntryActionPayload(actionKind: actionKind, entryKind: entryKind)
 
         case let .renameItem(oldPath, _):
             guard let entryKind = entryKind(for: [oldPath]) else { return nil }
@@ -180,7 +181,7 @@ struct EntryOperationsMetricsReducer {
         if entry.fileExtension.lowercased() == CollectionConstants.fileExtension {
             return .collection
         }
-        return entry.isDirectory ? .directory : .file
+        return entry.isFolder ? .directory : .file
     }
 
     private func entryKind(for paths: [String]) -> DAUEntryKind? {
@@ -200,26 +201,40 @@ struct EntryOperationsMetricsReducer {
         return .file
     }
 
-    private func dauActionKind(for actionKind: EntryActionRecord.ActionKind) -> DAUEntryActionKind {
-        switch actionKind {
+    private func dauActionKind(for operationKind: OperationKind) -> DAUEntryActionKind? {
+        guard operationKind.isUndoable else { return nil }
+
+        switch operationKind {
         case .rename:
-            .rename
-        case .move:
-            .move
-        case .duplicate:
-            .duplicate
-        case .paste:
-            .paste
+            return .rename
+        case .pasteFileMove:
+            return .move
+        case .pasteFileDuplicate:
+            return .duplicate
+        case .pasteFileCopy:
+            return .paste
         case .createFolder:
-            .createFolder
+            return .createFolder
         case .createAlias:
-            .createAlias
+            return .createAlias
         case .moveToTrash:
-            .moveToTrash
+            return .moveToTrash
         case .putBack:
-            .putBack
+            return .putBack
         case .setTags:
-            .setTags
+            return .setTags
+        case .openDefault,
+             .openWithApp,
+             .setDefaultApp,
+             .quickLook,
+             .getInfo,
+             .share,
+             .performService,
+             .revealInFinder,
+             .deleteImmediately,
+             .compress,
+             .extract:
+            return nil
         }
     }
 }

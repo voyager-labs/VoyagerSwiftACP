@@ -1,3 +1,5 @@
+import Foundation
+
 import ComposableArchitecture
 @testable import Voyager
 import XCTest
@@ -280,7 +282,6 @@ final class PermissionsFeatureTests: XCTestCase {
             state.helperFolderAccessResult = helperResult
             state.helperFilesAndFoldersStatus = .granted
             state.isComplete = true
-            state.isIndexingInBackground = true
         }
 
         await store.finish()

@@ -1,3 +1,5 @@
+import Foundation
+
 import ComposableArchitecture
 @testable import Voyager
 import XCTest
@@ -74,8 +76,7 @@ private let kRegistryLabels: [String: String] = [
 
 private let kRegistryOperatorDefinition = OperatorDefinition(
     uiLabel: "Equals",
-    sqlOperator: nil,
-    sqlKind: nil,
+    mdqueryOperator: nil,
     valueShape: nil,
     valueCount: nil,
     allowedTypes: nil,

@@ -22,7 +22,7 @@ extension WorkspaceClient {
         } else if entry.fileExtension.lowercased() == CollectionConstants.fileExtension {
             NSImage(named: CollectionConstants.fileIconName)
                 ?? iconForType(.data)
-        } else if entry.isDirectory {
+        } else if entry.isFolder {
             iconForFile(entry.fullPath)
         } else if let utType = UTType(filenameExtension: entry.fileExtension) {
             iconForType(utType)
@@ -43,7 +43,7 @@ extension WorkspaceClient {
         if entry.fileExtension.lowercased() == CollectionConstants.fileExtension {
             return "asset:\(CollectionConstants.fileIconName)"
         }
-        if entry.isDirectory {
+        if entry.isFolder {
             return "dir:\(entry.fullPath)"
         }
         if let utType = UTType(filenameExtension: entry.fileExtension) {
