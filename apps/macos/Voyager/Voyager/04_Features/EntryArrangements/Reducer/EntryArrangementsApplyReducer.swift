@@ -59,24 +59,27 @@ struct EntryArrangementsApplyReducer {
         case .name:
             return item1.name.localizedCaseInsensitiveCompare(item2.name)
         case .kind:
-            return item1.kind.localizedCaseInsensitiveCompare(item2.kind)
+            return item1.facets.kind.localizedCaseInsensitiveCompare(item2.facets.kind)
         case .application:
-            let app1 = item1.creatorApplication ?? ""
-            let app2 = item2.creatorApplication ?? ""
+            let app1 = item1.facets.creatorApplication ?? ""
+            let app2 = item2.facets.creatorApplication ?? ""
             return app1.localizedCaseInsensitiveCompare(app2)
         case .dateLastOpened:
-            return compareDates(item1.lastOpenedDate ?? .distantPast, item2.lastOpenedDate ?? .distantPast)
+            return compareDates(
+                item1.facets.lastOpenedDate ?? .distantPast,
+                item2.facets.lastOpenedDate ?? .distantPast,
+            )
         case .dateAdded:
-            return compareDates(item1.addedDate, item2.addedDate)
+            return compareDates(item1.facets.addedDate, item2.facets.addedDate)
         case .dateModified:
             return compareDates(item1.modifiedDate, item2.modifiedDate)
         case .dateCreated:
-            return compareDates(item1.createdDate, item2.createdDate)
+            return compareDates(item1.facets.createdDate, item2.facets.createdDate)
         case .size:
             return compareSizes(item1.size, item2.size)
         case .tags:
-            let tag1Name = item1.tags?.first?.name ?? ""
-            let tag2Name = item2.tags?.first?.name ?? ""
+            let tag1Name = item1.facets.tags?.first?.name ?? ""
+            let tag2Name = item2.facets.tags?.first?.name ?? ""
             return tag1Name.localizedCaseInsensitiveCompare(tag2Name)
         }
     }
@@ -124,11 +127,11 @@ private extension EntryArrangementsApplyReducer {
         case .dateLastOpened:
             groupItemsByDateLastOpened(items, now: now)
         case .dateAdded:
-            groupByDate(items, dateKeyPath: \.addedDate, now: now)
+            groupByDate(items, dateProvider: { $0.facets.addedDate }, now: now)
         case .dateModified:
             groupByDate(items, now: now)
         case .dateCreated:
-            groupByDate(items, dateKeyPath: \.createdDate, now: now)
+            groupByDate(items, dateProvider: { $0.facets.createdDate }, now: now)
         case .size:
             groupItemsBySize(items)
         case .tags:
@@ -144,14 +147,18 @@ private extension EntryArrangementsApplyReducer {
     func groupItemsByDateLastOpened(_ items: [EntryModel], now: Date) -> [GroupedItems] {
         var result: [GroupedItems] = []
         let itemsWithDates = items.compactMap { item -> EntryModel? in
-            guard item.lastOpenedDate != nil else { return nil }
+            guard item.facets.lastOpenedDate != nil else { return nil }
             return item
         }
         if !itemsWithDates.isEmpty {
-            result.append(contentsOf: groupByDate(itemsWithDates, dateKeyPath: \.lastOpenedDate!, now: now))
+            result.append(contentsOf: groupByDate(
+                itemsWithDates,
+                dateProvider: { $0.facets.lastOpenedDate ?? .distantPast },
+                now: now,
+            ))
         }
 
-        let itemsWithoutDates = items.filter { $0.lastOpenedDate == nil }
+        let itemsWithoutDates = items.filter { $0.facets.lastOpenedDate == nil }
         if !itemsWithoutDates.isEmpty {
             result.append(GroupedItems(groupName: "Earlier", items: itemsWithoutDates))
         }
@@ -160,7 +167,7 @@ private extension EntryArrangementsApplyReducer {
 
     func groupByDate(
         _ files: [EntryModel],
-        dateKeyPath: KeyPath<EntryModel, Date> = \.modifiedDate,
+        dateProvider: (EntryModel) -> Date = { $0.modifiedDate },
         now: Date,
     ) -> [GroupedItems] {
         let calendar = Calendar.current
@@ -170,7 +177,7 @@ private extension EntryArrangementsApplyReducer {
         monthFormatter.locale = Locale.current
 
         let grouped = Dictionary(grouping: files) { item in
-            DateGroupBucket.bucket(for: item[keyPath: dateKeyPath], now: now, calendar: calendar)
+            DateGroupBucket.bucket(for: dateProvider(item), now: now, calendar: calendar)
         }
 
         return grouped.keys.sorted(by: DateGroupBucket.ordered).compactMap { bucket in
@@ -275,7 +282,7 @@ private extension EntryArrangementsApplyReducer {
             return "Collections"
         }
 
-        let normalizedKind = entry.kind.trimmingCharacters(in: .whitespacesAndNewlines)
+        let normalizedKind = entry.facets.kind.trimmingCharacters(in: .whitespacesAndNewlines)
         return normalizedKind.isEmpty ? "Other" : normalizedKind
     }
 
@@ -305,10 +312,10 @@ private extension EntryArrangementsApplyReducer {
 
     func groupItemsByApplication(_ items: [EntryModel]) -> [GroupedItems] {
         let grouped = Dictionary(grouping: items) { item -> String in
-            if item.isFolder || item.creatorApplication == nil {
+            if item.isFolder || item.facets.creatorApplication == nil {
                 return "Other"
             }
-            return item.creatorApplication ?? "Other"
+            return item.facets.creatorApplication ?? "Other"
         }
 
         let sortedGroups = grouped.sorted {
@@ -333,7 +340,7 @@ private extension EntryArrangementsApplyReducer {
         var itemsWithoutTags: [EntryModel] = []
 
         for item in items {
-            if let itemTags = item.tags, !itemTags.isEmpty {
+            if let itemTags = item.facets.tags, !itemTags.isEmpty {
                 for tag in itemTags {
                     tagToItems[tag.name, default: []].append(item)
                 }
@@ -346,7 +353,7 @@ private extension EntryArrangementsApplyReducer {
 
         for tagColor in TagColor.colorOrder {
             for (tagName, taggedItems) in tagToItems {
-                if let firstTag = taggedItems.first?.tags?.first(where: { $0.name == tagName }),
+                if let firstTag = taggedItems.first?.facets.tags?.first(where: { $0.name == tagName }),
                    firstTag.tagColor == tagColor
                 {
                     result.append(GroupedItems(

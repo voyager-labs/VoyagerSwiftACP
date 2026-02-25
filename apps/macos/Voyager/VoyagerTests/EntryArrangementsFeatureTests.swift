@@ -94,12 +94,19 @@ final class EntryArrangementsFeatureTests: XCTestCase {
             name: name,
             fullPath: fullPath,
             isFolder: dir,
+            isHidden: false,
             size: size,
             modifiedDate: date,
-            createdDate: date,
-            addedDate: date,
             fileExtension: ext,
-            kind: kind,
+            facets: EntryFacets(
+                createdDate: date,
+                addedDate: date,
+                lastOpenedDate: nil,
+                kind: kind,
+                creatorApplication: nil,
+                tags: nil,
+                supplementaryMetadata: nil,
+            ),
         )
     }
     #endif

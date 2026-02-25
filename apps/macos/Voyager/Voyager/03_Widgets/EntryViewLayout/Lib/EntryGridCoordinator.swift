@@ -190,7 +190,7 @@ final class EntryGridCoordinator: NSObject {
 
     private func resolveTagColorCode(tagName: String, items: [EntryModel]) -> Int? {
         for item in items {
-            if let colorCode = item.tags?.first(where: { $0.name == tagName })?.colorCode {
+            if let colorCode = item.facets.tags?.first(where: { $0.name == tagName })?.colorCode {
                 return colorCode
             }
         }

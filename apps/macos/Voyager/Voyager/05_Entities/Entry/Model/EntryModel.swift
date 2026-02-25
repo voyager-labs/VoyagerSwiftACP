@@ -1,66 +1,69 @@
 import Foundation
 
+public enum EntrySupplementaryMetadata: Equatable, Sendable {
+    case folderItemCount(Int)
+    case imageResolution(width: Int, height: Int)
+    case compressedFileSize(Int64)
+}
+
+public struct EntryFacets: Equatable, Sendable {
+    public let createdDate: Date
+    public let addedDate: Date
+    public let lastOpenedDate: Date?
+    public let kind: String
+    public let creatorApplication: String?
+    public let tags: [Tag]?
+    public let supplementaryMetadata: EntrySupplementaryMetadata?
+
+    public nonisolated init(
+        createdDate: Date,
+        addedDate: Date,
+        lastOpenedDate: Date?,
+        kind: String,
+        creatorApplication: String?,
+        tags: [Tag]?,
+        supplementaryMetadata: EntrySupplementaryMetadata?,
+    ) {
+        self.createdDate = createdDate
+        self.addedDate = addedDate
+        self.lastOpenedDate = lastOpenedDate
+        self.kind = kind
+        self.creatorApplication = creatorApplication
+        self.tags = tags
+        self.supplementaryMetadata = supplementaryMetadata
+    }
+}
+
 public struct EntryModel: Identifiable, Sendable {
-    public let id: String
     public let name: String
     public let fullPath: String
     public let isFolder: Bool
     public let isHidden: Bool
     public let size: Int64
     public let modifiedDate: Date
-    public let createdDate: Date
-    public let addedDate: Date
-    public let lastOpenedDate: Date?
     public let fileExtension: String
-    public let kind: String
-    public let creatorApplication: String?
-    public let tags: [Tag]?
+    public let facets: EntryFacets
 
-    // 이건 뭔지 모르겠네
-    public let additionalInfo: String?
-
-    // 이런 것들은 Computed Property 성격이 아닐까?
-    public let formattedSize: String
-    public let formattedModifiedDate: String
-    public let formattedCreatedDate: String
+    public var id: String { fullPath }
 
     public nonisolated init(
-        name: String = "",
-        fullPath: String = "",
-        isFolder: Bool = false,
-        isHidden: Bool = false,
-        size: Int64 = 0,
-        modifiedDate: Date = Date(),
-        createdDate: Date = Date(),
-        addedDate: Date = Date(),
-        lastOpenedDate: Date? = nil,
-        fileExtension: String = "",
-        kind: String = "",
-        creatorApplication: String? = nil,
-        tags: [Tag]? = nil,
-        additionalInfo: String? = nil,
-        formattedSize: String = "--",
-        formattedModifiedDate: String = "",
-        formattedCreatedDate: String = "",
+        name: String,
+        fullPath: String,
+        isFolder: Bool,
+        isHidden: Bool,
+        size: Int64,
+        modifiedDate: Date,
+        fileExtension: String,
+        facets: EntryFacets,
     ) {
-        id = fullPath
         self.name = name
         self.fullPath = fullPath
         self.isFolder = isFolder
         self.isHidden = isHidden
         self.size = size
         self.modifiedDate = modifiedDate
-        self.createdDate = createdDate
-        self.addedDate = addedDate
-        self.lastOpenedDate = lastOpenedDate
         self.fileExtension = fileExtension
-        self.kind = kind
-        self.creatorApplication = creatorApplication
-        self.tags = tags
-        self.additionalInfo = additionalInfo
-        self.formattedSize = formattedSize
-        self.formattedModifiedDate = formattedModifiedDate
-        self.formattedCreatedDate = formattedCreatedDate
+        self.facets = facets
     }
 }
 
@@ -69,7 +72,7 @@ extension EntryModel: Equatable {
         lhs.id == rhs.id &&
             lhs.modifiedDate == rhs.modifiedDate &&
             lhs.size == rhs.size &&
-            lhs.tags == rhs.tags
+            lhs.facets.tags == rhs.facets.tags
     }
 
     public static func temporaryFolder(id: String, name: String) -> EntryModel {
@@ -78,7 +81,18 @@ extension EntryModel: Equatable {
             fullPath: id,
             isFolder: true,
             isHidden: false,
-            kind: "Folder",
+            size: 0,
+            modifiedDate: Date(),
+            fileExtension: "",
+            facets: EntryFacets(
+                createdDate: Date(),
+                addedDate: Date(),
+                lastOpenedDate: nil,
+                kind: "Folder",
+                creatorApplication: nil,
+                tags: nil,
+                supplementaryMetadata: nil,
+            ),
         )
     }
 }
