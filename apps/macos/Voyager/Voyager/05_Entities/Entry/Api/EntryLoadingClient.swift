@@ -25,7 +25,6 @@ public struct EntryLoadingClient: Sendable {
         FileManager.SearchPathDomainMask,
     ) -> [URL]
     public var homeDirectory: @Sendable () -> String
-    public var loadDragPaths: @Sendable () -> [String]
     public var getItemMetadata: @Sendable (URL, Bool, WorkspaceClient) -> EntryItemMetadata
     public var getImageResolution: @Sendable (URL) -> (width: Int, height: Int)?
     public var getFileSizeInBytes: @Sendable (URL) -> Int64?
@@ -49,7 +48,6 @@ public struct EntryLoadingClient: Sendable {
         urlsForDirectory: @escaping @Sendable (FileManager.SearchPathDirectory, FileManager.SearchPathDomainMask)
             -> [URL],
         homeDirectory: @escaping @Sendable () -> String,
-        loadDragPaths: @escaping @Sendable () -> [String],
         getItemMetadata: @escaping @Sendable (URL, Bool, WorkspaceClient) -> EntryItemMetadata,
         getImageResolution: @escaping @Sendable (URL) -> (width: Int, height: Int)?,
         getFileSizeInBytes: @escaping @Sendable (URL) -> Int64?,
@@ -67,7 +65,6 @@ public struct EntryLoadingClient: Sendable {
         self.mountedVolumeURLs = mountedVolumeURLs
         self.urlsForDirectory = urlsForDirectory
         self.homeDirectory = homeDirectory
-        self.loadDragPaths = loadDragPaths
         self.getItemMetadata = getItemMetadata
         self.getImageResolution = getImageResolution
         self.getFileSizeInBytes = getFileSizeInBytes
@@ -90,7 +87,6 @@ extension EntryLoadingClient: DependencyKey {
             mountedVolumeURLs: EntryLoadingLive.mountedVolumeURLs,
             urlsForDirectory: EntryLoadingLive.urlsForDirectory,
             homeDirectory: EntryLoadingLive.homeDirectory,
-            loadDragPaths: EntryFileOpsLive.loadDragPaths,
             getItemMetadata: EntryLoadingLive.getItemMetadata,
             getImageResolution: EntryLoadingLive.getImageResolution,
             getFileSizeInBytes: EntryLoadingLive.getFileSizeInBytes,
@@ -112,7 +108,6 @@ extension EntryLoadingClient: DependencyKey {
             mountedVolumeURLs: { _, _ in nil },
             urlsForDirectory: { _, _ in [] },
             homeDirectory: { "/Users/test" },
-            loadDragPaths: { [] },
             getItemMetadata: { _, _, _ in EntryItemMetadata(kind: "File", creatorApplication: nil, lastUsedDate: nil) },
             getImageResolution: { _ in nil },
             getFileSizeInBytes: { _ in nil },
@@ -134,7 +129,6 @@ extension EntryLoadingClient: DependencyKey {
             mountedVolumeURLs: { _, _ in nil },
             urlsForDirectory: { _, _ in [] },
             homeDirectory: { "/Users/test" },
-            loadDragPaths: { [] },
             getItemMetadata: { _, _, _ in EntryItemMetadata(kind: "File", creatorApplication: nil, lastUsedDate: nil) },
             getImageResolution: { _ in nil },
             getFileSizeInBytes: { _ in nil },
