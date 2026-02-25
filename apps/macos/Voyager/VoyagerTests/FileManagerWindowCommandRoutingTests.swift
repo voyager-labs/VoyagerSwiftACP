@@ -2,49 +2,47 @@ import ComposableArchitecture
 @testable import Voyager
 import XCTest
 
+@MainActor
 @Reducer
 private struct FileManagerCommandHarnessFeature {
+    @MainActor
     @ObservableState
     struct State: Equatable {
         var window = FileManagerFeature.State()
-        var lastRoute: Route?
     }
 
-    enum Action {
+    enum Action: Equatable {
         case window(FileManagerWindowAction)
-    }
 
-    enum Route: Equatable {
-        case createNewFolder(path: String)
-        case pasteItems(path: String)
-        case toggleSidebar(visible: Bool)
-        case toggleComposer(presented: Bool)
+        static func == (lhs: Self, rhs: Self) -> Bool {
+            switch (lhs, rhs) {
+            case let (.window(lhsAction), .window(rhsAction)):
+                switch (lhsAction, rhsAction) {
+                case (.request(.newFolder), .request(.newFolder)): true
+                case (.request(.paste), .request(.paste)): true
+                case (.request(.toggleSidebar), .request(.toggleSidebar)): true
+                case (.request(.toggleComposer), .request(.toggleComposer)): true
+                case let (.content(.entries(.createNewFolder(lhsPath))), .content(.entries(.createNewFolder(rhsPath)))):
+                    lhsPath == rhsPath
+                case let (.content(.entries(.pasteItems(lhsPath))), .content(.entries(.pasteItems(rhsPath)))):
+                    lhsPath == rhsPath
+                case let (
+                    .content(.composer(.setPresented(lhsPresented))),
+                    .content(.composer(.setPresented(rhsPresented))),
+                ):
+                    lhsPresented == rhsPresented
+                case let (.sidebar(.setSidebarVisible(lhsVisible)), .sidebar(.setSidebarVisible(rhsVisible))):
+                    lhsVisible == rhsVisible
+                default:
+                    false
+                }
+            }
+        }
     }
 
     var body: some Reducer<State, Action> {
         Scope(state: \.window, action: \.window) {
             FileManagerFeature()
-        }
-
-        Reduce { state, action in
-            switch action {
-            case let .window(.content(.entries(.createNewFolder(currentPath)))):
-                state.lastRoute = .createNewFolder(path: currentPath)
-
-            case let .window(.content(.entries(.pasteItems(destinationPath)))):
-                state.lastRoute = .pasteItems(path: destinationPath)
-
-            case let .window(.sidebar(.setSidebarVisible(visible))):
-                state.lastRoute = .toggleSidebar(visible: visible)
-
-            case let .window(.content(.composer(.setPresented(presented)))):
-                state.lastRoute = .toggleComposer(presented: presented)
-
-            default:
-                break
-            }
-
-            return .none
         }
     }
 }
@@ -52,58 +50,88 @@ private struct FileManagerCommandHarnessFeature {
 @MainActor
 final class FileManagerWindowCommandRoutingTests: XCTestCase {
     func testNewFolderCommandUsesCurrentNavigationPath() async {
-        let store = TestStore(initialState: FileManagerCommandHarnessFeature.State()) {
+        let expectedPath = "/tmp/voyager"
+        var initialState = FileManagerCommandHarnessFeature.State()
+        initialState.window.content.navigation.seedInitialFolderPath(expectedPath)
+
+        let store = TestStore(initialState: initialState) {
             FileManagerCommandHarnessFeature()
+        } withDependencies: {
+            $0.entryFileOpsClient = .previewValue
+            $0.undoManagerClient = .init(
+                registerUndo: { _, _, _, _ in },
+                undo: { _ in },
+                redo: { _ in },
+            )
+            $0.date = .constant(Date(timeIntervalSince1970: 1_234_567_890))
         }
         store.exhaustivity = .off
 
-        store.state.window.content.navigation.currentPath = "/tmp/voyager"
-
         await store.send(.window(.request(.newFolder)))
-        await store.finish()
-
-        XCTAssertEqual(store.state.lastRoute, .createNewFolder(path: "/tmp/voyager"))
+        await store.receive(.window(.content(.entries(.createNewFolder(currentPath: expectedPath)))))
     }
 
     func testPasteCommandUsesCurrentNavigationPath() async {
-        let store = TestStore(initialState: FileManagerCommandHarnessFeature.State()) {
+        let expectedPath = "/tmp/voyager"
+        var initialState = FileManagerCommandHarnessFeature.State()
+        initialState.window.content.navigation.seedInitialFolderPath(expectedPath)
+
+        let store = TestStore(initialState: initialState) {
             FileManagerCommandHarnessFeature()
+        } withDependencies: {
+            $0.entryFileOpsClient = .previewValue
+            $0.undoManagerClient = .init(
+                registerUndo: { _, _, _, _ in },
+                undo: { _ in },
+                redo: { _ in },
+            )
+            $0.date = .constant(Date(timeIntervalSince1970: 1_234_567_890))
         }
         store.exhaustivity = .off
 
-        store.state.window.content.navigation.currentPath = "/tmp/voyager"
-
         await store.send(.window(.request(.paste)))
-        await store.finish()
-
-        XCTAssertEqual(store.state.lastRoute, .pasteItems(path: "/tmp/voyager"))
+        await store.receive(.window(.content(.entries(.pasteItems(destinationPath: expectedPath)))))
     }
 
     func testToggleSidebarCommandUsesCurrentSidebarState() async {
-        let store = TestStore(initialState: FileManagerCommandHarnessFeature.State()) {
+        var initialState = FileManagerCommandHarnessFeature.State()
+        initialState.window.sidebar.sidebarVisible = true
+
+        let store = TestStore(initialState: initialState) {
             FileManagerCommandHarnessFeature()
+        } withDependencies: {
+            $0.entryFileOpsClient = .previewValue
+            $0.undoManagerClient = .init(
+                registerUndo: { _, _, _, _ in },
+                undo: { _ in },
+                redo: { _ in },
+            )
+            $0.date = .constant(Date(timeIntervalSince1970: 1_234_567_890))
         }
         store.exhaustivity = .off
 
-        store.state.window.sidebar.sidebarVisible = true
-
         await store.send(.window(.request(.toggleSidebar)))
-        await store.finish()
-
-        XCTAssertEqual(store.state.lastRoute, .toggleSidebar(visible: false))
+        await store.receive(.window(.sidebar(.setSidebarVisible(false))))
     }
 
     func testToggleComposerCommandUsesCurrentComposerState() async {
-        let store = TestStore(initialState: FileManagerCommandHarnessFeature.State()) {
+        var initialState = FileManagerCommandHarnessFeature.State()
+        initialState.window.content.composer.isPresented = false
+
+        let store = TestStore(initialState: initialState) {
             FileManagerCommandHarnessFeature()
+        } withDependencies: {
+            $0.entryFileOpsClient = .previewValue
+            $0.undoManagerClient = .init(
+                registerUndo: { _, _, _, _ in },
+                undo: { _ in },
+                redo: { _ in },
+            )
+            $0.date = .constant(Date(timeIntervalSince1970: 1_234_567_890))
         }
         store.exhaustivity = .off
 
-        store.state.window.content.composer.isPresented = false
-
         await store.send(.window(.request(.toggleComposer)))
-        await store.finish()
-
-        XCTAssertEqual(store.state.lastRoute, .toggleComposer(presented: true))
+        await store.receive(.window(.content(.composer(.setPresented(true)))))
     }
 }
