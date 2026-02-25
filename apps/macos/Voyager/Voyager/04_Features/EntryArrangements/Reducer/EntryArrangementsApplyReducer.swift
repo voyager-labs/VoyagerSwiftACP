@@ -257,9 +257,9 @@ private extension EntryArrangementsApplyReducer {
 
     func groupItemsBySize(_ items: [EntryModel]) -> [GroupedItems] {
         var result: [GroupedItems] = []
-        let files = items.filter { !$0.isDirectory }
+        let files = items.filter { !$0.isFolder }
         result.append(contentsOf: groupBySize(files))
-        let folders = items.filter(\.isDirectory)
+        let folders = items.filter(\.isFolder)
         if !folders.isEmpty {
             result.append(GroupedItems(groupName: "---", items: folders))
         }
@@ -267,7 +267,7 @@ private extension EntryArrangementsApplyReducer {
     }
 
     func categoryForEntry(_ entry: EntryModel) -> String {
-        if entry.isDirectory {
+        if entry.isFolder {
             return "Folders"
         }
 
@@ -305,7 +305,7 @@ private extension EntryArrangementsApplyReducer {
 
     func groupItemsByApplication(_ items: [EntryModel]) -> [GroupedItems] {
         let grouped = Dictionary(grouping: items) { item -> String in
-            if item.isDirectory || item.creatorApplication == nil {
+            if item.isFolder || item.creatorApplication == nil {
                 return "Other"
             }
             return item.creatorApplication ?? "Other"

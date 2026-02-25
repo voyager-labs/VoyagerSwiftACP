@@ -93,7 +93,7 @@ final class EntryArrangementsFeatureTests: XCTestCase {
         EntryModel(
             name: name,
             fullPath: fullPath,
-            isDirectory: dir,
+            isFolder: dir,
             size: size,
             modifiedDate: date,
             createdDate: date,

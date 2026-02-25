@@ -156,7 +156,7 @@ struct ContentPageView: View {
                     pageStore.send(.entryArrangements(.setSortOrder(order)))
                 },
                 resolveOpenWithMenuData: { selectedEntries in
-                    let selectedFiles = selectedEntries.filter { !$0.isDirectory }
+                    let selectedFiles = selectedEntries.filter { !$0.isFolder }
                     if selectedFiles.isEmpty {
                         return (false, [])
                     }

@@ -180,7 +180,7 @@ struct EntryOperationsMetricsReducer {
         if entry.fileExtension.lowercased() == CollectionConstants.fileExtension {
             return .collection
         }
-        return entry.isDirectory ? .directory : .file
+        return entry.isFolder ? .directory : .file
     }
 
     private func entryKind(for paths: [String]) -> DAUEntryKind? {

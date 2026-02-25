@@ -197,7 +197,7 @@ enum EntryLoadingLive {
                     EntryModel(
                         name: rootName,
                         fullPath: "/",
-                        isDirectory: true,
+                        isFolder: true,
                         isHidden: false,
                         kind: "Volume",
                     ),
@@ -633,7 +633,7 @@ enum EntryModelConverterLive {
         return EntryModel(
             name: name,
             fullPath: itemURL.path,
-            isDirectory: isDirectory.boolValue,
+            isFolder: isDirectory.boolValue,
             isHidden: isHidden,
             size: size,
             modifiedDate: modifiedDate,

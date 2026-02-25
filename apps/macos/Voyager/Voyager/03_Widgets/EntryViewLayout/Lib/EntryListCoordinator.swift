@@ -173,7 +173,7 @@ final class EntryListCoordinator: NSObject {
         for row in startRow ..< endRow {
             guard let outlineItem = tableView.item(atRow: row) as? OutlineItem else { continue }
             guard case let .entry(entry) = outlineItem.kind else { continue }
-            guard !entry.isDirectory else { continue }
+            guard !entry.isFolder else { continue }
             paths.insert(entry.fullPath)
         }
 
@@ -537,7 +537,7 @@ extension EntryListCoordinator: NSOutlineViewDataSource {
         var destinationPath = pageState.currentPath
         if let outlineItem = item as? OutlineItem,
            case let .entry(entry) = outlineItem.kind,
-           entry.isDirectory
+           entry.isFolder
         {
             outlineView.setDropItem(outlineItem, dropChildIndex: NSOutlineViewDropOnItemIndex)
             destinationPath = entry.fullPath
@@ -588,7 +588,7 @@ extension EntryListCoordinator: NSOutlineViewDataSource {
         var destinationPath = pageState.currentPath
         if let outlineItem = item as? OutlineItem,
            case let .entry(entry) = outlineItem.kind,
-           entry.isDirectory
+           entry.isFolder
         {
             destinationPath = entry.fullPath
         }

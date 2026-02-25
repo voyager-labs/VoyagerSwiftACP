@@ -51,7 +51,7 @@ enum EntryOperationsExecutionSupport {
     }
 
     static func validateDefaultAppSetting(file: EntryModel, capabilities: EntryCapabilities) -> FileOpError? {
-        guard !file.isDirectory else {
+        guard !file.isFolder else {
             return .unsupportedType
         }
         guard capabilities.supportsDefaultAppManagement else {
@@ -229,7 +229,7 @@ enum EntryOperationsExecutionSupport {
 
     private static func prepareFileInfos(from files: [EntryModel]) -> [FileInfo] {
         files.compactMap { file in
-            guard !file.isDirectory,
+            guard !file.isFolder,
                   let fileType = UTType(filenameExtension: file.fileExtension)
             else { return nil }
             return FileInfo(file: file, fileType: fileType, url: URL(fileURLWithPath: file.fullPath))

@@ -76,7 +76,7 @@ extension FileManagerLocationsClient: DependencyKey {
                         [.skipsHiddenFiles],
                     ) {
                         for itemURL in cloudStorageContents {
-                            if let isDirectory = try? itemURL.resourceValues(forKeys: [.isDirectoryKey]).isDirectory,
+                            if let isDirectory = try? itemURL.resourceValues(forKeys: [.isDirectoryKey]).isFolder,
                                isDirectory == true
                             {
                                 locations.append(SidebarItems.LocationItem(

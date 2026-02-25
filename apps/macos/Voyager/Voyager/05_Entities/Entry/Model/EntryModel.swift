@@ -4,7 +4,7 @@ public struct EntryModel: Identifiable, Sendable {
     public let id: String
     public let name: String
     public let fullPath: String
-    public let isDirectory: Bool
+    public let isFolder: Bool
     public let isHidden: Bool
     public let size: Int64
     public let modifiedDate: Date
@@ -15,8 +15,11 @@ public struct EntryModel: Identifiable, Sendable {
     public let kind: String
     public let creatorApplication: String?
     public let tags: [Tag]?
+
+    // 이건 뭔지 모르겠네
     public let additionalInfo: String?
 
+    // 이런 것들은 Computed Property 성격이 아닐까?
     public let formattedSize: String
     public let formattedModifiedDate: String
     public let formattedCreatedDate: String
@@ -24,7 +27,7 @@ public struct EntryModel: Identifiable, Sendable {
     public nonisolated init(
         name: String = "",
         fullPath: String = "",
-        isDirectory: Bool = false,
+        isFolder: Bool = false,
         isHidden: Bool = false,
         size: Int64 = 0,
         modifiedDate: Date = Date(),
@@ -43,7 +46,7 @@ public struct EntryModel: Identifiable, Sendable {
         id = fullPath
         self.name = name
         self.fullPath = fullPath
-        self.isDirectory = isDirectory
+        self.isFolder = isFolder
         self.isHidden = isHidden
         self.size = size
         self.modifiedDate = modifiedDate
@@ -73,7 +76,7 @@ extension EntryModel: Equatable {
         EntryModel(
             name: name,
             fullPath: id,
-            isDirectory: true,
+            isFolder: true,
             isHidden: false,
             kind: "Folder",
         )

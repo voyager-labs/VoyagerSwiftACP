@@ -99,7 +99,7 @@ struct EntryOpenWithOperationsReducer {
                 )
 
             case let .loadApplicationsForFile(file):
-                guard !file.isDirectory else { return .none }
+                guard !file.isFolder else { return .none }
                 let filePath = file.fullPath
 
                 guard state.applicationsForItems[filePath] == nil else {
