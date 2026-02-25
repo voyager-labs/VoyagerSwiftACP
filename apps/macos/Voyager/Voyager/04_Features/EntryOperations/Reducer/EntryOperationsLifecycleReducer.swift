@@ -32,7 +32,7 @@ struct EntryOperationsLifecycleReducer {
                     if case .setDefaultApp = kind {
                         state.applicationsForItems[filePath] = nil
                         let url = URL(fileURLWithPath: filePath)
-                        let isDirectory = (try? url.resourceValues(forKeys: [.isDirectoryKey]))?.isFolder ?? false
+                        let isDirectory = (try? url.resourceValues(forKeys: [.isDirectoryKey]))?.isDirectory ?? false
                         let fileExtension = url.pathExtension
                         guard !isDirectory else { return .none }
                         let fileType = UTType(filenameExtension: fileExtension) ?? .data

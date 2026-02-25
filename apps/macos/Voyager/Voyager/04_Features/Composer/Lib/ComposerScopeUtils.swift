@@ -188,7 +188,7 @@ enum ComposerScopeUtils {
             }
 
             guard let values = try? item.resourceValues(forKeys: context.resourceKeySet),
-                  values.isFolder == true
+                  values.isDirectory == true
             else {
                 continue
             }
