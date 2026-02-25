@@ -206,23 +206,23 @@ struct EntryOperationsMetricsReducer {
 
         switch operationKind {
         case .rename:
-            .rename
+            return .rename
         case .pasteFileMove:
-            .move
+            return .move
         case .pasteFileDuplicate:
-            .duplicate
+            return .duplicate
         case .pasteFileCopy:
-            .paste
+            return .paste
         case .createFolder:
-            .createFolder
+            return .createFolder
         case .createAlias:
-            .createAlias
+            return .createAlias
         case .moveToTrash:
-            .moveToTrash
+            return .moveToTrash
         case .putBack:
-            .putBack
+            return .putBack
         case .setTags:
-            .setTags
+            return .setTags
         case .openDefault,
              .openWithApp,
              .setDefaultApp,
@@ -234,7 +234,7 @@ struct EntryOperationsMetricsReducer {
              .deleteImmediately,
              .compress,
              .extract:
-            nil
+            return nil
         }
     }
 }

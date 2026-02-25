@@ -22,7 +22,7 @@ enum OperationKind: Equatable, Hashable, Sendable {
     case extract
     case setTags
 
-    var isUndoable: Bool {
+    nonisolated var isUndoable: Bool {
         switch self {
         case .createFolder,
              .createAlias,
