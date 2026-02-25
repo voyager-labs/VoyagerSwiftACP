@@ -1,55 +1,78 @@
 import AppKit
+import ComposableArchitecture
+import Foundation
 import QuickLookUI
 
-@MainActor
-final class EntryQuickLookController: NSObject, QLPreviewPanelDataSource, QLPreviewPanelDelegate {
-    static let shared = EntryQuickLookController()
+public struct EntryQuickLookClient: Sendable {
+    public var quickLook: @Sendable (_ urls: [URL], _ initialIndex: Int) async throws -> Void
 
-    private var currentURL: URL?
-    private var currentURLs: [URL] = []
-    private var currentIndex: Int = 0
-    private var scopeToken: EntryQuickLookSecurityScopedURLToken?
-    private var scopeTokens: [EntryQuickLookSecurityScopedURLToken] = []
+    public nonisolated init(
+        quickLook: @escaping @Sendable (_ urls: [URL], _ initialIndex: Int) async throws -> Void,
+    ) {
+        self.quickLook = quickLook
+    }
+}
 
+extension EntryQuickLookClient: DependencyKey {
     @MainActor
-    func present(url: URL, scopeToken: EntryQuickLookSecurityScopedURLToken) {
-        self.scopeToken?.invalidate()
-        scopeTokens.forEach { $0.invalidate() }
-        scopeTokens = []
-        self.scopeToken = scopeToken
-        currentURL = url
-        currentURLs = [url]
-        currentIndex = 0
+    private static let coordinator = EntryQuickLookPanelCoordinator()
 
-        guard let panel = QLPreviewPanel.shared() else {
-            scopeToken.invalidate()
-            self.scopeToken = nil
-            currentURL = nil
-            return
-        }
-
-        panel.dataSource = self
-        panel.delegate = self
-        panel.makeKeyAndOrderFront(nil)
-        panel.currentPreviewItemIndex = currentIndex
-        panel.reloadData()
+    public nonisolated static var liveValue: EntryQuickLookClient {
+        EntryQuickLookClient(
+            quickLook: { urls, initialIndex in
+                await MainActor.run {
+                    coordinator.present(urls: urls, initialIndex: initialIndex)
+                }
+            },
+        )
     }
 
-    @MainActor
-    func present(urls: [URL], scopeTokens: [EntryQuickLookSecurityScopedURLToken], initialIndex: Int) {
-        scopeToken?.invalidate()
+    public nonisolated static var testValue: EntryQuickLookClient {
+        let unimplemented = { @Sendable (_: Any...) -> Never in
+            fatalError("EntryQuickLookClient test dependency not set.")
+        }
+
+        return EntryQuickLookClient(
+            quickLook: { _, _ in unimplemented() },
+        )
+    }
+
+    public nonisolated static var previewValue: EntryQuickLookClient {
+        EntryQuickLookClient(
+            quickLook: { _, _ in },
+        )
+    }
+}
+
+public extension DependencyValues {
+    nonisolated var entryQuickLookClient: EntryQuickLookClient {
+        get { self[EntryQuickLookClient.self] }
+        set { self[EntryQuickLookClient.self] = newValue }
+    }
+}
+
+@MainActor
+private final class EntryQuickLookPanelCoordinator: NSObject, QLPreviewPanelDataSource, QLPreviewPanelDelegate {
+    private var currentURLs: [URL] = []
+    private var currentIndex: Int = 0
+    private var scopeTokens: [EntryQuickLookSecurityScopedURLToken] = []
+
+    func present(urls: [URL], initialIndex: Int) {
+        guard !urls.isEmpty else { return }
+        let tokens = urls.map(EntryQuickLookSecurityScopedURLToken.init)
+        present(urls: urls, scopeTokens: tokens, initialIndex: initialIndex)
+    }
+
+    private func present(urls: [URL], scopeTokens: [EntryQuickLookSecurityScopedURLToken], initialIndex: Int) {
         self.scopeTokens.forEach { $0.invalidate() }
-        scopeToken = nil
         self.scopeTokens = scopeTokens
         currentURLs = urls
-        currentURL = urls.first
         currentIndex = max(0, min(initialIndex, max(urls.count - 1, 0)))
 
         guard let panel = QLPreviewPanel.shared() else {
             scopeTokens.forEach { $0.invalidate() }
             self.scopeTokens = []
             currentURLs = []
-            currentURL = nil
             currentIndex = 0
             return
         }
@@ -76,24 +99,20 @@ final class EntryQuickLookController: NSObject, QLPreviewPanelDataSource, QLPrev
         let swiftURL = url as URL
         if let index = currentURLs.firstIndex(of: swiftURL) {
             currentIndex = index
-            currentURL = swiftURL
         }
     }
 
     func previewPanelWillClose(_: QLPreviewPanel!) {
         Task { @MainActor in
-            scopeToken?.invalidate()
-            scopeToken = nil
             scopeTokens.forEach { $0.invalidate() }
             scopeTokens = []
-            currentURL = nil
             currentURLs = []
             currentIndex = 0
         }
     }
 }
 
-final class EntryQuickLookSecurityScopedURLToken {
+private final class EntryQuickLookSecurityScopedURLToken {
     private let url: URL
     private let isAccessing: Bool
 
