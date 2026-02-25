@@ -22,9 +22,8 @@ struct FileManagerContentEntryThumbnailFeature {
             case let .requestThumbnails(paths):
                 let uniquePaths = Array(Set(paths))
                 let filtered = uniquePaths.filter { path in
-                    !state.entryThumbnails.thumbnailsReady.contains(path)
-                        && !state.entryThumbnails.thumbnailRequestsInFlight.contains(path)
-                        && !state.entryThumbnails.thumbnailRequestsFailed.contains(path)
+                    !state.entryThumbnails.thumbnailRequestsInFlight.contains(path)
+                        && entryThumbnailCacheClient.getThumbnail(for: path) == nil
                 }
 
                 let pathsToRequest = Array(filtered.prefix(200))
@@ -33,17 +32,19 @@ struct FileManagerContentEntryThumbnailFeature {
                 state.entryThumbnails.thumbnailRequestsInFlight.formUnion(pathsToRequest)
                 return requestThumbnailsEffect(for: pathsToRequest)
 
-            case let .thumbnailsReady(paths):
+            case let .thumbnailsUpdated(paths):
                 let pathSet = Set(paths)
-                state.entryThumbnails.thumbnailsReady.formUnion(pathSet)
-                state.entryThumbnails.thumbnailRequestsInFlight.subtract(pathSet)
-                state.entryThumbnails.thumbnailRequestsFailed.subtract(pathSet)
+                guard !pathSet.isEmpty else { return .none }
+                state.entryThumbnails.thumbnailRenderVersion &+= 1
                 return .none
 
-            case let .thumbnailRequestFailed(paths):
+            case let .thumbnailRequestsCompleted(paths):
                 let pathSet = Set(paths)
-                state.entryThumbnails.thumbnailRequestsFailed.formUnion(pathSet)
                 state.entryThumbnails.thumbnailRequestsInFlight.subtract(pathSet)
+                return .none
+
+            case let .fileSystemChanged(paths):
+                entryThumbnailCacheClient.removeThumbnails(for: paths)
                 return .none
 
             default:
@@ -62,32 +63,21 @@ struct FileManagerContentEntryThumbnailFeature {
             let batchSize = 10
 
             var remainingIterator = paths.makeIterator()
-            var readyBatch: [String] = []
-            readyBatch.reserveCapacity(batchSize)
-            var failedBatch: [String] = []
-            failedBatch.reserveCapacity(batchSize)
+            var updatedBatch: [String] = []
+            updatedBatch.reserveCapacity(batchSize)
+            var completedPaths: [String] = []
+            completedPaths.reserveCapacity(paths.count)
 
             func flushIfNeeded() async {
-                if readyBatch.count >= batchSize {
-                    await send(.entries(.thumbnailsReady(paths: readyBatch)))
-                    readyBatch.removeAll(keepingCapacity: true)
-                }
-                if failedBatch.count >= batchSize {
-                    await send(.entries(.thumbnailRequestFailed(paths: failedBatch)))
-                    failedBatch.removeAll(keepingCapacity: true)
+                if updatedBatch.count >= batchSize {
+                    await send(.entries(.thumbnailsUpdated(paths: updatedBatch)))
+                    updatedBatch.removeAll(keepingCapacity: true)
                 }
             }
 
             await withTaskGroup(of: (String, Bool).self) { group in
                 func addTask(for path: String) {
                     group.addTask(priority: .utility) {
-                        let hasCached = await MainActor.run {
-                            entryThumbnailCacheClient.getThumbnail(for: path) != nil
-                        }
-                        if hasCached {
-                            return (path, true)
-                        }
-
                         let url = URL(fileURLWithPath: path)
                         if let thumbnail = await thumbnailGeneratorClient.generateThumbnail(
                             for: url,
@@ -110,10 +100,9 @@ struct FileManagerContentEntryThumbnailFeature {
                 }
 
                 while let (path, didGenerate) = await group.next() {
+                    completedPaths.append(path)
                     if didGenerate {
-                        readyBatch.append(path)
-                    } else {
-                        failedBatch.append(path)
+                        updatedBatch.append(path)
                     }
                     await flushIfNeeded()
 
@@ -123,11 +112,11 @@ struct FileManagerContentEntryThumbnailFeature {
                 }
             }
 
-            if !readyBatch.isEmpty {
-                await send(.entries(.thumbnailsReady(paths: readyBatch)))
+            if !updatedBatch.isEmpty {
+                await send(.entries(.thumbnailsUpdated(paths: updatedBatch)))
             }
-            if !failedBatch.isEmpty {
-                await send(.entries(.thumbnailRequestFailed(paths: failedBatch)))
+            if !completedPaths.isEmpty {
+                await send(.entries(.thumbnailRequestsCompleted(paths: completedPaths)))
             }
         }
     }
