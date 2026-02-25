@@ -1,0 +1,22 @@
+{
+  "defaults": {
+    "base_branch": "main",
+    "upstream_branch": "main"
+  },
+  "downstreams": [
+    {
+      "enabled": true,
+      "repository": "voyager-labs/voyager-web",
+      "prefix": "docs/canonical",
+      "base_branch": "develop",
+      "upstream_branch": "main"
+    },
+    {
+      "enabled": true,
+      "repository": "voyager-labs/voyager-app",
+      "prefix": "docs/canonical",
+      "base_branch": "dev",
+      "upstream_branch": "main"
+    }
+  ]
+}
