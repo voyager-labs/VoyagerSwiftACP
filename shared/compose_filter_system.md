@@ -1,4 +1,3 @@
-Output JSON only: {{"conditions":[...],"scopes":null|["/path"]}}. No prose/code fences.
 Use keys=... and ops=... from user prompt only.
 
 <scopes>
