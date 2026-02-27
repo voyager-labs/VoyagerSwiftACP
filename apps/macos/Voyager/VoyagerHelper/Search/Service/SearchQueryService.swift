@@ -48,8 +48,14 @@ struct SearchQueryService: Sendable {
             )
         }
 
+        let chipsScopes = cleanScopes(request.filters.scopes)
+        let resolvedScopes = resolveScopes(
+            queryScopes: conversion.scopes,
+            chipsScopes: chipsScopes,
+        )
+
         let plannedFilters = SearchFiltersPayload(
-            scopes: conversion.scopes ?? request.filters.scopes,
+            scopes: resolvedScopes,
             conditions: conversion.conditions,
         )
 
@@ -84,5 +90,25 @@ struct SearchQueryService: Sendable {
             items: [],
             error: SearchErrorPayload(code: code, details: details),
         )
+    }
+
+    private nonisolated func resolveScopes(
+        queryScopes: [String]?,
+        chipsScopes: [String],
+    ) -> [String] {
+        if let queryScopes {
+            let cleanedQueryScopes = cleanScopes(queryScopes)
+            if cleanedQueryScopes.isEmpty == false {
+                return cleanedQueryScopes
+            }
+        }
+
+        return chipsScopes
+    }
+
+    private nonisolated func cleanScopes(_ scopes: [String]) -> [String] {
+        scopes
+            .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+            .filter { $0.isEmpty == false }
     }
 }
