@@ -38,7 +38,7 @@ description: 'SwiftUI + TCA frontend overview and backend bootstrap'
 
 - Prefer deriving API base from `{PUBLIC_BACKEND_HOST}:{assignedPort}` (port는 런타임에 동적 할당될 수 있음).
 - Ensure helper launches backend before issuing API calls.
-- See [01-frontend-http-client-guidelines.mdc](mdc:.cursor/rules/01-macos-voyager/01-frontend-http-client-guidelines.mdc) for HTTP client patterns.
-- See [02-frontend-tca-conventions.mdc](mdc:.cursor/rules/01-macos-voyager/02-frontend-tca-conventions.mdc) for TCA conventions.
-- See [03-macos-fsd-tca-structure.mdc](mdc:.cursor/rules/01-macos-voyager/03-macos-fsd-tca-structure.mdc) for FSD layer mapping and reducer organization.
-- See [01-frontend-dotenv-integration.mdc](mdc:.cursor/rules/02-macos-helper/01-frontend-dotenv-integration.mdc) for Swift-dotenv usage.
+- See [01-frontend-http-client-guidelines.md](/.agents/rules/01-macos-voyager/01-frontend-http-client-guidelines.md) for HTTP client patterns.
+- See [02-frontend-tca-conventions.md](/.agents/rules/01-macos-voyager/02-frontend-tca-conventions.md) for TCA conventions.
+- See [03-macos-fsd-tca-structure.md](/.agents/rules/01-macos-voyager/03-macos-fsd-tca-structure.md) for FSD layer mapping and reducer organization.
+- See [01-frontend-dotenv-integration.md](/.agents/rules/02-macos-helper/01-frontend-dotenv-integration.md) for Swift-dotenv usage.

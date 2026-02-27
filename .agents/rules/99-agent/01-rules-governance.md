@@ -34,7 +34,7 @@ description: 'Rule-first development, sync triggers, and quality bar.'
 ## Rule consistency & SSOT
 
 - **Single Source of Truth**: Each topic should have one authoritative rule file.
-- **Cross-references**: Use full paths under `.cursor/rules/` including the numbered directory, e.g. [03-error-handling-policy.mdc](mdc:.cursor/rules/00-monorepo/03-error-handling-policy.mdc).
+- **Cross-references**: Use full paths under `.agents/rules/` including the numbered directory, e.g. [03-error-handling-policy.md](/.agents/rules/00-monorepo/03-error-handling-policy.md).
 - **Avoid duplication**: If content appears in multiple rules, consolidate and reference instead.
 - **Consistency check**: Before creating/updating rules, verify:
   - No conflicting information with existing rules
@@ -44,11 +44,11 @@ description: 'Rule-first development, sync triggers, and quality bar.'
 
 ### SSOT enforcement patterns
 
-- **Error handling**: All error formats defined in `03-error-handling-policy.mdc` only
-- **Logging**: All logging guidelines centralized in `05-logging-observability.mdc`
-- **Security**: All security practices centralized in `04-security-and-secrets.mdc`
+- **Error handling**: All error formats defined in `03-error-handling-policy.md` only
+- **Logging**: All logging guidelines centralized in `05-logging-observability.md`
+- **Security**: All security practices centralized in `04-security-and-secrets.md`
 - **Environment management**: Frontend uses `swift-dotenv` approach only (no hybrid)
-- **Backend configuration**: All configuration practices centralized in `25-backend-config.mdc`
+- **Backend configuration**: All configuration practices centralized in `25-backend-config.md`
 - **API contracts**: Response formats referenced, not duplicated across rules
 - **Cross-cutting concerns**: Security, logging, error handling referenced, not repeated
 
@@ -62,7 +62,7 @@ description: 'Rule-first development, sync triggers, and quality bar.'
 ### Rule change propagation
 
 - **When renaming/moving rules**: Use `grep` to find all references to the old rule name
-- **Update all references**: Change `[old-name.mdc](mdc:.cursor/rules/<old-dir>/<old-name>.mdc)` to `[new-name.mdc](mdc:.cursor/rules/<new-dir>/<new-name>.mdc)`
+- **Update all references**: Change `[old-name.md](/.agents/rules/<old-dir>/<old-name>.md)` to `[new-name.md](/.agents/rules/<new-dir>/<new-name>.md)`
 - **Verify completeness**: Ensure no orphaned references remain
 - **Test references**: Confirm all links work after changes
 

@@ -55,4 +55,4 @@ description: 'Database schema and migrations (Alembic)'
 
 - Put bootstrap data logic in dedicated modules; avoid mixing with schema migration scripts.
 - Initialize/upgrade handled on startup via: [apps/backend/src/infra/db/bootstrap](mdc:apps/backend/src/infra/db/bootstrap)
-- Use DTOs for data modeling (see [04-data-modeling-and-schemas.mdc](mdc:.cursor/rules/03-backend/04-data-modeling-and-schemas.mdc)).
+- Use DTOs for data modeling (see [04-data-modeling-and-schemas.md](/.agents/rules/03-backend/04-data-modeling-and-schemas.md)).

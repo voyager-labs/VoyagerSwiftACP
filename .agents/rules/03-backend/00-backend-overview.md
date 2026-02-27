@@ -14,7 +14,7 @@ description: 'Backend (FastAPI + Python) overview: structure, entry points, and 
 
 ## How to run (high-level)
 
-See [01-dev-run-and-env.mdc](mdc:.cursor/rules/00-monorepo/01-dev-run-and-env.mdc) for detailed development workflows and environment setup.
+See [01-dev-run-and-env.md](/.agents/rules/00-monorepo/01-dev-run-and-env.md) for detailed development workflows and environment setup.
 
 ## Integration with frontend
 
@@ -26,8 +26,8 @@ See [01-dev-run-and-env.mdc](mdc:.cursor/rules/00-monorepo/01-dev-run-and-env.md
 ## Notes
 
 - Backend provides AI/ML capabilities for file operations and search
-- See [01-backend-api-contracts.mdc](mdc:.cursor/rules/03-backend/01-backend-api-contracts.mdc) for API contracts and error handling
-- See [02-backend-testing.mdc](mdc:.cursor/rules/03-backend/02-backend-testing.mdc) for testing guidelines
-- See [03-db-migrations.mdc](mdc:.cursor/rules/03-backend/03-db-migrations.mdc) for database schema management
-- See [04-data-modeling-and-schemas.mdc](mdc:.cursor/rules/03-backend/04-data-modeling-and-schemas.mdc) for Pydantic DTO conventions
-- See [05-backend-config.mdc](mdc:.cursor/rules/03-backend/05-backend-config.mdc) for configuration details
+- See [01-backend-api-contracts.md](/.agents/rules/03-backend/01-backend-api-contracts.md) for API contracts and error handling
+- See [02-backend-testing.md](/.agents/rules/03-backend/02-backend-testing.md) for testing guidelines
+- See [03-db-migrations.md](/.agents/rules/03-backend/03-db-migrations.md) for database schema management
+- See [04-data-modeling-and-schemas.md](/.agents/rules/03-backend/04-data-modeling-and-schemas.md) for Pydantic DTO conventions
+- See [05-backend-config.md](/.agents/rules/03-backend/05-backend-config.md) for configuration details

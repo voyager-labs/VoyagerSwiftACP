@@ -39,6 +39,6 @@ References
 
 ## Logs & PII
 
-- Follow [05-logging-observability.mdc](mdc:.cursor/rules/00-monorepo/05-logging-observability.mdc) for detailed logging guidelines.
+- Follow [05-logging-observability.md](/.agents/rules/00-monorepo/05-logging-observability.md) for detailed logging guidelines.
 - Redact PII and tokens; do not log raw payloads.
 - Rotate or truncate large logs to reduce exposure duration.

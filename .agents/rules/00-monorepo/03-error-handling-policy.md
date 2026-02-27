@@ -17,7 +17,7 @@ description: 'Error handling policy across backend and frontend'
 - Validation
   - Prefer explicit `422` with pydantic validation details (sanitized).
 - Logging
-  - Follow [05-logging-observability.mdc](mdc:.cursor/rules/00-monorepo/05-logging-observability.mdc) for detailed logging guidelines.
+  - Follow [05-logging-observability.md](/.agents/rules/00-monorepo/05-logging-observability.md) for detailed logging guidelines.
   - Log minimal context; never include secrets or full payloads.
 
 ### Exceptions (current codebase)

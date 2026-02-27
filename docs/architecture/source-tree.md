@@ -27,7 +27,7 @@ voyager-app/
 ├─ docs/                        # 문서 (PRD/아키텍처/기능)
 ├─ shared/                      # 레지스트리 JSON 파일
 ├─ scripts/                     # 빌드/CI 스크립트
-├─ .cursor/rules/               # 에이전트/자동화 규칙
+├─ .agents/rules/               # 에이전트/자동화 규칙
 └─ .claude/skills/              # AI 에이전트 스킬 정의
 ```
 
@@ -362,37 +362,37 @@ scripts/
 
 ---
 
-## .cursor/rules/ - 에이전트 규칙
+## .agents/rules/ - 에이전트 규칙
 
 Cursor IDE와 AI 에이전트를 위한 규칙 파일들입니다.
 
 ```
-.cursor/rules/
+.agents/rules/
 ├─ 00-monorepo/                 # 모노레포 공통
-│  ├─ 00-monorepo-overview.mdc
-│  ├─ 01-dev-run-and-env.mdc
-│  ├─ 02-architecture-overview.mdc
-│  ├─ 03-error-handling-policy.mdc
-│  ├─ 04-security-and-secrets.mdc
-│  ├─ 05-logging-observability.mdc
-│  └─ 06-commit-messages.mdc
+│  ├─ 00-monorepo-overview.md
+│  ├─ 01-dev-run-and-env.md
+│  ├─ 02-architecture-overview.md
+│  ├─ 03-error-handling-policy.md
+│  ├─ 04-security-and-secrets.md
+│  ├─ 05-logging-observability.md
+│  └─ 06-commit-messages.md
 ├─ 01-macos-voyager/            # macOS 앱 규칙
-│  ├─ 00-frontend-overview.mdc
-│  ├─ 01-frontend-http-client-guidelines.mdc
-│  ├─ 02-frontend-tca-conventions.mdc
-│  └─ 03-macos-fsd-tca-structure.mdc
+│  ├─ 00-frontend-overview.md
+│  ├─ 01-frontend-http-client-guidelines.md
+│  ├─ 02-frontend-tca-conventions.md
+│  └─ 03-macos-fsd-tca-structure.md
 ├─ 02-macos-helper/             # Helper 규칙
-│  └─ 01-frontend-dotenv-integration.mdc
+│  └─ 01-frontend-dotenv-integration.md
 ├─ 03-backend/                  # 백엔드 규칙
-│  ├─ 00-backend-overview.mdc
-│  ├─ 01-backend-api-contracts.mdc
-│  ├─ 02-backend-testing.mdc
-│  ├─ 03-db-migrations.mdc
-│  ├─ 04-data-modeling-and-schemas.mdc
-│  └─ 05-backend-config.mdc
+│  ├─ 00-backend-overview.md
+│  ├─ 01-backend-api-contracts.md
+│  ├─ 02-backend-testing.md
+│  ├─ 03-db-migrations.md
+│  ├─ 04-data-modeling-and-schemas.md
+│  └─ 05-backend-config.md
 └─ 99-agent/                    # 에이전트 모드
-   ├─ 00-agent-mode.mdc
-   └─ 01-rules-governance.mdc
+   ├─ 00-agent-mode.md
+   └─ 01-rules-governance.md
 ```
 
 ---
@@ -430,7 +430,7 @@ OpenCode/Claude 에이전트를 위한 스킬 정의입니다.
 - `docs/`: 문서
 - `shared/`: 공유 데이터
 - `scripts/`: 자동화 스크립트
-- `.cursor/rules/`: IDE/에이전트 규칙
+- `.agents/rules/`: IDE/에이전트 규칙
 - `.claude/skills/`: AI 스킬
 
 ### 2. 백엔드 레이어 분리

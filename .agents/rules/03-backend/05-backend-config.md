@@ -122,7 +122,7 @@ Only API keys are loaded from environment variables.
 
 ## Secrets Management
 
-- **Security guidelines**: Follow [04-security-and-secrets.mdc](mdc:.cursor/rules/00-monorepo/04-security-and-secrets.mdc)
+- **Security guidelines**: Follow [04-security-and-secrets.md](/.agents/rules/00-monorepo/04-security-and-secrets.md)
 - **Dev secrets**: Store in `.env.dev` (gitignored)
 - **Prod secrets**: Inject via process environment or Keychain
 - **Never bundle secrets**: Keep secrets out of compiled artifacts
@@ -133,11 +133,11 @@ Only API keys are loaded from environment variables.
 2. Add corresponding field to `VoyagerConfig` dataclass
 3. Update `load_config()` to read the new variable
 4. Update this documentation
-5. Consider impact on data models (see [04-data-modeling-and-schemas.mdc](mdc:.cursor/rules/03-backend/04-data-modeling-and-schemas.mdc))
+5. Consider impact on data models (see [04-data-modeling-and-schemas.md](/.agents/rules/03-backend/04-data-modeling-and-schemas.md))
 
 ## Notes
 
-- See [00-backend-overview.mdc](mdc:.cursor/rules/03-backend/00-backend-overview.mdc) for backend overview
-- See [02-architecture-overview.mdc](mdc:.cursor/rules/00-monorepo/02-architecture-overview.mdc) for system architecture
-- See [05-logging-observability.mdc](mdc:.cursor/rules/00-monorepo/05-logging-observability.mdc) for logging configuration
-- See [01-dev-run-and-env.mdc](mdc:.cursor/rules/00-monorepo/01-dev-run-and-env.mdc) for development workflow
+- See [00-backend-overview.md](/.agents/rules/03-backend/00-backend-overview.md) for backend overview
+- See [02-architecture-overview.md](/.agents/rules/00-monorepo/02-architecture-overview.md) for system architecture
+- See [05-logging-observability.md](/.agents/rules/00-monorepo/05-logging-observability.md) for logging configuration
+- See [01-dev-run-and-env.md](/.agents/rules/00-monorepo/01-dev-run-and-env.md) for development workflow

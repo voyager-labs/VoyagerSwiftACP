@@ -17,11 +17,11 @@ Voyager is a macOS application that combines local file operations with AI-power
 
 ## Frontend Architecture (SwiftUI + TCA)
 
-See [00-frontend-overview.mdc](mdc:.cursor/rules/01-macos-voyager/00-frontend-overview.mdc) for detailed frontend structure and components.
+See [00-frontend-overview.md](/.agents/rules/01-macos-voyager/00-frontend-overview.md) for detailed frontend structure and components.
 
 ## Backend Architecture (FastAPI + Python)
 
-See [00-backend-overview.mdc](mdc:.cursor/rules/03-backend/00-backend-overview.mdc) for detailed backend structure and entry points.
+See [00-backend-overview.md](/.agents/rules/03-backend/00-backend-overview.md) for detailed backend structure and entry points.
 
 ## Integration & Communication
 
@@ -45,17 +45,17 @@ See [00-backend-overview.mdc](mdc:.cursor/rules/03-backend/00-backend-overview.m
 - **Shared**: Common environment keys for integration (`PUBLIC_BACKEND_HOST`, `PUBLIC_BACKEND_PORT`, `APP_ENV`)
 
 ### Error Handling
-- See [03-error-handling-policy.mdc](mdc:.cursor/rules/00-monorepo/03-error-handling-policy.mdc) for detailed error handling guidelines
+- See [03-error-handling-policy.md](/.agents/rules/00-monorepo/03-error-handling-policy.md) for detailed error handling guidelines
 - **Frontend**: TCA-based error state management with user-friendly messages
 - **Backend**: Structured error responses with appropriate HTTP status codes
 - **Integration**: Network error mapping and retry strategies
 
 ### Security & Secrets
-- See [04-security-and-secrets.mdc](mdc:.cursor/rules/00-monorepo/04-security-and-secrets.mdc) for detailed security guidelines
+- See [04-security-and-secrets.md](/.agents/rules/00-monorepo/04-security-and-secrets.md) for detailed security guidelines
 - **Shared**: No secrets in logs, metadata-only startup banners
 
 ### Logging & Observability
-- See [05-logging-observability.mdc](mdc:.cursor/rules/00-monorepo/05-logging-observability.mdc) for detailed guidelines
+- See [05-logging-observability.md](/.agents/rules/00-monorepo/05-logging-observability.md) for detailed guidelines
 - **Frontend**: Backend process logging to configured file paths
 - **Backend**: Structured logging with PII redaction
 

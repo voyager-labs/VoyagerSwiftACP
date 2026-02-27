@@ -22,10 +22,10 @@ description: 'Backend testing policy (pytest, TestClient, structure)'
 
 ## Contracts and regression
 
-- Add/modify tests when changing API contracts or status codes (see [01-backend-api-contracts.mdc](mdc:.cursor/rules/03-backend/01-backend-api-contracts.mdc)).
+- Add/modify tests when changing API contracts or status codes (see [01-backend-api-contracts.md](/.agents/rules/03-backend/01-backend-api-contracts.md)).
 - Cover pagination/filtering where applicable.
 - Include minimal integration tests for key flows (happy path + failure).
-- Test error responses according to [03-error-handling-policy.mdc](mdc:.cursor/rules/00-monorepo/03-error-handling-policy.mdc).
+- Test error responses according to [03-error-handling-policy.md](/.agents/rules/00-monorepo/03-error-handling-policy.md).
 
 ## Guidelines
 

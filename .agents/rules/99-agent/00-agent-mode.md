@@ -35,8 +35,8 @@ description: 'Agent mode guardrails and governance alignment.'
 ## Rule management
 
 - **Before creating/updating rules**: Check existing rules for conflicts and overlaps.
-- **SSOT principle**: Ensure each topic has one authoritative rule file (see [01-rules-governance.mdc](mdc:.cursor/rules/99-agent/01-rules-governance.mdc) for detailed SSOT enforcement patterns).
-- **Cross-references**: Use full paths under `.cursor/rules/` (directory + filename), e.g. [03-error-handling-policy.mdc](mdc:.cursor/rules/00-monorepo/03-error-handling-policy.mdc).
+- **SSOT principle**: Ensure each topic has one authoritative rule file (see [01-rules-governance.md](/.agents/rules/99-agent/01-rules-governance.md) for detailed SSOT enforcement patterns).
+- **Cross-references**: Use full paths under `.agents/rules/` (directory + filename), e.g. [03-error-handling-policy.md](/.agents/rules/00-monorepo/03-error-handling-policy.md).
 - **Consistency check**: Verify terminology, formatting, and content alignment across all rules.
 - **Avoid duplication**: Consolidate repeated content and reference instead of copying.
 - **Maintain currency**: Rules must reflect the current state of the codebase 100%.
@@ -46,4 +46,4 @@ description: 'Agent mode guardrails and governance alignment.'
 - Conversation with the user follows the user-selected language (Korean for this project).
 - Thinking/searching/coding defaults to English (APIs, symbols, identifiers, queries).
 - Rules are written in English. Code comments are written in Korean. Documents/commits follow the project convention (Korean unless specified).
-- Commit messages follow [06-commit-messages.mdc](mdc:.cursor/rules/00-monorepo/06-commit-messages.mdc) standard.
+- Commit messages follow [06-commit-messages.md](/.agents/rules/00-monorepo/06-commit-messages.md) standard.

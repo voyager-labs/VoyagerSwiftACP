@@ -15,7 +15,7 @@ description: 'Pydantic DTO conventions and schema placement'
 
 - Name DTOs with clear intent (e.g., `FileEntryCreate`, `FileEntryRead`).
 - Separate request vs response models.
-- Keep external API DTOs stable; prefer additive changes and version when breaking (see [01-backend-api-contracts.mdc](mdc:.cursor/rules/03-backend/01-backend-api-contracts.mdc)).
+- Keep external API DTOs stable; prefer additive changes and version when breaking (see [01-backend-api-contracts.md](/.agents/rules/03-backend/01-backend-api-contracts.md)).
 - Use explicit field types and defaults; avoid `Any`.
 - Document optional fields with defaults and comments.
 
@@ -29,4 +29,4 @@ description: 'Pydantic DTO conventions and schema placement'
 
 - Add new fields as optional for non-breaking changes.
 - For breaking changes, version APIs and DTOs (e.g., `v2`).
-- Coordinate schema changes with database migrations (see [03-db-migrations.mdc](mdc:.cursor/rules/03-backend/03-db-migrations.mdc)).
+- Coordinate schema changes with database migrations (see [03-db-migrations.md](/.agents/rules/03-backend/03-db-migrations.md)).

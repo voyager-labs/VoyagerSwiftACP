@@ -13,7 +13,7 @@ description: 'HTTP client guidelines for macOS app (URLSession, base URL, errors
 ## Requests
 
 - Use `URLSession` or a thin wrapper; set reasonable timeouts.
-- Decode using `JSONDecoder`; align with backend envelopes from [03-error-handling-policy.mdc](mdc:.cursor/rules/00-monorepo/03-error-handling-policy.mdc).
+- Decode using `JSONDecoder`; align with backend envelopes from [03-error-handling-policy.md](/.agents/rules/00-monorepo/03-error-handling-policy.md).
   - Note: search endpoints (`/api/collection*`) currently return non-enveloped `SearchResponse`.
 - Map HTTP errors to user-friendly messages; include optional `suggestion`.
 
@@ -28,5 +28,5 @@ description: 'HTTP client guidelines for macOS app (URLSession, base URL, errors
 - Support cancellation for long-running requests; propagate to TCA effects.
 
 References
-- Swift-dotenv: [01-frontend-dotenv-integration.mdc](mdc:.cursor/rules/02-macos-helper/01-frontend-dotenv-integration.mdc)
-- Overview: [00-frontend-overview.mdc](mdc:.cursor/rules/01-macos-voyager/00-frontend-overview.mdc)
+- Swift-dotenv: [01-frontend-dotenv-integration.md](/.agents/rules/02-macos-helper/01-frontend-dotenv-integration.md)
+- Overview: [00-frontend-overview.md](/.agents/rules/01-macos-voyager/00-frontend-overview.md)

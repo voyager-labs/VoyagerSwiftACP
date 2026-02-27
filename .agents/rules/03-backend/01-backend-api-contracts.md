@@ -13,10 +13,10 @@ description: 'HTTP API guidance: endpoints, contracts, and versioning for FastAP
 
 ## Response Standards
 
-- **Success responses (preferred)**: Use envelope pattern (see [03-error-handling-policy.mdc](mdc:.cursor/rules/00-monorepo/03-error-handling-policy.mdc))
+- **Success responses (preferred)**: Use envelope pattern (see [03-error-handling-policy.md](/.agents/rules/00-monorepo/03-error-handling-policy.md))
 - **Error responses**: Consistent error structure and HTTP status codes
 - **Validation**: Prefer explicit `422` validation errors; avoid generic `500`
-- **Data models**: Use Pydantic schemas (see [04-data-modeling-and-schemas.mdc](mdc:.cursor/rules/03-backend/04-data-modeling-and-schemas.mdc))
+- **Data models**: Use Pydantic schemas (see [04-data-modeling-and-schemas.md](/.agents/rules/03-backend/04-data-modeling-and-schemas.md))
 
 Note: Existing search endpoints (`/api/collection*`) currently return `SearchResponse` top-level and may use `SearchResponse.error` for failures.
 
@@ -38,5 +38,5 @@ Note: Existing search endpoints (`/api/collection*`) currently return `SearchRes
 ## Documentation
 
 - **OpenAPI**: Ensure app exposes OpenAPI and docs (FastAPI defaults)
-- **Testing**: Test API contracts and endpoints (see [02-backend-testing.mdc](mdc:.cursor/rules/03-backend/02-backend-testing.mdc))
+- **Testing**: Test API contracts and endpoints (see [02-backend-testing.md](/.agents/rules/03-backend/02-backend-testing.md))
 - **Examples**: Include request/response examples for each endpoint

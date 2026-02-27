@@ -57,5 +57,5 @@ Interpretation:
 ## References
 
 - Deep-dive + diagrams: [docs/architecture/macos-app.md](mdc:docs/architecture/macos-app.md)
-- Frontend overview/bootstrap: [00-frontend-overview.mdc](mdc:.cursor/rules/01-macos-voyager/00-frontend-overview.mdc)
-- TCA basics: [02-frontend-tca-conventions.mdc](mdc:.cursor/rules/01-macos-voyager/02-frontend-tca-conventions.mdc)
+- Frontend overview/bootstrap: [00-frontend-overview.md](/.agents/rules/01-macos-voyager/00-frontend-overview.md)
+- TCA basics: [02-frontend-tca-conventions.md](/.agents/rules/01-macos-voyager/02-frontend-tca-conventions.md)

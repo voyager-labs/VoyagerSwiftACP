@@ -21,7 +21,7 @@ This repository is a monorepo that contains a macOS SwiftUI app (frontend) and a
 
 ## How to run (high-level)
 
-See [01-dev-run-and-env.mdc](mdc:.cursor/rules/00-monorepo/01-dev-run-and-env.mdc) for detailed development workflows and environment setup.
+See [01-dev-run-and-env.md](/.agents/rules/00-monorepo/01-dev-run-and-env.md) for detailed development workflows and environment setup.
 
 ## Language policy
 
@@ -39,4 +39,4 @@ See [01-dev-run-and-env.mdc](mdc:.cursor/rules/00-monorepo/01-dev-run-and-env.md
 ## Notes
 
 - Paths in rules and examples use absolute-style monorepo paths (e.g., `apps/backend/...`, `apps/macos/...`).
-- See [04-security-and-secrets.mdc](mdc:.cursor/rules/00-monorepo/04-security-and-secrets.mdc) for secrets management guidelines.
+- See [04-security-and-secrets.md](/.agents/rules/00-monorepo/04-security-and-secrets.md) for secrets management guidelines.

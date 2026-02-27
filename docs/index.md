@@ -5,7 +5,7 @@
 ## 문서 원칙
 
 - `docs/`는 설계/아키텍처/기능 설명(why/how, 다이어그램 포함)을 위한 문서 공간입니다.
-- 강제 규칙(Do/Don't, 컨벤션, globs 기반 적용)은 `.cursor/rules/`를 SSOT로 유지합니다.
+- 강제 규칙(Do/Don't, 컨벤션, globs 기반 적용)은 `.agents/rules/`를 SSOT로 유지합니다.
 - 절차/워크플로우(스크립트 포함)는 `.claude/skills/`를 사용합니다.
 
 ## 아키텍처
