@@ -20,12 +20,6 @@ struct SearchQueryService: Sendable {
 
     nonisolated func querySearch(
         _ request: SearchRequestPayload,
-    ) async throws -> SearchResponsePayload {
-        await convertQuery(request)
-    }
-
-    nonisolated func convertQuery(
-        _ request: SearchRequestPayload,
     ) async -> SearchResponsePayload {
         let trimmedQuery = request.query.trimmingCharacters(in: .whitespacesAndNewlines)
 

@@ -84,9 +84,6 @@ struct FileManagerContentComposerFeature {
         state: inout State,
     ) -> Effect<Action>? {
         switch action {
-        case .searchResponse(.success):
-            return .none
-
         case let .filtersResponse(.success(response)):
             return handleSearchSuccess(
                 items: response.items ?? [],
