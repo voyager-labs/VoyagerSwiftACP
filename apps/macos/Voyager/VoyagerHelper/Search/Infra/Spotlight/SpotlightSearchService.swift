@@ -20,6 +20,7 @@ struct SpotlightSearchService: Sendable {
     private let maxCandidates: Int
     private let defaultScopeURL: @Sendable () -> URL
     private let executionEngine: SpotlightQueryEngine
+    private let rewriteEngine: NSURLScopeRewriteEngine
     private let compilerTask: Task<SpotlightQueryCompiler, Error>
     private let postFilterTask: Task<PostFilterEvaluator, Error>
 
@@ -44,6 +45,7 @@ struct SpotlightSearchService: Sendable {
         self.maxCandidates = max(1, maxCandidates)
         self.defaultScopeURL = defaultScopeURL
         executionEngine = SpotlightQueryEngine(maxCandidates: self.maxCandidates)
+        rewriteEngine = NSURLScopeRewriteEngine()
         compilerTask = Task(priority: .utility) {
             try await compilerFactory()
         }
@@ -54,15 +56,16 @@ struct SpotlightSearchService: Sendable {
 
     func applyFilters(_ filters: SearchFiltersPayload) async throws -> SearchResponsePayload {
         let requestId = UUID().uuidString
+        let prepared = rewriteEngine.prepare(filters)
 
         let compiler = try await compilerTask.value
         let postFilter = try await postFilterTask.value
-        let compiledPlan = try compiler.compilePlan(conditions: filters.conditions)
+        let compiledPlan = try compiler.compilePlan(conditions: prepared.conditions)
 
-        let scopeURLs = resolveScopeURLs(filters.scopes)
+        let scopeURLs = resolveScopeURLs(prepared.scopes)
         let execution = try executePlan(
             compiledPlan,
-            filters: filters,
+            conditions: prepared.conditions,
             scopeURLs: scopeURLs,
             requestId: requestId,
         )
@@ -97,7 +100,7 @@ struct SpotlightSearchService: Sendable {
 
     private func executePlan(
         _ initialPlan: SpotlightQueryCompiler.CompilePlan,
-        filters: SearchFiltersPayload,
+        conditions: [SearchConditionPayload],
         scopeURLs: [URL],
         requestId: String,
     ) throws -> PlanExecutionResult {
@@ -130,7 +133,7 @@ struct SpotlightSearchService: Sendable {
                 plan: SpotlightQueryCompiler.CompilePlan(
                     predicate: SpotlightQueryCompiler.basePredicate,
                     pushdownConditions: [],
-                    postFilterConditions: filters.conditions,
+                    postFilterConditions: conditions,
                 ),
                 paths: paths,
                 usedFallback: true,
