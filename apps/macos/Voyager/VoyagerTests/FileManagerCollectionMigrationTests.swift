@@ -56,19 +56,18 @@ private let kRegistryLabels: [String: String] = [
 
 private let kRegistryOperatorDefinition = OperatorDefinition(
     uiLabel: "Equals",
-    sqlOperator: nil,
-    sqlKind: nil,
-    valueShape: nil,
-    valueCount: nil,
-    allowedTypes: nil,
-    inverseOf: nil,
-    aliases: nil,
+    mdqueryOperator: nil as String?,
+    valueShape: nil as ValueShape?,
+    valueCount: nil as ValueCount?,
+    allowedTypes: nil as [String]?,
+    inverseOf: nil as String?,
+    aliases: nil as [String]?,
     uiValueKind: [
         "string": "singleText",
         "number": "singleNumber",
         "date": "singleDate",
         "boolean": "toggle",
-    ],
+    ] as [String: String]?,
 )
 
 private let kEmptySearchResponse = SearchResponsePayload(
