@@ -28,6 +28,8 @@ struct ConditionChipView: View {
     @State private var boolOptionHoverValue: String?
     @FocusState private var focusedValueIndex: Int?
 
+    private let rangeSep = "~"
+
     var body: some View {
         WithViewStore(
             operatorPickerStore,
@@ -357,7 +359,7 @@ struct ConditionChipView: View {
                         )
                     },
                 )
-                Text("and")
+                Text(rangeSep)
                     .font(.system(size: 11, weight: .medium))
                     .foregroundColor(.secondary)
             }
@@ -372,7 +374,7 @@ struct ConditionChipView: View {
             )
 
             if editingIndex == 0, let values = condition.values, values.count >= 2 {
-                Text("and")
+                Text(rangeSep)
                     .font(.system(size: 11, weight: .medium))
                     .foregroundColor(.secondary)
                 ValuePillView(
@@ -425,7 +427,7 @@ struct ConditionChipView: View {
                     )
                 },
             )
-            Text("and")
+            Text(rangeSep)
                 .font(.system(size: 11, weight: .medium))
                 .foregroundColor(.secondary)
             ValuePillView(
@@ -459,12 +461,19 @@ struct ConditionChipView: View {
         valueViewStore: ViewStore<ValuePickerFeature.State, ValuePickerFeature.Action>,
     ) -> some View {
         let hasError = valueViewStore.errorMessage != nil
+        let displayedValues = Self.displayedValuesForDate(
+            conditionValues: condition.values,
+            conditionPropertyKey: condition.propertyKey,
+            pickerPropertyKey: valueViewStore.propertyKey,
+            pickerPresented: valueViewStore.isPresented,
+            pickerValues: valueViewStore.values,
+        )
         if valueArity >= 2 {
             HStack(spacing: 6) {
                 dateValueButton(
                     config: DateValueButtonConfig(
                         placeholderText: "From",
-                        currentText: condition.values?.first ?? "",
+                        currentText: displayedValues?.first ?? "",
                         hasError: hasError,
                         index: 0,
                         operatorCode: operatorCode,
@@ -473,13 +482,13 @@ struct ConditionChipView: View {
                     ),
                     valueViewStore: valueViewStore,
                 )
-                Text("and")
+                Text(rangeSep)
                     .font(.system(size: 11, weight: .medium))
                     .foregroundColor(.secondary)
                 dateValueButton(
                     config: DateValueButtonConfig(
                         placeholderText: "To",
-                        currentText: (condition.values?.count ?? 0) > 1 ? (condition.values?[1] ?? "") : "",
+                        currentText: (displayedValues?.count ?? 0) > 1 ? (displayedValues?[1] ?? "") : "",
                         hasError: hasError,
                         index: 1,
                         operatorCode: operatorCode,
@@ -493,7 +502,7 @@ struct ConditionChipView: View {
             dateValueButton(
                 config: DateValueButtonConfig(
                     placeholderText: "Value",
-                    currentText: condition.values?.first ?? "",
+                    currentText: displayedValues?.first ?? "",
                     hasError: hasError,
                     index: 0,
                     operatorCode: operatorCode,
@@ -695,7 +704,7 @@ struct ConditionChipView: View {
                 }
 
                 if valueArity >= 2, index == 0 {
-                    Text("and")
+                    Text(rangeSep)
                         .font(.system(size: 11, weight: .medium))
                         .foregroundColor(.secondary)
                         .fixedSize()
@@ -969,25 +978,52 @@ struct ConditionChipView: View {
     }
 
     private func displayValueText() -> String {
-        guard let values = condition.values, !values.isEmpty else { return "Value" }
-        let suffix = if condition.propertyKey == "size", condition.valueType == "number" {
+        Self.formattedValueText(
+            values: condition.values,
+            propertyKey: condition.propertyKey,
+            valueType: condition.valueType,
+            rangeSeparator: rangeSep,
+        )
+    }
+
+    static func displayedValuesForDate(
+        conditionValues: [String]?,
+        conditionPropertyKey: String,
+        pickerPropertyKey: String?,
+        pickerPresented: Bool,
+        pickerValues: [String],
+    ) -> [String]? {
+        if pickerPresented, pickerPropertyKey == conditionPropertyKey {
+            return pickerValues
+        }
+        return conditionValues
+    }
+
+    static func formattedValueText(
+        values: [String]?,
+        propertyKey: String,
+        valueType: String,
+        rangeSeparator: String,
+    ) -> String {
+        guard let values, !values.isEmpty else { return "Value" }
+        let suffix = if propertyKey == "size", valueType == "number" {
             " bytes"
         } else {
             ""
         }
-        if condition.valueType == "date" || condition.valueType == "datetime" {
+        if valueType == "date" || valueType == "datetime" {
             let first = ValueNormalizerUtils.formatDateOnlyString(values[0]) ?? values[0]
             if values.count >= 2 {
                 let second = ValueNormalizerUtils.formatDateOnlyString(values[1]) ?? values[1]
                 if first == second {
                     return first + suffix
                 }
-                return first + " ~ " + second + suffix
+                return first + " \(rangeSeparator) " + second + suffix
             }
             return first + suffix
         }
         if values.count >= 2 {
-            return values[0] + " and " + values[1] + suffix
+            return values[0] + " \(rangeSeparator) " + values[1] + suffix
         }
         return values[0] + suffix
     }
