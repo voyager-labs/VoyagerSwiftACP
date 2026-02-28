@@ -1,14 +1,14 @@
 # Response Template
 
-예외 케이스 응답은 아래 템플릿만 사용합니다.
+For exception cases, strictly use this template.
 
-## staged 변경 없음
+## No Staged Changes
 
 ```text
-staged changes 없음
+No staged changes
 ```
 
-규칙:
+Rules:
 
-- 위 텍스트만 출력
-- 설명/헤더/코드펜스/부연 금지
+- Output the text above ONLY.
+- DO NOT include explanations, headers, code fences, or any other formatting.

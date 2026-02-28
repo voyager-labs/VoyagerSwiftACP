@@ -1,29 +1,27 @@
 # Output Template
 
-정상 케이스에서는 아래 템플릿 중 하나만 사용합니다.
+For successful generation, use one of the templates below.
 
 ## 1) Subject only
 
 `type(scope): summary`
-
-또는
-
+or
 `type: summary`
 
 ## 2) Subject + Body
 
-헤더(subject)와 본문(body) 사이에 빈 줄을 둡니다.
+Leave an empty line between the subject and the body.
 
 ```text
 type(scope): summary
 
-- 변경 의도
-- 영향 범위
-- 리스크/주의점
+- Intent of the change
+- Impact scope
+- Risks/Warnings
 ```
 
-본문 불릿 규칙:
+Body bullet rules:
 
-- 각 줄은 `- `로 시작
-- 문장 종결형(`-합니다`) 대신 명사형/간결형의 개조식 형태를 우선
-- 3-5개 항목 유지
+- Start each line with `- `.
+- Use concise, noun-based phrases rather than full sentences.
+- Maintain 3-5 bullet points.

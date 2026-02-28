@@ -1,51 +1,48 @@
 ---
 name: test-runner
-description: 코드 변경 후 관련 테스트를 실행하고 실패 분석 및 재실행 루프를 수행합니다.
+description: Runs relevant tests after code changes, analyzes failures, and executes fix/re-run loops. Use when tests need to be verified or fixed.
 compatibility: opencode
 metadata:
-  workflow: testing
-  output: test-report
+    workflow: testing
+    output: test-report
 ---
 
-이 스킬은 "변경에 맞는 테스트를 빠르게 선택"하고, 실패를 분석해 재실행까지 마무리하는 워크플로우입니다.
+# Test Runner Workflow
 
-## 목표
+## Purpose
 
-- 빠른 테스트부터 실행(관련성 높은 것 우선)
-- 실패 시 원인/수정/재실행 루프를 짧게
-- 테스트를 "통과시키기 위해" 의미를 훼손하지 않기
+- Run fast, highly relevant tests first.
+- Shorten the loop for failure analysis -> fix -> re-run.
+- Never compromise test intent just to make it pass.
 
-## 워크플로우
+## Workflow
 
-1) 테스트 커맨드 탐색
+1. **Find Test Commands**
+    - Locate official test commands from README.md, AGENTS.md, or CI configs.
+    - For monorepos, narrow down commands based on the modified app/package.
 
-- `README.md`, `AGENTS.md`, CI 설정에서 공식 테스트 커맨드를 찾는다.
-- 모노레포면 변경된 앱/패키지 기준으로 커맨드를 좁힌다.
+2. **Execution Strategy**
+    - 1st Pass: Fastest relevant tests (unit/specs).
+    - 2nd Pass: Integration/E2E tests (if any).
+    - 3rd Pass: Full test suite (if necessary).
 
-2) 실행 전략
+3. **Failure Analysis**
+    - Summarize the first failure log.
+    - Categorize failure as "Environment" vs. "Logic".
+    - Identify flaky tests via re-runs, but find the root cause.
 
-- 1차: 가장 빠른 관련 테스트(단위/스펙)
-- 2차: 통합/엔드투엔드(있으면)
-- 3차: 전체 테스트(필요 시)
+4. **Fix (If Needed)**
+    - Fix code/test while preserving the original test intent.
+    - **MUST NOT**: Hide failures (e.g., removing assertions, abusing skip).
+    - **MUST NOT**: Run UI tests (XCUITest, VoyagerUITests). Use `-skip-testing:AppUITests` or equivalent for iOS/macOS.
 
-3) 실패 분석
+5. **Re-run & Report**
+    - Re-run with the exact same command to verify success.
+    - Summarize what was tested, what failed, and how it was fixed.
 
-- 첫 실패 로그를 요약하고, 실패가 "환경"인지 "로직"인지 분리한다.
-- flaky 가능성이 있으면 재실행으로 확인하되, 근본 원인을 찾는다.
+## Output Format
 
-4) 수정(필요 시)
-
-- 테스트 의도를 유지하면서 코드/테스트를 수정한다.
-- 실패를 숨기는 수정(예: assertion 제거, skip 남발)은 금지.
-
-5) 재실행 및 결과 보고
-
-- 동일 커맨드로 재실행하여 통과를 확인
-- 어떤 테스트를 돌렸는지, 어떤 실패였는지, 어떻게 해결했는지 정리
-
-## 출력 형식
-
-- Commands: 실행한 테스트 커맨드
-- Result: pass/fail 요약
-- Failures: 핵심 에러 3-5줄 요약
-- Fix/Next: 수정 내용 또는 다음 액션
+- Commands: Test commands executed.
+- Result: Pass/Fail summary.
+- Failures: 3-5 line summary of key errors.
+- Fix/Next: Modifications made or next actions.

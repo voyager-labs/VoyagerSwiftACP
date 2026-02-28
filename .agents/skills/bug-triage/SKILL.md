@@ -1,57 +1,51 @@
 ---
 name: bug-triage
-description: 버그/테스트 실패를 재현, 격리, 최소 수정, 검증까지 끝내는 트리아지 워크플로우입니다.
+description: Reproduces, isolates, and minimally fixes bugs/test failures. Used for rapid triage of critical issues.
 compatibility: opencode
 metadata:
-  workflow: debugging
-  output: triage
+    workflow: debugging
+    output: triage
 ---
 
-이 스킬은 "당장 고쳐야 하는" 버그/실패를 빠르게 끝내기 위한 절차입니다.
+# Bug Triage
 
-## 목표
+## Purpose
 
-- 재현 가능한 최소 케이스 확보
-- 원인(루트) 1개로 좁히기
-- 최소 수정으로 해결(리팩터링 금지)
-- 회귀 방지(가능하면 테스트 추가)
+- Reproduce the minimal failing case.
+- Isolate down to exactly 1 root cause.
+- Fix minimally (NO refactoring).
+- Prevent regression (add tests if possible).
 
-## 워크플로우
+## Workflow
 
-1) 사실 수집
+1. **Gather Facts**
+    - Summarize "Expected vs. Actual" in one sentence.
+    - Collect error logs, stack traces, and environment flags.
 
-- 기대 동작 vs 실제 동작을 한 문장씩 정리
-- 에러 로그/스택트레이스/환경(OS, 버전, 플래그) 확보
+2. **Reproduce**
+    - Create the shortest reproduction steps.
+    - If flaky, inject observation points (logs/metrics) to stabilize it.
 
-2) 재현
+3. **Isolate**
+    - Reduce input/state/timing dependencies.
+    - Identify suspect commits/changes to narrow scope.
 
-- 가장 짧은 재현 절차를 만든다.
-- 재현이 불안정하면, 관측 포인트(로그/메트릭)를 추가해 안정화한다.
+4. **Identify Root Cause**
+    - NEVER mask symptoms (e.g., blanket try/catch, force casting).
+    - You must be able to explain _why_ it fails under these specific conditions.
 
-3) 격리
+5. **Fix**
+    - Keep the fix minimal.
+    - Strictly NO unintended refactoring or formatting changes.
 
-- 입력/상태/타이밍을 줄여서 문제 범위를 좁힌다.
-- 관련 커밋/변경을 의심할 수 있으면 범위를 축소한다.
+6. **Verify**
+    - Confirm the minimal reproduction case no longer fails.
+    - Check 1-2 related paths/features for side effects.
+    - Add a regression test if applicable.
 
-4) 원인 규명
+## Output Format
 
-- 증상 처리(try/catch 남발, 타입 강제 캐스팅 등)로 덮지 않는다.
-- "왜 이 조건에서만" 발생하는지 설명 가능해야 한다.
-
-5) 수정
-
-- 수정은 작게.
-- 의도치 않은 리팩터링/포맷 대규모 변경 금지.
-
-6) 검증
-
-- 실패하던 케이스 재현이 사라졌는지 확인
-- 영향 범위(연관 경로/기능) 최소 1-2개 추가 확인
-- 가능하면 회귀 테스트 추가
-
-## 출력 형식
-
-- Root cause: 1-2문장
-- Fix: 무엇을 바꿨는지(핵심만)
-- Verification: 어떤 테스트/수동 확인을 했는지
-- Risk: 남은 리스크/추가 확인 필요(있으면)
+- Root cause: 1-2 sentences.
+- Fix: What was changed (core logic only).
+- Verification: Tests or manual checks performed.
+- Risk: Remaining risks or needed follow-ups.

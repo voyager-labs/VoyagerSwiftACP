@@ -249,7 +249,7 @@ sequenceDiagram
 관련 코드
 
 - `apps/macos/Voyager/Voyager/04_Features/Composer/Api/SearchClient.swift`
-- `.agents/rules/00-monorepo/03-error-handling-policy.md`
+- `.agents/rules/20-backend/01-api-and-schemas.md`
 
 ## 디버깅 플레이북
 

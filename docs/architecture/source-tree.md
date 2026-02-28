@@ -408,9 +408,7 @@ OpenCode/Claude 에이전트를 위한 스킬 정의입니다.
 │  └─ SKILL.md
 ├─ changelog/                   # 변경 로그
 │  └─ SKILL.md
-├─ macos-tca-orchestrator/      # TCA 오케스트레이터
-│  └─ SKILL.md
-└─ macos-tca-fsd-scaffold/      # TCA FSD 스캐폴딩
+└─ voyager-dev/                  # Voyager macOS TCA/FSD 통합 스킬
    └─ SKILL.md
 ```
 

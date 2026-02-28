@@ -1,53 +1,47 @@
 ---
 name: pr-review
-description: 변경 diff/PR을 품질, 보안, 테스트, 리스크 관점으로 구조화해서 리뷰합니다.
+description: Structurally reviews PRs or local diffs focusing on quality, security, tests, and risks. Used for rapid, comment-ready code reviews.
 compatibility: opencode
 metadata:
-  workflow: review
-  output: review
+    workflow: review
+    output: review
 ---
 
-이 스킬은 PR(또는 로컬 diff)을 빠르게 리뷰하고 "리뷰 코멘트를 바로 남길 수 있는 형태"로 정리하는 워크플로우입니다.
+# PR Review
 
-## 목표
+## Purpose
 
-- Blocker/High/Medium/Low/Nit로 우선순위 분류
-- 문제 지적만 하지 않고, 가능하면 대안/패치 방향까지 제안
-- 테스트/롤백/리스크를 명확히 적는다
+Rapidly review PRs (or local diffs) and compile actionable, "ready-to-post" review comments.
 
-## 워크플로우
+## Workflow
 
-1) 의도 파악
+1. **Grasp Intent**
+    - Read PR description/issue links. If none, summarize the diff's goal in 1-2 sentences.
 
-- PR 설명/이슈 링크가 있으면 먼저 읽고, 없으면 diff에서 목적을 1-2문장으로 요약한다.
+2. **Summarize Scope**
+    - Categorize functional impact based on changed files/modules.
+    - Check for API, Data Model, Migration, or UX changes.
 
-2) 변경 범위 요약
+3. **Checklist-Based Review**
+    - **Correctness**: Edge cases, error handling, nil/optional, concurrency, state mismatch.
+    - **Security**: Input validation, authn/authz, secret exposure, path/SQL injection, permissions.
+    - **Performance**: N+1 queries, unnecessary I/O, cache/batching, UI rendering cost.
+    - **Maintainability**: Separation of concerns, naming, duplication, over-abstraction.
+    - **Tests**: Regression, snapshot, integration tests, debugging feasibility on failure.
+    - **Docs/UX**: User impact, doc/guide updates.
 
-- 변경 파일/모듈을 기준으로 기능적 영향 범위를 나눈다.
-- API/데이터 모델/마이그레이션/UX 변경 여부를 체크한다.
+4. **Draft Comments**
+    - Format each comment: `[Priority] Problem + Why it's a problem + Alternative/Patch`.
+    - Prioritize: Blocker > High > Medium > Low > Nit.
+    - Always include the file path or identifier (function/type/endpoint).
 
-3) 체크리스트 기반 리뷰
+5. **Validation/Risks**
+    - List 2-3 critical flows potentially broken by these changes.
+    - Propose specific tests or manual QA steps.
 
-- Correctness: 경계 조건, 에러 처리, nil/optional, 동시성, 상태 불일치
-- Security: 입력 검증, authz/authn, 시크릿 노출, 경로/SQL 인젝션, 권한
-- Performance: N+1, 불필요한 I/O, 캐시/배치, UI 렌더링 비용
-- Maintainability: 책임 분리, 네이밍, 중복, 과도한 추상화
-- Tests: 회귀 테스트/스냅샷/통합 테스트, 실패 시 디버깅 가능성
-- Docs/UX: 사용자 영향, 문서/가이드 업데이트 필요성
+## Output Format
 
-4) 코멘트 작성
-
-- 각 코멘트는 "문제" + "왜 문제인지" + "대안"을 포함한다.
-- 파일 경로/식별자(함수/타입/엔드포인트)를 같이 적는다.
-
-5) 검증/리스크
-
-- 변경으로 인해 깨질 수 있는 플로우를 2-3개 나열한다.
-- 필요한 테스트/수동 QA를 제안한다.
-
-## 출력 형식
-
-- TL;DR 3줄
-- Findings: Blocker/High/Medium/Low/Nit 순서로 항목화
-- Tests/QA: 어떤 커맨드/플로우를 확인해야 하는지
-- Risk: 롤백/플래그/마이그레이션 주의점(있으면)
+- **TL;DR**: 3-line summary.
+- **Findings**: Bulleted list of comments ordered by priority (Blocker to Nit).
+- **Tests/QA**: Specific commands or user flows to verify.
+- **Risk**: Warnings regarding rollbacks, feature flags, or migrations.

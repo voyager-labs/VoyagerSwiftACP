@@ -1,63 +1,59 @@
 ---
 name: changelog
-description: 변경사항을 사용자/릴리즈 관점의 changelog 또는 release notes로 정리합니다.
+description: Compiles recent changes into a user/release-focused changelog. Used when generating release notes.
 compatibility: opencode
 metadata:
-  workflow: release
-  output: notes
+    workflow: release
+    output: notes
 ---
 
-이 스킬은 코드 변경을 "배포 노트"로 전환하는 워크플로우입니다.
+# Changelog Generator
 
-## 목표
+## Purpose
 
-- 사용자 관점의 변경점(Added/Changed/Fixed 등)으로 정리
-- Breaking change/마이그레이션/리스크를 명확히
-- 구현 디테일 과다 노출 없이도 의미가 전달되게
+Convert code changes into readable release notes. Focus on what changed for the user, highlighting breaking changes and migrations.
 
-## 워크플로우
+## Workflow
 
-1) changelog 시스템 확인
+1. **Determine Changelog System**
+    - Priority: `CHANGELOG.md` > `.changeset/` > `releases/` > `docs/release-notes*`.
+    - If none exists: Draft a "Release notes" section to be used in a PR description.
 
-- 우선순위
-  - `CHANGELOG.md`/`CHANGELOG.md` 변형
-  - `.changeset/` (Changesets)
-  - `releases/`, `docs/release-notes*`
-- 없다면: PR description에 넣을 "Release notes" 섹션을 작성한다.
+2. **Categorize Changes**
+    - `Added`: New features
+    - `Changed`: Behavior/UX modifications
+    - `Fixed`: Bug fixes
+    - `Removed/Deprecated`: Dropped support or deprecations
+    - `Security`: Vulnerability patches
 
-2) 변경점 분류
+3. **Format for the Audience**
+    - Clarify if the change affects Developers, Users, or Operators.
+    - Include configuration changes or migration steps if necessary.
+    - Omit deep implementation details.
 
-- Added: 새 기능
-- Changed: 동작/UX 변경
-- Fixed: 버그 수정
-- Removed/Deprecated: 제거/중단
-- Security: 보안 관련
+4. **Verification & Risks**
+    - Add a 1-liner on tests/QA performed.
+    - Note any rollback points or critical risks.
 
-3) 독자 대상 정리
-
-- 개발자/사용자/운영자 중 누구에게 영향인지 표시
-- 필요한 경우 설정 변경/마이그레이션 단계 포함
-
-4) 검증/리스크 포함
-
-- 어떤 테스트/수동 QA를 했는지 한 줄
-- 롤백 포인트가 있으면 적는다.
-
-## 출력 형식(권장)
+## Output Format (Recommended)
 
 ```markdown
 ## Release notes
 
 ### Added
+
 - ...
 
 ### Changed
+
 - ...
 
 ### Fixed
+
 - ...
 
 ### Notes
+
 - Validation: ...
 - Risk: ...
 ```
