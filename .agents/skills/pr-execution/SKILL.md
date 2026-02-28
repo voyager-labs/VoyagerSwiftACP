@@ -3,70 +3,79 @@ name: pr-execution
 description: Creates or updates PR titles, bodies, verifications, and checklists consistently based on Linear issues. Use for "create PR", "update PR body", or "sync new commits".
 compatibility: opencode
 metadata:
-    workflow: pr
-    output: pr-body
+  workflow: pr
+  output: pr-body
 ---
 
 # PR Execution
 
 ## Overview
 
-Compiles branch history, validation results, and Linear issue context to draft/update PR bodies. Highly optimized for syncing commit lists and module-specific change descriptions when new commits are added.
+This skill writes and updates **high-detail PR bodies** from branch history, validation results, and Linear context.
+The default mode is detailed module-level reporting, not summary mode. When new commits are added, commit lists, module details, and validation results must be synchronized.
+
+## Writing Mode
+
+- Default: `detailed` (always)
+- Exception: shorten only when the user explicitly asks for a brief summary
 
 ## Workflow
 
-1. **Gather Context**
-    - Check current branch commit range:
-        - `git log --oneline origin/develop..HEAD`
-        - `git diff --name-status origin/develop...HEAD`
-    - Check current PR status:
-        - `gh pr view <PR_NUMBER> --json title,body,commits,baseRefName,headRefName`
-    - Compare PR body's commit list/descriptions with actual commit range.
+1. **Gather context**
+   - Commit range:
+     - `git log --oneline origin/develop..HEAD`
+     - `git diff --name-status origin/develop...HEAD`
+   - PR status:
+     - `gh pr view <PR_NUMBER> --json title,body,commits,baseRefName,headRefName`
+   - List mismatches between current PR body and actual diff
 
-2. **Enforce Title Format**
-    - Format: `[<Linear Issue ids...>] {PR Summary}`
-    - Example: `[VOY-164] Decouple local backend runtime for macOS`
+2. **Enforce title format**
+   - Format: `[<Linear Issue ids...>] {PR Summary}`
+   - If title intent conflicts with body scope, fix the title first
 
-3. **Draft/Update Body**
-    - Maintain the section order from `references/pr-body-template-ko.md`.
-    - If commits are added, ALWAYS synchronize:
-        - "Commit-level scope" list
-        - "What changed where" module details (include exact file paths)
-        - Verification results (test/type-check/build status)
+3. **Write/update body (detailed mode)**
+   - Template: `references/pr-body-template-ko.md`
+   - Detailing rules: `references/detailing-rules-ko.md`
+   - Quality checklist: `references/quality-gate-checklist-ko.md`
+   - Module sections must include file paths, change type, intent, impact, and risk
 
-4. **Record Validation Commands**
-    - Record only actually executed verifications.
-    - Base verification set follows `references/validation-commands.md`.
-    - Explicitly list "Cause + Scope + Follow-up" for any failures.
+4. **Record validation results**
+   - Record only commands actually executed
+   - Baseline command set: `references/validation-commands.md`
+   - For failures, include `cause + impact scope + follow-up action`
 
-5. **Quality Gates**
-    - Update PR body ONLY if:
-        - PR commit list matches body commit list.
-        - Title follows `[Issue] Summary`.
-        - No core changes (additions/deletions/migrations) missing from module details.
-        - Verification section reflects latest execution results.
+5. **Pass quality gates**
+   - Commit list consistency
+   - Title format consistency
+   - No missing core changes in module details
+   - Verification section reflects latest runs
+   - Checklist: `references/quality-gate-checklist-ko.md`
 
 ## Linear Integration Rules
 
-- Explicitly link the Linear issue at the top.
-- Describe commits/modules based on "actual changed code," not copy-pasting Linear text.
-- If actual diff differs from Linear requirements, separate "Applied in this PR" and "Follow-up track".
+- Put the Linear issue link at the top of the body
+- Do not copy-paste Linear text; describe actual code changes from diff
+- If implementation differs from issue wording, split into `included in this PR` and `follow-up track`
 
-## Commit Addition Sync Rules
+## New Commit Sync Rules
 
-If new commits appear after PR creation:
-
-1. **Identify New Commits**: Compare `git log origin/develop..HEAD` with PR body.
-2. **Impact Analysis**: Check files per new commit (`git show --name-status`).
-3. **Update Body**: Append to commit list, update module details, re-run verifications.
+1. Identify newly added commits with `git log origin/develop..HEAD`
+2. Analyze impact with `git show --name-status --pretty=format:'COMMIT %h %s' <new-commit>`
+3. Re-sync commit list, module details, and verification section
 
 ## Output Format
 
-- Valid, ready-to-use Korean Markdown for the PR body.
-- Module-based organization without omitting implementation details.
-- Avoid forcing tables unless explicitly requested.
+- Final output must be Korean Markdown ready to paste into the PR body
+- Default is detailed mode and must include:
+  - Commit-level scope
+  - Module-level details (with file paths)
+  - Validation commands and outcomes
+  - Risks / follow-ups
+- Use tables only when explicitly requested
 
 ## References
 
-- PR Template: `references/pr-body-template-ko.md`
-- Validation Commands: `references/validation-commands.md`
+- PR body template: `references/pr-body-template-ko.md`
+- Detailing rules: `references/detailing-rules-ko.md`
+- Quality gate checklist: `references/quality-gate-checklist-ko.md`
+- Validation commands: `references/validation-commands.md`
