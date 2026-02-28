@@ -96,6 +96,13 @@ struct SpotlightQueryCompiler: Sendable {
 
         for condition in conditions {
             let validated = try validateCondition(condition)
+
+            if let rewrittenClause = buildNsurlBooleanPushdownClause(condition: condition) {
+                clauses.append(rewrittenClause)
+                pushdownConditions.append(condition)
+                continue
+            }
+
             guard let attribute = resolveAttributeName(
                 mapping: validated.mapping,
             ) else {

@@ -1,5 +1,6 @@
 @preconcurrency import CoreServices
 import Foundation
+import UniformTypeIdentifiers
 
 struct PostFilterEvaluator: Sendable {
     enum EvaluationError: Error, LocalizedError {
@@ -317,7 +318,7 @@ private extension PostFilterEvaluator {
             }
         }
 
-        if let derived = derivedValue(for: spec.condition.propertyKey, context: context) {
+        if let derived = derivedValue(for: spec.condition.propertyKey, context: &context) {
             context.propertyCache[spec.condition.propertyKey] = .value(derived)
             return derived
         }
@@ -390,7 +391,7 @@ private extension PostFilterEvaluator {
         return value
     }
 
-    func derivedValue(for propertyKey: String, context: PathContext) -> Any? {
+    func derivedValue(for propertyKey: String, context: inout PathContext) -> Any? {
         switch propertyKey {
         case "path":
             context.path
@@ -398,8 +399,84 @@ private extension PostFilterEvaluator {
             context.url.pathExtension
         case "name_stem":
             context.url.deletingPathExtension().lastPathComponent
+        case "is_directory":
+            derivedIsDirectory(context: &context)
+        case "is_package":
+            derivedIsPackage(context: &context)
+        case "is_regular_file":
+            derivedIsRegularFile(context: &context)
+        case "is_symbolic_link":
+            derivedIsSymbolicLink(context: &context)
         default:
             nil
         }
+    }
+
+    private struct MDItemTypeMetadata {
+        let contentType: String?
+        let contentTypeTree: Set<String>
+    }
+
+    private func mdItemTypeMetadata(context: inout PathContext) -> MDItemTypeMetadata? {
+        let contentType = valueForMDItemSymbol("kMDItemContentType", context: &context) as? String
+        let contentTypeTree = (valueForMDItemSymbol("kMDItemContentTypeTree", context: &context) as? [String]) ?? []
+        if contentType == nil, contentTypeTree.isEmpty {
+            return nil
+        }
+        return MDItemTypeMetadata(contentType: contentType, contentTypeTree: Set(contentTypeTree))
+    }
+
+    private func derivedIsDirectory(context: inout PathContext) -> Bool? {
+        derivedTypeFlag(context: &context, evaluator: isDirectory)
+    }
+
+    private func derivedIsPackage(context: inout PathContext) -> Bool? {
+        derivedTypeFlag(context: &context, evaluator: isPackage)
+    }
+
+    private func derivedIsRegularFile(context: inout PathContext) -> Bool? {
+        guard let metadata = mdItemTypeMetadata(context: &context) else { return nil }
+        let isFolder = isDirectory(metadata: metadata)
+        let isLink = isSymbolicLink(metadata: metadata)
+        return isFolder == false && isLink == false
+    }
+
+    private func derivedIsSymbolicLink(context: inout PathContext) -> Bool? {
+        derivedTypeFlag(context: &context, evaluator: isSymbolicLink)
+    }
+
+    private func derivedTypeFlag(
+        context: inout PathContext,
+        evaluator: (MDItemTypeMetadata) -> Bool,
+    ) -> Bool? {
+        guard let metadata = mdItemTypeMetadata(context: &context) else { return nil }
+        return evaluator(metadata)
+    }
+
+    private func isDirectory(metadata: MDItemTypeMetadata) -> Bool {
+        if metadata.contentTypeTree.contains("public.folder") {
+            return true
+        }
+        if let type = metadata.contentType.flatMap(UTType.init), type.conforms(to: .folder) {
+            return true
+        }
+        return false
+    }
+
+    private func isPackage(metadata: MDItemTypeMetadata) -> Bool {
+        if metadata.contentTypeTree.contains("com.apple.package") {
+            return true
+        }
+        if let type = metadata.contentType.flatMap(UTType.init), type.conforms(to: .package) {
+            return true
+        }
+        return false
+    }
+
+    private func isSymbolicLink(metadata: MDItemTypeMetadata) -> Bool {
+        if metadata.contentTypeTree.contains("public.symlink") {
+            return true
+        }
+        return metadata.contentType == "public.symlink"
     }
 }
