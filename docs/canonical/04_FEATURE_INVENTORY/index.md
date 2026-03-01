@@ -9,7 +9,7 @@ Voyager의 기능/인터랙션 인벤토리를 표 형태(TSV)로 관리합니�
   - PK: `category_key`
   - 파일: `04_FEATURE_INVENTORY/FEATURE_CATEGORIES/data.tsv`, `04_FEATURE_INVENTORY/FEATURE_CATEGORIES/schema.json`
 - FEATURES
-  - 목적: 기능 단위 인벤토리(릴리즈 단계/상태/한 줄 설명)
+  - 목적: 기능 단위 인벤토리(릴리즈 단계/한 줄 설명)
   - PK: `feature_id`
   - 주요 참조:
     - `category_key` -> FEATURE_CATEGORIES.category_key

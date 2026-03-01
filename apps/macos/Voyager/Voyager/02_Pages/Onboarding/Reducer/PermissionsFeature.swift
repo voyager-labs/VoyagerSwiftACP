@@ -21,12 +21,6 @@ enum FullDiskAccessStatus: String, Equatable, Sendable {
     }
 }
 
-struct FolderAccessItem: Equatable, Identifiable, Sendable {
-    let id: String
-    let title: String
-    let status: FolderAccessPermission
-}
-
 @Reducer
 struct PermissionsFeature {
     @ObservableState
@@ -34,11 +28,6 @@ struct PermissionsFeature {
         var isComplete: Bool = false
         var fullDiskAccessStatus: FullDiskAccessStatus = .unknown
         var systemSettingsError: String?
-        var filesAndFoldersStatus: FilesAndFoldersStatus = .idle
-        var folderAccessResult: FolderAccessResult?
-        var helperFilesAndFoldersStatus: FilesAndFoldersStatus = .idle
-        var helperFolderAccessResult: FolderAccessResult?
-        var isRequestingFilesAndFolders: Bool = false
         var launchAtLoginEnabled: Bool = false
         var launchAtLoginError: String?
         var hasAttemptedFullDiskAccessEnable: Bool = false
@@ -55,53 +44,7 @@ struct PermissionsFeature {
             if fullDiskAccessStatus != .granted {
                 return "Turn on Full Disk Access to continue."
             }
-            return allFilesAndFoldersGranted
-                ? nil
-                : "Allow Desktop, Documents, and Downloads for Voyager and Voyager Helper to continue."
-        }
-
-        var filesAndFoldersMessage: String {
-            if isRequestingFilesAndFolders {
-                return "Requesting access…"
-            }
-            if allFilesAndFoldersGranted {
-                return "Access granted for Voyager and Voyager Helper (Desktop, Documents, Downloads)."
-            }
-
-            switch (filesAndFoldersStatus, helperFilesAndFoldersStatus) {
-            case (.idle, .idle):
-                return "Tap Grant Access when you're ready."
-            case (.notGranted, .notGranted):
-                return
-                    "No folders were granted for Voyager and Voyager Helper. "
-                        + "You can enable them later in System Settings."
-            default:
-                return
-                    "Some folders are still off for Voyager or Voyager Helper. "
-                        + "You can enable them later in System Settings."
-            }
-        }
-
-        var folderAccessItems: [FolderAccessItem] {
-            guard let result = folderAccessResult else { return [] }
-            return [
-                FolderAccessItem(id: "desktop", title: "Desktop", status: result.desktop),
-                FolderAccessItem(id: "documents", title: "Documents", status: result.documents),
-                FolderAccessItem(id: "downloads", title: "Downloads", status: result.downloads),
-            ]
-        }
-
-        var helperFolderAccessItems: [FolderAccessItem] {
-            guard let result = helperFolderAccessResult else { return [] }
-            return [
-                FolderAccessItem(id: "helper-desktop", title: "Desktop", status: result.desktop),
-                FolderAccessItem(id: "helper-documents", title: "Documents", status: result.documents),
-                FolderAccessItem(id: "helper-downloads", title: "Downloads", status: result.downloads),
-            ]
-        }
-
-        var allFilesAndFoldersGranted: Bool {
-            filesAndFoldersStatus == .granted && helperFilesAndFoldersStatus == .granted
+            return nil
         }
     }
 
@@ -111,21 +54,14 @@ struct PermissionsFeature {
         case fullDiskAccessStatusResponse(FullDiskAccessStatus)
         case openSystemSettingsTapped
         case systemSettingsOpenResult(Bool)
-        case requestFilesAndFoldersTapped
-        case filesAndFoldersResponse(FolderAccessResult)
-        case helperFilesAndFoldersResponse(FolderAccessResult)
         case launchAtLoginToggled(Bool)
         case launchAtLoginUpdateSucceeded
         case launchAtLoginUpdateFailed(Bool)
         case launchAtLoginStateLoaded(Bool)
     }
 
-    @Dependency(\.folderAccessClient)
-    var folderAccessClient
     @Dependency(\.fullDiskAccessClient)
     var fullDiskAccessClient
-    @Dependency(\.helperFolderAccessClient)
-    var helperFolderAccessClient
     @Dependency(\.launchAtLoginClient)
     var launchAtLoginClient
     @Dependency(\.systemSettingsClient)
@@ -162,32 +98,6 @@ struct PermissionsFeature {
                 } else {
                     state.hasAttemptedFullDiskAccessEnable = true
                 }
-                return .none
-
-            case .requestFilesAndFoldersTapped:
-                state.isRequestingFilesAndFolders = true
-                state.filesAndFoldersStatus = .idle
-                state.folderAccessResult = nil
-                state.helperFilesAndFoldersStatus = .idle
-                state.helperFolderAccessResult = nil
-                return .run { [folderAccessClient, helperFolderAccessClient] send in
-                    let result = await folderAccessClient.requestAccess()
-                    let helperResult = await helperFolderAccessClient.requestAccess()
-                    await send(.filesAndFoldersResponse(result))
-                    await send(.helperFilesAndFoldersResponse(helperResult))
-                }
-
-            case let .filesAndFoldersResponse(result):
-                state.folderAccessResult = result
-                state.filesAndFoldersStatus = result.status
-                refreshCompletionState(state: &state)
-                return .none
-
-            case let .helperFilesAndFoldersResponse(result):
-                state.isRequestingFilesAndFolders = false
-                state.helperFolderAccessResult = result
-                state.helperFilesAndFoldersStatus = result.status
-                refreshCompletionState(state: &state)
                 return .none
 
             case let .launchAtLoginToggled(enabled):
@@ -247,6 +157,6 @@ struct PermissionsFeature {
     }
 
     private func refreshCompletionState(state: inout State) {
-        state.isComplete = state.fullDiskAccessStatus == .granted && state.allFilesAndFoldersGranted
+        state.isComplete = state.fullDiskAccessStatus == .granted
     }
 }

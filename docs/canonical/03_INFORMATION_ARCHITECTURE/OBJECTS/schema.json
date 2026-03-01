@@ -7,13 +7,20 @@
       "name": "category",
       "type": "string",
       "required": true,
-      "description": "오브젝트 상위 분류."
+      "enum": [
+        "Domain",
+        "Conversation",
+        "State",
+        "Operation",
+        "Rule"
+      ],
+      "description": "오브젝트 상위 분류(그룹)."
     },
     {
       "name": "key",
       "type": "string",
       "required": true,
-      "description": "오브젝트 식별자(PK)."
+      "description": "오브젝트 식별자(PK). 안정적인 참조 키."
     },
     {
       "name": "label_ko",
@@ -25,7 +32,7 @@
       "name": "summary",
       "type": "string",
       "required": false,
-      "description": "한 줄 정의."
+      "description": "오브젝트 한 줄 정의(무엇인지)."
     }
   ]
 }

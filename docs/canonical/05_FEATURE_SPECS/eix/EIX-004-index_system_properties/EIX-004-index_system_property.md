@@ -9,8 +9,8 @@
 | Feature | Index System Properties |
 | Category Key | EIX |
 | Feature ID | EIX-004 |
-| Status | 배포 완료 |
-| Summary | 새로 인덱싱 대상이 되었거나 시스템 프로퍼티가 변경된 Entry의 경로·이름·확장자·용량·생성·수정 시각 등을 수집해 시스템 프로퍼티 인덱스를 갱신 |
+| Status | 취소 |
+| Summary | 시스템 프로퍼티 조회는 별도 인덱싱 대신 macOS Spotlight 메타데이터 인덱스를 사용 |
 | Related Region | - |
 | Menu | - |
 | Shortcut | - |

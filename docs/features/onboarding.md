@@ -69,19 +69,11 @@ Voyager는 온보딩을 여러 단계로 쪼개고, 진행 상황을 저장하�
 주요 항목
 
 - Full Disk Access 상태 확인/유도
-- Files & Folders 권한 요청
-- (선택) 로그인 시 실행(Launch at Login) 설정
-- 준비가 완료되면 백그라운드 인덱싱을 트리거
+- (선택) 로그인 시 실행(Launch at Login) 설정 (필수 아님)
 
 완료 조건
 
 - `fullDiskAccessStatus == .granted` 일 때 단계가 완료로 간주됩니다.
-
-백그라운드 인덱싱 트리거
-
-- Full Disk Access + Files & Folders 권한이 모두 `granted`이고,
-- 아직 인덱싱을 백그라운드에서 시작하지 않았다면
-- `indexingClient.start()`를 호출합니다.
 
 관련 코드
 
@@ -107,15 +99,13 @@ Voyager는 온보딩을 여러 단계로 쪼개고, 진행 상황을 저장하�
 - `fileManagerWindowClient`: 메인 파일 매니저 윈도우 오픈
 - `onboardingWindowClient`: 온보딩 윈도우 닫기
 - `betaAccessClient`: 베타 권한 검증
-- `fullDiskAccessClient`, `folderAccessClient`, `systemSettingsClient`: 권한 확인/요청/설정 열기
-- `indexingClient`: 초기 인덱싱 트리거
+- `fullDiskAccessClient`, `systemSettingsClient`: 권한 확인/요청/설정 열기
 
 ## QA 체크리스트
 
 - 앱을 온보딩 중간에 종료했다가 다시 열면, 진행 상황이 정상적으로 복원되는가
 - 권한이 이미 부여된 상태에서 온보딩에 진입하면, Permissions 단계가 즉시 완료로 반영되는가
 - Full Disk Access 설정 화면을 열지 못했을 때 사용자에게 안내가 표시되는가
-- Files & Folders 권한 요청 후 결과가 UI에 반영되는가
 - Complete에서 파일 매니저 윈도우 오픈 실패 시 재시도 UX가 동작하는가
 
 ## 트러블슈팅

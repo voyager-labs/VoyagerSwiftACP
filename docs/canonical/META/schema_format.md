@@ -35,8 +35,24 @@
     - 단, `primary_key`로 지정된 컬럼에는 `TBD`를 사용하지 않습니다(안정적인 식별자 필요).
   - `required: false`인 컬럼은 `-`/`TBD` 표기를 사용할 수 있습니다.
 - `description` (string | optional)
+- `enum` (string[] | optional)
+  - 해당 컬럼의 허용값 집합을 명시합니다.
+  - 표현 형식은 JSON 배열입니다. 예: `"enum": ["command", "input", "display"]`
+  - 값 없음/해당 없음은 enum 값으로 넣지 않고 `-`(null sentinel)로 표현합니다.
 - `ref` (object | optional)
   - 외래키(foreign-key) 유사 참조를 선언
+
+### `enum` 포맷
+
+```json
+{
+  "name": "interaction_type",
+  "type": "string",
+  "required": false,
+  "enum": ["command", "input", "display", "background"],
+  "description": "인터랙션 타입."
+}
+```
 
 ### `ref` 포맷
 
