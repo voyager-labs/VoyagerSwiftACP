@@ -17,15 +17,14 @@
 
 ## Preconditions
 
-- -
-
+- Inspector Pane이 표시 상태
 ## Edge Cases
 
 - -
 
 ## Acceptance Criteria
 
-- -
+- [ ] Inspector Pane이 표시 상태일 때, 사용자가 해당 인터랙션을 호출하면, Inspector Pane이 숨김 상태로 전환되고 Content Pane이 우측으로 확장됨
 
 ## Source
 

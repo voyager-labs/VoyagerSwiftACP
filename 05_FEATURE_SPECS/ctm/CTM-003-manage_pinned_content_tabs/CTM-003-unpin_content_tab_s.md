@@ -17,15 +17,15 @@
 
 ## Preconditions
 
-- -
-
+- 해당 Content Tab이 Pin된 상태
+- 1개 이상의 Pinned Content Tab이 활성 상태거나 지정된 상태
 ## Edge Cases
 
 - -
 
 ## Acceptance Criteria
 
-- -
+- [ ] <<AI>> 하나 이상의 Pin 상태 Content Tab이 선택된 상태에서 사용자가 해당 인터랙션을 호출하면, 대상 탭들의 Pin 상태가 해제되고 일반 탭 영역으로 이동함.
 
 ## Source
 
