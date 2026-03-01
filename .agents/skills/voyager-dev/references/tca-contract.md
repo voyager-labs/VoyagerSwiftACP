@@ -13,10 +13,14 @@
 
 ## View boundary rules
 
-- Views send only `Action.view` or `@ViewAction` generated actions.
-- Views must not emit `delegate` or internal action cases directly.
+- "UI adapters" include SwiftUI views, representables, and coordinators.
+- UI adapters emit only `Action.view` (or `@ViewAction`) for the feature store they are initialized with.
+- UI adapters must not construct or send `delegate` / internal actions directly.
 - Keep `view`, `delegate`, and internal/effect-result responsibilities distinct.
 - Treat system events, callback routing, and async completions as reducer-owned internal flow.
+- In UIKit/AppKit coordinators with observable state, use `observe { ... }` for state-driven UI updates.
+- Do not add new `Store.publisher`/`ViewStore.publisher`-based state subscriptions in coordinators.
+- For external UI events (scroll/notification/delegate), prefer notification tokens + delegate callbacks + imperative schedulers (throttle/debounce), not Combine pipelines.
 
 ## Side-effect rules
 

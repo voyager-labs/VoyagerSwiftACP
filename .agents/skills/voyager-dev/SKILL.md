@@ -48,7 +48,9 @@ This skill routes internally. Do not ask the user to pick a mode.
 - Keep orchestration in `Reducer/*Feature.swift`.
 - Avoid splitting TCA core types through `State+*`, `Action+*`, `Feature+*`, or `Reducer+*` files when that spread starts to hide state movement and ownership.
 - If a flow grows too large, extract dedicated model types, helper/coordinator types, or child features/reducers and compose them explicitly from the parent.
-- Views send only `Action.view`/`@ViewAction` actions.
+- UI adapters (SwiftUI views, representables, coordinators) emit only `Action.view`/`@ViewAction` actions for the feature store they are initialized with.
+- In UIKit/AppKit coordinators, react to feature state via TCA `observe { ... }`, not `store.publisher`/`sink`.
+- Do not introduce Combine-based state subscriptions in coordinators.
 - Keep external calls behind dependency clients.
 - Accumulate Voyager-specific reusable heuristics in `references/development-rules.md` before promoting them into `.agents/rules/**`.
 

@@ -13,18 +13,20 @@ Block implementation choices that violate clean architecture or FSD dependency d
      - `Features -> (Entities|Shared)`
      - `Entities -> Shared`
 2. Boundary gate
-    - Views must not call network/filesystem/system SDK directly.
-    - External calls must go through dependency clients.
+   - UI adapters must not call network/filesystem/system SDK directly.
+   - External calls must go through dependency clients.
+   - In UIKit/AppKit coordinators, react to feature state via TCA `observe { ... }`, not `store.publisher`/`sink`.
+   - Do not introduce Combine-based state subscriptions in coordinators.
 3. Slice boundary gate
    - Same-layer cross-slice references must be treated as a violation unless there is explicit architectural justification.
    - Do not depend on another slice's internal helpers or decomposition files when a stable boundary should exist.
 4. Action boundary gate
-    - View emits only `Action.view` or `@ViewAction` actions.
-    - `delegate`/internal actions originate from reducer logic.
+   - UI adapters emit only `Action.view` or `@ViewAction` actions.
+   - `delegate`/internal actions originate from reducer logic.
 5. Reducer ownership gate
-    - Non-trivial slices keep `State`/`Action` in `Model/`.
-    - `Reducer/*Feature.swift` is orchestration-only.
-    - New architecture split must not re-fragment `State`/`Action`/`Feature`/`Reducer` via `+*` extension files such as `State+Presentation.swift`; prefer dedicated mapper/projection/helper types.
+   - Non-trivial slices keep `State`/`Action` in `Model/`.
+   - `Reducer/*Feature.swift` is orchestration-only.
+   - New architecture split must not re-fragment `State`/`Action`/`Feature`/`Reducer` via `+*` extension files such as `State+Presentation.swift`; prefer dedicated mapper/projection/helper types.
 6. Complexity inflation gate
    - Do not add new models, objects, wrappers, or reducers if an existing type can absorb the change with clearer ownership and lower overall complexity.
    - New wrapper layers created only for compatibility or guardrail reasons must prove they own real translation, migration, or protective behavior.

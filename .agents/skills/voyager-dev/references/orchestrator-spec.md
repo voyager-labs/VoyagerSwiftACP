@@ -18,10 +18,13 @@
 4. Inject child reducers into parent.
 5. Compose with `.merge` in parent reducer body.
 
+Parent/child is defined by reducer composition (`Scope`, `ifLet`, `forEach`), not by folder names.
+
 ## Action boundary
 
-- View layer emits only parent `Action.view` (or `@ViewAction`).
-- `delegate` and internal actions are emitted from reducer logic, not views.
+- UI adapters emit only the composing feature `Action.view` (or `@ViewAction`).
+- `delegate` and internal actions are emitted from reducer logic, not UI adapters.
+- A composing reducer must consume child `delegate` outputs and map them to concrete actions/effects (no orphan delegates).
 
 ## Cancellation policy
 
