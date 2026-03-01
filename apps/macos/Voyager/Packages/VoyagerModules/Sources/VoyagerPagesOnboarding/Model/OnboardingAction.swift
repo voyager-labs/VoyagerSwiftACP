@@ -1,0 +1,13 @@
+import ComposableArchitecture
+
+@CasePathable
+enum OnboardingAction: CasePathable, Sendable {
+    case onAppear
+    case backTapped
+    case nextTapped
+
+    case welcome(WelcomeFeature.Action)
+    case betaAccess(BetaAccessFeature.Action)
+    case permissions(PermissionsFeature.Action)
+    case complete(CompleteFeature.Action)
+}

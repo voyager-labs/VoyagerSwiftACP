@@ -1,0 +1,141 @@
+import AppKit
+import ComposableArchitecture
+
+@MainActor private var onboardingWindowController: OnboardingWindowController?
+
+private actor OnboardingPresentationGate {
+    private var hasRequestedPresentation = false
+
+    func claimPresentation() -> Bool {
+        if hasRequestedPresentation {
+            return false
+        }
+        hasRequestedPresentation = true
+        return true
+    }
+
+    func reset() {
+        hasRequestedPresentation = false
+    }
+}
+
+public struct OnboardingWindowClient: Sendable {
+    public var showIfNeeded: @Sendable () -> Bool
+    public var showWindow: @Sendable () async -> Void
+    public var closeWindow: @Sendable () async -> Void
+    public var openMainWindow: @Sendable (_ path: String?) async -> Bool
+
+    public nonisolated init(
+        showIfNeeded: @escaping @Sendable () -> Bool,
+        showWindow: @escaping @Sendable () async -> Void,
+        closeWindow: @escaping @Sendable () async -> Void,
+        openMainWindow: @escaping @Sendable (_ path: String?) async -> Bool,
+    ) {
+        self.showIfNeeded = showIfNeeded
+        self.showWindow = showWindow
+        self.closeWindow = closeWindow
+        self.openMainWindow = openMainWindow
+    }
+}
+
+extension OnboardingWindowClient: DependencyKey {
+    public nonisolated static var liveValue: OnboardingWindowClient {
+        makeLive(openMainWindow: { _ in
+            fatalError("onboardingWindowClient.openMainWindow live dependency is not configured")
+        })
+    }
+
+    public nonisolated static func makeLive(
+        openMainWindow: @escaping @Sendable (_ path: String?) async -> Bool,
+    ) -> OnboardingWindowClient {
+        makeClient(
+            progressClient: OnboardingProgressClient.liveValue,
+            openMainWindow: openMainWindow,
+        )
+    }
+
+    nonisolated static func makeClient(
+        progressClient: OnboardingProgressClient,
+        openMainWindow: @escaping @Sendable (_ path: String?) async -> Bool,
+        showWindow customShowWindow: (@Sendable () async -> Void)? = nil,
+        closeWindow customCloseWindow: (@Sendable () async -> Void)? = nil,
+    ) -> OnboardingWindowClient {
+        let presentationGate = OnboardingPresentationGate()
+        let showWindow: @Sendable () async -> Void = customShowWindow ?? {
+            await MainActor.run {
+                if onboardingWindowController == nil {
+                    onboardingWindowController = OnboardingWindowController(openMainWindow: openMainWindow)
+                }
+
+                onboardingWindowController?.showWindow(nil)
+                onboardingWindowController?.window?.makeKeyAndOrderFront(nil)
+                NSApp.activate(ignoringOtherApps: true)
+            }
+        }
+        let closeWindowBase: @Sendable () async -> Void = customCloseWindow ?? {
+            await MainActor.run {
+                onboardingWindowController?.dismissWithoutTerminate()
+                onboardingWindowController = nil
+            }
+        }
+        let closeWindow: @Sendable () async -> Void = {
+            await closeWindowBase()
+            await presentationGate.reset()
+        }
+
+        return OnboardingWindowClient(
+            showIfNeeded: {
+                let required = isOnboardingRequired(progressClient)
+
+                if required {
+                    Task {
+                        if await presentationGate.claimPresentation() {
+                            await showWindow()
+                        }
+                    }
+                }
+                return required
+            },
+            showWindow: showWindow,
+            closeWindow: closeWindow,
+            openMainWindow: openMainWindow,
+        )
+    }
+
+    private nonisolated static func isOnboardingRequired(_ progressClient: OnboardingProgressClient) -> Bool {
+        switch progressClient.load() {
+        case let .success(snapshot):
+            !snapshot.stepState.completeComplete
+        case .empty, .resetRequired:
+            true
+        }
+    }
+
+    public nonisolated static var testValue: OnboardingWindowClient {
+        OnboardingWindowClient(
+            showIfNeeded: {
+                fatalError("onboardingWindowClient.showIfNeeded test dependency is not configured")
+            },
+            showWindow: {
+                fatalError("onboardingWindowClient.showWindow test dependency is not configured")
+            },
+            closeWindow: {
+                fatalError("onboardingWindowClient.closeWindow test dependency is not configured")
+            },
+            openMainWindow: { _ in
+                fatalError("onboardingWindowClient.openMainWindow test dependency is not configured")
+            },
+        )
+    }
+
+    public nonisolated static var previewValue: OnboardingWindowClient {
+        testValue
+    }
+}
+
+public extension DependencyValues {
+    nonisolated var onboardingWindowClient: OnboardingWindowClient {
+        get { self[OnboardingWindowClient.self] }
+        set { self[OnboardingWindowClient.self] = newValue }
+    }
+}
