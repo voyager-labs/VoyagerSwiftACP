@@ -8,19 +8,19 @@ struct ContentPageNavigationStateReducer {
     var body: some Reducer<State, Action> {
         Reduce { state, action in
             switch action {
-            case .rollbackBackHistoryOnce:
+            case .internal(.rollbackBackHistoryOnce):
                 rollbackBackHistoryOnce(state: &state)
 
-            case let .appendBackHistory(entry):
+            case let .internal(.appendBackHistory(entry)):
                 appendBackHistory(entry, state: &state)
 
-            case .clearForwardHistory:
+            case .internal(.clearForwardHistory):
                 clearForwardHistory(state: &state)
 
-            case let .setNavigationState(navigationState):
+            case let .internal(.setNavigationState(navigationState)):
                 setNavigationState(navigationState, state: &state)
 
-            case let .setPendingNavigation(pending):
+            case let .internal(.setPendingNavigation(pending)):
                 setPendingNavigation(pending, state: &state)
 
             default:

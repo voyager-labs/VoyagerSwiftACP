@@ -8,7 +8,7 @@ struct ContentPageNavigationHistoryReducer {
     var body: some Reducer<State, Action> {
         Reduce { state, action in
             switch action {
-            case let .performNavigation(pending):
+            case let .internal(.performNavigation(pending)):
                 performNavigation(pending, state: &state)
 
             default:

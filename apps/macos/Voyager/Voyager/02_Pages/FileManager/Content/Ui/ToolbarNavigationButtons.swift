@@ -4,7 +4,7 @@ import Foundation
 import SwiftUI
 
 struct ToolbarNavigationButtons: View {
-    let onNavigationAction: (ContentPageNavigationAction) -> Void
+    let onNavigationAction: (ContentPageNavigationAction.View) -> Void
     let backHistory: [ContentPageNavigationHistorySnapshot]
     let forwardHistory: [ContentPageNavigationHistorySnapshot]
     let canGoBack: Bool

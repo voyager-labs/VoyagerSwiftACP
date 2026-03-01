@@ -30,36 +30,36 @@ private struct FileManagerNavigationBridgeReducer {
                 if favorite.url.pathExtension.lowercased() == CollectionConstants.fileExtension {
                     state.sidebar.pendingSidebarSelectionRestore = state.sidebar.selectedSidebarItem
                     state.sidebar.selectedSidebarItem = favorite.displayName
-                    return .send(.navigation(.openCollectionFile(favorite.url)))
+                    return .send(.navigation(.view(.openCollectionFile(favorite.url))))
                 }
-                return .send(.navigation(.navigateToPath(favorite.url.path)))
+                return .send(.navigation(.view(.navigateToPath(favorite.url.path))))
 
             case let .sidebar(.openLocation(location)):
-                return .send(.navigation(.navigateToPath(location.url.path)))
+                return .send(.navigation(.view(.navigateToPath(location.url.path))))
 
             case let .sidebar(.showTag(tag)):
-                return .send(.navigation(.showTag(tag.name)))
+                return .send(.navigation(.view(.showTag(tag.name))))
 
             case .sidebar(.showRecents):
-                return .send(.navigation(.showRecents))
+                return .send(.navigation(.view(.showRecents)))
 
             case .sidebar(.showComputer):
-                return .send(.navigation(.showComputer))
+                return .send(.navigation(.view(.showComputer)))
 
             case let .content(.entries(.navigateFolder(id: id))):
                 guard let entry = state.content.entryOperations.displayItems[id: id] else {
                     return .none
                 }
-                return .send(.navigation(.navigateToPath(entry.fullPath)))
+                return .send(.navigation(.view(.navigateToPath(entry.fullPath))))
 
             case let .content(.entries(.openCollectionFile(url))):
-                return .send(.navigation(.openCollectionFile(url)))
+                return .send(.navigation(.view(.openCollectionFile(url))))
 
             case let .content(.requestNavigation(navigationAction)):
                 return .send(.navigation(navigationAction))
 
             case let .content(.performPendingNavigation(pending)):
-                return .send(.navigation(.performNavigation(pending)))
+                return .send(.navigation(.internal(.performNavigation(pending))))
 
             case .content(.composer(.searchResponse(.success))),
                  .content(.composer(.filtersResponse(.success))),
@@ -201,7 +201,7 @@ func handleNavigateToState(
     case let .collection(navigation):
         .concatenate(
             .send(.content(.entries(.setCollectionMode(true)))),
-            .send(.navigation(.navigateToCollection(navigation))),
+            .send(.navigation(.internal(.navigateToCollection(navigation)))),
         )
     }
 }

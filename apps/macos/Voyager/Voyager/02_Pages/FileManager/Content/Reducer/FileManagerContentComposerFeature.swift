@@ -183,10 +183,10 @@ struct FileManagerContentComposerFeature {
 
         var navigationEffects: [Effect<Action>] = []
         if shouldAppendHistory {
-            navigationEffects.append(.send(.requestNavigation(.appendBackHistory(previousSnapshot))))
-            navigationEffects.append(.send(.requestNavigation(.clearForwardHistory)))
+            navigationEffects.append(.send(.requestNavigation(.internal(.appendBackHistory(previousSnapshot)))))
+            navigationEffects.append(.send(.requestNavigation(.internal(.clearForwardHistory))))
         }
-        navigationEffects.append(.send(.requestNavigation(.setNavigationState(nextNavigationState))))
+        navigationEffects.append(.send(.requestNavigation(.internal(.setNavigationState(nextNavigationState)))))
 
         if !wasOpeningCollectionFile, !previousNavigationState.isCollection {
             logContentPageNavigationDAUIfNeeded(previous: previousNavigationState, next: nextNavigationState)
@@ -215,7 +215,7 @@ struct FileManagerContentComposerFeature {
         state.resetComposer()
         let exitEffect = state.exitCollectionMode(computerName: computerNameClient.computerName())
         return .concatenate(
-            .send(.requestNavigation(.rollbackBackHistoryOnce)),
+            .send(.requestNavigation(.internal(.rollbackBackHistoryOnce))),
             .merge(
                 exitEffect,
                 .run { _ in
@@ -244,7 +244,7 @@ struct FileManagerContentComposerFeature {
             handleCollectionSaveSuccess(url: url, state: &state)
 
         case .saveCompleted(.failure):
-            .send(.requestNavigation(.setPendingNavigation(nil)))
+            .send(.requestNavigation(.internal(.setPendingNavigation(nil))))
         }
     }
 
@@ -268,7 +268,7 @@ struct FileManagerContentComposerFeature {
         }
 
         var navigationEffects: [Effect<Action>] = [
-            .send(.requestNavigation(.setNavigationState(.collection(state.makeCollectionNavigation())))),
+            .send(.requestNavigation(.internal(.setNavigationState(.collection(state.makeCollectionNavigation()))))),
         ]
 
         if shouldAppendHistory {
@@ -285,11 +285,11 @@ struct FileManagerContentComposerFeature {
                     viewLayout: state.viewLayout,
                 )
                 let entry = ContentPageNavigationHistorySnapshot(navigationState: .collection(navigation))
-                navigationEffects.append(.send(.requestNavigation(.appendBackHistory(entry))))
+                navigationEffects.append(.send(.requestNavigation(.internal(.appendBackHistory(entry)))))
             } else {
-                navigationEffects.append(.send(.requestNavigation(.appendBackHistory(previousSnapshot))))
+                navigationEffects.append(.send(.requestNavigation(.internal(.appendBackHistory(previousSnapshot)))))
             }
-            navigationEffects.append(.send(.requestNavigation(.clearForwardHistory)))
+            navigationEffects.append(.send(.requestNavigation(.internal(.clearForwardHistory))))
         }
 
         state.syncComposerCollectionState()
@@ -297,7 +297,7 @@ struct FileManagerContentComposerFeature {
         if let pending = state.navigation.pendingNavigation {
             return .concatenate(
                 .concatenate(navigationEffects),
-                .send(.requestNavigation(.setPendingNavigation(nil))),
+                .send(.requestNavigation(.internal(.setPendingNavigation(nil)))),
                 .send(.performPendingNavigation(pending)),
             )
         }

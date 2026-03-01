@@ -5,7 +5,7 @@ import SwiftUI
 struct FileManagerContentPaneView: View {
     let store: StoreOf<FileManagerContentFeature>
     let paneState: FileManagerContentPaneViewState
-    let onNavigationAction: (ContentPageNavigationAction) -> Void
+    let onNavigationAction: (ContentPageNavigationAction.View) -> Void
     let onNavigate: (String) -> Void
 
     var body: some View {

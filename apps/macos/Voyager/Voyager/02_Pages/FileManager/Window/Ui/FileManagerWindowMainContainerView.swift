@@ -6,33 +6,33 @@ struct FileManagerWindowMainContainerView: View {
     let isDark: Bool
 
     var body: some View {
-        FileManagerWindowMainContainerViewRepresentable(
+        MainContainerViewControllerRepresentable(
             store: store,
             isDark: isDark,
         )
     }
 }
 
-private struct FileManagerWindowMainContainerViewRepresentable: NSViewControllerRepresentable {
+private struct MainContainerViewControllerRepresentable: NSViewControllerRepresentable {
     let store: StoreOf<FileManagerFeature>
     let isDark: Bool
 
-    func makeNSViewController(context _: Context) -> FileManagerWindowMainContainerSplitCoordinator {
-        FileManagerWindowMainContainerSplitCoordinator(
+    func makeNSViewController(context _: Context) -> MainContainerSplitCoordinator {
+        MainContainerSplitCoordinator(
             store: store,
             isDark: isDark,
         )
     }
 
     func updateNSViewController(
-        _ nsViewController: FileManagerWindowMainContainerSplitCoordinator,
+        _ nsViewController: MainContainerSplitCoordinator,
         context _: Context,
     ) {
         nsViewController.updateAppearance(isDark: isDark)
     }
 
     static func dismantleNSViewController(
-        _ nsViewController: FileManagerWindowMainContainerSplitCoordinator,
+        _ nsViewController: MainContainerSplitCoordinator,
         coordinator _: Void,
     ) {
         nsViewController.tearDown()

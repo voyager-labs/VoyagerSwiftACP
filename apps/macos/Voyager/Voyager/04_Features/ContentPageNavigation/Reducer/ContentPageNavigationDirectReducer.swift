@@ -9,19 +9,19 @@ struct ContentPageNavigationDirectReducer {
     var body: some Reducer<State, Action> {
         Reduce { state, action in
             switch action {
-            case let .performNavigateToPath(path):
+            case let .internal(.performNavigateToPath(path)):
                 performNavigateToPath(path, state: &state)
 
-            case .performShowRecents:
+            case .internal(.performShowRecents):
                 performShowRecents(state: &state)
 
-            case .performShowComputer:
+            case .internal(.performShowComputer):
                 performShowComputer(state: &state)
 
-            case let .performShowTag(tagName):
+            case let .internal(.performShowTag(tagName)):
                 performShowTag(tagName, state: &state)
 
-            case let .prepareCollectionFileOpen(url):
+            case let .internal(.prepareCollectionFileOpen(url)):
                 performPrepareCollectionFileOpen(url, state: &state)
 
             default:
