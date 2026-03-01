@@ -55,7 +55,13 @@ Voyager 타깃은 메인 프론트엔드 앱입니다. TCA를 기반으로 하�
 - Reducer: `*Feature.swift` (예: `apps/macos/Voyager/Voyager/02_Pages/Onboarding/Reducer/OnboardingFeature.swift`)
 - Client: `*Client.swift` (예: `apps/macos/Voyager/Voyager/04_Features/Composer/Api/SearchClient.swift`)
 - View: `*View.swift` (예: `apps/macos/Voyager/Voyager/05_Entities/Entry/Ui/EntryListView.swift`)
+- Coordinator: `*Coordinator.swift` (예: `apps/macos/Voyager/Voyager/02_Pages/FileManager/Window/Lib/FileManagerWindowCoordinator.swift`)
 - Utils/Extension: `*Utils.swift` 또는 `Domain+Category.swift` (예: `EntryTagUtils.swift`, `EntryContextMenuContent+Sections.swift`)
+
+`Coordinator` 네이밍 기준:
+
+- 시스템 SDK(AppKit/QuickLook 등)의 delegate, listener, lifecycle 이벤트를 오케스트레이션하면서 TCA `Action` 라우팅에 관여하는 타입은 `*Coordinator.swift`를 사용합니다.
+- `NSView`/`NSViewController`가 렌더링과 로컬 UI 상태 관리 중심이면 `Ui/`에 두고, 오케스트레이션 책임이 커지면 `Lib/*Coordinator.swift`로 분리합니다.
 
 ## FSD 레이어 매핑 (실제 경로 기준)
 
@@ -319,7 +325,7 @@ Voyager는 macOS 특성상 "화면 전환"이 단일 NavigationStack만으로 �
 권장 기준
 
 - 라우팅 상태는 단일 소스(State)로 유지하고, 뷰는 state를 읽어 렌더링만 담당합니다.
-- 윈도우 오픈/클로즈 같은 AppKit 연동은 `Api/*Client.swift`로 캡슐화한 뒤 `@Dependency`로 호출합니다.
+- 윈도우 오픈/클로즈, QuickLook, 시스템 서비스 호출 같은 시스템 SDK 연동은 `Api/*Client.swift`로 캡슐화한 뒤 `@Dependency`로 호출합니다.
 
 ## 사이드이펙트(Effect)와 취소(Cancellation)
 

@@ -5,37 +5,43 @@ struct FileManagerContentEntryOperationsFeature {
     typealias State = FileManagerContentState
     typealias Action = FileManagerContentAction
 
+    @Dependency(\.entryThumbnailCacheClient)
+    private var entryThumbnailCacheClient
+
     var body: some Reducer<State, Action> {
         Reduce { state, action in
             guard case let .entryOperations(entryOperationsAction) = action else {
                 return .none
             }
 
-            return handleEntryOperationsAction(entryOperationsAction, state: state)
+            return handleEntryOperationsAction(entryOperationsAction, state: &state)
         }
     }
 
     private func handleEntryOperationsAction(
         _ action: EntryOperationsAction,
-        state: State,
+        state: inout State,
     ) -> Effect<Action> {
         switch action {
         case .itemsLoaded,
              .collectionItemsLoadedFromSearch,
              .setCollectionMode:
-            .send(.entryArrangements(.reapply))
+            state.entryThumbnails.thumbnailRequestsInFlight.removeAll(keepingCapacity: false)
+            state.entryThumbnails.thumbnailRenderVersion &+= 1
+            entryThumbnailCacheClient.clearCache()
+            return .send(.entryArrangements(.reapply))
 
         case .operationFinished:
-            .merge(
+            return .merge(
                 .send(.entryArrangements(.reapply)),
                 reloadEntryItemsEffect(state: state),
             )
 
         case .emptyTrashCompleted:
-            .send(.emptyTrashCompleted)
+            return .send(.closeWindow)
 
         default:
-            .none
+            return .none
         }
     }
 

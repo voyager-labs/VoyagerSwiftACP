@@ -7,10 +7,6 @@ enum PermissionsAction: CasePathable, Sendable {
     case fullDiskAccessStatusResponse(FullDiskAccessStatus)
     case openSystemSettingsTapped
     case systemSettingsOpenResult(Bool)
-    case requestFilesAndFoldersTapped
-    case filesAndFoldersResponse(FolderAccessResult)
-    case helperFilesAndFoldersResponse(FolderAccessResult)
-
     case launchAtLoginToggled(Bool)
     case launchAtLoginUpdateSucceeded
     case launchAtLoginUpdateFailed(Bool)

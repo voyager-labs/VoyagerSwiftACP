@@ -84,36 +84,32 @@ struct FileManagerContentComposerFeature {
         state: inout State,
     ) -> Effect<Action>? {
         switch action {
-        case let .searchResponse(.success(response)):
-            handleSearchSuccess(
+        case let .filtersResponse(.success(response)):
+            return handleSearchSuccess(
                 items: response.items ?? [],
                 query: state.composer.pendingSearchQuery ?? "",
                 state: &state,
             )
 
-        case let .filtersResponse(.success(response)):
-            handleSearchSuccess(
-                items: response.items ?? [],
-                query: "",
-                state: &state,
-            )
-
         case let .searchResponse(.failure(error)):
-            handleSearchFailure(
+            return handleSearchFailure(
                 error: error,
                 title: "Unable to Run Collection Search",
                 state: &state,
             )
 
         case let .filtersResponse(.failure(error)):
-            handleSearchFailure(
+            let title = state.composer.pendingSearchQuery == nil
+                ? "Unable to Apply Collection Filters"
+                : "Unable to Run Collection Search"
+            return handleSearchFailure(
                 error: error,
-                title: "Unable to Apply Collection Filters",
+                title: title,
                 state: &state,
             )
 
         default:
-            nil
+            return nil
         }
     }
 

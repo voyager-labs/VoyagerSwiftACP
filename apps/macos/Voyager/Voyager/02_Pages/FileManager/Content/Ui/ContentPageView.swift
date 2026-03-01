@@ -49,8 +49,7 @@ struct ContentPageView: View {
         }
     }
 
-    @ViewBuilder
-    private var entryContainerView: some View {
+    @ViewBuilder private var entryContainerView: some View {
         if isCollectionSearching {
             collectionLoadingView
         } else {
@@ -69,8 +68,7 @@ struct ContentPageView: View {
             .frame(height: 1)
     }
 
-    @ViewBuilder
-    private var keyCommandOverlay: some View {
+    @ViewBuilder private var keyCommandOverlay: some View {
         if isGridLayout {
             KeyCommandView { event in
                 handleKeyboardEvent(event)
@@ -158,7 +156,7 @@ struct ContentPageView: View {
                     pageStore.send(.entryArrangements(.setSortOrder(order)))
                 },
                 resolveOpenWithMenuData: { selectedEntries in
-                    let selectedFiles = selectedEntries.filter { !$0.isDirectory }
+                    let selectedFiles = selectedEntries.filter { !$0.isFolder }
                     if selectedFiles.isEmpty {
                         return (false, [])
                     }
@@ -298,7 +296,7 @@ struct ContentPageView: View {
             listTextSize: state.listTextSize,
             gridIconSize: state.gridIconSize,
             gridTextSize: state.gridTextSize,
-            thumbnailsReady: state.entryThumbnails.thumbnailsReady,
+            thumbnailRenderVersion: state.entryThumbnails.thumbnailRenderVersion,
             clipboardItems: Set(state.entryOperations.clipboardItems),
             clipboardOperation: state.entryOperations.clipboardOperation,
         )

@@ -1,3 +1,5 @@
+import Foundation
+
 import ComposableArchitecture
 @testable import Voyager
 import XCTest
@@ -18,13 +20,10 @@ final class PermissionsFeatureTests: XCTestCase {
 
         await store.send(.fullDiskAccessStatusResponse(.granted)) { state in
             state.fullDiskAccessStatus = .granted
-            state.isComplete = false
+            state.isComplete = true
         }
 
-        XCTAssertEqual(
-            store.state.nextDisabledMessage,
-            "Allow Desktop, Documents, and Downloads for Voyager and Voyager Helper to continue.",
-        )
+        XCTAssertNil(store.state.nextDisabledMessage)
         await store.finish()
     }
 
@@ -103,184 +102,31 @@ final class PermissionsFeatureTests: XCTestCase {
         await store.finish()
     }
 
-    func testFilesAndFoldersGranted() async {
-        let appResult = FolderAccessResult(
-            desktop: .granted,
-            documents: .granted,
-            downloads: .granted,
-        )
-        let helperResult = FolderAccessResult(
-            desktop: .granted,
-            documents: .granted,
-            downloads: .granted,
-        )
-
+    func testLaunchAtLoginDoesNotGateCompletion() async {
         let store = TestStore(initialState: PermissionsFeature.State()) {
             PermissionsFeature()
         } withDependencies: {
-            $0.folderAccessClient = FolderAccessClient(requestAccess: { appResult })
-            $0.helperFolderAccessClient = HelperFolderAccessClient(requestAccess: { helperResult })
+            $0.launchAtLoginClient = LaunchAtLoginClient(isEnabled: { false }, setEnabled: { _ in })
         }
 
-        await store.send(.requestFilesAndFoldersTapped) { state in
-            state.isRequestingFilesAndFolders = true
-            state.filesAndFoldersStatus = .idle
-            state.folderAccessResult = nil
-            state.helperFilesAndFoldersStatus = .idle
-            state.helperFolderAccessResult = nil
-        }
-
-        await store.receive(\.filesAndFoldersResponse) { state in
-            state.folderAccessResult = appResult
-            state.filesAndFoldersStatus = .granted
-        }
-
-        await store.receive(\.helperFilesAndFoldersResponse) { state in
-            state.isRequestingFilesAndFolders = false
-            state.helperFolderAccessResult = helperResult
-            state.helperFilesAndFoldersStatus = .granted
-        }
-
-        XCTAssertEqual(
-            store.state.filesAndFoldersMessage,
-            "Access granted for Voyager and Voyager Helper (Desktop, Documents, Downloads).",
-        )
-        await store.finish()
-    }
-
-    func testFilesAndFoldersPartialWhenOnlyAppIsPartial() async {
-        let appResult = FolderAccessResult(
-            desktop: .granted,
-            documents: .notGranted,
-            downloads: .granted,
-        )
-        let helperResult = FolderAccessResult(
-            desktop: .granted,
-            documents: .granted,
-            downloads: .granted,
-        )
-
-        let store = TestStore(initialState: PermissionsFeature.State()) {
-            PermissionsFeature()
-        } withDependencies: {
-            $0.folderAccessClient = FolderAccessClient(requestAccess: { appResult })
-            $0.helperFolderAccessClient = HelperFolderAccessClient(requestAccess: { helperResult })
-        }
-
-        await store.send(.requestFilesAndFoldersTapped) { state in
-            state.isRequestingFilesAndFolders = true
-            state.filesAndFoldersStatus = .idle
-            state.folderAccessResult = nil
-            state.helperFilesAndFoldersStatus = .idle
-            state.helperFolderAccessResult = nil
-        }
-
-        await store.receive(\.filesAndFoldersResponse) { state in
-            state.folderAccessResult = appResult
-            state.filesAndFoldersStatus = .partial
-        }
-
-        await store.receive(\.helperFilesAndFoldersResponse) { state in
-            state.isRequestingFilesAndFolders = false
-            state.helperFolderAccessResult = helperResult
-            state.helperFilesAndFoldersStatus = .granted
-        }
-
-        XCTAssertEqual(
-            store.state.filesAndFoldersMessage,
-            "Some folders are still off for Voyager or Voyager Helper. You can enable them later in System Settings.",
-        )
-        await store.finish()
-    }
-
-    func testFilesAndFoldersNotGrantedForBoth() async {
-        let appResult = FolderAccessResult(
-            desktop: .notGranted,
-            documents: .notGranted,
-            downloads: .notGranted,
-        )
-        let helperResult = FolderAccessResult(
-            desktop: .notGranted,
-            documents: .notGranted,
-            downloads: .notGranted,
-        )
-
-        let store = TestStore(initialState: PermissionsFeature.State()) {
-            PermissionsFeature()
-        } withDependencies: {
-            $0.folderAccessClient = FolderAccessClient(requestAccess: { appResult })
-            $0.helperFolderAccessClient = HelperFolderAccessClient(requestAccess: { helperResult })
-        }
-
-        await store.send(.requestFilesAndFoldersTapped) { state in
-            state.isRequestingFilesAndFolders = true
-            state.filesAndFoldersStatus = .idle
-            state.folderAccessResult = nil
-            state.helperFilesAndFoldersStatus = .idle
-            state.helperFolderAccessResult = nil
-        }
-
-        await store.receive(\.filesAndFoldersResponse) { state in
-            state.folderAccessResult = appResult
-            state.filesAndFoldersStatus = .notGranted
-        }
-
-        await store.receive(\.helperFilesAndFoldersResponse) { state in
-            state.isRequestingFilesAndFolders = false
-            state.helperFolderAccessResult = helperResult
-            state.helperFilesAndFoldersStatus = .notGranted
-        }
-
-        XCTAssertEqual(
-            store.state.filesAndFoldersMessage,
-            "No folders were granted for Voyager and Voyager Helper. You can enable them later in System Settings.",
-        )
-        await store.finish()
-    }
-
-    func testIndexingStartsAfterAllSixFolderPermissionsGranted() async {
-        let appResult = FolderAccessResult(
-            desktop: .granted,
-            documents: .granted,
-            downloads: .granted,
-        )
-        let helperResult = FolderAccessResult(
-            desktop: .granted,
-            documents: .granted,
-            downloads: .granted,
-        )
-
-        let store = TestStore(initialState: PermissionsFeature.State()) {
-            PermissionsFeature()
-        } withDependencies: {
-            $0.folderAccessClient = FolderAccessClient(requestAccess: { appResult })
-            $0.helperFolderAccessClient = HelperFolderAccessClient(requestAccess: { helperResult })
-        }
-
+        // FDA granted -> isComplete = true
         await store.send(.fullDiskAccessStatusResponse(.granted)) { state in
             state.fullDiskAccessStatus = .granted
-            state.isComplete = false
-        }
-
-        await store.send(.requestFilesAndFoldersTapped) { state in
-            state.isRequestingFilesAndFolders = true
-            state.filesAndFoldersStatus = .idle
-            state.folderAccessResult = nil
-            state.helperFilesAndFoldersStatus = .idle
-            state.helperFolderAccessResult = nil
-        }
-
-        await store.receive(\.filesAndFoldersResponse) { state in
-            state.folderAccessResult = appResult
-            state.filesAndFoldersStatus = .granted
-        }
-
-        await store.receive(\.helperFilesAndFoldersResponse) { state in
-            state.isRequestingFilesAndFolders = false
-            state.helperFolderAccessResult = helperResult
-            state.helperFilesAndFoldersStatus = .granted
             state.isComplete = true
         }
+
+        // Toggle Launch at Login -> isComplete stays true
+        await store.send(.launchAtLoginToggled(true)) { state in
+            state.launchAtLoginEnabled = true
+        }
+        await store.receive(\.launchAtLoginUpdateSucceeded)
+        XCTAssertTrue(store.state.isComplete)
+
+        await store.send(.launchAtLoginToggled(false)) { state in
+            state.launchAtLoginEnabled = false
+        }
+        await store.receive(\.launchAtLoginUpdateSucceeded)
+        XCTAssertTrue(store.state.isComplete)
 
         await store.finish()
     }

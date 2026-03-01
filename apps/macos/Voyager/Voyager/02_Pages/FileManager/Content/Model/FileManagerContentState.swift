@@ -5,9 +5,8 @@ import SwiftUI
 @ObservableState
 struct FileManagerContentState: Equatable {
     struct EntryThumbnailState: Equatable {
-        var thumbnailsReady: Set<String> = []
         var thumbnailRequestsInFlight: Set<String> = []
-        var thumbnailRequestsFailed: Set<String> = []
+        var thumbnailRenderVersion: Int = 0
     }
 
     var navigation: ContentPageNavigationFeature.State = .init()
@@ -41,8 +40,6 @@ struct FileManagerContentState: Equatable {
         composer.openedCollectionURL = collectionSession.openedURL
         composer.isCollectionMode = entryOperations.loadingContext.isCollectionMode
     }
-
-    mutating func syncEntryViewLayoutStateFromEntries() {}
 
     var canSaveCollection: Bool {
         guard entryOperations.loadingContext.isCollectionMode, collectionContext != nil else { return false }

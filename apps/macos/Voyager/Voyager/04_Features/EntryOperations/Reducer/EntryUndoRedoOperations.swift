@@ -21,6 +21,9 @@ struct EntryUndoRedoOperationsReducer {
         Reduce { state, action in
             switch action {
             case let .entryActionCompleted(record):
+                guard record.operationKind.isUndoable else {
+                    return .none
+                }
                 state.appendUndoRecord(record)
 
                 let windowID = state.windowID
@@ -119,7 +122,7 @@ struct EntryUndoRedoOperationsReducer {
 
             case let .operationFinished(_, kind, result):
                 switch (kind, result) {
-                case (.pasteFile, .success):
+                case (.pasteFileMove, .success):
                     guard state.clipboardOperation == .cut else {
                         return .none
                     }
@@ -170,7 +173,7 @@ struct EntryUndoRedoOperationsReducer {
                     send: send,
                 )
                 let updatedRecord = EntryActionRecord(
-                    actionKind: record.actionKind,
+                    operationKind: record.operationKind,
                     targets: targets,
                     id: record.id,
                     timestamp: record.timestamp,
@@ -228,15 +231,19 @@ struct EntryUndoRedoOperationsReducer {
         target: EntryActionRecord.Target,
         direction: EntryActionDirection,
     ) throws -> EntryActionOperation {
-        switch record.actionKind {
+        switch record.operationKind {
         case .rename:
             try makeRenameOperation(target: target, direction: direction)
 
-        case .move:
+        case .pasteFileMove:
             try makeMoveOperation(target: target, direction: direction)
 
-        case .paste, .duplicate:
-            try makeCopyOperation(target: target, direction: direction)
+        case .pasteFileCopy, .pasteFileDuplicate:
+            try makeCopyOperation(
+                target: target,
+                direction: direction,
+                operationKind: record.operationKind,
+            )
 
         case .createFolder:
             try makeCreateFolderOperation(target: target, direction: direction)
@@ -252,6 +259,19 @@ struct EntryUndoRedoOperationsReducer {
 
         case .setTags:
             try makeSetTagsOperation(target: target, direction: direction)
+
+        case .openDefault,
+             .openWithApp,
+             .setDefaultApp,
+             .quickLook,
+             .getInfo,
+             .share,
+             .performService,
+             .revealInFinder,
+             .deleteImmediately,
+             .compress,
+             .extract:
+            throw FileOpError.system(message: "Unsupported undo operation kind")
         }
     }
 
@@ -326,7 +346,7 @@ struct EntryUndoRedoOperationsReducer {
         )
         return EntryActionOperation(
             operationPath: fromPath,
-            operationKind: OperationKind.pasteFile,
+            operationKind: .pasteFileMove,
             perform: {
                 try await entryFileOpsClient.moveFile(
                     URL(fileURLWithPath: fromPath),
@@ -340,6 +360,7 @@ struct EntryUndoRedoOperationsReducer {
     private func makeCopyOperation(
         target: EntryActionRecord.Target,
         direction: EntryActionDirection,
+        operationKind: OperationKind,
     ) throws -> EntryActionOperation {
         switch direction {
         case .undo:
@@ -357,7 +378,7 @@ struct EntryUndoRedoOperationsReducer {
             let targetPath = try Self.requiredPath(target.afterPath, context: "redo copy target")
             return EntryActionOperation(
                 operationPath: sourcePath,
-                operationKind: OperationKind.pasteFile,
+                operationKind: operationKind,
                 perform: {
                     try await entryFileOpsClient.pasteFile(
                         URL(fileURLWithPath: sourcePath),

@@ -91,14 +91,15 @@ final class EntryGridCollectionViewItem: NSCollectionViewItem {
             applyDisplayStyle(text: configuration.entry.name)
         }
 
-        if let additionalInfo = configuration.entry.additionalInfo, !additionalInfo.isEmpty {
+        let display = EntryDisplayModel(entry: configuration.entry)
+        if let supplementaryInfoText = display.supplementaryInfoText {
             infoField.isHidden = false
-            infoField.stringValue = additionalInfo
+            infoField.stringValue = supplementaryInfoText
         } else {
             infoField.isHidden = true
         }
 
-        updateTags(configuration.entry.tags)
+        updateTags(configuration.entry.facets.tags)
         updateAppearance()
     }
 

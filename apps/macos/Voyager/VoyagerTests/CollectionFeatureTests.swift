@@ -85,7 +85,7 @@ private let kRegistryOperatorDefinition = OperatorDefinition(
         "number": "singleNumber",
         "date": "singleDate",
         "boolean": "toggle",
-    ],
+    ] as [String: String]?,
 )
 
 private func makeRegistryClient() -> RegistryClient {

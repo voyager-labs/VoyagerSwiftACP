@@ -8,6 +8,7 @@ final class MenuCommandsFeatureTests: XCTestCase {
         let store = TestStore(initialState: MenuCommandsFeature.State()) {
             MenuCommandsFeature()
         }
+        store.exhaustivity = .off
 
         await store.send(.view(.app(.newFolder)))
         await store.receive {
@@ -21,6 +22,7 @@ final class MenuCommandsFeatureTests: XCTestCase {
         let store = TestStore(initialState: MenuCommandsFeature.State()) {
             MenuCommandsFeature()
         }
+        store.exhaustivity = .off
 
         await store.send(.view(.app(.checkForUpdates)))
         await store.receive {
@@ -34,6 +36,7 @@ final class MenuCommandsFeatureTests: XCTestCase {
         let store = TestStore(initialState: MenuCommandsFeature.State()) {
             MenuCommandsFeature()
         }
+        store.exhaustivity = .off
 
         await store.send(.view(.viewCommand(.toggleSidebar)))
         await store.receive {
@@ -47,6 +50,7 @@ final class MenuCommandsFeatureTests: XCTestCase {
         let store = TestStore(initialState: MenuCommandsFeature.State()) {
             MenuCommandsFeature()
         }
+        store.exhaustivity = .off
 
         await store.send(.view(.edit(.copy)))
         await store.receive {

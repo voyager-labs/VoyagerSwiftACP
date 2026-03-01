@@ -9,6 +9,8 @@ struct EntryOpenOperationsReducer {
 
     @Dependency(\.entryOpenClient)
     var entryOpenClient
+    @Dependency(\.entryQuickLookClient)
+    var entryQuickLookClient
     @Dependency(\.entryOperationsAlertClient)
     var alertClient
 
@@ -109,14 +111,16 @@ struct EntryOpenOperationsReducer {
                 let filePath = file.fullPath
                 let url = URL(fileURLWithPath: filePath)
                 return EntryOperationsExecutionSupport.run(for: filePath, kind: .quickLook) {
-                    try await entryOpenClient.quickLook(url)
+                    try await entryQuickLookClient.quickLook([url], 0)
                 }
+
+            // TODO: quickLook 액션을 단일 엔트리 포인트로 통합하고 quickLookFiles 분기를 제거한다.
 
             case let .quickLookFiles(files):
                 let urls = files.map { URL(fileURLWithPath: $0.fullPath) }
                 let keyPath = files.first?.fullPath ?? "quicklook"
                 return EntryOperationsExecutionSupport.run(for: keyPath, kind: .quickLook) {
-                    try await entryOpenClient.quickLookFiles(urls)
+                    try await entryQuickLookClient.quickLook(urls, 0)
                 }
 
             case let .openFinderInfo(items):
