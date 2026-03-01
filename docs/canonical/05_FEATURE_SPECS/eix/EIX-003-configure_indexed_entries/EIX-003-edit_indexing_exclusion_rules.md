@@ -17,15 +17,15 @@
 
 ## Preconditions
 
-- -
-
+- 인덱싱 설정 화면이 표시된 상태
 ## Edge Cases
 
-- -
+- 입력한 경로·패턴이 유효하지 않아 규칙을 저장할 수 없는 경우
+- 새 규칙이 기존 규칙과 중복되거나 충돌하는 경우
 
 ## Acceptance Criteria
 
-- -
+- [ ] -
 
 ## Source
 

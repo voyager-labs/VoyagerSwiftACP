@@ -17,15 +17,14 @@
 
 ## Preconditions
 
-- -
-
+- 대상 창이 전체 화면이 아닌 상태
 ## Edge Cases
 
 - -
 
 ## Acceptance Criteria
 
-- -
+- [ ] 대상 File Manager Window가 전체 화면이 아닌 상태일 때, 사용자가 해당 인터랙션을 호출하면, 대상 창이 macOS 전체 화면 모드로 전환됨
 
 ## Source
 

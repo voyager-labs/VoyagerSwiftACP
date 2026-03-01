@@ -17,15 +17,15 @@
 
 ## Preconditions
 
-- -
-
+- Inspector Pane이 숨김 상태
 ## Edge Cases
 
 - -
 
 ## Acceptance Criteria
 
-- -
+- [ ] Inspector Pane가 숨김 상태일 때, 사용자가 해당 인터랙션을 호출하면, Inspector Pane이 File Manager 우측 영역에 표시됨
+- [ ] Inspector Pane이 표시될 때, 숨긴 시점의 Pane Mode가 Chat Pane이 아니라면, 해당 Pane Mode로 렌더링됨
 
 ## Source
 

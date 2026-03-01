@@ -17,15 +17,14 @@
 
 ## Preconditions
 
-- -
-
+- 앱 활성 상태
 ## Edge Cases
 
 - -
 
 ## Acceptance Criteria
 
-- -
+- [ ] TBD
 
 ## Source
 

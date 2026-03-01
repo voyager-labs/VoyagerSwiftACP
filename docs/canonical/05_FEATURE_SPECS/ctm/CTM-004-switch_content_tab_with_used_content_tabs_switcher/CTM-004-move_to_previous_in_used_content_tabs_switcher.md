@@ -17,15 +17,15 @@
 
 ## Preconditions
 
-- -
-
+- Used Content Tabs Switcher가 화면에 표시된 상태
 ## Edge Cases
 
-- -
+- 현재 지정된 탭이 Used Content Tabs Switcher List 상 처음에 위치해 있는 경우
 
 ## Acceptance Criteria
 
-- -
+- [ ] <<AI>> Used Content Tabs Switcher가 표시된 상태이고 이전 항목이 존재할 때, 사용자가 해당 인터랙션을 호출하면, 포커스가 바로 이전 Content Tab으로 이동함.
+- [ ] <<AI>> 이전 항목이 존재하지 않는 상태에서 사용자가 해당 인터랙션을 호출하면, 포커스가 첫 번째 탭에 머무르거나 순환 설정에 따라 마지막 탭으로 이동함.
 
 ## Source
 

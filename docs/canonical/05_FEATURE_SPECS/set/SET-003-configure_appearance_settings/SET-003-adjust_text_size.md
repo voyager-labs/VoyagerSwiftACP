@@ -18,14 +18,13 @@
 ## Preconditions
 
 - -
-
 ## Edge Cases
 
 - -
 
 ## Acceptance Criteria
 
-- -
+- [ ] -
 
 ## Source
 

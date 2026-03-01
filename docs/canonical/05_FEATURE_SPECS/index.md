@@ -1,7 +1,7 @@
 # FEATURE_SPECS
 
 - Source: `04_FEATURE_INVENTORY/INTERACTIONS/data.tsv`
-- Generated specs: `273`
+- Generated specs: `274`
 - Structure: `05_FEATURE_SPECS/<feature_category_slug>/<feature_id>-<feature_title_slug>/<interaction_id>.md`
 
 | Category | Feature ID | Feature Title | Interaction ID | Spec |
@@ -237,6 +237,7 @@
 | `SET` | `SET-002` | Configure General Settings | `SET-002-verify_system_permission_status` | [SET-002-verify_system_permission_status](set/SET-002-configure_general_settings/SET-002-verify_system_permission_status.md) |
 | `SET` | `SET-002` | Configure General Settings | `SET-002-export_user_settings_data` | [SET-002-export_user_settings_data](set/SET-002-configure_general_settings/SET-002-export_user_settings_data.md) |
 | `SET` | `SET-002` | Configure General Settings | `SET-002-import_user_settings_data` | [SET-002-import_user_settings_data](set/SET-002-configure_general_settings/SET-002-import_user_settings_data.md) |
+| `SET` | `SET-002` | Configure General Settings | `SET-002-verify_spotlight_indexing_status` | [SET-002-verify_spotlight_indexing_status](set/SET-002-configure_general_settings/SET-002-verify_spotlight_indexing_status.md) |
 | `SET` | `SET-003` | Configure Appearance Settings | `SET-003-swtich_theme_mode` | [SET-003-swtich_theme_mode](set/SET-003-configure_appearance_settings/SET-003-swtich_theme_mode.md) |
 | `SET` | `SET-003` | Configure Appearance Settings | `SET-003-adjust_text_size` | [SET-003-adjust_text_size](set/SET-003-configure_appearance_settings/SET-003-adjust_text_size.md) |
 | `SET` | `SET-003` | Configure Appearance Settings | `SET-003-adjust_icon_size` | [SET-003-adjust_icon_size](set/SET-003-configure_appearance_settings/SET-003-adjust_icon_size.md) |

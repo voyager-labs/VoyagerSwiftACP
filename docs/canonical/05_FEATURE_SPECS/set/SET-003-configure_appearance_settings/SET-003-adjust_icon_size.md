@@ -17,15 +17,14 @@
 
 ## Preconditions
 
-- -
-
+- Entries View가 Icon View로 설정된 상태
 ## Edge Cases
 
-- -
+- Entries View가 Icon View로 설정된 상태
 
 ## Acceptance Criteria
 
-- -
+- [ ] -
 
 ## Source
 
