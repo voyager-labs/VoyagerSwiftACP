@@ -128,6 +128,7 @@ final class FSItemsUndoManagerTests: XCTestCase {
             }
         }
 
+        // Non-exhaustive: focus on the key delegate/state change; intermediate actions are noisy.
         store.exhaustivity = .off
 
         await store.send(.undoEntryAction(record))
@@ -162,6 +163,7 @@ final class FSItemsUndoManagerTests: XCTestCase {
             }
         }
 
+        // Non-exhaustive: focus on the key delegate/state change; intermediate actions are noisy.
         store.exhaustivity = .off
 
         await store.send(.redoEntryAction(record))

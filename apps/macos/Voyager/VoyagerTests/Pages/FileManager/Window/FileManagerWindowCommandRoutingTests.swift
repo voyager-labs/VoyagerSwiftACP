@@ -65,6 +65,7 @@ final class FileManagerWindowCommandRoutingTests: XCTestCase {
             )
             $0.date = .constant(Date(timeIntervalSince1970: 1_234_567_890))
         }
+        // Non-exhaustive: focus on the key delegate/state change; intermediate actions are noisy.
         store.exhaustivity = .off
 
         await store.send(.window(.request(.newFolder)))
@@ -87,6 +88,7 @@ final class FileManagerWindowCommandRoutingTests: XCTestCase {
             )
             $0.date = .constant(Date(timeIntervalSince1970: 1_234_567_890))
         }
+        // Non-exhaustive: focus on the key delegate/state change; intermediate actions are noisy.
         store.exhaustivity = .off
 
         await store.send(.window(.request(.paste)))
@@ -108,6 +110,7 @@ final class FileManagerWindowCommandRoutingTests: XCTestCase {
             )
             $0.date = .constant(Date(timeIntervalSince1970: 1_234_567_890))
         }
+        // Non-exhaustive: focus on the key delegate/state change; intermediate actions are noisy.
         store.exhaustivity = .off
 
         await store.send(.window(.request(.toggleSidebar)))
@@ -129,6 +132,7 @@ final class FileManagerWindowCommandRoutingTests: XCTestCase {
             )
             $0.date = .constant(Date(timeIntervalSince1970: 1_234_567_890))
         }
+        // Non-exhaustive: focus on the key delegate/state change; intermediate actions are noisy.
         store.exhaustivity = .off
 
         await store.send(.window(.request(.toggleComposer)))
