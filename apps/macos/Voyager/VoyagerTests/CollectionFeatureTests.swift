@@ -1,5 +1,3 @@
-import Foundation
-
 import ComposableArchitecture
 @testable import Voyager
 import XCTest
@@ -76,18 +74,18 @@ private let kRegistryLabels: [String: String] = [
 
 private let kRegistryOperatorDefinition = OperatorDefinition(
     uiLabel: "Equals",
-    mdqueryOperator: nil,
-    valueShape: nil,
-    valueCount: nil,
-    allowedTypes: nil,
-    inverseOf: nil,
-    aliases: nil,
+    mdqueryOperator: nil as String?,
+    valueShape: nil as ValueShape?,
+    valueCount: nil as ValueCount?,
+    allowedTypes: nil as [String]?,
+    inverseOf: nil as String?,
+    aliases: nil as [String]?,
     uiValueKind: [
         "string": "singleText",
         "number": "singleNumber",
         "date": "singleDate",
         "boolean": "toggle",
-    ],
+    ] as [String: String]?,
 )
 
 private func makeRegistryClient() -> RegistryClient {
