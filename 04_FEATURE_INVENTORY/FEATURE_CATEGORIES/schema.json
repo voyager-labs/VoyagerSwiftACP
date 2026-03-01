@@ -25,7 +25,7 @@
       "name": "description",
       "type": "string",
       "required": false,
-      "description": "카테고리 설명."
+      "description": "카테고리 설명. 컨벤션: '...기능 묶음' 형태로 작성."
     }
   ]
 }
