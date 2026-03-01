@@ -12,36 +12,65 @@ struct FullDiskAccessClient: Sendable {
 extension FullDiskAccessClient: DependencyKey {
     nonisolated static var liveValue: FullDiskAccessClient {
         FullDiskAccessClient(status: {
-            let fileManager = FileManager.default
+            statusFromProtectedReadProbe()
+        })
+    }
 
-            // Desktop 접근 시도: 권한이 없으면 시스템이 FDA 목록에 등록하도록 트리거
-            let desktopPath = "\(NSHomeDirectory())/Desktop"
+    private nonisolated static func statusFromProtectedReadProbe() -> FullDiskAccessStatus {
+        let fileManager = FileManager.default
+        let homeDirectory = NSHomeDirectory()
+
+        let probePaths: [String] = [
+            homeDirectory + "/Library/Messages",
+            homeDirectory + "/Library/Mail",
+            homeDirectory + "/Library/Safari",
+        ]
+
+        var foundPermissionError = false
+
+        for path in probePaths {
             do {
-                _ = try fileManager.contentsOfDirectory(atPath: desktopPath)
-                // Desktop 읽기 성공: Full Disk Access 권한 보유
+                _ = try fileManager.contentsOfDirectory(atPath: path)
                 return .granted
             } catch {
-                // Desktop 읽기 실패: 권한 이슈 가능, 이 접근 시도가 FDA 등록을 유도
-            }
-
-            // 보조 체크: 보호된 시스템 파일 접근 시도
-            let protectedPaths = [
-                "\(NSHomeDirectory())/Library/Safari/Bookmarks.plist",
-                "/Library/Application Support/com.apple.TCC/TCC.db",
-            ]
-
-            for path in protectedPaths where fileManager.fileExists(atPath: path) {
-                if fileManager.isReadableFile(atPath: path) {
-                    return .granted
-                } else {
-                    // 파일은 존재하지만 읽기 불가: FDA 필요
-                    return .needsAction
+                if isMissingFileOrDirectoryError(error) {
+                    continue
                 }
+                if isPermissionDeniedError(error) {
+                    foundPermissionError = true
+                    continue
+                }
+                foundPermissionError = true
             }
+        }
 
-            // 판정 불가: 조치 필요로 처리
+        if foundPermissionError {
             return .needsAction
-        })
+        }
+
+        return .needsAction
+    }
+
+    private nonisolated static func isMissingFileOrDirectoryError(_ error: Error) -> Bool {
+        let nsError = error as NSError
+        if nsError.domain == NSCocoaErrorDomain, nsError.code == NSFileReadNoSuchFileError {
+            return true
+        }
+        if nsError.domain == NSPOSIXErrorDomain, nsError.code == ENOENT {
+            return true
+        }
+        return false
+    }
+
+    private nonisolated static func isPermissionDeniedError(_ error: Error) -> Bool {
+        let nsError = error as NSError
+        if nsError.domain == NSCocoaErrorDomain, nsError.code == NSFileReadNoPermissionError {
+            return true
+        }
+        if nsError.domain == NSPOSIXErrorDomain, nsError.code == EACCES || nsError.code == EPERM {
+            return true
+        }
+        return false
     }
 
     nonisolated static var testValue: FullDiskAccessClient {
