@@ -17,15 +17,14 @@
 
 ## Preconditions
 
-- -
-
+- Collection Filter Composer가 열린 상태
 ## Edge Cases
 
 - -
 
 ## Acceptance Criteria
 
-- -
+- [ ] Generate Filter Suggestions from Query가 실행 중일 때, 사용자가 텍스트필드에 포커스되었다면, 값을 입력할 수 있음
 
 ## Source
 

@@ -18,14 +18,13 @@
 ## Preconditions
 
 - -
-
 ## Edge Cases
 
 - -
 
 ## Acceptance Criteria
 
-- -
+- [ ] 현재 페이지가 Entries를 정상적으로 표시하고 있을 때, 사용자가 해당 인터랙션을 호출하면, Entry 구성이 그리드 레이아웃으로 전환되며 정렬은 기존 설정을 따름
 
 ## Source
 

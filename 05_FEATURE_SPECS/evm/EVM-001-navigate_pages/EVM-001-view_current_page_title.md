@@ -18,14 +18,13 @@
 ## Preconditions
 
 - -
-
 ## Edge Cases
 
-- -
+- 제목이 매우 긴 경우
 
 ## Acceptance Criteria
 
-- -
+- [ ] -
 
 ## Source
 

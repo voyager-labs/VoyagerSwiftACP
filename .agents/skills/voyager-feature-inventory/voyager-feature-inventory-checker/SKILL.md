@@ -1,6 +1,6 @@
 ---
 name: voyager-feature-inventory-checker
-description: Look up and validate a Voyager feature in the FEATURE_INVENTORY tables (04_FEATURE_INVENTORY/*). Use when you need to check whether a feature_id exists, inspect its metadata (release_phase/status/related_ui), or list related INTERACTIONS. Triggers: FEATURE_INVENTORY, 기능 인벤토리, feature_id.
+description: Look up and validate Voyager FEATURE_INVENTORY entries (04_FEATURE_INVENTORY/*). Use for (1) exact feature_id checks, and (2) impact discovery when users ask "which features need updates" from Korean/English requirement text. Triggers: FEATURE_INVENTORY, 기능 인벤토리, feature_id, related features, 영향 범위, 변경 필요한 feature.
 ---
 
 # Voyager Feature Inventory Checker
@@ -47,11 +47,64 @@ Deterministic check (stdlib, no deps):
 python3 .agents/skills/voyager-feature-inventory/voyager-feature-inventory-checker/scripts/check_feature.py FMW-001
 ```
 
+Contains match check (title/description/feature_id substring):
+
+```bash
+python3 .agents/skills/voyager-feature-inventory/voyager-feature-inventory-checker/scripts/check_feature.py "System Properties" --match contains
+```
+
+## Operating Modes
+
+### Mode A: Exact ID validation (fast)
+
+Use when the user already gives a `feature_id`.
+
+1. Run `check_feature.py <feature_id>`.
+2. Use the printed INTERACTIONS list to confirm related rows.
+
+### Mode B: Impact discovery from requirement text (KR+EN)
+
+Use when the user asks "관련 기능 찾아줘" or "어떤 feature 변경 필요?" without IDs.
+
+Important: this is not true vector semantic search. It is high-recall discovery via bilingual keyword expansion + deterministic ID validation.
+
+1. Build bilingual keyword packs from the request.
+   - Prefer inventory language, not implementation buzzwords.
+   - Example packs:
+     - `결정론`, `deterministic`, `후보`, `candidate`
+     - `시스템 프로퍼티`, `system property`, `메타데이터`, `metadata`
+     - `인덱싱`, `indexing`, `필터`, `filter`
+2. Run broad searches with `vfi.py search` for each keyword.
+   - Use `--scope all` and larger `--limit` (50-100) for recall.
+3. Run `check_feature.py "<keyword>" --match contains` for ambiguous terms.
+   - This searches `feature_id`, `feature_title`, `description`.
+   - If ambiguous, it prints candidate IDs; use those IDs next.
+4. Validate each candidate ID with exact `check_feature.py <id>`.
+5. Classify output as:
+   - `must-update`: directly conflicts with requested change
+   - `consider-update`: adjacent behavior/wording likely affected
+   - `no-change`: related domain but no required row changes
+
+Recommended command pattern:
+
+```bash
+python3 .agents/skills/voyager-feature-inventory/voyager-feature-inventory-checker/scripts/vfi.py search "결정론" --scope all --limit 80
+python3 .agents/skills/voyager-feature-inventory/voyager-feature-inventory-checker/scripts/vfi.py search "deterministic" --scope all --limit 80
+python3 .agents/skills/voyager-feature-inventory/voyager-feature-inventory-checker/scripts/vfi.py search "시스템 프로퍼티" --scope all --limit 80
+python3 .agents/skills/voyager-feature-inventory/voyager-feature-inventory-checker/scripts/vfi.py search "system property" --scope all --limit 80
+python3 .agents/skills/voyager-feature-inventory/voyager-feature-inventory-checker/scripts/check_feature.py "System Properties" --match contains
+```
+
 ## What This Checks (check_feature.py)
 
 `scripts/vfi.py` focuses on loading/joining/searching. Use `scripts/check_feature.py` when you want explicit consistency warnings.
 
 - Finds the matching row(s) in FEATURES and prints a compact report
+- Matching modes:
+  - `id`: exact feature_id
+  - `title`: exact title
+  - `contains`: substring search over `feature_id`, `feature_title`, `description`
+  - `auto`: picks `id` for `ABC-123` patterns, otherwise `contains`
 - Validates required fields (ex: `feature_category`, `category_key`, `feature_title`, `feature_id`)
 - Checks category consistency:
   - FEATURES.category_key exists in FEATURE_CATEGORIES.category_key
@@ -106,3 +159,4 @@ python3 .agents/skills/voyager-feature-inventory/voyager-feature-inventory-check
 
 - TSV conventions use `-` (not applicable) and `TBD` (must be filled).
 - `scripts/check_feature.py` treats `-` as empty for required fields, but allows `TBD` for required fields.
+- For impact analysis, always do two-step validation: broad discovery (`vfi.py search`) -> exact confirmation (`check_feature.py <id>`).

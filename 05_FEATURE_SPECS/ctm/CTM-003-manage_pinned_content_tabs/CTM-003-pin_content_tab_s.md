@@ -17,15 +17,16 @@
 
 ## Preconditions
 
-- -
-
+- 1개 이상의 Content Tab이 활성 상태 거나 지정된 상태
+- 해당 Content Tab이 Pin되지 않은 상태
 ## Edge Cases
 
-- -
+- 이미 Pin 상태인 Content Tab에 대해 시도하는 경우
 
 ## Acceptance Criteria
 
-- -
+- [ ] <<AI>> 하나 이상의 Content Tab이 선택된 상태에서 사용자가 해당 인터랙션을 호출하면, 대상 탭들이 Pin 상태로 전환되고 Pinned 영역에 고정되어 세션 종료 후 재실행 시에도 복원됨.
+- [ ] <<AI>> 이미 Pin 상태인 Content Tab에 대해 사용자가 해당 인터랙션을 호출하면, Pin 상태가 변경되지 않고 UI가 그대로 유지되거나 중복 동작이 없는 토글 정책에 따라 처리됨.
 
 ## Source
 

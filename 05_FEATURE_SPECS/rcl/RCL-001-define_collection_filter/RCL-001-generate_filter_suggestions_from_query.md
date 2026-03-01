@@ -17,15 +17,15 @@
 
 ## Preconditions
 
-- -
-
+- Submit Collection Filter Query가 발생한 상태
 ## Edge Cases
 
-- -
+- 아무 조건이 생성되지 않고 반환되는 경우
+- 생성이 실패/오류로 종료되는 경우
 
 ## Acceptance Criteria
 
-- -
+- [ ] -
 
 ## Source
 

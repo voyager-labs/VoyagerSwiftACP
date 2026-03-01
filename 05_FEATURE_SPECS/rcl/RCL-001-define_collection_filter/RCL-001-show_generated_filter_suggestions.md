@@ -17,15 +17,15 @@
 
 ## Preconditions
 
-- -
-
+- Collection Filter Composer가 열린 상태
+- Generate Filter Suggestions from Query 결과가 성공으로 반환된 상태
 ## Edge Cases
 
 - -
 
 ## Acceptance Criteria
 
-- -
+- [ ] -
 
 ## Source
 
