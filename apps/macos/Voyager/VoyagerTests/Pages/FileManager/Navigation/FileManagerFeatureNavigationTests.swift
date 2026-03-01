@@ -1,5 +1,6 @@
 import ComposableArchitecture
 @testable import Voyager
+import VoyagerShared
 import XCTest
 
 @MainActor
@@ -7,7 +8,7 @@ final class FileManagerFeatureNavigationTests: XCTestCase {
     func testInitialWindowStateContainsDefaultSlices() {
         let state = FileManagerFeature.State()
 
-        XCTAssertEqual(state.content.navigation.currentPath, SettingsDefaults.defaultTabPath())
+        XCTAssertEqual(state.content.navigation.currentPath, Voyager.SettingsDefaults.defaultTabPath())
         XCTAssertTrue(state.sidebar.sidebarVisible)
     }
 
@@ -23,6 +24,6 @@ final class FileManagerFeatureNavigationTests: XCTestCase {
 
         await store.send(.onAppear)
 
-        XCTAssertEqual(store.state.content.navigation.currentPath, SettingsDefaults.defaultTabPath())
+        XCTAssertEqual(store.state.content.navigation.currentPath, Voyager.SettingsDefaults.defaultTabPath())
     }
 }

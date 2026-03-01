@@ -1,6 +1,7 @@
 import AppKit
 import ComposableArchitecture
 import Foundation
+import VoyagerShared
 
 public struct AppearanceSettingsClient: Sendable {
     public var loadTheme: @Sendable () -> AppTheme
@@ -42,7 +43,8 @@ extension AppearanceSettingsClient: DependencyKey {
     public nonisolated static var liveValue: AppearanceSettingsClient {
         AppearanceSettingsClient(
             loadTheme: {
-                if let themeString = UserDefaults.standard.string(forKey: "theme"),
+                @Dependency(\.userDefaultsClient) var userDefaultsClient
+                if let themeString = userDefaultsClient.string(SettingsKeys.theme),
                    let theme = AppTheme(rawValue: themeString)
                 {
                     return theme

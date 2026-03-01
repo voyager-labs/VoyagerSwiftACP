@@ -3,6 +3,7 @@ import Foundation
 import IOKit
 import Logging
 import SwiftDotenv
+import VoyagerShared
 
 struct BetaAccessClient: Sendable {
     var verify: @Sendable (_ email: String, _ token: String) async throws -> BetaAccessVerifyResponse
