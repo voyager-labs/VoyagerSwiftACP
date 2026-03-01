@@ -7,7 +7,7 @@ final class ContentPageNavigationFeatureTests: XCTestCase {
     func testDirectNavigateToPathRecordsHistoryAndEmitsDelegatesInOrder() async {
         let store = makeStore(seedPath: "/seed")
 
-        await store.send(.performNavigateToPath("/next")) {
+        await store.send(.internal(.performNavigateToPath("/next"))) {
             $0.navigationState = .folder("/next")
             $0.backHistory = [ContentPageNavigationHistorySnapshot(navigationState: .folder("/seed"))]
             $0.forwardHistory = []
@@ -21,7 +21,7 @@ final class ContentPageNavigationFeatureTests: XCTestCase {
     func testDirectShowRecentsRecordsHistoryAndEmitsDelegatesInOrder() async {
         let store = makeStore(seedPath: "/seed")
 
-        await store.send(.performShowRecents) {
+        await store.send(.internal(.performShowRecents)) {
             $0.navigationState = .recents
             $0.backHistory = [ContentPageNavigationHistorySnapshot(navigationState: .folder("/seed"))]
             $0.forwardHistory = []
@@ -35,7 +35,7 @@ final class ContentPageNavigationFeatureTests: XCTestCase {
     func testDirectShowTagRecordsHistoryAndEmitsDelegatesInOrder() async {
         let store = makeStore(seedPath: "/seed")
 
-        await store.send(.performShowTag("work")) {
+        await store.send(.internal(.performShowTag("work"))) {
             $0.navigationState = .tags("work")
             $0.backHistory = [ContentPageNavigationHistorySnapshot(navigationState: .folder("/seed"))]
             $0.forwardHistory = []
@@ -49,7 +49,7 @@ final class ContentPageNavigationFeatureTests: XCTestCase {
     func testDirectShowComputerRecordsHistoryAndEmitsDelegatesInOrder() async {
         let store = makeStore(seedPath: "/seed")
 
-        await store.send(.performShowComputer) {
+        await store.send(.internal(.performShowComputer)) {
             $0.navigationState = .computer
             $0.backHistory = [ContentPageNavigationHistorySnapshot(navigationState: .folder("/seed"))]
             $0.forwardHistory = []
@@ -63,7 +63,7 @@ final class ContentPageNavigationFeatureTests: XCTestCase {
     func testBackThenForwardNavigationMovesHistoryAndEmitsResetBeforeNavigateForNonCollection() async {
         let store = makeStore(seedPath: "/a")
 
-        await store.send(.performNavigateToPath("/b")) {
+        await store.send(.internal(.performNavigateToPath("/b"))) {
             $0.navigationState = .folder("/b")
             $0.backHistory = [ContentPageNavigationHistorySnapshot(navigationState: .folder("/a"))]
             $0.forwardHistory = []
@@ -72,7 +72,7 @@ final class ContentPageNavigationFeatureTests: XCTestCase {
         await store.receive(.delegate(.logDAUNavigation(previous: .folder("/a"), next: .folder("/b"))))
         await store.receive(.delegate(.navigateToState(.folder("/b"))))
 
-        await store.send(.performNavigateToPath("/c")) {
+        await store.send(.internal(.performNavigateToPath("/c"))) {
             $0.navigationState = .folder("/c")
             $0.backHistory = [
                 ContentPageNavigationHistorySnapshot(navigationState: .folder("/a")),
@@ -84,7 +84,7 @@ final class ContentPageNavigationFeatureTests: XCTestCase {
         await store.receive(.delegate(.logDAUNavigation(previous: .folder("/b"), next: .folder("/c"))))
         await store.receive(.delegate(.navigateToState(.folder("/c"))))
 
-        await store.send(.performNavigation(.back)) {
+        await store.send(.internal(.performNavigation(.back))) {
             $0.navigationState = .folder("/b")
             $0.backHistory = [ContentPageNavigationHistorySnapshot(navigationState: .folder("/a"))]
             $0.forwardHistory = [ContentPageNavigationHistorySnapshot(navigationState: .folder("/c"))]
@@ -93,7 +93,7 @@ final class ContentPageNavigationFeatureTests: XCTestCase {
         await store.receive(.delegate(.logDAUNavigation(previous: .folder("/c"), next: .folder("/b"))))
         await store.receive(.delegate(.navigateToState(.folder("/b"))))
 
-        await store.send(.performNavigation(.forward)) {
+        await store.send(.internal(.performNavigation(.forward))) {
             $0.navigationState = .folder("/c")
             $0.backHistory = [
                 ContentPageNavigationHistorySnapshot(navigationState: .folder("/a")),
@@ -120,7 +120,7 @@ final class ContentPageNavigationFeatureTests: XCTestCase {
             ContentPageNavigationFeature()
         }
 
-        await store.send(.performNavigation(.history(index: 1, isBackHistory: true))) {
+        await store.send(.internal(.performNavigation(.history(index: 1, isBackHistory: true)))) {
             $0.navigationState = .folder("/b")
             $0.backHistory = [ContentPageNavigationHistorySnapshot(navigationState: .folder("/a"))]
             $0.forwardHistory = [
@@ -143,7 +143,7 @@ final class ContentPageNavigationFeatureTests: XCTestCase {
             ContentPageNavigationFeature()
         }
 
-        await store.send(.performNavigation(.enclosingDirectory)) {
+        await store.send(.internal(.performNavigation(.enclosingDirectory))) {
             $0.navigationState = .folder("/a")
             $0.backHistory = [ContentPageNavigationHistorySnapshot(navigationState: .folder("/a/b"))]
             $0.forwardHistory = []
@@ -165,7 +165,7 @@ final class ContentPageNavigationFeatureTests: XCTestCase {
             ContentPageNavigationFeature()
         }
 
-        await store.send(.performNavigation(.back)) {
+        await store.send(.internal(.performNavigation(.back))) {
             $0.navigationState = collectionRoute
             $0.backHistory = []
             $0.forwardHistory = [ContentPageNavigationHistorySnapshot(navigationState: .folder("/folder"))]
@@ -180,7 +180,7 @@ final class ContentPageNavigationFeatureTests: XCTestCase {
         store.exhaustivity = .off
 
         for index in 0 ..< 12 {
-            await store.send(.performNavigateToPath("/p/\(index)"))
+            await store.send(.internal(.performNavigateToPath("/p/\(index)")))
             await store.receive(.delegate(.resetComposer))
             await store.receive(\.delegate)
             await store.receive(\.delegate)

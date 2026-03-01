@@ -8,14 +8,14 @@ final class FileManagerNavigationUnsavedTests: XCTestCase {
         for testCase in kHistoryNavigationTestCases {
             let store = makeStore(alertChoice: .cancel)
 
-            await store.send(.navigation(testCase.action))
+            await store.send(.navigation(.view(testCase.viewAction)))
 
             await store.receive {
-                guard case let .navigation(.showUnsavedNavigationAlert(pending)) = $0 else { return false }
+                guard case let .navigation(.internal(.showUnsavedNavigationAlert(pending))) = $0 else { return false }
                 return pendingMatches(pending, testCase.pending)
             }
             await store.receive {
-                guard case let .navigation(.unsavedNavigationAlertResponse(pending, choice)) = $0 else {
+                guard case let .navigation(.internal(.unsavedNavigationAlertResponse(pending, choice))) = $0 else {
                     return false
                 }
                 guard pendingMatches(pending, testCase.pending) else { return false }
@@ -36,14 +36,14 @@ final class FileManagerNavigationUnsavedTests: XCTestCase {
         for testCase in kHistoryNavigationTestCases {
             let store = makeStore(alertChoice: .discard, composerText: "dirty")
 
-            await store.send(.navigation(testCase.action))
+            await store.send(.navigation(.view(testCase.viewAction)))
 
             await store.receive {
-                guard case let .navigation(.showUnsavedNavigationAlert(pending)) = $0 else { return false }
+                guard case let .navigation(.internal(.showUnsavedNavigationAlert(pending))) = $0 else { return false }
                 return pendingMatches(pending, testCase.pending)
             }
             await store.receive {
-                guard case let .navigation(.unsavedNavigationAlertResponse(pending, choice)) = $0 else {
+                guard case let .navigation(.internal(.unsavedNavigationAlertResponse(pending, choice))) = $0 else {
                     return false
                 }
                 guard pendingMatches(pending, testCase.pending) else { return false }
@@ -55,7 +55,7 @@ final class FileManagerNavigationUnsavedTests: XCTestCase {
                 state.content.resetComposerOnNextDirectoryNavigation = true
             }
             await store.receive {
-                guard case let .navigation(.performNavigation(pending)) = $0 else { return false }
+                guard case let .navigation(.internal(.performNavigation(pending))) = $0 else { return false }
                 return pendingMatches(pending, testCase.pending)
             } assert: { state in
                 state.content.resetComposerOnNextDirectoryNavigation = false
@@ -72,14 +72,14 @@ final class FileManagerNavigationUnsavedTests: XCTestCase {
         for testCase in kHistoryNavigationTestCases {
             let store = makeStore(alertChoice: .save)
 
-            await store.send(.navigation(testCase.action))
+            await store.send(.navigation(.view(testCase.viewAction)))
 
             await store.receive {
-                guard case let .navigation(.showUnsavedNavigationAlert(pending)) = $0 else { return false }
+                guard case let .navigation(.internal(.showUnsavedNavigationAlert(pending))) = $0 else { return false }
                 return pendingMatches(pending, testCase.pending)
             }
             await store.receive {
-                guard case let .navigation(.unsavedNavigationAlertResponse(pending, choice)) = $0 else {
+                guard case let .navigation(.internal(.unsavedNavigationAlertResponse(pending, choice))) = $0 else {
                     return false
                 }
                 guard pendingMatches(pending, testCase.pending) else { return false }
@@ -91,7 +91,7 @@ final class FileManagerNavigationUnsavedTests: XCTestCase {
                 state.content.resetComposerOnNextDirectoryNavigation = true
             }
             await store.receive {
-                guard case let .navigation(.setPendingNavigation(pending)) = $0 else { return false }
+                guard case let .navigation(.internal(.setPendingNavigation(pending))) = $0 else { return false }
                 return optionalPendingMatches(pending, testCase.pending)
             } assert: { state in
                 state.content.navigation.pendingNavigation = testCase.pending
@@ -110,7 +110,7 @@ final class FileManagerNavigationUnsavedTests: XCTestCase {
 }
 
 private struct HistoryNavigationTestCase {
-    let action: ContentPageNavigationAction
+    let viewAction: ContentPageNavigationAction.View
     let pending: ContentPageNavigationPending
 }
 
@@ -141,13 +141,13 @@ private func optionalPendingMatches(
 }
 
 private let kHistoryNavigationTestCases: [HistoryNavigationTestCase] = [
-    HistoryNavigationTestCase(action: .goBack, pending: .back),
-    HistoryNavigationTestCase(action: .goForward, pending: .forward),
+    HistoryNavigationTestCase(viewAction: .goBack, pending: .back),
+    HistoryNavigationTestCase(viewAction: .goForward, pending: .forward),
     HistoryNavigationTestCase(
-        action: .goToHistoryIndex(3, isBackHistory: true),
+        viewAction: .goToHistoryIndex(3, isBackHistory: true),
         pending: .history(index: 3, isBackHistory: true),
     ),
-    HistoryNavigationTestCase(action: .goToEnclosingDirectory, pending: .enclosingDirectory),
+    HistoryNavigationTestCase(viewAction: .goToEnclosingDirectory, pending: .enclosingDirectory),
 ]
 
 @MainActor
