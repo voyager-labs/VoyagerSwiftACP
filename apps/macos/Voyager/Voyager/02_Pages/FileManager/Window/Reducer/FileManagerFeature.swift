@@ -2,6 +2,7 @@ import AppKit
 import ComposableArchitecture
 import Foundation
 import SwiftUI
+import VoyagerShared
 
 @Reducer
 struct FileManagerFeature {

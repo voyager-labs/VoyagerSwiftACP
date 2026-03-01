@@ -1,5 +1,5 @@
 import ComposableArchitecture
-@testable import Voyager
+@testable import VoyagerPagesOnboarding
 import XCTest
 
 @MainActor
@@ -138,6 +138,7 @@ final class OnboardingFeatureTests: XCTestCase {
 
         let openedPaths = await pathRecorder.snapshot()
         XCTAssertEqual(openedPaths.count, 1)
+        XCTAssertNil(openedPaths[0])
         let savedSnapshot = await snapshotRecorder.value
         XCTAssertEqual(savedSnapshot?.stepState.completeComplete, true)
         await store.finish()

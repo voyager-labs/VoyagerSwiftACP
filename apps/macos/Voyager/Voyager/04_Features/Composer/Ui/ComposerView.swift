@@ -1,6 +1,7 @@
 import AppKit
 import ComposableArchitecture
 import SwiftUI
+import VoyagerShared
 
 private struct ChipSizePreferenceKey: PreferenceKey {
     static var defaultValue: [AnyHashable: CGSize] = [:]

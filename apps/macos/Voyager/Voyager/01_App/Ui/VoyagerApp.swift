@@ -3,6 +3,9 @@ import ComposableArchitecture
 import Foundation
 import Logging
 import SwiftUI
+import VoyagerPagesOnboarding
+import VoyagerPagesSettings
+import VoyagerShared
 
 @main
 struct VoyagerApp: App {
@@ -20,7 +23,8 @@ struct VoyagerApp: App {
         } withDependencies: {
             $0.onboardingWindowClient = OnboardingWindowClient.makeLive(openMainWindow: { path in
                 await MainActor.run {
-                    requestFileManagerNewWindow(path: path)
+                    let resolvedPath = path ?? SettingsDefaults.defaultTabPath()
+                    requestFileManagerNewWindow(path: resolvedPath)
                     return true
                 }
             })
@@ -66,7 +70,7 @@ struct VoyagerApp: App {
 
     var body: some Scene {
         Settings {
-            SettingsView()
+            SettingsView(store: appRootStore.scope(state: \.settings, action: \.settings))
         }
         .commands {
             AppMenuCommands(appRootStore: appRootStore)

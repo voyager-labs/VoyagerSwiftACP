@@ -1,6 +1,7 @@
 import ComposableArchitecture
 import Foundation
 import SwiftUI
+import VoyagerShared
 
 @ObservableState
 struct FileManagerContentState: Equatable {
