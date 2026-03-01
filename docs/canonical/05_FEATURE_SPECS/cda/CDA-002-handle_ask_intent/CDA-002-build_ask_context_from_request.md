@@ -17,15 +17,14 @@
 
 ## Preconditions
 
-- -
-
+- Ask Intent로 분류된 Chunk가 하나 이상 존재하는 상태
 ## Edge Cases
 
 - -
 
 ## Acceptance Criteria
 
-- -
+- [ ] TBD
 
 ## Source
 

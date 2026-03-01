@@ -17,15 +17,14 @@
 
 ## Preconditions
 
-- -
-
+- TBD
 ## Edge Cases
 
-- -
+- TBD
 
 ## Acceptance Criteria
 
-- -
+- [ ] TBD
 
 ## Source
 
