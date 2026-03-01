@@ -18,6 +18,7 @@ final class FileManagerFeatureNavigationTests: XCTestCase {
             $0.userDefaultsClient = .testValue
             $0.date = .constant(Date(timeIntervalSince1970: 1_234_567_890))
         }
+        // Non-exhaustive: focus on the key delegate/state change; intermediate actions are noisy.
         store.exhaustivity = .off
 
         await store.send(.onAppear)

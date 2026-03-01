@@ -68,6 +68,7 @@ final class MenuCommandsFeatureTests: XCTestCase {
         let store = TestStore(initialState: MenuCommandsHarnessFeature.State()) {
             MenuCommandsHarnessFeature()
         }
+        // Non-exhaustive: focus on the key delegate/state change; intermediate actions are noisy.
         store.exhaustivity = .off
 
         await store.send(.menu(.view(.app(.newFolder))))
@@ -80,6 +81,7 @@ final class MenuCommandsFeatureTests: XCTestCase {
         let store = TestStore(initialState: MenuCommandsHarnessFeature.State()) {
             MenuCommandsHarnessFeature()
         }
+        // Non-exhaustive: focus on the key delegate/state change; intermediate actions are noisy.
         store.exhaustivity = .off
 
         await store.send(.menu(.view(.app(.checkForUpdates))))
@@ -92,6 +94,7 @@ final class MenuCommandsFeatureTests: XCTestCase {
         let store = TestStore(initialState: MenuCommandsHarnessFeature.State()) {
             MenuCommandsHarnessFeature()
         }
+        // Non-exhaustive: focus on the key delegate/state change; intermediate actions are noisy.
         store.exhaustivity = .off
 
         await store.send(.menu(.view(.viewCommand(.toggleSidebar))))
@@ -104,6 +107,7 @@ final class MenuCommandsFeatureTests: XCTestCase {
         let store = TestStore(initialState: MenuCommandsHarnessFeature.State()) {
             MenuCommandsHarnessFeature()
         }
+        // Non-exhaustive: focus on the key delegate/state change; intermediate actions are noisy.
         store.exhaustivity = .off
 
         await store.send(.menu(.view(.edit(.copy))))

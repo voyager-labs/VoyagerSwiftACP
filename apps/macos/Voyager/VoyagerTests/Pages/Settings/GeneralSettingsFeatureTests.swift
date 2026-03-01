@@ -1,5 +1,5 @@
-#if false
 import ComposableArchitecture
+import Foundation
 @testable import Voyager
 import XCTest
 
@@ -43,7 +43,6 @@ final class GeneralSettingsFeatureTests: XCTestCase {
                     await recorder.append(enabled)
                 },
             )
-            $0.entryClient = EntryClient.testValue
         }
 
         await store.send(.toggleAutomaticUpdate(true)) { state in
@@ -57,9 +56,7 @@ final class GeneralSettingsFeatureTests: XCTestCase {
         XCTAssertEqual(values, [true])
     }
 }
-#endif
 
-#if false
 private final class BoolStorage: @unchecked Sendable {
     private let lock = NSLock()
     private var values: [String: Bool] = [:]
@@ -86,5 +83,3 @@ private actor BoolRecorder {
 }
 
 // swiftlint:enable xct_specific_matcher
-
-#endif
