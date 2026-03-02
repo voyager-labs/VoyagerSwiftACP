@@ -86,12 +86,7 @@ struct ContentPageNavigationState: Equatable {
         }
     }
 
-    func makeContentPageNavigationHistorySnapshot(composer: ComposerFeature
-        .State) -> ContentPageNavigationHistorySnapshot
-    {
-        ContentPageNavigationHistorySnapshot(
-            navigationState: navigationState,
-            composerSnapshot: composer,
-        )
+    func makeContentPageNavigationHistorySnapshot() -> ContentPageNavigationHistorySnapshot {
+        ContentPageNavigationHistorySnapshot(navigationState: navigationState)
     }
 }

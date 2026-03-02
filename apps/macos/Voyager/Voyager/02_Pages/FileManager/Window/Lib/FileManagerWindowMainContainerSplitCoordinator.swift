@@ -4,7 +4,7 @@ import ComposableArchitecture
 import SwiftUI
 
 @MainActor
-final class FileManagerWindowMainContainerSplitCoordinator: NSViewController, NSSplitViewDelegate {
+final class MainContainerSplitCoordinator: NSViewController, NSSplitViewDelegate {
     private enum Constants {
         static let defaultInspectorWidth: CGFloat = 300
         static let inspectorMinWidth: CGFloat = 200
@@ -154,10 +154,10 @@ final class FileManagerWindowMainContainerSplitCoordinator: NSViewController, NS
             store: store.scope(state: \.content, action: \.content),
             paneState: paneState,
             onNavigationAction: { [weak self] action in
-                self?.store.send(.navigation(action))
+                self?.store.send(.navigation(.view(action)))
             },
             onNavigate: { [weak self] path in
-                self?.store.send(.navigation(.navigateToPath(path)))
+                self?.store.send(.navigation(.view(.navigateToPath(path))))
             },
         )
     }

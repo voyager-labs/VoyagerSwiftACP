@@ -31,7 +31,7 @@ struct ToolbarView: View {
     }
 
     let store: StoreOf<FileManagerContentFeature>
-    let onNavigationAction: (ContentPageNavigationAction) -> Void
+    let onNavigationAction: (ContentPageNavigationAction.View) -> Void
 
     @Environment(\.colorScheme)
     private var colorScheme
