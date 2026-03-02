@@ -1,6 +1,6 @@
 # Response Template
 
-For exception cases, strictly use this template.
+Use these short templates for operational responses.
 
 ## No Staged Changes
 
@@ -8,7 +8,25 @@ For exception cases, strictly use this template.
 No staged changes
 ```
 
+## Selection Prompt
+
+```text
+Choose 1, 2, 3, or Reroll (R/r).
+```
+
+## Invalid Selection
+
+```text
+Please choose 1, 2, 3, or Reroll (R/r).
+```
+
+## Commit Success
+
+```text
+<commit-hash>
+```
+
 Rules:
 
-- Output the text above ONLY.
-- DO NOT include explanations, headers, code fences, or any other formatting.
+- Keep operational responses short and direct.
+- Use exact templates for no-staged and invalid-selection cases.
