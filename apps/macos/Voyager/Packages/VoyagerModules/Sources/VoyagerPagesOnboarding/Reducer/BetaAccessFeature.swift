@@ -118,6 +118,8 @@ private func mapGatewayError(_ code: String) -> BetaAccessVerificationResult {
         BetaAccessVerificationResult(status: .notActive, reason: .deviceMismatch)
     case "auth_backend_error":
         BetaAccessVerificationResult(status: .checkFailed, reason: .authBackendError)
+    case "invalid_gateway_url":
+        BetaAccessVerificationResult(status: .checkFailed, reason: .invalidGatewayUrl)
     default:
         BetaAccessVerificationResult(status: .checkFailed, reason: .networkError)
     }

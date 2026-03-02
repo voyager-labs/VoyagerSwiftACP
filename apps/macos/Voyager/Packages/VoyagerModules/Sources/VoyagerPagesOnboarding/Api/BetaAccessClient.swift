@@ -49,11 +49,11 @@ private func verifyBetaAccess(email: String, token: String) async throws -> Beta
         return BetaAccessVerifyResponse(ok: true)
     }
 
-    guard let urlString = Dotenv["PUBLIC_GATEWAY_URL"]?.stringValue else {
-        fatalError("Missing PUBLIC_GATEWAY_URL in .env")
-    }
-    guard let baseURL = URL(string: urlString) else {
-        fatalError("Invalid PUBLIC_GATEWAY_URL: \(urlString)")
+    guard let urlString = Dotenv["PUBLIC_GATEWAY_URL"]?.stringValue,
+          !urlString.isEmpty,
+          let baseURL = URL(string: urlString)
+    else {
+        throw BetaAccessVerificationError.gatewayError(code: "invalid_gateway_url")
     }
     let url = baseURL.appendingPathComponent("auth/verify-cbt")
     var request = URLRequest(url: url)
