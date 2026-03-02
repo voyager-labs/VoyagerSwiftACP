@@ -1,37 +1,53 @@
 {
   "$kind": "system_property_registry",
-  "$version": "2.3.0",
+  "$version": "2.3.1",
   "categories": {
     "audio": {
       "apple_loop_descriptors": {
         "availability": "macOS 10.4+",
         "description": "Specifies multiple pieces of descriptive information about a loop.",
-        "search_aliases": ["apple loop descriptor"],
-        "system_keys": ["mditem:kMDItemAppleLoopDescriptors"],
+        "search_aliases": [
+          "apple loop descriptor"
+        ],
+        "system_keys": [
+          "mditem:kMDItemAppleLoopDescriptors"
+        ],
         "type": "string_list",
         "ui_label": "Apple loop descriptors"
       },
       "apple_loops_key_filter_type": {
         "availability": "macOS 10.4+",
         "description": "Specifies key filtering information about a loop. Loops are matched against projects that often in a major or minor key.",
-        "search_aliases": ["apple loops key filter types"],
-        "system_keys": ["mditem:kMDItemAppleLoopsKeyFilterType"],
+        "search_aliases": [
+          "apple loops key filter types"
+        ],
+        "system_keys": [
+          "mditem:kMDItemAppleLoopsKeyFilterType"
+        ],
         "type": "string",
         "ui_label": "Apple loops key filter type"
       },
       "apple_loops_loop_mode": {
         "availability": "macOS 10.4+",
         "description": "Specifies how a file should be played.",
-        "search_aliases": ["apple loops loop modes"],
-        "system_keys": ["mditem:kMDItemAppleLoopsLoopMode"],
+        "search_aliases": [
+          "apple loops loop modes"
+        ],
+        "system_keys": [
+          "mditem:kMDItemAppleLoopsLoopMode"
+        ],
         "type": "string",
         "ui_label": "Apple loops loop mode"
       },
       "apple_loops_root_key": {
         "availability": "macOS 10.4+",
         "description": "Specifies the loop's original key. The key is the root note or tonic for the loop, and does not include the scale type.",
-        "search_aliases": ["apple loops root keys"],
-        "system_keys": ["mditem:kMDItemAppleLoopsRootKey"],
+        "search_aliases": [
+          "apple loops root keys"
+        ],
+        "system_keys": [
+          "mditem:kMDItemAppleLoopsRootKey"
+        ],
         "type": "string",
         "ui_label": "Apple loops root key"
       },
@@ -45,8 +61,12 @@
           "sound channel counts",
           "audio channel numbers"
         ],
-        "legacy_keys": ["audioChannelCount"],
-        "system_keys": ["mditem:kMDItemAudioChannelCount"],
+        "legacy_keys": [
+          "audioChannelCount"
+        ],
+        "system_keys": [
+          "mditem:kMDItemAudioChannelCount"
+        ],
         "type": "number",
         "ui_label": "Audio channel count"
       },
@@ -60,7 +80,9 @@
           "sound encoding applications",
           "audio encoding apps"
         ],
-        "system_keys": ["mditem:kMDItemAudioEncodingApplication"],
+        "system_keys": [
+          "mditem:kMDItemAudioEncodingApplication"
+        ],
         "type": "string",
         "ui_label": "Audio encoding application"
       },
@@ -74,8 +96,12 @@
           "sound sample rates",
           "audio sample bitrates"
         ],
-        "legacy_keys": ["audioSampleRate"],
-        "system_keys": ["mditem:kMDItemAudioSampleRate"],
+        "legacy_keys": [
+          "audioSampleRate"
+        ],
+        "system_keys": [
+          "mditem:kMDItemAudioSampleRate"
+        ],
         "type": "number",
         "ui_label": "Audio sample rate"
       },
@@ -88,7 +114,9 @@
           "audio track numbers",
           "sound track numbers"
         ],
-        "system_keys": ["mditem:kMDItemAudioTrackNumber"],
+        "system_keys": [
+          "mditem:kMDItemAudioTrackNumber"
+        ],
         "type": "number",
         "ui_label": "Audio track number"
       },
@@ -96,23 +124,33 @@
         "availability": "macOS 10.4+",
         "description": "The composer of the music contained in the audio file.",
         "search_aliases": [],
-        "system_keys": ["mditem:kMDItemComposer"],
+        "system_keys": [
+          "mditem:kMDItemComposer"
+        ],
         "type": "string",
         "ui_label": "Composer"
       },
       "is_general_midi_sequence": {
         "availability": "macOS 10.4+",
         "description": "Indicates whether the MIDI sequence contained in the file is setup for use with a General MIDI device.",
-        "search_aliases": ["is general midi sequences"],
-        "system_keys": ["mditem:kMDItemIsGeneralMIDISequence"],
+        "search_aliases": [
+          "is general midi sequences"
+        ],
+        "system_keys": [
+          "mditem:kMDItemIsGeneralMIDISequence"
+        ],
         "type": "boolean",
         "ui_label": "Is general midi sequence"
       },
       "key_signature": {
         "availability": "macOS 10.4+",
         "description": "The key of the music contained in the audio file. For example: C, Dm, F#m, Bb.",
-        "search_aliases": ["key signatures"],
-        "system_keys": ["mditem:kMDItemKeySignature"],
+        "search_aliases": [
+          "key signatures"
+        ],
+        "system_keys": [
+          "mditem:kMDItemKeySignature"
+        ],
         "type": "string",
         "ui_label": "Key signature"
       },
@@ -120,31 +158,45 @@
         "availability": "macOS 10.4+",
         "description": "The lyricist, or text writer, of the music contained in the audio file.",
         "search_aliases": [],
-        "system_keys": ["mditem:kMDItemLyricist"],
+        "system_keys": [
+          "mditem:kMDItemLyricist"
+        ],
         "type": "string",
         "ui_label": "Lyricist"
       },
       "musical_genre": {
         "availability": "macOS 10.4+",
         "description": "The musical genre of the song or composition contained in the audio file. For example: Jazz, Pop, Rock, Classical.",
-        "search_aliases": ["musical genres"],
-        "system_keys": ["mditem:kMDItemMusicalGenre"],
+        "search_aliases": [
+          "musical genres"
+        ],
+        "system_keys": [
+          "mditem:kMDItemMusicalGenre"
+        ],
         "type": "categorical",
         "ui_label": "Musical genre"
       },
       "musical_instrument_category": {
         "availability": "macOS 10.4+",
         "description": "Specifies the category of an instrument.",
-        "search_aliases": ["musical instrument categories"],
-        "system_keys": ["mditem:kMDItemMusicalInstrumentCategory"],
+        "search_aliases": [
+          "musical instrument categories"
+        ],
+        "system_keys": [
+          "mditem:kMDItemMusicalInstrumentCategory"
+        ],
         "type": "categorical",
         "ui_label": "Musical instrument category"
       },
       "musical_instrument_name": {
         "availability": "macOS 10.4+",
         "description": "Specifies the name of instrument relative to the instrument category.",
-        "search_aliases": ["musical instrument names"],
-        "system_keys": ["mditem:kMDItemMusicalInstrumentName"],
+        "search_aliases": [
+          "musical instrument names"
+        ],
+        "system_keys": [
+          "mditem:kMDItemMusicalInstrumentName"
+        ],
         "type": "string",
         "ui_label": "Musical instrument name"
       },
@@ -158,15 +210,22 @@
           "recorded dates",
           "recording times"
         ],
-        "system_keys": ["mditem:kMDItemRecordingDate"],
+        "system_keys": [
+          "mditem:kMDItemRecordingDate"
+        ],
         "type": "date",
         "ui_label": "Recording date"
       },
       "recording_year": {
         "availability": "macOS 10.4+",
         "description": "Indicates the year the item was recorded. For example, 1964, 2003, etc.",
-        "search_aliases": ["recorded year", "recording yr"],
-        "system_keys": ["mditem:kMDItemRecordingYear"],
+        "search_aliases": [
+          "recorded year",
+          "recording yr"
+        ],
+        "system_keys": [
+          "mditem:kMDItemRecordingYear"
+        ],
         "type": "number",
         "ui_label": "Recording year"
       },
@@ -174,15 +233,21 @@
         "availability": "macOS 10.4+",
         "description": "A float value that specifies the beats per minute of the music contained in the audio file.",
         "search_aliases": [],
-        "system_keys": ["mditem:kMDItemTempo"],
+        "system_keys": [
+          "mditem:kMDItemTempo"
+        ],
         "type": "number",
         "ui_label": "Tempo"
       },
       "time_signature": {
         "availability": "macOS 10.4+",
         "description": "The time signature of the musical composition contained in the audio/MIDI file. For example: \"4/4\", \"7/8\".",
-        "search_aliases": ["time signatures"],
-        "system_keys": ["mditem:kMDItemTimeSignature"],
+        "search_aliases": [
+          "time signatures"
+        ],
+        "system_keys": [
+          "mditem:kMDItemTimeSignature"
+        ],
         "type": "string",
         "ui_label": "Time signature"
       }
@@ -192,7 +257,9 @@
         "availability": "macOS 10.4+",
         "description": "The audience for which the file is intended. The audience may be determined by the creator or the publisher or by a third party.",
         "search_aliases": [],
-        "system_keys": ["mditem:kMDItemAudiences"],
+        "system_keys": [
+          "mditem:kMDItemAudiences"
+        ],
         "type": "string_list",
         "ui_label": "Audiences"
       },
@@ -204,7 +271,9 @@
           "author address",
           "creator address"
         ],
-        "system_keys": ["mditem:kMDItemAuthorAddresses"],
+        "system_keys": [
+          "mditem:kMDItemAuthorAddresses"
+        ],
         "type": "string_list",
         "ui_label": "Author addresses"
       },
@@ -217,7 +286,9 @@
           "creator email address",
           "author e-mail address"
         ],
-        "system_keys": ["mditem:kMDItemAuthorEmailAddresses"],
+        "system_keys": [
+          "mditem:kMDItemAuthorEmailAddresses"
+        ],
         "type": "string_list",
         "ui_label": "Author email addresses"
       },
@@ -225,7 +296,9 @@
         "availability": "macOS 10.4+",
         "description": "The author, or authors, of the contents of the file.",
         "search_aliases": [],
-        "system_keys": ["mditem:kMDItemAuthors"],
+        "system_keys": [
+          "mditem:kMDItemAuthors"
+        ],
         "type": "string_list",
         "ui_label": "Authors"
       },
@@ -238,7 +311,9 @@
           "cf bundle identifiers",
           "cf package identifiers"
         ],
-        "system_keys": ["mditem:kMDItemCFBundleIdentifier"],
+        "system_keys": [
+          "mditem:kMDItemCFBundleIdentifier"
+        ],
         "type": "string",
         "ui_label": "CF bundle identifier"
       },
@@ -246,31 +321,48 @@
         "availability": "macOS 10.4+",
         "description": "Identifies city of origin according to guidelines established by the provider.",
         "search_aliases": [],
-        "system_keys": ["mditem:kMDItemCity"],
+        "system_keys": [
+          "mditem:kMDItemCity"
+        ],
         "type": "categorical",
         "ui_label": "City"
       },
       "comment": {
         "availability": "macOS 10.4+",
         "description": "A comment related to the file. This differs from the Finder comment, kMDItemFinderComment.",
-        "search_aliases": ["comments", "note"],
-        "system_keys": ["mditem:kMDItemComment"],
+        "search_aliases": [
+          "comments",
+          "note"
+        ],
+        "system_keys": [
+          "mditem:kMDItemComment"
+        ],
         "type": "string",
         "ui_label": "Comment"
       },
       "contact_keywords": {
         "availability": "macOS 10.4+",
         "description": "A list of contacts that are associated with this document, not including the authors.",
-        "search_aliases": ["contact tags", "contact keyword", "contact tag"],
-        "system_keys": ["mditem:kMDItemContactKeywords"],
+        "search_aliases": [
+          "contact tags",
+          "contact keyword",
+          "contact tag"
+        ],
+        "system_keys": [
+          "mditem:kMDItemContactKeywords"
+        ],
         "type": "string_list",
         "ui_label": "Contact keywords"
       },
       "uniform_type_identifier": {
         "availability": "macOS 10.4+",
         "description": "The UTI pedigree of a file.",
-        "search_aliases": ["content types"],
-        "legacy_keys": ["contentType"],
+        "search_aliases": [
+          "content types"
+        ],
+        "legacy_keys": [
+          "contentType"
+        ],
         "system_keys": [
           "mditem:kMDItemContentType",
           "nsurl:NSURLContentTypeKey"
@@ -283,7 +375,9 @@
         "availability": "macOS 10.4+",
         "description": "The entities responsible for making contributions to the content of the resource.",
         "search_aliases": [],
-        "system_keys": ["mditem:kMDItemContributors"],
+        "system_keys": [
+          "mditem:kMDItemContributors"
+        ],
         "type": "string_list",
         "ui_label": "Contributors"
       },
@@ -291,7 +385,9 @@
         "availability": "macOS 10.4+",
         "description": "The copyright owner of the file contents.",
         "search_aliases": [],
-        "system_keys": ["mditem:kMDItemCopyright"],
+        "system_keys": [
+          "mditem:kMDItemCopyright"
+        ],
         "type": "string",
         "ui_label": "Copyright"
       },
@@ -299,7 +395,9 @@
         "availability": "macOS 10.4+",
         "description": "The full, publishable name of the country or region where the intellectual property of the item was created, according to guidelines of the provider.",
         "search_aliases": [],
-        "system_keys": ["mditem:kMDItemCountry"],
+        "system_keys": [
+          "mditem:kMDItemCountry"
+        ],
         "type": "categorical",
         "ui_label": "Country"
       },
@@ -307,7 +405,9 @@
         "availability": "macOS 10.4+",
         "description": "The extent or scope of the content of the resource.",
         "search_aliases": [],
-        "system_keys": ["mditem:kMDItemCoverage"],
+        "system_keys": [
+          "mditem:kMDItemCoverage"
+        ],
         "type": "string",
         "ui_label": "Coverage"
       },
@@ -315,7 +415,9 @@
         "availability": "macOS 10.4+",
         "description": "Application used to create the document content (for example \"Word\", \"Pages\", and so on).",
         "search_aliases": [],
-        "system_keys": ["mditem:kMDItemCreator"],
+        "system_keys": [
+          "mditem:kMDItemCreator"
+        ],
         "type": "string",
         "ui_label": "Creator"
       },
@@ -323,48 +425,78 @@
         "availability": "macOS 10.4+",
         "description": "A description of the content of the resource. The description may include an abstract, table of contents, reference to a graphical representation of content or a free-text account of the content.",
         "search_aliases": [],
-        "system_keys": ["mditem:kMDItemDescription"],
+        "system_keys": [
+          "mditem:kMDItemDescription"
+        ],
         "type": "string",
         "ui_label": "Description"
       },
       "due_date": {
         "availability": "macOS 10.4+",
         "description": "Date this item is due.",
-        "search_aliases": ["due time", "due dates", "due times"],
-        "system_keys": ["mditem:kMDItemDueDate"],
+        "search_aliases": [
+          "due time",
+          "due dates",
+          "due times"
+        ],
+        "system_keys": [
+          "mditem:kMDItemDueDate"
+        ],
         "type": "date",
         "ui_label": "Due date"
       },
       "duration_seconds": {
         "availability": "macOS 10.4+",
         "description": "The duration, in seconds, of the content of file. A value of 10. 5 represents media that is 10 and 1/2 seconds long.",
-        "search_aliases": ["length seconds", "duration sec"],
-        "legacy_keys": ["duration"],
-        "system_keys": ["mditem:kMDItemDurationSeconds"],
+        "search_aliases": [
+          "length seconds",
+          "duration sec"
+        ],
+        "legacy_keys": [
+          "duration"
+        ],
+        "system_keys": [
+          "mditem:kMDItemDurationSeconds"
+        ],
         "type": "number",
         "ui_label": "Duration seconds"
       },
       "email_addresses": {
         "availability": "macOS 10.4+",
         "description": "Email addresses related to this item.",
-        "search_aliases": ["email address", "e-mail address"],
-        "system_keys": ["mditem:kMDItemEmailAddresses"],
+        "search_aliases": [
+          "email address",
+          "e-mail address"
+        ],
+        "system_keys": [
+          "mditem:kMDItemEmailAddresses"
+        ],
         "type": "string_list",
         "ui_label": "Email addresses"
       },
       "encoding_applications": {
         "availability": "macOS 10.4+",
         "description": "Application used to convert the original content into it's current form. For example, a PDF file might have an encoding application set to \"Distiller\".",
-        "search_aliases": ["encoding application"],
-        "system_keys": ["mditem:kMDItemEncodingApplications"],
+        "search_aliases": [
+          "encoding application"
+        ],
+        "system_keys": [
+          "mditem:kMDItemEncodingApplications"
+        ],
         "type": "string_list",
         "ui_label": "Encoding applications"
       },
       "finder_comment": {
         "availability": "macOS 10.4+",
         "description": "Finder comments for this file.",
-        "search_aliases": ["finder note", "finder comments", "finder notes"],
-        "system_keys": ["mditem:kMDItemFinderComment"],
+        "search_aliases": [
+          "finder note",
+          "finder comments",
+          "finder notes"
+        ],
+        "system_keys": [
+          "mditem:kMDItemFinderComment"
+        ],
         "type": "string",
         "ui_label": "Finder comment"
       },
@@ -372,7 +504,9 @@
         "availability": "macOS 10.4+",
         "description": "Fonts used in this item. You should store the font's full name, the postscript name, or the font family name, based on the available information.",
         "search_aliases": [],
-        "system_keys": ["mditem:kMDItemFonts"],
+        "system_keys": [
+          "mditem:kMDItemFonts"
+        ],
         "type": "string_list",
         "ui_label": "Fonts"
       },
@@ -384,7 +518,9 @@
           "fs has custom icons",
           "filesystem has custom icons"
         ],
-        "system_keys": ["mditem:kMDItemFSHasCustomIcon"],
+        "system_keys": [
+          "mditem:kMDItemFSHasCustomIcon"
+        ],
         "type": "boolean",
         "ui_label": "FS has custom icon"
       },
@@ -396,7 +532,9 @@
           "fs is stationeries",
           "filesystem is stationeries"
         ],
-        "system_keys": ["mditem:kMDItemFSIsStationery"],
+        "system_keys": [
+          "mditem:kMDItemFSIsStationery"
+        ],
         "type": "boolean",
         "ui_label": "FS is stationery"
       },
@@ -404,15 +542,21 @@
         "availability": "macOS 10.4+",
         "description": "A publishable entry providing a synopsis of the contents of the file. For example, \"Apple Introduces the iPod Photo\".",
         "search_aliases": [],
-        "system_keys": ["mditem:kMDItemHeadline"],
+        "system_keys": [
+          "mditem:kMDItemHeadline"
+        ],
         "type": "string",
         "ui_label": "Headline"
       },
       "identifier": {
         "availability": "macOS 10.4+",
         "description": "A formal identifier used to reference the resource within a given context.",
-        "search_aliases": ["id"],
-        "system_keys": ["mditem:kMDItemIdentifier"],
+        "search_aliases": [
+          "id"
+        ],
+        "system_keys": [
+          "mditem:kMDItemIdentifier"
+        ],
         "type": "string",
         "ui_label": "Identifier"
       },
@@ -420,15 +564,21 @@
         "availability": "macOS 10.5+",
         "description": "Information about the item.",
         "search_aliases": [],
-        "system_keys": ["mditem:kMDItemInformation"],
+        "system_keys": [
+          "mditem:kMDItemInformation"
+        ],
         "type": "string",
         "ui_label": "Information"
       },
       "instant_message_addresses": {
         "availability": "macOS 10.4+",
         "description": "Instant message addresses related to this item.",
-        "search_aliases": ["instant message address"],
-        "system_keys": ["mditem:kMDItemInstantMessageAddresses"],
+        "search_aliases": [
+          "instant message address"
+        ],
+        "system_keys": [
+          "mditem:kMDItemInstantMessageAddresses"
+        ],
         "type": "string_list",
         "ui_label": "Instant message addresses"
       },
@@ -436,7 +586,9 @@
         "availability": "macOS 10.4+",
         "description": "Editorial instructions concerning the use of the item, such as embargoes and warnings. For example, \"Second of four stories\".",
         "search_aliases": [],
-        "system_keys": ["mditem:kMDItemInstructions"],
+        "system_keys": [
+          "mditem:kMDItemInstructions"
+        ],
         "type": "string",
         "ui_label": "Instructions"
       },
@@ -444,7 +596,9 @@
         "availability": "macOS 10.4+",
         "description": "Keywords associated with this file. For example, \"Birthday\", \"Important\", etc.",
         "search_aliases": [],
-        "system_keys": ["mditem:kMDItemKeywords"],
+        "system_keys": [
+          "mditem:kMDItemKeywords"
+        ],
         "type": "string_list",
         "ui_label": "Keywords"
       },
@@ -452,8 +606,13 @@
         "availability": "macOS 10.4+",
         "description": "A description of the kind of item this file represents.",
         "search_aliases": [],
-        "legacy_keys": ["kind"],
-        "system_keys": ["mditem:kMDItemKind", "mdimporter:kMDLabelKind"],
+        "legacy_keys": [
+          "kind"
+        ],
+        "system_keys": [
+          "mditem:kMDItemKind",
+          "mdimporter:kMDLabelKind"
+        ],
         "type": "categorical",
         "ui_label": "Kind",
         "db_indexed": true
@@ -462,16 +621,26 @@
         "availability": "macOS 10.4+",
         "description": "Indicates the languages of the intellectual content of the resource. Recommended best practice for the values of the Language element is defined by RFC 3066.",
         "search_aliases": [],
-        "system_keys": ["mditem:kMDItemLanguages"],
+        "system_keys": [
+          "mditem:kMDItemLanguages"
+        ],
         "type": "string_list",
         "ui_label": "Languages"
       },
       "number_of_pages": {
         "availability": "macOS 10.4+",
         "description": "Number of pages in the document.",
-        "search_aliases": ["num of pages", "number of page", "num of page"],
-        "legacy_keys": ["numberOfPages"],
-        "system_keys": ["mditem:kMDItemNumberOfPages"],
+        "search_aliases": [
+          "num of pages",
+          "number of page",
+          "num of page"
+        ],
+        "legacy_keys": [
+          "numberOfPages"
+        ],
+        "system_keys": [
+          "mditem:kMDItemNumberOfPages"
+        ],
         "type": "number",
         "ui_label": "Number of pages"
       },
@@ -479,23 +648,33 @@
         "availability": "macOS 10.4+",
         "description": "The company or organization that created the document.",
         "search_aliases": [],
-        "system_keys": ["mditem:kMDItemOrganizations"],
+        "system_keys": [
+          "mditem:kMDItemOrganizations"
+        ],
         "type": "string_list",
         "ui_label": "Organizations"
       },
       "page_height": {
         "availability": "macOS 10.4+",
         "description": "Height of the document page, in points (72 points per inch). For PDF files this indicates the height of the first page only.",
-        "search_aliases": ["page heights"],
-        "system_keys": ["mditem:kMDItemPageHeight"],
+        "search_aliases": [
+          "page heights"
+        ],
+        "system_keys": [
+          "mditem:kMDItemPageHeight"
+        ],
         "type": "number",
         "ui_label": "Page height"
       },
       "page_width": {
         "availability": "macOS 10.4+",
         "description": "Width of the document page, in points (72 points per inch). For PDF files this indicates the width of the first page only.",
-        "search_aliases": ["page widths"],
-        "system_keys": ["mditem:kMDItemPageWidth"],
+        "search_aliases": [
+          "page widths"
+        ],
+        "system_keys": [
+          "mditem:kMDItemPageWidth"
+        ],
         "type": "number",
         "ui_label": "Page width"
       },
@@ -503,7 +682,9 @@
         "availability": "macOS 10.6+",
         "description": "The list of people who are visible in an image or movie or written about in a document.",
         "search_aliases": [],
-        "system_keys": ["mditem:kMDItemParticipants"],
+        "system_keys": [
+          "mditem:kMDItemParticipants"
+        ],
         "type": "string_list",
         "ui_label": "Participants"
       },
@@ -515,7 +696,9 @@
           "phone number",
           "telephone number"
         ],
-        "system_keys": ["mditem:kMDItemPhoneNumbers"],
+        "system_keys": [
+          "mditem:kMDItemPhoneNumbers"
+        ],
         "type": "string_list",
         "ui_label": "Phone numbers"
       },
@@ -523,7 +706,9 @@
         "availability": "macOS 10.4+",
         "description": "The list of projects that this file is part of. For example, if you were working on a movie all of the files could be marked as belonging to the project \"My Movie\".",
         "search_aliases": [],
-        "system_keys": ["mditem:kMDItemProjects"],
+        "system_keys": [
+          "mditem:kMDItemProjects"
+        ],
         "type": "string_list",
         "ui_label": "Projects"
       },
@@ -531,7 +716,9 @@
         "availability": "macOS 10.4+",
         "description": "The entity responsible for making the resource available. For example, a person, an organization, or a service. Typically, the name of a publisher should be used to indicate the entity.",
         "search_aliases": [],
-        "system_keys": ["mditem:kMDItemPublishers"],
+        "system_keys": [
+          "mditem:kMDItemPublishers"
+        ],
         "type": "string_list",
         "ui_label": "Publishers"
       },
@@ -543,7 +730,9 @@
           "recipient address",
           "receiver address"
         ],
-        "system_keys": ["mditem:kMDItemRecipientAddresses"],
+        "system_keys": [
+          "mditem:kMDItemRecipientAddresses"
+        ],
         "type": "string_list",
         "ui_label": "Recipient addresses"
       },
@@ -556,7 +745,9 @@
           "receiver email address",
           "recipient e-mail address"
         ],
-        "system_keys": ["mditem:kMDItemRecipientEmailAddresses"],
+        "system_keys": [
+          "mditem:kMDItemRecipientEmailAddresses"
+        ],
         "type": "string_list",
         "ui_label": "Recipient email addresses"
       },
@@ -564,7 +755,9 @@
         "availability": "macOS 10.4+",
         "description": "Recipients of this item.",
         "search_aliases": [],
-        "system_keys": ["mditem:kMDItemRecipients"],
+        "system_keys": [
+          "mditem:kMDItemRecipients"
+        ],
         "type": "string_list",
         "ui_label": "Recipients"
       },
@@ -572,31 +765,45 @@
         "availability": "macOS 10.4+",
         "description": "Provides a link to information about rights held in and over the resource.",
         "search_aliases": [],
-        "system_keys": ["mditem:kMDItemRights"],
+        "system_keys": [
+          "mditem:kMDItemRights"
+        ],
         "type": "string",
         "ui_label": "Rights"
       },
       "security_method": {
         "availability": "macOS 10.4+",
         "description": "The security or encryption method used for the file.",
-        "search_aliases": ["security methods"],
-        "system_keys": ["mditem:kMDItemSecurityMethod"],
+        "search_aliases": [
+          "security methods"
+        ],
+        "system_keys": [
+          "mditem:kMDItemSecurityMethod"
+        ],
         "type": "string",
         "ui_label": "Security method"
       },
       "star_rating": {
         "availability": "macOS 10.4+",
         "description": "User rating of this item. For example, the stars rating of an iTunes track.",
-        "search_aliases": ["star ratings"],
-        "system_keys": ["mditem:kMDItemStarRating"],
+        "search_aliases": [
+          "star ratings"
+        ],
+        "system_keys": [
+          "mditem:kMDItemStarRating"
+        ],
         "type": "number",
         "ui_label": "Star rating"
       },
       "state_or_province": {
         "availability": "macOS 10.4+",
         "description": "Identifies the province or state of origin according to guidelines established by the provider. For example, \"CA\", \"Ontario\", or \"Sussex\".",
-        "search_aliases": ["state or provinces"],
-        "system_keys": ["mditem:kMDItemStateOrProvince"],
+        "search_aliases": [
+          "state or provinces"
+        ],
+        "system_keys": [
+          "mditem:kMDItemStateOrProvince"
+        ],
         "type": "string",
         "ui_label": "State or province"
       },
@@ -604,15 +811,21 @@
         "availability": "macOS 10.4+",
         "description": "Subject of the this item.",
         "search_aliases": [],
-        "system_keys": ["mditem:kMDItemSubject"],
+        "system_keys": [
+          "mditem:kMDItemSubject"
+        ],
         "type": "string",
         "ui_label": "Subject"
       },
       "text_content": {
         "availability": "macOS 10.4+",
         "description": "Contains a text representation of the content of the document. Data in multiple fields should be combined using a whitespace character as a separator.",
-        "search_aliases": ["text contents"],
-        "system_keys": ["mditem:kMDItemTextContent"],
+        "search_aliases": [
+          "text contents"
+        ],
+        "system_keys": [
+          "mditem:kMDItemTextContent"
+        ],
         "type": "string",
         "ui_label": "Text content"
       },
@@ -620,7 +833,9 @@
         "availability": "macOS 10.4+",
         "description": "Theme of the this item.",
         "search_aliases": [],
-        "system_keys": ["mditem:kMDItemTheme"],
+        "system_keys": [
+          "mditem:kMDItemTheme"
+        ],
         "type": "string",
         "ui_label": "Theme"
       },
@@ -628,16 +843,24 @@
         "availability": "macOS 10.4+",
         "description": "The title of the file. For example, this could be the title of a document, the name of a song, or the subject of an email message.",
         "search_aliases": [],
-        "legacy_keys": ["title"],
-        "system_keys": ["mditem:kMDItemTitle"],
+        "legacy_keys": [
+          "title"
+        ],
+        "system_keys": [
+          "mditem:kMDItemTitle"
+        ],
         "type": "string",
         "ui_label": "Title"
       },
       "url": {
         "availability": "macOS 10.5+",
         "description": "Url of the item.",
-        "search_aliases": ["link"],
-        "system_keys": ["mditem:kMDItemURL"],
+        "search_aliases": [
+          "link"
+        ],
+        "system_keys": [
+          "mditem:kMDItemURL"
+        ],
         "type": "string",
         "ui_label": "URL"
       },
@@ -645,15 +868,21 @@
         "availability": "macOS 10.4+",
         "description": "The version number of this file.",
         "search_aliases": [],
-        "system_keys": ["mditem:kMDItemVersion"],
+        "system_keys": [
+          "mditem:kMDItemVersion"
+        ],
         "type": "string",
         "ui_label": "Version"
       },
       "where_froms": {
         "availability": "macOS 10.4+",
         "description": "Describes where the file was obtained from.",
-        "search_aliases": ["where from"],
-        "system_keys": ["mditem:kMDItemWhereFroms"],
+        "search_aliases": [
+          "where from"
+        ],
+        "system_keys": [
+          "mditem:kMDItemWhereFroms"
+        ],
         "type": "string_list",
         "ui_label": "Where froms"
       }
@@ -684,9 +913,12 @@
           "content access dates",
           "content access times"
         ],
-        "system_keys": ["nsurl:NSURLContentAccessDateKey"],
+        "system_keys": [
+          "nsurl:NSURLContentAccessDateKey"
+        ],
         "type": "date",
-        "ui_label": "Content access date"
+        "ui_label": "Content access date",
+        "ui_hidden": true
       },
       "content_creation_date": {
         "availability": "macOS 10.4+",
@@ -698,8 +930,12 @@
           "content created dates",
           "content creation times"
         ],
-        "legacy_keys": ["contentCreatedAt"],
-        "system_keys": ["mditem:kMDItemContentCreationDate"],
+        "legacy_keys": [
+          "contentCreatedAt"
+        ],
+        "system_keys": [
+          "mditem:kMDItemContentCreationDate"
+        ],
         "type": "date",
         "ui_label": "Content creation date",
         "db_indexed": true
@@ -714,7 +950,10 @@
           "content modified dates",
           "content modification times"
         ],
-        "legacy_keys": ["modifiedAt", "contentModifiedAt"],
+        "legacy_keys": [
+          "modifiedAt",
+          "contentModifiedAt"
+        ],
         "system_keys": [
           "mditem:kMDItemContentModificationDate",
           "mditem:kMDItemFSContentChangeDate",
@@ -734,8 +973,12 @@
           "last used dates",
           "last used times"
         ],
-        "legacy_keys": ["lastUsedAt"],
-        "system_keys": ["mditem:kMDItemLastUsedDate"],
+        "legacy_keys": [
+          "lastUsedAt"
+        ],
+        "system_keys": [
+          "mditem:kMDItemLastUsedDate"
+        ],
         "type": "date",
         "ui_label": "Last used date",
         "db_indexed": true
@@ -750,7 +993,9 @@
           "created dates",
           "creation times"
         ],
-        "legacy_keys": ["createdAt"],
+        "legacy_keys": [
+          "createdAt"
+        ],
         "system_keys": [
           "mditem:kMDItemFSCreationDate",
           "nsurl:NSURLCreationDateKey"
@@ -763,8 +1008,14 @@
       "added_date": {
         "availability": "macOS 10.7+",
         "description": "Date added.",
-        "search_aliases": ["time added", "date addeds", "time addeds"],
-        "legacy_keys": ["addedAt"],
+        "search_aliases": [
+          "time added",
+          "date addeds",
+          "time addeds"
+        ],
+        "legacy_keys": [
+          "addedAt"
+        ],
         "system_keys": [
           "mdimporter:kMDItemDateAdded",
           "nsurl:NSURLAddedToDirectoryDateKey"
@@ -782,7 +1033,9 @@
           "downloaded dates",
           "downloaded times"
         ],
-        "system_keys": ["mdimporter:kMDItemDownloadedDate"],
+        "system_keys": [
+          "mdimporter:kMDItemDownloadedDate"
+        ],
         "type": "date",
         "ui_label": "Downloaded date"
       }
@@ -791,7 +1044,9 @@
       "display_name": {
         "availability": "macOS 10.4+",
         "description": "The localized version of the file name.",
-        "search_aliases": ["display names"],
+        "search_aliases": [
+          "display names"
+        ],
         "system_keys": [
           "mditem:kMDItemDisplayName",
           "mdimporter:kMDLabelDisplayName",
@@ -808,7 +1063,9 @@
           "extensions",
           "file extensions"
         ],
-        "system_keys": ["mditem:kMDItemFSName"],
+        "system_keys": [
+          "mditem:kMDItemFSName"
+        ],
         "type": "categorical",
         "ui_label": "Extension",
         "ui_pinned": true,
@@ -817,8 +1074,13 @@
       "file_allocated_size": {
         "availability": "macOS 10.6+",
         "description": "The key for the total size allocated on-disk for the file.",
-        "search_aliases": ["file allocated bytes", "file allocated sizes"],
-        "legacy_keys": ["size"],
+        "search_aliases": [
+          "file allocated bytes",
+          "file allocated sizes"
+        ],
+        "legacy_keys": [
+          "size"
+        ],
         "system_keys": [
           "mditem:kMDItemFSSize",
           "nsurl:NSURLFileAllocatedSizeKey",
@@ -837,7 +1099,9 @@
           "filesystem node counts",
           "fs node numbers"
         ],
-        "system_keys": ["mditem:kMDItemFSNodeCount"],
+        "system_keys": [
+          "mditem:kMDItemFSNodeCount"
+        ],
         "type": "number",
         "ui_label": "FS node count"
       },
@@ -849,7 +1113,9 @@
           "fs owner group identifier",
           "fs owner group identifiers"
         ],
-        "system_keys": ["mditem:kMDItemFSOwnerGroupID"],
+        "system_keys": [
+          "mditem:kMDItemFSOwnerGroupID"
+        ],
         "type": "number",
         "ui_hidden": true,
         "ui_label": "FS owner group ID"
@@ -862,7 +1128,9 @@
           "fs owner user identifier",
           "fs owner user identifiers"
         ],
-        "system_keys": ["mditem:kMDItemFSOwnerUserID"],
+        "system_keys": [
+          "mditem:kMDItemFSOwnerUserID"
+        ],
         "type": "number",
         "ui_hidden": true,
         "ui_label": "FS owner user ID"
@@ -885,9 +1153,16 @@
       "is_invisible": {
         "availability": "macOS 10.6+",
         "description": "Key for determining whether the resource is normally not displayed to users, returned as a Boolean NSNumber object (read-write).",
-        "search_aliases": ["is hidden"],
-        "legacy_keys": ["isInvisible"],
-        "system_keys": ["mditem:kMDItemFSInvisible", "nsurl:NSURLIsHiddenKey"],
+        "search_aliases": [
+          "is hidden"
+        ],
+        "legacy_keys": [
+          "isInvisible"
+        ],
+        "system_keys": [
+          "mditem:kMDItemFSInvisible",
+          "nsurl:NSURLIsHiddenKey"
+        ],
         "type": "boolean",
         "ui_label": "Is hidden",
         "db_indexed": true
@@ -901,15 +1176,23 @@
           "label numbers",
           "tag numbers"
         ],
-        "system_keys": ["mditem:kMDItemFSLabel", "nsurl:NSURLLabelNumberKey"],
+        "system_keys": [
+          "mditem:kMDItemFSLabel",
+          "nsurl:NSURLLabelNumberKey"
+        ],
         "type": "number",
         "ui_label": "Label number"
       },
       "name_full": {
         "availability": "macOS 10.6+",
         "description": "The resource's name in the file system, returned as an NSString object (read-write).",
-        "search_aliases": ["full name"],
-        "system_keys": ["mditem:kMDItemFSName", "nsurl:NSURLNameKey"],
+        "search_aliases": [
+          "full name"
+        ],
+        "system_keys": [
+          "mditem:kMDItemFSName",
+          "nsurl:NSURLNameKey"
+        ],
         "type": "string",
         "ui_label": "Full name",
         "ui_hidden": true,
@@ -917,9 +1200,15 @@
       },
       "name_stem": {
         "description": "File name without extension.",
-        "search_aliases": ["name stems"],
-        "system_keys": ["mditem:kMDItemFSName"],
-        "legacy_keys": ["name"],
+        "search_aliases": [
+          "name stems"
+        ],
+        "system_keys": [
+          "mditem:kMDItemFSName"
+        ],
+        "legacy_keys": [
+          "name"
+        ],
         "type": "string",
         "ui_label": "Name",
         "ui_pinned": true,
@@ -929,7 +1218,10 @@
         "availability": "macOS 10.4+",
         "description": "The complete path to the file.",
         "search_aliases": [],
-        "system_keys": ["mditem:kMDItemPath", "nsurl:NSURLPathKey"],
+        "system_keys": [
+          "mditem:kMDItemPath",
+          "nsurl:NSURLPathKey"
+        ],
         "type": "string",
         "ui_hidden": true,
         "ui_label": "Path",
@@ -940,16 +1232,24 @@
       "acquisition_make": {
         "availability": "macOS 10.4+",
         "description": "The manufacturer of the device used to acquire the document contents.",
-        "search_aliases": ["acquisition makes"],
-        "system_keys": ["mditem:kMDItemAcquisitionMake"],
+        "search_aliases": [
+          "acquisition makes"
+        ],
+        "system_keys": [
+          "mditem:kMDItemAcquisitionMake"
+        ],
         "type": "string",
         "ui_label": "Acquisition make"
       },
       "acquisition_model": {
         "availability": "macOS 10.4+",
         "description": "The model of the device used to acquire the document contents. For example, 100, 200, 400, etc.",
-        "search_aliases": ["acquisition models"],
-        "system_keys": ["mditem:kMDItemAcquisitionModel"],
+        "search_aliases": [
+          "acquisition models"
+        ],
+        "system_keys": [
+          "mditem:kMDItemAcquisitionModel"
+        ],
         "type": "string",
         "ui_label": "Acquisition model"
       },
@@ -957,7 +1257,9 @@
         "availability": "macOS 10.4+",
         "description": "The title for a collection of media. This is analagous to a record album, or photo album.",
         "search_aliases": [],
-        "system_keys": ["mditem:kMDItemAlbum"],
+        "system_keys": [
+          "mditem:kMDItemAlbum"
+        ],
         "type": "string",
         "ui_label": "Album"
       },
@@ -965,7 +1267,9 @@
         "availability": "macOS 10.5+",
         "description": "The altitude of the item in meters above sea level, expressed using the WGS84 datum. Negative values lie below sea level.",
         "search_aliases": [],
-        "system_keys": ["mditem:kMDItemAltitude"],
+        "system_keys": [
+          "mditem:kMDItemAltitude"
+        ],
         "type": "string",
         "ui_label": "Altitude"
       },
@@ -973,48 +1277,74 @@
         "availability": "macOS 10.4+",
         "description": "The aperture setting used to acquire the document contents. This unit is the APEX value.",
         "search_aliases": [],
-        "system_keys": ["mditem:kMDItemAperture"],
+        "system_keys": [
+          "mditem:kMDItemAperture"
+        ],
         "type": "number",
         "ui_label": "Aperture"
       },
       "bits_per_sample": {
         "availability": "macOS 10.4+",
         "description": "The number of bits per sample. For example, the bit depth of an image (8-bit, 16-bit etc. . . ) or the bit depth per audio sample of uncompressed audio data (8, 16, 24, 32, 64, etc. . ).",
-        "search_aliases": ["bits per samples"],
-        "system_keys": ["mditem:kMDItemBitsPerSample"],
+        "search_aliases": [
+          "bits per samples"
+        ],
+        "system_keys": [
+          "mditem:kMDItemBitsPerSample"
+        ],
         "type": "number",
         "ui_label": "Bits per sample"
       },
       "color_space": {
         "availability": "macOS 10.4+",
         "description": "The color space model used by the document contents. For example, \"RGB\", \"CMYK\", \"YUV\", or \"YCbCr\".",
-        "search_aliases": ["color spaces"],
-        "legacy_keys": ["colorSpace"],
-        "system_keys": ["mditem:kMDItemColorSpace"],
+        "search_aliases": [
+          "color spaces"
+        ],
+        "legacy_keys": [
+          "colorSpace"
+        ],
+        "system_keys": [
+          "mditem:kMDItemColorSpace"
+        ],
         "type": "string",
         "ui_label": "Color space"
       },
       "exif_version": {
         "availability": "macOS 10.4+",
         "description": "The version of the EXIF header used to generate the metadata.",
-        "search_aliases": ["exif versions"],
-        "system_keys": ["mditem:kMDItemEXIFVersion"],
+        "search_aliases": [
+          "exif versions"
+        ],
+        "system_keys": [
+          "mditem:kMDItemEXIFVersion"
+        ],
         "type": "string",
         "ui_label": "EXIF version"
       },
       "exifgps_version": {
         "availability": "macOS 10.5+",
         "description": "The version of GPSInfoIFD in EXIF used to generate the metadata.",
-        "search_aliases": ["exifgps versions"],
-        "system_keys": ["mditem:kMDItemEXIFGPSVersion"],
+        "search_aliases": [
+          "exifgps versions"
+        ],
+        "system_keys": [
+          "mditem:kMDItemEXIFGPSVersion"
+        ],
         "type": "string",
         "ui_label": "Exifgps version"
       },
       "exposure_mode": {
         "availability": "macOS 10.4+",
         "description": "The exposure mode used to acquire the document contents.",
-        "search_aliases": ["shutter mode", "exposure modes", "shutter modes"],
-        "system_keys": ["mditem:kMDItemExposureMode"],
+        "search_aliases": [
+          "shutter mode",
+          "exposure modes",
+          "shutter modes"
+        ],
+        "system_keys": [
+          "mditem:kMDItemExposureMode"
+        ],
         "type": "number",
         "ui_label": "Exposure mode"
       },
@@ -1026,15 +1356,22 @@
           "exposure programs",
           "shutter programs"
         ],
-        "system_keys": ["mditem:kMDItemExposureProgram"],
+        "system_keys": [
+          "mditem:kMDItemExposureProgram"
+        ],
         "type": "string",
         "ui_label": "Exposure program"
       },
       "exposure_time_seconds": {
         "availability": "macOS 10.4+",
         "description": "The exposure time, in seconds, used to acquire the document contents.",
-        "search_aliases": ["shutter time seconds", "exposure time sec"],
-        "system_keys": ["mditem:kMDItemExposureTimeSeconds"],
+        "search_aliases": [
+          "shutter time seconds",
+          "exposure time sec"
+        ],
+        "system_keys": [
+          "mditem:kMDItemExposureTimeSeconds"
+        ],
         "type": "number",
         "ui_label": "Exposure time seconds"
       },
@@ -1046,23 +1383,34 @@
           "exposure time strings",
           "shutter time strings"
         ],
-        "system_keys": ["mditem:kMDItemExposureTimeString"],
+        "system_keys": [
+          "mditem:kMDItemExposureTimeString"
+        ],
         "type": "string",
         "ui_label": "Exposure time string"
       },
       "f_number": {
         "availability": "macOS 10.4+",
         "description": "The diameter of the diaphragm aperture in terms of the effective focal length of the lens.",
-        "search_aliases": ["f num", "f numbers"],
-        "system_keys": ["mditem:kMDItemFNumber"],
+        "search_aliases": [
+          "f num",
+          "f numbers"
+        ],
+        "system_keys": [
+          "mditem:kMDItemFNumber"
+        ],
         "type": "number",
         "ui_label": "F number"
       },
       "flash_on_off": {
         "availability": "macOS 10.4+",
         "description": "Indicates if a camera flash was used.",
-        "search_aliases": ["flash on offs"],
-        "system_keys": ["mditem:kMDItemFlashOnOff"],
+        "search_aliases": [
+          "flash on offs"
+        ],
+        "system_keys": [
+          "mditem:kMDItemFlashOnOff"
+        ],
         "type": "number",
         "ui_label": "Flash on off"
       },
@@ -1074,40 +1422,60 @@
           "focal lengths",
           "focal durations"
         ],
-        "system_keys": ["mditem:kMDItemFocalLength"],
+        "system_keys": [
+          "mditem:kMDItemFocalLength"
+        ],
         "type": "number",
         "ui_label": "Focal length"
       },
       "gps_track": {
         "availability": "macOS 10.5+",
         "description": "The direction of travel of the item, in degrees from true north.",
-        "search_aliases": ["gps tracks"],
-        "system_keys": ["mditem:kMDItemGPSTrack"],
+        "search_aliases": [
+          "gps tracks"
+        ],
+        "system_keys": [
+          "mditem:kMDItemGPSTrack"
+        ],
         "type": "string",
         "ui_label": "GPS track"
       },
       "has_alpha_channel": {
         "availability": "macOS 10.4+",
         "description": "Indicates if this image file has an alpha channel.",
-        "search_aliases": ["has alpha channels"],
-        "legacy_keys": ["hasAlphaChannel"],
-        "system_keys": ["mditem:kMDItemHasAlphaChannel"],
+        "search_aliases": [
+          "has alpha channels"
+        ],
+        "legacy_keys": [
+          "hasAlphaChannel"
+        ],
+        "system_keys": [
+          "mditem:kMDItemHasAlphaChannel"
+        ],
         "type": "boolean",
         "ui_label": "Has alpha channel"
       },
       "image_direction": {
         "availability": "macOS 10.5+",
         "description": "The direction of the item's image, in degrees from true north.",
-        "search_aliases": ["image directions"],
-        "system_keys": ["mditem:kMDItemImageDirection"],
+        "search_aliases": [
+          "image directions"
+        ],
+        "system_keys": [
+          "mditem:kMDItemImageDirection"
+        ],
         "type": "string",
         "ui_label": "Image direction"
       },
       "iso_speed": {
         "availability": "macOS 10.4+",
         "description": "The ISO speed used to acquire the document contents.",
-        "search_aliases": ["iso speeds"],
-        "system_keys": ["mditem:kMDItemISOSpeed"],
+        "search_aliases": [
+          "iso speeds"
+        ],
+        "system_keys": [
+          "mditem:kMDItemISOSpeed"
+        ],
         "type": "number",
         "ui_label": "ISO speed"
       },
@@ -1115,15 +1483,21 @@
         "availability": "macOS 10.5+",
         "description": "The latitude of the item in degrees north of the equator, expressed using the WGS84 datum. Negative values lie south of the equator.",
         "search_aliases": [],
-        "system_keys": ["mditem:kMDItemLatitude"],
+        "system_keys": [
+          "mditem:kMDItemLatitude"
+        ],
         "type": "string",
         "ui_label": "Latitude"
       },
       "layer_names": {
         "availability": "macOS 10.4+",
         "description": "The names of the layers in the file.",
-        "search_aliases": ["layer name"],
-        "system_keys": ["mditem:kMDItemLayerNames"],
+        "search_aliases": [
+          "layer name"
+        ],
+        "system_keys": [
+          "mditem:kMDItemLayerNames"
+        ],
         "type": "string_list",
         "ui_label": "Layer names"
       },
@@ -1131,31 +1505,45 @@
         "availability": "macOS 10.5+",
         "description": "The longitude of the item in degrees east of the prime meridian, expressed using the WGS84 datum. Negative values lie west of the prime meridian.",
         "search_aliases": [],
-        "system_keys": ["mditem:kMDItemLongitude"],
+        "system_keys": [
+          "mditem:kMDItemLongitude"
+        ],
         "type": "string",
         "ui_label": "Longitude"
       },
       "max_aperture": {
         "availability": "macOS 10.4+",
         "description": "The smallest f-number of the lens. Ordinarily it is given in the range of 00. 00 to 99. 99.",
-        "search_aliases": ["max apertures"],
-        "system_keys": ["mditem:kMDItemMaxAperture"],
+        "search_aliases": [
+          "max apertures"
+        ],
+        "system_keys": [
+          "mditem:kMDItemMaxAperture"
+        ],
         "type": "number",
         "ui_label": "Max aperture"
       },
       "metering_mode": {
         "availability": "macOS 10.4+",
         "description": "The metering mode used to take the image.",
-        "search_aliases": ["metering modes"],
-        "system_keys": ["mditem:kMDItemMeteringMode"],
+        "search_aliases": [
+          "metering modes"
+        ],
+        "system_keys": [
+          "mditem:kMDItemMeteringMode"
+        ],
         "type": "string",
         "ui_label": "Metering mode"
       },
       "named_location": {
         "availability": "macOS 10.6+",
         "description": "The name of the location or point of interest associated with the item. The name may be user provided.",
-        "search_aliases": ["named locations"],
-        "system_keys": ["mditem:kMDItemNamedLocation"],
+        "search_aliases": [
+          "named locations"
+        ],
+        "system_keys": [
+          "mditem:kMDItemNamedLocation"
+        ],
         "type": "string",
         "ui_label": "Named location"
       },
@@ -1163,7 +1551,9 @@
         "availability": "macOS 10.4+",
         "description": "The orientation of the document contents. Possible values are 0 (landscape) and 1 (portrait).",
         "search_aliases": [],
-        "system_keys": ["mditem:kMDItemOrientation"],
+        "system_keys": [
+          "mditem:kMDItemOrientation"
+        ],
         "type": "number",
         "ui_label": "Orientation"
       },
@@ -1177,57 +1567,91 @@
           "px counts",
           "pixel numbers"
         ],
-        "system_keys": ["mditem:kMDItemPixelCount"],
+        "system_keys": [
+          "mditem:kMDItemPixelCount"
+        ],
         "type": "number",
         "ui_label": "Pixel count"
       },
       "pixel_height": {
         "availability": "macOS 10.4+",
         "description": "The height, in pixels, of the contents. For example, the image height or the video frame height.",
-        "search_aliases": ["px height", "pixel heights", "px heights"],
-        "legacy_keys": ["pixelHeight"],
-        "system_keys": ["mditem:kMDItemPixelHeight"],
+        "search_aliases": [
+          "px height",
+          "pixel heights",
+          "px heights"
+        ],
+        "legacy_keys": [
+          "pixelHeight"
+        ],
+        "system_keys": [
+          "mditem:kMDItemPixelHeight"
+        ],
         "type": "number",
         "ui_label": "Pixel height"
       },
       "pixel_width": {
         "availability": "macOS 10.4+",
         "description": "The width, in pixels, of the contents. For example, the image width or the video frame width.",
-        "search_aliases": ["px width", "pixel widths", "px widths"],
-        "legacy_keys": ["pixelWidth"],
-        "system_keys": ["mditem:kMDItemPixelWidth"],
+        "search_aliases": [
+          "px width",
+          "pixel widths",
+          "px widths"
+        ],
+        "legacy_keys": [
+          "pixelWidth"
+        ],
+        "system_keys": [
+          "mditem:kMDItemPixelWidth"
+        ],
         "type": "number",
         "ui_label": "Pixel width"
       },
       "profile_name": {
         "availability": "macOS 10.4+",
         "description": "The name of the color profile used by the document contents.",
-        "search_aliases": ["profile names"],
-        "system_keys": ["mditem:kMDItemProfileName"],
+        "search_aliases": [
+          "profile names"
+        ],
+        "system_keys": [
+          "mditem:kMDItemProfileName"
+        ],
         "type": "string",
         "ui_label": "Profile name"
       },
       "red_eye_on_off": {
         "availability": "macOS 10.4+",
         "description": "Indicates if red-eye reduction was used to take the picture.",
-        "search_aliases": ["red eye on offs"],
-        "system_keys": ["mditem:kMDItemRedEyeOnOff"],
+        "search_aliases": [
+          "red eye on offs"
+        ],
+        "system_keys": [
+          "mditem:kMDItemRedEyeOnOff"
+        ],
         "type": "boolean",
         "ui_label": "Red eye on off"
       },
       "resolution_height_dpi": {
         "availability": "macOS 10.4+",
         "description": "Resolution height, in DPI, of this image.",
-        "search_aliases": ["res height dpi"],
-        "system_keys": ["mditem:kMDItemResolutionHeightDPI"],
+        "search_aliases": [
+          "res height dpi"
+        ],
+        "system_keys": [
+          "mditem:kMDItemResolutionHeightDPI"
+        ],
         "type": "number",
         "ui_label": "Resolution height DPI"
       },
       "resolution_width_dpi": {
         "availability": "macOS 10.4+",
         "description": "Resolution width, in DPI, of this image.",
-        "search_aliases": ["res width dpi"],
-        "system_keys": ["mditem:kMDItemResolutionWidthDPI"],
+        "search_aliases": [
+          "res width dpi"
+        ],
+        "system_keys": [
+          "mditem:kMDItemResolutionWidthDPI"
+        ],
         "type": "number",
         "ui_label": "Resolution width DPI"
       },
@@ -1235,7 +1659,9 @@
         "availability": "macOS 10.5+",
         "description": "The speed of the item, in kilometers per hour.",
         "search_aliases": [],
-        "system_keys": ["mditem:kMDItemSpeed"],
+        "system_keys": [
+          "mditem:kMDItemSpeed"
+        ],
         "type": "string",
         "ui_label": "Speed"
       },
@@ -1243,15 +1669,21 @@
         "availability": "macOS 10.5+",
         "description": "The timestamp on the item. This generally is used to indicate the time at which the event captured by the item took place.",
         "search_aliases": [],
-        "system_keys": ["mditem:kMDItemTimestamp"],
+        "system_keys": [
+          "mditem:kMDItemTimestamp"
+        ],
         "type": "string",
         "ui_label": "Timestamp"
       },
       "white_balance": {
         "availability": "macOS 10.4+",
         "description": "The white balance setting used to acquire the document contents. Possible values are 0 (auto white balance) and 1 (manual).",
-        "search_aliases": ["white balances"],
-        "system_keys": ["mditem:kMDItemWhiteBalance"],
+        "search_aliases": [
+          "white balances"
+        ],
+        "system_keys": [
+          "mditem:kMDItemWhiteBalance"
+        ],
         "type": "number",
         "ui_label": "White balance"
       }
@@ -1260,8 +1692,12 @@
       "added_notification": {
         "availability": "macOS 10.7+",
         "description": "Added notification.",
-        "search_aliases": ["added notifications"],
-        "system_keys": ["mdimporter:kMDLabelAddedNotification"],
+        "search_aliases": [
+          "added notifications"
+        ],
+        "system_keys": [
+          "mdimporter:kMDLabelAddedNotification"
+        ],
         "type": "string",
         "ui_label": "Added notification"
       },
@@ -1273,7 +1709,9 @@
           "application category",
           "app category"
         ],
-        "system_keys": ["mdimporter:kMDItemApplicationCategories"],
+        "system_keys": [
+          "mdimporter:kMDItemApplicationCategories"
+        ],
         "type": "string",
         "ui_label": "Application categories"
       },
@@ -1285,31 +1723,48 @@
           "application is scriptables",
           "app is scriptables"
         ],
-        "system_keys": ["nsurl:NSURLApplicationIsScriptableKey"],
+        "system_keys": [
+          "nsurl:NSURLApplicationIsScriptableKey"
+        ],
         "type": "boolean",
-        "ui_label": "Application is scriptable"
+        "ui_label": "Application is scriptable",
+        "ui_hidden": true
       },
       "bundle_url": {
         "availability": "macOS 10.7+",
         "description": "Bundle URL.",
-        "search_aliases": ["package url", "bundle link", "bundle links"],
-        "system_keys": ["mdimporter:kMDLabelBundleURL"],
+        "search_aliases": [
+          "package url",
+          "bundle link",
+          "bundle links"
+        ],
+        "system_keys": [
+          "mdimporter:kMDLabelBundleURL"
+        ],
         "type": "string",
         "ui_label": "Bundle URL"
       },
       "camera_owner": {
         "availability": "macOS 10.7+",
         "description": "Camera owner.",
-        "search_aliases": ["camera owners"],
-        "system_keys": ["mdimporter:kMDItemCameraOwner"],
+        "search_aliases": [
+          "camera owners"
+        ],
+        "system_keys": [
+          "mdimporter:kMDItemCameraOwner"
+        ],
         "type": "string",
         "ui_label": "Camera owner"
       },
       "canonical_path": {
         "availability": "macOS 10.12+",
         "description": "Canonical path.",
-        "search_aliases": ["canonical paths"],
-        "system_keys": ["nsurl:NSURLCanonicalPathKey"],
+        "search_aliases": [
+          "canonical paths"
+        ],
+        "system_keys": [
+          "nsurl:NSURLCanonicalPathKey"
+        ],
         "type": "string",
         "ui_hidden": true,
         "ui_label": "Canonical path"
@@ -1317,32 +1772,50 @@
       "changed_notification": {
         "availability": "macOS 10.7+",
         "description": "Changed notification.",
-        "search_aliases": ["changed notifications"],
-        "system_keys": ["mdimporter:kMDLabelChangedNotification"],
+        "search_aliases": [
+          "changed notifications"
+        ],
+        "system_keys": [
+          "mdimporter:kMDLabelChangedNotification"
+        ],
         "type": "string",
         "ui_label": "Changed notification"
       },
       "content_type_tree": {
         "availability": "macOS 10.5+",
         "description": "Content type tree.",
-        "search_aliases": ["content type trees"],
-        "system_keys": ["mdimporter:kMDItemContentTypeTree"],
+        "search_aliases": [
+          "content type trees"
+        ],
+        "system_keys": [
+          "mdimporter:kMDItemContentTypeTree"
+        ],
         "type": "string",
         "ui_label": "Content type tree"
       },
       "custom_icon": {
         "availability": "macOS 10.6+",
         "description": "The icon stored with the resource, returned as an NSImage object, or nil if the resource has no custom icon.",
-        "search_aliases": ["custom icons"],
-        "system_keys": ["nsurl:NSURLCustomIconKey"],
+        "search_aliases": [
+          "custom icons"
+        ],
+        "system_keys": [
+          "nsurl:NSURLCustomIconKey"
+        ],
         "type": "string",
-        "ui_label": "Custom icon"
+        "ui_label": "Custom icon",
+        "ui_hidden": true
       },
       "document_identifier": {
         "availability": "macOS 10.10+",
         "description": "The document identifier returned as an NSNumber (read-only).",
-        "search_aliases": ["document id", "document identifiers"],
-        "system_keys": ["nsurl:NSURLDocumentIdentifierKey"],
+        "search_aliases": [
+          "document id",
+          "document identifiers"
+        ],
+        "system_keys": [
+          "nsurl:NSURLDocumentIdentifierKey"
+        ],
         "type": "string",
         "ui_hidden": true,
         "ui_label": "Document identifier"
@@ -1351,39 +1824,59 @@
         "availability": "macOS 10.5+",
         "description": "Editors.",
         "search_aliases": [],
-        "system_keys": ["mdimporter:kMDItemEditors"],
+        "system_keys": [
+          "mdimporter:kMDItemEditors"
+        ],
         "type": "string",
         "ui_label": "Editors"
       },
       "effective_icon": {
         "availability": "macOS 10.6+",
         "description": "The resource's normal icon, returned as an NSImage object (read-only).",
-        "search_aliases": ["effective icons"],
-        "system_keys": ["nsurl:NSURLEffectiveIconKey"],
+        "search_aliases": [
+          "effective icons"
+        ],
+        "system_keys": [
+          "nsurl:NSURLEffectiveIconKey"
+        ],
         "type": "string",
-        "ui_label": "Effective icon"
+        "ui_label": "Effective icon",
+        "ui_hidden": true
       },
       "executable_architectures": {
         "availability": "macOS 10.7+",
         "description": "Executable architectures.",
-        "search_aliases": ["executable architecture"],
-        "system_keys": ["mdimporter:kMDItemExecutableArchitectures"],
+        "search_aliases": [
+          "executable architecture"
+        ],
+        "system_keys": [
+          "mdimporter:kMDItemExecutableArchitectures"
+        ],
         "type": "string",
         "ui_label": "Executable architectures"
       },
       "executable_platform": {
         "availability": "macOS 10.7+",
         "description": "Executable platform.",
-        "search_aliases": ["executable platforms"],
-        "system_keys": ["mdimporter:kMDItemExecutablePlatform"],
+        "search_aliases": [
+          "executable platforms"
+        ],
+        "system_keys": [
+          "mdimporter:kMDItemExecutablePlatform"
+        ],
         "type": "string",
         "ui_label": "Executable platform"
       },
       "file_content_identifier": {
         "availability": "macOS 11.0+",
         "description": "The key for a value that APFS assigns to identify a file's content data stream.",
-        "search_aliases": ["file content id", "file content identifiers"],
-        "system_keys": ["nsurl:NSURLFileContentIdentifierKey"],
+        "search_aliases": [
+          "file content id",
+          "file content identifiers"
+        ],
+        "system_keys": [
+          "nsurl:NSURLFileContentIdentifierKey"
+        ],
         "type": "string",
         "ui_hidden": true,
         "ui_label": "File content identifier"
@@ -1391,8 +1884,12 @@
       "file_protection": {
         "availability": "macOS 10.11+",
         "description": "The key for the protection level of the file.",
-        "search_aliases": ["file protections"],
-        "system_keys": ["nsurl:NSURLFileProtectionKey"],
+        "search_aliases": [
+          "file protections"
+        ],
+        "system_keys": [
+          "nsurl:NSURLFileProtectionKey"
+        ],
         "type": "string",
         "ui_hidden": true,
         "ui_label": "File protection"
@@ -1400,8 +1897,13 @@
       "file_resource_identifier": {
         "availability": "macOS 10.7+",
         "description": "The key for the resource's unique identifier.",
-        "search_aliases": ["file resource id", "file resource identifiers"],
-        "system_keys": ["nsurl:NSURLFileResourceIdentifierKey"],
+        "search_aliases": [
+          "file resource id",
+          "file resource identifiers"
+        ],
+        "system_keys": [
+          "nsurl:NSURLFileResourceIdentifierKey"
+        ],
         "type": "string",
         "ui_hidden": true,
         "ui_label": "File resource identifier"
@@ -1409,16 +1911,25 @@
       "file_resource_type": {
         "availability": "macOS 10.7+",
         "description": "The key for the resource's object type.",
-        "search_aliases": ["file resource types"],
-        "system_keys": ["nsurl:NSURLFileResourceTypeKey"],
+        "search_aliases": [
+          "file resource types"
+        ],
+        "system_keys": [
+          "nsurl:NSURLFileResourceTypeKey"
+        ],
         "type": "string",
-        "ui_label": "File resource type"
+        "ui_label": "File resource type",
+        "ui_hidden": true
       },
       "file_security": {
         "availability": "macOS 10.7+",
         "description": "The key for the resource's security information.",
-        "search_aliases": ["file securities"],
-        "system_keys": ["nsurl:NSURLFileSecurityKey"],
+        "search_aliases": [
+          "file securities"
+        ],
+        "system_keys": [
+          "nsurl:NSURLFileSecurityKey"
+        ],
         "type": "string",
         "ui_hidden": true,
         "ui_label": "File security"
@@ -1426,7 +1937,11 @@
       "size": {
         "availability": "macOS 10.6+",
         "description": "The key for the file's size, in bytes.",
-        "search_aliases": ["sizes", "file bytes", "file sizes"],
+        "search_aliases": [
+          "sizes",
+          "file bytes",
+          "file sizes"
+        ],
         "system_keys": [
           "mditem:kMDItemFSSize",
           "nsurl:NSURLFileSizeKey",
@@ -1440,16 +1955,25 @@
       "focal_length35mm": {
         "availability": "macOS 10.7+",
         "description": "Focal length35mm.",
-        "search_aliases": ["focal length35mms"],
-        "system_keys": ["mdimporter:kMDItemFocalLength35mm"],
+        "search_aliases": [
+          "focal length35mms"
+        ],
+        "system_keys": [
+          "mdimporter:kMDItemFocalLength35mm"
+        ],
         "type": "string",
         "ui_label": "Focal length35mm"
       },
       "generation_identifier": {
         "availability": "macOS 10.10+",
         "description": "An opaque generation identifier, returned as an id <NSCopying, NSCoding, NSObject> (read-only)",
-        "search_aliases": ["generation id", "generation identifiers"],
-        "system_keys": ["nsurl:NSURLGenerationIdentifierKey"],
+        "search_aliases": [
+          "generation id",
+          "generation identifiers"
+        ],
+        "system_keys": [
+          "nsurl:NSURLGenerationIdentifierKey"
+        ],
         "type": "string",
         "ui_hidden": true,
         "ui_label": "Generation identifier"
@@ -1457,8 +1981,12 @@
       "gps_area_information": {
         "availability": "macOS 10.7+",
         "description": "GPS area information.",
-        "search_aliases": ["gps area informations"],
-        "system_keys": ["mdimporter:kMDItemGPSAreaInformation"],
+        "search_aliases": [
+          "gps area informations"
+        ],
+        "system_keys": [
+          "mdimporter:kMDItemGPSAreaInformation"
+        ],
         "type": "string",
         "ui_label": "GPS area information"
       },
@@ -1470,79 +1998,117 @@
           "gps date stamps",
           "gps time stamps"
         ],
-        "system_keys": ["mdimporter:kMDItemGPSDateStamp"],
+        "system_keys": [
+          "mdimporter:kMDItemGPSDateStamp"
+        ],
         "type": "string",
         "ui_label": "GPS date stamp"
       },
       "gps_dest_bearing": {
         "availability": "macOS 10.7+",
         "description": "GPS dest bearing.",
-        "search_aliases": ["gps dest bearings"],
-        "system_keys": ["mdimporter:kMDItemGPSDestBearing"],
+        "search_aliases": [
+          "gps dest bearings"
+        ],
+        "system_keys": [
+          "mdimporter:kMDItemGPSDestBearing"
+        ],
         "type": "string",
         "ui_label": "GPS dest bearing"
       },
       "gps_dest_distance": {
         "availability": "macOS 10.7+",
         "description": "GPS dest distance.",
-        "search_aliases": ["gps dest distances"],
-        "system_keys": ["mdimporter:kMDItemGPSDestDistance"],
+        "search_aliases": [
+          "gps dest distances"
+        ],
+        "system_keys": [
+          "mdimporter:kMDItemGPSDestDistance"
+        ],
         "type": "string",
         "ui_label": "GPS dest distance"
       },
       "gps_dest_latitude": {
         "availability": "macOS 10.7+",
         "description": "GPS dest latitude.",
-        "search_aliases": ["gps dest latitudes"],
-        "system_keys": ["mdimporter:kMDItemGPSDestLatitude"],
+        "search_aliases": [
+          "gps dest latitudes"
+        ],
+        "system_keys": [
+          "mdimporter:kMDItemGPSDestLatitude"
+        ],
         "type": "string",
         "ui_label": "GPS dest latitude"
       },
       "gps_dest_longitude": {
         "availability": "macOS 10.7+",
         "description": "GPS dest longitude.",
-        "search_aliases": ["gps dest longitudes"],
-        "system_keys": ["mdimporter:kMDItemGPSDestLongitude"],
+        "search_aliases": [
+          "gps dest longitudes"
+        ],
+        "system_keys": [
+          "mdimporter:kMDItemGPSDestLongitude"
+        ],
         "type": "string",
         "ui_label": "GPS dest longitude"
       },
       "gps_differental": {
         "availability": "macOS 10.7+",
         "description": "GPS differental.",
-        "search_aliases": ["gps differentals"],
-        "system_keys": ["mdimporter:kMDItemGPSDifferental"],
+        "search_aliases": [
+          "gps differentals"
+        ],
+        "system_keys": [
+          "mdimporter:kMDItemGPSDifferental"
+        ],
         "type": "string",
         "ui_label": "GPS differental"
       },
       "gps_map_datum": {
         "availability": "macOS 10.7+",
         "description": "GPS map datum.",
-        "search_aliases": ["gps map datums"],
-        "system_keys": ["mdimporter:kMDItemGPSMapDatum"],
+        "search_aliases": [
+          "gps map datums"
+        ],
+        "system_keys": [
+          "mdimporter:kMDItemGPSMapDatum"
+        ],
         "type": "string",
         "ui_label": "GPS map datum"
       },
       "gps_measure_mode": {
         "availability": "macOS 10.7+",
         "description": "GPS measure mode.",
-        "search_aliases": ["gps measure modes"],
-        "system_keys": ["mdimporter:kMDItemGPSMeasureMode"],
+        "search_aliases": [
+          "gps measure modes"
+        ],
+        "system_keys": [
+          "mdimporter:kMDItemGPSMeasureMode"
+        ],
         "type": "string",
         "ui_label": "GPS measure mode"
       },
       "gps_processing_method": {
         "availability": "macOS 10.7+",
         "description": "GPS processing method.",
-        "search_aliases": ["gps processing methods"],
-        "system_keys": ["mdimporter:kMDItemGPSProcessingMethod"],
+        "search_aliases": [
+          "gps processing methods"
+        ],
+        "system_keys": [
+          "mdimporter:kMDItemGPSProcessingMethod"
+        ],
         "type": "string",
         "ui_label": "GPS processing method"
       },
       "gps_status": {
         "availability": "macOS 10.7+",
         "description": "GPS status.",
-        "search_aliases": ["gps statu"],
-        "system_keys": ["mdimporter:kMDItemGPSStatus"],
+        "search_aliases": [
+          "gps statu"
+        ],
+        "system_keys": [
+          "mdimporter:kMDItemGPSStatus"
+        ],
         "type": "string",
         "ui_label": "GPS status"
       },
@@ -1550,49 +2116,75 @@
         "availability": "macOS 10.7+",
         "description": "Gpsdop.",
         "search_aliases": [],
-        "system_keys": ["mdimporter:kMDItemGPSDOP"],
+        "system_keys": [
+          "mdimporter:kMDItemGPSDOP"
+        ],
         "type": "string",
         "ui_label": "Gpsdop"
       },
       "html_content": {
         "availability": "macOS 10.11+",
         "description": "Html content.",
-        "search_aliases": ["html contents"],
-        "system_keys": ["mdimporter:kMDItemHTMLContent"],
+        "search_aliases": [
+          "html contents"
+        ],
+        "system_keys": [
+          "mdimporter:kMDItemHTMLContent"
+        ],
         "type": "string",
         "ui_label": "Html content"
       },
       "icon_data": {
         "availability": "macOS 10.7+",
         "description": "Icon data.",
-        "search_aliases": ["icon datas"],
-        "system_keys": ["mdimporter:kMDLabelIconData"],
+        "search_aliases": [
+          "icon datas"
+        ],
+        "system_keys": [
+          "mdimporter:kMDLabelIconData"
+        ],
         "type": "string",
         "ui_label": "Icon data"
       },
       "icon_uuid": {
         "availability": "macOS 10.7+",
         "description": "Icon uuid.",
-        "search_aliases": ["icon unique id"],
-        "system_keys": ["mdimporter:kMDLabelIconUUID"],
+        "search_aliases": [
+          "icon unique id"
+        ],
+        "system_keys": [
+          "mdimporter:kMDLabelIconUUID"
+        ],
         "type": "string",
         "ui_label": "Icon uuid"
       },
       "is_alias_file": {
         "availability": "macOS 10.6+",
         "description": "The key for determining whether the file is an alias.",
-        "search_aliases": ["is alias files"],
-        "system_keys": ["nsurl:NSURLIsAliasFileKey"],
+        "search_aliases": [
+          "is alias files"
+        ],
+        "system_keys": [
+          "nsurl:NSURLIsAliasFileKey"
+        ],
         "type": "boolean",
-        "ui_label": "Is alias file"
+        "ui_label": "Is alias file",
+        "ui_hidden": true
       },
       "is_application": {
         "availability": "macOS 10.11+",
         "description": "Is application.",
-        "search_aliases": ["is app", "is applications", "is apps"],
-        "system_keys": ["nsurl:NSURLIsApplicationKey"],
+        "search_aliases": [
+          "is app",
+          "is applications",
+          "is apps"
+        ],
+        "system_keys": [
+          "nsurl:NSURLIsApplicationKey"
+        ],
         "type": "boolean",
-        "ui_label": "Is application"
+        "ui_label": "Is application",
+        "ui_hidden": true
       },
       "is_application_managed": {
         "availability": "macOS 10.7+",
@@ -1602,159 +2194,253 @@
           "is application manageds",
           "is app manageds"
         ],
-        "system_keys": ["mdimporter:kMDItemIsApplicationManaged"],
+        "system_keys": [
+          "mdimporter:kMDItemIsApplicationManaged"
+        ],
         "type": "boolean",
         "ui_label": "Is application managed"
       },
       "is_directory": {
         "availability": "macOS 10.6+",
         "description": "Key for determining whether the resource is a directory, returned as a Boolean NSNumber object (read-only).",
-        "search_aliases": ["is folder", "is directories", "is folders"],
-        "system_keys": ["nsurl:NSURLIsDirectoryKey"],
+        "search_aliases": [
+          "is folder",
+          "is directories",
+          "is folders"
+        ],
+        "system_keys": [
+          "nsurl:NSURLIsDirectoryKey"
+        ],
         "type": "boolean",
-        "ui_label": "Is directory"
+        "ui_label": "Is directory",
+        "ui_hidden": true
       },
       "is_excluded_from_backup": {
         "availability": "macOS 10.8+",
         "description": "A key for indicating whether the system excludes the resource from all backups of app data.",
-        "search_aliases": ["is excluded from backups"],
-        "system_keys": ["nsurl:NSURLIsExcludedFromBackupKey"],
+        "search_aliases": [
+          "is excluded from backups"
+        ],
+        "system_keys": [
+          "nsurl:NSURLIsExcludedFromBackupKey"
+        ],
         "type": "boolean",
-        "ui_label": "Is excluded from backup"
+        "ui_label": "Is excluded from backup",
+        "ui_hidden": true
       },
       "is_executable": {
         "availability": "macOS 10.7+",
         "description": "Key for determining whether the current process (as determined by the EUID) can execute the resource (if it is a file) or search the resource (if it is a directory), returned as a Boolean NSNumber object (read-only).",
-        "search_aliases": ["is executables"],
-        "system_keys": ["nsurl:NSURLIsExecutableKey"],
+        "search_aliases": [
+          "is executables"
+        ],
+        "system_keys": [
+          "nsurl:NSURLIsExecutableKey"
+        ],
         "type": "boolean",
-        "ui_label": "Is executable"
+        "ui_label": "Is executable",
+        "ui_hidden": true
       },
       "is_likely_junk": {
         "availability": "macOS 10.7+",
         "description": "Is likely junk.",
-        "search_aliases": ["is likely junks"],
-        "system_keys": ["mdimporter:kMDItemIsLikelyJunk"],
+        "search_aliases": [
+          "is likely junks"
+        ],
+        "system_keys": [
+          "mdimporter:kMDItemIsLikelyJunk"
+        ],
         "type": "boolean",
         "ui_label": "Is likely junk"
       },
       "is_mount_trigger": {
         "availability": "macOS 10.7+",
         "description": "Key for determining whether the URL is a file system trigger directory, returned as a Boolean NSNumber object (read-only). Traversing or opening a file system trigger directory causes an attempt to mount a file system on the directory.",
-        "search_aliases": ["is mount triggers"],
-        "system_keys": ["nsurl:NSURLIsMountTriggerKey"],
+        "search_aliases": [
+          "is mount triggers"
+        ],
+        "system_keys": [
+          "nsurl:NSURLIsMountTriggerKey"
+        ],
         "type": "boolean",
-        "ui_label": "Is mount trigger"
+        "ui_label": "Is mount trigger",
+        "ui_hidden": true
       },
       "is_mutually_exclusive_set_member": {
         "availability": "macOS 10.7+",
         "description": "Is mutually exclusive set member.",
-        "search_aliases": ["is mutually exclusive set members"],
-        "system_keys": ["mdimporter:kMDLabelIsMutuallyExclusiveSetMember"],
+        "search_aliases": [
+          "is mutually exclusive set members"
+        ],
+        "system_keys": [
+          "mdimporter:kMDLabelIsMutuallyExclusiveSetMember"
+        ],
         "type": "boolean",
         "ui_label": "Is mutually exclusive set member"
       },
       "is_package": {
         "availability": "macOS 10.6+",
         "description": "The key for determining whether the resource is a file package.",
-        "search_aliases": ["is packages"],
-        "system_keys": ["nsurl:NSURLIsPackageKey"],
+        "search_aliases": [
+          "is packages"
+        ],
+        "system_keys": [
+          "nsurl:NSURLIsPackageKey"
+        ],
         "type": "boolean",
-        "ui_label": "Is package"
+        "ui_label": "Is package",
+        "ui_hidden": true
       },
       "is_purgeable": {
         "availability": "macOS 11.0+",
         "description": "The key for a Boolean value that indicates whether the file system can delete a file when the system needs to free space.",
-        "search_aliases": ["is purgeables"],
-        "system_keys": ["nsurl:NSURLIsPurgeableKey"],
+        "search_aliases": [
+          "is purgeables"
+        ],
+        "system_keys": [
+          "nsurl:NSURLIsPurgeableKey"
+        ],
         "type": "boolean",
-        "ui_label": "Is purgeable"
+        "ui_label": "Is purgeable",
+        "ui_hidden": true
       },
       "is_readable": {
         "availability": "macOS 10.7+",
         "description": "Key for determining whether the current process (as determined by the EUID) can read the resource, returned as a Boolean NSNumber object (read-only).",
-        "search_aliases": ["is readables"],
-        "system_keys": ["nsurl:NSURLIsReadableKey"],
+        "search_aliases": [
+          "is readables"
+        ],
+        "system_keys": [
+          "nsurl:NSURLIsReadableKey"
+        ],
         "type": "boolean",
-        "ui_label": "Is readable"
+        "ui_label": "Is readable",
+        "ui_hidden": true
       },
       "is_regular_file": {
         "availability": "macOS 10.6+",
         "description": "The key for determining whether the resource is a regular file rather than a directory or a symbolic link.",
-        "search_aliases": ["is regular files"],
-        "system_keys": ["nsurl:NSURLIsRegularFileKey"],
+        "search_aliases": [
+          "is regular files"
+        ],
+        "system_keys": [
+          "nsurl:NSURLIsRegularFileKey"
+        ],
         "type": "boolean",
-        "ui_label": "Is regular file"
+        "ui_label": "Is regular file",
+        "ui_hidden": true
       },
       "is_sparse": {
         "availability": "macOS 11.0+",
         "description": "The key for a Boolean value that indicates whether the file has sparse regions.",
-        "search_aliases": ["is sparses"],
-        "system_keys": ["nsurl:NSURLIsSparseKey"],
+        "search_aliases": [
+          "is sparses"
+        ],
+        "system_keys": [
+          "nsurl:NSURLIsSparseKey"
+        ],
         "type": "boolean",
-        "ui_label": "Is sparse"
+        "ui_label": "Is sparse",
+        "ui_hidden": true
       },
       "is_symbolic_link": {
         "availability": "macOS 10.6+",
         "description": "Key for determining whether the resource is a symbolic link, returned as a Boolean NSNumber object (read-only).",
-        "search_aliases": ["is symbolic links"],
-        "system_keys": ["nsurl:NSURLIsSymbolicLinkKey"],
+        "search_aliases": [
+          "is symbolic links"
+        ],
+        "system_keys": [
+          "nsurl:NSURLIsSymbolicLinkKey"
+        ],
         "type": "boolean",
-        "ui_label": "Is symbolic link"
+        "ui_label": "Is symbolic link",
+        "ui_hidden": true
       },
       "is_system_immutable": {
         "availability": "macOS 10.6+",
         "description": "Key for determining whether the resource's system immutable bit is set, returned as a Boolean NSNumber object (read-write).",
-        "search_aliases": ["is system immutables"],
-        "system_keys": ["nsurl:NSURLIsSystemImmutableKey"],
+        "search_aliases": [
+          "is system immutables"
+        ],
+        "system_keys": [
+          "nsurl:NSURLIsSystemImmutableKey"
+        ],
         "type": "boolean",
-        "ui_label": "Is system immutable"
+        "ui_label": "Is system immutable",
+        "ui_hidden": true
       },
       "is_ubiquitous_item": {
         "availability": "macOS 10.7+",
         "description": "The key for a Boolean value that indicates whether the item is in iCloud storage.",
-        "search_aliases": ["is ubiquitous items"],
-        "system_keys": ["nsurl:NSURLIsUbiquitousItemKey"],
+        "search_aliases": [
+          "is ubiquitous items"
+        ],
+        "system_keys": [
+          "nsurl:NSURLIsUbiquitousItemKey"
+        ],
         "type": "boolean",
-        "ui_label": "Is ubiquitous item"
+        "ui_label": "Is ubiquitous item",
+        "ui_hidden": true
       },
       "is_user_immutable": {
         "availability": "macOS 10.6+",
         "description": "Key for determining whether the resource's user immutable bit is set, returned as a Boolean NSNumber object (read-write).",
-        "search_aliases": ["is user immutables"],
-        "system_keys": ["nsurl:NSURLIsUserImmutableKey"],
+        "search_aliases": [
+          "is user immutables"
+        ],
+        "system_keys": [
+          "nsurl:NSURLIsUserImmutableKey"
+        ],
         "type": "boolean",
-        "ui_label": "Is user immutable"
+        "ui_label": "Is user immutable",
+        "ui_hidden": true
       },
       "is_volume": {
         "availability": "macOS 10.6+",
         "description": "Key for determining whether the resource is the root directory of a volume, returned as a Boolean NSNumber object (read-only).",
-        "search_aliases": ["is volumes"],
-        "system_keys": ["nsurl:NSURLIsVolumeKey"],
+        "search_aliases": [
+          "is volumes"
+        ],
+        "system_keys": [
+          "nsurl:NSURLIsVolumeKey"
+        ],
         "type": "boolean",
-        "ui_label": "Is volume"
+        "ui_label": "Is volume",
+        "ui_hidden": true
       },
       "is_writable": {
         "availability": "macOS 10.7+",
         "description": "Key for determining whether the current process (as determined by the EUID) can write to the resource, returned as a Boolean NSNumber object (read-only).",
         "search_aliases": [],
-        "system_keys": ["nsurl:NSURLIsWritableKey"],
+        "system_keys": [
+          "nsurl:NSURLIsWritableKey"
+        ],
         "type": "boolean",
-        "ui_label": "Is writable"
+        "ui_label": "Is writable",
+        "ui_hidden": true
       },
       "keys_of_unset_values": {
         "availability": "macOS 10.7+",
         "description": "Key for the resource properties that have not been set after the setResourceValues:error: method returns an error, returned as an array of NSString objects.",
-        "search_aliases": ["keys of unset value"],
-        "system_keys": ["nsurl:NSURLKeysOfUnsetValuesKey"],
+        "search_aliases": [
+          "keys of unset value"
+        ],
+        "system_keys": [
+          "nsurl:NSURLKeysOfUnsetValuesKey"
+        ],
         "type": "string",
-        "ui_label": "Keys of unset values"
+        "ui_label": "Keys of unset values",
+        "ui_hidden": true
       },
       "kind_is_mutually_exclusive_set_key": {
         "availability": "macOS 10.7+",
         "description": "Kind is mutually exclusive set key.",
-        "search_aliases": ["kind is mutually exclusive set keys"],
-        "system_keys": ["mdimporter:kMDLabelKindIsMutuallyExclusiveSetKey"],
+        "search_aliases": [
+          "kind is mutually exclusive set keys"
+        ],
+        "system_keys": [
+          "mdimporter:kMDLabelKindIsMutuallyExclusiveSetKey"
+        ],
         "type": "boolean",
         "ui_label": "Kind is mutually exclusive set key"
       },
@@ -1766,39 +2452,63 @@
           "kind visibility keys",
           "kind visible keys"
         ],
-        "system_keys": ["mdimporter:kMDLabelKindVisibilityKey"],
+        "system_keys": [
+          "mdimporter:kMDLabelKindVisibilityKey"
+        ],
         "type": "string",
         "ui_label": "Kind visibility key"
       },
       "label_color": {
         "availability": "macOS 10.6+",
         "description": "The resource's label color, returned as an NSColor object, or nil if the resource has no label color (read-only).",
-        "search_aliases": ["tag color", "label colors", "tag colors"],
-        "system_keys": ["nsurl:NSURLLabelColorKey"],
+        "search_aliases": [
+          "tag color",
+          "label colors",
+          "tag colors"
+        ],
+        "system_keys": [
+          "nsurl:NSURLLabelColorKey"
+        ],
         "type": "string",
-        "ui_label": "Label color"
+        "ui_label": "Label color",
+        "ui_hidden": true
       },
       "lens_model": {
         "availability": "macOS 10.7+",
         "description": "Lens model.",
-        "search_aliases": ["lens models"],
-        "system_keys": ["mdimporter:kMDItemLensModel"],
+        "search_aliases": [
+          "lens models"
+        ],
+        "system_keys": [
+          "mdimporter:kMDItemLensModel"
+        ],
         "type": "string",
         "ui_label": "Lens model"
       },
       "link_count": {
         "availability": "macOS 10.6+",
         "description": "The number of hard links to the resource, returned as an NSNumber object (read-only).",
-        "search_aliases": ["link number", "link counts", "link numbers"],
-        "system_keys": ["nsurl:NSURLLinkCountKey"],
+        "search_aliases": [
+          "link number",
+          "link counts",
+          "link numbers"
+        ],
+        "system_keys": [
+          "nsurl:NSURLLinkCountKey"
+        ],
         "type": "number",
-        "ui_label": "Link count"
+        "ui_label": "Link count",
+        "ui_hidden": true
       },
       "local_domain": {
         "availability": "macOS 10.7+",
         "description": "Local domain.",
-        "search_aliases": ["local domains"],
-        "system_keys": ["mdimporter:kMDLabelLocalDomain"],
+        "search_aliases": [
+          "local domains"
+        ],
+        "system_keys": [
+          "mdimporter:kMDLabelLocalDomain"
+        ],
         "type": "string",
         "ui_label": "Local domain"
       },
@@ -1810,25 +2520,38 @@
           "localized labels",
           "localized tags"
         ],
-        "system_keys": ["nsurl:NSURLLocalizedLabelKey"],
+        "system_keys": [
+          "nsurl:NSURLLocalizedLabelKey"
+        ],
         "type": "string",
-        "ui_label": "Localized label"
+        "ui_label": "Localized label",
+        "ui_hidden": true
       },
       "may_have_extended_attributes": {
         "availability": "macOS 11.0+",
         "description": "The key for a Boolean value that indicates whether the file has extended attributes.",
-        "search_aliases": ["may have extended attribute"],
-        "system_keys": ["nsurl:NSURLMayHaveExtendedAttributesKey"],
+        "search_aliases": [
+          "may have extended attribute"
+        ],
+        "system_keys": [
+          "nsurl:NSURLMayHaveExtendedAttributesKey"
+        ],
         "type": "boolean",
-        "ui_label": "May have extended attributes"
+        "ui_label": "May have extended attributes",
+        "ui_hidden": true
       },
       "may_share_file_content": {
         "availability": "macOS 11.0+",
         "description": "The key for a Boolean value that indicates whether cloned files and their original files may share data blocks.",
-        "search_aliases": ["may share file contents"],
-        "system_keys": ["nsurl:NSURLMayShareFileContentKey"],
+        "search_aliases": [
+          "may share file contents"
+        ],
+        "system_keys": [
+          "nsurl:NSURLMayShareFileContentKey"
+        ],
         "type": "boolean",
-        "ui_label": "May share file content"
+        "ui_label": "May share file content",
+        "ui_hidden": true
       },
       "parent_directory_url": {
         "availability": "macOS 10.6+",
@@ -1838,7 +2561,9 @@
           "parent directory link",
           "parent directory links"
         ],
-        "system_keys": ["nsurl:NSURLParentDirectoryURLKey"],
+        "system_keys": [
+          "nsurl:NSURLParentDirectoryURLKey"
+        ],
         "type": "string",
         "ui_hidden": true,
         "ui_label": "Parent directory URL"
@@ -1850,9 +2575,12 @@
           "preferred io block bytes",
           "preferred io block sizes"
         ],
-        "system_keys": ["nsurl:NSURLPreferredIOBlockSizeKey"],
+        "system_keys": [
+          "nsurl:NSURLPreferredIOBlockSizeKey"
+        ],
         "type": "number",
-        "ui_label": "Preferred io block size"
+        "ui_label": "Preferred io block size",
+        "ui_hidden": true
       },
       "private_visibility": {
         "availability": "macOS 10.7+",
@@ -1862,7 +2590,9 @@
           "private visibilities",
           "private visibles"
         ],
-        "system_keys": ["mdimporter:kMDPrivateVisibility"],
+        "system_keys": [
+          "mdimporter:kMDPrivateVisibility"
+        ],
         "type": "string",
         "ui_label": "Private visibility"
       },
@@ -1874,15 +2604,21 @@
           "public visibilities",
           "public visibles"
         ],
-        "system_keys": ["mdimporter:kMDPublicVisibility"],
+        "system_keys": [
+          "mdimporter:kMDPublicVisibility"
+        ],
         "type": "string",
         "ui_label": "Public visibility"
       },
       "quarantine_properties": {
         "availability": "macOS 10.10+",
         "description": "Quarantine properties.",
-        "search_aliases": ["quarantine property"],
-        "system_keys": ["nsurl:NSURLQuarantinePropertiesKey"],
+        "search_aliases": [
+          "quarantine property"
+        ],
+        "system_keys": [
+          "nsurl:NSURLQuarantinePropertiesKey"
+        ],
         "type": "string",
         "ui_hidden": true,
         "ui_label": "Quarantine properties"
@@ -1890,48 +2626,76 @@
       "removed_notification": {
         "availability": "macOS 10.7+",
         "description": "Removed notification.",
-        "search_aliases": ["removed notifications"],
-        "system_keys": ["mdimporter:kMDLabelRemovedNotification"],
+        "search_aliases": [
+          "removed notifications"
+        ],
+        "system_keys": [
+          "mdimporter:kMDLabelRemovedNotification"
+        ],
         "type": "string",
         "ui_label": "Removed notification"
       },
       "sets_finder_color": {
         "availability": "macOS 10.7+",
         "description": "Sets finder color.",
-        "search_aliases": ["sets finder colors"],
-        "system_keys": ["mdimporter:kMDLabelSetsFinderColor"],
+        "search_aliases": [
+          "sets finder colors"
+        ],
+        "system_keys": [
+          "mdimporter:kMDLabelSetsFinderColor"
+        ],
         "type": "string",
         "ui_label": "Sets finder color"
       },
       "tag_names": {
         "availability": "macOS 10.9+",
         "description": "The names of tags attached to the resource, returned as an array of NSString values (read-write).",
-        "search_aliases": ["label names", "tag name", "label name"],
-        "system_keys": ["nsurl:NSURLTagNamesKey"],
+        "search_aliases": [
+          "label names",
+          "tag name",
+          "label name"
+        ],
+        "system_keys": [
+          "nsurl:NSURLTagNamesKey"
+        ],
         "type": "string",
-        "ui_label": "Tag names"
+        "ui_label": "Tag names",
+        "ui_hidden": true
       },
       "user_domain": {
         "availability": "macOS 10.7+",
         "description": "User domain.",
-        "search_aliases": ["user domains"],
-        "system_keys": ["mdimporter:kMDLabelUserDomain"],
+        "search_aliases": [
+          "user domains"
+        ],
+        "system_keys": [
+          "mdimporter:kMDLabelUserDomain"
+        ],
         "type": "string",
         "ui_label": "User domain"
       },
       "uuid": {
         "availability": "macOS 10.7+",
         "description": "Uuid.",
-        "search_aliases": ["unique id", "unique identifier"],
-        "system_keys": ["mdimporter:kMDLabelUUID"],
+        "search_aliases": [
+          "unique id",
+          "unique identifier"
+        ],
+        "system_keys": [
+          "mdimporter:kMDLabelUUID"
+        ],
         "type": "string",
         "ui_label": "Uuid"
       },
       "visibility": {
         "availability": "macOS 10.7+",
         "description": "Visibility.",
-        "search_aliases": ["visible"],
-        "system_keys": ["mdimporter:kMDLabelVisibility"],
+        "search_aliases": [
+          "visible"
+        ],
+        "system_keys": [
+          "mdimporter:kMDLabelVisibility"
+        ],
         "type": "string",
         "ui_label": "Visibility"
       }
@@ -1944,9 +2708,12 @@
           "ubiquitous item container display names",
           "icloud item container display names"
         ],
-        "system_keys": ["nsurl:NSURLUbiquitousItemContainerDisplayNameKey"],
+        "system_keys": [
+          "nsurl:NSURLUbiquitousItemContainerDisplayNameKey"
+        ],
         "type": "string",
-        "ui_label": "Ubiquitous item container display name"
+        "ui_label": "Ubiquitous item container display name",
+        "ui_hidden": true
       },
       "ubiquitous_item_download_requested": {
         "availability": "macOS 10.10+",
@@ -1955,9 +2722,12 @@
           "ubiquitous item download requesteds",
           "icloud item download requesteds"
         ],
-        "system_keys": ["nsurl:NSURLUbiquitousItemDownloadRequestedKey"],
+        "system_keys": [
+          "nsurl:NSURLUbiquitousItemDownloadRequestedKey"
+        ],
         "type": "string",
-        "ui_label": "Ubiquitous item download requested"
+        "ui_label": "Ubiquitous item download requested",
+        "ui_hidden": true
       },
       "ubiquitous_item_downloading_error": {
         "availability": "macOS 10.9+",
@@ -1966,9 +2736,12 @@
           "ubiquitous item downloading errors",
           "icloud item downloading errors"
         ],
-        "system_keys": ["nsurl:NSURLUbiquitousItemDownloadingErrorKey"],
+        "system_keys": [
+          "nsurl:NSURLUbiquitousItemDownloadingErrorKey"
+        ],
         "type": "string",
-        "ui_label": "Ubiquitous item downloading error"
+        "ui_label": "Ubiquitous item downloading error",
+        "ui_hidden": true
       },
       "ubiquitous_item_downloading_status": {
         "availability": "macOS 10.9+",
@@ -1977,9 +2750,12 @@
           "ubiquitous item downloading status",
           "icloud item downloading status"
         ],
-        "system_keys": ["nsurl:NSURLUbiquitousItemDownloadingStatusKey"],
+        "system_keys": [
+          "nsurl:NSURLUbiquitousItemDownloadingStatusKey"
+        ],
         "type": "string",
-        "ui_label": "Ubiquitous item downloading status"
+        "ui_label": "Ubiquitous item downloading status",
+        "ui_hidden": true
       },
       "ubiquitous_item_has_unresolved_conflicts": {
         "availability": "macOS 10.7+",
@@ -1988,9 +2764,12 @@
           "ubiquitous item has unresolved conflicts",
           "icloud item has unresolved conflicts"
         ],
-        "system_keys": ["nsurl:NSURLUbiquitousItemHasUnresolvedConflictsKey"],
+        "system_keys": [
+          "nsurl:NSURLUbiquitousItemHasUnresolvedConflictsKey"
+        ],
         "type": "boolean",
-        "ui_label": "Ubiquitous item has unresolved conflicts"
+        "ui_label": "Ubiquitous item has unresolved conflicts",
+        "ui_hidden": true
       },
       "ubiquitous_item_is_downloading": {
         "availability": "macOS 10.7+",
@@ -1999,9 +2778,12 @@
           "ubiquitous item is downloadings",
           "icloud item is downloadings"
         ],
-        "system_keys": ["nsurl:NSURLUbiquitousItemIsDownloadingKey"],
+        "system_keys": [
+          "nsurl:NSURLUbiquitousItemIsDownloadingKey"
+        ],
         "type": "boolean",
-        "ui_label": "Ubiquitous item is downloading"
+        "ui_label": "Ubiquitous item is downloading",
+        "ui_hidden": true
       },
       "ubiquitous_item_is_excluded_from_sync": {
         "availability": "macOS 11.3+",
@@ -2010,9 +2792,12 @@
           "ubiquitous item is excluded from syncs",
           "icloud item is excluded from syncs"
         ],
-        "system_keys": ["nsurl:NSURLUbiquitousItemIsExcludedFromSyncKey"],
+        "system_keys": [
+          "nsurl:NSURLUbiquitousItemIsExcludedFromSyncKey"
+        ],
         "type": "boolean",
-        "ui_label": "Ubiquitous item is excluded from sync"
+        "ui_label": "Ubiquitous item is excluded from sync",
+        "ui_hidden": true
       },
       "ubiquitous_item_is_shared": {
         "availability": "macOS 10.12+",
@@ -2021,9 +2806,12 @@
           "ubiquitous item is shareds",
           "icloud item is shareds"
         ],
-        "system_keys": ["nsurl:NSURLUbiquitousItemIsSharedKey"],
+        "system_keys": [
+          "nsurl:NSURLUbiquitousItemIsSharedKey"
+        ],
         "type": "boolean",
-        "ui_label": "Ubiquitous item is shared"
+        "ui_label": "Ubiquitous item is shared",
+        "ui_hidden": true
       },
       "ubiquitous_item_is_uploaded": {
         "availability": "macOS 10.7+",
@@ -2032,9 +2820,12 @@
           "ubiquitous item is uploadeds",
           "icloud item is uploadeds"
         ],
-        "system_keys": ["nsurl:NSURLUbiquitousItemIsUploadedKey"],
+        "system_keys": [
+          "nsurl:NSURLUbiquitousItemIsUploadedKey"
+        ],
         "type": "boolean",
-        "ui_label": "Ubiquitous item is uploaded"
+        "ui_label": "Ubiquitous item is uploaded",
+        "ui_hidden": true
       },
       "ubiquitous_item_is_uploading": {
         "availability": "macOS 10.7+",
@@ -2043,9 +2834,12 @@
           "ubiquitous item is uploadings",
           "icloud item is uploadings"
         ],
-        "system_keys": ["nsurl:NSURLUbiquitousItemIsUploadingKey"],
+        "system_keys": [
+          "nsurl:NSURLUbiquitousItemIsUploadingKey"
+        ],
         "type": "boolean",
-        "ui_label": "Ubiquitous item is uploading"
+        "ui_label": "Ubiquitous item is uploading",
+        "ui_hidden": true
       },
       "ubiquitous_item_uploading_error": {
         "availability": "macOS 10.9+",
@@ -2054,9 +2848,12 @@
           "ubiquitous item uploading errors",
           "icloud item uploading errors"
         ],
-        "system_keys": ["nsurl:NSURLUbiquitousItemUploadingErrorKey"],
+        "system_keys": [
+          "nsurl:NSURLUbiquitousItemUploadingErrorKey"
+        ],
         "type": "string",
-        "ui_label": "Ubiquitous item uploading error"
+        "ui_label": "Ubiquitous item uploading error",
+        "ui_hidden": true
       },
       "ubiquitous_shared_item_current_user_permissions": {
         "availability": "macOS 10.12+",
@@ -2069,7 +2866,8 @@
           "nsurl:NSURLUbiquitousSharedItemCurrentUserPermissionsKey"
         ],
         "type": "string",
-        "ui_label": "Ubiquitous shared item current user permissions"
+        "ui_label": "Ubiquitous shared item current user permissions",
+        "ui_hidden": true
       },
       "ubiquitous_shared_item_current_user_role": {
         "availability": "macOS 10.12+",
@@ -2078,9 +2876,12 @@
           "ubiquitous shared item current user roles",
           "icloud shared item current user roles"
         ],
-        "system_keys": ["nsurl:NSURLUbiquitousSharedItemCurrentUserRoleKey"],
+        "system_keys": [
+          "nsurl:NSURLUbiquitousSharedItemCurrentUserRoleKey"
+        ],
         "type": "string",
-        "ui_label": "Ubiquitous shared item current user role"
+        "ui_label": "Ubiquitous shared item current user role",
+        "ui_hidden": true
       },
       "ubiquitous_shared_item_most_recent_editor_name_components": {
         "availability": "macOS 10.12+",
@@ -2093,7 +2894,8 @@
           "nsurl:NSURLUbiquitousSharedItemMostRecentEditorNameComponentsKey"
         ],
         "type": "string",
-        "ui_label": "Ubiquitous shared item most recent editor name components"
+        "ui_label": "Ubiquitous shared item most recent editor name components",
+        "ui_hidden": true
       },
       "ubiquitous_shared_item_owner_name_components": {
         "availability": "macOS 10.12+",
@@ -2106,25 +2908,34 @@
           "nsurl:NSURLUbiquitousSharedItemOwnerNameComponentsKey"
         ],
         "type": "string",
-        "ui_label": "Ubiquitous shared item owner name components"
+        "ui_label": "Ubiquitous shared item owner name components",
+        "ui_hidden": true
       },
       "volume_available_capacity": {
         "availability": "macOS 10.6+",
         "description": "Key for the volume's available capacity in bytes (read-only).",
-        "search_aliases": ["volume available capacities"],
-        "system_keys": ["nsurl:NSURLVolumeAvailableCapacityKey"],
+        "search_aliases": [
+          "volume available capacities"
+        ],
+        "system_keys": [
+          "nsurl:NSURLVolumeAvailableCapacityKey"
+        ],
         "type": "string",
-        "ui_label": "Volume available capacity"
+        "ui_label": "Volume available capacity",
+        "ui_hidden": true
       },
       "volume_available_capacity_for_important_usage": {
         "availability": "macOS 10.13+",
         "description": "Key for the volume's available capacity in bytes for storing important resources (read-only).",
-        "search_aliases": ["volume available capacity for important usages"],
+        "search_aliases": [
+          "volume available capacity for important usages"
+        ],
         "system_keys": [
           "nsurl:NSURLVolumeAvailableCapacityForImportantUsageKey"
         ],
         "type": "string",
-        "ui_label": "Volume available capacity for important usage"
+        "ui_label": "Volume available capacity for important usage",
+        "ui_hidden": true
       },
       "volume_available_capacity_for_opportunistic_usage": {
         "availability": "macOS 10.13+",
@@ -2136,7 +2947,8 @@
           "nsurl:NSURLVolumeAvailableCapacityForOpportunisticUsageKey"
         ],
         "type": "string",
-        "ui_label": "Volume available capacity for opportunistic usage"
+        "ui_label": "Volume available capacity for opportunistic usage",
+        "ui_hidden": true
       },
       "volume_creation_date": {
         "availability": "macOS 10.7+",
@@ -2148,89 +2960,143 @@
           "volume created dates",
           "volume creation times"
         ],
-        "system_keys": ["nsurl:NSURLVolumeCreationDateKey"],
+        "system_keys": [
+          "nsurl:NSURLVolumeCreationDateKey"
+        ],
         "type": "date",
-        "ui_label": "Volume creation date"
+        "ui_label": "Volume creation date",
+        "ui_hidden": true
       },
       "volume_identifier": {
         "availability": "macOS 10.7+",
         "description": "The unique identifier of the resource's volume, returned as an id (read-only).",
-        "search_aliases": ["volume id", "volume identifiers"],
-        "system_keys": ["nsurl:NSURLVolumeIdentifierKey"],
+        "search_aliases": [
+          "volume id",
+          "volume identifiers"
+        ],
+        "system_keys": [
+          "nsurl:NSURLVolumeIdentifierKey"
+        ],
         "type": "string",
-        "ui_label": "Volume identifier"
+        "ui_label": "Volume identifier",
+        "ui_hidden": true
       },
       "volume_is_automounted": {
         "availability": "macOS 10.7+",
         "description": "Key for determining whether the volume is automounted, returned as a Boolean NSNumber object (read-only).",
-        "search_aliases": ["volume is automounteds"],
-        "system_keys": ["nsurl:NSURLVolumeIsAutomountedKey"],
+        "search_aliases": [
+          "volume is automounteds"
+        ],
+        "system_keys": [
+          "nsurl:NSURLVolumeIsAutomountedKey"
+        ],
         "type": "boolean",
-        "ui_label": "Volume is automounted"
+        "ui_label": "Volume is automounted",
+        "ui_hidden": true
       },
       "volume_is_browsable": {
         "availability": "macOS 10.7+",
         "description": "Key for determining whether the volume is visible in GUI-based file-browsing environments, such as the Desktop or the Finder application, returned as a Boolean NSNumber object (read-only).",
-        "search_aliases": ["volume is browsables"],
-        "system_keys": ["nsurl:NSURLVolumeIsBrowsableKey"],
+        "search_aliases": [
+          "volume is browsables"
+        ],
+        "system_keys": [
+          "nsurl:NSURLVolumeIsBrowsableKey"
+        ],
         "type": "boolean",
-        "ui_label": "Volume is browsable"
+        "ui_label": "Volume is browsable",
+        "ui_hidden": true
       },
       "volume_is_ejectable": {
         "availability": "macOS 10.7+",
         "description": "Key for determining whether the volume is ejectable from the drive mechanism under software control, returned as a Boolean NSNumber object (read-only).",
-        "search_aliases": ["volume is ejectables"],
-        "system_keys": ["nsurl:NSURLVolumeIsEjectableKey"],
+        "search_aliases": [
+          "volume is ejectables"
+        ],
+        "system_keys": [
+          "nsurl:NSURLVolumeIsEjectableKey"
+        ],
         "type": "boolean",
-        "ui_label": "Volume is ejectable"
+        "ui_label": "Volume is ejectable",
+        "ui_hidden": true
       },
       "volume_is_encrypted": {
         "availability": "macOS 10.12+",
         "description": "Whether the volume is encrypted, returned as NSNumber containing a Boolean value (read-only).",
-        "search_aliases": ["volume is encrypteds"],
-        "system_keys": ["nsurl:NSURLVolumeIsEncryptedKey"],
+        "search_aliases": [
+          "volume is encrypteds"
+        ],
+        "system_keys": [
+          "nsurl:NSURLVolumeIsEncryptedKey"
+        ],
         "type": "boolean",
-        "ui_label": "Volume is encrypted"
+        "ui_label": "Volume is encrypted",
+        "ui_hidden": true
       },
       "volume_is_internal": {
         "availability": "macOS 10.7+",
         "description": "Key for determining whether the volume is connected to an internal bus, returned as a Boolean NSNumber object, or nil if it cannot be determined (read-only).",
-        "search_aliases": ["volume is internals"],
-        "system_keys": ["nsurl:NSURLVolumeIsInternalKey"],
+        "search_aliases": [
+          "volume is internals"
+        ],
+        "system_keys": [
+          "nsurl:NSURLVolumeIsInternalKey"
+        ],
         "type": "boolean",
-        "ui_label": "Volume is internal"
+        "ui_label": "Volume is internal",
+        "ui_hidden": true
       },
       "volume_is_journaling": {
         "availability": "macOS 10.6+",
         "description": "Key for determining whether the volume is currently journaling, returned as a Boolean NSNumber object (read-only).",
-        "search_aliases": ["volume is journalings"],
-        "system_keys": ["nsurl:NSURLVolumeIsJournalingKey"],
+        "search_aliases": [
+          "volume is journalings"
+        ],
+        "system_keys": [
+          "nsurl:NSURLVolumeIsJournalingKey"
+        ],
         "type": "boolean",
-        "ui_label": "Volume is journaling"
+        "ui_label": "Volume is journaling",
+        "ui_hidden": true
       },
       "volume_is_local": {
         "availability": "macOS 10.7+",
         "description": "Key for determining whether the volume is stored on a local device, returned as a Boolean NSNumber object (read-only).",
-        "search_aliases": ["volume is locals"],
-        "system_keys": ["nsurl:NSURLVolumeIsLocalKey"],
+        "search_aliases": [
+          "volume is locals"
+        ],
+        "system_keys": [
+          "nsurl:NSURLVolumeIsLocalKey"
+        ],
         "type": "boolean",
-        "ui_label": "Volume is local"
+        "ui_label": "Volume is local",
+        "ui_hidden": true
       },
       "volume_is_read_only": {
         "availability": "macOS 10.7+",
         "description": "Key for determining whether the volume is read-only, returned as a Boolean NSNumber object (read-only).",
-        "search_aliases": ["volume is read onlies"],
-        "system_keys": ["nsurl:NSURLVolumeIsReadOnlyKey"],
+        "search_aliases": [
+          "volume is read onlies"
+        ],
+        "system_keys": [
+          "nsurl:NSURLVolumeIsReadOnlyKey"
+        ],
         "type": "boolean",
-        "ui_label": "Volume is read only"
+        "ui_label": "Volume is read only",
+        "ui_hidden": true
       },
       "volume_is_removable": {
         "availability": "macOS 10.7+",
         "description": "Key for determining whether the volume is removable from the drive mechanism, returned as a Boolean NSNumber object (read-only).",
-        "search_aliases": ["volume is removables"],
-        "system_keys": ["nsurl:NSURLVolumeIsRemovableKey"],
+        "search_aliases": [
+          "volume is removables"
+        ],
+        "system_keys": [
+          "nsurl:NSURLVolumeIsRemovableKey"
+        ],
         "type": "boolean",
-        "ui_label": "Volume is removable"
+        "ui_label": "Volume is removable",
+        "ui_hidden": true
       },
       "volume_is_root_file_system": {
         "availability": "macOS 10.12+",
@@ -2239,25 +3105,38 @@
           "volume is root file systems",
           "volume is root filesystems"
         ],
-        "system_keys": ["nsurl:NSURLVolumeIsRootFileSystemKey"],
+        "system_keys": [
+          "nsurl:NSURLVolumeIsRootFileSystemKey"
+        ],
         "type": "boolean",
-        "ui_label": "Volume is root file system"
+        "ui_label": "Volume is root file system",
+        "ui_hidden": true
       },
       "volume_localized_format_description": {
         "availability": "macOS 10.6+",
         "description": "Key for the volume's descriptive format name, returned as an NSString object (read-only).",
-        "search_aliases": ["volume localized format descriptions"],
-        "system_keys": ["nsurl:NSURLVolumeLocalizedFormatDescriptionKey"],
+        "search_aliases": [
+          "volume localized format descriptions"
+        ],
+        "system_keys": [
+          "nsurl:NSURLVolumeLocalizedFormatDescriptionKey"
+        ],
         "type": "string",
-        "ui_label": "Volume localized format description"
+        "ui_label": "Volume localized format description",
+        "ui_hidden": true
       },
       "volume_localized_name": {
         "availability": "macOS 10.7+",
         "description": "The name of the volume as it should be displayed in the user interface, returned as an NSString object (read-only).",
-        "search_aliases": ["volume localized names"],
-        "system_keys": ["nsurl:NSURLVolumeLocalizedNameKey"],
+        "search_aliases": [
+          "volume localized names"
+        ],
+        "system_keys": [
+          "nsurl:NSURLVolumeLocalizedNameKey"
+        ],
         "type": "string",
-        "ui_label": "Volume localized name"
+        "ui_label": "Volume localized name",
+        "ui_hidden": true
       },
       "volume_maximum_file_size": {
         "availability": "macOS 10.7+",
@@ -2267,17 +3146,25 @@
           "volume maximum file sizes",
           "volume maximum filesizes"
         ],
-        "system_keys": ["nsurl:NSURLVolumeMaximumFileSizeKey"],
+        "system_keys": [
+          "nsurl:NSURLVolumeMaximumFileSizeKey"
+        ],
         "type": "number",
-        "ui_label": "Volume maximum file size"
+        "ui_label": "Volume maximum file size",
+        "ui_hidden": true
       },
       "volume_name": {
         "availability": "macOS 10.7+",
         "description": "The name of the volume, returned as an NSString object (read-write). Settable only if NSURLVolumeSupportsRenamingKey is YES.",
-        "search_aliases": ["volume names"],
-        "system_keys": ["nsurl:NSURLVolumeNameKey"],
+        "search_aliases": [
+          "volume names"
+        ],
+        "system_keys": [
+          "nsurl:NSURLVolumeNameKey"
+        ],
         "type": "string",
-        "ui_label": "Volume name"
+        "ui_label": "Volume name",
+        "ui_hidden": true
       },
       "volume_resource_count": {
         "availability": "macOS 10.6+",
@@ -2287,121 +3174,192 @@
           "volume resource counts",
           "volume resource numbers"
         ],
-        "system_keys": ["nsurl:NSURLVolumeResourceCountKey"],
+        "system_keys": [
+          "nsurl:NSURLVolumeResourceCountKey"
+        ],
         "type": "number",
-        "ui_label": "Volume resource count"
+        "ui_label": "Volume resource count",
+        "ui_hidden": true
       },
       "volume_supports_access_permissions": {
         "availability": "macOS 10.13+",
         "description": "Volume supports access permissions.",
-        "search_aliases": ["volume supports access permission"],
-        "system_keys": ["nsurl:NSURLVolumeSupportsAccessPermissionsKey"],
+        "search_aliases": [
+          "volume supports access permission"
+        ],
+        "system_keys": [
+          "nsurl:NSURLVolumeSupportsAccessPermissionsKey"
+        ],
         "type": "boolean",
-        "ui_label": "Volume supports access permissions"
+        "ui_label": "Volume supports access permissions",
+        "ui_hidden": true
       },
       "volume_supports_advisory_file_locking": {
         "availability": "macOS 10.7+",
         "description": "Key for determining whether the volume implements whole-file advisory locks in the style of flock, along with the O_EXLOCK and O_SHLOCK flags of the open function, returned as a Boolean NSNumber object (read-only).",
-        "search_aliases": ["volume supports advisory file lockings"],
-        "system_keys": ["nsurl:NSURLVolumeSupportsAdvisoryFileLockingKey"],
+        "search_aliases": [
+          "volume supports advisory file lockings"
+        ],
+        "system_keys": [
+          "nsurl:NSURLVolumeSupportsAdvisoryFileLockingKey"
+        ],
         "type": "boolean",
-        "ui_label": "Volume supports advisory file locking"
+        "ui_label": "Volume supports advisory file locking",
+        "ui_hidden": true
       },
       "volume_supports_case_preserved_names": {
         "availability": "macOS 10.6+",
         "description": "Key for determining whether the volume supports case-preserved names, returned as a Boolean NSNumber object (read-only).",
-        "search_aliases": ["volume supports case preserved name"],
-        "system_keys": ["nsurl:NSURLVolumeSupportsCasePreservedNamesKey"],
+        "search_aliases": [
+          "volume supports case preserved name"
+        ],
+        "system_keys": [
+          "nsurl:NSURLVolumeSupportsCasePreservedNamesKey"
+        ],
         "type": "boolean",
-        "ui_label": "Volume supports case preserved names"
+        "ui_label": "Volume supports case preserved names",
+        "ui_hidden": true
       },
       "volume_supports_case_sensitive_names": {
         "availability": "macOS 10.6+",
         "description": "Key for determining whether the volume supports case-sensitive names, returned as a Boolean NSNumber object (read-only).",
-        "search_aliases": ["volume supports case sensitive name"],
-        "system_keys": ["nsurl:NSURLVolumeSupportsCaseSensitiveNamesKey"],
+        "search_aliases": [
+          "volume supports case sensitive name"
+        ],
+        "system_keys": [
+          "nsurl:NSURLVolumeSupportsCaseSensitiveNamesKey"
+        ],
         "type": "boolean",
-        "ui_label": "Volume supports case sensitive names"
+        "ui_label": "Volume supports case sensitive names",
+        "ui_hidden": true
       },
       "volume_supports_compression": {
         "availability": "macOS 10.12+",
         "description": "Whether the volume supports transparent decompression of compressed files using decmpfs, returned as NSNumber containing a Boolean value (read-only).",
-        "search_aliases": ["volume supports compressions"],
-        "system_keys": ["nsurl:NSURLVolumeSupportsCompressionKey"],
+        "search_aliases": [
+          "volume supports compressions"
+        ],
+        "system_keys": [
+          "nsurl:NSURLVolumeSupportsCompressionKey"
+        ],
         "type": "boolean",
-        "ui_label": "Volume supports compression"
+        "ui_label": "Volume supports compression",
+        "ui_hidden": true
       },
       "volume_supports_exclusive_renaming": {
         "availability": "macOS 10.12+",
         "description": "Whether the volume supports exclusive renaming using renamex_np(2) with the RENAME_EXCL option, returned as NSNumber containing a Boolean value (read-only).",
-        "search_aliases": ["volume supports exclusive renamings"],
-        "system_keys": ["nsurl:NSURLVolumeSupportsExclusiveRenamingKey"],
+        "search_aliases": [
+          "volume supports exclusive renamings"
+        ],
+        "system_keys": [
+          "nsurl:NSURLVolumeSupportsExclusiveRenamingKey"
+        ],
         "type": "boolean",
-        "ui_label": "Volume supports exclusive renaming"
+        "ui_label": "Volume supports exclusive renaming",
+        "ui_hidden": true
       },
       "volume_supports_extended_security": {
         "availability": "macOS 10.7+",
         "description": "Key for determining whether the volume supports extended security (access control lists), returned as a Boolean NSNumber object (read-only).",
-        "search_aliases": ["volume supports extended securities"],
-        "system_keys": ["nsurl:NSURLVolumeSupportsExtendedSecurityKey"],
+        "search_aliases": [
+          "volume supports extended securities"
+        ],
+        "system_keys": [
+          "nsurl:NSURLVolumeSupportsExtendedSecurityKey"
+        ],
         "type": "boolean",
-        "ui_label": "Volume supports extended security"
+        "ui_label": "Volume supports extended security",
+        "ui_hidden": true
       },
       "volume_supports_file_cloning": {
         "availability": "macOS 10.12+",
         "description": "Whether the volume supports cloning using clonefile(2), returned as NSNumber containing a Boolean value (read-only).",
-        "search_aliases": ["volume supports file clonings"],
-        "system_keys": ["nsurl:NSURLVolumeSupportsFileCloningKey"],
+        "search_aliases": [
+          "volume supports file clonings"
+        ],
+        "system_keys": [
+          "nsurl:NSURLVolumeSupportsFileCloningKey"
+        ],
         "type": "boolean",
-        "ui_label": "Volume supports file cloning"
+        "ui_label": "Volume supports file cloning",
+        "ui_hidden": true
       },
       "volume_supports_file_protection": {
         "availability": "macOS 11.0+",
         "description": "A Boolean value that indicates the volume supports data protection for files.",
-        "search_aliases": ["volume supports file protections"],
-        "system_keys": ["nsurl:NSURLVolumeSupportsFileProtectionKey"],
+        "search_aliases": [
+          "volume supports file protections"
+        ],
+        "system_keys": [
+          "nsurl:NSURLVolumeSupportsFileProtectionKey"
+        ],
         "type": "boolean",
-        "ui_label": "Volume supports file protection"
+        "ui_label": "Volume supports file protection",
+        "ui_hidden": true
       },
       "volume_supports_hard_links": {
         "availability": "macOS 10.6+",
         "description": "Key for determining whether the volume supports hard links, returned as a Boolean NSNumber object (read-only).",
-        "search_aliases": ["volume supports hard link"],
-        "system_keys": ["nsurl:NSURLVolumeSupportsHardLinksKey"],
+        "search_aliases": [
+          "volume supports hard link"
+        ],
+        "system_keys": [
+          "nsurl:NSURLVolumeSupportsHardLinksKey"
+        ],
         "type": "boolean",
-        "ui_label": "Volume supports hard links"
+        "ui_label": "Volume supports hard links",
+        "ui_hidden": true
       },
       "volume_supports_immutable_files": {
         "availability": "macOS 10.13+",
         "description": "Volume supports immutable files.",
-        "search_aliases": ["volume supports immutable file"],
-        "system_keys": ["nsurl:NSURLVolumeSupportsImmutableFilesKey"],
+        "search_aliases": [
+          "volume supports immutable file"
+        ],
+        "system_keys": [
+          "nsurl:NSURLVolumeSupportsImmutableFilesKey"
+        ],
         "type": "boolean",
-        "ui_label": "Volume supports immutable files"
+        "ui_label": "Volume supports immutable files",
+        "ui_hidden": true
       },
       "volume_supports_journaling": {
         "availability": "macOS 10.6+",
         "description": "Key for determining whether the volume supports journaling, returned as a Boolean NSNumber object (read-only).",
-        "search_aliases": ["volume supports journalings"],
-        "system_keys": ["nsurl:NSURLVolumeSupportsJournalingKey"],
+        "search_aliases": [
+          "volume supports journalings"
+        ],
+        "system_keys": [
+          "nsurl:NSURLVolumeSupportsJournalingKey"
+        ],
         "type": "boolean",
-        "ui_label": "Volume supports journaling"
+        "ui_label": "Volume supports journaling",
+        "ui_hidden": true
       },
       "volume_supports_persistent_i_ds": {
         "availability": "macOS 10.6+",
         "description": "Key for determining whether the volume supports persistent IDs, returned as a Boolean NSNumber object (read-only).",
         "search_aliases": [],
-        "system_keys": ["nsurl:NSURLVolumeSupportsPersistentIDsKey"],
+        "system_keys": [
+          "nsurl:NSURLVolumeSupportsPersistentIDsKey"
+        ],
         "type": "boolean",
-        "ui_label": "Volume supports persistent i ds"
+        "ui_label": "Volume supports persistent i ds",
+        "ui_hidden": true
       },
       "volume_supports_renaming": {
         "availability": "macOS 10.7+",
         "description": "Key for determining whether the volume can be renamed, returned as a Boolean NSNumber object (read-only).",
-        "search_aliases": ["volume supports renamings"],
-        "system_keys": ["nsurl:NSURLVolumeSupportsRenamingKey"],
+        "search_aliases": [
+          "volume supports renamings"
+        ],
+        "system_keys": [
+          "nsurl:NSURLVolumeSupportsRenamingKey"
+        ],
         "type": "boolean",
-        "ui_label": "Volume supports renaming"
+        "ui_label": "Volume supports renaming",
+        "ui_hidden": true
       },
       "volume_supports_root_directory_dates": {
         "availability": "macOS 10.7+",
@@ -2411,65 +3369,104 @@
           "volume supports root directory date",
           "volume supports root folder date"
         ],
-        "system_keys": ["nsurl:NSURLVolumeSupportsRootDirectoryDatesKey"],
+        "system_keys": [
+          "nsurl:NSURLVolumeSupportsRootDirectoryDatesKey"
+        ],
         "type": "boolean",
-        "ui_label": "Volume supports root directory dates"
+        "ui_label": "Volume supports root directory dates",
+        "ui_hidden": true
       },
       "volume_supports_sparse_files": {
         "availability": "macOS 10.6+",
         "description": "Key for determining whether the volume supports sparse files, returned as a Boolean NSNumber object (read-only).",
-        "search_aliases": ["volume supports sparse file"],
-        "system_keys": ["nsurl:NSURLVolumeSupportsSparseFilesKey"],
+        "search_aliases": [
+          "volume supports sparse file"
+        ],
+        "system_keys": [
+          "nsurl:NSURLVolumeSupportsSparseFilesKey"
+        ],
         "type": "boolean",
-        "ui_label": "Volume supports sparse files"
+        "ui_label": "Volume supports sparse files",
+        "ui_hidden": true
       },
       "volume_supports_swap_renaming": {
         "availability": "macOS 10.12+",
         "description": "Whether the volume supports renaming using renamex_np(2) with the RENAME_SWAP option, returned as NSNumber containing a Boolean value (read-only).",
-        "search_aliases": ["volume supports swap renamings"],
-        "system_keys": ["nsurl:NSURLVolumeSupportsSwapRenamingKey"],
+        "search_aliases": [
+          "volume supports swap renamings"
+        ],
+        "system_keys": [
+          "nsurl:NSURLVolumeSupportsSwapRenamingKey"
+        ],
         "type": "boolean",
-        "ui_label": "Volume supports swap renaming"
+        "ui_label": "Volume supports swap renaming",
+        "ui_hidden": true
       },
       "volume_supports_symbolic_links": {
         "availability": "macOS 10.6+",
         "description": "Key for determining whether the volume supports symbolic links, returned as a Boolean NSNumber object (read-only).",
-        "search_aliases": ["volume supports symbolic link"],
-        "system_keys": ["nsurl:NSURLVolumeSupportsSymbolicLinksKey"],
+        "search_aliases": [
+          "volume supports symbolic link"
+        ],
+        "system_keys": [
+          "nsurl:NSURLVolumeSupportsSymbolicLinksKey"
+        ],
         "type": "boolean",
-        "ui_label": "Volume supports symbolic links"
+        "ui_label": "Volume supports symbolic links",
+        "ui_hidden": true
       },
       "volume_supports_volume_sizes": {
         "availability": "macOS 10.7+",
         "description": "Key for determining whether the volume supports returning volume size information, returned as a Boolean NSNumber object (read-only). If true, volume size information is available as values of the NSURLVolumeTotalCapacityKey andNSURLVolumeAvailableCapacityKey keys.",
-        "search_aliases": ["volume supports volume siz"],
-        "system_keys": ["nsurl:NSURLVolumeSupportsVolumeSizesKey"],
+        "search_aliases": [
+          "volume supports volume siz"
+        ],
+        "system_keys": [
+          "nsurl:NSURLVolumeSupportsVolumeSizesKey"
+        ],
         "type": "boolean",
-        "ui_label": "Volume supports volume sizes"
+        "ui_label": "Volume supports volume sizes",
+        "ui_hidden": true
       },
       "volume_supports_zero_runs": {
         "availability": "macOS 10.6+",
         "description": "Key for determining whether the volume supports zero runs, returned as a Boolean NSNumber object (read-only).",
-        "search_aliases": ["volume supports zero run"],
-        "system_keys": ["nsurl:NSURLVolumeSupportsZeroRunsKey"],
+        "search_aliases": [
+          "volume supports zero run"
+        ],
+        "system_keys": [
+          "nsurl:NSURLVolumeSupportsZeroRunsKey"
+        ],
         "type": "boolean",
-        "ui_label": "Volume supports zero runs"
+        "ui_label": "Volume supports zero runs",
+        "ui_hidden": true
       },
       "volume_total_capacity": {
         "availability": "macOS 10.6+",
         "description": "Key for the volume's total capacity in bytes (read-only).",
-        "search_aliases": ["volume total capacities"],
-        "system_keys": ["nsurl:NSURLVolumeTotalCapacityKey"],
+        "search_aliases": [
+          "volume total capacities"
+        ],
+        "system_keys": [
+          "nsurl:NSURLVolumeTotalCapacityKey"
+        ],
         "type": "string",
-        "ui_label": "Volume total capacity"
+        "ui_label": "Volume total capacity",
+        "ui_hidden": true
       },
       "volume_url": {
         "availability": "macOS 10.6+",
         "description": "The root directory of the resource's volume, returned as an NSURL object (read-only).",
-        "search_aliases": ["volume link", "volume links"],
-        "system_keys": ["nsurl:NSURLVolumeURLKey"],
+        "search_aliases": [
+          "volume link",
+          "volume links"
+        ],
+        "system_keys": [
+          "nsurl:NSURLVolumeURLKey"
+        ],
         "type": "string",
-        "ui_label": "Volume URL"
+        "ui_label": "Volume URL",
+        "ui_hidden": true
       },
       "volume_url_for_remounting": {
         "availability": "macOS 10.7+",
@@ -2479,9 +3476,12 @@
           "volume url for remountings",
           "volume link for remountings"
         ],
-        "system_keys": ["nsurl:NSURLVolumeURLForRemountingKey"],
+        "system_keys": [
+          "nsurl:NSURLVolumeURLForRemountingKey"
+        ],
         "type": "string",
-        "ui_label": "Volume URL for remounting"
+        "ui_label": "Volume URL for remounting",
+        "ui_hidden": true
       },
       "volume_uuid_string": {
         "availability": "macOS 10.7+",
@@ -2491,9 +3491,12 @@
           "volume uuid strings",
           "volume unique id strings"
         ],
-        "system_keys": ["nsurl:NSURLVolumeUUIDStringKey"],
+        "system_keys": [
+          "nsurl:NSURLVolumeUUIDStringKey"
+        ],
         "type": "string",
-        "ui_label": "Volume uuid string"
+        "ui_label": "Volume uuid string",
+        "ui_hidden": true
       }
     },
     "video": {
@@ -2507,8 +3510,12 @@
           "audio bit rates",
           "sound bit rates"
         ],
-        "legacy_keys": ["audioBitRate"],
-        "system_keys": ["mditem:kMDItemAudioBitRate"],
+        "legacy_keys": [
+          "audioBitRate"
+        ],
+        "system_keys": [
+          "mditem:kMDItemAudioBitRate"
+        ],
         "type": "number",
         "ui_label": "Audio bit rate"
       },
@@ -2516,15 +3523,21 @@
         "availability": "macOS 10.4+",
         "description": "The codecs used to encode/decode the media.",
         "search_aliases": [],
-        "system_keys": ["mditem:kMDItemCodecs"],
+        "system_keys": [
+          "mditem:kMDItemCodecs"
+        ],
         "type": "string_list",
         "ui_label": "Codecs"
       },
       "delivery_type": {
         "availability": "macOS 10.4+",
         "description": "The delivery type. Values are \"Fast start\" or \"RTSP\".",
-        "search_aliases": ["delivery types"],
-        "system_keys": ["mditem:kMDItemDeliveryType"],
+        "search_aliases": [
+          "delivery types"
+        ],
+        "system_keys": [
+          "mditem:kMDItemDeliveryType"
+        ],
         "type": "string",
         "ui_label": "Delivery type"
       },
@@ -2532,7 +3545,9 @@
         "availability": "macOS 10.5+",
         "description": "Directory of the movie.",
         "search_aliases": [],
-        "system_keys": ["mditem:kMDItemDirector"],
+        "system_keys": [
+          "mditem:kMDItemDirector"
+        ],
         "type": "string",
         "ui_label": "Director"
       },
@@ -2540,31 +3555,45 @@
         "availability": "macOS 10.5+",
         "description": "Genre of the movie.",
         "search_aliases": [],
-        "system_keys": ["mditem:kMDItemGenre"],
+        "system_keys": [
+          "mditem:kMDItemGenre"
+        ],
         "type": "string",
         "ui_label": "Genre"
       },
       "media_types": {
         "availability": "macOS 10.4+",
         "description": "The media types present in the content.",
-        "search_aliases": ["media type"],
-        "system_keys": ["mditem:kMDItemMediaTypes"],
+        "search_aliases": [
+          "media type"
+        ],
+        "system_keys": [
+          "mditem:kMDItemMediaTypes"
+        ],
         "type": "string_list",
         "ui_label": "Media types"
       },
       "original_format": {
         "availability": "macOS 10.5+",
         "description": "Original format of the movie.",
-        "search_aliases": ["original formats"],
-        "system_keys": ["mditem:kMDItemOriginalFormat"],
+        "search_aliases": [
+          "original formats"
+        ],
+        "system_keys": [
+          "mditem:kMDItemOriginalFormat"
+        ],
         "type": "string",
         "ui_label": "Original format"
       },
       "original_source": {
         "availability": "macOS 10.5+",
         "description": "Original source of the movie.",
-        "search_aliases": ["original sources"],
-        "system_keys": ["mditem:kMDItemOriginalSource"],
+        "search_aliases": [
+          "original sources"
+        ],
+        "system_keys": [
+          "mditem:kMDItemOriginalSource"
+        ],
         "type": "string",
         "ui_label": "Original source"
       },
@@ -2572,7 +3601,9 @@
         "availability": "macOS 10.5+",
         "description": "Performers in the movie.",
         "search_aliases": [],
-        "system_keys": ["mditem:kMDItemPerformers"],
+        "system_keys": [
+          "mditem:kMDItemPerformers"
+        ],
         "type": "string_list",
         "ui_label": "Performers"
       },
@@ -2580,7 +3611,9 @@
         "availability": "macOS 10.5+",
         "description": "Producer of the content.",
         "search_aliases": [],
-        "system_keys": ["mditem:kMDItemProducer"],
+        "system_keys": [
+          "mditem:kMDItemProducer"
+        ],
         "type": "string",
         "ui_label": "Producer"
       },
@@ -2588,7 +3621,9 @@
         "availability": "macOS 10.4+",
         "description": "Whether the content is prepared for streaming.",
         "search_aliases": [],
-        "system_keys": ["mditem:kMDItemStreamable"],
+        "system_keys": [
+          "mditem:kMDItemStreamable"
+        ],
         "type": "boolean",
         "ui_label": "Streamable"
       },
@@ -2601,7 +3636,9 @@
           "total bit bitrates",
           "total bitrates"
         ],
-        "system_keys": ["mditem:kMDItemTotalBitRate"],
+        "system_keys": [
+          "mditem:kMDItemTotalBitRate"
+        ],
         "type": "number",
         "ui_label": "Total bit rate"
       },
@@ -2615,8 +3652,12 @@
           "video bit rates",
           "movie bit rates"
         ],
-        "legacy_keys": ["videoBitRate"],
-        "system_keys": ["mditem:kMDItemVideoBitRate"],
+        "legacy_keys": [
+          "videoBitRate"
+        ],
+        "system_keys": [
+          "mditem:kMDItemVideoBitRate"
+        ],
         "type": "number",
         "ui_label": "Video bit rate"
       }
