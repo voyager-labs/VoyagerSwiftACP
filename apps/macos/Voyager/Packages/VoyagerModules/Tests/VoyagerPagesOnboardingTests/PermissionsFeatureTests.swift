@@ -2,6 +2,7 @@ import Foundation
 
 import ComposableArchitecture
 @testable import VoyagerPagesOnboarding
+import VoyagerEntitiesSettings
 import XCTest
 
 @MainActor
