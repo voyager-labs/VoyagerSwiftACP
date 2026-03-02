@@ -22,13 +22,6 @@ struct SpotlightSearchService: Sendable {
     private let executionEngine: SpotlightQueryEngine
     private let rewriteEngine: NSURLScopeRewriteEngine
     private let compilerTask: Task<SpotlightQueryCompiler, Error>
-    private let postFilterTask: Task<PostFilterEvaluator, Error>
-
-    private struct PlanExecutionResult {
-        var plan: SpotlightQueryCompiler.CompilePlan
-        let paths: [String]
-        let usedFallback: Bool
-    }
 
     init(
         logger: Logger = Logger(label: "VoyagerHelper.SpotlightSearchService"),
@@ -36,9 +29,6 @@ struct SpotlightSearchService: Sendable {
         defaultScopeURL: @Sendable @escaping () -> URL = { FileManager.default.homeDirectoryForCurrentUser },
         compilerFactory: @Sendable @escaping () async throws -> SpotlightQueryCompiler = {
             try SpotlightQueryCompiler()
-        },
-        postFilterFactory: @Sendable @escaping () async throws -> PostFilterEvaluator = {
-            try PostFilterEvaluator()
         },
     ) {
         self.logger = logger
@@ -49,9 +39,6 @@ struct SpotlightSearchService: Sendable {
         compilerTask = Task(priority: .utility) {
             try await compilerFactory()
         }
-        postFilterTask = Task(priority: .utility) {
-            try await postFilterFactory()
-        }
     }
 
     func applyFilters(_ filters: SearchFiltersPayload) async throws -> SearchResponsePayload {
@@ -59,23 +46,13 @@ struct SpotlightSearchService: Sendable {
         let prepared = rewriteEngine.prepare(filters)
 
         let compiler = try await compilerTask.value
-        let postFilter = try await postFilterTask.value
         let compiledPlan = try compiler.compilePlan(conditions: prepared.conditions)
 
         let scopeURLs = resolveScopeURLs(prepared.scopes)
-        let execution = try executePlan(
-            compiledPlan,
-            conditions: prepared.conditions,
-            scopeURLs: scopeURLs,
-            requestId: requestId,
+        let paths = try executionEngine.loadPaths(
+            queryString: compiledPlan.predicate,
+            scopes: scopeURLs,
         )
-
-        let plan = execution.plan
-        var paths = execution.paths
-
-        if plan.postFilterConditions.isEmpty == false {
-            paths = try postFilter.filter(paths: paths, conditions: plan.postFilterConditions)
-        }
 
         if paths.count == maxCandidates {
             logger.warning("MDQuery result truncated at maxCandidates=\(maxCandidates): id=\(requestId)")
@@ -84,7 +61,7 @@ struct SpotlightSearchService: Sendable {
         let items = makeJSONItems(from: paths)
 
         logger.info(
-            "MDQuery applyFilters completed: id=\(requestId) scopes=\(scopeURLs.count) pushdown_conditions=\(plan.pushdownConditions.count) postfilter_conditions=\(plan.postFilterConditions.count) items=\(items.count) fallback=\(execution.usedFallback)",
+            "MDQuery applyFilters completed: id=\(requestId) scopes=\(scopeURLs.count) pushdown_conditions=\(compiledPlan.pushdownConditions.count) items=\(items.count)",
         )
 
         return SearchResponsePayload(
@@ -96,49 +73,6 @@ struct SpotlightSearchService: Sendable {
             items: items,
             error: nil,
         )
-    }
-
-    private func executePlan(
-        _ initialPlan: SpotlightQueryCompiler.CompilePlan,
-        conditions: [SearchConditionPayload],
-        scopeURLs: [URL],
-        requestId: String,
-    ) throws -> PlanExecutionResult {
-        do {
-            let paths = try executionEngine.loadPaths(
-                queryString: initialPlan.predicate,
-                scopes: scopeURLs,
-            )
-
-            return PlanExecutionResult(
-                plan: initialPlan,
-                paths: paths,
-                usedFallback: false,
-            )
-        } catch let error as SearchError {
-            guard initialPlan.pushdownConditions.isEmpty == false else {
-                throw error
-            }
-
-            logger.warning(
-                "MDQuery pushdown failed. Falling back to post-filter mode: id=\(requestId) error=\(error.localizedDescription)",
-            )
-
-            let paths = try executionEngine.loadPaths(
-                queryString: SpotlightQueryCompiler.basePredicate,
-                scopes: scopeURLs,
-            )
-
-            return PlanExecutionResult(
-                plan: SpotlightQueryCompiler.CompilePlan(
-                    predicate: SpotlightQueryCompiler.basePredicate,
-                    pushdownConditions: [],
-                    postFilterConditions: conditions,
-                ),
-                paths: paths,
-                usedFallback: true,
-            )
-        }
     }
 
     private func resolveScopeURLs(_ scopes: [String]) -> [URL] {
