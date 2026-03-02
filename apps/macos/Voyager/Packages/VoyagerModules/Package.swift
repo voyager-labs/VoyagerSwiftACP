@@ -56,5 +56,20 @@ let package = Package(
                 .product(name: "PerceptionCore", package: "swift-perception"),
             ],
         ),
+        .testTarget(
+            name: "VoyagerPagesOnboardingTests",
+            dependencies: [
+                "VoyagerPagesOnboarding",
+                .product(name: "ComposableArchitecture", package: "swift-composable-architecture"),
+            ],
+        ),
+        .testTarget(
+            name: "VoyagerPagesSettingsTests",
+            dependencies: [
+                "VoyagerPagesSettings",
+                "VoyagerShared",
+                .product(name: "ComposableArchitecture", package: "swift-composable-architecture"),
+            ],
+        ),
     ],
 )

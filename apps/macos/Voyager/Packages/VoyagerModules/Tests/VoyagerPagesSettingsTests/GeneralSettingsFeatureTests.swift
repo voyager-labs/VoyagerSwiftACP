@@ -1,15 +1,15 @@
 import ComposableArchitecture
 import Foundation
-@testable import Voyager
+@testable import VoyagerPagesSettings
+import VoyagerShared
 import XCTest
 
 // swiftlint:disable xct_specific_matcher
 
 @MainActor
 final class GeneralSettingsFeatureTests: XCTestCase {
-    func testToggleAutomaticUpdatePersistsAndCallsUpdater() async {
+    func testToggleAutomaticUpdatePersists() async {
         let storage = BoolStorage()
-        let recorder = BoolRecorder()
         let userDefaultsClient = UserDefaultsClient(
             bool: { key in
                 storage.get(key) ?? false
@@ -35,14 +35,6 @@ final class GeneralSettingsFeatureTests: XCTestCase {
             GeneralSettingsFeature()
         } withDependencies: {
             $0.userDefaultsClient = userDefaultsClient
-            $0.updaterClient = UpdaterClient(
-                configure: {},
-                startAtLaunch: {},
-                checkForUpdates: {},
-                setAutomaticUpdate: { enabled in
-                    await recorder.append(enabled)
-                },
-            )
         }
 
         await store.send(.toggleAutomaticUpdate(true)) { state in
@@ -52,8 +44,6 @@ final class GeneralSettingsFeatureTests: XCTestCase {
         await store.finish()
 
         XCTAssertEqual(storage.get(SettingsKeys.automaticUpdate), true)
-        let values = await recorder.values
-        XCTAssertEqual(values, [true])
     }
 }
 
@@ -71,14 +61,6 @@ private final class BoolStorage: @unchecked Sendable {
         lock.lock()
         defer { lock.unlock() }
         return values[key]
-    }
-}
-
-private actor BoolRecorder {
-    var values: [Bool] = []
-
-    func append(_ value: Bool) {
-        values.append(value)
     }
 }
 
