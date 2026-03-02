@@ -1,5 +1,6 @@
 import ComposableArchitecture
 import Foundation
+import VoyagerShared
 
 struct OnboardingProgressClient: Sendable {
     enum LoadResult: Equatable, Sendable {
@@ -25,20 +26,21 @@ extension OnboardingProgressClient: DependencyKey {
     nonisolated static var liveValue: OnboardingProgressClient {
         OnboardingProgressClient(
             load: {
-                let defaults = UserDefaults.standard
+                @Dependency(\.userDefaultsClient)
+                var userDefaultsClient
 
-                guard let currentStepRaw = defaults.string(forKey: Keys.currentStep) else {
+                guard let currentStepRaw = userDefaultsClient.string(Keys.currentStep) else {
                     return .empty
                 }
 
                 // Migration: Support both Int (legacy) and Double (current) version types
                 let version: Double
-                if let doubleVersion = defaults.object(forKey: Keys.version) as? Double {
+                if let doubleVersion = userDefaultsClient.object(Keys.version) as? Double {
                     version = doubleVersion
-                } else if let intVersion = defaults.object(forKey: Keys.version) as? Int {
+                } else if let intVersion = userDefaultsClient.object(Keys.version) as? Int {
                     // Migrate from Int to Double
                     version = Double(intVersion)
-                    defaults.set(version, forKey: Keys.version) // Update to Double
+                    userDefaultsClient.setObject(version, Keys.version) // Update to Double
                 } else {
                     return .resetRequired
                 }
@@ -49,7 +51,7 @@ extension OnboardingProgressClient: DependencyKey {
                 guard let step = OnboardingStep(rawValue: currentStepRaw) else {
                     return .resetRequired
                 }
-                guard let data = defaults.data(forKey: Keys.stepState) else {
+                guard let data = userDefaultsClient.object(Keys.stepState) as? Data else {
                     return .resetRequired
                 }
                 guard let stepState = try? JSONDecoder().decode(OnboardingStepState.self, from: data) else {
@@ -59,19 +61,21 @@ extension OnboardingProgressClient: DependencyKey {
                 return .success(OnboardingProgressSnapshot(currentStep: step, stepState: stepState))
             },
             save: { snapshot in
-                let defaults = UserDefaults.standard
-                defaults.set(currentVersion, forKey: Keys.version)
-                defaults.set(snapshot.currentStep.rawValue, forKey: Keys.currentStep)
+                @Dependency(\.userDefaultsClient)
+                var userDefaultsClient
+                userDefaultsClient.setObject(currentVersion, Keys.version)
+                userDefaultsClient.setObject(snapshot.currentStep.rawValue, Keys.currentStep)
 
                 if let data = try? JSONEncoder().encode(snapshot.stepState) {
-                    defaults.set(data, forKey: Keys.stepState)
+                    userDefaultsClient.setObject(data, Keys.stepState)
                 }
             },
             reset: {
-                let defaults = UserDefaults.standard
-                defaults.removeObject(forKey: Keys.version)
-                defaults.removeObject(forKey: Keys.currentStep)
-                defaults.removeObject(forKey: Keys.stepState)
+                @Dependency(\.userDefaultsClient)
+                var userDefaultsClient
+                userDefaultsClient.setObject(nil, Keys.version)
+                userDefaultsClient.setObject(nil, Keys.currentStep)
+                userDefaultsClient.setObject(nil, Keys.stepState)
             },
         )
     }
