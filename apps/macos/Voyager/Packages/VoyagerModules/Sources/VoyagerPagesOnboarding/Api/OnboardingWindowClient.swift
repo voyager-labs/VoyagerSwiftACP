@@ -3,6 +3,11 @@ import ComposableArchitecture
 
 @MainActor private var onboardingWindowController: OnboardingWindowController?
 
+public enum OnboardingOpenMainWindowRequest: Equatable, Sendable {
+    case defaultTabPath
+    case explicitPath(String)
+}
+
 private actor OnboardingPresentationGate {
     private var hasRequestedPresentation = false
 
@@ -23,13 +28,13 @@ public struct OnboardingWindowClient: Sendable {
     public var showIfNeeded: @Sendable () -> Bool
     public var showWindow: @Sendable () async -> Void
     public var closeWindow: @Sendable () async -> Void
-    public var openMainWindow: @Sendable (_ path: String?) async -> Bool
+    public var openMainWindow: @Sendable (_ request: OnboardingOpenMainWindowRequest) async -> Bool
 
     public nonisolated init(
         showIfNeeded: @escaping @Sendable () -> Bool,
         showWindow: @escaping @Sendable () async -> Void,
         closeWindow: @escaping @Sendable () async -> Void,
-        openMainWindow: @escaping @Sendable (_ path: String?) async -> Bool,
+        openMainWindow: @escaping @Sendable (_ request: OnboardingOpenMainWindowRequest) async -> Bool,
     ) {
         self.showIfNeeded = showIfNeeded
         self.showWindow = showWindow
@@ -46,7 +51,7 @@ extension OnboardingWindowClient: DependencyKey {
     }
 
     public nonisolated static func makeLive(
-        openMainWindow: @escaping @Sendable (_ path: String?) async -> Bool,
+        openMainWindow: @escaping @Sendable (_ request: OnboardingOpenMainWindowRequest) async -> Bool,
     ) -> OnboardingWindowClient {
         makeClient(
             progressClient: OnboardingProgressClient.liveValue,
@@ -56,7 +61,7 @@ extension OnboardingWindowClient: DependencyKey {
 
     nonisolated static func makeClient(
         progressClient: OnboardingProgressClient,
-        openMainWindow: @escaping @Sendable (_ path: String?) async -> Bool,
+        openMainWindow: @escaping @Sendable (_ request: OnboardingOpenMainWindowRequest) async -> Bool,
         showWindow customShowWindow: (@Sendable () async -> Void)? = nil,
         closeWindow customCloseWindow: (@Sendable () async -> Void)? = nil,
     ) -> OnboardingWindowClient {

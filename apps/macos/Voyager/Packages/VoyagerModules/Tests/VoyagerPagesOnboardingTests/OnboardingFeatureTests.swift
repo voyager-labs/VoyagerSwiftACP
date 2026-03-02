@@ -1,7 +1,6 @@
 import ComposableArchitecture
-@testable import VoyagerPagesOnboarding
 import VoyagerFeaturesBetaAccess
-import VoyagerShared
+@testable import VoyagerPagesOnboarding
 import XCTest
 
 @MainActor
@@ -121,8 +120,8 @@ final class OnboardingFeatureTests: XCTestCase {
                 showIfNeeded: { false },
                 showWindow: {},
                 closeWindow: {},
-                openMainWindow: { path in
-                    await pathRecorder.append(path)
+                openMainWindow: { request in
+                    await pathRecorder.append(request)
                     return true
                 },
             )
@@ -140,7 +139,7 @@ final class OnboardingFeatureTests: XCTestCase {
 
         let openedPaths = await pathRecorder.snapshot()
         XCTAssertEqual(openedPaths.count, 1)
-        XCTAssertEqual(openedPaths[0], SettingsDefaults.defaultTabPath())
+        XCTAssertEqual(openedPaths[0], .defaultTabPath)
         let savedSnapshot = await snapshotRecorder.value
         XCTAssertEqual(savedSnapshot?.stepState.completeComplete, true)
         await store.finish()
@@ -190,13 +189,13 @@ private actor SnapshotRecorder {
 }
 
 private actor PathRecorder {
-    private var paths: [String?] = []
+    private var paths: [OnboardingOpenMainWindowRequest] = []
 
-    func append(_ path: String?) {
-        paths.append(path)
+    func append(_ request: OnboardingOpenMainWindowRequest) {
+        paths.append(request)
     }
 
-    func snapshot() -> [String?] {
+    func snapshot() -> [OnboardingOpenMainWindowRequest] {
         paths
     }
 }

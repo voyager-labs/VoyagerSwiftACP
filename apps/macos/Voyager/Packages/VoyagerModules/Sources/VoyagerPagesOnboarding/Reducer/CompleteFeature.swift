@@ -1,6 +1,5 @@
 import ComposableArchitecture
 import Foundation
-import VoyagerShared
 
 @Reducer
 struct CompleteFeature {
@@ -18,10 +17,7 @@ struct CompleteFeature {
                 state.isOpeningWindow = true
                 state.openWindowError = nil
                 return .run { [onboardingWindowClient] send in
-                    let path = await MainActor.run {
-                        SettingsDefaults.defaultTabPath()
-                    }
-                    let opened = await onboardingWindowClient.openMainWindow(path)
+                    let opened = await onboardingWindowClient.openMainWindow(.defaultTabPath)
                     await send(.openWindowResponse(opened))
                 }
 

@@ -7,7 +7,9 @@ final class OnboardingWindowController: NSWindowController, NSWindowDelegate {
     let store: StoreOf<OnboardingFeature>
     private var shouldTerminateOnClose = true
 
-    init(openMainWindow: @escaping @Sendable (_ path: String?) async -> Bool = { _ in false }) {
+    init(openMainWindow: @escaping @Sendable (_ request: OnboardingOpenMainWindowRequest) async -> Bool = { _ in
+        false
+    }) {
         store = Store(initialState: OnboardingFeature.State()) {
             OnboardingFeature()
         } withDependencies: {

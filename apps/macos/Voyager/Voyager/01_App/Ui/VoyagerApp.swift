@@ -21,9 +21,14 @@ struct VoyagerApp: App {
         appRootStore = Store(initialState: AppRootState()) {
             AppRootFeature()
         } withDependencies: {
-            $0.onboardingWindowClient = OnboardingWindowClient.makeLive(openMainWindow: { path in
+            $0.onboardingWindowClient = OnboardingWindowClient.makeLive(openMainWindow: { request in
                 await MainActor.run {
-                    let resolvedPath = path ?? SettingsDefaults.defaultTabPath()
+                    let resolvedPath: String = switch request {
+                    case .defaultTabPath:
+                        SettingsDefaults.defaultTabPath()
+                    case let .explicitPath(path):
+                        path
+                    }
                     requestFileManagerNewWindow(path: resolvedPath)
                     return true
                 }
