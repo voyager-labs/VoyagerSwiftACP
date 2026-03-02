@@ -18,7 +18,7 @@ extension FileManagerContentState {
         )
 
         return .concatenate(
-            .send(.requestNavigation(.setNavigationState(navigationState))),
+            .send(.requestNavigation(.internal(.setNavigationState(navigationState)))),
             clearEffect,
         )
     }
@@ -52,7 +52,7 @@ extension FileManagerContentState {
         syncComposerCollectionState()
 
         return .merge(
-            .send(.requestNavigation(.setPendingNavigation(nil))),
+            .send(.requestNavigation(.internal(.setPendingNavigation(nil)))),
             .cancel(id: "openCollectionFile"),
             .cancel(id: ComposerFeature.CancelID.search),
             .cancel(id: ComposerFeature.CancelID.filters),

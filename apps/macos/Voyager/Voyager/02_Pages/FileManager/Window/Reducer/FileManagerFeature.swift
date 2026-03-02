@@ -154,33 +154,90 @@ struct FileManagerFeature {
     }
 
     private func handleEntryRequest(_ command: Action.WindowCommand, state: inout State) -> Effect<Action> {
+        let currentPath = state.content.navigation.currentPath
+
+        if let effect = handleEntryRequestPathDependent(command, currentPath: currentPath) {
+            return effect
+        }
+
+        if let effect = handleEntryRequestSelection(command) {
+            return effect
+        }
+
+        if let effect = handleEntryRequestEditing(command) {
+            return effect
+        }
+
+        if let effect = handleEntryRequestCopying(command) {
+            return effect
+        }
+
+        if let effect = handleEntryRequestViewOptions(command) {
+            return effect
+        }
+
+        return .none
+    }
+
+    private func handleEntryRequestPathDependent(
+        _ command: Action.WindowCommand,
+        currentPath: String,
+    ) -> Effect<Action>? {
         switch command {
         case .newFolder:
-            .send(.content(.entries(.createNewFolder(currentPath: state.content.navigation.currentPath))))
+            .send(.content(.entries(.createNewFolder(currentPath: currentPath))))
+        case .paste:
+            .send(.content(.entries(.pasteItems(destinationPath: currentPath))))
+        default:
+            nil
+        }
+    }
+
+    private func handleEntryRequestSelection(_ command: Action.WindowCommand) -> Effect<Action>? {
+        switch command {
         case .openSelectedItem:
             .send(.content(.entries(.openSelectedItem)))
         case .quickLookSelectedItem:
             .send(.content(.entries(.quickLookSelectedItem)))
-        case .toggleShowHiddenFiles:
-            .send(.content(.entries(.toggleShowHiddenFiles)))
+        case .selectAll:
+            .send(.content(.entries(.selectAll)))
+        default:
+            nil
+        }
+    }
+
+    private func handleEntryRequestEditing(_ command: Action.WindowCommand) -> Effect<Action>? {
+        switch command {
         case .cut:
             .send(.content(.entries(.cutSelectedItems)))
         case .copy:
             .send(.content(.entries(.copySelectedItems)))
-        case .paste:
-            .send(.content(.entries(.pasteItems(destinationPath: state.content.navigation.currentPath))))
         case .duplicate:
             .send(.content(.entries(.duplicateSelectedItems)))
         case .makeAlias:
             .send(.content(.entries(.createAliasForSelectedItems)))
-        case .selectAll:
-            .send(.content(.entries(.selectAll)))
+        default:
+            nil
+        }
+    }
+
+    private func handleEntryRequestCopying(_ command: Action.WindowCommand) -> Effect<Action>? {
+        switch command {
         case .copyAbsolutePaths:
             .send(.content(.entries(.copySelectedAbsolutePaths)))
         case .copyURLs:
             .send(.content(.entries(.copySelectedURLs)))
         default:
-            .none
+            nil
+        }
+    }
+
+    private func handleEntryRequestViewOptions(_ command: Action.WindowCommand) -> Effect<Action>? {
+        switch command {
+        case .toggleShowHiddenFiles:
+            .send(.content(.entries(.toggleShowHiddenFiles)))
+        default:
+            nil
         }
     }
 
@@ -200,11 +257,11 @@ struct FileManagerFeature {
     private func handleNavigationRequest(_ command: Action.WindowCommand) -> Effect<Action> {
         switch command {
         case .goBack:
-            .send(.navigation(.goBack))
+            .send(.navigation(.view(.goBack)))
         case .goForward:
-            .send(.navigation(.goForward))
+            .send(.navigation(.view(.goForward)))
         case .goToEnclosingDirectory:
-            .send(.navigation(.goToEnclosingDirectory))
+            .send(.navigation(.view(.goToEnclosingDirectory)))
         default:
             .none
         }

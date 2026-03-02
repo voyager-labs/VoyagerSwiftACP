@@ -9,20 +9,20 @@ struct ContentPageNavigationDirectReducer {
     var body: some Reducer<State, Action> {
         Reduce { state, action in
             switch action {
-            case let .performNavigateToPath(path, currentSnapshot):
-                performNavigateToPath(path, currentSnapshot: currentSnapshot, state: &state)
+            case let .internal(.performNavigateToPath(path)):
+                performNavigateToPath(path, state: &state)
 
-            case let .performShowRecents(currentSnapshot):
-                performShowRecents(currentSnapshot: currentSnapshot, state: &state)
+            case .internal(.performShowRecents):
+                performShowRecents(state: &state)
 
-            case let .performShowComputer(currentSnapshot):
-                performShowComputer(currentSnapshot: currentSnapshot, state: &state)
+            case .internal(.performShowComputer):
+                performShowComputer(state: &state)
 
-            case let .performShowTag(tagName, currentSnapshot):
-                performShowTag(tagName, currentSnapshot: currentSnapshot, state: &state)
+            case let .internal(.performShowTag(tagName)):
+                performShowTag(tagName, state: &state)
 
-            case let .prepareCollectionFileOpen(url, currentSnapshot):
-                performPrepareCollectionFileOpen(url, currentSnapshot: currentSnapshot, state: &state)
+            case let .internal(.prepareCollectionFileOpen(url)):
+                performPrepareCollectionFileOpen(url, state: &state)
 
             default:
                 .none
@@ -32,9 +32,9 @@ struct ContentPageNavigationDirectReducer {
 
     private func performNavigateToPath(
         _ path: String,
-        currentSnapshot: ContentPageNavigationHistorySnapshot,
         state: inout State,
     ) -> Effect<Action> {
+        let currentSnapshot = state.makeContentPageNavigationHistorySnapshot()
         let previousNavigationState = state.navigationState
         let shouldRecordHistory = path != state.currentPath
 
@@ -53,13 +53,13 @@ struct ContentPageNavigationDirectReducer {
     }
 
     private func performShowRecents(
-        currentSnapshot: ContentPageNavigationHistorySnapshot,
         state: inout State,
     ) -> Effect<Action> {
         if case .recents = state.navigationState {
             return .none
         }
 
+        let currentSnapshot = state.makeContentPageNavigationHistorySnapshot()
         let previousNavigationState = state.navigationState
         state.appendBackHistory(currentSnapshot)
         state.forwardHistory = []
@@ -73,13 +73,13 @@ struct ContentPageNavigationDirectReducer {
     }
 
     private func performShowComputer(
-        currentSnapshot: ContentPageNavigationHistorySnapshot,
         state: inout State,
     ) -> Effect<Action> {
         if case .computer = state.navigationState {
             return .none
         }
 
+        let currentSnapshot = state.makeContentPageNavigationHistorySnapshot()
         let previousNavigationState = state.navigationState
         state.appendBackHistory(currentSnapshot)
         state.forwardHistory = []
@@ -94,7 +94,6 @@ struct ContentPageNavigationDirectReducer {
 
     private func performShowTag(
         _ tagName: String,
-        currentSnapshot: ContentPageNavigationHistorySnapshot,
         state: inout State,
     ) -> Effect<Action> {
         if case let .tags(currentTagName) = state.navigationState,
@@ -103,6 +102,7 @@ struct ContentPageNavigationDirectReducer {
             return .none
         }
 
+        let currentSnapshot = state.makeContentPageNavigationHistorySnapshot()
         let previousNavigationState = state.navigationState
         state.appendBackHistory(currentSnapshot)
         state.forwardHistory = []
@@ -117,7 +117,6 @@ struct ContentPageNavigationDirectReducer {
 
     private func performPrepareCollectionFileOpen(
         _ url: URL,
-        currentSnapshot: ContentPageNavigationHistorySnapshot,
         state: inout State,
     ) -> Effect<Action> {
         if case .collection = state.navigationState {
@@ -125,10 +124,7 @@ struct ContentPageNavigationDirectReducer {
         }
 
         let directoryPath = url.deletingLastPathComponent().path
-        let previousSnapshot = ContentPageNavigationHistorySnapshot(
-            navigationState: .folder(directoryPath),
-            composerSnapshot: currentSnapshot.composerSnapshot,
-        )
+        let previousSnapshot = ContentPageNavigationHistorySnapshot(navigationState: .folder(directoryPath))
         state.appendBackHistory(previousSnapshot)
         state.forwardHistory = []
         return .none
