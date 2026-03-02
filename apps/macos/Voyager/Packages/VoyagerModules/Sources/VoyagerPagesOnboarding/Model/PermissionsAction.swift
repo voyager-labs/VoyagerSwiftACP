@@ -1,4 +1,5 @@
 import ComposableArchitecture
+import VoyagerEntitiesSettings
 
 @CasePathable
 enum PermissionsAction: CasePathable, Sendable {

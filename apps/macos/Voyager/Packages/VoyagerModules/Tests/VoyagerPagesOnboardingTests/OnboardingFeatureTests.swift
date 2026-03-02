@@ -1,6 +1,7 @@
 import ComposableArchitecture
 @testable import VoyagerPagesOnboarding
 import VoyagerFeaturesBetaAccess
+import VoyagerShared
 import XCTest
 
 @MainActor
@@ -139,7 +140,7 @@ final class OnboardingFeatureTests: XCTestCase {
 
         let openedPaths = await pathRecorder.snapshot()
         XCTAssertEqual(openedPaths.count, 1)
-        XCTAssertNil(openedPaths[0])
+        XCTAssertEqual(openedPaths[0], SettingsDefaults.defaultTabPath())
         let savedSnapshot = await snapshotRecorder.value
         XCTAssertEqual(savedSnapshot?.stepState.completeComplete, true)
         await store.finish()

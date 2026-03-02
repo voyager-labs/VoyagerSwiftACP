@@ -1,11 +1,11 @@
 import ComposableArchitecture
 import ServiceManagement
 
-struct LaunchAtLoginClient: Sendable {
-    var isEnabled: @Sendable () -> Bool
-    var setEnabled: @Sendable (Bool) throws -> Void
+public struct LaunchAtLoginClient: Sendable {
+    public var isEnabled: @Sendable () -> Bool
+    public var setEnabled: @Sendable (Bool) throws -> Void
 
-    nonisolated init(
+    public nonisolated init(
         isEnabled: @escaping @Sendable () -> Bool,
         setEnabled: @escaping @Sendable (Bool) throws -> Void,
     ) {
@@ -15,7 +15,7 @@ struct LaunchAtLoginClient: Sendable {
 }
 
 extension LaunchAtLoginClient: DependencyKey {
-    nonisolated static var liveValue: LaunchAtLoginClient {
+    public nonisolated static var liveValue: LaunchAtLoginClient {
         LaunchAtLoginClient(
             isEnabled: {
                 let appService = SMAppService.mainApp
@@ -32,14 +32,14 @@ extension LaunchAtLoginClient: DependencyKey {
         )
     }
 
-    nonisolated static var testValue: LaunchAtLoginClient {
+    public nonisolated static var testValue: LaunchAtLoginClient {
         LaunchAtLoginClient(
             isEnabled: { false },
             setEnabled: { _ in },
         )
     }
 
-    nonisolated static var previewValue: LaunchAtLoginClient {
+    public nonisolated static var previewValue: LaunchAtLoginClient {
         LaunchAtLoginClient(
             isEnabled: { false },
             setEnabled: { _ in },
@@ -47,7 +47,7 @@ extension LaunchAtLoginClient: DependencyKey {
     }
 }
 
-extension DependencyValues {
+public extension DependencyValues {
     nonisolated var launchAtLoginClient: LaunchAtLoginClient {
         get { self[LaunchAtLoginClient.self] }
         set { self[LaunchAtLoginClient.self] = newValue }

@@ -1,5 +1,6 @@
 import ComposableArchitecture
 import Foundation
+import VoyagerEntitiesSettings
 
 @ObservableState
 struct PermissionsState: Equatable, Sendable {

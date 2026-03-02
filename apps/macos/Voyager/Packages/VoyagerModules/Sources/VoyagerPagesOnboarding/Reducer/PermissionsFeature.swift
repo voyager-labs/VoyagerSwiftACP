@@ -1,5 +1,6 @@
 import ComposableArchitecture
 import Foundation
+import VoyagerEntitiesSettings
 
 @Reducer
 struct PermissionsFeature {

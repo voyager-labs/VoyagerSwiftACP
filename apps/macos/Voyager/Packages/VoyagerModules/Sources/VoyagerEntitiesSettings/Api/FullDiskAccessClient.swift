@@ -3,13 +3,13 @@ import Foundation
 
 // NOTE: FullDiskAccess 상태 타입은 권한 판정 클라이언트와 온보딩 권한 플로우에서 공용으로 사용한다.
 // TODO: FullDiskAccessStatus와 message 규칙을 Settings/Model로 분리하고, Api는 클라이언트 인터페이스만 유지한다.
-enum FullDiskAccessStatus: String, Equatable, Sendable {
+public enum FullDiskAccessStatus: String, Equatable, Sendable {
     case granted = "Granted"
     case needsAction = "Needs Action"
     case denied = "Denied"
     case unknown = "Unknown"
 
-    var message: String {
+    public var message: String {
         switch self {
         case .granted:
             "You're all set for Full Disk Access."
@@ -23,16 +23,16 @@ enum FullDiskAccessStatus: String, Equatable, Sendable {
     }
 }
 
-struct FullDiskAccessClient: Sendable {
-    var status: @Sendable () -> FullDiskAccessStatus
+public struct FullDiskAccessClient: Sendable {
+    public var status: @Sendable () -> FullDiskAccessStatus
 
-    nonisolated init(status: @escaping @Sendable () -> FullDiskAccessStatus) {
+    public nonisolated init(status: @escaping @Sendable () -> FullDiskAccessStatus) {
         self.status = status
     }
 }
 
 extension FullDiskAccessClient: DependencyKey {
-    nonisolated static var liveValue: FullDiskAccessClient {
+    public nonisolated static var liveValue: FullDiskAccessClient {
         FullDiskAccessClient(status: {
             statusFromProtectedReadProbe()
         })
@@ -95,16 +95,16 @@ extension FullDiskAccessClient: DependencyKey {
         return false
     }
 
-    nonisolated static var testValue: FullDiskAccessClient {
+    public nonisolated static var testValue: FullDiskAccessClient {
         FullDiskAccessClient(status: { .unknown })
     }
 
-    nonisolated static var previewValue: FullDiskAccessClient {
+    public nonisolated static var previewValue: FullDiskAccessClient {
         FullDiskAccessClient(status: { .unknown })
     }
 }
 
-extension DependencyValues {
+public extension DependencyValues {
     nonisolated var fullDiskAccessClient: FullDiskAccessClient {
         get { self[FullDiskAccessClient.self] }
         set { self[FullDiskAccessClient.self] = newValue }

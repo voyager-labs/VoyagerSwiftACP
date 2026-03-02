@@ -2,18 +2,18 @@ import AppKit
 import ComposableArchitecture
 import Foundation
 
-enum FolderAccessPermission: String, Equatable, Sendable {
+public enum FolderAccessPermission: String, Equatable, Sendable {
     case granted = "Granted"
     case notGranted = "Not Granted"
 }
 
-enum FilesAndFoldersStatus: Equatable, Sendable {
+public enum FilesAndFoldersStatus: Equatable, Sendable {
     case idle
     case granted
     case partial
     case notGranted
 
-    var message: String {
+    public var message: String {
         switch self {
         case .idle:
             "Tap Grant Access when you're ready."
@@ -27,12 +27,18 @@ enum FilesAndFoldersStatus: Equatable, Sendable {
     }
 }
 
-struct FolderAccessResult: Equatable, Sendable {
-    var desktop: FolderAccessPermission
-    var documents: FolderAccessPermission
-    var downloads: FolderAccessPermission
+public struct FolderAccessResult: Equatable, Sendable {
+    public var desktop: FolderAccessPermission
+    public var documents: FolderAccessPermission
+    public var downloads: FolderAccessPermission
 
-    var status: FilesAndFoldersStatus {
+    public init(desktop: FolderAccessPermission, documents: FolderAccessPermission, downloads: FolderAccessPermission) {
+        self.desktop = desktop
+        self.documents = documents
+        self.downloads = downloads
+    }
+
+    public var status: FilesAndFoldersStatus {
         let grantedCount = [desktop, documents, downloads].count(where: { $0 == .granted })
         switch grantedCount {
         case 3:
@@ -45,16 +51,16 @@ struct FolderAccessResult: Equatable, Sendable {
     }
 }
 
-struct FolderAccessClient: Sendable {
-    var requestAccess: @Sendable () async -> FolderAccessResult
+public struct FolderAccessClient: Sendable {
+    public var requestAccess: @Sendable () async -> FolderAccessResult
 
-    nonisolated init(requestAccess: @escaping @Sendable () async -> FolderAccessResult) {
+    public nonisolated init(requestAccess: @escaping @Sendable () async -> FolderAccessResult) {
         self.requestAccess = requestAccess
     }
 }
 
 extension FolderAccessClient: DependencyKey {
-    nonisolated static var liveValue: FolderAccessClient {
+    public nonisolated static var liveValue: FolderAccessClient {
         FolderAccessClient(requestAccess: {
             await MainActor.run {
                 let fileManager = FileManager.default
@@ -75,7 +81,7 @@ extension FolderAccessClient: DependencyKey {
         })
     }
 
-    nonisolated static var testValue: FolderAccessClient {
+    public nonisolated static var testValue: FolderAccessClient {
         FolderAccessClient(requestAccess: {
             FolderAccessResult(
                 desktop: .notGranted,
@@ -85,7 +91,7 @@ extension FolderAccessClient: DependencyKey {
         })
     }
 
-    nonisolated static var previewValue: FolderAccessClient {
+    public nonisolated static var previewValue: FolderAccessClient {
         FolderAccessClient(requestAccess: {
             FolderAccessResult(
                 desktop: .notGranted,
@@ -96,7 +102,7 @@ extension FolderAccessClient: DependencyKey {
     }
 }
 
-extension DependencyValues {
+public extension DependencyValues {
     nonisolated var folderAccessClient: FolderAccessClient {
         get { self[FolderAccessClient.self] }
         set { self[FolderAccessClient.self] = newValue }

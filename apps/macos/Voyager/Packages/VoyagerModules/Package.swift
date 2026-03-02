@@ -8,6 +8,7 @@ let package = Package(
     ],
     products: [
         .library(name: "VoyagerShared", targets: ["VoyagerShared"]),
+        .library(name: "VoyagerEntitiesSettings", targets: ["VoyagerEntitiesSettings"]),
         .library(name: "VoyagerFeaturesBetaAccess", targets: ["VoyagerFeaturesBetaAccess"]),
         .library(name: "VoyagerPagesOnboarding", targets: ["VoyagerPagesOnboarding"]),
         .library(name: "VoyagerPagesSettings", targets: ["VoyagerPagesSettings"]),
@@ -37,6 +38,13 @@ let package = Package(
             ],
         ),
         .target(
+            name: "VoyagerEntitiesSettings",
+            dependencies: [
+                "VoyagerShared",
+                .product(name: "ComposableArchitecture", package: "swift-composable-architecture"),
+            ],
+        ),
+        .target(
             name: "VoyagerFeaturesBetaAccess",
             dependencies: [
                 "VoyagerShared",
@@ -49,6 +57,7 @@ let package = Package(
             name: "VoyagerPagesOnboarding",
             dependencies: [
                 "VoyagerShared",
+                "VoyagerEntitiesSettings",
                 "VoyagerFeaturesBetaAccess",
                 .product(name: "CasePaths", package: "swift-case-paths"),
                 .product(name: "ComposableArchitecture", package: "swift-composable-architecture"),
@@ -60,6 +69,7 @@ let package = Package(
             name: "VoyagerPagesSettings",
             dependencies: [
                 "VoyagerShared",
+                "VoyagerEntitiesSettings",
                 .product(name: "CasePaths", package: "swift-case-paths"),
                 .product(name: "ComposableArchitecture", package: "swift-composable-architecture"),
                 .product(name: "Perception", package: "swift-perception"),

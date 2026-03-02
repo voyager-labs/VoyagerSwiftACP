@@ -1,23 +1,23 @@
 import ComposableArchitecture
 import Foundation
 
-struct HelperFolderAccessClient: Sendable {
-    var requestAccess: @Sendable () async -> FolderAccessResult
+public struct HelperFolderAccessClient: Sendable {
+    public var requestAccess: @Sendable () async -> FolderAccessResult
 
-    nonisolated init(requestAccess: @escaping @Sendable () async -> FolderAccessResult) {
+    public nonisolated init(requestAccess: @escaping @Sendable () async -> FolderAccessResult) {
         self.requestAccess = requestAccess
     }
 }
 
 extension HelperFolderAccessClient: DependencyKey {
-    nonisolated static var liveValue: HelperFolderAccessClient {
+    public nonisolated static var liveValue: HelperFolderAccessClient {
         let resolver = HelperFolderAccessResolver()
         return HelperFolderAccessClient(requestAccess: {
             await resolver.requestAccess()
         })
     }
 
-    nonisolated static var testValue: HelperFolderAccessClient {
+    public nonisolated static var testValue: HelperFolderAccessClient {
         HelperFolderAccessClient(requestAccess: {
             FolderAccessResult(
                 desktop: .notGranted,
@@ -27,12 +27,12 @@ extension HelperFolderAccessClient: DependencyKey {
         })
     }
 
-    nonisolated static var previewValue: HelperFolderAccessClient {
+    public nonisolated static var previewValue: HelperFolderAccessClient {
         testValue
     }
 }
 
-extension DependencyValues {
+public extension DependencyValues {
     nonisolated var helperFolderAccessClient: HelperFolderAccessClient {
         get { self[HelperFolderAccessClient.self] }
         set { self[HelperFolderAccessClient.self] = newValue }
@@ -76,7 +76,7 @@ private actor HelperFolderAccessResolver {
 
         let token = await MainActor.run {
             let token = DistributedNotificationCenter.default().addObserver(
-                forName: Notification.Name(HelperFolderAccessNotificationName.didUpdate),
+                forName: .voyagerHelperFolderAccessDidUpdate,
                 object: nil,
                 queue: .main,
             ) { [weak self] notification in
@@ -95,7 +95,7 @@ private actor HelperFolderAccessResolver {
     private func sendRequest() async {
         await MainActor.run {
             DistributedNotificationCenter.default().post(
-                name: Notification.Name(HelperFolderAccessNotificationName.request),
+                name: .voyagerHelperFolderAccessRequest,
                 object: nil,
                 userInfo: nil,
             )
