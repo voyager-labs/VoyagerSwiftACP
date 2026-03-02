@@ -24,10 +24,6 @@ final class OnboardingHostAppDelegate: NSObject, NSApplicationDelegate {
         return true
     })
 
-    func applicationWillFinishLaunching(_: Notification) {
-        try? EnvironmentLoader.loadEnvFiles()
-    }
-
     func applicationDidFinishLaunching(_: Notification) {
         resetOnboardingProgress()
         _ = onboardingWindowClient.showIfNeeded()

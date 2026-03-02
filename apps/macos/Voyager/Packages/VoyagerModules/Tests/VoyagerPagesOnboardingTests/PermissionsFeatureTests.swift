@@ -1,8 +1,8 @@
 import Foundation
 
 import ComposableArchitecture
-@testable import VoyagerPagesOnboarding
 import VoyagerEntitiesSettings
+@testable import VoyagerPagesOnboarding
 import XCTest
 
 @MainActor

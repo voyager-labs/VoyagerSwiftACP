@@ -16,7 +16,7 @@ public struct BetaAccessState: Equatable, Sendable {
         status: BetaAccessStatus = .notActive,
         reason: BetaAccessReason = .missingInput,
         isVerifying: Bool = false,
-        isComplete: Bool = false
+        isComplete: Bool = false,
     ) {
         self.email = email
         self.token = token

@@ -14,12 +14,12 @@ public struct BetaAccessClient: Sendable {
     }
 }
 
-extension BetaAccessClient {
-    public nonisolated static var mockResponse: BetaAccessVerifyResponse {
+public extension BetaAccessClient {
+    nonisolated static var mockResponse: BetaAccessVerifyResponse {
         BetaAccessVerifyResponse(ok: true)
     }
 
-    public nonisolated static var mock: BetaAccessClient {
+    nonisolated static var mock: BetaAccessClient {
         BetaAccessClient(verify: { _, _ in
             mockResponse
         })
