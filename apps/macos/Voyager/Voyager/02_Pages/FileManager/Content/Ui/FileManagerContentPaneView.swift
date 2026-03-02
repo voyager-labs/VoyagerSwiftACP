@@ -41,8 +41,12 @@ struct FileManagerContentPaneView: View {
                         isDiscardEnabled: paneState.isDiscardEnabled,
                         canSaveCollection: paneState.canSaveCollection,
                         isTemporaryCollection: paneState.isTemporaryCollection,
-                        onDiscardCollectionChanges: { store.send(.discardCollectionChanges) },
-                        onExitComposer: { store.send(.composer(.setPresented(false))) },
+                        onDiscardCollectionChanges: {
+                            store.send(.collectionDraft(.discardChangesTapped))
+                        },
+                        onExitComposer: {
+                            store.send(.composer(.setPresented(false)))
+                        },
                     )
                     .padding(.horizontal, VoyagerDS.Spacing.composerHorizontalPadding)
                     .padding(.top, VoyagerDS.Spacing.composerTopPadding)
