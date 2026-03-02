@@ -18,6 +18,7 @@ final class FileManagerWindowCommandRoutingTests: XCTestCase {
                 redo: { _ in },
             )
         }
+        // Non-exhaustive: focus on the key delegate/state change; intermediate actions are noisy.
         store.exhaustivity = .off
 
         await store.send(.request(.newFolder))
@@ -35,6 +36,7 @@ final class FileManagerWindowCommandRoutingTests: XCTestCase {
         let store = TestStore(initialState: initialState) {
             FileManagerFeature()
         }
+        // Non-exhaustive: focus on the key delegate/state change; intermediate actions are noisy.
         store.exhaustivity = .off
 
         await store.send(.request(.paste))
@@ -52,6 +54,7 @@ final class FileManagerWindowCommandRoutingTests: XCTestCase {
         let store = TestStore(initialState: initialState) {
             FileManagerFeature()
         }
+        // Non-exhaustive: focus on the key delegate/state change; intermediate actions are noisy.
         store.exhaustivity = .off
 
         await store.send(.request(.toggleSidebar))
@@ -69,6 +72,7 @@ final class FileManagerWindowCommandRoutingTests: XCTestCase {
         let store = TestStore(initialState: initialState) {
             FileManagerFeature()
         }
+        // Non-exhaustive: focus on the key delegate/state change; intermediate actions are noisy.
         store.exhaustivity = .off
 
         await store.send(.request(.toggleComposer))

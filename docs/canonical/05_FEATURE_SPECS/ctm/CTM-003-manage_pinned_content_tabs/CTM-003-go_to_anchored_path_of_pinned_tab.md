@@ -17,15 +17,14 @@
 
 ## Preconditions
 
-- -
-
+- 현재 페이지가 Pin
 ## Edge Cases
 
-- -
+- TBD
 
 ## Acceptance Criteria
 
-- -
+- [ ] TBD
 
 ## Source
 

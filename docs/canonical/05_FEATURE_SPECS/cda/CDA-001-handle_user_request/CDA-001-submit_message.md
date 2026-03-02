@@ -17,15 +17,18 @@
 
 ## Preconditions
 
-- -
-
+- 채팅 입력창이 포커스 상태
+- 입력된 Message가 공백이 아닌 상태
+- 이전에 제출된 Message가 처리 중이지 않은 상태
 ## Edge Cases
 
 - -
 
 ## Acceptance Criteria
 
-- -
+- [ ] Chat Pane의 인풋 필드가 입력된 Message가 공백이 아닌 상태일 때, 사용자가 해당 인터랙션을 호출하면, 새 User Request가 생성되고 채팅 히스토리에 Message가 추가됨
+- [ ] 사용자가 해당 인터랙션을 호출했을 때, 이전에 제출된 Message가 처리 중인 상태라면, 새 Submit Message를 제출이 막힘
+- [ ] 인풋 필드가 포커스된 상태일 때, 할당된 키보드 숏컷을 누르면, 해당 인터랙션이 호출됨
 
 ## Source
 

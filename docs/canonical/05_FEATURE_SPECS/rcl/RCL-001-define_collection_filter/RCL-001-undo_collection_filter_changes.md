@@ -17,15 +17,15 @@
 
 ## Preconditions
 
-- -
-
+- Generate Filter Changes from Query가 실행 중이지 않은 상태
+- 필터 편집 히스토리가 존재하는 상태
 ## Edge Cases
 
 - -
 
 ## Acceptance Criteria
 
-- -
+- [ ] 필터 편집 내역이 존재하는 상태일 때, 사용자가 해당 인터랙션을 호출하면, 직전의 필터 편집 변경이 한 단계 되돌려져 필터 상태가 갱신됨
 
 ## Source
 

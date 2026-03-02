@@ -5,7 +5,7 @@ import XCTest
 @MainActor
 final class CollectionFeatureTests: XCTestCase {
     func testResolveDetailedMapsLegacyKeysAndUnknowns() {
-        let registryClient = makeRegistryClient()
+        let registryClient = RegistryTestSupport.makeRegistryClient()
         let appliedFilters = AppliedFiltersPayload(
             scopes: ["/tmp"],
             conditions: [
@@ -67,74 +67,6 @@ final class CollectionFeatureTests: XCTestCase {
     }
 }
 
-private let kRegistryLabels: [String: String] = [
-    "name_full": "Name",
-    "file_allocated_size": "Size",
-]
-
-private let kRegistryOperatorDefinition = OperatorDefinition(
-    uiLabel: "Equals",
-    mdqueryOperator: nil,
-    valueShape: nil,
-    valueCount: nil,
-    allowedTypes: nil,
-    inverseOf: nil,
-    aliases: nil,
-    uiValueKind: [
-        "string": "singleText",
-        "number": "singleNumber",
-        "date": "singleDate",
-        "boolean": "toggle",
-    ] as [String: String]?,
-)
-
-private func makeRegistryClient() -> RegistryClient {
-    RegistryClient(
-        allProperties: { [] },
-        labelForKey: { kRegistryLabels[$0] ?? $0 },
-        propertyTypeString: registryPropertyType,
-        operatorCodes: { _ in ["eq"] },
-        operatorDefinition: { _ in kRegistryOperatorDefinition },
-        operatorValueUIKind: { _, typeKey in registryUIKind(for: typeKey) },
-        resolvePropertyKey: registryResolution,
-    )
-}
-
-private func registryPropertyType(for key: String) -> String {
-    switch key {
-    case "file_allocated_size":
-        "number"
-    default:
-        "string"
-    }
-}
-
-private func registryUIKind(for typeKey: String) -> String {
-    switch typeKey {
-    case "number":
-        "singleNumber"
-    case "date":
-        "singleDate"
-    case "boolean":
-        "toggle"
-    default:
-        "singleText"
-    }
-}
-
-private func registryResolution(for key: String) -> PropertyKeyResolution {
-    switch key {
-    case "name_full":
-        .canonical(key)
-    case "name":
-        .legacy(original: key, normalized: "name_full")
-    case "size":
-        .legacy(original: key, normalized: "file_allocated_size")
-    default:
-        .unknown(key)
-    }
-}
-
 private func makeActiveCondition() -> Condition {
     Condition(
         propertyKey: "name_full",
@@ -189,6 +121,7 @@ private func makeComposerStore(
         $0.searchClient = searchClient
     }
 
+    // Non-exhaustive: focus on the key delegate/state change; intermediate actions are noisy.
     store.exhaustivity = .off
     return store
 }
@@ -226,6 +159,7 @@ private func makeCollectionStore(
         $0.collectionFileClient = collectionFileClient
         $0.userDefaultsClient = .testValue
     }
+    // Non-exhaustive: focus on the key delegate/state change; intermediate actions are noisy.
     store.exhaustivity = .off
     return store
 }

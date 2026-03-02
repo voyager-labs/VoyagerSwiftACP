@@ -17,15 +17,16 @@
 
 ## Preconditions
 
-- -
-
+- <<AI>> 대상 Message에 Assistant Response가 존재하는 상태
 ## Edge Cases
 
-- -
+- <<AI>> 기존 스트리밍이 진행 중인 경우
+- <<AI>> 연속 재호출하는 경우
 
 ## Acceptance Criteria
 
-- -
+- [ ] <<AI>> 응답이 존재할 때, 사용자가 호출하면, 기존 응답은 이전 버전으로 유지되고 새 응답 생성이 시작됨.
+- [ ] <<AI>> 생성 중 재호출하면, 중복 실행이 방지되고 마지막 요청만 유효하게 처리됨.
 
 ## Source
 
