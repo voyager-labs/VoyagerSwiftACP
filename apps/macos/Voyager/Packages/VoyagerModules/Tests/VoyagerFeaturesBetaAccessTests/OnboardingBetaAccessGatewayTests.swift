@@ -1,5 +1,5 @@
 import ComposableArchitecture
-@testable import VoyagerPagesOnboarding
+@testable import VoyagerFeaturesBetaAccess
 import XCTest
 
 @MainActor

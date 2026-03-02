@@ -1,12 +1,12 @@
 import Foundation
 
-nonisolated enum BetaAccessStatus: String, Equatable, Sendable {
+public nonisolated enum BetaAccessStatus: String, Equatable, Sendable {
     case active = "Active"
     case notActive = "Not Active"
     case checkFailed = "Check failed"
 }
 
-nonisolated enum BetaAccessReason: Equatable, Sendable {
+public nonisolated enum BetaAccessReason: Equatable, Sendable {
     case none
     case missingInput
     case missingToken
@@ -23,11 +23,11 @@ nonisolated enum BetaAccessReason: Equatable, Sendable {
     case internalError
 }
 
-nonisolated struct BetaAccessVerificationResult: Equatable, Sendable {
-    var status: BetaAccessStatus
-    var reason: BetaAccessReason
+public nonisolated struct BetaAccessVerificationResult: Equatable, Sendable {
+    public var status: BetaAccessStatus
+    public var reason: BetaAccessReason
 
-    init(status: BetaAccessStatus, reason: BetaAccessReason = .none) {
+    public init(status: BetaAccessStatus, reason: BetaAccessReason = .none) {
         self.status = status
         self.reason = reason
     }

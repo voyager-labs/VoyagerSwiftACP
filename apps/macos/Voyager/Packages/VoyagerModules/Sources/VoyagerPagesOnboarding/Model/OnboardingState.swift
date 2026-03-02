@@ -1,4 +1,5 @@
 import ComposableArchitecture
+import VoyagerFeaturesBetaAccess
 
 @ObservableState
 struct OnboardingState: Equatable {

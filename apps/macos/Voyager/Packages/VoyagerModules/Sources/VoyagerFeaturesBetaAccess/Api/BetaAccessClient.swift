@@ -4,10 +4,10 @@ import IOKit
 import SwiftDotenv
 import VoyagerShared
 
-struct BetaAccessClient: Sendable {
-    var verify: @Sendable (_ email: String, _ token: String) async throws -> BetaAccessVerifyResponse
+public struct BetaAccessClient: Sendable {
+    public var verify: @Sendable (_ email: String, _ token: String) async throws -> BetaAccessVerifyResponse
 
-    nonisolated init(
+    public nonisolated init(
         verify: @escaping @Sendable (_ email: String, _ token: String) async throws -> BetaAccessVerifyResponse,
     ) {
         self.verify = verify
@@ -15,11 +15,11 @@ struct BetaAccessClient: Sendable {
 }
 
 extension BetaAccessClient {
-    nonisolated static var mockResponse: BetaAccessVerifyResponse {
+    public nonisolated static var mockResponse: BetaAccessVerifyResponse {
         BetaAccessVerifyResponse(ok: true)
     }
 
-    nonisolated static var mock: BetaAccessClient {
+    public nonisolated static var mock: BetaAccessClient {
         BetaAccessClient(verify: { _, _ in
             mockResponse
         })
@@ -27,17 +27,17 @@ extension BetaAccessClient {
 }
 
 extension BetaAccessClient: DependencyKey {
-    nonisolated static var liveValue: BetaAccessClient {
+    public nonisolated static var liveValue: BetaAccessClient {
         BetaAccessClient(verify: { email, token in
             try await verifyBetaAccess(email: email, token: token)
         })
     }
 
-    nonisolated static var testValue: BetaAccessClient { .mock }
-    nonisolated static var previewValue: BetaAccessClient { .mock }
+    public nonisolated static var testValue: BetaAccessClient { .mock }
+    public nonisolated static var previewValue: BetaAccessClient { .mock }
 }
 
-extension DependencyValues {
+public extension DependencyValues {
     nonisolated var betaAccessClient: BetaAccessClient {
         get { self[BetaAccessClient.self] }
         set { self[BetaAccessClient.self] = newValue }

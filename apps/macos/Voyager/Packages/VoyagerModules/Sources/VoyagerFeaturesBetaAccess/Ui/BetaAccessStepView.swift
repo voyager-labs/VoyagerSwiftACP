@@ -1,10 +1,14 @@
 import ComposableArchitecture
 import SwiftUI
 
-struct BetaAccessStepView: View {
-    let store: StoreOf<BetaAccessFeature>
+public struct BetaAccessStepView: View {
+    public let store: StoreOf<BetaAccessFeature>
 
-    var body: some View {
+    public init(store: StoreOf<BetaAccessFeature>) {
+        self.store = store
+    }
+
+    public var body: some View {
         WithViewStore(store, observe: { $0 }, content: { viewStore in
             VStack(alignment: .leading, spacing: 12) {
                 VStack(alignment: .leading, spacing: 8) {

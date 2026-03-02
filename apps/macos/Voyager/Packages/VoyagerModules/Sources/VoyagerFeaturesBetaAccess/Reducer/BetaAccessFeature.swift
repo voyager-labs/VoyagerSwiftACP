@@ -2,17 +2,19 @@ import ComposableArchitecture
 import Foundation
 
 @Reducer
-struct BetaAccessFeature {
+public struct BetaAccessFeature {
     @Dependency(\.betaAccessClient)
     var betaAccessClient
 
-    typealias State = BetaAccessState
-    typealias Action = BetaAccessAction
+    public typealias State = BetaAccessState
+    public typealias Action = BetaAccessAction
     private enum CancelID {
         static let verification = "betaAccessVerification"
     }
 
-    var body: some Reducer<State, Action> {
+    public init() {}
+
+    public var body: some Reducer<State, Action> {
         Reduce { state, action in
             switch action {
             case .onAppear:

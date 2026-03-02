@@ -8,6 +8,7 @@ let package = Package(
     ],
     products: [
         .library(name: "VoyagerShared", targets: ["VoyagerShared"]),
+        .library(name: "VoyagerFeaturesBetaAccess", targets: ["VoyagerFeaturesBetaAccess"]),
         .library(name: "VoyagerPagesOnboarding", targets: ["VoyagerPagesOnboarding"]),
         .library(name: "VoyagerPagesSettings", targets: ["VoyagerPagesSettings"]),
     ],
@@ -36,14 +37,23 @@ let package = Package(
             ],
         ),
         .target(
-            name: "VoyagerPagesOnboarding",
+            name: "VoyagerFeaturesBetaAccess",
             dependencies: [
                 "VoyagerShared",
                 .product(name: "CasePaths", package: "swift-case-paths"),
                 .product(name: "ComposableArchitecture", package: "swift-composable-architecture"),
+                .product(name: "SwiftDotenv", package: "swift-dotenv"),
+            ],
+        ),
+        .target(
+            name: "VoyagerPagesOnboarding",
+            dependencies: [
+                "VoyagerShared",
+                "VoyagerFeaturesBetaAccess",
+                .product(name: "CasePaths", package: "swift-case-paths"),
+                .product(name: "ComposableArchitecture", package: "swift-composable-architecture"),
                 .product(name: "Perception", package: "swift-perception"),
                 .product(name: "PerceptionCore", package: "swift-perception"),
-                .product(name: "SwiftDotenv", package: "swift-dotenv"),
             ],
         ),
         .target(
@@ -57,9 +67,17 @@ let package = Package(
             ],
         ),
         .testTarget(
+            name: "VoyagerFeaturesBetaAccessTests",
+            dependencies: [
+                "VoyagerFeaturesBetaAccess",
+                .product(name: "ComposableArchitecture", package: "swift-composable-architecture"),
+            ],
+        ),
+        .testTarget(
             name: "VoyagerPagesOnboardingTests",
             dependencies: [
                 "VoyagerPagesOnboarding",
+                "VoyagerFeaturesBetaAccess",
                 .product(name: "ComposableArchitecture", package: "swift-composable-architecture"),
             ],
         ),

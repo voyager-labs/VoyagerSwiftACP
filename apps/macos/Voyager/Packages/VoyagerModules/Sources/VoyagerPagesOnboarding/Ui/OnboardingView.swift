@@ -1,6 +1,7 @@
 import AppKit
 import ComposableArchitecture
 import SwiftUI
+import VoyagerFeaturesBetaAccess
 import VoyagerShared
 
 struct OnboardingView: View {

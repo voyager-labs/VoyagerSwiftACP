@@ -1,4 +1,5 @@
 import ComposableArchitecture
+import VoyagerFeaturesBetaAccess
 
 @CasePathable
 enum OnboardingAction: CasePathable, Sendable {

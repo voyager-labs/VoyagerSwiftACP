@@ -2,27 +2,43 @@ import ComposableArchitecture
 import Foundation
 
 @ObservableState
-struct BetaAccessState: Equatable, Sendable {
-    var email: String = ""
-    var token: String = ""
-    var status: BetaAccessStatus = .notActive
-    var reason: BetaAccessReason = .missingInput
-    var isVerifying: Bool = false
-    var isComplete: Bool = false
+public struct BetaAccessState: Equatable, Sendable {
+    public var email: String = ""
+    public var token: String = ""
+    public var status: BetaAccessStatus = .notActive
+    public var reason: BetaAccessReason = .missingInput
+    public var isVerifying: Bool = false
+    public var isComplete: Bool = false
 
-    var canSubmit: Bool {
+    public init(
+        email: String = "",
+        token: String = "",
+        status: BetaAccessStatus = .notActive,
+        reason: BetaAccessReason = .missingInput,
+        isVerifying: Bool = false,
+        isComplete: Bool = false
+    ) {
+        self.email = email
+        self.token = token
+        self.status = status
+        self.reason = reason
+        self.isVerifying = isVerifying
+        self.isComplete = isComplete
+    }
+
+    public var canSubmit: Bool {
         !email.isEmpty && !token.isEmpty && !isVerifying
     }
 
-    var showsRetry: Bool {
+    public var showsRetry: Bool {
         status == .checkFailed
     }
 
-    var statusTitle: String {
+    public var statusTitle: String {
         status.rawValue
     }
 
-    var statusMessage: String? {
+    public var statusMessage: String? {
         switch status {
         case .active:
             "Your invite is verified and beta access is enabled. You can proceed."
@@ -67,7 +83,7 @@ struct BetaAccessState: Equatable, Sendable {
         }
     }
 
-    mutating func updateStatus(_ status: BetaAccessStatus, reason: BetaAccessReason = .none) {
+    public mutating func updateStatus(_ status: BetaAccessStatus, reason: BetaAccessReason = .none) {
         self.status = status
         self.reason = reason
         isComplete = status == .active
