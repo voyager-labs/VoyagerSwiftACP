@@ -4,11 +4,13 @@ import SwiftUI
 struct FileManagerWindowMainContainerView: View {
     let store: StoreOf<FileManagerFeature>
     let isDark: Bool
+    let keyCommandFocusCoordinator: FileManagerKeyCommandFocusCoordinator
 
     var body: some View {
         MainContainerViewControllerRepresentable(
             store: store,
             isDark: isDark,
+            keyCommandFocusCoordinator: keyCommandFocusCoordinator,
         )
     }
 }
@@ -16,11 +18,13 @@ struct FileManagerWindowMainContainerView: View {
 private struct MainContainerViewControllerRepresentable: NSViewControllerRepresentable {
     let store: StoreOf<FileManagerFeature>
     let isDark: Bool
+    let keyCommandFocusCoordinator: FileManagerKeyCommandFocusCoordinator
 
     func makeNSViewController(context _: Context) -> MainContainerSplitCoordinator {
         MainContainerSplitCoordinator(
             store: store,
             isDark: isDark,
+            keyCommandFocusCoordinator: keyCommandFocusCoordinator,
         )
     }
 

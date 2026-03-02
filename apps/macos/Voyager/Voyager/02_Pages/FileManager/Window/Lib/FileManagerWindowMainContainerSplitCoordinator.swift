@@ -12,6 +12,7 @@ final class MainContainerSplitCoordinator: NSViewController, NSSplitViewDelegate
     }
 
     let store: StoreOf<FileManagerFeature>
+    let keyCommandFocusCoordinator: FileManagerKeyCommandFocusCoordinator
 
     private var cancellables: Set<AnyCancellable> = []
     private var hasStarted = false
@@ -24,13 +25,18 @@ final class MainContainerSplitCoordinator: NSViewController, NSSplitViewDelegate
     private var needsInspectorWidthApply = false
 
     private var inspectorHosting: NSHostingController<InspectorPaneView>?
-    private var contentHosting: NSHostingController<FileManagerContentPaneView>?
+    private var contentHosting: NSHostingController<AnyView>?
     private weak var mainSplitView: NSSplitView?
     private weak var containerView: NSView?
 
-    init(store: StoreOf<FileManagerFeature>, isDark: Bool) {
+    init(
+        store: StoreOf<FileManagerFeature>,
+        isDark: Bool,
+        keyCommandFocusCoordinator: FileManagerKeyCommandFocusCoordinator,
+    ) {
         self.store = store
         currentIsDark = isDark
+        self.keyCommandFocusCoordinator = keyCommandFocusCoordinator
         super.init(nibName: nil, bundle: nil)
     }
 
@@ -40,7 +46,7 @@ final class MainContainerSplitCoordinator: NSViewController, NSSplitViewDelegate
     }
 
     override func loadView() {
-        let paneState = makeContentPaneViewState(from: store.state)
+        let paneState = FileManagerContentPaneViewStateMapper.map(store.state)
         currentContentPaneState = paneState
 
         let components = FileManagerWindowMainContainerLayout.build(
@@ -119,46 +125,25 @@ final class MainContainerSplitCoordinator: NSViewController, NSSplitViewDelegate
     }
 
     private func updateContentRootViewIfNeeded(state: FileManagerWindowState) {
-        let paneState = makeContentPaneViewState(from: state)
+        let paneState = FileManagerContentPaneViewStateMapper.map(state)
         guard paneState != currentContentPaneState else { return }
         currentContentPaneState = paneState
         contentHosting?.rootView = makeContentRootView(paneState: paneState)
     }
 
-    private func makeContentPaneViewState(from state: FileManagerWindowState) -> FileManagerContentPaneViewState {
-        FileManagerContentPaneViewState(
-            isComposerPresented: state.content.composer.isPresented,
-            favorites: state.sidebar.favorites.map { favorite in
-                ScopeFavoriteItem(
-                    name: favorite.name,
-                    url: favorite.url,
-                    iconName: favorite.iconName,
-                )
-            },
-            historyPaths: state.content.navigation.backHistory.compactMap { entry in
-                if case let .folder(path) = entry.navigationState {
-                    return path
-                }
-                return nil
-            },
-            isDiscardEnabled: state.content.entryOperations.loadingContext.isCollectionMode
-                && state.content.collectionSession.baseline != nil
-                && state.content.isOpenedCollectionDirty,
-            canSaveCollection: state.content.canSaveCollection,
-            isTemporaryCollection: state.content.collectionSession.openedURL == nil,
-        )
-    }
-
-    private func makeContentRootView(paneState: FileManagerContentPaneViewState) -> FileManagerContentPaneView {
-        FileManagerContentPaneView(
-            store: store.scope(state: \.content, action: \.content),
-            paneState: paneState,
-            onNavigationAction: { [weak self] action in
-                self?.store.send(.navigation(.view(action)))
-            },
-            onNavigate: { [weak self] path in
-                self?.store.send(.navigation(.view(.navigateToPath(path))))
-            },
+    private func makeContentRootView(paneState: FileManagerContentPaneViewState) -> AnyView {
+        AnyView(
+            FileManagerContentPaneView(
+                store: store.scope(state: \.content, action: \.content),
+                paneState: paneState,
+                onNavigationAction: { [weak self] action in
+                    self?.store.send(.navigation(.view(action)))
+                },
+                onNavigate: { [weak self] path in
+                    self?.store.send(.navigation(.view(.navigateToPath(path))))
+                },
+            )
+            .environment(\.fileManagerKeyCommandFocusCoordinator, keyCommandFocusCoordinator),
         )
     }
 
@@ -175,7 +160,7 @@ final class MainContainerSplitCoordinator: NSViewController, NSSplitViewDelegate
         if visible {
             guard inspectorHosting == nil else { return }
             let hosting = FileManagerWindowMainContainerLayout.makeInspectorHosting(
-                store: store,
+                store: store.scope(state: \.inspector, action: \.inspector),
                 isDark: currentIsDark,
             )
             inspectorHosting = hosting
