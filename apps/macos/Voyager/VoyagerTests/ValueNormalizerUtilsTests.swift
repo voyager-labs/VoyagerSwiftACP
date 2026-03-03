@@ -50,6 +50,18 @@ final class ValueNormalizerUtilsTests: XCTestCase {
         XCTAssertEqual(result.values, ["alpha", "beta", "gamma"])
     }
 
+    func testNormalizeListTextRejectsWhitespaceOnlyInput() {
+        let result = ValueNormalizerUtils.normalize(
+            kind: "listText",
+            rawValues: ["   \n  ,   "],
+            editingIndex: nil,
+        )
+
+        XCTAssertEqual(result.errorMessage, "Value is required.")
+        XCTAssertNil(result.values)
+        XCTAssertEqual(result.resetIndices, [0])
+    }
+
     func testNormalizeSingleNumberRequiresValidNumber() {
         let invalid = ValueNormalizerUtils.normalize(
             kind: "singleNumber",
@@ -76,6 +88,18 @@ final class ValueNormalizerUtilsTests: XCTestCase {
 
         XCTAssertEqual(result.errorMessage, "Enter valid numbers.")
         XCTAssertNil(result.values)
+    }
+
+    func testNormalizeListNumberRejectsWhitespaceOnlyInput() {
+        let result = ValueNormalizerUtils.normalize(
+            kind: "listNumber",
+            rawValues: ["  \n  ,   "],
+            editingIndex: nil,
+        )
+
+        XCTAssertEqual(result.errorMessage, "Value is required.")
+        XCTAssertNil(result.values)
+        XCTAssertEqual(result.resetIndices, [0])
     }
 
     func testNormalizeSingleDateAcceptsIsoAndDateOnly() {
@@ -284,6 +308,17 @@ final class ValueNormalizerUtilsTests: XCTestCase {
         XCTAssertEqual(result.values, ["2026-02-26", "2026-02-27", "2026-02-28"])
     }
 
+    func testNormalizeRangeDateAcceptsReversedOrderAsGiven() {
+        let result = ValueNormalizerUtils.normalize(
+            kind: "rangeDate",
+            rawValues: ["2026-03-01", "2026-02-01"],
+            editingIndex: nil,
+        )
+
+        XCTAssertNil(result.errorMessage)
+        XCTAssertEqual(result.values, ["2026-03-01", "2026-02-01"])
+    }
+
     func testNormalizeRangeNumberPreservesExtraArityInput() {
         let result = ValueNormalizerUtils.normalize(
             kind: "rangeNumber",
@@ -293,6 +328,17 @@ final class ValueNormalizerUtilsTests: XCTestCase {
 
         XCTAssertNil(result.errorMessage)
         XCTAssertEqual(result.values, ["10", "20", "30"])
+    }
+
+    func testNormalizeRangeNumberAcceptsReversedOrderAsGiven() {
+        let result = ValueNormalizerUtils.normalize(
+            kind: "rangeNumber",
+            rawValues: ["20", "10"],
+            editingIndex: nil,
+        )
+
+        XCTAssertNil(result.errorMessage)
+        XCTAssertEqual(result.values, ["20", "10"])
     }
 
     func testFormatDateOnlyStringParsesIsoAndSpaceDateTime() {
