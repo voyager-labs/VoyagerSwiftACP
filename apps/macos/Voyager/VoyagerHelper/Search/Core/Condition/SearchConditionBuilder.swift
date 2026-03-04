@@ -17,6 +17,7 @@ struct SearchConditionBuilder: Sendable {
     let registry: PropertyConditionRegistry
     let propertyMap: [String: PropertyMapping]
     let legacyKeyMap: [String: String]
+    let operatorAliasMap: [String: String]
 
     init(bundle: Bundle = .main) throws {
         registry = try RegistryLoader.load(resourceName: "property_condition_registry", bundle: bundle)
@@ -26,11 +27,34 @@ struct SearchConditionBuilder: Sendable {
         )
         propertyMap = SearchConditionBuilder.buildPropertyMap(systemRegistry: systemRegistry)
         legacyKeyMap = SearchConditionBuilder.buildLegacyKeyMap(systemRegistry: systemRegistry)
+        operatorAliasMap = SearchConditionBuilder.buildOperatorAliasMap(registry: registry)
     }
 
     init(registry: PropertyConditionRegistry, systemRegistry: SystemPropertyRegistry) {
         self.registry = registry
         propertyMap = SearchConditionBuilder.buildPropertyMap(systemRegistry: systemRegistry)
         legacyKeyMap = SearchConditionBuilder.buildLegacyKeyMap(systemRegistry: systemRegistry)
+        operatorAliasMap = SearchConditionBuilder.buildOperatorAliasMap(registry: registry)
+    }
+
+    func canonicalOperatorCode(for rawOperator: String) -> String? {
+        let normalized = rawOperator
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+            .lowercased()
+        return operatorAliasMap[normalized]
+    }
+}
+
+private extension SearchConditionBuilder {
+    static func buildOperatorAliasMap(registry: PropertyConditionRegistry) -> [String: String] {
+        var map: [String: String] = [:]
+        for (operatorCode, definition) in registry.operators {
+            let normalizedCode = operatorCode.lowercased()
+            map[normalizedCode] = operatorCode
+            for alias in definition.aliases ?? [] {
+                map[alias.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()] = operatorCode
+            }
+        }
+        return map
     }
 }

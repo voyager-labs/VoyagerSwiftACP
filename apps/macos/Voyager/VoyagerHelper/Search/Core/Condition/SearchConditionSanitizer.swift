@@ -36,21 +36,17 @@ struct SearchConditionSanitizer: Sendable {
 
 private extension SearchConditionSanitizer {
     func normalize(_ condition: SearchConditionPayload) -> SearchConditionPayload? {
-        guard let canonicalKey = canonicalPropertyKey(for: condition.propertyKey) else {
+        guard let canonicalKey = canonicalPropertyKey(for: condition.propertyKey),
+              let canonicalOperator = conditionBuilder.canonicalOperatorCode(for: condition.operator)
+        else {
             return nil
         }
 
-        let normalizedCondition = SearchConditionPayload(
-            propertyKey: canonicalKey,
-            operator: condition.operator,
-            value: condition.value,
-        )
-
-        if normalizedCondition.operator == "eq", normalizedCondition.value == nil {
+        if canonicalOperator == "eq", condition.value == nil {
             return nil
         }
 
-        if normalizedCondition.operator == "rx", case let .string(text)? = normalizedCondition.value {
+        if canonicalOperator == "rx", case let .string(text)? = condition.value {
             let normalized: String = if text.contains("%") {
                 text
             } else if text.contains(".*") {
@@ -60,13 +56,17 @@ private extension SearchConditionSanitizer {
             }
 
             return SearchConditionPayload(
-                propertyKey: normalizedCondition.propertyKey,
-                operator: normalizedCondition.operator,
+                propertyKey: canonicalKey,
+                operator: canonicalOperator,
                 value: .string(normalized),
             )
         }
 
-        return normalizedCondition
+        return SearchConditionPayload(
+            propertyKey: canonicalKey,
+            operator: canonicalOperator,
+            value: condition.value,
+        )
     }
 
     func canonicalPropertyKey(for rawKey: String) -> String? {

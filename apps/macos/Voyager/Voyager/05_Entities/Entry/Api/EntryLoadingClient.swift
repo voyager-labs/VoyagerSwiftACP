@@ -25,11 +25,10 @@ public struct EntryLoadingClient: Sendable {
         FileManager.SearchPathDomainMask,
     ) -> [URL]
     public var homeDirectory: @Sendable () -> String
-    public var loadDragPaths: @Sendable () -> [String]
     public var getItemMetadata: @Sendable (URL, Bool, WorkspaceClient) -> EntryItemMetadata
-    public var getImageResolution: @Sendable (URL) -> String?
-    public var getFormattedFileSize: @Sendable (URL) -> String?
-    public var getFolderItemCount: @Sendable (URL) -> String?
+    public var getImageResolution: @Sendable (URL) -> (width: Int, height: Int)?
+    public var getFileSizeInBytes: @Sendable (URL) -> Int64?
+    public var getFolderItemCount: @Sendable (URL) -> Int?
     public var isPackageDirectory: @Sendable (URL) -> Bool
     public var displayName: @Sendable (String) -> String
 
@@ -49,11 +48,10 @@ public struct EntryLoadingClient: Sendable {
         urlsForDirectory: @escaping @Sendable (FileManager.SearchPathDirectory, FileManager.SearchPathDomainMask)
             -> [URL],
         homeDirectory: @escaping @Sendable () -> String,
-        loadDragPaths: @escaping @Sendable () -> [String],
         getItemMetadata: @escaping @Sendable (URL, Bool, WorkspaceClient) -> EntryItemMetadata,
-        getImageResolution: @escaping @Sendable (URL) -> String?,
-        getFormattedFileSize: @escaping @Sendable (URL) -> String?,
-        getFolderItemCount: @escaping @Sendable (URL) -> String?,
+        getImageResolution: @escaping @Sendable (URL) -> (width: Int, height: Int)?,
+        getFileSizeInBytes: @escaping @Sendable (URL) -> Int64?,
+        getFolderItemCount: @escaping @Sendable (URL) -> Int?,
         isPackageDirectory: @escaping @Sendable (URL) -> Bool,
         displayName: @escaping @Sendable (String) -> String,
     ) {
@@ -67,10 +65,9 @@ public struct EntryLoadingClient: Sendable {
         self.mountedVolumeURLs = mountedVolumeURLs
         self.urlsForDirectory = urlsForDirectory
         self.homeDirectory = homeDirectory
-        self.loadDragPaths = loadDragPaths
         self.getItemMetadata = getItemMetadata
         self.getImageResolution = getImageResolution
-        self.getFormattedFileSize = getFormattedFileSize
+        self.getFileSizeInBytes = getFileSizeInBytes
         self.getFolderItemCount = getFolderItemCount
         self.isPackageDirectory = isPackageDirectory
         self.displayName = displayName
@@ -90,10 +87,9 @@ extension EntryLoadingClient: DependencyKey {
             mountedVolumeURLs: EntryLoadingLive.mountedVolumeURLs,
             urlsForDirectory: EntryLoadingLive.urlsForDirectory,
             homeDirectory: EntryLoadingLive.homeDirectory,
-            loadDragPaths: EntryFileOpsLive.loadDragPaths,
             getItemMetadata: EntryLoadingLive.getItemMetadata,
             getImageResolution: EntryLoadingLive.getImageResolution,
-            getFormattedFileSize: EntryLoadingLive.getFormattedFileSize,
+            getFileSizeInBytes: EntryLoadingLive.getFileSizeInBytes,
             getFolderItemCount: EntryLoadingLive.getFolderItemCount,
             isPackageDirectory: EntryLoadingLive.isPackageDirectory,
             displayName: EntryLoadingLive.displayName,
@@ -112,10 +108,9 @@ extension EntryLoadingClient: DependencyKey {
             mountedVolumeURLs: { _, _ in nil },
             urlsForDirectory: { _, _ in [] },
             homeDirectory: { "/Users/test" },
-            loadDragPaths: { [] },
             getItemMetadata: { _, _, _ in EntryItemMetadata(kind: "File", creatorApplication: nil, lastUsedDate: nil) },
             getImageResolution: { _ in nil },
-            getFormattedFileSize: { _ in nil },
+            getFileSizeInBytes: { _ in nil },
             getFolderItemCount: { _ in nil },
             isPackageDirectory: { _ in false },
             displayName: { path in path },
@@ -134,10 +129,9 @@ extension EntryLoadingClient: DependencyKey {
             mountedVolumeURLs: { _, _ in nil },
             urlsForDirectory: { _, _ in [] },
             homeDirectory: { "/Users/test" },
-            loadDragPaths: { [] },
             getItemMetadata: { _, _, _ in EntryItemMetadata(kind: "File", creatorApplication: nil, lastUsedDate: nil) },
             getImageResolution: { _ in nil },
-            getFormattedFileSize: { _ in nil },
+            getFileSizeInBytes: { _ in nil },
             getFolderItemCount: { _ in nil },
             isPackageDirectory: { _ in false },
             displayName: { path in path },
@@ -197,9 +191,20 @@ enum EntryLoadingLive {
                     EntryModel(
                         name: rootName,
                         fullPath: "/",
-                        isDirectory: true,
+                        isFolder: true,
                         isHidden: false,
-                        kind: "Volume",
+                        size: 0,
+                        modifiedDate: Date(),
+                        fileExtension: "",
+                        facets: EntryFacets(
+                            createdDate: Date(),
+                            addedDate: Date(),
+                            lastOpenedDate: nil,
+                            kind: "Volume",
+                            creatorApplication: nil,
+                            tags: nil,
+                            supplementaryMetadata: nil,
+                        ),
                     ),
                 ]
             }.value
@@ -302,7 +307,7 @@ enum EntryLoadingLive {
         }
     }
 
-    nonisolated static var getImageResolution: @Sendable (URL) -> String? {
+    nonisolated static var getImageResolution: @Sendable (URL) -> (width: Int, height: Int)? {
         { url in
             guard let imageSource = CGImageSourceCreateWithURL(url as CFURL, nil),
                   let properties = CGImageSourceCopyPropertiesAtIndex(imageSource, 0, nil) as? [CFString: Any],
@@ -312,11 +317,11 @@ enum EntryLoadingLive {
                 return nil
             }
 
-            return "\(width) × \(height)"
+            return (width: width, height: height)
         }
     }
 
-    nonisolated static var getFormattedFileSize: @Sendable (URL) -> String? {
+    nonisolated static var getFileSizeInBytes: @Sendable (URL) -> Int64? {
         { url in
             guard let resourceValues = try? url.resourceValues(forKeys: [.fileSizeKey]),
                   let fileSize = resourceValues.fileSize
@@ -324,17 +329,11 @@ enum EntryLoadingLive {
                 return nil
             }
 
-            let formatter = ByteCountFormatter()
-            formatter.allowedUnits = [.useKB, .useMB, .useGB]
-            formatter.countStyle = .file
-            formatter.includesUnit = true
-            formatter.isAdaptive = true
-
-            return formatter.string(fromByteCount: Int64(fileSize))
+            return Int64(fileSize)
         }
     }
 
-    nonisolated static var getFolderItemCount: @Sendable (URL) -> String? {
+    nonisolated static var getFolderItemCount: @Sendable (URL) -> Int? {
         { url in
             guard let entries = try? FileManager.default.contentsOfDirectory(
                 at: url,
@@ -344,11 +343,7 @@ enum EntryLoadingLive {
                 return nil
             }
 
-            let count = entries.count
-            if count == 0 {
-                return "No items"
-            }
-            return "\(count) item\(count == 1 ? "" : "s")"
+            return entries.count
         }
     }
 
@@ -499,7 +494,7 @@ enum EntryMetadataSearchLive {
                 return nil
             }
 
-            let hasTags = item.tags?.contains(where: { $0.name == tag }) ?? false
+            let hasTags = item.facets.tags?.contains(where: { $0.name == tag }) ?? false
             return hasTags ? item : nil
         }
         return showHidden ? items : items.filter { !$0.isHidden }
@@ -574,20 +569,6 @@ enum EntryMetadataSearchLive {
 }
 
 enum EntryModelConverterLive {
-    private nonisolated static let entryDateFormatter: DateFormatter = {
-        let formatter = DateFormatter()
-        formatter.dateStyle = .medium
-        formatter.timeStyle = .short
-        return formatter
-    }()
-
-    private nonisolated(unsafe) static let entryByteFormatter: ByteCountFormatter = {
-        let formatter = ByteCountFormatter()
-        formatter.allowedUnits = [.useBytes, .useKB, .useMB, .useGB]
-        formatter.countStyle = .file
-        return formatter
-    }()
-
     nonisolated static func convertURLToEntry(
         _ itemURL: URL,
         entryLoadingClient: EntryLoadingClient,
@@ -620,34 +601,29 @@ enum EntryModelConverterLive {
         let lastOpenedDate = metadata.lastUsedDate
         let tags = entryTags(from: itemURL)
 
-        let additionalInfo = entryAdditionalInfo(
+        let supplementaryMetadata = entrySupplementaryMetadata(
             url: itemURL,
             isDirectory: isDirectory.boolValue,
             entryLoadingClient: entryLoadingClient,
         )
 
-        let formattedSize = isDirectory.boolValue ? "--" : entryByteFormatter.string(fromByteCount: size)
-        let formattedModifiedDate = entryDateFormatter.string(from: modifiedDate)
-        let formattedCreatedDate = entryDateFormatter.string(from: createdDate)
-
         return EntryModel(
             name: name,
             fullPath: itemURL.path,
-            isDirectory: isDirectory.boolValue,
+            isFolder: isDirectory.boolValue,
             isHidden: isHidden,
             size: size,
             modifiedDate: modifiedDate,
-            createdDate: createdDate,
-            addedDate: addedDate,
-            lastOpenedDate: lastOpenedDate,
             fileExtension: itemURL.pathExtension,
-            kind: metadata.kind,
-            creatorApplication: metadata.creatorApplication,
-            tags: tags,
-            additionalInfo: additionalInfo,
-            formattedSize: formattedSize,
-            formattedModifiedDate: formattedModifiedDate,
-            formattedCreatedDate: formattedCreatedDate,
+            facets: EntryFacets(
+                createdDate: createdDate,
+                addedDate: addedDate,
+                lastOpenedDate: lastOpenedDate,
+                kind: metadata.kind,
+                creatorApplication: metadata.creatorApplication,
+                tags: tags,
+                supplementaryMetadata: supplementaryMetadata,
+            ),
         )
     }
 
@@ -666,11 +642,11 @@ enum EntryModelConverterLive {
         return nil
     }
 
-    private nonisolated static func entryAdditionalInfo(
+    private nonisolated static func entrySupplementaryMetadata(
         url: URL,
         isDirectory: Bool,
         entryLoadingClient: EntryLoadingClient,
-    ) -> String? {
+    ) -> EntrySupplementaryMetadata? {
         if isDirectory {
             if entryLoadingClient.isPackageDirectory(url) {
                 return nil
@@ -679,17 +655,24 @@ enum EntryModelConverterLive {
             if ext == CollectionConstants.fileExtension {
                 return nil
             }
-            return entryLoadingClient.getFolderItemCount(url)
+            guard let itemCount = entryLoadingClient.getFolderItemCount(url) else {
+                return nil
+            }
+            return .folderItemCount(itemCount)
         }
 
         let ext = url.pathExtension.lowercased()
 
-        if ["jpg", "jpeg", "png", "heic", "gif", "webp", "bmp", "tiff"].contains(ext) {
-            return entryLoadingClient.getImageResolution(url)
+        if ["jpg", "jpeg", "png", "heic", "gif", "webp", "bmp", "tiff"].contains(ext),
+           let resolution = entryLoadingClient.getImageResolution(url)
+        {
+            return .imageResolution(width: resolution.width, height: resolution.height)
         }
 
-        if ["zip", "tar", "gz", "bz2", "xz", "rar", "7z", "dmg", "pkg"].contains(ext) {
-            return entryLoadingClient.getFormattedFileSize(url)
+        if ["zip", "tar", "gz", "bz2", "xz", "rar", "7z", "dmg", "pkg"].contains(ext),
+           let fileSizeInBytes = entryLoadingClient.getFileSizeInBytes(url)
+        {
+            return .compressedFileSize(fileSizeInBytes)
         }
 
         return nil

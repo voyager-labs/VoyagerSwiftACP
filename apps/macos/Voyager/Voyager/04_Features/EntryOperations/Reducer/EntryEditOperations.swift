@@ -24,7 +24,7 @@ struct EntryEditOperationsReducer {
                         try await entryFileOpsClient.createFolder(parentURL, name)
                         await send(.operationFinished(targetPath, .createFolder, .success(())))
                         let record = EntryActionRecord(
-                            actionKind: .createFolder,
+                            operationKind: .createFolder,
                             targets: [.init(beforePath: nil, afterPath: targetPath)],
                         )
                         await send(.entryActionCompleted(record))
@@ -64,7 +64,7 @@ struct EntryEditOperationsReducer {
                     }
 
                     guard !targets.isEmpty else { return }
-                    let record = EntryActionRecord(actionKind: .createAlias, targets: targets)
+                    let record = EntryActionRecord(operationKind: .createAlias, targets: targets)
                     await send(.entryActionCompleted(record))
                 }
 
@@ -78,7 +78,7 @@ struct EntryEditOperationsReducer {
                         try await entryFileOpsClient.renameFile(sourceURL, destURL)
                         await send(.operationFinished(oldPath, .rename, .success(())))
                         let record = EntryActionRecord(
-                            actionKind: .rename,
+                            operationKind: .rename,
                             targets: [.init(beforePath: oldPath, afterPath: newPath)],
                         )
                         await send(.entryActionCompleted(record))

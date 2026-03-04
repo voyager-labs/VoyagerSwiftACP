@@ -39,7 +39,7 @@ enum EntryOperationsAction: CasePathable, Sendable {
         sourcePaths: [String],
         destinationPath: String,
         operation: ClipboardOperation,
-        actionKind: EntryActionRecord.ActionKind,
+        operationKind: OperationKind,
     )
     case syncClipboardState(paths: [String], operation: ClipboardOperation)
     case renameItem(oldPath: String, newPath: String)

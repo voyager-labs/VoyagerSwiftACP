@@ -32,7 +32,7 @@ struct FileManagerContentEntryOperationsFeature {
             )
 
         case .emptyTrashCompleted:
-            .send(.emptyTrashCompleted)
+            .send(.closeWindow)
 
         default:
             .none

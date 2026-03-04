@@ -18,7 +18,7 @@ struct EntryTrashOperationsReducer {
                 return EntryOperationsExecutionSupport.runParallelWithTargets(
                     items: items,
                     kind: .moveToTrash,
-                    actionKind: .moveToTrash,
+                    operationKind: .moveToTrash,
                 ) { url in
                     let trashURL = try await entryFileOpsClient.moveToTrashAndReturnURL(url)
                     let result: NSURL? = trashURL as NSURL
@@ -154,7 +154,7 @@ struct EntryTrashOperationsReducer {
                     }
 
                     if !targets.isEmpty {
-                        let record = EntryActionRecord(actionKind: .putBack, targets: targets)
+                        let record = EntryActionRecord(operationKind: .putBack, targets: targets)
                         await send(.entryActionCompleted(record))
                     }
                 }

@@ -7,8 +7,6 @@ import UniformTypeIdentifiers
 public struct EntryOpenClient: Sendable {
     public var open: @Sendable (URL, OpenKind) async throws -> Void
     public var setDefaultApp: @Sendable (UTType, String) async throws -> Void
-    public var quickLook: @Sendable (URL) async throws -> Void
-    public var quickLookFiles: @Sendable ([URL]) async throws -> Void
     public var openFinderInfo: @Sendable ([URL]) async throws -> Void
     public var shareItems: @Sendable ([URL], CGPoint?) async throws -> Void
     public var performService: @Sendable (String, [URL]) async throws -> Void
@@ -20,8 +18,6 @@ public struct EntryOpenClient: Sendable {
     public nonisolated init(
         open: @escaping @Sendable (URL, OpenKind) async throws -> Void,
         setDefaultApp: @escaping @Sendable (UTType, String) async throws -> Void,
-        quickLook: @escaping @Sendable (URL) async throws -> Void,
-        quickLookFiles: @escaping @Sendable ([URL]) async throws -> Void,
         openFinderInfo: @escaping @Sendable ([URL]) async throws -> Void,
         shareItems: @escaping @Sendable ([URL], CGPoint?) async throws -> Void,
         performService: @escaping @Sendable (String, [URL]) async throws -> Void,
@@ -32,8 +28,6 @@ public struct EntryOpenClient: Sendable {
     ) {
         self.open = open
         self.setDefaultApp = setDefaultApp
-        self.quickLook = quickLook
-        self.quickLookFiles = quickLookFiles
         self.openFinderInfo = openFinderInfo
         self.shareItems = shareItems
         self.performService = performService
@@ -49,8 +43,6 @@ extension EntryOpenClient: DependencyKey {
         EntryOpenClient(
             open: EntryOpenLive.open,
             setDefaultApp: EntryOpenLive.setDefaultApp,
-            quickLook: EntryOpenLive.quickLook,
-            quickLookFiles: EntryOpenLive.quickLookFiles,
             openFinderInfo: EntryOpenLive.openFinderInfo,
             shareItems: EntryOpenLive.shareItems,
             performService: EntryOpenLive.performService,
@@ -68,8 +60,6 @@ extension EntryOpenClient: DependencyKey {
         return EntryOpenClient(
             open: { _, _ in unimplemented() },
             setDefaultApp: { _, _ in unimplemented() },
-            quickLook: { _ in unimplemented() },
-            quickLookFiles: { _ in unimplemented() },
             openFinderInfo: { _ in unimplemented() },
             shareItems: { _, _ in unimplemented() },
             performService: { _, _ in unimplemented() },
@@ -92,8 +82,6 @@ extension EntryOpenClient: DependencyKey {
         return EntryOpenClient(
             open: { _, _ in },
             setDefaultApp: { _, _ in },
-            quickLook: { _ in },
-            quickLookFiles: { _ in },
             openFinderInfo: { _ in },
             shareItems: { _, _ in },
             performService: { _, _ in },
@@ -139,34 +127,6 @@ enum EntryOpenLive {
                 let configuration = NSWorkspace.OpenConfiguration()
                 try await workspace.open([url], withApplicationAt: appURL, configuration: configuration)
             }
-        }
-    }
-
-    nonisolated static var quickLook: @Sendable (URL) async throws -> Void {
-        { url in
-            let scoped = url.startAccessingSecurityScopedResource()
-            defer {
-                if scoped {
-                    url.stopAccessingSecurityScopedResource()
-                }
-            }
-
-            let token = await MainActor.run { EntryQuickLookSecurityScopedURLToken(url: url) }
-            await EntryQuickLookController.shared.present(url: url, scopeToken: token)
-        }
-    }
-
-    nonisolated static var quickLookFiles: @Sendable ([URL]) async throws -> Void {
-        { urls in
-            let scoped = urls.map { $0.startAccessingSecurityScopedResource() }
-            defer {
-                for (url, isScoped) in zip(urls, scoped) where isScoped {
-                    url.stopAccessingSecurityScopedResource()
-                }
-            }
-
-            let tokens = await MainActor.run { urls.map(EntryQuickLookSecurityScopedURLToken.init) }
-            await EntryQuickLookController.shared.present(urls: urls, scopeTokens: tokens, initialIndex: 0)
         }
     }
 

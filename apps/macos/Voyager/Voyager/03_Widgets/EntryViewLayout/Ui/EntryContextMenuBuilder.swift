@@ -53,7 +53,7 @@ enum EntryContextMenuBuilder {
         let menu = makeMenu(configuration: .init(
             target: coordinator,
             selectedCount: selectedCount,
-            rowEntryPathForOpenInNewTab: input.rowEntry?.isDirectory == true ? input.rowEntry?.fullPath : nil,
+            rowEntryPathForOpenInNewTab: input.rowEntry?.isFolder == true ? input.rowEntry?.fullPath : nil,
             canPaste: input.canPaste,
             showCompress: showCompress,
             showExtract: showExtract,

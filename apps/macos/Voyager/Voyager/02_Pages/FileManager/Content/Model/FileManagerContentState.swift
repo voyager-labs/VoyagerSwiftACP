@@ -42,8 +42,6 @@ struct FileManagerContentState: Equatable {
         composer.isCollectionMode = entryOperations.loadingContext.isCollectionMode
     }
 
-    mutating func syncEntryViewLayoutStateFromEntries() {}
-
     var canSaveCollection: Bool {
         guard entryOperations.loadingContext.isCollectionMode, collectionContext != nil else { return false }
         if collectionSession.baseline == nil {

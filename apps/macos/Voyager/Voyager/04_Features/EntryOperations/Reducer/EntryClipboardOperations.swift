@@ -76,7 +76,7 @@ struct EntryClipboardOperationsReducer {
                     return .none
                 }
 
-                let actionKind: EntryActionRecord.ActionKind = clipboardOperation == .cut ? .move : .paste
+                let operationKind: OperationKind = clipboardOperation == .cut ? .pasteFileMove : .pasteFileCopy
 
                 return .concatenate(
                     .send(.syncClipboardState(paths: clipboardPaths, operation: clipboardOperation)),
@@ -84,11 +84,11 @@ struct EntryClipboardOperationsReducer {
                         sourcePaths: clipboardPaths,
                         destinationPath: destinationPath,
                         operation: clipboardOperation,
-                        actionKind: actionKind,
+                        operationKind: operationKind,
                     )),
                 )
 
-            case let .pasteItems(sourcePaths, destinationPath, operation, actionKind):
+            case let .pasteItems(sourcePaths, destinationPath, operation, operationKind):
                 let destinationURL = URL(fileURLWithPath: destinationPath)
                 let destinations = EntryOperationsExecutionSupport.avoidNameCollisions(
                     sourcePaths: sourcePaths,
@@ -100,7 +100,7 @@ struct EntryClipboardOperationsReducer {
                 guard !destinations.isEmpty else {
                     if operation == .cut {
                         return .run { send in
-                            await send(.operationFinished(destinationPath, .pasteFile, .success(())))
+                            await send(.operationFinished(destinationPath, operationKind, .success(())))
                         }
                     }
                     return .none
@@ -113,7 +113,7 @@ struct EntryClipboardOperationsReducer {
 
                     for (sourceURL, destURL) in destinations {
                         let sourcePath = sourceURL.path
-                        let kind: OperationKind = .pasteFile
+                        let kind: OperationKind = operationKind
 
                         await send(.operationStarted(sourcePath, kind))
 
@@ -162,8 +162,8 @@ struct EntryClipboardOperationsReducer {
                         }
                     }
 
-                    if !targets.isEmpty {
-                        let record = EntryActionRecord(actionKind: actionKind, targets: targets)
+                    if !targets.isEmpty, operationKind.isUndoable {
+                        let record = EntryActionRecord(operationKind: operationKind, targets: targets)
                         await send(.entryActionCompleted(record))
                     }
                 }

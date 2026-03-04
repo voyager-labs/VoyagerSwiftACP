@@ -16,6 +16,7 @@ final class FileManagerFeatureNavigationTests: XCTestCase {
             FileManagerFeature()
         } withDependencies: {
             $0.userDefaultsClient = .testValue
+            $0.date = .constant(Date(timeIntervalSince1970: 1_234_567_890))
         }
         store.exhaustivity = .off
 

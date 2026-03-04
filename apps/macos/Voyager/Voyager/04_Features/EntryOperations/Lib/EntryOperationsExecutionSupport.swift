@@ -50,15 +50,9 @@ enum EntryOperationsExecutionSupport {
         return destinations
     }
 
-    static func validateDefaultAppSetting(file: EntryModel, capabilities: EntryCapabilities) -> FileOpError? {
-        guard !file.isDirectory else {
+    static func validateDefaultAppSetting(file: EntryModel) -> FileOpError? {
+        guard !file.isFolder else {
             return .unsupportedType
-        }
-        guard capabilities.supportsDefaultAppManagement else {
-            return .system(
-                message: "Setting default apps is not supported yet.",
-                suggestion: "Enable default-app capability before using this action.",
-            )
         }
         return nil
     }
@@ -113,7 +107,7 @@ enum EntryOperationsExecutionSupport {
     static func runParallelWithTargets(
         items: [EntryModel],
         kind: OperationKind,
-        actionKind: EntryActionRecord.ActionKind,
+        operationKind: OperationKind,
         operation: @escaping @Sendable (URL) async throws -> EntryActionRecord.Target?,
     ) -> Effect<EntryOperationsAction> {
         .run { send in
@@ -143,8 +137,8 @@ enum EntryOperationsExecutionSupport {
             }
 
             let targets = await accumulator.targets
-            guard !targets.isEmpty else { return }
-            let record = EntryActionRecord(actionKind: actionKind, targets: targets)
+            guard !targets.isEmpty, operationKind.isUndoable else { return }
+            let record = EntryActionRecord(operationKind: operationKind, targets: targets)
             await send(.entryActionCompleted(record))
         }
     }
@@ -229,7 +223,7 @@ enum EntryOperationsExecutionSupport {
 
     private static func prepareFileInfos(from files: [EntryModel]) -> [FileInfo] {
         files.compactMap { file in
-            guard !file.isDirectory,
+            guard !file.isFolder,
                   let fileType = UTType(filenameExtension: file.fileExtension)
             else { return nil }
             return FileInfo(file: file, fileType: fileType, url: URL(fileURLWithPath: file.fullPath))
