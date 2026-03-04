@@ -20,11 +20,19 @@ struct SearchQueryService: Sendable {
 
     nonisolated func querySearch(
         _ request: SearchRequestPayload,
-    ) async throws -> SearchResponsePayload {
+    ) async -> SearchResponsePayload {
         let trimmedQuery = request.query.trimmingCharacters(in: .whitespacesAndNewlines)
 
         guard trimmedQuery.isEmpty == false else {
-            return try await searchService.applyFilters(request.filters)
+            return SearchResponsePayload(
+                itemCount: 0,
+                appliedFilters: AppliedFiltersPayload(
+                    scopes: request.filters.scopes,
+                    conditions: request.filters.conditions,
+                ),
+                items: nil,
+                error: nil,
+            )
         }
 
         let conversion = await converter.convert(query: trimmedQuery, existingFilters: request.filters)
@@ -40,21 +48,32 @@ struct SearchQueryService: Sendable {
             )
         }
 
+        let chipsScopes = cleanScopes(request.filters.scopes)
+        let resolvedScopes = resolveScopes(
+            queryScopes: conversion.scopes,
+            chipsScopes: chipsScopes,
+        )
+
         let plannedFilters = SearchFiltersPayload(
-            scopes: conversion.scopes ?? request.filters.scopes,
+            scopes: resolvedScopes,
             conditions: conversion.conditions,
         )
 
-        do {
-            return try await searchService.applyFilters(plannedFilters)
-        } catch {
-            logger.warning("Local query execution failed: \(error)")
-            return makeErrorResponse(
-                code: "QUERY_SEARCH_FAILED",
-                details: String(describing: error),
-                fallbackFilters: plannedFilters,
-            )
-        }
+        return SearchResponsePayload(
+            itemCount: 0,
+            appliedFilters: AppliedFiltersPayload(
+                scopes: plannedFilters.scopes,
+                conditions: plannedFilters.conditions,
+            ),
+            items: nil,
+            error: nil,
+        )
+    }
+
+    nonisolated func executeQuery(
+        _ filters: SearchFiltersPayload,
+    ) async throws -> SearchResponsePayload {
+        try await searchService.applyFilters(filters)
     }
 
     private nonisolated func makeErrorResponse(
@@ -71,5 +90,25 @@ struct SearchQueryService: Sendable {
             items: [],
             error: SearchErrorPayload(code: code, details: details),
         )
+    }
+
+    private nonisolated func resolveScopes(
+        queryScopes: [String]?,
+        chipsScopes: [String],
+    ) -> [String] {
+        if let queryScopes {
+            let cleanedQueryScopes = cleanScopes(queryScopes)
+            if cleanedQueryScopes.isEmpty == false {
+                return cleanedQueryScopes
+            }
+        }
+
+        return chipsScopes
+    }
+
+    private nonisolated func cleanScopes(_ scopes: [String]) -> [String] {
+        scopes
+            .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+            .filter { $0.isEmpty == false }
     }
 }

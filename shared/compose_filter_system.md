@@ -1,7 +1,7 @@
 Use keys=... and ops=... from user prompt only.
 
 <scopes>
-- If user prompt includes scopes=[...], use it; else scopes=null.
+- scopes = query_scopes if present; else existing_scopes (or legacy scopes); else null.
 </scopes>
 
 home:{home_dir}

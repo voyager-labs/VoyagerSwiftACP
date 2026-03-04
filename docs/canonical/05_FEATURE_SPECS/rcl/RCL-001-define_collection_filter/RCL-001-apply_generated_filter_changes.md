@@ -17,15 +17,14 @@
 
 ## Preconditions
 
-- -
-
+- Generate Filter Changes from Query 결과가 성공으로 반환된 상태
 ## Edge Cases
 
 - -
 
 ## Acceptance Criteria
 
-- -
+- [ ] Generate 결과가 성공으로 반환된 상태일 때, 시스템이 변경안을 적용하면, 현재 필터 정의가 최신 생성본으로 갱신됨
 
 ## Source
 

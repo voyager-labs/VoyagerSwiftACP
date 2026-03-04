@@ -17,15 +17,14 @@
 
 ## Preconditions
 
-- -
-
+- 각 Chunk에 대해 단일 Intent가 지정된 상태
 ## Edge Cases
 
-- -
+- 모든 Chunk가 동일한 Intent로 지정되어 Execution Plan이 단일 Intent 단계만 포함하게 되는 경우
 
 ## Acceptance Criteria
 
-- -
+- [ ] -
 
 ## Source
 

@@ -5,9 +5,8 @@ import SwiftUI
 @ObservableState
 struct FileManagerContentState: Equatable {
     struct EntryThumbnailState: Equatable {
-        var thumbnailsReady: Set<String> = []
         var thumbnailRequestsInFlight: Set<String> = []
-        var thumbnailRequestsFailed: Set<String> = []
+        var thumbnailRenderVersion: Int = 0
     }
 
     var navigation: ContentPageNavigationFeature.State = .init()

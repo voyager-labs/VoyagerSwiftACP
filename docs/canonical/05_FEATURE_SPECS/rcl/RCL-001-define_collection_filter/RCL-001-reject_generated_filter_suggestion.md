@@ -17,15 +17,17 @@
 
 ## Preconditions
 
-- -
-
+- Collection Filter Composer가 열린 상태
+- 제안 상태 항목이 존재하는 상태
+- 거절 대상 제안 항목이 지정된 상태
+- Generate Filter Suggestions from Query가 실행 중이지 않은 상태
 ## Edge Cases
 
 - -
 
 ## Acceptance Criteria
 
-- -
+- [ ] -
 
 ## Source
 

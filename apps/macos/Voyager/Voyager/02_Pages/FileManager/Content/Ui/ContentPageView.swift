@@ -296,7 +296,7 @@ struct ContentPageView: View {
             listTextSize: state.listTextSize,
             gridIconSize: state.gridIconSize,
             gridTextSize: state.gridTextSize,
-            thumbnailsReady: state.entryThumbnails.thumbnailsReady,
+            thumbnailRenderVersion: state.entryThumbnails.thumbnailRenderVersion,
             clipboardItems: Set(state.entryOperations.clipboardItems),
             clipboardOperation: state.entryOperations.clipboardOperation,
         )

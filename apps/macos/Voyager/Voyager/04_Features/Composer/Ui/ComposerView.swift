@@ -473,7 +473,6 @@ struct ComposerView: View {
             historyPaths: historyPaths,
         )
         .allowsHitTesting(!isLocked)
-        .opacity(isLocked ? 0.6 : 1)
         .onPreferenceChange(ChipSizePreferenceKey.self) { sizes in
             handleChipSizeChange(sizes: sizes, allChips: allChips, availableWidth: availableWidth)
         }

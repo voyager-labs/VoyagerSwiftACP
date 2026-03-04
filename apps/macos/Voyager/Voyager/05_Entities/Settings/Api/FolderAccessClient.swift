@@ -18,7 +18,7 @@ enum FilesAndFoldersStatus: Equatable, Sendable {
         case .idle:
             "Tap Grant Access when you're ready."
         case .granted:
-            "Access granted for Desktop, Documents, and Downloads."
+            "Access granted for the requested folders."
         case .partial:
             "Some folders are still off. You can enable them later in System Settings."
         case .notGranted:

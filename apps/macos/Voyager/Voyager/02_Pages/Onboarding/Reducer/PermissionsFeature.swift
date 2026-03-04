@@ -6,12 +6,8 @@ struct PermissionsFeature {
     typealias State = PermissionsState
     typealias Action = PermissionsAction
 
-    @Dependency(\.folderAccessClient)
-    var folderAccessClient
     @Dependency(\.fullDiskAccessClient)
     var fullDiskAccessClient
-    @Dependency(\.helperFolderAccessClient)
-    var helperFolderAccessClient
     @Dependency(\.launchAtLoginClient)
     var launchAtLoginClient
     @Dependency(\.systemSettingsClient)
@@ -48,32 +44,6 @@ struct PermissionsFeature {
                 } else {
                     state.hasAttemptedFullDiskAccessEnable = true
                 }
-                return .none
-
-            case .requestFilesAndFoldersTapped:
-                state.isRequestingFilesAndFolders = true
-                state.filesAndFoldersStatus = .idle
-                state.folderAccessResult = nil
-                state.helperFilesAndFoldersStatus = .idle
-                state.helperFolderAccessResult = nil
-                return .run { [folderAccessClient, helperFolderAccessClient] send in
-                    let result = await folderAccessClient.requestAccess()
-                    let helperResult = await helperFolderAccessClient.requestAccess()
-                    await send(.filesAndFoldersResponse(result))
-                    await send(.helperFilesAndFoldersResponse(helperResult))
-                }
-
-            case let .filesAndFoldersResponse(result):
-                state.folderAccessResult = result
-                state.filesAndFoldersStatus = result.status
-                refreshCompletionState(state: &state)
-                return .none
-
-            case let .helperFilesAndFoldersResponse(result):
-                state.isRequestingFilesAndFolders = false
-                state.helperFolderAccessResult = result
-                state.helperFilesAndFoldersStatus = result.status
-                refreshCompletionState(state: &state)
                 return .none
 
             case let .launchAtLoginToggled(enabled):
@@ -133,6 +103,6 @@ struct PermissionsFeature {
     }
 
     private func refreshCompletionState(state: inout State) {
-        state.isComplete = state.fullDiskAccessStatus == .granted && state.allFilesAndFoldersGranted
+        state.isComplete = state.fullDiskAccessStatus == .granted
     }
 }

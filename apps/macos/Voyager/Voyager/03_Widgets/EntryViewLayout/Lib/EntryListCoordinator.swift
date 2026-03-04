@@ -777,10 +777,7 @@ private extension EntryListCoordinator {
         case .name:
             let (iconView, _) = ensureNameCellLayout(view)
             iconView.isHidden = false
-            let isThumbnailReady = pageState.thumbnailsReady.contains(entry.fullPath)
-            let thumbnail = isThumbnailReady
-                ? entryThumbnailCacheClient.getThumbnail(for: entry.fullPath)
-                : nil
+            let thumbnail = entryThumbnailCacheClient.getThumbnail(for: entry.fullPath)
             iconView.image = workspaceClient.entryIcon(for: entry, thumbnail: thumbnail)
 
             let isRenaming = pageState.renamingItemId == entry.id
@@ -988,7 +985,7 @@ extension EntryListCoordinator {
 
     func observeThumbnailsReady() {
         adapter.pageStatePublisher
-            .map(\.thumbnailsReady)
+            .map(\.thumbnailRenderVersion)
             .removeDuplicates()
             .receive(on: DispatchQueue.main)
             .sink { [weak self] _ in
@@ -1070,10 +1067,7 @@ private extension EntryListCoordinator {
                     _ = ensureNameCellLayout(cell)
                 }
 
-                let isThumbnailReady = pageState.thumbnailsReady.contains(entry.fullPath)
-                let thumbnail = isThumbnailReady
-                    ? entryThumbnailCacheClient.getThumbnail(for: entry.fullPath)
-                    : nil
+                let thumbnail = entryThumbnailCacheClient.getThumbnail(for: entry.fullPath)
                 cell.imageView?.isHidden = false
                 cell.imageView?.image = workspaceClient.entryIcon(for: entry, thumbnail: thumbnail)
             }

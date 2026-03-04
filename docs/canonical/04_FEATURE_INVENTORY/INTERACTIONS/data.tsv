@@ -228,6 +228,7 @@ Set Voyager as Default File Manager	SET-002-set_voyager_as_default_file_manager	
 Request Full Disk Access Permission	SET-002-request_full_disk_access_permission	command	Configure General Settings	SET	SET-002	준비 완료	<<AI>> 설정(General)에서 Full Disk Access 권한의 현재 상태와 필요 사유를 안내하고, 사용자가 시스템 설정에서 권한을 부여할 수 있도록 이동 경로를 제공한다.	settings_window.settings_body.tab_general	-	-
 Request Notifications Permission	SET-002-request_notifications_permission	command	Configure General Settings	SET	SET-002	아이디어	<<AI>> 설정(General)에서 Notifications 권한을 요청하고, 결과에 따라 권한 상태를 표시하며 필요 시 시스템 설정에서 변경할 수 있는 경로를 제공한다.	settings_window.settings_body.tab_general	-	-
 Verify System Permission Status	SET-002-verify_system_permission_status	background	Configure General Settings	SET	SET-002	준비 완료	<<AI>> 설정(General)에서 Full Disk Access 및 Notifications 권한 상태를 재조회해 최신 상태로 갱신하고, 상태 배지/안내 문구를 업데이트한다.	settings_window.settings_body.tab_general	-	-
+Verify Spotlight Indexing Status	SET-002-verify_spotlight_indexing_status	background	Configure General Settings	SET	SET-002	아이디어	<<AI>> 시스템의 Spotlight 인덱싱 활성화 여부를 확인하고, 비활성 시 검색 제한 안내 및 시스템 설정 이동 경로를 제공한다.	settings_window.settings_body.tab_general	-	-
 Export User Settings Data	SET-002-export_user_settings_data	command	Configure General Settings	SET	SET-002	아이디어	<<AI>> 현재 사용자 설정(일반/외관/단축키 등)을 파일로 내보내 백업·이전할 수 있도록 함	settings_window.settings_body.tab_general	-	-
 Import User Settings Data	SET-002-import_user_settings_data	command	Configure General Settings	SET	SET-002	아이디어	<<AI>> 내보낸 설정 파일을 가져와 사용자 설정을 복원한다	settings_window.settings_body.tab_general	-	-
 Swtich Theme Mode	SET-003-swtich_theme_mode	input	Configure Appearance Settings	SET	SET-003	배포 완료	라이트/다크/자동 및 강조색, 폰트 사이즈 등을 편집합니다.	settings_window.settings_body.tab_appearance	-	-
@@ -239,7 +240,7 @@ Restore Default Keyboard Shortcuts	SET-005-restore_default_keyboard_shortcuts	co
 Start Onboarding Session	ONB-001-start_onboarding_session	background	Run User Onboarding	ONB	ONB-001	배포 완료	앱 실행 직후 온보딩 진입 필요 여부를 판정하고, 필요 시 온보딩 세션을 생성·초기화하며 재개 정책을 적용	onboarding_window	-	-
 Show Onboarding Step	ONB-001-show_onboarding_step	display	Run User Onboarding	ONB	ONB-001	배포 완료	현재 스텝의 안내, 입력 UI, 진행률을 표시	onboarding_window	-	-
 Update Onboarding Step State	ONB-001-update_onboarding_step_state	background	Run User Onboarding	ONB	ONB-001	배포 완료	사용자가 스텝 내 입력을 변경하면 진행 상태에 반영하고, 상태를 저장해 재개 가능 상태를 유지	onboarding_window	-	-
-Advance Onboarding Step	ONB-001-advance_onboarding_step	input	Run User Onboarding	ONB	ONB-001	배포 완료	현재 스텝의 완료 조건을 검증하고, 다음 스텝으로 이동	onboarding_window	-	-
+Advance Onboarding Step	ONB-001-advance_onboarding_step	input	Run User Onboarding	ONB	ONB-001	배포 완료	현재 스텝의 완료 조건(FDA, Launch at Login 등)을 검증하고, 다음 스텝으로 이동	onboarding_window	-	-
 Go Back Onboarding Step	ONB-001-go_back_onboarding_step	input	Run User Onboarding	ONB	ONB-001	배포 완료	이전 스텝으로 이동하고, 입력값을 복원	onboarding_window	-	-
 Resume Onboarding Session	ONB-001-resume_onboarding_session	background	Run User Onboarding	ONB	ONB-001	배포 완료	미완료 온보딩이 존재할 경우 마지막 유효 스텝에서 재개	onboarding_window	-	-
 Complete Onboarding Session	ONB-001-complete_onboarding_session	background	Run User Onboarding	ONB	ONB-001	배포 완료	온보딩을 완료 처리하고 파일 관리자 창을 실행	onboarding_window	-	-

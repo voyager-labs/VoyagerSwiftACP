@@ -25,7 +25,7 @@
 
 ## Acceptance Criteria
 
-- -
+- [ ] -
 
 ## Source
 

@@ -17,15 +17,15 @@
 
 ## Preconditions
 
-- -
-
+- 온보딩 진입이 확정된 상태
+- 현재 표시할 스텝이 결정된 상태
 ## Edge Cases
 
 - -
 
 ## Acceptance Criteria
 
-- -
+- [ ] TBD
 
 ## Source
 

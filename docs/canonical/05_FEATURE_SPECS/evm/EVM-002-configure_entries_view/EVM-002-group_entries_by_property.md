@@ -17,15 +17,15 @@
 
 ## Preconditions
 
-- -
-
+- Entries View가 Icon View로 설정된 상태
 ## Edge Cases
 
-- -
+- 선택한 프로퍼티 값이 일부 Entry에는 존재하지 않는 경우
 
 ## Acceptance Criteria
 
-- -
+- [ ] 현재 Entries View가 Icon View일 때, 해당 인터랙션을 호출하면, 선택한 프로퍼티를 기준으로 엔트리가 그룹 섹션으로 묶여 표시됨
+- [ ] 특정 프로퍼티 그룹 섹션으로 묶여 표시될 때, 해당 프로퍼티가 없는 엔트리가 존재한다면, “미지정” 그룹에 표시됨
 
 ## Source
 
