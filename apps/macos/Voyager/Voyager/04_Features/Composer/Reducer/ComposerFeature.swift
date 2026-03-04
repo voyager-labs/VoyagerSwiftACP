@@ -1,4 +1,4 @@
-// swiftlint:disable file_length attributes
+// swiftlint:disable file_length
 import ComposableArchitecture
 import Foundation
 import Logging
@@ -14,7 +14,6 @@ enum ComposerQueryRenderPhase: Equatable, Sendable {
 }
 
 @Reducer
-// swiftlint:disable:next type_body_length
 struct ComposerFeature {
     @Dependency(\.searchClient)
     var searchClient
@@ -46,13 +45,7 @@ struct ComposerFeature {
         Reduce { state, action in
             switch action {
             case let .setPresented(isPresented):
-                state.isPresented = isPresented
-                if !isPresented {
-                    state.hasSubmittedInSession = false
-                    state.searchStartedAt = nil
-                    state.filtersStartedAt = nil
-                    state.queryRenderPhase = .idle
-                }
+                handleSetPresented(state: &state, isPresented: isPresented)
                 return .none
 
             case let .setText(text):
@@ -60,255 +53,61 @@ struct ComposerFeature {
                 return .none
 
             case let .addScope(path):
-                guard !state.isLoadingSearch else { return .none }
-                guard !state.scopes.contains(path) else { return .none }
-                state.pushHistory()
-                if state.scopes.isEmpty || state.scopes == [ComposerScopeUtils.rootScopePath] {
-                    state.scopes = [path]
-                } else {
-                    state.scopes.append(path)
-                }
-                return applyFiltersIfNeeded(state: &state, searchClient: searchClient)
+                return handleAddScope(state: &state, path: path, searchClient: searchClient)
 
             case let .removeScope(path):
-                guard !state.isLoadingSearch else { return .none }
-                if state.scopes.contains(path) {
-                    state.pushHistory()
-                    state.scopes.removeAll { $0 == path }
-                    if state.scopes.isEmpty {
-                        state.scopes = [ComposerScopeUtils.rootScopePath]
-                    }
-                }
-                return applyFiltersIfNeeded(state: &state, searchClient: searchClient)
+                return handleRemoveScope(state: &state, path: path, searchClient: searchClient)
 
             case .clearAll:
-                guard !state.isLoadingSearch else { return .none }
-                state.pushHistory()
-                state.text = ""
-                state.scopes = [ComposerScopeUtils.rootScopePath]
-                state.conditions = []
-                state.operatorOptionsByKey = [:]
-                state.propertyPicker = .init()
-                state.operatorPicker = .init()
-                state.valuePicker = .init()
-                state.isLoadingFilters = false
-                state.lastFiltersResponse = nil
-                state.queryRenderPhase = .idle
-                return .cancel(id: CancelID.filters)
+                return handleClearAll(state: &state)
 
             case .submit:
-                let query = state.text.trimmingCharacters(in: .whitespacesAndNewlines)
-                guard !query.isEmpty else { return .none }
-                let filters = buildFilters(from: state)
-                VoyagerSentryMetricLogger.logMetric(
-                    "voyager_composer_submit",
-                    value: 1,
-                )
-                VoyagerSentryMetricLogger.logMetric(
-                    "voyager_search_submit",
-                    value: 1,
-                )
-                if state.hasSubmittedInSession {
-                    VoyagerSentryMetricLogger.logMetric(
-                        "voyager_search_resubmit",
-                        value: 1,
-                    )
-                }
-                state.hasSubmittedInSession = true
-                state.searchStartedAt = Date()
-                state.isLoadingSearch = true
-                state.isLoadingFilters = false
-                state.lastFiltersResponse = nil
-                state.queryRenderPhase = .searching
-                state.text = ""
-                let searchEffect: Effect<Action> = .run { send in
-                    do {
-                        let response = try await searchClient.search(
-                            .init(query: query, filters: filters),
-                        )
-                        await send(.searchResponse(.success(response)))
-                    } catch {
-                        await send(.searchResponse(.failure(error)))
-                    }
-                }
-                .cancellable(id: CancelID.search, cancelInFlight: true)
-                return .concatenate(
-                    .cancel(id: CancelID.filters),
-                    searchEffect,
-                )
+                return handleSubmit(state: &state, searchClient: searchClient)
 
             case .cancelSearch:
-                state.isLoadingSearch = false
-                state.queryRenderPhase = .idle
-                VoyagerSentryMetricLogger.logMetric(
-                    "voyager_search_cancel",
-                    value: 1,
-                    tags: ["type": "search"],
-                )
-                return .cancel(id: CancelID.search)
+                return handleCancelSearch(state: &state)
 
             case .cancelFilters:
-                state.isLoadingFilters = false
-                state.isFilteringInFlight = false
-                VoyagerSentryMetricLogger.logMetric(
-                    "voyager_search_cancel",
-                    value: 1,
-                    tags: ["type": "filters"],
-                )
-                return .cancel(id: CancelID.filters)
+                return handleCancelFilters(state: &state)
 
             case .applyFilters:
-                state.isLoadingSearch = false
-                state.lastSearchResponse = nil
-                state.isLoadingFilters = true
-                state.isFilteringInFlight = true
-                state.queryRenderPhase = .idle
-                VoyagerSentryMetricLogger.logMetric(
-                    "voyager_composer_filters_apply",
-                    value: 1,
-                )
-                state.filtersStartedAt = Date()
-                return .concatenate(
-                    .cancel(id: CancelID.search),
-                    applyFiltersIfNeeded(state: &state, searchClient: searchClient),
-                )
+                return handleApplyFilters(state: &state, searchClient: searchClient)
 
             case .saveCollection:
-                let payload = SaveRequestPayload(
-                    context: state.collectionContext,
-                    isSearchLoading: state.isLoadingSearch,
-                    isFiltersLoading: state.isLoadingFilters,
-                )
-                if let url = state.openedCollectionURL {
-                    return .send(.collection(.saveToExisting(payload, url)))
-                }
-                return .send(.collection(.saveRequested(payload)))
+                return handleSaveCollection(state: state)
 
             case .saveCollectionAs:
-                let payload = SaveRequestPayload(
-                    context: state.collectionContext,
-                    isSearchLoading: state.isLoadingSearch,
-                    isFiltersLoading: state.isLoadingFilters,
-                )
-                return .send(.collection(.saveRequested(payload)))
+                return handleSaveCollectionAs(state: state)
 
             case .focusQueryField:
                 state.focusRequestID += 1
                 return .none
 
             case let .updateScope(oldPath, newPath):
-                guard !state.isLoadingSearch else { return .none }
-                if let index = state.scopes.firstIndex(of: oldPath), oldPath != newPath {
-                    state.pushHistory()
-                    state.scopes[index] = newPath
-                }
-                return applyFiltersIfNeeded(state: &state, searchClient: searchClient)
+                return handleUpdateScope(state: &state, oldPath: oldPath, newPath: newPath, searchClient: searchClient)
 
             case let .addCondition(propertyKey):
-                guard !state.isLoadingSearch else { return .none }
-                let label = registryClient.labelForKey(propertyKey)
-                let propertyType = registryClient.propertyTypeString(propertyKey)
-                if state.conditions.contains(where: { $0.propertyKey == propertyKey }) {
-                    state.propertyPicker.duplicateMessage = "\"\(label)\" is already added."
-                    return .none
-                }
-
-                state.pushHistory()
-                let condition = Condition(
-                    propertyKey: propertyKey,
-                    propertyLabel: label,
-                    propertyType: propertyType,
-                    operatorCode: nil,
-                    operatorLabel: nil,
-                    operatorValueArity: nil,
-                    operatorValueUIKind: nil,
-                    valueType: SystemPropertyTypeKey.normalizedValueType(from: propertyType),
-                    values: nil,
-                )
-                state.conditions.append(condition)
-                updateOperatorOptions(state: &state, registryClient: registryClient)
-                state.propertyPicker.duplicateMessage = nil
-                state.propertyPicker.isPresented = false
-                return .none
+                return handleAddCondition(state: &state, propertyKey: propertyKey, registryClient: registryClient)
 
             case let .removeCondition(propertyKey):
-                guard !state.isLoadingSearch else { return .none }
-                if state.conditions.contains(where: { $0.propertyKey == propertyKey }) {
-                    state.pushHistory()
-                    state.conditions.removeAll { $0.propertyKey == propertyKey }
-                    updateOperatorOptions(state: &state, registryClient: registryClient)
-                }
-                return .none
+                return handleRemoveCondition(state: &state, propertyKey: propertyKey, registryClient: registryClient)
 
             case let .setOperator(propertyKey, operatorCode):
-                guard !state.isLoadingSearch else { return .none }
-                if let idx = state.conditions.firstIndex(where: { $0.propertyKey == propertyKey }) {
-                    state.pushHistory()
-                    let propertyType = state.conditions[idx].propertyType
-                    let typeKey = SystemPropertyTypeKey.operatorKey(from: propertyType)
-                    let uiValueKind = registryClient.operatorUIKind(
-                        for: operatorCode,
-                        typeKey: typeKey,
-                    )
-                    state.conditions[idx].operatorCode = operatorCode
-                    state.conditions[idx].operatorLabel = registryClient.operatorLabel(for: operatorCode)
-                    let valueArity = registryClient.valueArity(for: uiValueKind)
-                    state.conditions[idx].operatorValueArity = valueArity
-                    state.conditions[idx].operatorValueUIKind = uiValueKind
-                    state.conditions[idx].valueType = registryClient.valueType(for: uiValueKind)
-                    state.conditions[idx].values = valueArity == 0 ? [] : nil
-                    if state.valuePicker.propertyKey == propertyKey {
-                        state.valuePicker.isPresented = false
-                        state.valuePicker.propertyKey = nil
-                        state.valuePicker.operatorCode = nil
-                        state.valuePicker.valueUIKind = "singleText"
-                        state.valuePicker.valueType = "string"
-                        state.valuePicker.values = Array(
-                            repeating: "",
-                            count: registryClient.valueArity(for: uiValueKind),
-                        )
-                        state.valuePicker.errorMessage = nil
-                    }
-                    if valueArity == 0 {
-                        return applyFiltersIfNeeded(state: &state, searchClient: searchClient)
-                    }
-                }
-                return .none
+                return handleSetOperator(
+                    state: &state,
+                    propertyKey: propertyKey,
+                    operatorCode: operatorCode,
+                    registryClient: registryClient,
+                    searchClient: searchClient,
+                )
 
             case let .replaceConditionProperty(originalKey, propertyKey):
-                guard !state.isLoadingSearch else { return .none }
-                guard let idx = state.conditions.firstIndex(where: { $0.propertyKey == originalKey }) else {
-                    state.propertyPicker.editingConditionKey = nil
-                    state.propertyPicker.isPresented = false
-                    return .none
-                }
-
-                let label = registryClient.labelForKey(propertyKey)
-                let propertyType = registryClient.propertyTypeString(propertyKey)
-
-                // 중복 방지: 다른 조건에 동일 key가 이미 있으면 안내 후 아무 변화 없이 종료
-                if let dupIndex = state.conditions.firstIndex(where: { $0.propertyKey == propertyKey }),
-                   dupIndex != idx
-                {
-                    state.propertyPicker.duplicateMessage = "\"\(label)\" is already added."
-                    return .none
-                }
-
-                state.pushHistory()
-                state.conditions[idx].propertyKey = propertyKey
-                state.conditions[idx].propertyLabel = label
-                state.conditions[idx].propertyType = propertyType
-                state.conditions[idx].operatorCode = nil
-                state.conditions[idx].operatorLabel = nil
-                state.conditions[idx].operatorValueArity = nil
-                state.conditions[idx].operatorValueUIKind = nil
-                state.conditions[idx].valueType = SystemPropertyTypeKey.normalizedValueType(from: propertyType)
-                state.conditions[idx].values = nil
-                updateOperatorOptions(state: &state, registryClient: registryClient)
-                state.propertyPicker.editingConditionKey = nil
-                state.propertyPicker.isPresented = false
-                state.propertyPicker.duplicateMessage = nil
-                return .none
+                return handleReplaceConditionProperty(
+                    state: &state,
+                    originalKey: originalKey,
+                    propertyKey: propertyKey,
+                    registryClient: registryClient,
+                )
 
             // TODO: UndoManager로 변경
             case .undo:
@@ -545,6 +344,315 @@ struct ComposerFeature {
     }
 }
 
+private func handleSetPresented(state: inout ComposerFeature.State, isPresented: Bool) {
+    state.isPresented = isPresented
+    if !isPresented {
+        state.hasSubmittedInSession = false
+        state.searchStartedAt = nil
+        state.filtersStartedAt = nil
+        state.queryRenderPhase = .idle
+    }
+}
+
+private func handleAddScope(
+    state: inout ComposerFeature.State,
+    path: String,
+    searchClient: SearchClient,
+) -> Effect<ComposerFeature.Action> {
+    guard !state.isLoadingSearch else { return .none }
+    guard !state.scopes.contains(path) else { return .none }
+    state.pushHistory()
+    if state.scopes.isEmpty || state.scopes == [ComposerScopeUtils.rootScopePath] {
+        state.scopes = [path]
+    } else {
+        state.scopes.append(path)
+    }
+    return applyFiltersIfNeeded(state: &state, searchClient: searchClient)
+}
+
+private func handleRemoveScope(
+    state: inout ComposerFeature.State,
+    path: String,
+    searchClient: SearchClient,
+) -> Effect<ComposerFeature.Action> {
+    guard !state.isLoadingSearch else { return .none }
+    if state.scopes.contains(path) {
+        state.pushHistory()
+        state.scopes.removeAll { $0 == path }
+        if state.scopes.isEmpty {
+            state.scopes = [ComposerScopeUtils.rootScopePath]
+        }
+    }
+    return applyFiltersIfNeeded(state: &state, searchClient: searchClient)
+}
+
+private func handleUpdateScope(
+    state: inout ComposerFeature.State,
+    oldPath: String,
+    newPath: String,
+    searchClient: SearchClient,
+) -> Effect<ComposerFeature.Action> {
+    guard !state.isLoadingSearch else { return .none }
+    if let index = state.scopes.firstIndex(of: oldPath), oldPath != newPath {
+        state.pushHistory()
+        state.scopes[index] = newPath
+    }
+    return applyFiltersIfNeeded(state: &state, searchClient: searchClient)
+}
+
+private func handleClearAll(state: inout ComposerFeature.State) -> Effect<ComposerFeature.Action> {
+    guard !state.isLoadingSearch else { return .none }
+    state.pushHistory()
+    state.text = ""
+    state.scopes = [ComposerScopeUtils.rootScopePath]
+    state.conditions = []
+    state.operatorOptionsByKey = [:]
+    state.propertyPicker = .init()
+    state.operatorPicker = .init()
+    state.valuePicker = .init()
+    state.isLoadingFilters = false
+    state.lastFiltersResponse = nil
+    state.queryRenderPhase = .idle
+    return .cancel(id: ComposerFeature.CancelID.filters)
+}
+
+private func handleSubmit(
+    state: inout ComposerFeature.State,
+    searchClient: SearchClient,
+) -> Effect<ComposerFeature.Action> {
+    let query = state.text.trimmingCharacters(in: .whitespacesAndNewlines)
+    guard !query.isEmpty else { return .none }
+    let filters = buildFilters(from: state)
+    VoyagerSentryMetricLogger.logMetric(
+        "voyager_composer_submit",
+        value: 1,
+    )
+    VoyagerSentryMetricLogger.logMetric(
+        "voyager_search_submit",
+        value: 1,
+    )
+    if state.hasSubmittedInSession {
+        VoyagerSentryMetricLogger.logMetric(
+            "voyager_search_resubmit",
+            value: 1,
+        )
+    }
+    state.hasSubmittedInSession = true
+    state.searchStartedAt = Date()
+    state.isLoadingSearch = true
+    state.isLoadingFilters = false
+    state.lastFiltersResponse = nil
+    state.queryRenderPhase = .searching
+    state.text = ""
+
+    let searchEffect: Effect<ComposerFeature.Action> = .run { send in
+        do {
+            let response = try await searchClient.search(
+                .init(query: query, filters: filters),
+            )
+            await send(.searchResponse(.success(response)))
+        } catch {
+            await send(.searchResponse(.failure(error)))
+        }
+    }
+    .cancellable(id: ComposerFeature.CancelID.search, cancelInFlight: true)
+
+    return .concatenate(
+        .cancel(id: ComposerFeature.CancelID.filters),
+        searchEffect,
+    )
+}
+
+private func handleCancelSearch(state: inout ComposerFeature.State) -> Effect<ComposerFeature.Action> {
+    state.isLoadingSearch = false
+    state.queryRenderPhase = .idle
+    VoyagerSentryMetricLogger.logMetric(
+        "voyager_search_cancel",
+        value: 1,
+        tags: ["type": "search"],
+    )
+    return .cancel(id: ComposerFeature.CancelID.search)
+}
+
+private func handleCancelFilters(state: inout ComposerFeature.State) -> Effect<ComposerFeature.Action> {
+    state.isLoadingFilters = false
+    state.isFilteringInFlight = false
+    VoyagerSentryMetricLogger.logMetric(
+        "voyager_search_cancel",
+        value: 1,
+        tags: ["type": "filters"],
+    )
+    return .cancel(id: ComposerFeature.CancelID.filters)
+}
+
+private func handleApplyFilters(
+    state: inout ComposerFeature.State,
+    searchClient: SearchClient,
+) -> Effect<ComposerFeature.Action> {
+    state.isLoadingSearch = false
+    state.lastSearchResponse = nil
+    state.isLoadingFilters = true
+    state.isFilteringInFlight = true
+    state.queryRenderPhase = .idle
+    VoyagerSentryMetricLogger.logMetric(
+        "voyager_composer_filters_apply",
+        value: 1,
+    )
+    state.filtersStartedAt = Date()
+    return .concatenate(
+        .cancel(id: ComposerFeature.CancelID.search),
+        applyFiltersIfNeeded(state: &state, searchClient: searchClient),
+    )
+}
+
+private func makeSavePayload(from state: ComposerFeature.State) -> SaveRequestPayload {
+    .init(
+        context: state.collectionContext,
+        isSearchLoading: state.isLoadingSearch,
+        isFiltersLoading: state.isLoadingFilters,
+    )
+}
+
+private func handleSaveCollection(state: ComposerFeature.State) -> Effect<ComposerFeature.Action> {
+    let payload = makeSavePayload(from: state)
+    if let url = state.openedCollectionURL {
+        return .send(.collection(.saveToExisting(payload, url)))
+    }
+    return .send(.collection(.saveRequested(payload)))
+}
+
+private func handleSaveCollectionAs(state: ComposerFeature.State) -> Effect<ComposerFeature.Action> {
+    .send(.collection(.saveRequested(makeSavePayload(from: state))))
+}
+
+private func handleAddCondition(
+    state: inout ComposerFeature.State,
+    propertyKey: String,
+    registryClient: RegistryClient,
+) -> Effect<ComposerFeature.Action> {
+    guard !state.isLoadingSearch else { return .none }
+    let label = registryClient.labelForKey(propertyKey)
+    let propertyType = registryClient.propertyTypeString(propertyKey)
+    if state.conditions.contains(where: { $0.propertyKey == propertyKey }) {
+        state.propertyPicker.duplicateMessage = "\"\(label)\" is already added."
+        return .none
+    }
+
+    state.pushHistory()
+    let condition = Condition(
+        propertyKey: propertyKey,
+        propertyLabel: label,
+        propertyType: propertyType,
+        operatorCode: nil,
+        operatorLabel: nil,
+        operatorValueArity: nil,
+        operatorValueUIKind: nil,
+        valueType: SystemPropertyTypeKey.normalizedValueType(from: propertyType),
+        values: nil,
+    )
+    state.conditions.append(condition)
+    updateOperatorOptions(state: &state, registryClient: registryClient)
+    state.propertyPicker.duplicateMessage = nil
+    state.propertyPicker.isPresented = false
+    return .none
+}
+
+private func handleRemoveCondition(
+    state: inout ComposerFeature.State,
+    propertyKey: String,
+    registryClient: RegistryClient,
+) -> Effect<ComposerFeature.Action> {
+    guard !state.isLoadingSearch else { return .none }
+    if state.conditions.contains(where: { $0.propertyKey == propertyKey }) {
+        state.pushHistory()
+        state.conditions.removeAll { $0.propertyKey == propertyKey }
+        updateOperatorOptions(state: &state, registryClient: registryClient)
+    }
+    return .none
+}
+
+private func handleSetOperator(
+    state: inout ComposerFeature.State,
+    propertyKey: String,
+    operatorCode: String,
+    registryClient: RegistryClient,
+    searchClient: SearchClient,
+) -> Effect<ComposerFeature.Action> {
+    guard !state.isLoadingSearch else { return .none }
+    if let idx = state.conditions.firstIndex(where: { $0.propertyKey == propertyKey }) {
+        state.pushHistory()
+        let propertyType = state.conditions[idx].propertyType
+        let typeKey = SystemPropertyTypeKey.operatorKey(from: propertyType)
+        let uiValueKind = registryClient.operatorUIKind(
+            for: operatorCode,
+            typeKey: typeKey,
+        )
+        state.conditions[idx].operatorCode = operatorCode
+        state.conditions[idx].operatorLabel = registryClient.operatorLabel(for: operatorCode)
+        let valueArity = registryClient.valueArity(for: uiValueKind)
+        state.conditions[idx].operatorValueArity = valueArity
+        state.conditions[idx].operatorValueUIKind = uiValueKind
+        state.conditions[idx].valueType = registryClient.valueType(for: uiValueKind)
+        state.conditions[idx].values = valueArity == 0 ? [] : nil
+
+        if state.valuePicker.propertyKey == propertyKey {
+            state.valuePicker.isPresented = false
+            state.valuePicker.propertyKey = nil
+            state.valuePicker.operatorCode = nil
+            state.valuePicker.valueUIKind = "singleText"
+            state.valuePicker.valueType = "string"
+            state.valuePicker.values = Array(
+                repeating: "",
+                count: registryClient.valueArity(for: uiValueKind),
+            )
+            state.valuePicker.errorMessage = nil
+        }
+
+        if valueArity == 0 {
+            return applyFiltersIfNeeded(state: &state, searchClient: searchClient)
+        }
+    }
+    return .none
+}
+
+private func handleReplaceConditionProperty(
+    state: inout ComposerFeature.State,
+    originalKey: String,
+    propertyKey: String,
+    registryClient: RegistryClient,
+) -> Effect<ComposerFeature.Action> {
+    guard !state.isLoadingSearch else { return .none }
+    guard let idx = state.conditions.firstIndex(where: { $0.propertyKey == originalKey }) else {
+        state.propertyPicker.editingConditionKey = nil
+        state.propertyPicker.isPresented = false
+        return .none
+    }
+
+    let label = registryClient.labelForKey(propertyKey)
+    let propertyType = registryClient.propertyTypeString(propertyKey)
+
+    if let dupIndex = state.conditions.firstIndex(where: { $0.propertyKey == propertyKey }), dupIndex != idx {
+        state.propertyPicker.duplicateMessage = "\"\(label)\" is already added."
+        return .none
+    }
+
+    state.pushHistory()
+    state.conditions[idx].propertyKey = propertyKey
+    state.conditions[idx].propertyLabel = label
+    state.conditions[idx].propertyType = propertyType
+    state.conditions[idx].operatorCode = nil
+    state.conditions[idx].operatorLabel = nil
+    state.conditions[idx].operatorValueArity = nil
+    state.conditions[idx].operatorValueUIKind = nil
+    state.conditions[idx].valueType = SystemPropertyTypeKey.normalizedValueType(from: propertyType)
+    state.conditions[idx].values = nil
+    updateOperatorOptions(state: &state, registryClient: registryClient)
+    state.propertyPicker.editingConditionKey = nil
+    state.propertyPicker.isPresented = false
+    state.propertyPicker.duplicateMessage = nil
+    return .none
+}
+
 private func applyAppliedFilters(
     _ appliedFilters: AppliedFiltersPayload?,
     state: inout ComposerFeature.State,
@@ -628,4 +736,4 @@ private func updateOperatorOptions(
     )
 }
 
-// swiftlint:enable file_length attributes
+// swiftlint:enable file_length
