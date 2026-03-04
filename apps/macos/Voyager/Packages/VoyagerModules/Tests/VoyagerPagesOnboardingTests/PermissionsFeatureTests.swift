@@ -7,6 +7,22 @@ import XCTest
 
 @MainActor
 final class PermissionsFeatureTests: XCTestCase {
+    func testOnDisappearCancelsAppActiveObservation() async {
+        let store = TestStore(initialState: PermissionsFeature.State()) {
+            PermissionsFeature()
+        } withDependencies: {
+            $0.fullDiskAccessClient = FullDiskAccessClient(status: { .unknown })
+            $0.launchAtLoginClient = LaunchAtLoginClient(isEnabled: { false }, setEnabled: { _ in })
+        }
+
+        await store.send(.onAppear)
+        await store.receive(\.fullDiskAccessStatusResponse)
+        await store.receive(\.launchAtLoginStateLoaded)
+
+        await store.send(.onDisappear)
+        await store.finish()
+    }
+
     func testFullDiskAccessGatesNext() async {
         let store = TestStore(initialState: PermissionsFeature.State()) {
             PermissionsFeature()

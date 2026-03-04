@@ -30,8 +30,9 @@ struct VoyagerApp: App {
                         path
                     }
                     requestFileManagerNewWindow(path: resolvedPath)
-                    return true
                 }
+                await Task.yield()
+                return true
             })
             $0.fileManagerWindowClient = fileManagerWindowClient
         }

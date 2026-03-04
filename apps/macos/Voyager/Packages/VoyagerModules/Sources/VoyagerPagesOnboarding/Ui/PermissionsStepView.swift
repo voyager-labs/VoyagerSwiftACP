@@ -1,4 +1,3 @@
-import AppKit
 import ComposableArchitecture
 import SwiftUI
 
@@ -74,8 +73,8 @@ struct PermissionsStepView: View {
             .onAppear {
                 viewStore.send(.onAppear)
             }
-            .onReceive(NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)) { _ in
-                viewStore.send(.appDidBecomeActive)
+            .onDisappear {
+                viewStore.send(.onDisappear)
             }
         })
     }

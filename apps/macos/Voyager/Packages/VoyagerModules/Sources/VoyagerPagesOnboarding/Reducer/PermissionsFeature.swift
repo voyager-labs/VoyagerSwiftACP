@@ -1,3 +1,4 @@
+import AppKit
 import ComposableArchitecture
 import Foundation
 import VoyagerEntitiesSettings
@@ -14,11 +15,19 @@ struct PermissionsFeature {
     @Dependency(\.systemSettingsClient)
     var systemSettingsClient
 
+    private let appDidBecomeActiveObserverCancelID = "PermissionsFeature.appDidBecomeActiveObserver"
+
     var body: some Reducer<State, Action> {
         Reduce { state, action in
             switch action {
             case .onAppear:
-                return loadInitialState()
+                return .merge(
+                    loadInitialState(),
+                    observeAppDidBecomeActive(),
+                )
+
+            case .onDisappear:
+                return .cancel(id: appDidBecomeActiveObserverCancelID)
 
             case .appDidBecomeActive:
                 return refreshFullDiskAccess()
@@ -84,6 +93,15 @@ struct PermissionsFeature {
             let isEnabled = launchAtLoginClient.isEnabled()
             await send(.launchAtLoginStateLoaded(isEnabled))
         }
+    }
+
+    private func observeAppDidBecomeActive() -> Effect<Action> {
+        .run { send in
+            for await _ in NotificationCenter.default.notifications(named: NSApplication.didBecomeActiveNotification) {
+                await send(.appDidBecomeActive)
+            }
+        }
+        .cancellable(id: appDidBecomeActiveObserverCancelID, cancelInFlight: true)
     }
 
     private func refreshFullDiskAccess() -> Effect<Action> {

@@ -4,6 +4,7 @@ import VoyagerEntitiesSettings
 @CasePathable
 enum PermissionsAction: CasePathable, Sendable {
     case onAppear
+    case onDisappear
     case appDidBecomeActive
     case fullDiskAccessStatusResponse(FullDiskAccessStatus)
     case openSystemSettingsTapped
