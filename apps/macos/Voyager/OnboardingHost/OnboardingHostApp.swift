@@ -1,7 +1,6 @@
 import AppKit
 import SwiftUI
 import VoyagerPagesOnboarding
-import VoyagerShared
 
 @main
 struct OnboardingHostApp: App {
@@ -30,9 +29,6 @@ final class OnboardingHostAppDelegate: NSObject, NSApplicationDelegate {
     }
 
     private func resetOnboardingProgress() {
-        let userDefaultsClient = UserDefaultsClient.liveValue
-        userDefaultsClient.setObject(nil, "onboardingProgressVersion")
-        userDefaultsClient.setObject(nil, "onboardingCurrentStep")
-        userDefaultsClient.setObject(nil, "onboardingStepState")
+        OnboardingWindowClient.liveValue.resetStoredProgress()
     }
 }

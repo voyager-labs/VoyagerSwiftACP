@@ -19,6 +19,7 @@ final class OnboardingWindowController: NSWindowController, NSWindowDelegate {
                 showWindow: base.showWindow,
                 closeWindow: base.closeWindow,
                 openMainWindow: openMainWindow,
+                resetStoredProgress: base.resetStoredProgress,
             )
         }
 

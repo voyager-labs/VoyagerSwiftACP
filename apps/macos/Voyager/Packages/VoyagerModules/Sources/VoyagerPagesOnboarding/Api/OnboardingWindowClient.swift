@@ -29,17 +29,20 @@ public struct OnboardingWindowClient: Sendable {
     public var showWindow: @Sendable () async -> Void
     public var closeWindow: @Sendable () async -> Void
     public var openMainWindow: @Sendable (_ request: OnboardingOpenMainWindowRequest) async -> Bool
+    public var resetStoredProgress: @Sendable () -> Void
 
     public nonisolated init(
         showIfNeeded: @escaping @Sendable () -> Bool,
         showWindow: @escaping @Sendable () async -> Void,
         closeWindow: @escaping @Sendable () async -> Void,
         openMainWindow: @escaping @Sendable (_ request: OnboardingOpenMainWindowRequest) async -> Bool,
+        resetStoredProgress: @escaping @Sendable () -> Void = {},
     ) {
         self.showIfNeeded = showIfNeeded
         self.showWindow = showWindow
         self.closeWindow = closeWindow
         self.openMainWindow = openMainWindow
+        self.resetStoredProgress = resetStoredProgress
     }
 }
 
@@ -104,6 +107,7 @@ extension OnboardingWindowClient: DependencyKey {
             showWindow: showWindow,
             closeWindow: closeWindow,
             openMainWindow: openMainWindow,
+            resetStoredProgress: progressClient.reset,
         )
     }
 
@@ -129,6 +133,9 @@ extension OnboardingWindowClient: DependencyKey {
             },
             openMainWindow: { _ in
                 fatalError("onboardingWindowClient.openMainWindow test dependency is not configured")
+            },
+            resetStoredProgress: {
+                fatalError("onboardingWindowClient.resetStoredProgress test dependency is not configured")
             },
         )
     }
