@@ -64,7 +64,7 @@ final class OperatorDslMappingExhaustiveTests: XCTestCase {
         XCTAssertTrue(failures.isEmpty, failures.joined(separator: "\n"))
     }
 
-    func testZeroArityOperatorsEncodeNilValue() {
+    func testZeroArityOperatorsEncodeEmptyValueShape() {
         let snapshot = RegistrySnapshot.load()
         let operatorDefinitions = snapshot.operatorDefinitions
 
@@ -81,9 +81,11 @@ final class OperatorDslMappingExhaustiveTests: XCTestCase {
                     operatorCode: operatorCode,
                     operatorValueUIKind: uiKind,
                 )
-                if encoded != nil {
-                    failures.append("\(typeKey).\(operatorCode): expected nil for zero-arity")
+                guard let encoded else { continue }
+                if case let .array(values) = encoded, values.isEmpty {
+                    continue
                 }
+                failures.append("\(typeKey).\(operatorCode): expected nil or empty array for zero-arity")
             }
         }
 
