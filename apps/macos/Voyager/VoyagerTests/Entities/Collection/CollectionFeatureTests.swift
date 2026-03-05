@@ -65,6 +65,38 @@ final class CollectionFeatureTests: XCTestCase {
         XCTAssertEqual(saved?.file.conditions.first?.propertyKey, "name_full")
         XCTAssertEqual(saved?.url.pathExtension, "voycoll")
     }
+
+    func testSaveToExistingSkipsWhenSearchIsLoading() async {
+        let recorder = SavedCollectionsRecorder()
+        let payload = SaveRequestPayload(
+            context: CollectionContext(query: "Report", scopes: ["/tmp"], conditions: [makeActiveCondition()]),
+            isSearchLoading: true,
+            isFiltersLoading: false,
+        )
+        let store = makeCollectionStore(recorder: recorder)
+
+        await store.send(.saveToExisting(payload, URL(fileURLWithPath: "/tmp/collection")))
+        await store.finish()
+
+        let saveCount = await recorder.count()
+        XCTAssertEqual(saveCount, 0)
+    }
+
+    func testSaveToExistingSkipsWhenContextMissing() async {
+        let recorder = SavedCollectionsRecorder()
+        let payload = SaveRequestPayload(
+            context: nil,
+            isSearchLoading: false,
+            isFiltersLoading: false,
+        )
+        let store = makeCollectionStore(recorder: recorder)
+
+        await store.send(.saveToExisting(payload, URL(fileURLWithPath: "/tmp/collection")))
+        await store.finish()
+
+        let saveCount = await recorder.count()
+        XCTAssertEqual(saveCount, 0)
+    }
 }
 
 private func makeActiveCondition() -> Condition {
@@ -220,5 +252,9 @@ private actor SavedCollectionsRecorder {
 
     func last() -> Entry? {
         entries.last
+    }
+
+    func count() -> Int {
+        entries.count
     }
 }

@@ -160,13 +160,21 @@ private func resetPendingSave(_ state: inout CollectionFeature.State) {
     state.pendingSave = nil
 }
 
+private func canStartSave(
+    state: CollectionFeature.State,
+    payload: SaveRequestPayload,
+) -> Bool {
+    guard !state.isSaving else { return false }
+    guard !payload.isSearchLoading, !payload.isFiltersLoading else { return false }
+    return true
+}
+
 private func handleSaveRequested(
     state: inout CollectionFeature.State,
     payload: SaveRequestPayload,
     userDefaultsClient: UserDefaultsClient,
 ) -> Effect<CollectionFeature.Action> {
-    guard !state.isSaving else { return .none }
-    guard !payload.isSearchLoading, !payload.isFiltersLoading else { return .none }
+    guard canStartSave(state: state, payload: payload) else { return .none }
 
     switch validateSavePayload(payload) {
     case let .failure(failure):
@@ -191,8 +199,7 @@ private func handleSaveToExisting(
     url: URL,
     collectionFileClient: CollectionFileClient,
 ) -> Effect<CollectionFeature.Action> {
-    guard !state.isSaving else { return .none }
-    guard !payload.isSearchLoading, !payload.isFiltersLoading else { return .none }
+    guard canStartSave(state: state, payload: payload) else { return .none }
 
     switch validateSavePayload(payload) {
     case let .failure(failure):
