@@ -26,14 +26,8 @@ extension FinderFavoritesTagClient: DependencyKey {
         }
 
         let favoriteTagsLoader: @Sendable () -> [Tag] = {
-            favoriteTagNamesLoader().compactMap { rawTag in
-                if let parsedTag = TagMDItemUserTagParser.parse(rawTag) {
-                    return parsedTag
-                }
-
-                let name = rawTag.trimmingCharacters(in: .whitespacesAndNewlines)
-                guard !name.isEmpty else { return nil }
-                return Tag(name: name, colorCode: 0)
+            favoriteTagNamesLoader().compactMap {
+                TagMDItemUserTagParser.parseRelaxed($0)
             }
         }
 
