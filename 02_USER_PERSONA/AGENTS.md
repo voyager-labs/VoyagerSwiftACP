@@ -9,8 +9,9 @@ Voyager의 핵심 페르소나(타깃 사용자) 정의 문서 묶음입니다.
 | 작업 | 위치 | 노트 |
 |------|------|------|
 | 섹션 진입점 | `02_USER_PERSONA/index.md` | Map of Content(목차) |
-| 페르소나(Indie Hacker) | `02_USER_PERSONA/eric-indie_hacker.md` | 동기/컨텍스트 |
-| 페르소나(Early-stage SaaS) | `02_USER_PERSONA/lucas-early_stage_saas_founder.md` | 동기/컨텍스트 |
+| 페르소나(AI Agent Skilled) | `02_USER_PERSONA/alex-ai_agent_engineer.md` | 동기/컨텍스트 |
+| 페르소나(Indie Builder) | `02_USER_PERSONA/eric-multi_project_indie_builder.md` | 동기/컨텍스트 |
+| 페르소나(Workflow Creator) | `02_USER_PERSONA/mia-workflow_automation_creator.md` | 동기/컨텍스트 |
 
 ## CONVENTIONS
 

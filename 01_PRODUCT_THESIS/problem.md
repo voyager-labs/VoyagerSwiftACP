@@ -1,5 +1,7 @@
 # Problem
 
+[PRODUCT_THESIS](index.md)
+
 ## P01. 기억 의존성
 
 - 상황
@@ -50,4 +52,4 @@
 
 ### Solution Alignment: Agent Harness
 
-CDA의 실행 계획 시각화(Planning)와 승인 단계(Approval Gates)를 통해 AI 처리 과정의 투명성을 확보하고 사용자의 통제권을 복구한다.
+대화형 작업의 실행 계획 시각화(Planning)와 승인 단계(Approval Gates)를 통해 AI 처리 과정의 투명성을 확보하고 사용자의 통제권을 복구한다.
