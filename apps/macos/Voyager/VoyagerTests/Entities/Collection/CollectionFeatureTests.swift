@@ -1,4 +1,6 @@
+// swiftlint:disable file_length
 import ComposableArchitecture
+import Foundation
 @testable import Voyager
 import XCTest
 
@@ -40,6 +42,34 @@ final class CollectionFeatureTests: XCTestCase {
         XCTAssertFalse(unknownCondition.isActive)
     }
 
+    func testResolveDetailedRestoresDateRangePayloadWithoutShapeLoss() {
+        let registryClient = makeRangeDateRegistryClient()
+        let appliedFilters = AppliedFiltersPayload(
+            scopes: ["/tmp"],
+            conditions: [
+                .init(
+                    propertyKey: "content_modified_at",
+                    operator: "btw",
+                    value: .array([.string("2026-02-26"), .string("2026-02-27")]),
+                ),
+            ],
+        )
+
+        let resolved = AppliedFiltersUtils.resolveDetailed(
+            appliedFilters,
+            fallbackScopes: [],
+            fallbackConditions: [],
+            registryClient: registryClient,
+        )
+
+        XCTAssertEqual(resolved.unknownKeys, [])
+        XCTAssertEqual(resolved.conditions.count, 1)
+        XCTAssertEqual(resolved.conditions[0].operatorCode, "btw")
+        XCTAssertEqual(resolved.conditions[0].operatorValueUIKind, "rangeDate")
+        XCTAssertEqual(resolved.conditions[0].operatorValueArity, 2)
+        XCTAssertEqual(resolved.conditions[0].values, ["2026-02-26", "2026-02-27"])
+    }
+
     func testApplyFiltersSkipsInactiveConditions() async {
         let recorder = FiltersRecorder()
         let conditions = [makeActiveCondition(), makeInactiveCondition()]
@@ -50,6 +80,108 @@ final class CollectionFeatureTests: XCTestCase {
         let payload = await recorder.last()
         XCTAssertEqual(payload?.conditions.count, 1)
         XCTAssertEqual(payload?.conditions.first?.propertyKey, "name_full")
+    }
+
+    func testSetOperatorUpdatesInputContractArityForSingleRangeAndNone() async {
+        let recorder = FiltersRecorder()
+        let conditions = [makeNumberCondition(values: ["10"])]
+        let store = makeComposerStore(
+            recorder: recorder,
+            conditions: conditions,
+            registryClient: makeOperatorContractRegistryClient(),
+        )
+
+        await store.send(.setOperator(propertyKey: "file_allocated_size", operatorCode: "btw")) {
+            $0.conditions[0].operatorCode = "btw"
+            $0.conditions[0].operatorLabel = "Is between"
+            $0.conditions[0].operatorValueArity = 2
+            $0.conditions[0].operatorValueUIKind = "rangeNumber"
+            $0.conditions[0].valueType = "number"
+            $0.conditions[0].values = nil
+        }
+
+        await store.send(.setOperator(propertyKey: "file_allocated_size", operatorCode: "eq")) {
+            $0.conditions[0].operatorCode = "eq"
+            $0.conditions[0].operatorLabel = "Is"
+            $0.conditions[0].operatorValueArity = 1
+            $0.conditions[0].operatorValueUIKind = "singleNumber"
+            $0.conditions[0].valueType = "number"
+            $0.conditions[0].values = nil
+        }
+
+        await store.send(.setOperator(propertyKey: "file_allocated_size", operatorCode: "exists")) {
+            $0.isLoadingFilters = true
+            $0.isFilteringInFlight = true
+            $0.conditions[0].operatorCode = "exists"
+            $0.conditions[0].operatorLabel = "Exists"
+            $0.conditions[0].operatorValueArity = 0
+            $0.conditions[0].operatorValueUIKind = "none"
+            $0.conditions[0].valueType = "string"
+            $0.conditions[0].values = []
+        }
+        await store.receive(\.filtersResponse) {
+            $0.isLoadingFilters = false
+            $0.isFilteringInFlight = false
+            $0.lastFiltersResponse = kEmptySearchResponse
+        }
+
+        let payload = await recorder.last()
+        XCTAssertEqual(payload?.conditions.count, 1)
+        XCTAssertEqual(payload?.conditions.first?.propertyKey, "file_allocated_size")
+        XCTAssertEqual(payload?.conditions.first?.operator, "exists")
+        XCTAssertNil(payload?.conditions.first?.value)
+    }
+
+    func testSetOperatorClearsStaleValuesOnSameConditionSwitchSequence() async {
+        let recorder = FiltersRecorder()
+        let conditions = [makeNumberCondition(values: ["10", "20"])]
+        let store = makeComposerStore(
+            recorder: recorder,
+            conditions: conditions,
+            registryClient: makeOperatorContractRegistryClient(),
+        )
+
+        await store.send(.setOperator(propertyKey: "file_allocated_size", operatorCode: "btw")) {
+            $0.conditions[0].operatorCode = "btw"
+            $0.conditions[0].operatorLabel = "Is between"
+            $0.conditions[0].operatorValueArity = 2
+            $0.conditions[0].operatorValueUIKind = "rangeNumber"
+            $0.conditions[0].valueType = "number"
+            $0.conditions[0].values = nil
+        }
+
+        await store.send(.setValue(propertyKey: "file_allocated_size", values: ["10", "20"])) {
+            $0.conditions[0].values = ["10", "20"]
+        }
+
+        await store.send(.setOperator(propertyKey: "file_allocated_size", operatorCode: "eq")) {
+            $0.conditions[0].operatorCode = "eq"
+            $0.conditions[0].operatorLabel = "Is"
+            $0.conditions[0].operatorValueArity = 1
+            $0.conditions[0].operatorValueUIKind = "singleNumber"
+            $0.conditions[0].valueType = "number"
+            $0.conditions[0].values = nil
+        }
+
+        await store.send(.setOperator(propertyKey: "file_allocated_size", operatorCode: "exists")) {
+            $0.isLoadingFilters = true
+            $0.isFilteringInFlight = true
+            $0.conditions[0].operatorCode = "exists"
+            $0.conditions[0].operatorLabel = "Exists"
+            $0.conditions[0].operatorValueArity = 0
+            $0.conditions[0].operatorValueUIKind = "none"
+            $0.conditions[0].valueType = "string"
+            $0.conditions[0].values = []
+        }
+        await store.receive(\.filtersResponse) {
+            $0.isLoadingFilters = false
+            $0.isFilteringInFlight = false
+            $0.lastFiltersResponse = kEmptySearchResponse
+        }
+
+        XCTAssertEqual(store.state.conditions[0].values, [])
+        XCTAssertEqual(store.state.conditions[0].operatorCode, "exists")
+        XCTAssertEqual(store.state.conditions[0].operatorValueArity, 0)
     }
 
     func testSaveToExistingOmitsInactiveConditions() async {
@@ -67,6 +199,170 @@ final class CollectionFeatureTests: XCTestCase {
     }
 }
 
+private let kRegistryLabels: [String: String] = [
+    "name_full": "Name",
+    "file_allocated_size": "Size",
+]
+
+private let kRegistryOperatorDefinition = OperatorDefinition(
+    uiLabel: "Equals",
+    mdqueryOperator: nil,
+    valueShape: nil,
+    valueCount: nil,
+    allowedTypes: nil,
+    inverseOf: nil,
+    aliases: nil,
+    uiValueKind: [
+        "string": "singleText",
+        "number": "singleNumber",
+        "date": "singleDate",
+        "boolean": "toggle",
+    ],
+)
+
+private let kRegistryNumberEqOperatorDefinition = OperatorDefinition(
+    uiLabel: "Is",
+    mdqueryOperator: "==",
+    valueShape: .single,
+    valueCount: .fixed(1),
+    allowedTypes: ["number"],
+    inverseOf: nil,
+    aliases: nil,
+    uiValueKind: ["number": "singleNumber"],
+)
+
+private let kRegistryNumberBetweenOperatorDefinition = OperatorDefinition(
+    uiLabel: "Is between",
+    mdqueryOperator: "RANGE",
+    valueShape: .range,
+    valueCount: .fixed(2),
+    allowedTypes: ["number"],
+    inverseOf: nil,
+    aliases: nil,
+    uiValueKind: ["number": "rangeNumber"],
+)
+
+private let kRegistryExistsOperatorDefinition = OperatorDefinition(
+    uiLabel: "Exists",
+    mdqueryOperator: "EXISTS",
+    valueShape: .none,
+    valueCount: .fixed(0),
+    allowedTypes: ["number"],
+    inverseOf: nil,
+    aliases: nil,
+    uiValueKind: ["number": "none"],
+)
+
+private func makeRegistryClient() -> RegistryClient {
+    RegistryClient(
+        allProperties: { [] },
+        labelForKey: { kRegistryLabels[$0] ?? $0 },
+        propertyTypeString: registryPropertyType,
+        operatorCodes: { _ in ["eq"] },
+        operatorDefinition: { _ in kRegistryOperatorDefinition },
+        operatorValueUIKind: { _, typeKey in registryUIKind(for: typeKey) },
+        resolvePropertyKey: registryResolution,
+    )
+}
+
+private func makeRangeDateRegistryClient() -> RegistryClient {
+    RegistryClient(
+        allProperties: { [] },
+        labelForKey: { _ in "Modified Date" },
+        propertyTypeString: { _ in "date" },
+        operatorCodes: { _ in ["btw"] },
+        operatorDefinition: { _ in
+            .init(
+                uiLabel: "Between",
+                mdqueryOperator: "RANGE",
+                valueShape: .range,
+                valueCount: .fixed(2),
+                allowedTypes: ["date"],
+                inverseOf: nil,
+                aliases: nil,
+                uiValueKind: ["date": "rangeDate"],
+            )
+        },
+        operatorValueUIKind: { _, _ in "rangeDate" },
+        resolvePropertyKey: { .canonical($0) },
+    )
+}
+
+private func makeOperatorContractRegistryClient() -> RegistryClient {
+    RegistryClient(
+        allProperties: { [] },
+        labelForKey: { key in
+            switch key {
+            case "file_allocated_size":
+                "Size"
+            default:
+                key
+            }
+        },
+        propertyTypeString: { _ in "number" },
+        operatorCodes: { _ in ["eq", "btw", "exists"] },
+        operatorDefinition: { code in
+            switch code {
+            case "eq":
+                kRegistryNumberEqOperatorDefinition
+            case "btw":
+                kRegistryNumberBetweenOperatorDefinition
+            case "exists":
+                kRegistryExistsOperatorDefinition
+            default:
+                kRegistryNumberEqOperatorDefinition
+            }
+        },
+        operatorValueUIKind: { code, _ in
+            switch code {
+            case "eq":
+                "singleNumber"
+            case "btw":
+                "rangeNumber"
+            case "exists":
+                "none"
+            default:
+                "singleNumber"
+            }
+        },
+        resolvePropertyKey: { .canonical($0) },
+    )
+}
+
+private func registryPropertyType(for key: String) -> String {
+    switch key {
+    case "file_allocated_size":
+        "number"
+    default:
+        "string"
+    }
+}
+
+private func registryUIKind(for typeKey: String) -> String {
+    switch typeKey {
+    case "number":
+        "singleNumber"
+    case "date":
+        "singleDate"
+    case "boolean":
+        "toggle"
+    default:
+        "singleText"
+    }
+}
+
+private func registryResolution(for key: String) -> PropertyKeyResolution {
+    switch key {
+    case "name_full":
+        .canonical(key)
+    case "name":
+        .legacy(original: key, normalized: "name_full")
+    case "size":
+        .legacy(original: key, normalized: "file_allocated_size")
+    default:
+        .unknown(key)
+    }
+}
 private func makeActiveCondition() -> Condition {
     Condition(
         propertyKey: "name_full",
@@ -97,10 +393,26 @@ private func makeInactiveCondition() -> Condition {
     )
 }
 
+private func makeNumberCondition(values: [String]?) -> Condition {
+    Condition(
+        propertyKey: "file_allocated_size",
+        propertyLabel: "Size",
+        propertyType: "number",
+        operatorCode: "eq",
+        operatorLabel: "Is",
+        operatorValueArity: 1,
+        operatorValueUIKind: "singleNumber",
+        valueType: "number",
+        values: values,
+        isActive: true,
+    )
+}
+
 @MainActor
 private func makeComposerStore(
     recorder: FiltersRecorder,
     conditions: [Condition],
+    registryClient: RegistryClient = makeRegistryClient(),
 ) -> TestStore<ComposerFeature.State, ComposerFeature.Action> {
     let searchClient = SearchClient(
         search: { _ in kEmptySearchResponse },
@@ -119,6 +431,7 @@ private func makeComposerStore(
         ComposerFeature()
     } withDependencies: {
         $0.searchClient = searchClient
+        $0.registryClient = registryClient
     }
 
     // Non-exhaustive: focus on the key delegate/state change; intermediate actions are noisy.
@@ -222,3 +535,5 @@ private actor SavedCollectionsRecorder {
         entries.last
     }
 }
+
+// swiftlint:enable file_length
