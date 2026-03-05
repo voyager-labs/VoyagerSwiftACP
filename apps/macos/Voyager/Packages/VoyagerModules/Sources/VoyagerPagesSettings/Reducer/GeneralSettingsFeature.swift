@@ -1,7 +1,5 @@
-import AppKit
 import ComposableArchitecture
-import Foundation
-import ServiceManagement
+import VoyagerEntitiesSettings
 import VoyagerShared
 
 @Reducer
@@ -11,6 +9,10 @@ struct GeneralSettingsFeature {
 
     @Dependency(\.userDefaultsClient)
     var userDefaultsClient: UserDefaultsClient
+    @Dependency(\.launchAtLoginClient)
+    var launchAtLoginClient
+    @Dependency(\.directorySelectionClient)
+    var directorySelectionClient: DirectorySelectionClient
 
     var body: some Reducer<State, Action> {
         Reduce { state, action in
@@ -18,14 +20,12 @@ struct GeneralSettingsFeature {
             case .loadSettings:
                 // 시작 디렉토리 로드
                 let startingDir = userDefaultsClient.string(SettingsKeys.defaultTabPath)
-                    ?? FileManager.default.homeDirectoryForCurrentUser.path
+                    ?? directorySelectionClient.defaultHomePath()
                 state.startingDirectory = startingDir
                 state.selectedDirectoryOption = DirectoryOption.from(path: startingDir)
 
                 // 로그인 시 실행 상태 확인
-                let appService = SMAppService.mainApp
-                let actualStatus = appService.status
-                let isActuallyRegistered = (actualStatus == .enabled)
+                let isActuallyRegistered = launchAtLoginClient.isEnabled()
 
                 let savedValue = userDefaultsClient.bool(SettingsKeys.launchAtStartup)
                 if savedValue != isActuallyRegistered {
@@ -61,11 +61,8 @@ struct GeneralSettingsFeature {
             case .openOtherDirectoryPanel:
                 state.isSelectingDirectory = true
                 state.startingDirectoryError = nil
-                return .run { send in
-                    let path = await Task { @MainActor in
-                        showDirectorySelectionPanel()
-                    }.value
-
+                return .run { [directorySelectionClient] send in
+                    let path = await directorySelectionClient.pickDirectory()
                     await send(.startingDirectorySelected(path))
                 }
 
@@ -75,9 +72,8 @@ struct GeneralSettingsFeature {
                     return .none
                 }
 
-                var isDirectory: ObjCBool = false
-                if FileManager.default.fileExists(atPath: path, isDirectory: &isDirectory) {
-                    if isDirectory.boolValue {
+                if directorySelectionClient.pathExists(path) {
+                    if directorySelectionClient.isDirectory(path) {
                         return .send(.setStartingDirectory(path))
                     }
                     state.startingDirectoryError = "Selected path is not a directory"
@@ -89,12 +85,7 @@ struct GeneralSettingsFeature {
 
             case let .toggleLaunchAtStartup(enabled):
                 do {
-                    let appService = SMAppService.mainApp
-                    if enabled {
-                        try appService.register()
-                    } else {
-                        try appService.unregister()
-                    }
+                    try launchAtLoginClient.setEnabled(enabled)
                     state.launchAtStartup = enabled
                     userDefaultsClient.setBool(enabled, SettingsKeys.launchAtStartup)
                     state.launchAtStartupError = nil
@@ -119,22 +110,5 @@ struct GeneralSettingsFeature {
                 return .none
             }
         }
-    }
-}
-
-@MainActor
-private func showDirectorySelectionPanel() -> String? {
-    let panel = NSOpenPanel()
-    panel.canChooseFiles = false
-    panel.canChooseDirectories = true
-    panel.allowsMultipleSelection = false
-    panel.canCreateDirectories = true
-    panel.title = "Select Starting Directory"
-
-    let response = panel.runModal()
-    if response == .OK, let url = panel.url {
-        return url.path
-    } else {
-        return nil
     }
 }
