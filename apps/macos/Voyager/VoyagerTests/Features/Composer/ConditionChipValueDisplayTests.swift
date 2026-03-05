@@ -28,15 +28,15 @@ final class ConditionChipValueDisplayTests: XCTestCase {
         XCTAssertEqual(displayed, ["2026-02-01", "2026-02-10"])
     }
 
-    func testFormattedValueTextForDateRangeUsesTilde() {
+    func testFormattedValueTextForDateRangeUsesHyphen() {
         let text = ConditionChipView.formattedValueText(
             values: ["2026-02-01", "2026-02-10"],
             propertyKey: "content_modified_at",
             valueType: "date",
-            rangeSeparator: "~",
+            rangeSeparator: "-",
         )
 
-        XCTAssertEqual(text, "2026-02-01 ~ 2026-02-10")
+        XCTAssertEqual(text, "2026-02-01 - 2026-02-10")
     }
 
     func testFormattedValueTextForDateRangeCollapsesWhenSameDate() {
@@ -44,20 +44,20 @@ final class ConditionChipValueDisplayTests: XCTestCase {
             values: ["2026-02-01", "2026-02-01"],
             propertyKey: "content_modified_at",
             valueType: "date",
-            rangeSeparator: "~",
+            rangeSeparator: "-",
         )
 
         XCTAssertEqual(text, "2026-02-01")
     }
 
-    func testFormattedValueTextForNumberRangeUsesTilde() {
+    func testFormattedValueTextForNumberRangeUsesHyphen() {
         let text = ConditionChipView.formattedValueText(
             values: ["10", "20"],
             propertyKey: "file_allocated_size",
             valueType: "number",
-            rangeSeparator: "~",
+            rangeSeparator: "-",
         )
 
-        XCTAssertEqual(text, "10 ~ 20")
+        XCTAssertEqual(text, "10 - 20")
     }
 }

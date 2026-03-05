@@ -28,7 +28,7 @@ struct ConditionChipView: View {
     @State private var boolOptionHoverValue: String?
     @FocusState private var focusedValueIndex: Int?
 
-    private let rangeSep = "~"
+    private let rangeSep = "-"
 
     var body: some View {
         WithViewStore(
