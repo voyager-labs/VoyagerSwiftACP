@@ -256,9 +256,7 @@ struct FileManagerContentComposerFeature {
         state.collectionSession.originURL = url
 
         if let context = state.collectionContext {
-            state.collectionSession.baseline = CollectionBaseline(
-                context: context,
-            )
+            state.collectionSession.baseline = CollectionBaseline(context: context)
         } else {
             state.collectionSession.baseline = nil
         }
@@ -268,23 +266,27 @@ struct FileManagerContentComposerFeature {
         ]
 
         if shouldAppendHistory {
-            if let baseline = previousBaseline,
-               let previousURL = previousCollectionURL
-            {
+            let previousHistorySnapshot: ContentPageNavigationHistorySnapshot
+            if let baseline = previousBaseline, let previousCollectionURL {
                 let name = previousCollectionName
-                    ?? previousURL.deletingPathExtension().lastPathComponent
+                    ?? previousCollectionURL.deletingPathExtension().lastPathComponent
                 let navigation = ContentPageCollectionNavigation(
-                    kind: .file(url: previousURL, name: name),
+                    kind: .file(url: previousCollectionURL, name: name),
                     context: baseline.context,
                     sortKey: state.entryArrangements.sortKey,
                     sortOrder: state.entryArrangements.sortOrder,
                     viewLayout: state.viewLayout,
                 )
-                let entry = ContentPageNavigationHistorySnapshot(navigationState: .collection(navigation))
-                navigationEffects.append(.send(.requestNavigation(.internal(.appendBackHistory(entry)))))
+                previousHistorySnapshot = ContentPageNavigationHistorySnapshot(
+                    navigationState: .collection(navigation),
+                )
             } else {
-                navigationEffects.append(.send(.requestNavigation(.internal(.appendBackHistory(previousSnapshot)))))
+                previousHistorySnapshot = previousSnapshot
             }
+
+            navigationEffects.append(.send(.requestNavigation(.internal(
+                .appendBackHistory(previousHistorySnapshot),
+            ))))
             navigationEffects.append(.send(.requestNavigation(.internal(.clearForwardHistory))))
         }
 

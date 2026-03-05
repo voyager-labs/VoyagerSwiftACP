@@ -13,6 +13,14 @@ enum ComposerQueryRenderPhase: Equatable, Sendable {
     case failed
 }
 
+private enum ComposerQueryPhaseTransition: Sendable {
+    case reset
+    case startSearch
+    case searchSucceeded
+    case searchFailed
+    case listApplied
+}
+
 @Reducer
 struct ComposerFeature {
     @Dependency(\.searchClient)
@@ -272,7 +280,7 @@ struct ComposerFeature {
                 state.isLoadingSearch = false
                 state.lastSearchResponse = response
                 state.lastFiltersResponse = nil
-                state.queryRenderPhase = .chipsAppliedPendingList
+                applyQueryPhaseTransition(.searchSucceeded, state: &state)
                 applyAppliedFilters(response.appliedFilters, state: &state, registryClient: registryClient)
                 state.isLoadingFilters = true
                 state.isFilteringInFlight = true
@@ -304,7 +312,7 @@ struct ComposerFeature {
 
             case .searchResponse(.failure):
                 state.isLoadingSearch = false
-                state.queryRenderPhase = .failed
+                applyQueryPhaseTransition(.searchFailed, state: &state)
                 VoyagerSentryMetricLogger.logMetric(
                     "voyager_search_result",
                     value: 1,
@@ -335,9 +343,7 @@ struct ComposerFeature {
                 return .none
 
             case .searchListApplied:
-                if state.queryRenderPhase == .chipsAppliedPendingList {
-                    state.queryRenderPhase = .listApplied
-                }
+                applyQueryPhaseTransition(.listApplied, state: &state)
                 return .none
             }
         }
@@ -350,7 +356,27 @@ private func handleSetPresented(state: inout ComposerFeature.State, isPresented:
         state.hasSubmittedInSession = false
         state.searchStartedAt = nil
         state.filtersStartedAt = nil
+        applyQueryPhaseTransition(.reset, state: &state)
+    }
+}
+
+private func applyQueryPhaseTransition(
+    _ transition: ComposerQueryPhaseTransition,
+    state: inout ComposerFeature.State,
+) {
+    switch transition {
+    case .reset:
         state.queryRenderPhase = .idle
+    case .startSearch:
+        state.queryRenderPhase = .searching
+    case .searchSucceeded:
+        state.queryRenderPhase = .chipsAppliedPendingList
+    case .searchFailed:
+        state.queryRenderPhase = .failed
+    case .listApplied:
+        if state.queryRenderPhase == .chipsAppliedPendingList {
+            state.queryRenderPhase = .listApplied
+        }
     }
 }
 
@@ -412,7 +438,7 @@ private func handleClearAll(state: inout ComposerFeature.State) -> Effect<Compos
     state.valuePicker = .init()
     state.isLoadingFilters = false
     state.lastFiltersResponse = nil
-    state.queryRenderPhase = .idle
+    applyQueryPhaseTransition(.reset, state: &state)
     return .cancel(id: ComposerFeature.CancelID.filters)
 }
 
@@ -442,7 +468,7 @@ private func handleSubmit(
     state.isLoadingSearch = true
     state.isLoadingFilters = false
     state.lastFiltersResponse = nil
-    state.queryRenderPhase = .searching
+    applyQueryPhaseTransition(.startSearch, state: &state)
     state.text = ""
 
     let searchEffect: Effect<ComposerFeature.Action> = .run { send in
@@ -465,7 +491,7 @@ private func handleSubmit(
 
 private func handleCancelSearch(state: inout ComposerFeature.State) -> Effect<ComposerFeature.Action> {
     state.isLoadingSearch = false
-    state.queryRenderPhase = .idle
+    applyQueryPhaseTransition(.reset, state: &state)
     VoyagerSentryMetricLogger.logMetric(
         "voyager_search_cancel",
         value: 1,
@@ -493,7 +519,7 @@ private func handleApplyFilters(
     state.lastSearchResponse = nil
     state.isLoadingFilters = true
     state.isFilteringInFlight = true
-    state.queryRenderPhase = .idle
+    applyQueryPhaseTransition(.reset, state: &state)
     VoyagerSentryMetricLogger.logMetric(
         "voyager_composer_filters_apply",
         value: 1,
