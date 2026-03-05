@@ -362,17 +362,43 @@ private func performSave(
     url: URL,
     collectionFileClient: CollectionFileClient,
 ) -> Effect<CollectionFeature.Action> {
-    let finalURL = ensureCollectionFileExtension(url)
+    let request = buildSaveRequest(
+        snapshot: snapshot,
+        destinationURL: url,
+    )
+
+    return executeSave(
+        request: request,
+        collectionFileClient: collectionFileClient,
+    )
+}
+
+private struct CollectionSaveRequest {
+    let url: URL
+    let file: VoyagerCollectionFile
+}
+
+private func buildSaveRequest(
+    snapshot: CollectionSaveSnapshot,
+    destinationURL: URL,
+) -> CollectionSaveRequest {
+    let finalURL = ensureCollectionFileExtension(destinationURL)
     let file = makeCollectionFile(
         name: finalURL.deletingPathExtension().lastPathComponent,
         snapshot: snapshot,
         appVersion: currentAppVersion(),
     )
+    return .init(url: finalURL, file: file)
+}
 
-    return .run { send in
+private func executeSave(
+    request: CollectionSaveRequest,
+    collectionFileClient: CollectionFileClient,
+) -> Effect<CollectionFeature.Action> {
+    .run { send in
         do {
-            try await collectionFileClient.save(file, finalURL)
-            await send(.saveCompleted(.success(finalURL)))
+            try await collectionFileClient.save(request.file, request.url)
+            await send(.saveCompleted(.success(request.url)))
         } catch {
             await send(.saveCompleted(.failure(error)))
         }
