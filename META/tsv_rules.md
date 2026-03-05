@@ -18,7 +18,7 @@ TSV는 **머신과 사람이 함께 신뢰하는 SSOT**이며, 기본적으로 G
 예:
 
 ```text
-03_INFORMATION_ARCHITECTURE/
+PRODUCT/03_INFORMATION_ARCHITECTURE/
   MENUS/
     data.tsv
     schema.json
