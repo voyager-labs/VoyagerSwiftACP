@@ -18,75 +18,33 @@ struct CollectionFeature {
         Reduce { state, action in
             switch action {
             case let .saveRequested(payload):
-                guard !state.isSaving else { return .none }
-                guard !payload.isSearchLoading, !payload.isFiltersLoading else { return .none }
-
-                switch validateSavePayload(payload) {
-                case let .failure(failure):
-                    return showSaveError(failure)
-
-                case let .success(result):
-                    state.pendingSave = result.snapshot
-                    state.isSaving = true
-                    return .run { [userDefaultsClient] send in
-                        let initialDirectory = await defaultCollectionSaveDirectory(
-                            preferredScopes: result.context.scopes,
-                            userDefaultsClient: userDefaultsClient,
-                        )
-                        let url = await showCollectionSavePanel(initialDirectory: initialDirectory)
-                        await send(.savePanelResponse(url))
-                    }
-                }
+                handleSaveRequested(
+                    state: &state,
+                    payload: payload,
+                    userDefaultsClient: userDefaultsClient,
+                )
 
             case let .saveToExisting(payload, url):
-                guard !state.isSaving else { return .none }
-                guard !payload.isSearchLoading, !payload.isFiltersLoading else { return .none }
-
-                switch validateSavePayload(payload) {
-                case let .failure(failure):
-                    return showSaveError(failure)
-
-                case let .success(result):
-                    state.isSaving = true
-                    return performSave(
-                        snapshot: result.snapshot,
-                        url: url,
-                        collectionFileClient: collectionFileClient,
-                    )
-                }
-
-            case let .savePanelResponse(url):
-                guard let url else {
-                    resetPendingSave(&state)
-                    return .none
-                }
-
-                guard let snapshot = state.pendingSave else {
-                    resetPendingSave(&state)
-                    return .none
-                }
-
-                return performSave(
-                    snapshot: snapshot,
+                handleSaveToExisting(
+                    state: &state,
+                    payload: payload,
                     url: url,
                     collectionFileClient: collectionFileClient,
                 )
 
+            case let .savePanelResponse(url):
+                handleSavePanelResponse(
+                    state: &state,
+                    selectedURL: url,
+                    collectionFileClient: collectionFileClient,
+                )
+
             case let .saveCompleted(result):
-                resetPendingSave(&state)
-
-                switch result {
-                case let .success(url):
-                    let directory = url.deletingLastPathComponent().path
-                    userDefaultsClient.setString(directory, CollectionKeys.lastCollectionSaveDirectory)
-                    return .none
-
-                case let .failure(error):
-                    return showSaveError(.init(
-                        title: "Unable to Save Collection",
-                        message: error.localizedDescription,
-                    ))
-                }
+                handleSaveCompleted(
+                    state: &state,
+                    result: result,
+                    userDefaultsClient: userDefaultsClient,
+                )
             }
         }
     }
@@ -200,6 +158,90 @@ private func buildCollectionConditions(from conditions: [Condition]) throws -> [
 private func resetPendingSave(_ state: inout CollectionFeature.State) {
     state.isSaving = false
     state.pendingSave = nil
+}
+
+private func handleSaveRequested(
+    state: inout CollectionFeature.State,
+    payload: SaveRequestPayload,
+    userDefaultsClient: UserDefaultsClient,
+) -> Effect<CollectionFeature.Action> {
+    guard !state.isSaving else { return .none }
+    guard !payload.isSearchLoading, !payload.isFiltersLoading else { return .none }
+
+    switch validateSavePayload(payload) {
+    case let .failure(failure):
+        return showSaveError(failure)
+    case let .success(result):
+        state.pendingSave = result.snapshot
+        state.isSaving = true
+        return .run { send in
+            let initialDirectory = await defaultCollectionSaveDirectory(
+                preferredScopes: result.context.scopes,
+                userDefaultsClient: userDefaultsClient,
+            )
+            let url = await showCollectionSavePanel(initialDirectory: initialDirectory)
+            await send(.savePanelResponse(url))
+        }
+    }
+}
+
+private func handleSaveToExisting(
+    state: inout CollectionFeature.State,
+    payload: SaveRequestPayload,
+    url: URL,
+    collectionFileClient: CollectionFileClient,
+) -> Effect<CollectionFeature.Action> {
+    guard !state.isSaving else { return .none }
+    guard !payload.isSearchLoading, !payload.isFiltersLoading else { return .none }
+
+    switch validateSavePayload(payload) {
+    case let .failure(failure):
+        return showSaveError(failure)
+    case let .success(result):
+        state.isSaving = true
+        return performSave(
+            snapshot: result.snapshot,
+            url: url,
+            collectionFileClient: collectionFileClient,
+        )
+    }
+}
+
+private func handleSavePanelResponse(
+    state: inout CollectionFeature.State,
+    selectedURL: URL?,
+    collectionFileClient: CollectionFileClient,
+) -> Effect<CollectionFeature.Action> {
+    guard let selectedURL, let snapshot = state.pendingSave else {
+        resetPendingSave(&state)
+        return .none
+    }
+
+    return performSave(
+        snapshot: snapshot,
+        url: selectedURL,
+        collectionFileClient: collectionFileClient,
+    )
+}
+
+private func handleSaveCompleted(
+    state: inout CollectionFeature.State,
+    result: Result<URL, Error>,
+    userDefaultsClient: UserDefaultsClient,
+) -> Effect<CollectionFeature.Action> {
+    resetPendingSave(&state)
+
+    switch result {
+    case let .success(url):
+        let directory = url.deletingLastPathComponent().path
+        userDefaultsClient.setString(directory, CollectionKeys.lastCollectionSaveDirectory)
+        return .none
+    case let .failure(error):
+        return showSaveError(.init(
+            title: "Unable to Save Collection",
+            message: error.localizedDescription,
+        ))
+    }
 }
 
 @MainActor
