@@ -204,7 +204,6 @@ struct ConditionChipView: View {
         )
     }
 
-    // swiftlint:disable cyclomatic_complexity
     @ViewBuilder
     private func valueSection(
         valueUIKind: String,
@@ -215,119 +214,143 @@ struct ConditionChipView: View {
     ) -> some View {
         if let operatorCode = condition.operatorCode, valueArity != 0 {
             if valueUIKind == "rangeNumber" {
-                let isActive = valueStore.isPresented && valueStore.propertyKey == condition.propertyKey
-                let isEditingThis = isActive && valueStore.editingIndex != nil
-                let hasCommittedValues = (condition.values?.count ?? 0) >= 2
-                let needsPrepare = valueStore.propertyKey != condition.propertyKey ||
-                    valueStore.operatorCode != operatorCode ||
-                    valueStore.valueArity != valueArity
-                let sendPrepare: () -> Void = {
-                    _ = valuePickerStore.send(
-                        .prepare(
-                            .init(
-                                propertyKey: condition.propertyKey,
-                                operatorCode: operatorCode,
-                                valueType: condition.valueType,
-                                valueUIKind: valueUIKind,
-                                valueArity: valueArity,
-                                existingValues: condition.values,
-                                editingIndex: nil,
-                            ),
-                        ),
-                    )
-                }
-
-                if isEditingThis && hasCommittedValues {
-                    rangeEditingView(
-                        operatorCode: operatorCode,
-                        valueUIKind: valueUIKind,
-                        editingIndex: valueStore.editingIndex ?? 0,
-                        valueStore: valueStore,
-                    )
-                    .onAppear {
-                        if needsPrepare {
-                            sendPrepare()
-                        }
-                    }
-                    .onChange(of: needsPrepare, perform: { newValue in
-                        if newValue { sendPrepare() }
-                    })
-                } else if isActive || !hasCommittedValues {
-                    inlineValueInputs(
-                        valueViewStore: valueStore,
-                        valueArity: valueArity,
-                        valueType: condition.valueType,
-                        valueUIKind: valueUIKind,
-                        errorMessage: valueStore.errorMessage,
-                        editingIndex: nil,
-                    )
-                    .onAppear {
-                        if needsPrepare {
-                            sendPrepare()
-                        }
-                    }
-                    .onChange(of: needsPrepare, perform: { newValue in
-                        if newValue { sendPrepare() }
-                    })
-                } else if let values = condition.values, values.count >= 2 {
-                    rangeDisplayView(
-                        operatorCode: operatorCode,
-                        valueUIKind: valueUIKind,
-                        values: values,
-                    )
-                }
-            } else
-            if isDateType {
+                rangeNumberSection(
+                    operatorCode: operatorCode,
+                    valueUIKind: valueUIKind,
+                    valueArity: valueArity,
+                    valueStore: valueStore,
+                )
+            } else if isDateType {
                 dateValueSection(
                     operatorCode: operatorCode,
                     valueUIKind: valueUIKind,
                     valueArity: valueArity,
                     valueViewStore: valueStore,
                 )
-            } else
-            if isEditingValue, valueArity >= 2, let editingIndex = valueStore.editingIndex {
-                rangeEditingView(
+            } else {
+                nonDateValueSection(
                     operatorCode: operatorCode,
                     valueUIKind: valueUIKind,
-                    editingIndex: editingIndex,
+                    valueArity: valueArity,
+                    isEditingValue: isEditingValue,
                     valueStore: valueStore,
                 )
-            } else if isEditingValue {
-                inlineValueInputs(
-                    valueViewStore: valueStore,
-                    valueArity: valueArity,
-                    valueType: condition.valueType,
-                    valueUIKind: valueUIKind,
-                    errorMessage: valueStore.errorMessage,
-                    editingIndex: nil,
-                )
-            } else if valueArity >= 2, let values = condition.values, values.count >= 2 {
-                rangeDisplayView(
-                    operatorCode: operatorCode,
-                    valueUIKind: valueUIKind,
-                    values: values,
-                )
-            } else {
-                if condition.valueType == "boolean" {
-                    let currentText = condition.values?.first ?? ""
-                    booleanValueButton(
-                        placeholderText: "",
-                        currentText: currentText,
-                        index: 0,
-                        valueViewStore: ViewStore(valuePickerStore, observe: { $0 }),
-                        operatorCode: operatorCode,
-                        valueUIKind: valueUIKind,
-                    )
-                } else {
-                    singleValueButton(operatorCode: operatorCode, valueUIKind: valueUIKind, valueArity: valueArity)
-                }
             }
         } else {
             EmptyView()
         }
     }
 
-    // swiftlint:enable cyclomatic_complexity
+    @ViewBuilder
+    private func rangeNumberSection(
+        operatorCode: String,
+        valueUIKind: String,
+        valueArity: Int,
+        valueStore: ViewStore<ValuePickerFeature.State, ValuePickerFeature.Action>,
+    ) -> some View {
+        let isActive = valueStore.isPresented && valueStore.propertyKey == condition.propertyKey
+        let isEditingThis = isActive && valueStore.editingIndex != nil
+        let hasCommittedValues = (condition.values?.count ?? 0) >= 2
+        let needsPrepare = valueStore.propertyKey != condition.propertyKey
+            || valueStore.operatorCode != operatorCode
+            || valueStore.valueArity != valueArity
+
+        let sendPrepare: () -> Void = {
+            _ = valuePickerStore.send(
+                .prepare(
+                    .init(
+                        propertyKey: condition.propertyKey,
+                        operatorCode: operatorCode,
+                        valueType: condition.valueType,
+                        valueUIKind: valueUIKind,
+                        valueArity: valueArity,
+                        existingValues: condition.values,
+                        editingIndex: nil,
+                    ),
+                ),
+            )
+        }
+
+        if isEditingThis && hasCommittedValues {
+            rangeEditingView(
+                operatorCode: operatorCode,
+                valueUIKind: valueUIKind,
+                editingIndex: valueStore.editingIndex ?? 0,
+                valueStore: valueStore,
+            )
+            .onAppear {
+                if needsPrepare { sendPrepare() }
+            }
+            .onChange(of: needsPrepare) { newValue in
+                if newValue { sendPrepare() }
+            }
+        } else if isActive || !hasCommittedValues {
+            inlineValueInputs(
+                valueViewStore: valueStore,
+                valueArity: valueArity,
+                valueType: condition.valueType,
+                valueUIKind: valueUIKind,
+                errorMessage: valueStore.errorMessage,
+                editingIndex: nil,
+            )
+            .onAppear {
+                if needsPrepare { sendPrepare() }
+            }
+            .onChange(of: needsPrepare) { newValue in
+                if newValue { sendPrepare() }
+            }
+        } else if let values = condition.values, values.count >= 2 {
+            rangeDisplayView(
+                operatorCode: operatorCode,
+                valueUIKind: valueUIKind,
+                values: values,
+            )
+        }
+    }
+
+    @ViewBuilder
+    private func nonDateValueSection(
+        operatorCode: String,
+        valueUIKind: String,
+        valueArity: Int,
+        isEditingValue: Bool,
+        valueStore: ViewStore<ValuePickerFeature.State, ValuePickerFeature.Action>,
+    ) -> some View {
+        if isEditingValue, valueArity >= 2, let editingIndex = valueStore.editingIndex {
+            rangeEditingView(
+                operatorCode: operatorCode,
+                valueUIKind: valueUIKind,
+                editingIndex: editingIndex,
+                valueStore: valueStore,
+            )
+        } else if isEditingValue {
+            inlineValueInputs(
+                valueViewStore: valueStore,
+                valueArity: valueArity,
+                valueType: condition.valueType,
+                valueUIKind: valueUIKind,
+                errorMessage: valueStore.errorMessage,
+                editingIndex: nil,
+            )
+        } else if valueArity >= 2, let values = condition.values, values.count >= 2 {
+            rangeDisplayView(
+                operatorCode: operatorCode,
+                valueUIKind: valueUIKind,
+                values: values,
+            )
+        } else if condition.valueType == "boolean" {
+            booleanValueButton(
+                placeholderText: "",
+                currentText: condition.values?.first ?? "",
+                index: 0,
+                valueViewStore: ViewStore(valuePickerStore, observe: { $0 }),
+                operatorCode: operatorCode,
+                valueUIKind: valueUIKind,
+            )
+        } else {
+            singleValueButton(operatorCode: operatorCode, valueUIKind: valueUIKind, valueArity: valueArity)
+        }
+    }
 
     private func rangeEditingView(
         operatorCode: String,
