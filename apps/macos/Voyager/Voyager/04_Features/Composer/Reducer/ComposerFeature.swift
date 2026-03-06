@@ -1,4 +1,3 @@
-// swiftlint:disable file_length
 import ComposableArchitecture
 import Foundation
 import Logging
@@ -41,6 +40,7 @@ struct ComposerFeature {
         ComposerHistoryReducer()
         ComposerConditionEditingReducer()
         ComposerScopeReducer()
+        ComposerSaveReducer()
 
         Scope(state: \.collection, action: \.collection) {
             CollectionFeature()
@@ -65,21 +65,12 @@ struct ComposerFeature {
                 state.text = text
                 return .none
 
-            case .saveCollection:
-                return handleSaveCollection(state: state)
-
-            case .saveCollectionAs:
-                return handleSaveCollectionAs(state: state)
-
             case .focusQueryField:
                 state.focusRequestID += 1
                 return .none
 
             case .undo,
                  .redo:
-                return .none
-
-            case .collection:
                 return .none
 
             case .submit,
@@ -100,7 +91,10 @@ struct ComposerFeature {
                  .addScope,
                  .removeScope,
                  .updateScope,
-                 .clearAll:
+                 .clearAll,
+                 .saveCollection,
+                 .saveCollectionAs,
+                 .collection:
                 return .none
             }
         }
@@ -286,26 +280,6 @@ func handleApplyFilters(
         .cancel(id: ComposerFeature.CancelID.search),
         applyFiltersIfNeeded(state: &state, searchClient: searchClient),
     )
-}
-
-private func makeSavePayload(from state: ComposerFeature.State) -> SaveRequestPayload {
-    .init(
-        context: state.collectionContext,
-        isSearchLoading: state.isLoadingSearch,
-        isFiltersLoading: state.isLoadingFilters,
-    )
-}
-
-private func handleSaveCollection(state: ComposerFeature.State) -> Effect<ComposerFeature.Action> {
-    let payload = makeSavePayload(from: state)
-    if let url = state.openedCollectionURL {
-        return .send(.collection(.saveToExisting(payload, url)))
-    }
-    return .send(.collection(.saveRequested(payload)))
-}
-
-private func handleSaveCollectionAs(state: ComposerFeature.State) -> Effect<ComposerFeature.Action> {
-    .send(.collection(.saveRequested(makeSavePayload(from: state))))
 }
 
 func handleAddCondition(
@@ -518,5 +492,3 @@ func updateOperatorOptions(
         },
     )
 }
-
-// swiftlint:enable file_length
