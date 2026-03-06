@@ -39,6 +39,7 @@ struct ComposerFeature {
     var body: some Reducer<State, Action> {
         ComposerSearchLifecycleReducer()
         ComposerHistoryReducer()
+        ComposerConditionEditingReducer()
 
         Scope(state: \.collection, action: \.collection) {
             CollectionFeature()
@@ -85,158 +86,11 @@ struct ComposerFeature {
             case let .updateScope(oldPath, newPath):
                 return handleUpdateScope(state: &state, oldPath: oldPath, newPath: newPath, searchClient: searchClient)
 
-            case let .addCondition(propertyKey):
-                return handleAddCondition(state: &state, propertyKey: propertyKey, registryClient: registryClient)
-
-            case let .removeCondition(propertyKey):
-                return handleRemoveCondition(state: &state, propertyKey: propertyKey, registryClient: registryClient)
-
-            case let .setOperator(propertyKey, operatorCode):
-                return handleSetOperator(
-                    state: &state,
-                    propertyKey: propertyKey,
-                    operatorCode: operatorCode,
-                    registryClient: registryClient,
-                    searchClient: searchClient,
-                )
-
-            case let .replaceConditionProperty(originalKey, propertyKey):
-                return handleReplaceConditionProperty(
-                    state: &state,
-                    originalKey: originalKey,
-                    propertyKey: propertyKey,
-                    registryClient: registryClient,
-                )
-
             case .undo,
                  .redo:
                 return .none
 
-            case let .propertyPicker(.propertyTapped(property)):
-                if let editingKey = state.propertyPicker.editingConditionKey {
-                    return .send(.replaceConditionProperty(originalKey: editingKey, propertyKey: property))
-                } else {
-                    return .send(.addCondition(propertyKey: property))
-                }
-
             case .collection:
-                return .none
-
-            case let .propertyPicker(.setPresented(isPresented)):
-                if isPresented {
-                    state.propertyPicker.existingKeys = Set(state.conditions.map(\.propertyKey))
-                } else {
-                    state.propertyPicker.existingKeys = []
-                }
-                return .none
-
-            case let .propertyPicker(.startEditing(conditionKey)):
-                state.propertyPicker.existingKeys = Set(
-                    state.conditions
-                        .map(\.propertyKey)
-                        .filter { $0 != conditionKey },
-                )
-                return .none
-
-            case .propertyPicker:
-                return .none
-
-            case let .operatorPicker(.setPresented(isPresented)):
-                state.operatorPicker.isPresented = isPresented
-                if !isPresented {
-                    state.operatorPicker.propertyKey = nil
-                    state.operatorPicker.options = []
-                    state.operatorPicker.optionLabels = [:]
-                }
-                return .none
-
-            case let .operatorPicker(.prepare(propertyKey, options, _)):
-                guard !state.isLoadingSearch else { return .none }
-                let optionLabels = Dictionary(
-                    uniqueKeysWithValues: options.map { ($0, registryClient.operatorLabel(for: $0)) },
-                )
-                state.operatorPicker.propertyKey = propertyKey
-                state.operatorPicker.options = options
-                state.operatorPicker.optionLabels = optionLabels
-                state.operatorPicker.isPresented = true
-                return .none
-
-            case let .operatorPicker(.select(option)):
-                guard let propertyKey = state.operatorPicker.propertyKey else {
-                    return .none
-                }
-                return .send(.setOperator(propertyKey: propertyKey, operatorCode: option))
-
-            case .operatorPicker:
-                return .none
-
-            case let .valuePicker(.setPresented(isPresented)):
-                if isPresented {
-                    state.valuePicker.isPresented = true
-                } else {
-                    resetValuePicker(state: &state)
-                }
-                return .none
-
-            case let .valuePicker(.prepare(payload)):
-                guard !state.isLoadingSearch else { return .none }
-                state.valuePicker.propertyKey = payload.propertyKey
-                state.valuePicker.operatorCode = payload.operatorCode
-                state.valuePicker.valueType = payload.valueType
-                state.valuePicker.valueArity = max(0, payload.valueArity)
-                state.valuePicker.valueUIKind = payload.valueUIKind
-                state.valuePicker.editingIndex = payload.editingIndex
-
-                if state.valuePicker.valueArity == 0 {
-                    state.valuePicker.values = []
-                } else if let existingValues = payload.existingValues {
-                    let trimmed = existingValues.map {
-                        $0.trimmingCharacters(in: .whitespacesAndNewlines)
-                    }
-                    state.valuePicker.values = Array(trimmed.prefix(state.valuePicker.valueArity))
-                    if state.valuePicker.values.count < state.valuePicker.valueArity {
-                        state.valuePicker.values.append(contentsOf: Array(
-                            repeating: "",
-                            count: state.valuePicker.valueArity - state.valuePicker.values.count,
-                        ))
-                    }
-                } else if state.valuePicker.valueArity == 1 {
-                    state.valuePicker.values = [""]
-                } else {
-                    state.valuePicker.values = Array(repeating: "", count: state.valuePicker.valueArity)
-                }
-                state.valuePicker.isPresented = true
-                return .none
-
-            case let .valuePicker(.setValue(index, text)):
-                guard !state.isLoadingSearch else { return .none }
-                if state.valuePicker.values.indices.contains(index) {
-                    state.valuePicker.values[index] = text
-                }
-                return .none
-
-            case .valuePicker(.commit):
-                return .none
-
-            case let .valuePicker(.commitResult(propertyKey, values)):
-                guard !state.isLoadingSearch else { return .none }
-                if let idx = state.conditions.firstIndex(where: { $0.propertyKey == propertyKey }) {
-                    state.pushHistory()
-                    state.conditions[idx].values = values
-                }
-                resetValuePicker(state: &state)
-                return applyFiltersIfNeeded(state: &state, searchClient: searchClient)
-
-            case .valuePicker:
-                return .none
-
-            case let .setValue(propertyKey, values):
-                guard !state.isLoadingSearch else { return .none }
-                if let idx = state.conditions.firstIndex(where: { $0.propertyKey == propertyKey }) {
-                    state.pushHistory()
-                    state.conditions[idx].values = values
-                }
-                resetValuePicker(state: &state)
                 return .none
 
             case .submit,
@@ -245,7 +99,15 @@ struct ComposerFeature {
                  .applyFilters,
                  .searchResponse,
                  .filtersResponse,
-                 .searchListApplied:
+                 .searchListApplied,
+                 .addCondition,
+                 .removeCondition,
+                 .setOperator,
+                 .replaceConditionProperty,
+                 .propertyPicker,
+                 .operatorPicker,
+                 .valuePicker,
+                 .setValue:
                 return .none
             }
         }
@@ -453,7 +315,7 @@ private func handleSaveCollectionAs(state: ComposerFeature.State) -> Effect<Comp
     .send(.collection(.saveRequested(makeSavePayload(from: state))))
 }
 
-private func handleAddCondition(
+func handleAddCondition(
     state: inout ComposerFeature.State,
     propertyKey: String,
     registryClient: RegistryClient,
@@ -485,7 +347,7 @@ private func handleAddCondition(
     return .none
 }
 
-private func handleRemoveCondition(
+func handleRemoveCondition(
     state: inout ComposerFeature.State,
     propertyKey: String,
     registryClient: RegistryClient,
@@ -499,7 +361,7 @@ private func handleRemoveCondition(
     return .none
 }
 
-private func handleSetOperator(
+func handleSetOperator(
     state: inout ComposerFeature.State,
     propertyKey: String,
     operatorCode: String,
@@ -543,7 +405,7 @@ private func handleSetOperator(
     return .none
 }
 
-private func handleReplaceConditionProperty(
+func handleReplaceConditionProperty(
     state: inout ComposerFeature.State,
     originalKey: String,
     propertyKey: String,
@@ -597,7 +459,7 @@ func applyAppliedFilters(
     updateOperatorOptions(state: &state, registryClient: registryClient)
 }
 
-private func resetValuePicker(state: inout ComposerFeature.State) {
+func resetValuePicker(state: inout ComposerFeature.State) {
     state.valuePicker.isPresented = false
     state.valuePicker.propertyKey = nil
     state.valuePicker.operatorCode = nil
