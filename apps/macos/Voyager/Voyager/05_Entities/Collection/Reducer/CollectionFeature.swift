@@ -8,45 +8,8 @@ struct CollectionFeature {
     typealias State = CollectionState
     typealias Action = CollectionAction
 
-    @Dependency(\.collectionFileClient)
-    var collectionFileClient
-
-    @Dependency(\.userDefaultsClient)
-    var userDefaultsClient
-
     var body: some Reducer<State, Action> {
-        Reduce { state, action in
-            switch action {
-            case let .saveRequested(payload):
-                handleSaveRequested(
-                    state: &state,
-                    payload: payload,
-                    userDefaultsClient: userDefaultsClient,
-                )
-
-            case let .saveToExisting(payload, url):
-                handleSaveToExisting(
-                    state: &state,
-                    payload: payload,
-                    url: url,
-                    collectionFileClient: collectionFileClient,
-                )
-
-            case let .savePanelResponse(url):
-                handleSavePanelResponse(
-                    state: &state,
-                    selectedURL: url,
-                    collectionFileClient: collectionFileClient,
-                )
-
-            case let .saveCompleted(result):
-                handleSaveCompleted(
-                    state: &state,
-                    result: result,
-                    userDefaultsClient: userDefaultsClient,
-                )
-            }
-        }
+        CollectionSavePipelineReducer()
     }
 }
 
@@ -169,8 +132,8 @@ private func canStartSave(
     return true
 }
 
-private func handleSaveRequested(
-    state: inout CollectionFeature.State,
+func handleSaveRequested(
+    state: inout CollectionState,
     payload: SaveRequestPayload,
     userDefaultsClient: UserDefaultsClient,
 ) -> Effect<CollectionFeature.Action> {
@@ -193,8 +156,8 @@ private func handleSaveRequested(
     }
 }
 
-private func handleSaveToExisting(
-    state: inout CollectionFeature.State,
+func handleSaveToExisting(
+    state: inout CollectionState,
     payload: SaveRequestPayload,
     url: URL,
     collectionFileClient: CollectionFileClient,
@@ -214,8 +177,8 @@ private func handleSaveToExisting(
     }
 }
 
-private func handleSavePanelResponse(
-    state: inout CollectionFeature.State,
+func handleSavePanelResponse(
+    state: inout CollectionState,
     selectedURL: URL?,
     collectionFileClient: CollectionFileClient,
 ) -> Effect<CollectionFeature.Action> {
@@ -231,8 +194,8 @@ private func handleSavePanelResponse(
     )
 }
 
-private func handleSaveCompleted(
-    state: inout CollectionFeature.State,
+func handleSaveCompleted(
+    state: inout CollectionState,
     result: Result<URL, Error>,
     userDefaultsClient: UserDefaultsClient,
 ) -> Effect<CollectionFeature.Action> {
