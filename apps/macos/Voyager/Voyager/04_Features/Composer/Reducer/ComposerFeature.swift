@@ -13,7 +13,7 @@ enum ComposerQueryRenderPhase: Equatable, Sendable {
     case failed
 }
 
-private enum ComposerQueryPhaseTransition: Sendable {
+enum ComposerQueryPhaseTransition: Sendable {
     case reset
     case startSearch
     case searchSucceeded
@@ -37,6 +37,9 @@ struct ComposerFeature {
     }
 
     var body: some Reducer<State, Action> {
+        ComposerSearchLifecycleReducer()
+        ComposerHistoryReducer()
+
         Scope(state: \.collection, action: \.collection) {
             CollectionFeature()
         }
@@ -68,18 +71,6 @@ struct ComposerFeature {
 
             case .clearAll:
                 return handleClearAll(state: &state)
-
-            case .submit:
-                return handleSubmit(state: &state, searchClient: searchClient)
-
-            case .cancelSearch:
-                return handleCancelSearch(state: &state)
-
-            case .cancelFilters:
-                return handleCancelFilters(state: &state)
-
-            case .applyFilters:
-                return handleApplyFilters(state: &state, searchClient: searchClient)
 
             case .saveCollection:
                 return handleSaveCollection(state: state)
@@ -117,36 +108,8 @@ struct ComposerFeature {
                     registryClient: registryClient,
                 )
 
-            // TODO: UndoManager로 변경
-            case .undo:
-                guard !state.isLoadingSearch else { return .none }
-                let before = buildFilters(from: state)
-                guard let previous = state.history.popLast() else { return .none }
-                let current = FilterSnapshot(scopes: state.scopes, conditions: state.conditions)
-                state.redoHistory.append(current)
-                state.scopes = previous.scopes
-                state.conditions = previous.conditions
-                updateOperatorOptions(state: &state, registryClient: registryClient)
-                let after = buildFilters(from: state)
-                if before != after {
-                    return applyFiltersIfNeeded(state: &state, searchClient: searchClient)
-                }
-                return .none
-
-            // TODO: UndoManager로 변경
-            case .redo:
-                guard !state.isLoadingSearch else { return .none }
-                let before = buildFilters(from: state)
-                guard let next = state.redoHistory.popLast() else { return .none }
-                let current = FilterSnapshot(scopes: state.scopes, conditions: state.conditions)
-                state.history.append(current)
-                state.scopes = next.scopes
-                state.conditions = next.conditions
-                updateOperatorOptions(state: &state, registryClient: registryClient)
-                let after = buildFilters(from: state)
-                if before != after {
-                    return applyFiltersIfNeeded(state: &state, searchClient: searchClient)
-                }
+            case .undo,
+                 .redo:
                 return .none
 
             case let .propertyPicker(.propertyTapped(property)):
@@ -276,74 +239,13 @@ struct ComposerFeature {
                 resetValuePicker(state: &state)
                 return .none
 
-            case let .searchResponse(.success(response)):
-                state.isLoadingSearch = false
-                state.lastSearchResponse = response
-                state.lastFiltersResponse = nil
-                applyQueryPhaseTransition(.searchSucceeded, state: &state)
-                applyAppliedFilters(response.appliedFilters, state: &state, registryClient: registryClient)
-                state.isLoadingFilters = true
-                state.isFilteringInFlight = true
-                state.filtersStartedAt = Date()
-                let executionFilters = buildFilters(from: state)
-                if let startedAt = state.searchStartedAt {
-                    VoyagerSentryMetricLogger.logMetric(
-                        "voyager_search_roundtrip_duration_ms",
-                        value: round((Date().timeIntervalSince(startedAt)) * 1000),
-                    )
-                }
-                VoyagerSentryMetricLogger.logMetric(
-                    "voyager_search_result",
-                    value: 1,
-                    tags: ["result": response.itemCount > 0 ? "success" : "empty"],
-                )
-                state.searchStartedAt = nil
-                return .run { send in
-                    do {
-                        let executionResponse = try await searchClient.applyFilters(
-                            .init(filters: executionFilters),
-                        )
-                        await send(.filtersResponse(.success(executionResponse)))
-                    } catch {
-                        await send(.filtersResponse(.failure(error)))
-                    }
-                }
-                .cancellable(id: CancelID.filters, cancelInFlight: true)
-
-            case .searchResponse(.failure):
-                state.isLoadingSearch = false
-                applyQueryPhaseTransition(.searchFailed, state: &state)
-                VoyagerSentryMetricLogger.logMetric(
-                    "voyager_search_result",
-                    value: 1,
-                    tags: ["result": "error"],
-                    level: .warn,
-                )
-                state.searchStartedAt = nil
-                return .none
-
-            case let .filtersResponse(.success(response)):
-                state.isLoadingFilters = false
-                state.isFilteringInFlight = false
-                state.lastFiltersResponse = response
-                applyAppliedFilters(response.appliedFilters, state: &state, registryClient: registryClient)
-                if let startedAt = state.filtersStartedAt {
-                    VoyagerSentryMetricLogger.logMetric(
-                        "voyager_filters_roundtrip_duration_ms",
-                        value: round((Date().timeIntervalSince(startedAt)) * 1000),
-                    )
-                }
-                state.filtersStartedAt = nil
-                return .none
-
-            case .filtersResponse(.failure):
-                state.isLoadingFilters = false
-                state.isFilteringInFlight = false
-                state.filtersStartedAt = nil
-                return .none
-
-            case .searchListApplied:
-                applyQueryPhaseTransition(.listApplied, state: &state)
+            case .submit,
+                 .cancelSearch,
+                 .cancelFilters,
+                 .applyFilters,
+                 .searchResponse,
+                 .filtersResponse,
+                 .searchListApplied:
                 return .none
             }
         }
@@ -360,7 +262,7 @@ private func handleSetPresented(state: inout ComposerFeature.State, isPresented:
     }
 }
 
-private func applyQueryPhaseTransition(
+func applyQueryPhaseTransition(
     _ transition: ComposerQueryPhaseTransition,
     state: inout ComposerFeature.State,
 ) {
@@ -442,7 +344,7 @@ private func handleClearAll(state: inout ComposerFeature.State) -> Effect<Compos
     return .cancel(id: ComposerFeature.CancelID.filters)
 }
 
-private func handleSubmit(
+func handleSubmit(
     state: inout ComposerFeature.State,
     searchClient: SearchClient,
 ) -> Effect<ComposerFeature.Action> {
@@ -489,7 +391,7 @@ private func handleSubmit(
     )
 }
 
-private func handleCancelSearch(state: inout ComposerFeature.State) -> Effect<ComposerFeature.Action> {
+func handleCancelSearch(state: inout ComposerFeature.State) -> Effect<ComposerFeature.Action> {
     state.isLoadingSearch = false
     applyQueryPhaseTransition(.reset, state: &state)
     VoyagerSentryMetricLogger.logMetric(
@@ -500,7 +402,7 @@ private func handleCancelSearch(state: inout ComposerFeature.State) -> Effect<Co
     return .cancel(id: ComposerFeature.CancelID.search)
 }
 
-private func handleCancelFilters(state: inout ComposerFeature.State) -> Effect<ComposerFeature.Action> {
+func handleCancelFilters(state: inout ComposerFeature.State) -> Effect<ComposerFeature.Action> {
     state.isLoadingFilters = false
     state.isFilteringInFlight = false
     VoyagerSentryMetricLogger.logMetric(
@@ -511,7 +413,7 @@ private func handleCancelFilters(state: inout ComposerFeature.State) -> Effect<C
     return .cancel(id: ComposerFeature.CancelID.filters)
 }
 
-private func handleApplyFilters(
+func handleApplyFilters(
     state: inout ComposerFeature.State,
     searchClient: SearchClient,
 ) -> Effect<ComposerFeature.Action> {
@@ -679,7 +581,7 @@ private func handleReplaceConditionProperty(
     return .none
 }
 
-private func applyAppliedFilters(
+func applyAppliedFilters(
     _ appliedFilters: AppliedFiltersPayload?,
     state: inout ComposerFeature.State,
     registryClient: RegistryClient,
@@ -704,7 +606,7 @@ private func resetValuePicker(state: inout ComposerFeature.State) {
     state.valuePicker.editingIndex = nil
 }
 
-private func applyFiltersIfNeeded(
+func applyFiltersIfNeeded(
     state: inout ComposerFeature.State,
     searchClient: SearchClient,
 ) -> Effect<ComposerFeature.Action> {
@@ -727,7 +629,7 @@ private func applyFiltersIfNeeded(
     .cancellable(id: ComposerFeature.CancelID.filters, cancelInFlight: true)
 }
 
-private func buildFilters(from state: ComposerFeature.State) -> SearchFiltersPayload {
+func buildFilters(from state: ComposerFeature.State) -> SearchFiltersPayload {
     let conditionPayloads: [SearchConditionPayload] = state.conditions.compactMap { condition in
         guard condition.isActive else { return nil }
         guard let op = condition.operatorCode else { return nil }
@@ -751,7 +653,7 @@ private func buildFilters(from state: ComposerFeature.State) -> SearchFiltersPay
     )
 }
 
-private func updateOperatorOptions(
+func updateOperatorOptions(
     state: inout ComposerFeature.State,
     registryClient: RegistryClient,
 ) {
