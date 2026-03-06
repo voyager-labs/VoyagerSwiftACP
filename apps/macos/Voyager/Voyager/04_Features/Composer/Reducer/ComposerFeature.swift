@@ -40,6 +40,7 @@ struct ComposerFeature {
         ComposerSearchLifecycleReducer()
         ComposerHistoryReducer()
         ComposerConditionEditingReducer()
+        ComposerScopeReducer()
 
         Scope(state: \.collection, action: \.collection) {
             CollectionFeature()
@@ -64,15 +65,6 @@ struct ComposerFeature {
                 state.text = text
                 return .none
 
-            case let .addScope(path):
-                return handleAddScope(state: &state, path: path, searchClient: searchClient)
-
-            case let .removeScope(path):
-                return handleRemoveScope(state: &state, path: path, searchClient: searchClient)
-
-            case .clearAll:
-                return handleClearAll(state: &state)
-
             case .saveCollection:
                 return handleSaveCollection(state: state)
 
@@ -82,9 +74,6 @@ struct ComposerFeature {
             case .focusQueryField:
                 state.focusRequestID += 1
                 return .none
-
-            case let .updateScope(oldPath, newPath):
-                return handleUpdateScope(state: &state, oldPath: oldPath, newPath: newPath, searchClient: searchClient)
 
             case .undo,
                  .redo:
@@ -107,7 +96,11 @@ struct ComposerFeature {
                  .propertyPicker,
                  .operatorPicker,
                  .valuePicker,
-                 .setValue:
+                 .setValue,
+                 .addScope,
+                 .removeScope,
+                 .updateScope,
+                 .clearAll:
                 return .none
             }
         }
@@ -144,7 +137,7 @@ func applyQueryPhaseTransition(
     }
 }
 
-private func handleAddScope(
+func handleAddScope(
     state: inout ComposerFeature.State,
     path: String,
     searchClient: SearchClient,
@@ -160,7 +153,7 @@ private func handleAddScope(
     return applyFiltersIfNeeded(state: &state, searchClient: searchClient)
 }
 
-private func handleRemoveScope(
+func handleRemoveScope(
     state: inout ComposerFeature.State,
     path: String,
     searchClient: SearchClient,
@@ -176,7 +169,7 @@ private func handleRemoveScope(
     return applyFiltersIfNeeded(state: &state, searchClient: searchClient)
 }
 
-private func handleUpdateScope(
+func handleUpdateScope(
     state: inout ComposerFeature.State,
     oldPath: String,
     newPath: String,
@@ -190,7 +183,7 @@ private func handleUpdateScope(
     return applyFiltersIfNeeded(state: &state, searchClient: searchClient)
 }
 
-private func handleClearAll(state: inout ComposerFeature.State) -> Effect<ComposerFeature.Action> {
+func handleClearAll(state: inout ComposerFeature.State) -> Effect<ComposerFeature.Action> {
     guard !state.isLoadingSearch else { return .none }
     state.pushHistory()
     state.text = ""
