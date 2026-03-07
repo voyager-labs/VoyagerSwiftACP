@@ -25,6 +25,8 @@ enum FileManagerContentAction: CasePathable, Sendable {
     case performPendingNavigation(ContentPageNavigationPending)
     case requestNavigation(ContentPageNavigationAction)
     case discardCollectionChanges
+    case composerCollectionSearchSucceeded
+    case composerCollectionSearchFailed
 
     case openPathInNewWindow(String)
     case openPathInNewTab(String)
