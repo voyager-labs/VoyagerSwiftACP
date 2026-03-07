@@ -45,23 +45,23 @@ struct FileManagerContentComposerFeature {
         }
 
         switch action {
-        case let .setPresented(isPresented):
+        case let .view(.setPresented(isPresented)):
             return handleSetPresented(isPresented, state: &state)
 
-        case .applyFilters:
+        case .view(.applyFilters):
             state.composer.isLoadingFilters = true
             return .none
 
-        case let .setText(text):
+        case let .view(.setText(text)):
             return handleSetText(text, state: &state)
 
-        case .cancelSearch:
+        case .view(.cancelSearch):
             state.composer.pendingSearchQuery = nil
             state.collectionSession.isOpening = false
             state.collectionSession.openedName = nil
             return .none
 
-        case .clearAll:
+        case .view(.clearAll):
             if state.entryOperations.loadingContext.isCollectionMode {
                 state.composer.pendingSearchQuery = nil
                 state.collectionContext = CollectionContext(
@@ -84,21 +84,21 @@ struct FileManagerContentComposerFeature {
         state: inout State,
     ) -> Effect<Action>? {
         switch action {
-        case let .filtersResponse(.success(response)):
+        case let .internal(.filtersResponse(.success(response))):
             return handleSearchSuccess(
                 items: response.items ?? [],
                 query: state.composer.pendingSearchQuery ?? "",
                 state: &state,
             )
 
-        case let .searchResponse(.failure(error)):
+        case let .internal(.searchResponse(.failure(error))):
             return handleSearchFailure(
                 error: error,
                 title: "Unable to Run Collection Search",
                 state: &state,
             )
 
-        case let .filtersResponse(.failure(error)):
+        case let .internal(.filtersResponse(.failure(error))):
             let title = state.composer.pendingSearchQuery == nil
                 ? "Unable to Apply Collection Filters"
                 : "Unable to Run Collection Search"
