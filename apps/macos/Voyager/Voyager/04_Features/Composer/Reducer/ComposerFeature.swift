@@ -57,44 +57,45 @@ struct ComposerFeature {
 
         Reduce { state, action in
             switch action {
-            case let .setPresented(isPresented):
+            case let .view(.setPresented(isPresented)):
                 handleSetPresented(state: &state, isPresented: isPresented)
                 return .none
 
-            case let .setText(text):
+            case let .view(.setText(text)):
                 state.text = text
                 return .none
 
-            case .focusQueryField:
+            case .view(.focusQueryField):
                 state.focusRequestID += 1
                 return .none
 
-            case .undo,
-                 .redo:
+            case .view(.undo),
+                 .view(.redo):
                 return .none
 
-            case .submit,
-                 .cancelSearch,
-                 .cancelFilters,
-                 .applyFilters,
-                 .searchResponse,
-                 .filtersResponse,
-                 .searchListApplied,
-                 .addCondition,
-                 .removeCondition,
-                 .setOperator,
-                 .replaceConditionProperty,
+            case .view(.submit),
+                 .view(.cancelSearch),
+                 .view(.cancelFilters),
+                 .view(.applyFilters),
+                 .view(.addCondition),
+                 .view(.removeCondition),
+                 .view(.setOperator),
+                 .view(.replaceConditionProperty),
+                 .view(.setValue),
+                 .view(.addScope),
+                 .view(.removeScope),
+                 .view(.updateScope),
+                 .view(.clearAll),
+                 .view(.saveCollection),
+                 .view(.saveCollectionAs),
+                 .collection,
                  .propertyPicker,
                  .operatorPicker,
                  .valuePicker,
-                 .setValue,
-                 .addScope,
-                 .removeScope,
-                 .updateScope,
-                 .clearAll,
-                 .saveCollection,
-                 .saveCollectionAs,
-                 .collection:
+                 .internal(.searchResponse),
+                 .internal(.filtersResponse),
+                 .internal(.searchListApplied),
+                 .delegate:
                 return .none
             }
         }

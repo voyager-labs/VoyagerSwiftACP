@@ -11,13 +11,13 @@ struct ComposerScopeReducer {
     var body: some Reducer<State, Action> {
         Reduce { state, action in
             switch action {
-            case let .addScope(path):
+            case let .view(.addScope(path: path)):
                 handleAddScope(state: &state, path: path, searchClient: searchClient)
 
-            case let .removeScope(path):
+            case let .view(.removeScope(path: path)):
                 handleRemoveScope(state: &state, path: path, searchClient: searchClient)
 
-            case let .updateScope(oldPath, newPath):
+            case let .view(.updateScope(oldPath: oldPath, newPath: newPath)):
                 handleUpdateScope(
                     state: &state,
                     oldPath: oldPath,
@@ -25,7 +25,7 @@ struct ComposerScopeReducer {
                     searchClient: searchClient,
                 )
 
-            case .clearAll:
+            case .view(.clearAll):
                 handleClearAll(state: &state)
 
             default:

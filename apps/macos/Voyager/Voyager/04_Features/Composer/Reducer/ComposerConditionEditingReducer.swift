@@ -14,13 +14,13 @@ struct ComposerConditionEditingReducer {
     var body: some Reducer<State, Action> {
         Reduce { state, action in
             switch action {
-            case let .addCondition(propertyKey):
+            case let .view(.addCondition(propertyKey: propertyKey)):
                 return handleAddCondition(state: &state, propertyKey: propertyKey, registryClient: registryClient)
 
-            case let .removeCondition(propertyKey):
+            case let .view(.removeCondition(propertyKey: propertyKey)):
                 return handleRemoveCondition(state: &state, propertyKey: propertyKey, registryClient: registryClient)
 
-            case let .setOperator(propertyKey, operatorCode):
+            case let .view(.setOperator(propertyKey: propertyKey, operatorCode: operatorCode)):
                 return handleSetOperator(
                     state: &state,
                     propertyKey: propertyKey,
@@ -29,7 +29,7 @@ struct ComposerConditionEditingReducer {
                     searchClient: searchClient,
                 )
 
-            case let .replaceConditionProperty(originalKey, propertyKey):
+            case let .view(.replaceConditionProperty(originalKey: originalKey, propertyKey: propertyKey)):
                 return handleReplaceConditionProperty(
                     state: &state,
                     originalKey: originalKey,
@@ -151,7 +151,7 @@ struct ComposerConditionEditingReducer {
             case .valuePicker:
                 return .none
 
-            case let .setValue(propertyKey, values):
+            case let .view(.setValue(propertyKey: propertyKey, values: values)):
                 guard !state.isLoadingSearch else { return .none }
                 if let idx = state.conditions.firstIndex(where: { $0.propertyKey == propertyKey }) {
                     state.pushHistory()

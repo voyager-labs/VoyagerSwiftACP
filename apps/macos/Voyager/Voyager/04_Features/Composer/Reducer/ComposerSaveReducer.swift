@@ -8,14 +8,14 @@ struct ComposerSaveReducer {
     var body: some Reducer<State, Action> {
         Reduce { state, action in
             switch action {
-            case .saveCollection:
+            case .view(.saveCollection):
                 let payload = makeSavePayload(from: state)
                 if let url = state.openedCollectionURL {
                     return .send(.collection(.saveToExisting(payload, url)))
                 }
                 return .send(.collection(.saveRequested(payload)))
 
-            case .saveCollectionAs:
+            case .view(.saveCollectionAs):
                 return .send(.collection(.saveRequested(makeSavePayload(from: state))))
 
             case .collection:

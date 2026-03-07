@@ -13,7 +13,7 @@ struct ComposerHistoryReducer {
     var body: some Reducer<State, Action> {
         Reduce { state, action in
             switch action {
-            case .undo:
+            case .view(.undo):
                 guard !state.isLoadingSearch else { return .none }
                 let before = buildFilters(from: state)
                 guard let previous = state.history.popLast() else { return .none }
@@ -28,7 +28,7 @@ struct ComposerHistoryReducer {
                 }
                 return .none
 
-            case .redo:
+            case .view(.redo):
                 guard !state.isLoadingSearch else { return .none }
                 let before = buildFilters(from: state)
                 guard let next = state.redoHistory.popLast() else { return .none }

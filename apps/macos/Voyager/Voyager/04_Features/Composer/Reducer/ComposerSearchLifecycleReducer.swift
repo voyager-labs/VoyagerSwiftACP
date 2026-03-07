@@ -14,19 +14,19 @@ struct ComposerSearchLifecycleReducer {
     var body: some Reducer<State, Action> {
         Reduce { state, action in
             switch action {
-            case .submit:
+            case .view(.submit):
                 return handleSubmit(state: &state, searchClient: searchClient)
 
-            case .cancelSearch:
+            case .view(.cancelSearch):
                 return handleCancelSearch(state: &state)
 
-            case .cancelFilters:
+            case .view(.cancelFilters):
                 return handleCancelFilters(state: &state)
 
-            case .applyFilters:
+            case .view(.applyFilters):
                 return handleApplyFilters(state: &state, searchClient: searchClient)
 
-            case let .searchResponse(response):
+            case let .internal(.searchResponse(response)):
                 switch response {
                 case let .success(response):
                     state.isLoadingSearch = false
@@ -75,7 +75,7 @@ struct ComposerSearchLifecycleReducer {
                     return .none
                 }
 
-            case let .filtersResponse(response):
+            case let .internal(.filtersResponse(response)):
                 switch response {
                 case let .success(response):
                     state.isLoadingFilters = false
@@ -98,7 +98,7 @@ struct ComposerSearchLifecycleReducer {
                     return .none
                 }
 
-            case .searchListApplied:
+            case .internal(.searchListApplied):
                 applyQueryPhaseTransition(.listApplied, state: &state)
                 return .none
 
