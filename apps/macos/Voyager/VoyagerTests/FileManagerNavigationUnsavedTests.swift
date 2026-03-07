@@ -97,7 +97,7 @@ final class FileManagerNavigationUnsavedTests: XCTestCase {
                 state.content.navigation.pendingNavigation = testCase.pending
             }
             await store.receive {
-                guard case .content(.composer(.saveCollection)) = $0 else { return false }
+                guard case .content(.composer(.view(.saveCollection))) = $0 else { return false }
                 return true
             }
 
