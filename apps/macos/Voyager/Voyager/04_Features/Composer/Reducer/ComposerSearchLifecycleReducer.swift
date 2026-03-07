@@ -108,3 +108,92 @@ struct ComposerSearchLifecycleReducer {
         }
     }
 }
+
+private func handleSubmit(
+    state: inout ComposerFeature.State,
+    searchClient: SearchClient,
+) -> Effect<ComposerFeature.Action> {
+    let query = state.text.trimmingCharacters(in: .whitespacesAndNewlines)
+    guard !query.isEmpty else { return .none }
+    let filters = buildFilters(from: state)
+    VoyagerSentryMetricLogger.logMetric(
+        "voyager_composer_submit",
+        value: 1,
+    )
+    VoyagerSentryMetricLogger.logMetric(
+        "voyager_search_submit",
+        value: 1,
+    )
+    if state.hasSubmittedInSession {
+        VoyagerSentryMetricLogger.logMetric(
+            "voyager_search_resubmit",
+            value: 1,
+        )
+    }
+    state.hasSubmittedInSession = true
+    state.searchStartedAt = Date()
+    state.isLoadingSearch = true
+    state.isLoadingFilters = false
+    state.lastFiltersResponse = nil
+    applyQueryPhaseTransition(.startSearch, state: &state)
+    state.text = ""
+
+    let searchEffect: Effect<ComposerFeature.Action> = .run { send in
+        do {
+            let response = try await searchClient.search(
+                .init(query: query, filters: filters),
+            )
+            await send(.searchResponse(.success(response)))
+        } catch {
+            await send(.searchResponse(.failure(error)))
+        }
+    }
+    .cancellable(id: ComposerFeature.CancelID.search, cancelInFlight: true)
+
+    return .concatenate(
+        .cancel(id: ComposerFeature.CancelID.filters),
+        searchEffect,
+    )
+}
+
+private func handleCancelSearch(state: inout ComposerFeature.State) -> Effect<ComposerFeature.Action> {
+    state.isLoadingSearch = false
+    applyQueryPhaseTransition(.reset, state: &state)
+    VoyagerSentryMetricLogger.logMetric(
+        "voyager_search_cancel",
+        value: 1,
+        tags: ["type": "search"],
+    )
+    return .cancel(id: ComposerFeature.CancelID.search)
+}
+
+private func handleCancelFilters(state: inout ComposerFeature.State) -> Effect<ComposerFeature.Action> {
+    state.isLoadingFilters = false
+    state.isFilteringInFlight = false
+    VoyagerSentryMetricLogger.logMetric(
+        "voyager_search_cancel",
+        value: 1,
+        tags: ["type": "filters"],
+    )
+    return .cancel(id: ComposerFeature.CancelID.filters)
+}
+
+private func handleApplyFilters(
+    state: inout ComposerFeature.State,
+    searchClient: SearchClient,
+) -> Effect<ComposerFeature.Action> {
+    state.isLoadingSearch = false
+    state.lastSearchResponse = nil
+    state.isLoadingFilters = true
+    state.isFilteringInFlight = true
+    applyQueryPhaseTransition(.reset, state: &state)
+    VoyagerSentryMetricLogger.logMetric(
+        "voyager_composer_filters_apply",
+        value: 1,
+    )
+    state.filtersStartedAt = Date()
+    return .concatenate(
+        .cancel(id: ComposerFeature.CancelID.search),
+        applyFiltersIfNeeded(state: &state, searchClient: searchClient),
+    )
+}
