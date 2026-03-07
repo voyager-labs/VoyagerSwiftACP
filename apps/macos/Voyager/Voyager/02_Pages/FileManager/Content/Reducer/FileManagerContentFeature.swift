@@ -1,4 +1,5 @@
 import ComposableArchitecture
+import VoyagerShared
 
 @Reducer
 struct FileManagerContentFeature {
