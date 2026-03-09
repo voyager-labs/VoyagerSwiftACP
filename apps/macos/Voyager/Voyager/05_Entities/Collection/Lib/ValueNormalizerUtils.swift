@@ -170,6 +170,22 @@ enum ValueNormalizerUtils {
             .filter { !$0.isEmpty }
     }
 
+    static func deduplicatedTokenValues(_ rawValues: [String]) -> [String] {
+        var seen: Set<String> = []
+        var result: [String] = []
+
+        for value in rawValues {
+            let trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !trimmed.isEmpty else { continue }
+            let normalized = trimmed.folding(options: [.caseInsensitive], locale: .current)
+            if seen.insert(normalized).inserted {
+                result.append(trimmed)
+            }
+        }
+
+        return result
+    }
+
     private static func normalizeSingleText(rawValues: [String]) -> ValueNormalizeResult {
         guard let trimmed = requireNonEmpty([rawValues.first ?? ""]) else {
             return .init(values: nil, errorMessage: "Value is required.", resetIndices: [0])

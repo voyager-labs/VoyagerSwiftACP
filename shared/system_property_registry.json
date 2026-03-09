@@ -1,6 +1,6 @@
 {
   "$kind": "system_property_registry",
-  "$version": "2.3.0",
+  "$version": "2.3.1",
   "categories": {
     "audio": {
       "apple_loop_descriptors": {
@@ -1908,7 +1908,7 @@
         "description": "The names of tags attached to the resource, returned as an array of NSString values (read-write).",
         "search_aliases": ["label names", "tag name", "label name"],
         "system_keys": ["nsurl:NSURLTagNamesKey"],
-        "type": "string",
+        "type": "categorical",
         "ui_label": "Tag names"
       },
       "user_domain": {

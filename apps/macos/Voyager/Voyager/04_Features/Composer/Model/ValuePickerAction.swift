@@ -7,6 +7,9 @@ enum ValuePickerAction: CasePathable, Sendable {
     case prepare(PreparePayload)
 
     case setValue(index: Int, text: String)
+    case setTokenInput(String)
+    case appendToken(String)
+    case removeToken(String)
     case commit
     case commitResult(propertyKey: String, values: [String])
 }
