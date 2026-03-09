@@ -1,4 +1,3 @@
-import AppKit
 import ComposableArchitecture
 import SwiftUI
 
@@ -15,13 +14,8 @@ struct ComposerView: View {
     @Environment(\.colorScheme)
     private var colorScheme: ColorScheme
 
-    @State private var keyDownMonitor: Any?
-    @State private var flagsChangedMonitor: Any?
-    @State private var isOptionKeyPressed: Bool = false
+    @StateObject private var keyboardMonitor = ComposerKeyboardMonitor()
     @State private var isScopePickerPresented: Bool = false
-
-    private let escapeKeyCode: UInt16 = 53
-    private let zKeyCode: UInt16 = 6
 
     private var isDark: Bool { colorScheme == .dark }
 
@@ -37,7 +31,7 @@ struct ComposerView: View {
                         isDiscardEnabled: isDiscardEnabled,
                         canSaveCollection: canSaveCollection,
                         isTemporaryCollection: isTemporaryCollection,
-                        isOptionKeyPressed: isOptionKeyPressed,
+                        isOptionKeyPressed: keyboardMonitor.isOptionKeyPressed,
                         onDiscardCollectionChanges: onDiscardCollectionChanges,
                     )
                     .fixedSize(horizontal: false, vertical: true)
@@ -81,11 +75,11 @@ struct ComposerView: View {
                     setupOnAppear()
                 }
                 .onDisappear {
-                    cleanupKeyMonitor()
+                    keyboardMonitor.stop()
                 }
                 .onChange(of: viewStore.state) { isPresented in
                     if !isPresented {
-                        cleanupKeyMonitor()
+                        keyboardMonitor.stop()
                     }
                 }
             },
@@ -93,58 +87,37 @@ struct ComposerView: View {
     }
 
     private func setupOnAppear() {
-        isOptionKeyPressed = NSEvent.modifierFlags.contains(.option)
-
-        keyDownMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { event in
-            if event.keyCode == escapeKeyCode {
+        keyboardMonitor.start(
+            onEscape: {
                 if isScopePickerPresented {
                     isScopePickerPresented = false
-                    return nil
+                    return true
                 }
                 if store.propertyPicker.isPresented {
                     store.send(.propertyPicker(.setPresented(false)))
-                    return nil
+                    return true
                 }
                 if store.operatorPicker.isPresented {
                     store.send(.operatorPicker(.setPresented(false)))
-                    return nil
+                    return true
                 }
                 if store.valuePicker.isPresented {
                     store.send(.valuePicker(.setPresented(false)))
-                    return nil
+                    return true
                 }
                 onExitComposer()
-                return nil
-            }
-
-            if event.keyCode == zKeyCode, event.modifierFlags.contains(.command) {
-                if event.modifierFlags.contains(.shift) {
-                    if store.canRedo {
-                        store.send(.redo)
-                    }
-                } else if store.canUndo {
+                return true
+            },
+            onUndo: {
+                if store.canUndo {
                     store.send(.undo)
                 }
-                return nil
-            }
-
-            return event
-        }
-
-        flagsChangedMonitor = NSEvent.addLocalMonitorForEvents(matching: .flagsChanged) { event in
-            isOptionKeyPressed = event.modifierFlags.contains(.option)
-            return event
-        }
-    }
-
-    private func cleanupKeyMonitor() {
-        if let monitor = keyDownMonitor {
-            NSEvent.removeMonitor(monitor)
-            keyDownMonitor = nil
-        }
-        if let monitor = flagsChangedMonitor {
-            NSEvent.removeMonitor(monitor)
-            flagsChangedMonitor = nil
-        }
+            },
+            onRedo: {
+                if store.canRedo {
+                    store.send(.redo)
+                }
+            },
+        )
     }
 }

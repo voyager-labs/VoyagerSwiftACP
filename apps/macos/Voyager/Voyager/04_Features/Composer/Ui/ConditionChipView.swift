@@ -558,7 +558,7 @@ struct ConditionChipView: View {
                 ),
             )
         } label: {
-            Text(displayValueText())
+            Text(ConditionChipDisplayUtils.displayValueText(for: condition))
                 .font(.system(size: 11, weight: .medium))
                 .foregroundColor(condition.values == nil ? .secondary.opacity(0.7) : .primary)
                 .padding(.horizontal, 4)
@@ -636,7 +636,7 @@ struct ConditionChipView: View {
         return HStack(spacing: 6) {
             ForEach(indices, id: \.self) { index in
                 let currentText = valueViewStore.values.indices.contains(index) ? valueViewStore.values[index] : ""
-                let placeholderText = hasError ? "" : placeholder(
+                let placeholderText = hasError ? "" : ConditionChipDisplayUtils.placeholder(
                     for: valueArity,
                     index: index,
                     valueType: valueType,
@@ -988,43 +988,6 @@ struct ConditionChipView: View {
                 RoundedRectangle(cornerRadius: 8)
                     .fill(VoyagerDS.Surface.popoverBackground(for: isDark ? .dark : .light)),
             )
-        }
-    }
-
-    private func displayValueText() -> String {
-        guard let values = condition.values, !values.isEmpty else { return "Value" }
-        let suffix = if condition.propertyKey == "size", condition.valueType == "number" {
-            " bytes"
-        } else {
-            ""
-        }
-        if condition.valueType == "date" || condition.valueType == "datetime" {
-            let first = ValueNormalizerUtils.formatDateOnlyString(values[0]) ?? values[0]
-            if values.count >= 2 {
-                let second = ValueNormalizerUtils.formatDateOnlyString(values[1]) ?? values[1]
-                if first == second {
-                    return first + suffix
-                }
-                return first + " ~ " + second + suffix
-            }
-            return first + suffix
-        }
-        if values.count >= 2 {
-            return values[0] + " and " + values[1] + suffix
-        }
-        return values[0] + suffix
-    }
-
-    private func placeholder(for arity: Int, index: Int, valueType: String) -> String {
-        if arity >= 2 {
-            return index == 0 ? "From" : "To"
-        }
-
-        switch valueType {
-        case "number":
-            return "Number Value"
-        default:
-            return "Value"
         }
     }
 }

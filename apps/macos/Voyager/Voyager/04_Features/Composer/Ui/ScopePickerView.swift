@@ -9,16 +9,34 @@ struct ScopePickerView: View {
     let favorites: [ScopeFavoriteItem]
     let backHistory: [String]
 
-    @Dependency(\.entryLoadingClient)
-    private var entryLoadingClient
-
     @State private var searchText: String = ""
-    @State private var searchResults: [ComposerScopeUtils.DirectoryItem] = []
-    @State private var searchTask: Task<Void, Never>?
     @State private var hoveredPath: String?
+    @StateObject private var searchCoordinator: ScopePickerSearchCoordinator
     @FocusState private var isSearchFocused: Bool
     @Environment(\.colorScheme)
     private var colorScheme
+
+    init(
+        isPresented: Binding<Bool>,
+        oldPath: String?,
+        onSelect: @escaping (String) -> Void,
+        favorites: [ScopeFavoriteItem],
+        backHistory: [String],
+        entryLoadingClient: EntryLoadingClient,
+    ) {
+        _isPresented = isPresented
+        self.oldPath = oldPath
+        self.onSelect = onSelect
+        self.favorites = favorites
+        self.backHistory = backHistory
+        _searchCoordinator = StateObject(
+            wrappedValue: ScopePickerSearchCoordinator(
+                entryLoadingClient: entryLoadingClient,
+                favorites: favorites,
+                backHistory: backHistory,
+            ),
+        )
+    }
 
     var body: some View {
         VStack(spacing: 0) {
@@ -42,40 +60,10 @@ struct ScopePickerView: View {
             isSearchFocused = true
         }
         .onChange(of: searchText) { _ in
-            searchTask?.cancel()
-
-            let query = searchText.trimmingCharacters(in: .whitespacesAndNewlines)
-
-            if query.isEmpty {
-                searchResults = []
-            } else {
-                searchTask = Task {
-                    try? await Task.sleep(nanoseconds: 300_000_000) // 300ms
-
-                    guard !Task.isCancelled else { return }
-
-                    let entryLoadingClient = entryLoadingClient
-                    let results = try? await Task.detached(priority: .userInitiated) {
-                        try await ComposerScopeUtils.searchDirectories(
-                            query: query,
-                            entryLoadingClient: entryLoadingClient,
-                            maxResults: 50,
-                            initialMaxDepth: 2,
-                            timeout: 2.0,
-                        )
-                    }.value
-
-                    guard !Task.isCancelled else { return }
-
-                    await MainActor.run {
-                        searchResults = results ?? []
-                    }
-                }
-            }
+            searchCoordinator.update(query: searchText)
         }
         .onDisappear {
-            searchTask?.cancel()
-            searchTask = nil
+            searchCoordinator.stop()
         }
     }
 
@@ -114,22 +102,12 @@ struct ScopePickerView: View {
     private var listContent: some View {
         ScrollView {
             VStack(spacing: 0) {
-                if !searchResults.isEmpty {
-                    ForEach(searchResults) { item in
+                switch searchCoordinator.listState {
+                case let .defaultList(items), let .searchResults(items):
+                    ForEach(items) { item in
                         directoryRow(item: item)
                     }
-                } else if searchText.isEmpty {
-                    let combinedList = ComposerScopeUtils.buildCombinedList(
-                        history: backHistory,
-                        favorites: favorites,
-                        entryLoadingClient: entryLoadingClient,
-                        maxCount: 10,
-                    )
-
-                    ForEach(combinedList) { item in
-                        directoryRow(item: item)
-                    }
-                } else {
+                case .noResults:
                     Text("No directories found")
                         .font(.system(size: 12))
                         .foregroundColor(.secondary)
