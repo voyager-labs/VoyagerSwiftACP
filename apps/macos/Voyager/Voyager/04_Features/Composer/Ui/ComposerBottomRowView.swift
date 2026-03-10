@@ -68,6 +68,7 @@ struct ComposerBottomRowView: View {
         return chipRowsView(
             rows: rows,
             pickerStore: pickerStore,
+            conditionDisplayByKey: viewStore.conditionDisplayByKey,
             operatorOptionsByKey: viewStore.operatorOptionsByKey,
             historyPaths: historyPaths,
         )
@@ -85,6 +86,7 @@ struct ComposerBottomRowView: View {
     @ViewBuilder
     private func chipView(
         chip: ChipItemType,
+        conditionDisplayByKey: [String: ConditionDisplayState],
         operatorOptionsByKey: [String: [String]],
         historyPaths: [String],
     ) -> some View {
@@ -99,6 +101,7 @@ struct ComposerBottomRowView: View {
             )
 
         case let .condition(condition):
+            let displayState = conditionDisplayByKey[condition.propertyKey]
             ConditionChipView(
                 propertyPickerStore: store.scope(state: \.propertyPicker, action: \.propertyPicker),
                 condition: condition,
@@ -107,12 +110,17 @@ struct ComposerBottomRowView: View {
                 operatorPickerStore: store.scope(state: \.operatorPicker, action: \.operatorPicker),
                 valuePickerStore: store.scope(state: \.valuePicker, action: \.valuePicker),
                 operatorOptions: operatorOptionsByKey[condition.propertyKey] ?? [],
+                displayValues: displayState?.values,
+                displayUnitCode: displayState?.unitCode,
                 defaultChipHeight: defaultChipHeight,
                 onPropertyTap: {
                     store.send(.propertyPicker(.startEditing(condition.propertyKey)))
                 },
                 onRemove: {
                     store.send(.removeCondition(propertyKey: condition.propertyKey))
+                },
+                onDisplayUnitChange: { propertyKey, unitCode in
+                    store.send(.setDisplayUnit(propertyKey: propertyKey, unitCode: unitCode))
                 },
             )
         }
@@ -121,6 +129,7 @@ struct ComposerBottomRowView: View {
     private func chipRowsView(
         rows: [[ChipItemType]],
         pickerStore: StoreOf<ConditionPropertyPickerFeature>,
+        conditionDisplayByKey: [String: ConditionDisplayState],
         operatorOptionsByKey: [String: [String]],
         historyPaths: [String],
     ) -> some View {
@@ -132,6 +141,7 @@ struct ComposerBottomRowView: View {
                     ForEach(Array(rowChips.enumerated()), id: \.element.id) { _, chip in
                         chipView(
                             chip: chip,
+                            conditionDisplayByKey: conditionDisplayByKey,
                             operatorOptionsByKey: operatorOptionsByKey,
                             historyPaths: historyPaths,
                         )

@@ -11,9 +11,12 @@ struct ConditionChipView: View {
     let operatorPickerStore: StoreOf<OperatorPickerFeature>
     let valuePickerStore: StoreOf<ValuePickerFeature>
     let operatorOptions: [String]
+    let displayValues: [String]?
+    let displayUnitCode: String?
     let defaultChipHeight: CGFloat
     let onPropertyTap: () -> Void
     let onRemove: () -> Void
+    let onDisplayUnitChange: (_ propertyKey: String, _ unitCode: String) -> Void
 
     @State private var isPropertyHovering: Bool = false
     @State private var isOperatorHovering: Bool = false
@@ -27,6 +30,12 @@ struct ConditionChipView: View {
     @State private var boolHoverIndex: Int?
     @State private var boolOptionHoverValue: String?
     @FocusState private var focusedValueIndex: Int?
+
+    private var unitSpec: UnitValueUtils.UnitSpec? {
+        UnitValueUtils.supportsUnits(propertyKey: condition.propertyKey, valueType: condition.valueType)
+            ? UnitValueUtils.spec(for: condition.propertyKey)
+            : nil
+    }
 
     var body: some View {
         WithViewStore(
@@ -271,18 +280,12 @@ struct ConditionChipView: View {
         )
 
         return Button {
-            valuePickerStore.send(
-                .prepare(
-                    .init(
-                        propertyKey: condition.propertyKey,
-                        operatorCode: operatorCode,
-                        valueType: condition.valueType,
-                        valueUIKind: valueUIKind,
-                        valueArity: valueArity,
-                        existingValues: condition.values,
-                        editingIndex: nil,
-                    ),
-                ),
+            sendPrepare(
+                operatorCode: operatorCode,
+                valueUIKind: valueUIKind,
+                valueArity: valueArity,
+                editingIndex: nil,
+                includeDisplayState: false,
             )
         } label: {
             Text(ValuePickerTokenUtils.tokenButtonText(values: condition.values ?? []))
@@ -455,18 +458,12 @@ struct ConditionChipView: View {
             || valueStore.valueArity != valueArity
 
         let sendPrepare: () -> Void = {
-            _ = valuePickerStore.send(
-                .prepare(
-                    .init(
-                        propertyKey: condition.propertyKey,
-                        operatorCode: operatorCode,
-                        valueType: condition.valueType,
-                        valueUIKind: valueUIKind,
-                        valueArity: valueArity,
-                        existingValues: condition.values,
-                        editingIndex: nil,
-                    ),
-                ),
+            self.sendPrepare(
+                operatorCode: operatorCode,
+                valueUIKind: valueUIKind,
+                valueArity: valueArity,
+                editingIndex: nil,
+                includeDisplayState: false,
             )
         }
 
@@ -498,7 +495,7 @@ struct ConditionChipView: View {
             .onChange(of: needsPrepare) { newValue in
                 if newValue { sendPrepare() }
             }
-        } else if let values = condition.values, values.count >= 2 {
+        } else if let values = displayValues ?? condition.values, values.count >= 2 {
             rangeDisplayView(
                 operatorCode: operatorCode,
                 valueUIKind: valueUIKind,
@@ -531,7 +528,7 @@ struct ConditionChipView: View {
                 errorMessage: valueStore.errorMessage,
                 editingIndex: nil,
             )
-        } else if valueArity >= 2, let values = condition.values, values.count >= 2 {
+        } else if valueArity >= 2, let values = displayValues ?? condition.values, values.count >= 2 {
             rangeDisplayView(
                 operatorCode: operatorCode,
                 valueUIKind: valueUIKind,
@@ -558,24 +555,20 @@ struct ConditionChipView: View {
         valueStore: ViewStore<ValuePickerFeature.State, ValuePickerFeature.Action>,
     ) -> some View {
         HStack(spacing: 6) {
-            if editingIndex == 1, let values = condition.values, values.count >= 2 {
+            if editingIndex == 1, let values = displayValues ?? condition.values, values.count >= 2 {
                 ValuePillView(
                     text: values[0],
                     isDark: isDark,
                     hoverFillOpacity: hoverFillOpacity,
                     onTap: {
                         valuePickerStore.send(
-                            .prepare(
-                                .init(
-                                    propertyKey: condition.propertyKey,
-                                    operatorCode: operatorCode,
-                                    valueType: condition.valueType,
-                                    valueUIKind: valueUIKind,
-                                    valueArity: 2,
-                                    existingValues: condition.values,
-                                    editingIndex: 0,
-                                ),
-                            ),
+                            .prepare(makePreparePayload(
+                                operatorCode: operatorCode,
+                                valueUIKind: valueUIKind,
+                                valueArity: 2,
+                                editingIndex: 0,
+                                valueStore: valueStore,
+                            )),
                         )
                     },
                 )
@@ -593,7 +586,7 @@ struct ConditionChipView: View {
                 editingIndex: editingIndex,
             )
 
-            if editingIndex == 0, let values = condition.values, values.count >= 2 {
+            if editingIndex == 0, let values = displayValues ?? condition.values, values.count >= 2 {
                 Text("and")
                     .font(.system(size: 11, weight: .medium))
                     .foregroundColor(.secondary)
@@ -603,17 +596,13 @@ struct ConditionChipView: View {
                     hoverFillOpacity: hoverFillOpacity,
                     onTap: {
                         valuePickerStore.send(
-                            .prepare(
-                                .init(
-                                    propertyKey: condition.propertyKey,
-                                    operatorCode: operatorCode,
-                                    valueType: condition.valueType,
-                                    valueUIKind: valueUIKind,
-                                    valueArity: 2,
-                                    existingValues: condition.values,
-                                    editingIndex: 1,
-                                ),
-                            ),
+                            .prepare(makePreparePayload(
+                                operatorCode: operatorCode,
+                                valueUIKind: valueUIKind,
+                                valueArity: 2,
+                                editingIndex: 1,
+                                valueStore: valueStore,
+                            )),
                         )
                     },
                 )
@@ -633,17 +622,12 @@ struct ConditionChipView: View {
                 hoverFillOpacity: hoverFillOpacity,
                 onTap: {
                     valuePickerStore.send(
-                        .prepare(
-                            .init(
-                                propertyKey: condition.propertyKey,
-                                operatorCode: operatorCode,
-                                valueType: condition.valueType,
-                                valueUIKind: valueUIKind,
-                                valueArity: 2,
-                                existingValues: condition.values,
-                                editingIndex: 0,
-                            ),
-                        ),
+                        .prepare(makePreparePayload(
+                            operatorCode: operatorCode,
+                            valueUIKind: valueUIKind,
+                            valueArity: 2,
+                            editingIndex: 0,
+                        )),
                     )
                 },
             )
@@ -656,20 +640,17 @@ struct ConditionChipView: View {
                 hoverFillOpacity: hoverFillOpacity,
                 onTap: {
                     valuePickerStore.send(
-                        .prepare(
-                            .init(
-                                propertyKey: condition.propertyKey,
-                                operatorCode: operatorCode,
-                                valueType: condition.valueType,
-                                valueUIKind: valueUIKind,
-                                valueArity: 2,
-                                existingValues: condition.values,
-                                editingIndex: 1,
-                            ),
-                        ),
+                        .prepare(makePreparePayload(
+                            operatorCode: operatorCode,
+                            valueUIKind: valueUIKind,
+                            valueArity: 2,
+                            editingIndex: 1,
+                        )),
                     )
                 },
             )
+
+            displayRangeUnitSelector()
         }
     }
 
@@ -737,46 +718,53 @@ struct ConditionChipView: View {
         let valueArity: Int
     }
 
+    @ViewBuilder
     private func singleValueButton(
         operatorCode: String,
         valueUIKind: String,
         valueArity: Int,
     ) -> some View {
-        Button {
-            valuePickerStore.send(
-                .prepare(
-                    .init(
-                        propertyKey: condition.propertyKey,
+        HStack(spacing: 6) {
+            Button {
+                valuePickerStore.send(
+                    .prepare(makePreparePayload(
                         operatorCode: operatorCode,
-                        valueType: condition.valueType,
                         valueUIKind: valueUIKind,
                         valueArity: valueArity,
-                        existingValues: condition.values,
                         editingIndex: nil,
-                    ),
-                ),
-            )
-        } label: {
-            Text(ConditionChipDisplayUtils.displayValueText(for: condition))
-                .font(.system(size: 11, weight: .medium))
-                .foregroundColor(condition.values == nil ? .secondary.opacity(0.7) : .primary)
-                .padding(.horizontal, 4)
-                .padding(.vertical, 2)
-                .background(
-                    RoundedRectangle(cornerRadius: 4)
-                        .fill(
-                            isValueHovering
-                                ? (isDark ? Color.white.opacity(hoverFillOpacity) :
-                                    Color.black.opacity(hoverFillOpacity))
-                                : Color.white.opacity(0.0001),
-                        ),
+                    )),
                 )
-        }
-        .contentShape(Rectangle())
-        .frame(minWidth: 32, minHeight: 22, alignment: .center)
-        .buttonStyle(.plain)
-        .onHover { hovering in
-            isValueHovering = hovering
+            } label: {
+                Text(ConditionChipDisplayUtils.displayValueText(for: condition, displayValues: displayValues))
+                    .font(.system(size: 11, weight: .medium))
+                    .foregroundColor(condition.values == nil ? .secondary.opacity(0.7) : .primary)
+                    .padding(.horizontal, 4)
+                    .padding(.vertical, 2)
+                    .background(
+                        RoundedRectangle(cornerRadius: 4)
+                            .fill(
+                                isValueHovering
+                                    ? (isDark ? Color.white.opacity(hoverFillOpacity) :
+                                        Color.black.opacity(hoverFillOpacity))
+                                    : Color.white.opacity(0.0001),
+                            ),
+                    )
+            }
+            .contentShape(Rectangle())
+            .frame(minWidth: 32, minHeight: 22, alignment: .center)
+            .buttonStyle(.plain)
+            .onHover { hovering in
+                isValueHovering = hovering
+            }
+
+            if let selector = displayUnitSelector(
+                unitCode: resolvedDisplayUnitCode(),
+                onSelect: { unitCode in
+                    onDisplayUnitChange(condition.propertyKey, unitCode)
+                },
+            ) {
+                selector
+            }
         }
     }
 
@@ -907,11 +895,8 @@ struct ConditionChipView: View {
                             valuePickerStore.send(.commit)
                         }
 
-                        if valueType == "number", condition.propertyKey == "size" {
-                            Text("bytes")
-                                .font(.system(size: 11))
-                                .foregroundColor(.primary)
-                                .fixedSize()
+                        if let selector = editUnitSelector(valueViewStore: valueViewStore) {
+                            selector
                         }
                     }
                 }
@@ -951,6 +936,132 @@ struct ConditionChipView: View {
         }
     }
 
+    @ViewBuilder
+    private func displayRangeUnitSelector() -> some View {
+        if let selector = displayUnitSelector(
+            unitCode: resolvedDisplayUnitCode(),
+            onSelect: { unitCode in
+                onDisplayUnitChange(condition.propertyKey, unitCode)
+            },
+        ) {
+            selector
+        }
+    }
+
+    private func editUnitSelector(
+        valueViewStore: ViewStore<ValuePickerFeature.State, ValuePickerFeature.Action>,
+    ) -> AnyView? {
+        guard let spec = unitSpec,
+              let unitValueState = valueViewStore.unitValueState,
+              condition.valueType == "number"
+        else {
+            return nil
+        }
+
+        return AnyView(
+            UnitSelectorView(
+                availableUnitCodes: unitValueState.availableUnitCodes,
+                selectedUnitCode: unitValueState.selectedUnitCode,
+                selectedUnitLabel: UnitValueUtils.unitLabel(for: unitValueState.selectedUnitCode, spec: spec),
+                labelForUnit: { UnitValueUtils.unitLabel(for: $0, spec: spec) },
+                onSelect: { valuePickerStore.send(.selectUnit($0)) },
+            ),
+        )
+    }
+
+    private func displayUnitSelector(
+        unitCode: String?,
+        onSelect: @escaping (String) -> Void,
+    ) -> AnyView? {
+        guard let spec = unitSpec,
+              let unitCode
+        else {
+            return nil
+        }
+
+        return AnyView(
+            UnitSelectorView(
+                availableUnitCodes: UnitValueUtils.unitCodes(spec: spec),
+                selectedUnitCode: unitCode,
+                selectedUnitLabel: UnitValueUtils.unitLabel(for: unitCode, spec: spec),
+                labelForUnit: { UnitValueUtils.unitLabel(for: $0, spec: spec) },
+                onSelect: onSelect,
+            ),
+        )
+    }
+
+    private func resolvedDisplayUnitCode(
+        valueViewStore: ViewStore<ValuePickerFeature.State, ValuePickerFeature.Action>? = nil,
+    ) -> String? {
+        guard let spec = unitSpec else { return nil }
+        if let valueViewStore,
+           valueViewStore.propertyKey == condition.propertyKey,
+           let selectedUnitCode = valueViewStore.unitValueState?.selectedUnitCode
+        {
+            return selectedUnitCode
+        }
+        return displayUnitCode.flatMap { UnitValueUtils.unitCodes(spec: spec).contains($0) ? $0 : nil }
+            ?? UnitValueUtils.defaultDisplayUnitCode(spec: spec)
+    }
+
+    private func currentDisplayValues(
+        valueViewStore: ViewStore<ValuePickerFeature.State, ValuePickerFeature.Action>? = nil,
+    ) -> [String]? {
+        if let valueViewStore, valueViewStore.propertyKey == condition.propertyKey {
+            return valueViewStore.values
+        }
+        return displayValues ?? condition.values
+    }
+
+    private func makePreparePayload(
+        operatorCode: String,
+        valueUIKind: String,
+        valueArity: Int,
+        editingIndex: Int?,
+        valueStore: ViewStore<ValuePickerFeature.State, ValuePickerFeature.Action>? = nil,
+        existingValues: [String]? = nil,
+        includeDisplayState: Bool = true,
+        valueType: String? = nil,
+    ) -> PreparePayload {
+        PreparePayload(
+            propertyKey: condition.propertyKey,
+            operatorCode: operatorCode,
+            valueType: valueType ?? condition.valueType,
+            valueUIKind: valueUIKind,
+            valueArity: valueArity,
+            existingValues: existingValues ?? condition.values,
+            existingDisplayValues: includeDisplayState ? currentDisplayValues(valueViewStore: valueStore) : nil,
+            preferredUnitCode: includeDisplayState ? resolvedDisplayUnitCode(valueViewStore: valueStore) : nil,
+            editingIndex: editingIndex,
+        )
+    }
+
+    private func sendPrepare(
+        operatorCode: String,
+        valueUIKind: String,
+        valueArity: Int,
+        editingIndex: Int?,
+        valueStore: ViewStore<ValuePickerFeature.State, ValuePickerFeature.Action>? = nil,
+        existingValues: [String]? = nil,
+        includeDisplayState: Bool = true,
+        valueType: String? = nil,
+    ) {
+        valuePickerStore.send(
+            .prepare(
+                makePreparePayload(
+                    operatorCode: operatorCode,
+                    valueUIKind: valueUIKind,
+                    valueArity: valueArity,
+                    editingIndex: editingIndex,
+                    valueStore: valueStore,
+                    existingValues: existingValues,
+                    includeDisplayState: includeDisplayState,
+                    valueType: valueType,
+                ),
+            ),
+        )
+    }
+
     private func updateInlineValueFocus(shouldFocus: Bool, targetIndex: Int?) {
         let nextFocus = shouldFocus ? targetIndex : nil
         guard focusedValueIndex != nextFocus else { return }
@@ -977,18 +1088,14 @@ struct ConditionChipView: View {
                 }
                 return condition.values
             }()
-            valuePickerStore.send(
-                .prepare(
-                    .init(
-                        propertyKey: condition.propertyKey,
-                        operatorCode: config.operatorCode,
-                        valueType: condition.valueType,
-                        valueUIKind: config.valueUIKind,
-                        valueArity: config.valueArity,
-                        existingValues: currentValues,
-                        editingIndex: config.index,
-                    ),
-                ),
+            sendPrepare(
+                operatorCode: config.operatorCode,
+                valueUIKind: config.valueUIKind,
+                valueArity: config.valueArity,
+                editingIndex: config.index,
+                valueStore: valueViewStore,
+                existingValues: currentValues,
+                includeDisplayState: false,
             )
             tempDate = ValueNormalizerUtils.parseDate(config.currentText) ?? Date()
             datePopoverIndex = config.index
@@ -1075,18 +1182,14 @@ struct ConditionChipView: View {
         )
 
         return Button {
-            valuePickerStore.send(
-                .prepare(
-                    .init(
-                        propertyKey: condition.propertyKey,
-                        operatorCode: operatorCode,
-                        valueType: "boolean",
-                        valueUIKind: valueUIKind,
-                        valueArity: 1,
-                        existingValues: condition.values,
-                        editingIndex: index,
-                    ),
-                ),
+            sendPrepare(
+                operatorCode: operatorCode,
+                valueUIKind: valueUIKind,
+                valueArity: 1,
+                editingIndex: index,
+                existingValues: condition.values,
+                includeDisplayState: false,
+                valueType: "boolean",
             )
             boolPopoverIndex = index
         } label: {
