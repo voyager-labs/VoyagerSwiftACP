@@ -35,6 +35,25 @@ struct ValuePickerView: View {
                     }
                 }
 
+                if let propertyKey = viewStore.propertyKey,
+                   let spec = UnitValueUtils.spec(for: propertyKey),
+                   let unitValueState = viewStore.unitValueState
+                {
+                    HStack {
+                        Spacer()
+                        UnitSelectorView(
+                            availableUnitCodes: unitValueState.availableUnitCodes,
+                            selectedUnitCode: unitValueState.selectedUnitCode,
+                            selectedUnitLabel: UnitValueUtils.unitLabel(
+                                for: unitValueState.selectedUnitCode,
+                                spec: spec,
+                            ),
+                            labelForUnit: { UnitValueUtils.unitLabel(for: $0, spec: spec) },
+                            onSelect: { viewStore.send(.selectUnit($0)) },
+                        )
+                    }
+                }
+
                 if let error = viewStore.errorMessage {
                     Text(error)
                         .font(.system(size: 11))
