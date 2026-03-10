@@ -22,6 +22,8 @@ final class ValuePickerFeatureTests: XCTestCase {
                     valueUIKind: "listText",
                     valueArity: 1,
                     existingValues: nil,
+                    existingDisplayValues: nil,
+                    preferredUnitCode: nil,
                     editingIndex: nil,
                 ),
             ),
@@ -55,6 +57,8 @@ final class ValuePickerFeatureTests: XCTestCase {
                     valueUIKind: "listText",
                     valueArity: 1,
                     existingValues: ["Work"],
+                    existingDisplayValues: nil,
+                    preferredUnitCode: nil,
                     editingIndex: nil,
                 ),
             ),
@@ -91,6 +95,77 @@ final class ValuePickerFeatureTests: XCTestCase {
         ])
 
         XCTAssertEqual(values, ["Work", "Personal"])
+    }
+
+    func testPrepareForSizeUsesPreferredUnitAndConvertedDisplayValue() async {
+        let store = makeStore()
+
+        await store.send(
+            .prepare(
+                .init(
+                    propertyKey: "size",
+                    operatorCode: "eq",
+                    valueType: "number",
+                    valueUIKind: "number",
+                    valueArity: 1,
+                    existingValues: ["1048576"],
+                    existingDisplayValues: nil,
+                    preferredUnitCode: "MB",
+                    editingIndex: nil,
+                ),
+            ),
+        ) {
+            $0.propertyKey = "size"
+            $0.operatorCode = "eq"
+            $0.valueType = "number"
+            $0.valueUIKind = "number"
+            $0.valueArity = 1
+            $0.values = ["1"]
+            $0.unitValueState = .init(
+                selectedUnitCode: "MB",
+                availableUnitCodes: ["B", "KB", "MB", "GB"],
+            )
+            $0.finderTagListState = nil
+            $0.isPresented = true
+        }
+    }
+
+    func testSelectUnitUpdatesUnitStateWithoutChangingTypedValue() async {
+        let store = makeStore()
+
+        await store.send(
+            .prepare(
+                .init(
+                    propertyKey: "size",
+                    operatorCode: "eq",
+                    valueType: "number",
+                    valueUIKind: "number",
+                    valueArity: 1,
+                    existingValues: ["52428800"],
+                    existingDisplayValues: ["50"],
+                    preferredUnitCode: "MB",
+                    editingIndex: nil,
+                ),
+            ),
+        ) {
+            $0.propertyKey = "size"
+            $0.operatorCode = "eq"
+            $0.valueType = "number"
+            $0.valueUIKind = "number"
+            $0.valueArity = 1
+            $0.values = ["50"]
+            $0.unitValueState = .init(
+                selectedUnitCode: "MB",
+                availableUnitCodes: ["B", "KB", "MB", "GB"],
+            )
+            $0.isPresented = true
+        }
+
+        await store.send(.selectUnit("GB")) {
+            $0.unitValueState?.selectedUnitCode = "GB"
+        }
+
+        XCTAssertEqual(store.state.values, ["50"])
     }
 }
 

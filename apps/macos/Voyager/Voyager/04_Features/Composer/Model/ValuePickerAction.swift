@@ -7,11 +7,17 @@ enum ValuePickerAction: CasePathable, Sendable {
     case prepare(PreparePayload)
 
     case setValue(index: Int, text: String)
+    case selectUnit(String)
     case setTokenInput(String)
     case appendToken(String)
     case removeToken(String)
     case commit
-    case commitResult(propertyKey: String, values: [String])
+    case commitResult(
+        propertyKey: String,
+        values: [String],
+        displayValues: [String],
+        selectedUnitCode: String?,
+    )
 }
 
 struct PreparePayload: Sendable, Equatable {
@@ -21,5 +27,7 @@ struct PreparePayload: Sendable, Equatable {
     let valueUIKind: String
     let valueArity: Int
     let existingValues: [String]?
+    let existingDisplayValues: [String]?
+    let preferredUnitCode: String?
     let editingIndex: Int?
 }
