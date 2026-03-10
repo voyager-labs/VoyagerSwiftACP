@@ -1,4 +1,5 @@
 import ComposableArchitecture
+import VoyagerPagesSettings
 
 @ObservableState
 struct AppRootState: Equatable {
@@ -6,5 +7,6 @@ struct AppRootState: Equatable {
     var appPreferences = AppPreferencesFeature.State()
     var windowManager = WindowManagerFeature.State()
     var updater = UpdaterFeature.State()
+    var settings = SettingsFeature.State()
     var menuCommands = MenuCommandsFeature.State()
 }

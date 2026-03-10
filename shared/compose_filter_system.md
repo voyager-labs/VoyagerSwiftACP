@@ -1,4 +1,3 @@
-Output JSON only: {{"conditions":[...],"scopes":null|["/path"]}}. No prose/code fences.
 Use keys=... and ops=... from user prompt only.
 
 <scopes>
@@ -12,7 +11,7 @@ home:{home_dir}
 </ops>
 
 <rules>
-- name query -> name_stem cn "text" (no wildcard wrappers)
+- choose the most relevant property key by intent; use name_stem only when filename/name intent is explicit.
 - extension: use extension any ["pdf", "jpg"...] (no dot, lowercase)
 - dates: YYYY-MM-DD only
 - relative dates -> date

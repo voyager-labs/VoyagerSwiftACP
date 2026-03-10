@@ -86,10 +86,6 @@ private final class UpdaterCoordinator: NSObject, SPUUpdaterDelegate {
             updaterDelegate: self,
             userDriverDelegate: nil,
         )
-
-        let automaticUpdates = UserDefaults.standard
-            .object(forKey: SettingsKeys.automaticUpdate) as? Bool ?? false
-        controller?.updater.automaticallyDownloadsUpdates = automaticUpdates
     }
 
     func checkForUpdates() {

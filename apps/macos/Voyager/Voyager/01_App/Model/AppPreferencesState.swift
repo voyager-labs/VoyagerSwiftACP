@@ -1,5 +1,6 @@
 import CoreGraphics
 import Foundation
+import VoyagerShared
 
 struct AppPreferencesState: Equatable, Sendable {
     var showHiddenFiles: Bool = false
