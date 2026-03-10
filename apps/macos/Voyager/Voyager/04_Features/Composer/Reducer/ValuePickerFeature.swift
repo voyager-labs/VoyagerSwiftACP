@@ -135,6 +135,9 @@ struct ValuePickerFeature {
                 }
 
                 state.errorMessage = nil
+                guard let committedValues = result.values else {
+                    return .none
+                }
                 if ValuePickerTokenUtils.isTokenMode(
                     isCategoricalProperty: state.isCategoricalProperty,
                     valueUIKind: state.valueUIKind,
@@ -144,7 +147,7 @@ struct ValuePickerFeature {
                 return .send(
                     .commitResult(
                         propertyKey: propertyKey,
-                        values: result.values ?? [],
+                        values: committedValues,
                     ),
                 )
 

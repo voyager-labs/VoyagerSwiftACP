@@ -1,5 +1,6 @@
 import ComposableArchitecture
 import SwiftUI
+import VoyagerShared
 
 struct ComposerView: View {
     let store: StoreOf<ComposerFeature>

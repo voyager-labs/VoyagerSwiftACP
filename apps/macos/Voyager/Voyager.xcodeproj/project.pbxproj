@@ -14,6 +14,18 @@
 		6C727A2F2F0DF4AA0012D44A /* Logging in Frameworks */ = {isa = PBXBuildFile; productRef = 6C727A2E2F0DF4AA0012D44A /* Logging */; };
 		6C8A20C933C9C3F600B2B9B1 /* Sentry in Frameworks */ = {isa = PBXBuildFile; productRef = 7E17C1202F24CB7500F6BD2B /* Sentry */; };
 		6CFB7B382E9D48B40005FDF6 /* ComposableArchitecture in Frameworks */ = {isa = PBXBuildFile; productRef = 6CFB7B372E9D48B40005FDF6 /* ComposableArchitecture */; };
+		F21000000000000000000021 /* IdentifiedCollections in Frameworks */ = {isa = PBXBuildFile; productRef = F21000000000000000000011 /* IdentifiedCollections */; };
+		F21000000000000000000022 /* OrderedCollections in Frameworks */ = {isa = PBXBuildFile; productRef = F21000000000000000000012 /* OrderedCollections */; };
+		F21000000000000000000023 /* IdentifiedCollections in Frameworks */ = {isa = PBXBuildFile; productRef = F21000000000000000000011 /* IdentifiedCollections */; };
+		F21000000000000000000024 /* OrderedCollections in Frameworks */ = {isa = PBXBuildFile; productRef = F21000000000000000000012 /* OrderedCollections */; };
+		F21000000000000000000025 /* CasePaths in Frameworks */ = {isa = PBXBuildFile; productRef = F21000000000000000000013 /* CasePaths */; };
+		F20000000000000000000021 /* VoyagerPagesOnboarding in Frameworks */ = {isa = PBXBuildFile; productRef = F20000000000000000000011 /* VoyagerPagesOnboarding */; };
+		F20000000000000000000022 /* VoyagerPagesSettings in Frameworks */ = {isa = PBXBuildFile; productRef = F20000000000000000000012 /* VoyagerPagesSettings */; };
+		F20000000000000000000023 /* VoyagerShared in Frameworks */ = {isa = PBXBuildFile; productRef = F20000000000000000000013 /* VoyagerShared */; };
+		F20000000000000000000024 /* VoyagerPagesOnboarding in Frameworks */ = {isa = PBXBuildFile; productRef = F20000000000000000000011 /* VoyagerPagesOnboarding */; };
+		F20000000000000000000025 /* VoyagerShared in Frameworks */ = {isa = PBXBuildFile; productRef = F20000000000000000000013 /* VoyagerShared */; };
+		A70000000000000000000010 /* VoyagerPagesOnboarding in Frameworks */ = {isa = PBXBuildFile; productRef = F20000000000000000000011 /* VoyagerPagesOnboarding */; };
+		A70000000000000000000011 /* VoyagerShared in Frameworks */ = {isa = PBXBuildFile; productRef = F20000000000000000000013 /* VoyagerShared */; };
 		7E1724A12EC5BA6600385F6E /* SwiftUIIntrospect in Frameworks */ = {isa = PBXBuildFile; productRef = 7E1724A02EC5BA6600385F6E /* SwiftUIIntrospect */; };
 		7E17C1212F24CB7500F6BD2B /* Sentry in Frameworks */ = {isa = PBXBuildFile; productRef = 7E17C1202F24CB7500F6BD2B /* Sentry */; };
 		7E1974712E8BDC0700D041D3 /* InjectionNext in Frameworks */ = {isa = PBXBuildFile; productRef = 7E1974702E8BDC0700D041D3 /* InjectionNext */; };
@@ -103,6 +115,7 @@
 /* Begin PBXFileReference section */
 		60F570BDE5ECDE55DC1C7E60 /* property_condition_registry.json */ = {isa = PBXFileReference; lastKnownFileType = text.json; name = property_condition_registry.json; path = ../../../shared/property_condition_registry.json; sourceTree = SOURCE_ROOT; };
 		7E14EDCC2E86622C005AC834 /* Voyager.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = Voyager.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		A70000000000000000000002 /* OnboardingHost.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = OnboardingHost.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		7E14EDDB2E86622E005AC834 /* VoyagerTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = VoyagerTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		7E14EDE52E86622E005AC834 /* VoyagerUITests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = VoyagerUITests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		7E14EE232E866E82005AC834 /* VoyagerHelper.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = VoyagerHelper.app; sourceTree = BUILT_PRODUCTS_DIR; };
@@ -134,6 +147,11 @@
 			path = VoyagerUITests;
 			sourceTree = "<group>";
 		};
+		A70000000000000000000003 /* OnboardingHost */ = {
+			isa = PBXFileSystemSynchronizedRootGroup;
+			path = OnboardingHost;
+			sourceTree = "<group>";
+		};
 		7E14EE242E866E82005AC834 /* VoyagerHelper */ = {
 			isa = PBXFileSystemSynchronizedRootGroup;
 			path = VoyagerHelper;
@@ -161,6 +179,11 @@
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				F21000000000000000000021 /* IdentifiedCollections in Frameworks */,
+				F21000000000000000000022 /* OrderedCollections in Frameworks */,
+				F20000000000000000000021 /* VoyagerPagesOnboarding in Frameworks */,
+				F20000000000000000000022 /* VoyagerPagesSettings in Frameworks */,
+				F20000000000000000000023 /* VoyagerShared in Frameworks */,
 				7E6AF6AD2E8BABD8005DC7D3 /* Inject in Frameworks */,
 				7EEC64512E8CE684004ACEA5 /* SwiftDotenv in Frameworks */,
 				6C727A2D2F0DF4A10012D44A /* Logging in Frameworks */,
@@ -176,6 +199,11 @@
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				F21000000000000000000025 /* CasePaths in Frameworks */,
+				F21000000000000000000023 /* IdentifiedCollections in Frameworks */,
+				F21000000000000000000024 /* OrderedCollections in Frameworks */,
+				F20000000000000000000024 /* VoyagerPagesOnboarding in Frameworks */,
+				F20000000000000000000025 /* VoyagerShared in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -183,6 +211,15 @@
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		A70000000000000000000004 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				A70000000000000000000010 /* VoyagerPagesOnboarding in Frameworks */,
+				A70000000000000000000011 /* VoyagerShared in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -239,6 +276,7 @@
 				F10000000000000000000040 /* FilterSearchXPC */,
 				7E14EDDE2E86622E005AC834 /* VoyagerTests */,
 				7E14EDE82E86622E005AC834 /* VoyagerUITests */,
+				A70000000000000000000003 /* OnboardingHost */,
 				7E14EE242E866E82005AC834 /* VoyagerHelper */,
 				7E14EE322E866E85005AC834 /* VoyagerHelperTests */,
 				7E14EDCD2E86622C005AC834 /* Products */,
@@ -250,6 +288,7 @@
 			isa = PBXGroup;
 			children = (
 				7E14EDCC2E86622C005AC834 /* Voyager.app */,
+				A70000000000000000000002 /* OnboardingHost.app */,
 				7E14EDDB2E86622E005AC834 /* VoyagerTests.xctest */,
 				7E14EDE52E86622E005AC834 /* VoyagerUITests.xctest */,
 				7E14EE232E866E82005AC834 /* VoyagerHelper.app */,
@@ -286,6 +325,11 @@
 			);
 			name = Voyager;
 			packageProductDependencies = (
+				F20000000000000000000011 /* VoyagerPagesOnboarding */,
+				F20000000000000000000012 /* VoyagerPagesSettings */,
+				F20000000000000000000013 /* VoyagerShared */,
+				F21000000000000000000011 /* IdentifiedCollections */,
+				F21000000000000000000012 /* OrderedCollections */,
 				7E6AF6AC2E8BABD8005DC7D3 /* Inject */,
 				7E1974702E8BDC0700D041D3 /* InjectionNext */,
 				7EEC64502E8CE684004ACEA5 /* SwiftDotenv */,
@@ -317,6 +361,11 @@
 			);
 			name = VoyagerTests;
 			packageProductDependencies = (
+				F20000000000000000000011 /* VoyagerPagesOnboarding */,
+				F20000000000000000000013 /* VoyagerShared */,
+				F21000000000000000000013 /* CasePaths */,
+				F21000000000000000000011 /* IdentifiedCollections */,
+				F21000000000000000000012 /* OrderedCollections */,
 			);
 			productName = VoyagerTests;
 			productReference = 7E14EDDB2E86622E005AC834 /* VoyagerTests.xctest */;
@@ -344,6 +393,30 @@
 			productName = VoyagerUITests;
 			productReference = 7E14EDE52E86622E005AC834 /* VoyagerUITests.xctest */;
 			productType = "com.apple.product-type.bundle.ui-testing";
+		};
+		A70000000000000000000001 /* OnboardingHost */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = A70000000000000000000007 /* Build configuration list for PBXNativeTarget "OnboardingHost" */;
+			buildPhases = (
+				A70000000000000000000006 /* Sources */,
+				A70000000000000000000004 /* Frameworks */,
+				A70000000000000000000005 /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			fileSystemSynchronizedGroups = (
+				A70000000000000000000003 /* OnboardingHost */,
+			);
+			name = OnboardingHost;
+			packageProductDependencies = (
+				F20000000000000000000011 /* VoyagerPagesOnboarding */,
+				F20000000000000000000013 /* VoyagerShared */,
+			);
+			productName = OnboardingHost;
+			productReference = A70000000000000000000002 /* OnboardingHost.app */;
+			productType = "com.apple.product-type.application";
 		};
 		7E14EE222E866E82005AC834 /* VoyagerHelper */ = {
 			isa = PBXNativeTarget;
@@ -437,6 +510,9 @@
 				LastSwiftUpdateCheck = 2600;
 				LastUpgradeCheck = 2610;
 				TargetAttributes = {
+					A70000000000000000000001 = {
+						CreatedOnToolsVersion = 26.0.1;
+					};
 					7E14EDCB2E86622C005AC834 = {
 						CreatedOnToolsVersion = 26.0.1;
 					};
@@ -470,6 +546,10 @@
 			mainGroup = 7E14EDC32E86622C005AC834;
 			minimizedProjectReferenceProxies = 1;
 			packageReferences = (
+				F20000000000000000000001 /* XCLocalSwiftPackageReference "VoyagerModules" */,
+				F21000000000000000000001 /* XCRemoteSwiftPackageReference "swift-identified-collections" */,
+				F21000000000000000000002 /* XCRemoteSwiftPackageReference "swift-collections" */,
+				F21000000000000000000003 /* XCRemoteSwiftPackageReference "swift-case-paths" */,
 				7E6AF6AB2E8BABD8005DC7D3 /* XCRemoteSwiftPackageReference "Inject" */,
 				7E19746F2E8BDC0700D041D3 /* XCRemoteSwiftPackageReference "InjectionNext" */,
 				7E9D64932E8CDDC8006CB69F /* XCRemoteSwiftPackageReference "swift-dotenv" */,
@@ -488,6 +568,7 @@
 				7E14EDCB2E86622C005AC834 /* Voyager */,
 				7E14EDDA2E86622E005AC834 /* VoyagerTests */,
 				7E14EDE42E86622E005AC834 /* VoyagerUITests */,
+				A70000000000000000000001 /* OnboardingHost */,
 				7E14EE222E866E82005AC834 /* VoyagerHelper */,
 				7E14EE2E2E866E85005AC834 /* VoyagerHelperTests */,
 				F10000000000000000000001 /* FilterSearchXPC */,
@@ -513,6 +594,13 @@
 			runOnlyForDeploymentPostprocessing = 0;
 		};
 		7E14EDE32E86622E005AC834 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		A70000000000000000000005 /* Resources */ = {
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
@@ -663,6 +751,13 @@
 			runOnlyForDeploymentPostprocessing = 0;
 		};
 		7E14EDE12E86622E005AC834 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		A70000000000000000000006 /* Sources */ = {
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
@@ -1043,6 +1138,74 @@
 			};
 			name = Release;
 		};
+		A70000000000000000000008 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				APP_ENV = dev;
+				AUTOMATION_APPLE_EVENTS = YES;
+				CODE_SIGN_IDENTITY = "-";
+				CODE_SIGN_STYLE = Manual;
+				CURRENT_PROJECT_VERSION = 0;
+				DEAD_CODE_STRIPPING = YES;
+				DEVELOPMENT_TEAM = "";
+				ENABLE_APP_SANDBOX = NO;
+				ENABLE_PREVIEWS = YES;
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_KEY_CFBundleDisplayName = "Onboarding Host (Debug)";
+				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.developer-tools";
+				INFOPLIST_KEY_NSHumanReadableCopyright = "";
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/../Frameworks",
+				);
+				MACOSX_DEPLOYMENT_TARGET = 13.5;
+				MARKETING_VERSION = 0.2.1;
+				PRODUCT_BUNDLE_IDENTIFIER = fm.voyager.OnboardingHost;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				PROVISIONING_PROFILE_SPECIFIER = "";
+				STRING_CATALOG_GENERATE_SYMBOLS = NO;
+				SWIFT_APPROACHABLE_CONCURRENCY = YES;
+				SWIFT_DEFAULT_ACTOR_ISOLATION = MainActor;
+				SWIFT_EMIT_LOC_STRINGS = NO;
+				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
+				SWIFT_VERSION = 6.0;
+			};
+			name = Debug;
+		};
+		A70000000000000000000009 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				APP_ENV = prod;
+				AUTOMATION_APPLE_EVENTS = YES;
+				CODE_SIGN_IDENTITY = "-";
+				CODE_SIGN_STYLE = Manual;
+				CURRENT_PROJECT_VERSION = 0;
+				DEAD_CODE_STRIPPING = YES;
+				DEVELOPMENT_TEAM = "";
+				ENABLE_APP_SANDBOX = NO;
+				ENABLE_PREVIEWS = YES;
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_KEY_CFBundleDisplayName = "Onboarding Host";
+				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.developer-tools";
+				INFOPLIST_KEY_NSHumanReadableCopyright = "";
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/../Frameworks",
+				);
+				MACOSX_DEPLOYMENT_TARGET = 13.5;
+				MARKETING_VERSION = 0.2.1;
+				PRODUCT_BUNDLE_IDENTIFIER = fm.voyager.OnboardingHost;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				PROVISIONING_PROFILE_SPECIFIER = "";
+				STRING_CATALOG_GENERATE_SYMBOLS = NO;
+				SWIFT_APPROACHABLE_CONCURRENCY = YES;
+				SWIFT_DEFAULT_ACTOR_ISOLATION = MainActor;
+				SWIFT_EMIT_LOC_STRINGS = NO;
+				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
+				SWIFT_VERSION = 6.0;
+			};
+			name = Release;
+		};
 		7E14EE422E866E86005AC834 /* Debug */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
@@ -1289,6 +1452,15 @@
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Release;
 		};
+		A70000000000000000000007 /* Build configuration list for PBXNativeTarget "OnboardingHost" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				A70000000000000000000008 /* Debug */,
+				A70000000000000000000009 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
 		7E14EE412E866E86005AC834 /* Build configuration list for PBXNativeTarget "VoyagerHelper" */ = {
 			isa = XCConfigurationList;
 			buildConfigurations = (
@@ -1318,7 +1490,38 @@
 		};
 /* End XCConfigurationList section */
 
+/* Begin XCLocalSwiftPackageReference section */
+		F20000000000000000000001 /* XCLocalSwiftPackageReference "VoyagerModules" */ = {
+			isa = XCLocalSwiftPackageReference;
+			relativePath = Packages/VoyagerModules;
+		};
+/* End XCLocalSwiftPackageReference section */
+
 /* Begin XCRemoteSwiftPackageReference section */
+		F21000000000000000000001 /* XCRemoteSwiftPackageReference "swift-identified-collections" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/pointfreeco/swift-identified-collections";
+			requirement = {
+				kind = exactVersion;
+				version = 1.1.1;
+			};
+		};
+		F21000000000000000000002 /* XCRemoteSwiftPackageReference "swift-collections" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/apple/swift-collections";
+			requirement = {
+				kind = exactVersion;
+				version = 1.3.0;
+			};
+		};
+		F21000000000000000000003 /* XCRemoteSwiftPackageReference "swift-case-paths" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/pointfreeco/swift-case-paths";
+			requirement = {
+				kind = exactVersion;
+				version = 1.7.2;
+			};
+		};
 		08631B7042D24536AA083429 /* XCRemoteSwiftPackageReference "swift-structured-queries" */ = {
 			isa = XCRemoteSwiftPackageReference;
 			repositoryURL = "https://github.com/pointfreeco/swift-structured-queries";
@@ -1394,6 +1597,21 @@
 /* End XCRemoteSwiftPackageReference section */
 
 /* Begin XCSwiftPackageProductDependency section */
+		F21000000000000000000011 /* IdentifiedCollections */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = F21000000000000000000001 /* XCRemoteSwiftPackageReference "swift-identified-collections" */;
+			productName = IdentifiedCollections;
+		};
+		F21000000000000000000012 /* OrderedCollections */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = F21000000000000000000002 /* XCRemoteSwiftPackageReference "swift-collections" */;
+			productName = OrderedCollections;
+		};
+		F21000000000000000000013 /* CasePaths */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = F21000000000000000000003 /* XCRemoteSwiftPackageReference "swift-case-paths" */;
+			productName = CasePaths;
+		};
 		319E52B31FBB4D8FA03D33B9 /* StructuredQueries */ = {
 			isa = XCSwiftPackageProductDependency;
 			package = 08631B7042D24536AA083429 /* XCRemoteSwiftPackageReference "swift-structured-queries" */;
@@ -1453,6 +1671,21 @@
 			isa = XCSwiftPackageProductDependency;
 			package = 7E19746F2E8BDC0700D041D3 /* XCRemoteSwiftPackageReference "InjectionNext" */;
 			productName = InjectionNext;
+		};
+		F20000000000000000000011 /* VoyagerPagesOnboarding */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = F20000000000000000000001 /* XCLocalSwiftPackageReference "VoyagerModules" */;
+			productName = VoyagerPagesOnboarding;
+		};
+		F20000000000000000000012 /* VoyagerPagesSettings */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = F20000000000000000000001 /* XCLocalSwiftPackageReference "VoyagerModules" */;
+			productName = VoyagerPagesSettings;
+		};
+		F20000000000000000000013 /* VoyagerShared */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = F20000000000000000000001 /* XCLocalSwiftPackageReference "VoyagerModules" */;
+			productName = VoyagerShared;
 		};
 /* End XCSwiftPackageProductDependency section */
 	};

@@ -1,5 +1,6 @@
 import ComposableArchitecture
 import Foundation
+import VoyagerShared
 
 @preconcurrency import ObjectiveC
 

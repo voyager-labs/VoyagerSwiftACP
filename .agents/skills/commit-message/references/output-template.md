@@ -1,27 +1,53 @@
 # Output Template
 
-For successful generation, use one of the templates below.
+Use one of the templates below for normal outputs.
 
-## 1) Subject only
+## Candidate List (default)
+
+```text
+1. type(scope): summary
+
+- Why this change matters
+- Expected impact scope
+- Risk or compatibility note
+
+2. type(scope): summary
+
+- Why this change matters
+- Expected impact scope
+- Risk or compatibility note
+
+3. type(scope): summary
+
+- Why this change matters
+- Expected impact scope
+- Risk or compatibility note
+```
+
+Rules:
+
+- Generate exactly 3 candidates.
+- Subject must use Conventional Commit format: `type(scope): summary` or `type: summary`.
+- Subject must represent all staged changes.
+- Body is optional. If present, keep 1-3 bullets using `- `.
+
+## Final Commit Message (after user selection)
+
+Use one of these two forms:
 
 `type(scope): summary`
+
 or
-`type: summary`
-
-## 2) Subject + Body
-
-Leave an empty line between the subject and the body.
 
 ```text
 type(scope): summary
 
-- Intent of the change
-- Impact scope
-- Risks/Warnings
+- Intent
+- Impact
+- Risk
 ```
 
-Body bullet rules:
+Rules:
 
-- Start each line with `- `.
-- Use concise, noun-based phrases rather than full sentences.
-- Maintain 3-5 bullet points.
+- Keep the exact selected candidate content.
+- Keep a blank line between subject and body when body exists.

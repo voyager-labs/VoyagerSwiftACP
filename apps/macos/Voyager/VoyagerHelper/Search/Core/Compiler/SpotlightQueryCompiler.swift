@@ -9,7 +9,6 @@ struct SpotlightQueryCompiler: Sendable {
     struct CompilePlan: Sendable {
         let predicate: String
         let pushdownConditions: [SearchConditionPayload]
-        let postFilterConditions: [SearchConditionPayload]
     }
 
     enum CompileError: Error, LocalizedError {
@@ -83,7 +82,6 @@ struct SpotlightQueryCompiler: Sendable {
             return CompilePlan(
                 predicate: Self.basePredicate,
                 pushdownConditions: [],
-                postFilterConditions: [],
             )
         }
 
@@ -91,16 +89,14 @@ struct SpotlightQueryCompiler: Sendable {
         clauses.reserveCapacity(conditions.count + 1)
         var pushdownConditions: [SearchConditionPayload] = []
         pushdownConditions.reserveCapacity(conditions.count)
-        var postFilterConditions: [SearchConditionPayload] = []
-        postFilterConditions.reserveCapacity(conditions.count)
 
         for condition in conditions {
             let validated = try validateCondition(condition)
+
             guard let attribute = resolveAttributeName(
                 mapping: validated.mapping,
             ) else {
-                postFilterConditions.append(condition)
-                continue
+                throw CompileError.missingMDItemAttribute(condition.propertyKey)
             }
 
             let clause = try buildClause(
@@ -113,16 +109,9 @@ struct SpotlightQueryCompiler: Sendable {
             pushdownConditions.append(condition)
         }
 
-        if postFilterConditions.isEmpty == false {
-            logger.info(
-                "MDQuery pushdown skipped for \(postFilterConditions.count) conditions",
-            )
-        }
-
         return CompilePlan(
             predicate: clauses.joined(separator: " && "),
             pushdownConditions: pushdownConditions,
-            postFilterConditions: postFilterConditions,
         )
     }
 }
@@ -148,6 +137,10 @@ extension SpotlightQueryCompiler {
     private func validateCondition(_ condition: SearchConditionPayload) throws -> ValidatedCondition {
         guard let mapping = conditionBuilder.propertyMap[condition.propertyKey] else {
             throw CompileError.unknownPropertyKey(condition.propertyKey)
+        }
+
+        if mapping.uiHidden {
+            throw CompileError.hiddenPropertyKey(condition.propertyKey)
         }
 
         guard let typeKey = conditionBuilder.conditionTypeKey(for: mapping.type),
@@ -228,13 +221,15 @@ extension SpotlightQueryCompiler {
             let prefix = parsed.prefix
             let symbol = parsed.symbol
 
-            if symbol.hasPrefix("kMDItem") {
-                if prefix == "mditem" {
-                    return symbol
-                }
-                if prefix == "mdimporter", mdimporterCandidate == nil {
-                    mdimporterCandidate = symbol
-                }
+            if prefix == "mditem", symbol.hasPrefix("kMD") {
+                return symbol
+            }
+            if prefix == "mdimporter", symbol.isEmpty == false, mdimporterCandidate == nil {
+                mdimporterCandidate = symbol
+                continue
+            }
+            if prefix.isEmpty, symbol.hasPrefix("kMDItem") {
+                return symbol
             }
         }
 

@@ -1,25 +1,27 @@
 ---
 name: commit-message
-description: Generates a single, convention-compliant commit message based exclusively on currently staged changes. Use when creating a git commit.
+description: Generate 3 numbered Conventional Commit candidates from currently staged Git changes, explain each candidate briefly, collect user selection with an interactive option picker when available (fallback to text), support a `Reroll` option for new candidates, and execute `git commit` with the selected message. Use for `$commit-message`, commit-message drafting requests, or when the user wants message options before committing.
 compatibility: opencode
 metadata:
     workflow: git
     output: commit-message
 ---
 
-# Commit Message Generator
+# Commit Message Candidate Generator
 
 ## Purpose
 
-Generates exactly one commit message for the current staged changes, strictly following repo conventions (e.g. Conventional Commits).
-Focuses on the "Why" rather than just the "What".
+Generate 3 commit-message candidates from staged changes, ask the user to pick one (or reroll), and commit using the selected candidate.
 
 ## Hard Rules
 
 - **Ground Truth**: Use ONLY staged changes. NEVER mention unstaged changes.
 - **Fresh Context**: Always run the script to gather the latest index state on every invocation. Do not reuse past outputs.
-- **Output Only**: Return the "commit message text" ONLY. No headers, code fences, or explanations.
-- **Follow Templates**: Use `references/output-template.md` and `references/response-template.md`.
+- **Language**: Keep all skill instructions and responses in English unless the user explicitly requests another language for output content.
+- **Output Mode**: Default behavior is presenting 3 candidates. Returning only one final message is allowed only after the user has selected a candidate.
+- **Selection UX**: Prefer interactive selection components when available. Always include the fourth option: `Reroll`.
+- **Preview First**: Always print full candidate previews (subject and body) in normal text before opening any selection UI.
+- **Follow Templates**: Use `references/output-template.md`, `references/response-template.md`, and `references/selection-and-commit.md`.
 - **Comprehensive Subject**: If multiple files are staged, the subject MUST cover the intent of ALL staged changes. Do not write a subject that only covers one file.
 - **Empty State**: If no files are staged, do not hallucinate a message. Inform the user to stage files.
 - **Bullet Format**: If adding a body, use `- ` for all bullet points.
@@ -40,14 +42,21 @@ Focuses on the "Why" rather than just the "What".
     python3 .claude/skills/commit-message/scripts/collect_staged_context.py --head-lines 600 --tail-lines 600
     ```
 
-2. **Draft the Message**
-    - **Convention Priority**: Project commit guidelines > Recent commit style > Language.
-    - **Scope**: Infer from paths. Omit if ambiguous.
-    - **Subject**: 1-line summary encompassing all staged changes.
-    - **Body**: Use bullet points (`- `) to explain "Why/Impact/Risk". Keep it short. Do not over-explain implementation details.
+2. **Draft Message Candidates**
+    - Draft **exactly 3 candidates**.
+    - Follow formatting and quality rules in `references/output-template.md`.
+    - Use exception handling rules from `references/response-template.md`.
+    - Show all candidate details in plain text before asking for selection.
+
+3. **User Selection**
+    - Follow selection prompt and validation in `references/selection-and-commit.md`.
+
+4. **Commit**
+    - Follow commit execution and reporting rules in `references/selection-and-commit.md`.
 
 ## Bundled Resources
 
 - `scripts/collect_staged_context.py`: Extracts staged files, statistics, branch/issue hints, and recent commit style in one go.
-- `references/output-template.md`: Template for subject/body formatting, including double-newline rules.
-- `references/response-template.md`: Template for edge cases (e.g., empty staging area).
+- `references/output-template.md`: Candidate and final-message output format.
+- `references/response-template.md`: Exception and short operational responses.
+- `references/selection-and-commit.md`: Candidate selection validation and commit execution protocol.
