@@ -77,6 +77,7 @@ struct ComposerFeature {
                  .view(.cancelSearch),
                  .view(.cancelFilters),
                  .view(.applyFilters),
+                 .view(.setDisplayUnit),
                  .view(.addCondition),
                  .view(.removeCondition),
                  .view(.setOperator),
@@ -137,6 +138,7 @@ func applyAppliedFilters(
     state: inout ComposerFeature.State,
     registryClient: RegistryClient,
 ) {
+    let previousDisplayByKey = state.conditionDisplayByKey
     let resolved = AppliedFiltersUtils.resolve(
         appliedFilters,
         fallbackScopes: state.scopes,
@@ -145,16 +147,42 @@ func applyAppliedFilters(
     )
     state.scopes = resolved.scopes
     state.conditions = resolved.conditions
+    state.conditionDisplayByKey = Dictionary(
+        uniqueKeysWithValues: resolved.conditions.compactMap { condition in
+            guard let previous = previousDisplayByKey[condition.propertyKey],
+                  let reconciled = reconcileDisplayState(for: condition, previous: previous)
+            else {
+                return nil
+            }
+            return (condition.propertyKey, reconciled)
+        },
+    )
     updateOperatorOptions(state: &state, registryClient: registryClient)
 }
 
+private func reconcileDisplayState(
+    for condition: Condition,
+    previous: ConditionDisplayState,
+) -> ConditionDisplayState? {
+    guard let unitCode = previous.unitCode,
+          let spec = UnitValueUtils.spec(for: condition.propertyKey),
+          UnitValueUtils.unitCodes(spec: spec).contains(unitCode),
+          let values = condition.values
+    else {
+        return nil
+    }
+
+    let displayValues = values.map { value -> String in
+        let trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return "" }
+        return UnitValueUtils.fromCanonical(canonicalText: trimmed, to: unitCode, spec: spec) ?? trimmed
+    }
+
+    return .init(values: displayValues, unitCode: unitCode)
+}
+
 func resetValuePicker(state: inout ComposerFeature.State) {
-    state.valuePicker.isPresented = false
-    state.valuePicker.propertyKey = nil
-    state.valuePicker.operatorCode = nil
-    state.valuePicker.values = []
-    state.valuePicker.errorMessage = nil
-    state.valuePicker.editingIndex = nil
+    state.valuePicker = .init()
 }
 
 func applyFiltersIfNeeded(
