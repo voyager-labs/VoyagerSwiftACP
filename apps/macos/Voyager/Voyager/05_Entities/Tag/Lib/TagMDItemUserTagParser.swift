@@ -6,7 +6,7 @@ enum TagMDItemUserTagParser {
         let components = rawTag.split(separator: "\n", maxSplits: 1, omittingEmptySubsequences: false)
         guard let rawName = components.first else { return nil }
 
-        let name = String(rawName).trimmingCharacters(in: .whitespacesAndNewlines)
+        let name = normalizedTagName(String(rawName))
         guard !name.isEmpty else { return nil }
 
         let colorCode = if components.count == 2 {
@@ -16,5 +16,19 @@ enum TagMDItemUserTagParser {
         }
 
         return Tag(name: name, colorCode: colorCode)
+    }
+
+    nonisolated static func parseRelaxed(_ rawTag: String, defaultColorCode: Int = 0) -> Tag? {
+        if let parsed = parse(rawTag) {
+            return parsed
+        }
+
+        let name = normalizedTagName(rawTag)
+        guard !name.isEmpty else { return nil }
+        return Tag(name: name, colorCode: defaultColorCode)
+    }
+
+    private nonisolated static func normalizedTagName(_ rawName: String) -> String {
+        rawName.trimmingCharacters(in: .whitespacesAndNewlines)
     }
 }

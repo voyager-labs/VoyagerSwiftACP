@@ -198,6 +198,92 @@ final class CollectionFeatureTests: XCTestCase {
         XCTAssertEqual(saved?.file.conditions.first?.propertyKey, "name_full")
         XCTAssertEqual(saved?.url.pathExtension, "voycoll")
     }
+
+    func testSaveToExistingSkipsWhenSearchIsLoading() async {
+        let recorder = SavedCollectionsRecorder()
+        let payload = SaveRequestPayload(
+            context: CollectionContext(query: "Report", scopes: ["/tmp"], conditions: [makeActiveCondition()]),
+            isSearchLoading: true,
+            isFiltersLoading: false,
+        )
+        let store = makeCollectionStore(recorder: recorder)
+
+        await store.send(.saveToExisting(payload, URL(fileURLWithPath: "/tmp/collection")))
+        await store.finish()
+
+        let saveCount = await recorder.count()
+        XCTAssertEqual(saveCount, 0)
+    }
+
+    func testSaveToExistingSkipsWhenFiltersAreLoading() async {
+        let recorder = SavedCollectionsRecorder()
+        let payload = SaveRequestPayload(
+            context: CollectionContext(query: "Report", scopes: ["/tmp"], conditions: [makeActiveCondition()]),
+            isSearchLoading: false,
+            isFiltersLoading: true,
+        )
+        let store = makeCollectionStore(recorder: recorder)
+
+        await store.send(.saveToExisting(payload, URL(fileURLWithPath: "/tmp/collection")))
+        await store.finish()
+
+        let saveCount = await recorder.count()
+        XCTAssertEqual(saveCount, 0)
+    }
+
+    func testSaveToExistingSkipsWhenContextMissing() async {
+        let recorder = SavedCollectionsRecorder()
+        let payload = SaveRequestPayload(
+            context: nil,
+            isSearchLoading: false,
+            isFiltersLoading: false,
+        )
+        let store = makeCollectionStore(recorder: recorder)
+
+        await store.send(.saveToExisting(payload, URL(fileURLWithPath: "/tmp/collection")))
+        await store.finish()
+
+        let saveCount = await recorder.count()
+        XCTAssertEqual(saveCount, 0)
+    }
+
+    func testSaveCompletedResetsPendingStateOnSuccess() async {
+        let recorder = SavedCollectionsRecorder()
+        let saveSnapshot = CollectionSaveSnapshot(
+            query: "Report",
+            scopes: ["/tmp"],
+            conditions: [],
+        )
+        let state = CollectionFeature.State(
+            pendingSave: saveSnapshot,
+            isSaving: true,
+        )
+        let store = makeCollectionStore(recorder: recorder, initialState: state)
+
+        await store.send(.saveCompleted(.success(URL(fileURLWithPath: "/tmp/collection.voycoll")))) {
+            $0.pendingSave = nil
+            $0.isSaving = false
+        }
+    }
+
+    func testSaveCompletedResetsPendingStateOnFailure() async {
+        let recorder = SavedCollectionsRecorder()
+        let saveSnapshot = CollectionSaveSnapshot(
+            query: "Report",
+            scopes: ["/tmp"],
+            conditions: [],
+        )
+        let state = CollectionFeature.State(
+            pendingSave: saveSnapshot,
+            isSaving: true,
+        )
+        let store = makeCollectionStore(recorder: recorder, initialState: state)
+
+        await store.send(.saveCompleted(.failure(NSError(domain: "test", code: 1)))) {
+            $0.pendingSave = nil
+            $0.isSaving = false
+        }
+    }
 }
 
 private let kRegistryLabels: [String: String] = [
@@ -445,7 +531,7 @@ private func runApplyFiltersTest(
     store: TestStore<ComposerFeature.State, ComposerFeature.Action>,
 ) async {
     await store.send(.applyFilters)
-    await store.receive(\.filtersResponse)
+    await store.receive(\.internal.filtersResponse)
     await store.finish()
 }
 
@@ -460,6 +546,7 @@ private func makeSavePayload(conditions: [Condition]) -> SaveRequestPayload {
 @MainActor
 private func makeCollectionStore(
     recorder: SavedCollectionsRecorder,
+    initialState: CollectionFeature.State = CollectionFeature.State(),
 ) -> TestStore<CollectionFeature.State, CollectionFeature.Action> {
     let collectionFileClient = CollectionFileClient(
         save: { file, url in
@@ -467,7 +554,7 @@ private func makeCollectionStore(
         },
         load: { _ in kEmptyCollectionFile },
     )
-    let store = TestStore(initialState: CollectionFeature.State()) {
+    let store = TestStore(initialState: initialState) {
         CollectionFeature()
     } withDependencies: {
         $0.collectionFileClient = collectionFileClient
@@ -534,6 +621,10 @@ private actor SavedCollectionsRecorder {
 
     func last() -> Entry? {
         entries.last
+    }
+
+    func count() -> Int {
+        entries.count
     }
 }
 

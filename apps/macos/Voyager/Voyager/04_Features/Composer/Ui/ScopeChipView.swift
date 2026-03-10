@@ -59,6 +59,7 @@ struct ScopeChipView: View {
                 },
                 favorites: favorites,
                 backHistory: backHistory,
+                entryLoadingClient: entryLoadingClient,
             )
         }
     }

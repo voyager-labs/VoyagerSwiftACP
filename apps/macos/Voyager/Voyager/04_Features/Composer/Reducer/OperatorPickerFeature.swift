@@ -19,7 +19,9 @@ struct OperatorPickerFeature {
             case let .prepare(propertyKey, options, optionLabels):
                 state.propertyKey = propertyKey
                 state.options = options
-                state.optionLabels = optionLabels
+                if !optionLabels.isEmpty {
+                    state.optionLabels = optionLabels
+                }
                 state.isPresented = true
                 return .none
 

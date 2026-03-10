@@ -61,14 +61,12 @@ private struct FileManagerNavigationBridgeReducer {
             case let .content(.performPendingNavigation(pending)):
                 return .send(.navigation(.internal(.performNavigation(pending))))
 
-            case .content(.composer(.searchResponse(.success))),
-                 .content(.composer(.filtersResponse(.success))),
+            case .content(.composerCollectionSearchSucceeded),
                  .content(.discardCollectionChanges):
                 syncSidebarSelection(state: &state)
                 return .none
 
-            case .content(.composer(.searchResponse(.failure))),
-                 .content(.composer(.filtersResponse(.failure))):
+            case .content(.composerCollectionSearchFailed):
                 if state.sidebar.pendingSidebarSelectionRestore != nil {
                     return .send(.sidebar(.restoreSidebarSelection))
                 }

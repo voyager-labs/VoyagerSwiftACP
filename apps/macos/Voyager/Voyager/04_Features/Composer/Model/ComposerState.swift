@@ -18,16 +18,21 @@ struct ComposerState: Equatable {
     var openedCollectionURL: URL?
     var isCollectionMode: Bool = false
     var pendingSearchQuery: String?
+
     var text: String = ""
     var scopes: [String] = []
     var conditions: [Condition] = []
     var operatorOptionsByKey: [String: [String]] = [:]
     var focusRequestID: Int = 0
+
     var history: [FilterSnapshot] = [] // 이 히스토리는 UndoManager를 사용하도록 변경해야 하는 것이 아닌가?
     var redoHistory: [FilterSnapshot] = [] // 이 히스토리는 UndoManager를 사용하도록 변경해야 하는 것이 아닌가?
+
     var isLoadingSearch: Bool = false
     var isLoadingFilters: Bool = false
     var isFilteringInFlight: Bool = false
+    var queryRenderPhase: ComposerQueryRenderPhase = .idle
+
     var lastSearchResponse: SearchResponsePayload?
     var lastFiltersResponse: SearchResponsePayload?
     var searchStartedAt: Date?
@@ -46,8 +51,6 @@ struct ComposerState: Equatable {
             || !conditions.isEmpty
         return isSearching && hasContext
     }
-
-    var queryRenderPhase: ComposerQueryRenderPhase = .idle
 
     mutating func pushHistory() {
         history.append(FilterSnapshot(scopes: scopes, conditions: conditions))

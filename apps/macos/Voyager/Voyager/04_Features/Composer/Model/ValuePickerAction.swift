@@ -5,6 +5,7 @@ import Foundation
 enum ValuePickerAction: CasePathable, Sendable {
     case setPresented(Bool)
     case prepare(PreparePayload)
+
     case setValue(index: Int, text: String)
     case commit
     case commitResult(propertyKey: String, values: [String])

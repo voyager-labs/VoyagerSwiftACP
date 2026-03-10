@@ -77,7 +77,7 @@ final class FileManagerWindowCommandRoutingTests: XCTestCase {
 
         await store.send(.request(.toggleComposer))
         await store.receive {
-            guard case let .content(.composer(.setPresented(presented))) = $0 else { return false }
+            guard case let .content(.composer(.view(.setPresented(presented)))) = $0 else { return false }
             return presented == true
         }
         await store.finish()

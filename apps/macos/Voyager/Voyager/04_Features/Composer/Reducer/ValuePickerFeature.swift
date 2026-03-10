@@ -12,13 +12,7 @@ struct ValuePickerFeature {
             case let .setPresented(isPresented):
                 state.isPresented = isPresented
                 if !isPresented {
-                    state.propertyKey = nil
-                    state.operatorCode = nil
-                    state.values = [""]
-                    state.errorMessage = nil
-                    state.editingIndex = nil
-                    state.valueUIKind = "singleText"
-                    state.valueArity = 1
+                    resetValuePickerState(state: &state)
                 }
                 return .none
 
@@ -31,38 +25,19 @@ struct ValuePickerFeature {
                 state.errorMessage = nil
                 state.editingIndex = payload.editingIndex
 
-                if state.valueArity == 0 {
-                    state.values = []
-                } else if let existingValues = payload.existingValues {
-                    let trimmed = existingValues.map {
-                        $0.trimmingCharacters(in: .whitespacesAndNewlines)
-                    }
-                    state.valueArity = max(state.valueArity, trimmed.count)
-                    state.values = Array(trimmed.prefix(state.valueArity))
-                    if state.values.count < state.valueArity {
-                        state.values.append(
-                            contentsOf: Array(
-                                repeating: "",
-                                count: state.valueArity - state.values.count,
-                            ),
-                        )
-                    }
-                } else if state.valueArity == 1 {
-                    state.values = [state.values.first ?? ""]
-                } else {
-                    state.values = Array(repeating: "", count: state.valueArity)
-                }
+                let prepared = prepareValueInputs(
+                    valueArity: state.valueArity,
+                    existingValues: payload.existingValues,
+                    currentValues: state.values,
+                )
+                state.valueArity = prepared.valueArity
+                state.values = prepared.values
 
                 state.isPresented = true
                 return .none
 
             case let .setValue(index, text):
-                if state.values.count < max(state.valueArity, 1) {
-                    state.values = Array(
-                        repeating: "",
-                        count: max(state.valueArity, 1),
-                    )
-                }
+                ensureEditableValues(state: &state)
                 guard state.values.indices.contains(index) else { return .none }
                 state.values[index] = text
                 return .none
@@ -113,4 +88,46 @@ struct ValuePickerFeature {
             }
         }
     }
+}
+
+private func resetValuePickerState(state: inout ValuePickerState) {
+    state.propertyKey = nil
+    state.operatorCode = nil
+    state.values = [""]
+    state.errorMessage = nil
+    state.editingIndex = nil
+    state.valueUIKind = "singleText"
+    state.valueArity = 1
+}
+
+private func ensureEditableValues(state: inout ValuePickerState) {
+    let count = max(state.valueArity, 1)
+    if state.values.count < count {
+        state.values = Array(repeating: "", count: count)
+    }
+}
+
+private func prepareValueInputs(
+    valueArity: Int,
+    existingValues: [String]?,
+    currentValues: [String],
+) -> (valueArity: Int, values: [String]) {
+    let normalizedArity = max(0, valueArity)
+    guard normalizedArity > 0 else { return (0, []) }
+
+    if let existingValues {
+        let trimmed = existingValues.map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+        let effectiveArity = max(normalizedArity, trimmed.count)
+        var values = Array(trimmed.prefix(effectiveArity))
+        if values.count < effectiveArity {
+            values.append(contentsOf: Array(repeating: "", count: effectiveArity - values.count))
+        }
+        return (effectiveArity, values)
+    }
+
+    if normalizedArity == 1 {
+        return (1, [currentValues.first ?? ""])
+    }
+
+    return (normalizedArity, Array(repeating: "", count: normalizedArity))
 }

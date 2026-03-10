@@ -45,23 +45,23 @@ struct FileManagerContentComposerFeature {
         }
 
         switch action {
-        case let .setPresented(isPresented):
+        case let .view(.setPresented(isPresented)):
             return handleSetPresented(isPresented, state: &state)
 
-        case .applyFilters:
+        case .view(.applyFilters):
             state.composer.isLoadingFilters = true
             return .none
 
-        case let .setText(text):
+        case let .view(.setText(text)):
             return handleSetText(text, state: &state)
 
-        case .cancelSearch:
+        case .view(.cancelSearch):
             state.composer.pendingSearchQuery = nil
             state.collectionSession.isOpening = false
             state.collectionSession.openedName = nil
             return .none
 
-        case .clearAll:
+        case .view(.clearAll):
             if state.entryOperations.loadingContext.isCollectionMode {
                 state.composer.pendingSearchQuery = nil
                 state.collectionContext = CollectionContext(
@@ -84,28 +84,40 @@ struct FileManagerContentComposerFeature {
         state: inout State,
     ) -> Effect<Action>? {
         switch action {
-        case let .filtersResponse(.success(response)):
-            return handleSearchSuccess(
+        case let .internal(.filtersResponse(.success(response))):
+            let effect = handleSearchSuccess(
                 items: response.items ?? [],
                 query: state.composer.pendingSearchQuery ?? "",
                 state: &state,
             )
+            return .concatenate(
+                effect,
+                .send(.composerCollectionSearchSucceeded),
+            )
 
-        case let .searchResponse(.failure(error)):
-            return handleSearchFailure(
+        case let .internal(.searchResponse(.failure(error))):
+            let effect = handleSearchFailure(
                 error: error,
                 title: "Unable to Run Collection Search",
                 state: &state,
             )
+            return .concatenate(
+                effect,
+                .send(.composerCollectionSearchFailed),
+            )
 
-        case let .filtersResponse(.failure(error)):
+        case let .internal(.filtersResponse(.failure(error))):
             let title = state.composer.pendingSearchQuery == nil
                 ? "Unable to Apply Collection Filters"
                 : "Unable to Run Collection Search"
-            return handleSearchFailure(
+            let effect = handleSearchFailure(
                 error: error,
                 title: title,
                 state: &state,
+            )
+            return .concatenate(
+                effect,
+                .send(.composerCollectionSearchFailed),
             )
 
         default:
@@ -256,9 +268,7 @@ struct FileManagerContentComposerFeature {
         state.collectionSession.originURL = url
 
         if let context = state.collectionContext {
-            state.collectionSession.baseline = CollectionBaseline(
-                context: context,
-            )
+            state.collectionSession.baseline = CollectionBaseline(context: context)
         } else {
             state.collectionSession.baseline = nil
         }
@@ -268,23 +278,27 @@ struct FileManagerContentComposerFeature {
         ]
 
         if shouldAppendHistory {
-            if let baseline = previousBaseline,
-               let previousURL = previousCollectionURL
-            {
+            let previousHistorySnapshot: ContentPageNavigationHistorySnapshot
+            if let baseline = previousBaseline, let previousCollectionURL {
                 let name = previousCollectionName
-                    ?? previousURL.deletingPathExtension().lastPathComponent
+                    ?? previousCollectionURL.deletingPathExtension().lastPathComponent
                 let navigation = ContentPageCollectionNavigation(
-                    kind: .file(url: previousURL, name: name),
+                    kind: .file(url: previousCollectionURL, name: name),
                     context: baseline.context,
                     sortKey: state.entryArrangements.sortKey,
                     sortOrder: state.entryArrangements.sortOrder,
                     viewLayout: state.viewLayout,
                 )
-                let entry = ContentPageNavigationHistorySnapshot(navigationState: .collection(navigation))
-                navigationEffects.append(.send(.requestNavigation(.internal(.appendBackHistory(entry)))))
+                previousHistorySnapshot = ContentPageNavigationHistorySnapshot(
+                    navigationState: .collection(navigation),
+                )
             } else {
-                navigationEffects.append(.send(.requestNavigation(.internal(.appendBackHistory(previousSnapshot)))))
+                previousHistorySnapshot = previousSnapshot
             }
+
+            navigationEffects.append(.send(.requestNavigation(.internal(
+                .appendBackHistory(previousHistorySnapshot),
+            ))))
             navigationEffects.append(.send(.requestNavigation(.internal(.clearForwardHistory))))
         }
 
