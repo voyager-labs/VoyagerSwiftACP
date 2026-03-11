@@ -1,4 +1,3 @@
-// swiftlint:disable cyclomatic_complexity
 import ComposableArchitecture
 import Foundation
 
@@ -6,6 +5,11 @@ import Foundation
 struct EntryOperationsMetricsReducer {
     typealias State = EntryOperationsState
     typealias Action = EntryOperationsAction
+
+    private struct EntryActionPayload {
+        let actionKind: DAUEntryActionKind
+        let entryKind: DAUEntryKind
+    }
 
     var body: some Reducer<State, Action> {
         Reduce { _, action in
@@ -21,11 +25,6 @@ struct EntryOperationsMetricsReducer {
         }
     }
 
-    private struct EntryActionPayload {
-        let actionKind: DAUEntryActionKind
-        let entryKind: DAUEntryKind
-    }
-
     private func dauEntryActionPayload(for action: Action) -> EntryActionPayload? {
         payloadForOpenActions(action)
             ?? payloadForAppActions(action)
@@ -37,31 +36,31 @@ struct EntryOperationsMetricsReducer {
 
     private func payloadForOpenActions(_ action: Action) -> EntryActionPayload? {
         switch action {
-        case let .openFiles(files):
-            guard let entryKind = entryKind(for: files) else { return nil }
+        case let .openFiles(paths):
+            guard let entryKind = entryKind(for: paths) else { return nil }
             return EntryActionPayload(actionKind: .openDefault, entryKind: entryKind)
 
-        case let .quickLookFile(file):
-            return EntryActionPayload(actionKind: .quickLook, entryKind: entryKind(for: file))
+        case let .quickLookFile(path):
+            return EntryActionPayload(actionKind: .quickLook, entryKind: entryKind(forPath: path))
 
-        case let .quickLookFiles(files):
-            guard let entryKind = entryKind(for: files) else { return nil }
+        case let .quickLookFiles(paths):
+            guard let entryKind = entryKind(for: paths) else { return nil }
             return EntryActionPayload(actionKind: .quickLook, entryKind: entryKind)
 
-        case let .openFinderInfo(items):
-            guard let entryKind = entryKind(for: items) else { return nil }
+        case let .openFinderInfo(paths):
+            guard let entryKind = entryKind(for: paths) else { return nil }
             return EntryActionPayload(actionKind: .getInfo, entryKind: entryKind)
 
-        case let .shareItems(items, _):
-            guard let entryKind = entryKind(for: items) else { return nil }
+        case let .shareItems(paths, _):
+            guard let entryKind = entryKind(for: paths) else { return nil }
             return EntryActionPayload(actionKind: .share, entryKind: entryKind)
 
-        case let .performService(items, _):
-            guard let entryKind = entryKind(for: items) else { return nil }
+        case let .performService(paths, _):
+            guard let entryKind = entryKind(for: paths) else { return nil }
             return EntryActionPayload(actionKind: .performService, entryKind: entryKind)
 
-        case let .revealInFinder(items):
-            guard let entryKind = entryKind(for: items) else { return nil }
+        case let .revealInFinder(paths):
+            guard let entryKind = entryKind(for: paths) else { return nil }
             return EntryActionPayload(actionKind: .revealInFinder, entryKind: entryKind)
 
         default:
@@ -98,8 +97,8 @@ struct EntryOperationsMetricsReducer {
         case .createNewFolder:
             return EntryActionPayload(actionKind: .createFolder, entryKind: .directory)
 
-        case let .createAliases(items):
-            guard let entryKind = entryKind(for: items) else { return nil }
+        case let .createAliases(paths):
+            guard let entryKind = entryKind(for: paths) else { return nil }
             return EntryActionPayload(actionKind: .createAlias, entryKind: entryKind)
 
         case let .copySelectedItems(files):
@@ -122,20 +121,20 @@ struct EntryOperationsMetricsReducer {
 
     private func payloadForTrashActions(_ action: Action) -> EntryActionPayload? {
         switch action {
-        case let .moveToTrash(items):
-            guard let entryKind = entryKind(for: items) else { return nil }
+        case let .moveToTrash(paths):
+            guard let entryKind = entryKind(for: paths) else { return nil }
             return EntryActionPayload(actionKind: .moveToTrash, entryKind: entryKind)
 
-        case let .deleteImmediatelyConfirmed(items):
-            guard let entryKind = entryKind(for: items) else { return nil }
+        case let .deleteImmediatelyConfirmed(paths):
+            guard let entryKind = entryKind(for: paths) else { return nil }
             return EntryActionPayload(actionKind: .deleteImmediately, entryKind: entryKind)
 
-        case let .putBackFromTrash(items):
-            guard let entryKind = entryKind(for: items) else { return nil }
+        case let .putBackFromTrash(paths):
+            guard let entryKind = entryKind(for: paths) else { return nil }
             return EntryActionPayload(actionKind: .putBack, entryKind: entryKind)
 
-        case let .emptyTrashConfirmed(items):
-            guard let entryKind = entryKind(for: items) else { return nil }
+        case let .emptyTrashConfirmed(paths):
+            guard let entryKind = entryKind(for: paths) else { return nil }
             return EntryActionPayload(actionKind: .emptyTrash, entryKind: entryKind)
 
         default:
@@ -145,12 +144,12 @@ struct EntryOperationsMetricsReducer {
 
     private func payloadForArchiveActions(_ action: Action) -> EntryActionPayload? {
         switch action {
-        case let .compressItems(items):
-            guard let entryKind = entryKind(for: items) else { return nil }
+        case let .compressItems(paths):
+            guard let entryKind = entryKind(for: paths) else { return nil }
             return EntryActionPayload(actionKind: .compress, entryKind: entryKind)
 
-        case let .extractCompressedFile(file):
-            return EntryActionPayload(actionKind: .extract, entryKind: entryKind(for: file))
+        case let .extractCompressedFile(path):
+            return EntryActionPayload(actionKind: .extract, entryKind: entryKind(forPath: path))
 
         default:
             return nil
@@ -238,5 +237,3 @@ struct EntryOperationsMetricsReducer {
         }
     }
 }
-
-// swiftlint:enable cyclomatic_complexity

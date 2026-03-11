@@ -57,10 +57,10 @@ enum FileManagerContentKeyCommandHandler {
         let selectedIds = state.entryViewLayout.selectedIds
         let selectedEntries = Array(state.entryOperations.displayItems.filter { selectedIds.contains($0.id) })
         if selectedEntries.count == 1, let file = selectedEntries.first {
-            return .send(.entryOperations(.quickLookFile(file: file)))
+            return .send(.entryOperations(.quickLookFile(path: file.fullPath)))
         }
         if !selectedEntries.isEmpty {
-            return .send(.entryOperations(.quickLookFiles(files: selectedEntries)))
+            return .send(.entryOperations(.quickLookFiles(paths: selectedEntries.map(\.fullPath))))
         }
         return .none
     }
@@ -80,9 +80,9 @@ enum FileManagerContentKeyCommandHandler {
         guard !selectedEntries.isEmpty else { return .none }
 
         if command.modifiers.contains(.option) {
-            return .send(.entryOperations(.deleteImmediately(items: selectedEntries)))
+            return .send(.entryOperations(.deleteImmediately(paths: selectedEntries.map(\.fullPath))))
         }
-        return .send(.entryOperations(.moveToTrash(items: selectedEntries)))
+        return .send(.entryOperations(.moveToTrash(paths: selectedEntries.map(\.fullPath))))
     }
 
     private static func commandModifierEffect(

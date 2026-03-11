@@ -1,5 +1,3 @@
-import Foundation
-
 enum OperationKind: Equatable, Hashable, Sendable {
     case openDefault
     case openWithApp(String)
@@ -49,4 +47,9 @@ enum OperationKind: Equatable, Hashable, Sendable {
             false
         }
     }
+}
+
+public enum ClipboardOperation: Equatable, Sendable {
+    case copy
+    case cut
 }

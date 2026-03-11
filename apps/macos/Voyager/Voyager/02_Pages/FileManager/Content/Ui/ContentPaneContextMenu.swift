@@ -8,7 +8,8 @@ struct ContentPaneContextMenu: View {
     var body: some View {
         if isTrashFolder {
             Button("Empty Trash") {
-                store.send(.entryOperations(.emptyTrash(items: store.entryOperations.displayOrderItems)))
+                store
+                    .send(.entryOperations(.emptyTrash(paths: store.entryOperations.displayOrderItems.map(\.fullPath))))
             }
         } else {
             Button("New Folder") {

@@ -21,6 +21,9 @@ public struct EntryFileOpsClient: Sendable {
     public var loadDragPaths: @Sendable () -> [String]
     public var saveDragWithOption: @Sendable (Bool) -> Void
     public var loadDragWithOption: @Sendable () -> Bool
+    public var clipboardChangeCount: @Sendable () -> Int
+    public var loadClipboardCutSessionId: @Sendable () -> String?
+    public var saveClipboardCutSessionId: @Sendable (String?) -> Void
     public var loadClipboardPaths: @Sendable () -> ([String], ClipboardOperation)
     public var postFileSystemChanged: @Sendable ([String]) -> Void
 
@@ -43,6 +46,9 @@ public struct EntryFileOpsClient: Sendable {
         loadDragPaths: @escaping @Sendable () -> [String],
         saveDragWithOption: @escaping @Sendable (Bool) -> Void,
         loadDragWithOption: @escaping @Sendable () -> Bool,
+        clipboardChangeCount: @escaping @Sendable () -> Int,
+        loadClipboardCutSessionId: @escaping @Sendable () -> String?,
+        saveClipboardCutSessionId: @escaping @Sendable (String?) -> Void,
         loadClipboardPaths: @escaping @Sendable () -> ([String], ClipboardOperation),
         postFileSystemChanged: @escaping @Sendable ([String]) -> Void,
     ) {
@@ -64,6 +70,9 @@ public struct EntryFileOpsClient: Sendable {
         self.loadDragPaths = loadDragPaths
         self.saveDragWithOption = saveDragWithOption
         self.loadDragWithOption = loadDragWithOption
+        self.clipboardChangeCount = clipboardChangeCount
+        self.loadClipboardCutSessionId = loadClipboardCutSessionId
+        self.saveClipboardCutSessionId = saveClipboardCutSessionId
         self.loadClipboardPaths = loadClipboardPaths
         self.postFileSystemChanged = postFileSystemChanged
     }
@@ -90,6 +99,9 @@ extension EntryFileOpsClient: DependencyKey {
             loadDragPaths: EntryFileOpsLive.loadDragPaths,
             saveDragWithOption: EntryFileOpsLive.saveDragWithOption,
             loadDragWithOption: EntryFileOpsLive.loadDragWithOption,
+            clipboardChangeCount: EntryFileOpsLive.clipboardChangeCount,
+            loadClipboardCutSessionId: EntryFileOpsLive.loadClipboardCutSessionId,
+            saveClipboardCutSessionId: EntryFileOpsLive.saveClipboardCutSessionId,
             loadClipboardPaths: EntryFileOpsLive.loadClipboardPaths,
             postFileSystemChanged: EntryFileOpsLive.postFileSystemChanged,
         )
@@ -118,6 +130,9 @@ extension EntryFileOpsClient: DependencyKey {
             loadDragPaths: { [] },
             saveDragWithOption: { _ in },
             loadDragWithOption: { false },
+            clipboardChangeCount: { 0 },
+            loadClipboardCutSessionId: { nil },
+            saveClipboardCutSessionId: { _ in },
             loadClipboardPaths: { ([], .copy) },
             postFileSystemChanged: { _ in },
         )
@@ -143,6 +158,9 @@ extension EntryFileOpsClient: DependencyKey {
             loadDragPaths: { [] },
             saveDragWithOption: { _ in },
             loadDragWithOption: { false },
+            clipboardChangeCount: { 0 },
+            loadClipboardCutSessionId: { nil },
+            saveClipboardCutSessionId: { _ in },
             loadClipboardPaths: { ([], .copy) },
             postFileSystemChanged: { _ in },
         )
@@ -452,7 +470,7 @@ enum EntryFileOpsLive {
             let paths = urls.map(\.path)
 
             let opString = pasteboard
-                .string(forType: NSPasteboard.PasteboardType("com.voyager.clipboard.operation"))
+                .string(forType: NSPasteboard.PasteboardType("fm.voyager.clipboard.operation"))
             let operation: ClipboardOperation = opString == "cut" ? .cut : .copy
 
             return (paths, operation)

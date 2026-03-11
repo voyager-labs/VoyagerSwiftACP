@@ -7,17 +7,27 @@ struct EntryOperationsState: Equatable {
     var loadingContext: EntryLoadingContextState = .init()
     var isLoading: Bool = false
     var isReloading: Bool = false
+    var renamingItemId: EntryModel.ID?
+    var renamingText: String = ""
 
     var windowID: UUID?
     var itemStates: [String: ItemOperationState] = [:]
     var undoRecords: [EntryActionRecord] = []
     var redoRecords: [EntryActionRecord] = []
+    var selectedEntryIDs: Set<EntryModel.ID> = []
     var clipboardItems: [String] = []
     var clipboardOperation: ClipboardOperation = .copy
+    var cutClearSession: EntryViewLayoutCutClearHeuristic.CutSession?
     var pendingEmptyTrashItemCount: Int = 0
     var emptyTrashCompletedCount: Int = 0
     var applicationsForItems: [String: [ApplicationInfo]] = [:]
     var commonApplicationsForSelectedFiles: [ApplicationInfo] = []
+    var dropValidationResult: EntryDropValidationResult = .empty
+
+    private var hasSelectableEntries: Bool {
+        guard !selectedEntryIDs.isEmpty else { return false }
+        return displayItems.contains { selectedEntryIDs.contains($0.id) }
+    }
 
     var displayItems: IdentifiedArrayOf<EntryModel> {
         loadingContext.isCollectionMode ? loadingContext.collectionItems : loadingContext.items
@@ -27,9 +37,24 @@ struct EntryOperationsState: Equatable {
         Array(displayItems)
     }
 
-    mutating func appendUndoRecord(_ record: EntryActionRecord) {
-        undoRecords.append(record)
-        redoRecords.removeAll()
+    // TODO: Alias성 상태 필드 제거
+    var canOpenSelectedItem: Bool {
+        hasSelectableEntries
+    }
+
+    // TODO: Alias성 상태 필드 제거
+    var canQuickLookSelectedItem: Bool {
+        hasSelectableEntries
+    }
+
+    // TODO: Alias성 상태 필드 제거
+    var hasSelectedItems: Bool {
+        !selectedEntryIDs.isEmpty
+    }
+
+    // TODO: Alias성 상태 필드 제거
+    var hasClipboardItems: Bool {
+        !clipboardItems.isEmpty
     }
 
     var latestUndoRecord: EntryActionRecord? {
@@ -48,6 +73,11 @@ struct EntryOperationsState: Equatable {
     var canRedoEntryAction: Bool {
         guard let record = latestRedoRecord else { return false }
         return !isEntryActionBusy(record)
+    }
+
+    mutating func appendUndoRecord(_ record: EntryActionRecord) {
+        undoRecords.append(record)
+        redoRecords.removeAll()
     }
 
     func isEntryActionBusy(_ record: EntryActionRecord) -> Bool {
