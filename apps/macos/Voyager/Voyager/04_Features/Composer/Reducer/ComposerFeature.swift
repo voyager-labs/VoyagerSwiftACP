@@ -22,13 +22,13 @@ enum ComposerQueryPhaseTransition: Sendable {
 
 @Reducer
 struct ComposerFeature {
+    typealias State = ComposerState
+    typealias Action = ComposerAction
+
     @Dependency(\.searchClient)
     var searchClient
     @Dependency(\.registryClient)
     var registryClient
-
-    typealias State = ComposerState
-    typealias Action = ComposerAction
 
     nonisolated enum CancelID: Hashable, Sendable {
         case search

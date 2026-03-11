@@ -450,6 +450,7 @@ private func registryResolution(for key: String) -> PropertyKeyResolution {
         .unknown(key)
     }
 }
+
 private func makeActiveCondition() -> Condition {
     Condition(
         propertyKey: "name_full",

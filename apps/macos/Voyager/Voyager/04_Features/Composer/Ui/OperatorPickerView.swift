@@ -3,6 +3,7 @@ import SwiftUI
 
 struct OperatorPickerView: View {
     let store: StoreOf<OperatorPickerFeature>
+
     @Environment(\.colorScheme)
     private var colorScheme
     @State private var hoveredOptionCode: String?
