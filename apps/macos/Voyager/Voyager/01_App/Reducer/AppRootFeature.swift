@@ -1,4 +1,5 @@
 import ComposableArchitecture
+import VoyagerPagesSettings
 
 @Reducer
 struct AppRootFeature {
@@ -17,6 +18,9 @@ struct AppRootFeature {
         }
         Scope(state: \.updater, action: \.updater) {
             UpdaterFeature()
+        }
+        Scope(state: \.settings, action: \.settings) {
+            SettingsFeature()
         }
         Scope(state: \.menuCommands, action: \.menuCommands) {
             MenuCommandsFeature()
@@ -56,7 +60,13 @@ struct AppRootFeature {
             case .menuCommands:
                 effect = .none
 
-            case .windowManager, .updater:
+            case .settings(.general(.checkForUpdates)):
+                effect = .send(.updater(.checkForUpdates))
+
+            case let .settings(.general(.toggleAutomaticUpdate(enabled))):
+                effect = .send(.updater(.setAutomaticUpdate(enabled)))
+
+            case .windowManager, .updater, .settings:
                 effect = .none
             }
 

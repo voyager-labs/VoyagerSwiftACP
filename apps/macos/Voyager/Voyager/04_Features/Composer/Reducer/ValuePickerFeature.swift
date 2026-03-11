@@ -217,13 +217,16 @@ struct ValuePickerFeature {
                 }
 
                 state.errorMessage = nil
+                guard let committedValues = result.values else {
+                    return .none
+                }
                 if tokenMode {
                     state.values = ValueNormalizerUtils.deduplicatedTokenValues(displayValues)
                 }
                 return .send(
                     .commitResult(
                         propertyKey: propertyKey,
-                        values: result.values ?? [],
+                        values: committedValues,
                         displayValues: displayValues,
                         selectedUnitCode: state.unitValueState?.selectedUnitCode,
                     ),

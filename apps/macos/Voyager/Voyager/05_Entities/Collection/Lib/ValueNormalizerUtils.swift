@@ -226,27 +226,30 @@ enum ValueNormalizerUtils {
         let values = rawValues + Array(repeating: "", count: max(0, 2 - rawValues.count))
         let trimmed = values.map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
         let numbers = trimmed.map(Double.init)
-        var resetIndices: [Int] = []
+        let emptyIndices = trimmed.enumerated().compactMap { index, text in
+            text.isEmpty ? index : nil
+        }
+        let invalidIndices = numbers.enumerated().compactMap { index, number in
+            trimmed[index].isEmpty || number != nil ? nil : index
+        }
 
-        for (index, value) in numbers.enumerated() {
-            if trimmed[index].isEmpty {
-                resetIndices.append(index)
-                continue
-            }
-            if value == nil {
-                resetIndices.append(index)
-            }
+        if invalidIndices.isEmpty == false {
+            return .init(values: nil, errorMessage: "Enter valid numbers.", resetIndices: invalidIndices)
+        }
+
+        if emptyIndices.count == 1 {
+            return .init(values: nil, errorMessage: nil, resetIndices: emptyIndices)
         }
 
         if let editingIndex,
-           resetIndices.contains(editingIndex),
+           emptyIndices.contains(editingIndex),
            trimmed[editingIndex].isEmpty
         {
-            return .init(values: nil, errorMessage: nil, resetIndices: resetIndices)
+            return .init(values: nil, errorMessage: nil, resetIndices: emptyIndices)
         }
 
-        guard resetIndices.isEmpty else {
-            return .init(values: nil, errorMessage: "Enter valid numbers.", resetIndices: resetIndices)
+        guard emptyIndices.isEmpty else {
+            return .init(values: nil, errorMessage: "Value is required.", resetIndices: emptyIndices)
         }
 
         return .init(values: trimmed, errorMessage: nil, resetIndices: [])
@@ -281,34 +284,41 @@ enum ValueNormalizerUtils {
         let values = rawValues + Array(repeating: "", count: max(0, 2 - rawValues.count))
         let trimmed = values.map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
         let parsed = trimmed.map(parseDate)
-        var resetIndices: [Int] = []
+        let emptyIndices = trimmed.enumerated().compactMap { index, text in
+            text.isEmpty ? index : nil
+        }
+        let invalidIndices = parsed.enumerated().compactMap { index, date in
+            trimmed[index].isEmpty || date != nil ? nil : index
+        }
 
-        for (index, value) in parsed.enumerated() {
-            if trimmed[index].isEmpty {
-                resetIndices.append(index)
-                continue
-            }
-            if value == nil {
-                resetIndices.append(index)
-            }
+        if invalidIndices.isEmpty == false {
+            return .init(values: nil, errorMessage: "Enter valid dates.", resetIndices: invalidIndices)
+        }
+
+        if emptyIndices.count == 1 {
+            return .init(values: nil, errorMessage: nil, resetIndices: emptyIndices)
         }
 
         if let editingIndex,
-           resetIndices.contains(editingIndex),
+           emptyIndices.contains(editingIndex),
            trimmed[editingIndex].isEmpty
         {
-            return .init(values: nil, errorMessage: nil, resetIndices: resetIndices)
+            return .init(values: nil, errorMessage: nil, resetIndices: emptyIndices)
         }
 
-        guard resetIndices.isEmpty else {
-            return .init(values: nil, errorMessage: "Enter valid dates.", resetIndices: resetIndices)
+        guard emptyIndices.isEmpty else {
+            return .init(values: nil, errorMessage: "Value is required.", resetIndices: emptyIndices)
         }
 
         return .init(values: trimmed, errorMessage: nil, resetIndices: [])
     }
 
     private static func normalizeToggle(rawValues: [String]) -> ValueNormalizeResult {
-        guard let first = rawValues.first?.lowercased() else {
+        guard let first = rawValues.first?
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+            .lowercased(),
+            !first.isEmpty
+        else {
             return .init(values: nil, errorMessage: "Value is required.", resetIndices: [0])
         }
 

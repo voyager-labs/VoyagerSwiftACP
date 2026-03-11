@@ -168,7 +168,6 @@ final class ValuePickerFeatureTests: XCTestCase {
         XCTAssertEqual(store.state.values, ["50"])
     }
 }
-
 @MainActor
 private func makeStore(
     favoriteTags: [Tag] = [],

@@ -36,6 +36,7 @@ struct ConditionChipView: View {
             ? UnitValueUtils.spec(for: condition.propertyKey)
             : nil
     }
+    private let rangeSep = "-"
 
     var body: some View {
         WithViewStore(
@@ -572,7 +573,7 @@ struct ConditionChipView: View {
                         )
                     },
                 )
-                Text("and")
+                Text(rangeSep)
                     .font(.system(size: 11, weight: .medium))
                     .foregroundColor(.secondary)
             }
@@ -587,7 +588,7 @@ struct ConditionChipView: View {
             )
 
             if editingIndex == 0, let values = displayValues ?? condition.values, values.count >= 2 {
-                Text("and")
+                Text(rangeSep)
                     .font(.system(size: 11, weight: .medium))
                     .foregroundColor(.secondary)
                 ValuePillView(
@@ -631,7 +632,7 @@ struct ConditionChipView: View {
                     )
                 },
             )
-            Text("and")
+            Text(rangeSep)
                 .font(.system(size: 11, weight: .medium))
                 .foregroundColor(.secondary)
             ValuePillView(
@@ -662,12 +663,19 @@ struct ConditionChipView: View {
         valueViewStore: ViewStore<ValuePickerFeature.State, ValuePickerFeature.Action>,
     ) -> some View {
         let hasError = valueViewStore.errorMessage != nil
+        let displayedValues = Self.displayedValuesForDate(
+            conditionValues: condition.values,
+            conditionPropertyKey: condition.propertyKey,
+            pickerPropertyKey: valueViewStore.propertyKey,
+            pickerPresented: valueViewStore.isPresented,
+            pickerValues: valueViewStore.values,
+        )
         if valueArity >= 2 {
             HStack(spacing: 6) {
                 dateValueButton(
                     config: DateValueButtonConfig(
                         placeholderText: "From",
-                        currentText: condition.values?.first ?? "",
+                        currentText: displayedValues?.first ?? "",
                         hasError: hasError,
                         index: 0,
                         operatorCode: operatorCode,
@@ -676,13 +684,13 @@ struct ConditionChipView: View {
                     ),
                     valueViewStore: valueViewStore,
                 )
-                Text("and")
+                Text(rangeSep)
                     .font(.system(size: 11, weight: .medium))
                     .foregroundColor(.secondary)
                 dateValueButton(
                     config: DateValueButtonConfig(
                         placeholderText: "To",
-                        currentText: (condition.values?.count ?? 0) > 1 ? (condition.values?[1] ?? "") : "",
+                        currentText: (displayedValues?.count ?? 0) > 1 ? (displayedValues?[1] ?? "") : "",
                         hasError: hasError,
                         index: 1,
                         operatorCode: operatorCode,
@@ -696,7 +704,7 @@ struct ConditionChipView: View {
             dateValueButton(
                 config: DateValueButtonConfig(
                     placeholderText: "Value",
-                    currentText: condition.values?.first ?? "",
+                    currentText: displayedValues?.first ?? "",
                     hasError: hasError,
                     index: 0,
                     operatorCode: operatorCode,
@@ -902,7 +910,7 @@ struct ConditionChipView: View {
                 }
 
                 if valueArity >= 2, index == 0 {
-                    Text("and")
+                    Text(rangeSep)
                         .font(.system(size: 11, weight: .medium))
                         .foregroundColor(.secondary)
                         .fixedSize()
