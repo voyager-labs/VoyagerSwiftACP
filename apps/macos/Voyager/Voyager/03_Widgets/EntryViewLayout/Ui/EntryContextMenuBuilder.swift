@@ -1,19 +1,6 @@
 import AppKit
 
 enum EntryContextMenuBuilder {
-    struct Input {
-        let adapter: EntryViewLayoutAdapter
-        let selectedIds: Set<String>
-        let selectedEntries: [EntryModel]
-        let rowEntry: EntryModel?
-        let isTrashFolder: Bool
-        let canPaste: Bool
-        let currentPath: () -> String
-        let selectedItemId: () -> String?
-        let contextMenuAnchor: () -> CGPoint?
-        let saveScrollPosition: () -> Void
-    }
-
     struct Configuration {
         let target: EntryContextMenuCoordinator
         let selectedCount: Int
@@ -24,46 +11,7 @@ enum EntryContextMenuBuilder {
         let isTrashFolder: Bool
         let openWithApplications: [ApplicationInfo]
         let showOpenWith: Bool
-        let tags: [EntryContextMenuTagItem]
-    }
-
-    static func makeMenu(input: Input) -> (menu: NSMenu, coordinator: EntryContextMenuCoordinator) {
-        let selectedCount = EntryContextMenuDataResolver.selectedCount(
-            selectedIds: input.selectedIds,
-            fallbackEntry: input.rowEntry,
-        )
-
-        let coordinator = EntryContextMenuCoordinator.make(context: .init(
-            adapter: input.adapter,
-            currentPath: input.currentPath,
-            selectedItemId: input.selectedItemId,
-            contextMenuAnchor: input.contextMenuAnchor,
-            saveScrollPosition: input.saveScrollPosition,
-        ))
-
-        let (showCompress, showExtract) = EntryContextMenuDataResolver.resolveCompressExtract(
-            selectedEntries: input.selectedEntries,
-        )
-        let (showOpenWith, openWithApplications) = EntryContextMenuDataResolver.resolveOpenWithMenuData(
-            adapter: input.adapter,
-            selectedEntries: input.selectedEntries,
-        )
-        let tags = EntryContextMenuDataResolver.resolveTags(selectedEntries: input.selectedEntries)
-
-        let menu = makeMenu(configuration: .init(
-            target: coordinator,
-            selectedCount: selectedCount,
-            rowEntryPathForOpenInNewTab: input.rowEntry?.isFolder == true ? input.rowEntry?.fullPath : nil,
-            canPaste: input.canPaste,
-            showCompress: showCompress,
-            showExtract: showExtract,
-            isTrashFolder: input.isTrashFolder,
-            openWithApplications: openWithApplications,
-            showOpenWith: showOpenWith,
-            tags: tags,
-        ))
-
-        return (menu, coordinator)
+        let tags: [EntryContextMenuTagSpec]
     }
 
     static func makeMenu(configuration: Configuration) -> NSMenu {
@@ -210,9 +158,20 @@ enum EntryContextMenuBuilder {
     private static func addTagsItems(to menu: NSMenu, configuration: Configuration) {
         guard !configuration.tags.isEmpty else { return }
 
-        let tagsItem = NSMenuItem(title: "Tags…", action: nil, keyEquivalent: "")
-        tagsItem.submenu = buildTagsMenu(configuration: configuration)
-        menu.addItem(tagsItem)
+        let sectionTitle = NSMenuItem(title: "Tags…", action: nil, keyEquivalent: "")
+        sectionTitle.isEnabled = false
+        menu.addItem(sectionTitle)
+        for tag in configuration.tags {
+            let item = menuItem(
+                title: tag.name,
+                action: #selector(EntryContextMenuCoordinator.contextMenuToggleTag(_:)),
+                target: configuration.target,
+            )
+            item.representedObject = tag.name
+            item.state = selectionStateValue(tag.selection)
+            item.image = TagDotImageFactory.make(tagColor: TagColor(colorCode: tag.colorCode))
+            menu.addItem(item)
+        }
         menu.addItem(NSMenuItem.separator())
     }
 
@@ -269,37 +228,12 @@ enum EntryContextMenuBuilder {
         return menu
     }
 
-    private static func buildTagsMenu(configuration: Configuration) -> NSMenu {
-        let menu = NSMenu()
-
-        for tag in configuration.tags {
-            let item = menuItem(
-                title: tag.name,
-                action: #selector(EntryContextMenuCoordinator.contextMenuToggleTag(_:)),
-                target: configuration.target,
-            )
-            item.representedObject = tag.name
-            item.state = selectionStateValue(tag.state)
-            item.image = tagDotImage(colorCode: tag.colorCode)
-            menu.addItem(item)
+    private static func selectionStateValue(_ selection: EntryContextMenuTagSelection) -> NSControl.StateValue {
+        switch selection {
+        case .on: .on
+        case .off: .off
+        case .mixed: .mixed
         }
-
-        return menu
-    }
-
-    private static func selectionStateValue(_ state: EntryContextMenuTagItem.SelectionState) -> NSControl.StateValue {
-        switch state {
-        case .on:
-            .on
-        case .off:
-            .off
-        case .mixed:
-            .mixed
-        }
-    }
-
-    private static func tagDotImage(colorCode: Int) -> NSImage {
-        TagDotImageFactory.make(tagColor: TagColor(colorCode: colorCode), size: 11, inset: 1)
     }
 
     private static func menuItem(title: String, action: Selector, target: AnyObject) -> NSMenuItem {
