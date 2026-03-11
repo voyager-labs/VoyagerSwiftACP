@@ -6,18 +6,18 @@ public struct BetaAccessVerifyRequest: Encodable, Sendable {
     public let appVersion: String?
     public let osVersion: String?
 
-    public init(email: String, deviceId: String, appVersion: String?, osVersion: String?) {
-        self.email = email
-        self.deviceId = deviceId
-        self.appVersion = appVersion
-        self.osVersion = osVersion
-    }
-
     enum CodingKeys: String, CodingKey {
         case email
         case deviceId = "device_id"
         case appVersion = "app_version"
         case osVersion = "os_version"
+    }
+
+    public init(email: String, deviceId: String, appVersion: String?, osVersion: String?) {
+        self.email = email
+        self.deviceId = deviceId
+        self.appVersion = appVersion
+        self.osVersion = osVersion
     }
 }
 

@@ -4,8 +4,6 @@ import Foundation
 import VoyagerShared
 import XCTest
 
-// swiftlint:disable xct_specific_matcher
-
 @MainActor
 final class GeneralSettingsFeatureTests: XCTestCase {
     func testToggleAutomaticUpdatePersists() async {

@@ -9,10 +9,10 @@ import VoyagerShared
 
 @main
 struct VoyagerApp: App {
+    private let appRootStore: StoreOf<AppRootFeature>
+
     @NSApplicationDelegateAdaptor(AppDelegate.self)
     var appDelegate
-
-    private let appRootStore: StoreOf<AppRootFeature>
 
     @MainActor
     init() {
