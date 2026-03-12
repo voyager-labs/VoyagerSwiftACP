@@ -2,6 +2,7 @@ import AppKit
 import SwiftUI
 
 final class KeyCommandHostingView: NSView {
+    weak static var currentFirstResponder: KeyCommandHostingView?
     var onKeyDown: ((NSEvent) -> Void)?
 
     override func keyDown(with event: NSEvent) {
@@ -13,7 +14,25 @@ final class KeyCommandHostingView: NSView {
         super.mouseDown(with: event)
     }
 
+    override func becomeFirstResponder() -> Bool {
+        KeyCommandHostingView.currentFirstResponder = self
+        return true
+    }
+
+    override func resignFirstResponder() -> Bool {
+        if KeyCommandHostingView.currentFirstResponder == self {
+            KeyCommandHostingView.currentFirstResponder = nil
+        }
+        return true
+    }
+
     override var acceptsFirstResponder: Bool { true }
+
+    static func restoreCurrentFocus() {
+        DispatchQueue.main.async {
+            KeyCommandHostingView.currentFirstResponder?.restoreFocus()
+        }
+    }
 
     func restoreFocus() {
         window?.makeFirstResponder(self)
