@@ -4,6 +4,9 @@ import Foundation
 import SwiftUI
 
 struct ToolbarView: View {
+    let store: StoreOf<FileManagerContentFeature>
+    let onNavigationAction: (ContentPageNavigationAction.View) -> Void
+
     private struct CollectionTitleIcon: View {
         var body: some View {
             Image(systemName: "rectangle.stack")
@@ -30,13 +33,14 @@ struct ToolbarView: View {
         let isOpenedCollectionDirty: Bool
     }
 
-    let store: StoreOf<FileManagerContentFeature>
-    let onNavigationAction: (ContentPageNavigationAction.View) -> Void
-
     @Environment(\.colorScheme)
     private var colorScheme
 
     @State private var isTitleAreaHovered: Bool = false
+
+    private var separatorColor: Color {
+        Color.primary.opacity(0.12)
+    }
 
     var body: some View {
         WithViewStore(
@@ -49,7 +53,7 @@ struct ToolbarView: View {
                     canGoForward: $0.navigation.canGoForward,
                     canGoToEnclosingDirectory: $0.navigation.canGoToEnclosingDirectory,
                     currentPath: $0.navigation.currentPath,
-                    isCollectionMode: $0.entryOperations.loadingContext.isCollectionMode,
+                    isCollectionMode: $0.entryViewLayout.entryOperations.loadingContext.isCollectionMode,
                     isOpeningCollectionFile: $0.collectionSession.isOpening,
                     openedCollectionName: $0.collectionSession.openedName,
                     openedCollectionURLExists: $0.collectionSession.openedURL != nil,
@@ -121,10 +125,6 @@ struct ToolbarView: View {
                 },
             )
         }
-    }
-
-    private var separatorColor: Color {
-        Color.primary.opacity(0.12)
     }
 
     private func titleContent(viewStore: ViewStore<ViewState, FileManagerContentFeature.Action>) -> some View {

@@ -4,11 +4,12 @@ import SwiftUI
 
 @ViewAction(for: MenuCommandsFeature.self)
 struct EditMenuCommands: Commands {
-    let store: StoreOf<MenuCommandsFeature>
-    @ObservedObject private var viewStore: ViewStore<MenuCommandsState, MenuCommandsAction>
-
     private let undoSelector = Selector(("undo:"))
     private let redoSelector = Selector(("redo:"))
+
+    let store: StoreOf<MenuCommandsFeature>
+
+    @ObservedObject private var viewStore: ViewStore<MenuCommandsState, MenuCommandsAction>
 
     init(appRootStore: StoreOf<AppRootFeature>) {
         let menuStore = appRootStore.scope(state: \.menuCommands, action: \.menuCommands)
@@ -17,48 +18,6 @@ struct EditMenuCommands: Commands {
             menuStore,
             observe: { $0 },
         )
-    }
-
-    private func isTextEditingResponder() -> Bool {
-        guard let responder = NSApp.keyWindow?.firstResponder else { return false }
-        return responder is NSTextView || responder is NSTextField
-    }
-
-    private func textResponderUndoManager() -> UndoManager? {
-        (NSApp.keyWindow?.firstResponder as? NSResponder)?.undoManager
-    }
-
-    private func canUndoInTextResponder() -> Bool {
-        guard isTextEditingResponder() else { return false }
-        return textResponderUndoManager()?.canUndo == true
-    }
-
-    private func canRedoInTextResponder() -> Bool {
-        guard isTextEditingResponder() else { return false }
-        return textResponderUndoManager()?.canRedo == true
-    }
-
-    private func sendEditCommand(_ command: MenuCommandItem.EditCommand) {
-        send(.edit(command))
-    }
-
-    private func sendTextResponderAction(_ selector: Selector, fallback command: MenuCommandItem.EditCommand) {
-        guard !NSApp.sendAction(selector, to: nil, from: nil) else { return }
-        sendEditCommand(command)
-    }
-
-    private func sendUndoRedoAction(
-        canHandleByTextResponder: Bool,
-        selector: Selector,
-        fallback command: MenuCommandItem.EditCommand,
-    ) {
-        if canHandleByTextResponder,
-           NSApp.sendAction(selector, to: nil, from: nil)
-        {
-            return
-        }
-
-        sendEditCommand(command)
     }
 
     var body: some Commands {
@@ -152,5 +111,47 @@ struct EditMenuCommands: Commands {
             }
             .keyboardShortcut("a", modifiers: .command)
         }
+    }
+
+    private func isTextEditingResponder() -> Bool {
+        guard let responder = NSApp.keyWindow?.firstResponder else { return false }
+        return responder is NSTextView || responder is NSTextField
+    }
+
+    private func textResponderUndoManager() -> UndoManager? {
+        (NSApp.keyWindow?.firstResponder as? NSResponder)?.undoManager
+    }
+
+    private func canUndoInTextResponder() -> Bool {
+        guard isTextEditingResponder() else { return false }
+        return textResponderUndoManager()?.canUndo == true
+    }
+
+    private func canRedoInTextResponder() -> Bool {
+        guard isTextEditingResponder() else { return false }
+        return textResponderUndoManager()?.canRedo == true
+    }
+
+    private func sendEditCommand(_ command: MenuCommandItem.EditCommand) {
+        send(.edit(command))
+    }
+
+    private func sendTextResponderAction(_ selector: Selector, fallback command: MenuCommandItem.EditCommand) {
+        guard !NSApp.sendAction(selector, to: nil, from: nil) else { return }
+        sendEditCommand(command)
+    }
+
+    private func sendUndoRedoAction(
+        canHandleByTextResponder: Bool,
+        selector: Selector,
+        fallback command: MenuCommandItem.EditCommand,
+    ) {
+        if canHandleByTextResponder,
+           NSApp.sendAction(selector, to: nil, from: nil)
+        {
+            return
+        }
+
+        sendEditCommand(command)
     }
 }

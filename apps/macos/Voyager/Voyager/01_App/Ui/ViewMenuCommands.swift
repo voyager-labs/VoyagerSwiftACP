@@ -5,6 +5,7 @@ import SwiftUI
 @ViewAction(for: MenuCommandsFeature.self)
 struct ViewMenuCommands: Commands {
     let store: StoreOf<MenuCommandsFeature>
+
     @ObservedObject private var viewStore: ViewStore<MenuCommandsState, MenuCommandsAction>
 
     init(appRootStore: StoreOf<AppRootFeature>) {
