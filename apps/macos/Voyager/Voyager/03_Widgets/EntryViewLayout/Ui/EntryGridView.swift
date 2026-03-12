@@ -1,12 +1,13 @@
 import AppKit
+import ComposableArchitecture
 import SwiftUI
 
 @MainActor
 struct EntryGridViewRepresentable: NSViewRepresentable {
-    let adapter: EntryViewLayoutAdapter
+    let store: StoreOf<EntryViewLayoutFeature>
 
     func makeCoordinator() -> EntryGridCoordinator {
-        EntryGridCoordinator(adapter: adapter)
+        EntryGridCoordinator(store: store)
     }
 
     func makeNSView(context: Context) -> EntryGridView {
@@ -66,34 +67,13 @@ final class EntryGridView: NSView {
         override func mouseDragged(with event: NSEvent) {
             super.mouseDragged(with: event)
 
-            guard isLassoActive, let start = lassoStartPoint, let layout = collectionViewLayout else {
+            guard isLassoActive else {
                 onSelectionDrag?()
                 return
             }
 
             let current = convert(event.locationInWindow, from: nil)
-            let selectionRect = NSRect(
-                x: min(start.x, current.x),
-                y: min(start.y, current.y),
-                width: abs(current.x - start.x),
-                height: abs(current.y - start.y),
-            )
-
-            let attributes = layout.layoutAttributesForElements(in: selectionRect)
-            var selection = Set(attributes.compactMap { attr -> IndexPath? in
-                guard attr.representedElementCategory == .item else { return nil }
-                return attr.indexPath
-            })
-
-            let isAdditive = event.modifierFlags.contains(.command) || event.modifierFlags.contains(.shift)
-            if isAdditive {
-                selection.formUnion(lassoInitialSelection)
-            }
-
-            if selection != lastReportedLassoSelection {
-                lastReportedLassoSelection = selection
-                onLassoSelectionIndexPathsChanged?(selection, false)
-            }
+            applyLassoSelection(current: current, modifierFlags: event.modifierFlags, isFinal: false)
 
             onSelectionDrag?()
         }
@@ -101,11 +81,33 @@ final class EntryGridView: NSView {
         override func mouseUp(with event: NSEvent) {
             super.mouseUp(with: event)
 
-            guard isLassoActive, let start = lassoStartPoint, let layout = collectionViewLayout else {
+            guard isLassoActive else {
                 return
             }
 
             let current = convert(event.locationInWindow, from: nil)
+            applyLassoSelection(current: current, modifierFlags: event.modifierFlags, isFinal: true)
+        }
+
+        func updateLassoSelectionFromAutoscroll(_ point: NSPoint) {
+            guard isLassoActive else { return }
+            applyLassoSelection(current: point, modifierFlags: NSEvent.modifierFlags, isFinal: false)
+        }
+
+        private func applyLassoSelection(
+            current: NSPoint,
+            modifierFlags: NSEvent.ModifierFlags,
+            isFinal: Bool,
+        ) {
+            guard let start = lassoStartPoint,
+                  let layout = collectionViewLayout
+            else {
+                if isFinal {
+                    finishLassoSelection()
+                }
+                return
+            }
+
             let selectionRect = NSRect(
                 x: min(start.x, current.x),
                 y: min(start.y, current.y),
@@ -119,13 +121,24 @@ final class EntryGridView: NSView {
                 return attr.indexPath
             })
 
-            let isAdditive = event.modifierFlags.contains(.command) || event.modifierFlags.contains(.shift)
+            let isAdditive = modifierFlags.contains(.command) || modifierFlags.contains(.shift)
             if isAdditive {
                 selection.formUnion(lassoInitialSelection)
             }
 
-            onLassoSelectionIndexPathsChanged?(selection, true)
+            if isFinal {
+                onLassoSelectionIndexPathsChanged?(selection, true)
+                finishLassoSelection()
+                return
+            }
 
+            if selection != lastReportedLassoSelection {
+                lastReportedLassoSelection = selection
+                onLassoSelectionIndexPathsChanged?(selection, false)
+            }
+        }
+
+        private func finishLassoSelection() {
             isLassoActive = false
             lassoStartPoint = nil
             lassoInitialSelection = []

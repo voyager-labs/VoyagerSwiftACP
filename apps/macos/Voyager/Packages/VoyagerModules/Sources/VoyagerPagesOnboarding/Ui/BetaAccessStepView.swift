@@ -1,14 +1,17 @@
 import ComposableArchitecture
 import SwiftUI
+import VoyagerFeaturesBetaAccess
 
-public struct BetaAccessStepView: View {
-    public let store: StoreOf<BetaAccessFeature>
+struct BetaAccessStepView: View {
+    let store: StoreOf<BetaAccessFeature>
 
-    public init(store: StoreOf<BetaAccessFeature>) {
-        self.store = store
+    private enum ChipTone {
+        case success
+        case error
+        case neutral
     }
 
-    public var body: some View {
+    var body: some View {
         WithViewStore(store, observe: { $0 }, content: { viewStore in
             VStack(alignment: .leading, spacing: 12) {
                 VStack(alignment: .leading, spacing: 8) {
@@ -66,7 +69,7 @@ public struct BetaAccessStepView: View {
                     HStack(spacing: 8) {
                         ProgressView()
                             .controlSize(.small)
-                        Text("Checking…")
+                        Text("Checking...")
                             .font(.system(size: 12))
                             .foregroundStyle(.secondary)
                     }
@@ -77,23 +80,6 @@ public struct BetaAccessStepView: View {
                 viewStore.send(.onAppear)
             }
         })
-    }
-
-    private enum ChipTone {
-        case success
-        case error
-        case neutral
-    }
-
-    private func statusTone(for status: BetaAccessStatus) -> ChipTone {
-        switch status {
-        case .active:
-            .success
-        case .checkFailed:
-            .error
-        case .notActive:
-            .neutral
-        }
     }
 
     private func statusChip(_ text: String, tone: ChipTone) -> some View {
@@ -109,6 +95,17 @@ public struct BetaAccessStepView: View {
                 Capsule(style: .continuous)
                     .fill(colors.background),
             )
+    }
+
+    private func statusTone(for status: BetaAccessStatus) -> ChipTone {
+        switch status {
+        case .active:
+            .success
+        case .checkFailed:
+            .error
+        case .notActive:
+            .neutral
+        }
     }
 
     private func chipColors(for tone: ChipTone) -> (foreground: Color, background: Color) {

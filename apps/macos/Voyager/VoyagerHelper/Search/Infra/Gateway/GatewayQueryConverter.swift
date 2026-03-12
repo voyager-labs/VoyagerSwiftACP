@@ -3,10 +3,11 @@ import Logging
 
 struct GatewayQueryConverter: Sendable {
     private let logger: Logger
-    let resourceBundle: Bundle
-    let homeDir: String
     private let conditionRegistry: PropertyConditionRegistry?
     private let conditionSanitizer: SearchConditionSanitizer?
+
+    let resourceBundle: Bundle
+    let homeDir: String
     let systemPropertyMap: [String: SystemPropertyDefinition]
 
     init(

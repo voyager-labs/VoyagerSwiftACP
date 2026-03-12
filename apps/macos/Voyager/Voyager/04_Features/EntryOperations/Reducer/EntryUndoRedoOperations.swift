@@ -1,9 +1,10 @@
+// swiftlint:disable file_length
 import ComposableArchitecture
 import Foundation
 import OSLog
 
 @Reducer
-struct EntryUndoRedoOperationsReducer {
+struct EntryUndoRedoOperationsReducer { // swiftlint:disable:this type_body_length
     typealias State = EntryOperationsState
     typealias Action = EntryOperationsAction
 
@@ -12,10 +13,11 @@ struct EntryUndoRedoOperationsReducer {
     @Dependency(\.undoManagerClient)
     var undoManagerClient
 
-    private nonisolated static let logger = Logger(
-        subsystem: "com.voyager",
-        category: "entry-undo-redo-operations",
-    )
+    private struct EntryActionOperation {
+        let operationPath: String
+        let operationKind: OperationKind
+        let perform: @Sendable () async throws -> EntryActionRecord.Target
+    }
 
     var body: some Reducer<State, Action> {
         Reduce { state, action in
@@ -129,6 +131,7 @@ struct EntryUndoRedoOperationsReducer {
 
                     state.clipboardItems = []
                     state.clipboardOperation = .copy
+                    state.cutClearSession = nil
                     return .send(.setClipboardOperation(operation: .copy))
 
                 case (.deleteImmediately, .success):
@@ -153,12 +156,6 @@ struct EntryUndoRedoOperationsReducer {
                 return .none
             }
         }
-    }
-
-    private struct EntryActionOperation {
-        let operationPath: String
-        let operationKind: OperationKind
-        let perform: @Sendable () async throws -> EntryActionRecord.Target
     }
 
     private func replayEntryAction(
@@ -505,6 +502,23 @@ struct EntryUndoRedoOperationsReducer {
         )
     }
 
+    private func moveItemToTrash(path: String) async throws -> String {
+        let sourceURL = URL(fileURLWithPath: path)
+        let trashURL = try await entryFileOpsClient.moveToTrashAndReturnURL(sourceURL)
+        let metadata = TrashMetadata(
+            trashPath: trashURL.path,
+            originalPath: path,
+            deletedDate: Date(),
+        )
+        await TrashMetadataStore.shared.save(metadata)
+        return trashURL.path
+    }
+
+    private nonisolated static let logger = Logger(
+        subsystem: "fm.voyager",
+        category: "entry-undo-redo-operations",
+    )
+
     private static func requiredPath(_ path: String?, context: String) throws -> String {
         guard let path else {
             throw FileOpError.system(message: "Entry action path missing (\(context))")
@@ -517,17 +531,5 @@ struct EntryUndoRedoOperationsReducer {
             throw FileOpError.system(message: "Entry action tags missing (\(context))")
         }
         return tags
-    }
-
-    private func moveItemToTrash(path: String) async throws -> String {
-        let sourceURL = URL(fileURLWithPath: path)
-        let trashURL = try await entryFileOpsClient.moveToTrashAndReturnURL(sourceURL)
-        let metadata = TrashMetadata(
-            trashPath: trashURL.path,
-            originalPath: path,
-            deletedDate: Date(),
-        )
-        await TrashMetadataStore.shared.save(metadata)
-        return trashURL.path
     }
 }

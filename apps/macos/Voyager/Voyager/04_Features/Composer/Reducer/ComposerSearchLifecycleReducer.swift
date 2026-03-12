@@ -3,13 +3,13 @@ import Foundation
 
 @Reducer
 struct ComposerSearchLifecycleReducer {
+    typealias State = ComposerState
+    typealias Action = ComposerAction
+
     @Dependency(\.searchClient)
     var searchClient
     @Dependency(\.registryClient)
     var registryClient
-
-    typealias State = ComposerState
-    typealias Action = ComposerAction
 
     var body: some Reducer<State, Action> {
         Reduce { state, action in

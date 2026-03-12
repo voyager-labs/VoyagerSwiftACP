@@ -3,6 +3,7 @@ import SwiftUI
 
 struct ConditionPropertyPickerView: View {
     let store: StoreOf<ConditionPropertyPickerFeature>
+
     @Environment(\.colorScheme)
     private var colorScheme
     @FocusState private var isSearchFocused: Bool

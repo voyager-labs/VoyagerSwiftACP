@@ -1,19 +1,6 @@
 import Foundation
 
 struct RegistrySnapshot: Sendable {
-    struct PropertyEntry: Sendable {
-        let key: String
-        let category: String
-        let definition: SystemPropertyDefinition
-    }
-
-    private struct PropertyBuild {
-        let properties: [PropertyEntry]
-        let labels: [String: String]
-        let types: [String: String]
-        let legacyKeyMap: [String: String]
-    }
-
     let allProperties: [PropertyEntry]
     let propertyKeyToLabel: [String: String]
     let propertyKeyToType: [String: String]
@@ -22,27 +9,17 @@ struct RegistrySnapshot: Sendable {
     let operatorDefinitions: [String: OperatorDefinition]
     let propertyTypes: [String: PropertyType]
 
-    static func load() -> RegistrySnapshot {
-        let systemRegistry: SystemPropertyRegistry = loadRegistry(resourceName: "system_property_registry")
-        let conditionRegistry: PropertyConditionRegistry = loadRegistry(
-            resourceName: "property_condition_registry",
-        )
+    private struct PropertyBuild {
+        let properties: [PropertyEntry]
+        let labels: [String: String]
+        let types: [String: String]
+        let legacyKeyMap: [String: String]
+    }
 
-        let propertyBuild = buildProperties(from: systemRegistry)
-        let operatorMap = buildOperatorMap(
-            properties: propertyBuild.properties,
-            conditionRegistry: conditionRegistry,
-        )
-
-        return RegistrySnapshot(
-            allProperties: propertyBuild.properties,
-            propertyKeyToLabel: propertyBuild.labels,
-            propertyKeyToType: propertyBuild.types,
-            legacyKeyMap: propertyBuild.legacyKeyMap,
-            operatorCodesByKey: operatorMap,
-            operatorDefinitions: conditionRegistry.operators,
-            propertyTypes: conditionRegistry.propertyTypes,
-        )
+    struct PropertyEntry: Sendable {
+        let key: String
+        let category: String
+        let definition: SystemPropertyDefinition
     }
 
     private static func loadRegistry<T: Decodable>(resourceName: String) -> T {
@@ -128,5 +105,28 @@ struct RegistrySnapshot: Sendable {
         }
         _ = label
         return true
+    }
+
+    static func load() -> RegistrySnapshot {
+        let systemRegistry: SystemPropertyRegistry = loadRegistry(resourceName: "system_property_registry")
+        let conditionRegistry: PropertyConditionRegistry = loadRegistry(
+            resourceName: "property_condition_registry",
+        )
+
+        let propertyBuild = buildProperties(from: systemRegistry)
+        let operatorMap = buildOperatorMap(
+            properties: propertyBuild.properties,
+            conditionRegistry: conditionRegistry,
+        )
+
+        return RegistrySnapshot(
+            allProperties: propertyBuild.properties,
+            propertyKeyToLabel: propertyBuild.labels,
+            propertyKeyToType: propertyBuild.types,
+            legacyKeyMap: propertyBuild.legacyKeyMap,
+            operatorCodesByKey: operatorMap,
+            operatorDefinitions: conditionRegistry.operators,
+            propertyTypes: conditionRegistry.propertyTypes,
+        )
     }
 }

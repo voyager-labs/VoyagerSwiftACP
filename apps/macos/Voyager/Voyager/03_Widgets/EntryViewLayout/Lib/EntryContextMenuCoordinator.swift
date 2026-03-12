@@ -1,233 +1,157 @@
 import AppKit
 import ComposableArchitecture
+import CoreGraphics
 
 final class EntryContextMenuCoordinator: NSObject {
-    var onOpenSelectedItem: () -> Void = {}
-    var onOpenSelectedItemInNewTab: (String) -> Void = { _ in }
-    var onQuickLookSelectedItem: () -> Void = {}
-    var onGetInfoForSelectedItems: () -> Void = {}
-    var onShareSelectedItems: () -> Void = {}
-    var onRevealSelectedItemsInFinder: () -> Void = {}
-    var onCopySelectedItems: () -> Void = {}
-    var onCopySelectedAbsolutePaths: () -> Void = {}
-    var onCopySelectedURLs: () -> Void = {}
-    var onCutSelectedItems: () -> Void = {}
-    var onPasteItems: () -> Void = {}
-    var onStartRename: () -> Void = {}
-    var onDuplicateSelectedItems: () -> Void = {}
-    var onCreateAliasForSelectedItems: () -> Void = {}
-    var onCompressSelectedItems: () -> Void = {}
-    var onExtractSelectedItem: () -> Void = {}
-    var onMoveSelectedItemsToTrash: () -> Void = {}
-    var onDeleteSelectedItemsImmediately: () -> Void = {}
-    var onPutBackSelectedItems: () -> Void = {}
-    var onEmptyTrash: () -> Void = {}
-    var onOpenWithSelectedItem: (String?) -> Void = { _ in }
-    var onToggleTagForSelectedItem: (String) -> Void = { _ in }
+    private let store: StoreOf<EntryViewLayoutFeature>
+
+    init(store: StoreOf<EntryViewLayoutFeature>) {
+        self.store = store
+    }
 
     @objc
     func contextMenuOpenSelectedItem() {
-        onOpenSelectedItem()
+        store.send(.delegate(.saveScrollOffset(.zero, forPath: store.state.currentPath)))
+        store.send(.delegate(.executeCommand(.navigation(.openSelectedItem))))
     }
 
     @objc
     func contextMenuOpenSelectedItemInNewTab(_ sender: NSMenuItem) {
         guard let path = sender.representedObject as? String else { return }
-        onOpenSelectedItemInNewTab(path)
+        store.send(.delegate(.openPathInNewTab(path)))
     }
 
     @objc
     func contextMenuQuickLookSelectedItem() {
-        onQuickLookSelectedItem()
+        store.send(.delegate(.executeCommand(.navigation(.quickLookSelectedItem))))
     }
 
     @objc
     func contextMenuGetInfoForSelectedItems() {
-        onGetInfoForSelectedItems()
+        store.send(.delegate(.executeCommand(.navigation(.getInfoForSelectedItems))))
     }
 
     @objc
     func contextMenuShareSelectedItems() {
-        onShareSelectedItems()
+        store.send(.delegate(.executeCommand(.navigation(.shareSelectedItems(anchor: nil)))))
     }
 
     @objc
     func contextMenuRevealSelectedItemsInFinder() {
-        onRevealSelectedItemsInFinder()
+        store.send(.delegate(.executeCommand(.navigation(.revealSelectedItemsInFinder))))
     }
 
     @objc
     func contextMenuCopySelectedItems() {
-        onCopySelectedItems()
+        store.send(.delegate(.executeCommand(.clipboard(.copySelectedItems))))
     }
 
     @objc
     func contextMenuCopySelectedAbsolutePaths() {
-        onCopySelectedAbsolutePaths()
+        store.send(.delegate(.executeCommand(.clipboard(.copySelectedAbsolutePaths))))
     }
 
     @objc
     func contextMenuCopySelectedURLs() {
-        onCopySelectedURLs()
+        store.send(.delegate(.executeCommand(.clipboard(.copySelectedURLs))))
     }
 
     @objc
     func contextMenuCutSelectedItems() {
-        onCutSelectedItems()
+        store.send(.delegate(.executeCommand(.clipboard(.cutSelectedItems))))
     }
 
     @objc
     func contextMenuPasteItems() {
-        onPasteItems()
+        store.send(.delegate(.executeCommand(.clipboard(.pasteItems(destinationPath: store.state.currentPath)))))
     }
 
     @objc
     func contextMenuStartRename() {
-        onStartRename()
+        guard let id = store.state.selectedIds.first else { return }
+        let item = store.state.entries.first(where: { $0.id == id })
+        store.send(.delegate(.startRename(id: id, text: item?.name ?? "")))
     }
 
     @objc
     func contextMenuDuplicateSelectedItems() {
-        onDuplicateSelectedItems()
+        store.send(.delegate(.executeCommand(.clipboard(.duplicateSelectedItems))))
     }
 
     @objc
     func contextMenuCreateAliasForSelectedItems() {
-        onCreateAliasForSelectedItems()
+        store.send(.delegate(.executeCommand(.mutation(.createAliasForSelectedItems))))
     }
 
     @objc
     func contextMenuCompressSelectedItems() {
-        onCompressSelectedItems()
+        store.send(.delegate(.executeCommand(.mutation(.compressSelectedItems))))
     }
 
     @objc
     func contextMenuExtractSelectedItem() {
-        onExtractSelectedItem()
+        store.send(.delegate(.executeCommand(.mutation(.extractSelectedItem))))
     }
 
     @objc
     func contextMenuMoveSelectedItemsToTrash() {
-        onMoveSelectedItemsToTrash()
+        store.send(.delegate(.executeCommand(.mutation(.moveSelectedItemsToTrash))))
     }
 
     @objc
     func contextMenuDeleteSelectedItemsImmediately() {
-        onDeleteSelectedItemsImmediately()
+        store.send(.delegate(.executeCommand(.mutation(.deleteSelectedItemsImmediately))))
     }
 
     @objc
     func contextMenuPutBackSelectedItems() {
-        onPutBackSelectedItems()
+        store.send(.delegate(.executeCommand(.mutation(.putBackSelectedItems))))
     }
 
     @objc
     func contextMenuEmptyTrash() {
-        onEmptyTrash()
+        store.send(.delegate(.executeCommand(.mutation(.emptyTrash))))
     }
 
     @objc
     func contextMenuOpenWithOther() {
-        onOpenWithSelectedItem(nil)
+        store.send(.delegate(.executeCommand(.navigation(.openWithSelectedItem(
+            bundleID: nil,
+            shouldSetAsDefault: false,
+        )))))
     }
 
     @objc
     func contextMenuOpenWithApp(_ sender: NSMenuItem) {
         let bundleID = sender.representedObject as? String
-        onOpenWithSelectedItem(bundleID)
+        store.send(.delegate(.executeCommand(.navigation(.openWithSelectedItem(
+            bundleID: bundleID,
+            shouldSetAsDefault: false,
+        )))))
     }
 
     @objc
     func contextMenuToggleTag(_ sender: NSMenuItem) {
         guard let tagName = sender.representedObject as? String else { return }
-        onToggleTagForSelectedItem(tagName)
+        store.send(.delegate(.executeCommand(.mutation(.toggleTagForSelectedItem(tag: tagName)))))
     }
 }
 
-@MainActor
 extension EntryContextMenuCoordinator {
-    struct Context {
-        let adapter: EntryViewLayoutAdapter
-        let currentPath: () -> String
-        let selectedItemId: () -> String?
-        let contextMenuAnchor: () -> CGPoint?
-        let saveScrollPosition: () -> Void
+    static func sendWithSelection(
+        _ item: EntryModel,
+        selectedIds: Set<EntryModel.ID>,
+        entryViewLayoutStore: StoreOf<EntryViewLayoutFeature>,
+        action: @escaping () -> Void,
+    ) {
+        if !selectedIds.contains(item.id) {
+            entryViewLayoutStore.send(.internal(.setSelectionState(
+                ids: [item.id],
+                lastSelectedId: item.id,
+                rangeAnchorId: item.id,
+                shouldScrollToSelection: false,
+            )))
+        }
+        action()
     }
-
-    // swiftlint:disable function_body_length
-    static func make(context: Context) -> EntryContextMenuCoordinator {
-        let controller = EntryContextMenuCoordinator()
-
-        controller.onOpenSelectedItem = {
-            context.saveScrollPosition()
-            context.adapter.actions.openSelectedItem()
-        }
-        controller.onOpenSelectedItemInNewTab = { path in
-            context.adapter.actions.openPathInNewTab(path)
-        }
-        controller.onQuickLookSelectedItem = {
-            context.adapter.actions.quickLookSelectedItem()
-        }
-        controller.onGetInfoForSelectedItems = {
-            context.adapter.actions.getInfoForSelectedItems()
-        }
-        controller.onShareSelectedItems = {
-            context.adapter.actions.shareSelectedItems(context.contextMenuAnchor())
-        }
-        controller.onRevealSelectedItemsInFinder = {
-            context.adapter.actions.revealSelectedItemsInFinder()
-        }
-        controller.onCopySelectedItems = {
-            context.adapter.actions.copySelectedItems()
-        }
-        controller.onCopySelectedAbsolutePaths = {
-            context.adapter.actions.copySelectedAbsolutePaths()
-        }
-        controller.onCopySelectedURLs = {
-            context.adapter.actions.copySelectedURLs()
-        }
-        controller.onCutSelectedItems = {
-            context.adapter.actions.cutSelectedItems()
-        }
-        controller.onPasteItems = {
-            context.adapter.actions.pasteItems(context.currentPath())
-        }
-        controller.onStartRename = {
-            guard let id = context.selectedItemId() else { return }
-            context.adapter.actions.startRename(id)
-        }
-        controller.onDuplicateSelectedItems = {
-            context.adapter.actions.duplicateSelectedItems()
-        }
-        controller.onCreateAliasForSelectedItems = {
-            context.adapter.actions.createAliasForSelectedItems()
-        }
-        controller.onCompressSelectedItems = {
-            context.adapter.actions.compressSelectedItems()
-        }
-        controller.onExtractSelectedItem = {
-            context.adapter.actions.extractSelectedItem()
-        }
-        controller.onMoveSelectedItemsToTrash = {
-            context.adapter.actions.moveSelectedItemsToTrash()
-        }
-        controller.onDeleteSelectedItemsImmediately = {
-            context.adapter.actions.deleteSelectedItemsImmediately()
-        }
-        controller.onPutBackSelectedItems = {
-            context.adapter.actions.putBackSelectedItems()
-        }
-        controller.onEmptyTrash = {
-            context.adapter.actions.emptyTrash()
-        }
-        controller.onOpenWithSelectedItem = { bundleID in
-            context.adapter.actions.openWithSelectedItem(bundleID, false)
-        }
-        controller.onToggleTagForSelectedItem = { tagName in
-            context.adapter.actions.toggleTagForSelectedItem(tagName)
-        }
-
-        return controller
-    }
-    // swiftlint:enable function_body_length
 }

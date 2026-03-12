@@ -12,10 +12,10 @@ struct EntryArchiveOperationsReducer {
     var body: some Reducer<State, Action> {
         Reduce { _, action in
             switch action {
-            case let .compressItems(items):
-                let itemURLs = items.map { URL(fileURLWithPath: $0.fullPath) }
-                guard let firstItem = items.first else { return .none }
-                let parentPath = URL(fileURLWithPath: firstItem.fullPath).deletingLastPathComponent().path
+            case let .compressItems(paths):
+                let itemURLs = paths.map { URL(fileURLWithPath: $0) }
+                guard let firstPath = paths.first else { return .none }
+                let parentPath = URL(fileURLWithPath: firstPath).deletingLastPathComponent().path
 
                 return .run { [entryFileOpsClient] send in
                     await send(.operationStarted(parentPath, .compress))
@@ -29,8 +29,8 @@ struct EntryArchiveOperationsReducer {
                     }
                 }
 
-            case let .extractCompressedFile(file):
-                let zipURL = URL(fileURLWithPath: file.fullPath)
+            case let .extractCompressedFile(path):
+                let zipURL = URL(fileURLWithPath: path)
                 let parentPath = zipURL.deletingLastPathComponent().path
 
                 return .run { [entryFileOpsClient] send in

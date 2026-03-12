@@ -14,9 +14,9 @@ struct EntryTrashOperationsReducer {
     var body: some Reducer<State, Action> {
         Reduce { state, action in
             switch action {
-            case let .moveToTrash(items):
+            case let .moveToTrash(paths):
                 return EntryOperationsExecutionSupport.runParallelWithTargets(
-                    items: items,
+                    paths: paths,
                     kind: .moveToTrash,
                     operationKind: .moveToTrash,
                 ) { url in
@@ -38,26 +38,26 @@ struct EntryTrashOperationsReducer {
                     return nil
                 }
 
-            case let .deleteImmediately(items):
-                guard !items.isEmpty else {
+            case let .deleteImmediately(paths):
+                guard !paths.isEmpty else {
                     return .none
                 }
 
-                let itemNames = items.map(\.name)
+                let itemNames = paths.map { URL(fileURLWithPath: $0).lastPathComponent }
 
                 return .run { send in
                     let confirmed = await alertClient.showDeleteConfirmationAlert(itemNames)
                     guard confirmed else { return }
-                    await send(.deleteImmediatelyConfirmed(items: items))
+                    await send(.deleteImmediatelyConfirmed(paths: paths))
                 }
 
-            case let .deleteImmediatelyConfirmed(items):
-                return EntryOperationsExecutionSupport.runParallel(items: items, kind: .deleteImmediately) { url in
+            case let .deleteImmediatelyConfirmed(paths):
+                return EntryOperationsExecutionSupport.runParallel(paths: paths, kind: .deleteImmediately) { url in
                     try await entryFileOpsClient.deleteImmediately(url)
                 }
 
-            case let .emptyTrash(items):
-                let itemCount = items.count
+            case let .emptyTrash(paths):
+                let itemCount = paths.count
                 state.pendingEmptyTrashItemCount = itemCount
                 state.emptyTrashCompletedCount = 0
 
@@ -67,7 +67,7 @@ struct EntryTrashOperationsReducer {
                         await send(.emptyTrashCancelled)
                         return
                     }
-                    await send(.emptyTrashConfirmed(items: items))
+                    await send(.emptyTrashConfirmed(paths: paths))
                 }
 
             case .emptyTrashCancelled:
@@ -80,9 +80,9 @@ struct EntryTrashOperationsReducer {
                 state.emptyTrashCompletedCount = 0
                 return .none
 
-            case let .emptyTrashConfirmed(items):
+            case let .emptyTrashConfirmed(paths):
                 return EntryOperationsExecutionSupport.runParallel(
-                    items: items,
+                    paths: paths,
                     kind: .deleteImmediately,
                     operation: { url in
                         try await entryFileOpsClient.deleteImmediately(url)
@@ -92,17 +92,17 @@ struct EntryTrashOperationsReducer {
                     },
                 )
 
-            case let .putBackFromTrash(items):
+            case let .putBackFromTrash(paths):
                 return .run { [entryFileOpsClient] send in
                     var targets: [EntryActionRecord.Target] = []
 
-                    for item in items {
-                        await send(.operationStarted(item.fullPath, .putBack))
+                    for path in paths {
+                        await send(.operationStarted(path, .putBack))
 
-                        guard let metadata = await TrashMetadataStore.shared.find(trashPath: item.fullPath)
+                        guard let metadata = await TrashMetadataStore.shared.find(trashPath: path)
                         else {
                             await send(.operationFinished(
-                                item.fullPath,
+                                path,
                                 .putBack,
                                 .failure(.system(message: "Original path not found")),
                             ))
@@ -113,14 +113,14 @@ struct EntryTrashOperationsReducer {
 
                         do {
                             try await entryFileOpsClient.putBackFromTrash(
-                                URL(fileURLWithPath: item.fullPath),
+                                URL(fileURLWithPath: path),
                                 originalPath,
                             )
-                            await send(.operationFinished(item.fullPath, .putBack, .success(())))
-                            targets.append(.init(beforePath: item.fullPath, afterPath: originalPath))
+                            await send(.operationFinished(path, .putBack, .success(())))
+                            targets.append(.init(beforePath: path, afterPath: originalPath))
                         } catch let error as FileOpError where error.isFileExists {
                             guard let itemName = error.itemName else {
-                                await send(.operationFinished(item.fullPath, .putBack, .failure(error)))
+                                await send(.operationFinished(path, .putBack, .failure(error)))
                                 continue
                             }
 
@@ -137,19 +137,19 @@ struct EntryTrashOperationsReducer {
                                     let originalURL = URL(fileURLWithPath: originalPath)
                                     try await entryFileOpsClient.deleteImmediately(originalURL)
                                     try await entryFileOpsClient.putBackFromTrash(
-                                        URL(fileURLWithPath: item.fullPath),
+                                        URL(fileURLWithPath: path),
                                         originalPath,
                                     )
-                                    await send(.operationFinished(item.fullPath, .putBack, .success(())))
-                                    targets.append(.init(beforePath: item.fullPath, afterPath: originalPath))
+                                    await send(.operationFinished(path, .putBack, .success(())))
+                                    targets.append(.init(beforePath: path, afterPath: originalPath))
                                 } catch {
-                                    await send(.operationFinished(item.fullPath, .putBack, .failure(error.fileOpError)))
+                                    await send(.operationFinished(path, .putBack, .failure(error.fileOpError)))
                                 }
                             } else {
-                                await send(.operationFinished(item.fullPath, .putBack, .failure(.cancelled)))
+                                await send(.operationFinished(path, .putBack, .failure(.cancelled)))
                             }
                         } catch {
-                            await send(.operationFinished(item.fullPath, .putBack, .failure(error.fileOpError)))
+                            await send(.operationFinished(path, .putBack, .failure(error.fileOpError)))
                         }
                     }
 

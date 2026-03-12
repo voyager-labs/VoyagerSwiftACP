@@ -15,6 +15,10 @@ struct EntryOperationsLifecycleReducer {
     var body: some Reducer<State, Action> {
         Reduce { state, action in
             switch action {
+            case let .syncSelectedEntryIDs(ids):
+                state.selectedEntryIDs = ids
+                return .none
+
             case let .clearError(filePath):
                 state.itemStates[filePath]?.lastError = nil
                 return .none

@@ -62,7 +62,7 @@ extension WorkspaceClient: DependencyKey {
                 workspace.open(url)
             },
             currentEvent: {
-                NSApplication.shared.currentEvent
+                nil
             },
         )
     }

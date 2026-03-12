@@ -15,10 +15,9 @@ final class SpotlightQueryCompilerPushdownTests: XCTestCase {
         let plan = try compiler.compilePlan(conditions: [condition])
 
         XCTAssertEqual(plan.pushdownConditions.count, 1)
-        XCTAssertEqual(plan.postFilterConditions.count, 0)
     }
 
-    func testCompilePlanKeepsMdimporterLabelPropertyInPostFilter() throws {
+    func testCompilePlanPushesDownMdimporterLabelProperty() throws {
         let compiler = try makeCompiler()
         let condition = SearchConditionPayload(
             propertyKey: "removed_notification",
@@ -28,11 +27,10 @@ final class SpotlightQueryCompilerPushdownTests: XCTestCase {
 
         let plan = try compiler.compilePlan(conditions: [condition])
 
-        XCTAssertEqual(plan.pushdownConditions.count, 0)
-        XCTAssertEqual(plan.postFilterConditions.count, 1)
+        XCTAssertEqual(plan.pushdownConditions.count, 1)
     }
 
-    func testCompilePlanKeepsNsurlOnlyPropertyInPostFilter() throws {
+    func testCompilePlanRejectsHiddenNsurlOnlyProperty() throws {
         let compiler = try makeCompiler()
         let condition = SearchConditionPayload(
             propertyKey: "is_directory",
@@ -40,10 +38,13 @@ final class SpotlightQueryCompilerPushdownTests: XCTestCase {
             value: .bool(true),
         )
 
-        let plan = try compiler.compilePlan(conditions: [condition])
+        XCTAssertThrowsError(try compiler.compilePlan(conditions: [condition])) { error in
+            guard case let SpotlightQueryCompiler.CompileError.hiddenPropertyKey(propertyKey) = error else {
+                return XCTFail("Unexpected error: \(error)")
+            }
 
-        XCTAssertEqual(plan.pushdownConditions.count, 0)
-        XCTAssertEqual(plan.postFilterConditions.count, 1)
+            XCTAssertEqual(propertyKey, "is_directory")
+        }
     }
 }
 
