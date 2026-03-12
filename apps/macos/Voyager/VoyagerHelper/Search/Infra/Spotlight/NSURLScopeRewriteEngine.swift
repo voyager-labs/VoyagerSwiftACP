@@ -1,6 +1,11 @@
 import Foundation
 
 struct NSURLScopeRewriteEngine: Sendable {
+    private struct ScopeRewriteRule {
+        let propertyKey: String
+        let resolveScopes: (_ value: String, _ volumes: [VolumeInfo]) -> [String]
+    }
+
     struct VolumeInfo: Sendable {
         let rootPath: String
         let name: String?
@@ -11,11 +16,6 @@ struct NSURLScopeRewriteEngine: Sendable {
     struct PreparedFilters {
         let scopes: [String]
         let conditions: [SearchConditionPayload]
-    }
-
-    private struct ScopeRewriteRule {
-        let propertyKey: String
-        let resolveScopes: (_ value: String, _ volumes: [VolumeInfo]) -> [String]
     }
 
     func prepare(_ filters: SearchFiltersPayload) -> PreparedFilters {

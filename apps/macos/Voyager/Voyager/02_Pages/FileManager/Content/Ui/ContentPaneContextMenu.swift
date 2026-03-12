@@ -5,17 +5,38 @@ import SwiftUI
 struct ContentPaneContextMenu: View {
     let store: StoreOf<FileManagerContentFeature>
 
+    private var isTrashFolder: Bool {
+        guard case let .folder(path) = store.navigation.navigationState,
+              let trashPath = FileManager.default.urls(for: .trashDirectory, in: .userDomainMask).first?.path
+        else {
+            return false
+        }
+        return path == trashPath || path.hasPrefix(trashPath + "/")
+    }
+
+    private var defaultNewFolderName: String {
+        var folderName = "untitled folder"
+        var counter = 2
+        while store.entryViewLayout.entries.contains(where: { $0.name == folderName }) {
+            folderName = "untitled folder \(counter)"
+            counter += 1
+        }
+        return folderName
+    }
+
     var body: some View {
         if isTrashFolder {
             Button("Empty Trash") {
-                store.send(.entryOperations(.emptyTrash(items: store.entryOperations.displayOrderItems)))
+                store
+                    .send(.entryViewLayout(.entryOperations(.emptyTrash(paths: store.entryViewLayout.entries
+                            .map(\.fullPath)))))
             }
         } else {
             Button("New Folder") {
-                store.send(.entryOperations(.createNewFolder(
+                store.send(.entryViewLayout(.entryOperations(.createNewFolder(
                     name: defaultNewFolderName,
                     parentPath: store.navigation.currentPath,
-                )))
+                ))))
             }
             .keyboardShortcut("n", modifiers: [.command, .shift])
         }
@@ -49,25 +70,6 @@ struct ContentPaneContextMenu: View {
         }
     }
 
-    private var isTrashFolder: Bool {
-        guard case let .folder(path) = store.navigation.navigationState,
-              let trashPath = FileManager.default.urls(for: .trashDirectory, in: .userDomainMask).first?.path
-        else {
-            return false
-        }
-        return path == trashPath || path.hasPrefix(trashPath + "/")
-    }
-
-    private var defaultNewFolderName: String {
-        var folderName = "untitled folder"
-        var counter = 2
-        while store.entryOperations.displayItems.contains(where: { $0.name == folderName }) {
-            folderName = "untitled folder \(counter)"
-            counter += 1
-        }
-        return folderName
-    }
-
     private func viewLayoutToggle(_ title: String, layout: ContentViewLayout) -> some View {
         Toggle(
             title,
@@ -86,10 +88,10 @@ struct ContentPaneContextMenu: View {
         Toggle(
             title,
             isOn: Binding(
-                get: { store.entryArrangements.sortKey == key },
+                get: { store.entryViewLayout.entryArrangements.sortKey == key },
                 set: { isOn in
                     if isOn {
-                        store.send(.entryArrangements(.setSortKey(key)))
+                        store.send(.entryViewLayout(.entryArrangements(.setSortKey(key))))
                     }
                 },
             ),
@@ -100,10 +102,10 @@ struct ContentPaneContextMenu: View {
         Toggle(
             title,
             isOn: Binding(
-                get: { store.entryArrangements.sortOrder == order },
+                get: { store.entryViewLayout.entryArrangements.sortOrder == order },
                 set: { isOn in
                     if isOn {
-                        store.send(.entryArrangements(.setSortOrder(order)))
+                        store.send(.entryViewLayout(.entryArrangements(.setSortOrder(order))))
                     }
                 },
             ),
@@ -114,10 +116,10 @@ struct ContentPaneContextMenu: View {
         Toggle(
             title,
             isOn: Binding(
-                get: { store.entryArrangements.groupKey == key },
+                get: { store.entryViewLayout.entryArrangements.groupKey == key },
                 set: { isOn in
                     if isOn {
-                        store.send(.entryArrangements(.setGroupKey(key)))
+                        store.send(.entryViewLayout(.entryArrangements(.setGroupKey(key))))
                     }
                 },
             ),

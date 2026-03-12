@@ -1,3 +1,4 @@
+// swiftlint:disable file_length
 import ComposableArchitecture
 import CoreServices
 import Foundation

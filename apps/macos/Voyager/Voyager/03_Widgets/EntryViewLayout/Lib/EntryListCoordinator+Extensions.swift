@@ -1,0 +1,632 @@
+import AppKit
+import ComposableArchitecture
+
+extension EntryListCoordinator {
+    func configureHeaderMenu() {
+        let headerView: EntryListHeaderView
+        if let existing = tableView.headerView as? EntryListHeaderView {
+            headerView = existing
+        } else {
+            let newHeaderView = EntryListHeaderView()
+            tableView.headerView = newHeaderView
+            headerView = newHeaderView
+        }
+        headerView.menuModelProvider = { [weak self] in
+            let visibleColumns = self?.state.listVisibleColumns ?? EntryListColumn.defaultVisibleColumns
+            return EntryViewLayoutColumnsMenuModel(visibleColumns: visibleColumns)
+        }
+        headerView.send = { [weak self] action in
+            self?.store.send(action)
+        }
+        headerView.onSortClick = { [weak self] column in
+            self?.handleHeaderSortClick(column)
+        }
+    }
+
+    func handleHeaderSortClick(_ column: EntryListColumn) {
+        guard let sortKey = column.sortKey else { return }
+
+        if state.entryArrangements.sortKey == sortKey {
+            let next: SortOrder = state.entryArrangements.sortOrder == .ascending ? .descending : .ascending
+            if next != state.entryArrangements.sortOrder { sendEntryArrangements(.setSortOrder(next)) }
+        } else {
+            sendEntryArrangements(.setSortKey(sortKey))
+            sendEntryArrangements(.setSortOrder(defaultSortOrder(for: sortKey)))
+        }
+    }
+
+    func defaultSortOrder(for key: SortKey) -> SortOrder {
+        switch key {
+        case .dateModified, .dateCreated, .dateAdded, .dateLastOpened:
+            .descending
+        case .name, .kind, .application, .size, .tags:
+            .ascending
+        }
+    }
+
+    func syncVisibleColumnsFromTableView() {
+        let columns = tableView.tableColumns.compactMap { tableColumn in
+            EntryListColumn(rawValue: tableColumn.identifier.rawValue)
+        }
+        let normalized = EntryListColumn.normalizeVisibleColumns(columns)
+        if normalized != state.listVisibleColumns {
+            store.send(.internal(.setListVisibleColumns(normalized)))
+        }
+    }
+
+    func updateContextMenuAnchor(forRow row: Int?) {
+        guard let row, row >= 0 else {
+            contextMenuAnchor = nil
+            return
+        }
+        guard let window = view?.window else {
+            contextMenuAnchor = nil
+            return
+        }
+
+        let rectInTable = tableView.rect(ofRow: row)
+        let rectInWindow = tableView.convert(rectInTable, to: nil)
+        let rectInScreen = window.convertToScreen(rectInWindow)
+        contextMenuAnchor = CGPoint(x: rectInScreen.midX, y: rectInScreen.midY)
+    }
+
+    func beginRenaming(row: Int) {
+        guard row >= 0, row < tableView.numberOfRows else { return }
+        guard let nameColumnIndex else { return }
+
+        tableView.scrollRowToVisible(row)
+
+        DispatchQueue.main.async { [weak self] in
+            guard let self else { return }
+
+            _ = tableView.view(atColumn: nameColumnIndex, row: row, makeIfNecessary: true)
+            tableView.editColumn(nameColumnIndex, row: row, with: nil, select: true)
+
+            guard let cell = tableView
+                .view(atColumn: nameColumnIndex, row: row, makeIfNecessary: false) as? EntryListEntryCellView
+            else {
+                return
+            }
+
+            cell.beginRenaming()
+        }
+    }
+}
+
+extension EntryListCoordinator.OutlineItem {
+    func flattenEntries() -> [(EntryModel.ID, EntryListCoordinator.OutlineItem)] {
+        switch kind {
+        case let .entry(entry):
+            [(entry.id, self)]
+        case .group:
+            children.flatMap { $0.flattenEntries() }
+        }
+    }
+}
+
+extension EntryListCoordinator: NSOutlineViewDelegate {
+    func outlineView(_: NSOutlineView, shouldEdit tableColumn: NSTableColumn?, item: Any) -> Bool {
+        guard let tableColumn else { return false }
+        guard tableColumn.identifier.rawValue == EntryListColumn.name.rawValue else { return false }
+        guard let outlineItem = item as? OutlineItem else { return false }
+        guard case let .entry(entry) = outlineItem.kind else { return false }
+        guard state.entryOperations.renamingItemId == entry.id else { return false }
+        return true
+    }
+
+    func outlineView(
+        _: NSOutlineView,
+        draggingSession _: NSDraggingSession,
+        willBeginAt _: NSPoint,
+        forItems items: [Any],
+    ) {
+        let paths = items.compactMap { item -> String? in
+            guard let outlineItem = item as? OutlineItem else { return nil }
+            guard case let .entry(entry) = outlineItem.kind else { return nil }
+            return entry.fullPath
+        }
+        guard !paths.isEmpty else { return }
+        sendEntryOperations(.saveDragPaths(paths))
+    }
+
+    func outlineView(
+        _: NSOutlineView,
+        draggingSession _: NSDraggingSession,
+        endedAt _: NSPoint,
+        operation: NSDragOperation,
+    ) {
+        guard EntryViewLayoutDragStateClearRuleSet.shouldClearAfterSessionEnd(operation: operation) else { return }
+        sendEntryOperations(.saveDragPaths([]))
+        store.send(.view(.setDropTargeted(false)))
+    }
+
+    func outlineView(_ outlineView: NSOutlineView, sortDescriptorsDidChange _: [NSSortDescriptor]) {
+        let signature = EntryListCoordinatorSortDescriptorSignature(descriptors: outlineView.sortDescriptors)
+        guard !sortSyncGate.consumeIfSuppressed(signature) else { return }
+
+        guard let change = EntryListCoordinatorSortDescriptorMapper.change(from: outlineView.sortDescriptors)
+        else { return }
+        let needed = EntryListCoordinatorSortDescriptorMapper.actionsNeeded(
+            currentSortKey: state.entryArrangements.sortKey,
+            currentSortOrder: state.entryArrangements.sortOrder,
+            change: change,
+        )
+        if let sortKey = needed.sortKey { sendEntryArrangements(.setSortKey(sortKey)) }
+        if let sortOrder = needed.sortOrder { sendEntryArrangements(.setSortOrder(sortOrder)) }
+    }
+
+    func outlineViewColumnDidMove(_: Notification) {
+        syncVisibleColumnsFromTableView()
+    }
+
+    func outlineViewColumnDidResize(_ notification: Notification) {
+        guard let column = notification.userInfo?["NSTableColumn"] as? NSTableColumn else { return }
+        guard column.identifier.rawValue == EntryListColumn.dateModified.rawValue else { return }
+        dateModifiedResizeDebouncer.schedule { [weak self] in
+            self?.reloadVisibleDateModifiedCells()
+        }
+    }
+
+    func outlineView(_: NSOutlineView, isGroupItem item: Any) -> Bool {
+        guard let outlineItem = item as? OutlineItem else { return false }
+        if case .group = outlineItem.kind {
+            return true
+        }
+        return false
+    }
+
+    func outlineView(_: NSOutlineView, shouldSelectItem item: Any) -> Bool {
+        guard let outlineItem = item as? OutlineItem else { return false }
+        if case .group = outlineItem.kind {
+            return false
+        }
+        return true
+    }
+
+    func outlineView(_ outlineView: NSOutlineView, heightOfRowByItem item: Any) -> CGFloat {
+        guard let outlineItem = item as? OutlineItem else { return outlineView.rowHeight }
+        switch outlineItem.kind {
+        case .group:
+            return 32
+        case .entry:
+            return max(24, state.listIconSize + 4)
+        }
+    }
+
+    func outlineView(_ outlineView: NSOutlineView, viewFor tableColumn: NSTableColumn?, item: Any) -> NSView? {
+        guard let outlineItem = item as? OutlineItem else { return nil }
+
+        let columnId = tableColumn?.identifier.rawValue ?? "unknown"
+
+        switch outlineItem.kind {
+        case let .group(title, colorCode, _):
+            if columnId == EntryListColumn.name.rawValue {
+                return makeGroupHeaderCell(
+                    outlineView: outlineView,
+                    columnId: columnId,
+                    title: title,
+                    colorCode: colorCode,
+                )
+            }
+            return makeGroupEmptyCell(outlineView: outlineView, columnId: columnId)
+        case let .entry(entry):
+            return makeEntryCell(outlineView: outlineView, columnId: columnId, entry: entry)
+        }
+    }
+
+    private func makeGroupHeaderCell(
+        outlineView: NSOutlineView,
+        columnId: String,
+        title: String,
+        colorCode: Int?,
+    ) -> EntryListGroupHeaderCellView {
+        let headerIdentifier = NSUserInterfaceItemIdentifier("group-header-cell-\(columnId)")
+        let header = (outlineView.makeView(
+            withIdentifier: headerIdentifier,
+            owner: self,
+        ) as? EntryListGroupHeaderCellView)
+            ?? EntryListGroupHeaderCellView()
+        header.identifier = headerIdentifier
+        header.configure(title: title, colorCode: colorCode)
+        return header
+    }
+
+    private func makeGroupEmptyCell(outlineView: NSOutlineView, columnId: String) -> EntryListEmptyCellView {
+        let emptyIdentifier = NSUserInterfaceItemIdentifier("group-empty-cell-\(columnId)")
+        let emptyCell = (outlineView.makeView(withIdentifier: emptyIdentifier, owner: self) as? EntryListEmptyCellView)
+            ?? EntryListEmptyCellView()
+        emptyCell.identifier = emptyIdentifier
+        return emptyCell
+    }
+
+    private func makeEntryCell(
+        outlineView: NSOutlineView,
+        columnId: String,
+        entry: EntryModel,
+    ) -> EntryListEntryCellView {
+        let entryIdentifier = NSUserInterfaceItemIdentifier("entry-cell-\(columnId)")
+        let view = (outlineView.makeView(withIdentifier: entryIdentifier, owner: self) as? EntryListEntryCellView)
+            ?? EntryListEntryCellView()
+        view.identifier = entryIdentifier
+
+        let dateModifiedWidth = outlineView
+            .tableColumn(withIdentifier: NSUserInterfaceItemIdentifier(EntryListColumn.dateModified.rawValue))?
+            .width ?? 0
+        let thumbnail = thumbnailImagesByPath[entry.fullPath]
+        let configuration = makeEntryCellConfiguration(
+            entry: entry,
+            columnId: columnId,
+            dateModifiedWidth: dateModifiedWidth,
+            thumbnail: thumbnail,
+        )
+        view.configure(configuration)
+        return view
+    }
+
+    func outlineViewSelectionDidChange(_: Notification) {
+        guard !isUpdatingSelectionFromStore else { return }
+
+        let selectedIndexes = tableView.selectedRowIndexes
+        let selectedEntries: [EntryModel] = selectedIndexes.compactMap { index in
+            guard let outlineItem = tableView.item(atRow: index) as? OutlineItem else { return nil }
+            guard case let .entry(entry) = outlineItem.kind else { return nil }
+            return entry
+        }
+        let selectedIds: Set<EntryModel.ID> = Set(selectedEntries.map(\.id))
+
+        let clickedRow = tableView.clickedRow
+        let lastSelectedId: EntryModel.ID? = if selectedIndexes.contains(clickedRow),
+                                                let item = tableView.item(atRow: clickedRow) as? OutlineItem,
+                                                case let .entry(entry) = item.kind
+        {
+            entry.id
+        } else if let lastIndex = selectedIndexes.last,
+                  let item = tableView.item(atRow: lastIndex) as? OutlineItem,
+                  case let .entry(entry) = item.kind
+        {
+            entry.id
+        } else {
+            nil
+        }
+
+        preloadOpenWithApplications(selectedEntries: selectedEntries)
+        store.send(.internal(.setSelectionState(
+            ids: selectedIds,
+            lastSelectedId: lastSelectedId,
+            rangeAnchorId: lastSelectedId,
+            shouldScrollToSelection: false,
+        )))
+    }
+
+    func outlineViewItemDidExpand(_ notification: Notification) {
+        guard !isUpdatingGroupExpansion else { return }
+        guard let item = notification.userInfo?["NSObject"] as? OutlineItem else { return }
+        guard case let .group(name, _, _) = item.kind else { return }
+        if state.entryArrangements.collapsedGroups.contains(name) {
+            sendEntryArrangements(.toggleCollapsedGroup(name))
+        }
+    }
+
+    func outlineViewItemDidCollapse(_ notification: Notification) {
+        guard !isUpdatingGroupExpansion else { return }
+        guard let item = notification.userInfo?["NSObject"] as? OutlineItem else { return }
+        guard case let .group(name, _, _) = item.kind else { return }
+        if !state.entryArrangements.collapsedGroups.contains(name) {
+            sendEntryArrangements(.toggleCollapsedGroup(name))
+        }
+    }
+}
+
+extension EntryListCoordinator {
+    func observeListStore() {
+        observeRenderLoop()
+    }
+
+    func observeRenderLoop() {
+        observe { [weak self] in
+            guard let self else { return }
+            let snapshot = RenderSnapshot(state: state)
+
+            guard let previous = lastRenderSnapshot else {
+                lastRenderSnapshot = snapshot
+                return
+            }
+
+            handleSnapshotChanges(previous: previous, snapshot: snapshot)
+
+            lastRenderSnapshot = snapshot
+        }
+    }
+
+    func handleSnapshotChanges(previous: RenderSnapshot, snapshot: RenderSnapshot) {
+        handleVisibleColumnsChange(previous: previous, snapshot: snapshot)
+        rebuildRowsIfNeeded(previous: previous, snapshot: snapshot)
+        resetThumbnailSessionIfNeeded(previous: previous, snapshot: snapshot)
+        syncSelectionIfNeeded(previous: previous, snapshot: snapshot)
+        syncRenamingIfNeeded(previous: previous, snapshot: snapshot)
+        syncSortIndicatorsIfNeeded(previous: previous, snapshot: snapshot)
+        saveScrollPositionIfNeeded(previous: previous, snapshot: snapshot)
+        scrollToSelectionIfNeeded(previous: previous, snapshot: snapshot)
+        updateDropTargetBorderIfNeeded(previous: previous, snapshot: snapshot)
+    }
+
+    func handleVisibleColumnsChange(previous: RenderSnapshot, snapshot: RenderSnapshot) {
+        guard previous.listVisibleColumns != snapshot.listVisibleColumns else { return }
+        view?.applyColumns(snapshot.listVisibleColumns)
+        syncListSortIndicators(sortKey: snapshot.sortKey, sortOrder: snapshot.sortOrder)
+        syncListRenamingFromStore()
+        tableView.reloadData()
+        requestThumbnailsForVisibleRows()
+    }
+
+    func rebuildRowsIfNeeded(previous: RenderSnapshot, snapshot: RenderSnapshot) {
+        if previous.entries != snapshot.entries
+            || previous.groupKey != snapshot.groupKey
+            || previous.groupedItems != snapshot.groupedItems
+        {
+            rebuildRowsAndReload()
+        }
+    }
+
+    func resetThumbnailSessionIfNeeded(previous: RenderSnapshot, snapshot: RenderSnapshot) {
+        if previous.currentPath != snapshot.currentPath { resetThumbnailSession()
+            hasRestoredScrollPosition = false
+        }
+    }
+
+    func syncSelectionIfNeeded(previous: RenderSnapshot, snapshot: RenderSnapshot) {
+        if previous.selectedIds != snapshot.selectedIds { syncListSelectionFromStore() }
+    }
+
+    func syncRenamingIfNeeded(previous: RenderSnapshot, snapshot: RenderSnapshot) {
+        if previous.renamingItemId != snapshot.renamingItemId { syncListRenamingFromStore() }
+    }
+
+    func syncSortIndicatorsIfNeeded(previous: RenderSnapshot, snapshot: RenderSnapshot) {
+        if previous.sortKey != snapshot.sortKey || previous.sortOrder != snapshot.sortOrder {
+            syncListSortIndicators(sortKey: snapshot.sortKey, sortOrder: snapshot.sortOrder)
+        }
+    }
+
+    func saveScrollPositionIfNeeded(previous: RenderSnapshot, snapshot: RenderSnapshot) {
+        if previous.showHiddenFiles != snapshot.showHiddenFiles { saveScrollPosition() }
+    }
+
+    func scrollToSelectionIfNeeded(previous: RenderSnapshot, snapshot: RenderSnapshot) {
+        if !previous.shouldScrollToSelection, snapshot.shouldScrollToSelection { scrollToSelectionIfNeeded() }
+    }
+
+    func updateDropTargetBorderIfNeeded(previous: RenderSnapshot, snapshot: RenderSnapshot) {
+        if previous.isDropTargeted != snapshot
+            .isDropTargeted { updateDropTargetBorder(isTargeted: snapshot.isDropTargeted) }
+    }
+
+    func syncListSortIndicators(sortKey: SortKey, sortOrder: SortOrder) {
+        let ascending = sortOrder == .ascending
+        let descriptorKey = state.listVisibleColumns
+            .first { $0.sortKey == sortKey }?
+            .rawValue
+
+        let targetDescriptors: [NSSortDescriptor] = if let descriptorKey {
+            [NSSortDescriptor(key: descriptorKey, ascending: ascending)]
+        } else {
+            []
+        }
+        let currentSignature = EntryListCoordinatorSortDescriptorSignature(descriptors: tableView.sortDescriptors)
+        let targetSignature = EntryListCoordinatorSortDescriptorSignature(descriptors: targetDescriptors)
+        guard currentSignature != targetSignature else { return }
+
+        sortSyncGate.beginApply(targetSignature)
+        tableView.sortDescriptors = targetDescriptors
+    }
+
+    func syncListSelectionFromStore() {
+        let selectedIds = state.selectedIds
+        let indexes = IndexSet(selectedIds.compactMap { id in
+            guard let item = entryItemById[id] else { return nil }
+            let row = tableView.row(forItem: item)
+            return row >= 0 ? row : nil
+        })
+
+        isUpdatingSelectionFromStore = true
+        tableView.selectRowIndexes(indexes, byExtendingSelection: false)
+        isUpdatingSelectionFromStore = false
+    }
+
+    func syncListRenamingFromStore() {
+        let currentRenamingItemId = state.entryOperations.renamingItemId
+        let previousRenamingItemId = lastRenamingItemId
+        lastRenamingItemId = currentRenamingItemId
+
+        guard let nameColumnIndex else { return }
+        let nameColumnIndexes = IndexSet(integer: nameColumnIndex)
+
+        if let previousRenamingItemId,
+           let item = entryItemById[previousRenamingItemId]
+        {
+            let row = tableView.row(forItem: item)
+            if row >= 0 {
+                tableView.reloadData(forRowIndexes: IndexSet(integer: row), columnIndexes: nameColumnIndexes)
+            }
+        }
+
+        guard let renamingItemId = currentRenamingItemId,
+              let item = entryItemById[renamingItemId]
+        else {
+            view?.window?.makeFirstResponder(tableView)
+            return
+        }
+
+        let row = tableView.row(forItem: item)
+        guard row >= 0 else {
+            view?.window?.makeFirstResponder(tableView)
+            return
+        }
+        tableView.reloadData(forRowIndexes: IndexSet(integer: row), columnIndexes: nameColumnIndexes)
+        beginRenaming(row: row)
+    }
+}
+
+extension EntryListCoordinator: EntryListView.EntryListTableViewContextMenuProviding {
+    func contextMenu(forRow row: Int?, event _: NSEvent) -> NSMenu {
+        updateContextMenuAnchor(forRow: row)
+        let rowEntry = entryForRow(row)
+        let selectedEntries = selectedEntries(fallback: rowEntry)
+        preloadOpenWithApplications(selectedEntries: selectedEntries)
+        let menuSpec = EntryContextMenuSpecFactory.make(
+            selectedIds: state.selectedIds,
+            selectedEntries: selectedEntries,
+            rowEntry: rowEntry,
+            isTrashFolder: isTrashFolder,
+            canPaste: !state.entryOperations.clipboardItems.isEmpty,
+            favoriteTags: finderFavoritesTagClient.favoriteTags(),
+            openWithApplications: openWithApplications(selectedEntries: selectedEntries),
+        )
+        let coordinator = EntryContextMenuCoordinator(store: store)
+        contextMenuCoordinator = coordinator
+        return EntryContextMenuBuilder.makeMenu(configuration: .init(
+            target: coordinator,
+            selectedCount: menuSpec.selectedCount,
+            rowEntryPathForOpenInNewTab: menuSpec.rowEntryPathForOpenInNewTab,
+            canPaste: menuSpec.canPaste,
+            showCompress: menuSpec.showCompress,
+            showExtract: menuSpec.showExtract,
+            isTrashFolder: menuSpec.isTrashFolder,
+            openWithApplications: menuSpec.openWithApplications,
+            showOpenWith: menuSpec.showOpenWith,
+            tags: menuSpec.tags,
+        ))
+    }
+}
+
+extension EntryListCoordinator {
+    func refreshVisibleNameCellIcons(for paths: Set<String>? = nil) {
+        guard tableView.numberOfRows > 0 else { return }
+        guard let nameColumnIndex else { return }
+
+        let visibleRange = tableView.rows(in: tableView.visibleRect)
+        guard visibleRange.length > 0 else { return }
+
+        let dateModifiedWidth = tableView
+            .tableColumn(withIdentifier: NSUserInterfaceItemIdentifier(EntryListColumn.dateModified.rawValue))?
+            .width ?? 0
+
+        for row in visibleRange.location ..< (visibleRange.location + visibleRange.length) {
+            guard let cell = tableView
+                .view(atColumn: nameColumnIndex, row: row, makeIfNecessary: false) as? EntryListEntryCellView
+            else {
+                continue
+            }
+            guard let outlineItem = tableView.item(atRow: row) as? OutlineItem else { continue }
+            guard case let .entry(entry) = outlineItem.kind else { continue }
+            if let paths, !paths.contains(entry.fullPath) { continue }
+
+            let thumbnail = thumbnailImagesByPath[entry.fullPath]
+            let configuration = makeEntryCellConfiguration(
+                entry: entry,
+                columnId: EntryListColumn.name.rawValue,
+                dateModifiedWidth: dateModifiedWidth,
+                thumbnail: thumbnail,
+            )
+            cell.configure(configuration)
+        }
+    }
+
+    func makeEntryCellConfiguration(
+        entry: EntryModel,
+        columnId: String,
+        dateModifiedWidth: CGFloat,
+        thumbnail: NSImage?,
+    ) -> EntryListEntryCellViewConfiguration {
+        .init(
+            context: .init(
+                model: entry,
+                columnId: columnId,
+                iconSize: state.listIconSize,
+                textSize: state.listTextSize,
+                dateModifiedWidth: dateModifiedWidth,
+                thumbnail: thumbnail,
+                isRenaming: state.entryOperations.renamingItemId == entry.id,
+                renamingText: state.entryOperations.renamingText,
+                workspaceClient: workspaceClient,
+                onRenameUpdate: { [weak self] text in
+                    guard let self else { return }
+                    guard state.entryOperations.renamingItemId != nil else { return }
+                    sendEntryOperations(.updateRenamingText(text))
+                },
+                onRenameCommit: { [weak self] in
+                    guard let self else { return }
+                    guard state.entryOperations.renamingItemId != nil else { return }
+                    sendEntryOperations(.commitRename)
+                },
+                onRenameCancel: { [weak self] in
+                    guard let self else { return }
+                    guard state.entryOperations.renamingItemId != nil else { return }
+                    sendEntryOperations(.cancelRename)
+                },
+            ),
+        )
+    }
+
+    func preloadOpenWithApplications(selectedEntries: [EntryModel]) {
+        let selectedFiles = selectedEntries.filter { !$0.isFolder }
+        if selectedFiles.isEmpty {
+            return
+        }
+
+        if selectedFiles.count > 1 {
+            sendEntryOperations(.loadCommonApplicationsForFiles(files: selectedFiles))
+        } else if let file = selectedFiles.first,
+                  state.entryOperations.applicationsForItems[file.fullPath] == nil
+        {
+            sendEntryOperations(.loadApplicationsForFile(file: file))
+        }
+    }
+
+    func openWithApplications(selectedEntries: [EntryModel]) -> [ApplicationInfo] {
+        let selectedFiles = selectedEntries.filter { !$0.isFolder }
+        let applications: [ApplicationInfo] = if selectedFiles.count > 1 {
+            state.entryOperations.commonApplicationsForSelectedFiles
+        } else if let file = selectedFiles.first {
+            state.entryOperations.applicationsForItems[file.fullPath] ?? []
+        } else {
+            []
+        }
+        return applications
+    }
+
+    func entryForRow(_ row: Int?) -> EntryModel? {
+        guard let row, row >= 0 else { return nil }
+        guard let item = tableView.item(atRow: row) as? OutlineItem else { return nil }
+        guard case let .entry(entry) = item.kind else { return nil }
+        return entry
+    }
+
+    func selectedEntries(fallback: EntryModel?) -> [EntryModel] {
+        let selectedIds = state.selectedIds
+        if selectedIds.isEmpty {
+            return fallback.map { [$0] } ?? []
+        }
+        return state.entries.filter { selectedIds.contains($0.id) }
+    }
+
+    var isTrashFolder: Bool {
+        guard let trashPath = entryOpenClient.trashDirectoryPath()
+        else {
+            return false
+        }
+        let path = state.currentPath
+        return path == trashPath || path.hasPrefix(trashPath + "/")
+    }
+
+    func dragOperation(from resolved: EntryDropResolvedOperation) -> NSDragOperation {
+        switch resolved {
+        case .none:
+            []
+        case .copy:
+            .copy
+        case .move:
+            .move
+        }
+    }
+}
