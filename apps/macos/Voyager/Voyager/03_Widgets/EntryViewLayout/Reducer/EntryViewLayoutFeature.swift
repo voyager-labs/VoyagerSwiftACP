@@ -1,4 +1,5 @@
 import ComposableArchitecture
+import IdentifiedCollections
 
 @Reducer
 struct EntryViewLayoutFeature {
@@ -6,30 +7,24 @@ struct EntryViewLayoutFeature {
     typealias Action = EntryViewLayoutAction
 
     var body: some Reducer<State, Action> {
+        Scope(state: \.entryOperations, action: \.entryOperations) {
+            EntryOperationsFeature()
+        }
+
+        Scope(state: \.entryArrangements, action: \.entryArrangements) {
+            EntryArrangementsFeature()
+        }
+
         Reduce { state, action in
             switch action {
-            case let .setSelectionState(ids, lastSelectedId, rangeAnchorId, shouldScrollToSelection):
+            case let .internal(.setSelectionState(ids, lastSelectedId, rangeAnchorId, shouldScrollToSelection)):
                 state.selectedIds = ids
                 state.lastSelectedId = lastSelectedId
                 state.rangeAnchorId = rangeAnchorId
                 state.shouldScrollToSelection = shouldScrollToSelection
                 return .none
 
-            case let .setSelectedIds(ids, lastSelectedId):
-                state.selectedIds = ids
-                state.lastSelectedId = lastSelectedId
-                state.rangeAnchorId = lastSelectedId
-                state.shouldScrollToSelection = false
-                return .none
-
-            case let .setSelectedIdsFromLasso(ids, lastSelectedId):
-                state.selectedIds = ids
-                state.lastSelectedId = lastSelectedId
-                state.rangeAnchorId = lastSelectedId
-                state.shouldScrollToSelection = false
-                return .none
-
-            case let .applySelectAll(orderedItemIds):
+            case let .internal(.applySelectAll(orderedItemIds)):
                 let lastSelectedId = orderedItemIds.last
                 state.selectedIds = Set(orderedItemIds)
                 state.lastSelectedId = lastSelectedId
@@ -37,14 +32,14 @@ struct EntryViewLayoutFeature {
                 state.shouldScrollToSelection = false
                 return .none
 
-            case .applyClearSelection:
+            case .internal(.applyClearSelection):
                 state.selectedIds = []
                 state.lastSelectedId = nil
                 state.rangeAnchorId = nil
                 state.shouldScrollToSelection = false
                 return .none
 
-            case let .applySelectionOffset(offset, isShiftPressed, orderedItemIds):
+            case let .internal(.applySelectionOffset(offset, isShiftPressed, orderedItemIds)):
                 guard !orderedItemIds.isEmpty else { return .none }
 
                 guard let currentId = state.lastSelectedId,
@@ -96,15 +91,15 @@ struct EntryViewLayoutFeature {
                 state.shouldScrollToSelection = true
                 return .none
 
-            case let .updateGridColumnCount(count):
+            case let .internal(.updateGridColumnCount(count)):
                 state.gridColumnCount = max(1, count)
                 return .none
 
-            case let .setListVisibleColumns(columns):
+            case let .internal(.setListVisibleColumns(columns)):
                 state.listVisibleColumns = EntryListColumn.normalizeVisibleColumns(columns)
                 return .none
 
-            case let .setListColumnVisibility(column, isVisible):
+            case let .internal(.setListColumnVisibility(column, isVisible)):
                 var nextColumns = state.listVisibleColumns
                 if isVisible {
                     if !nextColumns.contains(column) {
@@ -116,7 +111,7 @@ struct EntryViewLayoutFeature {
                 state.listVisibleColumns = EntryListColumn.normalizeVisibleColumns(nextColumns)
                 return .none
 
-            case let .moveListColumn(from, to):
+            case let .internal(.moveListColumn(from, to)):
                 var nextColumns = EntryListColumn.normalizeVisibleColumns(state.listVisibleColumns)
                 guard nextColumns.indices.contains(from) else { return .none }
 
@@ -131,53 +126,79 @@ struct EntryViewLayoutFeature {
                 state.listVisibleColumns = EntryListColumn.normalizeVisibleColumns(nextColumns)
                 return .none
 
-            case .resetListVisibleColumns:
+            case .internal(.resetListVisibleColumns):
                 state.listVisibleColumns = EntryListColumn.defaultVisibleColumns
                 return .none
 
-            case .resetScrollFlag:
+            case .internal(.resetScrollFlag):
                 state.shouldScrollToSelection = false
                 return .none
 
-            case let .setDropTargeted(isTargeted):
+            case let .internal(.applyPreferences(preferences)):
+                state.listIconSize = preferences.listIconSize
+                state.listTextSize = preferences.listTextSize
+                state.gridIconSize = preferences.gridIconSize
+                state.gridTextSize = preferences.gridTextSize
+                state.showHiddenFiles = preferences.showHiddenFiles
+                return .none
+
+            case let .view(.setDropTargeted(isTargeted)):
                 state.isDropTargeted = isTargeted
                 return .none
 
-            case let .startRename(id):
-                state.renamingItemId = id
+            case .view(.selectNextItem),
+                 .view(.selectPreviousItem),
+                 .view(.selectByOffset),
+                 .view(.startDrag),
+                 .view(.handleDrop),
+                 .view(.dropItems),
+                 .view(.openSelectedItem):
                 return .none
 
-            case let .setRenameState(id, text):
-                state.renamingItemId = id
-                state.renamingText = text
-                return .none
-
-            case let .updateRenamingText(text):
-                state.renamingText = text
-                return .none
-
-            case .cancelRename:
-                state.renamingItemId = nil
-                state.renamingText = ""
-                return .none
-
-            case .commitRename,
-                 .selectNextItem,
-                 .selectPreviousItem,
-                 .selectByOffset,
-                 .startDrag,
-                 .handleDrop,
-                 .dropItems,
-                 .openSelectedItem:
-                return .none
-
-            case let .setShowHiddenFiles(show):
+            case let .internal(.setShowHiddenFiles(show)):
                 state.showHiddenFiles = show
                 return .none
 
-            case .toggleShowHiddenFiles:
+            case .view(.toggleShowHiddenFiles):
                 state.showHiddenFiles.toggle()
                 return .none
+
+            case .delegate:
+                return .none
+
+            case let .entryOperations(entryOperationsAction):
+                switch entryOperationsAction {
+                case .itemsLoaded,
+                     .collectionItemsLoadedFromSearch,
+                     .setCollectionMode:
+                    state.entries = state.entryOperations.displayOrderItems
+                    return .send(.entryArrangements(.reapply))
+
+                default:
+                    return .none
+                }
+
+            case let .entryArrangements(entryArrangementsAction):
+                switch entryArrangementsAction {
+                case .delegate(.requestApply):
+                    return .send(.entryArrangements(.apply(
+                        items: state.entries,
+                        isCollectionMode: state.entryOperations.loadingContext.isCollectionMode,
+                    )))
+
+                case let .delegate(.applied(sortedItems, isCollectionMode)):
+                    if isCollectionMode {
+                        state.entryOperations.loadingContext
+                            .collectionItems = IdentifiedArray(uniqueElements: sortedItems)
+                    } else {
+                        state.entryOperations.loadingContext.items = IdentifiedArray(uniqueElements: sortedItems)
+                    }
+                    state.entries = sortedItems
+                    return .none
+
+                default:
+                    return .none
+                }
             }
         }
     }

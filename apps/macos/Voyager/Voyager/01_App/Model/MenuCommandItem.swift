@@ -1,4 +1,8 @@
 struct MenuCommandItem: Identifiable, Equatable {
+    let id: String
+    let title: String
+    let command: Command
+
     enum AppCommand: Equatable, Sendable {
         case newWindow(path: String? = nil)
         case newTab(path: String? = nil)
@@ -51,8 +55,4 @@ struct MenuCommandItem: Identifiable, Equatable {
         case view(ViewCommand)
         case edit(EditCommand)
     }
-
-    let id: String
-    let title: String
-    let command: Command
 }

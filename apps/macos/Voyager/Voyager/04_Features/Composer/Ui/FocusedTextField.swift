@@ -3,6 +3,45 @@ import SwiftUI
 struct FocusedTextField: NSViewRepresentable {
     @Binding var text: String
     @Binding var isFirstResponder: Bool
+
+    class Coordinator: NSObject, NSTextFieldDelegate {
+        @Binding var text: String
+        var onCommit: () -> Void
+
+        init(text: Binding<String>, onCommit: @escaping () -> Void) {
+            _text = text
+            self.onCommit = onCommit
+        }
+
+        func controlTextDidChange(_ obj: Notification) {
+            if let field = obj.object as? NSTextField {
+                text = field.stringValue
+            }
+        }
+
+        func control(
+            _: NSControl,
+            textView _: NSTextView,
+            doCommandBy commandSelector: Selector,
+        ) -> Bool {
+            if commandSelector == #selector(NSResponder.insertNewline(_:)) ||
+                commandSelector == #selector(NSResponder.insertLineBreak(_:))
+            {
+                onCommit()
+                return true
+            }
+            return false
+        }
+
+        func controlTextDidEndEditing(_ obj: Notification) {
+            guard
+                let movement = obj.userInfo?["NSTextMovement"] as? Int,
+                movement == NSReturnTextMovement
+            else { return }
+            onCommit()
+        }
+    }
+
     var onCommit: () -> Void = {}
 
     func makeCoordinator() -> Coordinator {
@@ -46,44 +85,6 @@ struct FocusedTextField: NSViewRepresentable {
 
         DispatchQueue.main.async {
             isFirstResponder = nsView.window?.firstResponder == nsView
-        }
-    }
-
-    class Coordinator: NSObject, NSTextFieldDelegate {
-        @Binding var text: String
-        var onCommit: () -> Void
-
-        init(text: Binding<String>, onCommit: @escaping () -> Void) {
-            _text = text
-            self.onCommit = onCommit
-        }
-
-        func controlTextDidChange(_ obj: Notification) {
-            if let field = obj.object as? NSTextField {
-                text = field.stringValue
-            }
-        }
-
-        func control(
-            _: NSControl,
-            textView _: NSTextView,
-            doCommandBy commandSelector: Selector,
-        ) -> Bool {
-            if commandSelector == #selector(NSResponder.insertNewline(_:)) ||
-                commandSelector == #selector(NSResponder.insertLineBreak(_:))
-            {
-                onCommit()
-                return true
-            }
-            return false
-        }
-
-        func controlTextDidEndEditing(_ obj: Notification) {
-            guard
-                let movement = obj.userInfo?["NSTextMovement"] as? Int,
-                movement == NSReturnTextMovement
-            else { return }
-            onCommit()
         }
     }
 }

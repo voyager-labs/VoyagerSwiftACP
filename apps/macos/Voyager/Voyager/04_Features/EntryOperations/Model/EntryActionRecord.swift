@@ -1,6 +1,11 @@
 import Foundation
 
 struct EntryActionRecord: Equatable, Identifiable, Sendable {
+    let id: UUID
+    let operationKind: OperationKind
+    let timestamp: Date
+    let targets: [Target]
+
     struct Target: Equatable, Sendable {
         let beforePath: String?
         let afterPath: String?
@@ -19,11 +24,6 @@ struct EntryActionRecord: Equatable, Identifiable, Sendable {
             self.afterTags = afterTags
         }
     }
-
-    let id: UUID
-    let operationKind: OperationKind
-    let timestamp: Date
-    let targets: [Target]
 
     nonisolated init(
         operationKind: OperationKind,

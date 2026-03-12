@@ -1,12 +1,13 @@
 import AppKit
+import ComposableArchitecture
 import SwiftUI
 
 @MainActor
 struct EntryListViewRepresentable: NSViewRepresentable {
-    let adapter: EntryViewLayoutAdapter
+    let store: StoreOf<EntryViewLayoutFeature>
 
     func makeCoordinator() -> EntryListCoordinator {
-        EntryListCoordinator(adapter: adapter)
+        EntryListCoordinator(store: store)
     }
 
     func makeNSView(context: Context) -> EntryListView {
@@ -77,7 +78,7 @@ final class EntryListView: NSView {
         scrollView.translatesAutoresizingMaskIntoConstraints = false
         scrollView.drawsBackground = false
         scrollView.hasVerticalScroller = true
-        scrollView.hasHorizontalScroller = false
+        scrollView.hasHorizontalScroller = true
         scrollView.automaticallyAdjustsContentInsets = false
         scrollView.contentView.postsBoundsChangedNotifications = true
         scrollView.contentInsets = NSEdgeInsets(top: 0, left: 16, bottom: 0, right: 16)
@@ -94,7 +95,8 @@ final class EntryListView: NSView {
         tableView.registerForDraggedTypes([.fileURL])
         tableView.setDraggingSourceOperationMask([.copy, .move], forLocal: true)
         tableView.setDraggingSourceOperationMask([.copy], forLocal: false)
-        tableView.columnAutoresizingStyle = .lastColumnOnlyAutoresizingStyle
+        tableView.autoresizesOutlineColumn = false
+        tableView.columnAutoresizingStyle = .noColumnAutoresizing
         tableView.autosaveName = "FileManager.EntryList.Columns"
         tableView.autosaveTableColumns = true
         applyColumns(EntryListColumn.defaultVisibleColumns)

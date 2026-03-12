@@ -3,40 +3,60 @@ import ComposableArchitecture
 import Foundation
 
 @CasePathable
-enum EntryViewLayoutAction: CasePathable, Sendable {
-    case setSelectionState(
-        ids: Set<String>,
-        lastSelectedId: String?,
-        rangeAnchorId: String?,
-        shouldScrollToSelection: Bool,
-    )
-    case setSelectedIds(ids: Set<String>, lastSelectedId: String?)
-    case setSelectedIdsFromLasso(ids: Set<String>, lastSelectedId: String?)
-    case applySelectAll(orderedItemIds: [String])
-    case applyClearSelection
-    case selectNextItem(isShiftPressed: Bool)
-    case selectPreviousItem(isShiftPressed: Bool)
-    case selectByOffset(offset: Int, isShiftPressed: Bool)
-    case applySelectionOffset(offset: Int, isShiftPressed: Bool, orderedItemIds: [String])
-    case updateGridColumnCount(Int)
-    case setListVisibleColumns([EntryListColumn])
-    case setListColumnVisibility(column: EntryListColumn, isVisible: Bool)
-    case moveListColumn(from: Int, to: Int)
-    case resetListVisibleColumns
-    case resetScrollFlag
+enum EntryViewLayoutAction: ViewAction, CasePathable, Sendable {
+    struct EntryViewLayoutPreferences: Sendable {
+        let listIconSize: CGFloat
+        let listTextSize: CGFloat
+        let gridIconSize: CGFloat
+        let gridTextSize: CGFloat
+        let showHiddenFiles: Bool
+    }
 
-    case setDropTargeted(Bool)
-    case startDrag(paths: [String])
-    case handleDrop(providers: [NSItemProvider], destinationPath: String)
-    case dropItems(sourcePaths: [String], destinationPath: String, isOptionDrag: Bool)
+    case view(View)
+    case delegate(Delegate)
+    case `internal`(Internal)
+    case entryOperations(EntryOperationsFeature.Action)
+    case entryArrangements(EntryArrangementsFeature.Action)
 
-    case startRename(id: String)
-    case setRenameState(id: String?, text: String)
-    case updateRenamingText(String)
-    case commitRename
-    case cancelRename
+    @CasePathable
+    enum View: Sendable {
+        case selectNextItem(isShiftPressed: Bool)
+        case selectPreviousItem(isShiftPressed: Bool)
+        case selectByOffset(offset: Int, isShiftPressed: Bool)
+        case setDropTargeted(Bool)
+        case startDrag(paths: [String])
+        case handleDrop(providers: [NSItemProvider], destinationPath: String)
+        case dropItems(sourcePaths: [String], destinationPath: String, isOptionDrag: Bool)
+        case openSelectedItem
+        case toggleShowHiddenFiles
+    }
 
-    case openSelectedItem
-    case setShowHiddenFiles(Bool)
-    case toggleShowHiddenFiles
+    @CasePathable
+    enum Delegate: Sendable {
+        case executeCommand(EntryOperationsCommand)
+        case openPathInNewTab(String)
+        case startRename(id: EntryModel.ID, text: String)
+        case saveScrollOffset(CGPoint, forPath: String)
+    }
+
+    @CasePathable
+    enum Internal: Sendable {
+        case setSelectionState(
+            ids: Set<EntryModel.ID>,
+            lastSelectedId: EntryModel.ID?,
+            rangeAnchorId: EntryModel.ID?,
+            shouldScrollToSelection: Bool,
+        )
+        case applySelectAll(orderedItemIds: [EntryModel.ID])
+        case applyClearSelection
+        case applySelectionOffset(offset: Int, isShiftPressed: Bool, orderedItemIds: [EntryModel.ID])
+        case updateGridColumnCount(Int)
+        case setListVisibleColumns([EntryListColumn])
+        case setListColumnVisibility(column: EntryListColumn, isVisible: Bool)
+        case moveListColumn(from: Int, to: Int)
+        case resetListVisibleColumns
+        case resetScrollFlag
+        case applyPreferences(EntryViewLayoutPreferences)
+        case setShowHiddenFiles(Bool)
+    }
 }

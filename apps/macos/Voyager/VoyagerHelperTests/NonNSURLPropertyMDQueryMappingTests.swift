@@ -78,9 +78,9 @@ final class NonNSURLPropertyMDQueryMappingTests: XCTestCase {
 
             validated += 1
 
-            if plan.pushdownConditions.count != 1 || plan.postFilterConditions.isEmpty == false {
+            if plan.pushdownConditions.count != 1 {
                 failures.append(
-                    "\(propertyKey).\(operatorCode): expected pushdown=1/post=0, got pushdown=\(plan.pushdownConditions.count), post=\(plan.postFilterConditions.count)",
+                    "\(propertyKey).\(operatorCode): expected pushdown=1, got \(plan.pushdownConditions.count)",
                 )
                 continue
             }

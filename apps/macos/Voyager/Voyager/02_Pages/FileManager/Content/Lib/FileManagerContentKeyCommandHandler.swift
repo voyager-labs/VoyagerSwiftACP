@@ -1,5 +1,6 @@
 import AppKit
 import ComposableArchitecture
+import Foundation
 
 enum FileManagerContentKeyCommandHandler {
     private static let undoSelector = Selector(("undo:"))
@@ -9,38 +10,10 @@ enum FileManagerContentKeyCommandHandler {
         for command: KeyCommand,
         state: FileManagerContentState,
     ) -> Effect<FileManagerContentAction> {
-        if let effect = renameKeyEffect(for: command, state: state) { return effect }
         if let effect = quickLookKeyEffect(for: command, state: state) { return effect }
         if let effect = deleteKeyEffect(for: command, state: state) { return effect }
         if let movementEffect = selectionMovementEffect(for: command, state: state) { return movementEffect }
         if let effect = commandModifierEffect(for: command, state: state) { return effect }
-        return .none
-    }
-
-    private static func renameKeyEffect(
-        for command: KeyCommand,
-        state: FileManagerContentState,
-    ) -> Effect<FileManagerContentAction>? {
-        if command.keyCode == 53, state.entryViewLayout.isRenaming {
-            return .send(.entryViewLayout(.cancelRename))
-        }
-
-        guard command.keyCode == 36,
-              command.modifiers.isDisjoint(with: [.command, .option, .control, .shift])
-        else {
-            return nil
-        }
-
-        if state.entryViewLayout.isRenaming {
-            return .send(.entries(.commitRename))
-        }
-
-        if state.entryViewLayout.selectedIds.count == 1,
-           let selectedId = state.entryViewLayout.selectedIds.first
-        {
-            return .send(.entries(.startRename(id: selectedId)))
-        }
-
         return .none
     }
 
@@ -54,13 +27,12 @@ enum FileManagerContentKeyCommandHandler {
             return nil
         }
 
-        let selectedIds = state.entryViewLayout.selectedIds
-        let selectedEntries = Array(state.entryOperations.displayItems.filter { selectedIds.contains($0.id) })
+        let selectedEntries = state.selectedEntries
         if selectedEntries.count == 1, let file = selectedEntries.first {
-            return .send(.entryOperations(.quickLookFile(file: file)))
+            return .send(.entryViewLayout(.entryOperations(.quickLookFile(path: file.fullPath))))
         }
         if !selectedEntries.isEmpty {
-            return .send(.entryOperations(.quickLookFiles(files: selectedEntries)))
+            return .send(.entryViewLayout(.entryOperations(.quickLookFiles(paths: selectedEntries.map(\.fullPath)))))
         }
         return .none
     }
@@ -75,14 +47,14 @@ enum FileManagerContentKeyCommandHandler {
             return nil
         }
 
-        let selectedIds = state.entryViewLayout.selectedIds
-        let selectedEntries = Array(state.entryOperations.displayItems.filter { selectedIds.contains($0.id) })
+        let selectedEntries = state.selectedEntries
         guard !selectedEntries.isEmpty else { return .none }
+        let selectedPaths = selectedEntries.map(\.fullPath)
 
         if command.modifiers.contains(.option) {
-            return .send(.entryOperations(.deleteImmediately(items: selectedEntries)))
+            return .send(.entryViewLayout(.entryOperations(.deleteImmediately(paths: selectedPaths))))
         }
-        return .send(.entryOperations(.moveToTrash(items: selectedEntries)))
+        return .send(.entryViewLayout(.entryOperations(.moveToTrash(paths: selectedPaths))))
     }
 
     private static func commandModifierEffect(
@@ -98,7 +70,11 @@ enum FileManagerContentKeyCommandHandler {
         }
 
         if command.characters == ".", command.modifiers.contains(.shift) {
-            return .send(.entries(.toggleShowHiddenFiles))
+            let show = !state.entryViewLayout.showHiddenFiles
+            return .concatenate(
+                .send(.entryViewLayout(.internal(.setShowHiddenFiles(show)))),
+                reloadEntryItemsEffect(state: state, showHidden: show),
+            )
         }
 
         return nil
@@ -116,13 +92,13 @@ enum FileManagerContentKeyCommandHandler {
             if canRedoInTextResponder(), NSApp.sendAction(redoSelector, to: nil, from: nil) {
                 return .none
             }
-            return .send(.entryOperations(.requestRedo))
+            return .send(.entryViewLayout(.entryOperations(.requestRedo)))
         }
 
         if canUndoInTextResponder(), NSApp.sendAction(undoSelector, to: nil, from: nil) {
             return .none
         }
-        return .send(.entryOperations(.requestUndo))
+        return .send(.entryViewLayout(.entryOperations(.requestUndo)))
     }
 
     private static func selectionMovementEffect(
@@ -135,25 +111,57 @@ enum FileManagerContentKeyCommandHandler {
 
         switch command.keyCode {
         case 123 where state.viewLayout == .grid:
-            return .send(.entries(.selectPreviousItem(isShiftPressed: isShiftPressed)))
+            return selectionOffsetEffect(offset: -1, isShiftPressed: isShiftPressed, state: state)
         case 124 where state.viewLayout == .grid:
-            return .send(.entries(.selectNextItem(isShiftPressed: isShiftPressed)))
+            return selectionOffsetEffect(offset: 1, isShiftPressed: isShiftPressed, state: state)
         case 126 where state.viewLayout == .grid:
-            return .send(.entries(.selectByOffset(
+            return selectionOffsetEffect(
                 offset: -state.entryViewLayout.gridColumnCount,
                 isShiftPressed: isShiftPressed,
-            )))
+                state: state,
+            )
         case 125 where state.viewLayout == .grid:
-            return .send(.entries(.selectByOffset(
+            return selectionOffsetEffect(
                 offset: state.entryViewLayout.gridColumnCount,
                 isShiftPressed: isShiftPressed,
-            )))
+                state: state,
+            )
         case 126:
-            return .send(.entries(.selectPreviousItem(isShiftPressed: isShiftPressed)))
+            return selectionOffsetEffect(offset: -1, isShiftPressed: isShiftPressed, state: state)
         case 125:
-            return .send(.entries(.selectNextItem(isShiftPressed: isShiftPressed)))
+            return selectionOffsetEffect(offset: 1, isShiftPressed: isShiftPressed, state: state)
         default:
             return nil
+        }
+    }
+
+    private static func selectionOffsetEffect(
+        offset: Int,
+        isShiftPressed: Bool,
+        state: FileManagerContentState,
+    ) -> Effect<FileManagerContentAction> {
+        .send(.entryViewLayout(.internal(.applySelectionOffset(
+            offset: offset,
+            isShiftPressed: isShiftPressed,
+            orderedItemIds: state.entryViewLayout.entries.map(\.id),
+        ))))
+    }
+
+    private static func reloadEntryItemsEffect(
+        state: FileManagerContentState,
+        showHidden: Bool,
+    ) -> Effect<FileManagerContentAction> {
+        switch state.navigation.navigationState {
+        case let .folder(path):
+            .send(.entryViewLayout(.entryOperations(.loadItems(path: path, showHidden: showHidden))))
+        case .recents:
+            .send(.entryViewLayout(.entryOperations(.loadRecentItems(showHidden: showHidden))))
+        case let .tags(tagName):
+            .send(.entryViewLayout(.entryOperations(.loadTagItems(tagName: tagName, showHidden: showHidden))))
+        case .computer:
+            .send(.entryViewLayout(.entryOperations(.loadComputerItems)))
+        case .collection:
+            .none
         }
     }
 

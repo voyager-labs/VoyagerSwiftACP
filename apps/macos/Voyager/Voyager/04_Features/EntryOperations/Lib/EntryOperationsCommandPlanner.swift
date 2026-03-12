@@ -38,14 +38,14 @@ enum EntryOperationsMutationCommand {
 }
 
 struct EntryOperationsCommandContext {
-    var selectedIds: Set<String>
+    var selectedIds: Set<EntryModel.ID>
     var displayItems: [EntryModel]
     var currentPath: String
 }
 
 enum EntryOperationsCommandOutput {
     case entryOperations(EntryOperationsAction)
-    case navigateFolder(id: String)
+    case navigateFolder(id: EntryModel.ID)
 }
 
 enum EntryOperationsCommandPlanner {
@@ -131,7 +131,7 @@ enum EntryOperationsCommandPlanner {
         case .putBackSelectedItems:
             planPutBackSelectedItems(context)
         case .emptyTrash:
-            [.entryOperations(.emptyTrash(items: context.displayItems))]
+            [.entryOperations(.emptyTrash(paths: context.displayItems.map(\.fullPath)))]
         }
     }
 
@@ -148,20 +148,20 @@ enum EntryOperationsCommandPlanner {
         if selected.count == 1, let entry = selected.first, entry.isFolder {
             return [.navigateFolder(id: entry.id)]
         }
-        return [.entryOperations(.openFiles(files: selected))]
+        return [.entryOperations(.openFiles(paths: selected.map(\.fullPath)))]
     }
 
     private static func planQuickLookSelectedItem(_ selected: [EntryModel]) -> [EntryOperationsCommandOutput] {
-        if selected.count == 1, let file = selected.first {
-            return [.entryOperations(.quickLookFile(file: file))]
+        if selected.count == 1, let path = selected.first?.fullPath {
+            return [.entryOperations(.quickLookFile(path: path))]
         }
         guard !selected.isEmpty else { return [] }
-        return [.entryOperations(.quickLookFiles(files: selected))]
+        return [.entryOperations(.quickLookFiles(paths: selected.map(\.fullPath)))]
     }
 
     private static func planGetInfoForSelectedItems(_ selected: [EntryModel]) -> [EntryOperationsCommandOutput] {
         guard !selected.isEmpty else { return [] }
-        return [.entryOperations(.openFinderInfo(items: selected))]
+        return [.entryOperations(.openFinderInfo(paths: selected.map(\.fullPath)))]
     }
 
     private static func planShareSelectedItems(
@@ -169,12 +169,12 @@ enum EntryOperationsCommandPlanner {
         anchor: CGPoint?,
     ) -> [EntryOperationsCommandOutput] {
         guard !selected.isEmpty else { return [] }
-        return [.entryOperations(.shareItems(items: selected, anchor: anchor))]
+        return [.entryOperations(.shareItems(paths: selected.map(\.fullPath), anchor: anchor))]
     }
 
     private static func planRevealSelectedItemsInFinder(_ selected: [EntryModel]) -> [EntryOperationsCommandOutput] {
         guard !selected.isEmpty else { return [] }
-        return [.entryOperations(.revealInFinder(items: selected))]
+        return [.entryOperations(.revealInFinder(paths: selected.map(\.fullPath)))]
     }
 
     private static func planPerformService(
@@ -182,7 +182,7 @@ enum EntryOperationsCommandPlanner {
         serviceName: String,
     ) -> [EntryOperationsCommandOutput] {
         guard !selected.isEmpty else { return [] }
-        return [.entryOperations(.performService(items: selected, name: serviceName))]
+        return [.entryOperations(.performService(paths: selected.map(\.fullPath), name: serviceName))]
     }
 
     private static func planCopySelectedItems(_ context: EntryOperationsCommandContext)
@@ -238,24 +238,24 @@ enum EntryOperationsCommandPlanner {
     private static func planCreateAliasForSelectedItems(
         _ context: EntryOperationsCommandContext,
     ) -> [EntryOperationsCommandOutput] {
-        let selected = selectedItems(in: context)
-        guard !selected.isEmpty else { return [] }
-        return [.entryOperations(.createAliases(items: selected))]
+        let selectedPaths = selectedPaths(in: context)
+        guard !selectedPaths.isEmpty else { return [] }
+        return [.entryOperations(.createAliases(paths: selectedPaths))]
     }
 
     private static func planCompressSelectedItems(_ context: EntryOperationsCommandContext)
         -> [EntryOperationsCommandOutput]
     {
-        let selected = selectedItems(in: context)
-        guard !selected.isEmpty else { return [] }
-        return [.entryOperations(.compressItems(items: selected))]
+        let selectedPaths = selectedPaths(in: context)
+        guard !selectedPaths.isEmpty else { return [] }
+        return [.entryOperations(.compressItems(paths: selectedPaths))]
     }
 
     private static func planExtractSelectedItem(_ context: EntryOperationsCommandContext)
         -> [EntryOperationsCommandOutput]
     {
-        guard let selected = selectedItems(in: context).first else { return [] }
-        return [.entryOperations(.extractCompressedFile(file: selected))]
+        guard let selectedPath = selectedPaths(in: context).first else { return [] }
+        return [.entryOperations(.extractCompressedFile(path: selectedPath))]
     }
 
     private static func planToggleTagForSelectedItem(
@@ -276,25 +276,25 @@ enum EntryOperationsCommandPlanner {
     private static func planMoveSelectedItemsToTrash(
         _ context: EntryOperationsCommandContext,
     ) -> [EntryOperationsCommandOutput] {
-        let selected = selectedItems(in: context)
-        guard !selected.isEmpty else { return [] }
-        return [.entryOperations(.moveToTrash(items: selected))]
+        let selectedPaths = selectedPaths(in: context)
+        guard !selectedPaths.isEmpty else { return [] }
+        return [.entryOperations(.moveToTrash(paths: selectedPaths))]
     }
 
     private static func planDeleteSelectedItemsImmediately(
         _ context: EntryOperationsCommandContext,
     ) -> [EntryOperationsCommandOutput] {
-        let selected = selectedItems(in: context)
-        guard !selected.isEmpty else { return [] }
-        return [.entryOperations(.deleteImmediately(items: selected))]
+        let selectedPaths = selectedPaths(in: context)
+        guard !selectedPaths.isEmpty else { return [] }
+        return [.entryOperations(.deleteImmediately(paths: selectedPaths))]
     }
 
     private static func planPutBackSelectedItems(
         _ context: EntryOperationsCommandContext,
     ) -> [EntryOperationsCommandOutput] {
-        let selected = selectedItems(in: context)
-        guard !selected.isEmpty else { return [] }
-        return [.entryOperations(.putBackFromTrash(items: selected))]
+        let selectedPaths = selectedPaths(in: context)
+        guard !selectedPaths.isEmpty else { return [] }
+        return [.entryOperations(.putBackFromTrash(paths: selectedPaths))]
     }
 
     private static func openWithOutputs(

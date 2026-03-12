@@ -45,7 +45,7 @@ final class XPCSearchService: NSObject, FilterSearchXPCServiceProtocol {
             do {
                 let request = try Self.decodeQueryRequest(from: requestData)
                 let queryService = SearchQueryService(searchService: service)
-                let response = try await Task.detached(priority: .userInitiated) {
+                let response = await Task.detached(priority: .userInitiated) {
                     await queryService.querySearch(request)
                 }
                 .value
@@ -127,7 +127,7 @@ final class XPCSearchService: NSObject, FilterSearchXPCServiceProtocol {
 }
 
 private final class ReplyBox: @unchecked Sendable {
-    private nonisolated(unsafe) let lock = NSLock()
+    private let lock = NSLock()
     private nonisolated(unsafe) var reply: ((Data?, NSError?) -> Void)?
 
     nonisolated init(_ reply: @escaping (Data?, NSError?) -> Void) {

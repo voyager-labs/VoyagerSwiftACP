@@ -3,11 +3,11 @@ import Foundation
 
 @Reducer
 struct ConditionPropertyPickerFeature {
-    @Dependency(\.registryClient)
-    var registryClient
-
     typealias State = ConditionPropertyPickerState
     typealias Action = ConditionPropertyPickerAction
+
+    @Dependency(\.registryClient)
+    var registryClient
 
     var body: some Reducer<State, Action> {
         Reduce { state, action in

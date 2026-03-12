@@ -4,7 +4,8 @@ import Logging
 private final class SpotlightQueryCompilerBundleToken {}
 
 struct SpotlightQueryCompiler: Sendable {
-    static let basePredicate = "kMDItemContentTypeTree == \"public.item\""
+    private let logger: Logger
+    private let conditionBuilder: SearchConditionBuilder
 
     struct CompilePlan: Sendable {
         let predicate: String
@@ -36,9 +37,6 @@ struct SpotlightQueryCompiler: Sendable {
             }
         }
     }
-
-    private let logger: Logger
-    private let conditionBuilder: SearchConditionBuilder
 
     init(
         bundle: Bundle,
@@ -114,6 +112,8 @@ struct SpotlightQueryCompiler: Sendable {
             pushdownConditions: pushdownConditions,
         )
     }
+
+    static let basePredicate = "kMDItemContentTypeTree == \"public.item\""
 }
 
 extension SpotlightQueryCompiler {

@@ -14,8 +14,7 @@ public struct EntryQuickLookClient: Sendable {
 }
 
 extension EntryQuickLookClient: DependencyKey {
-    @MainActor
-    private static let coordinator = EntryQuickLookPanelCoordinator()
+    @MainActor private static let coordinator = EntryQuickLookPanelCoordinator()
 
     public nonisolated static var liveValue: EntryQuickLookClient {
         EntryQuickLookClient(

@@ -3,6 +3,7 @@ import SwiftUI
 
 struct ValuePickerView: View {
     let store: StoreOf<ValuePickerFeature>
+
     @Environment(\.colorScheme)
     private var colorScheme
 

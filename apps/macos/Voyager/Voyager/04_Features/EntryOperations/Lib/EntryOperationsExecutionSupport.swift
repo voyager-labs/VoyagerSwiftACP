@@ -74,24 +74,24 @@ enum EntryOperationsExecutionSupport {
     }
 
     static func runParallel(
-        items: [EntryModel],
+        paths: [String],
         kind: OperationKind,
         operation: @escaping @Sendable (URL) async throws -> Void,
         onComplete: (@Sendable () async -> Void)? = nil,
     ) -> Effect<EntryOperationsAction> {
         .run { send in
             await withTaskGroup(of: Void.self) { group in
-                for item in items {
+                for path in paths {
                     group.addTask {
-                        await send(.operationStarted(item.fullPath, kind))
+                        await send(.operationStarted(path, kind))
 
                         do {
-                            let url = URL(fileURLWithPath: item.fullPath)
+                            let url = URL(fileURLWithPath: path)
                             try await operation(url)
-                            await send(.operationFinished(item.fullPath, kind, .success(())))
+                            await send(.operationFinished(path, kind, .success(())))
                         } catch {
                             await send(.operationFinished(
-                                item.fullPath,
+                                path,
                                 kind,
                                 .failure(error.fileOpError),
                             ))
@@ -105,7 +105,7 @@ enum EntryOperationsExecutionSupport {
     }
 
     static func runParallelWithTargets(
-        items: [EntryModel],
+        paths: [String],
         kind: OperationKind,
         operationKind: OperationKind,
         operation: @escaping @Sendable (URL) async throws -> EntryActionRecord.Target?,
@@ -114,20 +114,20 @@ enum EntryOperationsExecutionSupport {
             let accumulator = EntryActionTargetAccumulator()
 
             await withTaskGroup(of: Void.self) { group in
-                for item in items {
+                for path in paths {
                     group.addTask {
-                        await send(.operationStarted(item.fullPath, kind))
+                        await send(.operationStarted(path, kind))
 
                         do {
-                            let url = URL(fileURLWithPath: item.fullPath)
+                            let url = URL(fileURLWithPath: path)
                             let target = try await operation(url)
                             if let target {
                                 await accumulator.append(target)
                             }
-                            await send(.operationFinished(item.fullPath, kind, .success(())))
+                            await send(.operationFinished(path, kind, .success(())))
                         } catch {
                             await send(.operationFinished(
-                                item.fullPath,
+                                path,
                                 kind,
                                 .failure(error.fileOpError),
                             ))

@@ -57,8 +57,8 @@ struct MenuCommandsState: Equatable {
         let windowState = window.window
 
         hasFocusedWindow = true
-        canOpen = windowState.content.canOpenSelectedItem
-        canQuickLook = windowState.content.canQuickLookSelectedItem
+        canOpen = windowState.content.entryViewLayout.entryOperations.canOpenSelectedItem
+        canQuickLook = windowState.content.entryViewLayout.entryOperations.canQuickLookSelectedItem
         canGoBack = windowState.content.navigation.canGoBack
         canGoForward = windowState.content.navigation.canGoForward
         canGoToEnclosingDirectory = windowState.content.navigation.canGoToEnclosingDirectory
@@ -66,11 +66,11 @@ struct MenuCommandsState: Equatable {
         sidebarVisible = windowState.sidebar.sidebarVisible
         showHiddenFiles = windowState.content.entryViewLayout.showHiddenFiles
         viewLayout = windowState.content.viewLayout
-        groupKey = windowState.content.entryArrangements.groupKey
-        sortKey = windowState.content.entryArrangements.sortKey
-        sortOrder = windowState.content.entryArrangements.sortOrder
-        canUndo = windowState.content.entryOperations.canUndoEntryAction
-        canRedo = windowState.content.entryOperations.canRedoEntryAction
+        groupKey = windowState.content.entryViewLayout.entryArrangements.groupKey
+        sortKey = windowState.content.entryViewLayout.entryArrangements.sortKey
+        sortOrder = windowState.content.entryViewLayout.entryArrangements.sortOrder
+        canUndo = windowState.content.entryViewLayout.entryOperations.canUndoEntryAction
+        canRedo = windowState.content.entryViewLayout.entryOperations.canRedoEntryAction
         selectedItemCount = windowState.content.entryViewLayout.selectedIds.count
         isComposerPresented = windowState.content.composer.isPresented
     }
