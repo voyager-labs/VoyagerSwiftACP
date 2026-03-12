@@ -18,6 +18,42 @@ struct SearchQueryService: Sendable {
         self.logger = logger
     }
 
+    private nonisolated func makeErrorResponse(
+        code: String,
+        details: String?,
+        fallbackFilters: SearchFiltersPayload,
+    ) -> SearchResponsePayload {
+        SearchResponsePayload(
+            itemCount: 0,
+            appliedFilters: AppliedFiltersPayload(
+                scopes: fallbackFilters.scopes,
+                conditions: fallbackFilters.conditions,
+            ),
+            items: [],
+            error: SearchErrorPayload(code: code, details: details),
+        )
+    }
+
+    private nonisolated func resolveScopes(
+        queryScopes: [String]?,
+        chipsScopes: [String],
+    ) -> [String] {
+        if let queryScopes {
+            let cleanedQueryScopes = cleanScopes(queryScopes)
+            if cleanedQueryScopes.isEmpty == false {
+                return cleanedQueryScopes
+            }
+        }
+
+        return chipsScopes
+    }
+
+    private nonisolated func cleanScopes(_ scopes: [String]) -> [String] {
+        scopes
+            .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+            .filter { $0.isEmpty == false }
+    }
+
     nonisolated func querySearch(
         _ request: SearchRequestPayload,
     ) async -> SearchResponsePayload {
@@ -74,41 +110,5 @@ struct SearchQueryService: Sendable {
         _ filters: SearchFiltersPayload,
     ) async throws -> SearchResponsePayload {
         try await searchService.applyFilters(filters)
-    }
-
-    private nonisolated func makeErrorResponse(
-        code: String,
-        details: String?,
-        fallbackFilters: SearchFiltersPayload,
-    ) -> SearchResponsePayload {
-        SearchResponsePayload(
-            itemCount: 0,
-            appliedFilters: AppliedFiltersPayload(
-                scopes: fallbackFilters.scopes,
-                conditions: fallbackFilters.conditions,
-            ),
-            items: [],
-            error: SearchErrorPayload(code: code, details: details),
-        )
-    }
-
-    private nonisolated func resolveScopes(
-        queryScopes: [String]?,
-        chipsScopes: [String],
-    ) -> [String] {
-        if let queryScopes {
-            let cleanedQueryScopes = cleanScopes(queryScopes)
-            if cleanedQueryScopes.isEmpty == false {
-                return cleanedQueryScopes
-            }
-        }
-
-        return chipsScopes
-    }
-
-    private nonisolated func cleanScopes(_ scopes: [String]) -> [String] {
-        scopes
-            .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
-            .filter { $0.isEmpty == false }
     }
 }

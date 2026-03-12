@@ -2,6 +2,13 @@ import Foundation
 import Logging
 
 struct SpotlightSearchService: Sendable {
+    private let logger: Logger
+    private let maxCandidates: Int
+    private let defaultScopeURL: @Sendable () -> URL
+    private let executionEngine: SpotlightQueryEngine
+    private let rewriteEngine: NSURLScopeRewriteEngine
+    private let compilerTask: Task<SpotlightQueryCompiler, Error>
+
     enum SearchError: Error, LocalizedError {
         case queryCreationFailed
         case queryExecutionFailed
@@ -15,13 +22,6 @@ struct SpotlightSearchService: Sendable {
             }
         }
     }
-
-    private let logger: Logger
-    private let maxCandidates: Int
-    private let defaultScopeURL: @Sendable () -> URL
-    private let executionEngine: SpotlightQueryEngine
-    private let rewriteEngine: NSURLScopeRewriteEngine
-    private let compilerTask: Task<SpotlightQueryCompiler, Error>
 
     init(
         logger: Logger = Logger(label: "VoyagerHelper.SpotlightSearchService"),
@@ -39,6 +39,14 @@ struct SpotlightSearchService: Sendable {
         compilerTask = Task(priority: .utility) {
             try await compilerFactory()
         }
+    }
+
+    private func resolveScopeURLs(_ scopes: [String]) -> [URL] {
+        let normalized = SearchScopeNormalizer.normalizeScopes(scopes)
+        if normalized.isEmpty {
+            return [defaultScopeURL().standardizedFileURL]
+        }
+        return normalized.map { URL(fileURLWithPath: $0).standardizedFileURL }
     }
 
     func applyFilters(_ filters: SearchFiltersPayload) async throws -> SearchResponsePayload {
@@ -73,14 +81,6 @@ struct SpotlightSearchService: Sendable {
             items: items,
             error: nil,
         )
-    }
-
-    private func resolveScopeURLs(_ scopes: [String]) -> [URL] {
-        let normalized = SearchScopeNormalizer.normalizeScopes(scopes)
-        if normalized.isEmpty {
-            return [defaultScopeURL().standardizedFileURL]
-        }
-        return normalized.map { URL(fileURLWithPath: $0).standardizedFileURL }
     }
 }
 
