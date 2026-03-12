@@ -2048,9 +2048,8 @@
           "label name"
         ],
         "system_keys": ["nsurl:NSURLTagNamesKey"],
-        "type": "string",
-        "ui_label": "Tag names",
-        "ui_hidden": true
+        "type": "categorical",
+        "ui_label": "Tag names"
       },
       "user_domain": {
         "availability": "macOS 10.7+",

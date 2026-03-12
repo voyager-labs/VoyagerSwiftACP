@@ -3,6 +3,11 @@ import Foundation
 
 @Reducer
 struct ValuePickerFeature {
+    @Dependency(\.registryClient)
+    var registryClient
+    @Dependency(\.finderFavoritesTagClient)
+    var finderFavoritesTagClient
+
     typealias State = ValuePickerState
     typealias Action = ValuePickerAction
 
@@ -22,6 +27,14 @@ struct ValuePickerFeature {
                 state.valueType = payload.valueType
                 state.valueArity = max(0, payload.valueArity)
                 state.valueUIKind = payload.valueUIKind
+                state.isCategoricalProperty =
+                    registryClient.propertyTypeString(payload.propertyKey) == "categorical"
+                state.tokenInput = ""
+                state.finderTagListState = payload.propertyKey == ValuePickerTokenUtils.finderTagPropertyKey
+                    ?
+                    .init(options: ValuePickerTokenUtils
+                        .deduplicatedTagsByName(finderFavoritesTagClient.favoriteTags()))
+                    : nil
                 state.errorMessage = nil
                 state.editingIndex = payload.editingIndex
 
@@ -29,6 +42,10 @@ struct ValuePickerFeature {
                     valueArity: state.valueArity,
                     existingValues: payload.existingValues,
                     currentValues: state.values,
+                    tokenMode: ValuePickerTokenUtils.isTokenMode(
+                        isCategoricalProperty: state.isCategoricalProperty,
+                        valueUIKind: state.valueUIKind,
+                    ),
                 )
                 state.valueArity = prepared.valueArity
                 state.values = prepared.values
@@ -42,6 +59,36 @@ struct ValuePickerFeature {
                 state.values[index] = text
                 return .none
 
+            case let .setTokenInput(text):
+                state.tokenInput = text
+                return .none
+
+            case let .appendToken(rawToken):
+                let token = rawToken.trimmingCharacters(in: .whitespacesAndNewlines)
+                guard !token.isEmpty else {
+                    state.tokenInput = ""
+                    return .none
+                }
+
+                let normalized = ValuePickerTokenUtils.normalizedTokenKey(token)
+                let existing = Set(state.values.map(ValuePickerTokenUtils.normalizedTokenKey))
+                guard !existing.contains(normalized) else {
+                    state.tokenInput = ""
+                    return .none
+                }
+
+                state.values.append(token)
+                state.values = ValueNormalizerUtils.deduplicatedTokenValues(state.values)
+                state.tokenInput = ""
+                state.errorMessage = nil
+                return .none
+
+            case let .removeToken(rawToken):
+                let normalized = ValuePickerTokenUtils.normalizedTokenKey(rawToken)
+                state.values.removeAll { ValuePickerTokenUtils.normalizedTokenKey($0) == normalized }
+                state.errorMessage = nil
+                return .none
+
             case .commit:
                 guard let propertyKey = state.propertyKey,
                       state.operatorCode != nil
@@ -51,6 +98,21 @@ struct ValuePickerFeature {
 
                 let expected = max(state.valueArity, ValueNormalizerUtils.expectedArity(for: state.valueUIKind))
                 var paddedValues = state.values
+                if ValuePickerTokenUtils.isTokenMode(
+                    isCategoricalProperty: state.isCategoricalProperty,
+                    valueUIKind: state.valueUIKind,
+                ) {
+                    let token = state.tokenInput.trimmingCharacters(in: .whitespacesAndNewlines)
+                    if !token.isEmpty {
+                        let normalized = ValuePickerTokenUtils.normalizedTokenKey(token)
+                        let existing = Set(paddedValues.map(ValuePickerTokenUtils.normalizedTokenKey))
+                        if !existing.contains(normalized) {
+                            paddedValues.append(token)
+                        }
+                    }
+                    paddedValues = ValueNormalizerUtils.deduplicatedTokenValues(paddedValues)
+                    state.tokenInput = ""
+                }
                 if expected > 0, paddedValues.count < expected {
                     paddedValues.append(contentsOf: Array(repeating: "", count: expected - paddedValues.count))
                 }
@@ -76,6 +138,12 @@ struct ValuePickerFeature {
                 guard let committedValues = result.values else {
                     return .none
                 }
+                if ValuePickerTokenUtils.isTokenMode(
+                    isCategoricalProperty: state.isCategoricalProperty,
+                    valueUIKind: state.valueUIKind,
+                ) {
+                    state.values = ValueNormalizerUtils.deduplicatedTokenValues(state.values)
+                }
                 return .send(
                     .commitResult(
                         propertyKey: propertyKey,
@@ -93,9 +161,13 @@ struct ValuePickerFeature {
 private func resetValuePickerState(state: inout ValuePickerState) {
     state.propertyKey = nil
     state.operatorCode = nil
+    state.isCategoricalProperty = false
     state.values = [""]
+    state.tokenInput = ""
+    state.finderTagListState = nil
     state.errorMessage = nil
     state.editingIndex = nil
+    state.valueType = "string"
     state.valueUIKind = "singleText"
     state.valueArity = 1
 }
@@ -111,14 +183,16 @@ private func prepareValueInputs(
     valueArity: Int,
     existingValues: [String]?,
     currentValues: [String],
+    tokenMode: Bool,
 ) -> (valueArity: Int, values: [String]) {
     let normalizedArity = max(0, valueArity)
     guard normalizedArity > 0 else { return (0, []) }
 
     if let existingValues {
         let trimmed = existingValues.map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
-        let effectiveArity = max(normalizedArity, trimmed.count)
-        var values = Array(trimmed.prefix(effectiveArity))
+        let normalized = tokenMode ? ValueNormalizerUtils.deduplicatedTokenValues(trimmed) : trimmed
+        let effectiveArity = max(normalizedArity, normalized.count)
+        var values = Array(normalized.prefix(effectiveArity))
         if values.count < effectiveArity {
             values.append(contentsOf: Array(repeating: "", count: effectiveArity - values.count))
         }
