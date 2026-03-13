@@ -64,35 +64,31 @@ struct AppLifecycleFeature {
                     let currentBundleVersion = Bundle.main.infoDictionary?["CFBundleVersion"] as? String
 
                     async let monitor: Void = {
-                        var recentRestarts: [Date] = []
-
-                        func recordRestartIfAllowed() -> Bool {
-                            let now = Date()
-                            recentRestarts = recentRestarts.filter { now.timeIntervalSince($0) <= 60 }
-                            if recentRestarts.count >= 3 {
-                                logger.error("helper_restart_rate_limited")
-                                return false
-                            }
-                            recentRestarts.append(now)
-                            return true
-                        }
+                        var policy = HelperSupervisionPolicy()
 
                         for await _ in helperClient.terminationEvents() {
                             if await VoyagerTerminationCoordinator.shared.isTerminating() {
                                 logger.info("helper_monitor_skip_due_to_termination")
-                                break
+                                continue
                             }
 
-                            guard recordRestartIfAllowed() else {
-                                break
-                            }
+                            let decision = policy.recordRestartAttempt()
+                            switch decision {
+                            case .allowed:
+                                logger.info("helper_restart_allowed")
+                                await helperClient.ensureRunning()
+                                _ = await helperClient.resolveAlignedState(
+                                    stateClient: stateClient,
+                                    mainBundleVersion: currentBundleVersion,
+                                    logger: logger,
+                                )
 
-                            await helperClient.start()
-                            _ = await helperClient.resolveAlignedState(
-                                stateClient: stateClient,
-                                mainBundleVersion: currentBundleVersion,
-                                logger: logger,
-                            )
+                            case let .cooldown(activeUntil):
+                                logger.info("helper_restart_cooldown -- activeUntil=\(activeUntil)")
+
+                            case let .graceWindow(activeUntil):
+                                logger.info("helper_restart_grace_window -- activeUntil=\(activeUntil)")
+                            }
                         }
                     }()
 

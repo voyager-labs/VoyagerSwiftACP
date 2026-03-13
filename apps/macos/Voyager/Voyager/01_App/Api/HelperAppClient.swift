@@ -10,23 +10,28 @@ public struct HelperAppClient: Sendable {
     // Helper 실행 여부 확인
     public var isRunning: @Sendable () async -> Bool
     public var terminationEvents: @Sendable () -> AsyncStream<Void>
+    /// Helper가 실행 중인지 확인하고, 필요 시에만 시작한다 (idempotent)
+    public var ensureRunning: @Sendable () async -> Void
 
     public nonisolated init(
         start: @escaping @Sendable () async -> Void,
         stop: @escaping @Sendable () async -> Void,
         isRunning: @escaping @Sendable () async -> Bool,
         terminationEvents: @escaping @Sendable () -> AsyncStream<Void>,
+        ensureRunning: @escaping @Sendable () async -> Void,
     ) {
         self.start = start
         self.stop = stop
         self.isRunning = isRunning
         self.terminationEvents = terminationEvents
+        self.ensureRunning = ensureRunning
     }
 }
 
 extension HelperAppClient: DependencyKey {
     public nonisolated static var liveValue: HelperAppClient {
-        HelperAppClient(
+        let launchCoordinator = HelperLaunchCoordinator()
+        return HelperAppClient(
             start: {
                 await MainActor.run {
                     launchHelper(resolveHelperInfo())
@@ -45,8 +50,14 @@ extension HelperAppClient: DependencyKey {
             },
             terminationEvents: {
                 AsyncStream { continuation in
-                    Task { @MainActor in
+                    let streamState = HelperTerminationEventStreamState()
+                    let setupTask = Task { @MainActor in
                         let info = resolveHelperInfo()
+                        let isRunning = NSWorkspace.shared.runningApplications.contains { app in
+                            app.bundleIdentifier == info.bundleId
+                        }
+                        await streamState.prime(isRunning: isRunning)
+
                         let observer = NSWorkspace.shared.notificationCenter.addObserver(
                             forName: NSWorkspace.didTerminateApplicationNotification,
                             object: nil,
@@ -58,16 +69,75 @@ extension HelperAppClient: DependencyKey {
                                 app.bundleIdentifier == info.bundleId
                             else { return }
 
-                            continuation.yield(())
-                        }
-
-                        continuation.onTermination = { _ in
-                            Task { @MainActor in
-                                NSWorkspace.shared.notificationCenter.removeObserver(observer)
+                            Task {
+                                if await streamState.recordTerminationNotification() {
+                                    continuation.yield(())
+                                }
                             }
+                        }
+                        await streamState.setObserver(observer)
+
+                        let pollingTask = Task {
+                            let intervalNanoseconds = UInt64(HelperSupervisionPolicy.pollInterval * 1_000_000_000)
+
+                            while !Task.isCancelled {
+                                try? await Task.sleep(nanoseconds: intervalNanoseconds)
+
+                                if Task.isCancelled {
+                                    break
+                                }
+
+                                let isRunning = await MainActor.run {
+                                    NSWorkspace.shared.runningApplications.contains { app in
+                                        app.bundleIdentifier == info.bundleId
+                                    }
+                                }
+
+                                let shouldYield = await streamState.recordPoll(isRunning: isRunning)
+
+                                if shouldYield {
+                                    continuation.yield(())
+                                }
+                            }
+                        }
+                        await streamState.setPollingTask(pollingTask)
+                    }
+
+                    continuation.onTermination = { _ in
+                        setupTask.cancel()
+                        Task {
+                            await streamState.cancel()
                         }
                     }
                 }
+            },
+            ensureRunning: {
+                let logger = Logger(label: "Voyager")
+                logger.info("helper_reconcile_begin")
+
+                let isRunning = await MainActor.run {
+                    let info = resolveHelperInfo()
+                    return NSWorkspace.shared.runningApplications.contains { app in
+                        app.bundleIdentifier == info.bundleId
+                    }
+                }
+
+                if isRunning {
+                    logger.info("helper_reconcile_skip -- reason=already_running")
+                    return
+                }
+
+                if await launchCoordinator.isInGraceWindow() {
+                    logger.info("helper_reconcile_skip -- reason=grace_window")
+                    return
+                }
+
+                await MainActor.run {
+                    launchHelper(resolveHelperInfo())
+                }
+
+                await launchCoordinator.recordLaunch()
+                logger.info("helper_reconcile_started")
             },
         )
     }
@@ -82,6 +152,7 @@ extension HelperAppClient: DependencyKey {
             },
             isRunning: { false },
             terminationEvents: { AsyncStream { $0.finish() } },
+            ensureRunning: {},
         )
     }
 
@@ -95,7 +166,97 @@ extension HelperAppClient: DependencyKey {
             },
             isRunning: { false },
             terminationEvents: { AsyncStream { $0.finish() } },
+            ensureRunning: {},
         )
+    }
+}
+
+private actor HelperTerminationEventStreamState {
+    private var tracker = HelperRunningStateTracker()
+    private var observer: NSObjectProtocol?
+    private var pollingTask: Task<Void, Never>?
+    private var isCancelled = false
+
+    func prime(isRunning: Bool) {
+        guard !isCancelled else {
+            return
+        }
+
+        _ = tracker.update(isRunning: isRunning)
+    }
+
+    func recordPoll(isRunning: Bool) -> Bool {
+        guard !isCancelled else {
+            return false
+        }
+
+        return tracker.update(isRunning: isRunning) == .stopped
+    }
+
+    func recordTerminationNotification() -> Bool {
+        guard !isCancelled else {
+            return false
+        }
+
+        if tracker.lastKnownIsRunning == true {
+            return tracker.update(isRunning: false) == .stopped
+        }
+
+        if tracker.hasSeenRunning {
+            return false
+        }
+
+        _ = tracker.update(isRunning: true)
+        return tracker.update(isRunning: false) == .stopped
+    }
+
+    func setObserver(_ observer: NSObjectProtocol) {
+        guard !isCancelled else {
+            Task { @MainActor in
+                NSWorkspace.shared.notificationCenter.removeObserver(observer)
+            }
+            return
+        }
+
+        self.observer = observer
+    }
+
+    func setPollingTask(_ pollingTask: Task<Void, Never>) {
+        guard !isCancelled else {
+            pollingTask.cancel()
+            return
+        }
+
+        self.pollingTask = pollingTask
+    }
+
+    func cancel() {
+        isCancelled = true
+        pollingTask?.cancel()
+        pollingTask?.cancel()
+
+        guard let observer else {
+            return
+        }
+
+        self.observer = nil
+        Task { @MainActor in
+            NSWorkspace.shared.notificationCenter.removeObserver(observer)
+        }
+    }
+}
+
+private actor HelperLaunchCoordinator {
+    private var lastLaunchAt: Date?
+
+    func isInGraceWindow() -> Bool {
+        guard let lastLaunchAt else { return false }
+        let graceWindow: TimeInterval = 5.0
+        return Date().timeIntervalSince(lastLaunchAt) <= graceWindow
+    }
+
+    func recordLaunch() {
+        lastLaunchAt = Date()
     }
 }
 
