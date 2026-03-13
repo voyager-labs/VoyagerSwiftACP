@@ -419,16 +419,18 @@ private final class MetadataQueryWrapper: @unchecked Sendable {
 private final class MetadataObserverWrapper: @unchecked Sendable {
     private let lock = NSLock()
     private nonisolated(unsafe) var observer: NSObjectProtocol?
+    private let notificationCenterClient: NotificationCenterClient
 
-    init(_ observer: NSObjectProtocol?) {
+    init(_ observer: NSObjectProtocol?, notificationCenterClient: NotificationCenterClient) {
         self.observer = observer
+        self.notificationCenterClient = notificationCenterClient
     }
 
     nonisolated func setObserver(_ observer: NSObjectProtocol?) {
         lock.lock()
         defer { lock.unlock() }
         if let oldObserver = self.observer {
-            NotificationCenter.default.removeObserver(oldObserver)
+            notificationCenterClient.removeObserver(oldObserver)
         }
         self.observer = observer
     }
@@ -437,7 +439,7 @@ private final class MetadataObserverWrapper: @unchecked Sendable {
         lock.lock()
         defer { lock.unlock() }
         if let observer {
-            NotificationCenter.default.removeObserver(observer)
+            notificationCenterClient.removeObserver(observer)
             self.observer = nil
         }
     }
@@ -450,12 +452,14 @@ enum EntryMetadataSearchLive {
         fileExistsAtPath: @escaping @Sendable (String, UnsafeMutablePointer<ObjCBool>?) -> Bool,
     ) async -> [EntryModel] {
         let entryLoadingClient = EntryLoadingClient.liveValue
+        let notificationCenterClient = NotificationCenterClient.liveValue
         let predicate = NSPredicate(format: "kMDItemLastUsedDate > %@", Date.distantPast as NSDate)
         let sortDescriptors = [NSSortDescriptor(key: "kMDItemLastUsedDate", ascending: false)]
 
         let recentFiles = await searchFiles(
             predicate: predicate,
             fileExistsAtPath: fileExistsAtPath,
+            notificationCenterClient: notificationCenterClient,
             sortDescriptors: sortDescriptors,
             filterFiles: true,
         )
@@ -477,12 +481,14 @@ enum EntryMetadataSearchLive {
         fileExistsAtPath: @escaping @Sendable (String, UnsafeMutablePointer<ObjCBool>?) -> Bool,
     ) async -> [EntryModel] {
         let entryLoadingClient = EntryLoadingClient.liveValue
+        let notificationCenterClient = NotificationCenterClient.liveValue
         let predicate = NSPredicate(format: "kMDItemUserTags CONTAINS %@", tag)
         let sortDescriptors = [NSSortDescriptor(key: "kMDItemLastUsedDate", ascending: false)]
 
         let taggedFiles = await searchFiles(
             predicate: predicate,
             fileExistsAtPath: fileExistsAtPath,
+            notificationCenterClient: notificationCenterClient,
             sortDescriptors: sortDescriptors,
         )
 
@@ -505,6 +511,7 @@ enum EntryMetadataSearchLive {
     private static func searchFiles(
         predicate: NSPredicate,
         fileExistsAtPath: @escaping @Sendable (String, UnsafeMutablePointer<ObjCBool>?) -> Bool,
+        notificationCenterClient: NotificationCenterClient,
         sortDescriptors: [NSSortDescriptor] = [],
         timeout: TimeInterval = 5,
         filterFiles: Bool = false,
@@ -518,12 +525,11 @@ enum EntryMetadataSearchLive {
 
                 let completionState = MetadataQueryCompletionState()
                 let queryWrapper = MetadataQueryWrapper(query)
-                let observerWrapper = MetadataObserverWrapper(nil)
+                let observerWrapper = MetadataObserverWrapper(nil, notificationCenterClient: notificationCenterClient)
 
-                let observer = NotificationCenter.default.addObserver(
-                    forName: .NSMetadataQueryDidFinishGathering,
-                    object: queryWrapper.query,
-                    queue: .main,
+                let observer = notificationCenterClient.addObserver(
+                    .NSMetadataQueryDidFinishGathering,
+                    queryWrapper.query,
                 ) { _ in
                     let capturedQuery = queryWrapper.query
                     Task { @MainActor in

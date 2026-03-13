@@ -102,17 +102,20 @@ enum EntryWatchingLive {
 
     nonisolated static var observeFileSystemChanged: @Sendable () -> AsyncStream<[String]> {
         {
-            AsyncStream { continuation in
+            let notificationCenterClient = NotificationCenterClient.liveValue
+            return AsyncStream { continuation in
                 final class ObserverBox: @unchecked Sendable {
                     var observer: (any NSObjectProtocol)?
-                    let center = NotificationCenter.default
+                    let notificationCenterClient: NotificationCenterClient
+                    init(notificationCenterClient: NotificationCenterClient) {
+                        self.notificationCenterClient = notificationCenterClient
+                    }
                 }
 
-                let box = ObserverBox()
-                box.observer = box.center.addObserver(
-                    forName: fileSystemChangedNotificationName,
-                    object: nil,
-                    queue: .main,
+                let box = ObserverBox(notificationCenterClient: notificationCenterClient)
+                box.observer = box.notificationCenterClient.addObserver(
+                    fileSystemChangedNotificationName,
+                    nil,
                 ) { notification in
                     if let paths = notification.userInfo?["paths"] as? [String] {
                         continuation.yield(paths)
@@ -121,7 +124,7 @@ enum EntryWatchingLive {
 
                 continuation.onTermination = { @Sendable _ in
                     if let obs = box.observer {
-                        box.center.removeObserver(obs)
+                        box.notificationCenterClient.removeObserver(obs)
                     }
                 }
             }

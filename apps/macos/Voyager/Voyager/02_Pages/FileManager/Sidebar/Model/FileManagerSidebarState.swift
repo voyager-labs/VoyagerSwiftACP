@@ -13,4 +13,6 @@ struct FileManagerSidebarState: Equatable {
     var isLocationsCollapsed: Bool = false
     var isTagsCollapsed: Bool = false
     var pendingSidebarSelectionRestore: String?
+    var contextMenuTargetId: String?
+    var contextMenuTargetWasSelected: Bool = false
 }

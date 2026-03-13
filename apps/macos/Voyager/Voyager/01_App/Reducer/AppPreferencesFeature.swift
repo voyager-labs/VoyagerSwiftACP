@@ -8,6 +8,8 @@ struct AppPreferencesFeature {
 
     @Dependency(\.userDefaultsClient)
     private var userDefaultsClient
+    @Dependency(\.notificationCenterClient)
+    private var notificationCenterClient
 
     private let userDefaultsObserverCancelID = "AppPreferencesFeature.userDefaultsObserver"
 
@@ -19,10 +21,11 @@ struct AppPreferencesFeature {
                 state = loaded
                 return .merge(
                     .send(.delegate(.updated(loaded))),
-                    .run { send in
-                        for await _ in NotificationCenter.default
-                            .notifications(named: UserDefaults.didChangeNotification)
-                        {
+                    .run { [notificationCenterClient] send in
+                        for await _ in notificationCenterClient.notifications(
+                            UserDefaults.didChangeNotification,
+                            nil,
+                        ) {
                             await send(.reloadFromUserDefaults)
                         }
                     }

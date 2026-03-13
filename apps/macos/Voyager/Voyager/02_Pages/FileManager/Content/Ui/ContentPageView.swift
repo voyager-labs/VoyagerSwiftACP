@@ -88,13 +88,14 @@ struct ContentPageView: View {
                 restoreKeyCommandFocus()
             }
             .onAppear {
+                store.send(.startObservingSystemNotifications)
                 guard store.viewLayout.isGridLayout else { return }
                 DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) {
                     restoreKeyCommandFocus()
                 }
             }
-            .onReceive(NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)) { _ in
-                store.send(.entryViewLayout(.entryOperations(.appDidBecomeActive)))
+            .onDisappear {
+                store.send(.stopObservingSystemNotifications)
             }
             .background(backgroundInteractionLayer)
     }
@@ -111,6 +112,6 @@ struct ContentPageView: View {
 
     private func restoreKeyCommandFocus() {
         isKeyCommandFocused = true
-        KeyCommandHostingView.restoreCurrentFocus()
+        keyCommandFocusCoordinator?.requestFocus()
     }
 }

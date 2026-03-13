@@ -1,3 +1,4 @@
+import AppKit
 import ComposableArchitecture
 import VoyagerShared
 
@@ -5,6 +6,10 @@ import VoyagerShared
 struct FileManagerContentFeature {
     typealias State = FileManagerContentState
     typealias Action = FileManagerContentAction
+
+    fileprivate enum CancelID {
+        static let systemNotifications = "FileManagerContentFeature.systemNotifications"
+    }
 
     @Dependency(\.userDefaultsClient)
     private var userDefaultsClient
@@ -16,6 +21,8 @@ struct FileManagerContentFeature {
     private var thumbnailGeneratorClient
     @Dependency(\.entryThumbnailCacheClient)
     private var entryThumbnailCacheClient
+    @Dependency(\.notificationCenterClient)
+    private var notificationCenterClient
 
     var body: some Reducer<State, Action> {
         Scope(state: \.composer, action: \.composer) {
@@ -89,6 +96,23 @@ struct FileManagerContentFeature {
             case let .saveScrollOffset(offset, forPath: path):
                 state.navigation.scrollPositions[path] = offset
                 return .none
+
+            case .startObservingSystemNotifications:
+                return .run { send in
+                    for await _ in await notificationCenterClient.notifications(
+                        NSApplication.didBecomeActiveNotification,
+                        nil,
+                    ) {
+                        await send(.systemAppDidBecomeActive)
+                    }
+                }
+                .cancellable(id: CancelID.systemNotifications, cancelInFlight: true)
+
+            case .stopObservingSystemNotifications:
+                return .cancel(id: CancelID.systemNotifications)
+
+            case .systemAppDidBecomeActive:
+                return .send(.entryViewLayout(.entryOperations(.appDidBecomeActive)))
 
             default:
                 return .none

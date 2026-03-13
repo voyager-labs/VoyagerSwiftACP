@@ -102,9 +102,12 @@ private final class UpdaterCoordinator: NSObject, SPUUpdaterDelegate {
         configureIfNeeded()
         guard let updater = controller?.updater else { return }
 
-        let notifications = NotificationCenter.default.notifications(
-            named: NSWindow.didBecomeMainNotification,
+        let notificationCenterClient = NotificationCenterClient.liveValue
+        let notifications = notificationCenterClient.notifications(
+            NSWindow.didBecomeMainNotification,
+            nil,
         )
+
         if NSApp.keyWindow != nil {
             updater.checkForUpdatesInBackground()
             return
@@ -140,7 +143,6 @@ private final class UpdaterCoordinator: NSObject, SPUUpdaterDelegate {
             invokeInstallHandlerOnce(attemptId: attemptId, installHandler)
         }
 
-        // fail-safe: 어떤 이유로든 stop이 지연되어도 relaunch가 영원히 막히지 않게 한다.
         Task { @MainActor in
             try? await Task.sleep(nanoseconds: 5_000_000_000)
             invokeInstallHandlerOnce(attemptId: attemptId, installHandler)

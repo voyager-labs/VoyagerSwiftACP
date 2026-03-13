@@ -3,9 +3,6 @@ import ComposableArchitecture
 import SwiftUI
 
 struct SidebarView: View {
-    @State private var contextMenuTargetId: String?
-    @State private var contextMenuTargetWasSelected = false
-
     let store: StoreOf<FileManagerSidebarFeature>
 
     var body: some View {
@@ -19,9 +16,9 @@ struct SidebarView: View {
                         iconName: "clock",
                         title: "Recents",
                         isSelected: store.selectedSidebarItem == "Recents",
-                        isContextMenuTarget: contextMenuTargetId == "Recents",
-                        contextMenuTargetWasSelected: contextMenuTargetId == "Recents"
-                            ? contextMenuTargetWasSelected : false,
+                        isContextMenuTarget: store.contextMenuTargetId == "Recents",
+                        contextMenuTargetWasSelected: store.contextMenuTargetId == "Recents"
+                            ? store.contextMenuTargetWasSelected : false,
                         isFavorite: true,
                         iconColor: nil,
                         targetURL: nil,
@@ -37,33 +34,21 @@ struct SidebarView: View {
                         .frame(height: 8)
 
                     if !store.favorites.isEmpty {
-                        SidebarFavoritesSectionView(
-                            contextMenuTargetId: $contextMenuTargetId,
-                            contextMenuTargetWasSelected: $contextMenuTargetWasSelected,
-                            store: store,
-                        )
+                        SidebarFavoritesSectionView(store: store)
                     }
 
                     Spacer()
                         .frame(height: 8)
 
                     if !store.locations.isEmpty {
-                        SidebarLocationsSectionView(
-                            contextMenuTargetId: $contextMenuTargetId,
-                            contextMenuTargetWasSelected: $contextMenuTargetWasSelected,
-                            store: store,
-                        )
+                        SidebarLocationsSectionView(store: store)
                     }
 
                     Spacer()
                         .frame(height: 8)
 
                     if !store.tags.isEmpty {
-                        SidebarTagsSectionView(
-                            contextMenuTargetId: $contextMenuTargetId,
-                            contextMenuTargetWasSelected: $contextMenuTargetWasSelected,
-                            store: store,
-                        )
+                        SidebarTagsSectionView(store: store)
                     }
 
                     Spacer()
@@ -73,9 +58,11 @@ struct SidebarView: View {
         }
         .frame(minWidth: 150)
         .background(Color.clear)
-        .onReceive(NotificationCenter.default.publisher(for: NSMenu.didEndTrackingNotification)) { _ in
-            contextMenuTargetId = nil
-            contextMenuTargetWasSelected = false
+        .onAppear {
+            store.send(.startObservingSystemNotifications)
+        }
+        .onDisappear {
+            store.send(.stopObservingSystemNotifications)
         }
         .navigationSplitViewColumnWidth(ideal: store.sidebarWidth)
         .background(
