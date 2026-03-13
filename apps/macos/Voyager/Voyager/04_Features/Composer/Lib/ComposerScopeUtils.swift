@@ -1,8 +1,6 @@
 import Foundation
 
 enum ComposerScopeUtils {
-    static let rootScopePath = "/"
-
     struct DirectoryItem: Identifiable, Equatable {
         let id: String
         let path: String
@@ -31,6 +29,101 @@ enum ComposerScopeUtils {
         let resourceKeys: [URLResourceKey]
         let resourceKeySet: Set<URLResourceKey>
         let options: FileManager.DirectoryEnumerationOptions
+    }
+
+    static let rootScopePath = "/"
+
+    nonisolated static func searchDirectories(
+        query: String,
+        entryLoadingClient: EntryLoadingClient,
+        maxResults: Int = 50,
+        initialMaxDepth: Int = 2,
+        timeout: TimeInterval = 2.0,
+    ) async throws -> [DirectoryItem] {
+        let normalizedQuery = query.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !normalizedQuery.isEmpty else { return [] }
+
+        let queryLower = normalizedQuery.lowercased()
+        let homeDir = entryLoadingClient.homeDirectory()
+        let context = SearchExecutionContext(
+            match: DirectoryMatchContext(
+                query: queryLower,
+                maxResults: maxResults,
+                homePath: homeDir,
+                iconPathMap: buildIconPathMapping(entryLoadingClient: entryLoadingClient),
+            ),
+            maxDepth: initialMaxDepth,
+            startTime: Date(),
+            timeout: timeout,
+            resourceKeys: [.isDirectoryKey],
+            resourceKeySet: Set([.isDirectoryKey]),
+            options: [.skipsHiddenFiles, .skipsPackageDescendants],
+        )
+
+        let searchPaths = makeSearchPaths(homeDir: homeDir)
+        let results = bfsSearchDirectories(
+            searchPaths: searchPaths,
+            context: context,
+            entryLoadingClient: entryLoadingClient,
+        )
+        return Array(sortSearchResults(results, query: queryLower).prefix(maxResults))
+    }
+
+    static func buildCombinedList(
+        history: [String],
+        favorites: [ScopeFavoriteItem],
+        entryLoadingClient: EntryLoadingClient,
+        maxCount: Int = 10,
+    ) -> [DirectoryItem] {
+        var result: [DirectoryItem] = []
+        var seenPaths: Set<String> = []
+        let collectionsExtension = CollectionConstants.fileExtension
+        let homePath = entryLoadingClient.homeDirectory()
+        let iconPathMap = buildIconPathMapping(entryLoadingClient: entryLoadingClient)
+
+        let historyItems = history.reversed().prefix(maxCount)
+        for path in historyItems {
+            if (path as NSString).pathExtension.lowercased() == collectionsExtension { continue }
+            guard !seenPaths.contains(path) else { continue }
+            guard entryLoadingClient.fileExists(path) else { continue }
+
+            let displayName = entryLoadingClient.displayName(path)
+            let iconName = iconNameForPath(path, homePath: homePath, iconPathMap: iconPathMap)
+
+            result.append(
+                DirectoryItem(
+                    id: path,
+                    path: path,
+                    name: displayName,
+                    iconName: iconName,
+                ),
+            )
+
+            seenPaths.insert(path)
+        }
+
+        let remainingSlots = maxCount - result.count
+        if remainingSlots > 0 {
+            for favorite in favorites.prefix(remainingSlots) {
+                let path = favorite.url.path
+                if favorite.url.pathExtension.lowercased() == collectionsExtension { continue }
+                guard !seenPaths.contains(path) else { continue }
+                guard entryLoadingClient.fileExists(path) else { continue }
+
+                result.append(
+                    DirectoryItem(
+                        id: path,
+                        path: path,
+                        name: favorite.name,
+                        iconName: favorite.iconName,
+                    ),
+                )
+
+                seenPaths.insert(path)
+            }
+        }
+
+        return result
     }
 
     private nonisolated static func buildIconPathMapping(
@@ -247,98 +340,5 @@ enum ComposerScopeUtils {
         }
 
         return results
-    }
-
-    nonisolated static func searchDirectories(
-        query: String,
-        entryLoadingClient: EntryLoadingClient,
-        maxResults: Int = 50,
-        initialMaxDepth: Int = 2,
-        timeout: TimeInterval = 2.0,
-    ) async throws -> [DirectoryItem] {
-        let normalizedQuery = query.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !normalizedQuery.isEmpty else { return [] }
-
-        let queryLower = normalizedQuery.lowercased()
-        let homeDir = entryLoadingClient.homeDirectory()
-        let context = SearchExecutionContext(
-            match: DirectoryMatchContext(
-                query: queryLower,
-                maxResults: maxResults,
-                homePath: homeDir,
-                iconPathMap: buildIconPathMapping(entryLoadingClient: entryLoadingClient),
-            ),
-            maxDepth: initialMaxDepth,
-            startTime: Date(),
-            timeout: timeout,
-            resourceKeys: [.isDirectoryKey],
-            resourceKeySet: Set([.isDirectoryKey]),
-            options: [.skipsHiddenFiles, .skipsPackageDescendants],
-        )
-
-        let searchPaths = makeSearchPaths(homeDir: homeDir)
-        let results = bfsSearchDirectories(
-            searchPaths: searchPaths,
-            context: context,
-            entryLoadingClient: entryLoadingClient,
-        )
-        return Array(sortSearchResults(results, query: queryLower).prefix(maxResults))
-    }
-
-    static func buildCombinedList(
-        history: [String],
-        favorites: [ScopeFavoriteItem],
-        entryLoadingClient: EntryLoadingClient,
-        maxCount: Int = 10,
-    ) -> [DirectoryItem] {
-        var result: [DirectoryItem] = []
-        var seenPaths: Set<String> = []
-        let collectionsExtension = CollectionConstants.fileExtension
-        let homePath = entryLoadingClient.homeDirectory()
-        let iconPathMap = buildIconPathMapping(entryLoadingClient: entryLoadingClient)
-
-        let historyItems = history.reversed().prefix(maxCount)
-        for path in historyItems {
-            if (path as NSString).pathExtension.lowercased() == collectionsExtension { continue }
-            guard !seenPaths.contains(path) else { continue }
-            guard entryLoadingClient.fileExists(path) else { continue }
-
-            let displayName = entryLoadingClient.displayName(path)
-            let iconName = iconNameForPath(path, homePath: homePath, iconPathMap: iconPathMap)
-
-            result.append(
-                DirectoryItem(
-                    id: path,
-                    path: path,
-                    name: displayName,
-                    iconName: iconName,
-                ),
-            )
-
-            seenPaths.insert(path)
-        }
-
-        let remainingSlots = maxCount - result.count
-        if remainingSlots > 0 {
-            for favorite in favorites.prefix(remainingSlots) {
-                let path = favorite.url.path
-                if favorite.url.pathExtension.lowercased() == collectionsExtension { continue }
-                guard !seenPaths.contains(path) else { continue }
-                guard entryLoadingClient.fileExists(path) else { continue }
-
-                result.append(
-                    DirectoryItem(
-                        id: path,
-                        path: path,
-                        name: favorite.name,
-                        iconName: favorite.iconName,
-                    ),
-                )
-
-                seenPaths.insert(path)
-            }
-        }
-
-        return result
     }
 }

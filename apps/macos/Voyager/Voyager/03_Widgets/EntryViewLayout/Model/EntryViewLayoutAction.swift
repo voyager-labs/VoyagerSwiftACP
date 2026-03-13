@@ -4,6 +4,12 @@ import Foundation
 
 @CasePathable
 enum EntryViewLayoutAction: ViewAction, CasePathable, Sendable {
+    case view(View)
+    case delegate(Delegate)
+    case `internal`(Internal)
+    case entryOperations(EntryOperationsFeature.Action)
+    case entryArrangements(EntryArrangementsFeature.Action)
+
     struct EntryViewLayoutPreferences: Sendable {
         let listIconSize: CGFloat
         let listTextSize: CGFloat
@@ -11,12 +17,6 @@ enum EntryViewLayoutAction: ViewAction, CasePathable, Sendable {
         let gridTextSize: CGFloat
         let showHiddenFiles: Bool
     }
-
-    case view(View)
-    case delegate(Delegate)
-    case `internal`(Internal)
-    case entryOperations(EntryOperationsFeature.Action)
-    case entryArrangements(EntryArrangementsFeature.Action)
 
     @CasePathable
     enum View: Sendable {

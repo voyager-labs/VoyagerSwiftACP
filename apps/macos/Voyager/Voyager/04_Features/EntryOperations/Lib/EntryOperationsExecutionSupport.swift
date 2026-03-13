@@ -3,6 +3,24 @@ import Foundation
 import UniformTypeIdentifiers
 
 enum EntryOperationsExecutionSupport {
+    private struct FileInfo {
+        let file: EntryModel
+        let fileType: UTType
+        let url: URL
+    }
+
+    private actor EntryActionTargetAccumulator {
+        private var storage: [EntryActionRecord.Target] = []
+
+        func append(_ target: EntryActionRecord.Target) {
+            storage.append(target)
+        }
+
+        var targets: [EntryActionRecord.Target] {
+            storage
+        }
+    }
+
     static func avoidNameCollisions(
         sourcePaths: [String],
         destinationURL: URL,
@@ -201,24 +219,6 @@ enum EntryOperationsExecutionSupport {
             fileInfos: fileInfos,
             fileTypeToDefaultApp: fileTypeToDefaultApp,
         )
-    }
-
-    private struct FileInfo {
-        let file: EntryModel
-        let fileType: UTType
-        let url: URL
-    }
-
-    private actor EntryActionTargetAccumulator {
-        private var storage: [EntryActionRecord.Target] = []
-
-        func append(_ target: EntryActionRecord.Target) {
-            storage.append(target)
-        }
-
-        var targets: [EntryActionRecord.Target] {
-            storage
-        }
     }
 
     private static func prepareFileInfos(from files: [EntryModel]) -> [FileInfo] {

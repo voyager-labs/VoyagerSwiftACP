@@ -48,16 +48,6 @@ public extension DependencyValues {
 }
 
 enum EntryWatchingLive {
-    nonisolated static let fileSystemChangedNotificationName = NSNotification.Name("VoyagerFileSystemChanged")
-
-    private final class FSEventsContinuationBox: @unchecked Sendable {
-        let continuation: AsyncStream<[String]>.Continuation
-
-        nonisolated init(_ continuation: AsyncStream<[String]>.Continuation) {
-            self.continuation = continuation
-        }
-    }
-
     final class FSEventsWatcher: @unchecked Sendable {
         private nonisolated(unsafe) var eventStream: FSEventStreamRef?
         private let lock = NSLock()
@@ -97,6 +87,16 @@ enum EntryWatchingLive {
             }
         }
     }
+
+    private final class FSEventsContinuationBox: @unchecked Sendable {
+        let continuation: AsyncStream<[String]>.Continuation
+
+        nonisolated init(_ continuation: AsyncStream<[String]>.Continuation) {
+            self.continuation = continuation
+        }
+    }
+
+    nonisolated static let fileSystemChangedNotificationName = NSNotification.Name("VoyagerFileSystemChanged")
 
     private nonisolated static let sharedWatcher = FSEventsWatcher()
 

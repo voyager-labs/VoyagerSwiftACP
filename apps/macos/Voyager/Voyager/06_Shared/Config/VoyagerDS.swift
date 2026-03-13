@@ -42,6 +42,10 @@ enum VoyagerDS {
 
     enum Radius {
         static let overlayCard: CGFloat = 12
+        static let control: CGFloat = 8
+        static let chipContainer: CGFloat = 6
+        static let chipItem: CGFloat = 4
+        static let toolbarButton: CGFloat = 5
         static var composer: CGFloat {
             if #available(macOS 26.0, *) {
                 return 16
@@ -55,11 +59,6 @@ enum VoyagerDS {
             }
             return 6
         }
-
-        static let control: CGFloat = 8
-        static let chipContainer: CGFloat = 6
-        static let chipItem: CGFloat = 4
-        static let toolbarButton: CGFloat = 5
     }
 
     enum Spacing {
@@ -78,6 +77,8 @@ enum VoyagerDS {
     }
 
     enum Shadow {
+        static let popoverRadius: CGFloat = 8
+        static let popoverYOffset: CGFloat = 4
         static func overlayColor(for scheme: ColorScheme) -> Color {
             Color.black.opacity(scheme == .dark ? 0.4 : 0.15)
         }
@@ -93,27 +94,26 @@ enum VoyagerDS {
         static func popoverColor(for scheme: ColorScheme) -> Color {
             Color.black.opacity(scheme == .dark ? 0.4 : 0.15)
         }
-
-        static let popoverRadius: CGFloat = 8
-        static let popoverYOffset: CGFloat = 4
     }
 
     enum Surface {
-        static func overlayBackground(for scheme: ColorScheme) -> Color {
-            scheme == .dark ? SystemColor.underPageBackground : SystemColor.windowBackground
-        }
-
         static let overlayBorder = SystemColor.separator
 
         // MARK: - Composer (피그마: Materials + Stroke 검정 50%)
 
         static let composerBorder = Color.black.opacity(0.5)
 
-        static func popoverBackground(for scheme: ColorScheme) -> Color {
+        static let popoverBorder = SystemColor.separator
+
+        static let toolbarDivider = Color.black.opacity(0.15)
+
+        static func overlayBackground(for scheme: ColorScheme) -> Color {
             scheme == .dark ? SystemColor.underPageBackground : SystemColor.windowBackground
         }
 
-        static let popoverBorder = SystemColor.separator
+        static func popoverBackground(for scheme: ColorScheme) -> Color {
+            scheme == .dark ? SystemColor.underPageBackground : SystemColor.windowBackground
+        }
 
         static func inputBackground(for scheme: ColorScheme) -> Color {
             scheme == .dark ? Color.white.opacity(0.08) : Color.black.opacity(0.05)
@@ -178,8 +178,6 @@ enum VoyagerDS {
                 ? Color.white.opacity(0.12)
                 : Color.black.opacity(0.12)
         }
-
-        static let toolbarDivider = Color.black.opacity(0.15)
 
         // MARK: - Status Button / Folder Chip
 
