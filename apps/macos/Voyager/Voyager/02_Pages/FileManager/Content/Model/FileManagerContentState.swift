@@ -8,6 +8,8 @@ struct FileManagerContentState: Equatable {
     struct EntryThumbnailState: Equatable {
         var thumbnailRequestsInFlight: Set<String> = []
         var thumbnailRenderVersion: Int = 0
+        var thumbnailsReady: Set<String> = []
+        var thumbnailRequestsFailed: Set<String> = []
     }
 
     var navigation: ContentPageNavigationFeature.State = .init()

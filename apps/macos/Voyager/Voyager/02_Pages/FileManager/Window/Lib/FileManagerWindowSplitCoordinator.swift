@@ -18,6 +18,7 @@ final class FileManagerWindowSplitCoordinator: NSViewController, NSSplitViewDele
     }
 
     let store: StoreOf<FileManagerFeature>
+    let keyCommandFocusCoordinator = FileManagerKeyCommandFocusCoordinator()
 
     private var cancellables: Set<AnyCancellable> = []
     private var hasStarted = false
@@ -28,7 +29,7 @@ final class FileManagerWindowSplitCoordinator: NSViewController, NSSplitViewDele
     private var currentSidebarWidth: CGFloat
     private var currentIsDark: Bool
 
-    private var sidebarHosting: NSHostingController<SidebarView>?
+    private var sidebarHosting: NSHostingController<AnyView>?
     private var mainContainerHosting: NSHostingController<FileManagerWindowMainContainerView>?
 
     private weak var windowSplitView: NSSplitView?
@@ -54,6 +55,7 @@ final class FileManagerWindowSplitCoordinator: NSViewController, NSSplitViewDele
     override func loadView() {
         let components = FileManagerWindowSplitLayout.build(
             store: store,
+            keyCommandFocusCoordinator: keyCommandFocusCoordinator,
             mainContainerRootView: makeMainContainerRootView(),
             contentVerticalMargin: Constants.contentVerticalMargin,
             isSidebarVisible: store.sidebar.sidebarVisible,
@@ -135,6 +137,7 @@ final class FileManagerWindowSplitCoordinator: NSViewController, NSSplitViewDele
         FileManagerWindowMainContainerView(
             store: store,
             isDark: currentIsDark,
+            keyCommandFocusCoordinator: keyCommandFocusCoordinator,
         )
     }
 

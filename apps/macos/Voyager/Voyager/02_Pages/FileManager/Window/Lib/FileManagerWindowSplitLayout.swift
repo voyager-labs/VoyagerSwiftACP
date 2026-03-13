@@ -6,7 +6,7 @@ enum FileManagerWindowSplitLayout {
     struct Components {
         let rootView: NSVisualEffectView
         let splitView: NSSplitView
-        let sidebarHosting: NSHostingController<SidebarView>
+        let sidebarHosting: NSHostingController<AnyView>
         let mainContainerHosting: NSHostingController<FileManagerWindowMainContainerView>
         let mainContainerView: NSView
         let mainContainerLeading: NSLayoutConstraint
@@ -14,13 +14,18 @@ enum FileManagerWindowSplitLayout {
 
     static func build(
         store: StoreOf<FileManagerFeature>,
+        keyCommandFocusCoordinator: FileManagerKeyCommandFocusCoordinator,
         mainContainerRootView: FileManagerWindowMainContainerView,
         contentVerticalMargin: CGFloat,
         isSidebarVisible: Bool,
     ) -> Components {
         let backgroundEffect = makeBackgroundEffectView()
         let splitView = makeSplitView()
-        let sidebarHosting = makeSidebarHosting(store: store, in: splitView)
+        let sidebarHosting = makeSidebarHosting(
+            store: store,
+            keyCommandFocusCoordinator: keyCommandFocusCoordinator,
+            in: splitView,
+        )
         let (mainContainerHosting, mainContainerLeading) = makeMainContainerHosting(
             rootView: mainContainerRootView,
             in: splitView,
@@ -60,11 +65,14 @@ enum FileManagerWindowSplitLayout {
 
     private static func makeSidebarHosting(
         store: StoreOf<FileManagerFeature>,
+        keyCommandFocusCoordinator: FileManagerKeyCommandFocusCoordinator,
         in splitView: NSSplitView,
-    ) -> NSHostingController<SidebarView> {
-        let sidebarHosting = NSHostingController(
-            rootView: SidebarView(store: store.scope(state: \.sidebar, action: \.sidebar)),
+    ) -> NSHostingController<AnyView> {
+        let rootView = AnyView(
+            SidebarView(store: store.scope(state: \.sidebar, action: \.sidebar))
+                .environment(\.fileManagerKeyCommandFocusCoordinator, keyCommandFocusCoordinator),
         )
+        let sidebarHosting = NSHostingController(rootView: rootView)
         sidebarHosting.safeAreaRegions = []
         sidebarHosting.view.wantsLayer = true
         sidebarHosting.view.layer?.backgroundColor = NSColor.clear.cgColor

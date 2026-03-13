@@ -6,10 +6,10 @@ enum FileManagerWindowMainContainerLayout {
     struct Components {
         let containerView: NSView
         let splitView: NSSplitView
-        let contentHosting: NSHostingController<FileManagerContentPaneView>
+        let contentHosting: NSHostingController<AnyView>
     }
 
-    static func build(contentRootView: FileManagerContentPaneView) -> Components {
+    static func build(contentRootView: AnyView) -> Components {
         let containerView = NSView()
         containerView.wantsLayer = true
         containerView.layer?.zPosition = 5
@@ -48,7 +48,7 @@ enum FileManagerWindowMainContainerLayout {
     }
 
     static func makeInspectorHosting(
-        store: StoreOf<FileManagerFeature>,
+        store: StoreOf<FileManagerInspectorFeature>,
         isDark: Bool,
     ) -> NSHostingController<InspectorPaneView> {
         let hosting = NSHostingController(rootView: InspectorPaneView(store: store))
