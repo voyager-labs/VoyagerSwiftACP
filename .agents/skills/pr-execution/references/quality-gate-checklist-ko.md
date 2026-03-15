@@ -18,6 +18,8 @@ Complete PR body updates only when all items below are satisfied.
 - [ ] Change type (`add|modify|delete|migrate`) is explicit.
 - [ ] Behavior difference and intent/impact are both described.
 - [ ] Risk/compatibility impact is documented.
+- [ ] Every substantive code-changing module includes at least one representative real code snippet.
+- [ ] Snippet text matches the actual diff/current code and is not pseudo-code.
 
 ## 4) Verification records
 

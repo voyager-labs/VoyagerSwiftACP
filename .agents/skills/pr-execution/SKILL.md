@@ -37,7 +37,7 @@ The default mode is detailed module-level reporting, not summary mode. When new 
    - Template: `references/pr-body-template-ko.md`
    - Detailing rules: `references/detailing-rules-ko.md`
    - Quality checklist: `references/quality-gate-checklist-ko.md`
-   - Module sections must include file paths, change type, intent, impact, and risk
+   - Module sections must include file paths, change type, intent, impact, risk, and representative code snippets when the module includes substantive code changes
 
 4. **Record validation results**
    - Record only commands actually executed
@@ -69,6 +69,7 @@ The default mode is detailed module-level reporting, not summary mode. When new 
 - Default is detailed mode and must include:
   - Commit-level scope
   - Module-level details (with file paths)
+  - Representative code snippets for each code-changing module
   - Validation commands and outcomes
   - Risks / follow-ups
 - Use tables only when explicitly requested
