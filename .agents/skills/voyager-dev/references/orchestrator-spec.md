@@ -3,7 +3,7 @@
 ## Use when
 
 - A feature file is too long and mixes unrelated concerns.
-- Logic is split across many `Feature+*.swift` extensions and traceability is poor.
+- Logic is scattered across many `Feature+*.swift` files and ownership/state flow is hard to trace.
 
 ## Parent/child decomposition contract
 

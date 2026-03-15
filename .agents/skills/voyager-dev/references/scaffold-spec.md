@@ -6,6 +6,36 @@
 - `slice`: `UpperCamelCase`
 - `segments`: subset of `Api | Model | Reducer | Ui | Lib | Config`
 
+## Layer defaults
+
+- `App`: usually `Api | Config | Lib | Reducer | Ui`
+- `Pages`: usually `Api | Lib | Model | Reducer | Ui`
+- `Widgets`: usually `Lib | Model | Reducer | Ui`
+- `Features`: usually `Api | Lib | Model | Reducer | Ui`
+- `Entities`: usually `Api | Lib | Model | Reducer | Ui | Config`
+- `Shared`: usually `Api | Config | Lib | Model`
+
+Widget rule:
+
+- Do not add `Widgets/Api` for ordinary UI sections.
+- If a widget seems to need its own external client, re-check whether the logic belongs in `Features`, `Entities`, or should be injected from a parent layer.
+
+## Layer-specific segment bans
+
+- `01_App`: do not create app-only business helpers that really belong in `Pages`, `Features`, or `Entities`.
+- `02_Pages`: do not turn page containers into domain logic buckets.
+- `03_Widgets`: do not add ordinary `Api/`; do not own standalone navigation or storage.
+- `04_Features`: do not depend on `Pages` or page containers.
+- `05_Entities`: do not reference `Pages` or `Features` above them.
+- `06_Shared`: do not depend on upper layers or slice-specific types.
+
+## Slice boundary checklist
+
+- Name the slice by business/domain meaning, not by technical role.
+- Decide what the stable external surface of the slice is before adding internals.
+- Avoid creating peer-slice dependencies on the same layer unless there is a deliberate, narrow exception.
+- If peer slices need to cooperate, prefer composing them upward in `Pages` or `App`.
+
 ## Layer path mapping
 
 - `App` -> `apps/macos/Voyager/Voyager/01_App`
@@ -33,5 +63,17 @@
 - `Model/`: state/action/domain types
 - `Ui/`: SwiftUI rendering and user input wiring
 - `Api/`: dependency clients and boundary adapters
-- `Lib/`: pure helper logic (no IO)
+- `Lib/`: helpers, mappers, and coordinators; do not park primary external boundary ownership here when it belongs in `Api/`
 - `Config/`: constants, design tokens, static config
+
+## Module checklist
+
+- Confirm the chosen layer is correct before creating files.
+- Keep the slice name domain-oriented and stable.
+- Add only the segments the module actually needs.
+- For non-trivial slices, create `Model/<Slice>State.swift`, `Model/<Slice>Action.swift`, and `Reducer/<Slice>Feature.swift` together.
+- Check whether orchestration belongs in the parent reducer before introducing new decomposition helpers.
+- Check whether a new external boundary should become an `Api/*Client.swift` instead of leaking into `Ui/` or `Lib/`.
+- Check whether the module should own a `Lib/*Coordinator.swift` instead of pushing SDK delegate/lifecycle orchestration into `Ui/`.
+- Check whether the new client belongs in the nearest slice `Api/` or should live in `01_App/Api` / `06_Shared/Api`.
+- Check whether the slice boundary would still make sense if later extracted into a package target.
