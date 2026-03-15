@@ -2,6 +2,7 @@ import AppKit
 import ComposableArchitecture
 import Foundation
 @preconcurrency import Sparkle
+import VoyagerShared
 
 public struct UpdateCheckClient: Sendable {
     public var startAtLaunch: @Sendable () async -> Void

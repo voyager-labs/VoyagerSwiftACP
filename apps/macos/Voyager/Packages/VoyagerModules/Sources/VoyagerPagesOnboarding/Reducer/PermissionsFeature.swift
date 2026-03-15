@@ -2,6 +2,7 @@ import AppKit
 import ComposableArchitecture
 import Foundation
 import VoyagerEntitiesSettings
+import VoyagerShared
 
 @Reducer
 struct PermissionsFeature {
@@ -12,6 +13,8 @@ struct PermissionsFeature {
     var fullDiskAccessClient
     @Dependency(\.launchAtLoginClient)
     var launchAtLoginClient
+    @Dependency(\.notificationCenterClient)
+    var notificationCenterClient
     @Dependency(\.systemSettingsClient)
     var systemSettingsClient
 
@@ -96,8 +99,11 @@ struct PermissionsFeature {
     }
 
     private func observeAppDidBecomeActive() -> Effect<Action> {
-        .run { send in
-            for await _ in NotificationCenter.default.notifications(named: NSApplication.didBecomeActiveNotification) {
+        .run { [notificationCenterClient] send in
+            for await _ in notificationCenterClient.notifications(
+                NSApplication.didBecomeActiveNotification,
+                nil,
+            ) {
                 await send(.appDidBecomeActive)
             }
         }

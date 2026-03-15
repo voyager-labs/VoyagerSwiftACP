@@ -35,6 +35,7 @@ extension NotificationCenterClient: DependencyKey {
                     final class ObserverBox: @unchecked Sendable {
                         var observer: NSObjectProtocol?
                         let center: NotificationCenter
+
                         init(center: NotificationCenter) {
                             self.center = center
                         }
@@ -51,8 +52,8 @@ extension NotificationCenterClient: DependencyKey {
                     )
 
                     continuation.onTermination = { @Sendable _ in
-                        if let obs = box.observer {
-                            box.center.removeObserver(obs)
+                        if let observer = box.observer {
+                            box.center.removeObserver(observer)
                         }
                     }
                 }

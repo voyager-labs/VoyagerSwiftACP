@@ -4,6 +4,7 @@ import CoreServices
 import Foundation
 import ImageIO
 import UniformTypeIdentifiers
+import VoyagerShared
 
 public struct EntryLoadingClient: Sendable {
     public var loadItems: @Sendable (URL, Bool) async throws -> [EntryModel]

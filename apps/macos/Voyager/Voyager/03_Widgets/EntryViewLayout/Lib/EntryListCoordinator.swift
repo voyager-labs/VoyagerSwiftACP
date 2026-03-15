@@ -1,5 +1,6 @@
 import AppKit
 import ComposableArchitecture
+import VoyagerShared
 
 struct EntryListCoordinatorSortDescriptorChange: Equatable {
     let sortKey: SortKey

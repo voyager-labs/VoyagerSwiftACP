@@ -1,6 +1,7 @@
 import ComposableArchitecture
 import CoreServices
 import Foundation
+import VoyagerShared
 
 public struct EntryWatchingClient: Sendable {
     public var observeFileSystemChanged: @Sendable () -> AsyncStream<[String]>

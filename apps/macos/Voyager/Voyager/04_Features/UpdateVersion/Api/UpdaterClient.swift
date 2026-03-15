@@ -3,6 +3,7 @@ import ComposableArchitecture
 import Foundation
 import Logging
 @preconcurrency import Sparkle
+import VoyagerShared
 
 public struct UpdaterClient: Sendable {
     public var configure: @Sendable () async -> Void

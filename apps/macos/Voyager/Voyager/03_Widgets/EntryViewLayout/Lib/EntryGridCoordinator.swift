@@ -1,5 +1,6 @@
 import AppKit
 import ComposableArchitecture
+import VoyagerShared
 
 final class EntryGridCoordinator: NSObject {
     typealias Section = EntryGridSection
