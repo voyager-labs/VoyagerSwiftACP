@@ -7,8 +7,8 @@ struct FileManagerContentComposerFeature {
 
     @Dependency(\.collectionAlertClient)
     private var collectionAlertClient
-    @Dependency(\.fileManagerComputerNameClient)
-    private var computerNameClient
+    @Dependency(\.fileManagerClient)
+    private var fileManagerClient: FileManagerClient
 
     var body: some Reducer<State, Action> {
         Reduce { state, action in
@@ -21,7 +21,7 @@ struct FileManagerContentComposerFeature {
                 state: &state,
                 dependencies: .init(
                     collectionAlertClient: collectionAlertClient,
-                    computerNameClient: computerNameClient,
+                    computerName: fileManagerClient.displayName("/"),
                 ),
             )
         }

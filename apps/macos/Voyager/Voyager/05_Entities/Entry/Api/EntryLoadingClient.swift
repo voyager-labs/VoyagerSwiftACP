@@ -153,9 +153,10 @@ enum EntryLoadingLive {
             try await Task.detached {
                 let entryLoadingClient = EntryLoadingClient.liveValue
                 let workspaceClient = WorkspaceClient.liveValue
+                let fileManagerClient = FileManagerClient.liveValue
                 let options: FileManager.DirectoryEnumerationOptions = showHidden ? [] : [.skipsHiddenFiles]
 
-                let entries = try contentsOfDirectory(
+                let entries = try fileManagerClient.contentsOfDirectory(
                     directoryURL,
                     [
                         .nameKey,
@@ -187,7 +188,8 @@ enum EntryLoadingLive {
     nonisolated static var loadComputerItems: @Sendable () async throws -> [EntryModel] {
         {
             await Task.detached {
-                let rootName = FileManager.default.displayName(atPath: "/")
+                let fileManagerClient = FileManagerClient.liveValue
+                let rootName = fileManagerClient.displayName("/")
                 return [
                     EntryModel(
                         name: rootName,
@@ -214,19 +216,19 @@ enum EntryLoadingLive {
 
     nonisolated static var fileExists: @Sendable (String) -> Bool {
         { path in
-            FileManager.default.fileExists(atPath: path)
+            FileManagerClient.liveValue.fileExists(path)
         }
     }
 
     nonisolated static var fileExistsAtPath: @Sendable (String, UnsafeMutablePointer<ObjCBool>?) -> Bool {
         { path, isDirectory in
-            FileManager.default.fileExists(atPath: path, isDirectory: isDirectory)
+            FileManagerClient.liveValue.fileExistsWithIsDirectory(path, isDirectory)
         }
     }
 
     nonisolated static var displayName: @Sendable (String) -> String {
         { path in
-            FileManager.default.displayName(atPath: path)
+            FileManagerClient.liveValue.displayName(path)
         }
     }
 
@@ -235,7 +237,7 @@ enum EntryLoadingLive {
         FileManager.SearchPathDomainMask,
     ) -> [URL] {
         { directory, domain in
-            FileManager.default.urls(for: directory, in: domain)
+            FileManagerClient.liveValue.urlsForDirectory(directory, domain)
         }
     }
 
@@ -247,7 +249,7 @@ enum EntryLoadingLive {
 
     nonisolated static var trashDirectoryPath: @Sendable () -> String? {
         {
-            FileManager.default.urls(for: .trashDirectory, in: .userDomainMask).first?.path
+            FileManagerClient.liveValue.urlsForDirectory(.trashDirectory, .userDomainMask).first?.path
         }
     }
 
@@ -256,7 +258,7 @@ enum EntryLoadingLive {
         FileManager.VolumeEnumerationOptions,
     ) -> [URL]? {
         { keys, options in
-            FileManager.default.mountedVolumeURLs(includingResourceValuesForKeys: keys, options: options)
+            FileManagerClient.liveValue.mountedVolumeURLs(keys, options)
         }
     }
 
@@ -266,7 +268,7 @@ enum EntryLoadingLive {
         FileManager.DirectoryEnumerationOptions,
     ) throws -> [URL] {
         { url, keys, options in
-            try FileManager.default.contentsOfDirectory(at: url, includingPropertiesForKeys: keys, options: options)
+            try FileManagerClient.liveValue.contentsOfDirectory(url, keys, options)
         }
     }
 
@@ -336,10 +338,10 @@ enum EntryLoadingLive {
 
     nonisolated static var getFolderItemCount: @Sendable (URL) -> Int? {
         { url in
-            guard let entries = try? FileManager.default.contentsOfDirectory(
-                at: url,
-                includingPropertiesForKeys: nil,
-                options: [.skipsHiddenFiles],
+            guard let entries = try? FileManagerClient.liveValue.contentsOfDirectory(
+                url,
+                nil,
+                [.skipsHiddenFiles],
             ) else {
                 return nil
             }
