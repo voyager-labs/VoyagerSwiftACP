@@ -86,8 +86,8 @@ private func makeContentComposerStore(
     let store = TestStore(initialState: initialState) {
         ContentComposerHarness()
     } withDependencies: {
-        $0.fileManagerComputerNameClient = .testValue
         $0.collectionAlertClient = .testValue
+        $0.fileManagerClient.displayName = { path in path == "/" ? "Computer" : path }
     }
     store.exhaustivity = .off
     return store
