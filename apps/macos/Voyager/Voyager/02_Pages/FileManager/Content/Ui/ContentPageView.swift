@@ -4,26 +4,19 @@ import SwiftUI
 
 struct ContentPageView: View {
     let store: StoreOf<FileManagerContentFeature>
-    let onNavigate: (String) -> Void
 
+    @Environment(\.fileManagerKeyCommandFocusCoordinator)
+    private var keyCommandFocusCoordinator
     @FocusState var isKeyCommandFocused: Bool
 
     private var mainContent: some View {
         ZStack {
-            VStack(spacing: 0) {
-                entryContainerView
-                separatorView
-                ContentPaneBreadcrumbBarView(
-                    store: store,
-                    onNavigate: onNavigate,
-                )
-            }
-
+            entryView
             keyCommandOverlay
         }
     }
 
-    @ViewBuilder private var entryContainerView: some View {
+    @ViewBuilder private var entryView: some View {
         if store.composer.isCollectionSearching {
             loadingView
         } else {
@@ -38,17 +31,16 @@ struct ContentPageView: View {
         }
     }
 
-    private var separatorView: some View {
-        Rectangle()
-            .fill(Color.primary.opacity(0.12))
-            .frame(height: 1)
-    }
-
     @ViewBuilder private var keyCommandOverlay: some View {
         if store.viewLayout.isGridLayout {
-            KeyCommandView { event in
-                handleKeyboardEvent(event)
-            }
+            KeyCommandView(
+                onViewCreated: { [weak keyCommandFocusCoordinator] view in
+                    keyCommandFocusCoordinator?.register(view)
+                },
+                onKeyDown: { event in
+                    handleKeyboardEvent(event)
+                },
+            )
             .focusable()
             .focused($isKeyCommandFocused)
             .allowsHitTesting(false)

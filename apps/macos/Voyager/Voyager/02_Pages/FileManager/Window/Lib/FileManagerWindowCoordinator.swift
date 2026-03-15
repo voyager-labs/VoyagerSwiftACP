@@ -6,7 +6,6 @@ final class FileManagerWindowCoordinator: NSWindowController, NSWindowDelegate {
     let windowID: UUID
     let windowUndoManager: UndoManager
     let store: StoreOf<FileManagerFeature>
-    private let computerNameClient = FileManagerComputerNameClient.liveValue
     private let onBecameKey: (@MainActor (UUID) -> Void)?
     private let onResignedKey: (@MainActor (UUID) -> Void)?
     private let onWillClose: (@MainActor (UUID) -> Void)?
@@ -188,15 +187,15 @@ final class FileManagerWindowCoordinator: NSWindowController, NSWindowDelegate {
     }
 
     private func bindWindowTitle(_ window: NSWindow) {
-        let titleClient = computerNameClient
         let makeWindowTitle: (String) -> String = { path in
+            let computerName = FileManagerClient.liveValue.displayName("/")
             if path == "/" {
-                return titleClient.computerName()
+                return computerName
             }
-            if path == titleClient.computerName() {
+            if path == computerName {
                 return path
             }
-            return titleClient.displayNameAtPath(path)
+            return FileManagerClient.liveValue.displayName(path)
         }
 
         func makeTitle(

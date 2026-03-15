@@ -77,24 +77,6 @@ struct PathBreadcrumbView: View {
     private let chevronSize: CGFloat = 14
     private let minTextWidth: CGFloat = 1
 
-    private var computerName: String {
-        FileManager.default.displayName(atPath: "/")
-    }
-
-    private var trashPath: String? {
-        FileManager.default.urls(for: .trashDirectory, in: .userDomainMask).first?.path
-    }
-
-    private func icon(for item: BreadcrumbItem) -> NSImage {
-        if item.fullPath == "/", item.name == computerName {
-            return NSImage(named: "NSComputer") ?? NSWorkspace.shared.icon(forFile: "/")
-        }
-        if let trashPath, item.fullPath == trashPath {
-            return NSImage(named: NSImage.trashFullName) ?? NSWorkspace.shared.icon(forFile: item.fullPath)
-        }
-        return NSWorkspace.shared.icon(forFile: item.fullPath)
-    }
-
     private func calculateTotalFullWidth() -> CGFloat {
         var total: CGFloat = 0
 
@@ -184,7 +166,7 @@ struct PathBreadcrumbView: View {
                     } label: {
                         BreadcrumbItemView(
                             item: item,
-                            icon: icon(for: item),
+                            icon: symbolImage(for: item.iconSystemName),
                             width: calculateDynamicMaxWidth(for: item, at: index),
                             needsFixedSize: position.needsFixedSize(hasSelectedItem: selectedItem != nil),
                             truncationMode: .tail,
@@ -228,7 +210,7 @@ struct PathBreadcrumbView: View {
 
                 BreadcrumbItemView(
                     item: selectedItem,
-                    icon: icon(for: selectedItem),
+                    icon: symbolImage(for: selectedItem.iconSystemName),
                     width: selectedItem.name.width(),
                     needsFixedSize: true,
                     truncationMode: .middle,
@@ -238,5 +220,9 @@ struct PathBreadcrumbView: View {
         }
         .fixedSize(horizontal: true, vertical: false)
         .frame(height: 20)
+    }
+
+    private func symbolImage(for systemName: String) -> NSImage {
+        NSImage(systemSymbolName: systemName, accessibilityDescription: nil) ?? NSImage()
     }
 }

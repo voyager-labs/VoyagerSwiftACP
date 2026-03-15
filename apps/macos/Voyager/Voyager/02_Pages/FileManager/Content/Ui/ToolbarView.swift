@@ -1,10 +1,15 @@
-import AppKit
 import ComposableArchitecture
 import Foundation
 import SwiftUI
 
+struct ToolbarHistoryItem: Equatable {
+    let iconSystemName: String
+    let title: String
+}
+
 struct ToolbarView: View {
     let store: StoreOf<FileManagerContentFeature>
+    let chromeProps: FileManagerContentChromeProps
     let onNavigationAction: (ContentPageNavigationAction.View) -> Void
 
     private struct CollectionTitleIcon: View {
@@ -20,12 +25,12 @@ struct ToolbarView: View {
 
     // NOTE: ViewState가 내부에 왜 있는지 체크
     private struct ViewState: Equatable {
-        let backHistory: [ContentPageNavigationHistorySnapshot]
-        let forwardHistory: [ContentPageNavigationHistorySnapshot]
+        let backHistoryItems: [ToolbarHistoryItem]
+        let forwardHistoryItems: [ToolbarHistoryItem]
         let canGoBack: Bool
         let canGoForward: Bool
         let canGoToEnclosingDirectory: Bool
-        let currentPath: String
+        let toolbarTitle: String
         let isCollectionMode: Bool
         let isOpeningCollectionFile: Bool
         let openedCollectionName: String?
@@ -42,22 +47,106 @@ struct ToolbarView: View {
         Color.primary.opacity(0.12)
     }
 
+    private func displayName(for path: String) -> String {
+        if path == "/" {
+            return chromeProps.computerName.isEmpty ? "Computer" : chromeProps.computerName
+        }
+
+        if let cached = chromeProps.pathDisplayNames[path], !cached.isEmpty {
+            return cached
+        }
+
+        let fallback = URL(fileURLWithPath: path).lastPathComponent
+        return fallback.isEmpty ? path : fallback
+    }
+
+    private func currentNavigationTitle(for navigationState: ContentPageNavigationRoute) -> String {
+        switch navigationState {
+        case let .folder(path):
+            displayName(for: path)
+        case .recents:
+            "Recents"
+        case let .tags(tagName):
+            tagName
+        case .computer:
+            chromeProps.computerName.isEmpty ? "Computer" : chromeProps.computerName
+        case let .collection(collectionNavigation):
+            switch collectionNavigation.kind {
+            case .temporary:
+                "New Collection"
+            case let .file(_, name):
+                name
+            }
+        }
+    }
+
+    private func iconSystemName(forDirectoryPath path: String, homePath: String) -> String {
+        if path == "/" {
+            return "internaldrive"
+        }
+        if path == homePath {
+            return "house"
+        }
+        if path.hasPrefix("/Volumes/") {
+            return "externaldrive"
+        }
+        if let mapped = chromeProps.specialDirectoryIconNames[path] {
+            return mapped
+        }
+        return "folder"
+    }
+
+    private func historyItem(
+        for snapshot: ContentPageNavigationHistorySnapshot,
+        homePath: String,
+    ) -> ToolbarHistoryItem {
+        switch snapshot.navigationState {
+        case let .folder(path):
+            return ToolbarHistoryItem(
+                iconSystemName: iconSystemName(forDirectoryPath: path, homePath: homePath),
+                title: displayName(for: path),
+            )
+        case .recents:
+            return ToolbarHistoryItem(iconSystemName: "clock.arrow.circlepath", title: "Recents")
+        case let .tags(tagName):
+            return ToolbarHistoryItem(iconSystemName: "tag", title: tagName)
+        case .computer:
+            return ToolbarHistoryItem(
+                iconSystemName: "internaldrive",
+                title: chromeProps.computerName.isEmpty ? "Computer" : chromeProps.computerName,
+            )
+        case let .collection(navigation):
+            let title: String = switch navigation.kind {
+            case .temporary:
+                "New Collection"
+            case let .file(_, name):
+                name
+            }
+            return ToolbarHistoryItem(iconSystemName: "rectangle.stack", title: title)
+        }
+    }
+
     var body: some View {
         WithViewStore(
             store,
-            observe: {
-                ViewState(
-                    backHistory: $0.navigation.backHistory,
-                    forwardHistory: $0.navigation.forwardHistory,
-                    canGoBack: $0.navigation.canGoBack,
-                    canGoForward: $0.navigation.canGoForward,
-                    canGoToEnclosingDirectory: $0.navigation.canGoToEnclosingDirectory,
-                    currentPath: $0.navigation.currentPath,
-                    isCollectionMode: $0.entryViewLayout.entryOperations.loadingContext.isCollectionMode,
-                    isOpeningCollectionFile: $0.collectionSession.isOpening,
-                    openedCollectionName: $0.collectionSession.openedName,
-                    openedCollectionURLExists: $0.collectionSession.openedURL != nil,
-                    isOpenedCollectionDirty: $0.isOpenedCollectionDirty,
+            observe: { state in
+                let homePath = NSHomeDirectory()
+                return ViewState(
+                    backHistoryItems: state.navigation.backHistory.map { snapshot in
+                        historyItem(for: snapshot, homePath: homePath)
+                    },
+                    forwardHistoryItems: state.navigation.forwardHistory.map { snapshot in
+                        historyItem(for: snapshot, homePath: homePath)
+                    },
+                    canGoBack: state.navigation.canGoBack,
+                    canGoForward: state.navigation.canGoForward,
+                    canGoToEnclosingDirectory: state.navigation.canGoToEnclosingDirectory,
+                    toolbarTitle: currentNavigationTitle(for: state.navigation.navigationState),
+                    isCollectionMode: state.entryViewLayout.entryOperations.loadingContext.isCollectionMode,
+                    isOpeningCollectionFile: state.collectionSession.isOpening,
+                    openedCollectionName: state.collectionSession.openedName,
+                    openedCollectionURLExists: state.collectionSession.openedURL != nil,
+                    isOpenedCollectionDirty: state.isOpenedCollectionDirty,
                 )
             },
             content: { viewStore in
@@ -82,8 +171,8 @@ struct ToolbarView: View {
         HStack(spacing: 0) {
             ToolbarNavigationButtons(
                 onNavigationAction: onNavigationAction,
-                backHistory: viewStore.backHistory,
-                forwardHistory: viewStore.forwardHistory,
+                backHistoryItems: viewStore.backHistoryItems,
+                forwardHistoryItems: viewStore.forwardHistoryItems,
                 canGoBack: viewStore.canGoBack,
                 canGoForward: viewStore.canGoForward,
                 canGoToEnclosingDirectory: viewStore.canGoToEnclosingDirectory,
@@ -133,7 +222,7 @@ struct ToolbarView: View {
         let titleText = viewStore.openedCollectionName
             ?? (viewStore.isCollectionMode
                 ? "New Collection"
-                : FileManager.default.displayName(atPath: viewStore.currentPath))
+                : viewStore.toolbarTitle)
         let composeSuffix = "/ Compose a filter"
         let showUnsavedIndicator = viewStore.isCollectionMode
             && (!viewStore.openedCollectionURLExists || viewStore.isOpenedCollectionDirty)

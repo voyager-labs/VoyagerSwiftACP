@@ -15,8 +15,8 @@ struct FileManagerContentFeature {
     private var userDefaultsClient
     @Dependency(\.collectionAlertClient)
     private var collectionAlertClient
-    @Dependency(\.fileManagerComputerNameClient)
-    private var computerNameClient
+    @Dependency(\.fileManagerClient)
+    private var fileManagerClient: FileManagerClient
     @Dependency(\.thumbnailGeneratorClient)
     private var thumbnailGeneratorClient
     @Dependency(\.entryThumbnailCacheClient)
@@ -42,81 +42,77 @@ struct FileManagerContentFeature {
         }
 
         Reduce { state, action in
-            if let effect = handleEntryAppearanceAction(action, state: &state) {
-                return effect
-            }
+            var effect: Effect<Action>
 
-            if let effect = handleEntryOperationsBridgeAction(action, state: &state) {
-                return effect
-            }
+            if let appearanceEffect = handleEntryAppearanceAction(action, state: &state) {
+                effect = appearanceEffect
+            } else if let bridgeEffect = handleEntryOperationsBridgeAction(action, state: &state) {
+                effect = bridgeEffect
+            } else if let thumbnailEffect = handleEntryThumbnailAction(action, state: &state) {
+                effect = thumbnailEffect
+            } else if let composerEffect = handleComposerAction(action, state: &state) {
+                effect = composerEffect
+            } else if let collectionDraftEffect = handleCollectionDraftAction(action, state: &state) {
+                effect = collectionDraftEffect
+            } else {
+                switch action {
+                case let .applyNavigationState(navigationState):
+                    effect = applyNavigationStateEffect(navigationState, state: state)
 
-            if let effect = handleEntryThumbnailAction(action, state: &state) {
-                return effect
-            }
+                case .selectAllEntries:
+                    effect = .send(.entries(.selectAll))
 
-            if let effect = handleComposerAction(action, state: &state) {
-                return effect
-            }
+                case .toggleShowHiddenFilesAndReload:
+                    let showHidden = !state.entryViewLayout.showHiddenFiles
+                    effect = .concatenate(
+                        .send(.entries(.toggleShowHiddenFiles)),
+                        reloadEntryItemsEffect(
+                            navigationState: state.navigation.navigationState,
+                            showHidden: showHidden,
+                        ),
+                    )
 
-            if let effect = handleCollectionDraftAction(action, state: &state) {
-                return effect
-            }
+                case let .handleKeyCommand(command):
+                    effect = FileManagerContentKeyCommandHandler.effect(for: command, state: state)
 
-            switch action {
-            case let .applyNavigationState(navigationState):
-                return applyNavigationStateEffect(navigationState, state: state)
+                case .openPathInNewWindow,
+                     .openPathInNewTab,
+                     .closeWindow:
+                    effect = .none
 
-            case .selectAllEntries:
-                return .send(.entries(.selectAll))
+                case let .changeLayout(layout):
+                    state.viewLayout = layout
+                    state.syncComposerCollectionState()
+                    userDefaultsClient.setString(layout.rawValue, SettingsKeys.viewLayout)
+                    effect = .none
 
-            case .toggleShowHiddenFilesAndReload:
-                let showHidden = !state.entryViewLayout.showHiddenFiles
-                return .concatenate(
-                    .send(.entries(.toggleShowHiddenFiles)),
-                    reloadEntryItemsEffect(
-                        navigationState: state.navigation.navigationState,
-                        showHidden: showHidden,
-                    ),
-                )
+                case let .saveScrollOffset(offset, forPath: path):
+                    state.navigation.scrollPositions[path] = offset
+                    effect = .none
 
-            case let .handleKeyCommand(command):
-                return FileManagerContentKeyCommandHandler.effect(for: command, state: state)
-
-            case .openPathInNewWindow,
-                 .openPathInNewTab,
-                 .closeWindow:
-                return .none
-
-            case let .changeLayout(layout):
-                state.viewLayout = layout
-                state.syncComposerCollectionState()
-                userDefaultsClient.setString(layout.rawValue, SettingsKeys.viewLayout)
-                return .none
-
-            case let .saveScrollOffset(offset, forPath: path):
-                state.navigation.scrollPositions[path] = offset
-                return .none
-
-            case .startObservingSystemNotifications:
-                return .run { send in
-                    for await _ in await notificationCenterClient.notifications(
-                        NSApplication.didBecomeActiveNotification,
-                        nil,
-                    ) {
-                        await send(.systemAppDidBecomeActive)
+                case .startObservingSystemNotifications:
+                    effect = .run { send in
+                        for await _ in await notificationCenterClient.notifications(
+                            NSApplication.didBecomeActiveNotification,
+                            nil,
+                        ) {
+                            await send(.systemAppDidBecomeActive)
+                        }
                     }
+                    .cancellable(id: CancelID.systemNotifications, cancelInFlight: true)
+
+                case .stopObservingSystemNotifications:
+                    effect = .cancel(id: CancelID.systemNotifications)
+
+                case .systemAppDidBecomeActive:
+                    effect = .send(.entryViewLayout(.entryOperations(.appDidBecomeActive)))
+
+                default:
+                    effect = .none
                 }
-                .cancellable(id: CancelID.systemNotifications, cancelInFlight: true)
-
-            case .stopObservingSystemNotifications:
-                return .cancel(id: CancelID.systemNotifications)
-
-            case .systemAppDidBecomeActive:
-                return .send(.entryViewLayout(.entryOperations(.appDidBecomeActive)))
-
-            default:
-                return .none
             }
+
+            return effect
         }
     }
 
@@ -241,7 +237,7 @@ struct FileManagerContentFeature {
             state: &state,
             dependencies: .init(
                 collectionAlertClient: collectionAlertClient,
-                computerNameClient: computerNameClient,
+                computerName: fileManagerClient.displayName("/"),
             ),
         )
     }
