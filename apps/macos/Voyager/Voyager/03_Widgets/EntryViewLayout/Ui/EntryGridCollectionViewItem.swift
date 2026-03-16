@@ -1,6 +1,41 @@
 import AppKit
 import UniformTypeIdentifiers
 
+public enum EntryGridRenameEditorRules {
+    public enum CommandAction: Equatable {
+        case commit
+        case cancel
+        case none
+    }
+
+    public static let maxLines = 3
+
+    public static func applyWrappingStyle(to textField: NSTextField) {
+        textField.usesSingleLineMode = false
+        textField.lineBreakMode = .byWordWrapping
+        textField.maximumNumberOfLines = maxLines
+        textField.cell?.wraps = true
+        textField.cell?.isScrollable = false
+    }
+
+    public static func sanitizeInput(_ value: String) -> String {
+        value.replacingOccurrences(of: "\n", with: "")
+            .replacingOccurrences(of: "\r", with: "")
+    }
+
+    public static func commandAction(for commandSelector: Selector) -> CommandAction {
+        if commandSelector == #selector(NSResponder.insertNewline(_:))
+            || commandSelector == #selector(NSResponder.insertTab(_:))
+        {
+            return .commit
+        }
+        if commandSelector == #selector(NSResponder.cancelOperation(_:)) {
+            return .cancel
+        }
+        return .none
+    }
+}
+
 final class EntryGridCollectionViewItem: NSCollectionViewItem {
     struct Configuration {
         let entry: EntryModel
@@ -21,6 +56,8 @@ final class EntryGridCollectionViewItem: NSCollectionViewItem {
     private let backgroundView = NSView()
     private let iconView = NSImageView()
     private let iconBackgroundView = NSView()
+    private let nameContainerView = NSView()
+    private let nameHighlightView = NSView()
     private let nameField = NSTextField(labelWithString: "")
     private let infoField = NSTextField(labelWithString: "")
     private let tagStackView = NSStackView()
@@ -109,9 +146,16 @@ final class EntryGridCollectionViewItem: NSCollectionViewItem {
         nameField.selectText(nil)
     }
 
+    // swiftlint:disable:next function_body_length
     private func setupViews() {
         view.wantsLayer = true
         view.layer?.cornerRadius = 8
+
+        iconBackgroundView.identifier = NSUserInterfaceItemIdentifier("entryGrid.iconBackground")
+        nameContainerView.identifier = NSUserInterfaceItemIdentifier("entryGrid.nameContainer")
+        nameHighlightView.identifier = NSUserInterfaceItemIdentifier("entryGrid.nameHighlight")
+        nameField.identifier = NSUserInterfaceItemIdentifier("entryGrid.nameField")
+        tagStackView.identifier = NSUserInterfaceItemIdentifier("entryGrid.tagStack")
 
         backgroundView.wantsLayer = true
         backgroundView.layer?.cornerRadius = 8
@@ -129,15 +173,39 @@ final class EntryGridCollectionViewItem: NSCollectionViewItem {
         tagStackView.alignment = .centerY
         tagStackView.spacing = 4
         tagStackView.translatesAutoresizingMaskIntoConstraints = false
+        tagStackView.setContentHuggingPriority(.required, for: .horizontal)
+        tagStackView.setContentCompressionResistancePriority(.required, for: .horizontal)
+
+        nameContainerView.translatesAutoresizingMaskIntoConstraints = false
+        nameContainerView.setContentHuggingPriority(.required, for: .horizontal)
+        nameContainerView.setContentCompressionResistancePriority(.defaultHigh, for: .horizontal)
+
+        nameHighlightView.wantsLayer = true
+        nameHighlightView.layer?.cornerRadius = 4
+        nameHighlightView.translatesAutoresizingMaskIntoConstraints = false
+        nameContainerView.addSubview(nameHighlightView)
 
         nameField.translatesAutoresizingMaskIntoConstraints = false
+        nameContainerView.addSubview(nameField)
         infoField.translatesAutoresizingMaskIntoConstraints = false
         infoField.font = NSFont.systemFont(ofSize: max(8, textSize - 1))
         infoField.textColor = NSColor.systemBlue
         infoField.alignment = .center
         infoField.lineBreakMode = .byTruncatingTail
 
-        let textStack = NSStackView(views: [tagStackView, nameField, infoField])
+        NSLayoutConstraint.activate([
+            nameHighlightView.leadingAnchor.constraint(equalTo: nameContainerView.leadingAnchor),
+            nameHighlightView.trailingAnchor.constraint(equalTo: nameContainerView.trailingAnchor),
+            nameHighlightView.topAnchor.constraint(equalTo: nameContainerView.topAnchor),
+            nameHighlightView.bottomAnchor.constraint(equalTo: nameContainerView.bottomAnchor),
+
+            nameField.leadingAnchor.constraint(equalTo: nameContainerView.leadingAnchor, constant: 6),
+            nameField.trailingAnchor.constraint(equalTo: nameContainerView.trailingAnchor, constant: -6),
+            nameField.topAnchor.constraint(equalTo: nameContainerView.topAnchor, constant: 2),
+            nameField.bottomAnchor.constraint(equalTo: nameContainerView.bottomAnchor, constant: -2),
+        ])
+
+        let textStack = NSStackView(views: [tagStackView, nameContainerView, infoField])
         textStack.orientation = .vertical
         textStack.alignment = .centerX
         textStack.spacing = 2
@@ -213,12 +281,12 @@ final class EntryGridCollectionViewItem: NSCollectionViewItem {
         iconBackgroundView.layer?.backgroundColor = NSColor.clear.cgColor
 
         if isHighlighted, !isRenaming {
-            nameField.drawsBackground = true
-            nameField.backgroundColor = selectionBackground
+            nameHighlightView.isHidden = false
+            nameHighlightView.layer?.backgroundColor = selectionBackground.cgColor
             nameField.textColor = .selectedTextColor
         } else if !isRenaming {
-            nameField.drawsBackground = false
-            nameField.backgroundColor = .clear
+            nameHighlightView.isHidden = true
+            nameHighlightView.layer?.backgroundColor = nil
             nameField.textColor = .labelColor
         }
 
@@ -235,14 +303,16 @@ final class EntryGridCollectionViewItem: NSCollectionViewItem {
     }
 
     private func applyRenamingStyle(text: String) {
+        nameHighlightView.isHidden = true
+        nameHighlightView.layer?.backgroundColor = nil
         nameField.isEditable = true
         nameField.isSelectable = true
         nameField.isBordered = true
         nameField.drawsBackground = true
         nameField.backgroundColor = NSColor.textBackgroundColor
         nameField.focusRingType = .default
-        nameField.usesSingleLineMode = true
-        nameField.stringValue = text
+        EntryGridRenameEditorRules.applyWrappingStyle(to: nameField)
+        nameField.stringValue = EntryGridRenameEditorRules.sanitizeInput(text)
         nameField.delegate = self
     }
 
@@ -282,27 +352,27 @@ extension EntryGridCollectionViewItem: NSTextFieldDelegate {
         guard isRenaming else { return }
         guard let textField = notification.object as? NSTextField else { return }
         guard textField === nameField else { return }
-        onRenameUpdate?(textField.stringValue)
+        let sanitized = EntryGridRenameEditorRules.sanitizeInput(textField.stringValue)
+        if sanitized != textField.stringValue {
+            textField.stringValue = sanitized
+        }
+        onRenameUpdate?(sanitized)
     }
 
     func control(_ control: NSControl, textView _: NSTextView, doCommandBy commandSelector: Selector) -> Bool {
         guard isRenaming else { return false }
         guard let textField = control as? NSTextField, textField === nameField else { return false }
 
-        if commandSelector == #selector(NSResponder.insertNewline(_:)) {
+        switch EntryGridRenameEditorRules.commandAction(for: commandSelector) {
+        case .commit:
             onRenameCommit?()
             return true
-        }
-        if commandSelector == #selector(NSResponder.cancelOperation(_:)) {
+        case .cancel:
             onRenameCancel?()
             return true
+        case .none:
+            return false
         }
-        if commandSelector == #selector(NSResponder.insertTab(_:)) {
-            onRenameCommit?()
-            return true
-        }
-
-        return false
     }
 
     func controlTextDidEndEditing(_ notification: Notification) {

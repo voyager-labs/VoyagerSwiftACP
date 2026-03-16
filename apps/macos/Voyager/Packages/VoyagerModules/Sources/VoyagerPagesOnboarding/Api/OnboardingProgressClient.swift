@@ -3,15 +3,15 @@ import Foundation
 import VoyagerShared
 
 struct OnboardingProgressClient: Sendable {
+    var load: @Sendable () -> LoadResult
+    var save: @Sendable (OnboardingProgressSnapshot) -> Void
+    var reset: @Sendable () -> Void
+
     enum LoadResult: Equatable, Sendable {
         case empty
         case resetRequired
         case success(OnboardingProgressSnapshot)
     }
-
-    var load: @Sendable () -> LoadResult
-    var save: @Sendable (OnboardingProgressSnapshot) -> Void
-    var reset: @Sendable () -> Void
 }
 
 extension OnboardingProgressClient: DependencyKey {

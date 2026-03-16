@@ -18,6 +18,49 @@ struct ConditionChipView: View {
     let onRemove: () -> Void
     let onDisplayUnitChange: (_ propertyKey: String, _ unitCode: String) -> Void
 
+    private struct DateValueButtonConfig {
+        let placeholderText: String
+        let currentText: String
+        let hasError: Bool
+        let index: Int
+        let operatorCode: String
+        let valueUIKind: String
+        let valueArity: Int
+    }
+
+    private struct ValuePillView: View {
+        let text: String
+        let isDark: Bool
+        let hoverFillOpacity: Double
+        let onTap: () -> Void
+
+        @State private var isHovering: Bool = false
+
+        var body: some View {
+            Button(action: onTap) {
+                Text(text.isEmpty ? "Value" : text)
+                    .font(.system(size: 11, weight: .medium))
+                    .foregroundColor(.primary)
+                    .padding(.horizontal, 6)
+                    .padding(.vertical, 3)
+                    .background(
+                        RoundedRectangle(cornerRadius: 4)
+                            .fill(
+                                isHovering
+                                    ? (isDark ? Color.white.opacity(hoverFillOpacity) :
+                                        Color.black.opacity(hoverFillOpacity))
+                                    : Color.white.opacity(0.0001),
+                            ),
+                    )
+            }
+            .buttonStyle(.plain)
+            .contentShape(Rectangle())
+            .onHover { hovering in
+                isHovering = hovering
+            }
+        }
+    }
+
     @State private var isPropertyHovering: Bool = false
     @State private var isOperatorHovering: Bool = false
     @State private var isValueHovering: Bool = false
@@ -223,17 +266,7 @@ struct ConditionChipView: View {
         valueStore: ViewStore<ValuePickerFeature.State, ValuePickerFeature.Action>,
     ) -> some View {
         if let operatorCode = condition.operatorCode, valueArity != 0 {
-            if ValuePickerTokenUtils.isTokenPopoverProperty(
-                propertyType: condition.propertyType,
-                valueUIKind: valueUIKind,
-            ) {
-                tokenValueButton(
-                    operatorCode: operatorCode,
-                    valueUIKind: valueUIKind,
-                    valueArity: valueArity,
-                    valueViewStore: valueStore,
-                )
-            } else if valueUIKind == "rangeNumber" {
+            if valueUIKind == "rangeNumber" {
                 rangeNumberSection(
                     operatorCode: operatorCode,
                     valueUIKind: valueUIKind,
@@ -443,7 +476,6 @@ struct ConditionChipView: View {
         .frame(height: 164)
         .padding(.vertical, 2)
     }
-
     @ViewBuilder
     private func rangeNumberSection(
         operatorCode: String,
@@ -716,17 +748,6 @@ struct ConditionChipView: View {
         }
     }
 
-    private struct DateValueButtonConfig {
-        let placeholderText: String
-        let currentText: String
-        let hasError: Bool
-        let index: Int
-        let operatorCode: String
-        let valueUIKind: String
-        let valueArity: Int
-    }
-
-    @ViewBuilder
     private func singleValueButton(
         operatorCode: String,
         valueUIKind: String,
@@ -772,39 +793,6 @@ struct ConditionChipView: View {
                 },
             ) {
                 selector
-            }
-        }
-    }
-
-    private struct ValuePillView: View {
-        let text: String
-        let isDark: Bool
-        let hoverFillOpacity: Double
-        let onTap: () -> Void
-
-        @State private var isHovering: Bool = false
-
-        var body: some View {
-            Button(action: onTap) {
-                Text(text.isEmpty ? "Value" : text)
-                    .font(.system(size: 11, weight: .medium))
-                    .foregroundColor(.primary)
-                    .padding(.horizontal, 6)
-                    .padding(.vertical, 3)
-                    .background(
-                        RoundedRectangle(cornerRadius: 4)
-                            .fill(
-                                isHovering
-                                    ? (isDark ? Color.white.opacity(hoverFillOpacity) :
-                                        Color.black.opacity(hoverFillOpacity))
-                                    : Color.white.opacity(0.0001),
-                            ),
-                    )
-            }
-            .buttonStyle(.plain)
-            .contentShape(Rectangle())
-            .onHover { hovering in
-                isHovering = hovering
             }
         }
     }
@@ -1077,7 +1065,6 @@ struct ConditionChipView: View {
             focusedValueIndex = nextFocus
         }
     }
-
     private func dateValueButton(
         config: DateValueButtonConfig,
         valueViewStore: ViewStore<ValuePickerFeature.State, ValuePickerFeature.Action>,
@@ -1300,10 +1287,50 @@ struct ConditionChipView: View {
             )
         }
     }
+
+    private func updateInlineValueFocus(shouldFocus: Bool, targetIndex: Int?) {
+        let nextFocus = shouldFocus ? targetIndex : nil
+        guard focusedValueIndex != nextFocus else { return }
+        DispatchQueue.main.async {
+            focusedValueIndex = nextFocus
+        }
+    }
+
+    static func displayedValuesForDate(
+        conditionValues: [String]?,
+        conditionPropertyKey: String,
+        pickerPropertyKey: String?,
+        pickerPresented: Bool,
+        pickerValues: [String],
+    ) -> [String]? {
+        if pickerPresented, pickerPropertyKey == conditionPropertyKey {
+            return pickerValues
+        }
+        return conditionValues
+    }
 }
 
 private struct CalendarDatePicker: NSViewRepresentable {
     @Binding var selection: Date
+
+    final class Coordinator: NSObject {
+        @Binding var selection: Date
+        let onCommit: () -> Void
+
+        init(selection: Binding<Date>, onCommit: @escaping () -> Void) {
+            _selection = selection
+            self.onCommit = onCommit
+        }
+
+        @objc
+        func dateChanged(_ sender: NSDatePicker) {
+            selection = sender.dateValue
+            if NSApp.currentEvent?.clickCount == 2 {
+                onCommit()
+            }
+        }
+    }
+
     let onCommit: () -> Void
 
     func makeCoordinator() -> Coordinator {
@@ -1326,24 +1353,6 @@ private struct CalendarDatePicker: NSViewRepresentable {
     func updateNSView(_ nsView: NSDatePicker, context _: Context) {
         if nsView.dateValue != selection {
             nsView.dateValue = selection
-        }
-    }
-
-    final class Coordinator: NSObject {
-        @Binding var selection: Date
-        let onCommit: () -> Void
-
-        init(selection: Binding<Date>, onCommit: @escaping () -> Void) {
-            _selection = selection
-            self.onCommit = onCommit
-        }
-
-        @objc
-        func dateChanged(_ sender: NSDatePicker) {
-            selection = sender.dateValue
-            if NSApp.currentEvent?.clickCount == 2 {
-                onCommit()
-            }
         }
     }
 }

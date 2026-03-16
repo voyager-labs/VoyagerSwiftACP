@@ -9,7 +9,7 @@ public struct SettingsView: View {
     }
 
     public var body: some View {
-        WithViewStore(store, observe: { $0 }) { viewStore in
+        WithViewStore(store, observe: { $0 }, content: { viewStore in
             TabView(selection: viewStore.binding(get: \.selectedSection, send: SettingsAction.selectSection)) {
                 ForEach(SettingsSection.allCases) { section in
                     tabContent(for: section)
@@ -30,7 +30,7 @@ public struct SettingsView: View {
                 .keyboardShortcut("w", modifiers: .command)
                 .hidden(),
             )
-        }
+        })
     }
 
     @ViewBuilder

@@ -1,18 +1,10 @@
 import AppKit
 import ComposableArchitecture
 import SwiftUI
-import VoyagerFeaturesBetaAccess
 import VoyagerShared
 
 struct OnboardingView: View {
     let store: StoreOf<OnboardingFeature>
-
-    // TODO(DS): 디자인시스템 적용
-    private let accentColor = Color(
-        red: 252 / 255,
-        green: 154 / 255,
-        blue: 48 / 255,
-    )
 
     var body: some View {
         WithViewStore(store, observe: { $0 }, content: { viewStore in
@@ -97,6 +89,13 @@ struct OnboardingView: View {
             }
         })
     }
+
+    // TODO(DS): 디자인시스템 적용
+    private let accentColor = Color(
+        red: 252 / 255,
+        green: 154 / 255,
+        blue: 48 / 255,
+    )
 
     private func topInsetBar(viewStore: ViewStore<OnboardingFeature.State, OnboardingFeature.Action>) -> some View {
         let sideSlotWidth: CGFloat = 200
@@ -191,13 +190,6 @@ struct OnboardingView: View {
         .accessibilityLabel("Onboarding progress")
     }
 
-    private func nextDisabledMessage(
-        from viewStore: ViewStore<OnboardingFeature.State, OnboardingFeature.Action>,
-    ) -> String? {
-        guard viewStore.currentStep == .permissions, !viewStore.canGoNext else { return nil }
-        return viewStore.permissions.nextDisabledMessage
-    }
-
     private func stepSummaryView(
         viewStore: ViewStore<OnboardingFeature.State, OnboardingFeature.Action>,
         isCentered: Bool,
@@ -240,5 +232,12 @@ struct OnboardingView: View {
         case .complete:
             CompleteStepView(store: store.scope(state: \.complete, action: \.complete))
         }
+    }
+
+    private func nextDisabledMessage(
+        from viewStore: ViewStore<OnboardingFeature.State, OnboardingFeature.Action>,
+    ) -> String? {
+        guard viewStore.currentStep == .permissions, !viewStore.canGoNext else { return nil }
+        return viewStore.permissions.nextDisabledMessage
     }
 }

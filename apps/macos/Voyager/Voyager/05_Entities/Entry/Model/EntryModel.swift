@@ -35,6 +35,8 @@ public struct EntryFacets: Equatable, Sendable {
 }
 
 public struct EntryModel: Identifiable, Sendable {
+    public typealias ID = String
+
     public let name: String
     public let fullPath: String
     public let isFolder: Bool
@@ -43,8 +45,6 @@ public struct EntryModel: Identifiable, Sendable {
     public let modifiedDate: Date
     public let fileExtension: String
     public let facets: EntryFacets
-
-    public var id: String { fullPath }
 
     public nonisolated init(
         name: String,
@@ -65,6 +65,8 @@ public struct EntryModel: Identifiable, Sendable {
         self.fileExtension = fileExtension
         self.facets = facets
     }
+
+    public var id: ID { fullPath }
 }
 
 extension EntryModel: Equatable {
@@ -75,7 +77,7 @@ extension EntryModel: Equatable {
             lhs.facets.tags == rhs.facets.tags
     }
 
-    public static func temporaryFolder(id: String, name: String) -> EntryModel {
+    public static func temporaryFolder(id: ID, name: String) -> EntryModel {
         EntryModel(
             name: name,
             fullPath: id,

@@ -4,7 +4,7 @@ import SwiftUI
 
 // TODO: AppKit으로 변경 및 점검 필요
 struct InspectorPaneView: View {
-    let store: StoreOf<FileManagerFeature>
+    let store: StoreOf<FileManagerInspectorFeature>
     @State private var chatInput: String = ""
     @Environment(\.colorScheme)
     var colorScheme
@@ -23,7 +23,7 @@ struct InspectorPaneView: View {
                 .buttonStyle(.plain)
 
                 Button {
-                    store.send(.inspector(.toggleInspector))
+                    store.send(.toggleInspector)
                 } label: {
                     Image(systemName: "xmark")
                         .foregroundColor(.secondary)

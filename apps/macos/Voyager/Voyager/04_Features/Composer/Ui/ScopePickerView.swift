@@ -3,7 +3,6 @@ import ComposableArchitecture
 import SwiftUI
 
 struct ScopePickerView: View {
-    @Binding var isPresented: Bool
     let oldPath: String?
     let onSelect: (String) -> Void
     let favorites: [ScopeFavoriteItem]
@@ -15,6 +14,8 @@ struct ScopePickerView: View {
     @FocusState private var isSearchFocused: Bool
     @Environment(\.colorScheme)
     private var colorScheme
+
+    @Binding var isPresented: Bool
 
     init(
         isPresented: Binding<Bool>,
@@ -36,35 +37,6 @@ struct ScopePickerView: View {
                 backHistory: backHistory,
             ),
         )
-    }
-
-    var body: some View {
-        VStack(spacing: 0) {
-            searchField
-
-            listContent
-        }
-        .frame(width: 200)
-        .frame(maxHeight: 400)
-        .background(VoyagerDS.Surface.popoverBackground(for: colorScheme))
-        .overlay(
-            RoundedRectangle(cornerRadius: 8)
-                .stroke(VoyagerDS.Surface.popoverBorder, lineWidth: 1),
-        )
-        .shadow(
-            color: VoyagerDS.Shadow.popoverColor(for: colorScheme),
-            radius: VoyagerDS.Shadow.popoverRadius,
-            y: VoyagerDS.Shadow.popoverYOffset,
-        )
-        .onAppear {
-            isSearchFocused = true
-        }
-        .onChange(of: searchText) { _ in
-            searchCoordinator.update(query: searchText)
-        }
-        .onDisappear {
-            searchCoordinator.stop()
-        }
     }
 
     private var searchField: some View {
@@ -117,12 +89,33 @@ struct ScopePickerView: View {
         }
     }
 
-    private func applicationsIcon() -> NSImage? {
-        let appIcon = NSImage(
-            contentsOfFile: "/System/Library/CoreServices/CoreTypes.bundle/Contents/Resources/SidebarApplicationsFolder.icns",
+    var body: some View {
+        VStack(spacing: 0) {
+            searchField
+
+            listContent
+        }
+        .frame(width: 200)
+        .frame(maxHeight: 400)
+        .background(VoyagerDS.Surface.popoverBackground(for: colorScheme))
+        .overlay(
+            RoundedRectangle(cornerRadius: 8)
+                .stroke(VoyagerDS.Surface.popoverBorder, lineWidth: 1),
         )
-        appIcon?.isTemplate = true
-        return appIcon
+        .shadow(
+            color: VoyagerDS.Shadow.popoverColor(for: colorScheme),
+            radius: VoyagerDS.Shadow.popoverRadius,
+            y: VoyagerDS.Shadow.popoverYOffset,
+        )
+        .onAppear {
+            isSearchFocused = true
+        }
+        .onChange(of: searchText) { _ in
+            searchCoordinator.update(query: searchText)
+        }
+        .onDisappear {
+            searchCoordinator.stop()
+        }
     }
 
     @ViewBuilder
@@ -166,5 +159,13 @@ struct ScopePickerView: View {
         .onHover { hovering in
             hoveredPath = hovering ? item.path : nil
         }
+    }
+
+    private func applicationsIcon() -> NSImage? {
+        let appIcon = NSImage(
+            contentsOfFile: "/System/Library/CoreServices/CoreTypes.bundle/Contents/Resources/SidebarApplicationsFolder.icns",
+        )
+        appIcon?.isTemplate = true
+        return appIcon
     }
 }

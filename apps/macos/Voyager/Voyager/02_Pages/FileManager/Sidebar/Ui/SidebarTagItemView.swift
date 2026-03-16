@@ -13,6 +13,9 @@ struct SidebarTagItemView: View {
 
     @Environment(\.colorScheme)
     private var colorScheme
+
+    @Environment(\.fileManagerKeyCommandFocusCoordinator)
+    private var keyCommandFocusCoordinator
     @State private var isDropTarget = false
 
     @ViewBuilder private var backgroundView: some View {
@@ -57,7 +60,7 @@ struct SidebarTagItemView: View {
         .contentShape(Rectangle())
         .onTapGesture {
             action()
-            KeyCommandHostingView.restoreCurrentFocus()
+            keyCommandFocusCoordinator?.requestFocus()
         }
         .onDrop(of: [.fileURL], isTargeted: $isDropTarget) { providers in
             guard let onDrop else { return false }

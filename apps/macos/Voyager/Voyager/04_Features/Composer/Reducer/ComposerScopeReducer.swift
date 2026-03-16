@@ -2,11 +2,11 @@ import ComposableArchitecture
 
 @Reducer
 struct ComposerScopeReducer {
-    @Dependency(\.searchClient)
-    var searchClient
-
     typealias State = ComposerState
     typealias Action = ComposerAction
+
+    @Dependency(\.searchClient)
+    var searchClient
 
     var body: some Reducer<State, Action> {
         Reduce { state, action in

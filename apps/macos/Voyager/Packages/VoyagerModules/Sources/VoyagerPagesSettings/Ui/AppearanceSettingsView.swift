@@ -218,79 +218,6 @@ struct AppearanceSettingsView: View {
         perViewPresets
     }
 
-    private func presetForList(iconSize: CGFloat, textSize: CGFloat) -> SizePreset {
-        let icon = Int(iconSize.rounded())
-        let text = Int(textSize.rounded())
-
-        if icon == 18, text == 12 { return .small }
-        if icon == 20, text == 13 { return .medium }
-        if icon == 24, text == 14 { return .large }
-
-        return .mixed
-    }
-
-    private func presetForIcon(iconSize: CGFloat, textSize: CGFloat) -> SizePreset {
-        let icon = Int(iconSize.rounded())
-        let text = Int(textSize.rounded())
-
-        if icon == 48, text == 11 { return .small }
-        if icon == 64, text == 12 { return .medium }
-        if icon == 96, text == 13 { return .large }
-
-        return .mixed
-    }
-
-    private func sizingForListPreset(_ preset: SizePreset) -> ViewSizing? {
-        switch preset {
-        case .small:
-            ViewSizing(iconSize: 18, textSize: 12)
-        case .medium:
-            ViewSizing(iconSize: 20, textSize: 13)
-        case .large:
-            ViewSizing(iconSize: 24, textSize: 14)
-        case .mixed:
-            nil
-        }
-    }
-
-    private func sizingForIconPreset(_ preset: SizePreset) -> ViewSizing? {
-        switch preset {
-        case .small:
-            ViewSizing(iconSize: 48, textSize: 11)
-        case .medium:
-            ViewSizing(iconSize: 64, textSize: 12)
-        case .large:
-            ViewSizing(iconSize: 96, textSize: 13)
-        case .mixed:
-            nil
-        }
-    }
-
-    private func applyOverallPreset(_ preset: SizePreset) {
-        guard preset != .mixed else { return }
-        guard let listSizing = sizingForListPreset(preset) else { return }
-        guard let iconSizing = sizingForIconPreset(preset) else { return }
-
-        store.send(.setListIconSize(listSizing.iconSize))
-        store.send(.setListTextSize(listSizing.textSize))
-        store.send(.setGridIconSize(iconSizing.iconSize))
-        store.send(.setGridTextSize(iconSizing.textSize))
-    }
-
-    private func applyListPreset(_ preset: SizePreset) {
-        guard preset != .mixed else { return }
-        guard let sizing = sizingForListPreset(preset) else { return }
-        store.send(.setListIconSize(sizing.iconSize))
-        store.send(.setListTextSize(sizing.textSize))
-    }
-
-    private func applyIconPreset(_ preset: SizePreset) {
-        guard preset != .mixed else { return }
-        guard let sizing = sizingForIconPreset(preset) else { return }
-        store.send(.setGridIconSize(sizing.iconSize))
-        store.send(.setGridTextSize(sizing.textSize))
-    }
-
     var body: some View {
         Form {
             Section {
@@ -383,5 +310,78 @@ struct AppearanceSettingsView: View {
         .formStyle(.grouped)
         .scrollContentBackground(.hidden)
         .background(Color(NSColor.controlBackgroundColor))
+    }
+
+    private func presetForList(iconSize: CGFloat, textSize: CGFloat) -> SizePreset {
+        let icon = Int(iconSize.rounded())
+        let text = Int(textSize.rounded())
+
+        if icon == 18, text == 12 { return .small }
+        if icon == 20, text == 13 { return .medium }
+        if icon == 24, text == 14 { return .large }
+
+        return .mixed
+    }
+
+    private func presetForIcon(iconSize: CGFloat, textSize: CGFloat) -> SizePreset {
+        let icon = Int(iconSize.rounded())
+        let text = Int(textSize.rounded())
+
+        if icon == 48, text == 11 { return .small }
+        if icon == 64, text == 12 { return .medium }
+        if icon == 96, text == 13 { return .large }
+
+        return .mixed
+    }
+
+    private func sizingForListPreset(_ preset: SizePreset) -> ViewSizing? {
+        switch preset {
+        case .small:
+            ViewSizing(iconSize: 18, textSize: 12)
+        case .medium:
+            ViewSizing(iconSize: 20, textSize: 13)
+        case .large:
+            ViewSizing(iconSize: 24, textSize: 14)
+        case .mixed:
+            nil
+        }
+    }
+
+    private func sizingForIconPreset(_ preset: SizePreset) -> ViewSizing? {
+        switch preset {
+        case .small:
+            ViewSizing(iconSize: 48, textSize: 11)
+        case .medium:
+            ViewSizing(iconSize: 64, textSize: 12)
+        case .large:
+            ViewSizing(iconSize: 96, textSize: 13)
+        case .mixed:
+            nil
+        }
+    }
+
+    private func applyOverallPreset(_ preset: SizePreset) {
+        guard preset != .mixed else { return }
+        guard let listSizing = sizingForListPreset(preset) else { return }
+        guard let iconSizing = sizingForIconPreset(preset) else { return }
+
+        store.send(.setListIconSize(listSizing.iconSize))
+        store.send(.setListTextSize(listSizing.textSize))
+        store.send(.setGridIconSize(iconSizing.iconSize))
+        store.send(.setGridTextSize(iconSizing.textSize))
+    }
+
+    private func applyListPreset(_ preset: SizePreset) {
+        guard preset != .mixed else { return }
+        guard let sizing = sizingForListPreset(preset) else { return }
+        store.send(.setListIconSize(sizing.iconSize))
+        store.send(.setListTextSize(sizing.textSize))
+    }
+
+    private func applyIconPreset(_ preset: SizePreset) {
+        guard preset != .mixed else { return }
+        guard let sizing = sizingForIconPreset(preset) else { return }
+        store.send(.setGridIconSize(sizing.iconSize))
+        store.send(.setGridTextSize(sizing.textSize))
     }
 }

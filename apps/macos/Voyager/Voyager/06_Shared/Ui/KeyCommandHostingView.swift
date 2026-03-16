@@ -2,8 +2,8 @@ import AppKit
 import SwiftUI
 
 final class KeyCommandHostingView: NSView {
-    var onKeyDown: ((NSEvent) -> Void)?
     weak static var currentFirstResponder: KeyCommandHostingView?
+    var onKeyDown: ((NSEvent) -> Void)?
 
     override func keyDown(with event: NSEvent) {
         onKeyDown?(event)
@@ -13,8 +13,6 @@ final class KeyCommandHostingView: NSView {
         window?.makeFirstResponder(self)
         super.mouseDown(with: event)
     }
-
-    override var acceptsFirstResponder: Bool { true }
 
     override func becomeFirstResponder() -> Bool {
         KeyCommandHostingView.currentFirstResponder = self
@@ -28,24 +26,35 @@ final class KeyCommandHostingView: NSView {
         return true
     }
 
-    func restoreFocus() {
-        window?.makeFirstResponder(self)
-    }
+    override var acceptsFirstResponder: Bool { true }
 
-    // TODO: 현재 Sidebar onTap에서도 이 API를 호출하고 있어 Shared UI 레이어가 FileManager 포커스 정책에 결합되어 있다. 포커스 복구 책임 위치를 재설계하자.
     static func restoreCurrentFocus() {
         DispatchQueue.main.async {
             KeyCommandHostingView.currentFirstResponder?.restoreFocus()
         }
     }
+
+    func restoreFocus() {
+        window?.makeFirstResponder(self)
+    }
 }
 
 struct KeyCommandView: NSViewRepresentable {
+    var onViewCreated: ((KeyCommandHostingView) -> Void)?
     var onKeyDown: (NSEvent) -> Void
+
+    init(
+        onViewCreated: ((KeyCommandHostingView) -> Void)? = nil,
+        onKeyDown: @escaping (NSEvent) -> Void,
+    ) {
+        self.onViewCreated = onViewCreated
+        self.onKeyDown = onKeyDown
+    }
 
     func makeNSView(context _: Context) -> KeyCommandHostingView {
         let view = KeyCommandHostingView()
         view.onKeyDown = onKeyDown
+        onViewCreated?(view)
         return view
     }
 

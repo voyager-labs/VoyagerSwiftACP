@@ -2,6 +2,56 @@ import AppKit
 import ComposableArchitecture
 import Foundation
 
+struct EntryViewLayoutCutClearMonitor: Sendable {
+    var heuristic: EntryViewLayoutCutClearHeuristic
+
+    struct RuntimeContext: Sendable {
+        var now: Date
+        var readPasteboardChangeCount: @Sendable () -> Int
+        var readPasteboardCutSessionId: @Sendable () -> String?
+        var fileExists: @Sendable (String) -> Bool
+    }
+
+    enum Decision: Equatable, Sendable {
+        case noop
+        case keep(EntryViewLayoutCutClearHeuristic.CutSession)
+        case clear
+    }
+
+    init(heuristic: EntryViewLayoutCutClearHeuristic = .init()) {
+        self.heuristic = heuristic
+    }
+
+    func evaluateOnAppDidBecomeActive(
+        clipboardOperation: ClipboardOperation,
+        clipboardItems: [String],
+        session: EntryViewLayoutCutClearHeuristic.CutSession?,
+        makeSession: (_ now: Date, _ sourcePaths: [String]) -> EntryViewLayoutCutClearHeuristic.CutSession?,
+        context: RuntimeContext,
+    ) -> Decision {
+        guard clipboardOperation == .cut, !clipboardItems.isEmpty else {
+            return .noop
+        }
+
+        guard let activeSession = session ?? makeSession(context.now, clipboardItems) else {
+            return .clear
+        }
+
+        switch heuristic.evaluate(
+            session: activeSession,
+            now: context.now,
+            readPasteboardChangeCount: context.readPasteboardChangeCount,
+            readPasteboardCutSessionId: context.readPasteboardCutSessionId,
+            fileExists: context.fileExists,
+        ) {
+        case let .keep(updatedSession):
+            return .keep(updatedSession)
+        case .clear:
+            return .clear
+        }
+    }
+}
+
 @Reducer
 struct EntryClipboardOperationsReducer {
     typealias State = EntryOperationsState
@@ -11,6 +61,8 @@ struct EntryClipboardOperationsReducer {
     var entryFileOpsClient
     @Dependency(\.entryOperationsAlertClient)
     var alertClient
+    @Dependency(\.uuid)
+    var uuid
 
     var body: some Reducer<State, Action> {
         Reduce { state, action in
@@ -18,6 +70,8 @@ struct EntryClipboardOperationsReducer {
             case let .copySelectedItems(files):
                 state.clipboardItems = files.map(\.fullPath)
                 state.clipboardOperation = .copy
+                state.cutClearSession = nil
+                entryFileOpsClient.saveClipboardCutSessionId(nil)
 
                 let pasteboard = NSPasteboard.general
                 pasteboard.clearContents()
@@ -31,6 +85,50 @@ struct EntryClipboardOperationsReducer {
             case .loadClipboardState:
                 let (clipboardPaths, clipboardOperation) = entryFileOpsClient.loadClipboardPaths()
                 return .send(.syncClipboardState(paths: clipboardPaths, operation: clipboardOperation))
+
+            case .appDidBecomeActive:
+                let now = Date()
+                let monitor = EntryViewLayoutCutClearMonitor()
+                let decision = monitor.evaluateOnAppDidBecomeActive(
+                    clipboardOperation: state.clipboardOperation,
+                    clipboardItems: state.clipboardItems,
+                    session: state.cutClearSession,
+                    makeSession: { now, sourcePaths in
+                        guard !sourcePaths.isEmpty else {
+                            return nil
+                        }
+
+                        let existingSessionId = entryFileOpsClient.loadClipboardCutSessionId()
+                        let sessionId = existingSessionId ?? uuid().uuidString
+                        if existingSessionId == nil {
+                            entryFileOpsClient.saveClipboardCutSessionId(sessionId)
+                        }
+
+                        let heuristic = EntryViewLayoutCutClearHeuristic()
+                        return heuristic.makeInitialSession(
+                            cutSessionId: sessionId,
+                            pasteboardChangeCount: entryFileOpsClient.clipboardChangeCount(),
+                            sourcePaths: sourcePaths,
+                            now: now,
+                        )
+                    },
+                    context: .init(
+                        now: now,
+                        readPasteboardChangeCount: entryFileOpsClient.clipboardChangeCount,
+                        readPasteboardCutSessionId: entryFileOpsClient.loadClipboardCutSessionId,
+                        fileExists: entryFileOpsClient.fileExists,
+                    ),
+                )
+
+                switch decision {
+                case .noop:
+                    return .none
+                case let .keep(updatedSession):
+                    state.cutClearSession = updatedSession
+                    return .none
+                case .clear:
+                    return .send(.setClipboardOperation(operation: .copy))
+                }
 
             case let .copyAbsolutePaths(paths):
                 guard !paths.isEmpty else { return .none }
@@ -60,14 +158,54 @@ struct EntryClipboardOperationsReducer {
                 let operationValue = operation == .cut ? "cut" : "copy"
                 pasteboard.setString(
                     operationValue,
-                    forType: NSPasteboard.PasteboardType("com.voyager.clipboard.operation"),
+                    forType: NSPasteboard.PasteboardType("fm.voyager.clipboard.operation"),
                 )
+
+                if operation == .cut {
+                    guard !state.clipboardItems.isEmpty else {
+                        state.cutClearSession = nil
+                        entryFileOpsClient.saveClipboardCutSessionId(nil)
+                        return .none
+                    }
+
+                    let cutSessionId = uuid().uuidString
+                    entryFileOpsClient.saveClipboardCutSessionId(cutSessionId)
+                    let heuristic = EntryViewLayoutCutClearHeuristic()
+                    state.cutClearSession = heuristic.makeInitialSession(
+                        cutSessionId: cutSessionId,
+                        pasteboardChangeCount: entryFileOpsClient.clipboardChangeCount(),
+                        sourcePaths: state.clipboardItems,
+                        now: Date(),
+                    )
+                } else {
+                    state.cutClearSession = nil
+                    entryFileOpsClient.saveClipboardCutSessionId(nil)
+                }
 
                 return .none
 
             case let .syncClipboardState(paths, operation):
                 state.clipboardItems = paths
                 state.clipboardOperation = operation
+
+                guard operation == .cut, !paths.isEmpty else {
+                    state.cutClearSession = nil
+                    return .none
+                }
+
+                let existingSessionId = entryFileOpsClient.loadClipboardCutSessionId()
+                let sessionId = existingSessionId ?? uuid().uuidString
+                if existingSessionId == nil {
+                    entryFileOpsClient.saveClipboardCutSessionId(sessionId)
+                }
+
+                let heuristic = EntryViewLayoutCutClearHeuristic()
+                state.cutClearSession = heuristic.makeInitialSession(
+                    cutSessionId: sessionId,
+                    pasteboardChangeCount: entryFileOpsClient.clipboardChangeCount(),
+                    sourcePaths: paths,
+                    now: Date(),
+                )
                 return .none
 
             case let .pasteItemsFromClipboard(destinationPath):

@@ -55,12 +55,8 @@ enum SidebarItems {
             try container.encode(url.absoluteString, forKey: .url)
         }
 
-        var displayName: String {
-            // TODO(Collection): displayName 구조 변경
-            if url.pathExtension.lowercased() == CollectionConstants.fileExtension {
-                return url.deletingPathExtension().lastPathComponent
-            }
-            return name
+        nonisolated var displayName: String {
+            CollectionFileUtils.displayName(url, fallback: name)
         }
     }
 }

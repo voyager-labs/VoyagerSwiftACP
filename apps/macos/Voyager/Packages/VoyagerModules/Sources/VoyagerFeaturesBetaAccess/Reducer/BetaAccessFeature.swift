@@ -3,11 +3,12 @@ import Foundation
 
 @Reducer
 public struct BetaAccessFeature {
+    public typealias State = BetaAccessState
+    public typealias Action = BetaAccessAction
+
     @Dependency(\.betaAccessClient)
     var betaAccessClient
 
-    public typealias State = BetaAccessState
-    public typealias Action = BetaAccessAction
     private enum CancelID {
         static let verification = "betaAccessVerification"
     }

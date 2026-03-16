@@ -1,6 +1,11 @@
 import Foundation
 
 struct SearchConditionBuilder: Sendable {
+    let registry: PropertyConditionRegistry
+    let propertyMap: [String: PropertyMapping]
+    let legacyKeyMap: [String: String]
+    let operatorAliasMap: [String: String]
+
     struct BuilderError: Error, CustomStringConvertible {
         let message: String
 
@@ -13,11 +18,6 @@ struct SearchConditionBuilder: Sendable {
         let systemKeys: [String]
         let uiHidden: Bool
     }
-
-    let registry: PropertyConditionRegistry
-    let propertyMap: [String: PropertyMapping]
-    let legacyKeyMap: [String: String]
-    let operatorAliasMap: [String: String]
 
     init(bundle: Bundle = .main) throws {
         registry = try RegistryLoader.load(resourceName: "property_condition_registry", bundle: bundle)
