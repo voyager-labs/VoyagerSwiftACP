@@ -7,10 +7,8 @@ import Logging
 public struct HelperAppClient: Sendable {
     public var start: @Sendable () async -> Void
     public var stop: @Sendable () async -> Void
-    // Helper 실행 여부 확인
     public var isRunning: @Sendable () async -> Bool
     public var terminationEvents: @Sendable () -> AsyncStream<Void>
-    /// Helper가 실행 중인지 확인하고, 필요 시에만 시작한다 (idempotent)
     public var ensureRunning: @Sendable () async -> Void
 
     public nonisolated init(
@@ -30,8 +28,7 @@ public struct HelperAppClient: Sendable {
 
 extension HelperAppClient: DependencyKey {
     public nonisolated static var liveValue: HelperAppClient {
-        let launchCoordinator = HelperLaunchCoordinator()
-        return HelperAppClient(
+        HelperAppClient(
             start: {
                 await MainActor.run {
                     launchHelper(resolveHelperInfo())
@@ -49,95 +46,66 @@ extension HelperAppClient: DependencyKey {
                 }
             },
             terminationEvents: {
-                AsyncStream { continuation in
-                    let streamState = HelperTerminationEventStreamState()
-                    let setupTask = Task { @MainActor in
-                        let info = resolveHelperInfo()
-                        let isRunning = NSWorkspace.shared.runningApplications.contains { app in
-                            app.bundleIdentifier == info.bundleId
-                        }
-                        await streamState.prime(isRunning: isRunning)
+                let logger = Logger(label: "Voyager")
+                logger.info("[VOY-122] termination_stream_started -- using kqueue")
 
-                        let observer = NSWorkspace.shared.notificationCenter.addObserver(
-                            forName: NSWorkspace.didTerminateApplicationNotification,
-                            object: nil,
-                            queue: .main,
-                        ) { notification in
-                            guard
-                                let app = notification
-                                .userInfo?[NSWorkspace.applicationUserInfoKey] as? NSRunningApplication,
-                                app.bundleIdentifier == info.bundleId
-                            else { return }
+                return AsyncStream { continuation in
+                    Task {
+                        var lastPID: pid_t = 0
 
-                            Task {
-                                if await streamState.recordTerminationNotification() {
-                                    continuation.yield(())
-                                }
+                        while !Task.isCancelled {
+                            let helperPID = await MainActor.run {
+                                findHelperPID()
                             }
-                        }
-                        await streamState.setObserver(observer)
 
-                        let pollingTask = Task {
-                            let intervalNanoseconds = UInt64(HelperSupervisionPolicy.pollInterval * 1_000_000_000)
+                            if let pid = helperPID, pid != lastPID {
+                                lastPID = pid
+                                logger.info("[VOY-122] kqueue_monitoring_start -- pid=\(pid)")
 
-                            while !Task.isCancelled {
-                                try? await Task.sleep(nanoseconds: intervalNanoseconds)
-
-                                if Task.isCancelled {
-                                    break
-                                }
-
-                                let isRunning = await MainActor.run {
-                                    NSWorkspace.shared.runningApplications.contains { app in
-                                        app.bundleIdentifier == info.bundleId
+                                await withCheckedContinuation { (checkedContinuation: CheckedContinuation<
+                                    Void,
+                                    Never,
+                                >) in
+                                    Task.detached {
+                                        monitorProcessTermination(pid: pid, logger: logger)
+                                        checkedContinuation.resume()
                                     }
                                 }
 
-                                let shouldYield = await streamState.recordPoll(isRunning: isRunning)
-
-                                if shouldYield {
-                                    continuation.yield(())
-                                }
+                                logger.info("[VOY-122] kqueue_process_terminated -- pid=\(pid)")
+                                continuation.yield(())
+                            } else if helperPID == nil, lastPID != 0 {
+                                lastPID = 0
                             }
-                        }
-                        await streamState.setPollingTask(pollingTask)
-                    }
 
-                    continuation.onTermination = { _ in
-                        setupTask.cancel()
-                        Task {
-                            await streamState.cancel()
+                            try? await Task.sleep(nanoseconds: 500_000_000)
                         }
+
+                        logger.info("[VOY-122] termination_stream_terminated")
+                        continuation.finish()
                     }
                 }
             },
             ensureRunning: {
                 let logger = Logger(label: "Voyager")
-                logger.info("helper_reconcile_begin")
+                logger.info("[VOY-122] helper_ensure_begin")
 
-                let isRunning = await MainActor.run {
-                    let info = resolveHelperInfo()
+                let running = await MainActor.run {
+                    let helperInfo = resolveHelperInfo()
                     return NSWorkspace.shared.runningApplications.contains { app in
-                        app.bundleIdentifier == info.bundleId
+                        app.bundleIdentifier == helperInfo.bundleId
                     }
                 }
 
-                if isRunning {
-                    logger.info("helper_reconcile_skip -- reason=already_running")
+                if running {
+                    logger.info("[VOY-122] helper_ensure_skip -- reason=already_running")
                     return
                 }
 
-                if await launchCoordinator.isInGraceWindow() {
-                    logger.info("helper_reconcile_skip -- reason=grace_window")
-                    return
-                }
-
+                logger.info("[VOY-122] helper_ensure_start")
                 await MainActor.run {
                     launchHelper(resolveHelperInfo())
                 }
-
-                await launchCoordinator.recordLaunch()
-                logger.info("helper_reconcile_started")
             },
         )
     }
@@ -171,95 +139,6 @@ extension HelperAppClient: DependencyKey {
     }
 }
 
-private actor HelperTerminationEventStreamState {
-    private var tracker = HelperRunningStateTracker()
-    private var observer: NSObjectProtocol?
-    private var pollingTask: Task<Void, Never>?
-    private var isCancelled = false
-
-    func prime(isRunning: Bool) {
-        guard !isCancelled else {
-            return
-        }
-
-        _ = tracker.update(isRunning: isRunning)
-    }
-
-    func recordPoll(isRunning: Bool) -> Bool {
-        guard !isCancelled else {
-            return false
-        }
-
-        return tracker.update(isRunning: isRunning) == .stopped
-    }
-
-    func recordTerminationNotification() -> Bool {
-        guard !isCancelled else {
-            return false
-        }
-
-        if tracker.lastKnownIsRunning == true {
-            return tracker.update(isRunning: false) == .stopped
-        }
-
-        if tracker.hasSeenRunning {
-            return false
-        }
-
-        _ = tracker.update(isRunning: true)
-        return tracker.update(isRunning: false) == .stopped
-    }
-
-    func setObserver(_ observer: NSObjectProtocol) {
-        guard !isCancelled else {
-            Task { @MainActor in
-                NSWorkspace.shared.notificationCenter.removeObserver(observer)
-            }
-            return
-        }
-
-        self.observer = observer
-    }
-
-    func setPollingTask(_ pollingTask: Task<Void, Never>) {
-        guard !isCancelled else {
-            pollingTask.cancel()
-            return
-        }
-
-        self.pollingTask = pollingTask
-    }
-
-    func cancel() {
-        isCancelled = true
-        pollingTask?.cancel()
-        pollingTask?.cancel()
-
-        guard let observer else {
-            return
-        }
-
-        self.observer = nil
-        Task { @MainActor in
-            NSWorkspace.shared.notificationCenter.removeObserver(observer)
-        }
-    }
-}
-
-private actor HelperLaunchCoordinator {
-    private var lastLaunchAt: Date?
-
-    func isInGraceWindow() -> Bool {
-        guard let lastLaunchAt else { return false }
-        let graceWindow: TimeInterval = 5.0
-        return Date().timeIntervalSince(lastLaunchAt) <= graceWindow
-    }
-
-    func recordLaunch() {
-        lastLaunchAt = Date()
-    }
-}
-
 public extension DependencyValues {
     nonisolated var helperAppClient: HelperAppClient {
         get { self[HelperAppClient.self] }
@@ -271,33 +150,29 @@ public extension HelperAppClient {
     func resolveAlignedState(
         stateClient: HelperStateClient,
         mainBundleVersion: String?,
-        logger: Logger,
     ) async -> HelperState? {
-        let state = await requestStateWithFallback(stateClient: stateClient, logger: logger)
+        let state = await requestStateWithFallback(stateClient: stateClient)
         return await ensureAligned(
             state,
             stateClient: stateClient,
             mainBundleVersion: mainBundleVersion,
-            logger: logger,
         )
     }
 }
 
 private extension HelperAppClient {
+    private static let log = Logger(label: "Voyager")
+
     func requestStateWithFallback(
         stateClient: HelperStateClient,
-        logger: Logger,
     ) async -> HelperState? {
-        // Helper가 떠있다는 전제를 하지 않고, start는 idempotent하다는 가정 하에 항상 호출한다.
         await start()
 
-        // 1) State를 요청한다.
         if let state = await stateClient.resolve() {
             return state
         }
 
-        // 2) state가 안 오면, unresponsive로 판단하고 회수/재기동 후 1회 더 요청한다.
-        logger.warning("helper_state_missing_restart")
+        Self.log.info("[VOY-122] helper_state_missing_restart")
         await stop()
         await start()
         return await stateClient.resolve()
@@ -307,7 +182,6 @@ private extension HelperAppClient {
         _ state: HelperState?,
         stateClient: HelperStateClient,
         mainBundleVersion: String?,
-        logger: Logger,
     ) async -> HelperState? {
         guard let state else {
             return state
@@ -318,7 +192,7 @@ private extension HelperAppClient {
         }
 
         guard let helperVersion = state.helperBundleVersion else {
-            logger.info("helper_launch_force_restart_begin -- helper=unknown main=\(mainVersion)")
+            Self.log.info("[VOY-122] helper_launch_force_restart_begin -- helper=unknown main=\(mainVersion)")
             await stop()
             await start()
             return await stateClient.resolve()
@@ -328,7 +202,7 @@ private extension HelperAppClient {
             return state
         }
 
-        logger.info("helper_launch_force_restart_begin -- helper=\(helperVersion) main=\(mainVersion)")
+        Self.log.info("[VOY-122] helper_launch_force_restart_begin -- helper=\(helperVersion) main=\(mainVersion)")
         await stop()
         await start()
         return await stateClient.resolve()
@@ -339,6 +213,8 @@ private struct HelperLifecycleInfo {
     let bundleId: String
     let url: URL
 }
+
+private let voyagerHelperLog = Logger(label: "Voyager")
 
 @MainActor
 private func resolveHelperInfo() -> HelperLifecycleInfo {
@@ -369,17 +245,22 @@ private func resolveHelperInfo() -> HelperLifecycleInfo {
 
 @MainActor
 private func launchHelper(_ info: HelperLifecycleInfo) {
-    let logger = Logger(label: "Voyager")
-    logger.info("helper_launch_begin")
+    voyagerHelperLog.info("[VOY-122] helper_launch_begin -- url=\(info.url.path)")
     let configuration = NSWorkspace.OpenConfiguration()
     configuration.activates = false
     if let helperEnvironment = resolveHelperEnvironment() {
         configuration.environment = helperEnvironment
     }
-    do {
-        try NSWorkspace.shared.openApplication(at: info.url, configuration: configuration)
-    } catch {
-        logger.error("helper_launch_failed -- \(String(describing: error))")
+    NSWorkspace.shared.openApplication(at: info.url, configuration: configuration) { runningApp, error in
+        Task { @MainActor in
+            if let app = runningApp {
+                voyagerHelperLog.info("[VOY-122] helper_launch_success -- pid=\(app.processIdentifier)")
+            } else if let error {
+                voyagerHelperLog.info("[VOY-122] helper_launch_failed -- error=\(error.localizedDescription)")
+            } else {
+                voyagerHelperLog.info("[VOY-122] helper_launch_failed -- reason=unknown")
+            }
+        }
     }
 }
 
@@ -397,42 +278,40 @@ private func resolveHelperEnvironment() -> [String: String]? {
 
 @MainActor
 private func terminateHelperGracefully(_ info: HelperLifecycleInfo) async {
-    let logger = Logger(label: "Voyager")
-
     guard let helper = findRunningHelper(bundleId: info.bundleId) else {
         return
     }
 
-    logger.info("helper_stop_begin")
+    voyagerHelperLog.info("[VOY-122] helper_stop_begin")
 
     if helper.bundleURL == nil {
-        logger.warning("helper_stop_bundleurl_nil")
+        voyagerHelperLog.info("[VOY-122] helper_stop_bundleurl_nil")
     } else if helper.bundleURL?.lastPathComponent != "VoyagerHelper.app" {
-        logger.warning("helper_stop_bundleurl_unexpected -- \(helper.bundleURL?.path ?? "nil")")
+        voyagerHelperLog.info("[VOY-122] helper_stop_bundleurl_unexpected -- \(helper.bundleURL?.path ?? "nil")")
         return
     }
 
     let pid = helper.processIdentifier
     if kill(pid, SIGTERM) != 0 {
-        logger.warning("helper_stop_sigterm_failed -- errno=\(errno)")
+        voyagerHelperLog.info("[VOY-122] helper_stop_sigterm_failed -- errno=\(errno)")
     }
 
     if await waitForHelperTermination(bundleId: info.bundleId, timeoutSeconds: 3) {
-        logger.info("helper_stop_done")
+        voyagerHelperLog.info("[VOY-122] helper_stop_done")
         return
     }
 
     helper.forceTerminate()
     if await waitForHelperTermination(bundleId: info.bundleId, timeoutSeconds: 2) {
-        logger.info("helper_stop_done")
+        voyagerHelperLog.info("[VOY-122] helper_stop_done")
         return
     }
 
     _ = kill(pid, SIGKILL)
     if await waitForHelperTermination(bundleId: info.bundleId, timeoutSeconds: 2) {
-        logger.warning("helper_stop_forced")
+        voyagerHelperLog.info("[VOY-122] helper_stop_forced")
     } else {
-        logger.error("helper_stop_failed")
+        voyagerHelperLog.info("[VOY-122] helper_stop_failed")
     }
 }
 
@@ -469,5 +348,45 @@ private func waitForHelperTermination(bundleId: String, timeoutSeconds: TimeInte
 
     return !NSWorkspace.shared.runningApplications.contains { app in
         app.bundleIdentifier == bundleId
+    }
+}
+
+@MainActor
+private func findHelperPID() -> pid_t? {
+    let info = resolveHelperInfo()
+    return NSWorkspace.shared.runningApplications.first(where: { $0.bundleIdentifier == info.bundleId })?
+        .processIdentifier
+}
+
+private nonisolated func monitorProcessTermination(pid: pid_t, logger: Logger) {
+    let kq = kqueue()
+    guard kq != -1 else {
+        logger.error("[VOY-122] kqueue_create_failed -- errno=\(errno)")
+        return
+    }
+    defer { close(kq) }
+
+    var ke = kevent(
+        ident: UInt(pid),
+        filter: Int16(EVFILT_PROC),
+        flags: UInt16(EV_ADD | EV_ENABLE | EV_ONESHOT),
+        fflags: UInt32(NOTE_EXIT),
+        data: 0,
+        udata: nil,
+    )
+
+    let result = kevent(kq, &ke, 1, nil, 0, nil)
+    guard result != -1 else {
+        logger.error("[VOY-122] kevent_register_failed -- errno=\(errno)")
+        return
+    }
+
+    logger.info("[VOY-122] kqueue_waiting_for_exit -- pid=\(pid)")
+
+    var event = kevent()
+    let eventResult = kevent(kq, nil, 0, &event, 1, nil)
+
+    if eventResult > 0 {
+        logger.info("[VOY-122] kqueue_exit_detected -- pid=\(pid)")
     }
 }
