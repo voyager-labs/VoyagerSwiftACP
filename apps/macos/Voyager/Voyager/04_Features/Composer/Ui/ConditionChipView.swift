@@ -79,6 +79,7 @@ struct ConditionChipView: View {
             ? UnitValueUtils.spec(for: condition.propertyKey)
             : nil
     }
+
     private let rangeSep = "-"
 
     var body: some View {
@@ -476,6 +477,7 @@ struct ConditionChipView: View {
         .frame(height: 164)
         .padding(.vertical, 2)
     }
+
     @ViewBuilder
     private func rangeNumberSection(
         operatorCode: String,
@@ -1065,6 +1067,7 @@ struct ConditionChipView: View {
             focusedValueIndex = nextFocus
         }
     }
+
     private func dateValueButton(
         config: DateValueButtonConfig,
         valueViewStore: ViewStore<ValuePickerFeature.State, ValuePickerFeature.Action>,
@@ -1285,14 +1288,6 @@ struct ConditionChipView: View {
                 RoundedRectangle(cornerRadius: 8)
                     .fill(VoyagerDS.Surface.popoverBackground(for: isDark ? .dark : .light)),
             )
-        }
-    }
-
-    private func updateInlineValueFocus(shouldFocus: Bool, targetIndex: Int?) {
-        let nextFocus = shouldFocus ? targetIndex : nil
-        guard focusedValueIndex != nextFocus else { return }
-        DispatchQueue.main.async {
-            focusedValueIndex = nextFocus
         }
     }
 
