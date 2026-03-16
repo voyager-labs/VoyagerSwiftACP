@@ -32,6 +32,21 @@ enum UnitValueUtils {
                     "GB": Decimal(ByteSizeBucket.oneGB),
                 ],
             )
+        case "audio_bit_rate", "video_bit_rate", "total_bit_rate":
+            UnitSpec(
+                canonicalUnit: "bps",
+                units: [
+                    .init(code: "bps", label: "bps"),
+                    .init(code: "Kbps", label: "Kbps"),
+                    .init(code: "Mbps", label: "Mbps"),
+                ],
+                defaultDisplayUnit: "bps",
+                factorsToCanonical: [
+                    "bps": Decimal(1),
+                    "Kbps": Decimal(1000),
+                    "Mbps": Decimal(1_000_000),
+                ],
+            )
         default:
             nil
         }
