@@ -261,7 +261,7 @@ enum EntryFileOpsLive {
 
             try FileManagerClient.liveValue.moveItem(trashURL, originalURL)
 
-            await TrashMetadataStore.shared.remove(trashPath: trashURL.path)
+            await TrashMetadataStoreClient.liveValue.remove(trashURL.path)
         }
     }
 
@@ -459,16 +459,18 @@ enum EntryFileOpsLive {
 
     nonisolated static var loadClipboardPaths: @Sendable () -> ([String], ClipboardOperation) {
         {
-            let pasteboard = NSPasteboard.general
+            let pasteboardClient = PasteboardClient.liveValue
 
-            guard let urls = pasteboard.readObjects(forClasses: [NSURL.self]) as? [URL] else {
+            guard let objects = pasteboardClient.readObjects([NSURL.self], nil),
+                  let urls = objects as? [URL]
+            else {
                 return ([], .copy)
             }
 
             let paths = urls.map(\.path)
 
-            let opString = pasteboard
-                .string(forType: NSPasteboard.PasteboardType("fm.voyager.clipboard.operation"))
+            let opString = pasteboardClient
+                .string(NSPasteboard.PasteboardType("fm.voyager.clipboard.operation"))
             let operation: ClipboardOperation = opString == "cut" ? .cut : .copy
 
             return (paths, operation)

@@ -26,31 +26,30 @@ public struct HelperAppClient: Sendable {
 
 extension HelperAppClient: DependencyKey {
     public nonisolated static var liveValue: HelperAppClient {
-        HelperAppClient(
+        let workspaceClient = WorkspaceClient.liveValue
+        return HelperAppClient(
             start: {
-                await MainActor.run {
-                    launchHelper(resolveHelperInfo())
-                }
+                let info = await MainActor.run { resolveHelperInfo() }
+                await launchHelper(info, workspaceClient: workspaceClient)
             },
             stop: {
-                await terminateHelperGracefully(resolveHelperInfo())
+                let info = await MainActor.run { resolveHelperInfo() }
+                await terminateHelperGracefully(info, workspaceClient: workspaceClient)
             },
             isRunning: {
-                await MainActor.run {
-                    let info = resolveHelperInfo()
-                    return NSWorkspace.shared.runningApplications.contains { app in
-                        app.bundleIdentifier == info.bundleId
-                    }
+                let info = await MainActor.run { resolveHelperInfo() }
+                return workspaceClient.runningApplications().contains { app in
+                    app.bundleIdentifier == info.bundleId
                 }
             },
             terminationEvents: {
                 AsyncStream { continuation in
                     Task { @MainActor in
                         let info = resolveHelperInfo()
-                        let observer = NSWorkspace.shared.notificationCenter.addObserver(
-                            forName: NSWorkspace.didTerminateApplicationNotification,
-                            object: nil,
-                            queue: .main,
+                        let observer = workspaceClient.addWorkspaceNotificationObserver(
+                            NSWorkspace.didTerminateApplicationNotification,
+                            nil,
+                            .main,
                         ) { notification in
                             guard
                                 let app = notification
@@ -63,7 +62,7 @@ extension HelperAppClient: DependencyKey {
 
                         continuation.onTermination = { _ in
                             Task { @MainActor in
-                                NSWorkspace.shared.notificationCenter.removeObserver(observer)
+                                workspaceClient.removeWorkspaceNotificationObserver(observer)
                             }
                         }
                     }
@@ -206,17 +205,12 @@ private func resolveHelperInfo() -> HelperLifecycleInfo {
     return HelperLifecycleInfo(bundleId: bundleId, url: helperURL)
 }
 
-@MainActor
-private func launchHelper(_ info: HelperLifecycleInfo) {
+private func launchHelper(_ info: HelperLifecycleInfo, workspaceClient: WorkspaceClient) async {
     let logger = Logger(label: "Voyager")
     logger.info("helper_launch_begin")
-    let configuration = NSWorkspace.OpenConfiguration()
-    configuration.activates = false
-    if let helperEnvironment = resolveHelperEnvironment() {
-        configuration.environment = helperEnvironment
-    }
+    let environment = await MainActor.run { resolveHelperEnvironment() }
     do {
-        try NSWorkspace.shared.openApplication(at: info.url, configuration: configuration)
+        try await workspaceClient.openApplicationAtURL(info.url, false, environment)
     } catch {
         logger.error("helper_launch_failed -- \(String(describing: error))")
     }
@@ -234,11 +228,10 @@ private func resolveHelperEnvironment() -> [String: String]? {
     return filtered.isEmpty ? nil : filtered
 }
 
-@MainActor
-private func terminateHelperGracefully(_ info: HelperLifecycleInfo) async {
+private func terminateHelperGracefully(_ info: HelperLifecycleInfo, workspaceClient: WorkspaceClient) async {
     let logger = Logger(label: "Voyager")
 
-    guard let helper = findRunningHelper(bundleId: info.bundleId) else {
+    guard let helper = findRunningHelper(bundleId: info.bundleId, workspaceClient: workspaceClient) else {
         return
     }
 
@@ -256,19 +249,19 @@ private func terminateHelperGracefully(_ info: HelperLifecycleInfo) async {
         logger.warning("helper_stop_sigterm_failed -- errno=\(errno)")
     }
 
-    if await waitForHelperTermination(bundleId: info.bundleId, timeoutSeconds: 3) {
+    if await waitForHelperTermination(bundleId: info.bundleId, timeoutSeconds: 3, workspaceClient: workspaceClient) {
         logger.info("helper_stop_done")
         return
     }
 
     helper.forceTerminate()
-    if await waitForHelperTermination(bundleId: info.bundleId, timeoutSeconds: 2) {
+    if await waitForHelperTermination(bundleId: info.bundleId, timeoutSeconds: 2, workspaceClient: workspaceClient) {
         logger.info("helper_stop_done")
         return
     }
 
     _ = kill(pid, SIGKILL)
-    if await waitForHelperTermination(bundleId: info.bundleId, timeoutSeconds: 2) {
+    if await waitForHelperTermination(bundleId: info.bundleId, timeoutSeconds: 2, workspaceClient: workspaceClient) {
         logger.warning("helper_stop_forced")
     } else {
         logger.error("helper_stop_failed")
@@ -288,16 +281,16 @@ private let kHelperEnvironmentKeys: [String] = [
     "VOYAGER_PROJECT_ROOT",
 ]
 
-@MainActor
-private func findRunningHelper(bundleId: String) -> NSRunningApplication? {
-    NSWorkspace.shared.runningApplications.first(where: { $0.bundleIdentifier == bundleId })
+private func findRunningHelper(bundleId: String, workspaceClient: WorkspaceClient) -> NSRunningApplication? {
+    workspaceClient.runningApplications().first(where: { $0.bundleIdentifier == bundleId })
 }
 
-@MainActor
-private func waitForHelperTermination(bundleId: String, timeoutSeconds: TimeInterval) async -> Bool {
+private func waitForHelperTermination(bundleId: String, timeoutSeconds: TimeInterval,
+                                      workspaceClient: WorkspaceClient) async -> Bool
+{
     let deadline = Date().addingTimeInterval(timeoutSeconds)
     while Date() < deadline {
-        let isRunning = NSWorkspace.shared.runningApplications.contains { app in
+        let isRunning = workspaceClient.runningApplications().contains { app in
             app.bundleIdentifier == bundleId
         }
         if !isRunning {
@@ -306,7 +299,7 @@ private func waitForHelperTermination(bundleId: String, timeoutSeconds: TimeInte
         try? await Task.sleep(nanoseconds: 200_000_000)
     }
 
-    return !NSWorkspace.shared.runningApplications.contains { app in
+    return !workspaceClient.runningApplications().contains { app in
         app.bundleIdentifier == bundleId
     }
 }

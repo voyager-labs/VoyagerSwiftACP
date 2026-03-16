@@ -106,7 +106,8 @@ public extension DependencyValues {
 
 enum EntryOpenLive {
     nonisolated static var open: @Sendable (URL, OpenKind) async throws -> Void {
-        { url, kind in
+        let workspaceClient = WorkspaceClient.liveValue
+        return { url, kind in
             let scoped = url.startAccessingSecurityScopedResource()
             defer {
                 if scoped {
@@ -114,18 +115,16 @@ enum EntryOpenLive {
                 }
             }
 
-            let workspace = NSWorkspace.shared
             switch kind {
             case .defaultApp:
-                guard workspace.open(url) else {
+                guard workspaceClient.openURL(url) else {
                     throw FileOpError.system(message: "Failed to open item.")
                 }
             case let .bundleID(bundleID):
-                guard let appURL = workspace.urlForApplication(withBundleIdentifier: bundleID) else {
+                guard let appURL = workspaceClient.urlForApplication(bundleID) else {
                     throw FileOpError.notFound
                 }
-                let configuration = NSWorkspace.OpenConfiguration()
-                try await workspace.open([url], withApplicationAt: appURL, configuration: configuration)
+                try await workspaceClient.openURLsWithApplication([url], appURL, false, nil)
             }
         }
     }
@@ -230,7 +229,8 @@ enum EntryOpenLive {
     }
 
     nonisolated static var revealInFinder: @Sendable ([URL]) async throws -> Void {
-        { urls in
+        let workspaceClient = WorkspaceClient.liveValue
+        return { urls in
             guard !urls.isEmpty else { return }
             let scoped = urls.map { $0.startAccessingSecurityScopedResource() }
             defer {
@@ -239,9 +239,7 @@ enum EntryOpenLive {
                 }
             }
 
-            await MainActor.run {
-                NSWorkspace.shared.activateFileViewerSelecting(urls)
-            }
+            workspaceClient.activateFileViewerSelecting(urls)
         }
     }
 
@@ -259,9 +257,9 @@ enum EntryOpenLive {
     }
 
     nonisolated static var applicationsForFile: @Sendable (URL) async -> [ApplicationInfo] {
-        { url in
-            let workspace = NSWorkspace.shared
-            let appURLs = workspace.urlsForApplications(toOpen: url)
+        let workspaceClient = WorkspaceClient.liveValue
+        return { url in
+            let appURLs = workspaceClient.urlsForApplications(url)
 
             var seen = Set<String>()
             var apps: [ApplicationInfo] = []

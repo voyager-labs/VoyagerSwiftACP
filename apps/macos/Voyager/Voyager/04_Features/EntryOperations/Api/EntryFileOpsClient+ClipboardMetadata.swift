@@ -1,17 +1,21 @@
 import AppKit
+import ComposableArchitecture
 
 extension EntryFileOpsLive {
     nonisolated static var clipboardChangeCount: @Sendable () -> Int {
         {
-            NSPasteboard.general.changeCount
+            @Dependency(\.pasteboardClient)
+            var pasteboardClient
+            return pasteboardClient.changeCount()
         }
     }
 
     nonisolated static var loadClipboardCutSessionId: @Sendable () -> String? {
         {
-            let pasteboard = NSPasteboard.general
+            @Dependency(\.pasteboardClient)
+            var pasteboardClient
             let type = NSPasteboard.PasteboardType("fm.voyager.clipboard.cutSessionId")
-            let sessionId = pasteboard.string(forType: type)
+            let sessionId = pasteboardClient.string(type)
             guard let sessionId, !sessionId.isEmpty else {
                 return nil
             }
@@ -21,9 +25,10 @@ extension EntryFileOpsLive {
 
     nonisolated static var saveClipboardCutSessionId: @Sendable (String?) -> Void {
         { sessionId in
-            let pasteboard = NSPasteboard.general
+            @Dependency(\.pasteboardClient)
+            var pasteboardClient
             let type = NSPasteboard.PasteboardType("fm.voyager.clipboard.cutSessionId")
-            pasteboard.setString(sessionId ?? "", forType: type)
+            _ = pasteboardClient.setString(sessionId ?? "", type)
         }
     }
 }

@@ -10,6 +10,8 @@ struct EntryTrashOperationsReducer {
     var entryFileOpsClient
     @Dependency(\.entryOperationsAlertClient)
     var alertClient
+    @Dependency(\.trashMetadataStoreClient)
+    var trashMetadataStoreClient
 
     var body: some Reducer<State, Action> {
         Reduce { state, action in
@@ -29,7 +31,7 @@ struct EntryTrashOperationsReducer {
                             originalPath: url.path,
                             deletedDate: Date(),
                         )
-                        await TrashMetadataStore.shared.save(metadata)
+                        await trashMetadataStoreClient.save(metadata)
                         return EntryActionRecord.Target(
                             beforePath: url.path,
                             afterPath: trashURL.path,
@@ -88,7 +90,7 @@ struct EntryTrashOperationsReducer {
                         try await entryFileOpsClient.deleteImmediately(url)
                     },
                     onComplete: {
-                        await TrashMetadataStore.shared.removeAll()
+                        await trashMetadataStoreClient.removeAll()
                     },
                 )
 
@@ -99,7 +101,7 @@ struct EntryTrashOperationsReducer {
                     for path in paths {
                         await send(.operationStarted(path, .putBack))
 
-                        guard let metadata = await TrashMetadataStore.shared.find(trashPath: path)
+                        guard let metadata = await trashMetadataStoreClient.find(path)
                         else {
                             await send(.operationFinished(
                                 path,
