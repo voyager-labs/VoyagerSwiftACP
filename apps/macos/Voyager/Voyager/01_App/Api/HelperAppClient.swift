@@ -47,7 +47,6 @@ extension HelperAppClient: DependencyKey {
             },
             terminationEvents: {
                 let logger = Logger(label: "Voyager")
-                logger.info("[VOY-122] termination_stream_started -- using kqueue")
 
                 return AsyncStream { continuation in
                     Task {
@@ -60,7 +59,6 @@ extension HelperAppClient: DependencyKey {
 
                             if let pid = helperPID, pid != lastPID {
                                 lastPID = pid
-                                logger.info("[VOY-122] kqueue_monitoring_start -- pid=\(pid)")
 
                                 await withCheckedContinuation { (checkedContinuation: CheckedContinuation<
                                     Void,
@@ -72,7 +70,6 @@ extension HelperAppClient: DependencyKey {
                                     }
                                 }
 
-                                logger.info("[VOY-122] kqueue_process_terminated -- pid=\(pid)")
                                 continuation.yield(())
                             } else if helperPID == nil, lastPID != 0 {
                                 lastPID = 0
@@ -81,15 +78,11 @@ extension HelperAppClient: DependencyKey {
                             try? await Task.sleep(nanoseconds: 500_000_000)
                         }
 
-                        logger.info("[VOY-122] termination_stream_terminated")
                         continuation.finish()
                     }
                 }
             },
             ensureRunning: {
-                let logger = Logger(label: "Voyager")
-                logger.info("[VOY-122] helper_ensure_begin")
-
                 let running = await MainActor.run {
                     let helperInfo = resolveHelperInfo()
                     return NSWorkspace.shared.runningApplications.contains { app in
@@ -98,11 +91,9 @@ extension HelperAppClient: DependencyKey {
                 }
 
                 if running {
-                    logger.info("[VOY-122] helper_ensure_skip -- reason=already_running")
                     return
                 }
 
-                logger.info("[VOY-122] helper_ensure_start")
                 await MainActor.run {
                     launchHelper(resolveHelperInfo())
                 }
@@ -172,7 +163,6 @@ private extension HelperAppClient {
             return state
         }
 
-        Self.log.info("[VOY-122] helper_state_missing_restart")
         await stop()
         await start()
         return await stateClient.resolve()
@@ -192,7 +182,6 @@ private extension HelperAppClient {
         }
 
         guard let helperVersion = state.helperBundleVersion else {
-            Self.log.info("[VOY-122] helper_launch_force_restart_begin -- helper=unknown main=\(mainVersion)")
             await stop()
             await start()
             return await stateClient.resolve()
@@ -202,7 +191,6 @@ private extension HelperAppClient {
             return state
         }
 
-        Self.log.info("[VOY-122] helper_launch_force_restart_begin -- helper=\(helperVersion) main=\(mainVersion)")
         await stop()
         await start()
         return await stateClient.resolve()
@@ -245,23 +233,12 @@ private func resolveHelperInfo() -> HelperLifecycleInfo {
 
 @MainActor
 private func launchHelper(_ info: HelperLifecycleInfo) {
-    voyagerHelperLog.info("[VOY-122] helper_launch_begin -- url=\(info.url.path)")
     let configuration = NSWorkspace.OpenConfiguration()
     configuration.activates = false
     if let helperEnvironment = resolveHelperEnvironment() {
         configuration.environment = helperEnvironment
     }
-    NSWorkspace.shared.openApplication(at: info.url, configuration: configuration) { runningApp, error in
-        Task { @MainActor in
-            if let app = runningApp {
-                voyagerHelperLog.info("[VOY-122] helper_launch_success -- pid=\(app.processIdentifier)")
-            } else if let error {
-                voyagerHelperLog.info("[VOY-122] helper_launch_failed -- error=\(error.localizedDescription)")
-            } else {
-                voyagerHelperLog.info("[VOY-122] helper_launch_failed -- reason=unknown")
-            }
-        }
-    }
+    NSWorkspace.shared.openApplication(at: info.url, configuration: configuration)
 }
 
 @MainActor
@@ -282,37 +259,26 @@ private func terminateHelperGracefully(_ info: HelperLifecycleInfo) async {
         return
     }
 
-    voyagerHelperLog.info("[VOY-122] helper_stop_begin")
-
     if helper.bundleURL == nil {
-        voyagerHelperLog.info("[VOY-122] helper_stop_bundleurl_nil")
     } else if helper.bundleURL?.lastPathComponent != "VoyagerHelper.app" {
-        voyagerHelperLog.info("[VOY-122] helper_stop_bundleurl_unexpected -- \(helper.bundleURL?.path ?? "nil")")
         return
     }
 
     let pid = helper.processIdentifier
-    if kill(pid, SIGTERM) != 0 {
-        voyagerHelperLog.info("[VOY-122] helper_stop_sigterm_failed -- errno=\(errno)")
-    }
+    if kill(pid, SIGTERM) != 0 {}
 
     if await waitForHelperTermination(bundleId: info.bundleId, timeoutSeconds: 3) {
-        voyagerHelperLog.info("[VOY-122] helper_stop_done")
         return
     }
 
     helper.forceTerminate()
     if await waitForHelperTermination(bundleId: info.bundleId, timeoutSeconds: 2) {
-        voyagerHelperLog.info("[VOY-122] helper_stop_done")
         return
     }
 
     _ = kill(pid, SIGKILL)
     if await waitForHelperTermination(bundleId: info.bundleId, timeoutSeconds: 2) {
-        voyagerHelperLog.info("[VOY-122] helper_stop_forced")
-    } else {
-        voyagerHelperLog.info("[VOY-122] helper_stop_failed")
-    }
+    } else {}
 }
 
 private let kHelperEnvironmentKeys: [String] = [
@@ -358,10 +324,9 @@ private func findHelperPID() -> pid_t? {
         .processIdentifier
 }
 
-private nonisolated func monitorProcessTermination(pid: pid_t, logger: Logger) {
+private nonisolated func monitorProcessTermination(pid: pid_t, logger _: Logger) {
     let kq = kqueue()
     guard kq != -1 else {
-        logger.error("[VOY-122] kqueue_create_failed -- errno=\(errno)")
         return
     }
     defer { close(kq) }
@@ -377,16 +342,11 @@ private nonisolated func monitorProcessTermination(pid: pid_t, logger: Logger) {
 
     let result = kevent(kq, &ke, 1, nil, 0, nil)
     guard result != -1 else {
-        logger.error("[VOY-122] kevent_register_failed -- errno=\(errno)")
         return
     }
-
-    logger.info("[VOY-122] kqueue_waiting_for_exit -- pid=\(pid)")
 
     var event = kevent()
     let eventResult = kevent(kq, nil, 0, &event, 1, nil)
 
-    if eventResult > 0 {
-        logger.info("[VOY-122] kqueue_exit_detected -- pid=\(pid)")
-    }
+    if eventResult > 0 {}
 }

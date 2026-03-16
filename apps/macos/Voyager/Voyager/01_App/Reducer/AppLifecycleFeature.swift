@@ -59,41 +59,29 @@ struct AppLifecycleFeature {
                 let stateClient = helperStateClient
 
                 return .run { _ in
-                    let logger = Logger(label: "Voyager")
                     let currentBundleVersion = Bundle.main.infoDictionary?["CFBundleVersion"] as? String
 
                     async let monitor: Void = {
                         var policy = HelperSupervisionPolicy()
 
                         for await _ in helperClient.terminationEvents() {
-                            logger.info("[VOY-122] helper_termination_event_received")
-
                             if await VoyagerTerminationCoordinator.shared.isTerminating() {
-                                logger.info("[VOY-122] helper_restart_skip -- reason=app_terminating")
                                 continue
                             }
 
                             let decision = policy.recordRestartAttempt()
-                            logger.info("[VOY-122] helper_restart_decision -- \(decision)")
 
                             switch decision {
                             case .allowed:
-                                logger.info("[VOY-122] helper_ensure_invoked")
                                 await helperClient.ensureRunning()
 
                             case let .cooldown(activeUntil):
                                 let delay = activeUntil.timeIntervalSinceNow
-                                logger.info("[VOY-122] helper_restart_skip -- reason=cooldown until=\(activeUntil)")
                                 if delay > 0 {
-                                    logger.info("[VOY-122] helper_restart_scheduled -- delay=\(delay)s")
                                     try? await Task.sleep(nanoseconds: UInt64(delay * 1_000_000_000))
-                                    logger.info("[VOY-122] helper_restart_sleep_completed")
                                     let isRunning = await helperClient.isRunning()
-                                    logger.info("[VOY-122] helper_is_running_check -- result=\(isRunning)")
                                     if !isRunning {
-                                        logger.info("[VOY-122] helper_restart_after_cooldown")
                                         let newDecision = policy.recordRestartAttempt()
-                                        logger.info("[VOY-122] helper_restart_new_decision -- \(newDecision)")
                                         switch newDecision {
                                         case .allowed:
                                             await helperClient.ensureRunning()
@@ -105,17 +93,11 @@ struct AppLifecycleFeature {
 
                             case let .graceWindow(activeUntil):
                                 let delay = activeUntil.timeIntervalSinceNow
-                                logger.info("[VOY-122] helper_restart_skip -- reason=grace_window until=\(activeUntil)")
                                 if delay > 0 {
-                                    logger.info("[VOY-122] helper_restart_scheduled -- delay=\(delay)s")
                                     try? await Task.sleep(nanoseconds: UInt64(delay * 1_000_000_000))
-                                    logger.info("[VOY-122] helper_restart_sleep_completed")
                                     let isRunning = await helperClient.isRunning()
-                                    logger.info("[VOY-122] helper_is_running_check -- result=\(isRunning)")
                                     if !isRunning {
-                                        logger.info("[VOY-122] helper_restart_after_grace_window")
                                         let newDecision = policy.recordRestartAttempt()
-                                        logger.info("[VOY-122] helper_restart_new_decision -- \(newDecision)")
                                         switch newDecision {
                                         case .allowed:
                                             await helperClient.ensureRunning()
@@ -201,14 +183,11 @@ struct AppLifecycleFeature {
                 let helperAppClient = helperAppClient
                 return .merge(
                     .run { send in
-                        print("[VOY-122] app_terminate_cleanup_begin")
-
                         await VoyagerTerminationCoordinator.shared.begin(.userQuit)
                         await send(.willTerminate)
 
                         await helperAppClient.stop()
 
-                        print("[VOY-122] app_terminate_cleanup_done")
                         await send(.completeTerminationAttempt(attemptID: attemptID, shouldTerminate: true))
                     },
                     .run { send in
