@@ -36,7 +36,7 @@ enum EntryOperationsAction: CasePathable, Sendable {
     case setDefaultAppWithOther(file: EntryModel)
     case openFilesWithAppFromOther(files: [EntryModel], shouldSetAsDefault: Bool)
     case loadApplicationsForFile(file: EntryModel)
-    case createNewFolder(name: String, parentPath: String)
+    case createNewFolder(parentPath: String)
     case createAliases(paths: [String])
     case copySelectedItems(files: [EntryModel])
     case loadClipboardState
@@ -128,5 +128,6 @@ struct EntryDropValidationResult: Equatable, Sendable {
 
 @CasePathable
 enum EntryOperationsDelegate: CasePathable, Sendable {
-    case navigateFolder(id: EntryModel.ID)
+    case navigateToPath(String)
+    case openCollectionFile(URL)
 }
