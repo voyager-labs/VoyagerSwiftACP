@@ -50,7 +50,7 @@ enum FileManagerContentComposerCoordinator {
             return .none
 
         case .view(.clearAll):
-            if state.entryOperations.loadingContext.isCollectionMode {
+            if state.entryViewLayout.entryOperations.loadingContext.isCollectionMode {
                 state.composer.pendingSearchQuery = nil
                 state.collectionContext = CollectionContext(
                     query: "",
@@ -197,12 +197,17 @@ enum FileManagerContentComposerCoordinator {
         if !wasOpeningCollectionFile, !previousNavigationState.isCollection {
             logContentPageNavigationDAUIfNeeded(previous: previousNavigationState, next: nextNavigationState)
         }
+        let showHidden = state.entryViewLayout.showHiddenFiles
+
         return .concatenate(
             .concatenate(navigationEffects),
-            .send(.entries(.setCollectionMode(true))),
+            .send(.entryViewLayout(.entryOperations(.setCollectionMode(true)))),
             .run { send in
                 await Task.yield()
-                await send(.entries(.collectionItemsLoadedFromSearch(items)))
+                await send(.entryViewLayout(.entryOperations(.collectionItemsLoadedFromSearch(
+                    items: items,
+                    showHidden: showHidden,
+                ))))
                 await send(.composer(.searchListApplied))
             },
         )
@@ -291,8 +296,8 @@ enum FileManagerContentComposerCoordinator {
                 let navigation = ContentPageCollectionNavigation(
                     kind: .file(url: previousURL, name: name),
                     context: baseline.context,
-                    sortKey: state.entryArrangements.sortKey,
-                    sortOrder: state.entryArrangements.sortOrder,
+                    sortKey: state.entryViewLayout.entryArrangements.sortKey,
+                    sortOrder: state.entryViewLayout.entryArrangements.sortOrder,
                     viewLayout: state.viewLayout,
                 )
                 let entry = ContentPageNavigationHistorySnapshot(

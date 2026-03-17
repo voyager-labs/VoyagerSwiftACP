@@ -14,8 +14,6 @@ struct FileManagerContentState: Equatable {
 
     var navigation: ContentPageNavigationFeature.State = .init()
     var entryViewLayout: EntryViewLayoutState = .init()
-    var entryArrangements: EntryArrangementsState = .init()
-    var entryOperations: EntryOperationsFeature.State = .init()
     var entryThumbnails: EntryThumbnailState = .init()
     var composer: ComposerFeature.State = .init()
 
@@ -41,11 +39,12 @@ struct FileManagerContentState: Equatable {
     mutating func syncComposerCollectionState() {
         composer.collectionContext = collectionContext
         composer.openedCollectionURL = collectionSession.openedURL
-        composer.isCollectionMode = entryOperations.loadingContext.isCollectionMode
+        composer.isCollectionMode = entryViewLayout.entryOperations.loadingContext.isCollectionMode
     }
 
     var canSaveCollection: Bool {
-        guard entryOperations.loadingContext.isCollectionMode, collectionContext != nil else { return false }
+        guard entryViewLayout.entryOperations.loadingContext.isCollectionMode,
+              collectionContext != nil else { return false }
         if collectionSession.baseline == nil {
             return true
         }
@@ -72,11 +71,11 @@ struct FileManagerContentState: Equatable {
     }
 
     var hasClipboardItems: Bool {
-        !entryOperations.clipboardItems.isEmpty
+        !entryViewLayout.entryOperations.clipboardItems.isEmpty
     }
 
     private var hasSelectableEntries: Bool {
         guard !entryViewLayout.selectedIds.isEmpty else { return false }
-        return entryOperations.displayItems.contains { entryViewLayout.selectedIds.contains($0.id) }
+        return entryViewLayout.entryOperations.displayItems.contains { entryViewLayout.selectedIds.contains($0.id) }
     }
 }

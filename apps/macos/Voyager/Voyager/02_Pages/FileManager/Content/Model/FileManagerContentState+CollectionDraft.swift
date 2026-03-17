@@ -4,7 +4,7 @@ import Foundation
 extension FileManagerContentState {
     mutating func restoreCollectionDraftFromBaseline() -> Effect<FileManagerContentAction> {
         guard let baseline = collectionSession.baseline,
-              entryOperations.loadingContext.isCollectionMode,
+              entryViewLayout.entryOperations.loadingContext.isCollectionMode,
               isOpenedCollectionDirty
         else {
             return .none
