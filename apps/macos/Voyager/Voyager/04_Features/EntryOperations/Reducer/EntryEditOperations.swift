@@ -14,7 +14,8 @@ struct EntryEditOperationsReducer {
     var body: some Reducer<State, Action> {
         Reduce { state, action in
             switch action {
-            case let .createNewFolder(name, parentPath):
+            case let .createNewFolder(parentPath):
+                let name = defaultNewFolderName(entries: Array(state.displayItems))
                 let parentURL = URL(fileURLWithPath: parentPath)
                 let targetPath = parentURL.appendingPathComponent(name).path
 
@@ -135,5 +136,17 @@ struct EntryEditOperationsReducer {
                 return .none
             }
         }
+    }
+
+    private func defaultNewFolderName(entries: [EntryModel]) -> String {
+        var folderName = "untitled folder"
+        var counter = 2
+
+        while entries.contains(where: { $0.name == folderName }) {
+            folderName = "untitled folder \(counter)"
+            counter += 1
+        }
+
+        return folderName
     }
 }

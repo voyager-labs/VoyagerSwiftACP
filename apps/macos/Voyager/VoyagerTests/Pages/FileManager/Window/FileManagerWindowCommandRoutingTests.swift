@@ -7,6 +7,9 @@ final class FileManagerWindowCommandRoutingTests: XCTestCase {
     func testNewFolderCommandUsesCurrentNavigationPath() async {
         var initialState = FileManagerFeature.State()
         initialState.content.navigation.seedInitialFolderPath("/tmp/voyager")
+        initialState.content.entryViewLayout.entries = [
+            .temporaryFolder(id: "/tmp/voyager/untitled folder", name: "untitled folder"),
+        ]
 
         let store = TestStore(initialState: initialState) {
             FileManagerFeature()
@@ -23,8 +26,9 @@ final class FileManagerWindowCommandRoutingTests: XCTestCase {
 
         await store.send(.request(.newFolder))
         await store.receive {
-            guard case let .content(.entries(.createNewFolder(currentPath))) = $0 else { return false }
-            return currentPath == "/tmp/voyager"
+            guard case let .content(.entryViewLayout(.entryOperations(.createNewFolder(parentPath)))) = $0
+            else { return false }
+            return parentPath == "/tmp/voyager"
         }
         await store.finish()
     }
@@ -41,7 +45,10 @@ final class FileManagerWindowCommandRoutingTests: XCTestCase {
 
         await store.send(.request(.paste))
         await store.receive {
-            guard case let .content(.entries(.pasteItems(destinationPath))) = $0 else { return false }
+            guard case let .content(.entryViewLayout(.delegate(.executeCommand(.clipboard(
+                .pasteItems(destinationPath: destinationPath),
+            ))))) = $0
+            else { return false }
             return destinationPath == "/tmp/voyager"
         }
         await store.finish()
