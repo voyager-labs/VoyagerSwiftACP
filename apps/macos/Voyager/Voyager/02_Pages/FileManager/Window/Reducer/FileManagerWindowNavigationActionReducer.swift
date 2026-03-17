@@ -223,7 +223,7 @@ struct FileManagerNavigationActionReducer {
     }
 
     private func shouldPromptForUnsavedNavigation(_ state: FileManagerContentState) -> Bool {
-        state.entryOperations.loadingContext.isCollectionMode && state.canSaveCollection
+        state.entryViewLayout.entryOperations.loadingContext.isCollectionMode && state.canSaveCollection
     }
 }
 
@@ -307,7 +307,7 @@ private func handleNavigateToCollection(
 
     let trimmedQuery = navigation.context.query.trimmingCharacters(in: .whitespacesAndNewlines)
     return .merge(
-        .send(.content(.entryArrangements(.reapply))),
+        .send(.content(.entryViewLayout(.entryArrangements(.reapply)))),
         trimmedQuery.isEmpty ? .send(.content(.composer(.applyFilters))) : .send(.content(.composer(.submit))),
     )
 }
@@ -419,8 +419,8 @@ private func applyCollectionNavigationState(
     state.content.composer.isPresented = false
     state.content.collectionContext = navigation.context
     state.content.composer.pendingSearchQuery = navigation.context.query.isEmpty ? nil : navigation.context.query
-    state.content.entryArrangements.updateSortKey(navigation.sortKey)
-    state.content.entryArrangements.updateSortOrder(navigation.sortOrder)
+    state.content.entryViewLayout.entryArrangements.updateSortKey(navigation.sortKey)
+    state.content.entryViewLayout.entryArrangements.updateSortOrder(navigation.sortOrder)
     state.content.viewLayout = navigation.viewLayout
 
     switch navigation.kind {

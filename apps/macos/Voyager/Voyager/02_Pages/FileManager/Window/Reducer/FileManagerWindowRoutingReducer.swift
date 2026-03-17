@@ -22,7 +22,7 @@ struct FileManagerWindowRoutingReducer {
                     tagName: tagName,
                 )))
 
-            case .content(.entryOperations(.emptyTrashCompleted)):
+            case .content(.entryViewLayout(.entryOperations(.emptyTrashCompleted))):
                 // TODO(VOY-179 후속): 휴지통 비우기 완료 시 창을 닫는 정책이 맞는지 재검토 필요.
                 // `closeWindowRequested` delegate 라우트는 있으나 현재 Content에서 명시적 emit 지점이 없음.
                 .send(.closeWindow)
