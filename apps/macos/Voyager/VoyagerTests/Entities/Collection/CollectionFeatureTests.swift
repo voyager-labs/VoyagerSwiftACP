@@ -260,6 +260,7 @@ private func makeRegistryClient() -> RegistryClient {
         allProperties: { [] },
         labelForKey: { kRegistryLabels[$0] ?? $0 },
         propertyTypeString: registryPropertyType,
+        propertyUnitSpec: { _ in nil },
         operatorCodes: { _ in ["eq"] },
         operatorDefinition: { _ in kRegistryOperatorDefinition },
         operatorValueUIKind: { _, typeKey in registryUIKind(for: typeKey) },
@@ -272,6 +273,7 @@ private func makeRangeDateRegistryClient() -> RegistryClient {
         allProperties: { [] },
         labelForKey: { _ in "Modified Date" },
         propertyTypeString: { _ in "date" },
+        propertyUnitSpec: { _ in nil },
         operatorCodes: { _ in ["btw"] },
         operatorDefinition: { _ in
             .init(
@@ -302,6 +304,7 @@ private func makeOperatorContractRegistryClient() -> RegistryClient {
             }
         },
         propertyTypeString: { _ in "number" },
+        propertyUnitSpec: { _ in nil },
         operatorCodes: { _ in ["eq", "btw", "exists"] },
         operatorDefinition: { code in
             switch code {

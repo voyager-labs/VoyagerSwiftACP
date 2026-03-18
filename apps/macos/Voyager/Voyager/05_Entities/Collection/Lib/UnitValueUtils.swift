@@ -13,47 +13,31 @@ enum UnitValueUtils {
         fileprivate let factorsToCanonical: [String: Decimal]
     }
 
-    static func spec(for propertyKey: String) -> UnitSpec? {
-        switch propertyKey {
-        case "size", "file_allocated_size":
-            UnitSpec(
-                canonicalUnit: "B",
-                units: [
-                    .init(code: "B", label: "Byte"),
-                    .init(code: "KB", label: "KB"),
-                    .init(code: "MB", label: "MB"),
-                    .init(code: "GB", label: "GB"),
-                ],
-                defaultDisplayUnit: "Byte",
-                factorsToCanonical: [
-                    "B": Decimal(1),
-                    "KB": Decimal(1024),
-                    "MB": Decimal(ByteSizeBucket.oneMB),
-                    "GB": Decimal(ByteSizeBucket.oneGB),
-                ],
-            )
-        case "audio_bit_rate", "video_bit_rate", "total_bit_rate":
-            UnitSpec(
-                canonicalUnit: "bps",
-                units: [
-                    .init(code: "bps", label: "bps"),
-                    .init(code: "Kbps", label: "Kbps"),
-                    .init(code: "Mbps", label: "Mbps"),
-                ],
-                defaultDisplayUnit: "bps",
-                factorsToCanonical: [
-                    "bps": Decimal(1),
-                    "Kbps": Decimal(1000),
-                    "Mbps": Decimal(1_000_000),
-                ],
-            )
-        default:
-            nil
+    static func spec(for propertyKey: String, registryClient: RegistryClient) -> UnitSpec? {
+        guard let registrySpec = registryClient.unitSpec(for: propertyKey) else {
+            return nil
         }
+
+        let factorsToCanonical = Dictionary(uniqueKeysWithValues: registrySpec.units.map { option in
+            guard let factor = Decimal(string: option.factorToCanonical, locale: Locale(identifier: "en_US_POSIX"))
+            else {
+                preconditionFailure(
+                    "Invalid unit factor: \(propertyKey) / \(option.code) / \(option.factorToCanonical)",
+                )
+            }
+            return (option.code, factor)
+        })
+
+        return UnitSpec(
+            canonicalUnit: registrySpec.canonicalUnit,
+            units: registrySpec.units.map { .init(code: $0.code, label: $0.label) },
+            defaultDisplayUnit: registrySpec.defaultDisplayUnit,
+            factorsToCanonical: factorsToCanonical,
+        )
     }
 
-    static func supportsUnits(propertyKey: String, valueType: String) -> Bool {
-        valueType == "number" && spec(for: propertyKey) != nil
+    static func supportsUnits(propertyKey: String, valueType: String, registryClient: RegistryClient) -> Bool {
+        valueType == "number" && spec(for: propertyKey, registryClient: registryClient) != nil
     }
 
     static func unitCodes(spec: UnitSpec) -> [String] {

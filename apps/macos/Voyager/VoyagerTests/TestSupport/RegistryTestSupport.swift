@@ -4,9 +4,42 @@ import Foundation
 @testable import Voyager
 
 enum RegistryTestSupport {
+    private static let bitRateUnitSpec = SystemPropertyUnitSpec(
+        canonicalUnit: "bps",
+        units: [
+            .init(code: "bps", label: "bps", factorToCanonical: "1"),
+            .init(code: "Kbps", label: "Kbps", factorToCanonical: "1000"),
+            .init(code: "Mbps", label: "Mbps", factorToCanonical: "1000000"),
+        ],
+        defaultDisplayUnit: "bps",
+    )
+
+    private static let byteSizeUnitSpec = SystemPropertyUnitSpec(
+        canonicalUnit: "B",
+        units: [
+            .init(code: "B", label: "Byte", factorToCanonical: "1"),
+            .init(code: "KB", label: "KB", factorToCanonical: "1024"),
+            .init(code: "MB", label: "MB", factorToCanonical: "1048576"),
+            .init(code: "GB", label: "GB", factorToCanonical: "1073741824"),
+        ],
+        defaultDisplayUnit: "Byte",
+    )
+
     private static let registryLabels: [String: String] = [
         "name_full": "Name",
+        "size": "File size",
         "file_allocated_size": "Size",
+        "audio_bit_rate": "Audio bit rate",
+        "video_bit_rate": "Video bit rate",
+        "total_bit_rate": "Total bit rate",
+    ]
+
+    private static let registryUnitSpecs: [String: SystemPropertyUnitSpec] = [
+        "size": byteSizeUnitSpec,
+        "file_allocated_size": byteSizeUnitSpec,
+        "audio_bit_rate": bitRateUnitSpec,
+        "video_bit_rate": bitRateUnitSpec,
+        "total_bit_rate": bitRateUnitSpec,
     ]
 
     private static let registryOperatorDefinition = OperatorDefinition(
@@ -29,7 +62,8 @@ enum RegistryTestSupport {
         RegistryClient(
             allProperties: { [] },
             labelForKey: { registryLabels[$0] ?? $0 },
-            propertyTypeString: registryPropertyType(for:),
+            propertyTypeString: propertyTypeString(for:),
+            propertyUnitSpec: { registryUnitSpecs[$0] },
             operatorCodes: { _ in ["eq"] },
             operatorDefinition: { _ in registryOperatorDefinition },
             operatorValueUIKind: { _, typeKey in registryUIKind(for: typeKey) },
@@ -37,9 +71,13 @@ enum RegistryTestSupport {
         )
     }
 
-    private static func registryPropertyType(for key: String) -> String {
+    static func propertyTypeString(for key: String) -> String {
         switch key {
+        case "size":
+            "number"
         case "file_allocated_size":
+            "number"
+        case "audio_bit_rate", "video_bit_rate", "total_bit_rate":
             "number"
         default:
             "string"
@@ -63,12 +101,14 @@ enum RegistryTestSupport {
         switch key {
         case "name_full":
             .canonical(key)
+        case "size":
+            .canonical(key)
         case "file_allocated_size":
+            .canonical(key)
+        case "audio_bit_rate", "video_bit_rate", "total_bit_rate":
             .canonical(key)
         case "name":
             .legacy(original: key, normalized: "name_full")
-        case "size":
-            .legacy(original: key, normalized: "file_allocated_size")
         default:
             .unknown(key)
         }

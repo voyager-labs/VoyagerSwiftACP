@@ -1,6 +1,6 @@
 {
   "$kind": "system_property_registry",
-  "$version": "2.3.1",
+  "$version": "2.4.0",
   "categories": {
     "audio": {
       "apple_loop_descriptors": {
@@ -860,14 +860,23 @@
           "file allocated bytes",
           "file allocated sizes"
         ],
-        "legacy_keys": ["size"],
         "system_keys": [
           "mditem:kMDItemFSSize",
           "nsurl:NSURLFileAllocatedSizeKey",
           "nsurl:NSURLTotalFileAllocatedSizeKey"
         ],
         "type": "number",
-        "ui_label": "File allocated size"
+        "ui_label": "File allocated size",
+        "unit_spec": {
+          "canonical_unit": "B",
+          "default_display_unit": "Byte",
+          "units": [
+            { "code": "B", "label": "Byte", "factor_to_canonical": "1" },
+            { "code": "KB", "label": "KB", "factor_to_canonical": "1024" },
+            { "code": "MB", "label": "MB", "factor_to_canonical": "1048576" },
+            { "code": "GB", "label": "GB", "factor_to_canonical": "1073741824" }
+          ]
+        }
       },
       "fs_node_count": {
         "availability": "macOS 10.4+",
@@ -1527,6 +1536,16 @@
         ],
         "type": "number",
         "ui_label": "File size",
+        "unit_spec": {
+          "canonical_unit": "B",
+          "default_display_unit": "Byte",
+          "units": [
+            { "code": "B", "label": "Byte", "factor_to_canonical": "1" },
+            { "code": "KB", "label": "KB", "factor_to_canonical": "1024" },
+            { "code": "MB", "label": "MB", "factor_to_canonical": "1048576" },
+            { "code": "GB", "label": "GB", "factor_to_canonical": "1073741824" }
+          ]
+        },
         "ui_pinned": true,
         "db_indexed": true
       },
@@ -2706,7 +2725,16 @@
         "legacy_keys": ["audioBitRate"],
         "system_keys": ["mditem:kMDItemAudioBitRate"],
         "type": "number",
-        "ui_label": "Audio bit rate"
+        "ui_label": "Audio bit rate",
+        "unit_spec": {
+          "canonical_unit": "bps",
+          "default_display_unit": "bps",
+          "units": [
+            { "code": "bps", "label": "bps", "factor_to_canonical": "1" },
+            { "code": "Kbps", "label": "Kbps", "factor_to_canonical": "1000" },
+            { "code": "Mbps", "label": "Mbps", "factor_to_canonical": "1000000" }
+          ]
+        }
       },
       "codecs": {
         "availability": "macOS 10.4+",
@@ -2799,7 +2827,16 @@
         ],
         "system_keys": ["mditem:kMDItemTotalBitRate"],
         "type": "number",
-        "ui_label": "Total bit rate"
+        "ui_label": "Total bit rate",
+        "unit_spec": {
+          "canonical_unit": "bps",
+          "default_display_unit": "bps",
+          "units": [
+            { "code": "bps", "label": "bps", "factor_to_canonical": "1" },
+            { "code": "Kbps", "label": "Kbps", "factor_to_canonical": "1000" },
+            { "code": "Mbps", "label": "Mbps", "factor_to_canonical": "1000000" }
+          ]
+        }
       },
       "video_bit_rate": {
         "availability": "macOS 10.4+",
@@ -2814,7 +2851,16 @@
         "legacy_keys": ["videoBitRate"],
         "system_keys": ["mditem:kMDItemVideoBitRate"],
         "type": "number",
-        "ui_label": "Video bit rate"
+        "ui_label": "Video bit rate",
+        "unit_spec": {
+          "canonical_unit": "bps",
+          "default_display_unit": "bps",
+          "units": [
+            { "code": "bps", "label": "bps", "factor_to_canonical": "1" },
+            { "code": "Kbps", "label": "Kbps", "factor_to_canonical": "1000" },
+            { "code": "Mbps", "label": "Mbps", "factor_to_canonical": "1000000" }
+          ]
+        }
       }
     }
   }

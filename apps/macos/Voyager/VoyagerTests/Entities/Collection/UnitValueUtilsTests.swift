@@ -3,6 +3,8 @@ import XCTest
 
 @MainActor
 final class UnitValueUtilsTests: XCTestCase {
+    private let registryClient = RegistryTestSupport.makeRegistryClient()
+
     func testFromCanonicalConvertsBytesToDisplayUnit() {
         let spec = tryUnwrapSizeSpec()
 
@@ -97,7 +99,7 @@ final class UnitValueUtilsTests: XCTestCase {
         file: StaticString = #filePath,
         line: UInt = #line,
     ) -> UnitValueUtils.UnitSpec {
-        guard let spec = UnitValueUtils.spec(for: "size") else {
+        guard let spec = UnitValueUtils.spec(for: "size", registryClient: registryClient) else {
             XCTFail("Expected size unit spec", file: file, line: line)
             fatalError("Missing size spec")
         }
@@ -116,7 +118,7 @@ final class UnitValueUtilsTests: XCTestCase {
         file: StaticString = #filePath,
         line: UInt = #line,
     ) -> UnitValueUtils.UnitSpec {
-        guard let spec = UnitValueUtils.spec(for: propertyKey) else {
+        guard let spec = UnitValueUtils.spec(for: propertyKey, registryClient: registryClient) else {
             XCTFail("Expected \(propertyKey) unit spec", file: file, line: line)
             fatalError("Missing \(propertyKey) spec")
         }
