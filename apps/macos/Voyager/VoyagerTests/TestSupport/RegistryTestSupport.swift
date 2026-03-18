@@ -4,26 +4,7 @@ import Foundation
 @testable import Voyager
 
 enum RegistryTestSupport {
-    private static let bitRateUnitSpec = SystemPropertyUnitSpec(
-        canonicalUnit: "bps",
-        units: [
-            .init(code: "bps", label: "bps", factorToCanonical: "1"),
-            .init(code: "Kbps", label: "Kbps", factorToCanonical: "1000"),
-            .init(code: "Mbps", label: "Mbps", factorToCanonical: "1000000"),
-        ],
-        defaultDisplayUnit: "bps",
-    )
-
-    private static let byteSizeUnitSpec = SystemPropertyUnitSpec(
-        canonicalUnit: "B",
-        units: [
-            .init(code: "B", label: "Byte", factorToCanonical: "1"),
-            .init(code: "KB", label: "KB", factorToCanonical: "1024"),
-            .init(code: "MB", label: "MB", factorToCanonical: "1048576"),
-            .init(code: "GB", label: "GB", factorToCanonical: "1073741824"),
-        ],
-        defaultDisplayUnit: "Byte",
-    )
+    private static let registrySnapshot = RegistrySnapshot.load()
 
     private static let registryLabels: [String: String] = [
         "name_full": "Name",
@@ -34,13 +15,7 @@ enum RegistryTestSupport {
         "total_bit_rate": "Total bit rate",
     ]
 
-    private static let registryUnitSpecs: [String: SystemPropertyUnitSpec] = [
-        "size": byteSizeUnitSpec,
-        "file_allocated_size": byteSizeUnitSpec,
-        "audio_bit_rate": bitRateUnitSpec,
-        "video_bit_rate": bitRateUnitSpec,
-        "total_bit_rate": bitRateUnitSpec,
-    ]
+    private static let registryUnitSpecs: [String: SystemPropertyUnitSpec] = registrySnapshot.propertyKeyToUnitSpec
 
     private static let registryOperatorDefinition = OperatorDefinition(
         uiLabel: "Equals",
