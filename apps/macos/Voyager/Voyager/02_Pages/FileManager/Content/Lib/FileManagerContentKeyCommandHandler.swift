@@ -28,13 +28,8 @@ enum FileManagerContentKeyCommandHandler {
         }
 
         let selectedEntries = state.selectedEntries
-        if selectedEntries.count == 1, let file = selectedEntries.first {
-            return .send(.entryViewLayout(.entryOperations(.quickLookFile(path: file.fullPath))))
-        }
-        if !selectedEntries.isEmpty {
-            return .send(.entryViewLayout(.entryOperations(.quickLookFiles(paths: selectedEntries.map(\.fullPath)))))
-        }
-        return .none
+        guard !selectedEntries.isEmpty else { return nil }
+        return .send(.entryViewLayout(.entryOperations(.quickLookFiles(paths: selectedEntries.map(\.fullPath)))))
     }
 
     private static func deleteKeyEffect(

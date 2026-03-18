@@ -57,26 +57,4 @@ struct FileManagerContentState: Equatable {
         if baseline.context != context { return true }
         return false
     }
-
-    // 엔트리 관련 //
-    var canOpenSelectedItem: Bool {
-        hasSelectableEntries
-    }
-
-    var canQuickLookSelectedItem: Bool {
-        hasSelectableEntries
-    }
-
-    var hasSelectedItems: Bool {
-        !entryViewLayout.selectedIds.isEmpty
-    }
-
-    var hasClipboardItems: Bool {
-        !entryOperations.clipboardItems.isEmpty
-    }
-
-    private var hasSelectableEntries: Bool {
-        guard !entryViewLayout.selectedIds.isEmpty else { return false }
-        return entryOperations.displayItems.contains { entryViewLayout.selectedIds.contains($0.id) }
-    }
 }

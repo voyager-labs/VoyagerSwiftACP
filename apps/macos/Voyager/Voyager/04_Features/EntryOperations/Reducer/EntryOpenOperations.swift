@@ -96,46 +96,42 @@ struct EntryOpenOperationsReducer {
                     }
                 }
 
-            case let .quickLookFile(path):
-                let filePath = path
-                let url = URL(fileURLWithPath: filePath)
-                return EntryOperationsExecutionSupport.run(for: filePath, kind: .quickLook) {
-                    try await entryQuickLookClient.quickLook([url], 0)
-                }
-
-            // TODO: quickLook 액션을 단일 엔트리 포인트로 통합하고 quickLookFiles 분기를 제거한다.
-
             case let .quickLookFiles(paths):
+                guard !paths.isEmpty else { return .none }
                 let urls = paths.map { URL(fileURLWithPath: $0) }
-                let keyPath = paths.first ?? "quicklook"
+                guard let keyPath = paths.first else { return .none }
                 return EntryOperationsExecutionSupport.run(for: keyPath, kind: .quickLook) {
                     try await entryQuickLookClient.quickLook(urls, 0)
                 }
 
             case let .openFinderInfo(paths):
+                guard !paths.isEmpty else { return .none }
                 let urls = paths.map { URL(fileURLWithPath: $0) }
-                let keyPath = paths.first ?? "getinfo"
+                guard let keyPath = paths.first else { return .none }
                 return EntryOperationsExecutionSupport.run(for: keyPath, kind: .getInfo) {
                     try await entryOpenClient.openFinderInfo(urls)
                 }
 
             case let .shareItems(paths, anchor):
+                guard !paths.isEmpty else { return .none }
                 let urls = paths.map { URL(fileURLWithPath: $0) }
-                let keyPath = paths.first ?? "share"
+                guard let keyPath = paths.first else { return .none }
                 return EntryOperationsExecutionSupport.run(for: keyPath, kind: .share) {
                     try await entryOpenClient.shareItems(urls, anchor)
                 }
 
             case let .performService(paths, name):
+                guard !paths.isEmpty else { return .none }
                 let urls = paths.map { URL(fileURLWithPath: $0) }
-                let keyPath = paths.first ?? "service"
+                guard let keyPath = paths.first else { return .none }
                 return EntryOperationsExecutionSupport.run(for: keyPath, kind: .performService(name)) {
                     try await entryOpenClient.performService(name, urls)
                 }
 
             case let .revealInFinder(paths):
+                guard !paths.isEmpty else { return .none }
                 let urls = paths.map { URL(fileURLWithPath: $0) }
-                let keyPath = paths.first ?? "reveal"
+                guard let keyPath = paths.first else { return .none }
                 return EntryOperationsExecutionSupport.run(for: keyPath, kind: .revealInFinder) {
                     try await entryOpenClient.revealInFinder(urls)
                 }
