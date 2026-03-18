@@ -9,7 +9,7 @@ struct FilterSnapshot: Equatable {
 
 struct ConditionDisplayState: Equatable {
     var values: [String]
-    var unitCode: String?
+    var unitValueState: UnitValueState?
 }
 
 @ObservableState

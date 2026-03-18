@@ -110,8 +110,7 @@ struct ComposerBottomRowView: View {
                 operatorPickerStore: store.scope(state: \.operatorPicker, action: \.operatorPicker),
                 valuePickerStore: store.scope(state: \.valuePicker, action: \.valuePicker),
                 operatorOptions: operatorOptionsByKey[condition.propertyKey] ?? [],
-                displayValues: displayState?.values,
-                displayUnitCode: displayState?.unitCode,
+                displayState: displayState,
                 defaultChipHeight: defaultChipHeight,
                 onPropertyTap: {
                     store.send(.propertyPicker(.startEditing(condition.propertyKey)))

@@ -27,4 +27,5 @@ struct FinderTagListState: Equatable {
 struct UnitValueState: Equatable {
     var selectedUnitCode: String
     var availableUnitCodes: [String]
+    var unitLabelsByCode: [String: String]
 }
