@@ -35,4 +35,17 @@ enum ConditionChipDisplayUtils {
             return "Value"
         }
     }
+
+    static func displayedValuesForDate(
+        conditionValues: [String]?,
+        conditionPropertyKey: String,
+        pickerPropertyKey: String?,
+        pickerPresented: Bool,
+        pickerValues: [String],
+    ) -> [String]? {
+        if pickerPresented, pickerPropertyKey == conditionPropertyKey {
+            return pickerValues
+        }
+        return conditionValues
+    }
 }
