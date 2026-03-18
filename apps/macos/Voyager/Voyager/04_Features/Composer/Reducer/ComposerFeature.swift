@@ -149,28 +149,56 @@ func applyAppliedFilters(
     state.conditions = resolved.conditions
     state.conditionDisplayByKey = Dictionary(
         uniqueKeysWithValues: resolved.conditions.compactMap { condition in
-            guard let previous = previousDisplayByKey[condition.propertyKey],
-                  let reconciled = reconcileDisplayState(for: condition, previous: previous)
-            else {
-                return nil
+            let displayState: ConditionDisplayState? = if let previous = previousDisplayByKey[condition.propertyKey] {
+                reconcileDisplayState(
+                    for: condition,
+                    previous: previous,
+                    registryClient: registryClient,
+                )
+            } else {
+                defaultDisplayState(for: condition, registryClient: registryClient)
             }
-            return (condition.propertyKey, reconciled)
+            guard let displayState else { return nil }
+            return (condition.propertyKey, displayState)
         },
     )
     updateOperatorOptions(state: &state, registryClient: registryClient)
 }
 
-private func reconcileDisplayState(
+func defaultDisplayState(
     for condition: Condition,
-    previous: ConditionDisplayState,
+    registryClient: RegistryClient,
 ) -> ConditionDisplayState? {
-    guard let unitCode = previous.unitCode,
-          let spec = UnitValueUtils.spec(for: condition.propertyKey),
-          UnitValueUtils.unitCodes(spec: spec).contains(unitCode),
-          let values = condition.values
+    guard condition.valueType == "number",
+          let spec = UnitValueUtils.spec(for: condition.propertyKey, registryClient: registryClient)
     else {
         return nil
     }
+
+    let unitValueState = UnitValuePresentationUtils.makeState(spec: spec)
+    let unitCode = unitValueState.selectedUnitCode
+    let displayValues = (condition.values ?? []).map { value in
+        let trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return "" }
+        return UnitValueUtils.fromCanonical(canonicalText: trimmed, to: unitCode, spec: spec) ?? trimmed
+    }
+
+    return .init(values: displayValues, unitValueState: unitValueState)
+}
+
+private func reconcileDisplayState(
+    for condition: Condition,
+    previous: ConditionDisplayState,
+    registryClient: RegistryClient,
+) -> ConditionDisplayState? {
+    guard let previousUnitValueState = previous.unitValueState,
+          let spec = UnitValueUtils.spec(for: condition.propertyKey, registryClient: registryClient),
+          UnitValueUtils.unitCodes(spec: spec).contains(previousUnitValueState.selectedUnitCode)
+    else {
+        return defaultDisplayState(for: condition, registryClient: registryClient)
+    }
+    let values = condition.values ?? []
+    let unitCode = previousUnitValueState.selectedUnitCode
 
     let displayValues = values.map { value -> String in
         let trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -178,7 +206,10 @@ private func reconcileDisplayState(
         return UnitValueUtils.fromCanonical(canonicalText: trimmed, to: unitCode, spec: spec) ?? trimmed
     }
 
-    return .init(values: displayValues, unitCode: unitCode)
+    return .init(
+        values: displayValues,
+        unitValueState: UnitValuePresentationUtils.makeState(spec: spec, preferredUnitCode: unitCode),
+    )
 }
 
 func resetValuePicker(state: inout ComposerFeature.State) {

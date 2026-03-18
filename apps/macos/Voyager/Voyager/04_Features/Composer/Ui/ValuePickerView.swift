@@ -36,20 +36,17 @@ struct ValuePickerView: View {
                     }
                 }
 
-                if let propertyKey = viewStore.propertyKey,
-                   let spec = UnitValueUtils.spec(for: propertyKey),
-                   let unitValueState = viewStore.unitValueState
-                {
+                if let unitValueState = viewStore.unitValueState {
                     HStack {
                         Spacer()
                         UnitSelectorView(
                             availableUnitCodes: unitValueState.availableUnitCodes,
                             selectedUnitCode: unitValueState.selectedUnitCode,
-                            selectedUnitLabel: UnitValueUtils.unitLabel(
+                            selectedUnitLabel: UnitValuePresentationUtils.label(
                                 for: unitValueState.selectedUnitCode,
-                                spec: spec,
+                                state: unitValueState,
                             ),
-                            labelForUnit: { UnitValueUtils.unitLabel(for: $0, spec: spec) },
+                            labelForUnit: { UnitValuePresentationUtils.label(for: $0, state: unitValueState) },
                             onSelect: { viewStore.send(.selectUnit($0)) },
                         )
                     }

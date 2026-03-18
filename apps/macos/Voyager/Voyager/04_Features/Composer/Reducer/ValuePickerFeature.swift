@@ -56,16 +56,15 @@ struct ValuePickerFeature {
                     propertyKey: payload.propertyKey,
                     valueType: payload.valueType,
                     tokenMode: tokenMode,
+                    registryClient: registryClient,
                 ) {
-                    let availableUnitCodes = UnitValueUtils.unitCodes(spec: spec)
-                    let selectedUnitCode = payload.preferredUnitCode
-                        .flatMap { availableUnitCodes.contains($0) ? $0 : nil }
-                        ?? UnitValueUtils.defaultDisplayUnitCode(spec: spec)
-
-                    state.unitValueState = .init(
-                        selectedUnitCode: selectedUnitCode,
-                        availableUnitCodes: availableUnitCodes,
+                    let unitValueState = UnitValuePresentationUtils.makeState(
+                        spec: spec,
+                        preferredUnitCode: payload.preferredUnitCode,
                     )
+                    let selectedUnitCode = unitValueState.selectedUnitCode
+
+                    state.unitValueState = unitValueState
 
                     if let existingDisplayValues = payload.existingDisplayValues {
                         let preparedDisplayValues = prepareValueInputs(
@@ -108,6 +107,7 @@ struct ValuePickerFeature {
                           propertyKey: propertyKey,
                           valueType: state.valueType,
                           tokenMode: false,
+                          registryClient: registryClient,
                       ),
                       let unitValueState = state.unitValueState,
                       unitValueState.availableUnitCodes.contains(unitCode)
@@ -184,6 +184,7 @@ struct ValuePickerFeature {
                     propertyKey: propertyKey,
                     valueType: state.valueType,
                     tokenMode: tokenMode,
+                    registryClient: registryClient,
                 ), let selectedUnitCode {
                     guard let canonicalValues = UnitValueUtils.toCanonicalValues(
                         displayValues: displayValues,
@@ -292,11 +293,12 @@ private func resolvedUnitSpec(
     propertyKey: String,
     valueType: String,
     tokenMode: Bool,
+    registryClient: RegistryClient,
 ) -> UnitValueUtils.UnitSpec? {
     guard !tokenMode,
-          UnitValueUtils.supportsUnits(propertyKey: propertyKey, valueType: valueType)
+          UnitValueUtils.supportsUnits(propertyKey: propertyKey, valueType: valueType, registryClient: registryClient)
     else {
         return nil
     }
-    return UnitValueUtils.spec(for: propertyKey)
+    return UnitValueUtils.spec(for: propertyKey, registryClient: registryClient)
 }

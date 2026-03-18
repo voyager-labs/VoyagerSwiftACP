@@ -30,6 +30,7 @@ final class ValuePickerFeatureBitRateTests: XCTestCase {
             $0.unitValueState = .init(
                 selectedUnitCode: "Kbps",
                 availableUnitCodes: ["bps", "Kbps", "Mbps"],
+                unitLabelsByCode: ["bps": "bps", "Kbps": "Kbps", "Mbps": "Mbps"],
             )
             $0.finderTagListState = nil
             $0.isPresented = true
@@ -63,6 +64,7 @@ final class ValuePickerFeatureBitRateTests: XCTestCase {
             $0.unitValueState = .init(
                 selectedUnitCode: "Kbps",
                 availableUnitCodes: ["bps", "Kbps", "Mbps"],
+                unitLabelsByCode: ["bps": "bps", "Kbps": "Kbps", "Mbps": "Mbps"],
             )
             $0.finderTagListState = nil
             $0.isPresented = true
@@ -103,6 +105,7 @@ final class ValuePickerFeatureBitRateTests: XCTestCase {
             $0.unitValueState = .init(
                 selectedUnitCode: "Mbps",
                 availableUnitCodes: ["bps", "Kbps", "Mbps"],
+                unitLabelsByCode: ["bps": "bps", "Kbps": "Kbps", "Mbps": "Mbps"],
             )
             $0.finderTagListState = nil
             $0.isPresented = true
@@ -136,6 +139,7 @@ final class ValuePickerFeatureBitRateTests: XCTestCase {
             $0.unitValueState = .init(
                 selectedUnitCode: "Mbps",
                 availableUnitCodes: ["bps", "Kbps", "Mbps"],
+                unitLabelsByCode: ["bps": "bps", "Kbps": "Kbps", "Mbps": "Mbps"],
             )
             $0.finderTagListState = nil
             $0.isPresented = true
@@ -176,6 +180,7 @@ final class ValuePickerFeatureBitRateTests: XCTestCase {
             $0.unitValueState = .init(
                 selectedUnitCode: "Mbps",
                 availableUnitCodes: ["bps", "Kbps", "Mbps"],
+                unitLabelsByCode: ["bps": "bps", "Kbps": "Kbps", "Mbps": "Mbps"],
             )
             $0.finderTagListState = nil
             $0.isPresented = true
@@ -209,6 +214,7 @@ final class ValuePickerFeatureBitRateTests: XCTestCase {
             $0.unitValueState = .init(
                 selectedUnitCode: "Mbps",
                 availableUnitCodes: ["bps", "Kbps", "Mbps"],
+                unitLabelsByCode: ["bps": "bps", "Kbps": "Kbps", "Mbps": "Mbps"],
             )
             $0.finderTagListState = nil
             $0.isPresented = true
@@ -230,9 +236,9 @@ private func makeStore(
     let store = TestStore(initialState: ValuePickerFeature.State()) {
         ValuePickerFeature()
     } withDependencies: {
-        var registryClient = RegistryClient.testValue
+        var registryClient = RegistryTestSupport.makeRegistryClient()
         registryClient.propertyTypeString = { key in
-            key == "tag_names" ? "categorical" : "string"
+            key == "tag_names" ? "categorical" : RegistryTestSupport.propertyTypeString(for: key)
         }
         $0.registryClient = registryClient
         $0.finderFavoritesTagClient = FinderFavoritesTagClient(

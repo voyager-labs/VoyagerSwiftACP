@@ -42,6 +42,7 @@ struct ComposerConditionEditingReducer {
                     state: &state,
                     propertyKey: propertyKey,
                     unitCode: unitCode,
+                    registryClient: registryClient,
                     searchClient: searchClient,
                 )
 
@@ -115,10 +116,10 @@ struct ComposerConditionEditingReducer {
                 if let idx = state.conditions.firstIndex(where: { $0.propertyKey == propertyKey }) {
                     state.pushHistory()
                     state.conditions[idx].values = values
-                    if let selectedUnitCode {
+                    if selectedUnitCode != nil {
                         state.conditionDisplayByKey[propertyKey] = .init(
                             values: displayValues,
-                            unitCode: selectedUnitCode,
+                            unitValueState: state.valuePicker.unitValueState,
                         )
                     } else {
                         resetConditionDisplayState(propertyKey: propertyKey, state: &state)
@@ -135,7 +136,11 @@ struct ComposerConditionEditingReducer {
                 if let idx = state.conditions.firstIndex(where: { $0.propertyKey == propertyKey }) {
                     state.pushHistory()
                     state.conditions[idx].values = values
-                    resetConditionDisplayState(propertyKey: propertyKey, state: &state)
+                    syncConditionDisplayState(
+                        propertyKey: propertyKey,
+                        state: &state,
+                        registryClient: registryClient,
+                    )
                 }
                 resetValuePicker(state: &state)
                 return .none
@@ -217,7 +222,11 @@ private func handleSetOperator(
         state.conditions[idx].operatorValueUIKind = uiValueKind
         state.conditions[idx].valueType = registryClient.valueType(for: uiValueKind)
         state.conditions[idx].values = valueArity == 0 ? [] : nil
-        resetConditionDisplayState(propertyKey: propertyKey, state: &state)
+        syncConditionDisplayState(
+            propertyKey: propertyKey,
+            state: &state,
+            registryClient: registryClient,
+        )
 
         if state.valuePicker.propertyKey == propertyKey {
             state.valuePicker.isPresented = false
@@ -282,11 +291,12 @@ private func handleSetDisplayUnit(
     state: inout ComposerFeature.State,
     propertyKey: String,
     unitCode: String,
+    registryClient: RegistryClient,
     searchClient: SearchClient,
 ) -> Effect<ComposerFeature.Action> {
     guard !state.isLoadingSearch,
           let idx = state.conditions.firstIndex(where: { $0.propertyKey == propertyKey }),
-          let spec = UnitValueUtils.spec(for: propertyKey)
+          let spec = UnitValueUtils.spec(for: propertyKey, registryClient: registryClient)
     else {
         return .none
     }
@@ -305,7 +315,10 @@ private func handleSetDisplayUnit(
 
     state.pushHistory()
     state.conditions[idx].values = canonicalValues
-    state.conditionDisplayByKey[propertyKey] = .init(values: normalizedDisplayValues, unitCode: unitCode)
+    state.conditionDisplayByKey[propertyKey] = .init(
+        values: normalizedDisplayValues,
+        unitValueState: UnitValuePresentationUtils.makeState(spec: spec, preferredUnitCode: unitCode),
+    )
     return applyFiltersIfNeeded(state: &state, searchClient: searchClient)
 }
 
@@ -314,6 +327,20 @@ private func resetConditionDisplayState(
     state: inout ComposerFeature.State,
 ) {
     state.conditionDisplayByKey.removeValue(forKey: propertyKey)
+}
+
+private func syncConditionDisplayState(
+    propertyKey: String,
+    state: inout ComposerFeature.State,
+    registryClient: RegistryClient,
+) {
+    guard let condition = state.conditions.first(where: { $0.propertyKey == propertyKey }),
+          let displayState = defaultDisplayState(for: condition, registryClient: registryClient)
+    else {
+        resetConditionDisplayState(propertyKey: propertyKey, state: &state)
+        return
+    }
+    state.conditionDisplayByKey[propertyKey] = displayState
 }
 
 private func displayValues(

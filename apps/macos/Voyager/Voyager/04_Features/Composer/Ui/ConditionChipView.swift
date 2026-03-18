@@ -11,8 +11,7 @@ struct ConditionChipView: View {
     let operatorPickerStore: StoreOf<OperatorPickerFeature>
     let valuePickerStore: StoreOf<ValuePickerFeature>
     let operatorOptions: [String]
-    let displayValues: [String]?
-    let displayUnitCode: String?
+    let displayState: ConditionDisplayState?
     let defaultChipHeight: CGFloat
     let onPropertyTap: () -> Void
     let onRemove: () -> Void
@@ -74,10 +73,8 @@ struct ConditionChipView: View {
     @State private var boolOptionHoverValue: String?
     @FocusState private var focusedValueIndex: Int?
 
-    private var unitSpec: UnitValueUtils.UnitSpec? {
-        UnitValueUtils.supportsUnits(propertyKey: condition.propertyKey, valueType: condition.valueType)
-            ? UnitValueUtils.spec(for: condition.propertyKey)
-            : nil
+    private var displayUnitValueState: UnitValueState? {
+        displayState?.unitValueState
     }
 
     private let rangeSep = "-"
@@ -530,7 +527,7 @@ struct ConditionChipView: View {
             .onChange(of: needsPrepare) { newValue in
                 if newValue { sendPrepare() }
             }
-        } else if let values = displayValues ?? condition.values, values.count >= 2 {
+        } else if let values = displayState?.values ?? condition.values, values.count >= 2 {
             rangeDisplayView(
                 operatorCode: operatorCode,
                 valueUIKind: valueUIKind,
@@ -563,7 +560,7 @@ struct ConditionChipView: View {
                 errorMessage: valueStore.errorMessage,
                 editingIndex: nil,
             )
-        } else if valueArity >= 2, let values = displayValues ?? condition.values, values.count >= 2 {
+        } else if valueArity >= 2, let values = displayState?.values ?? condition.values, values.count >= 2 {
             rangeDisplayView(
                 operatorCode: operatorCode,
                 valueUIKind: valueUIKind,
@@ -590,7 +587,7 @@ struct ConditionChipView: View {
         valueStore: ViewStore<ValuePickerFeature.State, ValuePickerFeature.Action>,
     ) -> some View {
         HStack(spacing: 6) {
-            if editingIndex == 1, let values = displayValues ?? condition.values, values.count >= 2 {
+            if editingIndex == 1, let values = displayState?.values ?? condition.values, values.count >= 2 {
                 ValuePillView(
                     text: values[0],
                     isDark: isDark,
@@ -621,7 +618,7 @@ struct ConditionChipView: View {
                 editingIndex: editingIndex,
             )
 
-            if editingIndex == 0, let values = displayValues ?? condition.values, values.count >= 2 {
+            if editingIndex == 0, let values = displayState?.values ?? condition.values, values.count >= 2 {
                 Text(rangeSep)
                     .font(.system(size: 11, weight: .medium))
                     .foregroundColor(.secondary)
@@ -766,7 +763,7 @@ struct ConditionChipView: View {
                     )),
                 )
             } label: {
-                Text(ConditionChipDisplayUtils.displayValueText(for: condition, displayValues: displayValues))
+                Text(ConditionChipDisplayUtils.displayValueText(for: condition, displayValues: displayState?.values))
                     .font(.system(size: 11, weight: .medium))
                     .foregroundColor(condition.values == nil ? .secondary.opacity(0.7) : .primary)
                     .padding(.horizontal, 4)
@@ -789,7 +786,7 @@ struct ConditionChipView: View {
             }
 
             if let selector = displayUnitSelector(
-                unitCode: resolvedDisplayUnitCode(),
+                unitValueState: currentUnitValueState(),
                 onSelect: { unitCode in
                     onDisplayUnitChange(condition.propertyKey, unitCode)
                 },
@@ -937,7 +934,7 @@ struct ConditionChipView: View {
     @ViewBuilder
     private func displayRangeUnitSelector() -> some View {
         if let selector = displayUnitSelector(
-            unitCode: resolvedDisplayUnitCode(),
+            unitValueState: currentUnitValueState(),
             onSelect: { unitCode in
                 onDisplayUnitChange(condition.propertyKey, unitCode)
             },
@@ -949,8 +946,7 @@ struct ConditionChipView: View {
     private func editUnitSelector(
         valueViewStore: ViewStore<ValuePickerFeature.State, ValuePickerFeature.Action>,
     ) -> AnyView? {
-        guard let spec = unitSpec,
-              let unitValueState = valueViewStore.unitValueState,
+        guard let unitValueState = valueViewStore.unitValueState,
               condition.valueType == "number"
         else {
             return nil
@@ -960,46 +956,49 @@ struct ConditionChipView: View {
             UnitSelectorView(
                 availableUnitCodes: unitValueState.availableUnitCodes,
                 selectedUnitCode: unitValueState.selectedUnitCode,
-                selectedUnitLabel: UnitValueUtils.unitLabel(for: unitValueState.selectedUnitCode, spec: spec),
-                labelForUnit: { UnitValueUtils.unitLabel(for: $0, spec: spec) },
+                selectedUnitLabel: UnitValuePresentationUtils.label(
+                    for: unitValueState.selectedUnitCode,
+                    state: unitValueState,
+                ),
+                labelForUnit: { UnitValuePresentationUtils.label(for: $0, state: unitValueState) },
                 onSelect: { valuePickerStore.send(.selectUnit($0)) },
             ),
         )
     }
 
     private func displayUnitSelector(
-        unitCode: String?,
+        unitValueState: UnitValueState?,
         onSelect: @escaping (String) -> Void,
     ) -> AnyView? {
-        guard let spec = unitSpec,
-              let unitCode
+        guard let unitValueState
         else {
             return nil
         }
 
         return AnyView(
             UnitSelectorView(
-                availableUnitCodes: UnitValueUtils.unitCodes(spec: spec),
-                selectedUnitCode: unitCode,
-                selectedUnitLabel: UnitValueUtils.unitLabel(for: unitCode, spec: spec),
-                labelForUnit: { UnitValueUtils.unitLabel(for: $0, spec: spec) },
+                availableUnitCodes: unitValueState.availableUnitCodes,
+                selectedUnitCode: unitValueState.selectedUnitCode,
+                selectedUnitLabel: UnitValuePresentationUtils.label(
+                    for: unitValueState.selectedUnitCode,
+                    state: unitValueState,
+                ),
+                labelForUnit: { UnitValuePresentationUtils.label(for: $0, state: unitValueState) },
                 onSelect: onSelect,
             ),
         )
     }
 
-    private func resolvedDisplayUnitCode(
+    private func currentUnitValueState(
         valueViewStore: ViewStore<ValuePickerFeature.State, ValuePickerFeature.Action>? = nil,
-    ) -> String? {
-        guard let spec = unitSpec else { return nil }
+    ) -> UnitValueState? {
         if let valueViewStore,
            valueViewStore.propertyKey == condition.propertyKey,
-           let selectedUnitCode = valueViewStore.unitValueState?.selectedUnitCode
+           let unitValueState = valueViewStore.unitValueState
         {
-            return selectedUnitCode
+            return unitValueState
         }
-        return displayUnitCode.flatMap { UnitValueUtils.unitCodes(spec: spec).contains($0) ? $0 : nil }
-            ?? UnitValueUtils.defaultDisplayUnitCode(spec: spec)
+        return displayUnitValueState
     }
 
     private func currentDisplayValues(
@@ -1008,7 +1007,7 @@ struct ConditionChipView: View {
         if let valueViewStore, valueViewStore.propertyKey == condition.propertyKey {
             return valueViewStore.values
         }
-        return displayValues ?? condition.values
+        return displayState?.values ?? condition.values
     }
 
     private func makePreparePayload(
@@ -1029,7 +1028,8 @@ struct ConditionChipView: View {
             valueArity: valueArity,
             existingValues: existingValues ?? condition.values,
             existingDisplayValues: includeDisplayState ? currentDisplayValues(valueViewStore: valueStore) : nil,
-            preferredUnitCode: includeDisplayState ? resolvedDisplayUnitCode(valueViewStore: valueStore) : nil,
+            preferredUnitCode: includeDisplayState ? currentUnitValueState(valueViewStore: valueStore)?
+                .selectedUnitCode : nil,
             editingIndex: editingIndex,
         )
     }

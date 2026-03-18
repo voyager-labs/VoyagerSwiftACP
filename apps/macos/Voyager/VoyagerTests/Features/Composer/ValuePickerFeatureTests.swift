@@ -124,6 +124,7 @@ final class ValuePickerFeatureTests: XCTestCase {
             $0.unitValueState = .init(
                 selectedUnitCode: "MB",
                 availableUnitCodes: ["B", "KB", "MB", "GB"],
+                unitLabelsByCode: ["B": "Byte", "KB": "KB", "MB": "MB", "GB": "GB"],
             )
             $0.finderTagListState = nil
             $0.isPresented = true
@@ -157,6 +158,7 @@ final class ValuePickerFeatureTests: XCTestCase {
             $0.unitValueState = .init(
                 selectedUnitCode: "MB",
                 availableUnitCodes: ["B", "KB", "MB", "GB"],
+                unitLabelsByCode: ["B": "Byte", "KB": "KB", "MB": "MB", "GB": "GB"],
             )
             $0.isPresented = true
         }
@@ -176,9 +178,9 @@ private func makeStore(
     let store = TestStore(initialState: ValuePickerFeature.State()) {
         ValuePickerFeature()
     } withDependencies: {
-        var registryClient = RegistryClient.testValue
+        var registryClient = RegistryTestSupport.makeRegistryClient()
         registryClient.propertyTypeString = { key in
-            key == "tag_names" ? "categorical" : "string"
+            key == "tag_names" ? "categorical" : RegistryTestSupport.propertyTypeString(for: key)
         }
         $0.registryClient = registryClient
         $0.finderFavoritesTagClient = FinderFavoritesTagClient(
