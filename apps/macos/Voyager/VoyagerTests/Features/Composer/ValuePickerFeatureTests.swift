@@ -96,9 +96,9 @@ final class ValuePickerFeatureTests: XCTestCase {
     func testCommitRangeNumberClampsExtraInputsToExpectedArity() async {
         let store = TestStore(
             initialState: ValuePickerState(
-                isPresented: true,
                 propertyKey: "file_allocated_size",
                 operatorCode: "btw",
+                isPresented: true,
                 valueType: "number",
                 valueUIKind: "rangeNumber",
                 valueArity: 2,
