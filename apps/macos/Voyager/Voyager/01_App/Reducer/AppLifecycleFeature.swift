@@ -59,47 +59,60 @@ struct AppLifecycleFeature {
                 let stateClient = helperStateClient
 
                 return .run { _ in
-                    let logger = Logger(label: "Voyager")
-
                     let currentBundleVersion = Bundle.main.infoDictionary?["CFBundleVersion"] as? String
 
                     async let monitor: Void = {
-                        var recentRestarts: [Date] = []
-
-                        func recordRestartIfAllowed() -> Bool {
-                            let now = Date()
-                            recentRestarts = recentRestarts.filter { now.timeIntervalSince($0) <= 60 }
-                            if recentRestarts.count >= 3 {
-                                logger.error("helper_restart_rate_limited")
-                                return false
-                            }
-                            recentRestarts.append(now)
-                            return true
-                        }
+                        var policy = HelperSupervisionPolicy()
 
                         for await _ in helperClient.terminationEvents() {
                             if await VoyagerTerminationCoordinator.shared.isTerminating() {
-                                logger.info("helper_monitor_skip_due_to_termination")
-                                break
+                                continue
                             }
 
-                            guard recordRestartIfAllowed() else {
-                                break
-                            }
+                            let decision = policy.recordRestartAttempt()
 
-                            await helperClient.start()
-                            _ = await helperClient.resolveAlignedState(
-                                stateClient: stateClient,
-                                mainBundleVersion: currentBundleVersion,
-                                logger: logger,
-                            )
+                            switch decision {
+                            case .allowed:
+                                await helperClient.ensureRunning()
+
+                            case let .cooldown(activeUntil):
+                                let delay = activeUntil.timeIntervalSinceNow
+                                if delay > 0 {
+                                    try? await Task.sleep(nanoseconds: UInt64(delay * 1_000_000_000))
+                                    let isRunning = await helperClient.isRunning()
+                                    if !isRunning {
+                                        let newDecision = policy.recordRestartAttempt()
+                                        switch newDecision {
+                                        case .allowed:
+                                            await helperClient.ensureRunning()
+                                        default:
+                                            break
+                                        }
+                                    }
+                                }
+
+                            case let .graceWindow(activeUntil):
+                                let delay = activeUntil.timeIntervalSinceNow
+                                if delay > 0 {
+                                    try? await Task.sleep(nanoseconds: UInt64(delay * 1_000_000_000))
+                                    let isRunning = await helperClient.isRunning()
+                                    if !isRunning {
+                                        let newDecision = policy.recordRestartAttempt()
+                                        switch newDecision {
+                                        case .allowed:
+                                            await helperClient.ensureRunning()
+                                        default:
+                                            break
+                                        }
+                                    }
+                                }
+                            }
                         }
                     }()
 
                     let initialState = await helperClient.resolveAlignedState(
                         stateClient: stateClient,
                         mainBundleVersion: currentBundleVersion,
-                        logger: logger,
                     )
                     _ = initialState
                     _ = await monitor
@@ -170,16 +183,11 @@ struct AppLifecycleFeature {
                 let helperAppClient = helperAppClient
                 return .merge(
                     .run { send in
-                        let logger = Logger(label: "Voyager")
-
                         await VoyagerTerminationCoordinator.shared.begin(.userQuit)
                         await send(.willTerminate)
 
-                        logger.info("app_terminate_cleanup_begin")
-
                         await helperAppClient.stop()
 
-                        logger.info("app_terminate_cleanup_done")
                         await send(.completeTerminationAttempt(attemptID: attemptID, shouldTerminate: true))
                     },
                     .run { send in
