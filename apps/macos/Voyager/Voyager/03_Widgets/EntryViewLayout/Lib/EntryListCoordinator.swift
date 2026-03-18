@@ -6,7 +6,7 @@ struct EntryListCoordinatorSortDescriptorChange: Equatable {
     let sortOrder: SortOrder
 }
 
-struct EntryListCoordinatorSortDescriptorSignature: Hashable {
+struct EntryListCoordinatorSortSignature: Hashable {
     var key: String?
     var ascending: Bool
 
@@ -22,13 +22,13 @@ struct EntryListCoordinatorSortDescriptorSignature: Hashable {
 }
 
 struct EntryListCoordinatorSortSyncGate {
-    private var suppressCountBySignature: [EntryListCoordinatorSortDescriptorSignature: Int] = [:]
+    private var suppressCountBySignature: [EntryListCoordinatorSortSignature: Int] = [:]
 
-    mutating func beginApply(_ signature: EntryListCoordinatorSortDescriptorSignature) {
+    mutating func beginApply(_ signature: EntryListCoordinatorSortSignature) {
         suppressCountBySignature[signature, default: 0] += 1
     }
 
-    mutating func consumeIfSuppressed(_ signature: EntryListCoordinatorSortDescriptorSignature) -> Bool {
+    mutating func consumeIfSuppressed(_ signature: EntryListCoordinatorSortSignature) -> Bool {
         guard let count = suppressCountBySignature[signature], count > 0 else { return false }
         if count == 1 {
             suppressCountBySignature[signature] = nil
@@ -144,7 +144,6 @@ struct EntryListCoordinatorRenderSnapshot: Equatable {
 }
 
 typealias EntryListSortDescriptorChange = EntryListCoordinatorSortDescriptorChange
-typealias EntryListSortDescriptorSignature = EntryListCoordinatorSortDescriptorSignature
 typealias EntryListSortSyncGate = EntryListCoordinatorSortSyncGate
 typealias EntryListSortDescriptorMapper = EntryListCoordinatorSortDescriptorMapper
 typealias EntryListDateFormatting = EntryListCoordinatorDateFormatting
@@ -281,7 +280,7 @@ final class EntryListCoordinator: NSObject {
             object: scrollView.contentView,
             queue: .main,
         ) { [weak self] _ in
-            Task { @MainActor [weak self] in
+            DispatchQueue.main.async { [weak self] in
                 self?.visibleRowsPrefetchThrottler.schedule { [weak self] in
                     self?.requestThumbnailsForVisibleRows()
                 }
@@ -304,6 +303,8 @@ final class EntryListCoordinator: NSObject {
     }
 
     func rebuildRowsAndReload() {
+        let previousGraph = (outlineItems, entryItemById, groupItemByName)
+
         outlineItems = makeOutlineItems(state: state)
         entryItemById = Dictionary(uniqueKeysWithValues: outlineItems.flatMap { $0.flattenEntries() })
         groupItemByName = Dictionary(uniqueKeysWithValues: outlineItems.compactMap { item in
@@ -319,6 +320,10 @@ final class EntryListCoordinator: NSObject {
         restoreScrollPositionIfNeeded()
         syncListRenamingFromStore()
         requestThumbnailsForVisibleRows()
+
+        DispatchQueue.main.async {
+            _ = previousGraph
+        }
     }
 
     func requestThumbnailsForVisibleRows() {
@@ -342,11 +347,19 @@ final class EntryListCoordinator: NSObject {
 
     func requestThumbnails(paths: Set<String>) {
         pruneThumbnailSession(keeping: paths)
+        let scale = NSScreen.main?.backingScaleFactor ?? 3.0
+        let size = CGSize(width: 256, height: 256)
+        let thumbnailGeneratorClient = thumbnailGeneratorClient
         for path in paths where thumbnailImagesByPath[path] == nil && thumbnailTasksByPath[path] == nil {
-            let task = Task(priority: .utility) { [weak self] in
-                guard let self else { return }
-                let image = await self.generateThumbnail(for: path)
-                self.finishThumbnailRequest(path: path, image: image)
+            let task = Task.detached(priority: .utility) { [weak self] in
+                let image = await thumbnailGeneratorClient.generateThumbnail(
+                    for: URL(fileURLWithPath: path),
+                    size: size,
+                    scale: scale,
+                )
+                await MainActor.run { [weak self] in
+                    self?.finishThumbnailRequest(path: path, image: image)
+                }
             }
             thumbnailTasksByPath[path] = task
         }
@@ -374,16 +387,6 @@ final class EntryListCoordinator: NSObject {
         }
         thumbnailTasksByPath.removeAll(keepingCapacity: false)
         thumbnailImagesByPath.removeAll(keepingCapacity: false)
-    }
-
-    func generateThumbnail(for path: String) async -> NSImage? {
-        let scale = await MainActor.run { NSScreen.main?.backingScaleFactor ?? 3.0 }
-        let size = CGSize(width: 256, height: 256)
-        return await thumbnailGeneratorClient.generateThumbnail(
-            for: URL(fileURLWithPath: path),
-            size: size,
-            scale: scale,
-        )
     }
 
     func saveScrollPosition() {
