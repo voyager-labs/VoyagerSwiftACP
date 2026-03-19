@@ -146,13 +146,13 @@ enum EntryOperationsCommandPlanner {
     private static func planOpenSelectedItem(_ selected: [EntryModel]) -> [EntryOperationsCommandOutput] {
         guard !selected.isEmpty else { return [] }
         if selected.count == 1, let entry = selected.first {
-            if entry.isFolder {
-                return [.delegate(.navigateToPath(entry.fullPath))]
-            }
-
             let url = URL(fileURLWithPath: entry.fullPath)
             if CollectionFileUtils.isCollectionFile(url) {
                 return [.delegate(.openCollectionFile(url))]
+            }
+
+            if entry.isFolder {
+                return [.delegate(.navigateToPath(entry.fullPath))]
             }
         }
         return [.entryOperations(.openFiles(paths: selected.map(\.fullPath)))]

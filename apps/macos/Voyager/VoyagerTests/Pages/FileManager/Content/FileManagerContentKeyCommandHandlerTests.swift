@@ -135,6 +135,47 @@ final class FileManagerContentKeyCommandHandlerTests: XCTestCase {
         }
     }
 
+    func testOpenSelectedItemRoutesVoycollPackageToCollectionNavigation() async {
+        let selected = makeEntry(
+            name: "Sample.voycoll",
+            fullPath: "/tmp/voyager/Sample.voycoll",
+            isFolder: true,
+            fileExtension: "voycoll",
+        )
+
+        var initialState = FileManagerContentState()
+        initialState.navigation.seedInitialFolderPath("/tmp/voyager")
+        initialState.entryViewLayout.entries = [selected]
+        initialState.entryViewLayout.selectedIds = [selected.id]
+
+        let store = TestStore(initialState: initialState) {
+            FileManagerContentFeature()
+        }
+        store.exhaustivity = .off
+
+        await store.send(.entryViewLayout(.delegate(.executeCommand(.navigation(.openSelectedItem)))))
+        await store.receive { action in
+            guard case let .entryViewLayout(.entryOperations(.executeCommand(command: command, context: context))) =
+                action
+            else { return false }
+            guard case .navigation(.openSelectedItem) = command else { return false }
+            return context.selectedIds == Set([selected.id])
+                && context.displayItems == [selected]
+                && context.currentPath == "/tmp/voyager"
+        }
+        await store.receive { action in
+            guard case let .entryViewLayout(.entryOperations(.delegate(.openCollectionFile(url)))) = action else {
+                return false
+            }
+            return url.path == "/tmp/voyager/Sample.voycoll"
+        }
+        await store.receive { action in
+            guard case let .requestNavigation(.view(.openCollectionFile(url))) = action else { return false }
+            return url.path == "/tmp/voyager/Sample.voycoll"
+        }
+        await store.finish()
+    }
+
     private func assertShortcutRoutesThroughSharedCommandContext(
         layout: ContentViewLayout,
         shortcut: KeyCommand,
@@ -173,21 +214,26 @@ final class FileManagerContentKeyCommandHandlerTests: XCTestCase {
         await store.finish()
     }
 
-    private func makeEntry(name: String, fullPath: String) -> EntryModel {
+    private func makeEntry(
+        name: String,
+        fullPath: String,
+        isFolder: Bool = false,
+        fileExtension: String = "txt",
+    ) -> EntryModel {
         let date = Date(timeIntervalSince1970: 1_700_000_000)
         return EntryModel(
             name: name,
             fullPath: fullPath,
-            isFolder: false,
+            isFolder: isFolder,
             isHidden: false,
             size: 1,
             modifiedDate: date,
-            fileExtension: "txt",
+            fileExtension: fileExtension,
             facets: EntryFacets(
                 createdDate: date,
                 addedDate: date,
                 lastOpenedDate: nil,
-                kind: "Text",
+                kind: isFolder ? "Folder" : "Text",
                 creatorApplication: nil,
                 tags: nil,
                 supplementaryMetadata: nil,
