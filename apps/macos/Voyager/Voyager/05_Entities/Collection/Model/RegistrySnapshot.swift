@@ -4,6 +4,7 @@ struct RegistrySnapshot: Sendable {
     let allProperties: [PropertyEntry]
     let propertyKeyToLabel: [String: String]
     let propertyKeyToType: [String: String]
+    let propertyKeyToUnitSpec: [String: SystemPropertyUnitSpec]
     let legacyKeyMap: [String: String]
     let operatorCodesByKey: [String: [String]]
     let operatorDefinitions: [String: OperatorDefinition]
@@ -13,6 +14,7 @@ struct RegistrySnapshot: Sendable {
         let properties: [PropertyEntry]
         let labels: [String: String]
         let types: [String: String]
+        let unitSpecs: [String: SystemPropertyUnitSpec]
         let legacyKeyMap: [String: String]
     }
 
@@ -34,6 +36,7 @@ struct RegistrySnapshot: Sendable {
         var properties: [PropertyEntry] = []
         var labels: [String: String] = [:]
         var types: [String: String] = [:]
+        var unitSpecs: [String: SystemPropertyUnitSpec] = [:]
         var legacyKeyMap: [String: String] = [:]
 
         for (categoryKey, entries) in systemRegistry.categories {
@@ -47,6 +50,9 @@ struct RegistrySnapshot: Sendable {
                 )
                 labels[key] = label
                 types[key] = definition.type
+                if let unitSpec = definition.unitSpec {
+                    unitSpecs[key] = unitSpec
+                }
                 if let legacyKeys = definition.legacyKeys {
                     for legacyKey in legacyKeys where legacyKeyMap[legacyKey] == nil {
                         legacyKeyMap[legacyKey] = key
@@ -65,6 +71,7 @@ struct RegistrySnapshot: Sendable {
             properties: properties,
             labels: labels,
             types: types,
+            unitSpecs: unitSpecs,
             legacyKeyMap: legacyKeyMap,
         )
     }
@@ -123,6 +130,7 @@ struct RegistrySnapshot: Sendable {
             allProperties: propertyBuild.properties,
             propertyKeyToLabel: propertyBuild.labels,
             propertyKeyToType: propertyBuild.types,
+            propertyKeyToUnitSpec: propertyBuild.unitSpecs,
             legacyKeyMap: propertyBuild.legacyKeyMap,
             operatorCodesByKey: operatorMap,
             operatorDefinitions: conditionRegistry.operators,

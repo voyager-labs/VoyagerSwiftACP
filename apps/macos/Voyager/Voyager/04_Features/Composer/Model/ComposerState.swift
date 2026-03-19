@@ -4,6 +4,12 @@ import Foundation
 struct FilterSnapshot: Equatable {
     let scopes: [String]
     let conditions: [Condition]
+    let conditionDisplayByKey: [String: ConditionDisplayState]
+}
+
+struct ConditionDisplayState: Equatable {
+    var values: [String]
+    var unitValueState: UnitValueState?
 }
 
 @ObservableState
@@ -22,6 +28,7 @@ struct ComposerState: Equatable {
     var text: String = ""
     var scopes: [String] = []
     var conditions: [Condition] = []
+    var conditionDisplayByKey: [String: ConditionDisplayState] = [:]
     var operatorOptionsByKey: [String: [String]] = [:]
     var focusRequestID: Int = 0
 
@@ -53,7 +60,13 @@ struct ComposerState: Equatable {
     }
 
     mutating func pushHistory() {
-        history.append(FilterSnapshot(scopes: scopes, conditions: conditions))
+        history.append(
+            FilterSnapshot(
+                scopes: scopes,
+                conditions: conditions,
+                conditionDisplayByKey: conditionDisplayByKey,
+            ),
+        )
         if history.count > 100 {
             history.removeFirst(history.count - 100)
         }

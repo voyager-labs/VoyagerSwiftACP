@@ -101,6 +101,7 @@ final class OperatorValueInputContractTests: XCTestCase {
             allProperties: { [] },
             labelForKey: { _ in "Name" },
             propertyTypeString: { _ in "date" },
+            propertyUnitSpec: { _ in nil },
             operatorCodes: { _ in ["exists", "btw"] },
             operatorDefinition: { code in
                 switch code {

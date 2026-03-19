@@ -17,10 +17,15 @@ struct ComposerHistoryReducer {
                 guard !state.isLoadingSearch else { return .none }
                 let before = buildFilters(from: state)
                 guard let previous = state.history.popLast() else { return .none }
-                let current = FilterSnapshot(scopes: state.scopes, conditions: state.conditions)
+                let current = FilterSnapshot(
+                    scopes: state.scopes,
+                    conditions: state.conditions,
+                    conditionDisplayByKey: state.conditionDisplayByKey,
+                )
                 state.redoHistory.append(current)
                 state.scopes = previous.scopes
                 state.conditions = previous.conditions
+                state.conditionDisplayByKey = previous.conditionDisplayByKey
                 updateOperatorOptions(state: &state, registryClient: registryClient)
                 let after = buildFilters(from: state)
                 if before != after {
@@ -32,10 +37,15 @@ struct ComposerHistoryReducer {
                 guard !state.isLoadingSearch else { return .none }
                 let before = buildFilters(from: state)
                 guard let next = state.redoHistory.popLast() else { return .none }
-                let current = FilterSnapshot(scopes: state.scopes, conditions: state.conditions)
+                let current = FilterSnapshot(
+                    scopes: state.scopes,
+                    conditions: state.conditions,
+                    conditionDisplayByKey: state.conditionDisplayByKey,
+                )
                 state.history.append(current)
                 state.scopes = next.scopes
                 state.conditions = next.conditions
+                state.conditionDisplayByKey = next.conditionDisplayByKey
                 updateOperatorOptions(state: &state, registryClient: registryClient)
                 let after = buildFilters(from: state)
                 if before != after {

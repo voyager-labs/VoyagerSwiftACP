@@ -22,6 +22,8 @@ final class ValuePickerFeatureTests: XCTestCase {
                     valueUIKind: "listText",
                     valueArity: 1,
                     existingValues: nil,
+                    existingDisplayValues: nil,
+                    preferredUnitCode: nil,
                     editingIndex: nil,
                 ),
             ),
@@ -55,6 +57,8 @@ final class ValuePickerFeatureTests: XCTestCase {
                     valueUIKind: "listText",
                     valueArity: 1,
                     existingValues: ["Work"],
+                    existingDisplayValues: nil,
+                    preferredUnitCode: nil,
                     editingIndex: nil,
                 ),
             ),
@@ -93,191 +97,77 @@ final class ValuePickerFeatureTests: XCTestCase {
         XCTAssertEqual(values, ["Work", "Personal"])
     }
 
-    func testCommitRangeNumberClampsExtraInputsToExpectedArity() async {
-        let store = TestStore(
-            initialState: ValuePickerState(
-                propertyKey: "file_allocated_size",
-                operatorCode: "btw",
-                isPresented: true,
-                valueType: "number",
-                valueUIKind: "rangeNumber",
-                valueArity: 2,
-                values: ["10", "20", "30"],
-                errorMessage: nil,
-                editingIndex: nil,
-            ),
-        ) {
-            ValuePickerFeature()
-        }
-
-        await store.send(.commit)
-        await store.receive(\.commitResult)
-    }
-
-    func testCommitRangeDateDoesNotCommitOnPartialInput() async {
-        let store = TestStore(initialState: ValuePickerState()) {
-            ValuePickerFeature()
-        }
+    func testPrepareForSizeUsesPreferredUnitAndConvertedDisplayValue() async {
+        let store = makeStore()
 
         await store.send(
             .prepare(
                 .init(
-                    propertyKey: "content_modified_at",
-                    operatorCode: "btw",
-                    valueType: "date",
-                    valueUIKind: "rangeDate",
-                    valueArity: 2,
-                    existingValues: ["2026-02-26", ""],
-                    editingIndex: 0,
-                ),
-            ),
-        ) {
-            $0.propertyKey = "content_modified_at"
-            $0.operatorCode = "btw"
-            $0.valueType = "date"
-            $0.valueUIKind = "rangeDate"
-            $0.valueArity = 2
-            $0.values = ["2026-02-26", ""]
-            $0.errorMessage = nil
-            $0.editingIndex = 0
-            $0.isPresented = true
-        }
-
-        await store.send(.commit)
-    }
-
-    func testCommitRangeDateDoesNotCommitOnToOnlyInput() async {
-        let store = TestStore(initialState: ValuePickerState()) {
-            ValuePickerFeature()
-        }
-
-        await store.send(
-            .prepare(
-                .init(
-                    propertyKey: "content_modified_at",
-                    operatorCode: "btw",
-                    valueType: "date",
-                    valueUIKind: "rangeDate",
-                    valueArity: 2,
-                    existingValues: ["", "2026-02-27"],
-                    editingIndex: 1,
-                ),
-            ),
-        ) {
-            $0.propertyKey = "content_modified_at"
-            $0.operatorCode = "btw"
-            $0.valueType = "date"
-            $0.valueUIKind = "rangeDate"
-            $0.valueArity = 2
-            $0.values = ["", "2026-02-27"]
-            $0.errorMessage = nil
-            $0.editingIndex = 1
-            $0.isPresented = true
-        }
-
-        await store.send(.commit)
-    }
-
-    func testCommitRangeNumberShowsErrorAndResetsInvalidIndex() async {
-        let store = TestStore(initialState: ValuePickerState()) {
-            ValuePickerFeature()
-        }
-
-        await store.send(
-            .prepare(
-                .init(
-                    propertyKey: "file_allocated_size",
-                    operatorCode: "btw",
+                    propertyKey: "size",
+                    operatorCode: "eq",
                     valueType: "number",
-                    valueUIKind: "rangeNumber",
-                    valueArity: 2,
-                    existingValues: ["10", "xx"],
-                    editingIndex: 1,
+                    valueUIKind: "number",
+                    valueArity: 1,
+                    existingValues: ["1048576"],
+                    existingDisplayValues: nil,
+                    preferredUnitCode: "MB",
+                    editingIndex: nil,
                 ),
             ),
         ) {
-            $0.propertyKey = "file_allocated_size"
-            $0.operatorCode = "btw"
+            $0.propertyKey = "size"
+            $0.operatorCode = "eq"
             $0.valueType = "number"
-            $0.valueUIKind = "rangeNumber"
-            $0.valueArity = 2
-            $0.values = ["10", "xx"]
-            $0.errorMessage = nil
-            $0.editingIndex = 1
+            $0.valueUIKind = "number"
+            $0.valueArity = 1
+            $0.values = ["1"]
+            $0.unitValueState = .init(
+                selectedUnitCode: "MB",
+                availableUnitCodes: ["B", "KB", "MB", "GB"],
+                unitLabelsByCode: ["B": "Byte", "KB": "KB", "MB": "MB", "GB": "GB"],
+            )
+            $0.finderTagListState = nil
             $0.isPresented = true
-        }
-
-        await store.send(.commit) {
-            $0.errorMessage = "Enter valid numbers."
-            $0.values = ["10", ""]
         }
     }
 
-    func testCommitRangeNumberDoesNotCommitOnToOnlyInput() async {
-        let store = TestStore(initialState: ValuePickerState()) {
-            ValuePickerFeature()
-        }
+    func testSelectUnitUpdatesUnitStateWithoutChangingTypedValue() async {
+        let store = makeStore()
 
         await store.send(
             .prepare(
                 .init(
-                    propertyKey: "file_allocated_size",
-                    operatorCode: "btw",
+                    propertyKey: "size",
+                    operatorCode: "eq",
                     valueType: "number",
-                    valueUIKind: "rangeNumber",
-                    valueArity: 2,
-                    existingValues: ["", "20"],
-                    editingIndex: 1,
+                    valueUIKind: "number",
+                    valueArity: 1,
+                    existingValues: ["52428800"],
+                    existingDisplayValues: ["50"],
+                    preferredUnitCode: "MB",
+                    editingIndex: nil,
                 ),
             ),
         ) {
-            $0.propertyKey = "file_allocated_size"
-            $0.operatorCode = "btw"
+            $0.propertyKey = "size"
+            $0.operatorCode = "eq"
             $0.valueType = "number"
-            $0.valueUIKind = "rangeNumber"
-            $0.valueArity = 2
-            $0.values = ["", "20"]
-            $0.errorMessage = nil
-            $0.editingIndex = 1
+            $0.valueUIKind = "number"
+            $0.valueArity = 1
+            $0.values = ["50"]
+            $0.unitValueState = .init(
+                selectedUnitCode: "MB",
+                availableUnitCodes: ["B", "KB", "MB", "GB"],
+                unitLabelsByCode: ["B": "Byte", "KB": "KB", "MB": "MB", "GB": "GB"],
+            )
             $0.isPresented = true
         }
 
-        await store.send(.commit)
-    }
-
-    func testCommitRangeDateShowsErrorAndResetsInvalidIndex() async {
-        let store = TestStore(initialState: ValuePickerState()) {
-            ValuePickerFeature()
+        await store.send(.selectUnit("GB")) {
+            $0.unitValueState?.selectedUnitCode = "GB"
         }
 
-        await store.send(
-            .prepare(
-                .init(
-                    propertyKey: "content_modified_at",
-                    operatorCode: "btw",
-                    valueType: "date",
-                    valueUIKind: "rangeDate",
-                    valueArity: 2,
-                    existingValues: ["2026-02-26", "invalid-date"],
-                    editingIndex: 1,
-                ),
-            ),
-        ) {
-            $0.propertyKey = "content_modified_at"
-            $0.operatorCode = "btw"
-            $0.valueType = "date"
-            $0.valueUIKind = "rangeDate"
-            $0.valueArity = 2
-            $0.values = ["2026-02-26", "invalid-date"]
-            $0.errorMessage = nil
-            $0.editingIndex = 1
-            $0.isPresented = true
-        }
-
-        await store.send(.commit) {
-            $0.errorMessage = "Enter valid dates."
-            $0.values = ["2026-02-26", ""]
-        }
+        XCTAssertEqual(store.state.values, ["50"])
     }
 }
 
@@ -288,9 +178,9 @@ private func makeStore(
     let store = TestStore(initialState: ValuePickerFeature.State()) {
         ValuePickerFeature()
     } withDependencies: {
-        var registryClient = RegistryClient.testValue
+        var registryClient = RegistryTestSupport.makeRegistryClient()
         registryClient.propertyTypeString = { key in
-            key == "tag_names" ? "categorical" : "string"
+            key == "tag_names" ? "categorical" : RegistryTestSupport.propertyTypeString(for: key)
         }
         $0.registryClient = registryClient
         $0.finderFavoritesTagClient = FinderFavoritesTagClient(

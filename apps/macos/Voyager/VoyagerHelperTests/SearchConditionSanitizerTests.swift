@@ -9,7 +9,7 @@ final class SearchConditionSanitizerTests: XCTestCase {
         let conditions: [SearchConditionPayload] = [
             .init(propertyKey: "name_stem", operator: "is", value: .string("report")),
             .init(propertyKey: "name_stem", operator: "starts with", value: .string("rep")),
-            .init(propertyKey: "file_allocated_size", operator: "between", value: .array([.number(1), .number(10)])),
+            .init(propertyKey: "size", operator: "between", value: .array([.number(1), .number(10)])),
         ]
 
         let result = sanitizer.normalizeAndValidate(conditions)
@@ -25,7 +25,7 @@ final class SearchConditionSanitizerTests: XCTestCase {
         let conditions: [SearchConditionPayload] = [
             .init(propertyKey: "name_stem", operator: "ends with", value: .string("log")),
             .init(
-                propertyKey: "file_allocated_size",
+                propertyKey: "size",
                 operator: "not between",
                 value: .array([.number(10), .number(20)]),
             ),
@@ -56,7 +56,7 @@ final class SearchConditionSanitizerTests: XCTestCase {
         let sanitizer = try makeSanitizer()
         let conditions: [SearchConditionPayload] = [
             .init(propertyKey: "name_stem", operator: "equals", value: .string("report")),
-            .init(propertyKey: "file_allocated_size", operator: "starts with", value: .string("1")),
+            .init(propertyKey: "size", operator: "starts with", value: .string("1")),
         ]
 
         let result = sanitizer.normalizeAndValidate(conditions)
@@ -85,7 +85,7 @@ final class SearchConditionSanitizerTests: XCTestCase {
     func testNormalizeAndValidateRequiresRangeShapeForBetweenAlias() throws {
         let sanitizer = try makeSanitizer()
         let conditions: [SearchConditionPayload] = [
-            .init(propertyKey: "file_allocated_size", operator: "between", value: .array([.number(1)])),
+            .init(propertyKey: "size", operator: "between", value: .array([.number(1)])),
         ]
 
         let result = sanitizer.normalizeAndValidate(conditions)
@@ -95,7 +95,7 @@ final class SearchConditionSanitizerTests: XCTestCase {
     func testNormalizeAndValidateRequiresRangeShapeForNotBetweenAlias() throws {
         let sanitizer = try makeSanitizer()
         let conditions: [SearchConditionPayload] = [
-            .init(propertyKey: "file_allocated_size", operator: "not between", value: .array([.number(10)])),
+            .init(propertyKey: "size", operator: "not between", value: .array([.number(10)])),
         ]
 
         let result = sanitizer.normalizeAndValidate(conditions)
@@ -106,8 +106,8 @@ final class SearchConditionSanitizerTests: XCTestCase {
         let sanitizer = try makeSanitizer()
         let conditions: [SearchConditionPayload] = [
             .init(propertyKey: "name_stem", operator: "regex", value: .string("report.*2026")),
-            .init(propertyKey: "file_allocated_size", operator: "!=", value: .number(100)),
-            .init(propertyKey: "file_allocated_size", operator: ">=", value: .number(1024)),
+            .init(propertyKey: "size", operator: "!=", value: .number(100)),
+            .init(propertyKey: "size", operator: ">=", value: .number(1024)),
             .init(propertyKey: "creation_date", operator: "before", value: .string("2026-01-01")),
         ]
 
@@ -121,12 +121,12 @@ final class SearchConditionSanitizerTests: XCTestCase {
                 && $0.value == .string("2026-01-01")
         })?.operator, "lt")
         XCTAssertTrue(result.contains(where: {
-            $0.propertyKey == "file_allocated_size"
+            $0.propertyKey == "size"
                 && $0.operator == "gte"
                 && $0.value == .number(1024)
         }))
         XCTAssertTrue(result.contains(where: {
-            $0.propertyKey == "file_allocated_size"
+            $0.propertyKey == "size"
                 && $0.operator == "neq"
                 && $0.value == .number(100)
         }))

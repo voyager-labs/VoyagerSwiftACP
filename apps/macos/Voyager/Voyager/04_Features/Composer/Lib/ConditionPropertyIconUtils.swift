@@ -4,7 +4,7 @@ enum ConditionPropertyIconUtils {
     // TODO: 프로퍼티 아이콘 매핑 정책을 재정의하고(SSOT), 레지스트리 메타데이터/카테고리 기준으로 일관되게 매핑되도록 정리한다.
     private static let keyIconMap: [String: String] = [
         "name": "doc.text",
-        "file_allocated_size": "arrow.up.left.and.arrow.down.right",
+        "size": "arrow.up.left.and.arrow.down.right",
         "content_type": "doc.text.magnifyingglass",
         "kind": "tag",
         "is_hidden": "eye.slash",

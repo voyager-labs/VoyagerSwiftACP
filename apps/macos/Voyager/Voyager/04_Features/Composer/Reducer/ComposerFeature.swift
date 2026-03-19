@@ -77,6 +77,7 @@ struct ComposerFeature {
                  .view(.cancelSearch),
                  .view(.cancelFilters),
                  .view(.applyFilters),
+                 .view(.setDisplayUnit),
                  .view(.addCondition),
                  .view(.removeCondition),
                  .view(.setOperator),
@@ -137,6 +138,7 @@ func applyAppliedFilters(
     state: inout ComposerFeature.State,
     registryClient: RegistryClient,
 ) {
+    let previousDisplayByKey = state.conditionDisplayByKey
     let resolved = AppliedFiltersUtils.resolve(
         appliedFilters,
         fallbackScopes: state.scopes,
@@ -145,16 +147,73 @@ func applyAppliedFilters(
     )
     state.scopes = resolved.scopes
     state.conditions = resolved.conditions
+    state.conditionDisplayByKey = Dictionary(
+        uniqueKeysWithValues: resolved.conditions.compactMap { condition in
+            let displayState: ConditionDisplayState? = if let previous = previousDisplayByKey[condition.propertyKey] {
+                reconcileDisplayState(
+                    for: condition,
+                    previous: previous,
+                    registryClient: registryClient,
+                )
+            } else {
+                defaultDisplayState(for: condition, registryClient: registryClient)
+            }
+            guard let displayState else { return nil }
+            return (condition.propertyKey, displayState)
+        },
+    )
     updateOperatorOptions(state: &state, registryClient: registryClient)
 }
 
+func defaultDisplayState(
+    for condition: Condition,
+    registryClient: RegistryClient,
+) -> ConditionDisplayState? {
+    guard condition.valueType == "number",
+          let spec = UnitValueUtils.spec(for: condition.propertyKey, registryClient: registryClient)
+    else {
+        return nil
+    }
+
+    let unitValueState = UnitValuePresentationUtils.makeState(spec: spec)
+    let unitCode = unitValueState.selectedUnitCode
+    let displayValues = (condition.values ?? []).map { value in
+        let trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return "" }
+        return UnitValueUtils.fromCanonical(canonicalText: trimmed, to: unitCode, spec: spec) ?? trimmed
+    }
+
+    return .init(values: displayValues, unitValueState: unitValueState)
+}
+
+private func reconcileDisplayState(
+    for condition: Condition,
+    previous: ConditionDisplayState,
+    registryClient: RegistryClient,
+) -> ConditionDisplayState? {
+    guard let previousUnitValueState = previous.unitValueState,
+          let spec = UnitValueUtils.spec(for: condition.propertyKey, registryClient: registryClient),
+          UnitValueUtils.unitCodes(spec: spec).contains(previousUnitValueState.selectedUnitCode)
+    else {
+        return defaultDisplayState(for: condition, registryClient: registryClient)
+    }
+    let values = condition.values ?? []
+    let unitCode = previousUnitValueState.selectedUnitCode
+
+    let displayValues = values.map { value -> String in
+        let trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return "" }
+        return UnitValueUtils.fromCanonical(canonicalText: trimmed, to: unitCode, spec: spec) ?? trimmed
+    }
+
+    return .init(
+        values: displayValues,
+        unitValueState: UnitValuePresentationUtils.makeState(spec: spec, preferredUnitCode: unitCode),
+    )
+}
+
 func resetValuePicker(state: inout ComposerFeature.State) {
-    state.valuePicker.isPresented = false
-    state.valuePicker.propertyKey = nil
-    state.valuePicker.operatorCode = nil
-    state.valuePicker.values = []
-    state.valuePicker.errorMessage = nil
-    state.valuePicker.editingIndex = nil
+    state.valuePicker = .init()
 }
 
 func applyFiltersIfNeeded(
