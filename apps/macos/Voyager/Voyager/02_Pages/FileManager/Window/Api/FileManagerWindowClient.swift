@@ -88,6 +88,21 @@ extension DependencyValues {
 @MainActor private var fileManagerWindowControllers: [FileManagerWindowCoordinator] = []
 
 @MainActor
+func resolveFileManagerUndoManager(windowID: UUID?) -> UndoManager? {
+    if let windowID, let controller = fileManagerWindowControllersByID[windowID] {
+        return controller.windowUndoManager
+    }
+
+    if let keyWindow = NSApp.keyWindow,
+       let controller = fileManagerWindowControllers.first(where: { $0.window === keyWindow })
+    {
+        return controller.windowUndoManager
+    }
+
+    return (NSApp.keyWindow?.firstResponder as? NSResponder)?.undoManager
+}
+
+@MainActor
 func makeFileManagerWindowClientLive() -> FileManagerWindowClient {
     .init(
         open: { id in

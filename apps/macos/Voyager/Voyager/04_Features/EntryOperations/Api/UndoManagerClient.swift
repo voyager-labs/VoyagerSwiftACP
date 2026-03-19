@@ -32,14 +32,42 @@ struct UndoManagerClient: Sendable {
 extension UndoManagerClient: DependencyKey {
     nonisolated static var liveValue: UndoManagerClient {
         .init(
-            registerUndo: { _, _, _, _ in
-                fatalError("undoManagerClient.registerUndo live dependency is not configured")
+            registerUndo: { windowID, record, onUndo, onRedo in
+                await MainActor.run {
+                    guard let undoManager = resolveFileManagerUndoManager(windowID: windowID) else {
+                        assertionFailure("undoManagerClient.registerUndo live dependency is not configured")
+                        return
+                    }
+
+                    let handlerStore = UndoManagerHandlerStore.store(for: undoManager)
+                    let handler = UndoManagerHandler(
+                        undoManager: undoManager,
+                        onUndo: onUndo,
+                        onRedo: onRedo,
+                    )
+                    handlerStore.add(handler)
+                    undoManager.registerUndo(withTarget: handler) { target in
+                        target.handleUndo(record)
+                    }
+                }
             },
-            undo: { _ in
-                fatalError("undoManagerClient.undo live dependency is not configured")
+            undo: { windowID in
+                await MainActor.run {
+                    guard let undoManager = resolveFileManagerUndoManager(windowID: windowID) else {
+                        assertionFailure("undoManagerClient.undo live dependency is not configured")
+                        return
+                    }
+                    undoManager.undo()
+                }
             },
-            redo: { _ in
-                fatalError("undoManagerClient.redo live dependency is not configured")
+            redo: { windowID in
+                await MainActor.run {
+                    guard let undoManager = resolveFileManagerUndoManager(windowID: windowID) else {
+                        assertionFailure("undoManagerClient.redo live dependency is not configured")
+                        return
+                    }
+                    undoManager.redo()
+                }
             },
         )
     }

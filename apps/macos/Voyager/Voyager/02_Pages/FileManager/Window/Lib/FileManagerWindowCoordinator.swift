@@ -90,7 +90,7 @@ final class FileManagerWindowCoordinator: NSWindowController, NSWindowDelegate {
         fatalError("init(coder:) has not been implemented")
     }
 
-    private static func createInitialState(
+    static func createInitialState(
         windowID: UUID,
         path: String?,
         duplicateState: FileManagerFeature.State?,
@@ -106,7 +106,7 @@ final class FileManagerWindowCoordinator: NSWindowController, NSWindowDelegate {
             state.content.entryViewLayout.entryOperations.windowID = windowID
         }
 
-        if duplicateState == nil, let path {
+        if let path {
             state.content.navigation.seedInitialFolderPath(path)
         }
 
