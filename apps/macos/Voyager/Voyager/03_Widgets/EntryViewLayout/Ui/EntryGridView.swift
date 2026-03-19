@@ -5,6 +5,7 @@ import SwiftUI
 @MainActor
 struct EntryGridViewRepresentable: NSViewRepresentable {
     let store: StoreOf<EntryViewLayoutFeature>
+    let contentStore: StoreOf<FileManagerContentFeature>
 
     func makeCoordinator() -> EntryGridCoordinator {
         EntryGridCoordinator(store: store)
@@ -13,11 +14,25 @@ struct EntryGridViewRepresentable: NSViewRepresentable {
     func makeNSView(context: Context) -> EntryGridView {
         let view = EntryGridView()
         context.coordinator.bind(to: view)
+        configureBlankSpaceMenu(for: view)
         return view
     }
 
     func updateNSView(_ view: EntryGridView, context: Context) {
         context.coordinator.updateView(view)
+        configureBlankSpaceMenu(for: view)
+    }
+
+    private func configureBlankSpaceMenu(for view: EntryGridView) {
+        let coordinator = ContentPaneContextMenuCoordinator(store: contentStore)
+        view.collectionView.blankSpaceContextMenuCoordinator = coordinator
+        view.collectionView.blankSpaceContextMenuProvider = { [weak coordinator] in
+            guard let coordinator else { return NSMenu() }
+            return ContentPaneContextMenuBuilder.makeMenu(
+                configuration: coordinator.configuration,
+                target: coordinator,
+            )
+        }
     }
 }
 
@@ -28,6 +43,8 @@ final class EntryGridView: NSView {
 
     final class EntryGridCollectionView: NSCollectionView {
         weak var contextMenuProvider: EntryGridCollectionViewMenuProviding?
+        var blankSpaceContextMenuProvider: (() -> NSMenu)?
+        var blankSpaceContextMenuCoordinator: AnyObject?
         var onSelectionDrag: (() -> Void)?
         var onLassoSelectionIndexPathsChanged: ((Set<IndexPath>, Bool) -> Void)?
         var onLassoActiveChanged: ((Bool) -> Void)?
@@ -56,9 +73,17 @@ final class EntryGridView: NSView {
 
         override func rightMouseDown(with event: NSEvent) {
             let location = convert(event.locationInWindow, from: nil)
-            if let indexPath = indexPathForItem(at: location),
-               !selectionIndexPaths.contains(indexPath)
-            {
+            guard let indexPath = indexPathForItem(at: location) else {
+                deselectAll(nil)
+                if let menu = blankSpaceContextMenuProvider?() {
+                    NSMenu.popUpContextMenu(menu, with: event, for: self)
+                    return
+                }
+                super.rightMouseDown(with: event)
+                return
+            }
+
+            if !selectionIndexPaths.contains(indexPath) {
                 selectItems(at: [indexPath], scrollPosition: [])
             }
             super.rightMouseDown(with: event)
@@ -149,6 +174,7 @@ final class EntryGridView: NSView {
         override func menu(for event: NSEvent) -> NSMenu? {
             let location = convert(event.locationInWindow, from: nil)
             let indexPath = indexPathForItem(at: location)
+            guard let indexPath else { return nil }
             return contextMenuProvider?.contextMenu(for: indexPath, event: event)
         }
     }
