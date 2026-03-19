@@ -35,6 +35,7 @@ Use this skill for Voyager macOS TCA/FSD work.
 6. Escalate to architecture, boundary, or testing references only when the task actually changes those concerns.
 7. Execute checks from `references/verification.md`.
 8. For Xcode project listing, build, or test execution, prefer `references/xcodebuildmcp-workflow.md` over raw `xcodebuild` CLI instructions.
+9. When a task changes `State`/`Action`/reducer ownership, apply the action-taxonomy and reducer-composition heuristics from `references/development-rules.md` before choosing a split.
 
 This skill routes internally. Do not ask the user to pick a mode.
 
@@ -98,6 +99,8 @@ Do not read every reference blindly. Start with the always-on references, then a
 - Keep orchestration in `Reducer/*Feature.swift`.
 - Avoid splitting TCA core types through `State+*`, `Action+*`, `Feature+*`, or `Reducer+*` files when that spread starts to hide state movement and ownership.
 - If a flow grows too large, extract dedicated model types, helper/coordinator types, or child features/reducers and compose them explicitly from the parent.
+- Do not force one action taxonomy on every feature; prefer `view` / `internal` / `delegate` for UI-facing features and allow domain-family nested actions for operation/orchestration hubs when that better matches reducer ownership.
+- Choose `Scope` for real child boundaries with dedicated substate/action, and prefer reducer-module composition when multiple concerns still share the same parent state/action.
 - UI adapters (SwiftUI views, representables, coordinators) emit only `Action.view`/`@ViewAction` actions for the feature store they are initialized with.
 - In UIKit/AppKit coordinators, react to feature state via TCA `observe { ... }`, not `store.publisher`/`sink`.
 - Do not introduce Combine-based state subscriptions in coordinators.

@@ -12,6 +12,16 @@ Use this file to accumulate Voyager-local development heuristics that are reusab
 - If an existing type can absorb the change by adding properties or well-scoped behavior without breaking ownership, prefer extending that type over creating a sibling wrapper or near-duplicate model.
 - Create a new model/object/reducer only when the responsibility is large enough to deserve its own clearly named scope, not just to make one call site look cleaner.
 - Avoid compatibility-only shells that merely wrap an existing type or flow without owning new behavior, new boundaries, or meaningful complexity reduction.
+- Do not force a single Action taxonomy on every Voyager feature.
+- Do not leave reducer composition style entirely to local preference when it changes ownership shape or feature boundaries.
+- Prefer `Scope` when a child owns dedicated substate/action and forms a real feature boundary with reuse, lifecycle, or independent test value.
+- Prefer reducer-module composition (for example `CombineReducers` or explicit parent-owned reducer assembly) when multiple concerns still share the same parent state/action and do not deserve separate child feature boundaries.
+- Avoid large non-trivial same-file private helper reducer `.merge` structures when dedicated reducer modules would make ownership clearer.
+- For UI-facing features, prefer `view` / `internal` / `delegate` (+ child action) families.
+- For operation/orchestration hubs whose reducers are already split by domain, domain-family nested actions are allowed and often preferred.
+- Do not mirror reducer filenames 1:1 into action namespaces; choose stable domain families instead.
+- Keep cross-cutting status, metrics, and lifecycle actions flat or narrowly grouped when domain nesting would reduce clarity.
+- Optimize for readability and ownership clarity, not taxonomy purity.
 - Keep Voyager-specific heuristics here until they become stable enough to enforce repo-wide, then promote them into `.agents/rules/**`.
 
 ## Promotion test
