@@ -54,10 +54,6 @@ final class FileManagerWindowCommandRoutingTests: XCTestCase {
                 if case .clipboard(.duplicateSelectedItems) = $0 { return true }
                 return false
             }),
-            (.makeAlias, {
-                if case .mutation(.createAliasForSelectedItems) = $0 { return true }
-                return false
-            }),
             (.copyAbsolutePaths, {
                 if case .clipboard(.copySelectedAbsolutePaths) = $0 { return true }
                 return false

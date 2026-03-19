@@ -64,15 +64,6 @@ final class FileManagerContentKeyCommandHandlerTests: XCTestCase {
                     return true
                 },
             )
-
-            await assertShortcutRoutesThroughSharedCommandContext(
-                layout: layout,
-                shortcut: .init(keyCode: 37, modifiers: [.command], characters: "l", charactersIgnoringModifiers: "l"),
-                commandMatches: {
-                    guard case .mutation(.createAliasForSelectedItems) = $0 else { return false }
-                    return true
-                },
-            )
         }
     }
 
