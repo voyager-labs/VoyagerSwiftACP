@@ -76,4 +76,17 @@ Widget rule:
 - Check whether a new external boundary should become an `Api/*Client.swift` instead of leaking into `Ui/` or `Lib/`.
 - Check whether the module should own a `Lib/*Coordinator.swift` instead of pushing SDK delegate/lifecycle orchestration into `Ui/`.
 - Check whether the new client belongs in the nearest slice `Api/` or should live in `01_App/Api` / `06_Shared/Api`.
-- Check whether the slice boundary would still make sense if later extracted into a package target.
+- Check whether the slice boundary would still make sense if later extracted into a package target; if that question matters, load `package-extraction-posture.md`.
+
+## Required output
+
+- `layer`
+  - chosen layer plus one-line ownership rationale
+- `slice-boundary`
+  - stable external surface the slice should expose
+- `segments`
+  - selected segments plus intentionally omitted segments
+- `file-plan`
+  - files to create or modify, including the minimum `Model/*State`, `Model/*Action`, and `Reducer/*Feature` set when the slice is non-trivial
+- `verification`
+  - focused tests, search checks, and formatting/lint commands to run after the scaffold lands

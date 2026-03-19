@@ -1,6 +1,6 @@
 ---
 name: voyager-dev
-description: Unified Voyager(macOS) workflow for TCA + FSD changes. Use this whenever working in `apps/macos/Voyager/Voyager/**`, especially for State/Action/Reducer refactors, feature decomposition, external observation ownership, model splits, or reuse discovery, even if the user does not explicitly mention `voyager-dev`.
+description: Unified Voyager(macOS) workflow for TCA + FSD changes. Use this whenever working in `apps/macos/Voyager/Voyager/**` to scaffold a new slice/module, refactor State/Action/Reducer ownership, split a large feature into parent/child reducers, move external/system observation out of views, evaluate reuse candidates, or enforce Voyager layer and public-boundary rules, even if the user does not explicitly mention `voyager-dev`.
 compatibility: opencode
 metadata:
     area: macos
@@ -21,20 +21,70 @@ Use this skill for Voyager macOS TCA/FSD work.
 ## Workflow
 
 1. Classify the task shape before editing.
-    - New module or feature shell -> load `references/scaffold-spec.md`.
-    - Large reducer/feature split or ownership cleanup -> load `references/orchestrator-spec.md`.
-    - View-owned external/system observation -> load `references/observation-lifecycle-spec.md`.
-    - Reuse/discovery question or duplication risk -> load `references/reuse-discovery-spec.md`, `references/architecture-gate-spec.md`, and `references/decision-matrix.md`.
-2. Always apply common guidance from:
+    - `scaffold`: new module or feature shell.
+    - `decompose`: large reducer/feature split or ownership cleanup.
+    - `observation-refactor`: view-owned external/system observation.
+    - `reuse-guard`: reuse/discovery question or duplication risk.
+2. Load only the references needed for the task shape from the reference map below.
+3. Always apply common guidance from:
     - `references/development-rules.md`
-    - `references/macos-architecture-shape.md`
-    - `references/public-boundary-spec.md`
     - `references/tca-contract.md`
-    - `references/testing-playbook.md`
-3. Load every relevant playbook, not just one, when the change spans multiple task shapes.
-4. Execute checks from `references/verification.md`.
+    - `references/verification.md`
+4. Load every relevant playbook, not just one, when the change spans multiple task shapes.
+5. Emit the task-shape deliverable described below.
+6. Escalate to architecture, boundary, or testing references only when the task actually changes those concerns.
+7. Execute checks from `references/verification.md`.
+8. For Xcode project listing, build, or test execution, prefer `references/xcodebuildmcp-workflow.md` over raw `xcodebuild` CLI instructions.
 
 This skill routes internally. Do not ask the user to pick a mode.
+
+## Reference map
+
+- Always
+    - `references/development-rules.md`
+    - `references/tca-contract.md`
+    - `references/verification.md`
+- Any task needing Xcode project listing, build, or test execution
+    - `references/xcodebuildmcp-workflow.md`
+- `scaffold`
+    - `references/layer-and-segment-rules.md`
+    - `references/public-boundary-spec.md`
+    - `references/package-extraction-posture.md`
+        - `references/scaffold-spec.md`
+- `decompose`
+    - `references/orchestrator-spec.md`
+    - Add `references/testing-playbook.md` when routing, ownership, or reducer tests change.
+    - Add `references/layer-and-segment-rules.md` and `references/public-boundary-spec.md` when the split changes layer, segment, or slice boundary.
+- `observation-refactor`
+    - `references/observation-lifecycle-spec.md`
+    - Add `references/testing-playbook.md` when lifecycle, cancellation, or reducer tests change.
+    - Add `references/layer-and-segment-rules.md` only when files move across `Ui` / `Lib` / `Api` / `Reducer`.
+- `reuse-guard`
+    - `references/layer-and-segment-rules.md`
+    - `references/public-boundary-spec.md`
+    - Add `references/package-extraction-posture.md` when the decision affects future package boundaries or shared extraction.
+    - `references/testing-playbook.md`
+    - `references/reuse-discovery-spec.md`
+    - `references/architecture-gate-spec.md`
+    - `references/decision-matrix.md`
+
+Do not read every reference blindly. Start with the always-on references, then add only the playbooks that match the task. Use `references/macos-architecture-shape.md` as a navigation page only when you need help choosing the next deeper architecture reference. Use `references/xcodebuildmcp-workflow.md` only when the task requires actual Xcode project introspection, build, or test execution.
+
+## Deliverable
+
+- `scaffold`
+    - Emit the chosen layer, slice boundary, segments to create, and the file list to add or modify.
+    - Call out any omitted segments deliberately, especially when avoiding `Widgets/Api`.
+    - Finish with verification and formatting commands.
+- `decompose`
+    - Emit the parent/child reducer split, action boundary, cancellation ownership, and touched files.
+    - Finish with focused test targets and any follow-up cleanup search.
+- `observation-refactor`
+    - Emit the view cleanup, reducer lifecycle actions, observation owner, cancellation ID, and proof-search queries.
+    - Finish with focused tests covering lifecycle and semantic routed actions.
+- `reuse-guard`
+    - Emit the ranked candidate table, architecture gate result, final choice (`reuse` | `adapt` | `new`), and implementation delta.
+    - Record rejected candidates and the gate or score that disqualified them.
 
 ## Not for
 
@@ -53,18 +103,3 @@ This skill routes internally. Do not ask the user to pick a mode.
 - Do not introduce Combine-based state subscriptions in coordinators.
 - Keep external calls behind dependency clients.
 - Accumulate Voyager-specific reusable heuristics in `references/development-rules.md` before promoting them into `.agents/rules/**`.
-
-## Required references
-
-- `references/development-rules.md`
-- `references/macos-architecture-shape.md`
-- `references/public-boundary-spec.md`
-- `references/scaffold-spec.md`
-- `references/orchestrator-spec.md`
-- `references/observation-lifecycle-spec.md`
-- `references/reuse-discovery-spec.md`
-- `references/architecture-gate-spec.md`
-- `references/decision-matrix.md`
-- `references/tca-contract.md`
-- `references/testing-playbook.md`
-- `references/verification.md`

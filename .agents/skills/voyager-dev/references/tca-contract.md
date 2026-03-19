@@ -41,7 +41,7 @@
 
 ## Dependency direction stance
 
-- Follow the structural dependency direction defined in `macos-architecture-shape.md`.
+- Follow the structural dependency direction defined in `layer-and-segment-rules.md`.
 - Keep `tca-contract.md` focused on TCA ownership and execution mechanics that sit inside those boundaries.
 
 ## Cancellation ownership
