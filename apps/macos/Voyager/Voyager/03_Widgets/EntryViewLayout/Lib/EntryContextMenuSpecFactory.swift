@@ -36,12 +36,18 @@ enum EntryContextMenuSpecFactory {
         favoriteTags: [Tag],
         openWithApplications: [ApplicationInfo],
     ) -> EntryContextMenuSpec {
-        let selectedCount = selectedIds.isEmpty ? (rowEntry == nil ? 0 : 1) : selectedIds.count
+        let effectiveSelectedCount: Int = if !selectedIds.isEmpty {
+            selectedIds.count
+        } else if rowEntry != nil {
+            1
+        } else {
+            0
+        }
         let showOpenWith = selectedEntries.contains { !$0.isFolder }
         let (showCompress, showExtract) = resolveCompressExtract(selectedEntries: selectedEntries)
 
         return .init(
-            selectedCount: selectedCount,
+            selectedCount: effectiveSelectedCount,
             rowEntryPathForOpenInNewTab: rowEntry?.isFolder == true ? rowEntry?.fullPath : nil,
             canPaste: canPaste,
             showCompress: showCompress,

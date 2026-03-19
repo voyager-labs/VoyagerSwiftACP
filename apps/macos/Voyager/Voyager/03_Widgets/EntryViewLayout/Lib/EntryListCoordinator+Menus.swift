@@ -104,10 +104,10 @@ extension EntryListCoordinator {
         return entry
     }
 
-    func selectedEntries(fallback: EntryModel?) -> [EntryModel] {
+    func selectedEntries(rowEntry: EntryModel?) -> [EntryModel] {
         let selectedIds = state.selectedIds
         if selectedIds.isEmpty {
-            return fallback.map { [$0] } ?? []
+            return rowEntry.map { [$0] } ?? []
         }
         return state.entries.filter { selectedIds.contains($0.id) }
     }
@@ -136,7 +136,7 @@ extension EntryListCoordinator: EntryListView.EntryListTableViewContextMenuProvi
     func contextMenu(forRow row: Int?, event _: NSEvent) -> NSMenu {
         updateContextMenuAnchor(forRow: row)
         let rowEntry = entryForRow(row)
-        let selectedEntries = selectedEntries(fallback: rowEntry)
+        let selectedEntries = selectedEntries(rowEntry: rowEntry)
         preloadOpenWithApplications(selectedEntries: selectedEntries)
         let menuSpec = EntryContextMenuSpecFactory.make(
             selectedIds: state.selectedIds,

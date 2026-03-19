@@ -462,7 +462,7 @@ extension EntryGridCoordinator: EntryGridView.EntryGridCollectionViewMenuProvidi
     func contextMenu(for indexPath: IndexPath?, event: NSEvent) -> NSMenu {
         updateContextMenuAnchor(event)
         let rowEntry = entry(at: indexPath)
-        let selectedEntries = selectedEntries(fallback: rowEntry)
+        let selectedEntries = selectedEntries(rowEntry: rowEntry)
         preloadOpenWithApplications(selectedEntries: selectedEntries)
         let menuSpec = EntryContextMenuSpecFactory.make(
             selectedIds: state.selectedIds,
