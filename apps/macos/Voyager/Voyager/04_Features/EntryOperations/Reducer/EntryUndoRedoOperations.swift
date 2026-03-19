@@ -122,14 +122,23 @@ struct EntryUndoRedoOperationsReducer { // swiftlint:disable:this type_body_leng
                     return .none
                 }
 
-            case let .operationFinished(_, kind, result):
+            case let .operationFinished(path, kind, result):
                 switch (kind, result) {
                 case (.pasteFileMove, .success):
                     guard state.clipboardOperation == .cut else {
                         return .none
                     }
 
-                    state.clipboardItems = []
+                    state.clipboardItems.removeAll { $0 == path }
+                    if var session = state.cutClearSession {
+                        session.sourcePaths.removeAll { $0 == path }
+                        state.cutClearSession = session.sourcePaths.isEmpty ? nil : session
+                    }
+
+                    guard state.clipboardItems.isEmpty else {
+                        return .none
+                    }
+
                     state.clipboardOperation = .copy
                     state.cutClearSession = nil
                     return .send(.setClipboardOperation(operation: .copy))

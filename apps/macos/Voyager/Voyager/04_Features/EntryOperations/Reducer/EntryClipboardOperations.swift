@@ -236,11 +236,6 @@ struct EntryClipboardOperationsReducer {
                 )
 
                 guard !destinations.isEmpty else {
-                    if operation == .cut {
-                        return .run { send in
-                            await send(.operationFinished(destinationPath, operationKind, .success(())))
-                        }
-                    }
                     return .none
                 }
 
