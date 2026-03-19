@@ -27,14 +27,9 @@ enum FileManagerContentKeyCommandHandler {
             return nil
         }
 
-        let selectedEntries = state.selectedEntries
-        if selectedEntries.count == 1, let file = selectedEntries.first {
-            return .send(.entryViewLayout(.entryOperations(.quickLookFile(path: file.fullPath))))
-        }
-        if !selectedEntries.isEmpty {
-            return .send(.entryViewLayout(.entryOperations(.quickLookFiles(paths: selectedEntries.map(\.fullPath)))))
-        }
-        return .none
+        guard state.hasSelectableEntriesInLayout else { return .none }
+
+        return .send(.entryViewLayout(.delegate(.executeCommand(.navigation(.quickLookSelectedItem)))))
     }
 
     private static func deleteKeyEffect(
@@ -70,14 +65,54 @@ enum FileManagerContentKeyCommandHandler {
         }
 
         if command.characters == ".", command.modifiers.contains(.shift) {
-            let show = !state.entryViewLayout.showHiddenFiles
-            return .concatenate(
-                .send(.entryViewLayout(.internal(.setShowHiddenFiles(show)))),
-                reloadEntryItemsEffect(state: state, showHidden: show),
-            )
+            return .send(.toggleShowHiddenFilesAndReload)
+        }
+
+        if let effect = entryCommandModifierEffect(for: command, state: state) {
+            return effect
         }
 
         return nil
+    }
+
+    private static func entryCommandModifierEffect(
+        for command: KeyCommand,
+        state: FileManagerContentState,
+    ) -> Effect<FileManagerContentAction>? {
+        if command.keyCode == 125,
+           command.modifiers.isDisjoint(with: [.option, .control, .shift])
+        {
+            guard state.hasSelectableEntriesInLayout else { return .none }
+            return .send(.entryViewLayout(.delegate(.executeCommand(.navigation(.openSelectedItem)))))
+        }
+
+        guard command.modifiers.isDisjoint(with: [.option, .control, .shift]),
+              let key = command.charactersIgnoringModifiers
+        else {
+            return nil
+        }
+
+        switch key {
+        case "x":
+            return .send(.entryViewLayout(.delegate(.executeCommand(.clipboard(.cutSelectedItems)))))
+
+        case "c":
+            return .send(.entryViewLayout(.delegate(.executeCommand(.clipboard(.copySelectedItems)))))
+
+        case "v":
+            return .send(.entryViewLayout(.delegate(.executeCommand(.clipboard(
+                .pasteItems(destinationPath: state.navigation.currentPath),
+            )))))
+
+        case "d":
+            return .send(.entryViewLayout(.delegate(.executeCommand(.clipboard(.duplicateSelectedItems)))))
+
+        case "l":
+            return .send(.entryViewLayout(.delegate(.executeCommand(.mutation(.createAliasForSelectedItems)))))
+
+        default:
+            return nil
+        }
     }
 
     private static func undoRedoEffect(
@@ -145,24 +180,6 @@ enum FileManagerContentKeyCommandHandler {
             isShiftPressed: isShiftPressed,
             orderedItemIds: state.entryViewLayout.entries.map(\.id),
         ))))
-    }
-
-    private static func reloadEntryItemsEffect(
-        state: FileManagerContentState,
-        showHidden: Bool,
-    ) -> Effect<FileManagerContentAction> {
-        switch state.navigation.navigationState {
-        case let .folder(path):
-            .send(.entryViewLayout(.entryOperations(.loadItems(path: path, showHidden: showHidden))))
-        case .recents:
-            .send(.entryViewLayout(.entryOperations(.loadRecentItems(showHidden: showHidden))))
-        case let .tags(tagName):
-            .send(.entryViewLayout(.entryOperations(.loadTagItems(tagName: tagName, showHidden: showHidden))))
-        case .computer:
-            .send(.entryViewLayout(.entryOperations(.loadComputerItems)))
-        case .collection:
-            .none
-        }
     }
 
     private static func isTextEditingResponder() -> Bool {

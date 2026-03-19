@@ -92,7 +92,7 @@ struct FileManagerFeature {
             return effect
         }
 
-        if let effect = handleEntryRequestSelection(command) {
+        if let effect = handleEntryRequestSelection(command, state: state) {
             return effect
         }
 
@@ -128,16 +128,18 @@ struct FileManagerFeature {
         }
     }
 
-    private func handleEntryRequestSelection(_ command: Action.WindowCommand) -> Effect<Action>? {
+    private func handleEntryRequestSelection(_ command: Action.WindowCommand, state: State) -> Effect<Action>? {
         switch command {
         case .openSelectedItem:
-            .send(.content(.entryViewLayout(.delegate(.executeCommand(.navigation(.openSelectedItem))))))
+            guard state.content.hasSelectableEntriesInLayout else { return .none }
+            return .send(.content(.entryViewLayout(.delegate(.executeCommand(.navigation(.openSelectedItem))))))
         case .quickLookSelectedItem:
-            .send(.content(.entryViewLayout(.delegate(.executeCommand(.navigation(.quickLookSelectedItem))))))
+            guard state.content.hasSelectableEntriesInLayout else { return .none }
+            return .send(.content(.entryViewLayout(.delegate(.executeCommand(.navigation(.quickLookSelectedItem))))))
         case .selectAll:
-            .send(.content(.selectAllEntries))
+            return .send(.content(.selectAllEntries))
         default:
-            nil
+            return nil
         }
     }
 

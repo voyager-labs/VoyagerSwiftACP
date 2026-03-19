@@ -45,14 +45,12 @@ struct ContentPageView: View {
     }
 
     @ViewBuilder private var keyCommandOverlay: some View {
-        if store.viewLayout.isGridLayout {
-            KeyCommandView { event in
-                handleKeyboardEvent(event)
-            }
-            .focusable()
-            .focused($isKeyCommandFocused)
-            .allowsHitTesting(false)
+        KeyCommandView { event in
+            handleKeyboardEvent(event)
         }
+        .focusable()
+        .focused($isKeyCommandFocused)
+        .allowsHitTesting(false)
     }
 
     private var backgroundInteractionLayer: some View {
@@ -62,7 +60,6 @@ struct ContentPageView: View {
                 ContentPaneContextMenu(store: store)
             }
             .onTapGesture {
-                guard store.viewLayout.isGridLayout else { return }
                 restoreKeyCommandFocus()
             }
     }
@@ -84,11 +81,9 @@ struct ContentPageView: View {
     var body: some View {
         mainContent
             .onChange(of: store.entryViewLayout.selectedIds) { _ in
-                guard store.viewLayout.isGridLayout else { return }
                 restoreKeyCommandFocus()
             }
             .onAppear {
-                guard store.viewLayout.isGridLayout else { return }
                 DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) {
                     restoreKeyCommandFocus()
                 }
