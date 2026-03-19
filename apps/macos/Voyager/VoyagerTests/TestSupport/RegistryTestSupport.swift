@@ -4,10 +4,17 @@ import Foundation
 @testable import Voyager
 
 enum RegistryTestSupport {
+    private static let registrySnapshot = RegistrySnapshot.load()
+
     private static let registryLabels: [String: String] = [
         "name_full": "Name",
-        "file_allocated_size": "Size",
+        "size": "File size",
+        "audio_bit_rate": "Audio bit rate",
+        "video_bit_rate": "Video bit rate",
+        "total_bit_rate": "Total bit rate",
     ]
+
+    private static let registryUnitSpecs: [String: SystemPropertyUnitSpec] = registrySnapshot.propertyKeyToUnitSpec
 
     private static let registryOperatorDefinition = OperatorDefinition(
         uiLabel: "Equals",
@@ -29,7 +36,8 @@ enum RegistryTestSupport {
         RegistryClient(
             allProperties: { [] },
             labelForKey: { registryLabels[$0] ?? $0 },
-            propertyTypeString: registryPropertyType(for:),
+            propertyTypeString: propertyTypeString(for:),
+            propertyUnitSpec: { registryUnitSpecs[$0] },
             operatorCodes: { _ in ["eq"] },
             operatorDefinition: { _ in registryOperatorDefinition },
             operatorValueUIKind: { _, typeKey in registryUIKind(for: typeKey) },
@@ -37,9 +45,11 @@ enum RegistryTestSupport {
         )
     }
 
-    private static func registryPropertyType(for key: String) -> String {
+    static func propertyTypeString(for key: String) -> String {
         switch key {
-        case "file_allocated_size":
+        case "size":
+            "number"
+        case "audio_bit_rate", "video_bit_rate", "total_bit_rate":
             "number"
         default:
             "string"
@@ -63,12 +73,14 @@ enum RegistryTestSupport {
         switch key {
         case "name_full":
             .canonical(key)
+        case "size":
+            .canonical(key)
         case "file_allocated_size":
+            .legacy(original: key, normalized: "size")
+        case "audio_bit_rate", "video_bit_rate", "total_bit_rate":
             .canonical(key)
         case "name":
             .legacy(original: key, normalized: "name_full")
-        case "size":
-            .legacy(original: key, normalized: "file_allocated_size")
         default:
             .unknown(key)
         }

@@ -15,7 +15,7 @@ final class FileManagerCollectionMigrationTests: XCTestCase {
             scopes: ["/tmp"],
             conditions: [
                 CollectionCondition(propertyKey: "name", operatorCode: "eq", value: .string("Report")),
-                CollectionCondition(propertyKey: "size", operatorCode: "eq", value: .number(12)),
+                CollectionCondition(propertyKey: "file_allocated_size", operatorCode: "eq", value: .number(12)),
             ],
             appVersion: nil,
         )
@@ -24,7 +24,7 @@ final class FileManagerCollectionMigrationTests: XCTestCase {
             registryClient: RegistryTestSupport.makeRegistryClient(),
         )
 
-        XCTAssertEqual(resolved.conditions.map(\.propertyKey), ["name_full", "file_allocated_size"])
+        XCTAssertEqual(resolved.conditions.map(\.propertyKey), ["name_full", "size"])
         XCTAssertTrue(resolved.conditions.allSatisfy(\.isActive))
     }
 }

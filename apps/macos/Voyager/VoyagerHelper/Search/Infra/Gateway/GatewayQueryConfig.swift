@@ -9,7 +9,6 @@ enum GatewayQueryConfig {
         "name_full",
         "extension",
         "content_type_tree",
-        "file_allocated_size",
         "size",
         "downloaded_date",
         "modification_date",

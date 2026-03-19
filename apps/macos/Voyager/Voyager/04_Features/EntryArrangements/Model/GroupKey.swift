@@ -35,7 +35,7 @@ enum GroupKey: String, Equatable, CaseIterable, Sendable {
         case .dateAdded: "added_date"
         case .dateModified: "modification_date"
         case .dateCreated: "creation_date"
-        case .size: "file_allocated_size"
+        case .size: "size"
         case .tags: "keywords"
         }
     }

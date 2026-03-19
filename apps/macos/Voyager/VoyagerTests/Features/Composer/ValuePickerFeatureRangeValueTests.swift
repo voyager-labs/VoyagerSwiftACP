@@ -1,10 +1,9 @@
 import ComposableArchitecture
-import Foundation
 @testable import Voyager
 import XCTest
 
 @MainActor
-final class ValuePickerFeatureTests: XCTestCase {
+final class ValuePickerFeatureRangeValueTests: XCTestCase {
     func testCommitRangeNumberClampsExtraInputsToExpectedArity() async {
         let store = TestStore(
             initialState: ValuePickerState(
@@ -40,6 +39,8 @@ final class ValuePickerFeatureTests: XCTestCase {
                     valueUIKind: "rangeDate",
                     valueArity: 2,
                     existingValues: ["2026-02-26", ""],
+                    existingDisplayValues: nil,
+                    preferredUnitCode: nil,
                     editingIndex: 0,
                 ),
             ),
@@ -72,6 +73,8 @@ final class ValuePickerFeatureTests: XCTestCase {
                     valueUIKind: "rangeDate",
                     valueArity: 2,
                     existingValues: ["", "2026-02-27"],
+                    existingDisplayValues: nil,
+                    preferredUnitCode: nil,
                     editingIndex: 1,
                 ),
             ),
@@ -104,6 +107,8 @@ final class ValuePickerFeatureTests: XCTestCase {
                     valueUIKind: "rangeNumber",
                     valueArity: 2,
                     existingValues: ["10", "xx"],
+                    existingDisplayValues: nil,
+                    preferredUnitCode: nil,
                     editingIndex: 1,
                 ),
             ),
@@ -122,6 +127,77 @@ final class ValuePickerFeatureTests: XCTestCase {
         await store.send(.commit) {
             $0.errorMessage = "Enter valid numbers."
             $0.values = ["10", ""]
+        }
+    }
+
+    func testCommitRangeNumberDoesNotCommitOnToOnlyInput() async {
+        let store = TestStore(initialState: ValuePickerState()) {
+            ValuePickerFeature()
+        }
+
+        await store.send(
+            .prepare(
+                .init(
+                    propertyKey: "size",
+                    operatorCode: "btw",
+                    valueType: "number",
+                    valueUIKind: "rangeNumber",
+                    valueArity: 2,
+                    existingValues: ["", "20"],
+                    existingDisplayValues: nil,
+                    preferredUnitCode: nil,
+                    editingIndex: 1,
+                ),
+            ),
+        ) {
+            $0.propertyKey = "size"
+            $0.operatorCode = "btw"
+            $0.valueType = "number"
+            $0.valueUIKind = "rangeNumber"
+            $0.valueArity = 2
+            $0.values = ["", "20"]
+            $0.errorMessage = nil
+            $0.editingIndex = 1
+            $0.isPresented = true
+        }
+
+        await store.send(.commit)
+    }
+
+    func testCommitRangeDateShowsErrorAndResetsInvalidIndex() async {
+        let store = TestStore(initialState: ValuePickerState()) {
+            ValuePickerFeature()
+        }
+
+        await store.send(
+            .prepare(
+                .init(
+                    propertyKey: "content_modified_at",
+                    operatorCode: "btw",
+                    valueType: "date",
+                    valueUIKind: "rangeDate",
+                    valueArity: 2,
+                    existingValues: ["2026-02-26", "invalid-date"],
+                    existingDisplayValues: nil,
+                    preferredUnitCode: nil,
+                    editingIndex: 1,
+                ),
+            ),
+        ) {
+            $0.propertyKey = "content_modified_at"
+            $0.operatorCode = "btw"
+            $0.valueType = "date"
+            $0.valueUIKind = "rangeDate"
+            $0.valueArity = 2
+            $0.values = ["2026-02-26", "invalid-date"]
+            $0.errorMessage = nil
+            $0.editingIndex = 1
+            $0.isPresented = true
+        }
+
+        await store.send(.commit) {
+            $0.errorMessage = "Enter valid dates."
+            $0.values = ["2026-02-26", ""]
         }
     }
 }
