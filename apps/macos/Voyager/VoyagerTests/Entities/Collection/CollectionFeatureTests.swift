@@ -93,7 +93,7 @@ final class CollectionFeatureTests: XCTestCase {
             registryClient: makeOperatorContractRegistryClient(),
         )
 
-        await store.send(.setOperator(propertyKey: "file_allocated_size", operatorCode: "btw")) {
+        await store.send(.setOperator(propertyKey: "size", operatorCode: "btw")) {
             $0.conditions[0].operatorCode = "btw"
             $0.conditions[0].operatorLabel = "Is between"
             $0.conditions[0].operatorValueArity = 2
@@ -102,7 +102,7 @@ final class CollectionFeatureTests: XCTestCase {
             $0.conditions[0].values = nil
         }
 
-        await store.send(.setOperator(propertyKey: "file_allocated_size", operatorCode: "eq")) {
+        await store.send(.setOperator(propertyKey: "size", operatorCode: "eq")) {
             $0.conditions[0].operatorCode = "eq"
             $0.conditions[0].operatorLabel = "Is"
             $0.conditions[0].operatorValueArity = 1
@@ -111,7 +111,7 @@ final class CollectionFeatureTests: XCTestCase {
             $0.conditions[0].values = nil
         }
 
-        await store.send(.setOperator(propertyKey: "file_allocated_size", operatorCode: "exists")) {
+        await store.send(.setOperator(propertyKey: "size", operatorCode: "exists")) {
             $0.isLoadingFilters = true
             $0.isFilteringInFlight = true
             $0.conditions[0].operatorCode = "exists"
@@ -129,7 +129,7 @@ final class CollectionFeatureTests: XCTestCase {
 
         let payload = await recorder.last()
         XCTAssertEqual(payload?.conditions.count, 1)
-        XCTAssertEqual(payload?.conditions.first?.propertyKey, "file_allocated_size")
+        XCTAssertEqual(payload?.conditions.first?.propertyKey, "size")
         XCTAssertEqual(payload?.conditions.first?.operator, "exists")
         XCTAssertNil(payload?.conditions.first?.value)
     }
@@ -143,7 +143,7 @@ final class CollectionFeatureTests: XCTestCase {
             registryClient: makeOperatorContractRegistryClient(),
         )
 
-        await store.send(.setOperator(propertyKey: "file_allocated_size", operatorCode: "btw")) {
+        await store.send(.setOperator(propertyKey: "size", operatorCode: "btw")) {
             $0.conditions[0].operatorCode = "btw"
             $0.conditions[0].operatorLabel = "Is between"
             $0.conditions[0].operatorValueArity = 2
@@ -152,11 +152,11 @@ final class CollectionFeatureTests: XCTestCase {
             $0.conditions[0].values = nil
         }
 
-        await store.send(.setValue(propertyKey: "file_allocated_size", values: ["10", "20"])) {
+        await store.send(.setValue(propertyKey: "size", values: ["10", "20"])) {
             $0.conditions[0].values = ["10", "20"]
         }
 
-        await store.send(.setOperator(propertyKey: "file_allocated_size", operatorCode: "eq")) {
+        await store.send(.setOperator(propertyKey: "size", operatorCode: "eq")) {
             $0.conditions[0].operatorCode = "eq"
             $0.conditions[0].operatorLabel = "Is"
             $0.conditions[0].operatorValueArity = 1
@@ -165,7 +165,7 @@ final class CollectionFeatureTests: XCTestCase {
             $0.conditions[0].values = nil
         }
 
-        await store.send(.setOperator(propertyKey: "file_allocated_size", operatorCode: "exists")) {
+        await store.send(.setOperator(propertyKey: "size", operatorCode: "exists")) {
             $0.isLoadingFilters = true
             $0.isFilteringInFlight = true
             $0.conditions[0].operatorCode = "exists"
@@ -203,7 +203,7 @@ final class CollectionFeatureTests: XCTestCase {
 
 private let kRegistryLabels: [String: String] = [
     "name_full": "Name",
-    "file_allocated_size": "Size",
+    "size": "File size",
 ]
 
 private let kRegistryOperatorDefinition = OperatorDefinition(
@@ -297,8 +297,8 @@ private func makeOperatorContractRegistryClient() -> RegistryClient {
         allProperties: { [] },
         labelForKey: { key in
             switch key {
-            case "file_allocated_size":
-                "Size"
+            case "size":
+                "File size"
             default:
                 key
             }
@@ -336,7 +336,7 @@ private func makeOperatorContractRegistryClient() -> RegistryClient {
 
 private func registryPropertyType(for key: String) -> String {
     switch key {
-    case "file_allocated_size":
+    case "size":
         "number"
     default:
         "string"
@@ -363,7 +363,9 @@ private func registryResolution(for key: String) -> PropertyKeyResolution {
     case "name":
         .legacy(original: key, normalized: "name_full")
     case "size":
-        .legacy(original: key, normalized: "file_allocated_size")
+        .canonical(key)
+    case "file_allocated_size":
+        .legacy(original: key, normalized: "size")
     default:
         .unknown(key)
     }
@@ -401,8 +403,8 @@ private func makeInactiveCondition() -> Condition {
 
 private func makeNumberCondition(values: [String]?) -> Condition {
     Condition(
-        propertyKey: "file_allocated_size",
-        propertyLabel: "Size",
+        propertyKey: "size",
+        propertyLabel: "File size",
         propertyType: "number",
         operatorCode: "eq",
         operatorLabel: "Is",

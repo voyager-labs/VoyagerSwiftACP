@@ -8,7 +8,7 @@ final class ValuePickerFeatureRangeValueTests: XCTestCase {
         let store = TestStore(
             initialState: ValuePickerState(
                 isPresented: true,
-                propertyKey: "file_allocated_size",
+                propertyKey: "size",
                 operatorCode: "btw",
                 valueType: "number",
                 valueUIKind: "rangeNumber",
@@ -101,7 +101,7 @@ final class ValuePickerFeatureRangeValueTests: XCTestCase {
         await store.send(
             .prepare(
                 .init(
-                    propertyKey: "file_allocated_size",
+                    propertyKey: "size",
                     operatorCode: "btw",
                     valueType: "number",
                     valueUIKind: "rangeNumber",
@@ -113,7 +113,7 @@ final class ValuePickerFeatureRangeValueTests: XCTestCase {
                 ),
             ),
         ) {
-            $0.propertyKey = "file_allocated_size"
+            $0.propertyKey = "size"
             $0.operatorCode = "btw"
             $0.valueType = "number"
             $0.valueUIKind = "rangeNumber"
@@ -138,7 +138,7 @@ final class ValuePickerFeatureRangeValueTests: XCTestCase {
         await store.send(
             .prepare(
                 .init(
-                    propertyKey: "file_allocated_size",
+                    propertyKey: "size",
                     operatorCode: "btw",
                     valueType: "number",
                     valueUIKind: "rangeNumber",
@@ -150,7 +150,7 @@ final class ValuePickerFeatureRangeValueTests: XCTestCase {
                 ),
             ),
         ) {
-            $0.propertyKey = "file_allocated_size"
+            $0.propertyKey = "size"
             $0.operatorCode = "btw"
             $0.valueType = "number"
             $0.valueUIKind = "rangeNumber"

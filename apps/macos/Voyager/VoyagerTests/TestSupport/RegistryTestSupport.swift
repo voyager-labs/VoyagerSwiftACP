@@ -9,7 +9,6 @@ enum RegistryTestSupport {
     private static let registryLabels: [String: String] = [
         "name_full": "Name",
         "size": "File size",
-        "file_allocated_size": "Size",
         "audio_bit_rate": "Audio bit rate",
         "video_bit_rate": "Video bit rate",
         "total_bit_rate": "Total bit rate",
@@ -50,8 +49,6 @@ enum RegistryTestSupport {
         switch key {
         case "size":
             "number"
-        case "file_allocated_size":
-            "number"
         case "audio_bit_rate", "video_bit_rate", "total_bit_rate":
             "number"
         default:
@@ -79,7 +76,7 @@ enum RegistryTestSupport {
         case "size":
             .canonical(key)
         case "file_allocated_size":
-            .canonical(key)
+            .legacy(original: key, normalized: "size")
         case "audio_bit_rate", "video_bit_rate", "total_bit_rate":
             .canonical(key)
         case "name":

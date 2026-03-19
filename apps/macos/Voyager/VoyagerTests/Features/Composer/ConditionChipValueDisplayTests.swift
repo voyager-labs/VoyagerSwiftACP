@@ -68,7 +68,7 @@ final class ConditionChipValueDisplayTests: XCTestCase {
 
     func testFormattedValueTextForNumberRangeUsesHyphen() {
         let text = ConditionChipDisplayUtils.displayValueText(for: makeCondition(
-            propertyKey: "file_allocated_size",
+            propertyKey: "size",
             valueType: "number",
             values: ["10", "20"],
         ))
