@@ -421,7 +421,7 @@ private func applyCollectionNavigationState(
     state.content.composer.pendingSearchQuery = navigation.context.query.isEmpty ? nil : navigation.context.query
     state.content.entryArrangements.updateSortKey(navigation.sortKey)
     state.content.entryArrangements.updateSortOrder(navigation.sortOrder)
-    state.content.viewLayout = navigation.viewLayout
+    state.content.entryViewLayout.mode = navigation.viewLayout
 
     switch navigation.kind {
     case .temporary:

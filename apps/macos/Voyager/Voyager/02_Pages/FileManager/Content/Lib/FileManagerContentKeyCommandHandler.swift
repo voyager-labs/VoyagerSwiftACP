@@ -110,17 +110,17 @@ enum FileManagerContentKeyCommandHandler {
         let isShiftPressed = command.modifiers.contains(.shift)
 
         switch command.keyCode {
-        case 123 where state.viewLayout == .grid:
+        case 123 where state.entryViewLayout.mode == .grid:
             return selectionOffsetEffect(offset: -1, isShiftPressed: isShiftPressed, state: state)
-        case 124 where state.viewLayout == .grid:
+        case 124 where state.entryViewLayout.mode == .grid:
             return selectionOffsetEffect(offset: 1, isShiftPressed: isShiftPressed, state: state)
-        case 126 where state.viewLayout == .grid:
+        case 126 where state.entryViewLayout.mode == .grid:
             return selectionOffsetEffect(
                 offset: -state.entryViewLayout.gridColumnCount,
                 isShiftPressed: isShiftPressed,
                 state: state,
             )
-        case 125 where state.viewLayout == .grid:
+        case 125 where state.entryViewLayout.mode == .grid:
             return selectionOffsetEffect(
                 offset: state.entryViewLayout.gridColumnCount,
                 isShiftPressed: isShiftPressed,

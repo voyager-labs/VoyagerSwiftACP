@@ -13,7 +13,7 @@ struct FileManagerWindowPreferencesReducer {
                 state.sidebar.sidebarVisible = preferences.sidebarVisible
                 state.sidebar.sidebarWidth = preferences.sidebarWidth
 
-                state.content.viewLayout = preferences.viewLayout
+                state.content.entryViewLayout.mode = preferences.viewLayout
                 state.content.listIconSize = preferences.listIconSize
                 state.content.gridIconSize = preferences.gridIconSize
                 state.content.listTextSize = preferences.listTextSize

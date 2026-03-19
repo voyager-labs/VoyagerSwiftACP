@@ -16,7 +16,7 @@ enum FileManagerContentAction: CasePathable, Sendable {
 
     case handleKeyCommand(KeyCommand)
 
-    case changeLayout(ContentViewLayout)
+    case changeLayout(EntryViewLayoutState.Mode)
     case applyNavigationState(ContentPageNavigationRoute)
     case performPendingNavigation(ContentPageNavigationPending)
     case requestNavigation(ContentPageNavigationAction)

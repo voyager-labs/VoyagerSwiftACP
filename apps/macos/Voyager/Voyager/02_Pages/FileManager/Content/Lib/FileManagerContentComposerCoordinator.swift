@@ -293,7 +293,7 @@ enum FileManagerContentComposerCoordinator {
                     context: baseline.context,
                     sortKey: state.entryArrangements.sortKey,
                     sortOrder: state.entryArrangements.sortOrder,
-                    viewLayout: state.viewLayout,
+                    viewLayout: state.entryViewLayout.mode,
                 )
                 let entry = ContentPageNavigationHistorySnapshot(
                     navigationState: .collection(navigation),

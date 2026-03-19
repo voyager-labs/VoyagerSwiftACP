@@ -81,7 +81,7 @@ struct FileManagerContentFeature {
                     effect = .none
 
                 case let .changeLayout(layout):
-                    state.viewLayout = layout
+                    state.entryViewLayout.mode = layout
                     state.syncComposerCollectionState()
                     userDefaultsClient.setString(layout.rawValue, SettingsKeys.viewLayout)
                     effect = .none

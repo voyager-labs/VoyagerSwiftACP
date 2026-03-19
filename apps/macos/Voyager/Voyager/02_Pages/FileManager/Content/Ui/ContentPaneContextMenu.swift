@@ -72,11 +72,11 @@ struct ContentPaneContextMenu: View {
         }
     }
 
-    private func viewLayoutToggle(_ title: String, layout: ContentViewLayout) -> some View {
+    private func viewLayoutToggle(_ title: String, layout: EntryViewLayoutState.Mode) -> some View {
         Toggle(
             title,
             isOn: Binding(
-                get: { store.viewLayout == layout },
+                get: { store.entryViewLayout.mode == layout },
                 set: { isOn in
                     if isOn {
                         store.send(.changeLayout(layout))

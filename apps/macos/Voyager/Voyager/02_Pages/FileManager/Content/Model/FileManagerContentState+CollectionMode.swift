@@ -40,7 +40,7 @@ extension FileManagerContentState {
             context: context,
             sortKey: entryArrangements.sortKey,
             sortOrder: entryArrangements.sortOrder,
-            viewLayout: viewLayout,
+            viewLayout: entryViewLayout.mode,
         )
     }
 

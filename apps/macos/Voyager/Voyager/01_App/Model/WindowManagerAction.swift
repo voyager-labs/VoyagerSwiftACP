@@ -20,7 +20,7 @@ enum WindowManagerAction: CasePathable, Sendable {
     case goToEnclosingDirectory
     case toggleSidebar
     case toggleShowHiddenFiles
-    case setViewLayout(ContentViewLayout)
+    case setViewLayout(EntryViewLayoutState.Mode)
     case setGroupKey(GroupKey)
     case setSortKey(SortKey)
     case setSortOrder(SortOrder)

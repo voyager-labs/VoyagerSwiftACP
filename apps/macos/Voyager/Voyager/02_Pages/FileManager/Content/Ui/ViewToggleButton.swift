@@ -8,7 +8,7 @@ struct ViewToggleButton: View {
     var body: some View {
         ToolbarMenuButton(
             // TODO: 아이콘 상수화
-            systemName: store.viewLayout == .list ? "list.bullet" : "square.grid.2x2",
+            systemName: store.entryViewLayout.mode == .list ? "list.bullet" : "square.grid.2x2",
             isEnabled: true,
             font: nil,
             menuContent: {
@@ -21,7 +21,7 @@ struct ViewToggleButton: View {
                         }
                     },
                 )
-                .disabled(store.viewLayout == .list)
+                .disabled(store.entryViewLayout.mode == .list)
 
                 Button(
                     action: { store.send(.changeLayout(.grid)) },
@@ -32,7 +32,7 @@ struct ViewToggleButton: View {
                         }
                     },
                 )
-                .disabled(store.viewLayout == .grid)
+                .disabled(store.entryViewLayout.mode == .grid)
             },
         )
     }

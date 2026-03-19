@@ -6,6 +6,20 @@ import VoyagerShared
 
 @ObservableState
 struct EntryViewLayoutState: Equatable {
+    enum Mode: String, Equatable, Codable, Sendable {
+        case list
+        case grid
+
+        var isGridLayout: Bool {
+            self == .grid
+        }
+
+        static func from(_ rawValue: String?) -> Mode? {
+            rawValue.flatMap(Self.init(rawValue:))
+        }
+    }
+
+    var mode: Mode = .list
     var entryOperations: EntryOperationsFeature.State = .init()
     var entryArrangements: EntryArrangementsFeature.State = .init()
 

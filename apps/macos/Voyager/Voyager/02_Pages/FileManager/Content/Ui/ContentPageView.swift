@@ -20,7 +20,7 @@ struct ContentPageView: View {
         if store.composer.isCollectionSearching {
             loadingView
         } else {
-            switch store.viewLayout {
+            switch store.entryViewLayout.mode {
             case .list:
                 let entryViewLayoutStore = store.scope(state: \.entryViewLayout, action: \.entryViewLayout)
                 EntryListViewRepresentable(store: entryViewLayoutStore)
@@ -32,7 +32,7 @@ struct ContentPageView: View {
     }
 
     @ViewBuilder private var keyCommandOverlay: some View {
-        if store.viewLayout.isGridLayout {
+        if store.entryViewLayout.mode.isGridLayout {
             KeyCommandView(
                 onViewCreated: { [weak keyCommandFocusCoordinator] view in
                     keyCommandFocusCoordinator?.register(view)
@@ -54,7 +54,7 @@ struct ContentPageView: View {
                 ContentPaneContextMenu(store: store)
             }
             .onTapGesture {
-                guard store.viewLayout.isGridLayout else { return }
+                guard store.entryViewLayout.mode.isGridLayout else { return }
                 restoreKeyCommandFocus()
             }
     }
@@ -76,12 +76,12 @@ struct ContentPageView: View {
     var body: some View {
         mainContent
             .onChange(of: store.entryViewLayout.selectedIds) { _ in
-                guard store.viewLayout.isGridLayout else { return }
+                guard store.entryViewLayout.mode.isGridLayout else { return }
                 restoreKeyCommandFocus()
             }
             .onAppear {
                 store.send(.startObservingSystemNotifications)
-                guard store.viewLayout.isGridLayout else { return }
+                guard store.entryViewLayout.mode.isGridLayout else { return }
                 DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) {
                     restoreKeyCommandFocus()
                 }

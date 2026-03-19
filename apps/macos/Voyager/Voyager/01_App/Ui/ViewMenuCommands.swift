@@ -69,7 +69,7 @@ struct ViewMenuCommands: Commands {
         }
     }
 
-    private func viewLayoutToggleBinding(_ layout: ContentViewLayout) -> Binding<Bool> {
+    private func viewLayoutToggleBinding(_ layout: EntryViewLayoutState.Mode) -> Binding<Bool> {
         Binding(
             get: { viewStore.viewLayout == layout },
             set: { isOn in

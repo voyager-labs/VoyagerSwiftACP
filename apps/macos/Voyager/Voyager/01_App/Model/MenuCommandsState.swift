@@ -15,7 +15,7 @@ struct MenuCommandsState: Equatable {
     var sidebarVisible: Bool
     var showHiddenFiles: Bool
 
-    var viewLayout: ContentViewLayout
+    var viewLayout: EntryViewLayoutState.Mode
     var groupKey: GroupKey
     var sortKey: SortKey
     var sortOrder: SortOrder
@@ -65,7 +65,7 @@ struct MenuCommandsState: Equatable {
         canSaveCollection = windowState.content.canSaveCollection
         sidebarVisible = windowState.sidebar.sidebarVisible
         showHiddenFiles = windowState.content.entryViewLayout.showHiddenFiles
-        viewLayout = windowState.content.viewLayout
+        viewLayout = windowState.content.entryViewLayout.mode
         groupKey = windowState.content.entryViewLayout.entryArrangements.groupKey
         sortKey = windowState.content.entryViewLayout.entryArrangements.sortKey
         sortOrder = windowState.content.entryViewLayout.entryArrangements.sortOrder

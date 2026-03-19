@@ -19,7 +19,6 @@ struct FileManagerContentState: Equatable {
     var entryThumbnails: EntryThumbnailState = .init()
     var composer: ComposerFeature.State = .init()
 
-    var viewLayout: ContentViewLayout = .list
     var listIconSize: CGFloat = AppearanceSettingsDefaults.listIconSize
     var gridIconSize: CGFloat = AppearanceSettingsDefaults.gridIconSize
     var listTextSize: CGFloat = AppearanceSettingsDefaults.listTextSize
