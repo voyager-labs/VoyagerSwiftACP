@@ -4,6 +4,92 @@ import XCTest
 
 @MainActor
 final class FileManagerWindowCommandRoutingTests: XCTestCase {
+    func testOpenAndQuickLookCommandsWithSelectionRouteThroughSharedEntryCommandContract() async {
+        let selected = makeEntry(name: "selected", fullPath: "/tmp/voyager/selected.txt")
+
+        for (command, matcher) in [
+            (FileManagerWindowAction.WindowCommand.openSelectedItem, { (entryCommand: EntryCommandAction) in
+                guard case .navigation(.openSelectedItem) = entryCommand else { return false }
+                return true
+            }),
+            (.quickLookSelectedItem, { entryCommand in
+                guard case .navigation(.quickLookSelectedItem) = entryCommand else { return false }
+                return true
+            }),
+        ] {
+            var initialState = FileManagerFeature.State()
+            initialState.content.navigation.seedInitialFolderPath("/tmp/voyager")
+            initialState.content.entryViewLayout.entries = [selected]
+            initialState.content.entryViewLayout.selectedIds = [selected.id]
+
+            let store = TestStore(initialState: initialState) {
+                FileManagerFeature()
+            }
+            store.exhaustivity = .off
+
+            await store.send(.request(command))
+            await store.receive { action in
+                guard case let .content(.entryViewLayout(.delegate(.executeCommand(entryCommand)))) = action else {
+                    return false
+                }
+                return matcher(entryCommand)
+            }
+            await store.finish()
+        }
+    }
+
+    func testEditAndCopyCommandsWithSelectionRouteThroughSharedEntryCommandContract() async {
+        let selected = makeEntry(name: "selected", fullPath: "/tmp/voyager/selected.txt")
+
+        let cases: [(FileManagerWindowAction.WindowCommand, (EntryCommandAction) -> Bool)] = [
+            (.cut, {
+                if case .clipboard(.cutSelectedItems) = $0 { return true }
+                return false
+            }),
+            (.copy, {
+                if case .clipboard(.copySelectedItems) = $0 { return true }
+                return false
+            }),
+            (.duplicate, {
+                if case .clipboard(.duplicateSelectedItems) = $0 { return true }
+                return false
+            }),
+            (.makeAlias, {
+                if case .mutation(.createAliasForSelectedItems) = $0 { return true }
+                return false
+            }),
+            (.copyAbsolutePaths, {
+                if case .clipboard(.copySelectedAbsolutePaths) = $0 { return true }
+                return false
+            }),
+            (.copyURLs, {
+                if case .clipboard(.copySelectedURLs) = $0 { return true }
+                return false
+            }),
+        ]
+
+        for (command, matcher) in cases {
+            var initialState = FileManagerFeature.State()
+            initialState.content.navigation.seedInitialFolderPath("/tmp/voyager")
+            initialState.content.entryViewLayout.entries = [selected]
+            initialState.content.entryViewLayout.selectedIds = [selected.id]
+
+            let store = TestStore(initialState: initialState) {
+                FileManagerFeature()
+            }
+            store.exhaustivity = .off
+
+            await store.send(.request(command))
+            await store.receive { action in
+                guard case let .content(.entryViewLayout(.delegate(.executeCommand(entryCommand)))) = action else {
+                    return false
+                }
+                return matcher(entryCommand)
+            }
+            await store.finish()
+        }
+    }
+
     func testNewFolderCommandUsesCurrentNavigationPath() async {
         var initialState = FileManagerFeature.State()
         initialState.content.navigation.seedInitialFolderPath("/tmp/voyager")
@@ -88,5 +174,51 @@ final class FileManagerWindowCommandRoutingTests: XCTestCase {
             return presented == true
         }
         await store.finish()
+    }
+
+    func testOpenSelectedItemCommandWithNoSelectionDoesNothing() async {
+        var initialState = FileManagerFeature.State()
+        initialState.content.navigation.seedInitialFolderPath("/tmp/voyager")
+
+        let store = TestStore(initialState: initialState) {
+            FileManagerFeature()
+        }
+
+        await store.send(.request(.openSelectedItem))
+        await store.finish()
+    }
+
+    func testQuickLookCommandWithNoSelectionDoesNothing() async {
+        var initialState = FileManagerFeature.State()
+        initialState.content.navigation.seedInitialFolderPath("/tmp/voyager")
+
+        let store = TestStore(initialState: initialState) {
+            FileManagerFeature()
+        }
+
+        await store.send(.request(.quickLookSelectedItem))
+        await store.finish()
+    }
+
+    private func makeEntry(name: String, fullPath: String) -> EntryModel {
+        let date = Date(timeIntervalSince1970: 1_700_000_000)
+        return EntryModel(
+            name: name,
+            fullPath: fullPath,
+            isFolder: false,
+            isHidden: false,
+            size: 1,
+            modifiedDate: date,
+            fileExtension: "txt",
+            facets: EntryFacets(
+                createdDate: date,
+                addedDate: date,
+                lastOpenedDate: nil,
+                kind: "Text",
+                creatorApplication: nil,
+                tags: nil,
+                supplementaryMetadata: nil,
+            ),
+        )
     }
 }

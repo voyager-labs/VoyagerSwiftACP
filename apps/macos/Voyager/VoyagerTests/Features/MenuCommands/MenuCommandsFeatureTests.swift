@@ -63,4 +63,61 @@ final class MenuCommandsFeatureTests: XCTestCase {
         }
         await store.finish()
     }
+
+    func testTask3EntryCommandsRouteToWindowManagerDelegate() async {
+        let appCases: [(MenuCommandItem.AppCommand, WindowManagerAction)] = [
+            (.open, .open),
+            (.quickLook, .quickLook),
+        ]
+
+        for (command, expected) in appCases {
+            let store = TestStore(initialState: MenuCommandsFeature.State()) {
+                MenuCommandsFeature()
+            }
+            store.exhaustivity = .off
+
+            await store.send(.view(.app(command)))
+            await store.receive {
+                guard case let .delegate(.windowManager(action)) = $0 else { return false }
+                return action == expected
+            }
+            await store.finish()
+        }
+
+        let editCases: [(MenuCommandItem.EditCommand, WindowManagerAction)] = [
+            (.cut, .cut),
+            (.copy, .copy),
+            (.paste, .paste),
+            (.duplicate, .duplicate),
+            (.makeAlias, .makeAlias),
+            (.copyAbsolutePaths, .copyAbsolutePaths),
+            (.copyURLs, .copyURLs),
+        ]
+
+        for (command, expected) in editCases {
+            let store = TestStore(initialState: MenuCommandsFeature.State()) {
+                MenuCommandsFeature()
+            }
+            store.exhaustivity = .off
+
+            await store.send(.view(.edit(command)))
+            await store.receive {
+                guard case let .delegate(.windowManager(action)) = $0 else { return false }
+                return action == expected
+            }
+            await store.finish()
+        }
+
+        let viewStore = TestStore(initialState: MenuCommandsFeature.State()) {
+            MenuCommandsFeature()
+        }
+        viewStore.exhaustivity = .off
+
+        await viewStore.send(.view(.viewCommand(.toggleShowHiddenFiles)))
+        await viewStore.receive {
+            guard case let .delegate(.windowManager(action)) = $0 else { return false }
+            return action == .toggleShowHiddenFiles
+        }
+        await viewStore.finish()
+    }
 }
