@@ -16,6 +16,11 @@
 # Exclude pattern matching - ignore TCA reducer syntax
 --disable redundantClosure
 --disable trailingClosures
+--enable organizeDeclarations
+--organizationmode type
+--organize-types enum
+--markcategories false
+--groupblanklines false
 
 # Preserve reduce builder syntax
 --ifdef no-indent

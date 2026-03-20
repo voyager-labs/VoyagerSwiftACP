@@ -2,7 +2,7 @@
 
 ## Scoring model
 
-`Reuse Score = Similarity + LayerFit + Testability - CouplingRisk`
+`Reuse Score = Similarity + LayerFit + Testability - CouplingRisk - WrapperTax`
 
 - `Similarity` (0-4)
   - Signature/behavior parity with target
@@ -12,12 +12,14 @@
   - Existing tests or easy `TestStore` coverage
 - `CouplingRisk` (0-3)
   - Hidden dependencies, side effects, cross-layer leaks
+- `WrapperTax` (0-3)
+  - Penalize new types that only mirror existing state/behavior or add compatibility shells without owning a real boundary
 
 ## Decision thresholds
 
-- `>= 5`: `reuse`
-- `3-4`: `adapt` (wrapper/adapter)
-- `<= 2`: `new`
+- `>= 6`: `extend` or `reuse`
+- `4-5`: `adapt` only if the adapter owns real translation, migration, or boundary protection
+- `<= 3`: `new` only if the scope is large enough to justify a new named responsibility
 
 ## Output contract
 
@@ -28,10 +30,11 @@ For final implementation planning, always emit:
 2. `architecture-risks`
    - gate failures and mitigation
 3. `final-choice`
-   - `reuse` | `adapt` | `new` + reason
+   - `extend` | `reuse` | `adapt` | `new` + reason
 4. `implementation-delta`
    - files to change, symbols to touch, verification commands
 
 ## Rule
 
-Default is not `new`. Choose `new` only when all reusable candidates fail score or architecture gates.
+Default is not `new`. Prefer extending an existing type first, then direct reuse.
+Choose `new` only when reusable candidates fail score or architecture gates, and the new scope has a strong enough independent responsibility to stay understandable.

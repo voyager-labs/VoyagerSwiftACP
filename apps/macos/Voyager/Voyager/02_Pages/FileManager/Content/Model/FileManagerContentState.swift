@@ -14,6 +14,8 @@ struct FileManagerContentState: Equatable {
 
     var navigation: ContentPageNavigationFeature.State = .init()
     var entryViewLayout: EntryViewLayoutState = .init()
+    var entryArrangements: EntryArrangementsState = .init()
+    var entryOperations: EntryOperationsFeature.State = .init()
     var entryThumbnails: EntryThumbnailState = .init()
     var composer: ComposerFeature.State = .init()
 
@@ -39,12 +41,11 @@ struct FileManagerContentState: Equatable {
     mutating func syncComposerCollectionState() {
         composer.collectionContext = collectionContext
         composer.openedCollectionURL = collectionSession.openedURL
-        composer.isCollectionMode = entryViewLayout.entryOperations.loadingContext.isCollectionMode
+        composer.isCollectionMode = entryOperations.loadingContext.isCollectionMode
     }
 
     var canSaveCollection: Bool {
-        guard entryViewLayout.entryOperations.loadingContext.isCollectionMode,
-              collectionContext != nil else { return false }
+        guard entryOperations.loadingContext.isCollectionMode, collectionContext != nil else { return false }
         if collectionSession.baseline == nil {
             return true
         }
@@ -55,27 +56,5 @@ struct FileManagerContentState: Equatable {
         guard let baseline = collectionSession.baseline, let context = collectionContext else { return false }
         if baseline.context != context { return true }
         return false
-    }
-
-    // 엔트리 관련 //
-    var canOpenSelectedItem: Bool {
-        hasSelectableEntries
-    }
-
-    var canQuickLookSelectedItem: Bool {
-        hasSelectableEntries
-    }
-
-    var hasSelectedItems: Bool {
-        !entryViewLayout.selectedIds.isEmpty
-    }
-
-    var hasClipboardItems: Bool {
-        !entryViewLayout.entryOperations.clipboardItems.isEmpty
-    }
-
-    private var hasSelectableEntries: Bool {
-        guard !entryViewLayout.selectedIds.isEmpty else { return false }
-        return entryViewLayout.entryOperations.displayItems.contains { entryViewLayout.selectedIds.contains($0.id) }
     }
 }

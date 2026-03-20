@@ -4,7 +4,7 @@ import Foundation
 enum FileManagerContentComposerCoordinator {
     struct Dependencies: Sendable {
         let collectionAlertClient: CollectionAlertClient
-        let computerNameClient: FileManagerComputerNameClient
+        let computerName: String
     }
 
     static func reduce(
@@ -60,7 +60,7 @@ enum FileManagerContentComposerCoordinator {
                 state.syncComposerCollectionState()
                 return .none
             }
-            return state.exitCollectionMode(computerName: dependencies.computerNameClient.computerName())
+            return state.exitCollectionMode(computerName: dependencies.computerName)
 
         default:
             return nil
@@ -156,7 +156,7 @@ enum FileManagerContentComposerCoordinator {
         let query = text.trimmingCharacters(in: .whitespacesAndNewlines)
         state.composer.pendingSearchQuery = query.isEmpty ? nil : query
         if query.isEmpty, state.composer.conditions.isEmpty, state.composer.scopes.isEmpty {
-            return state.exitCollectionMode(computerName: dependencies.computerNameClient.computerName())
+            return state.exitCollectionMode(computerName: dependencies.computerName)
         }
         return .none
     }
@@ -225,7 +225,7 @@ enum FileManagerContentComposerCoordinator {
         }
         state.collectionSession = .init()
         state.resetComposer()
-        let exitEffect = state.exitCollectionMode(computerName: dependencies.computerNameClient.computerName())
+        let exitEffect = state.exitCollectionMode(computerName: dependencies.computerName)
         let collectionAlertClient = dependencies.collectionAlertClient
         return .concatenate(
             .send(.requestNavigation(.internal(.rollbackBackHistoryOnce))),

@@ -1,12 +1,10 @@
-import AppKit
 import ComposableArchitecture
-import Foundation
 import SwiftUI
 
 struct ToolbarNavigationButtons: View {
     let onNavigationAction: (ContentPageNavigationAction.View) -> Void
-    let backHistory: [ContentPageNavigationHistorySnapshot]
-    let forwardHistory: [ContentPageNavigationHistorySnapshot]
+    let backHistoryItems: [ToolbarHistoryItem]
+    let forwardHistoryItems: [ToolbarHistoryItem]
     let canGoBack: Bool
     let canGoForward: Bool
     let canGoToEnclosingDirectory: Bool
@@ -24,19 +22,19 @@ struct ToolbarNavigationButtons: View {
             systemName: "chevron.left",
             isEnabled: canGoBack,
             font: IconButtonStyle.toolbar.font,
-            menuID: backHistory.count,
+            menuID: backHistoryItems.count,
             primaryAction: { onNavigationAction(.goBack) },
             menuContent: {
-                if backHistory.isEmpty {
+                if backHistoryItems.isEmpty {
                     Text("No history")
                         .foregroundColor(.secondary)
                 } else {
-                    ForEach(Array(backHistory.enumerated().reversed()), id: \.offset) { index, entry in
+                    ForEach(Array(backHistoryItems.enumerated().reversed()), id: \.offset) { index, item in
                         Button(
                             action: {
                                 onNavigationAction(.goToHistoryIndex(index, isBackHistory: true))
                             },
-                            label: { historyMenuLabel(for: entry) },
+                            label: { historyMenuLabel(for: item) },
                         )
                     }
                 }
@@ -50,19 +48,19 @@ struct ToolbarNavigationButtons: View {
             systemName: "chevron.right",
             isEnabled: canGoForward,
             font: IconButtonStyle.toolbar.font,
-            menuID: forwardHistory.count,
+            menuID: forwardHistoryItems.count,
             primaryAction: { onNavigationAction(.goForward) },
             menuContent: {
-                if forwardHistory.isEmpty {
+                if forwardHistoryItems.isEmpty {
                     Text("No history")
                         .foregroundColor(.secondary)
                 } else {
-                    ForEach(Array(forwardHistory.enumerated().reversed()), id: \.offset) { index, entry in
+                    ForEach(Array(forwardHistoryItems.enumerated().reversed()), id: \.offset) { index, item in
                         Button(
                             action: {
                                 onNavigationAction(.goToHistoryIndex(index, isBackHistory: false))
                             },
-                            label: { historyMenuLabel(for: entry) },
+                            label: { historyMenuLabel(for: item) },
                         )
                     }
                 }
@@ -87,66 +85,11 @@ struct ToolbarNavigationButtons: View {
         .buttonStyle(.borderless)
     }
 
-    private func historyDisplayName(for entry: ContentPageNavigationHistorySnapshot) -> String {
-        switch entry.navigationState {
-        case let .folder(path):
-            FileManager.default.displayName(atPath: path)
-        case .recents:
-            "Recents"
-        case let .tags(tagName):
-            tagName
-        case .computer:
-            FileManager.default.displayName(atPath: "/")
-        case let .collection(navigation):
-            switch navigation.kind {
-            case .temporary:
-                "New Collection"
-            case let .file(_, name):
-                name
-            }
-        }
-    }
-
-    private func historyMenuLabel(for entry: ContentPageNavigationHistorySnapshot) -> some View {
+    private func historyMenuLabel(for item: ToolbarHistoryItem) -> some View {
         HStack(spacing: 6) {
-            if let icon = historyIcon(for: entry) {
-                Image(nsImage: resizedHistoryIcon(from: icon))
-                    .frame(width: 10, height: 10)
-            }
-            Text(historyDisplayName(for: entry))
+            Image(systemName: item.iconSystemName)
+                .frame(width: 10, height: 10)
+            Text(item.title)
         }
-    }
-
-    private func historyIcon(for entry: ContentPageNavigationHistorySnapshot) -> NSImage? {
-        switch entry.navigationState {
-        case let .folder(path):
-            return NSWorkspace.shared.icon(forFile: path)
-        case let .collection(navigation):
-            if case let .file(url, _) = navigation.kind {
-                return NSWorkspace.shared.icon(forFile: url.path)
-            }
-            return nil
-        case .recents:
-            return NSImage(
-                systemSymbolName: "clock.arrow.circlepath", accessibilityDescription: nil,
-            )
-        case .tags:
-            return NSImage(systemSymbolName: "tag", accessibilityDescription: nil)
-        case .computer:
-            return NSImage(
-                systemSymbolName: "menubar.dock.rectangle", accessibilityDescription: nil,
-            )
-        }
-    }
-
-    private func resizedHistoryIcon(from icon: NSImage) -> NSImage {
-        let size: CGFloat = 10
-        let targetSize = NSSize(width: size, height: size)
-        let resized = NSImage(size: targetSize)
-        resized.lockFocus()
-        icon.draw(in: NSRect(origin: .zero, size: targetSize))
-        resized.unlockFocus()
-        resized.isTemplate = icon.isTemplate
-        return resized
     }
 }

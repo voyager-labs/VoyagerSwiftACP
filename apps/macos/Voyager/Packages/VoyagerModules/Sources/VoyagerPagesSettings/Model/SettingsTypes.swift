@@ -35,6 +35,10 @@ public enum DirectoryOption: Equatable, Hashable, Identifiable, Sendable {
     case custom(String)
     case other
 
+    public static var standardOptions: [DirectoryOption] {
+        [.home, .root, .desktop, .documents, .downloads]
+    }
+
     public var id: String {
         switch self {
         case .home: "home"
@@ -131,9 +135,5 @@ public enum DirectoryOption: Equatable, Hashable, Identifiable, Sendable {
         } else {
             return .custom(path)
         }
-    }
-
-    public static var standardOptions: [DirectoryOption] {
-        [.home, .root, .desktop, .documents, .downloads]
     }
 }

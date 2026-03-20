@@ -19,8 +19,9 @@ Before adding code, discover whether equivalent or near-equivalent functions, va
    - `ast_grep_search` for reducer/view/effect patterns
    - `grep` for naming variants and domain keywords
 3. Run similarity pass:
-   - Find same responsibility with different names
-   - Find partial matches that can be wrapped/adapted
+    - Find same responsibility with different names
+    - Find partial matches that can be wrapped/adapted
+    - Check whether an existing model/object can absorb the change by adding properties or focused behavior instead of introducing a new peer type
 
 ## Parallel subagent pattern
 
@@ -38,8 +39,15 @@ For each candidate include:
 - `path`
 - `why-similar`
 - `gap`
-- `reuse-option` (`direct` | `adapter` | `reject`)
+- `reuse-option` (`extend` | `direct` | `adapter` | `new` | `reject`)
+- `why-not-extend-existing` (required when choosing `adapter` or `new`)
 
 ## Exit condition
 
 Discovery is complete only when at least one pass has been executed for symbols, patterns, and references.
+
+## Reuse-first rule
+
+- Default order is: `extend existing` -> `direct reuse` -> `adapter` -> `new`.
+- Choose `new` only when the change forms a new responsibility with its own stable name, ownership boundary, or lifecycle.
+- If the proposal adds a wrapper only to preserve compatibility during refactor, require proof that the wrapper owns real translation, protection, or migration behavior.

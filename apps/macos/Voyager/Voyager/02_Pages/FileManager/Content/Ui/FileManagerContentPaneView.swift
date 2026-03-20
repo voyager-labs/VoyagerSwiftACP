@@ -1,10 +1,10 @@
 import ComposableArchitecture
 import SwiftUI
 
-/// 파일 매니저의 Content Pane(툴바/리스트/컴포저 오버레이)를 구성하는 루트 뷰
 struct FileManagerContentPaneView: View {
     let store: StoreOf<FileManagerContentFeature>
-    let paneState: FileManagerContentPaneViewState
+    let chromeProps: FileManagerContentChromeProps
+    let overlayProps: FileManagerContentOverlayProps
     let onNavigationAction: (ContentPageNavigationAction.View) -> Void
     let onNavigate: (String) -> Void
 
@@ -13,10 +13,18 @@ struct FileManagerContentPaneView: View {
             VStack(spacing: 0) {
                 ToolbarView(
                     store: store,
+                    chromeProps: chromeProps,
                     onNavigationAction: onNavigationAction,
                 )
                 ContentPageView(
                     store: store,
+                )
+                Rectangle()
+                    .fill(Color.primary.opacity(0.12))
+                    .frame(height: 1)
+                ContentPaneBreadcrumbBarView(
+                    store: store,
+                    chromeProps: chromeProps,
                     onNavigate: onNavigate,
                 )
             }
@@ -25,7 +33,7 @@ struct FileManagerContentPaneView: View {
                     .strokeBorder(Color.primary.opacity(0.03), lineWidth: 1),
             )
 
-            if paneState.isComposerPresented {
+            if overlayProps.isComposerPresented {
                 Color.clear
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
                     .contentShape(Rectangle())
@@ -33,14 +41,14 @@ struct FileManagerContentPaneView: View {
             }
 
             Group {
-                if paneState.isComposerPresented {
+                if overlayProps.isComposerPresented {
                     ComposerView(
                         store: store.scope(state: \.composer, action: \.composer),
-                        favorites: paneState.favorites,
-                        historyPaths: paneState.historyPaths,
-                        isDiscardEnabled: paneState.isDiscardEnabled,
-                        canSaveCollection: paneState.canSaveCollection,
-                        isTemporaryCollection: paneState.isTemporaryCollection,
+                        favorites: overlayProps.favorites,
+                        historyPaths: overlayProps.historyPaths,
+                        isDiscardEnabled: overlayProps.isDiscardEnabled,
+                        canSaveCollection: overlayProps.canSaveCollection,
+                        isTemporaryCollection: overlayProps.isTemporaryCollection,
                         onDiscardCollectionChanges: {
                             store.send(.collectionDraft(.discardChangesTapped))
                         },
@@ -57,7 +65,7 @@ struct FileManagerContentPaneView: View {
             }
             .animation(
                 .spring(response: 0.25, dampingFraction: 0.75),
-                value: paneState.isComposerPresented,
+                value: overlayProps.isComposerPresented,
             )
         }
         .background(.thickMaterial)
@@ -66,7 +74,14 @@ struct FileManagerContentPaneView: View {
     }
 }
 
-struct FileManagerContentPaneViewState: Equatable {
+struct FileManagerContentChromeProps: Equatable {
+    let computerName: String
+    let breadcrumbRoots: FileManagerBreadcrumbRoots
+    let pathDisplayNames: [String: String]
+    let specialDirectoryIconNames: [String: String]
+}
+
+struct FileManagerContentOverlayProps: Equatable {
     let isComposerPresented: Bool
     let favorites: [ScopeFavoriteItem]
     let historyPaths: [String]

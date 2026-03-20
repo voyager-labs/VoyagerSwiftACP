@@ -8,6 +8,23 @@ enum DateGroupBucket: Hashable, Sendable {
     case month(Int)
     case year(Int)
 
+    private var priority: Int {
+        switch self {
+        case .today:
+            0
+        case .yesterday:
+            1
+        case .previous7Days:
+            2
+        case .previous30Days:
+            3
+        case .month:
+            4
+        case .year:
+            5
+        }
+    }
+
     static func bucket(
         for date: Date,
         now: Date = Date(),
@@ -56,23 +73,6 @@ enum DateGroupBucket: Hashable, Sendable {
             return lhsYear > rhsYear
         default:
             return false
-        }
-    }
-
-    private var priority: Int {
-        switch self {
-        case .today:
-            0
-        case .yesterday:
-            1
-        case .previous7Days:
-            2
-        case .previous30Days:
-            3
-        case .month:
-            4
-        case .year:
-            5
         }
     }
 }

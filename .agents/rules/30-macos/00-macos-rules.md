@@ -18,6 +18,8 @@ description: "macOS SwiftUI + TCA structure and dependency rules."
   - `Entities -> Shared`
 - Keep TCA dependencies injected (`@Dependency`) and testable.
 - Keep reducers focused (`@Reducer`, effect routing in reducer, no side effects in views).
+- Follow `.agents/rules/30-macos/02-tca-observation-lifecycle.md` when moving external/system observation out of SwiftUI views.
+- Follow `.agents/rules/30-macos/03-voyager-app-workflow.md` for `apps/macos/Voyager/Voyager/**` work.
 - For scaffold/orchestrator-style TCA work, load:
   - `.agents/skills/voyager-dev/SKILL.md`
 

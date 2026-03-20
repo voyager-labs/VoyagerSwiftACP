@@ -23,7 +23,7 @@ final class ConditionChipValueDisplayTests: XCTestCase {
     }
 
     func testDisplayedValuesForDateUsesPickerValuesWhileEditingSameCondition() {
-        let displayed = ConditionChipView.displayedValuesForDate(
+        let displayed = ConditionChipDisplayUtils.displayedValuesForDate(
             conditionValues: ["2026-02-01", "2026-02-10"],
             conditionPropertyKey: "content_modified_at",
             pickerPropertyKey: "content_modified_at",
@@ -35,7 +35,7 @@ final class ConditionChipValueDisplayTests: XCTestCase {
     }
 
     func testDisplayedValuesForDateFallsBackWhenPickerClosed() {
-        let displayed = ConditionChipView.displayedValuesForDate(
+        let displayed = ConditionChipDisplayUtils.displayedValuesForDate(
             conditionValues: ["2026-02-01", "2026-02-10"],
             conditionPropertyKey: "content_modified_at",
             pickerPropertyKey: "content_modified_at",
@@ -68,7 +68,7 @@ final class ConditionChipValueDisplayTests: XCTestCase {
 
     func testFormattedValueTextForNumberRangeUsesHyphen() {
         let text = ConditionChipDisplayUtils.displayValueText(for: makeCondition(
-            propertyKey: "file_allocated_size",
+            propertyKey: "size",
             valueType: "number",
             values: ["10", "20"],
         ))

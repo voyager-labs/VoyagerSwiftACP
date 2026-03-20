@@ -3,8 +3,8 @@ import Foundation
 
 @Reducer
 struct FileManagerNavigationActionReducer {
-    @Dependency(\.fileManagerComputerNameClient)
-    var computerNameClient
+    @Dependency(\.fileManagerClient)
+    var fileManagerClient: FileManagerClient
     @Dependency(\.collectionFileClient)
     var collectionFileClient
     @Dependency(\.collectionAlertClient)
@@ -39,7 +39,7 @@ struct FileManagerNavigationActionReducer {
             handleNavigationDelegate(
                 delegateAction,
                 state: &state,
-                computerName: computerNameClient.computerName(),
+                computerName: fileManagerClient.displayName("/"),
             )
         }
     }
@@ -94,7 +94,7 @@ struct FileManagerNavigationActionReducer {
              .clearForwardHistory,
              .setNavigationState,
              .setPendingNavigation:
-            syncSidebarSelection(state: &state, computerName: computerNameClient.computerName())
+            syncSidebarSelection(state: &state, computerName: fileManagerClient.displayName("/"))
             return .none
         }
     }
@@ -105,7 +105,7 @@ struct FileManagerNavigationActionReducer {
     ) -> Effect<Action> {
         switch action {
         case let .navigateToPath(path):
-            let computerName = computerNameClient.computerName()
+            let computerName = fileManagerClient.displayName("/")
             if path == computerName, state.content.navigation.currentPath == computerName {
                 return .none
             }
@@ -136,7 +136,7 @@ struct FileManagerNavigationActionReducer {
                 state: &state,
                 collectionAlertClient: collectionAlertClient,
                 registryClient: registryClient,
-                computerName: computerNameClient.computerName(),
+                computerName: fileManagerClient.displayName("/"),
             )
 
         case let .navigateToCollection(navigation):

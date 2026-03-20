@@ -61,6 +61,8 @@ struct EntryClipboardOperationsReducer {
     var entryFileOpsClient
     @Dependency(\.entryOperationsAlertClient)
     var alertClient
+    @Dependency(\.pasteboardClient)
+    var pasteboardClient
     @Dependency(\.uuid)
     var uuid
 
@@ -73,11 +75,10 @@ struct EntryClipboardOperationsReducer {
                 state.cutClearSession = nil
                 entryFileOpsClient.saveClipboardCutSessionId(nil)
 
-                let pasteboard = NSPasteboard.general
-                pasteboard.clearContents()
+                pasteboardClient.clearContents()
 
                 let urls = files.map { URL(fileURLWithPath: $0.fullPath) }
-                pasteboard.writeObjects(urls as [NSURL])
+                _ = pasteboardClient.writeObjects(urls as [NSURL])
                 entryFileOpsClient.postFileSystemChanged([])
 
                 return .none
@@ -134,9 +135,8 @@ struct EntryClipboardOperationsReducer {
                 guard !paths.isEmpty else { return .none }
 
                 let text = paths.joined(separator: "\n")
-                let pasteboard = NSPasteboard.general
-                pasteboard.clearContents()
-                pasteboard.setString(text, forType: .string)
+                pasteboardClient.clearContents()
+                _ = pasteboardClient.setString(text, .string)
 
                 return .none
 
@@ -146,19 +146,17 @@ struct EntryClipboardOperationsReducer {
                 let text = paths
                     .map { URL(fileURLWithPath: $0).absoluteString }
                     .joined(separator: "\n")
-                let pasteboard = NSPasteboard.general
-                pasteboard.clearContents()
-                pasteboard.setString(text, forType: .string)
+                pasteboardClient.clearContents()
+                _ = pasteboardClient.setString(text, .string)
 
                 return .none
 
             case let .setClipboardOperation(operation):
                 state.clipboardOperation = operation
-                let pasteboard = NSPasteboard.general
                 let operationValue = operation == .cut ? "cut" : "copy"
-                pasteboard.setString(
+                _ = pasteboardClient.setString(
                     operationValue,
-                    forType: NSPasteboard.PasteboardType("fm.voyager.clipboard.operation"),
+                    NSPasteboard.PasteboardType("fm.voyager.clipboard.operation"),
                 )
 
                 if operation == .cut {

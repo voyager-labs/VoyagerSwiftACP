@@ -4,6 +4,7 @@ import CoreServices
 import Foundation
 import ImageIO
 import UniformTypeIdentifiers
+import VoyagerShared
 
 public struct EntryLoadingClient: Sendable {
     public var loadItems: @Sendable (URL, Bool) async throws -> [EntryModel]
@@ -153,9 +154,10 @@ enum EntryLoadingLive {
             try await Task.detached {
                 let entryLoadingClient = EntryLoadingClient.liveValue
                 let workspaceClient = WorkspaceClient.liveValue
+                let fileManagerClient = FileManagerClient.liveValue
                 let options: FileManager.DirectoryEnumerationOptions = showHidden ? [] : [.skipsHiddenFiles]
 
-                let entries = try contentsOfDirectory(
+                let entries = try fileManagerClient.contentsOfDirectory(
                     directoryURL,
                     [
                         .nameKey,
@@ -187,7 +189,8 @@ enum EntryLoadingLive {
     nonisolated static var loadComputerItems: @Sendable () async throws -> [EntryModel] {
         {
             await Task.detached {
-                let rootName = FileManager.default.displayName(atPath: "/")
+                let fileManagerClient = FileManagerClient.liveValue
+                let rootName = fileManagerClient.displayName("/")
                 return [
                     EntryModel(
                         name: rootName,
@@ -214,19 +217,19 @@ enum EntryLoadingLive {
 
     nonisolated static var fileExists: @Sendable (String) -> Bool {
         { path in
-            FileManager.default.fileExists(atPath: path)
+            FileManagerClient.liveValue.fileExists(path)
         }
     }
 
     nonisolated static var fileExistsAtPath: @Sendable (String, UnsafeMutablePointer<ObjCBool>?) -> Bool {
         { path, isDirectory in
-            FileManager.default.fileExists(atPath: path, isDirectory: isDirectory)
+            FileManagerClient.liveValue.fileExistsWithIsDirectory(path, isDirectory)
         }
     }
 
     nonisolated static var displayName: @Sendable (String) -> String {
         { path in
-            FileManager.default.displayName(atPath: path)
+            FileManagerClient.liveValue.displayName(path)
         }
     }
 
@@ -235,7 +238,7 @@ enum EntryLoadingLive {
         FileManager.SearchPathDomainMask,
     ) -> [URL] {
         { directory, domain in
-            FileManager.default.urls(for: directory, in: domain)
+            FileManagerClient.liveValue.urlsForDirectory(directory, domain)
         }
     }
 
@@ -247,7 +250,7 @@ enum EntryLoadingLive {
 
     nonisolated static var trashDirectoryPath: @Sendable () -> String? {
         {
-            FileManager.default.urls(for: .trashDirectory, in: .userDomainMask).first?.path
+            FileManagerClient.liveValue.urlsForDirectory(.trashDirectory, .userDomainMask).first?.path
         }
     }
 
@@ -256,7 +259,7 @@ enum EntryLoadingLive {
         FileManager.VolumeEnumerationOptions,
     ) -> [URL]? {
         { keys, options in
-            FileManager.default.mountedVolumeURLs(includingResourceValuesForKeys: keys, options: options)
+            FileManagerClient.liveValue.mountedVolumeURLs(keys, options)
         }
     }
 
@@ -266,7 +269,7 @@ enum EntryLoadingLive {
         FileManager.DirectoryEnumerationOptions,
     ) throws -> [URL] {
         { url, keys, options in
-            try FileManager.default.contentsOfDirectory(at: url, includingPropertiesForKeys: keys, options: options)
+            try FileManagerClient.liveValue.contentsOfDirectory(url, keys, options)
         }
     }
 
@@ -336,10 +339,10 @@ enum EntryLoadingLive {
 
     nonisolated static var getFolderItemCount: @Sendable (URL) -> Int? {
         { url in
-            guard let entries = try? FileManager.default.contentsOfDirectory(
-                at: url,
-                includingPropertiesForKeys: nil,
-                options: [.skipsHiddenFiles],
+            guard let entries = try? FileManagerClient.liveValue.contentsOfDirectory(
+                url,
+                nil,
+                [.skipsHiddenFiles],
             ) else {
                 return nil
             }
@@ -419,16 +422,18 @@ private final class MetadataQueryWrapper: @unchecked Sendable {
 private final class MetadataObserverWrapper: @unchecked Sendable {
     private let lock = NSLock()
     private nonisolated(unsafe) var observer: NSObjectProtocol?
+    private let notificationCenterClient: NotificationCenterClient
 
-    init(_ observer: NSObjectProtocol?) {
+    init(_ observer: NSObjectProtocol?, notificationCenterClient: NotificationCenterClient) {
         self.observer = observer
+        self.notificationCenterClient = notificationCenterClient
     }
 
     nonisolated func setObserver(_ observer: NSObjectProtocol?) {
         lock.lock()
         defer { lock.unlock() }
         if let oldObserver = self.observer {
-            NotificationCenter.default.removeObserver(oldObserver)
+            notificationCenterClient.removeObserver(oldObserver)
         }
         self.observer = observer
     }
@@ -437,7 +442,7 @@ private final class MetadataObserverWrapper: @unchecked Sendable {
         lock.lock()
         defer { lock.unlock() }
         if let observer {
-            NotificationCenter.default.removeObserver(observer)
+            notificationCenterClient.removeObserver(observer)
             self.observer = nil
         }
     }
@@ -450,12 +455,14 @@ enum EntryMetadataSearchLive {
         fileExistsAtPath: @escaping @Sendable (String, UnsafeMutablePointer<ObjCBool>?) -> Bool,
     ) async -> [EntryModel] {
         let entryLoadingClient = EntryLoadingClient.liveValue
+        let notificationCenterClient = NotificationCenterClient.liveValue
         let predicate = NSPredicate(format: "kMDItemLastUsedDate > %@", Date.distantPast as NSDate)
         let sortDescriptors = [NSSortDescriptor(key: "kMDItemLastUsedDate", ascending: false)]
 
         let recentFiles = await searchFiles(
             predicate: predicate,
             fileExistsAtPath: fileExistsAtPath,
+            notificationCenterClient: notificationCenterClient,
             sortDescriptors: sortDescriptors,
             filterFiles: true,
         )
@@ -477,12 +484,14 @@ enum EntryMetadataSearchLive {
         fileExistsAtPath: @escaping @Sendable (String, UnsafeMutablePointer<ObjCBool>?) -> Bool,
     ) async -> [EntryModel] {
         let entryLoadingClient = EntryLoadingClient.liveValue
+        let notificationCenterClient = NotificationCenterClient.liveValue
         let predicate = NSPredicate(format: "kMDItemUserTags CONTAINS %@", tag)
         let sortDescriptors = [NSSortDescriptor(key: "kMDItemLastUsedDate", ascending: false)]
 
         let taggedFiles = await searchFiles(
             predicate: predicate,
             fileExistsAtPath: fileExistsAtPath,
+            notificationCenterClient: notificationCenterClient,
             sortDescriptors: sortDescriptors,
         )
 
@@ -505,6 +514,7 @@ enum EntryMetadataSearchLive {
     private static func searchFiles(
         predicate: NSPredicate,
         fileExistsAtPath: @escaping @Sendable (String, UnsafeMutablePointer<ObjCBool>?) -> Bool,
+        notificationCenterClient: NotificationCenterClient,
         sortDescriptors: [NSSortDescriptor] = [],
         timeout: TimeInterval = 5,
         filterFiles: Bool = false,
@@ -518,12 +528,11 @@ enum EntryMetadataSearchLive {
 
                 let completionState = MetadataQueryCompletionState()
                 let queryWrapper = MetadataQueryWrapper(query)
-                let observerWrapper = MetadataObserverWrapper(nil)
+                let observerWrapper = MetadataObserverWrapper(nil, notificationCenterClient: notificationCenterClient)
 
-                let observer = NotificationCenter.default.addObserver(
-                    forName: .NSMetadataQueryDidFinishGathering,
-                    object: queryWrapper.query,
-                    queue: .main,
+                let observer = notificationCenterClient.addObserver(
+                    .NSMetadataQueryDidFinishGathering,
+                    queryWrapper.query,
                 ) { _ in
                     let capturedQuery = queryWrapper.query
                     Task { @MainActor in

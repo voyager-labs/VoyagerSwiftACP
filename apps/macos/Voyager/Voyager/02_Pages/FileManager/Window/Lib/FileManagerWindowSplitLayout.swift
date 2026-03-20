@@ -44,6 +44,18 @@ enum FileManagerWindowSplitLayout {
         )
     }
 
+    static func applySplitBackground(_ splitView: NSSplitView?) {
+        splitView?.layer?.backgroundColor = NSColor.clear.cgColor
+    }
+
+    static func updateMainContainerLeading(
+        _ constraint: NSLayoutConstraint?,
+        isSidebarVisible: Bool,
+        contentVerticalMargin: CGFloat,
+    ) {
+        constraint?.constant = isSidebarVisible ? 0 : contentVerticalMargin
+    }
+
     private static func makeBackgroundEffectView() -> NSVisualEffectView {
         let backgroundEffect = NSVisualEffectView()
         backgroundEffect.material = .sidebar
@@ -136,17 +148,5 @@ enum FileManagerWindowSplitLayout {
             splitView.leadingAnchor.constraint(equalTo: backgroundEffect.leadingAnchor),
             splitView.trailingAnchor.constraint(equalTo: backgroundEffect.trailingAnchor),
         ])
-    }
-
-    static func applySplitBackground(_ splitView: NSSplitView?) {
-        splitView?.layer?.backgroundColor = NSColor.clear.cgColor
-    }
-
-    static func updateMainContainerLeading(
-        _ constraint: NSLayoutConstraint?,
-        isSidebarVisible: Bool,
-        contentVerticalMargin: CGFloat,
-    ) {
-        constraint?.constant = isSidebarVisible ? 0 : contentVerticalMargin
     }
 }

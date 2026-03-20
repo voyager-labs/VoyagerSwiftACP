@@ -87,6 +87,7 @@ private func handleClearAll(state: inout ComposerFeature.State) -> Effect<Compos
     state.text = ""
     state.scopes = [ComposerScopeUtils.rootScopePath]
     state.conditions = []
+    state.conditionDisplayByKey = [:]
     state.operatorOptionsByKey = [:]
     state.propertyPicker = .init()
     state.operatorPicker = .init()

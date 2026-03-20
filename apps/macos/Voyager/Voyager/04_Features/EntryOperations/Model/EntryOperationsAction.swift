@@ -24,7 +24,6 @@ enum EntryOperationsAction: CasePathable, Sendable {
     case clearCollectionItems
 
     case openFiles(paths: [String])
-    case quickLookFile(path: String)
     case quickLookFiles(paths: [String])
     case openFinderInfo(paths: [String])
     case shareItems(paths: [String], anchor: CGPoint?)

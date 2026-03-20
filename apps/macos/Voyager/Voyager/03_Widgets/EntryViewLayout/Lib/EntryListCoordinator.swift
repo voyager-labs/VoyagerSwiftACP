@@ -1,5 +1,6 @@
 import AppKit
 import ComposableArchitecture
+import VoyagerShared
 
 struct EntryListCoordinatorSortDescriptorChange: Equatable {
     let sortKey: SortKey
@@ -233,6 +234,8 @@ final class EntryListCoordinator: NSObject {
     var thumbnailGeneratorClient
     @Dependency(\.finderFavoritesTagClient)
     var finderFavoritesTagClient
+    @Dependency(\.notificationCenterClient)
+    var notificationCenterClient
     init(store: StoreOf<EntryViewLayoutFeature>) {
         self.store = store
         super.init()
@@ -273,12 +276,11 @@ final class EntryListCoordinator: NSObject {
 
     func observeTableView() {
         if let boundsDidChangeObserver {
-            NotificationCenter.default.removeObserver(boundsDidChangeObserver)
+            notificationCenterClient.removeObserver(boundsDidChangeObserver)
         }
-        boundsDidChangeObserver = NotificationCenter.default.addObserver(
-            forName: NSView.boundsDidChangeNotification,
-            object: scrollView.contentView,
-            queue: .main,
+        boundsDidChangeObserver = notificationCenterClient.addObserver(
+            NSView.boundsDidChangeNotification,
+            scrollView.contentView,
         ) { [weak self] _ in
             DispatchQueue.main.async { [weak self] in
                 self?.visibleRowsPrefetchThrottler.schedule { [weak self] in

@@ -34,4 +34,9 @@ enum FileManagerContentAction: CasePathable, Sendable {
     case openPathInNewWindow(String)
     case openPathInNewTab(String)
     case closeWindow
+
+    // System lifecycle
+    case startObservingSystemNotifications
+    case stopObservingSystemNotifications
+    case systemAppDidBecomeActive
 }

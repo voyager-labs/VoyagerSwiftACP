@@ -13,6 +13,7 @@ struct ValuePickerState: Equatable {
     var isCategoricalProperty: Bool = false
 
     var values: [String] = [""]
+    var unitValueState: UnitValueState?
     var tokenInput: String = ""
     var finderTagListState: FinderTagListState?
     var errorMessage: String?
@@ -21,4 +22,10 @@ struct ValuePickerState: Equatable {
 
 struct FinderTagListState: Equatable {
     var options: [Tag]
+}
+
+struct UnitValueState: Equatable {
+    var selectedUnitCode: String
+    var availableUnitCodes: [String]
+    var unitLabelsByCode: [String: String]
 }

@@ -17,17 +17,17 @@ extension CollectionFileClient: DependencyKey {
                 encoder.outputFormat = .binary
                 return try encoder.encode(file)
             }
-            let fileManager = FileManager.default
+            let fileManagerClient = FileManagerClient.liveValue
 
             var isDirectory: ObjCBool = false
-            let exists = fileManager.fileExists(atPath: url.path, isDirectory: &isDirectory)
+            let exists = fileManagerClient.fileExistsWithIsDirectory(url.path, &isDirectory)
             if exists, !isDirectory.boolValue {
                 // 동일 경로에 파일이 있으면 패키지 디렉터리로 교체한다.
-                try fileManager.removeItem(at: url)
+                try fileManagerClient.removeItem(url)
             }
 
             if !exists || !isDirectory.boolValue {
-                try fileManager.createDirectory(at: url, withIntermediateDirectories: false)
+                try fileManagerClient.createDirectory(url, false, nil)
             }
 
             let payloadURL = url.appendingPathComponent(packagePayloadFilename)
@@ -35,12 +35,12 @@ extension CollectionFileClient: DependencyKey {
         },
         load: { url in
             let packagePayloadFilename = "collection.plist"
-            let fileManager = FileManager.default
+            let fileManagerClient = FileManagerClient.liveValue
 
             var isDirectory: ObjCBool = false
-            if fileManager.fileExists(atPath: url.path, isDirectory: &isDirectory), isDirectory.boolValue {
+            if fileManagerClient.fileExistsWithIsDirectory(url.path, &isDirectory), isDirectory.boolValue {
                 let payloadURL = url.appendingPathComponent(packagePayloadFilename)
-                let payloadExists = fileManager.fileExists(atPath: payloadURL.path, isDirectory: nil)
+                let payloadExists = fileManagerClient.fileExists(payloadURL.path)
                 guard payloadExists else {
                     throw CocoaError(.fileReadNoSuchFile, userInfo: [
                         NSLocalizedDescriptionKey: "Missing \(packagePayloadFilename) in .voycoll package.",

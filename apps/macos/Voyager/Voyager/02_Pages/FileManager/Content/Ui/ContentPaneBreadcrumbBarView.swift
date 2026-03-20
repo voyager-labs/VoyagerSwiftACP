@@ -5,7 +5,44 @@ import SwiftUI
 @MainActor
 struct ContentPaneBreadcrumbBarView: View {
     let store: StoreOf<FileManagerContentFeature>
+    let chromeProps: FileManagerContentChromeProps
     let onNavigate: (String) -> Void
+
+    private func displayName(for path: String) -> String {
+        if path == "/" {
+            return chromeProps.computerName.isEmpty ? "Computer" : chromeProps.computerName
+        }
+
+        if let cached = chromeProps.pathDisplayNames[path], !cached.isEmpty {
+            return cached
+        }
+
+        let fallback = URL(fileURLWithPath: path).lastPathComponent
+        return fallback.isEmpty ? path : fallback
+    }
+
+    private func iconSystemName(forDirectoryPath path: String) -> String {
+        if path == "/" {
+            return "internaldrive"
+        }
+        if path == chromeProps.breadcrumbRoots.homePath {
+            return "house"
+        }
+        if path.hasPrefix("/Volumes/") {
+            return "externaldrive"
+        }
+        if let mapped = chromeProps.specialDirectoryIconNames[path] {
+            return mapped
+        }
+        return "folder"
+    }
+
+    private func iconSystemName(for entry: EntryModel) -> String {
+        if entry.fileExtension.lowercased() == CollectionConstants.fileExtension {
+            return "rectangle.stack"
+        }
+        return entry.isFolder ? "folder" : "doc"
+    }
 
     private var statusText: String {
         let total = store.entryViewLayout.entryOperations.displayItems.count
@@ -22,20 +59,13 @@ struct ContentPaneBreadcrumbBarView: View {
         GeometryReader { proxy in
             let totalWidth = max(proxy.size.width - 32, 0)
             let leftWidth = max(totalWidth * 0.5, 0)
+            let breadcrumbItems = resolvedBreadcrumbItems()
 
             HStack(spacing: 0) {
-                let breadcrumbItems = BreadcrumbBuilder.breadcrumbItems(
-                    navigationState: store.navigation.navigationState,
-                    selectedPath: selectedPath,
-                    computerName: computerName,
-                    homePath: homePath,
-                    trashPath: trashPath,
-                    displayName: { path in FileManager.default.displayName(atPath: path) },
-                )
                 let selectedBreadcrumbItem = BreadcrumbBuilder.selectedBreadcrumbItem(
-                    selectedPath: selectedPath,
-                    selectedName: selectedName,
+                    selectedEntry: selectedEntry,
                     currentPath: store.navigation.currentPath,
+                    iconSystemName: { entry in iconSystemName(for: entry) },
                 )
 
                 if !breadcrumbItems.isEmpty || selectedBreadcrumbItem != nil {
@@ -66,16 +96,34 @@ struct ContentPaneBreadcrumbBarView: View {
         .frame(height: 24)
     }
 
-    private var computerName: String {
-        FileManager.default.displayName(atPath: "/")
-    }
-
-    private var homePath: String {
-        NSHomeDirectory()
-    }
-
-    private var trashPath: String? {
-        FileManager.default.urls(for: .trashDirectory, in: .userDomainMask).first?.path
+    private func resolvedBreadcrumbItems() -> [BreadcrumbItem] {
+        switch store.navigation.navigationState {
+        case .recents, .tags, .collection:
+            return []
+        case .computer:
+            guard store.navigation.currentPath != "/" else {
+                return []
+            }
+            return [
+                BreadcrumbItem(
+                    path: "/",
+                    name: chromeProps.computerName,
+                    iconSystemName: iconSystemName(forDirectoryPath: "/"),
+                ),
+            ]
+        case .folder:
+            let paths = BreadcrumbBuilder.breadcrumbPaths(
+                navigationState: store.navigation.navigationState,
+                roots: chromeProps.breadcrumbRoots,
+            )
+            return paths.map { path in
+                BreadcrumbItem(
+                    path: path,
+                    name: displayName(for: path),
+                    iconSystemName: iconSystemName(forDirectoryPath: path),
+                )
+            }
+        }
     }
 
     private var selectedEntry: EntryModel? {
@@ -85,13 +133,5 @@ struct ContentPaneBreadcrumbBarView: View {
             return nil
         }
         return store.entryViewLayout.entryOperations.displayItems[id: selectedId]
-    }
-
-    private var selectedPath: String? {
-        selectedEntry?.fullPath
-    }
-
-    private var selectedName: String? {
-        selectedEntry?.name
     }
 }

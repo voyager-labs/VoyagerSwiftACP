@@ -24,7 +24,9 @@ Generate 3 commit-message candidates from staged changes, ask the user to pick o
 - **Follow Templates**: Use `references/output-template.md`, `references/response-template.md`, and `references/selection-and-commit.md`.
 - **Comprehensive Subject**: If multiple files are staged, the subject MUST cover the intent of ALL staged changes. Do not write a subject that only covers one file.
 - **Empty State**: If no files are staged, do not hallucinate a message. Inform the user to stage files.
+- **Body Optionality**: Omit the body when the staged change is small enough and the subject already communicates the change clearly.
 - **Bullet Format**: If adding a body, use `- ` for all bullet points.
+- **No Bullet Padding**: Never add filler bullets just to make the message look balanced or complete. Use only as many bullets as the staged changes actually need.
 - **No Secrets**: Never include API keys, tokens, or PII in the commit message.
 
 ## Workflow

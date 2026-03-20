@@ -9,6 +9,10 @@ struct FileManagerSidebarFeature {
     typealias State = FileManagerSidebarState
     typealias Action = FileManagerSidebarAction
 
+    fileprivate enum CancelID {
+        static let systemNotifications = "FileManagerSidebarFeature.systemNotifications"
+    }
+
     var body: some Reducer<State, Action> {
         let visibility = SidebarVisibilityReducer()
         let favorites = SidebarFavoritesReducer()
@@ -16,6 +20,7 @@ struct FileManagerSidebarFeature {
         let tags = SidebarTagsReducer()
         let sectionCollapse = SidebarSectionCollapseReducer()
         let width = SidebarWidthReducer()
+        let contextMenu = SidebarContextMenuReducer()
 
         Reduce { state, action in
             .merge(
@@ -25,6 +30,7 @@ struct FileManagerSidebarFeature {
                 tags.reduce(into: &state, action: action),
                 sectionCollapse.reduce(into: &state, action: action),
                 width.reduce(into: &state, action: action),
+                contextMenu.reduce(into: &state, action: action),
             )
         }
     }
@@ -339,6 +345,44 @@ private struct SidebarWidthReducer {
             }
             state.sidebarWidth = clampedWidth
             userDefaultsClient.setDouble(clampedWidth, SettingsKeys.sidebarWidth)
+            return .none
+
+        default:
+            return .none
+        }
+    }
+}
+
+private struct SidebarContextMenuReducer {
+    @Dependency(\.notificationCenterClient)
+    private var notificationCenterClient
+
+    func reduce(into state: inout FileManagerSidebarState, action: FileManagerSidebarAction)
+        -> Effect<FileManagerSidebarAction>
+    {
+        switch action {
+        case .startObservingSystemNotifications:
+            return .run { send in
+                for await _ in await notificationCenterClient.notifications(
+                    NSMenu.didEndTrackingNotification,
+                    nil,
+                ) {
+                    await send(.systemMenuDidEndTracking)
+                }
+            }
+            .cancellable(id: FileManagerSidebarFeature.CancelID.systemNotifications, cancelInFlight: true)
+
+        case .stopObservingSystemNotifications:
+            return .cancel(id: FileManagerSidebarFeature.CancelID.systemNotifications)
+
+        case .systemMenuDidEndTracking:
+            state.contextMenuTargetId = nil
+            state.contextMenuTargetWasSelected = false
+            return .none
+
+        case let .setContextMenuTarget(id, wasSelected):
+            state.contextMenuTargetId = id
+            state.contextMenuTargetWasSelected = wasSelected
             return .none
 
         default:

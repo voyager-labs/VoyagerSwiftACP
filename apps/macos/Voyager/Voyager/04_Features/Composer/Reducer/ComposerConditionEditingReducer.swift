@@ -37,6 +37,15 @@ struct ComposerConditionEditingReducer {
                     registryClient: registryClient,
                 )
 
+            case let .view(.setDisplayUnit(propertyKey: propertyKey, unitCode: unitCode)):
+                return handleSetDisplayUnit(
+                    state: &state,
+                    propertyKey: propertyKey,
+                    unitCode: unitCode,
+                    registryClient: registryClient,
+                    searchClient: searchClient,
+                )
+
             case let .propertyPicker(.propertyTapped(property)):
                 if let editingKey = state.propertyPicker.editingConditionKey {
                     return .send(.replaceConditionProperty(originalKey: editingKey, propertyKey: property))
@@ -99,51 +108,22 @@ struct ComposerConditionEditingReducer {
                 }
                 return .none
 
-            case let .valuePicker(.prepare(payload)):
-                guard !state.isLoadingSearch else { return .none }
-                state.valuePicker.propertyKey = payload.propertyKey
-                state.valuePicker.operatorCode = payload.operatorCode
-                state.valuePicker.valueType = payload.valueType
-                state.valuePicker.valueArity = max(0, payload.valueArity)
-                state.valuePicker.valueUIKind = payload.valueUIKind
-                state.valuePicker.editingIndex = payload.editingIndex
-
-                if state.valuePicker.valueArity == 0 {
-                    state.valuePicker.values = []
-                } else if let existingValues = payload.existingValues {
-                    let trimmed = existingValues.map {
-                        $0.trimmingCharacters(in: .whitespacesAndNewlines)
-                    }
-                    state.valuePicker.values = Array(trimmed.prefix(state.valuePicker.valueArity))
-                    if state.valuePicker.values.count < state.valuePicker.valueArity {
-                        state.valuePicker.values.append(contentsOf: Array(
-                            repeating: "",
-                            count: state.valuePicker.valueArity - state.valuePicker.values.count,
-                        ))
-                    }
-                } else if state.valuePicker.valueArity == 1 {
-                    state.valuePicker.values = [""]
-                } else {
-                    state.valuePicker.values = Array(repeating: "", count: state.valuePicker.valueArity)
-                }
-                state.valuePicker.isPresented = true
-                return .none
-
-            case let .valuePicker(.setValue(index, text)):
-                guard !state.isLoadingSearch else { return .none }
-                if state.valuePicker.values.indices.contains(index) {
-                    state.valuePicker.values[index] = text
-                }
-                return .none
-
             case .valuePicker(.commit):
                 return .none
 
-            case let .valuePicker(.commitResult(propertyKey, values)):
+            case let .valuePicker(.commitResult(propertyKey, values, displayValues, selectedUnitCode)):
                 guard !state.isLoadingSearch else { return .none }
                 if let idx = state.conditions.firstIndex(where: { $0.propertyKey == propertyKey }) {
                     state.pushHistory()
                     state.conditions[idx].values = values
+                    if selectedUnitCode != nil {
+                        state.conditionDisplayByKey[propertyKey] = .init(
+                            values: displayValues,
+                            unitValueState: state.valuePicker.unitValueState,
+                        )
+                    } else {
+                        resetConditionDisplayState(propertyKey: propertyKey, state: &state)
+                    }
                 }
                 resetValuePicker(state: &state)
                 return applyFiltersIfNeeded(state: &state, searchClient: searchClient)
@@ -156,6 +136,11 @@ struct ComposerConditionEditingReducer {
                 if let idx = state.conditions.firstIndex(where: { $0.propertyKey == propertyKey }) {
                     state.pushHistory()
                     state.conditions[idx].values = values
+                    syncConditionDisplayState(
+                        propertyKey: propertyKey,
+                        state: &state,
+                        registryClient: registryClient,
+                    )
                 }
                 resetValuePicker(state: &state)
                 return .none
@@ -208,6 +193,7 @@ private func handleRemoveCondition(
     if state.conditions.contains(where: { $0.propertyKey == propertyKey }) {
         state.pushHistory()
         state.conditions.removeAll { $0.propertyKey == propertyKey }
+        resetConditionDisplayState(propertyKey: propertyKey, state: &state)
         updateOperatorOptions(state: &state, registryClient: registryClient)
     }
     return .none
@@ -236,6 +222,11 @@ private func handleSetOperator(
         state.conditions[idx].operatorValueUIKind = uiValueKind
         state.conditions[idx].valueType = registryClient.valueType(for: uiValueKind)
         state.conditions[idx].values = valueArity == 0 ? [] : nil
+        syncConditionDisplayState(
+            propertyKey: propertyKey,
+            state: &state,
+            registryClient: registryClient,
+        )
 
         if state.valuePicker.propertyKey == propertyKey {
             state.valuePicker.isPresented = false
@@ -288,9 +279,76 @@ private func handleReplaceConditionProperty(
     state.conditions[idx].operatorValueUIKind = nil
     state.conditions[idx].valueType = SystemPropertyTypeKey.normalizedValueType(from: propertyType)
     state.conditions[idx].values = nil
+    resetConditionDisplayState(propertyKey: originalKey, state: &state)
     updateOperatorOptions(state: &state, registryClient: registryClient)
     state.propertyPicker.editingConditionKey = nil
     state.propertyPicker.isPresented = false
     state.propertyPicker.duplicateMessage = nil
     return .none
+}
+
+private func handleSetDisplayUnit(
+    state: inout ComposerFeature.State,
+    propertyKey: String,
+    unitCode: String,
+    registryClient: RegistryClient,
+    searchClient: SearchClient,
+) -> Effect<ComposerFeature.Action> {
+    guard !state.isLoadingSearch,
+          let idx = state.conditions.firstIndex(where: { $0.propertyKey == propertyKey }),
+          let spec = UnitValueUtils.spec(for: propertyKey, registryClient: registryClient)
+    else {
+        return .none
+    }
+
+    guard UnitValueUtils.unitCodes(spec: spec).contains(unitCode) else { return .none }
+
+    let sourceDisplayValues = displayValues(for: state.conditions[idx], state: state)
+    let normalizedDisplayValues = UnitValueUtils.strippedDisplayValues(sourceDisplayValues, spec: spec)
+    guard let canonicalValues = UnitValueUtils.toCanonicalValues(
+        displayValues: normalizedDisplayValues,
+        from: unitCode,
+        spec: spec,
+    ) else {
+        return .none
+    }
+
+    state.pushHistory()
+    state.conditions[idx].values = canonicalValues
+    state.conditionDisplayByKey[propertyKey] = .init(
+        values: normalizedDisplayValues,
+        unitValueState: UnitValuePresentationUtils.makeState(spec: spec, preferredUnitCode: unitCode),
+    )
+    return applyFiltersIfNeeded(state: &state, searchClient: searchClient)
+}
+
+private func resetConditionDisplayState(
+    propertyKey: String,
+    state: inout ComposerFeature.State,
+) {
+    state.conditionDisplayByKey.removeValue(forKey: propertyKey)
+}
+
+private func syncConditionDisplayState(
+    propertyKey: String,
+    state: inout ComposerFeature.State,
+    registryClient: RegistryClient,
+) {
+    guard let condition = state.conditions.first(where: { $0.propertyKey == propertyKey }),
+          let displayState = defaultDisplayState(for: condition, registryClient: registryClient)
+    else {
+        resetConditionDisplayState(propertyKey: propertyKey, state: &state)
+        return
+    }
+    state.conditionDisplayByKey[propertyKey] = displayState
+}
+
+private func displayValues(
+    for condition: Condition,
+    state: ComposerFeature.State,
+) -> [String] {
+    if let display = state.conditionDisplayByKey[condition.propertyKey]?.values {
+        return display
+    }
+    return condition.values ?? []
 }

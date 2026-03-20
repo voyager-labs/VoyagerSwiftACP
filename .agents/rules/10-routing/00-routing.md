@@ -16,6 +16,7 @@ description: 'Routing rules: which domain rules to load by path/task.'
 - If touching `apps/macos/**`:
   - Load `30-macos/00-macos-rules.md`
   - Load `30-macos/01-http-and-env.md` for network/env/bootstrap work.
+  - If touching `apps/macos/Voyager/Voyager/**`, also load `30-macos/03-voyager-app-workflow.md`.
 - If touching both backend and macOS:
   - Load both backend and macOS domain rules.
 - If docs-only:

@@ -23,6 +23,7 @@ enum ComposerAction: ViewAction, CasePathable, Sendable {
         case replaceConditionProperty(originalKey: String, propertyKey: String)
         case setOperator(propertyKey: String, operatorCode: String)
         case setValue(propertyKey: String, values: [String])
+        case setDisplayUnit(propertyKey: String, unitCode: String)
         case clearAll
         case submit
         case applyFilters
@@ -70,6 +71,10 @@ extension ComposerAction {
 
     static func setValue(propertyKey: String, values: [String]) -> Self {
         .view(.setValue(propertyKey: propertyKey, values: values))
+    }
+
+    static func setDisplayUnit(propertyKey: String, unitCode: String) -> Self {
+        .view(.setDisplayUnit(propertyKey: propertyKey, unitCode: unitCode))
     }
 
     static var clearAll: Self { .view(.clearAll) }

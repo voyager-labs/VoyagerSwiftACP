@@ -73,20 +73,6 @@ enum ValueNormalizerUtils {
         return nil
     }
 
-    private static func normalizedDay(_ date: Date) -> Date {
-        // 캘린더 컴포넌트는 사용자의 현지 시간대를 기준으로 뽑고,
-        // 최종 Date는 UTC 자정으로 고정해 날짜가 하루 당겨지지 않도록 맞춤.
-        var localCalendar = Calendar(identifier: .gregorian)
-        localCalendar.timeZone = .current
-        let comps = localCalendar.dateComponents([.year, .month, .day], from: date)
-
-        var utcCalendar = Calendar(identifier: .gregorian)
-        if let utc = TimeZone(secondsFromGMT: 0) {
-            utcCalendar.timeZone = utc
-        }
-        return utcCalendar.date(from: comps) ?? date
-    }
-
     static func startOfDayString(for date: Date) -> String {
         let calendar = Calendar(identifier: .gregorian)
         let utc = TimeZone(secondsFromGMT: 0) ?? .current
@@ -158,18 +144,6 @@ enum ValueNormalizerUtils {
         }
     }
 
-    private static func requireNonEmpty(_ texts: [String]) -> [String]? {
-        let trimmed = texts.map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
-        return trimmed.contains(where: \.isEmpty) ? nil : trimmed
-    }
-
-    private static func splitList(_ text: String) -> [String] {
-        text
-            .split(whereSeparator: { $0 == "," || $0.isNewline })
-            .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
-            .filter { !$0.isEmpty }
-    }
-
     static func deduplicatedTokenValues(_ rawValues: [String]) -> [String] {
         var seen: Set<String> = []
         var result: [String] = []
@@ -184,6 +158,32 @@ enum ValueNormalizerUtils {
         }
 
         return result
+    }
+
+    private static func normalizedDay(_ date: Date) -> Date {
+        // 캘린더 컴포넌트는 사용자의 현지 시간대를 기준으로 뽑고,
+        // 최종 Date는 UTC 자정으로 고정해 날짜가 하루 당겨지지 않도록 맞춤.
+        var localCalendar = Calendar(identifier: .gregorian)
+        localCalendar.timeZone = .current
+        let comps = localCalendar.dateComponents([.year, .month, .day], from: date)
+
+        var utcCalendar = Calendar(identifier: .gregorian)
+        if let utc = TimeZone(secondsFromGMT: 0) {
+            utcCalendar.timeZone = utc
+        }
+        return utcCalendar.date(from: comps) ?? date
+    }
+
+    private static func requireNonEmpty(_ texts: [String]) -> [String]? {
+        let trimmed = texts.map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+        return trimmed.contains(where: \.isEmpty) ? nil : trimmed
+    }
+
+    private static func splitList(_ text: String) -> [String] {
+        text
+            .split(whereSeparator: { $0 == "," || $0.isNewline })
+            .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+            .filter { !$0.isEmpty }
     }
 
     private static func normalizeSingleText(rawValues: [String]) -> ValueNormalizeResult {

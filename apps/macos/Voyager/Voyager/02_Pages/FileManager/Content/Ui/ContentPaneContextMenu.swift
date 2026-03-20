@@ -5,9 +5,12 @@ import SwiftUI
 struct ContentPaneContextMenu: View {
     let store: StoreOf<FileManagerContentFeature>
 
+    @Dependency(\.fileManagerClient)
+    private var fileManagerClient
+
     private var isTrashFolder: Bool {
         guard case let .folder(path) = store.navigation.navigationState,
-              let trashPath = FileManager.default.urls(for: .trashDirectory, in: .userDomainMask).first?.path
+              let trashPath = fileManagerClient.urlsForDirectory(.trashDirectory, .userDomainMask).first?.path
         else {
             return false
         }

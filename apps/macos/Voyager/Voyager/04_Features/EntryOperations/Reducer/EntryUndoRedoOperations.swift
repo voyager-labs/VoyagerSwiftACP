@@ -12,6 +12,8 @@ struct EntryUndoRedoOperationsReducer { // swiftlint:disable:this type_body_leng
     var entryFileOpsClient
     @Dependency(\.undoManagerClient)
     var undoManagerClient
+    @Dependency(\.trashMetadataStoreClient)
+    var trashMetadataStoreClient
 
     private struct EntryActionOperation {
         let operationPath: String
@@ -519,7 +521,7 @@ struct EntryUndoRedoOperationsReducer { // swiftlint:disable:this type_body_leng
             originalPath: path,
             deletedDate: Date(),
         )
-        await TrashMetadataStore.shared.save(metadata)
+        await trashMetadataStoreClient.save(metadata)
         return trashURL.path
     }
 

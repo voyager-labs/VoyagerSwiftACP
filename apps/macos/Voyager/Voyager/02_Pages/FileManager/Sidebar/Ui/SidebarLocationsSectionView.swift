@@ -2,9 +2,6 @@ import ComposableArchitecture
 import SwiftUI
 
 struct SidebarLocationsSectionView: View {
-    @Binding var contextMenuTargetId: String?
-    @Binding var contextMenuTargetWasSelected: Bool
-
     let store: StoreOf<FileManagerSidebarFeature>
 
     var body: some View {
@@ -21,8 +18,8 @@ struct SidebarLocationsSectionView: View {
             if !store.isLocationsCollapsed {
                 ForEach(store.locations, id: \.url) { location in
                     let isSelected = store.selectedSidebarItem == location.name
-                    let isContextMenuTarget = contextMenuTargetId == location.name
-                    let wasSelected = isContextMenuTarget ? contextMenuTargetWasSelected : false
+                    let isContextMenuTarget = store.contextMenuTargetId == location.name
+                    let wasSelected = isContextMenuTarget ? store.contextMenuTargetWasSelected : false
 
                     SidebarItemView(
                         iconName: location.iconName,

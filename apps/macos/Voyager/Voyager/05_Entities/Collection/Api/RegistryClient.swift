@@ -5,6 +5,7 @@ struct RegistryClient: Sendable {
     var allProperties: @Sendable () -> [RegistrySnapshot.PropertyEntry]
     var labelForKey: @Sendable (_ key: String) -> String
     var propertyTypeString: @Sendable (_ key: String) -> String
+    var propertyUnitSpec: @Sendable (_ key: String) -> SystemPropertyUnitSpec?
     var operatorCodes: @Sendable (_ key: String) -> [String]
     var operatorDefinition: @Sendable (_ code: String) -> OperatorDefinition
     var operatorValueUIKind: @Sendable (_ code: String, _ typeKey: String) -> String
@@ -24,6 +25,17 @@ extension RegistryClient {
 
     func propertyTypeString(for key: String) -> String {
         propertyTypeString(key)
+    }
+
+    func unitSpec(for key: String) -> SystemPropertyUnitSpec? {
+        switch resolveKey(key) {
+        case let .canonical(canonicalKey):
+            propertyUnitSpec(canonicalKey)
+        case let .legacy(_, normalized):
+            propertyUnitSpec(normalized)
+        case .unknown:
+            nil
+        }
     }
 
     func operatorCodes(for key: String) -> [String] {
@@ -76,6 +88,7 @@ extension RegistryClient: DependencyKey, TestDependencyKey {
         allProperties: { [] },
         labelForKey: { $0 },
         propertyTypeString: { _ in "unknown" },
+        propertyUnitSpec: { _ in nil },
         operatorCodes: { _ in [] },
         operatorDefinition: { _ in
             preconditionFailure("operator 정의 누락")
@@ -95,40 +108,47 @@ extension DependencyValues {
 }
 
 extension RegistryClient {
+    private nonisolated static func requiredValue<T>(
+        from dictionary: [String: T],
+        key: String,
+        missingMessage: String,
+    ) -> T {
+        guard let value = dictionary[key] else {
+            preconditionFailure("\(missingMessage): \(key)")
+        }
+        return value
+    }
+
+    private nonisolated static func resolveKey(
+        _ key: String,
+        labels: [String: String],
+        legacyKeyMap: [String: String],
+    ) -> PropertyKeyResolution {
+        if labels[key] != nil {
+            return .canonical(key)
+        }
+        if let normalized = legacyKeyMap[key], labels[normalized] != nil {
+            return .legacy(original: key, normalized: normalized)
+        }
+        return .unknown(key)
+    }
+
     static func live(snapshot: RegistrySnapshot) -> RegistryClient {
         let allProperties = snapshot.allProperties
         let labels = snapshot.propertyKeyToLabel
         let types = snapshot.propertyKeyToType
+        let unitSpecs = snapshot.propertyKeyToUnitSpec
         let operatorMap = snapshot.operatorCodesByKey
         let operatorDefinitions = snapshot.operatorDefinitions
         let legacyKeyMap = snapshot.legacyKeyMap
 
         return RegistryClient(
             allProperties: { allProperties },
-            labelForKey: { key in
-                guard let label = labels[key] else {
-                    preconditionFailure("ui_label 누락: \(key)")
-                }
-                return label
-            },
-            propertyTypeString: { key in
-                guard let type = types[key] else {
-                    preconditionFailure("type 누락: \(key)")
-                }
-                return type
-            },
-            operatorCodes: { key in
-                guard let options = operatorMap[key] else {
-                    preconditionFailure("operator 옵션 누락: \(key)")
-                }
-                return options
-            },
-            operatorDefinition: { code in
-                guard let definition = operatorDefinitions[code] else {
-                    preconditionFailure("operator 정의 누락: \(code)")
-                }
-                return definition
-            },
+            labelForKey: { requiredValue(from: labels, key: $0, missingMessage: "ui_label 누락") },
+            propertyTypeString: { requiredValue(from: types, key: $0, missingMessage: "type 누락") },
+            propertyUnitSpec: { unitSpecs[$0] },
+            operatorCodes: { requiredValue(from: operatorMap, key: $0, missingMessage: "operator 옵션 누락") },
+            operatorDefinition: { requiredValue(from: operatorDefinitions, key: $0, missingMessage: "operator 정의 누락") },
             operatorValueUIKind: { code, typeKey in
                 guard let definition = operatorDefinitions[code],
                       let uiValueKind = definition.uiValueKind?[typeKey]
@@ -137,15 +157,7 @@ extension RegistryClient {
                 }
                 return uiValueKind
             },
-            resolvePropertyKey: { key in
-                if labels[key] != nil {
-                    return .canonical(key)
-                }
-                if let normalized = legacyKeyMap[key], labels[normalized] != nil {
-                    return .legacy(original: key, normalized: normalized)
-                }
-                return .unknown(key)
-            },
+            resolvePropertyKey: { resolveKey($0, labels: labels, legacyKeyMap: legacyKeyMap) },
         )
     }
 }

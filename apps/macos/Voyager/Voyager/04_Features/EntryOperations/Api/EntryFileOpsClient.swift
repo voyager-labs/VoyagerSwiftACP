@@ -178,44 +178,44 @@ enum EntryFileOpsLive {
     nonisolated static var createFolder: @Sendable (URL, String) async throws -> Void {
         { parentURL, folderName in
             let folderURL = parentURL.appendingPathComponent(folderName)
-            try FileManager.default.createDirectory(
-                at: folderURL,
-                withIntermediateDirectories: false,
-                attributes: nil,
+            try FileManagerClient.liveValue.createDirectory(
+                folderURL,
+                false,
+                nil,
             )
         }
     }
 
     nonisolated static var pasteFile: @Sendable (URL, URL) async throws -> Void {
         { sourceURL, destinationURL in
-            if FileManager.default.fileExists(atPath: destinationURL.path) {
+            if FileManagerClient.liveValue.fileExists(destinationURL.path) {
                 throw FileOpError.fileExists(itemName: destinationURL.lastPathComponent)
             }
-            try FileManager.default.copyItem(at: sourceURL, to: destinationURL)
+            try FileManagerClient.liveValue.copyItem(sourceURL, destinationURL)
         }
     }
 
     nonisolated static var moveFile: @Sendable (URL, URL) async throws -> Void {
         { sourceURL, destinationURL in
-            if FileManager.default.fileExists(atPath: destinationURL.path) {
+            if FileManagerClient.liveValue.fileExists(destinationURL.path) {
                 throw FileOpError.fileExists(itemName: destinationURL.lastPathComponent)
             }
-            try FileManager.default.moveItem(at: sourceURL, to: destinationURL)
+            try FileManagerClient.liveValue.moveItem(sourceURL, destinationURL)
         }
     }
 
     nonisolated static var renameFile: @Sendable (URL, URL) async throws -> Void {
         { sourceURL, destinationURL in
-            if FileManager.default.fileExists(atPath: destinationURL.path) {
+            if FileManagerClient.liveValue.fileExists(destinationURL.path) {
                 throw FileOpError.fileExists(itemName: destinationURL.lastPathComponent)
             }
-            try FileManager.default.moveItem(at: sourceURL, to: destinationURL)
+            try FileManagerClient.liveValue.moveItem(sourceURL, destinationURL)
         }
     }
 
     nonisolated static var createAlias: @Sendable (URL, URL) async throws -> Void {
         { sourceURL, aliasURL in
-            if FileManager.default.fileExists(atPath: aliasURL.path) {
+            if FileManagerClient.liveValue.fileExists(aliasURL.path) {
                 throw FileOpError.fileExists(itemName: aliasURL.lastPathComponent)
             }
             let bookmarkData = try sourceURL.bookmarkData(
@@ -230,11 +230,7 @@ enum EntryFileOpsLive {
     nonisolated static var moveToTrashAndReturnURL: @Sendable (URL) async throws -> URL {
         { url in
             try await MainActor.run {
-                var result: NSURL?
-                try FileManager.default.trashItem(at: url, resultingItemURL: &result)
-                guard let trashURL = result as URL? else {
-                    throw FileOpError.system(message: "Trash URL not found")
-                }
+                let trashURL = try FileManagerClient.liveValue.trashItem(url)
                 return trashURL
             }
         }
@@ -242,7 +238,7 @@ enum EntryFileOpsLive {
 
     nonisolated static var deleteImmediately: @Sendable (URL) async throws -> Void {
         { url in
-            try FileManager.default.removeItem(at: url)
+            try FileManagerClient.liveValue.removeItem(url)
         }
     }
 
@@ -251,20 +247,21 @@ enum EntryFileOpsLive {
             let originalURL = URL(fileURLWithPath: originalPath)
 
             let parentURL = originalURL.deletingLastPathComponent()
-            if !FileManager.default.fileExists(atPath: parentURL.path) {
-                try FileManager.default.createDirectory(
-                    at: parentURL,
-                    withIntermediateDirectories: true,
+            if !FileManagerClient.liveValue.fileExists(parentURL.path) {
+                try FileManagerClient.liveValue.createDirectory(
+                    parentURL,
+                    true,
+                    nil,
                 )
             }
 
-            if FileManager.default.fileExists(atPath: originalURL.path) {
+            if FileManagerClient.liveValue.fileExists(originalURL.path) {
                 throw FileOpError.fileExists(itemName: originalURL.lastPathComponent)
             }
 
-            try FileManager.default.moveItem(at: trashURL, to: originalURL)
+            try FileManagerClient.liveValue.moveItem(trashURL, originalURL)
 
-            await TrashMetadataStore.shared.remove(trashPath: trashURL.path)
+            await TrashMetadataStoreClient.liveValue.remove(trashURL.path)
         }
     }
 
@@ -286,7 +283,7 @@ enum EntryFileOpsLive {
 
             var archiveURL = parentURL.appendingPathComponent(archiveName)
             var counter = 2
-            while FileManager.default.fileExists(atPath: archiveURL.path) {
+            while FileManagerClient.liveValue.fileExists(archiveURL.path) {
                 let baseName = archiveName.replacingOccurrences(of: ".zip", with: "")
                 archiveURL = parentURL.appendingPathComponent("\(baseName) \(counter).zip")
                 counter += 1
@@ -320,13 +317,13 @@ enum EntryFileOpsLive {
             }
 
             let parentURL = zipURL.deletingLastPathComponent()
-            let tempURL = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+            let tempURL = FileManagerClient.liveValue.temporaryDirectory().appendingPathComponent(UUID().uuidString)
 
             defer {
-                try? FileManager.default.removeItem(at: tempURL)
+                try? FileManagerClient.liveValue.removeItem(tempURL)
             }
 
-            try FileManager.default.createDirectory(at: tempURL, withIntermediateDirectories: true)
+            try FileManagerClient.liveValue.createDirectory(tempURL, true, nil)
 
             let process = Process()
             process.executableURL = URL(fileURLWithPath: "/usr/bin/unzip")
@@ -339,9 +336,10 @@ enum EntryFileOpsLive {
                 throw FileOpError.system(message: "Extraction failed")
             }
 
-            let extractedItems = try FileManager.default.contentsOfDirectory(
-                at: tempURL,
-                includingPropertiesForKeys: nil,
+            let extractedItems = try FileManagerClient.liveValue.contentsOfDirectory(
+                tempURL,
+                nil,
+                [],
             )
 
             if extractedItems.count == 1 {
@@ -349,7 +347,7 @@ enum EntryFileOpsLive {
                 var targetURL = parentURL.appendingPathComponent(item.lastPathComponent)
                 var counter = 2
 
-                while FileManager.default.fileExists(atPath: targetURL.path) {
+                while FileManagerClient.liveValue.fileExists(targetURL.path) {
                     let name = (item.lastPathComponent as NSString).deletingPathExtension
                     let ext = (item.lastPathComponent as NSString).pathExtension
 
@@ -359,22 +357,22 @@ enum EntryFileOpsLive {
                     counter += 1
                 }
 
-                try FileManager.default.moveItem(at: item, to: targetURL)
+                try FileManagerClient.liveValue.moveItem(item, targetURL)
             } else {
                 let baseName = zipURL.deletingPathExtension().lastPathComponent
                 var folderURL = parentURL.appendingPathComponent(baseName)
                 var counter = 2
 
-                while FileManager.default.fileExists(atPath: folderURL.path) {
+                while FileManagerClient.liveValue.fileExists(folderURL.path) {
                     folderURL = parentURL.appendingPathComponent("\(baseName) \(counter)")
                     counter += 1
                 }
 
-                try FileManager.default.createDirectory(at: folderURL, withIntermediateDirectories: false)
+                try FileManagerClient.liveValue.createDirectory(folderURL, false, nil)
 
                 for item in extractedItems {
                     let target = folderURL.appendingPathComponent(item.lastPathComponent)
-                    try FileManager.default.moveItem(at: item, to: target)
+                    try FileManagerClient.liveValue.moveItem(item, target)
                 }
             }
         }
@@ -416,7 +414,7 @@ enum EntryFileOpsLive {
 
     nonisolated static var fileExists: @Sendable (String) -> Bool {
         { path in
-            FileManager.default.fileExists(atPath: path)
+            FileManagerClient.liveValue.fileExists(path)
         }
     }
 
@@ -461,16 +459,18 @@ enum EntryFileOpsLive {
 
     nonisolated static var loadClipboardPaths: @Sendable () -> ([String], ClipboardOperation) {
         {
-            let pasteboard = NSPasteboard.general
+            let pasteboardClient = PasteboardClient.liveValue
 
-            guard let urls = pasteboard.readObjects(forClasses: [NSURL.self]) as? [URL] else {
+            guard let objects = pasteboardClient.readObjects([NSURL.self], nil),
+                  let urls = objects as? [URL]
+            else {
                 return ([], .copy)
             }
 
             let paths = urls.map(\.path)
 
-            let opString = pasteboard
-                .string(forType: NSPasteboard.PasteboardType("fm.voyager.clipboard.operation"))
+            let opString = pasteboardClient
+                .string(NSPasteboard.PasteboardType("fm.voyager.clipboard.operation"))
             let operation: ClipboardOperation = opString == "cut" ? .cut : .copy
 
             return (paths, operation)

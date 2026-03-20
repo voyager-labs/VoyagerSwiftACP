@@ -43,15 +43,14 @@ final class OperatorValueInputContractTests: XCTestCase {
     func testSetOperatorResetsValuePickerPayloadForSameProperty() async {
         var initial = makeState()
         initial.valuePicker = .init(
-            isPresented: true,
             propertyKey: "name_stem",
             operatorCode: "eq",
+            isPresented: true,
             valueType: "string",
             valueUIKind: "singleText",
             valueArity: 1,
             values: ["report"],
             errorMessage: "x",
-            editingIndex: nil,
         )
 
         let store = TestStore(initialState: initial) {
@@ -102,6 +101,7 @@ final class OperatorValueInputContractTests: XCTestCase {
             allProperties: { [] },
             labelForKey: { _ in "Name" },
             propertyTypeString: { _ in "date" },
+            propertyUnitSpec: { _ in nil },
             operatorCodes: { _ in ["exists", "btw"] },
             operatorDefinition: { code in
                 switch code {
