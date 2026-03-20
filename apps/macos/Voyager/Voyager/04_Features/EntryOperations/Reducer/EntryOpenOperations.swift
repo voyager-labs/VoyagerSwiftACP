@@ -13,6 +13,8 @@ struct EntryOpenOperationsReducer {
     var entryQuickLookClient
     @Dependency(\.entryOperationsAlertClient)
     var alertClient
+    @Dependency(\.workspaceClient)
+    var workspaceClient
 
     var body: some Reducer<State, Action> {
         Reduce { _, action in
@@ -23,7 +25,8 @@ struct EntryOpenOperationsReducer {
                 }
 
                 let entryOpenClient = entryOpenClient
-                return .run { [entryOpenClient] (send: Send<Action>) in
+                let workspaceClient = workspaceClient
+                return .run { [entryOpenClient, workspaceClient] (send: Send<Action>) in
                     guard let firstFilePath = paths.first else { return }
                     let isTrash = await MainActor.run {
                         guard let trashPath = entryOpenClient.trashDirectoryPath(), !trashPath.isEmpty else {
@@ -53,10 +56,7 @@ struct EntryOpenOperationsReducer {
                         let urls = groupPaths.map { URL(fileURLWithPath: $0) }
                         guard let firstURL = urls.first else { continue }
 
-                        let appURL = await Task { @MainActor in
-                            let workspace = NSWorkspace.shared
-                            return workspace.urlForApplication(toOpen: firstURL)
-                        }.value
+                        let appURL = workspaceClient.urlForApplicationToOpen(firstURL)
                         guard let appURL else {
                             for filePath in groupPaths {
                                 let url = URL(fileURLWithPath: filePath)
@@ -82,16 +82,7 @@ struct EntryOpenOperationsReducer {
                                     url.stopAccessingSecurityScopedResource()
                                 }
                             }
-                            try await Task { @MainActor in
-                                let workspace = NSWorkspace.shared
-                                let configuration = NSWorkspace.OpenConfiguration()
-                                configuration.createsNewApplicationInstance = false
-                                try await workspace.open(
-                                    urls,
-                                    withApplicationAt: appURL,
-                                    configuration: configuration,
-                                )
-                            }.value
+                            try await workspaceClient.openURLsWithApplication(urls, appURL, false, nil)
                             for filePath in groupPaths {
                                 await send(
                                     .operationFinished(filePath, .openDefault, .success(())),
@@ -105,46 +96,42 @@ struct EntryOpenOperationsReducer {
                     }
                 }
 
-            case let .quickLookFile(path):
-                let filePath = path
-                let url = URL(fileURLWithPath: filePath)
-                return EntryOperationsExecutionSupport.run(for: filePath, kind: .quickLook) {
-                    try await entryQuickLookClient.quickLook([url], 0)
-                }
-
-            // TODO: quickLook 액션을 단일 엔트리 포인트로 통합하고 quickLookFiles 분기를 제거한다.
-
             case let .quickLookFiles(paths):
+                guard !paths.isEmpty else { return .none }
                 let urls = paths.map { URL(fileURLWithPath: $0) }
-                let keyPath = paths.first ?? "quicklook"
+                guard let keyPath = paths.first else { return .none }
                 return EntryOperationsExecutionSupport.run(for: keyPath, kind: .quickLook) {
                     try await entryQuickLookClient.quickLook(urls, 0)
                 }
 
             case let .openFinderInfo(paths):
+                guard !paths.isEmpty else { return .none }
                 let urls = paths.map { URL(fileURLWithPath: $0) }
-                let keyPath = paths.first ?? "getinfo"
+                guard let keyPath = paths.first else { return .none }
                 return EntryOperationsExecutionSupport.run(for: keyPath, kind: .getInfo) {
                     try await entryOpenClient.openFinderInfo(urls)
                 }
 
             case let .shareItems(paths, anchor):
+                guard !paths.isEmpty else { return .none }
                 let urls = paths.map { URL(fileURLWithPath: $0) }
-                let keyPath = paths.first ?? "share"
+                guard let keyPath = paths.first else { return .none }
                 return EntryOperationsExecutionSupport.run(for: keyPath, kind: .share) {
                     try await entryOpenClient.shareItems(urls, anchor)
                 }
 
             case let .performService(paths, name):
+                guard !paths.isEmpty else { return .none }
                 let urls = paths.map { URL(fileURLWithPath: $0) }
-                let keyPath = paths.first ?? "service"
+                guard let keyPath = paths.first else { return .none }
                 return EntryOperationsExecutionSupport.run(for: keyPath, kind: .performService(name)) {
                     try await entryOpenClient.performService(name, urls)
                 }
 
             case let .revealInFinder(paths):
+                guard !paths.isEmpty else { return .none }
                 let urls = paths.map { URL(fileURLWithPath: $0) }
-                let keyPath = paths.first ?? "reveal"
+                guard let keyPath = paths.first else { return .none }
                 return EntryOperationsExecutionSupport.run(for: keyPath, kind: .revealInFinder) {
                     try await entryOpenClient.revealInFinder(urls)
                 }

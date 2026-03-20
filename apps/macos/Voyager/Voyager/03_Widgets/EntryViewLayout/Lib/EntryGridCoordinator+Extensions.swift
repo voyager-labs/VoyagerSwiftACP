@@ -1,6 +1,7 @@
 import AppKit
 import ComposableArchitecture
 import Foundation
+import VoyagerShared
 
 extension EntryGridCoordinator {
     func observeStore() {
@@ -84,12 +85,11 @@ extension EntryGridCoordinator {
 
     func observeScrollForThumbnailPrefetch() {
         if let boundsDidChangeObserver {
-            NotificationCenter.default.removeObserver(boundsDidChangeObserver)
+            notificationCenterClient.removeObserver(boundsDidChangeObserver)
         }
-        boundsDidChangeObserver = NotificationCenter.default.addObserver(
-            forName: NSView.boundsDidChangeNotification,
-            object: scrollView.contentView,
-            queue: .main,
+        boundsDidChangeObserver = notificationCenterClient.addObserver(
+            NSView.boundsDidChangeNotification,
+            scrollView.contentView,
         ) { [weak self] _ in
             Task { @MainActor [weak self] in
                 self?.thumbnailPrefetchThrottler.schedule { [weak self] in

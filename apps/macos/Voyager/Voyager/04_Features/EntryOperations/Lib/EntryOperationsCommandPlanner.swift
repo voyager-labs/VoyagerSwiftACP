@@ -152,9 +152,6 @@ enum EntryOperationsCommandPlanner {
     }
 
     private static func planQuickLookSelectedItem(_ selected: [EntryModel]) -> [EntryOperationsCommandOutput] {
-        if selected.count == 1, let path = selected.first?.fullPath {
-            return [.entryOperations(.quickLookFile(path: path))]
-        }
         guard !selected.isEmpty else { return [] }
         return [.entryOperations(.quickLookFiles(paths: selected.map(\.fullPath)))]
     }

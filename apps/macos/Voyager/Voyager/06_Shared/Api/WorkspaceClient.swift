@@ -3,7 +3,6 @@ import ComposableArchitecture
 import Foundation
 import UniformTypeIdentifiers
 
-/// NSWorkspace 관련 기능을 제공하는 Client
 public struct WorkspaceClient: Sendable {
     public var urlForApplication: @Sendable (String) -> URL?
     public var urlForApplicationToOpen: @Sendable (URL) -> URL?
@@ -13,6 +12,17 @@ public struct WorkspaceClient: Sendable {
     public var openApplication: @Sendable (URL) async throws -> Void
     public var openURL: @Sendable (URL) -> Bool
     public var currentEvent: @Sendable () -> NSEvent?
+    public var runningApplications: @Sendable () -> [NSRunningApplication]
+    public var activateFileViewerSelecting: @Sendable ([URL]) -> Void
+    public var openURLsWithApplication: @Sendable ([URL], URL, Bool, [String: String]?) async throws -> Void
+    public var openApplicationAtURL: @Sendable (URL, Bool, [String: String]?) async throws -> Void
+    public var addWorkspaceNotificationObserver: @Sendable (
+        NSNotification.Name?,
+        Any?,
+        OperationQueue?,
+        @escaping (Notification) -> Void,
+    ) -> NSObjectProtocol
+    public var removeWorkspaceNotificationObserver: @Sendable (NSObjectProtocol) -> Void
 
     public nonisolated init(
         urlForApplication: @escaping @Sendable (String) -> URL?,
@@ -23,6 +33,17 @@ public struct WorkspaceClient: Sendable {
         openApplication: @escaping @Sendable (URL) async throws -> Void,
         openURL: @escaping @Sendable (URL) -> Bool,
         currentEvent: @escaping @Sendable () -> NSEvent?,
+        runningApplications: @escaping @Sendable () -> [NSRunningApplication],
+        activateFileViewerSelecting: @escaping @Sendable ([URL]) -> Void,
+        openURLsWithApplication: @escaping @Sendable ([URL], URL, Bool, [String: String]?) async throws -> Void,
+        openApplicationAtURL: @escaping @Sendable (URL, Bool, [String: String]?) async throws -> Void,
+        addWorkspaceNotificationObserver: @escaping @Sendable (
+            NSNotification.Name?,
+            Any?,
+            OperationQueue?,
+            @escaping (Notification) -> Void,
+        ) -> NSObjectProtocol,
+        removeWorkspaceNotificationObserver: @escaping @Sendable (NSObjectProtocol) -> Void,
     ) {
         self.urlForApplication = urlForApplication
         self.urlForApplicationToOpen = urlForApplicationToOpen
@@ -32,6 +53,12 @@ public struct WorkspaceClient: Sendable {
         self.openApplication = openApplication
         self.openURL = openURL
         self.currentEvent = currentEvent
+        self.runningApplications = runningApplications
+        self.activateFileViewerSelecting = activateFileViewerSelecting
+        self.openURLsWithApplication = openURLsWithApplication
+        self.openApplicationAtURL = openApplicationAtURL
+        self.addWorkspaceNotificationObserver = addWorkspaceNotificationObserver
+        self.removeWorkspaceNotificationObserver = removeWorkspaceNotificationObserver
     }
 }
 
@@ -64,6 +91,34 @@ extension WorkspaceClient: DependencyKey {
             currentEvent: {
                 nil
             },
+            runningApplications: {
+                workspace.runningApplications
+            },
+            activateFileViewerSelecting: { urls in
+                workspace.activateFileViewerSelecting(urls)
+            },
+            openURLsWithApplication: { urls, appURL, createsNewInstance, environment in
+                let configuration = NSWorkspace.OpenConfiguration()
+                configuration.createsNewApplicationInstance = createsNewInstance
+                if let environment {
+                    configuration.environment = environment
+                }
+                try await workspace.open(urls, withApplicationAt: appURL, configuration: configuration)
+            },
+            openApplicationAtURL: { url, activates, environment in
+                let configuration = NSWorkspace.OpenConfiguration()
+                configuration.activates = activates
+                if let environment {
+                    configuration.environment = environment
+                }
+                try await workspace.openApplication(at: url, configuration: configuration)
+            },
+            addWorkspaceNotificationObserver: { name, object, queue, handler in
+                workspace.notificationCenter.addObserver(forName: name, object: object, queue: queue, using: handler)
+            },
+            removeWorkspaceNotificationObserver: { observer in
+                workspace.notificationCenter.removeObserver(observer)
+            },
         )
     }
 
@@ -77,6 +132,12 @@ extension WorkspaceClient: DependencyKey {
             openApplication: { _ in },
             openURL: { _ in false },
             currentEvent: { nil },
+            runningApplications: { [] },
+            activateFileViewerSelecting: { _ in },
+            openURLsWithApplication: { _, _, _, _ in },
+            openApplicationAtURL: { _, _, _ in },
+            addWorkspaceNotificationObserver: { _, _, _, _ in NSObject() },
+            removeWorkspaceNotificationObserver: { _ in },
         )
     }
 

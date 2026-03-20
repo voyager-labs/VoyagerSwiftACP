@@ -2,9 +2,6 @@ import ComposableArchitecture
 import SwiftUI
 
 struct SidebarTagsSectionView: View {
-    @Binding var contextMenuTargetId: String?
-    @Binding var contextMenuTargetWasSelected: Bool
-
     let store: StoreOf<FileManagerSidebarFeature>
 
     var body: some View {
@@ -23,9 +20,9 @@ struct SidebarTagsSectionView: View {
                     SidebarTagItemView(
                         tag: tag,
                         isSelected: store.selectedSidebarItem == tag.name,
-                        isContextMenuTarget: contextMenuTargetId == tag.name,
-                        contextMenuTargetWasSelected: contextMenuTargetId == tag.name
-                            ? contextMenuTargetWasSelected : false,
+                        isContextMenuTarget: store.contextMenuTargetId == tag.name,
+                        contextMenuTargetWasSelected: store.contextMenuTargetId == tag.name
+                            ? store.contextMenuTargetWasSelected : false,
                         action: {
                             store.send(.showTag(tag))
                         },

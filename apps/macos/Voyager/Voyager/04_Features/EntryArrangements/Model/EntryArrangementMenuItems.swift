@@ -11,8 +11,6 @@ typealias EntryArrangementSortMenuItem = EntryArrangementMenuItem<SortKey>
 typealias EntryArrangementGroupMenuItem = EntryArrangementMenuItem<GroupKey>
 
 enum EntryArrangementMenuItems {
-    private static let labelClient = EntryArrangementMenuLabelClient.live
-
     static let sortItems: [EntryArrangementSortMenuItem] = SortKey.menuKeys.map { key in
         .init(
             key: key,
@@ -29,4 +27,6 @@ enum EntryArrangementMenuItems {
             title: labelClient.labelForPropertyKey(propertyKey),
         )
     }
+
+    private static let labelClient = EntryArrangementMenuLabelClient.live
 }

@@ -11,15 +11,6 @@ enum SidebarItems {
         }
     }
 
-    private enum FavoriteItemCodingKeys: String, CodingKey {
-        case name
-        case url
-    }
-
-    private enum FavoriteItemLegacyCodingKeys: String, CodingKey {
-        case iconName
-    }
-
     struct FavoriteItem: Equatable, Codable {
         let name: String
         let url: URL
@@ -58,5 +49,14 @@ enum SidebarItems {
         nonisolated var displayName: String {
             CollectionFileUtils.displayName(url, fallback: name)
         }
+    }
+
+    private enum FavoriteItemCodingKeys: String, CodingKey {
+        case name
+        case url
+    }
+
+    private enum FavoriteItemLegacyCodingKeys: String, CodingKey {
+        case iconName
     }
 }

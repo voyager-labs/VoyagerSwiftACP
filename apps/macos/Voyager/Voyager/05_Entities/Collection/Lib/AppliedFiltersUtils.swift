@@ -7,6 +7,11 @@ enum AppliedFiltersUtils {
         let unknownKeys: [String]
     }
 
+    private struct ResolvedCondition {
+        let condition: Condition
+        let unknownKey: String?
+    }
+
     static func resolve(
         _ appliedFilters: AppliedFiltersPayload?,
         fallbackScopes: [String],
@@ -47,11 +52,6 @@ enum AppliedFiltersUtils {
             conditions: fallbackConditions,
             unknownKeys: [],
         )
-    }
-
-    private struct ResolvedCondition {
-        let condition: Condition
-        let unknownKey: String?
     }
 
     private static func makeResolvedCondition(

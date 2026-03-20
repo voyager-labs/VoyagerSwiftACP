@@ -4,9 +4,6 @@ import SwiftUI
 import UniformTypeIdentifiers
 
 struct SidebarFavoritesSectionView: View {
-    @Binding var contextMenuTargetId: String?
-    @Binding var contextMenuTargetWasSelected: Bool
-
     @State private var dropTargetIndex: Int?
 
     let store: StoreOf<FileManagerSidebarFeature>
@@ -30,9 +27,9 @@ struct SidebarFavoritesSectionView: View {
                         iconName: favorite.iconName,
                         title: favorite.displayName,
                         isSelected: store.selectedSidebarItem == favorite.displayName,
-                        isContextMenuTarget: contextMenuTargetId == favorite.displayName,
-                        contextMenuTargetWasSelected: contextMenuTargetId == favorite.displayName
-                            ? contextMenuTargetWasSelected : false,
+                        isContextMenuTarget: store.contextMenuTargetId == favorite.displayName,
+                        contextMenuTargetWasSelected: store.contextMenuTargetId == favorite.displayName
+                            ? store.contextMenuTargetWasSelected : false,
                         isFavorite: true,
                         iconColor: favorite.url.pathExtension.lowercased() == CollectionConstants.fileExtension
                             ? VoyagerDS.BrandSecondaryColor.c600
@@ -48,8 +45,10 @@ struct SidebarFavoritesSectionView: View {
                             ))
                         },
                         onContextMenuOpen: {
-                            contextMenuTargetId = favorite.displayName
-                            contextMenuTargetWasSelected = store.selectedSidebarItem == favorite.displayName
+                            store.send(.setContextMenuTarget(
+                                id: favorite.displayName,
+                                wasSelected: store.selectedSidebarItem == favorite.displayName,
+                            ))
                         },
                     )
                     .contextMenu {

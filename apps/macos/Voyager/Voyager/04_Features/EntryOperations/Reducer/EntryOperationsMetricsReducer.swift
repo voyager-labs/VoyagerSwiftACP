@@ -40,9 +40,6 @@ struct EntryOperationsMetricsReducer {
             guard let entryKind = entryKind(for: paths) else { return nil }
             return EntryActionPayload(actionKind: .openDefault, entryKind: entryKind)
 
-        case let .quickLookFile(path):
-            return EntryActionPayload(actionKind: .quickLook, entryKind: entryKind(forPath: path))
-
         case let .quickLookFiles(paths):
             guard let entryKind = entryKind(for: paths) else { return nil }
             return EntryActionPayload(actionKind: .quickLook, entryKind: entryKind)

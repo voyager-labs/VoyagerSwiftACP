@@ -3,6 +3,19 @@ import Foundation
 
 @CasePathable
 enum FileManagerWindowAction: CasePathable, Sendable {
+    case delegate(Delegate)
+
+    case request(WindowCommand)
+    case content(FileManagerContentFeature.Action)
+    case sidebar(FileManagerSidebarFeature.Action)
+    case inspector(FileManagerInspectorFeature.Action)
+    case navigation(ContentPageNavigationFeature.Action)
+    case applyAppPreferences(AppPreferencesState)
+
+    case onAppear
+    case onDisappear
+    case closeWindow
+
     @CasePathable
     enum WindowCommand: Sendable {
         case newFolder
@@ -37,17 +50,4 @@ enum FileManagerWindowAction: CasePathable, Sendable {
         case openPathInNewWindow(String)
         case openPathInNewTab(String)
     }
-
-    case delegate(Delegate)
-
-    case request(WindowCommand)
-    case content(FileManagerContentFeature.Action)
-    case sidebar(FileManagerSidebarFeature.Action)
-    case inspector(FileManagerInspectorFeature.Action)
-    case navigation(ContentPageNavigationFeature.Action)
-    case applyAppPreferences(AppPreferencesState)
-
-    case onAppear
-    case onDisappear
-    case closeWindow
 }

@@ -1,5 +1,6 @@
 import AppKit
 import ComposableArchitecture
+import VoyagerShared
 
 final class EntryGridCoordinator: NSObject {
     typealias Section = EntryGridSection
@@ -59,6 +60,8 @@ final class EntryGridCoordinator: NSObject {
     var thumbnailGeneratorClient
     @Dependency(\.finderFavoritesTagClient)
     var finderFavoritesTagClient
+    @Dependency(\.notificationCenterClient)
+    var notificationCenterClient
     let horizontalPadding: CGFloat = 12
     let minSpacing: CGFloat = 2
     let verticalSpacing: CGFloat = 8

@@ -168,10 +168,6 @@ private func makeStore(
     let store = TestStore(initialState: state) {
         WindowNavUnsavedHarness()
     } withDependencies: {
-        $0.fileManagerComputerNameClient = FileManagerComputerNameClient(
-            computerName: { "Mac" },
-            displayNameAtPath: { $0 },
-        )
         $0.collectionAlertClient = CollectionAlertClient(
             showUnsavedNavigationAlert: { alertChoice },
             showCollectionOpenErrorAlert: { _, _ in },

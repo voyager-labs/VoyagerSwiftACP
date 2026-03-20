@@ -121,7 +121,7 @@ final class CollectionFeatureTests: XCTestCase {
             $0.conditions[0].valueType = "string"
             $0.conditions[0].values = []
         }
-        await store.receive(\.filtersResponse) {
+        await store.receive(\.internal.filtersResponse) {
             $0.isLoadingFilters = false
             $0.isFilteringInFlight = false
             $0.lastFiltersResponse = kEmptySearchResponse
@@ -175,7 +175,7 @@ final class CollectionFeatureTests: XCTestCase {
             $0.conditions[0].valueType = "string"
             $0.conditions[0].values = []
         }
-        await store.receive(\.filtersResponse) {
+        await store.receive(\.internal.filtersResponse) {
             $0.isLoadingFilters = false
             $0.isFilteringInFlight = false
             $0.lastFiltersResponse = kEmptySearchResponse
@@ -451,7 +451,7 @@ private func runApplyFiltersTest(
     store: TestStore<ComposerFeature.State, ComposerFeature.Action>,
 ) async {
     await store.send(.applyFilters)
-    await store.receive(\.filtersResponse)
+    await store.receive(\.internal.filtersResponse)
     await store.finish()
 }
 

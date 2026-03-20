@@ -9,6 +9,18 @@ enum SystemPropertyTypeKey: String, Equatable, Sendable {
     case categorical
     case unknown
 
+    var valueType: String {
+        rawValue
+    }
+
+    var operatorKey: String {
+        rawValue
+    }
+
+    var operatorKeyOrNil: String? {
+        self == .unknown ? nil : rawValue
+    }
+
     init(rawType: String) {
         switch rawType.lowercased() {
         case "string":
@@ -38,17 +50,5 @@ enum SystemPropertyTypeKey: String, Equatable, Sendable {
 
     static func operatorKeyOrNil(from rawType: String) -> String? {
         SystemPropertyTypeKey(rawType: rawType).operatorKeyOrNil
-    }
-
-    var valueType: String {
-        rawValue
-    }
-
-    var operatorKey: String {
-        rawValue
-    }
-
-    var operatorKeyOrNil: String? {
-        self == .unknown ? nil : rawValue
     }
 }

@@ -57,8 +57,8 @@ struct MenuCommandsState: Equatable {
         let windowState = window.window
 
         hasFocusedWindow = true
-        canOpen = windowState.content.entryViewLayout.entryOperations.canOpenSelectedItem
-        canQuickLook = windowState.content.entryViewLayout.entryOperations.canQuickLookSelectedItem
+        canOpen = windowState.content.entryViewLayout.entryOperations.hasSelectableEntries
+        canQuickLook = windowState.content.entryViewLayout.entryOperations.hasSelectableEntries
         canGoBack = windowState.content.navigation.canGoBack
         canGoForward = windowState.content.navigation.canGoForward
         canGoToEnclosingDirectory = windowState.content.navigation.canGoToEnclosingDirectory

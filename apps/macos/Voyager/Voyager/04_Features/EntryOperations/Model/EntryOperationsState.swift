@@ -24,11 +24,6 @@ struct EntryOperationsState: Equatable {
     var commonApplicationsForSelectedFiles: [ApplicationInfo] = []
     var dropValidationResult: EntryDropValidationResult = .empty
 
-    private var hasSelectableEntries: Bool {
-        guard !selectedEntryIDs.isEmpty else { return false }
-        return displayItems.contains { selectedEntryIDs.contains($0.id) }
-    }
-
     var displayItems: IdentifiedArrayOf<EntryModel> {
         loadingContext.isCollectionMode ? loadingContext.collectionItems : loadingContext.items
     }
@@ -37,24 +32,9 @@ struct EntryOperationsState: Equatable {
         Array(displayItems)
     }
 
-    // TODO: Alias성 상태 필드 제거
-    var canOpenSelectedItem: Bool {
-        hasSelectableEntries
-    }
-
-    // TODO: Alias성 상태 필드 제거
-    var canQuickLookSelectedItem: Bool {
-        hasSelectableEntries
-    }
-
-    // TODO: Alias성 상태 필드 제거
-    var hasSelectedItems: Bool {
-        !selectedEntryIDs.isEmpty
-    }
-
-    // TODO: Alias성 상태 필드 제거
-    var hasClipboardItems: Bool {
-        !clipboardItems.isEmpty
+    var hasSelectableEntries: Bool {
+        guard !selectedEntryIDs.isEmpty else { return false }
+        return displayItems.contains { selectedEntryIDs.contains($0.id) }
     }
 
     var latestUndoRecord: EntryActionRecord? {

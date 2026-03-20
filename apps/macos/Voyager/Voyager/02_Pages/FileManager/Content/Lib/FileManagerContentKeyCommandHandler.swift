@@ -28,13 +28,8 @@ enum FileManagerContentKeyCommandHandler {
         }
 
         let selectedEntries = state.selectedEntries
-        if selectedEntries.count == 1, let file = selectedEntries.first {
-            return .send(.entryViewLayout(.entryOperations(.quickLookFile(path: file.fullPath))))
-        }
-        if !selectedEntries.isEmpty {
-            return .send(.entryViewLayout(.entryOperations(.quickLookFiles(paths: selectedEntries.map(\.fullPath)))))
-        }
-        return .none
+        guard !selectedEntries.isEmpty else { return nil }
+        return .send(.entryViewLayout(.entryOperations(.quickLookFiles(paths: selectedEntries.map(\.fullPath)))))
     }
 
     private static func deleteKeyEffect(
@@ -84,10 +79,15 @@ enum FileManagerContentKeyCommandHandler {
         for command: KeyCommand,
         state: FileManagerContentState,
     ) -> Effect<FileManagerContentAction> {
+        // Composer(FocusedTextField 포함)가 열려있으면 자체 undo/redo 처리
+        // FocusedTextField는 NSTextField 기반으로 독립적으로 first responder 상태를 관리하며,
+        // KeyCommandHostingView의 포커스 시스템을 우회함
         if state.composer.isPresented {
             return .none
         }
 
+        // 텍스트 리스폰더 체인을 먼저 시도 (FocusedTextField 또는 다른 텍스트 필드용)
+        // 사이드바/탭의 인라인 텍스트 편집이 자체 undo/redo를 처리할 수 있게 함
         if command.modifiers.contains(.shift) {
             if canRedoInTextResponder(), NSApp.sendAction(redoSelector, to: nil, from: nil) {
                 return .none

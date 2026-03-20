@@ -26,4 +26,9 @@ enum FileManagerSidebarAction: CasePathable {
     case showComputer
     case dropItemsToSidebarFolder(providers: [NSItemProvider], targetURL: URL)
     case dropItemsToTag(providers: [NSItemProvider], tagName: String)
+
+    case startObservingSystemNotifications
+    case stopObservingSystemNotifications
+    case systemMenuDidEndTracking
+    case setContextMenuTarget(id: String?, wasSelected: Bool)
 }
