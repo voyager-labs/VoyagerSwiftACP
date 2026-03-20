@@ -50,3 +50,4 @@ description: "macOS SwiftUI + TCA structure and dependency rules."
 - Confirm system or service access remains behind dependencies/reducers rather than SwiftUI views.
 - Confirm each touched concept has one canonical owner after the change.
 - Confirm cross-feature or window-level commands are routed through actions, delegate events, or dedicated handlers.
+- Confirm this rule file does not contain issue-specific type names, file-path ownership maps, or temporary migration directives.

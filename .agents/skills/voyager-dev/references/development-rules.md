@@ -18,13 +18,19 @@ Use this file to accumulate Voyager-local development heuristics that are reusab
 - Prefer reducer-module composition (for example `CombineReducers` or explicit parent-owned reducer assembly) when multiple concerns still share the same parent state/action and do not deserve separate child feature boundaries.
 - Avoid large non-trivial same-file private helper reducer `.merge` structures when dedicated reducer modules would make ownership clearer.
 - For UI-facing features, prefer `view` / `internal` / `delegate` (+ child action) families.
+- For parent window/page reducers that coordinate several child features plus cross-cutting commands, a flat parent action enum with child feature cases is acceptable when extra family nesting adds ceremony without clarifying ownership.
 - For operation/orchestration hubs whose reducers are already split by domain, domain-family nested actions are allowed and often preferred.
 - Do not mirror reducer filenames 1:1 into action namespaces; choose stable domain families instead.
 - Keep cross-cutting status, metrics, and lifecycle actions flat or narrowly grouped when domain nesting would reduce clarity.
 - Optimize for readability and ownership clarity, not taxonomy purity.
+- Treat compatibility-only action shells and legacy facades as temporary migration aids. Route new work directly to the canonical owner and remove the facade once call sites converge.
+- Prefer parent-owned bridge reducers or translator reducers for child-to-child, child-to-window, and child-to-navigation routing instead of scattering peer mutations across sibling features.
+- Keep one canonical owner per concern. When behavior such as lifecycle restore, rollback, derived navigation, or mode exit spans multiple reducers, choose one reducer/helper/state method as the owner and route other paths through it.
+- File-scope helper functions are acceptable for dense orchestrator-only handlers when extracting another reducer or type would not create a real boundary. Keep the helper narrow and avoid turning it into a shadow owner.
 - Keep Voyager-specific heuristics here until they become stable enough to enforce repo-wide, then promote them into `.agents/rules/**`.
 
 ## Promotion test
 
 - Keep a heuristic here while it is Voyager-specific, evolving, or mostly procedural.
 - Move a heuristic into `.agents/rules/**` when it becomes a stable invariant that should apply automatically by path.
+- When promoting a heuristic, rewrite it as a reusable rule. Do not carry forward issue IDs, exact type names, concrete file paths, or one-off ownership tables.
