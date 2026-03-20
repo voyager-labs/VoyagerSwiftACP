@@ -81,6 +81,11 @@ enum EntryOperationsAction: CasePathable, Sendable {
     case entryActionCompleted(EntryActionRecord)
     case emptyTrashCompleted
     case clearError(String)
+
+    // Thumbnail actions (migrated from EntryCommandAction)
+    case requestThumbnails(paths: [String])
+    case thumbnailsReady(paths: [String])
+    case thumbnailRequestFailed(paths: [String])
 }
 
 struct TagMutationRequest: Equatable, Sendable {

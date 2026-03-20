@@ -60,7 +60,8 @@ struct FileManagerContentFeature {
                     effect = applyNavigationStateEffect(navigationState, state: state)
 
                 case .selectAllEntries:
-                    effect = .send(.entries(.selectAll))
+                    let orderedIds = state.entryViewLayout.entries.map(\.id)
+                    effect = .send(.entryViewLayout(.internal(.applySelectAll(orderedItemIds: orderedIds))))
 
                 case .toggleShowHiddenFilesAndReload:
                     let showHidden = !state.entryViewLayout.showHiddenFiles
@@ -120,30 +121,15 @@ struct FileManagerContentFeature {
         _ action: Action,
         state: inout State,
     ) -> Effect<Action>? {
-        guard case let .entries(entryAction) = action else {
+        guard case let .entryViewLayout(.internal(.applyPreferences(prefs))) = action else {
             return nil
         }
 
-        switch entryAction {
-        case let .setListIconSize(size):
-            state.listIconSize = size
-            return .none
-
-        case let .setGridIconSize(size):
-            state.gridIconSize = size
-            return .none
-
-        case let .setListTextSize(size):
-            state.listTextSize = size
-            return .none
-
-        case let .setGridTextSize(size):
-            state.gridTextSize = size
-            return .none
-
-        default:
-            return nil
-        }
+        state.listIconSize = prefs.listIconSize
+        state.gridIconSize = prefs.gridIconSize
+        state.listTextSize = prefs.listTextSize
+        state.gridTextSize = prefs.gridTextSize
+        return .none
     }
 
     private func handleEntryOperationsBridgeAction(
@@ -210,12 +196,12 @@ struct FileManagerContentFeature {
         _ action: Action,
         state: inout State,
     ) -> Effect<Action>? {
-        guard case let .entries(entryAction) = action else {
+        guard case let .entryOperations(entryOpsAction) = action else {
             return nil
         }
 
         return FileManagerContentThumbnailCoordinator.reduce(
-            entryAction,
+            entryOpsAction,
             state: &state,
             dependencies: .init(
                 thumbnailGeneratorClient: thumbnailGeneratorClient,

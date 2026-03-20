@@ -9,7 +9,7 @@ enum FileManagerContentThumbnailCoordinator {
     }
 
     static func reduce(
-        _ action: EntryCommandAction,
+        _ action: EntryOperationsAction,
         state: inout FileManagerContentState,
         dependencies: Dependencies,
     ) -> Effect<FileManagerContentAction>? {
