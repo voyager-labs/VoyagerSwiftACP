@@ -7,8 +7,8 @@ final class FileManagerWindowCommandRoutingTests: XCTestCase {
     func testOpenAndQuickLookCommandsWithSelectionRouteThroughSharedEntryCommandContract() async {
         let selected = makeEntry(name: "selected", fullPath: "/tmp/voyager/selected.txt")
 
-        for (command, matcher) in [
-            (FileManagerWindowAction.WindowCommand.openSelectedItem, { (entryCommand: EntryCommandAction) in
+        let cases: [(FileManagerWindowAction.WindowCommand, (EntryOperationsCommand) -> Bool)] = [
+            (.openSelectedItem, { entryCommand in
                 guard case .navigation(.openSelectedItem) = entryCommand else { return false }
                 return true
             }),
@@ -16,7 +16,9 @@ final class FileManagerWindowCommandRoutingTests: XCTestCase {
                 guard case .navigation(.quickLookSelectedItem) = entryCommand else { return false }
                 return true
             }),
-        ] {
+        ]
+
+        for (command, matcher) in cases {
             var initialState = FileManagerFeature.State()
             initialState.content.navigation.seedInitialFolderPath("/tmp/voyager")
             initialState.content.entryViewLayout.entries = [selected]
@@ -41,7 +43,7 @@ final class FileManagerWindowCommandRoutingTests: XCTestCase {
     func testEditAndCopyCommandsWithSelectionRouteThroughSharedEntryCommandContract() async {
         let selected = makeEntry(name: "selected", fullPath: "/tmp/voyager/selected.txt")
 
-        let cases: [(FileManagerWindowAction.WindowCommand, (EntryCommandAction) -> Bool)] = [
+        let cases: [(FileManagerWindowAction.WindowCommand, (EntryOperationsCommand) -> Bool)] = [
             (.cut, {
                 if case .clipboard(.cutSelectedItems) = $0 { return true }
                 return false

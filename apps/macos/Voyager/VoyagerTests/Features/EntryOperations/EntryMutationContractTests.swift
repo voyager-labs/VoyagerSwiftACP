@@ -86,7 +86,7 @@ final class EntryMutationContractTests: XCTestCase {
             $0.clipboardOperation = .copy
             $0.cutClearSession = nil
         }
-        await store.receive(.setClipboardOperation(operation: .copy)) {
+        await store.receive(\.setClipboardOperation) {
             $0.clipboardOperation = .copy
             $0.cutClearSession = nil
         }

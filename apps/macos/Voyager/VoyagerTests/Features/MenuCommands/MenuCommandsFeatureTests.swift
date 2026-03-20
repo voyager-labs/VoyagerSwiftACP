@@ -71,17 +71,7 @@ final class MenuCommandsFeatureTests: XCTestCase {
         ]
 
         for (command, expected) in appCases {
-            let store = TestStore(initialState: MenuCommandsFeature.State()) {
-                MenuCommandsFeature()
-            }
-            store.exhaustivity = .off
-
-            await store.send(.view(.app(command)))
-            await store.receive {
-                guard case let .delegate(.windowManager(action)) = $0 else { return false }
-                return action == expected
-            }
-            await store.finish()
+            await assertAppCommand(command, routesTo: expected)
         }
 
         let editCases: [(MenuCommandItem.EditCommand, WindowManagerAction)] = [
@@ -95,29 +85,70 @@ final class MenuCommandsFeatureTests: XCTestCase {
         ]
 
         for (command, expected) in editCases {
-            let store = TestStore(initialState: MenuCommandsFeature.State()) {
-                MenuCommandsFeature()
-            }
-            store.exhaustivity = .off
-
-            await store.send(.view(.edit(command)))
-            await store.receive {
-                guard case let .delegate(.windowManager(action)) = $0 else { return false }
-                return action == expected
-            }
-            await store.finish()
+            await assertEditCommand(command, routesTo: expected)
         }
 
-        let viewStore = TestStore(initialState: MenuCommandsFeature.State()) {
+        let store = TestStore(initialState: MenuCommandsFeature.State()) {
             MenuCommandsFeature()
         }
-        viewStore.exhaustivity = .off
+        store.exhaustivity = .off
 
-        await viewStore.send(.view(.viewCommand(.toggleShowHiddenFiles)))
-        await viewStore.receive {
+        await store.send(.view(.viewCommand(.toggleShowHiddenFiles)))
+        await store.receive {
             guard case let .delegate(.windowManager(action)) = $0 else { return false }
-            return action == .toggleShowHiddenFiles
+            guard case .toggleShowHiddenFiles = action else { return false }
+            return true
         }
-        await viewStore.finish()
+        await store.finish()
+    }
+
+    private func assertAppCommand(
+        _ command: MenuCommandItem.AppCommand,
+        routesTo expected: WindowManagerAction
+    ) async {
+        let store = TestStore(initialState: MenuCommandsFeature.State()) {
+            MenuCommandsFeature()
+        }
+        store.exhaustivity = .off
+
+        await store.send(.view(.app(command)))
+        await store.receive {
+            guard case let .delegate(.windowManager(action)) = $0 else { return false }
+            switch (action, expected) {
+            case (.open, .open), (.quickLook, .quickLook):
+                return true
+            default:
+                return false
+            }
+        }
+        await store.finish()
+    }
+
+    private func assertEditCommand(
+        _ command: MenuCommandItem.EditCommand,
+        routesTo expected: WindowManagerAction
+    ) async {
+        let store = TestStore(initialState: MenuCommandsFeature.State()) {
+            MenuCommandsFeature()
+        }
+        store.exhaustivity = .off
+
+        await store.send(.view(.edit(command)))
+        await store.receive {
+            guard case let .delegate(.windowManager(action)) = $0 else { return false }
+            switch (action, expected) {
+            case (.cut, .cut),
+                 (.copy, .copy),
+                 (.paste, .paste),
+                 (.duplicate, .duplicate),
+                 (.makeAlias, .makeAlias),
+                 (.copyAbsolutePaths, .copyAbsolutePaths),
+                 (.copyURLs, .copyURLs):
+                return true
+            default:
+                return false
+            }
+        }
+        await store.finish()
     }
 }
