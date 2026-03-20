@@ -26,10 +26,13 @@ struct FileManagerWindowLifecycleReducer {
                     .send(.content(.entryArrangements(.setSortKey(state.content.entryArrangements.sortKey)))),
                     .send(.content(.entryArrangements(.setSortOrder(state.content.entryArrangements.sortOrder)))),
                     .send(.content(.entryArrangements(.setGroupKey(state.content.entryArrangements.groupKey)))),
-                    .send(.content(.entries(.loadItems(path: state.content.navigation.currentPath)))),
-                    .send(.sidebar(.loadFavorites)),
-                    .send(.sidebar(.loadLocations)),
-                    .send(.sidebar(.loadTags)),
+                    .send(.content(.entryOperations(.loadItems(
+                        path: state.content.navigation.currentPath,
+                        showHidden: state.content.entryViewLayout.showHiddenFiles,
+                    )))),
+                    .send(.sidebar(.internal(.loadFavorites))),
+                    .send(.sidebar(.internal(.loadLocations))),
+                    .send(.sidebar(.internal(.loadTags))),
                 )
 
             case .onDisappear:

@@ -14,7 +14,7 @@ struct SidebarFavoritesSectionView: View {
                 title: "Favorites",
                 isCollapsed: store.isFavoritesCollapsed,
                 onToggle: {
-                    store.send(.toggleFavoritesSection)
+                    store.send(.view(.toggleFavoritesSection))
                 },
             )
             .padding(.top, 8)
@@ -36,24 +36,24 @@ struct SidebarFavoritesSectionView: View {
                             : nil,
                         targetURL: favorite.url,
                         action: {
-                            store.send(.openFavorite(favorite))
+                            store.send(.view(.openFavorite(favorite)))
                         },
                         onDrop: { providers, targetURL in
-                            store.send(.dropItemsToSidebarFolder(
+                            store.send(.view(.dropItemsToSidebarFolder(
                                 providers: providers,
                                 targetURL: targetURL,
-                            ))
+                            )))
                         },
                         onContextMenuOpen: {
-                            store.send(.setContextMenuTarget(
+                            store.send(.view(.setContextMenuTarget(
                                 id: favorite.displayName,
                                 wasSelected: store.selectedSidebarItem == favorite.displayName,
-                            ))
+                            )))
                         },
                     )
                     .contextMenu {
                         Button("Remove from Sidebar") {
-                            store.send(.removeFavorite(favorite))
+                            store.send(.internal(.removeFavorite(favorite)))
                         }
                     }
                     .onDrag {
@@ -105,7 +105,7 @@ struct SidebarFavoritesSectionView: View {
             return false
         }
 
-        store.send(.insertFavoriteFromDrop(providers: fileURLProviders, at: index))
+        store.send(.internal(.insertFavoriteFromDrop(providers: fileURLProviders, at: index)))
         return true
     }
 }

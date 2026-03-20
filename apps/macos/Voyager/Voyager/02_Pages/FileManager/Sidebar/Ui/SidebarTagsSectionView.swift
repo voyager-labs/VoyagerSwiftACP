@@ -10,7 +10,7 @@ struct SidebarTagsSectionView: View {
                 title: "Tags",
                 isCollapsed: store.isTagsCollapsed,
                 onToggle: {
-                    store.send(.toggleTagsSection)
+                    store.send(.view(.toggleTagsSection))
                 },
             )
             .padding(.top, 8)
@@ -24,10 +24,10 @@ struct SidebarTagsSectionView: View {
                         contextMenuTargetWasSelected: store.contextMenuTargetId == tag.name
                             ? store.contextMenuTargetWasSelected : false,
                         action: {
-                            store.send(.showTag(tag))
+                            store.send(.view(.showTag(tag)))
                         },
                         onDrop: { providers, tagName in
-                            store.send(.dropItemsToTag(providers: providers, tagName: tagName))
+                            store.send(.view(.dropItemsToTag(providers: providers, tagName: tagName)))
                         },
                         onContextMenuOpen: nil,
                     )

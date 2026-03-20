@@ -23,7 +23,7 @@ struct SidebarView: View {
                         iconColor: nil,
                         targetURL: nil,
                         action: {
-                            store.send(.showRecents)
+                            store.send(.view(.showRecents))
                         },
                         onDrop: nil,
                         onContextMenuOpen: nil,
@@ -59,17 +59,17 @@ struct SidebarView: View {
         .frame(minWidth: 150)
         .background(Color.clear)
         .onAppear {
-            store.send(.startObservingSystemNotifications)
+            store.send(.internal(.startObservingSystemNotifications))
         }
         .onDisappear {
-            store.send(.stopObservingSystemNotifications)
+            store.send(.internal(.stopObservingSystemNotifications))
         }
         .navigationSplitViewColumnWidth(ideal: store.sidebarWidth)
         .background(
             GeometryReader { geometry in
                 Color.clear
                     .onChange(of: geometry.size.width) { newWidth in
-                        store.send(.setSidebarWidth(newWidth))
+                        store.send(.view(.setSidebarWidth(newWidth)))
                     }
             },
         )
