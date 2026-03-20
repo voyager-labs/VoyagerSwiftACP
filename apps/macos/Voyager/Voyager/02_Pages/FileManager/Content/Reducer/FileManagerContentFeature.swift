@@ -10,8 +10,8 @@ struct FileManagerContentFeature {
     private var userDefaultsClient
     @Dependency(\.collectionAlertClient)
     private var collectionAlertClient
-    @Dependency(\.fileManagerComputerNameClient)
-    private var computerNameClient
+    @Dependency(\.fileManagerClient)
+    private var fileManagerClient
     @Dependency(\.thumbnailGeneratorClient)
     private var thumbnailGeneratorClient
     @Dependency(\.entryThumbnailCacheClient)
@@ -245,7 +245,7 @@ struct FileManagerContentFeature {
             state: &state,
             dependencies: .init(
                 collectionAlertClient: collectionAlertClient,
-                computerNameClient: computerNameClient,
+                computerName: fileManagerClient.displayName("/"),
             ),
         )
     }

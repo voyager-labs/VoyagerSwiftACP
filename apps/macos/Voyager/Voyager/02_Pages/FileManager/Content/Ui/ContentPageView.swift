@@ -4,21 +4,12 @@ import SwiftUI
 
 struct ContentPageView: View {
     let store: StoreOf<FileManagerContentFeature>
-    let onNavigate: (String) -> Void
 
     @FocusState var isKeyCommandFocused: Bool
 
     private var mainContent: some View {
         ZStack {
-            VStack(spacing: 0) {
-                entryContainerView
-                separatorView
-                ContentPaneBreadcrumbBarView(
-                    store: store,
-                    onNavigate: onNavigate,
-                )
-            }
-
+            entryContainerView
             keyCommandOverlay
         }
     }
@@ -36,12 +27,6 @@ struct ContentPageView: View {
                 EntryGridViewRepresentable(store: entryViewLayoutStore, contentStore: store)
             }
         }
-    }
-
-    private var separatorView: some View {
-        Rectangle()
-            .fill(Color.primary.opacity(0.12))
-            .frame(height: 1)
     }
 
     @ViewBuilder private var keyCommandOverlay: some View {
