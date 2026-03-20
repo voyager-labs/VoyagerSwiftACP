@@ -177,6 +177,7 @@ private func fileManagerWindowOpen(windowID: UUID) {
         windowID: windowID,
         fileManagerStore: fileManagerStore,
         undoManager: undoManager,
+        tabbingMode: .disallowed,
     )
     registerFileManagerWindowController(controller)
     controller.showWindow(nil as Any?)
@@ -206,6 +207,7 @@ private func fileManagerWindowOpenTab(windowID: UUID) {
         windowID: windowID,
         fileManagerStore: fileManagerStore,
         undoManager: undoManager,
+        tabbingMode: .preferred,
     )
     registerFileManagerWindowController(controller)
 
@@ -253,12 +255,14 @@ private func makeManagedWindowController(
     windowID: UUID,
     fileManagerStore: StoreOf<FileManagerFeature>,
     undoManager: UndoManager,
+    tabbingMode: NSWindow.TabbingMode,
 ) -> FileManagerWindowCoordinator {
     FileManagerWindowCoordinator(
         windowID: windowID,
         store: fileManagerStore,
         windowUndoManager: undoManager,
         path: nil,
+        tabbingMode: tabbingMode,
         onBecameKey: { id in
             fileManagerWindowOnBecameKey?(id)
         },
