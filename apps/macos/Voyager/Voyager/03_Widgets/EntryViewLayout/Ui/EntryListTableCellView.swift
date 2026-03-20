@@ -10,6 +10,8 @@ struct EntryListEntryCellViewConfiguration {
         let textSize: CGFloat
         let dateModifiedWidth: CGFloat
         let thumbnail: NSImage?
+        let isHidden: Bool
+        let isCut: Bool
         let isRenaming: Bool
         let renamingText: String
         let workspaceClient: WorkspaceClient
@@ -141,6 +143,8 @@ final class EntryListEntryCellView: NSTableCellView {
     private var textLeadingToViewConstraint: NSLayoutConstraint?
 
     private var isRenaming: Bool = false
+    private var isHiddenEntry: Bool = false
+    private var isCutEntry: Bool = false
     var onRenameUpdate: ((String) -> Void)?
     var onRenameCommit: (() -> Void)?
     var onRenameCancel: (() -> Void)?
@@ -208,6 +212,8 @@ final class EntryListEntryCellView: NSTableCellView {
 
     private func configureEntryCell(context: EntryListEntryCellViewConfiguration.Context) {
         isRenaming = context.isRenaming
+        isHiddenEntry = context.isHidden
+        isCutEntry = context.isCut
         let display = EntryDisplayModel(entry: context.model)
 
         switch EntryListColumn(rawValue: context.columnId) {
@@ -252,6 +258,8 @@ final class EntryListEntryCellView: NSTableCellView {
             hideIconAndSetupTextOnly(textSize: context.textSize)
             customTextField.stringValue = ""
         }
+
+        applyContentAlpha()
     }
 
     private func hideIconAndSetupTextOnly(textSize: CGFloat) {
@@ -271,6 +279,7 @@ final class EntryListEntryCellView: NSTableCellView {
         customTextField.drawsBackground = false
         customTextField.focusRingType = .none
         customTextField.delegate = nil
+        applyContentAlpha()
     }
 
     private func applyRenamingStyle(text: String) {
@@ -283,6 +292,13 @@ final class EntryListEntryCellView: NSTableCellView {
 
         customTextField.stringValue = EntryGridRenameEditorRules.sanitizeInput(text)
         customTextField.delegate = self
+        applyContentAlpha()
+    }
+
+    private func applyContentAlpha() {
+        let alpha: CGFloat = (isHiddenEntry || isCutEntry) ? 0.5 : 1.0
+        customImageView.alphaValue = alpha
+        customTextField.alphaValue = alpha
     }
 }
 

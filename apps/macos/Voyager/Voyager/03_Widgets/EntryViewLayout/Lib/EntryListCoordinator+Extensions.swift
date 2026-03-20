@@ -438,7 +438,10 @@ extension EntryListCoordinator {
         dateModifiedWidth: CGFloat,
         thumbnail: NSImage?,
     ) -> EntryListEntryCellViewConfiguration {
-        .init(
+        let isCut = state.entryOperations.clipboardItems.contains(entry.fullPath)
+            && state.entryOperations.clipboardOperation == .cut
+
+        return .init(
             context: .init(
                 model: entry,
                 columnId: columnId,
@@ -446,6 +449,8 @@ extension EntryListCoordinator {
                 textSize: state.listTextSize,
                 dateModifiedWidth: dateModifiedWidth,
                 thumbnail: thumbnail,
+                isHidden: entry.isHidden,
+                isCut: isCut,
                 isRenaming: state.entryOperations.renamingItemId == entry.id,
                 renamingText: state.entryOperations.renamingText,
                 workspaceClient: workspaceClient,
