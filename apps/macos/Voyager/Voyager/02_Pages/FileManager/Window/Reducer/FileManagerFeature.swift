@@ -117,11 +117,12 @@ struct FileManagerFeature {
     ) -> Effect<Action>? {
         switch command {
         case .newFolder:
-            .send(.content(.entries(.createNewFolder(currentPath: currentPath))))
+            let defaultName = "untitled folder"
+            return .send(.content(.entryOperations(.createNewFolder(name: defaultName, parentPath: currentPath))))
         case .paste:
-            .send(.content(.entries(.pasteItems(destinationPath: currentPath))))
+            return .send(.content(.entryOperations(.pasteItemsFromClipboard(destinationPath: currentPath))))
         default:
-            nil
+            return nil
         }
     }
 
@@ -202,7 +203,7 @@ struct FileManagerFeature {
     private func handleLayoutRequest(_ command: Action.WindowCommand, state: inout State) -> Effect<Action> {
         switch command {
         case .toggleSidebar:
-            .send(.sidebar(.setSidebarVisible(!state.sidebar.sidebarVisible)))
+            .send(.sidebar(.view(.setSidebarVisible(!state.sidebar.sidebarVisible))))
         case let .setViewLayout(layout):
             .send(.content(.changeLayout(layout)))
         case let .setGroupKey(key):

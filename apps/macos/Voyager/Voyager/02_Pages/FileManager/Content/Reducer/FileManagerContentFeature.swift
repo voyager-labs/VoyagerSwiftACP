@@ -238,7 +238,7 @@ struct FileManagerContentFeature {
             state.restoreCollectionDraftFromBaseline()
 
         default:
-            nil
+            return nil
         }
     }
 }

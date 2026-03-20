@@ -56,4 +56,26 @@ struct FileManagerContentState: Equatable {
         if baseline.context != context { return true }
         return false
     }
+
+    mutating func exitCollectionMode(computerName: String) -> Effect<FileManagerContentAction> {
+        entryOperations.loadingContext.isCollectionMode = false
+        collectionContext = nil
+        collectionSession.openedName = nil
+        collectionSession.openedURL = nil
+        collectionSession.originURL = nil
+        collectionSession.baseline = nil
+        resetComposer()
+        return .send(.requestNavigation(.view(.navigateToPath(computerName))))
+    }
+
+    func makeCollectionNavigation() -> ContentPageCollectionNavigation {
+        let context = collectionContext ?? CollectionContext(query: "", scopes: [], conditions: [])
+        return ContentPageCollectionNavigation(
+            kind: .temporary,
+            context: context,
+            sortKey: entryArrangements.sortKey,
+            sortOrder: entryArrangements.sortOrder,
+            viewLayout: entryViewLayout.mode,
+        )
+    }
 }

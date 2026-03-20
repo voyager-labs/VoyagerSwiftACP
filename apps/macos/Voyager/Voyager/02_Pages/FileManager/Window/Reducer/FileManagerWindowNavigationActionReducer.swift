@@ -240,7 +240,7 @@ private func handleOpenCollectionFile(
         .navigation(.internal(.prepareCollectionFileOpen(url))),
     )
 
-    let clearEffect = state.content.clearCollectionMode()
+    let clearEffect: Effect<FileManagerContentAction> = clearCollectionMode(state: &state.content)
     state.content.collectionSession.isOpening = true
     state.content.collectionSession.openedName = url.deletingPathExtension().lastPathComponent
     state.content.collectionSession.openedURL = url
@@ -380,7 +380,7 @@ private func handleCollectionFileLoadedFailure(
     let exitEffect = state.content.exitCollectionMode(computerName: computerName)
     var effects: [Effect<FileManagerWindowAction>] = [.send(.navigation(.internal(.rollbackBackHistoryOnce)))]
     if state.sidebar.pendingSidebarSelectionRestore != nil {
-        effects.append(.send(.sidebar(.restoreSidebarSelection)))
+        effects.append(.send(.sidebar(.internal(.restoreSidebarSelection))))
     }
     effects.append(exitEffect.map(FileManagerWindowAction.content))
     effects.append(.run { _ in
@@ -474,4 +474,15 @@ private func handleNavigationDelegate(
         state.content.resetComposer()
         return exitEffect.map(FileManagerWindowAction.content)
     }
+}
+
+private func clearCollectionMode(state: inout FileManagerContentState) -> Effect<FileManagerContentAction> {
+    state.entryOperations.loadingContext.isCollectionMode = false
+    state.collectionContext = nil
+    state.collectionSession.openedName = nil
+    state.collectionSession.openedURL = nil
+    state.collectionSession.originURL = nil
+    state.collectionSession.baseline = nil
+    state.resetComposer()
+    return .none
 }

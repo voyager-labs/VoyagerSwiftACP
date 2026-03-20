@@ -15,6 +15,7 @@ enum FileManagerContentAction: CasePathable, Sendable {
     case collectionDraft(FileManagerContentCollectionDraftAction)
 
     case handleKeyCommand(KeyCommand)
+    case changeLayout(EntryViewLayoutState.Mode)
 
     case changeLayout(EntryViewLayoutState.Mode)
     case applyNavigationState(ContentPageNavigationRoute)
