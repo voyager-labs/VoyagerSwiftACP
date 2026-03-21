@@ -277,6 +277,7 @@ extension EntryListCoordinator {
         rebuildRowsIfNeeded(previous: previous, snapshot: snapshot)
         resetThumbnailSessionIfNeeded(previous: previous, snapshot: snapshot)
         syncSelectionIfNeeded(previous: previous, snapshot: snapshot)
+        reloadVisibleRowsIfNeeded(previous: previous, snapshot: snapshot)
         syncRenamingIfNeeded(previous: previous, snapshot: snapshot)
         syncSortIndicatorsIfNeeded(previous: previous, snapshot: snapshot)
         saveScrollPositionIfNeeded(previous: previous, snapshot: snapshot)
@@ -310,6 +311,19 @@ extension EntryListCoordinator {
 
     func syncSelectionIfNeeded(previous: RenderSnapshot, snapshot: RenderSnapshot) {
         if previous.selectedIds != snapshot.selectedIds { syncListSelectionFromStore() }
+    }
+
+    func reloadVisibleRowsIfNeeded(previous: RenderSnapshot, snapshot: RenderSnapshot) {
+        guard previous.clipboardItems != snapshot.clipboardItems
+            || previous.clipboardOperation != snapshot.clipboardOperation
+        else {
+            return
+        }
+
+        let rows = tableView.rows(in: tableView.visibleRect)
+        guard rows.location != NSNotFound, rows.length > 0 else { return }
+        tableView.reloadData(forRowIndexes: IndexSet(integersIn: rows.location ..< NSMaxRange(rows)),
+                             columnIndexes: IndexSet(integersIn: 0 ..< tableView.numberOfColumns))
     }
 
     func syncRenamingIfNeeded(previous: RenderSnapshot, snapshot: RenderSnapshot) {

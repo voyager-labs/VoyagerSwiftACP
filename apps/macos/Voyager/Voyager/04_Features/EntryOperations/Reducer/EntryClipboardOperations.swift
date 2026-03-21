@@ -234,6 +234,9 @@ struct EntryClipboardOperationsReducer {
                 )
 
                 guard !destinations.isEmpty else {
+                    if operation == .cut {
+                        return .send(.setClipboardOperation(operation: .copy))
+                    }
                     return .none
                 }
 

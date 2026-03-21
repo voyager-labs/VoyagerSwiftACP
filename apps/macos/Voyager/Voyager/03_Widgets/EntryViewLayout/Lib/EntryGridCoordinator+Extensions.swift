@@ -30,6 +30,7 @@ extension EntryGridCoordinator {
             rebuildSectionsAndReload()
         }
         syncSelectionIfNeeded(previous: previous, snapshot: snapshot)
+        reloadVisibleItemsIfNeeded(previous: previous, snapshot: snapshot)
         syncRenamingIfNeeded(previous: previous, snapshot: snapshot)
         updateGridMetricsIfNeeded(previous: previous, snapshot: snapshot)
         saveScrollPositionIfNeeded(previous: previous, snapshot: snapshot)
@@ -46,6 +47,12 @@ extension EntryGridCoordinator {
 
     func syncSelectionIfNeeded(previous: RenderSnapshot, snapshot: RenderSnapshot) {
         if previous.selectedIds != snapshot.selectedIds { syncSelectionFromStore() }
+    }
+
+    func reloadVisibleItemsIfNeeded(previous: RenderSnapshot, snapshot: RenderSnapshot) {
+        guard previous.clipboardItems != snapshot.clipboardItems
+            || previous.clipboardOperation != snapshot.clipboardOperation else { return }
+        reloadVisibleItems()
     }
 
     func syncRenamingIfNeeded(previous: RenderSnapshot, snapshot: RenderSnapshot) {
@@ -69,12 +76,12 @@ extension EntryGridCoordinator {
     }
 
     func updateDropTargetBorderIfNeeded(previous: RenderSnapshot, snapshot: RenderSnapshot) {
-        if previous.isDropTargeted != snapshot
-            .isDropTargeted { updateDropTargetBorder(isTargeted: snapshot.isDropTargeted) }
+        if previous.isDropTargeted != snapshot.isDropTargeted { updateDropTargetBorder(isTargeted: snapshot.isDropTargeted) }
     }
 
     func resetThumbnailSessionIfNeeded(previous: RenderSnapshot, snapshot: RenderSnapshot) {
-        if previous.currentPath != snapshot.currentPath { resetThumbnailSession()
+        if previous.currentPath != snapshot.currentPath {
+            resetThumbnailSession()
             hasRestoredScrollPosition = false
         }
     }

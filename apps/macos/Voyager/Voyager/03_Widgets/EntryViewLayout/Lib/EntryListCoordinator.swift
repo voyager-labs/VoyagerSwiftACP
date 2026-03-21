@@ -121,6 +121,8 @@ struct EntryListCoordinatorRenderSnapshot: Equatable {
     let groupedItems: [GroupedItems]
     let currentPath: String
     let selectedIds: Set<EntryModel.ID>
+    let clipboardItems: Set<String>
+    let clipboardOperation: ClipboardOperation
     let renamingItemId: EntryModel.ID?
     let sortKey: SortKey
     let sortOrder: SortOrder
@@ -135,6 +137,8 @@ struct EntryListCoordinatorRenderSnapshot: Equatable {
         groupedItems = state.entryArrangements.groupedItems
         currentPath = state.currentPath
         selectedIds = state.selectedIds
+        clipboardItems = Set(state.entryOperations.clipboardItems)
+        clipboardOperation = state.entryOperations.clipboardOperation
         renamingItemId = state.entryOperations.renamingItemId
         sortKey = state.entryArrangements.sortKey
         sortOrder = state.entryArrangements.sortOrder
@@ -236,10 +240,7 @@ final class EntryListCoordinator: NSObject {
     var finderFavoritesTagClient
     @Dependency(\.notificationCenterClient)
     var notificationCenterClient
-    init(store: StoreOf<EntryViewLayoutFeature>) {
-        self.store = store
-        super.init()
-    }
+    init(store: StoreOf<EntryViewLayoutFeature>) { self.store = store; super.init() }
 
     func bind(to view: EntryListView) {
         self.view = view
@@ -275,9 +276,7 @@ final class EntryListCoordinator: NSObject {
     }
 
     func observeTableView() {
-        if let boundsDidChangeObserver {
-            notificationCenterClient.removeObserver(boundsDidChangeObserver)
-        }
+        if let boundsDidChangeObserver { notificationCenterClient.removeObserver(boundsDidChangeObserver) }
         boundsDidChangeObserver = notificationCenterClient.addObserver(
             NSView.boundsDidChangeNotification,
             scrollView.contentView,
