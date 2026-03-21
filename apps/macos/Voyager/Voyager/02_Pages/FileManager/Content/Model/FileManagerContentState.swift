@@ -64,24 +64,6 @@ struct FileManagerContentState: Equatable {
         }
     }
 
-    mutating func exitCollectionMode(computerName _: String) -> Effect<FileManagerContentAction> {
-        collectionContext = nil
-        collectionSession = .init()
-        resetComposer()
-        return .send(.entryOperations(.setCollectionMode(false)))
-    }
-
-    func makeCollectionNavigation() -> ContentPageCollectionNavigation {
-        ContentPageCollectionNavigation(
-            kind: collectionSession.openedURL
-                .map { .file(url: $0, name: collectionSession.openedName ?? "") } ?? .temporary,
-            context: collectionContext ?? .init(query: "", scopes: [], conditions: []),
-            sortKey: entryArrangements.sortKey,
-            sortOrder: entryArrangements.sortOrder,
-            viewLayout: entryViewLayout.mode,
-        )
-    }
-
     mutating func restoreCollectionDraftFromBaseline() {
         if let baseline = collectionSession.baseline {
             collectionContext = baseline.context

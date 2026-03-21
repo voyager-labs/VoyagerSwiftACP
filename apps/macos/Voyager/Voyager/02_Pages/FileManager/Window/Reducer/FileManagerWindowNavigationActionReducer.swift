@@ -514,24 +514,3 @@ private func exitCollectionMode(
         clearEffect,
     )
 }
-
-private func makeCollectionNavigation(state: FileManagerContentState) -> ContentPageCollectionNavigation {
-    let kind: ContentPageCollectionKind
-    if let url = state.collectionSession.openedURL {
-        let name = state.collectionSession.openedName ?? url.deletingPathExtension().lastPathComponent
-        kind = .file(url: url, name: name)
-    } else {
-        kind = .temporary
-    }
-
-    let context = state.collectionContext
-        ?? CollectionContext(query: "", scopes: [], conditions: [])
-
-    return ContentPageCollectionNavigation(
-        kind: kind,
-        context: context,
-        sortKey: state.entryArrangements.sortKey,
-        sortOrder: state.entryArrangements.sortOrder,
-        viewLayout: state.entryViewLayout.mode,
-    )
-}

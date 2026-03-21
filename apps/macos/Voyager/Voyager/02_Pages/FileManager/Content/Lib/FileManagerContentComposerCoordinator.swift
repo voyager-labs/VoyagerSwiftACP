@@ -225,7 +225,7 @@ enum FileManagerContentComposerCoordinator {
         }
         state.collectionSession = .init()
         state.resetComposer()
-        let exitEffect = state.exitCollectionMode(computerName: dependencies.computerName)
+        let exitEffect = exitCollectionMode(state: &state, computerName: dependencies.computerName)
         let collectionAlertClient = dependencies.collectionAlertClient
         return .concatenate(
             .send(.internal(.requestNavigation(.internal(.rollbackBackHistoryOnce)))),
