@@ -56,56 +56,56 @@ struct FileManagerContentFeature {
                 effect = collectionDraftEffect
             } else {
                 switch action {
-                case let .applyNavigationState(navigationState):
+                case let .internal(.applyNavigationState(navigationState)):
                     effect = applyNavigationStateEffect(navigationState, state: state)
 
-                case .selectAllEntries:
+                case .view(.selectAllEntries):
                     let orderedIds = state.entryViewLayout.entries.map(\.id)
                     effect = .send(.entryViewLayout(.internal(.applySelectAll(orderedItemIds: orderedIds))))
 
-                case .toggleShowHiddenFilesAndReload:
+                case .view(.toggleShowHiddenFilesAndReload):
                     let showHidden = !state.entryViewLayout.showHiddenFiles
                     effect = .concatenate(
-                        .send(.entries(.toggleShowHiddenFiles)),
+                        .send(.entryViewLayout(.view(.toggleShowHiddenFiles))),
                         reloadEntryItemsEffect(
                             navigationState: state.navigation.navigationState,
                             showHidden: showHidden,
                         ),
                     )
 
-                case let .handleKeyCommand(command):
+                case let .view(.handleKeyCommand(command)):
                     effect = FileManagerContentKeyCommandHandler.effect(for: command, state: state)
 
-                case .openPathInNewWindow,
-                     .openPathInNewTab,
-                     .closeWindow:
+                case .delegate(.openPathInNewWindow),
+                     .delegate(.openPathInNewTab),
+                     .delegate(.closeWindow):
                     effect = .none
 
-                case let .changeLayout(layout):
+                case let .view(.changeLayout(layout)):
                     state.entryViewLayout.mode = layout
                     state.syncComposerCollectionState()
                     userDefaultsClient.setString(layout.rawValue, SettingsKeys.viewLayout)
                     effect = .none
 
-                case let .saveScrollOffset(offset, forPath: path):
+                case let .internal(.saveScrollOffset(offset, forPath: path)):
                     state.navigation.scrollPositions[path] = offset
                     effect = .none
 
-                case .startObservingSystemNotifications:
+                case .internal(.startObservingSystemNotifications):
                     effect = .run { send in
                         for await _ in await notificationCenterClient.notifications(
                             NSApplication.didBecomeActiveNotification,
                             nil,
                         ) {
-                            await send(.systemAppDidBecomeActive)
+                            await send(.internal(.systemAppDidBecomeActive))
                         }
                     }
                     .cancellable(id: CancelID.systemNotifications, cancelInFlight: true)
 
-                case .stopObservingSystemNotifications:
+                case .internal(.stopObservingSystemNotifications):
                     effect = .cancel(id: CancelID.systemNotifications)
 
-                case .systemAppDidBecomeActive:
+                case .internal(.systemAppDidBecomeActive):
                     effect = .send(.entryViewLayout(.entryOperations(.appDidBecomeActive)))
 
                 default:
@@ -160,7 +160,7 @@ struct FileManagerContentFeature {
             )
 
         case .emptyTrashCompleted:
-            .send(.closeWindow)
+            .send(.delegate(.closeWindow))
 
         default:
             .none
@@ -233,9 +233,9 @@ struct FileManagerContentFeature {
         state: inout State,
     ) -> Effect<Action>? {
         switch action {
-        case .discardCollectionChanges,
-             .collectionDraft(.discardChangesTapped):
+        case .delegate(.discardCollectionChanges):
             state.restoreCollectionDraftFromBaseline()
+            return .none
 
         default:
             return nil
@@ -251,7 +251,7 @@ private extension FileManagerContentFeature {
         switch navigationState {
         case let .folder(path):
             .merge(
-                .send(.entries(.setCollectionMode(false))),
+                .send(.entryOperations(.setCollectionMode(false))),
                 .send(.entryOperations(.loadItems(
                     path: path,
                     showHidden: state.entryViewLayout.showHiddenFiles,
@@ -260,13 +260,13 @@ private extension FileManagerContentFeature {
 
         case .recents:
             .merge(
-                .send(.entries(.setCollectionMode(false))),
+                .send(.entryOperations(.setCollectionMode(false))),
                 .send(.entryOperations(.loadRecentItems(showHidden: state.entryViewLayout.showHiddenFiles))),
             )
 
         case let .tags(tagName):
             .merge(
-                .send(.entries(.setCollectionMode(false))),
+                .send(.entryOperations(.setCollectionMode(false))),
                 .send(.entryOperations(.loadTagItems(
                     tagName: tagName,
                     showHidden: state.entryViewLayout.showHiddenFiles,
@@ -275,12 +275,12 @@ private extension FileManagerContentFeature {
 
         case .computer:
             .merge(
-                .send(.entries(.setCollectionMode(false))),
+                .send(.entryOperations(.setCollectionMode(false))),
                 .send(.entryOperations(.loadComputerItems)),
             )
 
         case .collection:
-            .send(.entries(.setCollectionMode(true)))
+            .send(.entryOperations(.setCollectionMode(true)))
         }
     }
 }

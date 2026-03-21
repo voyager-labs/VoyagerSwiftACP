@@ -24,12 +24,12 @@ struct FileManagerContentState: Equatable {
     var listTextSize: CGFloat = AppearanceSettingsDefaults.listTextSize
     var gridTextSize: CGFloat = AppearanceSettingsDefaults.gridTextSize
 
-    // 컴포저 관련 //
+    // 컴포저 관련
     var collectionContext: CollectionContext?
 
     var resetComposerOnNextDirectoryNavigation: Bool = false
 
-    // 콜렉션 관련 //
+    // 콜렉션 관련
     var collectionSession: CollectionDocumentSessionState = .init()
 
     mutating func resetComposer() {
@@ -57,25 +57,35 @@ struct FileManagerContentState: Equatable {
         return false
     }
 
-    mutating func exitCollectionMode(computerName: String) -> Effect<FileManagerContentAction> {
-        entryOperations.loadingContext.isCollectionMode = false
+    var selectedEntries: [EntryModel] {
+        let selectedIds = entryViewLayout.selectedIds
+        return selectedIds.compactMap { id in
+            entryOperations.displayItems[id: id]
+        }
+    }
+
+    mutating func exitCollectionMode(computerName _: String) -> Effect<FileManagerContentAction> {
         collectionContext = nil
-        collectionSession.openedName = nil
-        collectionSession.openedURL = nil
-        collectionSession.originURL = nil
-        collectionSession.baseline = nil
+        collectionSession = .init()
         resetComposer()
-        return .send(.requestNavigation(.view(.navigateToPath(computerName))))
+        return .send(.entryOperations(.setCollectionMode(false)))
     }
 
     func makeCollectionNavigation() -> ContentPageCollectionNavigation {
-        let context = collectionContext ?? CollectionContext(query: "", scopes: [], conditions: [])
-        return ContentPageCollectionNavigation(
-            kind: .temporary,
-            context: context,
+        ContentPageCollectionNavigation(
+            kind: collectionSession.openedURL
+                .map { .file(url: $0, name: collectionSession.openedName ?? "") } ?? .temporary,
+            context: collectionContext ?? .init(query: "", scopes: [], conditions: []),
             sortKey: entryArrangements.sortKey,
             sortOrder: entryArrangements.sortOrder,
             viewLayout: entryViewLayout.mode,
         )
+    }
+
+    mutating func restoreCollectionDraftFromBaseline() {
+        if let baseline = collectionSession.baseline {
+            collectionContext = baseline.context
+            syncComposerCollectionState()
+        }
     }
 }

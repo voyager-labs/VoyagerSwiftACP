@@ -377,7 +377,7 @@ private func handleCollectionFileLoadedFailure(
     state.content.collectionSession = .init()
     state.content.resetComposer()
 
-    let exitEffect = state.content.exitCollectionMode(computerName: computerName)
+    let exitEffect = exitCollectionMode(state: &state.content, computerName: computerName)
     var effects: [Effect<FileManagerWindowAction>] = [.send(.navigation(.internal(.rollbackBackHistoryOnce)))]
     if state.sidebar.pendingSidebarSelectionRestore != nil {
         effects.append(.send(.sidebar(.internal(.restoreSidebarSelection))))
@@ -397,7 +397,7 @@ private func handleEmptyCollectionFile(
     state.content.collectionSession = .init()
     state.content.resetComposer()
 
-    let exitEffect = state.content.exitCollectionMode(computerName: computerName)
+    let exitEffect = exitCollectionMode(state: &state.content, computerName: computerName)
     return .concatenate(
         .send(.navigation(.internal(.rollbackBackHistoryOnce))),
         .merge(
@@ -470,19 +470,68 @@ private func handleNavigationDelegate(
         return .none
 
     case .resetComposer:
-        let exitEffect = state.content.exitCollectionMode(computerName: computerName)
+        let exitEffect = exitCollectionMode(state: &state.content, computerName: computerName)
         state.content.resetComposer()
         return exitEffect.map(FileManagerWindowAction.content)
     }
 }
 
 private func clearCollectionMode(state: inout FileManagerContentState) -> Effect<FileManagerContentAction> {
-    state.entryOperations.loadingContext.isCollectionMode = false
     state.collectionContext = nil
-    state.collectionSession.openedName = nil
-    state.collectionSession.openedURL = nil
-    state.collectionSession.originURL = nil
-    state.collectionSession.baseline = nil
-    state.resetComposer()
-    return .none
+    state.composer.pendingSearchQuery = nil
+    state.collectionSession = .init()
+    state.entryOperations.loadingContext.collectionItems = []
+    state.syncComposerCollectionState()
+
+    return .merge(
+        .send(.internal(.requestNavigation(.internal(.setPendingNavigation(nil))))),
+        .cancel(id: "openCollectionFile"),
+        .cancel(id: ComposerFeature.CancelID.search),
+        .cancel(id: ComposerFeature.CancelID.filters),
+        .send(.entryOperations(.setCollectionMode(false))),
+        .send(.entryOperations(.clearCollectionItems)),
+    )
+}
+
+private func exitCollectionMode(
+    state: inout FileManagerContentState,
+    computerName: String,
+) -> Effect<FileManagerContentAction> {
+    let wasCollection = if case .collection = state.navigation.navigationState { true } else { false }
+    let clearEffect = clearCollectionMode(state: &state)
+
+    guard wasCollection else {
+        return clearEffect
+    }
+
+    let navigationState = ContentPageNavigationRoute.fromPath(
+        state.navigation.titlePath,
+        computerName: computerName,
+    )
+
+    return .concatenate(
+        .send(.internal(.requestNavigation(.internal(.setNavigationState(navigationState))))),
+        clearEffect,
+    )
+}
+
+private func makeCollectionNavigation(state: FileManagerContentState) -> ContentPageCollectionNavigation {
+    let kind: ContentPageCollectionKind
+    if let url = state.collectionSession.openedURL {
+        let name = state.collectionSession.openedName ?? url.deletingPathExtension().lastPathComponent
+        kind = .file(url: url, name: name)
+    } else {
+        kind = .temporary
+    }
+
+    let context = state.collectionContext
+        ?? CollectionContext(query: "", scopes: [], conditions: [])
+
+    return ContentPageCollectionNavigation(
+        kind: kind,
+        context: context,
+        sortKey: state.entryArrangements.sortKey,
+        sortOrder: state.entryArrangements.sortOrder,
+        viewLayout: state.entryViewLayout.mode,
+    )
 }
