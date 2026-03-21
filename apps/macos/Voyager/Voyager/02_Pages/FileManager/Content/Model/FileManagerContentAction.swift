@@ -42,6 +42,5 @@ enum FileManagerContentAction: ViewAction, CasePathable, Sendable {
         case openPathInNewWindow(String)
         case openPathInNewTab(String)
         case closeWindow
-        case closeWindowRequested
     }
 }
