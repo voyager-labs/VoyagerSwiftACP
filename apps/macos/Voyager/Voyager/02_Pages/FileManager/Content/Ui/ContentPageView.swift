@@ -69,9 +69,13 @@ struct ContentPageView: View {
                 restoreKeyCommandFocus()
             }
             .onAppear {
+                store.send(.startObservingSystemNotifications)
                 DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) {
                     restoreKeyCommandFocus()
                 }
+            }
+            .onDisappear {
+                store.send(.stopObservingSystemNotifications)
             }
             .onReceive(NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)) { _ in
                 store.send(.entryViewLayout(.entryOperations(.appDidBecomeActive)))

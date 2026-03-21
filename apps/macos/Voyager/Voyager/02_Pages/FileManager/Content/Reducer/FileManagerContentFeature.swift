@@ -1,4 +1,5 @@
 import ComposableArchitecture
+import Foundation
 import VoyagerShared
 
 @Reducer
@@ -6,12 +7,16 @@ struct FileManagerContentFeature {
     typealias State = FileManagerContentState
     typealias Action = FileManagerContentAction
 
+    private let fileSystemChangedCancellationID = "FileManagerContent.fileSystemChanged"
+
     @Dependency(\.userDefaultsClient)
     private var userDefaultsClient
     @Dependency(\.collectionAlertClient)
     private var collectionAlertClient
     @Dependency(\.fileManagerClient)
     private var fileManagerClient
+    @Dependency(\.entryWatchingClient)
+    private var entryWatchingClient
     @Dependency(\.thumbnailGeneratorClient)
     private var thumbnailGeneratorClient
     @Dependency(\.entryThumbnailCacheClient)
@@ -92,6 +97,23 @@ struct FileManagerContentFeature {
                     state.entryViewLayout.savedScrollOffset = offset
                 }
                 return .none
+
+            case .startObservingSystemNotifications:
+                return .run { [entryWatchingClient] send in
+                    for await paths in entryWatchingClient.observeFileSystemChanged() {
+                        await send(.entries(.fileSystemChanged(paths)))
+                    }
+                }
+                .cancellable(id: fileSystemChangedCancellationID, cancelInFlight: true)
+
+            case .stopObservingSystemNotifications:
+                return .cancel(id: fileSystemChangedCancellationID)
+
+            case let .entries(.fileSystemChanged(paths)):
+                guard pathsAffectCurrentFolder(paths, currentPath: state.navigation.currentPath) else {
+                    return .none
+                }
+                return reloadEntryItemsEffect(state: state)
 
             default:
                 return .none
@@ -211,6 +233,20 @@ struct FileManagerContentFeature {
             .send(.entryViewLayout(.entryOperations(.loadComputerItems)))
         case .collection:
             .none
+        }
+    }
+
+    private func pathsAffectCurrentFolder(_ paths: [String], currentPath: String) -> Bool {
+        let normalizedCurrentPath = URL(fileURLWithPath: currentPath).standardizedFileURL.path
+
+        return paths.contains { path in
+            let normalizedPath = URL(fileURLWithPath: path).standardizedFileURL.path
+            if normalizedPath == normalizedCurrentPath {
+                return true
+            }
+
+            let folderPrefix = normalizedCurrentPath == "/" ? "/" : normalizedCurrentPath + "/"
+            return normalizedPath.hasPrefix(folderPrefix)
         }
     }
 
