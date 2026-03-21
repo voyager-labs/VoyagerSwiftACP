@@ -13,7 +13,7 @@ struct ViewToggleButton: View {
             font: nil,
             menuContent: {
                 Button(
-                    action: { store.send(.changeLayout(.list)) },
+                    action: { store.send(.view(.changeLayout(.list))) },
                     label: {
                         HStack {
                             Image(systemName: "list.bullet")
@@ -24,7 +24,7 @@ struct ViewToggleButton: View {
                 .disabled(store.entryViewLayout.mode == .list)
 
                 Button(
-                    action: { store.send(.changeLayout(.grid)) },
+                    action: { store.send(.view(.changeLayout(.grid))) },
                     label: {
                         HStack {
                             Image(systemName: "square.grid.2x2")

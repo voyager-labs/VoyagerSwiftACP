@@ -10,17 +10,17 @@ struct FileManagerWindowRoutingReducer {
     var body: some Reducer<State, Action> {
         Reduce { _, action in
             switch action {
-            case let .sidebar(.dropItemsToSidebarFolder(providers, targetURL)):
-                .send(.content(.dropItemsToSidebarFolder(
+            case let .sidebar(.view(.dropItemsToSidebarFolder(providers, targetURL))):
+                .send(.content(.delegate(.dropItemsToSidebarFolder(
                     providers: providers,
                     targetURL: targetURL,
-                )))
+                ))))
 
-            case let .sidebar(.dropItemsToTag(providers, tagName)):
-                .send(.content(.dropItemsToTag(
+            case let .sidebar(.view(.dropItemsToTag(providers, tagName))):
+                .send(.content(.delegate(.dropItemsToTag(
                     providers: providers,
                     tagName: tagName,
-                )))
+                ))))
 
             case .content(.entryOperations(.emptyTrashCompleted)):
                 // TODO(VOY-179 후속): 휴지통 비우기 완료 시 창을 닫는 정책이 맞는지 재검토 필요.

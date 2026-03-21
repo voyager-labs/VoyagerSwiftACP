@@ -34,10 +34,10 @@ struct FileManagerFeature {
             case let .request(command):
                 handleRequestedCommand(command, state: &state)
 
-            case let .content(.openPathInNewWindow(path)):
+            case let .content(.delegate(.openPathInNewWindow(path))):
                 .send(.delegate(.openPathInNewWindow(path)))
 
-            case let .content(.openPathInNewTab(path)):
+            case let .content(.delegate(.openPathInNewTab(path))):
                 .send(.delegate(.openPathInNewTab(path)))
 
             default:
@@ -92,15 +92,15 @@ struct FileManagerFeature {
             return effect
         }
 
-        if let effect = handleEntryRequestSelection(command) {
+        if let effect = handleEntryRequestSelection(command, state: state) {
             return effect
         }
 
-        if let effect = handleEntryRequestEditing(command) {
+        if let effect = handleEntryRequestEditing(command, state: state) {
             return effect
         }
 
-        if let effect = handleEntryRequestCopying(command) {
+        if let effect = handleEntryRequestCopying(command, state: state) {
             return effect
         }
 
@@ -126,49 +126,88 @@ struct FileManagerFeature {
         }
     }
 
-    private func handleEntryRequestSelection(_ command: Action.WindowCommand) -> Effect<Action>? {
+    private func handleEntryRequestSelection(_ command: Action.WindowCommand, state: State) -> Effect<Action>? {
+        let context = EntryOperationsCommandContext(
+            selectedIds: state.content.entryViewLayout.selectedIds,
+            displayItems: state.content.entryOperations.displayOrderItems,
+            currentPath: state.content.navigation.currentPath,
+        )
         switch command {
         case .openSelectedItem:
-            .send(.content(.entries(.openSelectedItem)))
+            return .send(.content(.entryOperations(.executeCommand(
+                command: .navigation(.openSelectedItem),
+                context: context,
+            ))))
         case .quickLookSelectedItem:
-            .send(.content(.entries(.quickLookSelectedItem)))
+            return .send(.content(.entryOperations(.executeCommand(
+                command: .navigation(.quickLookSelectedItem),
+                context: context,
+            ))))
         case .selectAll:
-            .send(.content(.entries(.selectAll)))
+            return .send(.content(.view(.selectAllEntries)))
         default:
-            nil
+            return nil
         }
     }
 
-    private func handleEntryRequestEditing(_ command: Action.WindowCommand) -> Effect<Action>? {
+    private func handleEntryRequestEditing(_ command: Action.WindowCommand, state: State) -> Effect<Action>? {
+        let context = EntryOperationsCommandContext(
+            selectedIds: state.content.entryViewLayout.selectedIds,
+            displayItems: state.content.entryOperations.displayOrderItems,
+            currentPath: state.content.navigation.currentPath,
+        )
         switch command {
         case .cut:
-            .send(.content(.entries(.cutSelectedItems)))
+            return .send(.content(.entryOperations(.executeCommand(
+                command: .clipboard(.cutSelectedItems),
+                context: context,
+            ))))
         case .copy:
-            .send(.content(.entries(.copySelectedItems)))
+            return .send(.content(.entryOperations(.executeCommand(
+                command: .clipboard(.copySelectedItems),
+                context: context,
+            ))))
         case .duplicate:
-            .send(.content(.entries(.duplicateSelectedItems)))
+            return .send(.content(.entryOperations(.executeCommand(
+                command: .clipboard(.duplicateSelectedItems),
+                context: context,
+            ))))
         case .makeAlias:
-            .send(.content(.entries(.createAliasForSelectedItems)))
+            return .send(.content(.entryOperations(.executeCommand(
+                command: .mutation(.createAliasForSelectedItems),
+                context: context,
+            ))))
         default:
-            nil
+            return nil
         }
     }
 
-    private func handleEntryRequestCopying(_ command: Action.WindowCommand) -> Effect<Action>? {
+    private func handleEntryRequestCopying(_ command: Action.WindowCommand, state: State) -> Effect<Action>? {
+        let context = EntryOperationsCommandContext(
+            selectedIds: state.content.entryViewLayout.selectedIds,
+            displayItems: state.content.entryOperations.displayOrderItems,
+            currentPath: state.content.navigation.currentPath,
+        )
         switch command {
         case .copyAbsolutePaths:
-            .send(.content(.entries(.copySelectedAbsolutePaths)))
+            return .send(.content(.entryOperations(.executeCommand(
+                command: .clipboard(.copySelectedAbsolutePaths),
+                context: context,
+            ))))
         case .copyURLs:
-            .send(.content(.entries(.copySelectedURLs)))
+            return .send(.content(.entryOperations(.executeCommand(
+                command: .clipboard(.copySelectedURLs),
+                context: context,
+            ))))
         default:
-            nil
+            return nil
         }
     }
 
     private func handleEntryRequestViewOptions(_ command: Action.WindowCommand) -> Effect<Action>? {
         switch command {
         case .toggleShowHiddenFiles:
-            .send(.content(.entries(.toggleShowHiddenFiles)))
+            .send(.content(.view(.toggleShowHiddenFilesAndReload)))
         default:
             nil
         }
@@ -205,7 +244,7 @@ struct FileManagerFeature {
         case .toggleSidebar:
             .send(.sidebar(.view(.setSidebarVisible(!state.sidebar.sidebarVisible))))
         case let .setViewLayout(layout):
-            .send(.content(.changeLayout(layout)))
+            .send(.content(.view(.changeLayout(layout))))
         case let .setGroupKey(key):
             .send(.content(.entryArrangements(.setGroupKey(key))))
         case let .setSortKey(key):

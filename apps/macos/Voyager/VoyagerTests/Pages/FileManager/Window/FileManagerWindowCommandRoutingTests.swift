@@ -23,7 +23,8 @@ final class FileManagerWindowCommandRoutingTests: XCTestCase {
 
         await store.send(.request(.newFolder))
         await store.receive {
-            guard case let .content(.entries(.createNewFolder(currentPath))) = $0 else { return false }
+            guard case let .content(.entryOperations(.createNewFolder(name: _, parentPath: currentPath))) = $0
+            else { return false }
             return currentPath == "/tmp/voyager"
         }
         await store.finish()
@@ -41,7 +42,8 @@ final class FileManagerWindowCommandRoutingTests: XCTestCase {
 
         await store.send(.request(.paste))
         await store.receive {
-            guard case let .content(.entries(.pasteItems(destinationPath))) = $0 else { return false }
+            guard case let .content(.entryOperations(.pasteItemsFromClipboard(destinationPath: destinationPath))) = $0
+            else { return false }
             return destinationPath == "/tmp/voyager"
         }
         await store.finish()

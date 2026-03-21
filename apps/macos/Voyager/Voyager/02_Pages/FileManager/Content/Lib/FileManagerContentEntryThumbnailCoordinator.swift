@@ -145,11 +145,11 @@ enum FileManagerContentThumbnailCoordinator {
         batchSize: Int,
     ) {
         if readyBatch.count >= batchSize {
-            send(.entries(.thumbnailsReady(paths: readyBatch)))
+            send(.entryOperations(.thumbnailsReady(paths: readyBatch)))
             readyBatch.removeAll(keepingCapacity: true)
         }
         if failedBatch.count >= batchSize {
-            send(.entries(.thumbnailRequestFailed(paths: failedBatch)))
+            send(.entryOperations(.thumbnailRequestFailed(paths: failedBatch)))
             failedBatch.removeAll(keepingCapacity: true)
         }
     }
@@ -161,10 +161,10 @@ enum FileManagerContentThumbnailCoordinator {
         failedBatch: [String],
     ) {
         if !readyBatch.isEmpty {
-            send(.entries(.thumbnailsReady(paths: readyBatch)))
+            send(.entryOperations(.thumbnailsReady(paths: readyBatch)))
         }
         if !failedBatch.isEmpty {
-            send(.entries(.thumbnailRequestFailed(paths: failedBatch)))
+            send(.entryOperations(.thumbnailRequestFailed(paths: failedBatch)))
         }
     }
 }

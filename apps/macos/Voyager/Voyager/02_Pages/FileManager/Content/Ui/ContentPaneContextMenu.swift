@@ -79,7 +79,7 @@ struct ContentPaneContextMenu: View {
                 get: { store.entryViewLayout.mode == layout },
                 set: { isOn in
                     if isOn {
-                        store.send(.changeLayout(layout))
+                        store.send(.view(.changeLayout(layout)))
                     }
                 },
             ),

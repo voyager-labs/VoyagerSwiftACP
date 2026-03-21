@@ -80,14 +80,14 @@ struct ContentPageView: View {
                 restoreKeyCommandFocus()
             }
             .onAppear {
-                store.send(.startObservingSystemNotifications)
+                store.send(.internal(.startObservingSystemNotifications))
                 guard store.entryViewLayout.mode.isGridLayout else { return }
                 DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) {
                     restoreKeyCommandFocus()
                 }
             }
             .onDisappear {
-                store.send(.stopObservingSystemNotifications)
+                store.send(.internal(.stopObservingSystemNotifications))
             }
             .background(backgroundInteractionLayer)
     }
@@ -99,7 +99,7 @@ struct ContentPageView: View {
             characters: event.characters,
             charactersIgnoringModifiers: event.charactersIgnoringModifiers,
         )
-        store.send(.handleKeyCommand(command))
+        store.send(.view(.handleKeyCommand(command)))
     }
 
     private func restoreKeyCommandFocus() {

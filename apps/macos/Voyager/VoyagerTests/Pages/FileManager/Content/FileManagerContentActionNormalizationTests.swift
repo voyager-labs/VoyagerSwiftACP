@@ -4,9 +4,9 @@ import XCTest
 
 // MARK: - VOY-201 Task 6: FileManagerContentAction Normalization Tests
 
-// These tests verify that FileManagerContentAction no longer exposes the
-// legacy .entries(EntryCommandAction) facade and that all actions are
-// properly routed through child features.
+// These tests verify that FileManagerContentAction uses the normalized action structure
+// with view/internal/delegate cases and child feature scopes (entryArrangements,
+// entryViewLayout, entryOperations, composer) without legacy facade cases.
 
 @MainActor
 final class FileManagerContentActionNormalizationTests: XCTestCase {
@@ -57,7 +57,7 @@ final class FileManagerContentActionNormalizationTests: XCTestCase {
         }
         store.exhaustivity = .off
 
-        await store.send(.selectAllEntries)
+        await store.send(.view(.selectAllEntries))
 
         await store.finish()
 
@@ -83,7 +83,7 @@ final class FileManagerContentActionNormalizationTests: XCTestCase {
         }
         store.exhaustivity = .off
 
-        await store.send(.toggleShowHiddenFilesAndReload)
+        await store.send(.view(.toggleShowHiddenFilesAndReload))
 
         await store.finish()
 

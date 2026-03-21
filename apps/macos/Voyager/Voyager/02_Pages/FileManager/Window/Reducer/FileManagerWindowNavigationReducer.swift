@@ -20,15 +20,15 @@ private struct FileManagerNavigationBridgeReducer {
     var body: some Reducer<State, Action> {
         Reduce { state, action in
             switch action {
-            case .sidebar(.favoritesLoaded),
-                 .sidebar(.locationsLoaded),
-                 .sidebar(.tagsLoaded):
+            case .sidebar(.internal(.favoritesLoaded)),
+                 .sidebar(.internal(.locationsLoaded)),
+                 .sidebar(.internal(.tagsLoaded)):
                 let computerName = state.sidebar.locations.first(where: { $0.isComputer })?.name
                     ?? state.content.navigation.currentPath
                 syncSidebarSelection(state: &state, computerName: computerName)
                 return .none
 
-            case let .sidebar(.openFavorite(favorite)):
+            case let .sidebar(.view(.openFavorite(favorite))):
                 if favorite.url.pathExtension.lowercased() == CollectionConstants.fileExtension {
                     state.sidebar.pendingSidebarSelectionRestore = state.sidebar.selectedSidebarItem
                     state.sidebar.selectedSidebarItem = favorite.displayName
@@ -36,44 +36,40 @@ private struct FileManagerNavigationBridgeReducer {
                 }
                 return .send(.navigation(.view(.navigateToPath(favorite.url.path))))
 
-            case let .sidebar(.openLocation(location)):
+            case let .sidebar(.view(.openLocation(location))):
                 return .send(.navigation(.view(.navigateToPath(location.url.path))))
 
-            case let .sidebar(.showTag(tag)):
+            case let .sidebar(.view(.showTag(tag))):
                 return .send(.navigation(.view(.showTag(tag.name))))
 
-            case .sidebar(.showRecents):
+            case .sidebar(.view(.showRecents)):
                 return .send(.navigation(.view(.showRecents)))
 
-            case .sidebar(.showComputer):
+            case .sidebar(.view(.showComputer)):
                 return .send(.navigation(.view(.showComputer)))
 
-            case let .content(.entries(.navigateFolder(id: id))):
+            case let .content(.entryOperations(.delegate(.navigateFolder(id: id)))):
                 guard let entry = state.content.entryOperations.displayItems[id: id] else {
                     return .none
                 }
                 return .send(.navigation(.view(.navigateToPath(entry.fullPath))))
 
-            case let .content(.entries(.openCollectionFile(url))):
-                return .send(.navigation(.view(.openCollectionFile(url))))
-
-            case let .content(.requestNavigation(navigationAction)):
+            case let .content(.internal(.requestNavigation(navigationAction))):
                 return .send(.navigation(navigationAction))
 
-            case let .content(.performPendingNavigation(pending)):
+            case let .content(.internal(.performPendingNavigation(pending))):
                 return .send(.navigation(.internal(.performNavigation(pending))))
 
-            case .content(.composerCollectionSearchSucceeded),
-                 .content(.discardCollectionChanges),
-                 .content(.collectionDraft(.discardChangesTapped)):
+            case .content(.delegate(.composerCollectionSearchSucceeded)),
+                 .content(.delegate(.discardCollectionChanges)):
                 let computerName = state.sidebar.locations.first(where: { $0.isComputer })?.name
                     ?? state.content.navigation.currentPath
                 syncSidebarSelection(state: &state, computerName: computerName)
                 return .none
 
-            case .content(.composerCollectionSearchFailed):
+            case .content(.delegate(.composerCollectionSearchFailed)):
                 if state.sidebar.pendingSidebarSelectionRestore != nil {
-                    return .send(.sidebar(.restoreSidebarSelection))
+                    return .send(.sidebar(.internal(.restoreSidebarSelection)))
                 }
                 return .none
 
@@ -136,30 +132,34 @@ func handleNavigateToState(
     switch navigationState {
     case let .folder(path):
         .concatenate(
-            .send(.content(.entries(.setCollectionMode(false)))),
-            .send(.content(.entries(.loadItems(path: path)))),
+            .send(.content(.entryOperations(.setCollectionMode(false)))),
+            .send(.content(.entryOperations(.loadItems(
+                path: path,
+                showHidden: state.content.entryViewLayout.showHiddenFiles,
+            )))),
         )
     case .recents:
         .concatenate(
-            .send(.content(.entries(.setCollectionMode(false)))),
-            .send(.content(.entries(.loadRecentItems(showHidden: state.content.entryViewLayout.showHiddenFiles)))),
+            .send(.content(.entryOperations(.setCollectionMode(false)))),
+            .send(.content(.entryOperations(.loadRecentItems(showHidden: state.content.entryViewLayout
+                    .showHiddenFiles)))),
         )
     case let .tags(tagName):
         .concatenate(
-            .send(.content(.entries(.setCollectionMode(false)))),
-            .send(.content(.entries(.loadTagItems(
+            .send(.content(.entryOperations(.setCollectionMode(false)))),
+            .send(.content(.entryOperations(.loadTagItems(
                 tagName: tagName,
                 showHidden: state.content.entryViewLayout.showHiddenFiles,
             )))),
         )
     case .computer:
         .concatenate(
-            .send(.content(.entries(.setCollectionMode(false)))),
-            .send(.content(.entries(.loadComputerItems))),
+            .send(.content(.entryOperations(.setCollectionMode(false)))),
+            .send(.content(.entryOperations(.loadComputerItems))),
         )
     case let .collection(navigation):
         .concatenate(
-            .send(.content(.entries(.setCollectionMode(true)))),
+            .send(.content(.entryOperations(.setCollectionMode(true)))),
             .send(.navigation(.internal(.navigateToCollection(navigation)))),
         )
     }
