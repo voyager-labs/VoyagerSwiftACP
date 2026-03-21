@@ -7,12 +7,14 @@ extension EntryListCoordinator {
         guard let nameColumnIndex else { return }
 
         tableView.scrollRowToVisible(row)
+        isUpdatingSelectionFromStore = true
+        tableView.selectRowIndexes(IndexSet(integer: row), byExtendingSelection: false)
+        isUpdatingSelectionFromStore = false
 
         DispatchQueue.main.async { [weak self] in
             guard let self else { return }
 
             _ = tableView.view(atColumn: nameColumnIndex, row: row, makeIfNecessary: true)
-            tableView.editColumn(nameColumnIndex, row: row, with: nil, select: true)
 
             guard let cell = tableView
                 .view(atColumn: nameColumnIndex, row: row, makeIfNecessary: false) as? EntryListEntryCellView

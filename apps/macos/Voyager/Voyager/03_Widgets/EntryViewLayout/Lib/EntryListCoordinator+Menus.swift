@@ -147,7 +147,7 @@ extension EntryListCoordinator: EntryListView.EntryListTableViewContextMenuProvi
             favoriteTags: finderFavoritesTagClient.favoriteTags(),
             openWithApplications: openWithApplications(selectedEntries: selectedEntries),
         )
-        let coordinator = EntryContextMenuCoordinator(store: store)
+        let coordinator = EntryContextMenuCoordinator(store: store, rowEntry: rowEntry)
         contextMenuCoordinator = coordinator
         return EntryContextMenuBuilder.makeMenu(configuration: .init(
             target: coordinator,

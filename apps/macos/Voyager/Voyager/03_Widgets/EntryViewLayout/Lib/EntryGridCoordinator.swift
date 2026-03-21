@@ -239,6 +239,9 @@ final class EntryGridCoordinator: NSObject {
             view?.window?.makeFirstResponder(collectionView)
             return
         }
+        isUpdatingSelectionFromStore = true
+        applySelection([indexPath])
+        isUpdatingSelectionFromStore = false
         collectionView.reloadItems(at: [indexPath])
         DispatchQueue.main.async { [weak self] in
             guard let self else { return }

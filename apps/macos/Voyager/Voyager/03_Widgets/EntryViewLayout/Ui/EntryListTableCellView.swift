@@ -135,7 +135,7 @@ final class EntryListEmptyCellView: NSTableCellView {}
 
 final class EntryListEntryCellView: NSTableCellView {
     private let customImageView = NSImageView()
-    private let customTextField = NSTextField(labelWithString: "")
+    private let customTextField = NSTextField(string: "")
 
     private var iconWidthConstraint: NSLayoutConstraint?
     private var iconHeightConstraint: NSLayoutConstraint?
@@ -194,6 +194,8 @@ final class EntryListEntryCellView: NSTableCellView {
             textTrailing,
             textCenterY,
         ])
+
+        applyDisplayStyle()
     }
 
     func configure(_ configuration: EntryListEntryCellViewConfiguration) {
@@ -332,6 +334,15 @@ extension EntryListEntryCellView: NSTextFieldDelegate {
     func controlTextDidEndEditing(_ notification: Notification) {
         guard isRenaming else { return }
         guard let textField = notification.object as? NSTextField, textField === customTextField else { return }
-        onRenameCommit?()
+        guard let movement = notification.userInfo?["NSTextMovement"] as? Int else { return }
+
+        switch movement {
+        case NSReturnTextMovement, NSTabTextMovement:
+            onRenameCommit?()
+        case NSCancelTextMovement:
+            onRenameCancel?()
+        default:
+            return
+        }
     }
 }

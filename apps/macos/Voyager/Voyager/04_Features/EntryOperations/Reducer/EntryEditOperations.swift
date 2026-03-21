@@ -116,13 +116,14 @@ struct EntryEditOperationsReducer {
                 }
 
                 let trimmed = state.renamingText.trimmingCharacters(in: .whitespaces)
-                state.renamingItemId = nil
-                state.renamingText = ""
 
                 guard !trimmed.isEmpty, trimmed != item.name else {
+                    state.renamingItemId = nil
+                    state.renamingText = ""
                     return .none
                 }
 
+                state.renamingText = trimmed
                 let parentPath = URL(fileURLWithPath: item.fullPath).deletingLastPathComponent().path
                 let newPath = URL(fileURLWithPath: parentPath).appendingPathComponent(trimmed).path
                 return .send(.renameItem(oldPath: item.fullPath, newPath: newPath))

@@ -58,7 +58,7 @@ final class EntryGridCollectionViewItem: NSCollectionViewItem {
     private let iconBackgroundView = NSView()
     private let nameContainerView = NSView()
     private let nameHighlightView = NSView()
-    private let nameField = NSTextField(labelWithString: "")
+    private let nameField = NSTextField(string: "")
     private let infoField = NSTextField(labelWithString: "")
     private let tagStackView = NSStackView()
 
@@ -220,6 +220,7 @@ final class EntryGridCollectionViewItem: NSCollectionViewItem {
 
         activateConstraints(rootStack: rootStack)
         cacheIconConstraints()
+        applyDisplayStyle(text: "")
     }
 
     private func activateConstraints(rootStack: NSStackView) {
@@ -378,6 +379,15 @@ extension EntryGridCollectionViewItem: NSTextFieldDelegate {
     func controlTextDidEndEditing(_ notification: Notification) {
         guard isRenaming else { return }
         guard let textField = notification.object as? NSTextField, textField === nameField else { return }
-        onRenameCommit?()
+        guard let movement = notification.userInfo?["NSTextMovement"] as? Int else { return }
+
+        switch movement {
+        case NSReturnTextMovement, NSTabTextMovement:
+            onRenameCommit?()
+        case NSCancelTextMovement:
+            onRenameCancel?()
+        default:
+            return
+        }
     }
 }

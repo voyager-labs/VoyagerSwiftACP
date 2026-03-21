@@ -4,9 +4,11 @@ import CoreGraphics
 
 final class EntryContextMenuCoordinator: NSObject {
     private let store: StoreOf<EntryViewLayoutFeature>
+    private let rowEntry: EntryModel?
 
-    init(store: StoreOf<EntryViewLayoutFeature>) {
+    init(store: StoreOf<EntryViewLayoutFeature>, rowEntry: EntryModel? = nil) {
         self.store = store
+        self.rowEntry = rowEntry
     }
 
     @objc
@@ -68,9 +70,14 @@ final class EntryContextMenuCoordinator: NSObject {
 
     @objc
     func contextMenuStartRename() {
-        guard let id = store.state.selectedIds.first else { return }
-        let item = store.state.entries.first(where: { $0.id == id })
-        store.send(.delegate(.startRename(id: id, text: item?.name ?? "")))
+        if let rowEntry {
+            store.send(.delegate(.startRename(id: rowEntry.id, text: rowEntry.name)))
+            return
+        }
+
+        let selectedEntries = store.state.entries.filter { store.state.selectedIds.contains($0.id) }
+        guard selectedEntries.count == 1, let item = selectedEntries.first else { return }
+        store.send(.delegate(.startRename(id: item.id, text: item.name)))
     }
 
     @objc
