@@ -13,11 +13,11 @@ struct FileManagerContentState: Equatable {
     }
 
     var navigation: ContentPageNavigationFeature.State = .init()
-    var entryViewLayout: EntryViewLayoutState = .init()
-    var entryArrangements: EntryArrangementsState = .init()
+    var entryViewLayout: EntryViewLayoutFeature.State = .init()
+    var entryArrangements: EntryArrangementsFeature.State = .init()
     var entryOperations: EntryOperationsFeature.State = .init()
-    var entryThumbnails: EntryThumbnailState = .init()
     var composer: ComposerFeature.State = .init()
+    var entryThumbnails: FileManagerContentState.EntryThumbnailState = EntryThumbnailState()
 
     var listIconSize: CGFloat = AppearanceSettingsDefaults.listIconSize
     var gridIconSize: CGFloat = AppearanceSettingsDefaults.gridIconSize

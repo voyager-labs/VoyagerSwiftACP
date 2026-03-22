@@ -8,8 +8,9 @@ enum FileManagerContentAction: ViewAction, CasePathable, Sendable {
     case view(View)
     case `internal`(Internal)
     case delegate(Delegate)
-    case entryArrangements(EntryArrangementsAction)
-    case entryViewLayout(EntryViewLayoutAction)
+
+    case entryArrangements(EntryArrangementsFeature.Action)
+    case entryViewLayout(EntryViewLayoutFeature.Action)
     case entryOperations(EntryOperationsFeature.Action)
     case composer(ComposerFeature.Action)
 
