@@ -28,7 +28,7 @@ private struct FileManagerNavigationBridgeReducer {
                 syncSidebarSelection(state: &state, computerName: computerName)
                 return .none
 
-            case let .sidebar(.view(.openFavorite(favorite))):
+            case let .sidebar(.delegate(.openFavorite(favorite))):
                 if favorite.url.pathExtension.lowercased() == CollectionConstants.fileExtension {
                     state.sidebar.pendingSidebarSelectionRestore = state.sidebar.selectedSidebarItem
                     state.sidebar.selectedSidebarItem = favorite.displayName
@@ -36,16 +36,16 @@ private struct FileManagerNavigationBridgeReducer {
                 }
                 return .send(.navigation(.view(.navigateToPath(favorite.url.path))))
 
-            case let .sidebar(.view(.openLocation(location))):
+            case let .sidebar(.delegate(.openLocation(location))):
                 return .send(.navigation(.view(.navigateToPath(location.url.path))))
 
-            case let .sidebar(.view(.showTag(tag))):
-                return .send(.navigation(.view(.showTag(tag.name))))
+            case let .sidebar(.delegate(.showTag(tagName))):
+                return .send(.navigation(.view(.showTag(tagName))))
 
-            case .sidebar(.view(.showRecents)):
+            case .sidebar(.delegate(.showRecents)):
                 return .send(.navigation(.view(.showRecents)))
 
-            case .sidebar(.view(.showComputer)):
+            case .sidebar(.delegate(.showComputer)):
                 return .send(.navigation(.view(.showComputer)))
 
             case let .content(.entryOperations(.delegate(.navigateFolder(id: id)))):

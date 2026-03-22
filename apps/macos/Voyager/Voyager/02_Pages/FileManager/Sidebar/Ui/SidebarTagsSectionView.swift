@@ -24,10 +24,10 @@ struct SidebarTagsSectionView: View {
                         contextMenuTargetWasSelected: store.contextMenuTargetId == tag.name
                             ? store.contextMenuTargetWasSelected : false,
                         action: {
-                            store.send(.view(.showTag(tag)))
+                            store.send(.delegate(.showTag(tag.name)))
                         },
                         onDrop: { providers, tagName in
-                            store.send(.view(.dropItemsToTag(providers: providers, tagName: tagName)))
+                            store.send(.delegate(.dropItemsToTag(providers: providers, tagName: tagName)))
                         },
                         onContextMenuOpen: nil,
                     )

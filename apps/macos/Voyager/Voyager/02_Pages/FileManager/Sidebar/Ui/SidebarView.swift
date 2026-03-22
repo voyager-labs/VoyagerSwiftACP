@@ -23,7 +23,7 @@ struct SidebarView: View {
                         iconColor: nil,
                         targetURL: nil,
                         action: {
-                            store.send(.view(.showRecents))
+                            store.send(.delegate(.showRecents))
                         },
                         onDrop: nil,
                         onContextMenuOpen: nil,

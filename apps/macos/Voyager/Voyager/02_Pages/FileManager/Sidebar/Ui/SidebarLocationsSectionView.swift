@@ -32,13 +32,13 @@ struct SidebarLocationsSectionView: View {
                         targetURL: location.isComputer ? nil : location.url,
                         action: {
                             if location.isComputer {
-                                store.send(.view(.showComputer))
+                                store.send(.delegate(.showComputer))
                             } else {
-                                store.send(.view(.openLocation(location)))
+                                store.send(.delegate(.openLocation(location)))
                             }
                         },
                         onDrop: { providers, targetURL in
-                            store.send(.view(.dropItemsToSidebarFolder(providers: providers, targetURL: targetURL)))
+                            store.send(.delegate(.dropItemsToSidebarFolder(providers: providers, targetURL: targetURL)))
                         },
                         onContextMenuOpen: nil,
                     )

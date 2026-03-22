@@ -36,10 +36,10 @@ struct SidebarFavoritesSectionView: View {
                             : nil,
                         targetURL: favorite.url,
                         action: {
-                            store.send(.view(.openFavorite(favorite)))
+                            store.send(.delegate(.openFavorite(favorite)))
                         },
                         onDrop: { providers, targetURL in
-                            store.send(.view(.dropItemsToSidebarFolder(
+                            store.send(.delegate(.dropItemsToSidebarFolder(
                                 providers: providers,
                                 targetURL: targetURL,
                             )))
