@@ -5,7 +5,8 @@ import SwiftUI
 struct ContentPaneContextMenu: View {
     let store: StoreOf<FileManagerContentFeature>
 
-    @Dependency(\.fileManagerClient) private var fileManagerClient
+    @Dependency(\.fileManagerClient)
+    private var fileManagerClient
 
     private var isTrashFolder: Bool {
         guard case let .folder(path) = store.navigation.navigationState,

@@ -42,7 +42,9 @@ extension AppearanceSettingsClient: DependencyKey {
     public nonisolated static var liveValue: AppearanceSettingsClient {
         AppearanceSettingsClient(
             loadTheme: {
-                @Dependency(\.userDefaultsClient) var userDefaultsClient
+                @Dependency(\.userDefaultsClient)
+                var userDefaultsClient
+
                 if let themeString = userDefaultsClient.string(SettingsKeys.theme),
                    let theme = AppTheme(rawValue: themeString)
                 {

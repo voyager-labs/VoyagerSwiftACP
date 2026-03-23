@@ -16,7 +16,7 @@ struct FileManagerContentFeature {
     @Dependency(\.collectionAlertClient)
     private var collectionAlertClient
     @Dependency(\.fileManagerClient)
-    private var fileManagerClient: FileManagerClient
+    private var fileManagerClient
     @Dependency(\.thumbnailGeneratorClient)
     private var thumbnailGeneratorClient
     @Dependency(\.entryThumbnailCacheClient)

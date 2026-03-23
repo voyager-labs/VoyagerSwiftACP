@@ -4,7 +4,7 @@ import Foundation
 @Reducer
 struct FileManagerNavigationActionReducer {
     @Dependency(\.fileManagerClient)
-    var fileManagerClient: FileManagerClient
+    var fileManagerClient
     @Dependency(\.collectionFileClient)
     var collectionFileClient
     @Dependency(\.collectionAlertClient)
