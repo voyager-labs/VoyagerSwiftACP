@@ -12,6 +12,7 @@ enum FileManagerContentKeyCommandHandler {
     ) -> Effect<FileManagerContentAction> {
         if let effect = quickLookKeyEffect(for: command, state: state) { return effect }
         if let effect = deleteKeyEffect(for: command, state: state) { return effect }
+        if let effect = renameKeyEffect(for: command, state: state) { return effect }
         if let movementEffect = selectionMovementEffect(for: command, state: state) { return movementEffect }
         if let effect = commandModifierEffect(for: command, state: state) { return effect }
         return .none
@@ -50,6 +51,23 @@ enum FileManagerContentKeyCommandHandler {
             return .send(.entryViewLayout(.entryOperations(.deleteImmediately(paths: selectedPaths))))
         }
         return .send(.entryViewLayout(.entryOperations(.moveToTrash(paths: selectedPaths))))
+    }
+
+    private static func renameKeyEffect(
+        for command: KeyCommand,
+        state: FileManagerContentState,
+    ) -> Effect<FileManagerContentAction>? {
+        guard command.modifiers.isDisjoint(with: [.command, .option, .control, .shift]),
+              command.keyCode == 36 || command.keyCode == 76,
+              state.entryViewLayout.entryOperations.renamingItemId == nil
+        else {
+            return nil
+        }
+
+        let selectedEntries = state.selectedEntries
+        guard selectedEntries.count == 1, let entry = selectedEntries.first else { return .none }
+
+        return .send(.entryViewLayout(.delegate(.startRename(id: entry.id, text: entry.name))))
     }
 
     private static func commandModifierEffect(
