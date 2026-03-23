@@ -8,6 +8,8 @@ Use this file to accumulate Voyager-local development heuristics that are reusab
 - Load multiple playbooks together when a change spans scaffolding, decomposition, observation ownership, and reuse discovery.
 - Prefer reducer-owned external/system observation and keep views as lifecycle/action senders only.
 - Prefer explicit composition through dedicated model types, helper/coordinator types, and child reducers/features over letting `State+*`, `Action+*`, `Feature+*`, or `Reducer+*` files carry hidden ownership and state-flow splits.
+- When a parent `State` stores another feature's `State` as a child boundary, prefer an explicit property type with `.init()` (for example `var child: ChildFeature.State = .init()`) over relying on initializer-only type inference (`var child = ChildFeature.State()`).
+- For `@Dependency` declarations, prefer inferred property types (for example `@Dependency(\.searchClient) var searchClient`) over repeating the client type explicitly; keep the explicit type on the `DependencyValues` accessor and only annotate the use-site declaration when inference fails or real disambiguation is needed.
 - Default to reusing existing models, reducers, and helper objects before inventing new ones.
 - If an existing type can absorb the change by adding properties or well-scoped behavior without breaking ownership, prefer extending that type over creating a sibling wrapper or near-duplicate model.
 - Create a new model/object/reducer only when the responsibility is large enough to deserve its own clearly named scope, not just to make one call site look cleaner.
@@ -18,6 +20,10 @@ Use this file to accumulate Voyager-local development heuristics that are reusab
 - Prefer reducer-module composition (for example `CombineReducers` or explicit parent-owned reducer assembly) when multiple concerns still share the same parent state/action and do not deserve separate child feature boundaries.
 - Avoid large non-trivial same-file private helper reducer `.merge` structures when dedicated reducer modules would make ownership clearer.
 - For UI-facing features, prefer `view` / `internal` / `delegate` (+ child action) families.
+- When a feature owns child reducers through TCA composition, keep the parent-facing action route aligned with the composition case path instead of burying owned child traffic under the parent's `delegate`.
+- For ordinary `Scope(state:action:)` children, that usually means a direct top-level child action case on the parent.
+- Reserve a parent feature's `delegate` family for outward/upward events it emits to its parent or ancestor, not as a namespace for owned scoped child reducers.
+- If a scoped child needs to notify its parent semantically, prefer `child(.delegate(...))` over moving the child's scoped routing under the parent's `delegate`.
 - For parent window/page reducers that coordinate several child features plus cross-cutting commands, a flat parent action enum with child feature cases is acceptable when extra family nesting adds ceremony without clarifying ownership.
 - For operation/orchestration hubs whose reducers are already split by domain, domain-family nested actions are allowed and often preferred.
 - Do not mirror reducer filenames 1:1 into action namespaces; choose stable domain families instead.
