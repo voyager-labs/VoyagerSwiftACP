@@ -29,7 +29,7 @@ enum FileManagerContentKeyCommandHandler {
 
         let selectedEntries = state.selectedEntries
         guard !selectedEntries.isEmpty else { return nil }
-        return .send(.entryViewLayout(.entryOperations(.quickLookFiles(paths: selectedEntries.map(\.fullPath)))))
+        return .send(.entryViewLayout(.entryOperations(.open(.quickLookFiles(paths: selectedEntries.map(\.fullPath))))))
     }
 
     private static func deleteKeyEffect(
@@ -47,9 +47,9 @@ enum FileManagerContentKeyCommandHandler {
         let selectedPaths = selectedEntries.map(\.fullPath)
 
         if command.modifiers.contains(.option) {
-            return .send(.entryViewLayout(.entryOperations(.deleteImmediately(paths: selectedPaths))))
+            return .send(.entryViewLayout(.entryOperations(.trash(.deleteImmediately(paths: selectedPaths)))))
         }
-        return .send(.entryViewLayout(.entryOperations(.moveToTrash(paths: selectedPaths))))
+        return .send(.entryViewLayout(.entryOperations(.trash(.moveToTrash(paths: selectedPaths)))))
     }
 
     private static func commandModifierEffect(
@@ -92,13 +92,13 @@ enum FileManagerContentKeyCommandHandler {
             if canRedoInTextResponder(), NSApp.sendAction(redoSelector, to: nil, from: nil) {
                 return .none
             }
-            return .send(.entryViewLayout(.entryOperations(.requestRedo)))
+            return .send(.entryViewLayout(.entryOperations(.undoRedo(.requestRedo))))
         }
 
         if canUndoInTextResponder(), NSApp.sendAction(undoSelector, to: nil, from: nil) {
             return .none
         }
-        return .send(.entryViewLayout(.entryOperations(.requestUndo)))
+        return .send(.entryViewLayout(.entryOperations(.undoRedo(.requestUndo))))
     }
 
     private static func selectionMovementEffect(
@@ -153,13 +153,13 @@ enum FileManagerContentKeyCommandHandler {
     ) -> Effect<FileManagerContentAction> {
         switch state.navigation.navigationState {
         case let .folder(path):
-            .send(.entryViewLayout(.entryOperations(.loadItems(path: path, showHidden: showHidden))))
+            .send(.entryViewLayout(.entryOperations(.loading(.loadItems(path: path, showHidden: showHidden)))))
         case .recents:
-            .send(.entryViewLayout(.entryOperations(.loadRecentItems(showHidden: showHidden))))
+            .send(.entryViewLayout(.entryOperations(.loading(.loadRecentItems(showHidden: showHidden)))))
         case let .tags(tagName):
-            .send(.entryViewLayout(.entryOperations(.loadTagItems(tagName: tagName, showHidden: showHidden))))
+            .send(.entryViewLayout(.entryOperations(.loading(.loadTagItems(tagName: tagName, showHidden: showHidden)))))
         case .computer:
-            .send(.entryViewLayout(.entryOperations(.loadComputerItems)))
+            .send(.entryViewLayout(.entryOperations(.loading(.loadComputerItems))))
         case .collection:
             .none
         }

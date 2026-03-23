@@ -132,34 +132,34 @@ func handleNavigateToState(
     switch navigationState {
     case let .folder(path):
         .concatenate(
-            .send(.content(.entryOperations(.setCollectionMode(false)))),
-            .send(.content(.entryOperations(.loadItems(
+            .send(.content(.entryOperations(.loading(.setCollectionMode(false))))),
+            .send(.content(.entryOperations(.loading(.loadItems(
                 path: path,
                 showHidden: state.content.entryViewLayout.showHiddenFiles,
-            )))),
+            ))))),
         )
     case .recents:
         .concatenate(
-            .send(.content(.entryOperations(.setCollectionMode(false)))),
-            .send(.content(.entryOperations(.loadRecentItems(showHidden: state.content.entryViewLayout
-                    .showHiddenFiles)))),
+            .send(.content(.entryOperations(.loading(.setCollectionMode(false))))),
+            .send(.content(.entryOperations(.loading(.loadRecentItems(showHidden: state.content.entryViewLayout
+                    .showHiddenFiles))))),
         )
     case let .tags(tagName):
         .concatenate(
-            .send(.content(.entryOperations(.setCollectionMode(false)))),
-            .send(.content(.entryOperations(.loadTagItems(
+            .send(.content(.entryOperations(.loading(.setCollectionMode(false))))),
+            .send(.content(.entryOperations(.loading(.loadTagItems(
                 tagName: tagName,
                 showHidden: state.content.entryViewLayout.showHiddenFiles,
-            )))),
+            ))))),
         )
     case .computer:
         .concatenate(
-            .send(.content(.entryOperations(.setCollectionMode(false)))),
-            .send(.content(.entryOperations(.loadComputerItems))),
+            .send(.content(.entryOperations(.loading(.setCollectionMode(false))))),
+            .send(.content(.entryOperations(.loading(.loadComputerItems)))),
         )
     case let .collection(navigation):
         .concatenate(
-            .send(.content(.entryOperations(.setCollectionMode(true)))),
+            .send(.content(.entryOperations(.loading(.setCollectionMode(true))))),
             .send(.navigation(.internal(.navigateToCollection(navigation)))),
         )
     }

@@ -81,12 +81,12 @@ enum EntryOperationsExecutionSupport {
         operation: @escaping @Sendable () async throws -> Void,
     ) -> Effect<EntryOperationsAction> {
         .run { send in
-            await send(.operationStarted(filePath, kind))
+            await send(.lifecycle(.operationStarted(filePath, kind)))
             do {
                 try await operation()
-                await send(.operationFinished(filePath, kind, .success(())))
+                await send(.lifecycle(.operationFinished(filePath, kind, .success(()))))
             } catch {
-                await send(.operationFinished(filePath, kind, .failure(error.fileOpError)))
+                await send(.lifecycle(.operationFinished(filePath, kind, .failure(error.fileOpError))))
             }
         }
     }
@@ -101,18 +101,18 @@ enum EntryOperationsExecutionSupport {
             await withTaskGroup(of: Void.self) { group in
                 for path in paths {
                     group.addTask {
-                        await send(.operationStarted(path, kind))
+                        await send(.lifecycle(.operationStarted(path, kind)))
 
                         do {
                             let url = URL(fileURLWithPath: path)
                             try await operation(url)
-                            await send(.operationFinished(path, kind, .success(())))
+                            await send(.lifecycle(.operationFinished(path, kind, .success(()))))
                         } catch {
-                            await send(.operationFinished(
+                            await send(.lifecycle(.operationFinished(
                                 path,
                                 kind,
                                 .failure(error.fileOpError),
-                            ))
+                            )))
                         }
                     }
                 }
@@ -134,7 +134,7 @@ enum EntryOperationsExecutionSupport {
             await withTaskGroup(of: Void.self) { group in
                 for path in paths {
                     group.addTask {
-                        await send(.operationStarted(path, kind))
+                        await send(.lifecycle(.operationStarted(path, kind)))
 
                         do {
                             let url = URL(fileURLWithPath: path)
@@ -142,13 +142,13 @@ enum EntryOperationsExecutionSupport {
                             if let target {
                                 await accumulator.append(target)
                             }
-                            await send(.operationFinished(path, kind, .success(())))
+                            await send(.lifecycle(.operationFinished(path, kind, .success(()))))
                         } catch {
-                            await send(.operationFinished(
+                            await send(.lifecycle(.operationFinished(
                                 path,
                                 kind,
                                 .failure(error.fileOpError),
-                            ))
+                            )))
                         }
                     }
                 }
@@ -157,7 +157,7 @@ enum EntryOperationsExecutionSupport {
             let targets = await accumulator.targets
             guard !targets.isEmpty, operationKind.isUndoable else { return }
             let record = EntryActionRecord(operationKind: operationKind, targets: targets)
-            await send(.entryActionCompleted(record))
+            await send(.lifecycle(.entryActionCompleted(record)))
         }
     }
 
@@ -184,7 +184,7 @@ enum EntryOperationsExecutionSupport {
             let finalApps = await MainActor.run {
                 finalizeApplicationList(appsWithDefaultFlag)
             }
-            await send(.applicationsLoaded(filePath, finalApps))
+            await send(.openWith(.applicationsLoaded(filePath, finalApps)))
         }
     }
 
@@ -197,7 +197,7 @@ enum EntryOperationsExecutionSupport {
             let finalApps = await MainActor.run {
                 finalizeApplicationList(commonApps)
             }
-            await send(.commonApplicationsLoaded(finalApps))
+            await send(.openWith(.commonApplicationsLoaded(finalApps)))
         }
     }
 

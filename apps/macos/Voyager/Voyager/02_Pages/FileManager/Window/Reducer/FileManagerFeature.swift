@@ -118,9 +118,12 @@ struct FileManagerFeature {
         switch command {
         case .newFolder:
             let defaultName = "untitled folder"
-            return .send(.content(.entryOperations(.createNewFolder(name: defaultName, parentPath: currentPath))))
+            return .send(.content(.entryOperations(.edit(.createNewFolder(
+                name: defaultName,
+                parentPath: currentPath,
+            )))))
         case .paste:
-            return .send(.content(.entryOperations(.pasteItemsFromClipboard(destinationPath: currentPath))))
+            return .send(.content(.entryOperations(.clipboard(.pasteItemsFromClipboard(destinationPath: currentPath)))))
         default:
             return nil
         }
@@ -134,15 +137,15 @@ struct FileManagerFeature {
         )
         switch command {
         case .openSelectedItem:
-            return .send(.content(.entryOperations(.executeCommand(
+            return .send(.content(.entryOperations(.routing(.executeCommand(
                 command: .navigation(.openSelectedItem),
                 context: context,
-            ))))
+            )))))
         case .quickLookSelectedItem:
-            return .send(.content(.entryOperations(.executeCommand(
+            return .send(.content(.entryOperations(.routing(.executeCommand(
                 command: .navigation(.quickLookSelectedItem),
                 context: context,
-            ))))
+            )))))
         case .selectAll:
             return .send(.content(.view(.selectAllEntries)))
         default:
@@ -158,25 +161,25 @@ struct FileManagerFeature {
         )
         switch command {
         case .cut:
-            return .send(.content(.entryOperations(.executeCommand(
+            return .send(.content(.entryOperations(.routing(.executeCommand(
                 command: .clipboard(.cutSelectedItems),
                 context: context,
-            ))))
+            )))))
         case .copy:
-            return .send(.content(.entryOperations(.executeCommand(
+            return .send(.content(.entryOperations(.routing(.executeCommand(
                 command: .clipboard(.copySelectedItems),
                 context: context,
-            ))))
+            )))))
         case .duplicate:
-            return .send(.content(.entryOperations(.executeCommand(
+            return .send(.content(.entryOperations(.routing(.executeCommand(
                 command: .clipboard(.duplicateSelectedItems),
                 context: context,
-            ))))
+            )))))
         case .makeAlias:
-            return .send(.content(.entryOperations(.executeCommand(
+            return .send(.content(.entryOperations(.routing(.executeCommand(
                 command: .mutation(.createAliasForSelectedItems),
                 context: context,
-            ))))
+            )))))
         default:
             return nil
         }
@@ -190,15 +193,15 @@ struct FileManagerFeature {
         )
         switch command {
         case .copyAbsolutePaths:
-            return .send(.content(.entryOperations(.executeCommand(
+            return .send(.content(.entryOperations(.routing(.executeCommand(
                 command: .clipboard(.copySelectedAbsolutePaths),
                 context: context,
-            ))))
+            )))))
         case .copyURLs:
-            return .send(.content(.entryOperations(.executeCommand(
+            return .send(.content(.entryOperations(.routing(.executeCommand(
                 command: .clipboard(.copySelectedURLs),
                 context: context,
-            ))))
+            )))))
         default:
             return nil
         }
@@ -259,9 +262,9 @@ struct FileManagerFeature {
     private func handleUndoRedoRequest(_ command: Action.WindowCommand) -> Effect<Action> {
         switch command {
         case .requestUndo:
-            .send(.content(.entryOperations(.requestUndo)))
+            .send(.content(.entryOperations(.undoRedo(.requestUndo))))
         case .requestRedo:
-            .send(.content(.entryOperations(.requestRedo)))
+            .send(.content(.entryOperations(.undoRedo(.requestRedo))))
         default:
             .none
         }

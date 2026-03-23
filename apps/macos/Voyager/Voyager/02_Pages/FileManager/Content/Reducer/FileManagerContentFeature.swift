@@ -106,7 +106,7 @@ struct FileManagerContentFeature {
                     effect = .cancel(id: CancelID.systemNotifications)
 
                 case .internal(.systemAppDidBecomeActive):
-                    effect = .send(.entryViewLayout(.entryOperations(.appDidBecomeActive)))
+                    effect = .send(.entryViewLayout(.entryOperations(.lifecycle(.appDidBecomeActive))))
 
                 default:
                     effect = .none
@@ -148,18 +148,18 @@ struct FileManagerContentFeature {
         state: inout State,
     ) -> Effect<Action> {
         switch action {
-        case .itemsLoaded,
-             .collectionItemsLoadedFromSearch,
-             .setCollectionMode:
+        case .loading(.itemsLoaded),
+             .loading(.collectionItemsLoadedFromSearch),
+             .loading(.setCollectionMode):
             .send(.entryArrangements(.reapply))
 
-        case .operationFinished:
+        case .lifecycle(.operationFinished):
             .merge(
                 .send(.entryArrangements(.reapply)),
                 reloadEntryItemsEffect(state: state),
             )
 
-        case .emptyTrashCompleted:
+        case .lifecycle(.emptyTrashCompleted):
             .send(.delegate(.closeWindow))
 
         default:
@@ -180,13 +180,13 @@ struct FileManagerContentFeature {
     ) -> Effect<Action> {
         switch navigationState {
         case let .folder(path):
-            .send(.entryOperations(.loadItems(path: path, showHidden: showHidden)))
+            .send(.entryOperations(.loading(.loadItems(path: path, showHidden: showHidden))))
         case .recents:
-            .send(.entryOperations(.loadRecentItems(showHidden: showHidden)))
+            .send(.entryOperations(.loading(.loadRecentItems(showHidden: showHidden))))
         case let .tags(tagName):
-            .send(.entryOperations(.loadTagItems(tagName: tagName, showHidden: showHidden)))
+            .send(.entryOperations(.loading(.loadTagItems(tagName: tagName, showHidden: showHidden))))
         case .computer:
-            .send(.entryOperations(.loadComputerItems))
+            .send(.entryOperations(.loading(.loadComputerItems)))
         case .collection:
             .none
         }
@@ -251,36 +251,36 @@ private extension FileManagerContentFeature {
         switch navigationState {
         case let .folder(path):
             .merge(
-                .send(.entryOperations(.setCollectionMode(false))),
-                .send(.entryOperations(.loadItems(
+                .send(.entryOperations(.loading(.setCollectionMode(false)))),
+                .send(.entryOperations(.loading(.loadItems(
                     path: path,
                     showHidden: state.entryViewLayout.showHiddenFiles,
-                ))),
+                )))),
             )
 
         case .recents:
             .merge(
-                .send(.entryOperations(.setCollectionMode(false))),
-                .send(.entryOperations(.loadRecentItems(showHidden: state.entryViewLayout.showHiddenFiles))),
+                .send(.entryOperations(.loading(.setCollectionMode(false)))),
+                .send(.entryOperations(.loading(.loadRecentItems(showHidden: state.entryViewLayout.showHiddenFiles)))),
             )
 
         case let .tags(tagName):
             .merge(
-                .send(.entryOperations(.setCollectionMode(false))),
-                .send(.entryOperations(.loadTagItems(
+                .send(.entryOperations(.loading(.setCollectionMode(false)))),
+                .send(.entryOperations(.loading(.loadTagItems(
                     tagName: tagName,
                     showHidden: state.entryViewLayout.showHiddenFiles,
-                ))),
+                )))),
             )
 
         case .computer:
             .merge(
-                .send(.entryOperations(.setCollectionMode(false))),
-                .send(.entryOperations(.loadComputerItems)),
+                .send(.entryOperations(.loading(.setCollectionMode(false)))),
+                .send(.entryOperations(.loading(.loadComputerItems))),
             )
 
         case .collection:
-            .send(.entryOperations(.setCollectionMode(true)))
+            .send(.entryOperations(.loading(.setCollectionMode(true))))
         }
     }
 }

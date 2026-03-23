@@ -14,7 +14,7 @@ enum FileManagerContentThumbnailCoordinator {
         dependencies: Dependencies,
     ) -> Effect<FileManagerContentAction>? {
         switch action {
-        case let .requestThumbnails(paths):
+        case let .thumbnail(.requestThumbnails(paths)):
             let uniquePaths = Array(Set(paths))
             let filtered = uniquePaths.filter { path in
                 !state.entryThumbnails.thumbnailsReady.contains(path)
@@ -28,14 +28,14 @@ enum FileManagerContentThumbnailCoordinator {
             state.entryThumbnails.thumbnailRequestsInFlight.formUnion(pathsToRequest)
             return requestThumbnailsEffect(for: pathsToRequest, dependencies: dependencies)
 
-        case let .thumbnailsReady(paths):
+        case let .thumbnail(.thumbnailsReady(paths)):
             let pathSet = Set(paths)
             state.entryThumbnails.thumbnailsReady.formUnion(pathSet)
             state.entryThumbnails.thumbnailRequestsInFlight.subtract(pathSet)
             state.entryThumbnails.thumbnailRequestsFailed.subtract(pathSet)
             return .none
 
-        case let .thumbnailRequestFailed(paths):
+        case let .thumbnail(.thumbnailRequestFailed(paths)):
             let pathSet = Set(paths)
             state.entryThumbnails.thumbnailRequestsFailed.formUnion(pathSet)
             state.entryThumbnails.thumbnailRequestsInFlight.subtract(pathSet)
@@ -145,11 +145,11 @@ enum FileManagerContentThumbnailCoordinator {
         batchSize: Int,
     ) {
         if readyBatch.count >= batchSize {
-            send(.entryOperations(.thumbnailsReady(paths: readyBatch)))
+            send(.entryOperations(.thumbnail(.thumbnailsReady(paths: readyBatch))))
             readyBatch.removeAll(keepingCapacity: true)
         }
         if failedBatch.count >= batchSize {
-            send(.entryOperations(.thumbnailRequestFailed(paths: failedBatch)))
+            send(.entryOperations(.thumbnail(.thumbnailRequestFailed(paths: failedBatch))))
             failedBatch.removeAll(keepingCapacity: true)
         }
     }
@@ -161,10 +161,10 @@ enum FileManagerContentThumbnailCoordinator {
         failedBatch: [String],
     ) {
         if !readyBatch.isEmpty {
-            send(.entryOperations(.thumbnailsReady(paths: readyBatch)))
+            send(.entryOperations(.thumbnail(.thumbnailsReady(paths: readyBatch))))
         }
         if !failedBatch.isEmpty {
-            send(.entryOperations(.thumbnailRequestFailed(paths: failedBatch)))
+            send(.entryOperations(.thumbnail(.thumbnailRequestFailed(paths: failedBatch))))
         }
     }
 }

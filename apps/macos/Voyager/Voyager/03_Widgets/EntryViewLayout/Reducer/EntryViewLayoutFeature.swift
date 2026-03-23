@@ -168,9 +168,9 @@ struct EntryViewLayoutFeature {
 
             case let .entryOperations(entryOperationsAction):
                 switch entryOperationsAction {
-                case .itemsLoaded,
-                     .collectionItemsLoadedFromSearch,
-                     .setCollectionMode:
+                case .loading(.itemsLoaded),
+                     .loading(.collectionItemsLoadedFromSearch),
+                     .loading(.setCollectionMode):
                     state.entries = state.entryOperations.displayOrderItems
                     return .send(.entryArrangements(.reapply))
 

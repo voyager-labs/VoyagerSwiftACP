@@ -30,15 +30,15 @@ struct ContentPaneContextMenu: View {
         if isTrashFolder {
             Button("Empty Trash") {
                 store
-                    .send(.entryViewLayout(.entryOperations(.emptyTrash(paths: store.entryViewLayout.entries
-                            .map(\.fullPath)))))
+                    .send(.entryViewLayout(.entryOperations(.trash(.emptyTrash(paths: store.entryViewLayout.entries
+                            .map(\.fullPath))))))
             }
         } else {
             Button("New Folder") {
-                store.send(.entryViewLayout(.entryOperations(.createNewFolder(
+                store.send(.entryViewLayout(.entryOperations(.edit(.createNewFolder(
                     name: defaultNewFolderName,
                     parentPath: store.navigation.currentPath,
-                ))))
+                )))))
             }
             .keyboardShortcut("n", modifiers: [.command, .shift])
         }

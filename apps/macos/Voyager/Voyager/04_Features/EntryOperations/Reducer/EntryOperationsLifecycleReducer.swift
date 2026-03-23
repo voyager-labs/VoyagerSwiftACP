@@ -15,19 +15,19 @@ struct EntryOperationsLifecycleReducer {
     var body: some Reducer<State, Action> {
         Reduce { state, action in
             switch action {
-            case let .syncSelectedEntryIDs(ids):
+            case let .lifecycle(.syncSelectedEntryIDs(ids)):
                 state.selectedEntryIDs = ids
                 return .none
 
-            case let .clearError(filePath):
+            case let .lifecycle(.clearError(filePath)):
                 state.itemStates[filePath]?.lastError = nil
                 return .none
 
-            case let .operationStarted(filePath, _):
+            case let .lifecycle(.operationStarted(filePath, kind)):
                 state.itemStates[filePath] = ItemOperationState(isBusy: true, lastError: nil)
                 return .none
 
-            case let .operationFinished(filePath, kind, result):
+            case let .lifecycle(.operationFinished(filePath, kind, result)):
                 state.itemStates[filePath]?.isBusy = false
                 switch result {
                 case .success:
@@ -61,7 +61,7 @@ struct EntryOperationsLifecycleReducer {
 
                 return .none
 
-            case .entryActionCompleted:
+            case .lifecycle(.entryActionCompleted):
                 return .none
 
             default:

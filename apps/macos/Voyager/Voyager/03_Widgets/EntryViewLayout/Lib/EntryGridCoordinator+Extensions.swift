@@ -221,13 +221,13 @@ extension EntryGridCoordinator: NSCollectionViewDataSource {
             isDropTargeted: isDropTargeted,
             workspaceClient: workspaceClient,
             onRenameUpdate: { [weak self] text in
-                self?.sendEntryOperations(.updateRenamingText(text))
+                self?.sendEntryOperations(.edit(.updateRenamingText(text)))
             },
             onRenameCommit: { [weak self] in
-                self?.sendEntryOperations(.commitRename)
+                self?.sendEntryOperations(.edit(.commitRename))
             },
             onRenameCancel: { [weak self] in
-                self?.sendEntryOperations(.cancelRename)
+                self?.sendEntryOperations(.edit(.cancelRename))
             },
         ))
 
@@ -315,7 +315,7 @@ extension EntryGridCoordinator: NSCollectionViewDelegate, NSCollectionViewDelega
             return entry.fullPath
         }
         guard !paths.isEmpty else { return }
-        sendEntryOperations(.saveDragPaths(paths))
+        sendEntryOperations(.routing(.saveDragPaths(paths)))
     }
 
     func collectionView(
@@ -325,7 +325,7 @@ extension EntryGridCoordinator: NSCollectionViewDelegate, NSCollectionViewDelega
         dragOperation operation: NSDragOperation,
     ) {
         guard EntryViewLayoutDragStateClearRuleSet.shouldClearAfterSessionEnd(operation: operation) else { return }
-        sendEntryOperations(.saveDragPaths([]))
+        sendEntryOperations(.routing(.saveDragPaths([])))
         store.send(.view(.setDropTargeted(false)))
     }
 
@@ -366,12 +366,12 @@ extension EntryGridCoordinator: NSCollectionViewDelegate, NSCollectionViewDelega
             ? NSEvent.modifierFlags.contains(.option)
             : entryFileOpsClient.loadDragWithOption()
         let allowed = draggingInfo.draggingSourceOperationMask
-        sendEntryOperations(.validateDrop(context: .init(
+        sendEntryOperations(.routing(.validateDrop(context: .init(
             sourcePaths: sourcePaths,
             destinationPath: destinationPath,
             allowedOperationsRawValue: allowed.rawValue,
             prefersCopy: wantsCopy,
-        )))
+        ))))
         let operation = dragOperation(from: state.entryOperations.dropValidationResult.resolvedOperation)
 
         setDropTargetEntryId(operation.isEmpty ? nil : targetEntryId)
@@ -399,12 +399,12 @@ extension EntryGridCoordinator: NSCollectionViewDelegate, NSCollectionViewDelega
             ? NSEvent.modifierFlags.contains(.option)
             : entryFileOpsClient.loadDragWithOption()
         let allowed = draggingInfo.draggingSourceOperationMask
-        sendEntryOperations(.validateDrop(context: .init(
+        sendEntryOperations(.routing(.validateDrop(context: .init(
             sourcePaths: internalPaths,
             destinationPath: destinationPath,
             allowedOperationsRawValue: allowed.rawValue,
             prefersCopy: wantsCopy,
-        )))
+        ))))
         let validation = state.entryOperations.dropValidationResult
         let resolvedOperation = dragOperation(from: validation.resolvedOperation)
         guard !resolvedOperation.isEmpty else {
@@ -414,7 +414,7 @@ extension EntryGridCoordinator: NSCollectionViewDelegate, NSCollectionViewDelega
         }
 
         if !internalPaths.isEmpty {
-            sendEntryOperations(.handleDrop(providers: [], destinationPath: destinationPath))
+            sendEntryOperations(.routing(.handleDrop(providers: [], destinationPath: destinationPath)))
             setDropTargetEntryId(nil)
             store.send(.view(.setDropTargeted(false)))
             return true
@@ -429,11 +429,11 @@ extension EntryGridCoordinator: NSCollectionViewDelegate, NSCollectionViewDelega
             store.send(.view(.setDropTargeted(false)))
             return false
         }
-        sendEntryOperations(.dropItems(
+        sendEntryOperations(.routing(.dropItems(
             sourcePaths: urls.map(\.path),
             destinationPath: destinationPath,
             isOptionDrag: validation.isOptionDrag,
-        ))
+        )))
         setDropTargetEntryId(nil)
         store.send(.view(.setDropTargeted(false)))
         return true
@@ -502,11 +502,11 @@ extension EntryGridCoordinator {
         }
 
         if selectedFiles.count > 1 {
-            sendEntryOperations(.loadCommonApplicationsForFiles(files: selectedFiles))
+            sendEntryOperations(.openWith(.loadCommonApplicationsForFiles(files: selectedFiles)))
         } else if let file = selectedFiles.first,
                   state.entryOperations.applicationsForItems[file.fullPath] == nil
         {
-            sendEntryOperations(.loadApplicationsForFile(file: file))
+            sendEntryOperations(.openWith(.loadApplicationsForFile(file: file)))
         }
     }
 

@@ -69,7 +69,7 @@ struct EntryClipboardOperationsReducer {
     var body: some Reducer<State, Action> {
         Reduce { state, action in
             switch action {
-            case let .copySelectedItems(files):
+            case let .clipboard(.copySelectedItems(files)):
                 state.clipboardItems = files.map(\.fullPath)
                 state.clipboardOperation = .copy
                 state.cutClearSession = nil
@@ -83,11 +83,11 @@ struct EntryClipboardOperationsReducer {
 
                 return .none
 
-            case .loadClipboardState:
+            case .lifecycle(.loadClipboardState):
                 let (clipboardPaths, clipboardOperation) = entryFileOpsClient.loadClipboardPaths()
-                return .send(.syncClipboardState(paths: clipboardPaths, operation: clipboardOperation))
+                return .send(.lifecycle(.syncClipboardState(paths: clipboardPaths, operation: clipboardOperation)))
 
-            case .appDidBecomeActive:
+            case .lifecycle(.appDidBecomeActive):
                 let now = Date()
                 let monitor = EntryViewLayoutCutClearMonitor()
                 let decision = monitor.evaluateOnAppDidBecomeActive(
@@ -128,10 +128,10 @@ struct EntryClipboardOperationsReducer {
                     state.cutClearSession = updatedSession
                     return .none
                 case .clear:
-                    return .send(.setClipboardOperation(operation: .copy))
+                    return .send(.clipboard(.setClipboardOperation(operation: .copy)))
                 }
 
-            case let .copyAbsolutePaths(paths):
+            case let .clipboard(.copyAbsolutePaths(paths)):
                 guard !paths.isEmpty else { return .none }
 
                 let text = paths.joined(separator: "\n")
@@ -140,7 +140,7 @@ struct EntryClipboardOperationsReducer {
 
                 return .none
 
-            case let .copyURLs(paths):
+            case let .clipboard(.copyURLs(paths)):
                 guard !paths.isEmpty else { return .none }
 
                 let text = paths
@@ -151,7 +151,7 @@ struct EntryClipboardOperationsReducer {
 
                 return .none
 
-            case let .setClipboardOperation(operation):
+            case let .clipboard(.setClipboardOperation(operation)):
                 state.clipboardOperation = operation
                 let operationValue = operation == .cut ? "cut" : "copy"
                 _ = pasteboardClient.setString(
@@ -182,7 +182,7 @@ struct EntryClipboardOperationsReducer {
 
                 return .none
 
-            case let .syncClipboardState(paths, operation):
+            case let .lifecycle(.syncClipboardState(paths, operation)):
                 state.clipboardItems = paths
                 state.clipboardOperation = operation
 
@@ -206,7 +206,7 @@ struct EntryClipboardOperationsReducer {
                 )
                 return .none
 
-            case let .pasteItemsFromClipboard(destinationPath):
+            case let .clipboard(.pasteItemsFromClipboard(destinationPath)):
                 let (clipboardPaths, clipboardOperation) = entryFileOpsClient.loadClipboardPaths()
                 guard !clipboardPaths.isEmpty else {
                     return .none
@@ -215,16 +215,16 @@ struct EntryClipboardOperationsReducer {
                 let operationKind: OperationKind = clipboardOperation == .cut ? .pasteFileMove : .pasteFileCopy
 
                 return .concatenate(
-                    .send(.syncClipboardState(paths: clipboardPaths, operation: clipboardOperation)),
-                    .send(.pasteItems(
+                    .send(.lifecycle(.syncClipboardState(paths: clipboardPaths, operation: clipboardOperation))),
+                    .send(.clipboard(.pasteItems(
                         sourcePaths: clipboardPaths,
                         destinationPath: destinationPath,
                         operation: clipboardOperation,
                         operationKind: operationKind,
-                    )),
+                    ))),
                 )
 
-            case let .pasteItems(sourcePaths, destinationPath, operation, operationKind):
+            case let .clipboard(.pasteItems(sourcePaths, destinationPath, operation, operationKind)):
                 let destinationURL = URL(fileURLWithPath: destinationPath)
                 let destinations = EntryOperationsExecutionSupport.avoidNameCollisions(
                     sourcePaths: sourcePaths,
@@ -236,7 +236,7 @@ struct EntryClipboardOperationsReducer {
                 guard !destinations.isEmpty else {
                     if operation == .cut {
                         return .run { send in
-                            await send(.operationFinished(destinationPath, operationKind, .success(())))
+                            await send(.lifecycle(.operationFinished(destinationPath, operationKind, .success(()))))
                         }
                     }
                     return .none
@@ -251,7 +251,7 @@ struct EntryClipboardOperationsReducer {
                         let sourcePath = sourceURL.path
                         let kind: OperationKind = operationKind
 
-                        await send(.operationStarted(sourcePath, kind))
+                        await send(.lifecycle(.operationStarted(sourcePath, kind)))
 
                         do {
                             if isCopy {
@@ -260,10 +260,10 @@ struct EntryClipboardOperationsReducer {
                                 try await entryFileOpsClient.moveFile(sourceURL, destURL)
                             }
                             targets.append(.init(beforePath: sourcePath, afterPath: destURL.path))
-                            await send(.operationFinished(sourcePath, kind, .success(())))
+                            await send(.lifecycle(.operationFinished(sourcePath, kind, .success(()))))
                         } catch let error as FileOpError where error.isFileExists {
                             guard let itemName = error.itemName else {
-                                await send(.operationFinished(sourcePath, kind, .failure(error)))
+                                await send(.lifecycle(.operationFinished(sourcePath, kind, .failure(error))))
                                 continue
                             }
 
@@ -286,21 +286,25 @@ struct EntryClipboardOperationsReducer {
 
                                     let destinationFolder = destURL.deletingLastPathComponent().path
                                     targets.append(.init(beforePath: sourcePath, afterPath: destURL.path))
-                                    await send(.operationFinished(destinationFolder, kind, .success(())))
+                                    await send(.lifecycle(.operationFinished(destinationFolder, kind, .success(()))))
                                 } catch {
-                                    await send(.operationFinished(sourcePath, kind, .failure(error.fileOpError)))
+                                    await send(.lifecycle(.operationFinished(
+                                        sourcePath,
+                                        kind,
+                                        .failure(error.fileOpError),
+                                    )))
                                 }
                             } else {
-                                await send(.operationFinished(sourcePath, kind, .failure(.cancelled)))
+                                await send(.lifecycle(.operationFinished(sourcePath, kind, .failure(.cancelled))))
                             }
                         } catch {
-                            await send(.operationFinished(sourcePath, kind, .failure(error.fileOpError)))
+                            await send(.lifecycle(.operationFinished(sourcePath, kind, .failure(error.fileOpError))))
                         }
                     }
 
                     if !targets.isEmpty, operationKind.isUndoable {
                         let record = EntryActionRecord(operationKind: operationKind, targets: targets)
-                        await send(.entryActionCompleted(record))
+                        await send(.lifecycle(.entryActionCompleted(record)))
                     }
                 }
 

@@ -126,7 +126,7 @@ extension EntryListCoordinator: NSOutlineViewDelegate {
             return entry.fullPath
         }
         guard !paths.isEmpty else { return }
-        sendEntryOperations(.saveDragPaths(paths))
+        sendEntryOperations(.routing(.saveDragPaths(paths)))
     }
 
     func outlineView(
@@ -136,7 +136,7 @@ extension EntryListCoordinator: NSOutlineViewDelegate {
         operation: NSDragOperation,
     ) {
         guard EntryViewLayoutDragStateClearRuleSet.shouldClearAfterSessionEnd(operation: operation) else { return }
-        sendEntryOperations(.saveDragPaths([]))
+        sendEntryOperations(.routing(.saveDragPaths([])))
         store.send(.view(.setDropTargeted(false)))
     }
 
@@ -552,17 +552,17 @@ extension EntryListCoordinator {
                 onRenameUpdate: { [weak self] text in
                     guard let self else { return }
                     guard state.entryOperations.renamingItemId != nil else { return }
-                    sendEntryOperations(.updateRenamingText(text))
+                    sendEntryOperations(.edit(.updateRenamingText(text)))
                 },
                 onRenameCommit: { [weak self] in
                     guard let self else { return }
                     guard state.entryOperations.renamingItemId != nil else { return }
-                    sendEntryOperations(.commitRename)
+                    sendEntryOperations(.edit(.commitRename))
                 },
                 onRenameCancel: { [weak self] in
                     guard let self else { return }
                     guard state.entryOperations.renamingItemId != nil else { return }
-                    sendEntryOperations(.cancelRename)
+                    sendEntryOperations(.edit(.cancelRename))
                 },
             ),
         )
@@ -575,11 +575,11 @@ extension EntryListCoordinator {
         }
 
         if selectedFiles.count > 1 {
-            sendEntryOperations(.loadCommonApplicationsForFiles(files: selectedFiles))
+            sendEntryOperations(.openWith(.loadCommonApplicationsForFiles(files: selectedFiles)))
         } else if let file = selectedFiles.first,
                   state.entryOperations.applicationsForItems[file.fullPath] == nil
         {
-            sendEntryOperations(.loadApplicationsForFile(file: file))
+            sendEntryOperations(.openWith(.loadApplicationsForFile(file: file)))
         }
     }
 
