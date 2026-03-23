@@ -56,8 +56,8 @@ enum FileManagerContentComposerCoordinator {
             .cancel(id: "openCollectionFile"),
             .cancel(id: ComposerFeature.CancelID.search),
             .cancel(id: ComposerFeature.CancelID.filters),
-            .send(.entryOperations(.setCollectionMode(false))),
-            .send(.entryOperations(.clearCollectionItems)),
+            .send(.entryOperations(.loading(.setCollectionMode(false)))),
+            .send(.entryOperations(.loading(.clearCollectionItems))),
         )
     }
 
@@ -261,13 +261,13 @@ enum FileManagerContentComposerCoordinator {
         }
         return .concatenate(
             .concatenate(navigationEffects),
-            .send(.entryOperations(.setCollectionMode(true))),
+            .send(.entryOperations(.loading(.setCollectionMode(true)))),
             .run { send in
                 await Task.yield()
-                await send(.entryOperations(.collectionItemsLoadedFromSearch(
+                await send(.entryOperations(.loading(.collectionItemsLoadedFromSearch(
                     items: items,
                     showHidden: false,
-                )))
+                ))))
                 await send(.composer(.searchListApplied))
             },
         )

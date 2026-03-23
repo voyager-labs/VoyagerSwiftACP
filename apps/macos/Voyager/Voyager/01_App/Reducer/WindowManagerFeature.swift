@@ -21,15 +21,15 @@ struct WindowManagerFeature {
     var body: some Reducer<State, Action> {
         Reduce { state, action in
             switch action {
-            case .openInitialWindowIfNeeded:
+            case .lifecycle(.openInitialWindowIfNeeded):
                 guard state.windows.isEmpty else { return .none }
-                return .send(.newWindow(path: nil))
+                return .send(.file(.newWindow(path: nil)))
 
-            case let .reopenWindowIfNeeded(hasVisibleWindows: flag):
+            case let .lifecycle(.reopenWindowIfNeeded(hasVisibleWindows: flag)):
                 guard !flag else { return .none }
 
                 if state.windows.isEmpty {
-                    return .send(.newWindow(path: nil))
+                    return .send(.file(.newWindow(path: nil)))
                 }
 
                 guard let reopenWindowID = state.focusedWindowID ?? state.windows.first?.id else {
@@ -41,7 +41,7 @@ struct WindowManagerFeature {
                     await fileManagerWindowClient.open(reopenWindowID)
                 }
 
-            case let .applyAppPreferences(preferences):
+            case let .lifecycle(.applyAppPreferences(preferences)):
                 state.appPreferences = preferences
                 return .merge(
                     state.windows.ids.map { id in
@@ -49,98 +49,98 @@ struct WindowManagerFeature {
                     },
                 )
 
-            case .newWindow,
-                 .newTab,
-                 .closeFocusedWindow,
-                 .closeAllWindows:
+            case .file(.newWindow),
+                 .file(.newTab),
+                 .window(.closeFocusedWindow),
+                 .window(.closeAllWindows):
                 return handleWindowCommand(action, state: &state)
 
-            case .newFolder:
+            case .file(.newFolder):
                 return sendCommandToFocusedWindow(state, .newFolder)
 
-            case .open:
+            case .file(.open):
                 return sendCommandToFocusedWindow(state, .openSelectedItem)
 
-            case .quickLook:
+            case .file(.quickLook):
                 return sendCommandToFocusedWindow(state, .quickLookSelectedItem)
 
-            case .saveCollection:
+            case .file(.saveCollection):
                 return sendCommandToFocusedWindow(state, .saveCollection)
 
-            case .saveCollectionAs:
+            case .file(.saveCollectionAs):
                 return sendCommandToFocusedWindow(state, .saveCollectionAs)
 
-            case .goBack:
+            case .window(.goBack):
                 return sendCommandToFocusedWindow(state, .goBack)
 
-            case .goForward:
+            case .window(.goForward):
                 return sendCommandToFocusedWindow(state, .goForward)
 
-            case .goToEnclosingDirectory:
+            case .window(.goToEnclosingDirectory):
                 return sendCommandToFocusedWindow(state, .goToEnclosingDirectory)
 
-            case .toggleSidebar:
+            case .window(.toggleSidebar):
                 return sendCommandToFocusedWindow(state, .toggleSidebar)
 
-            case .toggleShowHiddenFiles:
+            case .window(.toggleShowHiddenFiles):
                 return sendCommandToFocusedWindow(state, .toggleShowHiddenFiles)
 
-            case let .setViewLayout(layout):
+            case let .view(.setViewLayout(layout)):
                 return sendCommandToFocusedWindow(state, .setViewLayout(layout))
 
-            case let .setGroupKey(key):
+            case let .view(.setGroupKey(key)):
                 return sendCommandToFocusedWindow(state, .setGroupKey(key))
 
-            case let .setSortKey(key):
+            case let .view(.setSortKey(key)):
                 return sendCommandToFocusedWindow(state, .setSortKey(key))
 
-            case let .setSortOrder(order):
+            case let .view(.setSortOrder(order)):
                 return sendCommandToFocusedWindow(state, .setSortOrder(order))
 
-            case .requestUndo:
+            case .edit(.requestUndo):
                 return sendCommandToFocusedWindow(state, .requestUndo)
 
-            case .requestRedo:
+            case .edit(.requestRedo):
                 return sendCommandToFocusedWindow(state, .requestRedo)
 
-            case .toggleComposer:
+            case .edit(.toggleComposer):
                 return sendCommandToFocusedWindow(state, .toggleComposer)
 
-            case .cut:
+            case .edit(.cut):
                 return sendCommandToFocusedWindow(state, .cut)
 
-            case .copy:
+            case .edit(.copy):
                 return sendCommandToFocusedWindow(state, .copy)
 
-            case .paste:
+            case .edit(.paste):
                 return sendCommandToFocusedWindow(state, .paste)
 
-            case .duplicate:
+            case .edit(.duplicate):
                 return sendCommandToFocusedWindow(state, .duplicate)
 
-            case .makeAlias:
+            case .edit(.makeAlias):
                 return sendCommandToFocusedWindow(state, .makeAlias)
 
-            case .selectAll:
+            case .edit(.selectAll):
                 return sendCommandToFocusedWindow(state, .selectAll)
 
-            case .copyAbsolutePaths:
+            case .edit(.copyAbsolutePaths):
                 return sendCommandToFocusedWindow(state, .copyAbsolutePaths)
 
-            case .copyURLs:
+            case .edit(.copyURLs):
                 return sendCommandToFocusedWindow(state, .copyURLs)
 
-            case let .windowBecameKey(id):
+            case let .event(.windowBecameKey(id)):
                 state.focusedWindowID = id
                 return .none
 
-            case let .windowResignedKey(id):
+            case let .event(.windowResignedKey(id)):
                 if state.focusedWindowID == id {
                     state.focusedWindowID = nil
                 }
                 return .none
 
-            case let .windowClosed(id):
+            case let .event(.windowClosed(id)):
                 let wasFocused = state.focusedWindowID == id
                 state.windows.remove(id: id)
                 if wasFocused {
@@ -148,16 +148,16 @@ struct WindowManagerFeature {
                 }
                 return .none
 
-            case let .focusWindow(path):
+            case let .event(.focusWindow(path)):
                 return .run { _ in
                     await fileManagerWindowClient.focusPath(path)
                 }
 
             case let .windows(.element(id: _, action: .window(.delegate(.openPathInNewWindow(path))))):
-                return .send(.newWindow(path: path))
+                return .send(.file(.newWindow(path: path)))
 
             case let .windows(.element(id: _, action: .window(.delegate(.openPathInNewTab(path))))):
-                return .send(.newTab(path: path))
+                return .send(.file(.newTab(path: path)))
 
             case .windows:
                 return .none
@@ -170,7 +170,7 @@ struct WindowManagerFeature {
 
     private func handleWindowCommand(_ action: Action, state: inout State) -> Effect<Action> {
         switch action {
-        case let .newWindow(path):
+        case let .file(.newWindow(path)):
             if onboardingWindowClient.showIfNeeded() {
                 return .none
             }
@@ -189,7 +189,7 @@ struct WindowManagerFeature {
                 },
             )
 
-        case let .newTab(path):
+        case let .file(.newTab(path)):
             if onboardingWindowClient.showIfNeeded() {
                 return .none
             }
@@ -208,13 +208,13 @@ struct WindowManagerFeature {
                 },
             )
 
-        case .closeFocusedWindow:
+        case .window(.closeFocusedWindow):
             guard let id = state.focusedWindowID else { return .none }
             return .run { [id] _ in
                 await fileManagerWindowClient.close(id)
             }
 
-        case .closeAllWindows:
+        case .window(.closeAllWindows):
             state.windows.removeAll()
             state.focusedWindowID = nil
             return .run { _ in
