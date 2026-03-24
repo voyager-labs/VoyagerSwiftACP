@@ -5,6 +5,7 @@ import SwiftUI
 @MainActor
 struct EntryListViewRepresentable: NSViewRepresentable {
     let store: StoreOf<EntryViewLayoutFeature>
+    let contentStore: StoreOf<FileManagerContentFeature>
 
     func makeCoordinator() -> EntryListCoordinator {
         EntryListCoordinator(store: store)
@@ -13,11 +14,25 @@ struct EntryListViewRepresentable: NSViewRepresentable {
     func makeNSView(context: Context) -> EntryListView {
         let view = EntryListView()
         context.coordinator.bind(to: view)
+        configureBlankSpaceMenu(for: view)
         return view
     }
 
     func updateNSView(_ view: EntryListView, context: Context) {
         context.coordinator.updateRootView(view)
+        configureBlankSpaceMenu(for: view)
+    }
+
+    private func configureBlankSpaceMenu(for view: EntryListView) {
+        let coordinator = ContentPaneContextMenuCoordinator(store: contentStore)
+        view.tableView.blankSpaceContextMenuCoordinator = coordinator
+        view.tableView.blankSpaceContextMenuProvider = { [weak coordinator] in
+            guard let coordinator else { return NSMenu() }
+            return ContentPaneContextMenuBuilder.makeMenu(
+                configuration: coordinator.configuration,
+                target: coordinator,
+            )
+        }
     }
 }
 
@@ -28,6 +43,8 @@ final class EntryListView: NSView {
 
     final class EntryListTableView: NSOutlineView {
         weak var contextMenuProvider: EntryListTableViewContextMenuProviding?
+        var blankSpaceContextMenuProvider: (() -> NSMenu)?
+        var blankSpaceContextMenuCoordinator: AnyObject?
 
         override func mouseDown(with event: NSEvent) {
             let location = convert(event.locationInWindow, from: nil)
@@ -41,7 +58,17 @@ final class EntryListView: NSView {
             let location = convert(event.locationInWindow, from: nil)
             let row = row(at: location)
 
-            if row != -1, !selectedRowIndexes.contains(row) {
+            if row == -1 {
+                deselectAll(nil)
+                if let menu = blankSpaceContextMenuProvider?() {
+                    NSMenu.popUpContextMenu(menu, with: event, for: self)
+                    return
+                }
+                super.rightMouseDown(with: event)
+                return
+            }
+
+            if !selectedRowIndexes.contains(row) {
                 selectRowIndexes(IndexSet(integer: row), byExtendingSelection: false)
             }
 
@@ -50,7 +77,7 @@ final class EntryListView: NSView {
                 return
             }
 
-            let menu = contextMenuProvider.contextMenu(forRow: row == -1 ? nil : row, event: event)
+            let menu = contextMenuProvider.contextMenu(forRow: row, event: event)
             NSMenu.popUpContextMenu(menu, with: event, for: self)
         }
     }

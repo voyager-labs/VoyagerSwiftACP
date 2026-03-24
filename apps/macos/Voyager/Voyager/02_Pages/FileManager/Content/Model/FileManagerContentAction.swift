@@ -5,10 +5,8 @@ import SwiftUI
 
 @CasePathable
 enum FileManagerContentAction: CasePathable, Sendable {
-    case entryArrangements(EntryArrangementsAction)
     case entries(EntryCommandAction)
     case entryViewLayout(EntryViewLayoutAction)
-    case entryOperations(EntryOperationsFeature.Action)
     case composer(ComposerFeature.Action)
 
     case delegate(FileManagerContentDelegateAction)

@@ -10,6 +10,8 @@ struct EntryListEntryCellViewConfiguration {
         let textSize: CGFloat
         let dateModifiedWidth: CGFloat
         let thumbnail: NSImage?
+        let isHidden: Bool
+        let isCut: Bool
         let isRenaming: Bool
         let renamingText: String
         let workspaceClient: WorkspaceClient
@@ -133,7 +135,7 @@ final class EntryListEmptyCellView: NSTableCellView {}
 
 final class EntryListEntryCellView: NSTableCellView {
     private let customImageView = NSImageView()
-    private let customTextField = NSTextField(labelWithString: "")
+    private let customTextField = NSTextField(string: "")
 
     private var iconWidthConstraint: NSLayoutConstraint?
     private var iconHeightConstraint: NSLayoutConstraint?
@@ -141,6 +143,8 @@ final class EntryListEntryCellView: NSTableCellView {
     private var textLeadingToViewConstraint: NSLayoutConstraint?
 
     private var isRenaming: Bool = false
+    private var isHiddenEntry: Bool = false
+    private var isCutEntry: Bool = false
     var onRenameUpdate: ((String) -> Void)?
     var onRenameCommit: (() -> Void)?
     var onRenameCancel: (() -> Void)?
@@ -190,6 +194,8 @@ final class EntryListEntryCellView: NSTableCellView {
             textTrailing,
             textCenterY,
         ])
+
+        applyDisplayStyle()
     }
 
     func configure(_ configuration: EntryListEntryCellViewConfiguration) {
@@ -208,6 +214,8 @@ final class EntryListEntryCellView: NSTableCellView {
 
     private func configureEntryCell(context: EntryListEntryCellViewConfiguration.Context) {
         isRenaming = context.isRenaming
+        isHiddenEntry = context.isHidden
+        isCutEntry = context.isCut
         let display = EntryDisplayModel(entry: context.model)
 
         switch EntryListColumn(rawValue: context.columnId) {
@@ -252,6 +260,8 @@ final class EntryListEntryCellView: NSTableCellView {
             hideIconAndSetupTextOnly(textSize: context.textSize)
             customTextField.stringValue = ""
         }
+
+        applyContentAlpha()
     }
 
     private func hideIconAndSetupTextOnly(textSize: CGFloat) {
@@ -271,6 +281,7 @@ final class EntryListEntryCellView: NSTableCellView {
         customTextField.drawsBackground = false
         customTextField.focusRingType = .none
         customTextField.delegate = nil
+        applyContentAlpha()
     }
 
     private func applyRenamingStyle(text: String) {
@@ -283,6 +294,13 @@ final class EntryListEntryCellView: NSTableCellView {
 
         customTextField.stringValue = EntryGridRenameEditorRules.sanitizeInput(text)
         customTextField.delegate = self
+        applyContentAlpha()
+    }
+
+    private func applyContentAlpha() {
+        let alpha: CGFloat = (isHiddenEntry || isCutEntry) ? 0.5 : 1.0
+        customImageView.alphaValue = alpha
+        customTextField.alphaValue = alpha
     }
 }
 
@@ -316,6 +334,15 @@ extension EntryListEntryCellView: NSTextFieldDelegate {
     func controlTextDidEndEditing(_ notification: Notification) {
         guard isRenaming else { return }
         guard let textField = notification.object as? NSTextField, textField === customTextField else { return }
-        onRenameCommit?()
+        guard let movement = notification.userInfo?["NSTextMovement"] as? Int else { return }
+
+        switch movement {
+        case NSReturnTextMovement, NSTabTextMovement:
+            onRenameCommit?()
+        case NSCancelTextMovement:
+            onRenameCancel?()
+        default:
+            return
+        }
     }
 }

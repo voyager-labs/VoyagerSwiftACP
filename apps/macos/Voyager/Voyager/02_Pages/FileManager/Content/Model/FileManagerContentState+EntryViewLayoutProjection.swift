@@ -3,6 +3,8 @@ import Foundation
 extension FileManagerContentState {
     var selectedIds: Set<EntryModel.ID> { entryViewLayout.selectedIds }
     var selectedEntries: [EntryModel] { entries.filter { selectedIds.contains($0.id) } }
+    var hasSelectableEntriesInLayout: Bool { !selectedEntries.isEmpty }
+    var selectedEntryCount: Int { selectedEntries.count }
     var lastSelectedId: EntryModel.ID? { entryViewLayout.lastSelectedId }
     var shouldScrollToSelection: Bool { entryViewLayout.shouldScrollToSelection }
     var gridColumnCount: Int { entryViewLayout.gridColumnCount }

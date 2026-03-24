@@ -89,7 +89,7 @@ final class FileManagerWindowCoordinator: NSWindowController, NSWindowDelegate {
         fatalError("init(coder:) has not been implemented")
     }
 
-    private static func createInitialState(
+    static func createInitialState(
         windowID: UUID,
         path: String?,
         duplicateState: FileManagerFeature.State?,
@@ -97,15 +97,15 @@ final class FileManagerWindowCoordinator: NSWindowController, NSWindowDelegate {
         var state: FileManagerFeature.State
         if let duplicateState {
             var newState = duplicateState
-            newState.content.entryOperations = EntryOperationsState()
-            newState.content.entryOperations.windowID = windowID
+            newState.content.entryViewLayout.entryOperations = EntryOperationsState()
+            newState.content.entryViewLayout.entryOperations.windowID = windowID
             state = newState
         } else {
             state = FileManagerFeature.State()
-            state.content.entryOperations.windowID = windowID
+            state.content.entryViewLayout.entryOperations.windowID = windowID
         }
 
-        if duplicateState == nil, let path {
+        if let path {
             state.content.navigation.seedInitialFolderPath(path)
         }
 
@@ -152,7 +152,7 @@ final class FileManagerWindowCoordinator: NSWindowController, NSWindowDelegate {
         return best == .darkAqua
     }
 
-    private static func configureWindowStyle(_ window: NSWindow) {
+    static func configureWindowStyle(_ window: NSWindow) {
         window.styleMask = [.titled, .closable, .miniaturizable, .resizable, .fullSizeContentView]
         window.minSize = NSSize(width: 600, height: 350)
 
@@ -215,14 +215,14 @@ final class FileManagerWindowCoordinator: NSWindowController, NSWindowDelegate {
 
         let initialTitle = makeTitle(
             openedCollectionName: store.state.content.collectionSession.openedName,
-            isCollectionMode: store.state.content.entryOperations.loadingContext.isCollectionMode,
+            isCollectionMode: store.state.content.entryViewLayout.entryOperations.loadingContext.isCollectionMode,
             titlePath: store.state.content.navigation.titlePath,
             makeWindowTitle: makeWindowTitle,
         )
 
         Publishers.CombineLatest3(
             store.publisher.content.collectionSession.openedName.removeDuplicates(),
-            store.publisher.content.entryOperations.loadingContext.isCollectionMode.removeDuplicates(),
+            store.publisher.content.entryViewLayout.entryOperations.loadingContext.isCollectionMode.removeDuplicates(),
             store.publisher.content.navigation.titlePath.removeDuplicates(),
         )
         .map { openedCollectionName, isCollectionMode, titlePath in

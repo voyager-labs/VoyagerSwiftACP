@@ -20,15 +20,15 @@ struct FileManagerWindowPreferencesReducer {
                 state.content.gridTextSize = preferences.gridTextSize
 
                 state.content.entryViewLayout.showHiddenFiles = preferences.showHiddenFiles
-                state.content.entryArrangements.updateSortKey(preferences.sortKey)
-                state.content.entryArrangements.updateSortOrder(preferences.sortOrder)
-                state.content.entryArrangements.updateGroupKey(preferences.groupKey)
+                state.content.entryViewLayout.entryArrangements.updateSortKey(preferences.sortKey)
+                state.content.entryViewLayout.entryArrangements.updateSortOrder(preferences.sortOrder)
+                state.content.entryViewLayout.entryArrangements.updateGroupKey(preferences.groupKey)
                 state.content.syncComposerCollectionState()
 
                 return .merge(
-                    .send(.content(.entryArrangements(.setSortKey(preferences.sortKey)))),
-                    .send(.content(.entryArrangements(.setSortOrder(preferences.sortOrder)))),
-                    .send(.content(.entryArrangements(.setGroupKey(preferences.groupKey)))),
+                    .send(.content(.entryViewLayout(.entryArrangements(.setSortKey(preferences.sortKey))))),
+                    .send(.content(.entryViewLayout(.entryArrangements(.setSortOrder(preferences.sortOrder))))),
+                    .send(.content(.entryViewLayout(.entryArrangements(.setGroupKey(preferences.groupKey))))),
                 )
 
             default:

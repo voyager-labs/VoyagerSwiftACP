@@ -5,7 +5,8 @@ import SwiftUI
 struct ContentPaneContextMenu: View {
     let store: StoreOf<FileManagerContentFeature>
 
-    @Dependency(\.fileManagerClient) private var fileManagerClient
+    @Dependency(\.fileManagerClient)
+    private var fileManagerClient
 
     private var isTrashFolder: Bool {
         guard case let .folder(path) = store.navigation.navigationState,
@@ -14,16 +15,6 @@ struct ContentPaneContextMenu: View {
             return false
         }
         return path == trashPath || path.hasPrefix(trashPath + "/")
-    }
-
-    private var defaultNewFolderName: String {
-        var folderName = "untitled folder"
-        var counter = 2
-        while store.entryViewLayout.entries.contains(where: { $0.name == folderName }) {
-            folderName = "untitled folder \(counter)"
-            counter += 1
-        }
-        return folderName
     }
 
     var body: some View {
@@ -35,10 +26,9 @@ struct ContentPaneContextMenu: View {
             }
         } else {
             Button("New Folder") {
-                store.send(.entryViewLayout(.entryOperations(.createNewFolder(
-                    name: defaultNewFolderName,
-                    parentPath: store.navigation.currentPath,
-                ))))
+                store
+                    .send(.entryViewLayout(.entryOperations(.createNewFolder(parentPath: store.navigation
+                            .currentPath))))
             }
             .keyboardShortcut("n", modifiers: [.command, .shift])
         }

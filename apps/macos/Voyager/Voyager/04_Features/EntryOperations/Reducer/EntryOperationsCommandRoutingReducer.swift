@@ -73,8 +73,8 @@ struct EntryOperationsCommandRoutingReducer {
         switch output {
         case let .entryOperations(action):
             .send(action)
-        case let .navigateFolder(id):
-            .send(.delegate(.navigateFolder(id: id)))
+        case let .delegate(delegate):
+            .send(.delegate(delegate))
         }
     }
 

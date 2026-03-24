@@ -29,9 +29,20 @@ struct EntryOperationsLifecycleReducer {
 
             case let .operationFinished(filePath, kind, result):
                 state.itemStates[filePath]?.isBusy = false
+
+                if case .rename = kind {
+                    state.renamingItemId = nil
+                    state.renamingText = ""
+                }
+
                 switch result {
                 case .success:
                     state.itemStates[filePath]?.lastError = nil
+
+                    if case .createFolder = kind {
+                        state.renamingItemId = filePath
+                        state.renamingText = URL(fileURLWithPath: filePath).lastPathComponent
+                    }
 
                     if case .setDefaultApp = kind {
                         state.applicationsForItems[filePath] = nil

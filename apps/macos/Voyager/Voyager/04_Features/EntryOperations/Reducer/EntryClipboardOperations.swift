@@ -235,9 +235,7 @@ struct EntryClipboardOperationsReducer {
 
                 guard !destinations.isEmpty else {
                     if operation == .cut {
-                        return .run { send in
-                            await send(.operationFinished(destinationPath, operationKind, .success(())))
-                        }
+                        return .send(.setClipboardOperation(operation: .copy))
                     }
                     return .none
                 }
@@ -259,6 +257,11 @@ struct EntryClipboardOperationsReducer {
                             } else {
                                 try await entryFileOpsClient.moveFile(sourceURL, destURL)
                             }
+                            let changedPaths = [
+                                sourceURL.deletingLastPathComponent().path,
+                                destURL.deletingLastPathComponent().path,
+                            ]
+                            entryFileOpsClient.postFileSystemChanged(Array(Set(changedPaths)))
                             targets.append(.init(beforePath: sourcePath, afterPath: destURL.path))
                             await send(.operationFinished(sourcePath, kind, .success(())))
                         } catch let error as FileOpError where error.isFileExists {
@@ -285,8 +288,13 @@ struct EntryClipboardOperationsReducer {
                                     }
 
                                     let destinationFolder = destURL.deletingLastPathComponent().path
+                                    let changedPaths = [
+                                        sourceURL.deletingLastPathComponent().path,
+                                        destinationFolder,
+                                    ]
+                                    entryFileOpsClient.postFileSystemChanged(Array(Set(changedPaths)))
                                     targets.append(.init(beforePath: sourcePath, afterPath: destURL.path))
-                                    await send(.operationFinished(destinationFolder, kind, .success(())))
+                                    await send(.operationFinished(sourcePath, kind, .success(())))
                                 } catch {
                                     await send(.operationFinished(sourcePath, kind, .failure(error.fileOpError)))
                                 }

@@ -30,6 +30,7 @@ extension EntryGridCoordinator {
             rebuildSectionsAndReload()
         }
         syncSelectionIfNeeded(previous: previous, snapshot: snapshot)
+        reloadVisibleItemsIfNeeded(previous: previous, snapshot: snapshot)
         syncRenamingIfNeeded(previous: previous, snapshot: snapshot)
         updateGridMetricsIfNeeded(previous: previous, snapshot: snapshot)
         saveScrollPositionIfNeeded(previous: previous, snapshot: snapshot)
@@ -46,6 +47,12 @@ extension EntryGridCoordinator {
 
     func syncSelectionIfNeeded(previous: RenderSnapshot, snapshot: RenderSnapshot) {
         if previous.selectedIds != snapshot.selectedIds { syncSelectionFromStore() }
+    }
+
+    func reloadVisibleItemsIfNeeded(previous: RenderSnapshot, snapshot: RenderSnapshot) {
+        guard previous.clipboardItems != snapshot.clipboardItems
+            || previous.clipboardOperation != snapshot.clipboardOperation else { return }
+        reloadVisibleItems()
     }
 
     func syncRenamingIfNeeded(previous: RenderSnapshot, snapshot: RenderSnapshot) {
@@ -74,7 +81,8 @@ extension EntryGridCoordinator {
     }
 
     func resetThumbnailSessionIfNeeded(previous: RenderSnapshot, snapshot: RenderSnapshot) {
-        if previous.currentPath != snapshot.currentPath { resetThumbnailSession()
+        if previous.currentPath != snapshot.currentPath {
+            resetThumbnailSession()
             hasRestoredScrollPosition = false
         }
     }
@@ -91,7 +99,7 @@ extension EntryGridCoordinator {
             NSView.boundsDidChangeNotification,
             scrollView.contentView,
         ) { [weak self] _ in
-            Task { @MainActor [weak self] in
+            DispatchQueue.main.async { [weak self] in
                 self?.thumbnailPrefetchThrottler.schedule { [weak self] in
                     self?.requestThumbnailsForVisibleArea()
                 }
@@ -138,10 +146,16 @@ extension EntryGridCoordinator {
 
     func requestThumbnails(paths: Set<String>) {
         pruneThumbnailSession(keeping: paths)
+        let scale = NSScreen.main?.backingScaleFactor ?? 3.0
+        let size = CGSize(width: 256, height: 256)
+        let thumbnailGeneratorClient = thumbnailGeneratorClient
         for path in paths where thumbnailImagesByPath[path] == nil && thumbnailTasksByPath[path] == nil {
-            let task = Task(priority: .utility) { [weak self] in
-                guard let self else { return }
-                let image = await self.generateThumbnail(for: path)
+            let task = Task.detached(priority: .utility) { [weak self] in
+                let image = await thumbnailGeneratorClient.generateThumbnail(
+                    for: URL(fileURLWithPath: path),
+                    size: size,
+                    scale: scale,
+                )
                 await MainActor.run { [weak self] in
                     guard let self else { return }
                     guard self.thumbnailTasksByPath[path] != nil else { return }
@@ -169,16 +183,6 @@ extension EntryGridCoordinator {
         }
         thumbnailTasksByPath.removeAll(keepingCapacity: false)
         thumbnailImagesByPath.removeAll(keepingCapacity: false)
-    }
-
-    func generateThumbnail(for path: String) async -> NSImage? {
-        let scale = await MainActor.run { NSScreen.main?.backingScaleFactor ?? 3.0 }
-        let size = CGSize(width: 256, height: 256)
-        return await thumbnailGeneratorClient.generateThumbnail(
-            for: URL(fileURLWithPath: path),
-            size: size,
-            scale: scale,
-        )
     }
 }
 
@@ -466,7 +470,7 @@ extension EntryGridCoordinator: EntryGridView.EntryGridCollectionViewMenuProvidi
     func contextMenu(for indexPath: IndexPath?, event: NSEvent) -> NSMenu {
         updateContextMenuAnchor(event)
         let rowEntry = entry(at: indexPath)
-        let selectedEntries = selectedEntries(fallback: rowEntry)
+        let selectedEntries = selectedEntries(rowEntry: rowEntry)
         preloadOpenWithApplications(selectedEntries: selectedEntries)
         let menuSpec = EntryContextMenuSpecFactory.make(
             selectedIds: state.selectedIds,
@@ -477,7 +481,7 @@ extension EntryGridCoordinator: EntryGridView.EntryGridCollectionViewMenuProvidi
             favoriteTags: finderFavoritesTagClient.favoriteTags(),
             openWithApplications: openWithApplications(selectedEntries: selectedEntries),
         )
-        let coordinator = EntryContextMenuCoordinator(store: store)
+        let coordinator = EntryContextMenuCoordinator(store: store, rowEntry: rowEntry)
         contextMenuCoordinator = coordinator
         return EntryContextMenuBuilder.makeMenu(configuration: .init(
             target: coordinator,
@@ -491,54 +495,5 @@ extension EntryGridCoordinator: EntryGridView.EntryGridCollectionViewMenuProvidi
             showOpenWith: menuSpec.showOpenWith,
             tags: menuSpec.tags,
         ))
-    }
-}
-
-extension EntryGridCoordinator {
-    func preloadOpenWithApplications(selectedEntries: [EntryModel]) {
-        let selectedFiles = selectedEntries.filter { !$0.isFolder }
-        if selectedFiles.isEmpty {
-            return
-        }
-
-        if selectedFiles.count > 1 {
-            sendEntryOperations(.loadCommonApplicationsForFiles(files: selectedFiles))
-        } else if let file = selectedFiles.first,
-                  state.entryOperations.applicationsForItems[file.fullPath] == nil
-        {
-            sendEntryOperations(.loadApplicationsForFile(file: file))
-        }
-    }
-
-    func openWithApplications(selectedEntries: [EntryModel]) -> [ApplicationInfo] {
-        let selectedFiles = selectedEntries.filter { !$0.isFolder }
-        let applications: [ApplicationInfo] = if selectedFiles.count > 1 {
-            state.entryOperations.commonApplicationsForSelectedFiles
-        } else if let file = selectedFiles.first {
-            state.entryOperations.applicationsForItems[file.fullPath] ?? []
-        } else {
-            []
-        }
-        return applications
-    }
-
-    func updateContextMenuAnchor(_ event: NSEvent) {
-        if let window = view?.window {
-            let screenPoint = window.convertPoint(toScreen: event.locationInWindow)
-            contextMenuAnchor = screenPoint
-        } else {
-            contextMenuAnchor = nil
-        }
-    }
-
-    func dragOperation(from resolved: EntryDropResolvedOperation) -> NSDragOperation {
-        switch resolved {
-        case .none:
-            []
-        case .copy:
-            .copy
-        case .move:
-            .move
-        }
     }
 }

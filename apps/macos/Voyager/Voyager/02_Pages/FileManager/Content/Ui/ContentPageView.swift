@@ -5,8 +5,6 @@ import SwiftUI
 struct ContentPageView: View {
     let store: StoreOf<FileManagerContentFeature>
 
-    @Environment(\.fileManagerKeyCommandFocusCoordinator)
-    private var keyCommandFocusCoordinator
     @FocusState var isKeyCommandFocused: Bool
 
     private var mainContent: some View {
@@ -23,28 +21,21 @@ struct ContentPageView: View {
             switch store.viewLayout {
             case .list:
                 let entryViewLayoutStore = store.scope(state: \.entryViewLayout, action: \.entryViewLayout)
-                EntryListViewRepresentable(store: entryViewLayoutStore)
+                EntryListViewRepresentable(store: entryViewLayoutStore, contentStore: store)
             case .grid:
                 let entryViewLayoutStore = store.scope(state: \.entryViewLayout, action: \.entryViewLayout)
-                EntryGridViewRepresentable(store: entryViewLayoutStore)
+                EntryGridViewRepresentable(store: entryViewLayoutStore, contentStore: store)
             }
         }
     }
 
     @ViewBuilder private var keyCommandOverlay: some View {
-        if store.viewLayout.isGridLayout {
-            KeyCommandView(
-                onViewCreated: { [weak keyCommandFocusCoordinator] view in
-                    keyCommandFocusCoordinator?.register(view)
-                },
-                onKeyDown: { event in
-                    handleKeyboardEvent(event)
-                },
-            )
-            .focusable()
-            .focused($isKeyCommandFocused)
-            .allowsHitTesting(false)
+        KeyCommandView { event in
+            handleKeyboardEvent(event)
         }
+        .focusable()
+        .focused($isKeyCommandFocused)
+        .allowsHitTesting(false)
     }
 
     private var backgroundInteractionLayer: some View {
@@ -54,7 +45,6 @@ struct ContentPageView: View {
                 ContentPaneContextMenu(store: store)
             }
             .onTapGesture {
-                guard store.viewLayout.isGridLayout else { return }
                 restoreKeyCommandFocus()
             }
     }
@@ -76,18 +66,19 @@ struct ContentPageView: View {
     var body: some View {
         mainContent
             .onChange(of: store.entryViewLayout.selectedIds) { _ in
-                guard store.viewLayout.isGridLayout else { return }
                 restoreKeyCommandFocus()
             }
             .onAppear {
                 store.send(.startObservingSystemNotifications)
-                guard store.viewLayout.isGridLayout else { return }
                 DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) {
                     restoreKeyCommandFocus()
                 }
             }
             .onDisappear {
                 store.send(.stopObservingSystemNotifications)
+            }
+            .onReceive(NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)) { _ in
+                store.send(.entryViewLayout(.entryOperations(.appDidBecomeActive)))
             }
             .background(backgroundInteractionLayer)
     }
@@ -104,6 +95,6 @@ struct ContentPageView: View {
 
     private func restoreKeyCommandFocus() {
         isKeyCommandFocused = true
-        keyCommandFocusCoordinator?.requestFocus()
+        KeyCommandHostingView.restoreCurrentFocus()
     }
 }

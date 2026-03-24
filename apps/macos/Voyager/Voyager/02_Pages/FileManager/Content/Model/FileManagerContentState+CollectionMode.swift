@@ -38,8 +38,8 @@ extension FileManagerContentState {
         return ContentPageCollectionNavigation(
             kind: kind,
             context: context,
-            sortKey: entryArrangements.sortKey,
-            sortOrder: entryArrangements.sortOrder,
+            sortKey: entryViewLayout.entryArrangements.sortKey,
+            sortOrder: entryViewLayout.entryArrangements.sortOrder,
             viewLayout: viewLayout,
         )
     }
@@ -48,7 +48,7 @@ extension FileManagerContentState {
         collectionContext = nil
         composer.pendingSearchQuery = nil
         collectionSession = .init()
-        entryOperations.loadingContext.collectionItems = []
+        entryViewLayout.entryOperations.loadingContext.collectionItems = []
         syncComposerCollectionState()
 
         return .merge(
@@ -56,8 +56,8 @@ extension FileManagerContentState {
             .cancel(id: "openCollectionFile"),
             .cancel(id: ComposerFeature.CancelID.search),
             .cancel(id: ComposerFeature.CancelID.filters),
-            .send(.entries(.setCollectionMode(false))),
-            .send(.entries(.clearCollectionItems)),
+            .send(.entryViewLayout(.entryOperations(.setCollectionMode(false)))),
+            .send(.entryViewLayout(.entryOperations(.clearCollectionItems))),
         )
     }
 }
