@@ -244,7 +244,7 @@ struct EntryClipboardOperationsReducer {
 
                 let isCopy = operation == .copy
 
-                return .run { [entryFileOpsClient] send in
+                return .run { [entryFileOpsClient, alertClient] send in
                     var targets: [EntryActionRecord.Target] = []
 
                     for (sourceURL, destURL) in destinations {
@@ -259,6 +259,7 @@ struct EntryClipboardOperationsReducer {
                             } else {
                                 try await entryFileOpsClient.moveFile(sourceURL, destURL)
                             }
+                            await send(.lifecycle(.pathsMutated([sourcePath, destURL.path])))
                             targets.append(.init(beforePath: sourcePath, afterPath: destURL.path))
                             await send(.lifecycle(.operationFinished(sourcePath, kind, .success(()))))
                         } catch let error as FileOpError where error.isFileExists {
@@ -284,6 +285,7 @@ struct EntryClipboardOperationsReducer {
                                         try await entryFileOpsClient.moveFile(sourceURL, destURL)
                                     }
 
+                                    await send(.lifecycle(.pathsMutated([sourcePath, destURL.path])))
                                     let destinationFolder = destURL.deletingLastPathComponent().path
                                     targets.append(.init(beforePath: sourcePath, afterPath: destURL.path))
                                     await send(.lifecycle(.operationFinished(destinationFolder, kind, .success(()))))

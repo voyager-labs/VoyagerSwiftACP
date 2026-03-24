@@ -135,7 +135,7 @@ struct EntryListCoordinatorRenderSnapshot: Equatable {
         groupKey = state.entryArrangements.groupKey
         groupedItems = state.entryArrangements.groupedItems
         currentPath = state.currentPath
-        thumbnailRenderVersion = state.entryOperations.thumbnail.renderVersion
+        thumbnailRenderVersion = state.entryThumbnail.renderVersion
         selectedIds = state.selectedIds
         renamingItemId = state.entryOperations.renamingItemId
         sortKey = state.entryArrangements.sortKey
@@ -186,6 +186,7 @@ final class EntryListCoordinator: NSObject {
 
     let store: StoreOf<EntryViewLayoutFeature>
     var state: EntryViewLayoutState { store.state }
+
     func sendEntryOperations(_ action: EntryOperationsFeature.Action) {
         store.send(.entryOperations(action))
     }
@@ -341,7 +342,7 @@ final class EntryListCoordinator: NSObject {
         }
         guard !paths.isEmpty else { return }
         pruneThumbnailSession(keeping: paths)
-        sendEntryOperations(.thumbnail(.requestThumbnails(paths: Array(paths))))
+        store.send(.entryThumbnail(.requestThumbnails(paths: Array(paths))))
         refreshVisibleNameCellIcons(for: refreshThumbnailProjection(paths: paths))
     }
 

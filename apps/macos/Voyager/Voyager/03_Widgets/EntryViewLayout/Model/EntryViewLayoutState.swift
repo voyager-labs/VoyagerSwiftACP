@@ -21,6 +21,7 @@ struct EntryViewLayoutState: Equatable {
 
     var mode: Mode = .list
     var entryOperations: EntryOperationsFeature.State = .init()
+    var entryThumbnail: EntryThumbnailFeature.State = .init()
     var entryArrangements: EntryArrangementsFeature.State = .init()
 
     var currentPath: String = ""

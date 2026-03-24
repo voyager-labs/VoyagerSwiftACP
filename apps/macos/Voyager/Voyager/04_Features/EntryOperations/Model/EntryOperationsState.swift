@@ -5,7 +5,6 @@ import IdentifiedCollections
 @ObservableState
 struct EntryOperationsState: Equatable {
     var loadingContext: EntryLoadingContextState = .init()
-    var thumbnail: EntryThumbnailState = .init()
     var isLoading: Bool = false
     var isReloading: Bool = false
     var renamingItemId: EntryModel.ID?

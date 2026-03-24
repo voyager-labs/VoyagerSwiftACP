@@ -17,7 +17,6 @@ enum EntryOperationsAction: CasePathable, Sendable {
     case archive(Archive)
     case tagging(Tagging)
     case undoRedo(UndoRedo)
-    case thumbnail(Thumbnail)
 
     @CasePathable
     enum Delegate: CasePathable, Sendable {
@@ -138,13 +137,6 @@ enum EntryOperationsAction: CasePathable, Sendable {
         case redoEntryAction(EntryActionRecord)
         case replayEntryAction(direction: EntryActionDirection, record: EntryActionRecord)
         case entryActionApplied(direction: EntryActionDirection, record: EntryActionRecord)
-    }
-
-    @CasePathable
-    enum Thumbnail: CasePathable, Sendable {
-        case requestThumbnails(paths: [String])
-        case thumbnailsReady(paths: [String])
-        case thumbnailRequestFailed(paths: [String])
     }
 }
 

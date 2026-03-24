@@ -7,6 +7,7 @@ final class EntryGridCoordinator: NSObject {
     typealias RenderSnapshot = EntryGridRenderSnapshot
     let store: StoreOf<EntryViewLayoutFeature>
     var state: EntryViewLayoutState { store.state }
+
     func sendEntryOperations(_ action: EntryOperationsFeature.Action) {
         store.send(.entryOperations(action))
     }

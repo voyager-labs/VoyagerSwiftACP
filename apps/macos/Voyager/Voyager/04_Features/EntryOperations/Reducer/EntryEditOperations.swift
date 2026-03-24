@@ -76,10 +76,11 @@ struct EntryEditOperationsReducer {
                 let sourceURL = URL(fileURLWithPath: oldPath)
                 let destURL = URL(fileURLWithPath: newPath)
 
-                return .run { send in
+                return .run { [entryFileOpsClient, alertClient] send in
                     await send(.lifecycle(.operationStarted(oldPath, .rename)))
                     do {
                         try await entryFileOpsClient.renameFile(sourceURL, destURL)
+                        await send(.lifecycle(.pathsMutated([oldPath, newPath])))
                         await send(.lifecycle(.operationFinished(oldPath, .rename, .success(()))))
                         let record = EntryActionRecord(
                             operationKind: .rename,

@@ -129,7 +129,7 @@ extension EntryGridCoordinator {
 
         guard !paths.isEmpty else { return }
         pruneThumbnailSession(keeping: paths)
-        sendEntryOperations(.thumbnail(.requestThumbnails(paths: Array(paths))))
+        store.send(.entryThumbnail(.requestThumbnails(paths: Array(paths))))
         reloadItemsForUpdatedThumbnails(paths: refreshThumbnailProjection(paths: paths))
     }
 

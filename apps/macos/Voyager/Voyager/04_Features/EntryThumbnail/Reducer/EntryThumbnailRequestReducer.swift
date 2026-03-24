@@ -3,9 +3,9 @@ import ComposableArchitecture
 import Foundation
 
 @Reducer
-struct EntryThumbnailOperationsReducer {
-    typealias State = EntryOperationsState
-    typealias Action = EntryOperationsAction
+struct EntryThumbnailRequestReducer {
+    typealias State = EntryThumbnailState
+    typealias Action = EntryThumbnailAction
 
     @Dependency(\.thumbnailGeneratorClient)
     private var thumbnailGeneratorClient
@@ -15,11 +15,11 @@ struct EntryThumbnailOperationsReducer {
     var body: some Reducer<State, Action> {
         Reduce { state, action in
             switch action {
-            case let .thumbnail(.requestThumbnails(paths)):
+            case let .requestThumbnails(paths):
                 let candidatePaths = dedupe(paths).filter { path in
-                    !state.thumbnail.readyPaths.contains(path)
-                        && !state.thumbnail.requestsInFlight.contains(path)
-                        && !state.thumbnail.failedPaths.contains(path)
+                    !state.readyPaths.contains(path)
+                        && !state.requestsInFlight.contains(path)
+                        && !state.failedPaths.contains(path)
                 }
                 let requestedPaths = Array(candidatePaths.prefix(200))
                 guard !requestedPaths.isEmpty else { return .none }
@@ -33,34 +33,31 @@ struct EntryThumbnailOperationsReducer {
 
                 if !cachedPaths.isEmpty {
                     let cachedSet = Set(cachedPaths)
-                    state.thumbnail.readyPaths.formUnion(cachedSet)
-                    state.thumbnail.failedPaths.subtract(cachedSet)
-                    state.thumbnail.requestsInFlight.subtract(cachedSet)
-                    state.thumbnail.renderVersion += 1
+                    state.readyPaths.formUnion(cachedSet)
+                    state.failedPaths.subtract(cachedSet)
+                    state.requestsInFlight.subtract(cachedSet)
+                    state.renderVersion += 1
                 }
 
                 guard !generatedPaths.isEmpty else { return .none }
-                state.thumbnail.requestsInFlight.formUnion(generatedPaths)
+                state.requestsInFlight.formUnion(generatedPaths)
                 return requestThumbnailsEffect(for: generatedPaths)
 
-            case let .thumbnail(.thumbnailsReady(paths)):
+            case let .thumbnailsReady(paths):
                 let pathSet = Set(paths)
                 guard !pathSet.isEmpty else { return .none }
-                state.thumbnail.readyPaths.formUnion(pathSet)
-                state.thumbnail.requestsInFlight.subtract(pathSet)
-                state.thumbnail.failedPaths.subtract(pathSet)
-                state.thumbnail.renderVersion += 1
+                state.readyPaths.formUnion(pathSet)
+                state.requestsInFlight.subtract(pathSet)
+                state.failedPaths.subtract(pathSet)
+                state.renderVersion += 1
                 return .none
 
-            case let .thumbnail(.thumbnailRequestFailed(paths)):
+            case let .thumbnailRequestFailed(paths):
                 let pathSet = Set(paths)
                 guard !pathSet.isEmpty else { return .none }
-                state.thumbnail.failedPaths.formUnion(pathSet)
-                state.thumbnail.requestsInFlight.subtract(pathSet)
-                state.thumbnail.renderVersion += 1
-                return .none
-
-            default:
+                state.failedPaths.formUnion(pathSet)
+                state.requestsInFlight.subtract(pathSet)
+                state.renderVersion += 1
                 return .none
             }
         }
@@ -111,11 +108,11 @@ struct EntryThumbnailOperationsReducer {
                     }
 
                     if readyBatch.count >= batchSize {
-                        await send(.thumbnail(.thumbnailsReady(paths: readyBatch)))
+                        await send(.thumbnailsReady(paths: readyBatch))
                         readyBatch.removeAll(keepingCapacity: true)
                     }
                     if failedBatch.count >= batchSize {
-                        await send(.thumbnail(.thumbnailRequestFailed(paths: failedBatch)))
+                        await send(.thumbnailRequestFailed(paths: failedBatch))
                         failedBatch.removeAll(keepingCapacity: true)
                     }
 
@@ -126,10 +123,10 @@ struct EntryThumbnailOperationsReducer {
             }
 
             if !readyBatch.isEmpty {
-                await send(.thumbnail(.thumbnailsReady(paths: readyBatch)))
+                await send(.thumbnailsReady(paths: readyBatch))
             }
             if !failedBatch.isEmpty {
-                await send(.thumbnail(.thumbnailRequestFailed(paths: failedBatch)))
+                await send(.thumbnailRequestFailed(paths: failedBatch))
             }
         }
     }

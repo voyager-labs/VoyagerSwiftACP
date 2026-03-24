@@ -95,6 +95,7 @@ enum EntryOperationsExecutionSupport {
         paths: [String],
         kind: OperationKind,
         operation: @escaping @Sendable (URL) async throws -> Void,
+        pathsMutated: (@Sendable (URL) -> [String])? = nil,
         onComplete: (@Sendable () async -> Void)? = nil,
     ) -> Effect<EntryOperationsAction> {
         .run { send in
@@ -106,6 +107,9 @@ enum EntryOperationsExecutionSupport {
                         do {
                             let url = URL(fileURLWithPath: path)
                             try await operation(url)
+                            if let pathsMutated {
+                                await send(.lifecycle(.pathsMutated(pathsMutated(url))))
+                            }
                             await send(.lifecycle(.operationFinished(path, kind, .success(()))))
                         } catch {
                             await send(.lifecycle(.operationFinished(
@@ -141,6 +145,8 @@ enum EntryOperationsExecutionSupport {
                             let target = try await operation(url)
                             if let target {
                                 await accumulator.append(target)
+                                await send(.lifecycle(.pathsMutated([target.beforePath, target.afterPath]
+                                        .compactMap(\.self))))
                             }
                             await send(.lifecycle(.operationFinished(path, kind, .success(()))))
                         } catch {

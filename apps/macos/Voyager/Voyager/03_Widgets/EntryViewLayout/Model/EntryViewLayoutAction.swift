@@ -9,6 +9,7 @@ enum EntryViewLayoutAction: ViewAction, CasePathable, Sendable {
     case `internal`(Internal)
 
     case entryOperations(EntryOperationsFeature.Action)
+    case entryThumbnail(EntryThumbnailFeature.Action)
     case entryArrangements(EntryArrangementsFeature.Action)
 
     struct EntryViewLayoutPreferences: Sendable {

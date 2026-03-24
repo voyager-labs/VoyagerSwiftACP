@@ -11,6 +11,8 @@ struct EntryOperationsLifecycleReducer {
     var entryOpenClient
     @Dependency(\.entryOperationsAlertClient)
     var alertClient
+    @Dependency(\.entryThumbnailCacheClient)
+    var entryThumbnailCacheClient
 
     var body: some Reducer<State, Action> {
         Reduce { state, action in
@@ -60,6 +62,15 @@ struct EntryOperationsLifecycleReducer {
                 }
 
                 return .none
+
+            case let .lifecycle(.pathsMutated(paths)):
+                let uniquePaths = Array(Set(paths))
+                guard !uniquePaths.isEmpty else { return .none }
+                return .run { [entryThumbnailCacheClient] _ in
+                    await MainActor.run {
+                        entryThumbnailCacheClient.removeThumbnails(for: uniquePaths)
+                    }
+                }
 
             case .lifecycle(.entryActionCompleted):
                 return .none

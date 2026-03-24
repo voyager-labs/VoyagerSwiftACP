@@ -38,6 +38,6 @@ struct EntryGridRenderSnapshot: Equatable {
         shouldScrollToSelection = state.shouldScrollToSelection
         isDropTargeted = state.isDropTargeted
         currentPath = state.currentPath
-        thumbnailRenderVersion = state.entryOperations.thumbnail.renderVersion
+        thumbnailRenderVersion = state.entryThumbnail.renderVersion
     }
 }

@@ -11,6 +11,10 @@ struct EntryViewLayoutFeature {
             EntryOperationsFeature()
         }
 
+        Scope(state: \.entryThumbnail, action: \.entryThumbnail) {
+            EntryThumbnailFeature()
+        }
+
         Scope(state: \.entryArrangements, action: \.entryArrangements) {
             EntryArrangementsFeature()
         }
@@ -164,6 +168,9 @@ struct EntryViewLayoutFeature {
                 return .none
 
             case .delegate:
+                return .none
+
+            case .entryThumbnail:
                 return .none
 
             case let .entryOperations(entryOperationsAction):

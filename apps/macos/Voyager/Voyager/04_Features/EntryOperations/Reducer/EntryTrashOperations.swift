@@ -21,7 +21,7 @@ struct EntryTrashOperationsReducer {
                     paths: paths,
                     kind: .moveToTrash,
                     operationKind: .moveToTrash,
-                ) { url in
+                ) { [entryFileOpsClient, trashMetadataStoreClient] url in
                     let trashURL = try await entryFileOpsClient.moveToTrashAndReturnURL(url)
                     let result: NSURL? = trashURL as NSURL
 
@@ -54,9 +54,14 @@ struct EntryTrashOperationsReducer {
                 }
 
             case let .trash(.deleteImmediatelyConfirmed(paths)):
-                return EntryOperationsExecutionSupport.runParallel(paths: paths, kind: .deleteImmediately) { url in
-                    try await entryFileOpsClient.deleteImmediately(url)
-                }
+                return EntryOperationsExecutionSupport.runParallel(
+                    paths: paths,
+                    kind: .deleteImmediately,
+                    operation: { [entryFileOpsClient] url in
+                        try await entryFileOpsClient.deleteImmediately(url)
+                    },
+                    pathsMutated: { url in [url.path] },
+                )
 
             case let .trash(.emptyTrash(paths)):
                 let itemCount = paths.count
@@ -95,7 +100,7 @@ struct EntryTrashOperationsReducer {
                 )
 
             case let .trash(.putBackFromTrash(paths)):
-                return .run { [entryFileOpsClient] send in
+                return .run { [entryFileOpsClient, trashMetadataStoreClient, alertClient] send in
                     var targets: [EntryActionRecord.Target] = []
 
                     for path in paths {
@@ -118,6 +123,7 @@ struct EntryTrashOperationsReducer {
                                 URL(fileURLWithPath: path),
                                 originalPath,
                             )
+                            await send(.lifecycle(.pathsMutated([path, originalPath])))
                             await send(.lifecycle(.operationFinished(path, .putBack, .success(()))))
                             targets.append(.init(beforePath: path, afterPath: originalPath))
                         } catch let error as FileOpError where error.isFileExists {
@@ -142,6 +148,7 @@ struct EntryTrashOperationsReducer {
                                         URL(fileURLWithPath: path),
                                         originalPath,
                                     )
+                                    await send(.lifecycle(.pathsMutated([path, originalPath])))
                                     await send(.lifecycle(.operationFinished(path, .putBack, .success(()))))
                                     targets.append(.init(beforePath: path, afterPath: originalPath))
                                 } catch {

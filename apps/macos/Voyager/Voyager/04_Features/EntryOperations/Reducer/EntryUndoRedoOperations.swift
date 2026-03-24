@@ -205,6 +205,7 @@ struct EntryUndoRedoOperationsReducer { // swiftlint:disable:this type_body_leng
             await send(.lifecycle(.operationStarted(operation.operationPath, operation.operationKind)))
             do {
                 let updatedTarget = try await operation.perform()
+                await send(.lifecycle(.pathsMutated([target.beforePath, target.afterPath].compactMap(\.self))))
                 await send(.lifecycle(.operationFinished(
                     operation.operationPath,
                     operation.operationKind,
@@ -445,7 +446,9 @@ struct EntryUndoRedoOperationsReducer { // swiftlint:disable:this type_body_leng
                 operationPath: originalPath,
                 operationKind: OperationKind.moveToTrash,
                 perform: {
-                    let trashPath = try await moveItemToTrash(path: originalPath)
+                    let trashPath = try await moveItemToTrash(
+                        path: originalPath,
+                    )
                     return EntryActionRecord.Target(beforePath: originalPath, afterPath: trashPath)
                 },
             )
@@ -463,7 +466,9 @@ struct EntryUndoRedoOperationsReducer { // swiftlint:disable:this type_body_leng
                 operationPath: originalPath,
                 operationKind: OperationKind.moveToTrash,
                 perform: {
-                    let trashPath = try await moveItemToTrash(path: originalPath)
+                    let trashPath = try await moveItemToTrash(
+                        path: originalPath,
+                    )
                     return EntryActionRecord.Target(beforePath: trashPath, afterPath: originalPath)
                 },
             )
