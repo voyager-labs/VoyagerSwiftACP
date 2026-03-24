@@ -16,8 +16,6 @@ struct VoyagerApp: App {
 
     @MainActor
     init() {
-        NSWindow.allowsAutomaticWindowTabbing = false
-
         let fileManagerWindowClient = makeFileManagerWindowClientLive()
 
         appRootStore = Store(initialState: AppRootState()) {
