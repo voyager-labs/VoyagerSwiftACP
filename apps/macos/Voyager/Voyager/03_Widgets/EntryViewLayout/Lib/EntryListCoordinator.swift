@@ -120,6 +120,7 @@ struct EntryListCoordinatorRenderSnapshot: Equatable {
     let groupKey: GroupKey
     let groupedItems: [GroupedItems]
     let currentPath: String
+    let thumbnailRenderVersion: Int
     let selectedIds: Set<EntryModel.ID>
     let renamingItemId: EntryModel.ID?
     let sortKey: SortKey
@@ -134,6 +135,7 @@ struct EntryListCoordinatorRenderSnapshot: Equatable {
         groupKey = state.entryArrangements.groupKey
         groupedItems = state.entryArrangements.groupedItems
         currentPath = state.currentPath
+        thumbnailRenderVersion = state.entryOperations.thumbnail.renderVersion
         selectedIds = state.selectedIds
         renamingItemId = state.entryOperations.renamingItemId
         sortKey = state.entryArrangements.sortKey
@@ -224,15 +226,14 @@ final class EntryListCoordinator: NSObject {
     let visibleRowsPrefetchThrottler = MainThreadThrottler(intervalMs: 150, latest: true)
     let dateModifiedResizeDebouncer = MainThreadDebouncer(intervalMs: 150)
     var thumbnailImagesByPath: [String: NSImage] = [:]
-    var thumbnailTasksByPath: [String: Task<Void, Never>] = [:]
     @Dependency(\.entryOpenClient)
     var entryOpenClient
     @Dependency(\.entryFileOpsClient)
     var entryFileOpsClient
     @Dependency(\.workspaceClient)
     var workspaceClient
-    @Dependency(\.thumbnailGeneratorClient)
-    var thumbnailGeneratorClient
+    @Dependency(\.entryThumbnailCacheClient)
+    var entryThumbnailCacheClient
     @Dependency(\.finderFavoritesTagClient)
     var finderFavoritesTagClient
     @Dependency(\.notificationCenterClient)
@@ -339,53 +340,50 @@ final class EntryListCoordinator: NSObject {
             paths.insert(entry.fullPath)
         }
         guard !paths.isEmpty else { return }
-        requestThumbnails(paths: paths)
-    }
-
-    func requestThumbnails(paths: Set<String>) {
         pruneThumbnailSession(keeping: paths)
-        for path in paths where thumbnailImagesByPath[path] == nil && thumbnailTasksByPath[path] == nil {
-            let task = Task(priority: .utility) { [weak self] in
-                guard let self else { return }
-                let image = await self.generateThumbnail(for: path)
-                self.finishThumbnailRequest(path: path, image: image)
-            }
-            thumbnailTasksByPath[path] = task
-        }
-    }
-
-    func finishThumbnailRequest(path: String, image: NSImage?) {
-        guard thumbnailTasksByPath[path] != nil else { return }
-        thumbnailTasksByPath[path] = nil
-        guard let image else { return }
-        thumbnailImagesByPath[path] = image
-        refreshVisibleNameCellIcons(for: [path])
+        sendEntryOperations(.thumbnail(.requestThumbnails(paths: Array(paths))))
+        refreshVisibleNameCellIcons(for: refreshThumbnailProjection(paths: paths))
     }
 
     func pruneThumbnailSession(keeping paths: Set<String>) {
         thumbnailImagesByPath = thumbnailImagesByPath.filter { paths.contains($0.key) }
-        for (path, task) in thumbnailTasksByPath where !paths.contains(path) {
-            task.cancel()
-            thumbnailTasksByPath[path] = nil
-        }
     }
 
     func resetThumbnailSession() {
-        for task in thumbnailTasksByPath.values {
-            task.cancel()
-        }
-        thumbnailTasksByPath.removeAll(keepingCapacity: false)
         thumbnailImagesByPath.removeAll(keepingCapacity: false)
     }
 
-    func generateThumbnail(for path: String) async -> NSImage? {
-        let scale = await MainActor.run { NSScreen.main?.backingScaleFactor ?? 3.0 }
-        let size = CGSize(width: 256, height: 256)
-        return await thumbnailGeneratorClient.generateThumbnail(
-            for: URL(fileURLWithPath: path),
-            size: size,
-            scale: scale,
-        )
+    func refreshThumbnailProjection(paths: Set<String>) -> Set<String> {
+        var changedPaths: Set<String> = []
+
+        for path in paths {
+            let cachedImage = entryThumbnailCacheClient.getThumbnail(for: path)
+            if let cachedImage {
+                if thumbnailImagesByPath[path] == nil {
+                    changedPaths.insert(path)
+                }
+                thumbnailImagesByPath[path] = cachedImage
+            } else if thumbnailImagesByPath.removeValue(forKey: path) != nil {
+                changedPaths.insert(path)
+            }
+        }
+
+        return changedPaths
+    }
+
+    func refreshThumbnailProjectionForVisibleRows() {
+        guard tableView.numberOfRows > 0 else { return }
+        let visibleRange = tableView.rows(in: tableView.visibleRect)
+        guard visibleRange.length > 0 else { return }
+
+        var visiblePaths: Set<String> = []
+        for row in visibleRange.location ..< (visibleRange.location + visibleRange.length) {
+            guard let outlineItem = tableView.item(atRow: row) as? OutlineItem else { continue }
+            guard case let .entry(entry) = outlineItem.kind, !entry.isFolder else { continue }
+            visiblePaths.insert(entry.fullPath)
+        }
+
+        refreshVisibleNameCellIcons(for: refreshThumbnailProjection(paths: visiblePaths))
     }
 
     func saveScrollPosition() {

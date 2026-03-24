@@ -47,7 +47,6 @@ final class EntryGridCoordinator: NSObject {
     var lastRenderSnapshot: RenderSnapshot?
     let thumbnailPrefetchThrottler = MainThreadThrottler(intervalMs: 150, latest: true)
     var thumbnailImagesByPath: [String: NSImage] = [:]
-    var thumbnailTasksByPath: [String: Task<Void, Never>] = [:]
     @Dependency(\.entryOpenClient)
     var entryOpenClient
     @Dependency(\.entryLoadingClient)
@@ -56,8 +55,8 @@ final class EntryGridCoordinator: NSObject {
     var entryFileOpsClient
     @Dependency(\.workspaceClient)
     var workspaceClient
-    @Dependency(\.thumbnailGeneratorClient)
-    var thumbnailGeneratorClient
+    @Dependency(\.entryThumbnailCacheClient)
+    var entryThumbnailCacheClient
     @Dependency(\.finderFavoritesTagClient)
     var finderFavoritesTagClient
     @Dependency(\.notificationCenterClient)

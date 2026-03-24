@@ -7,6 +7,7 @@ struct EntryOperationsFeature {
 
     var body: some Reducer<State, Action> {
         CombineReducers {
+            EntryThumbnailOperationsReducer()
             EntryOperationsCommandRoutingReducer()
             EntryOperationsLoadingReducer()
             EntryOperationsMetricsReducer()

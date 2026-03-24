@@ -348,6 +348,7 @@ extension EntryListCoordinator {
         saveScrollPositionIfNeeded(previous: previous, snapshot: snapshot)
         scrollToSelectionIfNeeded(previous: previous, snapshot: snapshot)
         updateDropTargetBorderIfNeeded(previous: previous, snapshot: snapshot)
+        syncThumbnailProjectionIfNeeded(previous: previous, snapshot: snapshot)
     }
 
     func handleVisibleColumnsChange(previous: RenderSnapshot, snapshot: RenderSnapshot) {
@@ -399,6 +400,11 @@ extension EntryListCoordinator {
     func updateDropTargetBorderIfNeeded(previous: RenderSnapshot, snapshot: RenderSnapshot) {
         if previous.isDropTargeted != snapshot
             .isDropTargeted { updateDropTargetBorder(isTargeted: snapshot.isDropTargeted) }
+    }
+
+    func syncThumbnailProjectionIfNeeded(previous: RenderSnapshot, snapshot: RenderSnapshot) {
+        guard previous.thumbnailRenderVersion != snapshot.thumbnailRenderVersion else { return }
+        refreshThumbnailProjectionForVisibleRows()
     }
 
     func syncListSortIndicators(sortKey: SortKey, sortOrder: SortOrder) {

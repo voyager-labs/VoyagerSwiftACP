@@ -17,10 +17,6 @@ struct FileManagerContentFeature {
     private var collectionAlertClient
     @Dependency(\.fileManagerClient)
     private var fileManagerClient
-    @Dependency(\.thumbnailGeneratorClient)
-    private var thumbnailGeneratorClient
-    @Dependency(\.entryThumbnailCacheClient)
-    private var entryThumbnailCacheClient
     @Dependency(\.notificationCenterClient)
     private var notificationCenterClient
 
@@ -48,8 +44,6 @@ struct FileManagerContentFeature {
                 effect = appearanceEffect
             } else if let bridgeEffect = handleEntryOperationsBridgeAction(action, state: &state) {
                 effect = bridgeEffect
-            } else if let thumbnailEffect = handleEntryThumbnailAction(action, state: &state) {
-                effect = thumbnailEffect
             } else if let composerEffect = handleComposerAction(action, state: &state) {
                 effect = composerEffect
             } else if let collectionDraftEffect = handleCollectionDraftAction(action, state: &state) {
@@ -190,24 +184,6 @@ struct FileManagerContentFeature {
         case .collection:
             .none
         }
-    }
-
-    private func handleEntryThumbnailAction(
-        _ action: Action,
-        state: inout State,
-    ) -> Effect<Action>? {
-        guard case let .entryOperations(entryOpsAction) = action else {
-            return nil
-        }
-
-        return FileManagerContentThumbnailCoordinator.reduce(
-            entryOpsAction,
-            state: &state,
-            dependencies: .init(
-                thumbnailGeneratorClient: thumbnailGeneratorClient,
-                entryThumbnailCacheClient: entryThumbnailCacheClient,
-            ),
-        )
     }
 
     private func handleComposerAction(

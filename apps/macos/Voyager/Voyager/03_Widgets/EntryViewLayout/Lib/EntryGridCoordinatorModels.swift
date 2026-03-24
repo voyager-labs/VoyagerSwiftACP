@@ -22,6 +22,7 @@ struct EntryGridRenderSnapshot: Equatable {
     let shouldScrollToSelection: Bool
     let isDropTargeted: Bool
     let currentPath: String
+    let thumbnailRenderVersion: Int
 
     init(state: EntryViewLayoutState) {
         entries = state.entries
@@ -37,5 +38,6 @@ struct EntryGridRenderSnapshot: Equatable {
         shouldScrollToSelection = state.shouldScrollToSelection
         isDropTargeted = state.isDropTargeted
         currentPath = state.currentPath
+        thumbnailRenderVersion = state.entryOperations.thumbnail.renderVersion
     }
 }

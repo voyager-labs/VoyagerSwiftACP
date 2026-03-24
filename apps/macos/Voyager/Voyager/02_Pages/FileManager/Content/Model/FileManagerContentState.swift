@@ -5,19 +5,11 @@ import VoyagerShared
 
 @ObservableState
 struct FileManagerContentState: Equatable {
-    struct EntryThumbnailState: Equatable {
-        var thumbnailRequestsInFlight: Set<String> = []
-        var thumbnailRenderVersion: Int = 0
-        var thumbnailsReady: Set<String> = []
-        var thumbnailRequestsFailed: Set<String> = []
-    }
-
     var navigation: ContentPageNavigationFeature.State = .init()
     var entryViewLayout: EntryViewLayoutFeature.State = .init()
     var entryArrangements: EntryArrangementsFeature.State = .init()
     var entryOperations: EntryOperationsFeature.State = .init()
     var composer: ComposerFeature.State = .init()
-    var entryThumbnails: FileManagerContentState.EntryThumbnailState = EntryThumbnailState()
 
     var listIconSize: CGFloat = AppearanceSettingsDefaults.listIconSize
     var gridIconSize: CGFloat = AppearanceSettingsDefaults.gridIconSize

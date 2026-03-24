@@ -35,6 +35,7 @@ extension EntryGridCoordinator {
         saveScrollPositionIfNeeded(previous: previous, snapshot: snapshot)
         scrollToSelectionIfNeeded(previous: previous, snapshot: snapshot)
         updateDropTargetBorderIfNeeded(previous: previous, snapshot: snapshot)
+        syncThumbnailProjectionIfNeeded(previous: previous, snapshot: snapshot)
         resetThumbnailSessionIfNeeded(previous: previous, snapshot: snapshot)
         restoreScrollOffsetIfNeeded(previous: previous, snapshot: snapshot)
     }
@@ -77,6 +78,11 @@ extension EntryGridCoordinator {
         if previous.currentPath != snapshot.currentPath { resetThumbnailSession()
             hasRestoredScrollPosition = false
         }
+    }
+
+    func syncThumbnailProjectionIfNeeded(previous: RenderSnapshot, snapshot: RenderSnapshot) {
+        guard previous.thumbnailRenderVersion != snapshot.thumbnailRenderVersion else { return }
+        refreshThumbnailProjectionForVisibleArea()
     }
 
     func restoreScrollOffsetIfNeeded(previous: RenderSnapshot, snapshot: RenderSnapshot) {
@@ -122,7 +128,9 @@ extension EntryGridCoordinator {
         }
 
         guard !paths.isEmpty else { return }
-        requestThumbnails(paths: paths)
+        pruneThumbnailSession(keeping: paths)
+        sendEntryOperations(.thumbnail(.requestThumbnails(paths: Array(paths))))
+        reloadItemsForUpdatedThumbnails(paths: refreshThumbnailProjection(paths: paths))
     }
 
     func reloadItemsForUpdatedThumbnails(paths: Set<String>) {
@@ -136,49 +144,50 @@ extension EntryGridCoordinator {
         collectionView.reloadItems(at: indexPaths)
     }
 
-    func requestThumbnails(paths: Set<String>) {
-        pruneThumbnailSession(keeping: paths)
-        for path in paths where thumbnailImagesByPath[path] == nil && thumbnailTasksByPath[path] == nil {
-            let task = Task(priority: .utility) { [weak self] in
-                guard let self else { return }
-                let image = await self.generateThumbnail(for: path)
-                await MainActor.run { [weak self] in
-                    guard let self else { return }
-                    guard self.thumbnailTasksByPath[path] != nil else { return }
-                    self.thumbnailTasksByPath[path] = nil
-                    guard let image else { return }
-                    self.thumbnailImagesByPath[path] = image
-                    self.reloadItemsForUpdatedThumbnails(paths: [path])
-                }
-            }
-            thumbnailTasksByPath[path] = task
-        }
-    }
-
     func pruneThumbnailSession(keeping paths: Set<String>) {
         thumbnailImagesByPath = thumbnailImagesByPath.filter { paths.contains($0.key) }
-        for (path, task) in thumbnailTasksByPath where !paths.contains(path) {
-            task.cancel()
-            thumbnailTasksByPath[path] = nil
-        }
     }
 
     func resetThumbnailSession() {
-        for task in thumbnailTasksByPath.values {
-            task.cancel()
-        }
-        thumbnailTasksByPath.removeAll(keepingCapacity: false)
         thumbnailImagesByPath.removeAll(keepingCapacity: false)
     }
 
-    func generateThumbnail(for path: String) async -> NSImage? {
-        let scale = await MainActor.run { NSScreen.main?.backingScaleFactor ?? 3.0 }
-        let size = CGSize(width: 256, height: 256)
-        return await thumbnailGeneratorClient.generateThumbnail(
-            for: URL(fileURLWithPath: path),
-            size: size,
-            scale: scale,
-        )
+    func refreshThumbnailProjection(paths: Set<String>) -> Set<String> {
+        var changedPaths: Set<String> = []
+
+        for path in paths {
+            let cachedImage = entryThumbnailCacheClient.getThumbnail(for: path)
+            if let cachedImage {
+                if thumbnailImagesByPath[path] == nil {
+                    changedPaths.insert(path)
+                }
+                thumbnailImagesByPath[path] = cachedImage
+            } else if thumbnailImagesByPath.removeValue(forKey: path) != nil {
+                changedPaths.insert(path)
+            }
+        }
+
+        return changedPaths
+    }
+
+    func refreshThumbnailProjectionForVisibleArea() {
+        guard let layout = collectionView.collectionViewLayout else { return }
+        let visibleRect = collectionView.visibleRect
+        guard visibleRect.height > 0 else { return }
+
+        let indexPaths: [IndexPath] = layout.layoutAttributesForElements(in: visibleRect).compactMap { attr in
+            guard attr.representedElementCategory == .item else { return nil }
+            return attr.indexPath
+        }
+        guard !indexPaths.isEmpty else { return }
+
+        var visiblePaths: Set<String> = []
+        for indexPath in indexPaths {
+            guard let entry = entry(at: indexPath), !entry.isFolder else { continue }
+            visiblePaths.insert(entry.fullPath)
+        }
+
+        reloadItemsForUpdatedThumbnails(paths: refreshThumbnailProjection(paths: visiblePaths))
     }
 }
 
