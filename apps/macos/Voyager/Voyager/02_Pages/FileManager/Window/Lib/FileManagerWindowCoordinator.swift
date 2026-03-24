@@ -19,7 +19,6 @@ final class FileManagerWindowCoordinator: NSWindowController, NSWindowDelegate {
         store: StoreOf<FileManagerFeature>,
         windowUndoManager: UndoManager,
         path: String? = nil,
-        tabbingMode: NSWindow.TabbingMode = .disallowed,
         onBecameKey: (@MainActor (UUID) -> Void)? = nil,
         onResignedKey: (@MainActor (UUID) -> Void)? = nil,
         onWillClose: (@MainActor (UUID) -> Void)? = nil,
@@ -37,7 +36,6 @@ final class FileManagerWindowCoordinator: NSWindowController, NSWindowDelegate {
         let window = Self.makeWindow(
             store: store,
             path: path,
-            tabbingMode: tabbingMode,
             makeContentViewController: makeContentViewController,
             initialWindowSizeProvider: initialWindowSizeProvider,
         )
@@ -51,7 +49,6 @@ final class FileManagerWindowCoordinator: NSWindowController, NSWindowDelegate {
         registryClient: RegistryClient,
         path: String? = nil,
         duplicateState: FileManagerFeature.State? = nil,
-        tabbingMode: NSWindow.TabbingMode = .disallowed,
         onBecameKey: (@MainActor (UUID) -> Void)? = nil,
         onResignedKey: (@MainActor (UUID) -> Void)? = nil,
         onWillClose: (@MainActor (UUID) -> Void)? = nil,
@@ -78,7 +75,6 @@ final class FileManagerWindowCoordinator: NSWindowController, NSWindowDelegate {
         let window = Self.makeWindow(
             store: store,
             path: path,
-            tabbingMode: tabbingMode,
             makeContentViewController: makeContentViewController,
             initialWindowSizeProvider: initialWindowSizeProvider,
         )
@@ -132,7 +128,6 @@ final class FileManagerWindowCoordinator: NSWindowController, NSWindowDelegate {
     private static func makeWindow(
         store: StoreOf<FileManagerFeature>,
         path: String?,
-        tabbingMode: NSWindow.TabbingMode,
         makeContentViewController: ((StoreOf<FileManagerFeature>, String?) -> NSViewController)?,
         initialWindowSizeProvider: (() -> NSSize?)?,
     ) -> NSWindow {
@@ -146,7 +141,7 @@ final class FileManagerWindowCoordinator: NSWindowController, NSWindowDelegate {
         }
 
         let window = NSWindow(contentViewController: contentViewController)
-        configureWindowStyle(window, tabbingMode: tabbingMode)
+        configureWindowStyle(window)
         applyInitialFrame(window, initialWindowSizeProvider: initialWindowSizeProvider)
         return window
     }
@@ -157,7 +152,7 @@ final class FileManagerWindowCoordinator: NSWindowController, NSWindowDelegate {
         return best == .darkAqua
     }
 
-    static func configureWindowStyle(_ window: NSWindow, tabbingMode: NSWindow.TabbingMode) {
+    static func configureWindowStyle(_ window: NSWindow) {
         window.styleMask = [.titled, .closable, .miniaturizable, .resizable, .fullSizeContentView]
         window.minSize = NSSize(width: 600, height: 350)
 
@@ -171,7 +166,7 @@ final class FileManagerWindowCoordinator: NSWindowController, NSWindowDelegate {
         window.isOpaque = false
         window.backgroundColor = .clear
         window.tabbingIdentifier = "file-manager"
-        window.tabbingMode = tabbingMode
+        window.tabbingMode = .preferred
     }
 
     private static func applyInitialFrame(

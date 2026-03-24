@@ -16,6 +16,8 @@ struct VoyagerApp: App {
 
     @MainActor
     init() {
+        NSWindow.allowsAutomaticWindowTabbing = false
+
         let fileManagerWindowClient = makeFileManagerWindowClientLive()
 
         appRootStore = Store(initialState: AppRootState()) {
@@ -62,7 +64,10 @@ struct VoyagerApp: App {
             },
         )
         appDelegate.configure(appRootStore: appRootStore)
+        configureLogging()
+    }
 
+    private func configureLogging() {
         LoggingSystem.bootstrap { label in
             let oslogHandler = VoyagerOSLogHandler(label: label)
             #if DEBUG
