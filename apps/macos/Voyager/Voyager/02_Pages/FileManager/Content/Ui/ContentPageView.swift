@@ -9,12 +9,12 @@ struct ContentPageView: View {
 
     private var mainContent: some View {
         ZStack {
-            entryContainerView
+            entryView
             keyCommandOverlay
         }
     }
 
-    @ViewBuilder private var entryContainerView: some View {
+    @ViewBuilder private var entryView: some View {
         if store.composer.isCollectionSearching {
             loadingView
         } else {
