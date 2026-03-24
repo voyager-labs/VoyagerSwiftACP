@@ -240,7 +240,9 @@ final class EntryListCoordinator: NSObject {
     var finderFavoritesTagClient
     @Dependency(\.notificationCenterClient)
     var notificationCenterClient
-    init(store: StoreOf<EntryViewLayoutFeature>) { self.store = store; super.init() }
+    init(store: StoreOf<EntryViewLayoutFeature>) { self.store = store
+        super.init()
+    }
 
     func bind(to view: EntryListView) {
         self.view = view

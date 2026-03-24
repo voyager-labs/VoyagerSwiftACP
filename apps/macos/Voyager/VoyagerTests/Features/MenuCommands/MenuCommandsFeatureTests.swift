@@ -104,7 +104,7 @@ final class MenuCommandsFeatureTests: XCTestCase {
 
     private func assertAppCommand(
         _ command: MenuCommandItem.AppCommand,
-        routesTo expected: WindowManagerAction
+        routesTo expected: WindowManagerAction,
     ) async {
         let store = TestStore(initialState: MenuCommandsFeature.State()) {
             MenuCommandsFeature()
@@ -126,7 +126,7 @@ final class MenuCommandsFeatureTests: XCTestCase {
 
     private func assertEditCommand(
         _ command: MenuCommandItem.EditCommand,
-        routesTo expected: WindowManagerAction
+        routesTo expected: WindowManagerAction,
     ) async {
         let store = TestStore(initialState: MenuCommandsFeature.State()) {
             MenuCommandsFeature()

@@ -76,7 +76,8 @@ extension EntryGridCoordinator {
     }
 
     func updateDropTargetBorderIfNeeded(previous: RenderSnapshot, snapshot: RenderSnapshot) {
-        if previous.isDropTargeted != snapshot.isDropTargeted { updateDropTargetBorder(isTargeted: snapshot.isDropTargeted) }
+        if previous.isDropTargeted != snapshot
+            .isDropTargeted { updateDropTargetBorder(isTargeted: snapshot.isDropTargeted) }
     }
 
     func resetThumbnailSessionIfNeeded(previous: RenderSnapshot, snapshot: RenderSnapshot) {
