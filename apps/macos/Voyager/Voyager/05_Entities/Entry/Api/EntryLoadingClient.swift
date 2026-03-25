@@ -375,205 +375,57 @@ enum EntryLoadingLive {
     }
 
     nonisolated static var loadRecentItems: @Sendable (Bool, WorkspaceClient) async -> [EntryModel] {
-        { showHidden, workspaceClient in
-            await EntryMetadataSearchLive.loadRecentItems(
-                showHidden: showHidden,
-                workspaceClient: workspaceClient,
-                fileExistsAtPath: fileExistsAtPath,
-            )
+        { showHidden, _ in
+            await loadRecentItemsViaSearch(showHidden: showHidden, searchClient: SearchClient.liveValue)
         }
     }
 
     nonisolated static var loadFilesWithTag: @Sendable (String, Bool, WorkspaceClient) async -> [EntryModel] {
-        { tag, showHidden, workspaceClient in
-            await EntryMetadataSearchLive.loadFilesWithTag(
-                tag: tag,
-                showHidden: showHidden,
-                workspaceClient: workspaceClient,
-                fileExistsAtPath: fileExistsAtPath,
-            )
+        { tag, showHidden, _ in
+            await loadFilesWithTagViaSearch(tag: tag, showHidden: showHidden, searchClient: SearchClient.liveValue)
         }
     }
-}
 
-private final class MetadataQueryCompletionState: @unchecked Sendable {
-    private let lock = NSLock()
-    private nonisolated(unsafe) var hasCompleted = false
-
-    nonisolated func setCompleted() -> Bool {
-        lock.lock()
-        defer { lock.unlock() }
-        if hasCompleted {
-            return false
-        }
-        hasCompleted = true
-        return true
-    }
-}
-
-private final class MetadataQueryWrapper: @unchecked Sendable {
-    nonisolated(unsafe) let query: NSMetadataQuery
-
-    init(_ query: NSMetadataQuery) {
-        self.query = query
-    }
-}
-
-private final class MetadataObserverWrapper: @unchecked Sendable {
-    private let lock = NSLock()
-    private nonisolated(unsafe) var observer: NSObjectProtocol?
-    private let notificationCenterClient: NotificationCenterClient
-
-    init(_ observer: NSObjectProtocol?, notificationCenterClient: NotificationCenterClient) {
-        self.observer = observer
-        self.notificationCenterClient = notificationCenterClient
-    }
-
-    nonisolated func setObserver(_ observer: NSObjectProtocol?) {
-        lock.lock()
-        defer { lock.unlock() }
-        if let oldObserver = self.observer {
-            notificationCenterClient.removeObserver(oldObserver)
-        }
-        self.observer = observer
-    }
-
-    nonisolated func remove() {
-        lock.lock()
-        defer { lock.unlock() }
-        if let observer {
-            notificationCenterClient.removeObserver(observer)
-            self.observer = nil
-        }
-    }
-}
-
-enum EntryMetadataSearchLive {
-    nonisolated static func loadRecentItems(
+    nonisolated static func loadRecentItemsViaSearch(
         showHidden: Bool,
-        workspaceClient: WorkspaceClient,
-        fileExistsAtPath: @escaping @Sendable (String, UnsafeMutablePointer<ObjCBool>?) -> Bool,
+        searchClient: SearchClient,
     ) async -> [EntryModel] {
-        let entryLoadingClient = EntryLoadingClient.liveValue
-        let notificationCenterClient = NotificationCenterClient.liveValue
-        let predicate = NSPredicate(format: "kMDItemLastUsedDate > %@", Date.distantPast as NSDate)
-        let sortDescriptors = [NSSortDescriptor(key: "kMDItemLastUsedDate", ascending: false)]
-
-        let recentFiles = await searchFiles(
-            predicate: predicate,
-            fileExistsAtPath: fileExistsAtPath,
-            notificationCenterClient: notificationCenterClient,
-            sortDescriptors: sortDescriptors,
-            filterFiles: true,
-        )
-
-        let items = recentFiles.compactMap { url in
-            EntryModelConverterLive.convertURLToEntry(
-                url,
-                entryLoadingClient: entryLoadingClient,
-                workspaceClient: workspaceClient,
+        do {
+            let response = try await searchClient.recentSearch(
+                .init(
+                    scopeMode: .allIndexed,
+                    scopes: [],
+                    resultCap: 100,
+                    includeHidden: showHidden,
+                    sort: .lastUsedDateDescending,
+                ),
             )
+            return response.items.map(EntryModelPayloadAdapter.makeEntry)
+        } catch {
+            return []
         }
-        return showHidden ? items : items.filter { !$0.isHidden }
     }
 
-    nonisolated static func loadFilesWithTag(
+    nonisolated static func loadFilesWithTagViaSearch(
         tag: String,
         showHidden: Bool,
-        workspaceClient: WorkspaceClient,
-        fileExistsAtPath: @escaping @Sendable (String, UnsafeMutablePointer<ObjCBool>?) -> Bool,
+        searchClient: SearchClient,
     ) async -> [EntryModel] {
-        let entryLoadingClient = EntryLoadingClient.liveValue
-        let notificationCenterClient = NotificationCenterClient.liveValue
-        let predicate = NSPredicate(format: "kMDItemUserTags CONTAINS %@", tag)
-        let sortDescriptors = [NSSortDescriptor(key: "kMDItemLastUsedDate", ascending: false)]
-
-        let taggedFiles = await searchFiles(
-            predicate: predicate,
-            fileExistsAtPath: fileExistsAtPath,
-            notificationCenterClient: notificationCenterClient,
-            sortDescriptors: sortDescriptors,
-        )
-
-        let items: [EntryModel] = taggedFiles.compactMap { url in
-            guard let item = EntryModelConverterLive.convertURLToEntry(
-                url,
-                entryLoadingClient: entryLoadingClient,
-                workspaceClient: workspaceClient,
-            ) else {
-                return nil
-            }
-
-            let hasTags = item.facets.tags?.contains(where: { $0.name == tag }) ?? false
-            return hasTags ? item : nil
-        }
-        return showHidden ? items : items.filter { !$0.isHidden }
-    }
-
-    @MainActor
-    private static func searchFiles(
-        predicate: NSPredicate,
-        fileExistsAtPath: @escaping @Sendable (String, UnsafeMutablePointer<ObjCBool>?) -> Bool,
-        notificationCenterClient: NotificationCenterClient,
-        sortDescriptors: [NSSortDescriptor] = [],
-        timeout: TimeInterval = 5,
-        filterFiles: Bool = false,
-    ) async -> [URL] {
-        await withCheckedContinuation { continuation in
-            DispatchQueue.main.async {
-                let query = NSMetadataQuery()
-                query.searchScopes = []
-                query.predicate = predicate
-                query.sortDescriptors = sortDescriptors
-
-                let completionState = MetadataQueryCompletionState()
-                let queryWrapper = MetadataQueryWrapper(query)
-                let observerWrapper = MetadataObserverWrapper(nil, notificationCenterClient: notificationCenterClient)
-
-                let observer = notificationCenterClient.addObserver(
-                    .NSMetadataQueryDidFinishGathering,
-                    queryWrapper.query,
-                ) { _ in
-                    let capturedQuery = queryWrapper.query
-                    Task { @MainActor in
-                        guard completionState.setCompleted() else { return }
-                        capturedQuery.stop()
-
-                        let urls: [URL] = Array(capturedQuery.results
-                            .compactMap { $0 as? NSMetadataItem }
-                            .compactMap { item -> URL? in
-                                guard let path = item.value(forAttribute: "kMDItemPath") as? String
-                                else { return nil }
-
-                                if filterFiles {
-                                    var isDirectory: ObjCBool = false
-                                    if fileExistsAtPath(path, &isDirectory), isDirectory.boolValue {
-                                        return nil
-                                    }
-                                }
-
-                                return URL(fileURLWithPath: path)
-                            }
-                            .prefix(100))
-
-                        continuation.resume(returning: urls)
-                        observerWrapper.remove()
-                    }
-                }
-
-                observerWrapper.setObserver(observer)
-                query.start()
-
-                DispatchQueue.main.asyncAfter(deadline: .now() + timeout) {
-                    let capturedQuery = queryWrapper.query
-                    Task { @MainActor in
-                        guard completionState.setCompleted() else { return }
-                        capturedQuery.stop()
-                        continuation.resume(returning: [])
-                        observerWrapper.remove()
-                    }
-                }
-            }
+        do {
+            let response = try await searchClient.tagSearch(
+                .init(
+                    requestedTag: tag,
+                    scopeMode: .allIndexed,
+                    scopes: [],
+                    resultCap: 100,
+                    includeHidden: showHidden,
+                    sort: .lastUsedDateDescending,
+                    exactTagVerification: true,
+                ),
+            )
+            return response.items.map(EntryModelPayloadAdapter.makeEntry)
+        } catch {
+            return []
         }
     }
 }
@@ -686,5 +538,45 @@ enum EntryModelConverterLive {
         }
 
         return nil
+    }
+}
+
+private enum EntryModelPayloadAdapter {
+    nonisolated static func makeEntry(_ payload: SearchEntryPayload) -> EntryModel {
+        EntryModel(
+            name: payload.name,
+            fullPath: payload.fullPath,
+            isFolder: payload.isFolder,
+            isHidden: payload.isHidden,
+            size: payload.size,
+            modifiedDate: payload.modifiedDate,
+            fileExtension: payload.fileExtension,
+            facets: EntryFacets(
+                createdDate: payload.createdDate,
+                addedDate: payload.addedDate,
+                lastOpenedDate: payload.lastOpenedDate,
+                kind: payload.kind,
+                creatorApplication: payload.creatorApplication,
+                tags: payload.tags?.map { Tag(name: $0.name, colorCode: $0.colorCode) },
+                supplementaryMetadata: makeSupplementaryMetadata(payload.supplementaryMetadata),
+            ),
+        )
+    }
+
+    private nonisolated static func makeSupplementaryMetadata(
+        _ payload: SearchEntrySupplementaryMetadataPayload?,
+    ) -> EntrySupplementaryMetadata? {
+        guard let payload else {
+            return nil
+        }
+
+        switch payload {
+        case let .folderItemCount(itemCount):
+            return .folderItemCount(itemCount)
+        case let .imageResolution(width, height):
+            return .imageResolution(width: width, height: height)
+        case let .compressedFileSize(fileSize):
+            return .compressedFileSize(fileSize)
+        }
     }
 }
