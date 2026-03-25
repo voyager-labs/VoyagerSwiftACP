@@ -4,7 +4,7 @@ import Foundation
 @testable import Voyager
 
 enum RegistryTestSupport {
-    private static let registrySnapshot = RegistrySnapshot.load()
+    private nonisolated(unsafe) static let registrySnapshot = RegistrySnapshot.load()
 
     private static let registryLabels: [String: String] = [
         "name_full": "Name",
@@ -14,7 +14,8 @@ enum RegistryTestSupport {
         "total_bit_rate": "Total bit rate",
     ]
 
-    private static let registryUnitSpecs: [String: SystemPropertyUnitSpec] = registrySnapshot.propertyKeyToUnitSpec
+    private nonisolated(unsafe) static let registryUnitSpecs: [String: SystemPropertyUnitSpec] = registrySnapshot
+        .propertyKeyToUnitSpec
 
     private static let registryOperatorDefinition = OperatorDefinition(
         uiLabel: "Equals",
