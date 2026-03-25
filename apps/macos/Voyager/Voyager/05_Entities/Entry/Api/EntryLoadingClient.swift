@@ -376,22 +376,26 @@ enum EntryLoadingLive {
 
     nonisolated static var loadRecentItems: @Sendable (Bool, WorkspaceClient) async -> [EntryModel] {
         { showHidden, _ in
-            await loadRecentItemsViaSearch(showHidden: showHidden, searchClient: SearchClient.liveValue)
+            await loadRecentItemsViaSearch(showHidden: showHidden, recentSearchClient: RecentSearchClient.liveValue)
         }
     }
 
     nonisolated static var loadFilesWithTag: @Sendable (String, Bool, WorkspaceClient) async -> [EntryModel] {
         { tag, showHidden, _ in
-            await loadFilesWithTagViaSearch(tag: tag, showHidden: showHidden, searchClient: SearchClient.liveValue)
+            await loadFilesWithTagViaSearch(
+                tag: tag,
+                showHidden: showHidden,
+                tagSearchClient: TagSearchClient.liveValue,
+            )
         }
     }
 
     nonisolated static func loadRecentItemsViaSearch(
         showHidden: Bool,
-        searchClient: SearchClient,
+        recentSearchClient: RecentSearchClient,
     ) async -> [EntryModel] {
         do {
-            let response = try await searchClient.recentSearch(
+            let response = try await recentSearchClient.search(
                 .init(
                     scopeMode: .allIndexed,
                     scopes: [],
@@ -409,10 +413,10 @@ enum EntryLoadingLive {
     nonisolated static func loadFilesWithTagViaSearch(
         tag: String,
         showHidden: Bool,
-        searchClient: SearchClient,
+        tagSearchClient: TagSearchClient,
     ) async -> [EntryModel] {
         do {
-            let response = try await searchClient.tagSearch(
+            let response = try await tagSearchClient.search(
                 .init(
                     requestedTag: tag,
                     scopeMode: .allIndexed,
