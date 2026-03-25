@@ -126,6 +126,35 @@ make bootstrap
 > 이 레포에서 작업할 때는 항상 `.xcode-version`에 적힌 Xcode 버전으로 빌드하는 것을 원칙으로 합니다.
 > 다른 프로젝트와 혼용해서 Xcode 버전을 바꾼 경우, Voyager 작업 전에 `./scripts/xcodes.sh`를 한 번 실행해 Xcode 버전을 다시 맞춰 주세요.
 
+## Optional: Cupertino Apple Docs MCP
+
+이 레포의 `opencode.json`에는 Apple 플랫폼 문서 검색용 `cupertino` MCP가 함께 선언되어 있습니다.
+`opencode` 세션에서 사용하려면 각 개발자 로컬 환경에 `cupertino` 바이너리가 먼저 설치되어 있어야 합니다.
+
+- 지원 플랫폼: macOS 15+
+- 설치(권장):
+
+```bash
+brew tap mihaelamj/tap
+brew install cupertino
+cupertino setup
+```
+
+- 또는 upstream installer 사용:
+
+```bash
+bash <(curl -sSL https://raw.githubusercontent.com/mihaelamj/cupertino/main/install.sh)
+```
+
+설치 후에는 아래 명령으로 경로를 확인하세요.
+
+```bash
+which cupertino
+```
+
+레포의 `opencode.json`은 `/opt/homebrew/bin`, `/usr/local/bin`을 포함한 공통 PATH로 `cupertino serve`를 실행하도록 설정되어 있습니다.
+만약 명령을 찾지 못하면 로컬 shell PATH 또는 설치 위치를 먼저 확인하세요.
+
 ## Conventions
 
 - Git Flow
