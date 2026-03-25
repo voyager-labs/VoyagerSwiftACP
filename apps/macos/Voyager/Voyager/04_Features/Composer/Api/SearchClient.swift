@@ -5,6 +5,8 @@ import Logging
 struct SearchClient: Sendable {
     var search: @Sendable (_ request: SearchRequestPayload) async throws -> SearchResponsePayload
     var applyFilters: @Sendable (_ request: FiltersOnlyRequestPayload) async throws -> SearchResponsePayload
+    var recentSearch: @Sendable (_ request: RecentSearchRequestPayload) async throws -> RecentSearchResponsePayload
+    var tagSearch: @Sendable (_ request: TagSearchRequestPayload) async throws -> TagSearchResponsePayload
 }
 
 extension SearchClient: DependencyKey {
@@ -16,12 +18,20 @@ extension SearchClient: DependencyKey {
             applyFilters: { request in
                 try await applyFiltersViaHelper(request)
             },
+            recentSearch: { request in
+                try await recentSearchViaHelper(request)
+            },
+            tagSearch: { request in
+                try await tagSearchViaHelper(request)
+            },
         )
     }()
 
     nonisolated(unsafe) static var testValue: SearchClient = .init(
         search: { _ in .init(itemCount: 0, appliedFilters: nil, items: nil, error: nil) },
         applyFilters: { _ in .init(itemCount: 0, appliedFilters: nil, items: nil, error: nil) },
+        recentSearch: { _ in .init(items: []) },
+        tagSearch: { request in .init(requestedTag: request.requestedTag, items: []) },
     )
 }
 
@@ -35,12 +45,24 @@ private extension SearchClient {
     static func applyFiltersViaHelper(_ request: FiltersOnlyRequestPayload) async throws -> SearchResponsePayload {
         try await FilterSearchXPCClient.applyFilters(request)
     }
+
+    static func recentSearchViaHelper(_ request: RecentSearchRequestPayload) async throws
+        -> RecentSearchResponsePayload
+    {
+        try await FilterSearchXPCClient.recentSearch(request)
+    }
+
+    static func tagSearchViaHelper(_ request: TagSearchRequestPayload) async throws -> TagSearchResponsePayload {
+        try await FilterSearchXPCClient.tagSearch(request)
+    }
 }
 
 private enum FilterSearchXPCClient {
     private nonisolated static let logger = Logger(label: "Voyager.FilterSearchXPC")
     private nonisolated static let filterTimeoutSeconds: TimeInterval = 20
     private nonisolated static let queryTimeoutSeconds: TimeInterval = 25
+    private nonisolated static let recentTimeoutSeconds: TimeInterval = 20
+    private nonisolated static let tagTimeoutSeconds: TimeInterval = 20
 
     static func applyFilters(
         _ request: FiltersOnlyRequestPayload,
@@ -54,6 +76,7 @@ private enum FilterSearchXPCClient {
                 requestId: requestId,
                 logger: logger,
                 continuation: continuation,
+                decodeResponse: decodeSearchResponse,
             )
             context.start(requestData: requestData, timeout: filterTimeoutSeconds)
         }
@@ -71,14 +94,55 @@ private enum FilterSearchXPCClient {
                 requestId: requestId,
                 logger: logger,
                 continuation: continuation,
+                decodeResponse: decodeSearchResponse,
             )
             context.startQuery(requestData: requestData, timeout: queryTimeoutSeconds)
+        }
+    }
+
+    static func recentSearch(
+        _ request: RecentSearchRequestPayload,
+    ) async throws -> RecentSearchResponsePayload {
+        let requestId = UUID().uuidString
+        logger.info("Dispatching recent search XPC request: id=\(requestId)")
+        let requestData = try encodeRequestData(from: request)
+
+        return try await withCheckedThrowingContinuation(isolation: nil) { @Sendable continuation in
+            let context = RequestContext(
+                requestId: requestId,
+                logger: logger,
+                continuation: continuation,
+                decodeResponse: { data in
+                    try decodeResponse(RecentSearchResponsePayload.self, from: data)
+                },
+            )
+            context.startRecent(requestData: requestData, timeout: recentTimeoutSeconds)
+        }
+    }
+
+    static func tagSearch(
+        _ request: TagSearchRequestPayload,
+    ) async throws -> TagSearchResponsePayload {
+        let requestId = UUID().uuidString
+        logger.info("Dispatching tag search XPC request: id=\(requestId)")
+        let requestData = try encodeRequestData(from: request)
+
+        return try await withCheckedThrowingContinuation(isolation: nil) { @Sendable continuation in
+            let context = RequestContext(
+                requestId: requestId,
+                logger: logger,
+                continuation: continuation,
+                decodeResponse: { data in
+                    try decodeResponse(TagSearchResponsePayload.self, from: data)
+                },
+            )
+            context.startTag(requestData: requestData, timeout: tagTimeoutSeconds)
         }
     }
 }
 
 private extension FilterSearchXPCClient {
-    static func encodeRequestData(from request: SearchRequestPayload) throws -> Data {
+    nonisolated static func encodeRequestData(from request: SearchRequestPayload) throws -> Data {
         do {
             return try JSONEncoder().encode(request)
         } catch {
@@ -86,17 +150,54 @@ private extension FilterSearchXPCClient {
         }
     }
 
-    static func encodeRequestData(from request: FiltersOnlyRequestPayload) throws -> Data {
+    nonisolated static func encodeRequestData(from request: FiltersOnlyRequestPayload) throws -> Data {
         do {
             return try JSONEncoder().encode(request)
         } catch {
             throw HelperSearchError(code: "ENCODE_FAILED", message: error.localizedDescription)
         }
+    }
+
+    nonisolated static func encodeRequestData(from request: RecentSearchRequestPayload) throws -> Data {
+        do {
+            return try JSONEncoder().encode(request)
+        } catch {
+            throw HelperSearchError(code: "ENCODE_FAILED", message: error.localizedDescription)
+        }
+    }
+
+    nonisolated static func encodeRequestData(from request: TagSearchRequestPayload) throws -> Data {
+        do {
+            return try JSONEncoder().encode(request)
+        } catch {
+            throw HelperSearchError(code: "ENCODE_FAILED", message: error.localizedDescription)
+        }
+    }
+
+    nonisolated static func decodeResponse<Response: Decodable & Sendable>(
+        _ type: Response.Type,
+        from data: Data,
+    ) throws -> Response {
+        do {
+            return try JSONDecoder().decode(type, from: data)
+        } catch {
+            throw HelperSearchError(code: "DECODE_FAILED", message: error.localizedDescription)
+        }
+    }
+
+    nonisolated static func decodeSearchResponse(from data: Data) throws -> SearchResponsePayload {
+        let response = try decodeResponse(SearchResponsePayload.self, from: data)
+        if let payloadError = response.error {
+            throw HelperSearchError(code: payloadError.code, message: payloadError.details)
+        }
+        return response
     }
 
     enum OperationKind {
         case filter
         case query
+        case recent
+        case tag
 
         nonisolated var label: String {
             switch self {
@@ -104,28 +205,35 @@ private extension FilterSearchXPCClient {
                 "Filter search"
             case .query:
                 "Query search"
+            case .recent:
+                "Recent search"
+            case .tag:
+                "Tag search"
             }
         }
     }
 
-    final class RequestContext: @unchecked Sendable {
+    final class RequestContext<Response: Sendable>: @unchecked Sendable {
         private let requestId: String
         private let logger: Logger
         private let queue: DispatchQueue
+        private let decodeResponse: @Sendable (Data) throws -> Response
         private let lock = NSLock()
 
-        private nonisolated(unsafe) var continuation: CheckedContinuation<SearchResponsePayload, Error>?
+        private nonisolated(unsafe) var continuation: CheckedContinuation<Response, Error>?
         private nonisolated(unsafe) var connection: NSXPCConnection?
         private nonisolated(unsafe) var timeoutWorkItem: DispatchWorkItem?
 
         nonisolated init(
             requestId: String,
             logger: Logger,
-            continuation: CheckedContinuation<SearchResponsePayload, Error>,
+            continuation: CheckedContinuation<Response, Error>,
+            decodeResponse: @escaping @Sendable (Data) throws -> Response,
         ) {
             self.requestId = requestId
             self.logger = logger
             self.continuation = continuation
+            self.decodeResponse = decodeResponse
             queue = DispatchQueue(label: "fm.voyager.search.filter.xpc.\(requestId)")
         }
 
@@ -140,6 +248,22 @@ private extension FilterSearchXPCClient {
         nonisolated func startQuery(requestData: Data, timeout: TimeInterval) {
             startOperation(
                 kind: .query,
+                requestData: requestData,
+                timeout: timeout,
+            )
+        }
+
+        nonisolated func startRecent(requestData: Data, timeout: TimeInterval) {
+            startOperation(
+                kind: .recent,
+                requestData: requestData,
+                timeout: timeout,
+            )
+        }
+
+        nonisolated func startTag(requestData: Data, timeout: TimeInterval) {
+            startOperation(
+                kind: .tag,
                 requestData: requestData,
                 timeout: timeout,
             )
@@ -172,6 +296,26 @@ private extension FilterSearchXPCClient {
                     }
                 case .query:
                     proxy.querySearch(requestData) { [self] responseData, error in
+                        queue.async {
+                            self.handleReply(
+                                responseData: responseData,
+                                error: error,
+                                operationLabel: operationLabel,
+                            )
+                        }
+                    }
+                case .recent:
+                    proxy.recentSearch(requestData) { [self] responseData, error in
+                        queue.async {
+                            self.handleReply(
+                                responseData: responseData,
+                                error: error,
+                                operationLabel: operationLabel,
+                            )
+                        }
+                    }
+                case .tag:
+                    proxy.tagSearch(requestData) { [self] responseData, error in
                         queue.async {
                             self.handleReply(
                                 responseData: responseData,
@@ -247,37 +391,25 @@ private extension FilterSearchXPCClient {
             }
 
             do {
-                let response = try JSONDecoder().decode(SearchResponsePayload.self, from: responseData)
-
-                if let payloadError = response.error {
-                    logger.warning(
-                        "\(operationLabel) payload error: id=\(requestId) code=\(payloadError.code)",
-                    )
-                    finish(
-                        .failure(
-                            HelperSearchError(
-                                code: payloadError.code,
-                                message: payloadError.details,
-                            ),
-                        ),
-                    )
-                    return
-                }
-
-                logger.info(
-                    "\(operationLabel) response received: id=\(requestId) items=\(response.itemCount)",
-                )
+                let response = try decodeResponse(responseData)
+                logger.info("\(operationLabel) response received: id=\(requestId)")
                 finish(.success(response))
             } catch {
-                finish(
-                    .failure(
-                        HelperSearchError(code: "DECODE_FAILED", message: error.localizedDescription),
-                    ),
-                )
+                finish(.failure(error))
             }
         }
 
-        private nonisolated func finish(_ result: Result<SearchResponsePayload, Error>) {
+        #if DEBUG
+        nonisolated func handleReplyForTesting(
+            responseData: Data?,
+            error: NSError?,
+            operationLabel: String,
+        ) {
+            handleReply(responseData: responseData, error: error, operationLabel: operationLabel)
+        }
+        #endif
+
+        private nonisolated func finish(_ result: Result<Response, Error>) {
             lock.lock()
             let currentContinuation = continuation
             let currentConnection = connection
@@ -291,7 +423,12 @@ private extension FilterSearchXPCClient {
             currentTimeoutWorkItem?.cancel()
             currentConnection?.invalidate()
 
-            currentContinuation.resume(with: result)
+            switch result {
+            case let .success(response):
+                currentContinuation.resume(returning: response)
+            case let .failure(error):
+                currentContinuation.resume(throwing: error)
+            }
         }
 
         private nonisolated func storeConnection(_ connection: NSXPCConnection) {
