@@ -1,13 +1,19 @@
 import Foundation
 import Logging
 
+protocol SearchExecutionServicing: Sendable {
+    func applyFilters(_ filters: SearchFiltersPayload) async throws -> SearchResponsePayload
+    func searchRecent(_ request: RecentSearchRequestPayload) async throws -> RecentSearchResponsePayload
+    func searchTag(_ request: TagSearchRequestPayload) async throws -> TagSearchResponsePayload
+}
+
 struct SearchQueryService: Sendable {
-    private let searchService: SpotlightSearchService
+    private let searchService: any SearchExecutionServicing
     private let converter: GatewayQueryConverter
     private let logger: Logger
 
     init(
-        searchService: SpotlightSearchService,
+        searchService: any SearchExecutionServicing,
         converter: GatewayQueryConverter = GatewayQueryConverter(
             logger: Logger(label: "VoyagerHelper.GatewayQueryConverter"),
         ),
