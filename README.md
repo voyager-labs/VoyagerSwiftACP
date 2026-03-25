@@ -15,13 +15,13 @@
 프로젝트 루트에 환경별 `.env` 파일을 생성합니다:
 
 - **`.env.dev`** (Git ignored): 로컬 개발 환경
-  - 모든 설정 포함 (비밀키 포함)
-  - Debug 빌드에서 사용
-  - 생성: `cp .env.example .env.dev`
+    - 모든 설정 포함 (비밀키 포함)
+    - Debug 빌드에서 사용
+    - 생성: `cp .env.example .env.dev`
 - **`.env.prod`** (Git tracked): 프로덕션 환경 템플릿
-  - 비밀키 제외한 기본 설정만 포함
-  - Release 빌드에서 사용
-  - Secrets는 파일에 포함하지 않음 (앱 번들 노출 방지)
+    - 비밀키 제외한 기본 설정만 포함
+    - Release 빌드에서 사용
+    - Secrets는 파일에 포함하지 않음 (앱 번들 노출 방지)
 
 ### 환경 자동 감지
 
@@ -47,28 +47,27 @@ macOS 앱 검색 경로는 Helper/XPC + Gateway를 사용하며, 로컬 FastAPI 
 
 ## Quick Start
 
-* Backend
+- Backend
+    - Setup: `cd apps/backend && uv sync && uv run pre-commit install`
+    - Dev server: `uv run dev`
+    - Tests: `uv run pytest`
 
-  * Setup: `cd apps/backend && uv sync && uv run pre-commit install`
-  * Dev server: `uv run dev`
-  * Tests: `uv run pytest`
-* macOS App
-
-  * Xcode에서 시작(권장): `xed apps/macos/Voyager/Voyager.xcworkspace` (열기 후 `Cmd+R` 실행)
-  * (대안) Xcode 프로젝트: `xed apps/macos/Voyager/Voyager.xcodeproj`
-  * VSCode 류 IDE(Sweetpad Extension)에서 실행:
-    * Xcode 프로젝트 열기: Sweetpad로 `apps/macos/Voyager/Voyager.xcodeproj` 오픈
-    * 태스크로 실행 (권장):
-      * `Cmd+Shift+P` (또는 `Ctrl+Shift+P`)로 Command Palette 열기
-      * "Tasks: Run Task" 입력 후 다음 태스크 중 선택:
-        - `Voyager Dev: Launch (Debug)` - 개발 환경 Debug 모드로 빌드 및 실행
-        - `Voyager Dev: Launch (Release)` - 개발 환경 Release 모드로 빌드 및 실행
-        - `Voyager Prod: Launch (Debug)` - 프로덕션 환경 Debug 모드로 빌드 및 실행
-        - `Voyager Prod: Launch (Release)` - 프로덕션 환경 Release 모드로 빌드 및 실행
-      * 참고: 버튼을 통한 직접 실행은 비권장합니다. xcscheme의 환경변수가 제대로 주입되지 않을 수 있습니다. 태스크를 통한 실행을 사용하세요.
-  * Build (CLI): `xcodebuild -project apps/macos/Voyager/Voyager.xcodeproj -scheme Voyager-Dev -configuration Debug`
-  * Prod build/archive (CLI): `xcodebuild -project apps/macos/Voyager/Voyager.xcodeproj -scheme Voyager-Prod -configuration Release`
-  * Tests (CLI): `xcodebuild test -scheme Voyager-Dev -project apps/macos/Voyager/Voyager.xcodeproj`
+- macOS App
+    - Xcode에서 시작(권장): `xed apps/macos/Voyager/Voyager.xcworkspace` (열기 후 `Cmd+R` 실행)
+    - (대안) Xcode 프로젝트: `xed apps/macos/Voyager/Voyager.xcodeproj`
+    - VSCode 류 IDE(Sweetpad Extension)에서 실행:
+        - Xcode 프로젝트 열기: Sweetpad로 `apps/macos/Voyager/Voyager.xcodeproj` 오픈
+        - 태스크로 실행 (권장):
+            - `Cmd+Shift+P` (또는 `Ctrl+Shift+P`)로 Command Palette 열기
+            - "Tasks: Run Task" 입력 후 다음 태스크 중 선택:
+                - `Voyager Dev: Launch (Debug)` - 개발 환경 Debug 모드로 빌드 및 실행
+                - `Voyager Dev: Launch (Release)` - 개발 환경 Release 모드로 빌드 및 실행
+                - `Voyager Prod: Launch (Debug)` - 프로덕션 환경 Debug 모드로 빌드 및 실행
+                - `Voyager Prod: Launch (Release)` - 프로덕션 환경 Release 모드로 빌드 및 실행
+            - 참고: 버튼을 통한 직접 실행은 비권장합니다. xcscheme의 환경변수가 제대로 주입되지 않을 수 있습니다. 태스크를 통한 실행을 사용하세요.
+    - Build (CLI): `xcodebuild -project apps/macos/Voyager/Voyager.xcodeproj -scheme Voyager-Dev -configuration Debug`
+    - Prod build/archive (CLI): `xcodebuild -project apps/macos/Voyager/Voyager.xcodeproj -scheme Voyager-Prod -configuration Release`
+    - Tests (CLI): `xcodebuild test -scheme Voyager-Dev -project apps/macos/Voyager/Voyager.xcodeproj`
 
 ### Xcode 버전 관리
 
@@ -77,9 +76,9 @@ macOS 앱 검색 경로는 Helper/XPC + Gateway를 사용하며, 로컬 FastAPI 
 
 #### 사전 준비
 
-* macOS
-* [Homebrew](https://brew.sh) 설치
-* Xcode 설치 및 업데이트 권한
+- macOS
+- [Homebrew](https://brew.sh) 설치
+- Xcode 설치 및 업데이트 권한
 
 #### 이 프로젝트용 Xcode 설정 방법
 
@@ -107,7 +106,7 @@ xcodebuild -version
 
 #### 스크립트를 실행해야 하는 시점
 
-* 이 레포를 **처음 클론한 직후**
+- 이 레포를 **처음 클론한 직후**
 
 ## Development Bootstrap (Git hooks)
 
@@ -120,8 +119,9 @@ make bootstrap
 ```
 
 이 설정은 repo-local git config(`core.hooksPath`)에 저장되며, 동일 레포에서 생성한 worktree에도 그대로 적용되는 것을 목표로 합니다.
-* 다른 프로젝트 때문에 Xcode 버전을 변경했다가, **다시 Voyager 앱을 개발하려고 할 때**
-* `.xcode-version`이 변경된 PR이 머지되어, **새로운 공식 Xcode 버전에 맞추어야 할 때**
+
+- 다른 프로젝트 때문에 Xcode 버전을 변경했다가, **다시 Voyager 앱을 개발하려고 할 때**
+- `.xcode-version`이 변경된 PR이 머지되어, **새로운 공식 Xcode 버전에 맞추어야 할 때**
 
 > 이 레포에서 작업할 때는 항상 `.xcode-version`에 적힌 Xcode 버전으로 빌드하는 것을 원칙으로 합니다.
 > 다른 프로젝트와 혼용해서 Xcode 버전을 바꾼 경우, Voyager 작업 전에 `./scripts/xcodes.sh`를 한 번 실행해 Xcode 버전을 다시 맞춰 주세요.
@@ -158,55 +158,53 @@ which cupertino
 ## Conventions
 
 - Git Flow
+    - **브랜치 구조**
+        - `main`: 운영/배포 브랜치 (태그: `vX.Y.Z`)
+        - `develop`: 개발 통합 브랜치
+        - `release/v<X.Y.Z>`: 릴리즈 준비/안정화 브랜치
+        - `<type>/<linear-issue>`: 이슈별 개발 브랜치
+            - `type`: `feature`, `fix`, `chore`, `refactor`, `docs`, `test`, `ci`
+            - 예: `feature/voy-123`, `fix/voy-456`
+        - `hotfix/<linear-issue>`: 운영 긴급 수정 브랜치
 
-  - **브랜치 구조**
-    - `main`: 운영/배포 브랜치 (태그: `vX.Y.Z`)
-    - `develop`: 개발 통합 브랜치
-    - `release/v<X.Y.Z>`: 릴리즈 준비/안정화 브랜치
-    - `<type>/<linear-issue>`: 이슈별 개발 브랜치
-      - `type`: `feature`, `fix`, `chore`, `refactor`, `docs`, `test`, `ci`
-      - 예: `feature/voy-123`, `fix/voy-456`
-    - `hotfix/<linear-issue>`: 운영 긴급 수정 브랜치
+    - **일반 개발 워크플로우**
+        1. `develop`에서 `<type>/<linear-issue>` 브랜치 생성
+        2. 개발 완료 후 `develop`으로 PR 생성 및 머지
+        3. 머지 후 작업 브랜치 삭제
 
-  - **일반 개발 워크플로우**
-    1. `develop`에서 `<type>/<linear-issue>` 브랜치 생성
-    2. 개발 완료 후 `develop`으로 PR 생성 및 머지
-    3. 머지 후 작업 브랜치 삭제
+    - **릴리즈 워크플로우**
+        1. `develop`에서 `release/v<X.Y.Z>` 브랜치 생성
+        2. 릴리즈 브랜치에서 버그 수정이 필요한 경우 `fix/<linear-issue>` 분기 후 `release/v<X.Y.Z>`로 PR 머지
+        3. 릴리즈 준비 완료 후 `release/v<X.Y.Z> -> main` PR 머지 및 `vX.Y.Z` 태그 생성
+        4. `main -> develop` (또는 `release/v<X.Y.Z> -> develop`)로 back-merge
 
-  - **릴리즈 워크플로우**
-    1. `develop`에서 `release/v<X.Y.Z>` 브랜치 생성
-    2. 릴리즈 브랜치에서 버그 수정이 필요한 경우 `fix/<linear-issue>` 분기 후 `release/v<X.Y.Z>`로 PR 머지
-    3. 릴리즈 준비 완료 후 `release/v<X.Y.Z> -> main` PR 머지 및 `vX.Y.Z` 태그 생성
-    4. `main -> develop` (또는 `release/v<X.Y.Z> -> develop`)로 back-merge
-
-  - **Hotfix 워크플로우**
-    1. `main`에서 `hotfix/<linear-issue>` 브랜치 생성
-    2. 수정 후 `main`으로 PR 머지
-    3. 동일 변경사항을 `develop` 및 진행 중인 `release/*` 브랜치에도 반영
+    - **Hotfix 워크플로우**
+        1. `main`에서 `hotfix/<linear-issue>` 브랜치 생성
+        2. 수정 후 `main`으로 PR 머지
+        3. 동일 변경사항을 `develop` 및 진행 중인 `release/*` 브랜치에도 반영
 
 - Conventional Commits
+    - Subject: `<type>(<scope>): <short description>` (명령형, ≲ 50자)
+    - Scope: 모노레포 명확성을 위해 `(backend)` 또는 `(macos)` 권장
+    - Types: `feat`, `fix`, `ui`, `refactor`, `style`, `docs`, `chore`, `test`, `ci`, `build`
+    - Body: `- ` 불릿으로 WHAT/WHY, 현재형, 영향 범위/파일 필요 시 명시
+    - 예시:
+        - `feat(backend): add asset ingestion endpoint`
+        - `fix(macos): resolve crash on QuickLook preview`
+        - `ui(macos): improve sidebar navigation layout`
+        - `docs: consolidate API contract guidelines`
 
-  - Subject: `<type>(<scope>): <short description>` (명령형, ≲ 50자)
-  - Scope: 모노레포 명확성을 위해 `(backend)` 또는 `(macos)` 권장
-  - Types: `feat`, `fix`, `ui`, `refactor`, `style`, `docs`, `chore`, `test`, `ci`, `build`
-  - Body: `- ` 불릿으로 WHAT/WHY, 현재형, 영향 범위/파일 필요 시 명시
-  - 예시:
-    - `feat(backend): add asset ingestion endpoint`
-    - `fix(macos): resolve crash on QuickLook preview`
-    - `ui(macos): improve sidebar navigation layout`
-    - `docs: consolidate API contract guidelines`
 - Pull Requests
-
-  - PR 설명에 의도/범위/리스크/검증 증거/롤백 포함, 관련 이슈 링크 및 UI 변경 시 스크린샷 첨부
-  - 문서/코드 변경이 함께 있을 때는 범위를 분리하고 작은 PR을 선호
+    - PR 설명에 의도/범위/리스크/검증 증거/롤백 포함, 관련 이슈 링크 및 UI 변경 시 스크린샷 첨부
+    - 문서/코드 변경이 함께 있을 때는 범위를 분리하고 작은 PR을 선호
 
 ## Documentation for Agents
 
 - Entry point: `docs/index.md` (PRD / Architecture / Frontend Spec 샤드 인덱스)
 - Architecture quick refs loaded by tools:
-  - `docs/architecture/coding-standards.md`
-  - `docs/architecture/tech-stack.md`
-  - `docs/architecture/source-tree.md`
+    - `docs/architecture/coding-standards.md`
+    - `docs/architecture/tech-stack.md`
+    - `docs/architecture/source-tree.md`
 
 ## Back to Docs
 
