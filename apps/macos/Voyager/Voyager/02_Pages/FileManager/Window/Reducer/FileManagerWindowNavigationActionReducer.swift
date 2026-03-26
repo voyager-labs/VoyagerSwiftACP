@@ -223,7 +223,7 @@ struct FileManagerNavigationActionReducer {
     }
 
     private func shouldPromptForUnsavedNavigation(_ state: FileManagerContentState) -> Bool {
-        state.entryOperations.loadingContext.isCollectionMode && state.canSaveCollection
+        state.entryViewLayout.entryOperations.loadingContext.isCollectionMode && state.canSaveCollection
     }
 }
 
@@ -240,8 +240,7 @@ private func handleOpenCollectionFile(
         .navigation(.internal(.prepareCollectionFileOpen(url))),
     )
 
-    let clearEffect: Effect<FileManagerContentAction> = FileManagerContentComposerCoordinator
-        .clearCollectionMode(state: &state.content)
+    let clearEffect: Effect<FileManagerContentAction> = clearCollectionMode(state: &state.content)
     state.content.collectionSession.isOpening = true
     state.content.collectionSession.openedName = url.deletingPathExtension().lastPathComponent
     state.content.collectionSession.openedURL = url
@@ -308,7 +307,7 @@ private func handleNavigateToCollection(
 
     let trimmedQuery = navigation.context.query.trimmingCharacters(in: .whitespacesAndNewlines)
     return .merge(
-        .send(.content(.entryArrangements(.reapply))),
+        .send(.content(.entryViewLayout(.entryArrangements(.reapply)))),
         trimmedQuery.isEmpty ? .send(.content(.composer(.applyFilters))) : .send(.content(.composer(.submit))),
     )
 }
@@ -378,7 +377,7 @@ private func handleCollectionFileLoadedFailure(
     state.content.collectionSession = .init()
     state.content.resetComposer()
 
-    let exitEffect = FileManagerContentComposerCoordinator.exitCollectionMode(
+    let exitEffect = exitCollectionMode(
         state: &state.content,
         computerName: computerName,
     )
@@ -401,7 +400,7 @@ private func handleEmptyCollectionFile(
     state.content.collectionSession = .init()
     state.content.resetComposer()
 
-    let exitEffect = FileManagerContentComposerCoordinator.exitCollectionMode(
+    let exitEffect = exitCollectionMode(
         state: &state.content,
         computerName: computerName,
     )
@@ -426,8 +425,8 @@ private func applyCollectionNavigationState(
     state.content.composer.isPresented = false
     state.content.collectionContext = navigation.context
     state.content.composer.pendingSearchQuery = navigation.context.query.isEmpty ? nil : navigation.context.query
-    state.content.entryArrangements.updateSortKey(navigation.sortKey)
-    state.content.entryArrangements.updateSortOrder(navigation.sortOrder)
+    state.content.entryViewLayout.entryArrangements.updateSortKey(navigation.sortKey)
+    state.content.entryViewLayout.entryArrangements.updateSortOrder(navigation.sortOrder)
     state.content.entryViewLayout.mode = navigation.viewLayout
 
     switch navigation.kind {
@@ -477,7 +476,7 @@ private func handleNavigationDelegate(
         return .none
 
     case .resetComposer:
-        let exitEffect = FileManagerContentComposerCoordinator.exitCollectionMode(
+        let exitEffect = exitCollectionMode(
             state: &state.content,
             computerName: computerName,
         )

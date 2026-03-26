@@ -17,16 +17,6 @@ struct ContentPaneContextMenu: View {
         return path == trashPath || path.hasPrefix(trashPath + "/")
     }
 
-    private var defaultNewFolderName: String {
-        var folderName = "untitled folder"
-        var counter = 2
-        while store.entryViewLayout.entries.contains(where: { $0.name == folderName }) {
-            folderName = "untitled folder \(counter)"
-            counter += 1
-        }
-        return folderName
-    }
-
     var body: some View {
         if isTrashFolder {
             Button("Empty Trash") {
@@ -37,7 +27,6 @@ struct ContentPaneContextMenu: View {
         } else {
             Button("New Folder") {
                 store.send(.entryViewLayout(.entryOperations(.edit(.createNewFolder(
-                    name: defaultNewFolderName,
                     parentPath: store.navigation.currentPath,
                 )))))
             }

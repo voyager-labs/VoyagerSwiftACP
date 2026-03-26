@@ -15,6 +15,8 @@ struct EntryGridRenderSnapshot: Equatable {
     let groupedItems: [GroupedItems]
     let collapsedGroups: Set<String>
     let selectedIds: Set<EntryModel.ID>
+    let clipboardItems: Set<String>
+    let clipboardOperation: ClipboardOperation
     let renamingItemId: EntryModel.ID?
     let gridIconSize: CGFloat
     let gridTextSize: CGFloat
@@ -31,6 +33,8 @@ struct EntryGridRenderSnapshot: Equatable {
         groupedItems = state.entryArrangements.groupedItems
         collapsedGroups = state.entryArrangements.collapsedGroups
         selectedIds = state.selectedIds
+        clipboardItems = Set(state.entryOperations.clipboardItems)
+        clipboardOperation = state.entryOperations.clipboardOperation
         renamingItemId = state.entryOperations.renamingItemId
         gridIconSize = state.gridIconSize
         gridTextSize = state.gridTextSize

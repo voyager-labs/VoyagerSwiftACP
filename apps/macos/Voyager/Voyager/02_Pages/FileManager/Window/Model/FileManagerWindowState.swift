@@ -9,7 +9,7 @@ struct FileManagerWindowState: Equatable {
 
     static func makeInitial(windowID: UUID, path: String?) -> Self {
         var state = Self()
-        state.content.entryOperations.windowID = windowID
+        state.content.entryViewLayout.entryOperations.windowID = windowID
 
         if let path {
             state.content.navigation.seedInitialFolderPath(path)

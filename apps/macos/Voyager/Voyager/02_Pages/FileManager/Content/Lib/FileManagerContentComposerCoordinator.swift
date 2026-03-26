@@ -23,66 +23,6 @@ enum FileManagerContentComposerCoordinator {
         return .none
     }
 
-    static func makeCollectionNavigation(state: FileManagerContentState) -> ContentPageCollectionNavigation {
-        let kind: ContentPageCollectionKind
-        if let url = state.collectionSession.openedURL {
-            let name = state.collectionSession.openedName ?? url.deletingPathExtension().lastPathComponent
-            kind = .file(url: url, name: name)
-        } else {
-            kind = .temporary
-        }
-
-        let context = state.collectionContext
-            ?? CollectionContext(query: "", scopes: [], conditions: [])
-
-        return ContentPageCollectionNavigation(
-            kind: kind,
-            context: context,
-            sortKey: state.entryArrangements.sortKey,
-            sortOrder: state.entryArrangements.sortOrder,
-            viewLayout: state.entryViewLayout.mode,
-        )
-    }
-
-    static func clearCollectionMode(state: inout FileManagerContentState) -> Effect<FileManagerContentAction> {
-        state.collectionContext = nil
-        state.composer.pendingSearchQuery = nil
-        state.collectionSession = .init()
-        state.entryOperations.loadingContext.collectionItems = []
-        state.syncComposerCollectionState()
-
-        return .merge(
-            .send(.internal(.requestNavigation(.internal(.setPendingNavigation(nil))))),
-            .cancel(id: "openCollectionFile"),
-            .cancel(id: ComposerFeature.CancelID.search),
-            .cancel(id: ComposerFeature.CancelID.filters),
-            .send(.entryOperations(.loading(.setCollectionMode(false)))),
-            .send(.entryOperations(.loading(.clearCollectionItems))),
-        )
-    }
-
-    static func exitCollectionMode(
-        state: inout FileManagerContentState,
-        computerName: String,
-    ) -> Effect<FileManagerContentAction> {
-        let wasCollection = if case .collection = state.navigation.navigationState { true } else { false }
-        let clearEffect = clearCollectionMode(state: &state)
-
-        guard wasCollection else {
-            return clearEffect
-        }
-
-        let navigationState = ContentPageNavigationRoute.fromPath(
-            state.navigation.titlePath,
-            computerName: computerName,
-        )
-
-        return .concatenate(
-            .send(.internal(.requestNavigation(.internal(.setNavigationState(navigationState))))),
-            clearEffect,
-        )
-    }
-
     private static func handleComposerLifecycleAction(
         _ action: ComposerFeature.Action,
         state: inout FileManagerContentState,
@@ -110,7 +50,7 @@ enum FileManagerContentComposerCoordinator {
             return .none
 
         case .view(.clearAll):
-            if state.entryOperations.loadingContext.isCollectionMode {
+            if state.entryViewLayout.entryOperations.loadingContext.isCollectionMode {
                 state.composer.pendingSearchQuery = nil
                 state.collectionContext = CollectionContext(
                     query: "",
@@ -236,6 +176,7 @@ enum FileManagerContentComposerCoordinator {
             scopes: state.composer.scopes,
             conditions: state.composer.conditions,
         )
+        state.entryViewLayout.entryOperations.loadingContext.isCollectionMode = true
         state.syncComposerCollectionState()
         if wasOpeningCollectionFile, state.collectionSession.openedURL != nil {
             state.collectionSession.baseline = CollectionBaseline(
@@ -259,14 +200,20 @@ enum FileManagerContentComposerCoordinator {
         if !wasOpeningCollectionFile, !previousNavigationState.isCollection {
             logContentPageNavigationDAUIfNeeded(previous: previousNavigationState, next: nextNavigationState)
         }
+        let showHidden = state.entryViewLayout.showHiddenFiles
+
         return .concatenate(
             .concatenate(navigationEffects),
-            .send(.entryOperations(.loading(.setCollectionMode(true)))),
+            .send(.entryViewLayout(.entryOperations(.loading(
+                EntryOperationsAction.Loading.setCollectionMode(true),
+            )))),
             .run { send in
                 await Task.yield()
-                await send(.entryOperations(.loading(.collectionItemsLoadedFromSearch(
-                    items: items,
-                    showHidden: false,
+                await send(.entryViewLayout(.entryOperations(.loading(
+                    EntryOperationsAction.Loading.collectionItemsLoadedFromSearch(
+                        items: items,
+                        showHidden: showHidden,
+                    ),
                 ))))
                 await send(.composer(.searchListApplied))
             },
@@ -357,8 +304,8 @@ enum FileManagerContentComposerCoordinator {
                 let navigation = ContentPageCollectionNavigation(
                     kind: .file(url: previousURL, name: name),
                     context: baseline.context,
-                    sortKey: state.entryArrangements.sortKey,
-                    sortOrder: state.entryArrangements.sortOrder,
+                    sortKey: state.entryViewLayout.entryArrangements.sortKey,
+                    sortOrder: state.entryViewLayout.entryArrangements.sortOrder,
                     viewLayout: state.entryViewLayout.mode,
                 )
                 let entry = ContentPageNavigationHistorySnapshot(
@@ -384,4 +331,65 @@ enum FileManagerContentComposerCoordinator {
 
         return .concatenate(navigationEffects)
     }
+}
+
+func makeCollectionNavigation(state: FileManagerContentState) -> ContentPageCollectionNavigation {
+    let kind: ContentPageCollectionKind
+    if let url = state.collectionSession.openedURL {
+        let name = state.collectionSession.openedName ?? url.deletingPathExtension().lastPathComponent
+        kind = .file(url: url, name: name)
+    } else {
+        kind = .temporary
+    }
+
+    let context = state.collectionContext
+        ?? CollectionContext(query: "", scopes: [], conditions: [])
+
+    return ContentPageCollectionNavigation(
+        kind: kind,
+        context: context,
+        sortKey: state.entryViewLayout.entryArrangements.sortKey,
+        sortOrder: state.entryViewLayout.entryArrangements.sortOrder,
+        viewLayout: state.entryViewLayout.mode,
+    )
+}
+
+func clearCollectionMode(state: inout FileManagerContentState) -> Effect<FileManagerContentAction> {
+    state.collectionContext = nil
+    state.composer.pendingSearchQuery = nil
+    state.collectionSession = .init()
+    state.entryViewLayout.entryOperations.loadingContext.isCollectionMode = false
+    state.entryViewLayout.entryOperations.loadingContext.collectionItems = []
+    state.syncComposerCollectionState()
+
+    return .merge(
+        .send(.internal(.requestNavigation(.internal(.setPendingNavigation(nil))))),
+        .cancel(id: "openCollectionFile"),
+        .cancel(id: ComposerFeature.CancelID.search),
+        .cancel(id: ComposerFeature.CancelID.filters),
+        .send(.entryViewLayout(.entryOperations(.loading(.setCollectionMode(false))))),
+        .send(.entryViewLayout(.entryOperations(.loading(.clearCollectionItems)))),
+    )
+}
+
+func exitCollectionMode(
+    state: inout FileManagerContentState,
+    computerName: String,
+) -> Effect<FileManagerContentAction> {
+    let wasCollection = if case .collection = state.navigation.navigationState { true } else { false }
+    let clearEffect = clearCollectionMode(state: &state)
+
+    guard wasCollection else {
+        return clearEffect
+    }
+
+    let navigationState = ContentPageNavigationRoute.fromPath(
+        state.navigation.titlePath,
+        computerName: computerName,
+    )
+
+    return .concatenate(
+        .send(.internal(.requestNavigation(.internal(.setNavigationState(navigationState))))),
+        clearEffect,
+    )
 }

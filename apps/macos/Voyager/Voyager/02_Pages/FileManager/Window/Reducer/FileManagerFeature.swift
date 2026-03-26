@@ -24,7 +24,6 @@ struct FileManagerFeature {
         }
 
         FileManagerWindowNavigationReducer()
-
         FileManagerWindowLifecycleReducer()
         FileManagerWindowPreferencesReducer()
         FileManagerWindowRoutingReducer()
@@ -96,11 +95,11 @@ struct FileManagerFeature {
             return effect
         }
 
-        if let effect = handleEntryRequestEditing(command, state: state) {
+        if let effect = handleEntryRequestEditing(command) {
             return effect
         }
 
-        if let effect = handleEntryRequestCopying(command, state: state) {
+        if let effect = handleEntryRequestCopying(command) {
             return effect
         }
 
@@ -117,93 +116,70 @@ struct FileManagerFeature {
     ) -> Effect<Action>? {
         switch command {
         case .newFolder:
-            let defaultName = "untitled folder"
-            return .send(.content(.entryOperations(.edit(.createNewFolder(
-                name: defaultName,
-                parentPath: currentPath,
-            )))))
+            let entryOperationsAction: EntryOperationsAction = .edit(.createNewFolder(parentPath: currentPath))
+            return .send(.content(.entryViewLayout(.entryOperations(entryOperationsAction))))
+
         case .paste:
-            return .send(.content(.entryOperations(.clipboard(.pasteItemsFromClipboard(destinationPath: currentPath)))))
+            return .send(.content(.entryViewLayout(.delegate(.executeCommand(.clipboard(
+                .pasteItems(destinationPath: currentPath),
+            ))))))
+
         default:
             return nil
         }
     }
 
     private func handleEntryRequestSelection(_ command: Action.WindowCommand, state: State) -> Effect<Action>? {
-        let context = EntryOperationsCommandContext(
-            selectedIds: state.content.entryViewLayout.selectedIds,
-            displayItems: state.content.entryOperations.displayOrderItems,
-            currentPath: state.content.navigation.currentPath,
-        )
         switch command {
         case .openSelectedItem:
-            return .send(.content(.entryOperations(.routing(.executeCommand(
-                command: .navigation(.openSelectedItem),
-                context: context,
-            )))))
+            guard !state.content.entryViewLayout.selectedIds.isEmpty else { return .none }
+            return .send(.content(.entryViewLayout(.delegate(.executeCommand(.navigation(.openSelectedItem))))))
+
         case .quickLookSelectedItem:
-            return .send(.content(.entryOperations(.routing(.executeCommand(
-                command: .navigation(.quickLookSelectedItem),
-                context: context,
-            )))))
+            guard !state.content.entryViewLayout.selectedIds.isEmpty else { return .none }
+            return .send(.content(.entryViewLayout(.delegate(.executeCommand(.navigation(.quickLookSelectedItem))))))
+
         case .selectAll:
             return .send(.content(.view(.selectAllEntries)))
+
         default:
             return nil
         }
     }
 
-    private func handleEntryRequestEditing(_ command: Action.WindowCommand, state: State) -> Effect<Action>? {
-        let context = EntryOperationsCommandContext(
-            selectedIds: state.content.entryViewLayout.selectedIds,
-            displayItems: state.content.entryOperations.displayOrderItems,
-            currentPath: state.content.navigation.currentPath,
-        )
+    private func handleEntryRequestEditing(_ command: Action.WindowCommand) -> Effect<Action>? {
         switch command {
         case .cut:
-            return .send(.content(.entryOperations(.routing(.executeCommand(
-                command: .clipboard(.cutSelectedItems),
-                context: context,
-            )))))
+            .send(.content(.entryViewLayout(.delegate(.executeCommand(.clipboard(.cutSelectedItems))))))
+
         case .copy:
-            return .send(.content(.entryOperations(.routing(.executeCommand(
-                command: .clipboard(.copySelectedItems),
-                context: context,
-            )))))
+            .send(.content(.entryViewLayout(.delegate(.executeCommand(.clipboard(.copySelectedItems))))))
+
         case .duplicate:
-            return .send(.content(.entryOperations(.routing(.executeCommand(
-                command: .clipboard(.duplicateSelectedItems),
-                context: context,
-            )))))
+            .send(.content(.entryViewLayout(.delegate(.executeCommand(.clipboard(.duplicateSelectedItems))))))
+
         case .makeAlias:
-            return .send(.content(.entryOperations(.routing(.executeCommand(
-                command: .mutation(.createAliasForSelectedItems),
-                context: context,
-            )))))
+            .send(.content(.entryViewLayout(.delegate(.executeCommand(.mutation(
+                .createAliasForSelectedItems,
+            ))))))
+
         default:
-            return nil
+            nil
         }
     }
 
-    private func handleEntryRequestCopying(_ command: Action.WindowCommand, state: State) -> Effect<Action>? {
-        let context = EntryOperationsCommandContext(
-            selectedIds: state.content.entryViewLayout.selectedIds,
-            displayItems: state.content.entryOperations.displayOrderItems,
-            currentPath: state.content.navigation.currentPath,
-        )
+    private func handleEntryRequestCopying(_ command: Action.WindowCommand) -> Effect<Action>? {
         switch command {
         case .copyAbsolutePaths:
-            return .send(.content(.entryOperations(.routing(.executeCommand(
-                command: .clipboard(.copySelectedAbsolutePaths),
-                context: context,
-            )))))
+            .send(.content(.entryViewLayout(.delegate(.executeCommand(.clipboard(
+                .copySelectedAbsolutePaths,
+            ))))))
+
         case .copyURLs:
-            return .send(.content(.entryOperations(.routing(.executeCommand(
-                command: .clipboard(.copySelectedURLs),
-                context: context,
-            )))))
+            .send(.content(.entryViewLayout(.delegate(.executeCommand(.clipboard(.copySelectedURLs))))))
+
         default:
-            return nil
+            nil
         }
     }
 
@@ -211,6 +187,7 @@ struct FileManagerFeature {
         switch command {
         case .toggleShowHiddenFiles:
             .send(.content(.view(.toggleShowHiddenFilesAndReload)))
+
         default:
             nil
         }
@@ -220,10 +197,13 @@ struct FileManagerFeature {
         switch command {
         case .saveCollection:
             .send(.content(.composer(.saveCollection)))
+
         case .saveCollectionAs:
             .send(.content(.composer(.saveCollectionAs)))
+
         case .toggleComposer:
             .send(.content(.composer(.setPresented(!state.content.composer.isPresented))))
+
         default:
             .none
         }
@@ -233,10 +213,13 @@ struct FileManagerFeature {
         switch command {
         case .goBack:
             .send(.navigation(.view(.goBack)))
+
         case .goForward:
             .send(.navigation(.view(.goForward)))
+
         case .goToEnclosingDirectory:
             .send(.navigation(.view(.goToEnclosingDirectory)))
+
         default:
             .none
         }
@@ -246,14 +229,19 @@ struct FileManagerFeature {
         switch command {
         case .toggleSidebar:
             .send(.sidebar(.view(.setSidebarVisible(!state.sidebar.sidebarVisible))))
+
         case let .setViewLayout(layout):
             .send(.content(.view(.changeLayout(layout))))
+
         case let .setGroupKey(key):
-            .send(.content(.entryArrangements(.setGroupKey(key))))
+            .send(.content(.entryViewLayout(.entryArrangements(.setGroupKey(key)))))
+
         case let .setSortKey(key):
-            .send(.content(.entryArrangements(.setSortKey(key))))
+            .send(.content(.entryViewLayout(.entryArrangements(.setSortKey(key)))))
+
         case let .setSortOrder(order):
-            .send(.content(.entryArrangements(.setSortOrder(order))))
+            .send(.content(.entryViewLayout(.entryArrangements(.setSortOrder(order)))))
+
         default:
             .none
         }
@@ -262,11 +250,15 @@ struct FileManagerFeature {
     private func handleUndoRedoRequest(_ command: Action.WindowCommand) -> Effect<Action> {
         switch command {
         case .requestUndo:
-            .send(.content(.entryOperations(.undoRedo(.requestUndo))))
+            let entryOperationsAction: EntryOperationsAction = .undoRedo(.requestUndo)
+            return .send(.content(.entryViewLayout(.entryOperations(entryOperationsAction))))
+
         case .requestRedo:
-            .send(.content(.entryOperations(.undoRedo(.requestRedo))))
+            let entryOperationsAction: EntryOperationsAction = .undoRedo(.requestRedo)
+            return .send(.content(.entryViewLayout(.entryOperations(entryOperationsAction))))
+
         default:
-            .none
+            return .none
         }
     }
 }

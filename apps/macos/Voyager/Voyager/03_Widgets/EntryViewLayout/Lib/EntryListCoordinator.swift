@@ -1,4 +1,5 @@
 import AppKit
+import Combine
 import ComposableArchitecture
 import VoyagerShared
 
@@ -7,7 +8,7 @@ struct EntryListCoordinatorSortDescriptorChange: Equatable {
     let sortOrder: SortOrder
 }
 
-struct EntryListCoordinatorSortDescriptorSignature: Hashable {
+struct EntryListCoordinatorSortSignature: Hashable {
     var key: String?
     var ascending: Bool
 
@@ -23,13 +24,13 @@ struct EntryListCoordinatorSortDescriptorSignature: Hashable {
 }
 
 struct EntryListCoordinatorSortSyncGate {
-    private var suppressCountBySignature: [EntryListCoordinatorSortDescriptorSignature: Int] = [:]
+    private var suppressCountBySignature: [EntryListCoordinatorSortSignature: Int] = [:]
 
-    mutating func beginApply(_ signature: EntryListCoordinatorSortDescriptorSignature) {
+    mutating func beginApply(_ signature: EntryListCoordinatorSortSignature) {
         suppressCountBySignature[signature, default: 0] += 1
     }
 
-    mutating func consumeIfSuppressed(_ signature: EntryListCoordinatorSortDescriptorSignature) -> Bool {
+    mutating func consumeIfSuppressed(_ signature: EntryListCoordinatorSortSignature) -> Bool {
         guard let count = suppressCountBySignature[signature], count > 0 else { return false }
         if count == 1 {
             suppressCountBySignature[signature] = nil
@@ -122,6 +123,8 @@ struct EntryListCoordinatorRenderSnapshot: Equatable {
     let currentPath: String
     let thumbnailRenderVersion: Int
     let selectedIds: Set<EntryModel.ID>
+    let clipboardItems: Set<String>
+    let clipboardOperation: ClipboardOperation
     let renamingItemId: EntryModel.ID?
     let sortKey: SortKey
     let sortOrder: SortOrder
@@ -137,6 +140,8 @@ struct EntryListCoordinatorRenderSnapshot: Equatable {
         currentPath = state.currentPath
         thumbnailRenderVersion = state.entryThumbnail.renderVersion
         selectedIds = state.selectedIds
+        clipboardItems = Set(state.entryOperations.clipboardItems)
+        clipboardOperation = state.entryOperations.clipboardOperation
         renamingItemId = state.entryOperations.renamingItemId
         sortKey = state.entryArrangements.sortKey
         sortOrder = state.entryArrangements.sortOrder
@@ -147,7 +152,6 @@ struct EntryListCoordinatorRenderSnapshot: Equatable {
 }
 
 typealias EntryListSortDescriptorChange = EntryListCoordinatorSortDescriptorChange
-typealias EntryListSortDescriptorSignature = EntryListCoordinatorSortDescriptorSignature
 typealias EntryListSortSyncGate = EntryListCoordinatorSortSyncGate
 typealias EntryListSortDescriptorMapper = EntryListCoordinatorSortDescriptorMapper
 typealias EntryListDateFormatting = EntryListCoordinatorDateFormatting
@@ -224,6 +228,7 @@ final class EntryListCoordinator: NSObject {
     var contextMenuCoordinator: EntryContextMenuCoordinator?
     var boundsDidChangeObserver: NSObjectProtocol?
     var lastRenderSnapshot: RenderSnapshot?
+    var renderObservationCancellable: AnyCancellable?
     let visibleRowsPrefetchThrottler = MainThreadThrottler(intervalMs: 150, latest: true)
     let dateModifiedResizeDebouncer = MainThreadDebouncer(intervalMs: 150)
     var thumbnailImagesByPath: [String: NSImage] = [:]
@@ -239,8 +244,7 @@ final class EntryListCoordinator: NSObject {
     var finderFavoritesTagClient
     @Dependency(\.notificationCenterClient)
     var notificationCenterClient
-    init(store: StoreOf<EntryViewLayoutFeature>) {
-        self.store = store
+    init(store: StoreOf<EntryViewLayoutFeature>) { self.store = store
         super.init()
     }
 
@@ -278,14 +282,12 @@ final class EntryListCoordinator: NSObject {
     }
 
     func observeTableView() {
-        if let boundsDidChangeObserver {
-            notificationCenterClient.removeObserver(boundsDidChangeObserver)
-        }
+        if let boundsDidChangeObserver { notificationCenterClient.removeObserver(boundsDidChangeObserver) }
         boundsDidChangeObserver = notificationCenterClient.addObserver(
             NSView.boundsDidChangeNotification,
             scrollView.contentView,
         ) { [weak self] _ in
-            Task { @MainActor [weak self] in
+            DispatchQueue.main.async { [weak self] in
                 self?.visibleRowsPrefetchThrottler.schedule { [weak self] in
                     self?.requestThumbnailsForVisibleRows()
                 }
@@ -308,6 +310,8 @@ final class EntryListCoordinator: NSObject {
     }
 
     func rebuildRowsAndReload() {
+        let previousGraph = (outlineItems, entryItemById, groupItemByName)
+
         outlineItems = makeOutlineItems(state: state)
         entryItemById = Dictionary(uniqueKeysWithValues: outlineItems.flatMap { $0.flattenEntries() })
         groupItemByName = Dictionary(uniqueKeysWithValues: outlineItems.compactMap { item in
@@ -323,6 +327,10 @@ final class EntryListCoordinator: NSObject {
         restoreScrollPositionIfNeeded()
         syncListRenamingFromStore()
         requestThumbnailsForVisibleRows()
+
+        DispatchQueue.main.async {
+            _ = previousGraph
+        }
     }
 
     func requestThumbnailsForVisibleRows() {

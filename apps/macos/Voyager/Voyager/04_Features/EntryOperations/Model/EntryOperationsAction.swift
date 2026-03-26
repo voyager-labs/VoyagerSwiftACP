@@ -20,7 +20,8 @@ enum EntryOperationsAction: CasePathable, Sendable {
 
     @CasePathable
     enum Delegate: CasePathable, Sendable {
-        case navigateFolder(id: EntryModel.ID)
+        case navigateToPath(String)
+        case openCollectionFile(URL)
     }
 
     @CasePathable
@@ -56,6 +57,7 @@ enum EntryOperationsAction: CasePathable, Sendable {
         case loadClipboardState
         case appDidBecomeActive
         case syncClipboardState(paths: [String], operation: ClipboardOperation)
+        case pathsMutated([String])
     }
 
     @CasePathable
@@ -83,7 +85,7 @@ enum EntryOperationsAction: CasePathable, Sendable {
 
     @CasePathable
     enum Edit: CasePathable, Sendable {
-        case createNewFolder(name: String, parentPath: String)
+        case createNewFolder(parentPath: String)
         case createAliases(paths: [String])
         case renameItem(oldPath: String, newPath: String)
         case startRename(id: EntryModel.ID, text: String)

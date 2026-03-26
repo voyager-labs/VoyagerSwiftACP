@@ -62,15 +62,6 @@ struct EntryOperationsCommandRoutingReducer {
                         paths: paths,
                     ))))
                 }
-                return .run { @MainActor send in
-                    let paths = await resolveEntryOperationDroppedPaths(from: providers)
-                    guard !paths.isEmpty else { return }
-                    send(.tagging(.requestTagMutation(request: .init(
-                        mode: .add,
-                        tagName: tagName,
-                        paths: paths,
-                    ))))
-                }
 
             default:
                 return .none
@@ -82,8 +73,8 @@ struct EntryOperationsCommandRoutingReducer {
         switch output {
         case let .entryOperations(action):
             .send(action)
-        case let .navigateFolder(id):
-            .send(.delegate(.navigateFolder(id: id)))
+        case let .delegate(delegate):
+            .send(.delegate(delegate))
         }
     }
 

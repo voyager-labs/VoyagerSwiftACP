@@ -45,7 +45,7 @@ struct ContentPaneBreadcrumbBarView: View {
     }
 
     private var statusText: String {
-        let total = store.entryOperations.displayItems.count
+        let total = store.entryViewLayout.entryOperations.displayItems.count
         let selected = store.entryViewLayout.selectedIds.count
 
         if selected == 0 {
@@ -112,10 +112,11 @@ struct ContentPaneBreadcrumbBarView: View {
                 ),
             ]
         case .folder:
-            return BreadcrumbBuilder.breadcrumbPaths(
+            let paths = BreadcrumbBuilder.breadcrumbPaths(
                 navigationState: store.navigation.navigationState,
                 roots: chromeProps.breadcrumbRoots,
-            ).map { path in
+            )
+            return paths.map { path in
                 BreadcrumbItem(
                     path: path,
                     name: displayName(for: path),
@@ -131,6 +132,6 @@ struct ContentPaneBreadcrumbBarView: View {
         else {
             return nil
         }
-        return store.entryOperations.displayItems[id: selectedId]
+        return store.entryViewLayout.entryOperations.displayItems[id: selectedId]
     }
 }

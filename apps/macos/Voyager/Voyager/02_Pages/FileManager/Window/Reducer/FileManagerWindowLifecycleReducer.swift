@@ -23,13 +23,16 @@ struct FileManagerWindowLifecycleReducer {
                 }
 
                 return .merge(
-                    .send(.content(.entryArrangements(.setSortKey(state.content.entryArrangements.sortKey)))),
-                    .send(.content(.entryArrangements(.setSortOrder(state.content.entryArrangements.sortOrder)))),
-                    .send(.content(.entryArrangements(.setGroupKey(state.content.entryArrangements.groupKey)))),
-                    .send(.content(.entryOperations(.loading(.loadItems(
-                        path: state.content.navigation.currentPath,
-                        showHidden: state.content.entryViewLayout.showHiddenFiles,
+                    .send(.content(.entryViewLayout(.entryArrangements(.setSortKey(
+                        state.content.entryViewLayout.entryArrangements.sortKey,
                     ))))),
+                    .send(.content(.entryViewLayout(.entryArrangements(.setSortOrder(
+                        state.content.entryViewLayout.entryArrangements.sortOrder,
+                    ))))),
+                    .send(.content(.entryViewLayout(.entryArrangements(.setGroupKey(
+                        state.content.entryViewLayout.entryArrangements.groupKey,
+                    ))))),
+                    .send(.content(.internal(.applyNavigationState(state.content.navigation.navigationState)))),
                     .send(.sidebar(.internal(.loadFavorites))),
                     .send(.sidebar(.internal(.loadLocations))),
                     .send(.sidebar(.internal(.loadTags))),

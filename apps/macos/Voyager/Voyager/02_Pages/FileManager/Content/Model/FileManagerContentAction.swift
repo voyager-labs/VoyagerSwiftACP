@@ -9,9 +9,7 @@ enum FileManagerContentAction: ViewAction, CasePathable, Sendable {
     case `internal`(Internal)
     case delegate(Delegate)
 
-    case entryArrangements(EntryArrangementsFeature.Action)
     case entryViewLayout(EntryViewLayoutFeature.Action)
-    case entryOperations(EntryOperationsFeature.Action)
     case composer(ComposerFeature.Action)
 
     @CasePathable

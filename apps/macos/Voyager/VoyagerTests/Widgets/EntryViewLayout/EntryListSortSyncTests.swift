@@ -25,7 +25,7 @@ final class EntryListSortSyncTests: XCTestCase {
     func testSortSyncGateConsumesSuppressedSignature() {
         var gate = EntryListSortSyncGate()
         let descriptors = [NSSortDescriptor(key: EntryListColumn.kind.rawValue, ascending: true)]
-        let signature = EntryListSortDescriptorSignature(descriptors: descriptors)
+        let signature = EntryListCoordinatorSortSignature(descriptors: descriptors)
 
         gate.beginApply(signature)
         let didConsumeFirst = gate.consumeIfSuppressed(signature)

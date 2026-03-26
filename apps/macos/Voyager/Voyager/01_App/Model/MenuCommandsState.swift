@@ -57,8 +57,9 @@ struct MenuCommandsState: Equatable {
         let windowState = window.window
 
         hasFocusedWindow = true
-        canOpen = windowState.content.entryViewLayout.entryOperations.hasSelectableEntries
-        canQuickLook = windowState.content.entryViewLayout.entryOperations.hasSelectableEntries
+        let selectedIds = windowState.content.entryViewLayout.selectedIds
+        canOpen = !selectedIds.isEmpty
+        canQuickLook = !selectedIds.isEmpty
         canGoBack = windowState.content.navigation.canGoBack
         canGoForward = windowState.content.navigation.canGoForward
         canGoToEnclosingDirectory = windowState.content.navigation.canGoToEnclosingDirectory
@@ -71,7 +72,7 @@ struct MenuCommandsState: Equatable {
         sortOrder = windowState.content.entryViewLayout.entryArrangements.sortOrder
         canUndo = windowState.content.entryViewLayout.entryOperations.canUndoEntryAction
         canRedo = windowState.content.entryViewLayout.entryOperations.canRedoEntryAction
-        selectedItemCount = windowState.content.entryViewLayout.selectedIds.count
+        selectedItemCount = selectedIds.count
         isComposerPresented = windowState.content.composer.isPresented
     }
 }

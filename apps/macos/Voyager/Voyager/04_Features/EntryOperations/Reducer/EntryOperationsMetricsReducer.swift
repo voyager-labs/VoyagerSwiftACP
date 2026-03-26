@@ -91,7 +91,7 @@ struct EntryOperationsMetricsReducer {
 
     private func payloadForCreateActions(_ action: Action) -> EntryActionPayload? {
         switch action {
-        case .edit(.createNewFolder(name: _, parentPath: _)):
+        case .edit(.createNewFolder(parentPath: _)):
             return EntryActionPayload(actionKind: .createFolder, entryKind: .directory)
 
         case let .edit(.createAliases(paths)):

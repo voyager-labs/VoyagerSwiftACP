@@ -260,6 +260,12 @@ struct EntryClipboardOperationsReducer {
                                 try await entryFileOpsClient.moveFile(sourceURL, destURL)
                             }
                             await send(.lifecycle(.pathsMutated([sourcePath, destURL.path])))
+                            let changedPaths = [
+                                sourceURL.deletingLastPathComponent().path,
+                                destURL.deletingLastPathComponent().path,
+                            ]
+                            entryFileOpsClient.postFileSystemChanged(Array(Set(changedPaths)))
+                            await send(.lifecycle(.pathsMutated([sourcePath, destURL.path])))
                             targets.append(.init(beforePath: sourcePath, afterPath: destURL.path))
                             await send(.lifecycle(.operationFinished(sourcePath, kind, .success(()))))
                         } catch let error as FileOpError where error.isFileExists {
@@ -287,6 +293,11 @@ struct EntryClipboardOperationsReducer {
 
                                     await send(.lifecycle(.pathsMutated([sourcePath, destURL.path])))
                                     let destinationFolder = destURL.deletingLastPathComponent().path
+                                    let changedPaths = [
+                                        sourceURL.deletingLastPathComponent().path,
+                                        destinationFolder,
+                                    ]
+                                    entryFileOpsClient.postFileSystemChanged(Array(Set(changedPaths)))
                                     targets.append(.init(beforePath: sourcePath, afterPath: destURL.path))
                                     await send(.lifecycle(.operationFinished(destinationFolder, kind, .success(()))))
                                 } catch {

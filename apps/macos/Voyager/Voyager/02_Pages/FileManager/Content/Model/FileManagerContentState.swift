@@ -32,11 +32,13 @@ struct FileManagerContentState: Equatable {
     mutating func syncComposerCollectionState() {
         composer.collectionContext = collectionContext
         composer.openedCollectionURL = collectionSession.openedURL
-        composer.isCollectionMode = entryOperations.loadingContext.isCollectionMode
+        composer.isCollectionMode = entryViewLayout.entryOperations.loadingContext.isCollectionMode
     }
 
     var canSaveCollection: Bool {
-        guard entryOperations.loadingContext.isCollectionMode, collectionContext != nil else { return false }
+        guard entryViewLayout.entryOperations.loadingContext.isCollectionMode, collectionContext != nil else {
+            return false
+        }
         if collectionSession.baseline == nil {
             return true
         }
@@ -47,19 +49,5 @@ struct FileManagerContentState: Equatable {
         guard let baseline = collectionSession.baseline, let context = collectionContext else { return false }
         if baseline.context != context { return true }
         return false
-    }
-
-    var selectedEntries: [EntryModel] {
-        let selectedIds = entryViewLayout.selectedIds
-        return selectedIds.compactMap { id in
-            entryOperations.displayItems[id: id]
-        }
-    }
-
-    mutating func restoreCollectionDraftFromBaseline() {
-        if let baseline = collectionSession.baseline {
-            collectionContext = baseline.context
-            syncComposerCollectionState()
-        }
     }
 }

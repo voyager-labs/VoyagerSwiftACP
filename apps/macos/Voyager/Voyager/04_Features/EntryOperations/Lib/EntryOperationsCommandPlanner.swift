@@ -45,7 +45,7 @@ struct EntryOperationsCommandContext {
 
 enum EntryOperationsCommandOutput {
     case entryOperations(EntryOperationsAction)
-    case navigateFolder(id: EntryModel.ID)
+    case delegate(EntryOperationsAction.Delegate)
 }
 
 enum EntryOperationsCommandPlanner {
@@ -145,8 +145,15 @@ enum EntryOperationsCommandPlanner {
 
     private static func planOpenSelectedItem(_ selected: [EntryModel]) -> [EntryOperationsCommandOutput] {
         guard !selected.isEmpty else { return [] }
-        if selected.count == 1, let entry = selected.first, entry.isFolder {
-            return [.navigateFolder(id: entry.id)]
+        if selected.count == 1, let entry = selected.first {
+            let url = URL(fileURLWithPath: entry.fullPath)
+            if CollectionFileUtils.isCollectionFile(url) {
+                return [.delegate(.openCollectionFile(url))]
+            }
+
+            if entry.isFolder {
+                return [.delegate(.navigateToPath(entry.fullPath))]
+            }
         }
         return [.entryOperations(.open(.openFiles(paths: selected.map(\.fullPath))))]
     }

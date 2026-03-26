@@ -1,4 +1,5 @@
 import AppKit
+import Combine
 import ComposableArchitecture
 import VoyagerShared
 
@@ -46,6 +47,7 @@ final class EntryGridCoordinator: NSObject {
     var lassoAutoscrollController: EntryGridLassoAutoscrollController?
     var boundsDidChangeObserver: NSObjectProtocol?
     var lastRenderSnapshot: RenderSnapshot?
+    var renderObservationCancellable: AnyCancellable?
     let thumbnailPrefetchThrottler = MainThreadThrottler(intervalMs: 150, latest: true)
     var thumbnailImagesByPath: [String: NSImage] = [:]
     @Dependency(\.entryOpenClient)
@@ -145,6 +147,7 @@ final class EntryGridCoordinator: NSObject {
         restoreScrollPositionIfNeeded()
         if let width = view?.bounds.width { updateGridColumnCountIfNeeded(for: width) }
         DispatchQueue.main.async { [weak self] in
+            self?.syncRenamingFromStore()
             self?.requestThumbnailsForVisibleArea()
         }
     }
@@ -239,6 +242,9 @@ final class EntryGridCoordinator: NSObject {
             view?.window?.makeFirstResponder(collectionView)
             return
         }
+        isUpdatingSelectionFromStore = true
+        applySelection([indexPath])
+        isUpdatingSelectionFromStore = false
         collectionView.reloadItems(at: [indexPath])
         DispatchQueue.main.async { [weak self] in
             guard let self else { return }
@@ -316,10 +322,10 @@ extension EntryGridCoordinator {
         return section.items[indexPath.item]
     }
 
-    func selectedEntries(fallback: EntryModel?) -> [EntryModel] {
+    func selectedEntries(rowEntry: EntryModel?) -> [EntryModel] {
         let selectedIds = state.selectedIds
         if selectedIds.isEmpty {
-            return fallback.map { [$0] } ?? []
+            return rowEntry.map { [$0] } ?? []
         }
         return state.entries.filter { selectedIds.contains($0.id) }
     }

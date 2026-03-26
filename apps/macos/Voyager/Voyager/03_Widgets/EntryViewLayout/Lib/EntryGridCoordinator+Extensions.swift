@@ -1,4 +1,5 @@
 import AppKit
+import Combine
 import ComposableArchitecture
 import Foundation
 import VoyagerShared
@@ -10,19 +11,22 @@ extension EntryGridCoordinator {
     }
 
     func observeRenderLoop() {
-        observe { [weak self] in
-            guard let self else { return }
-            let snapshot = RenderSnapshot(state: state)
+        renderObservationCancellable?.cancel()
+        renderObservationCancellable = store.publisher
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] _ in
+                guard let self else { return }
+                let snapshot = RenderSnapshot(state: state)
 
-            guard let previous = lastRenderSnapshot else {
+                guard let previous = lastRenderSnapshot else {
+                    lastRenderSnapshot = snapshot
+                    return
+                }
+
+                handleSnapshotChanges(previous: previous, snapshot: snapshot)
+
                 lastRenderSnapshot = snapshot
-                return
             }
-
-            handleSnapshotChanges(previous: previous, snapshot: snapshot)
-
-            lastRenderSnapshot = snapshot
-        }
     }
 
     func handleSnapshotChanges(previous: RenderSnapshot, snapshot: RenderSnapshot) {
@@ -30,6 +34,7 @@ extension EntryGridCoordinator {
             rebuildSectionsAndReload()
         }
         syncSelectionIfNeeded(previous: previous, snapshot: snapshot)
+        reloadVisibleItemsIfNeeded(previous: previous, snapshot: snapshot)
         syncRenamingIfNeeded(previous: previous, snapshot: snapshot)
         updateGridMetricsIfNeeded(previous: previous, snapshot: snapshot)
         saveScrollPositionIfNeeded(previous: previous, snapshot: snapshot)
@@ -47,6 +52,12 @@ extension EntryGridCoordinator {
 
     func syncSelectionIfNeeded(previous: RenderSnapshot, snapshot: RenderSnapshot) {
         if previous.selectedIds != snapshot.selectedIds { syncSelectionFromStore() }
+    }
+
+    func reloadVisibleItemsIfNeeded(previous: RenderSnapshot, snapshot: RenderSnapshot) {
+        guard previous.clipboardItems != snapshot.clipboardItems
+            || previous.clipboardOperation != snapshot.clipboardOperation else { return }
+        reloadVisibleItems()
     }
 
     func syncRenamingIfNeeded(previous: RenderSnapshot, snapshot: RenderSnapshot) {
@@ -75,7 +86,8 @@ extension EntryGridCoordinator {
     }
 
     func resetThumbnailSessionIfNeeded(previous: RenderSnapshot, snapshot: RenderSnapshot) {
-        if previous.currentPath != snapshot.currentPath { resetThumbnailSession()
+        if previous.currentPath != snapshot.currentPath {
+            resetThumbnailSession()
             hasRestoredScrollPosition = false
         }
     }
@@ -97,7 +109,7 @@ extension EntryGridCoordinator {
             NSView.boundsDidChangeNotification,
             scrollView.contentView,
         ) { [weak self] _ in
-            Task { @MainActor [weak self] in
+            DispatchQueue.main.async { [weak self] in
                 self?.thumbnailPrefetchThrottler.schedule { [weak self] in
                     self?.requestThumbnailsForVisibleArea()
                 }
@@ -475,7 +487,7 @@ extension EntryGridCoordinator: EntryGridView.EntryGridCollectionViewMenuProvidi
     func contextMenu(for indexPath: IndexPath?, event: NSEvent) -> NSMenu {
         updateContextMenuAnchor(event)
         let rowEntry = entry(at: indexPath)
-        let selectedEntries = selectedEntries(fallback: rowEntry)
+        let selectedEntries = selectedEntries(rowEntry: rowEntry)
         preloadOpenWithApplications(selectedEntries: selectedEntries)
         let menuSpec = EntryContextMenuSpecFactory.make(
             selectedIds: state.selectedIds,
@@ -486,7 +498,7 @@ extension EntryGridCoordinator: EntryGridView.EntryGridCollectionViewMenuProvidi
             favoriteTags: finderFavoritesTagClient.favoriteTags(),
             openWithApplications: openWithApplications(selectedEntries: selectedEntries),
         )
-        let coordinator = EntryContextMenuCoordinator(store: store)
+        let coordinator = EntryContextMenuCoordinator(store: store, rowEntry: rowEntry)
         contextMenuCoordinator = coordinator
         return EntryContextMenuBuilder.makeMenu(configuration: .init(
             target: coordinator,
@@ -500,54 +512,5 @@ extension EntryGridCoordinator: EntryGridView.EntryGridCollectionViewMenuProvidi
             showOpenWith: menuSpec.showOpenWith,
             tags: menuSpec.tags,
         ))
-    }
-}
-
-extension EntryGridCoordinator {
-    func preloadOpenWithApplications(selectedEntries: [EntryModel]) {
-        let selectedFiles = selectedEntries.filter { !$0.isFolder }
-        if selectedFiles.isEmpty {
-            return
-        }
-
-        if selectedFiles.count > 1 {
-            sendEntryOperations(.openWith(.loadCommonApplicationsForFiles(files: selectedFiles)))
-        } else if let file = selectedFiles.first,
-                  state.entryOperations.applicationsForItems[file.fullPath] == nil
-        {
-            sendEntryOperations(.openWith(.loadApplicationsForFile(file: file)))
-        }
-    }
-
-    func openWithApplications(selectedEntries: [EntryModel]) -> [ApplicationInfo] {
-        let selectedFiles = selectedEntries.filter { !$0.isFolder }
-        let applications: [ApplicationInfo] = if selectedFiles.count > 1 {
-            state.entryOperations.commonApplicationsForSelectedFiles
-        } else if let file = selectedFiles.first {
-            state.entryOperations.applicationsForItems[file.fullPath] ?? []
-        } else {
-            []
-        }
-        return applications
-    }
-
-    func updateContextMenuAnchor(_ event: NSEvent) {
-        if let window = view?.window {
-            let screenPoint = window.convertPoint(toScreen: event.locationInWindow)
-            contextMenuAnchor = screenPoint
-        } else {
-            contextMenuAnchor = nil
-        }
-    }
-
-    func dragOperation(from resolved: EntryDropResolvedOperation) -> NSDragOperation {
-        switch resolved {
-        case .none:
-            []
-        case .copy:
-            .copy
-        case .move:
-            .move
-        }
     }
 }

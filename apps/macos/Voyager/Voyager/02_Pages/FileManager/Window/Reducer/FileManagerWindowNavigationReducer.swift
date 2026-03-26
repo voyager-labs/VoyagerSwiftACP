@@ -48,12 +48,6 @@ private struct FileManagerNavigationBridgeReducer {
             case .sidebar(.delegate(.showComputer)):
                 return .send(.navigation(.view(.showComputer)))
 
-            case let .content(.entryOperations(.delegate(.navigateFolder(id: id)))):
-                guard let entry = state.content.entryOperations.displayItems[id: id] else {
-                    return .none
-                }
-                return .send(.navigation(.view(.navigateToPath(entry.fullPath))))
-
             case let .content(.internal(.requestNavigation(navigationAction))):
                 return .send(.navigation(navigationAction))
 
@@ -127,40 +121,16 @@ func matchedSidebarItemName(
 
 func handleNavigateToState(
     _ navigationState: ContentPageNavigationRoute,
-    state: inout FileManagerWindowState,
+    state _: inout FileManagerWindowState,
 ) -> Effect<FileManagerWindowAction> {
     switch navigationState {
-    case let .folder(path):
-        .concatenate(
-            .send(.content(.entryOperations(.loading(.setCollectionMode(false))))),
-            .send(.content(.entryOperations(.loading(.loadItems(
-                path: path,
-                showHidden: state.content.entryViewLayout.showHiddenFiles,
-            ))))),
-        )
-    case .recents:
-        .concatenate(
-            .send(.content(.entryOperations(.loading(.setCollectionMode(false))))),
-            .send(.content(.entryOperations(.loading(.loadRecentItems(showHidden: state.content.entryViewLayout
-                    .showHiddenFiles))))),
-        )
-    case let .tags(tagName):
-        .concatenate(
-            .send(.content(.entryOperations(.loading(.setCollectionMode(false))))),
-            .send(.content(.entryOperations(.loading(.loadTagItems(
-                tagName: tagName,
-                showHidden: state.content.entryViewLayout.showHiddenFiles,
-            ))))),
-        )
-    case .computer:
-        .concatenate(
-            .send(.content(.entryOperations(.loading(.setCollectionMode(false))))),
-            .send(.content(.entryOperations(.loading(.loadComputerItems)))),
-        )
     case let .collection(navigation):
         .concatenate(
-            .send(.content(.entryOperations(.loading(.setCollectionMode(true))))),
+            .send(.content(.internal(.applyNavigationState(.collection(navigation))))),
             .send(.navigation(.internal(.navigateToCollection(navigation)))),
         )
+
+    default:
+        .send(.content(.internal(.applyNavigationState(navigationState))))
     }
 }

@@ -86,6 +86,29 @@ extension DependencyValues {
 
 @MainActor private var fileManagerWindowControllersByID: [UUID: FileManagerWindowCoordinator] = [:]
 @MainActor private var fileManagerWindowControllers: [FileManagerWindowCoordinator] = []
+@MainActor private var didConfigureAutomaticWindowTabbing = false
+
+@MainActor
+private func configureFileManagerWindowTabbingPolicyIfNeeded() {
+    guard !didConfigureAutomaticWindowTabbing else { return }
+    NSWindow.allowsAutomaticWindowTabbing = false
+    didConfigureAutomaticWindowTabbing = true
+}
+
+@MainActor
+func resolveFileManagerUndoManager(windowID: UUID?) -> UndoManager? {
+    if let windowID, let controller = fileManagerWindowControllersByID[windowID] {
+        return controller.windowUndoManager
+    }
+
+    if let keyWindow = NSApp.keyWindow,
+       let controller = fileManagerWindowControllers.first(where: { $0.window === keyWindow })
+    {
+        return controller.windowUndoManager
+    }
+
+    return (NSApp.keyWindow?.firstResponder as? NSResponder)?.undoManager
+}
 
 @MainActor
 func makeFileManagerWindowClientLive() -> FileManagerWindowClient {
@@ -147,6 +170,8 @@ func requestFileManagerNewTab(path: String?) {
 
 @MainActor
 private func fileManagerWindowOpen(windowID: UUID) {
+    configureFileManagerWindowTabbingPolicyIfNeeded()
+
     if let existing = fileManagerWindowControllersByID[windowID] {
         existing.window?.makeKeyAndOrderFront(nil)
         return
@@ -169,6 +194,8 @@ private func fileManagerWindowOpen(windowID: UUID) {
 
 @MainActor
 private func fileManagerWindowOpenTab(windowID: UUID) {
+    configureFileManagerWindowTabbingPolicyIfNeeded()
+
     if let existing = fileManagerWindowControllersByID[windowID] {
         existing.window?.makeKeyAndOrderFront(nil)
         return

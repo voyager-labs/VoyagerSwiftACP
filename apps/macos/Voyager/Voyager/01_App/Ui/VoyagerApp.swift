@@ -62,7 +62,10 @@ struct VoyagerApp: App {
             },
         )
         appDelegate.configure(appRootStore: appRootStore)
+        configureLogging()
+    }
 
+    private func configureLogging() {
         LoggingSystem.bootstrap { label in
             let oslogHandler = VoyagerOSLogHandler(label: label)
             #if DEBUG

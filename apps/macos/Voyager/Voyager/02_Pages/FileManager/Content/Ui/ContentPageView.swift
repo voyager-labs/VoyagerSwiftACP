@@ -23,10 +23,10 @@ struct ContentPageView: View {
             switch store.entryViewLayout.mode {
             case .list:
                 let entryViewLayoutStore = store.scope(state: \.entryViewLayout, action: \.entryViewLayout)
-                EntryListViewRepresentable(store: entryViewLayoutStore)
+                EntryListViewRepresentable(store: entryViewLayoutStore, contentStore: store)
             case .grid:
                 let entryViewLayoutStore = store.scope(state: \.entryViewLayout, action: \.entryViewLayout)
-                EntryGridViewRepresentable(store: entryViewLayoutStore)
+                EntryGridViewRepresentable(store: entryViewLayoutStore, contentStore: store)
             }
         }
     }
