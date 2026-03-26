@@ -1,20 +1,12 @@
 import ComposableArchitecture
 import Foundation
-import SwiftUI
 import VoyagerShared
 
 @ObservableState
 struct FileManagerContentState: Equatable {
     var navigation: ContentPageNavigationFeature.State = .init()
     var entryViewLayout: EntryViewLayoutFeature.State = .init()
-    var entryArrangements: EntryArrangementsFeature.State = .init()
-    var entryOperations: EntryOperationsFeature.State = .init()
     var composer: ComposerFeature.State = .init()
-
-    var listIconSize: CGFloat = AppearanceSettingsDefaults.listIconSize
-    var gridIconSize: CGFloat = AppearanceSettingsDefaults.gridIconSize
-    var listTextSize: CGFloat = AppearanceSettingsDefaults.listTextSize
-    var gridTextSize: CGFloat = AppearanceSettingsDefaults.gridTextSize
 
     // 컴포저 관련
     var collectionContext: CollectionContext?

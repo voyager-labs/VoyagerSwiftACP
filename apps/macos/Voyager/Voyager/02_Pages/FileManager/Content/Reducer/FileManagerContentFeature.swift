@@ -29,10 +29,6 @@ struct FileManagerContentFeature {
         }
 
         Reduce { state, action in
-            if let effect = handleEntryAppearanceAction(action, state: &state) {
-                return effect
-            }
-
             if let effect = handleEntryViewLayoutDelegateBridgeAction(action, state: &state) {
                 return effect
             }
@@ -125,21 +121,6 @@ struct FileManagerContentFeature {
                 return .none
             }
         }
-    }
-
-    private func handleEntryAppearanceAction(
-        _ action: Action,
-        state: inout State,
-    ) -> Effect<Action>? {
-        guard case let .entryViewLayout(.internal(.applyPreferences(prefs))) = action else {
-            return nil
-        }
-
-        state.listIconSize = prefs.listIconSize
-        state.gridIconSize = prefs.gridIconSize
-        state.listTextSize = prefs.listTextSize
-        state.gridTextSize = prefs.gridTextSize
-        return .none
     }
 
     private func handleEntryOperationsBridgeAction(
