@@ -6,10 +6,8 @@ import XCTest
 final class EntryLoadingClientRecentTagAdapterTests: XCTestCase {
     func testRecentAdapterMapsHelperPayloadIntoEntryModel() async {
         let date = Date(timeIntervalSince1970: 1_700_000_000)
-        let searchClient = SearchClient(
-            search: { _ in .init(itemCount: 0, appliedFilters: nil, items: nil, error: nil) },
-            applyFilters: { _ in .init(itemCount: 0, appliedFilters: nil, items: nil, error: nil) },
-            recentSearch: { request in
+        let recentSearchClient = RecentSearchClient(
+            search: { request in
                 XCTAssertEqual(request.scopeMode, .allIndexed)
                 XCTAssertEqual(request.resultCap, 100)
                 XCTAssertFalse(request.includeHidden)
@@ -34,12 +32,12 @@ final class EntryLoadingClientRecentTagAdapterTests: XCTestCase {
                     ],
                 )
             },
-            tagSearch: { request in
-                .init(requestedTag: request.requestedTag, items: [])
-            },
         )
 
-        let items = await EntryLoadingLive.loadRecentItemsViaSearch(showHidden: false, searchClient: searchClient)
+        let items = await EntryLoadingLive.loadRecentItemsViaSearch(
+            showHidden: false,
+            recentSearchClient: recentSearchClient,
+        )
 
         XCTAssertEqual(items.map(\.fullPath), ["/tmp/Recent.txt"])
         XCTAssertEqual(items.first?.facets.lastOpenedDate, date)
@@ -50,17 +48,12 @@ final class EntryLoadingClientRecentTagAdapterTests: XCTestCase {
     func testTagAdapterReturnsEmptyArrayOnHelperFailure() async {
         struct StubError: Error {}
 
-        let searchClient = SearchClient(
-            search: { _ in .init(itemCount: 0, appliedFilters: nil, items: nil, error: nil) },
-            applyFilters: { _ in .init(itemCount: 0, appliedFilters: nil, items: nil, error: nil) },
-            recentSearch: { _ in .init(items: []) },
-            tagSearch: { _ in throw StubError() },
-        )
+        let tagSearchClient = TagSearchClient(search: { _ in throw StubError() })
 
         let items = await EntryLoadingLive.loadFilesWithTagViaSearch(
             tag: "Work",
             showHidden: false,
-            searchClient: searchClient,
+            tagSearchClient: tagSearchClient,
         )
 
         XCTAssertEqual(items, [])
