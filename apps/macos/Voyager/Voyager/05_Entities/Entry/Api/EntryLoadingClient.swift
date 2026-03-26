@@ -1,4 +1,3 @@
-// swiftlint:disable file_length
 import ComposableArchitecture
 import CoreServices
 import Foundation
@@ -78,11 +77,25 @@ public struct EntryLoadingClient: Sendable {
 
 extension EntryLoadingClient: DependencyKey {
     public nonisolated static var liveValue: EntryLoadingClient {
-        EntryLoadingClient(
+        let recentSearchClient = RecentSearchClient.liveValue
+        let tagSearchClient = TagSearchClient.liveValue
+
+        return EntryLoadingClient(
             loadItems: EntryLoadingLive.loadItems,
             loadComputerItems: EntryLoadingLive.loadComputerItems,
-            loadRecentItems: EntryLoadingLive.loadRecentItems,
-            loadFilesWithTag: EntryLoadingLive.loadFilesWithTag,
+            loadRecentItems: { showHidden, _ in
+                await EntryLoadingLive.loadRecentItemsViaSearch(
+                    showHidden: showHidden,
+                    recentSearchClient: recentSearchClient,
+                )
+            },
+            loadFilesWithTag: { tag, showHidden, _ in
+                await EntryLoadingLive.loadFilesWithTagViaSearch(
+                    tag: tag,
+                    showHidden: showHidden,
+                    tagSearchClient: tagSearchClient,
+                )
+            },
             fileExists: EntryLoadingLive.fileExists,
             fileExistsAtPath: EntryLoadingLive.fileExistsAtPath,
             contentsOfDirectory: EntryLoadingLive.contentsOfDirectory,
@@ -243,9 +256,7 @@ enum EntryLoadingLive {
     }
 
     nonisolated static var homeDirectory: @Sendable () -> String {
-        {
-            NSHomeDirectory()
-        }
+        { NSHomeDirectory() }
     }
 
     nonisolated static var trashDirectoryPath: @Sendable () -> String? {
@@ -374,22 +385,6 @@ enum EntryLoadingLive {
         }
     }
 
-    nonisolated static var loadRecentItems: @Sendable (Bool, WorkspaceClient) async -> [EntryModel] {
-        { showHidden, _ in
-            await loadRecentItemsViaSearch(showHidden: showHidden, recentSearchClient: RecentSearchClient.liveValue)
-        }
-    }
-
-    nonisolated static var loadFilesWithTag: @Sendable (String, Bool, WorkspaceClient) async -> [EntryModel] {
-        { tag, showHidden, _ in
-            await loadFilesWithTagViaSearch(
-                tag: tag,
-                showHidden: showHidden,
-                tagSearchClient: TagSearchClient.liveValue,
-            )
-        }
-    }
-
     nonisolated static func loadRecentItemsViaSearch(
         showHidden: Bool,
         recentSearchClient: RecentSearchClient,
@@ -430,157 +425,6 @@ enum EntryLoadingLive {
             return response.items.map(EntryModelPayloadAdapter.makeEntry)
         } catch {
             return []
-        }
-    }
-}
-
-enum EntryModelConverterLive {
-    nonisolated static func convertURLToEntry(
-        _ itemURL: URL,
-        entryLoadingClient: EntryLoadingClient,
-        workspaceClient: WorkspaceClient,
-    ) -> EntryModel? {
-        var isDirectory: ObjCBool = false
-        guard entryLoadingClient.fileExistsAtPath(itemURL.path, &isDirectory) else {
-            return nil
-        }
-
-        let resourceValues = try? itemURL.resourceValues(forKeys: [
-            .nameKey,
-            .fileSizeKey,
-            .contentModificationDateKey,
-            .creationDateKey,
-            .addedToDirectoryDateKey,
-            .contentAccessDateKey,
-            .isHiddenKey,
-        ])
-
-        let name = resourceValues?.name ?? itemURL.lastPathComponent
-        let size = Int64(resourceValues?.fileSize ?? 0)
-        let modifiedDate = resourceValues?.contentModificationDate ?? Date()
-        let createdDate = resourceValues?.creationDate ?? Date()
-        let addedDate = resourceValues?.addedToDirectoryDate ?? Date()
-
-        let isHidden = resourceValues?.isHidden ?? false || name.hasPrefix(".")
-
-        let metadata = entryLoadingClient.getItemMetadata(itemURL, isDirectory.boolValue, workspaceClient)
-        let lastOpenedDate = metadata.lastUsedDate
-        let tags = entryTags(from: itemURL)
-
-        let supplementaryMetadata = entrySupplementaryMetadata(
-            url: itemURL,
-            isDirectory: isDirectory.boolValue,
-            entryLoadingClient: entryLoadingClient,
-        )
-
-        return EntryModel(
-            name: name,
-            fullPath: itemURL.path,
-            isFolder: isDirectory.boolValue,
-            isHidden: isHidden,
-            size: size,
-            modifiedDate: modifiedDate,
-            fileExtension: itemURL.pathExtension,
-            facets: EntryFacets(
-                createdDate: createdDate,
-                addedDate: addedDate,
-                lastOpenedDate: lastOpenedDate,
-                kind: metadata.kind,
-                creatorApplication: metadata.creatorApplication,
-                tags: tags,
-                supplementaryMetadata: supplementaryMetadata,
-            ),
-        )
-    }
-
-    private nonisolated static func entryTags(from itemURL: URL) -> [Tag]? {
-        if let tags = TagMetadataClient.loadTags(from: itemURL) {
-            return tags
-        }
-
-        if let tagNames = try? itemURL.resourceValues(forKeys: [.tagNamesKey]).tagNames {
-            let tags = tagNames
-                .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
-                .filter { !$0.isEmpty }
-                .map { Tag(name: $0, colorCode: 0) }
-            return tags.isEmpty ? nil : tags
-        }
-        return nil
-    }
-
-    private nonisolated static func entrySupplementaryMetadata(
-        url: URL,
-        isDirectory: Bool,
-        entryLoadingClient: EntryLoadingClient,
-    ) -> EntrySupplementaryMetadata? {
-        if isDirectory {
-            if entryLoadingClient.isPackageDirectory(url) {
-                return nil
-            }
-            let ext = url.pathExtension.lowercased()
-            if ext == CollectionConstants.fileExtension {
-                return nil
-            }
-            guard let itemCount = entryLoadingClient.getFolderItemCount(url) else {
-                return nil
-            }
-            return .folderItemCount(itemCount)
-        }
-
-        let ext = url.pathExtension.lowercased()
-
-        if ["jpg", "jpeg", "png", "heic", "gif", "webp", "bmp", "tiff"].contains(ext),
-           let resolution = entryLoadingClient.getImageResolution(url)
-        {
-            return .imageResolution(width: resolution.width, height: resolution.height)
-        }
-
-        if ["zip", "tar", "gz", "bz2", "xz", "rar", "7z", "dmg", "pkg"].contains(ext),
-           let fileSizeInBytes = entryLoadingClient.getFileSizeInBytes(url)
-        {
-            return .compressedFileSize(fileSizeInBytes)
-        }
-
-        return nil
-    }
-}
-
-private enum EntryModelPayloadAdapter {
-    nonisolated static func makeEntry(_ payload: SearchEntryPayload) -> EntryModel {
-        EntryModel(
-            name: payload.name,
-            fullPath: payload.fullPath,
-            isFolder: payload.isFolder,
-            isHidden: payload.isHidden,
-            size: payload.size,
-            modifiedDate: payload.modifiedDate,
-            fileExtension: payload.fileExtension,
-            facets: EntryFacets(
-                createdDate: payload.createdDate,
-                addedDate: payload.addedDate,
-                lastOpenedDate: payload.lastOpenedDate,
-                kind: payload.kind,
-                creatorApplication: payload.creatorApplication,
-                tags: payload.tags?.map { Tag(name: $0.name, colorCode: $0.colorCode) },
-                supplementaryMetadata: makeSupplementaryMetadata(payload.supplementaryMetadata),
-            ),
-        )
-    }
-
-    private nonisolated static func makeSupplementaryMetadata(
-        _ payload: SearchEntrySupplementaryMetadataPayload?,
-    ) -> EntrySupplementaryMetadata? {
-        guard let payload else {
-            return nil
-        }
-
-        switch payload {
-        case let .folderItemCount(itemCount):
-            return .folderItemCount(itemCount)
-        case let .imageResolution(width, height):
-            return .imageResolution(width: width, height: height)
-        case let .compressedFileSize(fileSize):
-            return .compressedFileSize(fileSize)
         }
     }
 }

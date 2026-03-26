@@ -5,7 +5,7 @@ struct TagSearchClient: Sendable {
 }
 
 extension TagSearchClient: DependencyKey {
-    static let liveValue: TagSearchClient = .init(
+    nonisolated(unsafe) static var liveValue: TagSearchClient = .init(
         search: { request in
             try await SearchXPCTransport.tagSearch(request)
         },

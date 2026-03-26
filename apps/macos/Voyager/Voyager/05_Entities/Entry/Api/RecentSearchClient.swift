@@ -5,7 +5,7 @@ struct RecentSearchClient: Sendable {
 }
 
 extension RecentSearchClient: DependencyKey {
-    static let liveValue: RecentSearchClient = .init(
+    nonisolated(unsafe) static var liveValue: RecentSearchClient = .init(
         search: { request in
             try await SearchXPCTransport.recentSearch(request)
         },
