@@ -5,6 +5,8 @@ import SwiftDotenv
 @main
 class VoyagerHelperApp {
     private static var helperFolderAccessListener: HelperFolderAccessListener?
+    private static var helperExternalFileChangeBridge: HelperExternalFileChangeBridge?
+    private static var helperExternalFileSystemWatcher: HelperExternalFileSystemWatcher?
 
     @MainActor
     static func main() {
@@ -18,16 +20,24 @@ class VoyagerHelperApp {
         )
         let stateBroadcaster = HelperStateBroadcaster()
         let helperFolderAccessListener = HelperFolderAccessListener()
+        let helperExternalFileChangeBridge = HelperExternalFileChangeBridge()
+        let helperExternalFileSystemWatcher = HelperExternalFileSystemWatcher { paths in
+            await helperExternalFileChangeBridge.publishChangedPaths(paths)
+        }
 
         logger.info(
             "Starting (APP_ENV=\(Dotenv.appEnv?.rawValue ?? "nil"))",
         )
         VoyagerHelperApp.helperFolderAccessListener = helperFolderAccessListener
+        VoyagerHelperApp.helperExternalFileChangeBridge = helperExternalFileChangeBridge
+        VoyagerHelperApp.helperExternalFileSystemWatcher = helperExternalFileSystemWatcher
 
         // 마이그레이션 등 DB 초기화가 오래 걸려도 메인 앱 타임아웃 전에 상태를 한 번 보내서 재시작되지 않도록 한다.
         stateBroadcaster.startObservingRequests()
         stateBroadcaster.postCurrentState()
         helperFolderAccessListener.startObservingRequests()
+        helperExternalFileChangeBridge.startObservingReplayRequests()
+        helperExternalFileSystemWatcher.start()
 
         Task {
             await runStartupTask(
