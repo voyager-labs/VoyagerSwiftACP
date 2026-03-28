@@ -180,13 +180,10 @@ struct AppLifecycleFeature {
                     return .none
                 }
 
-                let helperAppClient = helperAppClient
                 return .merge(
                     .run { send in
                         await VoyagerTerminationCoordinator.shared.begin(.userQuit)
                         await send(.willTerminate)
-
-                        await helperAppClient.stop()
 
                         await send(.completeTerminationAttempt(attemptID: attemptID, shouldTerminate: true))
                     },
