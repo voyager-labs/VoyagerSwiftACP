@@ -4,7 +4,7 @@ import ComposableArchitecture
 struct WindowManagerState: Equatable {
     typealias WindowID = WindowSessionState.ID
 
-    var appPreferences: AppPreferencesState = .init()
-    var windows: IdentifiedArrayOf<WindowSessionState> = []
+    var appPreferences: AppPreferencesFeature.State = .init()
+    var windows: IdentifiedArrayOf<WindowSessionFeature.State> = []
     var focusedWindowID: WindowID?
 }

@@ -14,7 +14,7 @@ struct EntryOperationsCommandRoutingReducer {
     var body: some Reducer<State, Action> {
         Reduce { state, action in
             switch action {
-            case let .executeCommand(command, context):
+            case let .routing(.executeCommand(command, context)):
                 let outputs = EntryOperationsCommandPlanner.plan(
                     command: command,
                     context: context,
@@ -22,45 +22,45 @@ struct EntryOperationsCommandRoutingReducer {
                 guard !outputs.isEmpty else { return .none }
                 return .merge(outputs.map(effect(for:)))
 
-            case let .validateDrop(context):
+            case let .routing(.validateDrop(context)):
                 state.dropValidationResult = resolveDropValidation(context)
                 return .none
 
-            case let .saveDragPaths(paths):
+            case let .routing(.saveDragPaths(paths)):
                 entryFileOpsClient.saveDragPaths(paths)
                 return .none
 
-            case let .handleDrop(providers: _, destinationPath):
+            case let .routing(.handleDrop(providers: _, destinationPath)):
                 let internalPaths = entryFileOpsClient.loadDragPaths()
                 guard !internalPaths.isEmpty else { return .none }
                 let operation: ClipboardOperation = entryFileOpsClient.loadDragWithOption() ? .copy : .cut
                 let operationKind: OperationKind = operation == .copy ? .pasteFileCopy : .pasteFileMove
-                return .send(.pasteItems(
+                return .send(.clipboard(.pasteItems(
                     sourcePaths: internalPaths,
                     destinationPath: destinationPath,
                     operation: operation,
                     operationKind: operationKind,
-                ))
+                )))
 
-            case let .dropItems(sourcePaths, destinationPath, isOptionDrag):
+            case let .routing(.dropItems(sourcePaths, destinationPath, isOptionDrag)):
                 let operation: ClipboardOperation = isOptionDrag ? .copy : .cut
                 let operationKind: OperationKind = operation == .copy ? .pasteFileCopy : .pasteFileMove
-                return .send(.pasteItems(
+                return .send(.clipboard(.pasteItems(
                     sourcePaths: sourcePaths,
                     destinationPath: destinationPath,
                     operation: operation,
                     operationKind: operationKind,
-                ))
+                )))
 
-            case let .handleDropToTag(providers, tagName):
+            case let .routing(.handleDropToTag(providers, tagName)):
                 return .run { @MainActor send in
                     let paths = await resolveEntryOperationDroppedPaths(from: providers)
                     guard !paths.isEmpty else { return }
-                    send(.requestTagMutation(request: .init(
+                    send(.tagging(.requestTagMutation(request: .init(
                         mode: .add,
                         tagName: tagName,
                         paths: paths,
-                    )))
+                    ))))
                 }
 
             default:

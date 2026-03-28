@@ -11,6 +11,10 @@ struct EntryViewLayoutFeature {
             EntryOperationsFeature()
         }
 
+        Scope(state: \.entryThumbnail, action: \.entryThumbnail) {
+            EntryThumbnailFeature()
+        }
+
         Scope(state: \.entryArrangements, action: \.entryArrangements) {
             EntryArrangementsFeature()
         }
@@ -166,11 +170,14 @@ struct EntryViewLayoutFeature {
             case .delegate:
                 return .none
 
+            case .entryThumbnail:
+                return .none
+
             case let .entryOperations(entryOperationsAction):
                 switch entryOperationsAction {
-                case .itemsLoaded,
-                     .collectionItemsLoadedFromSearch,
-                     .setCollectionMode:
+                case .loading(.itemsLoaded),
+                     .loading(.collectionItemsLoadedFromSearch),
+                     .loading(.setCollectionMode):
                     state.entries = state.entryOperations.displayOrderItems
                     return .send(.entryArrangements(.reapply))
 

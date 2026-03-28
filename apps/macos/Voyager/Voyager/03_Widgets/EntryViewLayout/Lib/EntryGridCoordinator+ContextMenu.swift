@@ -8,11 +8,11 @@ extension EntryGridCoordinator {
         }
 
         if selectedFiles.count > 1 {
-            sendEntryOperations(.loadCommonApplicationsForFiles(files: selectedFiles))
+            sendEntryOperations(.openWith(.loadCommonApplicationsForFiles(files: selectedFiles)))
         } else if let file = selectedFiles.first,
                   state.entryOperations.applicationsForItems[file.fullPath] == nil
         {
-            sendEntryOperations(.loadApplicationsForFile(file: file))
+            sendEntryOperations(.openWith(.loadApplicationsForFile(file: file)))
         }
     }
 

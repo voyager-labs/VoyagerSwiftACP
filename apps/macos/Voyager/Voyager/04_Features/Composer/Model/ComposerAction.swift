@@ -5,6 +5,7 @@ enum ComposerAction: ViewAction, CasePathable, Sendable {
     case view(View)
     case delegate(Delegate)
     case `internal`(Internal)
+
     case collection(CollectionFeature.Action)
     case propertyPicker(ConditionPropertyPickerFeature.Action)
     case operatorPicker(OperatorPickerFeature.Action)

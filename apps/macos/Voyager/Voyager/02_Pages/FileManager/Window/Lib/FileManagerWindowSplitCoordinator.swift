@@ -276,7 +276,7 @@ final class FileManagerWindowSplitCoordinator: NSViewController, NSSplitViewDele
 
         let shouldBeVisible = !isCollapsed
         if store.sidebar.sidebarVisible != shouldBeVisible {
-            store.send(.sidebar(.setSidebarVisible(shouldBeVisible)))
+            store.send(.sidebar(.view(.setSidebarVisible(shouldBeVisible))))
             FileManagerWindowSplitLayout.updateMainContainerLeading(
                 constraints.mainContainerLeading,
                 isSidebarVisible: shouldBeVisible,
@@ -292,6 +292,6 @@ final class FileManagerWindowSplitCoordinator: NSViewController, NSSplitViewDele
             min(Constants.sidebarMaxWidth, width),
         )
         guard abs(store.sidebar.sidebarWidth - clampedWidth) > 0.5 else { return }
-        store.send(.sidebar(.setSidebarWidth(clampedWidth)))
+        store.send(.sidebar(.view(.setSidebarWidth(clampedWidth))))
     }
 }

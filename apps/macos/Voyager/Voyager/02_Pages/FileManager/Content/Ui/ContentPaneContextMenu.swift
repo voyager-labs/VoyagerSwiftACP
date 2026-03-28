@@ -21,14 +21,14 @@ struct ContentPaneContextMenu: View {
         if isTrashFolder {
             Button("Empty Trash") {
                 store
-                    .send(.entryViewLayout(.entryOperations(.emptyTrash(paths: store.entryViewLayout.entries
-                            .map(\.fullPath)))))
+                    .send(.entryViewLayout(.entryOperations(.trash(.emptyTrash(paths: store.entryViewLayout.entries
+                            .map(\.fullPath))))))
             }
         } else {
             Button("New Folder") {
-                store
-                    .send(.entryViewLayout(.entryOperations(.createNewFolder(parentPath: store.navigation
-                            .currentPath))))
+                store.send(.entryViewLayout(.entryOperations(.edit(.createNewFolder(
+                    parentPath: store.navigation.currentPath,
+                )))))
             }
             .keyboardShortcut("n", modifiers: [.command, .shift])
         }
@@ -62,14 +62,14 @@ struct ContentPaneContextMenu: View {
         }
     }
 
-    private func viewLayoutToggle(_ title: String, layout: ContentViewLayout) -> some View {
+    private func viewLayoutToggle(_ title: String, layout: EntryViewLayoutState.Mode) -> some View {
         Toggle(
             title,
             isOn: Binding(
-                get: { store.viewLayout == layout },
+                get: { store.entryViewLayout.mode == layout },
                 set: { isOn in
                     if isOn {
-                        store.send(.changeLayout(layout))
+                        store.send(.view(.changeLayout(layout)))
                     }
                 },
             ),

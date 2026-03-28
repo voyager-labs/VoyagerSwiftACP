@@ -18,7 +18,7 @@ final class AppRootFeatureContractTests: XCTestCase {
         await store.send(.appPreferences(.delegate(.updated(preferences)))) {
             $0.appPreferences = preferences
         }
-        await store.receive(\.windowManager.applyAppPreferences) {
+        await store.receive(\.windowManager.lifecycle.applyAppPreferences) {
             $0.windowManager.appPreferences = preferences
         }
     }
@@ -28,8 +28,8 @@ final class AppRootFeatureContractTests: XCTestCase {
             AppRootFeature()
         }
 
-        await store.send(.menuCommands(.delegate(.windowManager(.quickLook))))
-        await store.receive(\.windowManager.quickLook)
+        await store.send(.menuCommands(.delegate(.windowManager(.file(.quickLook)))))
+        await store.receive(\.windowManager.file.quickLook)
     }
 
     func testMenuCommandsDelegateForwardsToUpdater() async {
@@ -50,7 +50,7 @@ final class AppRootFeatureContractTests: XCTestCase {
         }
 
         await store.send(.lifecycle(.delegate(.openInitialWindowIfNeeded)))
-        await store.receive(\.windowManager.openInitialWindowIfNeeded)
+        await store.receive(\.windowManager.lifecycle.openInitialWindowIfNeeded)
     }
 
     func testMenuCommandsStateIsRecomputedAfterWindowManagerChanges() async {

@@ -19,7 +19,7 @@ struct EntryOpenOperationsReducer {
     var body: some Reducer<State, Action> {
         Reduce { _, action in
             switch action {
-            case let .openFiles(paths):
+            case let .open(.openFiles(paths)):
                 guard !paths.isEmpty else {
                     return .none
                 }
@@ -60,19 +60,23 @@ struct EntryOpenOperationsReducer {
                         guard let appURL else {
                             for filePath in groupPaths {
                                 let url = URL(fileURLWithPath: filePath)
-                                await send(.operationStarted(filePath, .openDefault))
+                                await send(.lifecycle(.operationStarted(filePath, .openDefault)))
                                 do {
                                     try await entryOpenClient.open(url, .defaultApp)
-                                    await send(.operationFinished(filePath, .openDefault, .success(())))
+                                    await send(.lifecycle(.operationFinished(filePath, .openDefault, .success(()))))
                                 } catch {
-                                    await send(.operationFinished(filePath, .openDefault, .failure(error.fileOpError)))
+                                    await send(.lifecycle(.operationFinished(
+                                        filePath,
+                                        .openDefault,
+                                        .failure(error.fileOpError),
+                                    )))
                                 }
                             }
                             continue
                         }
 
                         for filePath in groupPaths {
-                            await send(.operationStarted(filePath, .openDefault))
+                            await send(.lifecycle(.operationStarted(filePath, .openDefault)))
                         }
 
                         do {
@@ -85,18 +89,22 @@ struct EntryOpenOperationsReducer {
                             try await workspaceClient.openURLsWithApplication(urls, appURL, false, nil)
                             for filePath in groupPaths {
                                 await send(
-                                    .operationFinished(filePath, .openDefault, .success(())),
+                                    .lifecycle(.operationFinished(filePath, .openDefault, .success(()))),
                                 )
                             }
                         } catch {
                             for filePath in groupPaths {
-                                await send(.operationFinished(filePath, .openDefault, .failure(error.fileOpError)))
+                                await send(.lifecycle(.operationFinished(
+                                    filePath,
+                                    .openDefault,
+                                    .failure(error.fileOpError),
+                                )))
                             }
                         }
                     }
                 }
 
-            case let .quickLookFiles(paths):
+            case let .open(.quickLookFiles(paths)):
                 guard !paths.isEmpty else { return .none }
                 let urls = paths.map { URL(fileURLWithPath: $0) }
                 guard let keyPath = paths.first else { return .none }
@@ -104,7 +112,7 @@ struct EntryOpenOperationsReducer {
                     try await entryQuickLookClient.quickLook(urls, 0)
                 }
 
-            case let .openFinderInfo(paths):
+            case let .open(.openFinderInfo(paths)):
                 guard !paths.isEmpty else { return .none }
                 let urls = paths.map { URL(fileURLWithPath: $0) }
                 guard let keyPath = paths.first else { return .none }
@@ -112,7 +120,7 @@ struct EntryOpenOperationsReducer {
                     try await entryOpenClient.openFinderInfo(urls)
                 }
 
-            case let .shareItems(paths, anchor):
+            case let .open(.shareItems(paths, anchor)):
                 guard !paths.isEmpty else { return .none }
                 let urls = paths.map { URL(fileURLWithPath: $0) }
                 guard let keyPath = paths.first else { return .none }
@@ -120,7 +128,7 @@ struct EntryOpenOperationsReducer {
                     try await entryOpenClient.shareItems(urls, anchor)
                 }
 
-            case let .performService(paths, name):
+            case let .open(.performService(paths, name)):
                 guard !paths.isEmpty else { return .none }
                 let urls = paths.map { URL(fileURLWithPath: $0) }
                 guard let keyPath = paths.first else { return .none }
@@ -128,7 +136,7 @@ struct EntryOpenOperationsReducer {
                     try await entryOpenClient.performService(name, urls)
                 }
 
-            case let .revealInFinder(paths):
+            case let .open(.revealInFinder(paths)):
                 guard !paths.isEmpty else { return .none }
                 let urls = paths.map { URL(fileURLWithPath: $0) }
                 guard let keyPath = paths.first else { return .none }

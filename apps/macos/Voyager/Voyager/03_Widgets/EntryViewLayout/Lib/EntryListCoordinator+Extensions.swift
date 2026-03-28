@@ -1,4 +1,5 @@
 import AppKit
+import Combine
 import ComposableArchitecture
 
 extension EntryListCoordinator {
@@ -60,7 +61,7 @@ extension EntryListCoordinator: NSOutlineViewDelegate {
             return entry.fullPath
         }
         guard !paths.isEmpty else { return }
-        sendEntryOperations(.saveDragPaths(paths))
+        sendEntryOperations(.routing(.saveDragPaths(paths)))
     }
 
     func outlineView(
@@ -70,7 +71,7 @@ extension EntryListCoordinator: NSOutlineViewDelegate {
         operation: NSDragOperation,
     ) {
         guard EntryViewLayoutDragStateClearRuleSet.shouldClearAfterSessionEnd(operation: operation) else { return }
-        sendEntryOperations(.saveDragPaths([]))
+        sendEntryOperations(.routing(.saveDragPaths([])))
         store.send(.view(.setDropTargeted(false)))
     }
 
@@ -257,19 +258,22 @@ extension EntryListCoordinator {
     }
 
     func observeRenderLoop() {
-        observe { [weak self] in
-            guard let self else { return }
-            let snapshot = RenderSnapshot(state: state)
+        renderObservationCancellable?.cancel()
+        renderObservationCancellable = store.publisher
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] _ in
+                guard let self else { return }
+                let snapshot = RenderSnapshot(state: state)
 
-            guard let previous = lastRenderSnapshot else {
+                guard let previous = lastRenderSnapshot else {
+                    lastRenderSnapshot = snapshot
+                    return
+                }
+
+                handleSnapshotChanges(previous: previous, snapshot: snapshot)
+
                 lastRenderSnapshot = snapshot
-                return
             }
-
-            handleSnapshotChanges(previous: previous, snapshot: snapshot)
-
-            lastRenderSnapshot = snapshot
-        }
     }
 
     func handleSnapshotChanges(previous: RenderSnapshot, snapshot: RenderSnapshot) {
@@ -283,6 +287,7 @@ extension EntryListCoordinator {
         saveScrollPositionIfNeeded(previous: previous, snapshot: snapshot)
         scrollToSelectionIfNeeded(previous: previous, snapshot: snapshot)
         updateDropTargetBorderIfNeeded(previous: previous, snapshot: snapshot)
+        syncThumbnailProjectionIfNeeded(previous: previous, snapshot: snapshot)
     }
 
     func handleVisibleColumnsChange(previous: RenderSnapshot, snapshot: RenderSnapshot) {
@@ -347,6 +352,11 @@ extension EntryListCoordinator {
     func updateDropTargetBorderIfNeeded(previous: RenderSnapshot, snapshot: RenderSnapshot) {
         if previous.isDropTargeted != snapshot
             .isDropTargeted { updateDropTargetBorder(isTargeted: snapshot.isDropTargeted) }
+    }
+
+    func syncThumbnailProjectionIfNeeded(previous: RenderSnapshot, snapshot: RenderSnapshot) {
+        guard previous.thumbnailRenderVersion != snapshot.thumbnailRenderVersion else { return }
+        refreshThumbnailProjectionForVisibleRows()
     }
 
     func syncListSortIndicators(sortKey: SortKey, sortOrder: SortOrder) {
@@ -473,17 +483,17 @@ extension EntryListCoordinator {
                 onRenameUpdate: { [weak self] text in
                     guard let self else { return }
                     guard state.entryOperations.renamingItemId != nil else { return }
-                    sendEntryOperations(.updateRenamingText(text))
+                    sendEntryOperations(.edit(.updateRenamingText(text)))
                 },
                 onRenameCommit: { [weak self] in
                     guard let self else { return }
                     guard state.entryOperations.renamingItemId != nil else { return }
-                    sendEntryOperations(.commitRename)
+                    sendEntryOperations(.edit(.commitRename))
                 },
                 onRenameCancel: { [weak self] in
                     guard let self else { return }
                     guard state.entryOperations.renamingItemId != nil else { return }
-                    sendEntryOperations(.cancelRename)
+                    sendEntryOperations(.edit(.cancelRename))
                 },
             ),
         )

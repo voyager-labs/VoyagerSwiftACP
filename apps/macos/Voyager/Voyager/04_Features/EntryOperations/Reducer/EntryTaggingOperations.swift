@@ -12,7 +12,7 @@ struct EntryTaggingOperationsReducer {
     var body: some Reducer<State, Action> {
         Reduce { _, action in
             switch action {
-            case let .requestTagMutation(request):
+            case let .tagging(.requestTagMutation(request)):
                 applyTagMutation(request)
 
             default:
@@ -29,7 +29,7 @@ struct EntryTaggingOperationsReducer {
             for filePath in request.paths where seenPaths.insert(filePath).inserted {
                 let url = URL(fileURLWithPath: filePath)
 
-                await send(.operationStarted(filePath, .setTags))
+                await send(.lifecycle(.operationStarted(filePath, .setTags)))
                 do {
                     let beforeTags = try await entryFileOpsClient.getTags(url)
                     let afterTags = Self.makeAfterTags(
@@ -38,12 +38,12 @@ struct EntryTaggingOperationsReducer {
                         beforeTags: beforeTags,
                     )
                     guard beforeTags != afterTags else {
-                        await send(.operationFinished(filePath, .setTags, .success(())))
+                        await send(.lifecycle(.operationFinished(filePath, .setTags, .success(()))))
                         continue
                     }
 
                     try await entryFileOpsClient.setTags(url, afterTags)
-                    await send(.operationFinished(filePath, .setTags, .success(())))
+                    await send(.lifecycle(.operationFinished(filePath, .setTags, .success(()))))
                     completedTargets.append(EntryActionRecord.Target(
                         beforePath: filePath,
                         afterPath: filePath,
@@ -51,13 +51,13 @@ struct EntryTaggingOperationsReducer {
                         afterTags: afterTags,
                     ))
                 } catch {
-                    await send(.operationFinished(filePath, .setTags, .failure(error.fileOpError)))
+                    await send(.lifecycle(.operationFinished(filePath, .setTags, .failure(error.fileOpError))))
                 }
             }
 
             guard !completedTargets.isEmpty else { return }
             let record = EntryActionRecord(operationKind: .setTags, targets: completedTargets)
-            await send(.entryActionCompleted(record))
+            await send(.lifecycle(.entryActionCompleted(record)))
         }
     }
 

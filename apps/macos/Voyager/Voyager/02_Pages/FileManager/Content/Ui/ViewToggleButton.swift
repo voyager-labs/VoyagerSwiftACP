@@ -8,12 +8,12 @@ struct ViewToggleButton: View {
     var body: some View {
         ToolbarMenuButton(
             // TODO: 아이콘 상수화
-            systemName: store.viewLayout == .list ? "list.bullet" : "square.grid.2x2",
+            systemName: store.entryViewLayout.mode == .list ? "list.bullet" : "square.grid.2x2",
             isEnabled: true,
             font: nil,
             menuContent: {
                 Button(
-                    action: { store.send(.changeLayout(.list)) },
+                    action: { store.send(.view(.changeLayout(.list))) },
                     label: {
                         HStack {
                             Image(systemName: "list.bullet")
@@ -21,10 +21,10 @@ struct ViewToggleButton: View {
                         }
                     },
                 )
-                .disabled(store.viewLayout == .list)
+                .disabled(store.entryViewLayout.mode == .list)
 
                 Button(
-                    action: { store.send(.changeLayout(.grid)) },
+                    action: { store.send(.view(.changeLayout(.grid))) },
                     label: {
                         HStack {
                             Image(systemName: "square.grid.2x2")
@@ -32,7 +32,7 @@ struct ViewToggleButton: View {
                         }
                     },
                 )
-                .disabled(store.viewLayout == .grid)
+                .disabled(store.entryViewLayout.mode == .grid)
             },
         )
     }

@@ -45,7 +45,7 @@ struct EntryOperationsCommandContext {
 
 enum EntryOperationsCommandOutput {
     case entryOperations(EntryOperationsAction)
-    case delegate(EntryOperationsDelegate)
+    case delegate(EntryOperationsAction.Delegate)
 }
 
 enum EntryOperationsCommandPlanner {
@@ -101,7 +101,7 @@ enum EntryOperationsCommandPlanner {
         case .cutSelectedItems:
             planCutSelectedItems(context)
         case let .pasteItems(destinationPath):
-            [.entryOperations(.pasteItemsFromClipboard(destinationPath: destinationPath))]
+            [.entryOperations(.clipboard(.pasteItemsFromClipboard(destinationPath: destinationPath)))]
         case .duplicateSelectedItems:
             planDuplicateSelectedItems(context)
         case .copySelectedAbsolutePaths:
@@ -131,7 +131,7 @@ enum EntryOperationsCommandPlanner {
         case .putBackSelectedItems:
             planPutBackSelectedItems(context)
         case .emptyTrash:
-            [.entryOperations(.emptyTrash(paths: context.displayItems.map(\.fullPath)))]
+            [.entryOperations(.trash(.emptyTrash(paths: context.displayItems.map(\.fullPath))))]
         }
     }
 
@@ -155,17 +155,17 @@ enum EntryOperationsCommandPlanner {
                 return [.delegate(.navigateToPath(entry.fullPath))]
             }
         }
-        return [.entryOperations(.openFiles(paths: selected.map(\.fullPath)))]
+        return [.entryOperations(.open(.openFiles(paths: selected.map(\.fullPath))))]
     }
 
     private static func planQuickLookSelectedItem(_ selected: [EntryModel]) -> [EntryOperationsCommandOutput] {
         guard !selected.isEmpty else { return [] }
-        return [.entryOperations(.quickLookFiles(paths: selected.map(\.fullPath)))]
+        return [.entryOperations(.open(.quickLookFiles(paths: selected.map(\.fullPath))))]
     }
 
     private static func planGetInfoForSelectedItems(_ selected: [EntryModel]) -> [EntryOperationsCommandOutput] {
         guard !selected.isEmpty else { return [] }
-        return [.entryOperations(.openFinderInfo(paths: selected.map(\.fullPath)))]
+        return [.entryOperations(.open(.openFinderInfo(paths: selected.map(\.fullPath))))]
     }
 
     private static func planShareSelectedItems(
@@ -173,12 +173,12 @@ enum EntryOperationsCommandPlanner {
         anchor: CGPoint?,
     ) -> [EntryOperationsCommandOutput] {
         guard !selected.isEmpty else { return [] }
-        return [.entryOperations(.shareItems(paths: selected.map(\.fullPath), anchor: anchor))]
+        return [.entryOperations(.open(.shareItems(paths: selected.map(\.fullPath), anchor: anchor)))]
     }
 
     private static func planRevealSelectedItemsInFinder(_ selected: [EntryModel]) -> [EntryOperationsCommandOutput] {
         guard !selected.isEmpty else { return [] }
-        return [.entryOperations(.revealInFinder(paths: selected.map(\.fullPath)))]
+        return [.entryOperations(.open(.revealInFinder(paths: selected.map(\.fullPath))))]
     }
 
     private static func planPerformService(
@@ -186,7 +186,7 @@ enum EntryOperationsCommandPlanner {
         serviceName: String,
     ) -> [EntryOperationsCommandOutput] {
         guard !selected.isEmpty else { return [] }
-        return [.entryOperations(.performService(paths: selected.map(\.fullPath), name: serviceName))]
+        return [.entryOperations(.open(.performService(paths: selected.map(\.fullPath), name: serviceName)))]
     }
 
     private static func planCopySelectedItems(_ context: EntryOperationsCommandContext)
@@ -194,7 +194,7 @@ enum EntryOperationsCommandPlanner {
     {
         let selected = selectedItems(in: context)
         guard !selected.isEmpty else { return [] }
-        return [.entryOperations(.copySelectedItems(files: selected))]
+        return [.entryOperations(.clipboard(.copySelectedItems(files: selected)))]
     }
 
     private static func planCutSelectedItems(_ context: EntryOperationsCommandContext)
@@ -203,8 +203,8 @@ enum EntryOperationsCommandPlanner {
         let selected = selectedItems(in: context)
         guard !selected.isEmpty else { return [] }
         return [
-            .entryOperations(.copySelectedItems(files: selected)),
-            .entryOperations(.setClipboardOperation(operation: .cut)),
+            .entryOperations(.clipboard(.copySelectedItems(files: selected))),
+            .entryOperations(.clipboard(.setClipboardOperation(operation: .cut))),
         ]
     }
 
@@ -214,12 +214,12 @@ enum EntryOperationsCommandPlanner {
         let selectedPaths = selectedPaths(in: context)
         guard !selectedPaths.isEmpty else { return [] }
         return [
-            .entryOperations(.pasteItems(
+            .entryOperations(.clipboard(.pasteItems(
                 sourcePaths: selectedPaths,
                 destinationPath: context.currentPath,
                 operation: .copy,
                 operationKind: .pasteFileDuplicate,
-            )),
+            ))),
         ]
     }
 
@@ -228,7 +228,7 @@ enum EntryOperationsCommandPlanner {
     {
         let selectedPaths = selectedPaths(in: context)
         guard !selectedPaths.isEmpty else { return [] }
-        return [.entryOperations(.copyAbsolutePaths(paths: selectedPaths))]
+        return [.entryOperations(.clipboard(.copyAbsolutePaths(paths: selectedPaths)))]
     }
 
     private static func planCopySelectedURLs(_ context: EntryOperationsCommandContext)
@@ -236,7 +236,7 @@ enum EntryOperationsCommandPlanner {
     {
         let selectedPaths = selectedPaths(in: context)
         guard !selectedPaths.isEmpty else { return [] }
-        return [.entryOperations(.copyURLs(paths: selectedPaths))]
+        return [.entryOperations(.clipboard(.copyURLs(paths: selectedPaths)))]
     }
 
     private static func planCreateAliasForSelectedItems(
@@ -244,7 +244,7 @@ enum EntryOperationsCommandPlanner {
     ) -> [EntryOperationsCommandOutput] {
         let selectedPaths = selectedPaths(in: context)
         guard !selectedPaths.isEmpty else { return [] }
-        return [.entryOperations(.createAliases(paths: selectedPaths))]
+        return [.entryOperations(.edit(.createAliases(paths: selectedPaths)))]
     }
 
     private static func planCompressSelectedItems(_ context: EntryOperationsCommandContext)
@@ -252,14 +252,14 @@ enum EntryOperationsCommandPlanner {
     {
         let selectedPaths = selectedPaths(in: context)
         guard !selectedPaths.isEmpty else { return [] }
-        return [.entryOperations(.compressItems(paths: selectedPaths))]
+        return [.entryOperations(.archive(.compressItems(paths: selectedPaths)))]
     }
 
     private static func planExtractSelectedItem(_ context: EntryOperationsCommandContext)
         -> [EntryOperationsCommandOutput]
     {
         guard let selectedPath = selectedPaths(in: context).first else { return [] }
-        return [.entryOperations(.extractCompressedFile(path: selectedPath))]
+        return [.entryOperations(.archive(.extractCompressedFile(path: selectedPath)))]
     }
 
     private static func planToggleTagForSelectedItem(
@@ -269,11 +269,11 @@ enum EntryOperationsCommandPlanner {
         let selectedPaths = selectedPaths(in: context)
         guard !selectedPaths.isEmpty else { return [] }
         return [
-            .entryOperations(.requestTagMutation(request: .init(
+            .entryOperations(.tagging(.requestTagMutation(request: .init(
                 mode: .toggle,
                 tagName: tag,
                 paths: selectedPaths,
-            ))),
+            )))),
         ]
     }
 
@@ -282,7 +282,7 @@ enum EntryOperationsCommandPlanner {
     ) -> [EntryOperationsCommandOutput] {
         let selectedPaths = selectedPaths(in: context)
         guard !selectedPaths.isEmpty else { return [] }
-        return [.entryOperations(.moveToTrash(paths: selectedPaths))]
+        return [.entryOperations(.trash(.moveToTrash(paths: selectedPaths)))]
     }
 
     private static func planDeleteSelectedItemsImmediately(
@@ -290,7 +290,7 @@ enum EntryOperationsCommandPlanner {
     ) -> [EntryOperationsCommandOutput] {
         let selectedPaths = selectedPaths(in: context)
         guard !selectedPaths.isEmpty else { return [] }
-        return [.entryOperations(.deleteImmediately(paths: selectedPaths))]
+        return [.entryOperations(.trash(.deleteImmediately(paths: selectedPaths)))]
     }
 
     private static func planPutBackSelectedItems(
@@ -298,7 +298,7 @@ enum EntryOperationsCommandPlanner {
     ) -> [EntryOperationsCommandOutput] {
         let selectedPaths = selectedPaths(in: context)
         guard !selectedPaths.isEmpty else { return [] }
-        return [.entryOperations(.putBackFromTrash(paths: selectedPaths))]
+        return [.entryOperations(.trash(.putBackFromTrash(paths: selectedPaths)))]
     }
 
     private static func openWithOutputs(
@@ -313,17 +313,17 @@ enum EntryOperationsCommandPlanner {
             return selectedFiles.flatMap { file -> [EntryOperationsCommandOutput] in
                 var outputs: [EntryOperationsCommandOutput] = []
                 if shouldSetAsDefault {
-                    outputs.append(.entryOperations(.setDefaultAppForFile(
+                    outputs.append(.entryOperations(.openWith(.setDefaultAppForFile(
                         type: nil,
                         bundleID: bundleID,
                         file: file,
-                    )))
+                    ))))
                 }
-                outputs.append(.entryOperations(.openFileWithAppBundleID(
+                outputs.append(.entryOperations(.openWith(.openFileWithAppBundleID(
                     filePath: file.fullPath,
                     bundleID: bundleID,
                     url: URL(fileURLWithPath: file.fullPath),
-                )))
+                ))))
                 return outputs
             }
         }
@@ -332,18 +332,18 @@ enum EntryOperationsCommandPlanner {
             return [
                 .entryOperations(
                     shouldSetAsDefault
-                        ? .setDefaultAppWithOther(file: file)
-                        : .openFileWithApp(file: file),
+                        ? .openWith(.setDefaultAppWithOther(file: file))
+                        : .openWith(.openFileWithApp(file: file)),
                 ),
             ]
         }
 
         return [
             .entryOperations(
-                .openFilesWithAppFromOther(
+                .openWith(.openFilesWithAppFromOther(
                     files: selectedFiles,
                     shouldSetAsDefault: shouldSetAsDefault,
-                ),
+                )),
             ),
         ]
     }

@@ -18,31 +18,37 @@ final class AppLifecycleFeatureContractTests: XCTestCase {
     }
 
     func testLaunchActionsHaveProperStructure() {
-        XCTAssertTrue(AppLifecycleAction.willFinishLaunching.is(\.willFinishLaunching))
-        XCTAssertTrue(AppLifecycleAction.didFinishLaunching.is(\.didFinishLaunching))
+        XCTAssertTrue(AppLifecycleAction.launch(.willFinishLaunching).is(\.launch.willFinishLaunching))
+        XCTAssertTrue(AppLifecycleAction.launch(.didFinishLaunching).is(\.launch.didFinishLaunching))
     }
 
     func testReopenActionHasProperStructure() {
-        let reopenAction = AppLifecycleAction.appReopen(hasVisibleWindows: true)
-        XCTAssertTrue(reopenAction.is(\.appReopen))
+        let reopenAction = AppLifecycleAction.launch(.appReopen(hasVisibleWindows: true))
+        XCTAssertTrue(reopenAction.is(\.launch.appReopen))
     }
 
     func testTerminationActionsHaveProperStructure() {
         let attemptID = UUID()
         let result = QuitConfirmationResult(shouldQuit: true, isAlertBeforeQuitEnabled: false)
 
-        XCTAssertTrue(AppLifecycleAction.requestTermination.is(\.requestTermination))
+        XCTAssertTrue(AppLifecycleAction.termination(.requestTermination).is(\.termination.requestTermination))
 
-        let responseAction = AppLifecycleAction.quitConfirmationResponse(attemptID: attemptID, result: result)
-        XCTAssertTrue(responseAction.is(\.quitConfirmationResponse))
+        let responseAction = AppLifecycleAction.termination(.quitConfirmationResponse(
+            attemptID: attemptID,
+            result: result,
+        ))
+        XCTAssertTrue(responseAction.is(\.termination.quitConfirmationResponse))
 
-        let startCleanupAction = AppLifecycleAction.startTerminationCleanup(attemptID: attemptID)
-        XCTAssertTrue(startCleanupAction.is(\.startTerminationCleanup))
+        let startCleanupAction = AppLifecycleAction.termination(.startTerminationCleanup(attemptID: attemptID))
+        XCTAssertTrue(startCleanupAction.is(\.termination.startTerminationCleanup))
 
-        let completeAction = AppLifecycleAction.completeTerminationAttempt(attemptID: attemptID, shouldTerminate: true)
-        XCTAssertTrue(completeAction.is(\.completeTerminationAttempt))
+        let completeAction = AppLifecycleAction.termination(.completeTerminationAttempt(
+            attemptID: attemptID,
+            shouldTerminate: true,
+        ))
+        XCTAssertTrue(completeAction.is(\.termination.completeTerminationAttempt))
 
-        XCTAssertTrue(AppLifecycleAction.willTerminate.is(\.willTerminate))
+        XCTAssertTrue(AppLifecycleAction.termination(.willTerminate).is(\.termination.willTerminate))
     }
 
     func testDelegateActionsHaveProperStructure() {

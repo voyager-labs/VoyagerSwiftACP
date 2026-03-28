@@ -110,9 +110,10 @@ final class FileManagerWindowCommandRoutingTests: XCTestCase {
 
         await store.send(.request(.newFolder))
         await store.receive {
-            guard case let .content(.entryViewLayout(.entryOperations(.createNewFolder(parentPath)))) = $0
+            guard case let .content(.entryViewLayout(.entryOperations(.edit(editAction)))) = $0,
+                  case let .createNewFolder(payload) = editAction
             else { return false }
-            return parentPath == "/tmp/voyager"
+            return payload.parentPath == "/tmp/voyager"
         }
         await store.finish()
     }
@@ -150,7 +151,7 @@ final class FileManagerWindowCommandRoutingTests: XCTestCase {
 
         await store.send(.request(.toggleSidebar))
         await store.receive {
-            guard case let .sidebar(.setSidebarVisible(visible)) = $0 else { return false }
+            guard case let .sidebar(.view(.setSidebarVisible(visible))) = $0 else { return false }
             return visible == false
         }
         await store.finish()

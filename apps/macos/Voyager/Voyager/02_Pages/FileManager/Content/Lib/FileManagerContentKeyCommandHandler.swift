@@ -28,7 +28,7 @@ enum FileManagerContentKeyCommandHandler {
             return nil
         }
 
-        guard state.hasSelectableEntriesInLayout else { return .none }
+        guard !state.entryViewLayout.selectedIds.isEmpty else { return .none }
 
         return .send(.entryViewLayout(.delegate(.executeCommand(.navigation(.quickLookSelectedItem)))))
     }
@@ -43,14 +43,19 @@ enum FileManagerContentKeyCommandHandler {
             return nil
         }
 
-        let selectedEntries = state.selectedEntries
+        let selectedIds = state.entryViewLayout.selectedIds
+        let selectedEntries = state.entryViewLayout.entries.filter { selectedIds.contains($0.id) }
         guard !selectedEntries.isEmpty else { return .none }
         let selectedPaths = selectedEntries.map(\.fullPath)
 
         if command.modifiers.contains(.option) {
-            return .send(.entryViewLayout(.entryOperations(.deleteImmediately(paths: selectedPaths))))
+            return .send(.entryViewLayout(.entryOperations(.trash(
+                EntryOperationsAction.Trash.deleteImmediately(paths: selectedPaths),
+            ))))
         }
-        return .send(.entryViewLayout(.entryOperations(.moveToTrash(paths: selectedPaths))))
+        return .send(.entryViewLayout(.entryOperations(.trash(
+            EntryOperationsAction.Trash.moveToTrash(paths: selectedPaths),
+        ))))
     }
 
     private static func renameKeyEffect(
@@ -64,7 +69,8 @@ enum FileManagerContentKeyCommandHandler {
             return nil
         }
 
-        let selectedEntries = state.selectedEntries
+        let selectedIds = state.entryViewLayout.selectedIds
+        let selectedEntries = state.entryViewLayout.entries.filter { selectedIds.contains($0.id) }
         guard selectedEntries.count == 1, let entry = selectedEntries.first else { return .none }
 
         return .send(.entryViewLayout(.delegate(.startRename(id: entry.id, text: entry.name))))
@@ -83,7 +89,7 @@ enum FileManagerContentKeyCommandHandler {
         }
 
         if command.characters == ".", command.modifiers.contains(.shift) {
-            return .send(.toggleShowHiddenFilesAndReload)
+            return .send(.view(.toggleShowHiddenFilesAndReload))
         }
 
         if let effect = entryCommandModifierEffect(for: command, state: state) {
@@ -100,7 +106,7 @@ enum FileManagerContentKeyCommandHandler {
         if command.keyCode == 125,
            command.modifiers.isDisjoint(with: [.option, .control, .shift])
         {
-            guard state.hasSelectableEntriesInLayout else { return .none }
+            guard !state.entryViewLayout.selectedIds.isEmpty else { return .none }
             return .send(.entryViewLayout(.delegate(.executeCommand(.navigation(.openSelectedItem)))))
         }
 
@@ -142,13 +148,17 @@ enum FileManagerContentKeyCommandHandler {
             if canRedoInTextResponder(), NSApp.sendAction(redoSelector, to: nil, from: nil) {
                 return .none
             }
-            return .send(.entryViewLayout(.entryOperations(.requestRedo)))
+            return .send(.entryViewLayout(.entryOperations(.undoRedo(
+                EntryOperationsAction.UndoRedo.requestRedo,
+            ))))
         }
 
         if canUndoInTextResponder(), NSApp.sendAction(undoSelector, to: nil, from: nil) {
             return .none
         }
-        return .send(.entryViewLayout(.entryOperations(.requestUndo)))
+        return .send(.entryViewLayout(.entryOperations(.undoRedo(
+            EntryOperationsAction.UndoRedo.requestUndo,
+        ))))
     }
 
     private static func selectionMovementEffect(
@@ -160,17 +170,17 @@ enum FileManagerContentKeyCommandHandler {
         let isShiftPressed = command.modifiers.contains(.shift)
 
         switch command.keyCode {
-        case 123 where state.viewLayout == .grid:
+        case 123 where state.entryViewLayout.mode == .grid:
             return selectionOffsetEffect(offset: -1, isShiftPressed: isShiftPressed, state: state)
-        case 124 where state.viewLayout == .grid:
+        case 124 where state.entryViewLayout.mode == .grid:
             return selectionOffsetEffect(offset: 1, isShiftPressed: isShiftPressed, state: state)
-        case 126 where state.viewLayout == .grid:
+        case 126 where state.entryViewLayout.mode == .grid:
             return selectionOffsetEffect(
                 offset: -state.entryViewLayout.gridColumnCount,
                 isShiftPressed: isShiftPressed,
                 state: state,
             )
-        case 125 where state.viewLayout == .grid:
+        case 125 where state.entryViewLayout.mode == .grid:
             return selectionOffsetEffect(
                 offset: state.entryViewLayout.gridColumnCount,
                 isShiftPressed: isShiftPressed,

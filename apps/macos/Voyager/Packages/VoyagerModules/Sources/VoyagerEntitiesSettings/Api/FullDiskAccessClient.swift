@@ -2,25 +2,11 @@ import ComposableArchitecture
 import Foundation
 
 // NOTE: FullDiskAccess 상태 타입은 권한 판정 클라이언트와 온보딩 권한 플로우에서 공용으로 사용한다.
-// TODO: FullDiskAccessStatus와 message 규칙을 Settings/Model로 분리하고, Api는 클라이언트 인터페이스만 유지한다.
 public enum FullDiskAccessStatus: String, Equatable, Sendable {
     case granted = "Granted"
     case needsAction = "Needs Action"
     case denied = "Denied"
     case unknown = "Unknown"
-
-    public var message: String {
-        switch self {
-        case .granted:
-            "You're all set for Full Disk Access."
-        case .needsAction:
-            "Turn on Full Disk Access to keep going."
-        case .denied:
-            "Full Disk Access is off. You can enable it anytime."
-        case .unknown:
-            "Check Full Disk Access in System Settings."
-        }
-    }
 }
 
 public struct FullDiskAccessClient: Sendable {

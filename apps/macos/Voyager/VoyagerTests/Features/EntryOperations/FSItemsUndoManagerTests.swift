@@ -34,7 +34,7 @@ final class FSItemsUndoManagerTests: XCTestCase {
             }
         }
 
-        await store.send(.entryActionCompleted(record)) {
+        await store.send(.lifecycle(.entryActionCompleted(record))) {
             $0.undoRecords = [record]
             $0.redoRecords = []
         }
@@ -67,7 +67,7 @@ final class FSItemsUndoManagerTests: XCTestCase {
             }
         }
 
-        await store.send(.requestUndo)
+        await store.send(.undoRedo(.requestUndo))
         await store.finish()
 
         let count = await undoCalls.value()
@@ -98,7 +98,7 @@ final class FSItemsUndoManagerTests: XCTestCase {
             }
         }
 
-        await store.send(.requestUndo)
+        await store.send(.undoRedo(.requestUndo))
         await store.finish()
 
         let count = await undoCalls.value()
@@ -131,7 +131,7 @@ final class FSItemsUndoManagerTests: XCTestCase {
         // Non-exhaustive: focus on the key delegate/state change; intermediate actions are noisy.
         store.exhaustivity = .off
 
-        await store.send(.undoEntryAction(record))
+        await store.send(.undoRedo(.undoEntryAction(record)))
         await store.finish()
 
         let calls = await renameCalls.snapshot()
@@ -166,7 +166,7 @@ final class FSItemsUndoManagerTests: XCTestCase {
         // Non-exhaustive: focus on the key delegate/state change; intermediate actions are noisy.
         store.exhaustivity = .off
 
-        await store.send(.redoEntryAction(record))
+        await store.send(.undoRedo(.redoEntryAction(record)))
         await store.finish()
 
         let calls = await renameCalls.snapshot()

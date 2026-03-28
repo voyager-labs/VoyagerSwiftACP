@@ -9,135 +9,135 @@ struct FileManagerSidebarFeature {
     typealias State = FileManagerSidebarState
     typealias Action = FileManagerSidebarAction
 
-    fileprivate enum CancelID {
+    enum CancelID {
         static let systemNotifications = "FileManagerSidebarFeature.systemNotifications"
     }
 
-    var body: some Reducer<State, Action> {
-        let visibility = SidebarVisibilityReducer()
-        let favorites = SidebarFavoritesReducer()
-        let locations = SidebarLocationsReducer()
-        let tags = SidebarTagsReducer()
-        let sectionCollapse = SidebarSectionCollapseReducer()
-        let width = SidebarWidthReducer()
-        let contextMenu = SidebarContextMenuReducer()
-
-        Reduce { state, action in
-            .merge(
-                visibility.reduce(into: &state, action: action),
-                favorites.reduce(into: &state, action: action),
-                locations.reduce(into: &state, action: action),
-                tags.reduce(into: &state, action: action),
-                sectionCollapse.reduce(into: &state, action: action),
-                width.reduce(into: &state, action: action),
-                contextMenu.reduce(into: &state, action: action),
-            )
-        }
-    }
-}
-
-private struct SidebarVisibilityReducer {
-    @Dependency(\.userDefaultsClient)
-    private var userDefaultsClient
-
-    func reduce(into state: inout FileManagerSidebarState, action: FileManagerSidebarAction)
-        -> Effect<FileManagerSidebarAction>
-    {
-        switch action {
-        case let .setSidebarVisible(visible):
-            state.sidebarVisible = visible
-            userDefaultsClient.setObject(visible, SettingsKeys.sidebarVisible)
-            return .none
-
-        case .restoreSidebarSelection:
-            if let restoreSelection = state.pendingSidebarSelectionRestore {
-                state.selectedSidebarItem = restoreSelection
-            }
-            state.pendingSidebarSelectionRestore = nil
-            return .none
-
-        default:
-            return .none
-        }
-    }
-}
-
-private struct SidebarFavoritesReducer {
-    private let loading: SidebarFavoritesLoadingReducer
-    private let insertion: SidebarFavoritesInsertionReducer
-    private let editing: SidebarFavoritesEditingReducer
-
-    init(
-        loading: SidebarFavoritesLoadingReducer = .init(),
-        insertion: SidebarFavoritesInsertionReducer = .init(),
-        editing: SidebarFavoritesEditingReducer = .init(),
-    ) {
-        self.loading = loading
-        self.insertion = insertion
-        self.editing = editing
-    }
-
-    func reduce(into state: inout FileManagerSidebarState, action: FileManagerSidebarAction)
-        -> Effect<FileManagerSidebarAction>
-    {
-        .merge(
-            loading.reduce(into: &state, action: action),
-            insertion.reduce(into: &state, action: action),
-            editing.reduce(into: &state, action: action),
-        )
-    }
-}
-
-private struct SidebarFavoritesLoadingReducer {
     @Dependency(\.entryLoadingClient)
     private var entryLoadingClient
     @Dependency(\.userDefaultsClient)
     private var userDefaultsClient
     @Dependency(\.fileManagerFavoritesClient)
     private var favoritesClient
-
-    func reduce(into state: inout FileManagerSidebarState, action: FileManagerSidebarAction)
-        -> Effect<FileManagerSidebarAction>
-    {
-        switch action {
-        case .loadFavorites:
-            return .run { send in
-                let favorites = await favoritesClient.loadFavorites(entryLoadingClient, userDefaultsClient)
-                await send(.favoritesLoaded(favorites))
-            }
-
-        case let .favoritesLoaded(favorites):
-            state.favorites = favorites
-            return .none
-
-        default:
-            return .none
-        }
-    }
-}
-
-private struct SidebarFavoritesInsertionReducer {
-    @Dependency(\.entryLoadingClient)
-    private var entryLoadingClient
-    @Dependency(\.userDefaultsClient)
-    private var userDefaultsClient
-    @Dependency(\.fileManagerFavoritesClient)
-    private var favoritesClient
+    @Dependency(\.fileManagerLocationsClient)
+    private var locationsClient
+    @Dependency(\.finderFavoritesTagClient)
+    private var finderFavoritesTagClient
+    @Dependency(\.notificationCenterClient)
+    private var notificationCenterClient
     @Dependency(\.fileManagerIconClient)
     private var iconClient
 
-    func reduce(into state: inout FileManagerSidebarState, action: FileManagerSidebarAction)
-        -> Effect<FileManagerSidebarAction>
-    {
-        switch action {
-        case let .insertFavoriteFromDrop(providers, index):
-            insertFavoriteFromDropEffect(providers: providers, index: index)
+    var body: some Reducer<State, Action> {
+        Reduce { state, action in
+            switch action {
+            case let .view(.setSidebarVisible(visible)):
+                state.sidebarVisible = visible
+                userDefaultsClient.setObject(visible, SettingsKeys.sidebarVisible)
+                return .none
 
-        case let .insertFavorite(url, index):
-            insertFavorite(url: url, index: index, state: &state)
+            case .view(.toggleFavoritesSection):
+                state.isFavoritesCollapsed.toggle()
+                return .none
 
-        default:
-            .none
+            case .view(.toggleLocationsSection):
+                state.isLocationsCollapsed.toggle()
+                return .none
+
+            case .view(.toggleTagsSection):
+                state.isTagsCollapsed.toggle()
+                return .none
+
+            case let .view(.setSidebarWidth(width)):
+                let clampedWidth = max(150, min(400, width))
+                if abs(state.sidebarWidth - clampedWidth) < 0.5 {
+                    return .none
+                }
+                state.sidebarWidth = clampedWidth
+                userDefaultsClient.setDouble(clampedWidth, SettingsKeys.sidebarWidth)
+                return .none
+
+            case let .view(.setContextMenuTarget(id, wasSelected)):
+                state.contextMenuTargetId = id
+                state.contextMenuTargetWasSelected = wasSelected
+                return .none
+
+            case .internal(.restoreSidebarSelection):
+                if let restoreSelection = state.pendingSidebarSelectionRestore {
+                    state.selectedSidebarItem = restoreSelection
+                }
+                state.pendingSidebarSelectionRestore = nil
+                return .none
+
+            case .internal(.loadFavorites):
+                return .run { send in
+                    let favorites = await favoritesClient.loadFavorites(entryLoadingClient, userDefaultsClient)
+                    await send(.internal(.favoritesLoaded(favorites)))
+                }
+
+            case let .internal(.favoritesLoaded(favorites)):
+                state.favorites = favorites
+                return .none
+
+            case let .internal(.insertFavoriteFromDrop(providers, index)):
+                return insertFavoriteFromDropEffect(providers: providers, index: index)
+
+            case let .internal(.insertFavorite(url, index)):
+                return insertFavorite(url: url, index: index, state: &state)
+
+            case let .internal(.removeFavorite(favorite)):
+                state.favorites.removeAll { $0.url.path == favorite.url.path }
+                favoritesClient.saveFavorites(state.favorites, userDefaultsClient)
+                return .none
+
+            case let .internal(.reorderFavorites(source, destination)):
+                state.favorites = reorderedFavorites(
+                    current: state.favorites,
+                    source: source,
+                    destination: destination,
+                )
+                favoritesClient.saveFavorites(state.favorites, userDefaultsClient)
+                return .none
+
+            case .internal(.loadLocations):
+                return .run { send in
+                    let locations = await locationsClient.loadLocations(entryLoadingClient)
+                    await send(.internal(.locationsLoaded(locations)))
+                }
+
+            case let .internal(.locationsLoaded(locations)):
+                state.locations = locations
+                return .none
+
+            case .internal(.loadTags):
+                return .send(.internal(.tagsLoaded(finderFavoritesTagClient.favoriteTags())))
+
+            case let .internal(.tagsLoaded(tags)):
+                state.tags = tags
+                return .none
+
+            case .internal(.startObservingSystemNotifications):
+                return .run { send in
+                    for await _ in await notificationCenterClient.notifications(
+                        NSMenu.didEndTrackingNotification,
+                        nil,
+                    ) {
+                        await send(.internal(.systemMenuDidEndTracking))
+                    }
+                }
+                .cancellable(id: CancelID.systemNotifications, cancelInFlight: true)
+
+            case .internal(.stopObservingSystemNotifications):
+                return .cancel(id: CancelID.systemNotifications)
+
+            case .internal(.systemMenuDidEndTracking):
+                state.contextMenuTargetId = nil
+                state.contextMenuTargetWasSelected = false
+                return .none
+
+            case .delegate:
+                return .none
+            }
         }
     }
 
@@ -148,9 +148,9 @@ private struct SidebarFavoritesInsertionReducer {
             for provider in providers
                 where provider.hasItemConformingToTypeIdentifier(UTType.fileURL.identifier)
             {
-                let resolvedURL: URL? = await resolveURL(from: provider)
+                let resolvedURL = await resolveURL(from: provider)
                 if let resolvedURL {
-                    await send(.insertFavorite(url: resolvedURL, at: index))
+                    await send(.internal(.insertFavorite(url: resolvedURL, at: index)))
                     return
                 }
             }
@@ -188,7 +188,7 @@ private struct SidebarFavoritesInsertionReducer {
     ) -> Effect<FileManagerSidebarAction> {
         if let existingIndex = state.favorites.firstIndex(where: { $0.url.path == url.path }) {
             if existingIndex != index {
-                return .send(.reorderFavorites(from: IndexSet(integer: existingIndex), to: index))
+                return .send(.internal(.reorderFavorites(from: IndexSet(integer: existingIndex), to: index)))
             }
             return .none
         }
@@ -212,32 +212,6 @@ private struct SidebarFavoritesInsertionReducer {
         favoritesClient.saveFavorites(state.favorites, userDefaultsClient)
         return .none
     }
-}
-
-private struct SidebarFavoritesEditingReducer {
-    @Dependency(\.userDefaultsClient)
-    private var userDefaultsClient
-    @Dependency(\.fileManagerFavoritesClient)
-    private var favoritesClient
-
-    func reduce(into state: inout FileManagerSidebarState, action: FileManagerSidebarAction)
-        -> Effect<FileManagerSidebarAction>
-    {
-        switch action {
-        case let .removeFavorite(favorite):
-            state.favorites.removeAll { $0.url.path == favorite.url.path }
-            favoritesClient.saveFavorites(state.favorites, userDefaultsClient)
-            return .none
-
-        case let .reorderFavorites(source, destination):
-            state.favorites = reorderedFavorites(current: state.favorites, source: source, destination: destination)
-            favoritesClient.saveFavorites(state.favorites, userDefaultsClient)
-            return .none
-
-        default:
-            return .none
-        }
-    }
 
     private func reorderedFavorites(
         current: [SidebarItems.FavoriteItem],
@@ -257,136 +231,5 @@ private struct SidebarFavoritesEditingReducer {
         let insertIndex = max(0, min(adjustedDestination, reordered.count))
         reordered.insert(contentsOf: itemsToMove, at: insertIndex)
         return reordered
-    }
-}
-
-private struct SidebarLocationsReducer {
-    @Dependency(\.entryLoadingClient)
-    private var entryLoadingClient
-    @Dependency(\.fileManagerLocationsClient)
-    private var locationsClient
-
-    func reduce(into state: inout FileManagerSidebarState, action: FileManagerSidebarAction)
-        -> Effect<FileManagerSidebarAction>
-    {
-        switch action {
-        case .loadLocations:
-            return .run { send in
-                let locations = await locationsClient.loadLocations(entryLoadingClient)
-                await send(.locationsLoaded(locations))
-            }
-
-        case let .locationsLoaded(locations):
-            state.locations = locations
-            return .none
-
-        default:
-            return .none
-        }
-    }
-}
-
-private struct SidebarTagsReducer {
-    @Dependency(\.finderFavoritesTagClient)
-    private var finderFavoritesTagClient
-
-    func reduce(into state: inout FileManagerSidebarState, action: FileManagerSidebarAction)
-        -> Effect<FileManagerSidebarAction>
-    {
-        switch action {
-        case .loadTags:
-            return .send(.tagsLoaded(finderFavoritesTagClient.favoriteTags()))
-
-        case let .tagsLoaded(tags):
-            state.tags = tags
-            return .none
-
-        default:
-            return .none
-        }
-    }
-}
-
-private struct SidebarSectionCollapseReducer {
-    func reduce(into state: inout FileManagerSidebarState, action: FileManagerSidebarAction)
-        -> Effect<FileManagerSidebarAction>
-    {
-        switch action {
-        case .toggleFavoritesSection:
-            state.isFavoritesCollapsed.toggle()
-            return .none
-
-        case .toggleLocationsSection:
-            state.isLocationsCollapsed.toggle()
-            return .none
-
-        case .toggleTagsSection:
-            state.isTagsCollapsed.toggle()
-            return .none
-
-        default:
-            return .none
-        }
-    }
-}
-
-private struct SidebarWidthReducer {
-    @Dependency(\.userDefaultsClient)
-    private var userDefaultsClient
-
-    func reduce(into state: inout FileManagerSidebarState, action: FileManagerSidebarAction)
-        -> Effect<FileManagerSidebarAction>
-    {
-        switch action {
-        case let .setSidebarWidth(width):
-            let clampedWidth = max(150, min(400, width))
-            if abs(state.sidebarWidth - clampedWidth) < 0.5 {
-                return .none
-            }
-            state.sidebarWidth = clampedWidth
-            userDefaultsClient.setDouble(clampedWidth, SettingsKeys.sidebarWidth)
-            return .none
-
-        default:
-            return .none
-        }
-    }
-}
-
-private struct SidebarContextMenuReducer {
-    @Dependency(\.notificationCenterClient)
-    private var notificationCenterClient
-
-    func reduce(into state: inout FileManagerSidebarState, action: FileManagerSidebarAction)
-        -> Effect<FileManagerSidebarAction>
-    {
-        switch action {
-        case .startObservingSystemNotifications:
-            return .run { send in
-                for await _ in await notificationCenterClient.notifications(
-                    NSMenu.didEndTrackingNotification,
-                    nil,
-                ) {
-                    await send(.systemMenuDidEndTracking)
-                }
-            }
-            .cancellable(id: FileManagerSidebarFeature.CancelID.systemNotifications, cancelInFlight: true)
-
-        case .stopObservingSystemNotifications:
-            return .cancel(id: FileManagerSidebarFeature.CancelID.systemNotifications)
-
-        case .systemMenuDidEndTracking:
-            state.contextMenuTargetId = nil
-            state.contextMenuTargetWasSelected = false
-            return .none
-
-        case let .setContextMenuTarget(id, wasSelected):
-            state.contextMenuTargetId = id
-            state.contextMenuTargetWasSelected = wasSelected
-            return .none
-
-        default:
-            return .none
-        }
     }
 }

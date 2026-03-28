@@ -75,7 +75,7 @@ struct ContentPaneBreadcrumbBarView: View {
                         availableWidth: leftWidth,
                         onNavigate: { path in onNavigate(path) },
                         onOpenInNewWindow: { path in
-                            store.send(.openPathInNewWindow(path))
+                            store.send(.delegate(.openPathInNewWindow(path)))
                         },
                     )
                     .frame(width: leftWidth, alignment: .leading)

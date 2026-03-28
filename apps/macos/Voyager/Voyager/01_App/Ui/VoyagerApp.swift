@@ -39,10 +39,10 @@ struct VoyagerApp: App {
 
         configureFileManagerWindowClientLive(
             requestNewWindow: { [appRootStore] path in
-                appRootStore.send(.windowManager(.newWindow(path: path)))
+                appRootStore.send(.windowManager(.file(.newWindow(path: path))))
             },
             requestNewTab: { [appRootStore] path in
-                appRootStore.send(.windowManager(.newTab(path: path)))
+                appRootStore.send(.windowManager(.file(.newTab(path: path))))
             },
             resolveFileManagerStore: { [appRootStore] windowID in
                 let sessionStores = Array(
@@ -52,13 +52,13 @@ struct VoyagerApp: App {
                     .scope(state: \.window, action: \.window)
             },
             onWindowBecameKey: { [appRootStore] id in
-                appRootStore.send(.windowManager(.windowBecameKey(id)))
+                appRootStore.send(.windowManager(.event(.windowBecameKey(id))))
             },
             onWindowResignedKey: { [appRootStore] id in
-                appRootStore.send(.windowManager(.windowResignedKey(id)))
+                appRootStore.send(.windowManager(.event(.windowResignedKey(id))))
             },
             onWindowClosed: { [appRootStore] id in
-                appRootStore.send(.windowManager(.windowClosed(id)))
+                appRootStore.send(.windowManager(.event(.windowClosed(id))))
             },
         )
         appDelegate.configure(appRootStore: appRootStore)

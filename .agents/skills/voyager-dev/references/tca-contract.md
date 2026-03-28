@@ -5,11 +5,44 @@
 - Use `@Reducer` for feature reducers.
 - Use `@Dependency` for external interactions.
 - Prefer split model for non-trivial slices:
-  - `Model/*State.swift`
-  - `Model/*Action.swift`
-  - `Reducer/*Feature.swift`
+    - `Model/*State.swift`
+    - `Model/*Action.swift`
+    - `Reducer/*Feature.swift`
 - Avoid decomposing TCA core types through `State+*`, `Action+*`, `Feature+*`, or `Reducer+*` files when that makes state movement and ownership harder to trace.
 - When a feature grows too large, prefer separate model types, helper/coordinator types, or child reducers/features that are composed explicitly from the parent.
+- When composing an owned child reducer with `Scope(state:action:)`, keep the corresponding parent action case as a direct child-action case rather than nesting it under `delegate`.
+- Reserve `delegate` for semantic outward/upward events leaving the feature boundary. If a scoped child needs to notify its parent, prefer `child(.delegate(...))` over moving scoped child routing into the parent's `delegate` namespace.
+
+Preferred parent boundary shape:
+
+```swift
+enum ParentAction {
+    case view(View)
+    case delegate(Delegate)
+    case child(ChildFeature.Action)
+}
+
+Scope(state: \.child, action: \.child) {
+    ChildFeature()
+}
+
+// Parent consumes semantic child output here:
+// case .child(.delegate(.didFinish))
+```
+
+Avoid collapsing owned child routing into the parent's delegate namespace:
+
+```swift
+enum ParentAction {
+    case view(View)
+    case delegate(Delegate)
+
+    enum Delegate {
+        case child(ChildFeature.Action)
+        case didFinish
+    }
+}
+```
 
 ## View boundary rules
 

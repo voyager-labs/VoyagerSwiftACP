@@ -1,4 +1,5 @@
 import AppKit
+import Combine
 import ComposableArchitecture
 import VoyagerShared
 
@@ -7,6 +8,7 @@ final class EntryGridCoordinator: NSObject {
     typealias RenderSnapshot = EntryGridRenderSnapshot
     let store: StoreOf<EntryViewLayoutFeature>
     var state: EntryViewLayoutState { store.state }
+
     func sendEntryOperations(_ action: EntryOperationsFeature.Action) {
         store.send(.entryOperations(action))
     }
@@ -45,9 +47,9 @@ final class EntryGridCoordinator: NSObject {
     var lassoAutoscrollController: EntryGridLassoAutoscrollController?
     var boundsDidChangeObserver: NSObjectProtocol?
     var lastRenderSnapshot: RenderSnapshot?
+    var renderObservationCancellable: AnyCancellable?
     let thumbnailPrefetchThrottler = MainThreadThrottler(intervalMs: 150, latest: true)
     var thumbnailImagesByPath: [String: NSImage] = [:]
-    var thumbnailTasksByPath: [String: Task<Void, Never>] = [:]
     @Dependency(\.entryOpenClient)
     var entryOpenClient
     @Dependency(\.entryLoadingClient)
@@ -56,8 +58,8 @@ final class EntryGridCoordinator: NSObject {
     var entryFileOpsClient
     @Dependency(\.workspaceClient)
     var workspaceClient
-    @Dependency(\.thumbnailGeneratorClient)
-    var thumbnailGeneratorClient
+    @Dependency(\.entryThumbnailCacheClient)
+    var entryThumbnailCacheClient
     @Dependency(\.finderFavoritesTagClient)
     var finderFavoritesTagClient
     @Dependency(\.notificationCenterClient)

@@ -13,7 +13,7 @@ final class MenuCommandsFeatureTests: XCTestCase {
 
         await store.send(.view(.app(.newFolder)))
         await store.receive {
-            guard case .delegate(.windowManager(.newFolder)) = $0 else { return false }
+            guard case .delegate(.windowManager(.file(.newFolder))) = $0 else { return false }
             return true
         }
         await store.finish()
@@ -43,7 +43,7 @@ final class MenuCommandsFeatureTests: XCTestCase {
 
         await store.send(.view(.viewCommand(.toggleSidebar)))
         await store.receive {
-            guard case .delegate(.windowManager(.toggleSidebar)) = $0 else { return false }
+            guard case .delegate(.windowManager(.window(.toggleSidebar))) = $0 else { return false }
             return true
         }
         await store.finish()
@@ -58,7 +58,7 @@ final class MenuCommandsFeatureTests: XCTestCase {
 
         await store.send(.view(.edit(.copy)))
         await store.receive {
-            guard case .delegate(.windowManager(.copy)) = $0 else { return false }
+            guard case .delegate(.windowManager(.edit(.copy))) = $0 else { return false }
             return true
         }
         await store.finish()

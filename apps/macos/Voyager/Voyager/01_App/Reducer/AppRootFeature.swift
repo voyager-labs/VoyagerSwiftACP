@@ -29,16 +29,17 @@ struct AppRootFeature {
         Reduce { state, action in
             let effect: Effect<Action>
             switch action {
-            case .lifecycle(.willFinishLaunching):
+            case .lifecycle(.launch(.willFinishLaunching)):
                 effect = .send(.appPreferences(.load))
 
             case let .lifecycle(.delegate(delegateAction)):
                 switch delegateAction {
                 case .openInitialWindowIfNeeded:
-                    effect = .send(.windowManager(.openInitialWindowIfNeeded))
+                    effect = .send(.windowManager(.lifecycle(.openInitialWindowIfNeeded)))
 
                 case let .reopenWindowIfNeeded(hasVisibleWindows):
-                    effect = .send(.windowManager(.reopenWindowIfNeeded(hasVisibleWindows: hasVisibleWindows)))
+                    effect =
+                        .send(.windowManager(.lifecycle(.reopenWindowIfNeeded(hasVisibleWindows: hasVisibleWindows))))
                 }
 
             case .lifecycle:
@@ -46,7 +47,7 @@ struct AppRootFeature {
 
             case let .appPreferences(.delegate(.updated(preferences))):
                 state.appPreferences = preferences
-                effect = .send(.windowManager(.applyAppPreferences(preferences)))
+                effect = .send(.windowManager(.lifecycle(.applyAppPreferences(preferences))))
 
             case .appPreferences:
                 effect = .none
