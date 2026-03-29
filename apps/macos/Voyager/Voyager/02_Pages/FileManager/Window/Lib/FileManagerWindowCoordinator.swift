@@ -158,9 +158,6 @@ final class FileManagerWindowCoordinator: NSWindowController, NSWindowDelegate {
 
         window.titlebarAppearsTransparent = true
         window.titleVisibility = .hidden
-        window.standardWindowButton(.closeButton)?.isHidden = true
-        window.standardWindowButton(.miniaturizeButton)?.isHidden = true
-        window.standardWindowButton(.zoomButton)?.isHidden = true
         window.isMovableByWindowBackground = true
 
         window.isOpaque = false
