@@ -87,9 +87,17 @@ struct FileManagerContentFeature {
                 )))
 
             case let .view(.changeLayout(layout)):
+                let currentMode = state.entryViewLayout.mode
+                let isModeChanging = currentMode != layout
+                let hasActiveRename = state.entryViewLayout.entryOperations.renamingItemId != nil
+
                 state.entryViewLayout.mode = layout
                 state.syncComposerCollectionState()
                 userDefaultsClient.setString(layout.rawValue, SettingsKeys.viewLayout)
+
+                if isModeChanging, hasActiveRename {
+                    return .send(.entryViewLayout(.entryOperations(.edit(.cancelRename))))
+                }
                 return .none
 
             case let .internal(.saveScrollOffset(offset, forPath: path)):

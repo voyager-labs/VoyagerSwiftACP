@@ -26,6 +26,14 @@ struct EntryViewLayoutFeature {
                 state.lastSelectedId = lastSelectedId
                 state.rangeAnchorId = rangeAnchorId
                 state.shouldScrollToSelection = shouldScrollToSelection
+
+                if let renamingId = state.entryOperations.renamingItemId {
+                    let isRenamingItemSelected = ids == [renamingId]
+                    if !isRenamingItemSelected {
+                        return .send(.entryOperations(.edit(.cancelRename)))
+                    }
+                }
+
                 return .none
 
             case let .internal(.applySelectAll(orderedItemIds)):
