@@ -216,6 +216,99 @@ final class FileManagerContentKeyCommandHandlerTests: XCTestCase {
         await store.finish()
     }
 
+    func testRenameShortcutStartsRenameForSingleSelectionInListAndGrid() async {
+        for layout in [EntryViewLayoutState.Mode.list, .grid] {
+            for keyCode in [36, 76] {
+                let selected = makeEntry(name: "selected", fullPath: "/tmp/voyager/selected.txt")
+
+                var initialState = FileManagerContentState()
+                initialState.entryViewLayout.mode = layout
+                initialState.navigation.seedInitialFolderPath("/tmp/voyager")
+                initialState.entryViewLayout.entries = [selected]
+                initialState.entryViewLayout.selectedIds = [selected.id]
+
+                let store = TestStore(initialState: initialState) {
+                    FileManagerContentFeature()
+                }
+                store.exhaustivity = .off
+
+                await store.send(.view(.handleKeyCommand(
+                    KeyCommand(keyCode: keyCode, modifiers: [], characters: nil, charactersIgnoringModifiers: nil),
+                )))
+
+                await store.receive { action in
+                    guard case let .entryViewLayout(.delegate(.startRename(id, text))) = action else { return false }
+                    return id == selected.id && text == "selected"
+                }
+
+                await store.finish()
+            }
+        }
+    }
+
+    func testRenameShortcutDoesNothingWhenRenameAlreadyActive() async {
+        for layout in [EntryViewLayoutState.Mode.list, .grid] {
+            for keyCode in [36, 76] {
+                let selected = makeEntry(name: "selected", fullPath: "/tmp/voyager/selected.txt")
+
+                var initialState = FileManagerContentState()
+                initialState.entryViewLayout.mode = layout
+                initialState.navigation.seedInitialFolderPath("/tmp/voyager")
+                initialState.entryViewLayout.entries = [selected]
+                initialState.entryViewLayout.selectedIds = [selected.id]
+                initialState.entryViewLayout.entryOperations.renamingItemId = selected.id
+
+                let store = TestStore(initialState: initialState) {
+                    FileManagerContentFeature()
+                }
+
+                await store.send(.view(.handleKeyCommand(
+                    KeyCommand(keyCode: keyCode, modifiers: [], characters: nil, charactersIgnoringModifiers: nil),
+                )))
+                await store.finish()
+            }
+        }
+    }
+
+    func testRenameShortcutDoesNothingForZeroOrMultipleSelection() async {
+        for layout in [EntryViewLayoutState.Mode.list, .grid] {
+            for keyCode in [36, 76] {
+                var initialState = FileManagerContentState()
+                initialState.entryViewLayout.mode = layout
+                initialState.navigation.seedInitialFolderPath("/tmp/voyager")
+                initialState.entryViewLayout.entries = []
+                initialState.entryViewLayout.selectedIds = []
+
+                let store = TestStore(initialState: initialState) {
+                    FileManagerContentFeature()
+                }
+
+                await store.send(.view(.handleKeyCommand(
+                    KeyCommand(keyCode: keyCode, modifiers: [], characters: nil, charactersIgnoringModifiers: nil),
+                )))
+                await store.finish()
+
+                let entry1 = makeEntry(name: "entry1", fullPath: "/tmp/voyager/entry1.txt")
+                let entry2 = makeEntry(name: "entry2", fullPath: "/tmp/voyager/entry2.txt")
+
+                var multiSelectionState = FileManagerContentState()
+                multiSelectionState.entryViewLayout.mode = layout
+                multiSelectionState.navigation.seedInitialFolderPath("/tmp/voyager")
+                multiSelectionState.entryViewLayout.entries = [entry1, entry2]
+                multiSelectionState.entryViewLayout.selectedIds = [entry1.id, entry2.id]
+
+                let multiStore = TestStore(initialState: multiSelectionState) {
+                    FileManagerContentFeature()
+                }
+
+                await multiStore.send(.view(.handleKeyCommand(
+                    KeyCommand(keyCode: keyCode, modifiers: [], characters: nil, charactersIgnoringModifiers: nil),
+                )))
+                await multiStore.finish()
+            }
+        }
+    }
+
     private func makeEntry(
         name: String,
         fullPath: String,
