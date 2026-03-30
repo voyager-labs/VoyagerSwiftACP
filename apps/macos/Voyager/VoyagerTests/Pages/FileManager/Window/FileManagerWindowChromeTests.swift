@@ -4,29 +4,36 @@ import XCTest
 
 @MainActor
 final class FileManagerWindowChromeTests: XCTestCase {
-    func testTrafficLightsAreVisibleAfterConfiguration() {
+    func testTrafficLightsNotHiddenAfterBaseConfiguration() {
         let window = NSWindow(contentViewController: nil)
-
         FileManagerWindowCoordinator.configureWindowStyle(window)
+        XCTAssertFalse(window.standardWindowButton(.closeButton)?.isHidden ?? true)
+        XCTAssertFalse(window.standardWindowButton(.miniaturizeButton)?.isHidden ?? true)
+        XCTAssertFalse(window.standardWindowButton(.zoomButton)?.isHidden ?? true)
+    }
 
-        XCTAssertNotNil(window.standardWindowButton(.closeButton))
-        XCTAssertNotNil(window.standardWindowButton(.miniaturizeButton))
-        XCTAssertNotNil(window.standardWindowButton(.zoomButton))
+    func testTrafficLightsVisibleWhenSidebarVisible() {
+        let window = NSWindow(contentViewController: nil)
+        FileManagerWindowCoordinator.configureWindowStyle(window)
+        FileManagerWindowCoordinator.applyTrafficLightVisibility(to: window, isSidebarVisible: true)
+        XCTAssertFalse(window.standardWindowButton(.closeButton)?.isHidden ?? true)
+        XCTAssertFalse(window.standardWindowButton(.miniaturizeButton)?.isHidden ?? true)
+        XCTAssertFalse(window.standardWindowButton(.zoomButton)?.isHidden ?? true)
+    }
 
-        XCTAssertFalse(window.standardWindowButton(.closeButton)?.isHidden ?? true, "Close button should not be hidden")
-        XCTAssertFalse(
-            window.standardWindowButton(.miniaturizeButton)?.isHidden ?? true,
-            "Miniaturize button should not be hidden",
-        )
-        XCTAssertFalse(window.standardWindowButton(.zoomButton)?.isHidden ?? true, "Zoom button should not be hidden")
+    func testTrafficLightsHiddenWhenSidebarHidden() {
+        let window = NSWindow(contentViewController: nil)
+        FileManagerWindowCoordinator.configureWindowStyle(window)
+        FileManagerWindowCoordinator.applyTrafficLightVisibility(to: window, isSidebarVisible: false)
+        XCTAssertTrue(window.standardWindowButton(.closeButton)?.isHidden ?? false)
+        XCTAssertTrue(window.standardWindowButton(.miniaturizeButton)?.isHidden ?? false)
+        XCTAssertTrue(window.standardWindowButton(.zoomButton)?.isHidden ?? false)
     }
 
     func testTitleBarStyleIsConfiguredCorrectly() {
         let window = NSWindow(contentViewController: nil)
-
         FileManagerWindowCoordinator.configureWindowStyle(window)
-
-        XCTAssertEqual(window.titleVisibility, .hidden, "Title visibility should be hidden")
-        XCTAssertTrue(window.titlebarAppearsTransparent, "Title bar should appear transparent")
+        XCTAssertEqual(window.titleVisibility, .hidden)
+        XCTAssertTrue(window.titlebarAppearsTransparent)
     }
 }

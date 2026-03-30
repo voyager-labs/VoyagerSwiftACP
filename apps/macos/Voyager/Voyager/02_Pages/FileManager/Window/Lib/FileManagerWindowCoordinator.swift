@@ -158,12 +158,28 @@ final class FileManagerWindowCoordinator: NSWindowController, NSWindowDelegate {
 
         window.titlebarAppearsTransparent = true
         window.titleVisibility = .hidden
+
+        let toolbar = NSToolbar(identifier: "VoyagerMainToolbar")
+        toolbar.showsBaselineSeparator = false
+        toolbar.displayMode = .iconOnly
+        toolbar.allowsUserCustomization = false
+        toolbar.autosavesConfiguration = false
+        window.toolbar = toolbar
+
+        window.toolbarStyle = .unified
         window.isMovableByWindowBackground = true
 
         window.isOpaque = false
         window.backgroundColor = .clear
         window.tabbingIdentifier = "file-manager"
         window.tabbingMode = .preferred
+    }
+
+    static func applyTrafficLightVisibility(to window: NSWindow, isSidebarVisible: Bool) {
+        let shouldHide = !isSidebarVisible
+        window.standardWindowButton(.closeButton)?.isHidden = shouldHide
+        window.standardWindowButton(.miniaturizeButton)?.isHidden = shouldHide
+        window.standardWindowButton(.zoomButton)?.isHidden = shouldHide
     }
 
     private static func applyInitialFrame(
