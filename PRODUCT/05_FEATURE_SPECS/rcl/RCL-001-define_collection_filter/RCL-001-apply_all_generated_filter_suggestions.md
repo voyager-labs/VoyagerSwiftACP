@@ -11,7 +11,7 @@
 | Feature ID | RCL-001 |
 | Status | 취소 |
 | Summary | 표시된 모든 제안 상태 항목을 한 번에 확정 적용 |
-| Related Region | file_manager_window.content_pane.content_header.collection_fillter_composer |
+| Related Region | file_manager_window.content_pane.content_header.collection_filter_composer |
 | Menu | - |
 | Shortcut | ⌘⌥⏎ |
 

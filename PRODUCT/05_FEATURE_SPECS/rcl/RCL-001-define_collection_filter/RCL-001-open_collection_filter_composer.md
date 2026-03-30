@@ -11,7 +11,7 @@
 | Feature ID | RCL-001 |
 | Status | 배포 완료 |
 | Summary | Entries View 상단에서 Collection Filter Composer를 열어 현재 콜렉션의 스코프·조건을 편집 가능 상태로 전환 |
-| Related Region | file_manager_window.content_pane.content_header.collection_fillter_composer |
+| Related Region | file_manager_window.content_pane.content_header.collection_filter_composer |
 | Menu | Edit |
 | Shortcut | ⌘F |
 

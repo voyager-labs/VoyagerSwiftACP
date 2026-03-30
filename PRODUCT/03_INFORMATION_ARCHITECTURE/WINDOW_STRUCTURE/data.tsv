@@ -15,7 +15,7 @@ file_manager_window	sidebar_body	content_tabs_area	Content Tabs Area	콘텐트 �
 file_manager_window	content_header	page_nav_area	Page Nav Area	페이지 네비 영역	4	section	file_manager_window.content_pane.content_header.page_nav_area	뒤로/앞으로, 상위 이동 등 페이지 네비게이션 컨트롤 영역	TBD	CBT
 file_manager_window	content_header	page_info_area	Page Info Area	페이지 정보 영역	4	section	file_manager_window.content_pane.content_header.page_info_area	현재 페이지의 제목·경로·선택된 콜렉션 등 컨텍스트 정보를 요약 표시하는 영역	TBD	CBT
 file_manager_window	content_header	page_menu_area	Page Menu Area	페이지 메뉴 영역	4	section	file_manager_window.content_pane.content_header.page_menu_area	현재 페이지에 대한 주요 액션을 제공하는 메뉴 영역	TBD	CBT
-file_manager_window	content_header	collection_fillter_composer	Collection Filter Composer	콜렉션 필터 컴포저	4	overlay	file_manager_window.content_pane.content_header.collection_fillter_composer	콜렉션 필터를 편집·적용하는 오버레이 모달	TBD	CBT
+file_manager_window	content_header	collection_filter_composer	Collection Filter Composer	콜렉션 필터 컴포저	4	overlay	file_manager_window.content_pane.content_header.collection_filter_composer	콜렉션 필터를 편집·적용하는 오버레이 모달	TBD	CBT
 file_manager_window	page_container	page_mode_home	Home Page	홈 페이지	4	mode	file_manager_window.content_pane.page_container.page_mode_home	최근 작업·고정 항목 등 시작 지점을 제공하는 홈 페이지 모드	TBD	OBT
 file_manager_window	page_container	page_mode_directory	Directory Page	디렉토리 페이지	4	mode	file_manager_window.content_pane.page_container.page_mode_directory	선택한 디렉토리의 엔트리 목록을 탐색하는 페이지 모드	TBD	CBT
 file_manager_window	page_container	page_mode_collection	Collection Page	콜렉션 페이지	4	mode	file_manager_window.content_pane.page_container.page_mode_collection	설정된 콜렉션 필터를 통해 검색된 엔트리 결과 목록을 탐색·관리하는 페이지 모드	TBD	CBT

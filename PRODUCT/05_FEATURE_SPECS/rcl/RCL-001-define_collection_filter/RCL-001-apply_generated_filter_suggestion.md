@@ -11,7 +11,7 @@
 | Feature ID | RCL-001 |
 | Status | 취소 |
 | Summary | 해당 제안 상태의 필터를 확정하여 적용하여 새로 추가하거나, 값을 수정함 |
-| Related Region | file_manager_window.content_pane.content_header.collection_fillter_composer |
+| Related Region | file_manager_window.content_pane.content_header.collection_filter_composer |
 | Menu | - |
 | Shortcut | - |
 

@@ -11,7 +11,7 @@
 | Feature ID | RCL-001 |
 | Status | 배포 완료 |
 | Summary | 최근 수행한 필터 편집 작업을 한 단계 되돌려 이전 필터 상태로 롤백 |
-| Related Region | file_manager_window.content_pane.content_header.collection_fillter_composer |
+| Related Region | file_manager_window.content_pane.content_header.collection_filter_composer |
 | Menu | - |
 | Shortcut | ⌘Z |
 

@@ -11,7 +11,7 @@
 | Feature ID | RCL-001 |
 | Status | 배포 완료 |
 | Summary | 스코프 드롭다운 메뉴를 열어 컨디션이 적용될 스코프를 선택할 수 있는 옵션을 제공 |
-| Related Region | file_manager_window.content_pane.content_header.collection_fillter_composer |
+| Related Region | file_manager_window.content_pane.content_header.collection_filter_composer |
 | Menu | - |
 | Shortcut | - |
 

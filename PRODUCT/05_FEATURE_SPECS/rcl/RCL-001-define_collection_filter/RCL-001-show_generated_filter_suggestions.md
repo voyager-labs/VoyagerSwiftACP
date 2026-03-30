@@ -11,7 +11,7 @@
 | Feature ID | RCL-001 |
 | Status | 취소 |
 | Summary | 생성된 제안을 필터 영역에 사용자의 후속 결정을 대기하는 ‘제안 상태’로 표시 |
-| Related Region | file_manager_window.content_pane.content_header.collection_fillter_composer |
+| Related Region | file_manager_window.content_pane.content_header.collection_filter_composer |
 | Menu | - |
 | Shortcut | - |
 

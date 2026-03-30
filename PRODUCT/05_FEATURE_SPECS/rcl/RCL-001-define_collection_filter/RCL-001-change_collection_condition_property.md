@@ -11,7 +11,7 @@
 | Feature ID | RCL-001 |
 | Status | 배포 완료 |
 | Summary | 선택한 컨디션의 기준 프로퍼티를 다른 프로퍼티로 변경 |
-| Related Region | file_manager_window.content_pane.content_header.collection_fillter_composer |
+| Related Region | file_manager_window.content_pane.content_header.collection_filter_composer |
 | Menu | - |
 | Shortcut | - |
 

@@ -11,7 +11,7 @@
 | Feature ID | RCL-001 |
 | Status | 배포 완료 |
 | Summary | 선택한 컨디션의 비교 값 또는 범위를 편집해 해당 조건이 만족하는 엔트리 집합을 조정 |
-| Related Region | file_manager_window.content_pane.content_header.collection_fillter_composer |
+| Related Region | file_manager_window.content_pane.content_header.collection_filter_composer |
 | Menu | - |
 | Shortcut | - |
 
