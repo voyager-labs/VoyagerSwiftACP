@@ -28,6 +28,7 @@ struct EntryOperationsCommandRoutingReducer {
 
             case let .routing(.saveDragPaths(paths)):
                 entryFileOpsClient.saveDragPaths(paths)
+                entryFileOpsClient.saveDragWithOption(entryFileOpsClient.loadDragWithOption())
                 return .none
 
             case let .routing(.handleDrop(providers: _, destinationPath)):

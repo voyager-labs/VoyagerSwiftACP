@@ -131,10 +131,18 @@ final class EntryGridSelectionHighlightLayoutTests: XCTestCase {
         )
 
         XCTAssertNotNil(background.layer, "backgroundView should have a layer")
-        let borderWidth = background.layer?.borderWidth ?? 0
-        XCTAssertEqual(borderWidth, 1.5, accuracy: 0.1, "Drop target should have visible border")
-        XCTAssertNotNil(background.layer?.borderColor, "Drop target should have border color")
+        let bgBorderWidth = background.layer?.borderWidth ?? 0
+        XCTAssertEqual(
+            bgBorderWidth,
+            0,
+            accuracy: 0.1,
+            "Drop target should NOT have border on full-cell backgroundView",
+        )
         XCTAssertNil(background.layer?.backgroundColor, "Drop target should NOT set tile background color")
+
+        let iconBorderWidth = iconBackground.layer?.borderWidth ?? 0
+        XCTAssertEqual(iconBorderWidth, 1.5, accuracy: 0.1, "Drop target should have border on iconBackgroundView")
+        XCTAssertNotNil(iconBackground.layer?.borderColor, "Drop target icon border should have color")
         XCTAssertNil(iconBackground.layer?.backgroundColor, "Drop target should NOT tint icon background")
     }
 
@@ -153,8 +161,8 @@ final class EntryGridSelectionHighlightLayoutTests: XCTestCase {
             findSubview(in: item.view, identifier: "entryGrid.iconBackground"),
         )
 
-        let borderWidth = background.layer?.borderWidth ?? 0
-        XCTAssertEqual(borderWidth, 1.5, accuracy: 0.1, "Drop target border should be applied")
+        let bgBorderWidth = background.layer?.borderWidth ?? 0
+        XCTAssertEqual(bgBorderWidth, 0, accuracy: 0.1, "Full-cell backgroundView should NOT have drop border")
         XCTAssertFalse(highlight.isHidden, "Selection highlight should still be visible when drop target is active")
         XCTAssertNotNil(highlight.layer?.backgroundColor, "Selection highlight pill should have background color")
         XCTAssertNil(background.layer?.backgroundColor, "Drop target + selected should NOT tint tile background")
@@ -162,6 +170,83 @@ final class EntryGridSelectionHighlightLayoutTests: XCTestCase {
             iconBackground.layer?.backgroundColor,
             "Drop target + selected should show Finder-like icon background",
         )
+        let iconBorderWidth = iconBackground.layer?.borderWidth ?? 0
+        XCTAssertGreaterThan(iconBorderWidth, 0, "iconBackgroundView should carry the drop border")
+    }
+
+    // MARK: - Finder-like drop border restraint (NEW)
+
+    func testDropTargetBorderIsRestrictedToThumbnailZoneNotFullCell() throws {
+        // NEW CONTRACT: Drop target border should be visually constrained to the
+        // icon/thumbnail zone, not spanning the full cell width. Finder shows a
+        // tight border around the icon area, not a full-tile outline.
+        let item = makeItem(isDropTargeted: true)
+        item.view.layoutSubtreeIfNeeded()
+
+        let background = try XCTUnwrap(
+            findSubview(in: item.view, identifier: "entryGrid.background"),
+        )
+        let iconBackground = try XCTUnwrap(
+            findSubview(in: item.view, identifier: "entryGrid.iconBackground"),
+        )
+
+        let bgFrame = background.convert(background.bounds, to: item.view)
+        let iconFrame = iconBackground.convert(iconBackground.bounds, to: item.view)
+        let borderWidth = background.layer?.borderWidth ?? 0
+
+        // If backgroundView carries the border, it must be narrower than full cell
+        // OR the icon/thumbnail area must carry the border instead.
+        let borderOnFullCell = borderWidth > 0 && abs(bgFrame.width - 220.0) < 1.0
+        let iconHasBorder = (iconBackground.layer?.borderWidth ?? 0) > 0
+
+        XCTAssertTrue(
+            iconHasBorder || !borderOnFullCell,
+            "Drop border should be on iconBackground or a restrained inset, not full-cell backgroundView. " +
+                "bgWidth=\(bgFrame.width), iconWidth=\(iconFrame.width), borderWidth=\(borderWidth)",
+        )
+    }
+
+    func testDropTargetDoesNotFillEntireCellBackground() throws {
+        // NEW CONTRACT: Drop target visual should not flood-fill the entire cell.
+        // Current: backgroundView gets a border spanning full 220pt — too broad.
+        // Finder uses thumbnail-zone emphasis only.
+        let item = makeItem(isDropTargeted: true)
+        item.view.layoutSubtreeIfNeeded()
+
+        let iconBackground = try XCTUnwrap(
+            findSubview(in: item.view, identifier: "entryGrid.iconBackground"),
+        )
+
+        // The iconBackground area should show some form of drop emphasis
+        // (either border or tint), not remain plain when targeted.
+        let iconFrame = iconBackground.convert(iconBackground.bounds, to: item.view)
+        let hasEmphasis = (iconBackground.layer?.borderWidth ?? 0) > 0
+            || iconBackground.layer?.backgroundColor != nil
+
+        XCTAssertTrue(
+            hasEmphasis,
+            "Icon/thumbnail zone should show drop target emphasis (border or tint). " +
+                "iconWidth=\(iconFrame.width), iconHeight=\(iconFrame.height)",
+        )
+    }
+
+    func testSelectedPlusTargetedSelectionPillRemainsPrimary() throws {
+        // NEW CONTRACT: When selected+targeted, the selection name pill must remain
+        // the primary visual signal (blue pill + white text). Drop border is secondary.
+        let item = makeItem(isDropTargeted: true)
+        item.isSelected = true
+        item.view.layoutSubtreeIfNeeded()
+
+        let highlight = try XCTUnwrap(
+            findSubview(in: item.view, identifier: "entryGrid.nameHighlight"),
+        )
+        let nameField = try XCTUnwrap(
+            findSubview(in: item.view, identifier: "entryGrid.nameField") as? NSTextField,
+        )
+
+        XCTAssertFalse(highlight.isHidden, "Selection pill must be visible")
+        XCTAssertNotNil(highlight.layer?.backgroundColor, "Selection pill must have color")
+        XCTAssertEqual(nameField.textColor, .white, "Selected+targeted text must remain white (selection wins)")
     }
 
     // MARK: - Cross-Surface Regression Tests
@@ -200,13 +285,28 @@ final class EntryGridSelectionHighlightLayoutTests: XCTestCase {
             findSubview(in: item.view, identifier: "entryGrid.nameHighlight"),
             "Selection highlight should exist",
         )
+        let iconBackground = try XCTUnwrap(
+            findSubview(in: item.view, identifier: "entryGrid.iconBackground"),
+            "Icon background should exist",
+        )
         let tagStack = try XCTUnwrap(
             findSubview(in: item.view, identifier: "entryGrid.tagStack") as? NSStackView,
             "Tag stack should exist",
         )
 
-        let borderWidth = background.layer?.borderWidth ?? 0
-        XCTAssertEqual(borderWidth, 1.5, accuracy: 0.1, "Drop target border should be applied")
+        let bgBorderWidth = background.layer?.borderWidth ?? 0
+        XCTAssertEqual(
+            bgBorderWidth,
+            0,
+            accuracy: 0.1,
+            "Full-cell backgroundView should NOT have drop border when selected+targeted",
+        )
+        let iconBorderWidth = iconBackground.layer?.borderWidth ?? 0
+        XCTAssertGreaterThan(
+            iconBorderWidth,
+            0,
+            "iconBackgroundView should carry drop border (subordinate to selection)",
+        )
         XCTAssertFalse(highlight.isHidden, "Selection highlight should be visible with drop target")
         XCTAssertFalse(tagStack.isHidden, "Tag stack should remain visible with drop target + selection")
         XCTAssertEqual(tagStack.arrangedSubviews.count, 1, "Tag dot should be visible")

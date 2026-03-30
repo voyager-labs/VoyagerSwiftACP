@@ -31,14 +31,14 @@ enum RegistryTestSupport {
 
     static func makeRegistryClient() -> RegistryClient {
         let labels = registryLabels
-        let unitSpecs = registryUnitSpecs
+        let unitSpecs = registryUnitSpecs()
         let opDef = registryOperatorDefinition
 
         return RegistryClient(
             allProperties: { [] },
             labelForKey: { labels[$0] ?? $0 },
             propertyTypeString: propertyTypeString(for:),
-            propertyUnitSpec: { registryUnitSpecs()[$0] },
+            propertyUnitSpec: { unitSpecs[$0] },
             operatorCodes: { _ in ["eq"] },
             operatorDefinition: { _ in opDef },
             operatorValueUIKind: { _, typeKey in registryUIKind(for: typeKey) },
@@ -69,7 +69,7 @@ enum RegistryTestSupport {
         }
     }
 
-    private static func registryUIKind(for typeKey: String) -> String {
+    private nonisolated static func registryUIKind(for typeKey: String) -> String {
         switch typeKey {
         case "number":
             "singleNumber"

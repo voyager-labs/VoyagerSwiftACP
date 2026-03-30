@@ -4,6 +4,7 @@ import XCTest
 /// Characterization tests for TagMDItemUserTagParser behavior.
 /// These tests lock down the current parsing behavior for MDItem kMDItemUserTags format.
 /// Format: "name\ncolorCode" (e.g., "blue\n6")
+@MainActor
 final class TagMDItemUserTagParserTests: XCTestCase {
     // MARK: - parse(_:) Tests
 

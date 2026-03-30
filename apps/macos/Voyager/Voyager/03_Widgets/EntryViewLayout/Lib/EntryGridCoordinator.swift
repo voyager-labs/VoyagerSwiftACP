@@ -136,6 +136,14 @@ final class EntryGridCoordinator: NSObject {
     func rebuildSectionsAndReload() {
         sections = makeSections(state: state)
         indexPathByEntryId = [:]
+        let hadDropTarget = dropTargetEntryId != nil || state.isDropTargeted
+        dropTargetEntryId = nil
+        if hadDropTarget {
+            updateDropTargetBorder(isTargeted: false)
+            if state.isDropTargeted {
+                store.send(.view(.setDropTargeted(false)))
+            }
+        }
         for (sectionIndex, section) in sections.enumerated() {
             for (itemIndex, entry) in section.items.enumerated() {
                 indexPathByEntryId[entry.id] = IndexPath(item: itemIndex, section: sectionIndex)

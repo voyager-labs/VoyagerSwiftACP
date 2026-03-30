@@ -336,6 +336,8 @@ extension EntryGridCoordinator: NSCollectionViewDelegate, NSCollectionViewDelega
             return entry.fullPath
         }
         guard !paths.isEmpty else { return }
+        let isOptionDrag = NSEvent.modifierFlags.contains(.option)
+        entryFileOpsClient.saveDragWithOption(isOptionDrag)
         sendEntryOperations(.routing(.saveDragPaths(paths)))
     }
 
@@ -346,7 +348,9 @@ extension EntryGridCoordinator: NSCollectionViewDelegate, NSCollectionViewDelega
         dragOperation operation: NSDragOperation,
     ) {
         guard EntryViewLayoutDragStateClearRuleSet.shouldClearAfterSessionEnd(operation: operation) else { return }
+        entryFileOpsClient.saveDragWithOption(false)
         sendEntryOperations(.routing(.saveDragPaths([])))
+        setDropTargetEntryId(nil)
         store.send(.view(.setDropTargeted(false)))
     }
 
@@ -436,8 +440,6 @@ extension EntryGridCoordinator: NSCollectionViewDelegate, NSCollectionViewDelega
 
         if !internalPaths.isEmpty {
             sendEntryOperations(.routing(.handleDrop(providers: [], destinationPath: destinationPath)))
-            setDropTargetEntryId(nil)
-            store.send(.view(.setDropTargeted(false)))
             return true
         }
 
@@ -455,8 +457,6 @@ extension EntryGridCoordinator: NSCollectionViewDelegate, NSCollectionViewDelega
             destinationPath: destinationPath,
             isOptionDrag: validation.isOptionDrag,
         )))
-        setDropTargetEntryId(nil)
-        store.send(.view(.setDropTargeted(false)))
         return true
     }
 
