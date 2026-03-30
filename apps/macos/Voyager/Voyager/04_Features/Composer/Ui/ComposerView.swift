@@ -21,70 +21,66 @@ struct ComposerView: View {
     private var isDark: Bool { colorScheme == .dark }
 
     var body: some View {
-        WithViewStore(
-            store,
-            observe: { $0.isPresented },
-            content: { viewStore in
-                VStack(spacing: 0) {
-                    ComposerTopRowView(
-                        store: store,
-                        colorScheme: colorScheme,
-                        isDiscardEnabled: isDiscardEnabled,
-                        canSaveCollection: canSaveCollection,
-                        isTemporaryCollection: isTemporaryCollection,
-                        isOptionKeyPressed: keyboardMonitor.isOptionKeyPressed,
-                        onDiscardCollectionChanges: onDiscardCollectionChanges,
-                    )
-                    .fixedSize(horizontal: false, vertical: true)
-
-                    Rectangle()
-                        .fill(VoyagerDS.SystemColor.separator)
-                        .frame(height: 1)
-                        .padding(.horizontal, 16)
-
-                    ComposerBottomRowView(
-                        store: store,
-                        favorites: favorites,
-                        historyPaths: historyPaths,
-                        colorScheme: colorScheme,
-                        isScopePickerPresented: $isScopePickerPresented,
-                    )
-                    .fixedSize(horizontal: false, vertical: true)
-                }
-                .background(
-                    VisualEffectBackgroundView(
-                        material: .popover,
-                        blendingMode: .withinWindow,
-                        tintColor: NSColor(VoyagerDS.Interaction.composerBackground(for: colorScheme)),
-                        tintOpacity: 0.15,
-                    )
-                    .clipShape(RoundedRectangle(cornerRadius: VoyagerDS.Radius.composer))
-                    .overlay(
-                        RoundedRectangle(cornerRadius: VoyagerDS.Radius.composer)
-                            .stroke(isDark ? Color.white.opacity(0.08) : Color.black.opacity(0.12), lineWidth: 1),
-                    )
-                    .shadow(
-                        color: Color.black.opacity(isDark ? 0.45 : 0.18),
-                        radius: isDark ? 18 : 12,
-                        x: 0,
-                        y: isDark ? 10 : 6,
-                    )
-                    .allowsHitTesting(false),
+        WithViewStore(store, observe: \.isPresented) { viewStore in
+            VStack(spacing: 0) {
+                ComposerTopRowView(
+                    store: store,
+                    colorScheme: colorScheme,
+                    isDiscardEnabled: isDiscardEnabled,
+                    canSaveCollection: canSaveCollection,
+                    isTemporaryCollection: isTemporaryCollection,
+                    isOptionKeyPressed: keyboardMonitor.isOptionKeyPressed,
+                    onDiscardCollectionChanges: onDiscardCollectionChanges,
                 )
-                .allowsHitTesting(true)
-                .onAppear {
-                    setupOnAppear()
-                }
-                .onDisappear {
+                .fixedSize(horizontal: false, vertical: true)
+
+                Rectangle()
+                    .fill(VoyagerDS.SystemColor.separator)
+                    .frame(height: 1)
+                    .padding(.horizontal, 16)
+
+                ComposerBottomRowView(
+                    store: store,
+                    favorites: favorites,
+                    historyPaths: historyPaths,
+                    colorScheme: colorScheme,
+                    isScopePickerPresented: $isScopePickerPresented,
+                )
+                .fixedSize(horizontal: false, vertical: true)
+            }
+            .background(
+                VisualEffectBackgroundView(
+                    material: .popover,
+                    blendingMode: .withinWindow,
+                    tintColor: NSColor(VoyagerDS.Interaction.composerBackground(for: colorScheme)),
+                    tintOpacity: 0.15,
+                )
+                .clipShape(RoundedRectangle(cornerRadius: VoyagerDS.Radius.composer))
+                .overlay(
+                    RoundedRectangle(cornerRadius: VoyagerDS.Radius.composer)
+                        .stroke(isDark ? Color.white.opacity(0.08) : Color.black.opacity(0.12), lineWidth: 1),
+                )
+                .shadow(
+                    color: Color.black.opacity(isDark ? 0.45 : 0.18),
+                    radius: isDark ? 18 : 12,
+                    x: 0,
+                    y: isDark ? 10 : 6,
+                )
+                .allowsHitTesting(false),
+            )
+            .allowsHitTesting(true)
+            .onAppear {
+                setupOnAppear()
+            }
+            .onDisappear {
+                keyboardMonitor.stop()
+            }
+            .onChange(of: viewStore.state) { isPresented in
+                if !isPresented {
                     keyboardMonitor.stop()
                 }
-                .onChange(of: viewStore.state) { isPresented in
-                    if !isPresented {
-                        keyboardMonitor.stop()
-                    }
-                }
-            },
-        )
+            }
+        }
     }
 
     private func setupOnAppear() {

@@ -73,7 +73,7 @@ enum FileManagerContentComposerCoordinator {
         dependencies: Dependencies,
     ) -> Effect<FileManagerContentAction>? {
         switch action {
-        case let .internal(.filtersResponse(.success(response))):
+        case let .internal(.filtersResponse(_, .success(response))):
             let effect = handleSearchSuccess(
                 items: response.items ?? [],
                 query: state.composer.pendingSearchQuery ?? "",
@@ -84,7 +84,7 @@ enum FileManagerContentComposerCoordinator {
                 .send(.delegate(.composerCollectionSearchSucceeded)),
             )
 
-        case let .internal(.searchResponse(.failure(error))):
+        case let .internal(.searchResponse(_, .failure(error))):
             let effect = handleSearchFailure(
                 error: error,
                 title: "Unable to Run Collection Search",
@@ -96,7 +96,7 @@ enum FileManagerContentComposerCoordinator {
                 .send(.delegate(.composerCollectionSearchFailed)),
             )
 
-        case let .internal(.filtersResponse(.failure(error))):
+        case let .internal(.filtersResponse(_, .failure(error))):
             let title = state.composer.pendingSearchQuery == nil
                 ? "Unable to Apply Collection Filters"
                 : "Unable to Run Collection Search"
@@ -292,26 +292,19 @@ enum FileManagerContentComposerCoordinator {
 
         var navigationEffects: [Effect<FileManagerContentAction>] = [
             .send(.internal(.requestNavigation(.internal(.setNavigationState(.collection(
-                makeCollectionNavigation(state: state))))))),
+                makeCollectionNavigation(state: state),
+            )))))),
         ]
 
         if shouldAppendHistory {
-            if let baseline = previousBaseline,
-               let previousURL = previousCollectionURL
-            {
-                let name = previousCollectionName
-                    ?? previousURL.deletingPathExtension().lastPathComponent
-                let navigation = ContentPageCollectionNavigation(
-                    kind: .file(url: previousURL, name: name),
-                    context: baseline.context,
-                    sortKey: state.entryViewLayout.entryArrangements.sortKey,
-                    sortOrder: state.entryViewLayout.entryArrangements.sortOrder,
-                    viewLayout: state.entryViewLayout.mode,
-                )
-                let entry = ContentPageNavigationHistorySnapshot(
-                    navigationState: .collection(navigation),
-                )
-                navigationEffects.append(.send(.internal(.requestNavigation(.internal(.appendBackHistory(entry))))))
+            if let historyEntry = previousCollectionHistoryEntry(
+                baseline: previousBaseline,
+                previousURL: previousCollectionURL,
+                previousCollectionName: previousCollectionName,
+                state: state,
+            ) {
+                navigationEffects
+                    .append(.send(.internal(.requestNavigation(.internal(.appendBackHistory(historyEntry))))))
             } else {
                 navigationEffects
                     .append(.send(.internal(.requestNavigation(.internal(.appendBackHistory(previousSnapshot))))))
@@ -331,6 +324,32 @@ enum FileManagerContentComposerCoordinator {
 
         return .concatenate(navigationEffects)
     }
+}
+
+private func previousCollectionHistoryEntry(
+    baseline: CollectionBaseline?,
+    previousURL: URL?,
+    previousCollectionName: String?,
+    state: FileManagerContentState,
+) -> ContentPageNavigationHistorySnapshot? {
+    guard let baseline,
+          let previousURL
+    else {
+        return nil
+    }
+
+    let name = previousCollectionName
+        ?? previousURL.deletingPathExtension().lastPathComponent
+    let navigation = ContentPageCollectionNavigation(
+        kind: .file(url: previousURL, name: name),
+        context: baseline.context,
+        sortKey: state.entryViewLayout.entryArrangements.sortKey,
+        sortOrder: state.entryViewLayout.entryArrangements.sortOrder,
+        viewLayout: state.entryViewLayout.mode,
+    )
+    return ContentPageNavigationHistorySnapshot(
+        navigationState: .collection(navigation),
+    )
 }
 
 func makeCollectionNavigation(state: FileManagerContentState) -> ContentPageCollectionNavigation {

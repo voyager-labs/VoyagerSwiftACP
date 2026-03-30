@@ -10,7 +10,6 @@ struct ComposerSearchLifecycleReducer {
     var searchClient
     @Dependency(\.registryClient)
     var registryClient
-
     var body: some Reducer<State, Action> {
         Reduce { state, action in
             switch action {
@@ -26,18 +25,18 @@ struct ComposerSearchLifecycleReducer {
             case .view(.applyFilters):
                 return handleApplyFilters(state: &state, searchClient: searchClient)
 
-            case let .internal(.searchResponse(response)):
+            case let .internal(.searchResponse(requestID, response)):
+                guard state.activeSearchRequestID == requestID else {
+                    return .none
+                }
                 switch response {
                 case let .success(response):
                     state.isLoadingSearch = false
+                    state.activeSearchRequestID = nil
                     state.lastSearchResponse = response
                     state.lastFiltersResponse = nil
                     applyQueryPhaseTransition(.searchSucceeded, state: &state)
                     applyAppliedFilters(response.appliedFilters, state: &state, registryClient: registryClient)
-                    state.isLoadingFilters = true
-                    state.isFilteringInFlight = true
-                    state.filtersStartedAt = Date()
-                    let executionFilters = buildFilters(from: state)
                     if let startedAt = state.searchStartedAt {
                         VoyagerSentryMetricLogger.logMetric(
                             "voyager_search_roundtrip_duration_ms",
@@ -50,20 +49,30 @@ struct ComposerSearchLifecycleReducer {
                         tags: ["result": response.itemCount > 0 ? "success" : "empty"],
                     )
                     state.searchStartedAt = nil
+                    state.isLoadingFilters = true
+                    state.isFilteringInFlight = true
+                    let filtersRequestID = UUID()
+                    let executionFilters = buildFilters(from: state)
+                    state.activeFiltersRequestID = filtersRequestID
+                    state.filtersStartedAt = Date()
                     return .run { send in
                         do {
                             let executionResponse = try await searchClient.applyFilters(
                                 .init(filters: executionFilters),
                             )
-                            await send(.filtersResponse(.success(executionResponse)))
+                            await send(.filtersResponse(filtersRequestID, .success(executionResponse)))
+                        } catch is CancellationError {
+                            return
                         } catch {
-                            await send(.filtersResponse(.failure(error)))
+                            guard !Task.isCancelled else { return }
+                            await send(.filtersResponse(filtersRequestID, .failure(error)))
                         }
                     }
                     .cancellable(id: ComposerFeature.CancelID.filters, cancelInFlight: true)
 
                 case .failure:
                     state.isLoadingSearch = false
+                    state.activeSearchRequestID = nil
                     applyQueryPhaseTransition(.searchFailed, state: &state)
                     VoyagerSentryMetricLogger.logMetric(
                         "voyager_search_result",
@@ -75,11 +84,15 @@ struct ComposerSearchLifecycleReducer {
                     return .none
                 }
 
-            case let .internal(.filtersResponse(response)):
+            case let .internal(.filtersResponse(requestID, response)):
+                guard state.activeFiltersRequestID == requestID else {
+                    return .none
+                }
                 switch response {
                 case let .success(response):
                     state.isLoadingFilters = false
                     state.isFilteringInFlight = false
+                    state.activeFiltersRequestID = nil
                     state.lastFiltersResponse = response
                     applyAppliedFilters(response.appliedFilters, state: &state, registryClient: registryClient)
                     if let startedAt = state.filtersStartedAt {
@@ -94,6 +107,7 @@ struct ComposerSearchLifecycleReducer {
                 case .failure:
                     state.isLoadingFilters = false
                     state.isFilteringInFlight = false
+                    state.activeFiltersRequestID = nil
                     state.filtersStartedAt = nil
                     return .none
                 }
@@ -116,6 +130,7 @@ private func handleSubmit(
     let query = state.text.trimmingCharacters(in: .whitespacesAndNewlines)
     guard !query.isEmpty else { return .none }
     let filters = buildFilters(from: state)
+    let searchRequestID = UUID()
     VoyagerSentryMetricLogger.logMetric(
         "voyager_composer_submit",
         value: 1,
@@ -134,6 +149,9 @@ private func handleSubmit(
     state.searchStartedAt = Date()
     state.isLoadingSearch = true
     state.isLoadingFilters = false
+    state.submittedSearchFilters = filters
+    state.activeSearchRequestID = searchRequestID
+    state.activeFiltersRequestID = nil
     state.lastFiltersResponse = nil
     applyQueryPhaseTransition(.startSearch, state: &state)
     state.text = ""
@@ -143,9 +161,12 @@ private func handleSubmit(
             let response = try await searchClient.search(
                 .init(query: query, filters: filters),
             )
-            await send(.searchResponse(.success(response)))
+            await send(.searchResponse(searchRequestID, .success(response)))
+        } catch is CancellationError {
+            return
         } catch {
-            await send(.searchResponse(.failure(error)))
+            guard !Task.isCancelled else { return }
+            await send(.searchResponse(searchRequestID, .failure(error)))
         }
     }
     .cancellable(id: ComposerFeature.CancelID.search, cancelInFlight: true)
@@ -158,6 +179,7 @@ private func handleSubmit(
 
 private func handleCancelSearch(state: inout ComposerFeature.State) -> Effect<ComposerFeature.Action> {
     state.isLoadingSearch = false
+    state.activeSearchRequestID = nil
     applyQueryPhaseTransition(.reset, state: &state)
     VoyagerSentryMetricLogger.logMetric(
         "voyager_search_cancel",
@@ -170,6 +192,7 @@ private func handleCancelSearch(state: inout ComposerFeature.State) -> Effect<Co
 private func handleCancelFilters(state: inout ComposerFeature.State) -> Effect<ComposerFeature.Action> {
     state.isLoadingFilters = false
     state.isFilteringInFlight = false
+    state.activeFiltersRequestID = nil
     VoyagerSentryMetricLogger.logMetric(
         "voyager_search_cancel",
         value: 1,
@@ -183,9 +206,12 @@ private func handleApplyFilters(
     searchClient: SearchClient,
 ) -> Effect<ComposerFeature.Action> {
     state.isLoadingSearch = false
+    let filtersRequestID = UUID()
+    state.activeSearchRequestID = nil
     state.lastSearchResponse = nil
     state.isLoadingFilters = true
     state.isFilteringInFlight = true
+    state.activeFiltersRequestID = filtersRequestID
     applyQueryPhaseTransition(.reset, state: &state)
     VoyagerSentryMetricLogger.logMetric(
         "voyager_composer_filters_apply",
@@ -194,6 +220,6 @@ private func handleApplyFilters(
     state.filtersStartedAt = Date()
     return .concatenate(
         .cancel(id: ComposerFeature.CancelID.search),
-        applyFiltersIfNeeded(state: &state, searchClient: searchClient),
+        applyFiltersIfNeeded(state: &state, searchClient: searchClient, requestID: filtersRequestID),
     )
 }

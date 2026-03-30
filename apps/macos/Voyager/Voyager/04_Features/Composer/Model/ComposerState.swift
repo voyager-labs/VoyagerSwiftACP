@@ -39,6 +39,10 @@ struct ComposerState: Equatable {
     var isLoadingFilters: Bool = false
     var isFilteringInFlight: Bool = false
     var queryRenderPhase: ComposerQueryRenderPhase = .idle
+    var transientFeedback: ComposerTransientFeedback?
+    var submittedSearchFilters: SearchFiltersPayload?
+    var activeSearchRequestID: UUID?
+    var activeFiltersRequestID: UUID?
 
     var lastSearchResponse: SearchResponsePayload?
     var lastFiltersResponse: SearchResponsePayload?
