@@ -1,6 +1,22 @@
 .agents/skills/.venvs/
 .ruff_cache/
 
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+.mypy_cache/
+.pytest_cache/
+.pytype/
+.hypothesis/
+.coverage
+.coverage.*
+htmlcov/
+.venv/
+venv/
+env/
+
 # macOS
 .DS_Store
 .AppleDouble
