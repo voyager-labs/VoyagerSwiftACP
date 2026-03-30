@@ -1,5 +1,8 @@
 import ComposableArchitecture
 import Foundation
+import Logging
+
+private let kComposerSearchLifecycleLogger = Logger(label: "Voyager")
 
 @Reducer
 struct ComposerSearchLifecycleReducer {
@@ -31,12 +34,21 @@ struct ComposerSearchLifecycleReducer {
                 }
                 switch response {
                 case let .success(response):
+                    let baselineFilters = feedbackBaseline(from: state)
+                    let normalizedAppliedFilters = feedbackAppliedFilters(
+                        appliedFilters: response.appliedFilters,
+                        baseline: baselineFilters,
+                    )
+                    let isNoOpResponse = ComposerQueryFeedbackPolicy.isNoOp(
+                        baseline: baselineFilters,
+                        appliedFilters: response.appliedFilters,
+                    )
                     state.isLoadingSearch = false
                     state.activeSearchRequestID = nil
                     state.lastSearchResponse = response
                     state.lastFiltersResponse = nil
                     applyQueryPhaseTransition(.searchSucceeded, state: &state)
-                    applyAppliedFilters(response.appliedFilters, state: &state, registryClient: registryClient)
+                    applyAppliedFilters(normalizedAppliedFilters, state: &state, registryClient: registryClient)
                     if let startedAt = state.searchStartedAt {
                         VoyagerSentryMetricLogger.logMetric(
                             "voyager_search_roundtrip_duration_ms",
@@ -49,6 +61,9 @@ struct ComposerSearchLifecycleReducer {
                         tags: ["result": response.itemCount > 0 ? "success" : "empty"],
                     )
                     state.searchStartedAt = nil
+                    if isNoOpResponse {
+                        kComposerSearchLifecycleLogger.debug("Composer query search resolved to no-op filters")
+                    }
                     state.isLoadingFilters = true
                     state.isFilteringInFlight = true
                     let filtersRequestID = UUID()
@@ -70,7 +85,7 @@ struct ComposerSearchLifecycleReducer {
                     }
                     .cancellable(id: ComposerFeature.CancelID.filters, cancelInFlight: true)
 
-                case .failure:
+                case let .failure(error):
                     state.isLoadingSearch = false
                     state.activeSearchRequestID = nil
                     applyQueryPhaseTransition(.searchFailed, state: &state)
@@ -81,6 +96,9 @@ struct ComposerSearchLifecycleReducer {
                         level: .warn,
                     )
                     state.searchStartedAt = nil
+                    kComposerSearchLifecycleLogger.warning(
+                        "Composer query search failed: \(feedbackFailureMessage(for: error))",
+                    )
                     return .none
                 }
 
@@ -104,11 +122,14 @@ struct ComposerSearchLifecycleReducer {
                     state.filtersStartedAt = nil
                     return .none
 
-                case .failure:
+                case let .failure(error):
                     state.isLoadingFilters = false
                     state.isFilteringInFlight = false
                     state.activeFiltersRequestID = nil
                     state.filtersStartedAt = nil
+                    kComposerSearchLifecycleLogger.warning(
+                        "Composer filter application failed: \(feedbackFailureMessage(for: error))",
+                    )
                     return .none
                 }
 
@@ -222,4 +243,29 @@ private func handleApplyFilters(
         .cancel(id: ComposerFeature.CancelID.search),
         applyFiltersIfNeeded(state: &state, searchClient: searchClient, requestID: filtersRequestID),
     )
+}
+
+private func feedbackBaseline(from state: ComposerFeature.State) -> SearchFiltersPayload {
+    state.submittedSearchFilters ?? SearchFiltersPayload(
+        scopes: state.scopes,
+        conditions: buildFilters(from: state).conditions,
+    )
+}
+
+private func feedbackAppliedFilters(
+    appliedFilters: AppliedFiltersPayload?,
+    baseline: SearchFiltersPayload,
+) -> AppliedFiltersPayload {
+    let normalizedFilters = ComposerQueryFeedbackPolicy.normalizedFilters(
+        appliedFilters: appliedFilters,
+        fallback: baseline,
+    )
+    return AppliedFiltersPayload(
+        scopes: normalizedFilters.scopes,
+        conditions: normalizedFilters.conditions,
+    )
+}
+
+private func feedbackFailureMessage(for error: any Error) -> String {
+    ComposerQueryFeedbackPolicy.failureMessage(for: error)
 }
