@@ -41,6 +41,17 @@ struct WindowManagerFeature {
                     await fileManagerWindowClient.open(reopenWindowID)
                 }
 
+            case let .externalFileSystemChanged(paths):
+                guard !paths.isEmpty else { return .none }
+                return .merge(
+                    state.windows.ids.map { id in
+                        .send(.windows(.element(
+                            id: id,
+                            action: .window(.content(.entries(.fileSystemChanged(paths)))),
+                        )))
+                    },
+                )
+
             case let .applyAppPreferences(preferences):
                 state.appPreferences = preferences
                 return .merge(

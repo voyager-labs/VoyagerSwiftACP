@@ -53,6 +53,15 @@ final class AppRootFeatureContractTests: XCTestCase {
         await store.receive(\.windowManager.openInitialWindowIfNeeded)
     }
 
+    func testHelperExternalFileChangeForwardsToWindowManager() async {
+        let store = TestStore(initialState: AppRootFeature.State()) {
+            AppRootFeature()
+        }
+
+        await store.send(.helperExternalFileChanged(["/tmp/demo"]))
+        await store.receive(\.windowManager.externalFileSystemChanged)
+    }
+
     func testMenuCommandsStateIsRecomputedAfterWindowManagerChanges() async {
         var initialState = AppRootFeature.State()
         let windowID = UUID()

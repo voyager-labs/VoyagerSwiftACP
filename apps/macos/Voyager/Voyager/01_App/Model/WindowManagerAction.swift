@@ -4,6 +4,7 @@ import ComposableArchitecture
 enum WindowManagerAction: CasePathable, Sendable {
     case openInitialWindowIfNeeded
     case reopenWindowIfNeeded(hasVisibleWindows: Bool)
+    case externalFileSystemChanged([String])
     case applyAppPreferences(AppPreferencesState)
 
     case newWindow(path: String? = nil)

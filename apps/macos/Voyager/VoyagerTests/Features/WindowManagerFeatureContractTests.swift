@@ -107,4 +107,22 @@ final class WindowManagerFeatureContractTests: XCTestCase {
 
         await store.send(.quickLook)
     }
+
+    func testExternalFileSystemChangeFansOutToAllOpenWindows() async {
+        let firstID = UUID()
+        let secondID = UUID()
+
+        var initialState = WindowManagerFeature.State()
+        initialState.windows = [
+            WindowSessionState(id: firstID, window: .makeInitial(windowID: firstID, path: "/a")),
+            WindowSessionState(id: secondID, window: .makeInitial(windowID: secondID, path: "/b")),
+        ]
+
+        let store = TestStore(initialState: initialState) {
+            WindowManagerFeature()
+        }
+        store.exhaustivity = .off
+
+        await store.send(.externalFileSystemChanged(["/tmp/demo"]))
+    }
 }

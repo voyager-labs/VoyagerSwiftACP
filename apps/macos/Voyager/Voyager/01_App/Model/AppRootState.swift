@@ -9,4 +9,5 @@ struct AppRootState: Equatable {
     var updater = UpdaterFeature.State()
     var settings = SettingsFeature.State()
     var menuCommands = MenuCommandsFeature.State()
+    var pendingReplayPaths: [String] = []
 }
