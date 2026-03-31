@@ -63,6 +63,12 @@ struct ComposerSearchLifecycleReducer {
                     state.searchStartedAt = nil
                     if isNoOpResponse {
                         kComposerSearchLifecycleLogger.debug("Composer query search resolved to no-op filters")
+                        state.isLoadingFilters = false
+                        state.isFilteringInFlight = false
+                        state.activeFiltersRequestID = nil
+                        state.filtersStartedAt = nil
+                        applyQueryPhaseTransition(.reset, state: &state)
+                        return .none
                     }
                     state.isLoadingFilters = true
                     state.isFilteringInFlight = true
@@ -88,6 +94,11 @@ struct ComposerSearchLifecycleReducer {
                 case let .failure(error):
                     state.isLoadingSearch = false
                     state.activeSearchRequestID = nil
+                    state.transientFeedback = .init(
+                        id: UUID(),
+                        kind: .error,
+                        message: feedbackFailureMessage(for: error),
+                    )
                     applyQueryPhaseTransition(.searchFailed, state: &state)
                     VoyagerSentryMetricLogger.logMetric(
                         "voyager_search_result",
@@ -127,6 +138,11 @@ struct ComposerSearchLifecycleReducer {
                     state.isFilteringInFlight = false
                     state.activeFiltersRequestID = nil
                     state.filtersStartedAt = nil
+                    state.transientFeedback = .init(
+                        id: UUID(),
+                        kind: .error,
+                        message: feedbackFailureMessage(for: error),
+                    )
                     kComposerSearchLifecycleLogger.warning(
                         "Composer filter application failed: \(feedbackFailureMessage(for: error))",
                     )

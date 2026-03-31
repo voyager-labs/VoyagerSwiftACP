@@ -1,7 +1,6 @@
 import Foundation
 
 enum ComposerQueryFeedbackPolicy {
-    static let noOpMessage = "No filters were added from that query. Try being more specific."
     static let conversionFailureMessage = "Couldn't interpret that query. Try being more specific."
     static let executionFailureMessage = "Search couldn't be completed. Check Helper/Gateway and try again."
 
