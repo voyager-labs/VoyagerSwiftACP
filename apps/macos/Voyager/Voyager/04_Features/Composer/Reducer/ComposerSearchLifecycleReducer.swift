@@ -13,6 +13,8 @@ struct ComposerSearchLifecycleReducer {
     var searchClient
     @Dependency(\.registryClient)
     var registryClient
+    @Dependency(\.continuousClock)
+    var clock
     var body: some Reducer<State, Action> {
         Reduce { state, action in
             switch action {
@@ -94,10 +96,11 @@ struct ComposerSearchLifecycleReducer {
                 case let .failure(error):
                     state.isLoadingSearch = false
                     state.activeSearchRequestID = nil
-                    state.transientFeedback = .init(
-                        id: UUID(),
+                    let feedbackEffect = presentTransientFeedback(
                         kind: .error,
                         message: feedbackFailureMessage(for: error),
+                        state: &state,
+                        clock: clock,
                     )
                     applyQueryPhaseTransition(.searchFailed, state: &state)
                     VoyagerSentryMetricLogger.logMetric(
@@ -110,7 +113,7 @@ struct ComposerSearchLifecycleReducer {
                     kComposerSearchLifecycleLogger.warning(
                         "Composer query search failed: \(feedbackFailureMessage(for: error))",
                     )
-                    return .none
+                    return feedbackEffect
                 }
 
             case let .internal(.filtersResponse(requestID, response)):
@@ -138,15 +141,16 @@ struct ComposerSearchLifecycleReducer {
                     state.isFilteringInFlight = false
                     state.activeFiltersRequestID = nil
                     state.filtersStartedAt = nil
-                    state.transientFeedback = .init(
-                        id: UUID(),
+                    let feedbackEffect = presentTransientFeedback(
                         kind: .error,
                         message: feedbackFailureMessage(for: error),
+                        state: &state,
+                        clock: clock,
                     )
                     kComposerSearchLifecycleLogger.warning(
                         "Composer filter application failed: \(feedbackFailureMessage(for: error))",
                     )
-                    return .none
+                    return feedbackEffect
                 }
 
             case .internal(.searchListApplied):
@@ -284,4 +288,34 @@ private func feedbackAppliedFilters(
 
 private func feedbackFailureMessage(for error: any Error) -> String {
     ComposerQueryFeedbackPolicy.failureMessage(for: error)
+}
+
+private func presentTransientFeedback(
+    kind: ComposerTransientFeedbackKind,
+    message: String,
+    state: inout ComposerFeature.State,
+    clock: any Clock<Duration>,
+) -> Effect<ComposerFeature.Action> {
+    if let currentFeedback = state.transientFeedback,
+       currentFeedback.kind == kind,
+       currentFeedback.message == message
+    {
+        return .none
+    }
+
+    let feedback = ComposerTransientFeedback(
+        id: UUID(),
+        kind: kind,
+        message: message,
+    )
+    state.transientFeedback = feedback
+
+    return .concatenate(
+        .cancel(id: ComposerFeature.CancelID.feedbackDismiss),
+        .run { send in
+            try await clock.sleep(for: .seconds(4))
+            await send(.dismissTransientFeedback(id: feedback.id))
+        }
+        .cancellable(id: ComposerFeature.CancelID.feedbackDismiss, cancelInFlight: true),
+    )
 }
