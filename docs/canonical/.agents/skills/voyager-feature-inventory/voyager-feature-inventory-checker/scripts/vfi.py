@@ -144,8 +144,8 @@ def cmd_show(args: argparse.Namespace) -> int:
 
     repo_root = _find_repo_root(SKILL_DIR)
 
-    features_path = repo_root / "04_FEATURE_INVENTORY/FEATURES/data.tsv"
-    interactions_path = repo_root / "04_FEATURE_INVENTORY/INTERACTIONS/data.tsv"
+    features_path = repo_root / "PRODUCT/04_FEATURE_INVENTORY/FEATURES/data.tsv"
+    interactions_path = repo_root / "PRODUCT/04_FEATURE_INVENTORY/INTERACTIONS/data.tsv"
 
     features = _read_tsv(pl, features_path)
     feature_id = args.feature_id.strip()
@@ -217,9 +217,9 @@ def cmd_search(args: argparse.Namespace) -> int:
         return 2
     q_lower = q.lower()
 
-    features_path = repo_root / "04_FEATURE_INVENTORY/FEATURES/data.tsv"
-    interactions_path = repo_root / "04_FEATURE_INVENTORY/INTERACTIONS/data.tsv"
-    window_path = repo_root / "03_INFORMATION_ARCHITECTURE/WINDOW_STRUCTURE/data.tsv"
+    features_path = repo_root / "PRODUCT/04_FEATURE_INVENTORY/FEATURES/data.tsv"
+    interactions_path = repo_root / "PRODUCT/04_FEATURE_INVENTORY/INTERACTIONS/data.tsv"
+    window_path = repo_root / "PRODUCT/03_INFORMATION_ARCHITECTURE/WINDOW_STRUCTURE/data.tsv"
 
     features = _read_tsv(pl, features_path)
     interactions = _read_tsv(pl, interactions_path)
