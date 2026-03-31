@@ -2,9 +2,11 @@ import Darwin
 import Foundation
 
 extension Notification.Name {
-    static let voyagerHelperExternalFSDidUpdate = Notification.Name("voyagerHelperExternalFSDidUpdate")
-    static let voyagerHelperExternalFSReplayRequest = Notification.Name("voyagerHelperExternalFSReplayRequest")
-    static let voyagerHelperExternalFSReplayDidUpdate = Notification.Name("voyagerHelperExternalFSReplayDidUpdate")
+    nonisolated static let voyagerHelperFSChanged = Notification.Name("voyagerHelperFSChanged")
+    nonisolated static let voyagerHelperFSReplayRequest = Notification.Name("voyagerHelperFSReplayRequest")
+    nonisolated static let voyagerHelperFSReplay = Notification.Name("voyagerHelperFSReplay")
+    nonisolated static let voyagerHelperFSReplayAck = Notification.Name("voyagerHelperFSReplayAck")
+    nonisolated static let voyagerHelperFSWatchRootsChanged = Notification.Name("voyagerHelperFSWatchRootsChanged")
 }
 
 nonisolated enum HelperExternalFileChangeUserInfoKey {
@@ -134,14 +136,17 @@ nonisolated struct HelperExternalFileChangePayload: Codable, Equatable, Sendable
         ]
     }
 
-    nonisolated static func from(userInfo: [AnyHashable: Any]?) -> Self? {
+    nonisolated static func from(userInfo: [AnyHashable: Any]?, allowEmptyPaths: Bool = false) -> Self? {
         guard let userInfo else { return nil }
         guard let schemaVersion = parseInt(userInfo[HelperExternalFileChangeUserInfoKey.schemaVersion]),
               schemaVersion == 1
         else {
             return nil
         }
-        guard let paths = userInfo[HelperExternalFileChangeUserInfoKey.paths] as? [String], !paths.isEmpty else {
+        guard let paths = userInfo[HelperExternalFileChangeUserInfoKey.paths] as? [String] else {
+            return nil
+        }
+        if !allowEmptyPaths, paths.isEmpty {
             return nil
         }
 

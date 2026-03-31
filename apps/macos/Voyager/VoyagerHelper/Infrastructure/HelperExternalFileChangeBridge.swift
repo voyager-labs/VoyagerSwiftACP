@@ -3,6 +3,7 @@ import Foundation
 @MainActor
 final class HelperExternalFileChangeBridge {
     private nonisolated(unsafe) var replayObserver: NSObjectProtocol?
+    private nonisolated(unsafe) var replayAckObserver: NSObjectProtocol?
     private let store: HelperExternalFileChangeStore
 
     init(store: HelperExternalFileChangeStore = HelperExternalFileChangeStore()) {
@@ -11,16 +12,16 @@ final class HelperExternalFileChangeBridge {
 
     deinit {
         guard let replayObserver else { return }
-        Task { @MainActor in
-            DistributedNotificationCenter.default().removeObserver(replayObserver)
+        DistributedNotificationCenter.default().removeObserver(replayObserver)
+        if let replayAckObserver {
+            DistributedNotificationCenter.default().removeObserver(replayAckObserver)
         }
     }
 
     func startObservingReplayRequests() {
         guard replayObserver == nil else { return }
-
         replayObserver = DistributedNotificationCenter.default().addObserver(
-            forName: .voyagerHelperExternalFSReplayRequest,
+            forName: .voyagerHelperFSReplayRequest,
             object: nil,
             queue: .main,
         ) { [weak self] notification in
@@ -30,16 +31,26 @@ final class HelperExternalFileChangeBridge {
                 await self.respondToReplayRequest(request)
             }
         }
+
+        replayAckObserver = DistributedNotificationCenter.default().addObserver(
+            forName: .voyagerHelperFSReplayAck,
+            object: nil,
+            queue: .main,
+        ) { [weak self] _ in
+            guard let self else { return }
+            Task { @MainActor in
+                try? await self.store.clear()
+            }
+        }
     }
 
     func publishChangedPaths(_ paths: [String], generatedAt: Date = Date()) async {
         let payload = HelperExternalFileChangePayload(paths: paths, generatedAt: generatedAt)
         guard !payload.paths.isEmpty else { return }
-
         _ = try? await store.coalesce(payload.paths, generatedAt: generatedAt)
 
         DistributedNotificationCenter.default().post(
-            name: .voyagerHelperExternalFSDidUpdate,
+            name: .voyagerHelperFSChanged,
             object: nil,
             userInfo: payload.asUserInfo(),
         )
@@ -47,9 +58,8 @@ final class HelperExternalFileChangeBridge {
 
     private func respondToReplayRequest(_ request: HelperExternalFileChangeReplayRequest) async {
         guard let payload = try? await store.payloadForReplay(request) else { return }
-
         DistributedNotificationCenter.default().post(
-            name: .voyagerHelperExternalFSReplayDidUpdate,
+            name: .voyagerHelperFSReplay,
             object: nil,
             userInfo: payload.asUserInfo(),
         )

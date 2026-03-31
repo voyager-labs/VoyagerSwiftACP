@@ -14,7 +14,7 @@ final class HelperExternalFileChangeBridgeTests: XCTestCase {
         )
         let bridge = HelperExternalFileChangeBridge(store: store)
 
-        let payload = await expectNotification(named: .voyagerHelperExternalFSDidUpdate) {
+        let payload = await expectNotification(named: .voyagerHelperFSChanged) {
             Task { @MainActor in
                 await bridge.publishChangedPaths(["/tmp/demo/a", "/tmp/demo/../demo/a", "/tmp/demo/b"])
             }
@@ -42,9 +42,9 @@ final class HelperExternalFileChangeBridgeTests: XCTestCase {
 
         _ = try await store.coalesce(["/tmp/demo/a", "/tmp/demo/b"])
 
-        let replay = await expectNotification(named: .voyagerHelperExternalFSReplayDidUpdate) {
+        let replay = await expectNotification(named: .voyagerHelperFSReplay) {
             DistributedNotificationCenter.default().post(
-                name: .voyagerHelperExternalFSReplayRequest,
+                name: .voyagerHelperFSReplayRequest,
                 object: nil,
                 userInfo: HelperExternalFileChangeReplayRequest(consume: true).asUserInfo(),
             )
