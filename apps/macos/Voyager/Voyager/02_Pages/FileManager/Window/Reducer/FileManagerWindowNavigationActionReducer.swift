@@ -242,6 +242,7 @@ private func handleOpenCollectionFile(
 
     let clearEffect = state.content.clearCollectionMode()
     state.content.collectionSession.isOpening = true
+    state.content.collectionSession.isStale = false
     state.content.collectionSession.openedName = url.deletingPathExtension().lastPathComponent
     state.content.collectionSession.openedURL = url
     state.content.collectionSession.originURL = url
@@ -320,6 +321,7 @@ private func handleCollectionFileLoadedSuccess(
     computerName: String,
 ) -> Effect<FileManagerWindowAction> {
     state.content.composer.isPresented = false
+    state.content.collectionSession.isStale = false
     let trimmedQuery = file.query.trimmingCharacters(in: .whitespacesAndNewlines)
     state.content.composer.pendingSearchQuery = trimmedQuery.isEmpty ? nil : trimmedQuery
 

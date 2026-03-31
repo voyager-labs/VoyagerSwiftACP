@@ -110,10 +110,19 @@ struct FileManagerContentFeature {
                 return .cancel(id: fileSystemChangedCancellationID)
 
             case let .entries(.fileSystemChanged(paths)):
-                guard pathsAffectCurrentFolder(paths, currentPath: state.navigation.currentPath) else {
+                switch state.navigation.navigationState {
+                case .collection:
+                    if collectionPathsAffectCurrentContext(paths, state: state) {
+                        state.collectionSession.isStale = true
+                    }
                     return .none
+
+                default:
+                    guard pathsAffectCurrentFolder(paths, currentPath: state.navigation.currentPath) else {
+                        return .none
+                    }
+                    return reloadEntryItemsEffect(state: state)
                 }
-                return reloadEntryItemsEffect(state: state)
 
             default:
                 return .none
@@ -247,6 +256,33 @@ struct FileManagerContentFeature {
 
             let folderPrefix = normalizedCurrentPath == "/" ? "/" : normalizedCurrentPath + "/"
             return normalizedPath.hasPrefix(folderPrefix)
+        }
+    }
+
+    private func collectionPathsAffectCurrentContext(_ paths: [String], state: State) -> Bool {
+        guard let context = state.collectionContext else {
+            return true
+        }
+
+        let scopePaths = context.scopes.compactMap { scope -> String? in
+            guard !scope.isEmpty, scope.hasPrefix("/") else { return nil }
+            return URL(fileURLWithPath: scope).standardizedFileURL.path
+        }
+
+        guard !scopePaths.isEmpty else {
+            return true
+        }
+
+        return paths.contains { changedPath in
+            let normalizedPath = URL(fileURLWithPath: changedPath).standardizedFileURL.path
+            return scopePaths.contains { scopePath in
+                if normalizedPath == scopePath {
+                    return true
+                }
+
+                let scopePrefix = scopePath == "/" ? "/" : scopePath + "/"
+                return normalizedPath.hasPrefix(scopePrefix)
+            }
         }
     }
 
