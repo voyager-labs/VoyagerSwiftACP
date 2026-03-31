@@ -20,67 +20,91 @@ struct ComposerView: View {
 
     private var isDark: Bool { colorScheme == .dark }
 
+    private struct ViewState: Equatable {
+        let isPresented: Bool
+        let transientFeedback: ComposerTransientFeedback?
+    }
+
     var body: some View {
-        WithViewStore(store, observe: \.isPresented) { viewStore in
-            VStack(spacing: 0) {
-                ComposerTopRowView(
-                    store: store,
-                    colorScheme: colorScheme,
-                    isDiscardEnabled: isDiscardEnabled,
-                    canSaveCollection: canSaveCollection,
-                    isTemporaryCollection: isTemporaryCollection,
-                    isOptionKeyPressed: keyboardMonitor.isOptionKeyPressed,
-                    onDiscardCollectionChanges: onDiscardCollectionChanges,
+        WithViewStore(
+            store,
+            observe: { state in
+                ViewState(
+                    isPresented: state.isPresented,
+                    transientFeedback: state.transientFeedback,
                 )
-                .fixedSize(horizontal: false, vertical: true)
+            },
+            content: { viewStore in
+                ZStack(alignment: .top) {
+                    VStack(spacing: 0) {
+                        ComposerTopRowView(
+                            store: store,
+                            colorScheme: colorScheme,
+                            isDiscardEnabled: isDiscardEnabled,
+                            canSaveCollection: canSaveCollection,
+                            isTemporaryCollection: isTemporaryCollection,
+                            isOptionKeyPressed: keyboardMonitor.isOptionKeyPressed,
+                            onDiscardCollectionChanges: onDiscardCollectionChanges,
+                        )
+                        .fixedSize(horizontal: false, vertical: true)
 
-                Rectangle()
-                    .fill(VoyagerDS.SystemColor.separator)
-                    .frame(height: 1)
-                    .padding(.horizontal, 16)
+                        Rectangle()
+                            .fill(VoyagerDS.SystemColor.separator)
+                            .frame(height: 1)
+                            .padding(.horizontal, 16)
 
-                ComposerBottomRowView(
-                    store: store,
-                    favorites: favorites,
-                    historyPaths: historyPaths,
-                    colorScheme: colorScheme,
-                    isScopePickerPresented: $isScopePickerPresented,
+                        ComposerBottomRowView(
+                            store: store,
+                            favorites: favorites,
+                            historyPaths: historyPaths,
+                            colorScheme: colorScheme,
+                            isScopePickerPresented: $isScopePickerPresented,
+                        )
+                        .fixedSize(horizontal: false, vertical: true)
+                    }
+
+                    if let feedback = viewStore.transientFeedback {
+                        ComposerFeedbackToastView(feedback: feedback)
+                            .frame(maxWidth: 360)
+                            .padding(.top, 54)
+                            .allowsHitTesting(false)
+                            .zIndex(1)
+                    }
+                }
+                .background(
+                    VisualEffectBackgroundView(
+                        material: .popover,
+                        blendingMode: .withinWindow,
+                        tintColor: NSColor(VoyagerDS.Interaction.composerBackground(for: colorScheme)),
+                        tintOpacity: 0.15,
+                    )
+                    .clipShape(RoundedRectangle(cornerRadius: VoyagerDS.Radius.composer))
+                    .overlay(
+                        RoundedRectangle(cornerRadius: VoyagerDS.Radius.composer)
+                            .stroke(isDark ? Color.white.opacity(0.08) : Color.black.opacity(0.12), lineWidth: 1),
+                    )
+                    .shadow(
+                        color: Color.black.opacity(isDark ? 0.45 : 0.18),
+                        radius: isDark ? 18 : 12,
+                        x: 0,
+                        y: isDark ? 10 : 6,
+                    )
+                    .allowsHitTesting(false),
                 )
-                .fixedSize(horizontal: false, vertical: true)
-            }
-            .background(
-                VisualEffectBackgroundView(
-                    material: .popover,
-                    blendingMode: .withinWindow,
-                    tintColor: NSColor(VoyagerDS.Interaction.composerBackground(for: colorScheme)),
-                    tintOpacity: 0.15,
-                )
-                .clipShape(RoundedRectangle(cornerRadius: VoyagerDS.Radius.composer))
-                .overlay(
-                    RoundedRectangle(cornerRadius: VoyagerDS.Radius.composer)
-                        .stroke(isDark ? Color.white.opacity(0.08) : Color.black.opacity(0.12), lineWidth: 1),
-                )
-                .shadow(
-                    color: Color.black.opacity(isDark ? 0.45 : 0.18),
-                    radius: isDark ? 18 : 12,
-                    x: 0,
-                    y: isDark ? 10 : 6,
-                )
-                .allowsHitTesting(false),
-            )
-            .allowsHitTesting(true)
-            .onAppear {
-                setupOnAppear()
-            }
-            .onDisappear {
-                keyboardMonitor.stop()
-            }
-            .onChange(of: viewStore.state) { isPresented in
-                if !isPresented {
+                .allowsHitTesting(true)
+                .onAppear {
+                    setupOnAppear()
+                }
+                .onDisappear {
                     keyboardMonitor.stop()
                 }
-            }
-        }
+                .onChange(of: viewStore.isPresented) { isPresented in
+                    if !isPresented {
+                        keyboardMonitor.stop()
+                    }
+                }
+            },
+        )
     }
 
     private func setupOnAppear() {
