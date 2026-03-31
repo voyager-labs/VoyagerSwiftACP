@@ -14,6 +14,8 @@ struct AppRootFeature {
     private var helperFolderAccessClient
     @Dependency(\.helperStateClient)
     private var helperStateClient
+    @Dependency(\.collectionStalenessClient)
+    private var collectionStalenessClient
 
     private enum CancelID {
         static let helperExternalFileBridge = "helperExternalFileBridge"
@@ -91,6 +93,7 @@ struct AppRootFeature {
 
             case let .helperExternalFileChanged(event):
                 let helperExternalFileChangeClient = helperExternalFileChangeClient
+                collectionStalenessClient.invalidateRecords(event.paths)
                 if event.source == .replay, state.windowManager.windows.isEmpty {
                     state.pendingReplayPaths = Array(Set(state.pendingReplayPaths + event.paths)).sorted()
                     effect = .none

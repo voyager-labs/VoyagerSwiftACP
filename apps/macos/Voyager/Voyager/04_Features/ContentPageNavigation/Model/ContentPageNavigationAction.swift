@@ -15,7 +15,7 @@ struct ContentPageNavigationErrorFingerprint: Equatable, Sendable {
 }
 
 enum ContentPageCollectionFileLoadResult: Equatable, Sendable {
-    case success(VoyagerCollectionFile)
+    case success(VoyagerCollectionFile, isStale: Bool)
     case failure(ContentPageNavigationErrorFingerprint)
 }
 

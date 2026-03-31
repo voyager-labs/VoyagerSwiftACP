@@ -11,6 +11,8 @@ struct FileManagerNavigationActionReducer {
     var collectionAlertClient
     @Dependency(\.registryClient)
     var registryClient
+    @Dependency(\.collectionStalenessClient)
+    var collectionStalenessClient
 
     typealias State = FileManagerWindowState
     typealias Action = FileManagerWindowAction
@@ -66,6 +68,7 @@ struct FileManagerNavigationActionReducer {
                 url,
                 state: &state,
                 collectionFileClient: collectionFileClient,
+                collectionStalenessClient: collectionStalenessClient,
             )
         }
     }
@@ -136,6 +139,7 @@ struct FileManagerNavigationActionReducer {
                 state: &state,
                 collectionAlertClient: collectionAlertClient,
                 registryClient: registryClient,
+                collectionStalenessClient: collectionStalenessClient,
                 computerName: fileManagerClient.displayName("/"),
             )
 
@@ -231,6 +235,7 @@ private func handleOpenCollectionFile(
     _ url: URL,
     state: inout FileManagerWindowState,
     collectionFileClient: CollectionFileClient,
+    collectionStalenessClient: CollectionStalenessClient,
 ) -> Effect<FileManagerWindowAction> {
     if state.content.collectionSession.openedURL?.path != url.path {
         VoyagerSentryMetricLogger.logDAUNavigation(kind: .collection)
@@ -253,7 +258,8 @@ private func handleOpenCollectionFile(
         do {
             let file = try await collectionFileClient.load(url)
             try Task.checkCancellation()
-            await send(.navigation(.internal(.collectionFileLoaded(.success(file)))))
+            let isStale = collectionStalenessClient.consumeInvalidation(url.path)
+            await send(.navigation(.internal(.collectionFileLoaded(.success(file, isStale: isStale)))))
         } catch is CancellationError {
             return
         } catch {
@@ -278,19 +284,24 @@ private func handleCollectionFileLoaded(
     state: inout FileManagerWindowState,
     collectionAlertClient: CollectionAlertClient,
     registryClient: RegistryClient,
+    collectionStalenessClient: CollectionStalenessClient,
     computerName: String,
 ) -> Effect<FileManagerWindowAction> {
     switch result {
-    case let .success(file):
-        handleCollectionFileLoadedSuccess(
+    case let .success(file, isStale):
+        if let url = state.content.collectionSession.openedURL {
+            collectionStalenessClient.registerCollection(url.path, file.scopes)
+        }
+        return handleCollectionFileLoadedSuccess(
             file,
+            isStale: isStale,
             state: &state,
             collectionAlertClient: collectionAlertClient,
             registryClient: registryClient,
             computerName: computerName,
         )
     case let .failure(error):
-        handleCollectionFileLoadedFailure(
+        return handleCollectionFileLoadedFailure(
             error,
             state: &state,
             collectionAlertClient: collectionAlertClient,
@@ -315,13 +326,14 @@ private func handleNavigateToCollection(
 
 private func handleCollectionFileLoadedSuccess(
     _ file: VoyagerCollectionFile,
+    isStale: Bool,
     state: inout FileManagerWindowState,
     collectionAlertClient: CollectionAlertClient,
     registryClient: RegistryClient,
     computerName: String,
 ) -> Effect<FileManagerWindowAction> {
     state.content.composer.isPresented = false
-    state.content.collectionSession.isStale = false
+    state.content.collectionSession.isStale = isStale
     let trimmedQuery = file.query.trimmingCharacters(in: .whitespacesAndNewlines)
     state.content.composer.pendingSearchQuery = trimmedQuery.isEmpty ? nil : trimmedQuery
 
@@ -350,11 +362,17 @@ private func handleCollectionFileLoadedSuccess(
         ),
     )
 
-    var effects: [Effect<FileManagerWindowAction>] = [
-        state.content.collectionSession.isOpening
-            ? .send(.content(.composer(.applyFilters)))
-            : (trimmedQuery.isEmpty ? .send(.content(.composer(.applyFilters))) : .send(.content(.composer(.submit)))),
-    ]
+    var effects: [Effect<FileManagerWindowAction>] = []
+
+    if !isStale {
+        effects.append(
+            state.content.collectionSession.isOpening
+                ? .send(.content(.composer(.applyFilters)))
+                :
+                (trimmedQuery
+                    .isEmpty ? .send(.content(.composer(.applyFilters))) : .send(.content(.composer(.submit)))),
+        )
+    }
 
     if !resolved.unknownKeys.isEmpty {
         let joinedKeys = resolved.unknownKeys.joined(separator: ", ")
