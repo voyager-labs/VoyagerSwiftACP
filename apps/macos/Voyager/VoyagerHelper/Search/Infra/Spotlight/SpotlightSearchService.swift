@@ -1,13 +1,16 @@
 import CoreServices
+import Darwin
 import Foundation
 import ImageIO
 import Logging
 import UniformTypeIdentifiers
 
 struct SpotlightSearchService: Sendable, SearchExecutionServicing {
+    private nonisolated static let userTagsXattrName = "com.apple.metadata:_kMDItemUserTags"
     private let logger: Logger
     private let maxCandidates: Int
     private let defaultScopeURL: @Sendable () -> URL
+    private let rawUserTagsLoader: @Sendable (URL) -> [String]
     private let executionEngine: SpotlightQueryEngine
     private let rewriteEngine: NSURLScopeRewriteEngine
     private let compilerTask: Task<SpotlightQueryCompiler, Error>
@@ -30,6 +33,7 @@ struct SpotlightSearchService: Sendable, SearchExecutionServicing {
         logger: Logger = Logger(label: "VoyagerHelper.SpotlightSearchService"),
         maxCandidates: Int = 20000,
         defaultScopeURL: @Sendable @escaping () -> URL = { FileManager.default.homeDirectoryForCurrentUser },
+        rawUserTagsLoader: @Sendable @escaping (URL) -> [String] = SpotlightSearchService.loadRawUserTags,
         compilerFactory: @Sendable @escaping () async throws -> SpotlightQueryCompiler = {
             try SpotlightQueryCompiler()
         },
@@ -37,6 +41,7 @@ struct SpotlightSearchService: Sendable, SearchExecutionServicing {
         self.logger = logger
         self.maxCandidates = max(1, maxCandidates)
         self.defaultScopeURL = defaultScopeURL
+        self.rawUserTagsLoader = rawUserTagsLoader
         executionEngine = SpotlightQueryEngine(maxCandidates: self.maxCandidates)
         rewriteEngine = NSURLScopeRewriteEngine()
         compilerTask = Task(priority: .utility) {
@@ -148,7 +153,7 @@ extension SpotlightSearchService {
     }
 }
 
-private extension SpotlightSearchService {
+extension SpotlightSearchService {
     func makeTagPredicate(for requestedTag: String) -> String {
         let escapedTag = requestedTag.replacingOccurrences(of: "\"", with: "\\\"")
         return "kMDItemUserTags == \"\(escapedTag)\"c || kMDItemUserTags == \"*\(escapedTag)*\"c"
@@ -225,14 +230,23 @@ private extension SpotlightSearchService {
     }
 
     func makeTags(from match: SpotlightQueryEngine.QueryMatch, url: URL) -> [SearchTagPayload]? {
-        let rawTags = if match.rawUserTags.isEmpty {
-            (try? url.resourceValues(forKeys: [.tagNamesKey]).tagNames)?.map { "\($0)\n0" } ?? []
-        } else {
-            match.rawUserTags
+        let matchTags = match.rawUserTags.compactMap(parseTag)
+        let shouldReloadRawTags = match.rawUserTags.isEmpty ||
+            (match.rawUserTags.contains(where: { $0.contains("\n") }) == false &&
+                matchTags.allSatisfy { $0.colorCode == 0 })
+
+        guard shouldReloadRawTags else {
+            return matchTags.isEmpty ? nil : matchTags
         }
 
-        let tags = rawTags.compactMap(parseTag)
-        return tags.isEmpty ? nil : tags
+        let reloadedTags = rawUserTagsLoader(url).compactMap(parseTag)
+        guard reloadedTags.isEmpty == false else {
+            return matchTags.isEmpty ? nil : matchTags
+        }
+
+        return reloadedTags.contains(where: { $0.colorCode != 0 }) || matchTags.isEmpty
+            ? reloadedTags
+            : matchTags
     }
 
     func parseTag(_ rawTag: String) -> SearchTagPayload? {
@@ -253,6 +267,38 @@ private extension SpotlightSearchService {
         }
 
         return SearchTagPayload(name: name, colorCode: colorCode)
+    }
+
+    nonisolated static func loadRawUserTags(from url: URL) -> [String] {
+        guard let tagData = loadRawUserTagsXattrData(from: url) else {
+            return []
+        }
+
+        return (try? PropertyListSerialization.propertyList(from: tagData, format: nil) as? [String]) ?? []
+    }
+
+    private nonisolated static func loadRawUserTagsXattrData(from url: URL) -> Data? {
+        let size = getxattr(url.path, userTagsXattrName, nil, 0, 0, XATTR_NOFOLLOW)
+        guard size > 0 else {
+            return nil
+        }
+
+        var data = Data(count: size)
+        let result = data.withUnsafeMutableBytes { buffer in
+            getxattr(
+                url.path,
+                userTagsXattrName,
+                buffer.baseAddress,
+                size,
+                0,
+                XATTR_NOFOLLOW,
+            )
+        }
+        guard result >= 0 else {
+            return nil
+        }
+
+        return data
     }
 
     func makeKind(url: URL, isDirectory: Bool) -> String {

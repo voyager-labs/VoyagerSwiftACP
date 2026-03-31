@@ -1,5 +1,6 @@
 import ComposableArchitecture
 @testable import Voyager
+import VoyagerShared
 import XCTest
 
 // Disabled: tested API (entryArrangements/entryOperations scopes, entryThumbnails state,

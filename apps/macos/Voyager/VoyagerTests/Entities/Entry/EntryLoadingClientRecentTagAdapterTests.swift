@@ -58,4 +58,44 @@ final class EntryLoadingClientRecentTagAdapterTests: XCTestCase {
 
         XCTAssertEqual(items, [])
     }
+
+    func testTagAdapterMapsHelperPayloadIntoEntryModel() async {
+        let date = Date(timeIntervalSince1970: 1_700_000_000)
+        let tagSearchClient = TagSearchClient(
+            search: { request in
+                XCTAssertEqual(request.requestedTag, "Green")
+                XCTAssertTrue(request.exactTagVerification)
+                return TagSearchResponsePayload(
+                    requestedTag: request.requestedTag,
+                    items: [
+                        SearchEntryPayload(
+                            name: "Tagged.txt",
+                            fullPath: "/tmp/Tagged.txt",
+                            isFolder: false,
+                            isHidden: false,
+                            size: 12,
+                            modifiedDate: date,
+                            fileExtension: "txt",
+                            createdDate: date,
+                            addedDate: date,
+                            lastOpenedDate: date,
+                            kind: "Text",
+                            creatorApplication: "TextEdit",
+                            tags: [SearchTagPayload(name: "Green", colorCode: 2)],
+                            supplementaryMetadata: nil,
+                        ),
+                    ],
+                )
+            },
+        )
+
+        let items = await EntryLoadingLive.loadFilesWithTagViaSearch(
+            tag: "Green",
+            showHidden: false,
+            tagSearchClient: tagSearchClient,
+        )
+
+        XCTAssertEqual(items.map(\.fullPath), ["/tmp/Tagged.txt"])
+        XCTAssertEqual(items.first?.facets.tags, [Tag(name: "Green", colorCode: 2)])
+    }
 }

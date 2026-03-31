@@ -125,6 +125,7 @@ final class EntryGridCollectionViewItem: NSCollectionViewItem {
         view.wantsLayer = true
         view.layer?.cornerRadius = 8
 
+        backgroundView.identifier = NSUserInterfaceItemIdentifier("entryGrid.background")
         iconBackgroundView.identifier = NSUserInterfaceItemIdentifier("entryGrid.iconBackground")
         nameContainerView.identifier = NSUserInterfaceItemIdentifier("entryGrid.nameContainer")
         nameHighlightView.identifier = NSUserInterfaceItemIdentifier("entryGrid.nameHighlight")
@@ -235,40 +236,41 @@ final class EntryGridCollectionViewItem: NSCollectionViewItem {
     }
 
     private func updateAppearance() {
-        let isHighlighted = isSelected
-        let dropHighlighted = isDropTargeted
-        let selectionBackground = (view.window?.isKeyWindow ?? true)
-            ? NSColor.selectedTextBackgroundColor
-            : NSColor.unemphasizedSelectedTextBackgroundColor
-        let dropBackground = NSColor.selectedTextBackgroundColor.withAlphaComponent(0.22)
+        let selected = isSelected && !isRenaming
+        let targeted = isDropTargeted
 
-        // 선택 스타일은 라벨(name/info) 강조를 기본으로 하고,
-        // drop target 하이라이트만 타일(border/background)을 사용합니다.
-        if dropHighlighted {
-            backgroundView.layer?.backgroundColor = dropBackground.cgColor
+        backgroundView.layer?.backgroundColor = nil
+        if targeted {
             backgroundView.layer?.borderWidth = 1.5
-            backgroundView.layer?.borderColor = NSColor.controlAccentColor.cgColor
+            backgroundView.layer?.borderColor = NSColor.selectedContentBackgroundColor
+                .withAlphaComponent(0.6).cgColor
         } else {
-            backgroundView.layer?.backgroundColor = NSColor.clear.cgColor
             backgroundView.layer?.borderWidth = 0
             backgroundView.layer?.borderColor = nil
         }
-        iconBackgroundView.layer?.backgroundColor = NSColor.clear.cgColor
 
-        if isHighlighted, !isRenaming {
-            nameHighlightView.isHidden = false
-            nameHighlightView.layer?.backgroundColor = selectionBackground.cgColor
-            nameField.textColor = .selectedTextColor
-        } else if !isRenaming {
-            nameHighlightView.isHidden = true
-            nameHighlightView.layer?.backgroundColor = nil
-            nameField.textColor = .labelColor
+        // Finder-like rounded thumbnail background behind the icon area
+        if selected {
+            iconBackgroundView.layer?.backgroundColor = NSColor(
+                white: 1.0, alpha: 0.08,
+            ).cgColor
+        } else {
+            iconBackgroundView.layer?.backgroundColor = nil
         }
 
-        infoField.isBordered = false
-        infoField.drawsBackground = isHighlighted
-        infoField.backgroundColor = isHighlighted ? selectionBackground : .clear
-        infoField.textColor = isHighlighted ? .selectedTextColor : .systemBlue
+        // Name-area highlight: Finder-like blue pill behind the label
+        if selected {
+            nameHighlightView.isHidden = false
+            nameHighlightView.layer?.backgroundColor = NSColor.selectedContentBackgroundColor.cgColor
+        } else {
+            nameHighlightView.isHidden = true
+            nameHighlightView.layer?.backgroundColor = nil
+        }
+
+        let nameColor: NSColor = selected ? .white : .labelColor
+        let infoColor: NSColor = selected ? .white : .systemBlue
+        nameField.textColor = nameColor
+        infoField.textColor = infoColor
 
         let alpha: CGFloat = (isHiddenEntry || isCut) ? 0.5 : 1.0
         iconView.alphaValue = alpha

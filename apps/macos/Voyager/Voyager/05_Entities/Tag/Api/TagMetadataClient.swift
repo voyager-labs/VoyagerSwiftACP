@@ -1,4 +1,3 @@
-import CoreServices
 import Darwin
 import Foundation
 
@@ -8,16 +7,24 @@ enum TagMetadataClient {
         case failedToSetTags
     }
 
-    // MDItem의 kMDItemUserTags 형식("name\ncolorCode")에서 태그 색까지 복원합니다.
+    private nonisolated static let userTagsXattrName = "com.apple.metadata:_kMDItemUserTags"
+
+    // xattr plist의 "name\ncolorCode" 형식에서 태그 색까지 복원합니다.
     nonisolated static func loadTags(from itemURL: URL) -> [Tag]? {
-        guard let mdItem = MDItemCreate(kCFAllocatorDefault, itemURL.path as CFString),
-              let rawTags = MDItemCopyAttribute(mdItem, "kMDItemUserTags" as CFString) as? [String]
-        else {
+        guard let rawTags = loadRawUserTags(from: itemURL) else {
             return nil
         }
 
         let tags = rawTags.compactMap(TagMDItemUserTagParser.parse)
         return tags.isEmpty ? nil : tags
+    }
+
+    nonisolated static func loadRawUserTags(from itemURL: URL) -> [String]? {
+        guard let tagData = loadUserTagsXattrData(from: itemURL) else {
+            return nil
+        }
+
+        return try? PropertyListSerialization.propertyList(from: tagData, format: nil) as? [String]
     }
 
     nonisolated static func loadTagNames(from itemURL: URL) throws -> [String] {
@@ -29,7 +36,7 @@ enum TagMetadataClient {
         if tagNames.isEmpty {
             let result = removexattr(
                 itemURL.path,
-                "com.apple.metadata:_kMDItemUserTags",
+                userTagsXattrName,
                 XATTR_NOFOLLOW,
             )
             if result != 0, errno != ENOATTR {
@@ -46,7 +53,7 @@ enum TagMetadataClient {
 
         let result = setxattr(
             itemURL.path,
-            "com.apple.metadata:_kMDItemUserTags",
+            userTagsXattrName,
             (tagData as NSData).bytes,
             tagData.count,
             0,
@@ -62,7 +69,7 @@ enum TagMetadataClient {
         if tags.isEmpty {
             let result = removexattr(
                 itemURL.path,
-                "com.apple.metadata:_kMDItemUserTags",
+                userTagsXattrName,
                 XATTR_NOFOLLOW,
             )
             if result != 0, errno != ENOATTR {
@@ -81,7 +88,7 @@ enum TagMetadataClient {
 
         let result = setxattr(
             itemURL.path,
-            "com.apple.metadata:_kMDItemUserTags",
+            userTagsXattrName,
             (tagData as NSData).bytes,
             tagData.count,
             0,
@@ -110,5 +117,29 @@ enum TagMetadataClient {
 
         // 색상 보존하여 저장
         try setTags(updatedTags, for: itemURL)
+    }
+
+    private nonisolated static func loadUserTagsXattrData(from itemURL: URL) -> Data? {
+        let size = getxattr(itemURL.path, userTagsXattrName, nil, 0, 0, XATTR_NOFOLLOW)
+        guard size > 0 else {
+            return nil
+        }
+
+        var data = Data(count: size)
+        let result = data.withUnsafeMutableBytes { buffer in
+            getxattr(
+                itemURL.path,
+                userTagsXattrName,
+                buffer.baseAddress,
+                size,
+                0,
+                XATTR_NOFOLLOW,
+            )
+        }
+        guard result >= 0 else {
+            return nil
+        }
+
+        return data
     }
 }

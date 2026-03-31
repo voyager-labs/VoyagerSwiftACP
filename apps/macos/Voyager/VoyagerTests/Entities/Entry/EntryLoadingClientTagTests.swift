@@ -6,16 +6,16 @@ import XCTest
 /// Characterization tests for tag loading behavior in EntryLoadingClient.
 ///
 /// These tests document the fallback chain:
-/// 1. MDItem kMDItemUserTags (preserves colorCode) - via TagMetadataClient.loadTags
-/// 2. URL tagNamesKey (colorCode always 0) - fallback when MDItem unavailable
+/// 1. xattr com.apple.metadata:_kMDItemUserTags (preserves colorCode) - via TagMetadataClient.loadTags
+/// 2. URL tagNamesKey (colorCode always 0) - fallback when xattr is unavailable
 ///
 /// Note: EntryLoadingClient.entryTags(from:) is private, so we test through:
-/// - TagMetadataClient.loadTags (the MDItem path)
+/// - TagMetadataClient.loadTags (the xattr path)
 /// - Documenting the tagNamesKey fallback behavior
 final class EntryLoadingClientTagTests: XCTestCase {
     // MARK: - TagMetadataClient.loadTags Tests
 
-    /// Test that MDItem returns nil for file without tags.
+    /// Test that xattr-backed loading returns nil for file without tags.
     /// Expected: File with no tags → nil
     func testLoadTags_NoTags_ReturnsNil() throws {
         // Create a temporary file without tags
@@ -32,12 +32,11 @@ final class EntryLoadingClientTagTests: XCTestCase {
 
         let result = TagMetadataClient.loadTags(from: testFile)
 
-        // File has no tags, so MDItem returns nil or empty
-        // Note: MDItem may still create an item but kMDItemUserTags will be nil
+        // File has no tags, so xattr-backed loading returns nil
         XCTAssertNil(result)
     }
 
-    /// Test that MDItem returns tags with color codes when properly tagged.
+    /// Test that xattr-backed loading returns tags with color codes when properly tagged.
     /// This test documents the expected format: "name\ncolorCode"
     /// Note: This test requires Finder tags to be set, which may not work in all environments.
     func testLoadTags_WithFinderTags_PreservesColorCode() throws {
@@ -85,7 +84,7 @@ final class EntryLoadingClientTagTests: XCTestCase {
         XCTAssertEqual(loadedTags?.first?.colorCode, 6, "Color code should be preserved from MDItem")
     }
 
-    /// Test that MDItem returns nil for non-existent file.
+    /// Test that xattr-backed loading returns nil for non-existent file.
     /// Expected: Non-existent file → nil
     func testLoadTags_NonExistentFile_ReturnsNil() {
         let nonExistent = URL(fileURLWithPath: "/non/existent/path/file.txt")
@@ -95,10 +94,33 @@ final class EntryLoadingClientTagTests: XCTestCase {
         XCTAssertNil(result)
     }
 
+    /// tagNamesKey로 저장된 태그도 실제 xattr에는 "name\n0" 형식으로 기록됩니다.
+    func testLoadTags_WithTagNamesKeyStoredTags_ReturnsNeutralColorCodes() throws {
+        let tempDir = FileManager.default.temporaryDirectory
+            .appendingPathComponent("VoyagerTagTests-\(UUID().uuidString)")
+        try FileManager.default.createDirectory(at: tempDir, withIntermediateDirectories: true)
+
+        var testFile = tempDir.appendingPathComponent("tag-names-file.txt")
+        try "test content".write(to: testFile, atomically: true, encoding: .utf8)
+
+        defer {
+            try? FileManager.default.removeItem(at: tempDir)
+        }
+
+        try (testFile as NSURL).setResourceValue(["Red", "Green"], forKey: .tagNamesKey)
+
+        let loadedTags = TagMetadataClient.loadTags(from: testFile)
+
+        XCTAssertEqual(
+            loadedTags,
+            [Tag(name: "Red", colorCode: 0), Tag(name: "Green", colorCode: 0)],
+        )
+    }
+
     // MARK: - tagNamesKey Fallback Documentation Tests
 
     /// Test that tagNamesKey returns tag names (without color info).
-    /// This documents the fallback behavior when MDItem is unavailable.
+    /// This documents the fallback behavior when xattr is unavailable.
     /// Expected: tagNamesKey provides names but NOT color codes
     func testTagNamesKey_ReturnsNamesWithoutColorCodes() throws {
         let tempDir = FileManager.default.temporaryDirectory
@@ -124,7 +146,7 @@ final class EntryLoadingClientTagTests: XCTestCase {
         XCTAssertTrue(tagNames.contains("Green"))
 
         // Note: tagNamesKey does NOT include color code information
-        // When MDItem is unavailable, the fallback creates tags with colorCode: 0
+        // When xattr is unavailable, the fallback creates tags with colorCode: 0
     }
 
     /// Test that empty tag list is handled correctly in fallback.
@@ -161,11 +183,11 @@ final class EntryLoadingClientTagTests: XCTestCase {
     func testEntryTagsFallbackChain_Documentation() {
         // The private function EntryModelConverterLive.entryTags(from:) behaves as follows:
         //
-        // 1. First, try MDItem kMDItemUserTags via TagMetadataClient.loadTags:
+        // 1. First, try xattr com.apple.metadata:_kMDItemUserTags via TagMetadataClient.loadTags:
         //    - If successful: return tags WITH preserved colorCode
         //    - Format: "name\ncolorCode" → Tag(name: "name", colorCode: Int)
         //
-        // 2. If MDItem fails, fallback to URL tagNamesKey:
+        // 2. If xattr loading fails, fallback to URL tagNamesKey:
         //    - Returns: tag names WITHOUT color information
         //    - All tags get colorCode: 0
         //    - Empty list → return nil
@@ -175,7 +197,7 @@ final class EntryLoadingClientTagTests: XCTestCase {
         // This is characterized by the code at EntryLoadingClient.swift:640-652
 
         // Example scenarios:
-        // Scenario A: File with Finder tags (via MDItem)
+        // Scenario A: File with Finder tags (via xattr)
         //   Input: "Important\n1" (red)
         //   Output: Tag(name: "Important", colorCode: 1)
         //

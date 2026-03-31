@@ -205,6 +205,7 @@ final class FileManagerSidebarFeatureTests: XCTestCase {
             Tag(name: "Work", colorCode: 6),
             Tag(name: "Personal", colorCode: 5),
         ]
+        let expectedTagNames = expectedTags.map { tag in tag.name }
 
         let store = TestStore(initialState: initialState) {
             FileManagerSidebarFeature()
@@ -214,7 +215,7 @@ final class FileManagerSidebarFeatureTests: XCTestCase {
             $0.fileManagerFavoritesClient = .testValue
             $0.fileManagerLocationsClient = .testValue
             $0.finderFavoritesTagClient = FinderFavoritesTagClient(
-                favoriteTagNames: { expectedTags.map(\.name) },
+                favoriteTagNames: { expectedTagNames },
                 favoriteTags: { expectedTags },
             )
             $0.notificationCenterClient = .testValue
@@ -261,16 +262,17 @@ final class FileManagerSidebarFeatureTests: XCTestCase {
     func testLoadTags_PreservesColorCodes() async {
         let initialState = FileManagerSidebarState()
 
-        // Test various Finder color codes (1-7)
+        // TagColor.rawValue: Red=6, Orange=7, Yellow=5, Green=2, Blue=4, Purple=3, Gray=1
         let expectedTags = [
-            Tag(name: "Red", colorCode: 1),
-            Tag(name: "Orange", colorCode: 2),
-            Tag(name: "Yellow", colorCode: 3),
-            Tag(name: "Green", colorCode: 4),
-            Tag(name: "Blue", colorCode: 5),
-            Tag(name: "Purple", colorCode: 6),
-            Tag(name: "Gray", colorCode: 7),
+            Tag(name: "Red", colorCode: 6),
+            Tag(name: "Orange", colorCode: 7),
+            Tag(name: "Yellow", colorCode: 5),
+            Tag(name: "Green", colorCode: 2),
+            Tag(name: "Blue", colorCode: 4),
+            Tag(name: "Purple", colorCode: 3),
+            Tag(name: "Gray", colorCode: 1),
         ]
+        let expectedTagNames = expectedTags.map { tag in tag.name }
 
         let store = TestStore(initialState: initialState) {
             FileManagerSidebarFeature()
@@ -280,7 +282,7 @@ final class FileManagerSidebarFeatureTests: XCTestCase {
             $0.fileManagerFavoritesClient = .testValue
             $0.fileManagerLocationsClient = .testValue
             $0.finderFavoritesTagClient = FinderFavoritesTagClient(
-                favoriteTagNames: { expectedTags.map(\.name) },
+                favoriteTagNames: { expectedTagNames },
                 favoriteTags: { expectedTags },
             )
             $0.notificationCenterClient = .testValue
@@ -290,7 +292,7 @@ final class FileManagerSidebarFeatureTests: XCTestCase {
         await store.send(.internal(.loadTags)) { state in
             state.tags = expectedTags
             // Verify color codes are preserved
-            XCTAssertEqual(state.tags.map(\.colorCode), [1, 2, 3, 4, 5, 6, 7])
+            XCTAssertEqual(state.tags.map(\.colorCode), [6, 7, 5, 2, 4, 3, 1])
         }
 
         await store.finish()

@@ -166,6 +166,7 @@ enum EntryLoadingLive {
         { directoryURL, showHidden in
             try await Task.detached {
                 let entryLoadingClient = EntryLoadingClient.liveValue
+                let favoriteTags = FinderFavoritesTagClient.liveValue.favoriteTags()
                 let workspaceClient = WorkspaceClient.liveValue
                 let fileManagerClient = FileManagerClient.liveValue
                 let options: FileManager.DirectoryEnumerationOptions = showHidden ? [] : [.skipsHiddenFiles]
@@ -188,13 +189,15 @@ enum EntryLoadingLive {
                     options,
                 )
 
-                return entries.compactMap { url in
+                let loadedEntries = entries.compactMap { url in
                     EntryModelConverterLive.convertURLToEntry(
                         url,
                         entryLoadingClient: entryLoadingClient,
                         workspaceClient: workspaceClient,
                     )
                 }
+
+                return EntryModelTagColorNormalizer.normalize(loadedEntries, favoriteTags: favoriteTags)
             }.value
         }
     }
@@ -390,6 +393,7 @@ enum EntryLoadingLive {
         recentSearchClient: RecentSearchClient,
     ) async -> [EntryModel] {
         do {
+            let favoriteTags = FinderFavoritesTagClient.liveValue.favoriteTags()
             let response = try await recentSearchClient.search(
                 .init(
                     scopeMode: .allIndexed,
@@ -399,7 +403,10 @@ enum EntryLoadingLive {
                     sort: .lastUsedDateDescending,
                 ),
             )
-            return response.items.map(EntryModelPayloadAdapter.makeEntry)
+            return EntryModelTagColorNormalizer.normalize(
+                response.items.map(EntryModelPayloadAdapter.makeEntry),
+                favoriteTags: favoriteTags,
+            )
         } catch {
             return []
         }
@@ -411,6 +418,7 @@ enum EntryLoadingLive {
         tagSearchClient: TagSearchClient,
     ) async -> [EntryModel] {
         do {
+            let favoriteTags = FinderFavoritesTagClient.liveValue.favoriteTags()
             let response = try await tagSearchClient.search(
                 .init(
                     requestedTag: tag,
@@ -422,7 +430,10 @@ enum EntryLoadingLive {
                     exactTagVerification: true,
                 ),
             )
-            return response.items.map(EntryModelPayloadAdapter.makeEntry)
+            return EntryModelTagColorNormalizer.normalize(
+                response.items.map(EntryModelPayloadAdapter.makeEntry),
+                favoriteTags: favoriteTags,
+            )
         } catch {
             return []
         }

@@ -5,8 +5,6 @@ import Foundation
 
 @MainActor
 enum RegistryTestSupport {
-    private static let registrySnapshot = RegistrySnapshot.load()
-
     private static let registryLabels: [String: String] = [
         "name_full": "Name",
         "size": "File size",
@@ -14,9 +12,6 @@ enum RegistryTestSupport {
         "video_bit_rate": "Video bit rate",
         "total_bit_rate": "Total bit rate",
     ]
-
-    private static let registryUnitSpecs: [String: SystemPropertyUnitSpec] = registrySnapshot
-        .propertyKeyToUnitSpec
 
     private static let registryOperatorDefinition = OperatorDefinition(
         uiLabel: "Equals",
@@ -43,7 +38,7 @@ enum RegistryTestSupport {
             allProperties: { [] },
             labelForKey: { labels[$0] ?? $0 },
             propertyTypeString: propertyTypeString(for:),
-            propertyUnitSpec: { unitSpecs[$0] },
+            propertyUnitSpec: { registryUnitSpecs()[$0] },
             operatorCodes: { _ in ["eq"] },
             operatorDefinition: { _ in opDef },
             operatorValueUIKind: { _, typeKey in registryUIKind(for: typeKey) },
@@ -62,7 +57,19 @@ enum RegistryTestSupport {
         }
     }
 
-    private nonisolated static func registryUIKind(for typeKey: String) -> String {
+    private static func registrySnapshot() -> RegistrySnapshot {
+        MainActor.assumeIsolated {
+            RegistrySnapshot.load()
+        }
+    }
+
+    private static func registryUnitSpecs() -> [String: SystemPropertyUnitSpec] {
+        MainActor.assumeIsolated {
+            registrySnapshot().propertyKeyToUnitSpec
+        }
+    }
+
+    private static func registryUIKind(for typeKey: String) -> String {
         switch typeKey {
         case "number":
             "singleNumber"

@@ -172,8 +172,13 @@ final class ValuePickerFeatureTests: XCTestCase {
 }
 
 @MainActor
+private func makeStore() -> TestStore<ValuePickerFeature.State, ValuePickerFeature.Action> {
+    makeStore(favoriteTags: [])
+}
+
+@MainActor
 private func makeStore(
-    favoriteTags: [Tag] = [],
+    favoriteTags: [Tag],
 ) -> TestStore<ValuePickerFeature.State, ValuePickerFeature.Action> {
     let store = TestStore(initialState: ValuePickerFeature.State()) {
         ValuePickerFeature()

@@ -9,6 +9,7 @@ import XCTest
 /// 3. Multiple tags render with their correct colors
 ///
 /// Related: Task 3 of VOY-208 visual-data-follow-up
+@MainActor
 final class EntryGridTagColorRenderingTests: XCTestCase {
     // MARK: - Tag Dot Rendering Tests
 
@@ -55,29 +56,32 @@ final class EntryGridTagColorRenderingTests: XCTestCase {
     /// This ensures selection highlight doesn't interfere with tag dot visibility.
     func testSelectedTaggedItemKeepsVisibleTagDots() throws {
         let tags = [
-            Tag(name: "Work", colorCode: 4), // blue
-            Tag(name: "Personal", colorCode: 2), // green
+            Tag(name: "Work", colorCode: 4),
+            Tag(name: "Personal", colorCode: 2),
         ]
         let item = makeConfiguredItem(tags: tags)
         item.isSelected = true
         item.view.layoutSubtreeIfNeeded()
 
-        // Find the tag stack view
         let tagStack = try XCTUnwrap(
             findSubview(in: item.view, identifier: "entryGrid.tagStack") as? NSStackView,
             "Tag stack should exist",
         )
-
-        // Tag dots should remain visible when selected
-        XCTAssertFalse(tagStack.isHidden, "Tag stack should be visible when selected")
-        XCTAssertEqual(tagStack.arrangedSubviews.count, 2, "Should have two tag dots")
-
-        // Verify selection highlight is also present
         let highlight = try XCTUnwrap(
             findSubview(in: item.view, identifier: "entryGrid.nameHighlight"),
             "Selection highlight should exist",
         )
+        let iconBackground = try XCTUnwrap(
+            findSubview(in: item.view, identifier: "entryGrid.iconBackground"),
+        )
+
+        XCTAssertFalse(tagStack.isHidden, "Tag stack should be visible when selected")
+        XCTAssertEqual(tagStack.arrangedSubviews.count, 2, "Should have two tag dots")
         XCTAssertFalse(highlight.isHidden, "Selection highlight should be visible")
+        XCTAssertNotNil(
+            iconBackground.layer?.backgroundColor,
+            "Selected tagged item should show Finder-like icon background",
+        )
     }
 
     /// Test that multiple tag dots show correct colors.
@@ -102,13 +106,13 @@ final class EntryGridTagColorRenderingTests: XCTestCase {
         XCTAssertEqual(tagStack.arrangedSubviews.count, 3, "Should show up to 3 tag dots")
 
         // Verify each dot has the expected color
-        let expectedColors: [(name: String, colorCode: Int)] = [
-            ("Red", 6),
-            ("Blue", 4),
-            ("Green", 2),
+        let expectedColorCodes = [
+            6,
+            4,
+            2,
         ]
 
-        for (index, expected) in expectedColors.enumerated() {
+        for index in expectedColorCodes.indices {
             let dot = tagStack.arrangedSubviews[index]
             XCTAssertNotNil(dot.layer?.backgroundColor, "Tag dot \(index) should have background color")
         }
@@ -150,9 +154,145 @@ final class EntryGridTagColorRenderingTests: XCTestCase {
         XCTAssertEqual(tagStack.arrangedSubviews.count, 0, "Should have no tag dots")
     }
 
+    // MARK: - Cross-Regression Tests (Selection + Tag Combinations)
+
+    /// Test that a tagged item acting as drop target still renders tag dots correctly.
+    /// This verifies that drop-target styling doesn't suppress tag dot visibility.
+    func testDropTargetedTaggedItem_RendersCorrectly() throws {
+        let tags = [
+            Tag(name: "Work", colorCode: 4),
+            Tag(name: "Urgent", colorCode: 6),
+        ]
+        let item = makeConfiguredItem(tags: tags, isDropTargeted: true)
+        item.view.layoutSubtreeIfNeeded()
+
+        let tagStack = try XCTUnwrap(
+            findSubview(in: item.view, identifier: "entryGrid.tagStack") as? NSStackView,
+            "Tag stack should exist",
+        )
+        let background = try XCTUnwrap(
+            findSubview(in: item.view, identifier: "entryGrid.background"),
+            "Background view should exist",
+        )
+        let iconBackground = try XCTUnwrap(
+            findSubview(in: item.view, identifier: "entryGrid.iconBackground"),
+        )
+
+        XCTAssertEqual(
+            background.layer?.borderWidth ?? 0,
+            1.5,
+            accuracy: 0.1,
+            "Drop target should have visible border",
+        )
+        XCTAssertFalse(tagStack.isHidden, "Tag stack should remain visible when drop targeted")
+        XCTAssertEqual(tagStack.arrangedSubviews.count, 2, "Both tag dots should be visible")
+        XCTAssertNil(
+            background.layer?.backgroundColor,
+            "Drop target should NOT tint tile background",
+        )
+        XCTAssertNil(
+            iconBackground.layer?.backgroundColor,
+            "Drop target should NOT tint icon background",
+        )
+    }
+
+    /// Test that renaming a tagged item suppresses selection highlight but keeps tag dots visible.
+    /// This verifies the rename → selection suppression doesn't affect tag rendering.
+    func testRenamingTaggedItem_SuppressesSelectionButKeepsTagDots() throws {
+        let tags = [
+            Tag(name: "Draft", colorCode: 3), // yellow
+        ]
+        let item = makeConfiguredItem(tags: tags, isRenaming: true)
+        item.isSelected = true
+        item.view.layoutSubtreeIfNeeded()
+
+        let highlight = try XCTUnwrap(
+            findSubview(in: item.view, identifier: "entryGrid.nameHighlight"),
+            "Selection highlight should exist",
+        )
+        let tagStack = try XCTUnwrap(
+            findSubview(in: item.view, identifier: "entryGrid.tagStack") as? NSStackView,
+            "Tag stack should exist",
+        )
+
+        // Renaming suppresses selection highlight
+        XCTAssertTrue(
+            highlight.isHidden,
+            "Selection highlight should be hidden during rename",
+        )
+        // Tag dots should remain visible even during rename
+        XCTAssertFalse(
+            tagStack.isHidden,
+            "Tag stack should remain visible during rename",
+        )
+        XCTAssertEqual(tagStack.arrangedSubviews.count, 1, "Tag dot should be visible")
+    }
+
+    /// Test that a tagged + selected + drop-targeted item keeps all visuals correct.
+    /// This is the "all states combined" cross-regression test verifying priority:
+    /// drop target border + selection highlight + tag dots all coexist.
+    func testTaggedSelectedAndDropTargeted_TagDotsRemainVisible() throws {
+        let tags = [
+            Tag(name: "Work", colorCode: 4),
+            Tag(name: "Personal", colorCode: 2),
+            Tag(name: "Urgent", colorCode: 6),
+        ]
+        let item = makeConfiguredItem(tags: tags, isDropTargeted: true)
+        item.isSelected = true
+        item.view.layoutSubtreeIfNeeded()
+
+        let background = try XCTUnwrap(
+            findSubview(in: item.view, identifier: "entryGrid.background"),
+            "Background view should exist",
+        )
+        let highlight = try XCTUnwrap(
+            findSubview(in: item.view, identifier: "entryGrid.nameHighlight"),
+            "Selection highlight should exist",
+        )
+        let tagStack = try XCTUnwrap(
+            findSubview(in: item.view, identifier: "entryGrid.tagStack") as? NSStackView,
+            "Tag stack should exist",
+        )
+        let iconBackground = try XCTUnwrap(
+            findSubview(in: item.view, identifier: "entryGrid.iconBackground"),
+        )
+
+        XCTAssertEqual(
+            background.layer?.borderWidth ?? 0,
+            1.5,
+            accuracy: 0.1,
+            "Drop target border should be applied",
+        )
+        XCTAssertFalse(
+            highlight.isHidden,
+            "Selection highlight should be visible with drop target",
+        )
+        XCTAssertFalse(
+            tagStack.isHidden,
+            "Tag stack should remain visible with all states combined",
+        )
+        XCTAssertEqual(
+            tagStack.arrangedSubviews.count,
+            3,
+            "All three tag dots should be visible",
+        )
+        XCTAssertNil(
+            background.layer?.backgroundColor,
+            "All-states-combined should NOT tint tile background",
+        )
+        XCTAssertNotNil(
+            iconBackground.layer?.backgroundColor,
+            "All-states-combined should show Finder-like icon background when selected",
+        )
+    }
+
     // MARK: - Helper Methods
 
-    private func makeConfiguredItem(tags: [Tag]?) -> EntryGridCollectionViewItem {
+    private func makeConfiguredItem(
+        tags: [Tag]?,
+        isRenaming: Bool = false,
+        isDropTargeted: Bool = false,
+    ) -> EntryGridCollectionViewItem {
         let item = EntryGridCollectionViewItem()
         _ = item.view
         item.view.frame = CGRect(x: 0, y: 0, width: 220, height: 220)
@@ -181,9 +321,9 @@ final class EntryGridTagColorRenderingTests: XCTestCase {
             thumbnail: nil,
             isCut: false,
             isHidden: false,
-            isRenaming: false,
-            renamingText: "",
-            isDropTargeted: false,
+            isRenaming: isRenaming,
+            renamingText: isRenaming ? "Test File" : "",
+            isDropTargeted: isDropTargeted,
             workspaceClient: .testValue,
             onRenameUpdate: { _ in },
             onRenameCommit: {},

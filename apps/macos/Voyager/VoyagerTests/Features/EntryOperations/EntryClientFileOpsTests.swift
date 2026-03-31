@@ -49,6 +49,36 @@ final class EntryClientFileOpsTests: XCTestCase {
 
         XCTAssertFalse(FileManager.default.fileExists(atPath: fileURL.path))
     }
+
+    func testMakeTagsForPersistence_PreservesExistingColorCode() {
+        let tags = EntryFileOpsTagPersistenceResolver.makeTags(
+            tagNames: ["Work"],
+            existingTags: [Tag(name: "Work", colorCode: 4)],
+            favoriteTags: [Tag(name: "Work", colorCode: 6)],
+        )
+
+        XCTAssertEqual(tags, [Tag(name: "Work", colorCode: 4)])
+    }
+
+    func testMakeTagsForPersistence_UsesFavoriteTagColorForNewTag() {
+        let tags = EntryFileOpsTagPersistenceResolver.makeTags(
+            tagNames: ["Urgent"],
+            existingTags: [],
+            favoriteTags: [Tag(name: "Urgent", colorCode: 6)],
+        )
+
+        XCTAssertEqual(tags, [Tag(name: "Urgent", colorCode: 6)])
+    }
+
+    func testMakeTagsForPersistence_FallsBackToNeutralColorWhenFavoriteTagIsMissing() {
+        let tags = EntryFileOpsTagPersistenceResolver.makeTags(
+            tagNames: ["Adhoc"],
+            existingTags: [],
+            favoriteTags: [],
+        )
+
+        XCTAssertEqual(tags, [Tag(name: "Adhoc", colorCode: 0)])
+    }
 }
 
 private struct TempDirectory {

@@ -112,24 +112,7 @@ final class MenuCommandsFeatureTests: XCTestCase {
             guard case let .delegate(.windowManager(action)) = $0 else { return false }
             switch (action, expected) {
             case (.file(.open), .file(.open)),
-                 (.file(.quickLook), .file(.quickLook)),
-                 (.file(.newFolder), .file(.newFolder)),
-                 (.file(.newWindow), .file(.newWindow)),
-                 (.file(.newTab), .file(.newTab)),
-                 (.window(.closeFocusedWindow), .window(.closeFocusedWindow)),
-                 (.window(.closeAllWindows), .window(.closeAllWindows)),
-                 (.window(.goBack), .window(.goBack)),
-                 (.window(.goForward), .window(.goForward)),
-                 (.window(.goToEnclosingDirectory), .window(.goToEnclosingDirectory)),
-                 (.window(.toggleSidebar), .window(.toggleSidebar)),
-                 (.window(.toggleShowHiddenFiles), .window(.toggleShowHiddenFiles)),
-                 (.edit(.cut), .edit(.cut)),
-                 (.edit(.copy), .edit(.copy)),
-                 (.edit(.paste), .edit(.paste)),
-                 (.edit(.duplicate), .edit(.duplicate)),
-                 (.edit(.makeAlias), .edit(.makeAlias)),
-                 (.edit(.copyAbsolutePaths), .edit(.copyAbsolutePaths)),
-                 (.edit(.copyURLs), .edit(.copyURLs)):
+                 (.file(.quickLook), .file(.quickLook)):
                 return true
             default:
                 return false

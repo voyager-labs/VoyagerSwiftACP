@@ -5,7 +5,7 @@ import XCTest
 @MainActor
 final class EntryGridSelectionHighlightLayoutTests: XCTestCase {
     func testSelectedNameHighlightWrapsNameLabelWithPadding() throws {
-        let item = makeConfiguredItem(tags: [Tag(name: "blue", colorCode: 1)])
+        let item = makeItem(tags: [Tag(name: "blue", colorCode: 1)])
         item.isSelected = true
         item.view.layoutSubtreeIfNeeded()
 
@@ -32,7 +32,7 @@ final class EntryGridSelectionHighlightLayoutTests: XCTestCase {
     }
 
     func testTagStackIsAlignedToLabelStackNotTileTopLeading() throws {
-        let item = makeConfiguredItem(tags: [Tag(name: "blue", colorCode: 1), Tag(name: "red", colorCode: 6)])
+        let item = makeItem(tags: [Tag(name: "blue", colorCode: 1), Tag(name: "red", colorCode: 6)])
         item.view.layoutSubtreeIfNeeded()
 
         let nameField = try XCTUnwrap(
@@ -54,57 +54,92 @@ final class EntryGridSelectionHighlightLayoutTests: XCTestCase {
         XCTAssertLessThan(tagFrame.maxY, iconFrame.minY)
     }
 
-    // MARK: - Selection Priority Tests
+    // MARK: - Finder-like Selection Tests
 
-    func testDeselectedItemHasNoSelectionHighlight() throws {
-        let item = makeConfiguredItem(tags: nil)
+    func testSelectedShowsHighlightPillAndThumbnailBackground() throws {
+        let item = makeItem()
+        item.isSelected = true
+        item.view.layoutSubtreeIfNeeded()
+
+        let highlight = try XCTUnwrap(
+            findSubview(in: item.view, identifier: "entryGrid.nameHighlight"),
+        )
+        let iconBackground = try XCTUnwrap(
+            findSubview(in: item.view, identifier: "entryGrid.iconBackground"),
+        )
+        let background = try XCTUnwrap(
+            findSubview(in: item.view, identifier: "entryGrid.background"),
+        )
+
+        XCTAssertFalse(highlight.isHidden, "Selected item should show the name highlight pill")
+        XCTAssertNotNil(highlight.layer?.backgroundColor, "Name highlight pill should have a background color")
+        XCTAssertNotNil(
+            iconBackground.layer?.backgroundColor,
+            "Selected item should tint icon background (Finder-like thumbnail background)",
+        )
+        XCTAssertNil(background.layer?.backgroundColor, "Selected item should NOT tint tile background")
+    }
+
+    func testDeselectedClearsHighlightAndIconBackground() throws {
+        let item = makeItem()
         item.isSelected = false
         item.view.layoutSubtreeIfNeeded()
 
         let highlight = try XCTUnwrap(
             findSubview(in: item.view, identifier: "entryGrid.nameHighlight"),
         )
+        let iconBackground = try XCTUnwrap(
+            findSubview(in: item.view, identifier: "entryGrid.iconBackground"),
+        )
+
         XCTAssertTrue(highlight.isHidden, "Deselected item should have hidden nameHighlightView")
+        XCTAssertNil(iconBackground.layer?.backgroundColor, "Deselected item should have clear icon background")
     }
 
-    func testSelectedItemHasVisibleNameHighlight() throws {
-        let item = makeConfiguredItem(tags: nil)
+    // MARK: - Selection Priority Tests
+
+    func testRenamingSuppressesHighlightWithoutTinting() throws {
+        let item = makeItem(isRenaming: true)
         item.isSelected = true
         item.view.layoutSubtreeIfNeeded()
 
         let highlight = try XCTUnwrap(
             findSubview(in: item.view, identifier: "entryGrid.nameHighlight"),
         )
-        XCTAssertFalse(highlight.isHidden, "Selected item should have visible nameHighlightView")
-    }
-
-    func testRenamingStateSuppressesSelectionHighlight() throws {
-        let item = makeConfiguredItemWithRenaming(isRenaming: true)
-        item.isSelected = true
-        item.view.layoutSubtreeIfNeeded()
-
-        let highlight = try XCTUnwrap(
-            findSubview(in: item.view, identifier: "entryGrid.nameHighlight"),
+        let iconBackground = try XCTUnwrap(
+            findSubview(in: item.view, identifier: "entryGrid.iconBackground"),
         )
+        let background = try XCTUnwrap(
+            findSubview(in: item.view, identifier: "entryGrid.background"),
+        )
+
         XCTAssertTrue(highlight.isHidden, "Renaming state should suppress selection highlight even when selected")
+        XCTAssertNil(iconBackground.layer?.backgroundColor, "Renaming state should NOT tint icon background")
+        XCTAssertNil(background.layer?.backgroundColor, "Renaming state should NOT tint tile background")
     }
 
-    func testDropTargetHighlightWinsOverSelectionBackground() throws {
-        let item = makeConfiguredItemWithDropTarget(isDropTargeted: true)
+    func testDropTargetHighlightShowsBorderWithoutTinting() throws {
+        let item = makeItem(isDropTargeted: true)
         item.isSelected = false
         item.view.layoutSubtreeIfNeeded()
 
         let background = try XCTUnwrap(
             findSubview(in: item.view, identifier: "entryGrid.background"),
         )
+        let iconBackground = try XCTUnwrap(
+            findSubview(in: item.view, identifier: "entryGrid.iconBackground"),
+        )
+
         XCTAssertNotNil(background.layer, "backgroundView should have a layer")
-        XCTAssertEqual(background.layer?.borderWidth, 1.5, accuracy: 0.1, "Drop target should have visible border")
+        let borderWidth = background.layer?.borderWidth ?? 0
+        XCTAssertEqual(borderWidth, 1.5, accuracy: 0.1, "Drop target should have visible border")
         XCTAssertNotNil(background.layer?.borderColor, "Drop target should have border color")
-        XCTAssertNotNil(background.layer?.backgroundColor, "Drop target should have background color")
+        XCTAssertNil(background.layer?.backgroundColor, "Drop target should NOT set tile background color")
+        XCTAssertNil(iconBackground.layer?.backgroundColor, "Drop target should NOT tint icon background")
     }
 
     func testDropTargetAndSelectionAreIndependent() throws {
-        let item = makeConfiguredItemWithDropTarget(isDropTargeted: true)
+        let item = makeItem(isDropTargeted: true)
         item.isSelected = true
         item.view.layoutSubtreeIfNeeded()
 
@@ -114,23 +149,29 @@ final class EntryGridSelectionHighlightLayoutTests: XCTestCase {
         let highlight = try XCTUnwrap(
             findSubview(in: item.view, identifier: "entryGrid.nameHighlight"),
         )
+        let iconBackground = try XCTUnwrap(
+            findSubview(in: item.view, identifier: "entryGrid.iconBackground"),
+        )
 
-        XCTAssertEqual(background.layer?.borderWidth, 1.5, accuracy: 0.1, "Drop target border should be applied")
+        let borderWidth = background.layer?.borderWidth ?? 0
+        XCTAssertEqual(borderWidth, 1.5, accuracy: 0.1, "Drop target border should be applied")
         XCTAssertFalse(highlight.isHidden, "Selection highlight should still be visible when drop target is active")
+        XCTAssertNotNil(highlight.layer?.backgroundColor, "Selection highlight pill should have background color")
+        XCTAssertNil(background.layer?.backgroundColor, "Drop target + selected should NOT tint tile background")
+        XCTAssertNotNil(
+            iconBackground.layer?.backgroundColor,
+            "Drop target + selected should show Finder-like icon background",
+        )
     }
 
     // MARK: - Cross-Surface Regression Tests
 
-    /// Test that tagged + selected items keep tag dots visible with selection highlight.
-    /// This is a cross-regression test for the shared EntryGridCollectionViewItem.
-    /// Verifies that selection highlighting doesn't interfere with tag rendering.
     func testTaggedSelectedItemKeepsVisibleTagDots() throws {
         let tags = [Tag(name: "Work", colorCode: 4), Tag(name: "Personal", colorCode: 2)]
-        let item = makeConfiguredItem(tags: tags)
+        let item = makeItem(tags: tags)
         item.isSelected = true
         item.view.layoutSubtreeIfNeeded()
 
-        // Find views
         let highlight = try XCTUnwrap(
             findSubview(in: item.view, identifier: "entryGrid.nameHighlight"),
             "Selection highlight should exist",
@@ -140,17 +181,14 @@ final class EntryGridSelectionHighlightLayoutTests: XCTestCase {
             "Tag stack should exist",
         )
 
-        // Both selection highlight AND tag dots should be visible
         XCTAssertFalse(highlight.isHidden, "Selection highlight should be visible")
         XCTAssertFalse(tagStack.isHidden, "Tag stack should remain visible when selected")
         XCTAssertEqual(tagStack.arrangedSubviews.count, 2, "Both tag dots should be visible")
     }
 
-    /// Test that drop target + selected + tagged items handle priority correctly.
-    /// This verifies that drop target highlight doesn't interfere with tag dots.
     func testDropTargetSelectedTaggedItemHandlesPriorityCorrectly() throws {
         let tags = [Tag(name: "Important", colorCode: 6)]
-        let item = makeConfiguredItemWithDropTargetAndTags(isDropTargeted: true, tags: tags)
+        let item = makeItem(tags: tags, isDropTargeted: true)
         item.isSelected = true
         item.view.layoutSubtreeIfNeeded()
 
@@ -167,23 +205,28 @@ final class EntryGridSelectionHighlightLayoutTests: XCTestCase {
             "Tag stack should exist",
         )
 
-        // Drop target styling should be applied
-        XCTAssertEqual(background.layer?.borderWidth, 1.5, accuracy: 0.1, "Drop target border should be applied")
-        // Selection highlight should still be visible
+        let borderWidth = background.layer?.borderWidth ?? 0
+        XCTAssertEqual(borderWidth, 1.5, accuracy: 0.1, "Drop target border should be applied")
         XCTAssertFalse(highlight.isHidden, "Selection highlight should be visible with drop target")
-        // Tag dots should remain visible
         XCTAssertFalse(tagStack.isHidden, "Tag stack should remain visible with drop target + selection")
         XCTAssertEqual(tagStack.arrangedSubviews.count, 1, "Tag dot should be visible")
     }
 
-    private func makeConfiguredItemWithRenaming(isRenaming: Bool) -> EntryGridCollectionViewItem {
+    // MARK: - Helpers
+
+    private func makeItem(
+        name: String = "Test File",
+        tags: [Tag]? = nil,
+        isRenaming: Bool = false,
+        isDropTargeted: Bool = false,
+    ) -> EntryGridCollectionViewItem {
         let item = EntryGridCollectionViewItem()
         _ = item.view
         item.view.frame = CGRect(x: 0, y: 0, width: 220, height: 220)
 
         item.configure(.init(
             entry: EntryModel(
-                name: "Test File",
+                name: name,
                 fullPath: "/tmp/test.txt",
                 isFolder: false,
                 isHidden: false,
@@ -196,7 +239,7 @@ final class EntryGridSelectionHighlightLayoutTests: XCTestCase {
                     lastOpenedDate: nil,
                     kind: "Text",
                     creatorApplication: nil,
-                    tags: nil,
+                    tags: tags,
                     supplementaryMetadata: nil,
                 ),
             ),
@@ -206,96 +249,8 @@ final class EntryGridSelectionHighlightLayoutTests: XCTestCase {
             isCut: false,
             isHidden: false,
             isRenaming: isRenaming,
-            renamingText: isRenaming ? "Test File" : "",
-            isDropTargeted: false,
-            workspaceClient: .testValue,
-            onRenameUpdate: { _ in },
-            onRenameCommit: {},
-            onRenameCancel: {},
-        ))
-
-        return item
-    }
-
-    private func makeConfiguredItemWithDropTarget(isDropTargeted: Bool) -> EntryGridCollectionViewItem {
-        makeConfiguredItemWithDropTargetAndTags(isDropTargeted: isDropTargeted, tags: nil)
-    }
-
-    private func makeConfiguredItemWithDropTargetAndTags(isDropTargeted: Bool,
-                                                         tags: [Tag]?) -> EntryGridCollectionViewItem
-    {
-        let item = EntryGridCollectionViewItem()
-        _ = item.view
-        item.view.frame = CGRect(x: 0, y: 0, width: 220, height: 220)
-
-        item.configure(.init(
-            entry: EntryModel(
-                name: "Test File",
-                fullPath: "/tmp/test.txt",
-                isFolder: false,
-                isHidden: false,
-                size: 12000,
-                modifiedDate: Date(timeIntervalSince1970: 1_700_000_000),
-                fileExtension: "txt",
-                facets: EntryFacets(
-                    createdDate: Date(timeIntervalSince1970: 1_700_000_000),
-                    addedDate: Date(timeIntervalSince1970: 1_700_000_000),
-                    lastOpenedDate: nil,
-                    kind: "Text",
-                    creatorApplication: nil,
-                    tags: tags,
-                    supplementaryMetadata: nil,
-                ),
-            ),
-            iconSize: 64,
-            textSize: 12,
-            thumbnail: nil,
-            isCut: false,
-            isHidden: false,
-            isRenaming: false,
-            renamingText: "",
+            renamingText: isRenaming ? name : "",
             isDropTargeted: isDropTargeted,
-            workspaceClient: .testValue,
-            onRenameUpdate: { _ in },
-            onRenameCommit: {},
-            onRenameCancel: {},
-        ))
-
-        return item
-    }
-
-    private func makeConfiguredItem(tags: [Tag]) -> EntryGridCollectionViewItem {
-        let item = EntryGridCollectionViewItem()
-        _ = item.view
-        item.view.frame = CGRect(x: 0, y: 0, width: 220, height: 220)
-
-        item.configure(.init(
-            entry: EntryModel(
-                name: "Very Long File Name For Layout Tests",
-                fullPath: "/tmp/layout-test.txt",
-                isFolder: false,
-                isHidden: false,
-                size: 12000,
-                modifiedDate: Date(timeIntervalSince1970: 1_700_000_000),
-                fileExtension: "txt",
-                facets: EntryFacets(
-                    createdDate: Date(timeIntervalSince1970: 1_700_000_000),
-                    addedDate: Date(timeIntervalSince1970: 1_700_000_000),
-                    lastOpenedDate: nil,
-                    kind: "Text",
-                    creatorApplication: nil,
-                    tags: tags,
-                    supplementaryMetadata: nil,
-                ),
-            ),
-            iconSize: 64,
-            textSize: 12,
-            thumbnail: nil,
-            isCut: false,
-            isHidden: false,
-            isRenaming: false,
-            renamingText: "",
-            isDropTargeted: false,
             workspaceClient: .testValue,
             onRenameUpdate: { _ in },
             onRenameCommit: {},

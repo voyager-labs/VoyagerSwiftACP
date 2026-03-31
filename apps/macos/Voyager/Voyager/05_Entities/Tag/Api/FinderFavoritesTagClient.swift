@@ -26,8 +26,20 @@ extension FinderFavoritesTagClient: DependencyKey {
         }
 
         let favoriteTagsLoader: @Sendable () -> [Tag] = {
-            favoriteTagNamesLoader().compactMap {
-                TagMDItemUserTagParser.parseRelaxed($0)
+            let rawNames = favoriteTagNamesLoader()
+            let usesLeadingPlaceholderSlot = rawNames.count > 7 &&
+                rawNames.first?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty == true
+
+            return rawNames.enumerated().compactMap { index, rawName -> Tag? in
+                let name = rawName.trimmingCharacters(in: .whitespacesAndNewlines)
+                guard !name.isEmpty else { return nil }
+
+                let finderFavoriteSlotIndex = usesLeadingPlaceholderSlot ? index - 1 : index
+
+                return Tag(
+                    name: name,
+                    colorCode: TagColor(finderFavoriteSlotIndex: finderFavoriteSlotIndex).rawValue,
+                )
             }
         }
 

@@ -85,12 +85,16 @@ enum EntryContextMenuSpecFactory {
                 .mixed
             }
 
-            let colorCode = selectedEntries
+            let preferredColorCodes = selectedEntries
                 .lazy
                 .compactMap { entry in
                     entry.facets.tags?.first(where: { $0.name == tagName })?.colorCode
                 }
-                .first ?? favoriteTag.colorCode
+            let colorCode = TagColorFallbackResolver.resolvedColorCode(
+                tagName: tagName,
+                preferredColorCodes: Array(preferredColorCodes),
+                favoriteTags: favoriteTags,
+            )
 
             return .init(
                 name: tagName,
