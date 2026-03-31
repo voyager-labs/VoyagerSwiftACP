@@ -3,8 +3,9 @@ import Foundation
 #if canImport(Voyager)
 @testable import Voyager
 
+@MainActor
 enum RegistryTestSupport {
-    private nonisolated(unsafe) static let registrySnapshot = RegistrySnapshot.load()
+    private static let registrySnapshot = RegistrySnapshot.load()
 
     private static let registryLabels: [String: String] = [
         "name_full": "Name",
@@ -14,7 +15,7 @@ enum RegistryTestSupport {
         "total_bit_rate": "Total bit rate",
     ]
 
-    private nonisolated(unsafe) static let registryUnitSpecs: [String: SystemPropertyUnitSpec] = registrySnapshot
+    private static let registryUnitSpecs: [String: SystemPropertyUnitSpec] = registrySnapshot
         .propertyKeyToUnitSpec
 
     private static let registryOperatorDefinition = OperatorDefinition(
@@ -34,19 +35,23 @@ enum RegistryTestSupport {
     )
 
     static func makeRegistryClient() -> RegistryClient {
-        RegistryClient(
+        let labels = registryLabels
+        let unitSpecs = registryUnitSpecs
+        let opDef = registryOperatorDefinition
+
+        return RegistryClient(
             allProperties: { [] },
-            labelForKey: { registryLabels[$0] ?? $0 },
+            labelForKey: { labels[$0] ?? $0 },
             propertyTypeString: propertyTypeString(for:),
-            propertyUnitSpec: { registryUnitSpecs[$0] },
+            propertyUnitSpec: { unitSpecs[$0] },
             operatorCodes: { _ in ["eq"] },
-            operatorDefinition: { _ in registryOperatorDefinition },
+            operatorDefinition: { _ in opDef },
             operatorValueUIKind: { _, typeKey in registryUIKind(for: typeKey) },
             resolvePropertyKey: registryResolution(for:),
         )
     }
 
-    static func propertyTypeString(for key: String) -> String {
+    nonisolated static func propertyTypeString(for key: String) -> String {
         switch key {
         case "size":
             "number"
@@ -57,7 +62,7 @@ enum RegistryTestSupport {
         }
     }
 
-    private static func registryUIKind(for typeKey: String) -> String {
+    private nonisolated static func registryUIKind(for typeKey: String) -> String {
         switch typeKey {
         case "number":
             "singleNumber"
@@ -70,7 +75,7 @@ enum RegistryTestSupport {
         }
     }
 
-    private static func registryResolution(for key: String) -> PropertyKeyResolution {
+    private nonisolated static func registryResolution(for key: String) -> PropertyKeyResolution {
         switch key {
         case "name_full":
             .canonical(key)

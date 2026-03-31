@@ -16,7 +16,7 @@ final class EntryDropValidationContractTests: XCTestCase {
             prefersCopy: false,
         )
 
-        await store.send(.validateDrop(context: context)) {
+        await store.send(.routing(.validateDrop(context: context))) {
             $0.dropValidationResult = .init(
                 destinationPath: "/tmp/voyager",
                 resolvedOperation: .none,
@@ -39,7 +39,7 @@ final class EntryDropValidationContractTests: XCTestCase {
             prefersCopy: false,
         )
 
-        await store.send(.validateDrop(context: context)) {
+        await store.send(.routing(.validateDrop(context: context))) {
             $0.dropValidationResult = .init(
                 destinationPath: "/tmp/voyager/folder/child",
                 resolvedOperation: .none,

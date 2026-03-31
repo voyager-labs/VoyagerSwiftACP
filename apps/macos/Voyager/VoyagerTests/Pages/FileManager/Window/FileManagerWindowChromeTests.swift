@@ -1,3 +1,4 @@
+import AppKit
 import ComposableArchitecture
 @testable import Voyager
 import XCTest
@@ -5,7 +6,8 @@ import XCTest
 @MainActor
 final class FileManagerWindowChromeTests: XCTestCase {
     func testTrafficLightsNotHiddenAfterBaseConfiguration() {
-        let window = NSWindow(contentViewController: nil)
+        let contentViewController = NSViewController()
+        let window = NSWindow(contentViewController: contentViewController)
         FileManagerWindowCoordinator.configureWindowStyle(window)
         XCTAssertFalse(window.standardWindowButton(.closeButton)?.isHidden ?? true)
         XCTAssertFalse(window.standardWindowButton(.miniaturizeButton)?.isHidden ?? true)
@@ -13,7 +15,8 @@ final class FileManagerWindowChromeTests: XCTestCase {
     }
 
     func testTrafficLightsVisibleWhenSidebarVisible() {
-        let window = NSWindow(contentViewController: nil)
+        let contentViewController = NSViewController()
+        let window = NSWindow(contentViewController: contentViewController)
         FileManagerWindowCoordinator.configureWindowStyle(window)
         FileManagerWindowCoordinator.applyTrafficLightVisibility(to: window, isSidebarVisible: true)
         XCTAssertFalse(window.standardWindowButton(.closeButton)?.isHidden ?? true)
@@ -22,7 +25,8 @@ final class FileManagerWindowChromeTests: XCTestCase {
     }
 
     func testTrafficLightsHiddenWhenSidebarHidden() {
-        let window = NSWindow(contentViewController: nil)
+        let contentViewController = NSViewController()
+        let window = NSWindow(contentViewController: contentViewController)
         FileManagerWindowCoordinator.configureWindowStyle(window)
         FileManagerWindowCoordinator.applyTrafficLightVisibility(to: window, isSidebarVisible: false)
         XCTAssertTrue(window.standardWindowButton(.closeButton)?.isHidden ?? false)
@@ -31,7 +35,8 @@ final class FileManagerWindowChromeTests: XCTestCase {
     }
 
     func testTitleBarStyleIsConfiguredCorrectly() {
-        let window = NSWindow(contentViewController: nil)
+        let contentViewController = NSViewController()
+        let window = NSWindow(contentViewController: contentViewController)
         FileManagerWindowCoordinator.configureWindowStyle(window)
         XCTAssertEqual(window.titleVisibility, .hidden)
         XCTAssertTrue(window.titlebarAppearsTransparent)

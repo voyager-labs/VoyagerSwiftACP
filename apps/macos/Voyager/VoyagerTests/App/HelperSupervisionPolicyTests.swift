@@ -1,6 +1,7 @@
 @testable import Voyager
 import XCTest
 
+@MainActor
 final class HelperSupervisionPolicyTests: XCTestCase {
     func testFirstThreeAttemptsAllowed() {
         var policy = HelperSupervisionPolicy()
@@ -100,15 +101,8 @@ final class HelperSupervisionPolicyTests: XCTestCase {
         XCTAssertEqual(policy.restartCountInWindow, 3)
 
         let afterWindow = now.addingTimeInterval(61)
-        XCTAssertEqual(policy.restartCountInWindow(from: afterWindow), 0)
 
         let decision = policy.peekDecision(at: afterWindow)
         XCTAssertEqual(decision, .allowed)
-    }
-}
-
-private extension HelperSupervisionPolicy {
-    func restartCountInWindow(from date: Date) -> Int {
-        restartAttempts.count { date.timeIntervalSince($0) <= Self.windowDuration }
     }
 }

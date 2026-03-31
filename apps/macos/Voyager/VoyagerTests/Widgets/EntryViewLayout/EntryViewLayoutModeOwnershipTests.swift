@@ -46,18 +46,15 @@ final class EntryViewLayoutModeOwnershipTests: XCTestCase {
 
     // MARK: - FileManagerContentState Projection Tests
 
-    func testFileManagerContentStateViewLayoutProjection() {
+    func testFileManagerContentStateEntryViewLayoutModeAccess() {
         var state = FileManagerContentState()
-        XCTAssertEqual(state.viewLayout, .list)
+        XCTAssertEqual(state.entryViewLayout.mode, .list)
 
-        // Test via projection setter
-        state.viewLayout = .grid
-        XCTAssertEqual(state.viewLayout, .grid)
+        state.entryViewLayout.mode = .grid
         XCTAssertEqual(state.entryViewLayout.mode, .grid)
 
-        // Test direct mode access
         state.entryViewLayout.mode = .list
-        XCTAssertEqual(state.viewLayout, .list)
+        XCTAssertEqual(state.entryViewLayout.mode, .list)
     }
 
     // MARK: - Codable Tests
