@@ -34,11 +34,11 @@ This skill is for "authoring" tasks (drafting new rows, allocating IDs, suggesti
 - Identify the intended `category_key` and the likely `related_ui` (`WINDOW_STRUCTURE.structure_key`).
 
 2) Allocate IDs
-- Choose `category_key` from `04_FEATURE_INVENTORY/FEATURE_CATEGORIES/data.tsv`.
+- Choose `category_key` from `PRODUCT/04_FEATURE_INVENTORY/FEATURE_CATEGORIES/data.tsv`.
 - Allocate a new `feature_id` in that category by scanning existing `FEATURES.feature_id` values and picking the next numeric suffix.
 
 3) Draft the FEATURES row
-Draft a TSV row for `04_FEATURE_INVENTORY/FEATURES/data.tsv`.
+Draft a TSV row for `PRODUCT/04_FEATURE_INVENTORY/FEATURES/data.tsv`.
 
 - `feature_category`: Korean category title (display)
 - `category_key`: stable FK
@@ -50,7 +50,7 @@ Draft a TSV row for `04_FEATURE_INVENTORY/FEATURES/data.tsv`.
 - `objects`: `-` unless you have specific keys
 
 4) Suggest related INTERACTIONS
-Propose atomic interactions in the existing style for `04_FEATURE_INVENTORY/INTERACTIONS/data.tsv`:
+Propose atomic interactions in the existing style for `PRODUCT/04_FEATURE_INVENTORY/INTERACTIONS/data.tsv`:
 
 - `interaction_title`: imperative verb phrase
 - `interaction_id`: `<feature_id>-<snake_slug>` (stable). Example: `FMW-001-open_new_file_manager_window`

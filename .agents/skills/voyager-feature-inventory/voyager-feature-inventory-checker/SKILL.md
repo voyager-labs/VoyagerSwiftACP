@@ -1,11 +1,11 @@
 ---
 name: voyager-feature-inventory-checker
-description: Look up and validate Voyager FEATURE_INVENTORY entries (04_FEATURE_INVENTORY/*). Use for (1) exact feature_id checks, and (2) impact discovery when users ask "which features need updates" from Korean/English requirement text. Triggers: FEATURE_INVENTORY, 기능 인벤토리, feature_id, related features, 영향 범위, 변경 필요한 feature.
+description: Look up and validate Voyager FEATURE_INVENTORY entries (PRODUCT/04_FEATURE_INVENTORY/*). Use for (1) exact feature_id checks, and (2) impact discovery when users ask "which features need updates" from Korean/English requirement text. Triggers: FEATURE_INVENTORY, 기능 인벤토리, feature_id, related features, 영향 범위, 변경 필요한 feature.
 ---
 
 # Voyager Feature Inventory Checker
 
-Check a specific feature entry in `04_FEATURE_INVENTORY/FEATURES/data.tsv`.
+Check a specific feature entry in `PRODUCT/04_FEATURE_INVENTORY/FEATURES/data.tsv`.
 
 This skill supports both:
 
@@ -119,13 +119,13 @@ python3 .agents/skills/voyager-feature-inventory/voyager-feature-inventory-check
 
 ## Sources Of Truth (Repo)
 
-- `04_FEATURE_INVENTORY/FEATURES/data.tsv`
-- `04_FEATURE_INVENTORY/FEATURES/schema.json`
-- `04_FEATURE_INVENTORY/FEATURE_CATEGORIES/data.tsv`
-- `04_FEATURE_INVENTORY/FEATURE_CATEGORIES/schema.json`
-- `04_FEATURE_INVENTORY/INTERACTIONS/data.tsv`
-- `04_FEATURE_INVENTORY/INTERACTIONS/schema.json`
-- `03_INFORMATION_ARCHITECTURE/WINDOW_STRUCTURE/data.tsv`
+- `PRODUCT/04_FEATURE_INVENTORY/FEATURES/data.tsv`
+- `PRODUCT/04_FEATURE_INVENTORY/FEATURES/schema.json`
+- `PRODUCT/04_FEATURE_INVENTORY/FEATURE_CATEGORIES/data.tsv`
+- `PRODUCT/04_FEATURE_INVENTORY/FEATURE_CATEGORIES/schema.json`
+- `PRODUCT/04_FEATURE_INVENTORY/INTERACTIONS/data.tsv`
+- `PRODUCT/04_FEATURE_INVENTORY/INTERACTIONS/schema.json`
+- `PRODUCT/03_INFORMATION_ARCHITECTURE/WINDOW_STRUCTURE/data.tsv`
 - `META/tsv_rules.md`
 
 ## Schema Migration (v2)
@@ -146,13 +146,13 @@ This adds:
 If you see noisy diffs caused by accidental spaces (ex: `- `, NBSP, padding in key columns), run:
 
 ```bash
-python3 .agents/skills/voyager-feature-inventory/voyager-feature-inventory-checker/scripts/format_tsv_whitespace.py 04_FEATURE_INVENTORY/INTERACTIONS/data.tsv
+python3 .agents/skills/voyager-feature-inventory/voyager-feature-inventory-checker/scripts/format_tsv_whitespace.py PRODUCT/04_FEATURE_INVENTORY/INTERACTIONS/data.tsv
 ```
 
 Apply in-place:
 
 ```bash
-python3 .agents/skills/voyager-feature-inventory/voyager-feature-inventory-checker/scripts/format_tsv_whitespace.py --write 04_FEATURE_INVENTORY/INTERACTIONS/data.tsv
+python3 .agents/skills/voyager-feature-inventory/voyager-feature-inventory-checker/scripts/format_tsv_whitespace.py --write PRODUCT/04_FEATURE_INVENTORY/INTERACTIONS/data.tsv
 ```
 
 ## Notes
