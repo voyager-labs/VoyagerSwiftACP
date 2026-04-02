@@ -11,6 +11,10 @@ struct PermissionsFeature {
 
     @Dependency(\.fullDiskAccessClient)
     var fullDiskAccessClient
+    @Dependency(\.helperFolderAccessClient)
+    var helperFolderAccessClient
+    @Dependency(\.userDefaultsClient)
+    var userDefaultsClient
     @Dependency(\.launchAtLoginClient)
     var launchAtLoginClient
     @Dependency(\.notificationCenterClient)
@@ -41,6 +45,25 @@ struct PermissionsFeature {
                     hasAttempted: state.hasAttemptedFullDiskAccessEnable,
                 )
                 state.fullDiskAccessStatus = resolvedStatus
+                refreshCompletionState(state: &state)
+                return .none
+
+            case .requestHelperFolderAccessTapped:
+                state.helperFolderAccessError = nil
+                state.isRequestingHelperFolderAccess = true
+                return .run { [helperFolderAccessClient] send in
+                    let result = await helperFolderAccessClient.requestAccess()
+                    await send(.helperFolderAccessResponse(result))
+                }
+
+            case let .helperFolderAccessResponse(result):
+                state.isRequestingHelperFolderAccess = false
+                state.helperFolderAccess = result
+                state.helperFolderAccessError = result.status == .granted
+                    ? nil
+                    : "VoyagerHelper still needs Desktop, Documents, and Downloads access."
+                let data = try? JSONEncoder().encode(result)
+                userDefaultsClient.setObject(data, SettingsKeys.helperFolderAccessSnapshot)
                 refreshCompletionState(state: &state)
                 return .none
 
@@ -128,6 +151,6 @@ struct PermissionsFeature {
     }
 
     private func refreshCompletionState(state: inout State) {
-        state.isComplete = state.fullDiskAccessStatus == .granted
+        state.isComplete = state.fullDiskAccessStatus == .granted && state.helperFolderAccessStatus == .granted
     }
 }

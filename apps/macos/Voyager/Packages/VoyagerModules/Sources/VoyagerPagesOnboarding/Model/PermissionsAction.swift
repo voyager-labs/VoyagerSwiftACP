@@ -7,6 +7,8 @@ enum PermissionsAction: CasePathable, Sendable {
     case onDisappear
     case appDidBecomeActive
     case fullDiskAccessStatusResponse(FullDiskAccessStatus)
+    case requestHelperFolderAccessTapped
+    case helperFolderAccessResponse(FolderAccessResult)
     case openSystemSettingsTapped
     case systemSettingsOpenResult(Bool)
     case launchAtLoginToggled(Bool)
