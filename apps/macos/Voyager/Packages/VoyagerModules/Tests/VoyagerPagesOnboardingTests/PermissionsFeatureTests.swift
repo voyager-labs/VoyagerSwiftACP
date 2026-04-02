@@ -44,6 +44,32 @@ final class PermissionsFeatureTests: XCTestCase {
         await store.finish()
     }
 
+    func testHelperFolderAccessAlsoGatesCompletion() async {
+        let store = TestStore(initialState: PermissionsFeature.State()) {
+            PermissionsFeature()
+        }
+
+        await store.send(.fullDiskAccessStatusResponse(.granted)) { state in
+            state.fullDiskAccessStatus = .granted
+            state.isComplete = false
+        }
+
+        XCTAssertEqual(
+            store.state.nextDisabledMessage,
+            "Grant VoyagerHelper access to Desktop, Documents, and Downloads to continue.",
+        )
+
+        let result = FolderAccessResult(desktop: .granted, documents: .granted, downloads: .granted)
+        await store.send(.helperFolderAccessResponse(result)) { state in
+            state.helperFolderAccess = result
+            state.helperFolderAccessError = nil
+            state.isComplete = true
+        }
+
+        XCTAssertNil(store.state.nextDisabledMessage)
+        await store.finish()
+    }
+
     func testFullDiskAccessDeniedAfterAttempt() async {
         let store = TestStore(initialState: PermissionsFeature.State()) {
             PermissionsFeature()
