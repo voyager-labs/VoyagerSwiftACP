@@ -1,41 +1,6 @@
 import AppKit
 import UniformTypeIdentifiers
 
-public enum EntryGridRenameEditorRules {
-    public enum CommandAction: Equatable {
-        case commit
-        case cancel
-        case none
-    }
-
-    public static let maxLines = 3
-
-    public static func applyWrappingStyle(to textField: NSTextField) {
-        textField.usesSingleLineMode = false
-        textField.lineBreakMode = .byWordWrapping
-        textField.maximumNumberOfLines = maxLines
-        textField.cell?.wraps = true
-        textField.cell?.isScrollable = false
-    }
-
-    public static func sanitizeInput(_ value: String) -> String {
-        value.replacingOccurrences(of: "\n", with: "")
-            .replacingOccurrences(of: "\r", with: "")
-    }
-
-    public static func commandAction(for commandSelector: Selector) -> CommandAction {
-        if commandSelector == #selector(NSResponder.insertNewline(_:))
-            || commandSelector == #selector(NSResponder.insertTab(_:))
-        {
-            return .commit
-        }
-        if commandSelector == #selector(NSResponder.cancelOperation(_:)) {
-            return .cancel
-        }
-        return .none
-    }
-}
-
 final class EntryGridCollectionViewItem: NSCollectionViewItem {
     struct Configuration {
         let entry: EntryModel
@@ -312,8 +277,8 @@ final class EntryGridCollectionViewItem: NSCollectionViewItem {
         nameField.drawsBackground = true
         nameField.backgroundColor = NSColor.textBackgroundColor
         nameField.focusRingType = .default
-        EntryGridRenameEditorRules.applyWrappingStyle(to: nameField)
-        nameField.stringValue = EntryGridRenameEditorRules.sanitizeInput(text)
+        EntryInlineRenameEditorRules.applyWrappingStyle(to: nameField)
+        nameField.stringValue = EntryInlineRenameEditorRules.sanitizeInput(text)
         nameField.delegate = self
     }
 
@@ -353,7 +318,7 @@ extension EntryGridCollectionViewItem: NSTextFieldDelegate {
         guard isRenaming else { return }
         guard let textField = notification.object as? NSTextField else { return }
         guard textField === nameField else { return }
-        let sanitized = EntryGridRenameEditorRules.sanitizeInput(textField.stringValue)
+        let sanitized = EntryInlineRenameEditorRules.sanitizeInput(textField.stringValue)
         if sanitized != textField.stringValue {
             textField.stringValue = sanitized
         }
@@ -364,7 +329,7 @@ extension EntryGridCollectionViewItem: NSTextFieldDelegate {
         guard isRenaming else { return false }
         guard let textField = control as? NSTextField, textField === nameField else { return false }
 
-        switch EntryGridRenameEditorRules.commandAction(for: commandSelector) {
+        switch EntryInlineRenameEditorRules.commandAction(for: commandSelector) {
         case .commit:
             onRenameCommit?()
             return true

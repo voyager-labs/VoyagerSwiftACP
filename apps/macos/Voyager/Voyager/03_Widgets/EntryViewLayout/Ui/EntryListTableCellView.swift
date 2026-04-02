@@ -292,7 +292,7 @@ final class EntryListEntryCellView: NSTableCellView {
         customTextField.backgroundColor = .textBackgroundColor
         customTextField.focusRingType = .default
 
-        customTextField.stringValue = EntryGridRenameEditorRules.sanitizeInput(text)
+        customTextField.stringValue = EntryInlineRenameEditorRules.sanitizeInput(text)
         customTextField.delegate = self
         applyContentAlpha()
     }
@@ -308,7 +308,7 @@ extension EntryListEntryCellView: NSTextFieldDelegate {
     func controlTextDidChange(_ notification: Notification) {
         guard isRenaming else { return }
         guard let textField = notification.object as? NSTextField, textField === customTextField else { return }
-        let sanitized = EntryGridRenameEditorRules.sanitizeInput(textField.stringValue)
+        let sanitized = EntryInlineRenameEditorRules.sanitizeInput(textField.stringValue)
         if sanitized != textField.stringValue {
             textField.stringValue = sanitized
         }
@@ -319,7 +319,7 @@ extension EntryListEntryCellView: NSTextFieldDelegate {
         guard isRenaming else { return false }
         guard let textField = control as? NSTextField, textField === customTextField else { return false }
 
-        switch EntryGridRenameEditorRules.commandAction(for: commandSelector) {
+        switch EntryInlineRenameEditorRules.commandAction(for: commandSelector) {
         case .commit:
             onRenameCommit?()
             return true
