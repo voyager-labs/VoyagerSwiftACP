@@ -2,7 +2,7 @@ import AppKit
 import ComposableArchitecture
 import Foundation
 
-public enum FolderAccessPermission: String, Equatable, Sendable {
+public enum FolderAccessPermission: String, Equatable, Sendable, Codable {
     case granted = "Granted"
     case notGranted = "Not Granted"
 }
@@ -27,7 +27,7 @@ public enum FilesAndFoldersStatus: Equatable, Sendable {
     }
 }
 
-public struct FolderAccessResult: Equatable, Sendable {
+public struct FolderAccessResult: Equatable, Sendable, Codable {
     public var desktop: FolderAccessPermission
     public var documents: FolderAccessPermission
     public var downloads: FolderAccessPermission

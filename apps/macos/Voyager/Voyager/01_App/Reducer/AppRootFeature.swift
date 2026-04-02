@@ -1,7 +1,9 @@
 import ComposableArchitecture
 import Foundation
 import VoyagerEntitiesSettings
+import VoyagerPagesOnboarding
 import VoyagerPagesSettings
+import VoyagerShared
 
 @Reducer
 struct AppRootFeature {
@@ -16,6 +18,10 @@ struct AppRootFeature {
     private var helperStateClient
     @Dependency(\.collectionStalenessClient)
     private var collectionStalenessClient
+    @Dependency(\.onboardingWindowClient)
+    private var onboardingWindowClient
+    @Dependency(\.userDefaultsClient)
+    private var userDefaultsClient
 
     private enum CancelID {
         static let helperExternalFileBridge = "helperExternalFileBridge"
@@ -48,8 +54,9 @@ struct AppRootFeature {
             switch action {
             case .lifecycle(.willFinishLaunching):
                 let helperExternalFileChangeClient = helperExternalFileChangeClient
-                let helperFolderAccessClient = helperFolderAccessClient
                 let helperStateClient = helperStateClient
+                let onboardingWindowClient = onboardingWindowClient
+                let userDefaultsClient = userDefaultsClient
                 effect = .merge(
                     .send(.appPreferences(.load)),
                     .run { send in
@@ -59,10 +66,19 @@ struct AppRootFeature {
                     }
                     .cancellable(id: CancelID.helperExternalFileBridge, cancelInFlight: true),
                     .run { _ in
+                        guard onboardingWindowClient.isRequired() == false else {
+                            return
+                        }
+
                         for await helperState in helperStateClient.observe() {
                             guard helperState.helperReady else { continue }
 
-                            let access = await helperFolderAccessClient.requestAccess()
+                            let access = persistedHelperFolderAccess(userDefaultsClient: userDefaultsClient)
+                                ?? FolderAccessResult(
+                                    desktop: .notGranted,
+                                    documents: .notGranted,
+                                    downloads: .notGranted,
+                                )
                             let watchRoots = helperGrantedWatchRoots(from: access)
                             await helperExternalFileChangeClient.updateWatchRoots(watchRoots)
                             break
@@ -175,4 +191,11 @@ private nonisolated func helperGrantedWatchRoots(from access: FolderAccessResult
         guard permission == .granted else { return nil }
         return fileManager.urls(for: directory, in: .userDomainMask).first?.standardizedFileURL.path
     }
+}
+
+private nonisolated func persistedHelperFolderAccess(userDefaultsClient: UserDefaultsClient) -> FolderAccessResult? {
+    guard let data = userDefaultsClient.object(SettingsKeys.helperFolderAccessSnapshot) as? Data else {
+        return nil
+    }
+    return try? JSONDecoder().decode(FolderAccessResult.self, from: data)
 }

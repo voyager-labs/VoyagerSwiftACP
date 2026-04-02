@@ -33,9 +33,9 @@ final class HelperFolderAccessListener {
     private func postCurrentFolderAccess() {
         let payload: [String: Any] = [
             HelperFolderAccessUserInfoKey.schemaVersion: 1,
-            HelperFolderAccessUserInfoKey.desktop: requestFolderAccess(for: .desktopDirectory).rawValue,
-            HelperFolderAccessUserInfoKey.documents: requestFolderAccess(for: .documentDirectory).rawValue,
-            HelperFolderAccessUserInfoKey.downloads: requestFolderAccess(for: .downloadsDirectory).rawValue,
+            HelperFolderAccessUserInfoKey.desktop: folderAccess(for: .desktopDirectory).rawValue,
+            HelperFolderAccessUserInfoKey.documents: folderAccess(for: .documentDirectory).rawValue,
+            HelperFolderAccessUserInfoKey.downloads: folderAccess(for: .downloadsDirectory).rawValue,
         ]
 
         DistributedNotificationCenter.default().post(
@@ -45,7 +45,7 @@ final class HelperFolderAccessListener {
         )
     }
 
-    private func requestFolderAccess(for directory: FileManager.SearchPathDirectory) -> AccessValue {
+    private func folderAccess(for directory: FileManager.SearchPathDirectory) -> AccessValue {
         let fileManager = FileManager.default
         guard let url = fileManager.urls(for: directory, in: .userDomainMask).first else {
             return .notGranted

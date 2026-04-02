@@ -1,10 +1,16 @@
 import ComposableArchitecture
 import Foundation
+import VoyagerShared
 
 public struct HelperFolderAccessClient: Sendable {
+    public var checkAccess: @Sendable () async -> FolderAccessResult
     public var requestAccess: @Sendable () async -> FolderAccessResult
 
-    public nonisolated init(requestAccess: @escaping @Sendable () async -> FolderAccessResult) {
+    public nonisolated init(
+        checkAccess: @escaping @Sendable () async -> FolderAccessResult,
+        requestAccess: @escaping @Sendable () async -> FolderAccessResult,
+    ) {
+        self.checkAccess = checkAccess
         self.requestAccess = requestAccess
     }
 }
@@ -12,19 +18,32 @@ public struct HelperFolderAccessClient: Sendable {
 extension HelperFolderAccessClient: DependencyKey {
     public nonisolated static var liveValue: HelperFolderAccessClient {
         let resolver = HelperFolderAccessResolver()
-        return HelperFolderAccessClient(requestAccess: {
-            await resolver.requestAccess()
-        })
+        let userDefaultsClient = UserDefaultsClient.liveValue
+        return HelperFolderAccessClient(
+            checkAccess: {
+                guard let data = userDefaultsClient.object(SettingsKeys.helperFolderAccessSnapshot) as? Data,
+                      let snapshot = try? JSONDecoder().decode(FolderAccessResult.self, from: data)
+                else {
+                    return FolderAccessResult(desktop: .notGranted, documents: .notGranted, downloads: .notGranted)
+                }
+                return snapshot
+            },
+            requestAccess: {
+                await resolver.resolve()
+            },
+        )
     }
 
     public nonisolated static var testValue: HelperFolderAccessClient {
-        HelperFolderAccessClient(requestAccess: {
-            FolderAccessResult(
-                desktop: .notGranted,
-                documents: .notGranted,
-                downloads: .notGranted,
-            )
-        })
+        let fallback = FolderAccessResult(
+            desktop: .notGranted,
+            documents: .notGranted,
+            downloads: .notGranted,
+        )
+        return HelperFolderAccessClient(
+            checkAccess: { fallback },
+            requestAccess: { fallback },
+        )
     }
 
     public nonisolated static var previewValue: HelperFolderAccessClient {
@@ -58,7 +77,7 @@ private actor HelperFolderAccessResolver {
         }
     }
 
-    func requestAccess() async -> FolderAccessResult {
+    fileprivate func resolve() async -> FolderAccessResult {
         await ensureObserver()
 
         if waiters.isEmpty {
@@ -97,7 +116,9 @@ private actor HelperFolderAccessResolver {
             DistributedNotificationCenter.default().post(
                 name: .voyagerHelperFolderAccessRequest,
                 object: nil,
-                userInfo: nil,
+                userInfo: [
+                    HelperFolderAccessUserInfoKey.schemaVersion: 1,
+                ],
             )
         }
     }
