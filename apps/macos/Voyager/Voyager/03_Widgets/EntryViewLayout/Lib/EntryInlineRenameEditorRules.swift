@@ -49,29 +49,30 @@ public enum EntryInlineRenameEditorRules {
     ///   - `archive.tar.gz` → `archive.tar` 선택 (마지막 확장자만 제외)
     ///   - 폴더 → 전체 선택
     public static func initialSelectionRange(for displayName: String, isFolder: Bool) -> NSRange {
+        let nsDisplayName = displayName as NSString
+        let fullRange = NSRange(location: 0, length: nsDisplayName.length)
+
         // 폴더는 전체 선택
         if isFolder {
-            return NSRange(location: 0, length: displayName.count)
+            return fullRange
         }
 
         // "."으로 시작하고 나머지에 "."이 없으면 dotfile → 전체 선택
         if displayName.hasPrefix(".") {
             let afterDot = String(displayName.dropFirst())
             if !afterDot.contains(".") {
-                return NSRange(location: 0, length: displayName.count)
+                return fullRange
             }
         }
 
         // 마지막 "."의 위치 찾기
-        if let lastDotIndex = displayName.lastIndex(of: ".") {
-            let basenameEndIndex = displayName.distance(from: displayName.startIndex, to: lastDotIndex)
-            // "."이 첫 글자가 아니면 basename 선택
-            if basenameEndIndex > 0 {
-                return NSRange(location: 0, length: basenameEndIndex)
-            }
+        let lastDotRange = nsDisplayName.range(of: ".", options: .backwards, range: fullRange)
+        // "."이 첫 글자가 아니면 basename 선택
+        if lastDotRange.location != NSNotFound, lastDotRange.location > 0 {
+            return NSRange(location: 0, length: lastDotRange.location)
         }
 
         // "."이 없으면 전체 선택
-        return NSRange(location: 0, length: displayName.count)
+        return fullRange
     }
 }

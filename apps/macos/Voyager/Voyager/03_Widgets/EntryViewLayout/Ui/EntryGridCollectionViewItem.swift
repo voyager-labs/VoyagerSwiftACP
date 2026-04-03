@@ -94,7 +94,7 @@ final class EntryGridCollectionViewItem: NSCollectionViewItem {
         }
 
         let display = EntryDisplayModel(entry: configuration.entry)
-        if let supplementaryInfoText = display.supplementaryInfoText {
+        if !configuration.isRenaming, let supplementaryInfoText = display.supplementaryInfoText {
             infoField.isHidden = false
             infoField.stringValue = supplementaryInfoText
         } else {
@@ -109,6 +109,15 @@ final class EntryGridCollectionViewItem: NSCollectionViewItem {
         guard isRenaming else { return }
         view.window?.makeFirstResponder(nameField)
         nameField.selectText(nil)
+        if let entry,
+           let editor = nameField.currentEditor() as? NSTextView
+        {
+            let range = EntryInlineRenameEditorRules.initialSelectionRange(
+                for: entry.name,
+                isFolder: entry.isFolder,
+            )
+            editor.setSelectedRange(range)
+        }
     }
 
     // swiftlint:disable:next function_body_length
@@ -277,7 +286,11 @@ final class EntryGridCollectionViewItem: NSCollectionViewItem {
         nameField.drawsBackground = true
         nameField.backgroundColor = NSColor.textBackgroundColor
         nameField.focusRingType = .default
-        EntryInlineRenameEditorRules.applyWrappingStyle(to: nameField)
+        nameField.usesSingleLineMode = true
+        nameField.lineBreakMode = .byTruncatingTail
+        nameField.maximumNumberOfLines = 1
+        nameField.cell?.wraps = false
+        nameField.cell?.isScrollable = true
         nameField.stringValue = EntryInlineRenameEditorRules.sanitizeInput(text)
         nameField.delegate = self
     }

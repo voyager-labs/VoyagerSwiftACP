@@ -142,6 +142,8 @@ final class EntryListEntryCellView: NSTableCellView {
     private var textLeadingToIconConstraint: NSLayoutConstraint?
     private var textLeadingToViewConstraint: NSLayoutConstraint?
 
+    private var entryName: String = ""
+    private var entryIsFolder: Bool = false
     private var isRenaming: Bool = false
     private var isHiddenEntry: Bool = false
     private var isCutEntry: Bool = false
@@ -210,12 +212,21 @@ final class EntryListEntryCellView: NSTableCellView {
         guard isRenaming else { return }
         window?.makeFirstResponder(customTextField)
         customTextField.selectText(nil)
+        if let editor = customTextField.currentEditor() as? NSTextView {
+            let range = EntryInlineRenameEditorRules.initialSelectionRange(
+                for: entryName,
+                isFolder: entryIsFolder,
+            )
+            editor.setSelectedRange(range)
+        }
     }
 
     private func configureEntryCell(context: EntryListEntryCellViewConfiguration.Context) {
         isRenaming = context.isRenaming
         isHiddenEntry = context.isHidden
         isCutEntry = context.isCut
+        entryName = context.model.name
+        entryIsFolder = context.model.isFolder
         let display = EntryDisplayModel(entry: context.model)
 
         switch EntryListColumn(rawValue: context.columnId) {

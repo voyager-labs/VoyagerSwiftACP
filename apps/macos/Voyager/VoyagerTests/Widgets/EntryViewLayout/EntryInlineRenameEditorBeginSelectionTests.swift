@@ -48,6 +48,14 @@ final class EntryInlineRenameBeginSelectionTests: XCTestCase {
         XCTAssertEqual(range.length, 4)
     }
 
+    func testUnicodeFilenameUsesUtf16BasenameLength() {
+        let displayName = "📄report.txt"
+        let range = EntryInlineRenameEditorRules.initialSelectionRange(for: displayName, isFolder: false)
+
+        XCTAssertEqual(range.location, 0)
+        XCTAssertEqual(range.length, ("📄report" as NSString).length)
+    }
+
     // MARK: - selectedRange application tests
 
     func testBasenameSelectionAppliedToTextField() {
