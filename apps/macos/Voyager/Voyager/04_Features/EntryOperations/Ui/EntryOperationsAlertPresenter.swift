@@ -115,4 +115,16 @@ enum EntryOperationsAlertPresenter {
         alert.addButton(withTitle: "OK")
         alert.runModal()
     }
+
+    @MainActor
+    static func showRenameExtensionChangeAlert(oldName: String, newName: String) -> Bool {
+        let alert = NSAlert()
+        alert.alertStyle = .warning
+        alert.messageText = "Are you sure you want to change the extension from \"\(oldName)\" to \"\(newName)\"?"
+        alert.informativeText = "Changing the extension may make the file unusable."
+        alert.addButton(withTitle: "Continue")
+        alert.addButton(withTitle: "Cancel")
+        let response = alert.runModal()
+        return response == .alertFirstButtonReturn
+    }
 }

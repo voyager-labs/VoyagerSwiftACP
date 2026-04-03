@@ -20,6 +20,7 @@ struct EntryOperationsAlertClient: Sendable {
         _ context: EntryOperationsReplaceContext,
     ) async -> EntryOperationsReplaceAlertResponse
     var showGetInfoFailureAlert: @Sendable (_ message: String, _ suggestion: String?) async -> Void
+    var showRenameExtensionChangeAlert: @Sendable (_ oldName: String, _ newName: String) async -> Bool
 
     nonisolated init(
         showTrashFileAlert: @escaping @Sendable (_ fileName: String, _ hasMoreFiles: Bool) async -> Bool,
@@ -31,6 +32,8 @@ struct EntryOperationsAlertClient: Sendable {
             _ context: EntryOperationsReplaceContext,
         ) async -> EntryOperationsReplaceAlertResponse,
         showGetInfoFailureAlert: @escaping @Sendable (_ message: String, _ suggestion: String?) async -> Void,
+        showRenameExtensionChangeAlert: @escaping @Sendable (_ oldName: String, _ newName: String) async
+            -> Bool = { _, _ in true },
     ) {
         self.showTrashFileAlert = showTrashFileAlert
         self.showRenameConflictAlert = showRenameConflictAlert
@@ -38,6 +41,7 @@ struct EntryOperationsAlertClient: Sendable {
         self.showEmptyTrashConfirmationAlert = showEmptyTrashConfirmationAlert
         self.showReplaceAlert = showReplaceAlert
         self.showGetInfoFailureAlert = showGetInfoFailureAlert
+        self.showRenameExtensionChangeAlert = showRenameExtensionChangeAlert
     }
 }
 
@@ -83,6 +87,14 @@ extension EntryOperationsAlertClient: DependencyKey {
                     )
                 }
             },
+            showRenameExtensionChangeAlert: { oldName, newName in
+                await MainActor.run {
+                    EntryOperationsAlertPresenter.showRenameExtensionChangeAlert(
+                        oldName: oldName,
+                        newName: newName,
+                    )
+                }
+            },
         )
     }
 
@@ -94,6 +106,7 @@ extension EntryOperationsAlertClient: DependencyKey {
             showEmptyTrashConfirmationAlert: { _ in false },
             showReplaceAlert: { _, _ in .stop },
             showGetInfoFailureAlert: { _, _ in },
+            showRenameExtensionChangeAlert: { _, _ in true },
         )
     }
 

@@ -28,7 +28,7 @@ final class EntryViewLayoutRenameLifecycleTests: XCTestCase {
             shouldScrollToSelection: true,
         )))
 
-        await store.receive(.entryOperations(.edit(.cancelRename)))
+        await store.receive(\.entryOperations.edit.cancelRename)
 
         await store.finish()
     }
@@ -55,7 +55,7 @@ final class EntryViewLayoutRenameLifecycleTests: XCTestCase {
             shouldScrollToSelection: false,
         )))
 
-        await store.receive(.entryOperations(.edit(.cancelRename)))
+        await store.receive(\.entryOperations.edit.cancelRename)
 
         await store.finish()
     }
@@ -83,7 +83,7 @@ final class EntryViewLayoutRenameLifecycleTests: XCTestCase {
             shouldScrollToSelection: true,
         )))
 
-        await store.receive(.entryOperations(.edit(.cancelRename)))
+        await store.receive(\.entryOperations.edit.cancelRename)
 
         await store.finish()
     }
