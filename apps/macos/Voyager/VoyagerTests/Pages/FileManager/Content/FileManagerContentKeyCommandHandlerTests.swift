@@ -218,7 +218,7 @@ final class FileManagerContentKeyCommandHandlerTests: XCTestCase {
 
     func testRenameShortcutStartsRenameForSingleSelectionInListAndGrid() async {
         for layout in [EntryViewLayoutState.Mode.list, .grid] {
-            for keyCode in [36, 76] {
+            for keyCode in [UInt16(36), UInt16(76)] {
                 let selected = makeEntry(name: "selected", fullPath: "/tmp/voyager/selected.txt")
 
                 var initialState = FileManagerContentState()
@@ -248,7 +248,7 @@ final class FileManagerContentKeyCommandHandlerTests: XCTestCase {
 
     func testRenameShortcutDoesNothingWhenRenameAlreadyActive() async {
         for layout in [EntryViewLayoutState.Mode.list, .grid] {
-            for keyCode in [36, 76] {
+            for keyCode in [UInt16(36), UInt16(76)] {
                 let selected = makeEntry(name: "selected", fullPath: "/tmp/voyager/selected.txt")
 
                 var initialState = FileManagerContentState()
@@ -272,7 +272,7 @@ final class FileManagerContentKeyCommandHandlerTests: XCTestCase {
 
     func testRenameShortcutDoesNothingForZeroOrMultipleSelection() async {
         for layout in [EntryViewLayoutState.Mode.list, .grid] {
-            for keyCode in [36, 76] {
+            for keyCode in [UInt16(36), UInt16(76)] {
                 var initialState = FileManagerContentState()
                 initialState.entryViewLayout.mode = layout
                 initialState.navigation.seedInitialFolderPath("/tmp/voyager")
