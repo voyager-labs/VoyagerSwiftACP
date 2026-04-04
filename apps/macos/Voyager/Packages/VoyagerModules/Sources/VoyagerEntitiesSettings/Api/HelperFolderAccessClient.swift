@@ -1,6 +1,5 @@
 import ComposableArchitecture
 import Foundation
-import VoyagerShared
 
 public struct HelperFolderAccessClient: Sendable {
     public var checkAccess: @Sendable () async -> FolderAccessResult
@@ -18,18 +17,12 @@ public struct HelperFolderAccessClient: Sendable {
 extension HelperFolderAccessClient: DependencyKey {
     public nonisolated static var liveValue: HelperFolderAccessClient {
         let resolver = HelperFolderAccessResolver()
-        let userDefaultsClient = UserDefaultsClient.liveValue
         return HelperFolderAccessClient(
             checkAccess: {
-                guard let data = userDefaultsClient.object(SettingsKeys.helperFolderAccessSnapshot) as? Data,
-                      let snapshot = try? JSONDecoder().decode(FolderAccessResult.self, from: data)
-                else {
-                    return FolderAccessResult(desktop: .notGranted, documents: .notGranted, downloads: .notGranted)
-                }
-                return snapshot
+                await resolver.resolve(mode: .check)
             },
             requestAccess: {
-                await resolver.resolve()
+                await resolver.resolve(mode: .request)
             },
         )
     }
@@ -59,6 +52,11 @@ public extension DependencyValues {
 }
 
 private actor HelperFolderAccessResolver {
+    fileprivate enum Mode: String {
+        case check
+        case request
+    }
+
     private let fallbackResult = FolderAccessResult(
         desktop: .notGranted,
         documents: .notGranted,
@@ -77,11 +75,11 @@ private actor HelperFolderAccessResolver {
         }
     }
 
-    fileprivate func resolve() async -> FolderAccessResult {
+    fileprivate func resolve(mode: Mode) async -> FolderAccessResult {
         await ensureObserver()
 
         if waiters.isEmpty {
-            await sendRequest()
+            await sendRequest(mode: mode)
             scheduleTimeout()
         }
 
@@ -111,13 +109,14 @@ private actor HelperFolderAccessResolver {
         observer = token
     }
 
-    private func sendRequest() async {
+    private func sendRequest(mode: Mode) async {
         await MainActor.run {
             DistributedNotificationCenter.default().post(
                 name: .voyagerHelperFolderAccessRequest,
                 object: nil,
                 userInfo: [
                     HelperFolderAccessUserInfoKey.schemaVersion: 1,
+                    "mode": mode.rawValue,
                 ],
             )
         }

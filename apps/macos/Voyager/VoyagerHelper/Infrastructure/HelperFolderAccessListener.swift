@@ -22,17 +22,19 @@ final class HelperFolderAccessListener {
             forName: .voyagerHelperFolderAccessRequest,
             object: nil,
             queue: .main,
-        ) { [weak self] _ in
+        ) { [weak self] notification in
+            let mode = Self.parseMode(notification.userInfo) ?? .check
             Task { @MainActor in
-                self?.postCurrentFolderAccess()
+                self?.postCurrentFolderAccess(mode: mode)
             }
         }
         observer = token
     }
 
-    private func postCurrentFolderAccess() {
+    private func postCurrentFolderAccess(mode: HelperFolderAccessMode) {
         let payload: [String: Any] = [
             HelperFolderAccessUserInfoKey.schemaVersion: 1,
+            HelperFolderAccessUserInfoKey.mode: mode.rawValue,
             HelperFolderAccessUserInfoKey.desktop: folderAccess(for: .desktopDirectory).rawValue,
             HelperFolderAccessUserInfoKey.documents: folderAccess(for: .documentDirectory).rawValue,
             HelperFolderAccessUserInfoKey.downloads: folderAccess(for: .downloadsDirectory).rawValue,
@@ -61,5 +63,10 @@ final class HelperFolderAccessListener {
         } catch {
             return .notGranted
         }
+    }
+
+    private nonisolated static func parseMode(_ userInfo: [AnyHashable: Any]?) -> HelperFolderAccessMode? {
+        guard let raw = userInfo?[HelperFolderAccessUserInfoKey.mode] as? String else { return nil }
+        return HelperFolderAccessMode(rawValue: raw)
     }
 }
