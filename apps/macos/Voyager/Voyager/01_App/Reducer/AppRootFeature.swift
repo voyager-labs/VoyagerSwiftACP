@@ -25,7 +25,6 @@ struct AppRootFeature {
 
     private enum CancelID {
         static let helperExternalFileBridge = "helperExternalFileBridge"
-        static let helperWatchRootsRegistration = "helperWatchRootsRegistration"
     }
 
     var body: some Reducer<State, Action> {
@@ -54,9 +53,6 @@ struct AppRootFeature {
             switch action {
             case .lifecycle(.willFinishLaunching):
                 let helperExternalFileChangeClient = helperExternalFileChangeClient
-                let helperStateClient = helperStateClient
-                let onboardingWindowClient = onboardingWindowClient
-                let userDefaultsClient = userDefaultsClient
                 effect = .merge(
                     .send(.appPreferences(.load)),
                     .run { send in
@@ -65,26 +61,6 @@ struct AppRootFeature {
                         }
                     }
                     .cancellable(id: CancelID.helperExternalFileBridge, cancelInFlight: true),
-                    .run { _ in
-                        guard onboardingWindowClient.isRequired() == false else {
-                            return
-                        }
-
-                        for await helperState in helperStateClient.observe() {
-                            guard helperState.helperReady else { continue }
-
-                            let access = persistedHelperFolderAccess(userDefaultsClient: userDefaultsClient)
-                                ?? FolderAccessResult(
-                                    desktop: .notGranted,
-                                    documents: .notGranted,
-                                    downloads: .notGranted,
-                                )
-                            let watchRoots = helperGrantedWatchRoots(from: access)
-                            await helperExternalFileChangeClient.updateWatchRoots(watchRoots)
-                            break
-                        }
-                    }
-                    .cancellable(id: CancelID.helperWatchRootsRegistration, cancelInFlight: true),
                 )
 
             case let .lifecycle(.delegate(delegateAction)):
@@ -99,10 +75,7 @@ struct AppRootFeature {
             case .lifecycle:
                 switch action {
                 case .lifecycle(.willTerminate):
-                    effect = .merge(
-                        .cancel(id: CancelID.helperExternalFileBridge),
-                        .cancel(id: CancelID.helperWatchRootsRegistration),
-                    )
+                    effect = .cancel(id: CancelID.helperExternalFileBridge)
                 default:
                     effect = .none
                 }
@@ -140,6 +113,35 @@ struct AppRootFeature {
                     },
                 )
 
+            case .registerHelperWatchRootsIfNeeded:
+                let helperExternalFileChangeClient = helperExternalFileChangeClient
+                let helperStateClient = helperStateClient
+                let onboardingWindowClient = onboardingWindowClient
+                let helperFolderAccess = helperFolderAccessClient
+                let userDefaultsClient = userDefaultsClient
+                effect = .run { send in
+                    guard let helperState = await helperStateClient.resolve(), helperState.helperReady else {
+                        return
+                    }
+                    let access: FolderAccessResult
+                    if onboardingWindowClient.isRequired() == false,
+                       let persisted = persistedHelperFolderAccess(userDefaultsClient: userDefaultsClient),
+                       persisted.status == .granted
+                    {
+                        access = persisted
+                    } else {
+                        access = await helperFolderAccess.requestAccess()
+                        let data = try? JSONEncoder().encode(access)
+                        userDefaultsClient.setObject(data, SettingsKeys.helperFolderAccessSnapshot)
+                    }
+                    let watchRoots = helperGrantedWatchRoots(from: access)
+                    await helperExternalFileChangeClient.updateWatchRoots(watchRoots)
+                    await send(.registerHelperWatchRoots(watchRoots))
+                }
+
+            case .registerHelperWatchRoots:
+                effect = .none
+
             case let .appPreferences(.delegate(.updated(preferences))):
                 state.appPreferences = preferences
                 effect = .send(.windowManager(.applyAppPreferences(preferences)))
@@ -166,7 +168,10 @@ struct AppRootFeature {
                 switch action {
                 case .windowManager:
                     let hasWindowsAfterAction = !state.windowManager.windows.isEmpty
-                    effect = (!hadWindowsBeforeAction && hasWindowsAfterAction) ? .send(.flushPendingReplay) : .none
+                    effect = .merge(
+                        (!hadWindowsBeforeAction && hasWindowsAfterAction) ? .send(.flushPendingReplay) : .none,
+                        hasWindowsAfterAction ? .send(.registerHelperWatchRootsIfNeeded) : .none,
+                    )
                 default:
                     effect = .none
                 }

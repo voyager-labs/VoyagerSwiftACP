@@ -7,6 +7,8 @@ enum AppRootAction: CasePathable, Sendable {
     case lifecycle(AppLifecycleFeature.Action)
     case helperExternalFileChanged(HelperExternalFileChangeEvent)
     case flushPendingReplay
+    case registerHelperWatchRootsIfNeeded
+    case registerHelperWatchRoots([String])
     case appPreferences(AppPreferencesFeature.Action)
     case windowManager(WindowManagerFeature.Action)
     case updater(UpdaterFeature.Action)
