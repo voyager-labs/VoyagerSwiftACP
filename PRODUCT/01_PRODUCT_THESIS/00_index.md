@@ -6,7 +6,7 @@
 ## Map of Content
 
 - [Problem](01_problem.md)
-- [Target User & JTBD](target_user.md)
+- [Target User](02_target_user.md)
 - [Product Pillar](product_pilar.md)
 - [Non-Goals](non_goals.md)
 - [Core Flows](core_flow.md)
