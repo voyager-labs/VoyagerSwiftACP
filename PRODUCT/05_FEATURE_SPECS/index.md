@@ -27,6 +27,7 @@
 | `EVM` | `EVM-001` | Navigate Pages | `EVM-001-show_page_history` | [EVM-001-show_page_history](evm/EVM-001-navigate_pages/EVM-001-show_page_history.md) |
 | `EVM` | `EVM-001` | Navigate Pages | `EVM-001-go_to_enclosing_directory` | [EVM-001-go_to_enclosing_directory](evm/EVM-001-navigate_pages/EVM-001-go_to_enclosing_directory.md) |
 | `EVM` | `EVM-001` | Navigate Pages | `EVM-001-view_current_page_title` | [EVM-001-view_current_page_title](evm/EVM-001-navigate_pages/EVM-001-view_current_page_title.md) |
+| `EVM` | `EVM-001` | Navigate Pages | `EVM-001-reload_directory_page_on_external_change` | [EVM-001-reload_directory_page_on_external_change](evm/EVM-001-navigate_pages/EVM-001-reload_directory_page_on_external_change.md) |
 | `EVM` | `EVM-002` | Configure Entries View | `EVM-002-set_entries_view_as_list_table` | [EVM-002-set_entries_view_as_list_table](evm/EVM-002-configure_entries_view/EVM-002-set_entries_view_as_list_table.md) |
 | `EVM` | `EVM-002` | Configure Entries View | `EVM-002-set_entries_view_as_icon_grid` | [EVM-002-set_entries_view_as_icon_grid](evm/EVM-002-configure_entries_view/EVM-002-set_entries_view_as_icon_grid.md) |
 | `EVM` | `EVM-002` | Configure Entries View | `EVM-002-set_entries_view_as_column` | [EVM-002-set_entries_view_as_column](evm/EVM-002-configure_entries_view/EVM-002-set_entries_view_as_column.md) |
@@ -76,6 +77,8 @@
 | `EIX` | `EIX-001` | Index Entries | `EIX-001-run_initial_indexing` | [EIX-001-run_initial_indexing](eix/EIX-001-index_entries/EIX-001-run_initial_indexing.md) |
 | `EIX` | `EIX-001` | Index Entries | `EIX-001-index_new_entries` | [EIX-001-index_new_entries](eix/EIX-001-index_entries/EIX-001-index_new_entries.md) |
 | `EIX` | `EIX-001` | Index Entries | `EIX-001-update_index_for_changed_entries` | [EIX-001-update_index_for_changed_entries](eix/EIX-001-index_entries/EIX-001-update_index_for_changed_entries.md) |
+| `EIX` | `EIX-001` | Index Entries | `EIX-001-observe_external_file_system_changes` | [EIX-001-observe_external_file_system_changes](eix/EIX-001-index_entries/EIX-001-observe_external_file_system_changes.md) |
+| `EIX` | `EIX-001` | Index Entries | `EIX-001-bridge_external_file_system_changes_to_app` | [EIX-001-bridge_external_file_system_changes_to_app](eix/EIX-001-index_entries/EIX-001-bridge_external_file_system_changes_to_app.md) |
 | `EIX` | `EIX-001` | Index Entries | `EIX-001-reindex_all_entries` | [EIX-001-reindex_all_entries](eix/EIX-001-index_entries/EIX-001-reindex_all_entries.md) |
 | `EIX` | `EIX-002` | Monitor Indexing Status | `EIX-002-show_indexing_status` | [EIX-002-show_indexing_status](eix/EIX-002-monitor_indexing_status/EIX-002-show_indexing_status.md) |
 | `EIX` | `EIX-002` | Monitor Indexing Status | `EIX-002-pause_entry_indexing` | [EIX-002-pause_entry_indexing](eix/EIX-002-monitor_indexing_status/EIX-002-pause_entry_indexing.md) |
@@ -142,6 +145,8 @@
 | `RCL` | `RCL-003` | Retrieve Entries with Filters | `RCL-003-update_collection_results_on_filter_change` | [RCL-003-update_collection_results_on_filter_change](rcl/RCL-003-retrieve_entries_with_filters/RCL-003-update_collection_results_on_filter_change.md) |
 | `RCL` | `RCL-003` | Retrieve Entries with Filters | `RCL-003-apply_deterministic_filters` | [RCL-003-apply_deterministic_filters](rcl/RCL-003-retrieve_entries_with_filters/RCL-003-apply_deterministic_filters.md) |
 | `RCL` | `RCL-003` | Retrieve Entries with Filters | `RCL-003-refresh_collection_results` | [RCL-003-refresh_collection_results](rcl/RCL-003-retrieve_entries_with_filters/RCL-003-refresh_collection_results.md) |
+| `RCL` | `RCL-003` | Retrieve Entries with Filters | `RCL-003-invalidate_closed_collection_staleness_on_external_change` | [RCL-003-invalidate_closed_collection_staleness_on_external_change](rcl/RCL-003-retrieve_entries_with_filters/RCL-003-invalidate_closed_collection_staleness_on_external_change.md) |
+| `RCL` | `RCL-003` | Retrieve Entries with Filters | `RCL-003-mark_open_collection_as_stale_on_external_change` | [RCL-003-mark_open_collection_as_stale_on_external_change](rcl/RCL-003-retrieve_entries_with_filters/RCL-003-mark_open_collection_as_stale_on_external_change.md) |
 | `RCL` | `RCL-003` | Retrieve Entries with Filters | `RCL-003-evaluate_text_query_condition_lexically` | [RCL-003-evaluate_text_query_condition_lexically](rcl/RCL-003-retrieve_entries_with_filters/RCL-003-evaluate_text_query_condition_lexically.md) |
 | `RCL` | `RCL-003` | Retrieve Entries with Filters | `RCL-003-evaluate_text_query_condition_semantically` | [RCL-003-evaluate_text_query_condition_semantically](rcl/RCL-003-retrieve_entries_with_filters/RCL-003-evaluate_text_query_condition_semantically.md) |
 | `RCL` | `RCL-003` | Retrieve Entries with Filters | `RCL-003-combine_hybrid_scores` | [RCL-003-combine_hybrid_scores](rcl/RCL-003-retrieve_entries_with_filters/RCL-003-combine_hybrid_scores.md) |
