@@ -2,6 +2,11 @@ import Foundation
 
 @MainActor
 final class HelperFolderAccessListener {
+    private enum RequestMode: String {
+        case check
+        case request
+    }
+
     private enum AccessValue: String {
         case granted = "Granted"
         case notGranted = "Not Granted"
@@ -31,7 +36,7 @@ final class HelperFolderAccessListener {
         observer = token
     }
 
-    private func postCurrentFolderAccess(mode: HelperFolderAccessMode) {
+    private func postCurrentFolderAccess(mode: RequestMode) {
         let payload: [String: Any] = [
             HelperFolderAccessUserInfoKey.schemaVersion: 1,
             HelperFolderAccessUserInfoKey.mode: mode.rawValue,
@@ -65,8 +70,8 @@ final class HelperFolderAccessListener {
         }
     }
 
-    private nonisolated static func parseMode(_ userInfo: [AnyHashable: Any]?) -> HelperFolderAccessMode? {
+    private nonisolated static func parseMode(_ userInfo: [AnyHashable: Any]?) -> RequestMode? {
         guard let raw = userInfo?[HelperFolderAccessUserInfoKey.mode] as? String else { return nil }
-        return HelperFolderAccessMode(rawValue: raw)
+        return RequestMode(rawValue: raw)
     }
 }

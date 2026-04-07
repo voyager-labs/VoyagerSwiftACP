@@ -1,15 +1,6 @@
 import ComposableArchitecture
 import Foundation
-
-private enum HelperFolderAccessContract {
-    static let requestName = Notification.Name("voyagerHelperFolderAccessRequest")
-    static let responseName = Notification.Name("voyagerHelperFolderAccessDidUpdate")
-    static let schemaVersionKey = "schema_version"
-    static let desktopKey = "desktop"
-    static let documentsKey = "documents"
-    static let downloadsKey = "downloads"
-    static let modeKey = "mode"
-}
+import VoyagerShared
 
 public struct HelperFolderAccessClient: Sendable {
     public var checkAccess: @Sendable () async -> FolderAccessResult
@@ -125,8 +116,8 @@ private actor HelperFolderAccessResolver {
                 name: HelperFolderAccessContract.requestName,
                 object: nil,
                 userInfo: [
-                    HelperFolderAccessContract.schemaVersionKey: 1,
-                    HelperFolderAccessContract.modeKey: mode.rawValue,
+                    HelperFolderAccessUserInfoKey.schemaVersion: 1,
+                    HelperFolderAccessUserInfoKey.mode: mode.rawValue,
                 ],
             )
         }
@@ -157,14 +148,14 @@ private actor HelperFolderAccessResolver {
     private nonisolated static func parseResult(from userInfo: [AnyHashable: Any]?) -> FolderAccessResult? {
         guard let userInfo else { return nil }
 
-        if let schemaVersion = parseInt(userInfo[HelperFolderAccessContract.schemaVersionKey]), schemaVersion != 1 {
+        if let schemaVersion = parseInt(userInfo[HelperFolderAccessUserInfoKey.schemaVersion]), schemaVersion != 1 {
             return nil
         }
 
         guard
-            let desktop = parsePermission(userInfo[HelperFolderAccessContract.desktopKey]),
-            let documents = parsePermission(userInfo[HelperFolderAccessContract.documentsKey]),
-            let downloads = parsePermission(userInfo[HelperFolderAccessContract.downloadsKey])
+            let desktop = parsePermission(userInfo[HelperFolderAccessUserInfoKey.desktop]),
+            let documents = parsePermission(userInfo[HelperFolderAccessUserInfoKey.documents]),
+            let downloads = parsePermission(userInfo[HelperFolderAccessUserInfoKey.downloads])
         else {
             return nil
         }
