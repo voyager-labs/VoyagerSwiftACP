@@ -141,6 +141,7 @@ struct ComposerSearchLifecycleReducer {
                     state.isFilteringInFlight = false
                     state.activeFiltersRequestID = nil
                     state.filtersStartedAt = nil
+                    applyQueryPhaseTransition(.reset, state: &state)
                     let feedbackEffect = presentTransientFeedback(
                         kind: .error,
                         message: feedbackFailureMessage(for: error),
@@ -234,6 +235,7 @@ private func handleCancelFilters(state: inout ComposerFeature.State) -> Effect<C
     state.isLoadingFilters = false
     state.isFilteringInFlight = false
     state.activeFiltersRequestID = nil
+    applyQueryPhaseTransition(.reset, state: &state)
     VoyagerSentryMetricLogger.logMetric(
         "voyager_search_cancel",
         value: 1,
