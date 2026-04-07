@@ -2,7 +2,7 @@ import Foundation
 
 enum ComposerQueryFeedbackPolicy {
     static let conversionFailureMessage = "Couldn't interpret that query. Try being more specific."
-    static let executionFailureMessage = "Search couldn't be completed. Check Helper/Gateway and try again."
+    static let executionFailureMessage = "Couldn't complete that search. Please try again."
 
     static func failureMessage(for error: any Error) -> String {
         let code = parseErrorCode(from: error.localizedDescription)

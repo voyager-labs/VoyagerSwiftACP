@@ -39,6 +39,10 @@ final class ComposerQueryFeedbackPolicyTests: XCTestCase {
             ComposerQueryFeedbackPolicy.failureMessage(for: MockLocalizedError("HELPER_UNAVAILABLE: xpc disconnected")),
             ComposerQueryFeedbackPolicy.executionFailureMessage,
         )
+        XCTAssertEqual(
+            ComposerQueryFeedbackPolicy.executionFailureMessage,
+            "Couldn't complete that search. Please try again.",
+        )
     }
 }
 
