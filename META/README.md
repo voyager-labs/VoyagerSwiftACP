@@ -19,3 +19,4 @@
 - TSV 규칙: `META/tsv_rules.md`
 - 스키마 포맷(확장): `META/schema_format.md`
 - 네이밍 규칙: `META/naming_convention.md`
+- FEATURE_SPECS 작성 규칙: `META/feature_specs_writing.md`
