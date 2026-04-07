@@ -6,9 +6,9 @@
 - 기대 효과:
 
 ## 2) 관련 스펙 링크
-- IA: `03_INFORMATION_ARCHITECTURE/index.md` - {section}
-- Feature Inventory: `04_FEATURE_INVENTORY/index.md` - {feature_id / interaction_id}
-- Use Cases: `06_USE_CASES/index.md` - {use_case_id}
+- IA: `PRODUCT/03_INFORMATION_ARCHITECTURE/index.md` - {section}
+- Feature Inventory: `PRODUCT/04_FEATURE_INVENTORY/index.md` - {feature_id / interaction_id}
+- Use Cases: `PRODUCT/06_USE_CASES/index.md` - {use_case_id}
 - 기타 참고: {link}
 
 ## 3) 구현 범위

@@ -22,8 +22,8 @@ from dataclasses import dataclass
 from pathlib import Path
 
 
-FEATURES_TSV = Path("04_FEATURE_INVENTORY/FEATURES/data.tsv")
-INTERACTIONS_TSV = Path("04_FEATURE_INVENTORY/INTERACTIONS/data.tsv")
+FEATURES_TSV = Path("PRODUCT/04_FEATURE_INVENTORY/FEATURES/data.tsv")
+INTERACTIONS_TSV = Path("PRODUCT/04_FEATURE_INVENTORY/INTERACTIONS/data.tsv")
 
 
 def find_repo_root(start: Path) -> Path:

@@ -1,6 +1,56 @@
 .agents/skills/.venvs/
 .ruff_cache/
 
+# Editors / IDEs
+.idea/
+.vscode/
+*.code-workspace
+*.swp
+*.swo
+*~
+
+# Logs / temp
+*.log
+*.tmp
+*.temp
+.cache/
+
+# Local env / secrets
+.env
+.env.*
+!.env.example
+!.env.sample
+
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+.mypy_cache/
+.pytest_cache/
+.pytype/
+.hypothesis/
+.coverage
+.coverage.*
+htmlcov/
+.venv/
+venv/
+env/
+
+# JavaScript / Node
+node_modules/
+.npm/
+.pnpm-store/
+.yarn/
+
+# Archives
+*.zip
+*.tar
+*.gz
+*.tgz
+*.bz2
+*.7z
+
 # macOS
 .DS_Store
 .AppleDouble
