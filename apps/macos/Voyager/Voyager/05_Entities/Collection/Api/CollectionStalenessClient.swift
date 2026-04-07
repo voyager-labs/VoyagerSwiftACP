@@ -28,13 +28,7 @@ extension CollectionStalenessClient: DependencyKey {
             let normalizedChangedPaths = changedPaths.map(normalizePath)
 
             for (collectionPath, record) in records {
-                let isRelevant = normalizedChangedPaths.contains { changedPath in
-                    record.scopes.contains { scope in
-                        if changedPath == scope { return true }
-                        let prefix = scope == "/" ? "/" : scope + "/"
-                        return changedPath.hasPrefix(prefix)
-                    }
-                }
+                let isRelevant = collectionChangeIsRelevant(changedPaths: normalizedChangedPaths, scopes: record.scopes)
 
                 if isRelevant {
                     records[collectionPath] = .init(scopes: record.scopes, isInvalidated: true)

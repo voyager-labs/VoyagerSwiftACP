@@ -263,27 +263,7 @@ struct FileManagerContentFeature {
         guard let context = state.collectionContext else {
             return true
         }
-
-        let scopePaths = context.scopes.compactMap { scope -> String? in
-            guard !scope.isEmpty, scope.hasPrefix("/") else { return nil }
-            return URL(fileURLWithPath: scope).standardizedFileURL.path
-        }
-
-        guard !scopePaths.isEmpty else {
-            return true
-        }
-
-        return paths.contains { changedPath in
-            let normalizedPath = URL(fileURLWithPath: changedPath).standardizedFileURL.path
-            return scopePaths.contains { scopePath in
-                if normalizedPath == scopePath {
-                    return true
-                }
-
-                let scopePrefix = scopePath == "/" ? "/" : scopePath + "/"
-                return normalizedPath.hasPrefix(scopePrefix)
-            }
-        }
+        return collectionChangeIsRelevant(changedPaths: paths, scopes: context.scopes)
     }
 
     private func handleEntryThumbnailAction(
