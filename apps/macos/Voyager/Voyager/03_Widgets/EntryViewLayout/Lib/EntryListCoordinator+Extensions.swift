@@ -131,47 +131,19 @@ extension EntryListCoordinator: NSOutlineViewDelegate {
     func outlineView(_ outlineView: NSOutlineView, viewFor tableColumn: NSTableColumn?, item: Any) -> NSView? {
         guard let outlineItem = item as? OutlineItem else { return nil }
 
-        let columnId = tableColumn?.identifier.rawValue ?? "unknown"
-
         switch outlineItem.kind {
         case let .group(title, colorCode, _):
-            if columnId == EntryListColumn.name.rawValue {
-                return makeGroupHeaderCell(
-                    outlineView: outlineView,
-                    columnId: columnId,
-                    title: title,
-                    colorCode: colorCode,
-                )
-            }
-            return makeGroupEmptyCell(outlineView: outlineView, columnId: columnId)
+            return makeGroupRowView(
+                outlineView: outlineView,
+                tableColumn: tableColumn,
+                title: title,
+                colorCode: colorCode,
+            )
         case let .entry(entry):
+            let resolvedTableColumn = tableColumn ?? outlineView.outlineTableColumn
+            let columnId = resolvedTableColumn?.identifier.rawValue ?? EntryListColumn.name.rawValue
             return makeEntryCell(outlineView: outlineView, columnId: columnId, entry: entry)
         }
-    }
-
-    private func makeGroupHeaderCell(
-        outlineView: NSOutlineView,
-        columnId: String,
-        title: String,
-        colorCode: Int?,
-    ) -> EntryListGroupHeaderCellView {
-        let headerIdentifier = NSUserInterfaceItemIdentifier("group-header-cell-\(columnId)")
-        let header = (outlineView.makeView(
-            withIdentifier: headerIdentifier,
-            owner: self,
-        ) as? EntryListGroupHeaderCellView)
-            ?? EntryListGroupHeaderCellView()
-        header.identifier = headerIdentifier
-        header.configure(title: title, colorCode: colorCode)
-        return header
-    }
-
-    private func makeGroupEmptyCell(outlineView: NSOutlineView, columnId: String) -> EntryListEmptyCellView {
-        let emptyIdentifier = NSUserInterfaceItemIdentifier("group-empty-cell-\(columnId)")
-        let emptyCell = (outlineView.makeView(withIdentifier: emptyIdentifier, owner: self) as? EntryListEmptyCellView)
-            ?? EntryListEmptyCellView()
-        emptyCell.identifier = emptyIdentifier
-        return emptyCell
     }
 
     private func makeEntryCell(
