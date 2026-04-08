@@ -186,7 +186,10 @@ final class EntryListView: NSView {
         tableColumn.resizingMask = [.userResizingMask, .autoresizingMask]
 
         if let sortDescriptorKey = column.sortDescriptorKey {
-            tableColumn.sortDescriptorPrototype = NSSortDescriptor(key: sortDescriptorKey, ascending: true)
+            tableColumn.sortDescriptorPrototype = NSSortDescriptor(
+                key: sortDescriptorKey,
+                ascending: column.defaultSortAscending,
+            )
         } else {
             tableColumn.sortDescriptorPrototype = nil
         }

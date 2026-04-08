@@ -18,30 +18,6 @@ extension EntryListCoordinator {
         headerView.send = { [weak self] action in
             self?.store.send(action)
         }
-        headerView.onSortClick = { [weak self] column in
-            self?.handleHeaderSortClick(column)
-        }
-    }
-
-    func handleHeaderSortClick(_ column: EntryListColumn) {
-        guard let sortKey = column.sortKey else { return }
-
-        if state.entryArrangements.sortKey == sortKey {
-            let next: SortOrder = state.entryArrangements.sortOrder == .ascending ? .descending : .ascending
-            if next != state.entryArrangements.sortOrder { sendEntryArrangements(.setSortOrder(next)) }
-        } else {
-            sendEntryArrangements(.setSortKey(sortKey))
-            sendEntryArrangements(.setSortOrder(defaultSortOrder(for: sortKey)))
-        }
-    }
-
-    func defaultSortOrder(for key: SortKey) -> SortOrder {
-        switch key {
-        case .dateModified, .dateCreated, .dateAdded, .dateLastOpened:
-            .descending
-        case .name, .kind, .application, .size, .tags:
-            .ascending
-        }
     }
 
     func syncVisibleColumnsFromTableView() {

@@ -86,6 +86,15 @@ enum EntryListColumn: String, CaseIterable, Equatable, Sendable {
         return rawValue
     }
 
+    var defaultSortAscending: Bool {
+        switch self {
+        case .dateModified:
+            false
+        case .name, .size, .kind:
+            true
+        }
+    }
+
     static func normalizeVisibleColumns(_ columns: [EntryListColumn]) -> [EntryListColumn] {
         var normalized: [EntryListColumn] = []
         normalized.reserveCapacity(columns.count)
