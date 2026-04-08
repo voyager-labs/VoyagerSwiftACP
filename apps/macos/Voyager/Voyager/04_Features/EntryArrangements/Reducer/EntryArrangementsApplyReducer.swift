@@ -109,6 +109,15 @@ private extension EntryArrangementsApplyReducer {
         return groupItemsByKey(items, groupKey: groupKey, now: now)
     }
 
+    func resolveTagColorCode(tagName: String, items: [EntryModel]) -> Int? {
+        for item in items {
+            if let colorCode = item.facets.tags?.first(where: { $0.name == tagName })?.colorCode {
+                return colorCode
+            }
+        }
+        return nil
+    }
+
     func groupItemsByKey(
         _ items: [EntryModel],
         groupKey: GroupKey,
@@ -359,6 +368,7 @@ private extension EntryArrangementsApplyReducer {
                         groupName: tagName,
                         items: taggedItems
                             .sorted { $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending },
+                        colorCode: firstTag.colorCode,
                     ))
                     processedTags.insert(tagName)
                 }
@@ -372,6 +382,7 @@ private extension EntryArrangementsApplyReducer {
                 result.append(GroupedItems(
                     groupName: tagName,
                     items: taggedItems.sorted { $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending },
+                    colorCode: resolveTagColorCode(tagName: tagName, items: taggedItems),
                 ))
             }
         }
