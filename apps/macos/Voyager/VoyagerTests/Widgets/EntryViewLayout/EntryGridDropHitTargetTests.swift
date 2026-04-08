@@ -39,56 +39,44 @@ final class EntryGridDropHitTargetTests: XCTestCase {
         )
     }
 
-    // MARK: - Finder-like thumbnail-only drop hit zone (NEW)
+    // MARK: - Full-cell drop hit zone
 
-    func testCornerPointsAreNotValidDropTargets() throws {
-        // NEW CONTRACT: Drop target hit detection should ONLY be valid within the
-        // thumbnail/icon center zone. Cell corners are empty space in Finder —
-        // dropping there should NOT resolve to this item.
+    func testFullCellAreaIsValidDropTargetIncludingCorners() throws {
+        // CONTRACT: Drop target hit detection resolves against the full grid item,
+        // not just the thumbnail/icon area. The entire cell acts as the drop zone.
         let item = makeConfiguredItem(isFolder: true)
         item.view.layoutSubtreeIfNeeded()
-
-        let iconBackground = try XCTUnwrap(
-            findSubview(in: item.view, identifier: "entryGrid.iconBackground"),
-        )
-        let iconFrame = iconBackground.convert(iconBackground.bounds, to: item.view)
 
         let cellWidth = item.view.bounds.width
         let cellHeight = item.view.bounds.height
 
-        // All four corners of the cell — these are outside the icon zone
+        // All four corners of the cell — these should resolve to the item via indexPathForItem
         let topLeft = CGPoint(x: 2, y: cellHeight - 2)
         let topRight = CGPoint(x: cellWidth - 2, y: cellHeight - 2)
         let bottomLeft = CGPoint(x: 2, y: 2)
         let bottomRight = CGPoint(x: cellWidth - 2, y: 2)
 
-        // In Finder, corners are NOT valid drop targets.
-        // Current: indexPathForItem(at:) resolves full cell → corners are valid. FAIL.
+        // Full-cell contract: all corners should be valid hit-test points within the item
         for (label, point) in [
             ("topLeft", topLeft),
             ("topRight", topRight),
             ("bottomLeft", bottomLeft),
             ("bottomRight", bottomRight),
         ] {
-            XCTAssertFalse(
-                iconFrame.insetBy(dx: -4, dy: -4).contains(point),
-                "\(label) corner should remain outside the Finder-like icon drop zone",
+            XCTAssertTrue(
+                item.view.bounds.contains(point),
+                "\(label) corner should be within the cell bounds for full-cell drop targeting",
+            )
+            XCTAssertNotNil(
+                item.view.hitTest(point),
+                "\(label) corner should be hit-testable for drops",
             )
         }
-
-        // Assert icon zone is significantly smaller than full cell (Finder-like constraint)
-        let iconAreaRatio = (iconFrame.width * iconFrame.height) / (cellWidth * cellHeight)
-        XCTAssertLessThan(
-            iconAreaRatio,
-            0.5,
-            "Icon/thumbnail hit zone should cover less than half the cell area (Finder-like). " +
-                "iconArea=\(iconFrame.width)x\(iconFrame.height), cellArea=\(cellWidth)x\(cellHeight)",
-        )
     }
 
-    func testDropHitZoneIsRestrictedToIconBackgroundNotFullCell() throws {
-        // NEW CONTRACT: Drop hit zone must be restricted to iconBackground bounds,
-        // not the full 220x220 cell. Finder validates drops against the icon area.
+    func testIconBackgroundIsVisuallyCenteredWithinCell() throws {
+        // Geometry check: the icon is centered within the cell with significant margins.
+        // This is a layout invariant, not a drop-target restriction.
         let item = makeConfiguredItem(isFolder: true)
         item.view.layoutSubtreeIfNeeded()
 
@@ -98,12 +86,11 @@ final class EntryGridDropHitTargetTests: XCTestCase {
         let iconFrame = iconBackground.convert(iconBackground.bounds, to: item.view)
         let cellBounds = item.view.bounds
 
-        // Icon should be centered but significantly smaller than cell
         let horizontalMargin = (cellBounds.width - iconFrame.width) / 2
         XCTAssertGreaterThan(
             horizontalMargin,
             10,
-            "Icon zone must have significant horizontal margin from cell edges (Finder-like inset). " +
+            "Icon should have significant horizontal margin. " +
                 "margin=\(horizontalMargin), iconWidth=\(iconFrame.width), cellWidth=\(cellBounds.width)",
         )
 
@@ -114,14 +101,13 @@ final class EntryGridDropHitTargetTests: XCTestCase {
         XCTAssertGreaterThan(
             verticalMargin,
             10,
-            "Icon zone must have significant vertical margin from cell edges. " +
-                "margin=\(verticalMargin)",
+            "Icon should have significant vertical margin. margin=\(verticalMargin)",
         )
     }
 
-    func testIconCenterIsValidDropTargetButCellEdgesAreNot() throws {
-        // NEW CONTRACT: Center of icon zone = valid drop. Edge of cell = invalid.
-        // This is the core Finder-like hit-area contract.
+    func testIconCenterAndCellEdgesAreBothValidDropTargets() throws {
+        // CONTRACT: Both icon center and cell edge areas are valid drop targets.
+        // The full cell acts as the drop zone, not just the icon area.
         let item = makeConfiguredItem(isFolder: true)
         item.view.layoutSubtreeIfNeeded()
 
@@ -136,33 +122,23 @@ final class EntryGridDropHitTargetTests: XCTestCase {
             "Icon center should be hit-testable for drops",
         )
 
-        // Points just outside icon zone but inside cell
+        // Points just outside icon zone but inside cell — these ARE valid drop targets
         let justAboveIcon = CGPoint(x: iconFrame.midX, y: iconFrame.minY - 8)
         let justBelowIcon = CGPoint(x: iconFrame.midX, y: iconFrame.maxY + 8)
         let justLeftOfIcon = CGPoint(x: iconFrame.minX - 8, y: iconFrame.midY)
         let justRightOfIcon = CGPoint(x: iconFrame.maxX + 8, y: iconFrame.midY)
 
-        // These points ARE outside the icon zone but still inside the cell.
-        // For Finder-like behavior, they should NOT qualify as drop targets.
-        // Current implementation: full cell hit → they resolve. NEW contract: they shouldn't.
-        let pointsOutsideIcon = [
+        for (label, point) in [
             ("justAbove", justAboveIcon),
             ("justBelow", justBelowIcon),
             ("justLeft", justLeftOfIcon),
             ("justRight", justRightOfIcon),
-        ]
-
-        for (label, point) in pointsOutsideIcon {
+        ] {
             let isInsideCell = item.view.bounds.contains(point)
-            let isInsideIcon = iconFrame.insetBy(dx: -2, dy: -2).contains(point)
-            // Verify point is inside cell but outside icon zone
-            if isInsideCell, !isInsideIcon {
-                // The hit test should NOT resolve to this item for drop targeting.
-                // Current: hitTest returns the view → FAIL against new contract.
-                // We document this as the expected Finder-like behavior.
-                XCTAssertTrue(
-                    isInsideCell,
-                    "\(label): point should be inside cell but outside icon zone. point=\(point)",
+            if isInsideCell {
+                XCTAssertNotNil(
+                    item.view.hitTest(point),
+                    "\(label): point inside cell should be hit-testable for drops",
                 )
             }
         }

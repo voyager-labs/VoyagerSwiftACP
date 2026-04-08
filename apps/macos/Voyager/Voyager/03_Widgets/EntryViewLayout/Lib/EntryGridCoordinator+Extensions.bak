@@ -375,12 +375,11 @@ extension EntryGridCoordinator: NSCollectionViewDelegate, NSCollectionViewDelega
         let indexPath = hoverIndexPath ?? (proposedDropIndexPath.pointee as IndexPath)
         var destinationPath = state.currentPath
         var targetEntryId: EntryModel.ID?
-        if let entry = entry(at: indexPath),
-           entry.isFolder,
-           !entryLoadingClient.isPackageDirectory(URL(fileURLWithPath: entry.fullPath))
-        {
-            destinationPath = entry.fullPath
-            targetEntryId = entry.id
+        let entry = entry(at: indexPath)
+        let isFolder = entry?.isFolder ?? false
+        if isFolder, let folderEntry = entry {
+            destinationPath = folderEntry.fullPath
+            targetEntryId = folderEntry.id
             proposedDropOperation.pointee = .on
         } else {
             proposedDropOperation.pointee = .before
@@ -408,10 +407,12 @@ extension EntryGridCoordinator: NSCollectionViewDelegate, NSCollectionViewDelega
     func collectionView(
         _: NSCollectionView,
         acceptDrop draggingInfo: NSDraggingInfo,
-        indexPath _: IndexPath,
+        indexPath: IndexPath,
         dropOperation _: NSCollectionView.DropOperation,
     ) -> Bool {
-        let destinationPath = validatedDropDestinationPath ?? state.currentPath
+        let destinationPath = validatedDropDestinationPath
+            ?? (entry(at: indexPath).flatMap { $0.isFolder ? $0.fullPath : nil })
+            ?? state.currentPath
         var internalPaths = entryFileOpsClient.loadDragPaths()
         if internalPaths.isEmpty,
            let source = draggingInfo.draggingSource,

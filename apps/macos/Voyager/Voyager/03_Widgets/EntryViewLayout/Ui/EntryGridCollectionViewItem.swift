@@ -142,6 +142,7 @@ final class EntryGridCollectionViewItem: NSCollectionViewItem {
         iconBackgroundView.translatesAutoresizingMaskIntoConstraints = false
 
         iconView.translatesAutoresizingMaskIntoConstraints = false
+        iconView.unregisterDraggedTypes()
         iconBackgroundView.addSubview(iconView)
 
         tagStackView.orientation = .horizontal

@@ -320,6 +320,7 @@ final class EntryGridSelectionHighlightLayoutTests: XCTestCase {
     }
 }
 
+@MainActor
 private func makeEntryGridSelectionTestItem(
     name: String = "Test File",
     tags: [Tag]? = nil,

@@ -41,6 +41,7 @@ final class EntryGridCoordinator: NSObject {
     var lastRenamingItemId: EntryModel.ID?
     var hasRestoredScrollPosition = false
     var dropTargetEntryId: EntryModel.ID?
+    var validatedDropDestinationPath: String?
     var contextMenuAnchor: CGPoint?
     var lastLassoSelectedIds: Set<EntryModel.ID> = []
     var contextMenuCoordinator: EntryContextMenuCoordinator?
@@ -136,8 +137,8 @@ final class EntryGridCoordinator: NSObject {
     func rebuildSectionsAndReload() {
         sections = makeSections(state: state)
         indexPathByEntryId = [:]
-        let hadDropTarget = dropTargetEntryId != nil || state.isDropTargeted
-        dropTargetEntryId = nil
+        let hadDropTarget = dropTargetEntryId != nil || validatedDropDestinationPath != nil || state.isDropTargeted
+        clearDropTargetState()
         if hadDropTarget {
             updateDropTargetBorder(isTargeted: false)
             if state.isDropTargeted {
@@ -317,6 +318,41 @@ extension EntryGridCoordinator {
         if !indexPathsToReload.isEmpty {
             collectionView.reloadItems(at: indexPathsToReload)
         }
+    }
+
+    func clearDropTargetState() {
+        setDropTargetEntryId(nil)
+        validatedDropDestinationPath = nil
+    }
+
+    func indexPathForVisibleItem(containing point: NSPoint) -> IndexPath? {
+        for indexPath in collectionView.indexPathsForVisibleItems() {
+            guard let item = collectionView.item(at: indexPath) else { continue }
+            if item.view.frame.contains(point) {
+                return indexPath
+            }
+        }
+        return nil
+    }
+
+    /// Stabilizes the drop target across subview boundaries within the same entry tile.
+    ///
+    /// Once a drag is resolved to an entry, the whole tile acts as the drop target
+    /// regardless of which subview (thumbnail, icon background, name) the point lands on.
+    /// If the current point is still within the established target's frame, keep it;
+    /// otherwise fall through to the fresh point-resolution result.
+    func resolvedEntryTargetIndexPath(
+        pointResolved: IndexPath?,
+        localPoint: NSPoint,
+    ) -> IndexPath? {
+        guard let currentId = dropTargetEntryId,
+              let currentIndexPath = indexPathByEntryId[currentId],
+              let item = collectionView.item(at: currentIndexPath),
+              item.view.frame.contains(localPoint)
+        else {
+            return pointResolved
+        }
+        return currentIndexPath
     }
 
     func entry(at indexPath: IndexPath?) -> EntryModel? {
