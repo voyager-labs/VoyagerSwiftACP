@@ -2,25 +2,26 @@
 
 ## Metadata
 
-| Field | Value |
-| --- | --- |
-| Interaction ID | CDA-002-build_ask_context_from_request |
-| Interaction Type | background |
-| Feature | Handle Ask Intent |
-| Category Key | CDA |
-| Feature ID | CDA-002 |
-| Status | 기획 완료 |
-| Summary | Organize Intent Chunk 내용과 이전 컨텍스트를 기반으로, 질의 응답에 참고할 컨텍스트를 구성 |
-| Related Region | - |
-| Menu | - |
-| Shortcut | - |
+| Field            | Value                                                                                     |
+| ---------------- | ----------------------------------------------------------------------------------------- |
+| Interaction ID   | CDA-002-build_ask_context_from_request                                                    |
+| Interaction Type | background                                                                                |
+| Feature          | Handle Ask Intent                                                                         |
+| Category Key     | CDA                                                                                       |
+| Feature ID       | CDA-002                                                                                   |
+| Status           | 기획 완료                                                                                 |
+| Summary          | Organize Intent Chunk 내용과 이전 컨텍스트를 기반으로, 질의 응답에 참고할 컨텍스트를 구성 |
+| Related Region   | -                                                                                         |
+| Menu             | -                                                                                         |
+| Shortcut         | -                                                                                         |
 
 ## Preconditions
 
 - Ask Intent로 분류된 Chunk가 하나 이상 존재하는 상태
+
 ## Edge Cases
 
-- -
+-   -
 
 ## Acceptance Criteria
 

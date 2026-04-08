@@ -2,18 +2,18 @@
 
 ## Metadata
 
-| Field | Value |
-| --- | --- |
-| Interaction ID | SET-007-reset_provider_api_key |
-| Interaction Type | command |
-| Feature | Manage AI Connections |
-| Category Key | SET |
-| Feature ID | SET-007 |
-| Status | 드래프트 |
-| Summary | <<AI>> 저장된 API key를 제거하고 미연결 상태로 되돌려 사용자가 새 key를 다시 입력할 수 있게 한다. |
-| Related Region | settings_window.settings_body.tab_ai.provider_connection_area |
-| Menu | - |
-| Shortcut | - |
+| Field            | Value                                                                                             |
+| ---------------- | ------------------------------------------------------------------------------------------------- |
+| Interaction ID   | SET-007-reset_provider_api_key                                                                    |
+| Interaction Type | command                                                                                           |
+| Feature          | Manage AI Connections                                                                             |
+| Category Key     | SET                                                                                               |
+| Feature ID       | SET-007                                                                                           |
+| Status           | 드래프트                                                                                          |
+| Summary          | <<AI>> 저장된 API key를 제거하고 미연결 상태로 되돌려 사용자가 새 key를 다시 입력할 수 있게 한다. |
+| Related Region   | settings_window.settings_body.tab_ai.provider_connection_area                                     |
+| Menu             | -                                                                                                 |
+| Shortcut         | -                                                                                                 |
 
 ## Intent
 
@@ -55,14 +55,18 @@
 - 저장된 키가 없는 상태에서 초기화를 수행하면 실패로 처리하지 않고 이미 미연결 상태임을 안내한다.
 - 영속 저장소 삭제가 일시적으로 실패하면 사용자에게 재시도 안내와 상태 보류 메시지를 표시한다.
 - 인증중인 상태에서 초기화를 요청하면, 진행 취소 후 초기화 여부를 사용자 확인 후 반영해야 한다.
-- 다중 창/다중 탭에서 동시 초기화가 발생하면 마지막 이벤트 기준으로 일관성 있게 상태를 정합성 처리한다.
+- 다중 창/다중 탭에서 동시 초기화가 발생하면 마지막 이벤트 기준으로 일관성 있게 상태를 정합성
+  처리한다.
 
 ## Acceptance Criteria
 
-- [ ] API key provider를 선택한 상태에서 `초기화` 액션을 호출하면, 기존 키가 제거되고 상태가 `미연결`로 바뀌어야 한다.
-- [ ] 키가 존재하지 않는 상태에서 초기화를 호출한 경우, 실패를 내지 않고 이미 초기화된 상태를 유지해야 한다.
+- [ ] API key provider를 선택한 상태에서 `초기화` 액션을 호출하면, 기존 키가 제거되고 상태가
+      `미연결`로 바뀌어야 한다.
+- [ ] 키가 존재하지 않는 상태에서 초기화를 호출한 경우, 실패를 내지 않고 이미 초기화된 상태를
+      유지해야 한다.
 - [ ] 키 초기화 성공 후 사용자에게 새 key 입력이 가능한 상태로 UI가 전환되어야 한다.
-- [ ] 저장소 삭제 실패와 같은 예외가 발생한 경우, 사용자에게 실패 이유와 재시도 동선을 안내해야 한다.
+- [ ] 저장소 삭제 실패와 같은 예외가 발생한 경우, 사용자에게 실패 이유와 재시도 동선을 안내해야
+      한다.
 - [ ] 초기화가 완료되지 않았을 때는 오탐으로 인해 이전 키가 재노출되지 않아야 한다.
 
 ## Permissions / Dependencies

@@ -19,13 +19,7 @@
       "name": "menu_type",
       "type": "string",
       "required": false,
-      "enum": [
-        "menu_bar",
-        "main_menu",
-        "context_menu",
-        "submenu",
-        "section"
-      ],
+      "enum": ["menu_bar", "main_menu", "context_menu", "submenu", "section"],
       "description": "메뉴 타입."
     },
     {

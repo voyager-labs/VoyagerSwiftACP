@@ -2,18 +2,18 @@
 
 ## Metadata
 
-| Field | Value |
-| --- | --- |
-| Interaction ID | RCL-002-open_saved_collection |
-| Interaction Type | command |
-| Feature | Manage Retrieval Collections |
-| Category Key | RCL |
-| Feature ID | RCL-002 |
-| Status | 기획 완료 |
-| Summary | 저장된 콜렉션을 열고, usable snapshot이 있으면 snapshot-first 복원을 시작하고 그렇지 않으면 definition-first search fallback으로 전환 |
-| Related Region | file_manager_window.content_pane.page_container.page_mode_collection |
-| Menu | - |
-| Shortcut | - |
+| Field            | Value                                                                                                                                 |
+| ---------------- | ------------------------------------------------------------------------------------------------------------------------------------- |
+| Interaction ID   | RCL-002-open_saved_collection                                                                                                         |
+| Interaction Type | command                                                                                                                               |
+| Feature          | Manage Retrieval Collections                                                                                                          |
+| Category Key     | RCL                                                                                                                                   |
+| Feature ID       | RCL-002                                                                                                                               |
+| Status           | 기획 완료                                                                                                                             |
+| Summary          | 저장된 콜렉션을 열고, usable snapshot이 있으면 snapshot-first 복원을 시작하고 그렇지 않으면 definition-first search fallback으로 전환 |
+| Related Region   | file_manager_window.content_pane.page_container.page_mode_collection                                                                  |
+| Menu             | -                                                                                                                                     |
+| Shortcut         | -                                                                                                                                     |
 
 ## Preconditions
 
@@ -29,11 +29,15 @@
 
 ## Acceptance Criteria
 
-- [ ] 사용자가 저장된 콜렉션을 열면, 시스템은 해당 콜렉션 페이지를 열고 snapshot-first 복원 흐름을 시작함
-- [ ] usable snapshot이 있으면, 시스템은 다시 열 때마다 즉시 재검색하지 않고 저장된 결과를 먼저 보여주는 흐름을 우선 적용함
+- [ ] 사용자가 저장된 콜렉션을 열면, 시스템은 해당 콜렉션 페이지를 열고 snapshot-first 복원 흐름을
+      시작함
+- [ ] usable snapshot이 있으면, 시스템은 다시 열 때마다 즉시 재검색하지 않고 저장된 결과를 먼저
+      보여주는 흐름을 우선 적용함
 - [ ] usable snapshot이 없다면, 시스템은 정의 기반 검색 fallback으로 전환해 콜렉션을 열 수 있게 함
-- [ ] snapshot 또는 snapshot metadata가 없거나 usable하지 않은 경우만으로 open을 실패로 처리하지 않으며, 가능한 경우 definition-first fallback으로 계속 진행함
-- [ ] 콜렉션 파일 자체가 손상되었거나 정의를 복원할 수 없으면, 시스템은 실패를 안내하고 화면 상태를 일관되게 유지함
+- [ ] snapshot 또는 snapshot metadata가 없거나 usable하지 않은 경우만으로 open을 실패로 처리하지
+      않으며, 가능한 경우 definition-first fallback으로 계속 진행함
+- [ ] 콜렉션 파일 자체가 손상되었거나 정의를 복원할 수 없으면, 시스템은 실패를 안내하고 화면 상태를
+      일관되게 유지함
 
 ## Source
 

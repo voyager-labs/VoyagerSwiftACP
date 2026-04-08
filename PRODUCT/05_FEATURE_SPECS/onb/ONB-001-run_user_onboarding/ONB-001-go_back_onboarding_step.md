@@ -2,25 +2,26 @@
 
 ## Metadata
 
-| Field | Value |
-| --- | --- |
-| Interaction ID | ONB-001-go_back_onboarding_step |
-| Interaction Type | input |
-| Feature | Run User Onboarding |
-| Category Key | ONB |
-| Feature ID | ONB-001 |
-| Status | 배포 완료 |
-| Summary | 이전 스텝으로 이동하고, 입력값을 복원 |
-| Related Region | onboarding_window |
-| Menu | - |
-| Shortcut | - |
+| Field            | Value                                 |
+| ---------------- | ------------------------------------- |
+| Interaction ID   | ONB-001-go_back_onboarding_step       |
+| Interaction Type | input                                 |
+| Feature          | Run User Onboarding                   |
+| Category Key     | ONB                                   |
+| Feature ID       | ONB-001                               |
+| Status           | 배포 완료                             |
+| Summary          | 이전 스텝으로 이동하고, 입력값을 복원 |
+| Related Region   | onboarding_window                     |
+| Menu             | -                                     |
+| Shortcut         | -                                     |
 
 ## Preconditions
 
 - 이전 스텝이 존재하는 상태
+
 ## Edge Cases
 
-- -
+-   -
 
 ## Acceptance Criteria
 

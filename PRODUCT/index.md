@@ -9,5 +9,5 @@ Voyager 제품 기획/스펙 SSOT 영역.
 - IA tables: `03_INFORMATION_ARCHITECTURE/index.md`
 - Feature inventory: `04_FEATURE_INVENTORY/index.md`
 - Feature specs: `05_FEATURE_SPECS/index.md`
-  - Template: `05_FEATURE_SPECS/template.md`
+    - Template: `05_FEATURE_SPECS/template.md`
 - Use cases: `06_USE_CASES/index.md`

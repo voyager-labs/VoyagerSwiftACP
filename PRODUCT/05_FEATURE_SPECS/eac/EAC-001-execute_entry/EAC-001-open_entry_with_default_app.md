@@ -2,23 +2,24 @@
 
 ## Metadata
 
-| Field | Value |
-| --- | --- |
-| Interaction ID | EAC-001-open_entry_with_default_app |
-| Interaction Type | command |
-| Feature | Execute Entry |
-| Category Key | EAC |
-| Feature ID | EAC-001 |
-| Status | 배포 완료 |
-| Summary | 해당 Entry를 기본 앱으로 실행 |
-| Related Region | file_manager_window.content_pane.page_container.page_mode_directory |
-| Menu | File |
-| Shortcut | ⌘▼ |
+| Field            | Value                                                               |
+| ---------------- | ------------------------------------------------------------------- |
+| Interaction ID   | EAC-001-open_entry_with_default_app                                 |
+| Interaction Type | command                                                             |
+| Feature          | Execute Entry                                                       |
+| Category Key     | EAC                                                                 |
+| Feature ID       | EAC-001                                                             |
+| Status           | 배포 완료                                                           |
+| Summary          | 해당 Entry를 기본 앱으로 실행                                       |
+| Related Region   | file_manager_window.content_pane.page_container.page_mode_directory |
+| Menu             | File                                                                |
+| Shortcut         | ⌘▼                                                                  |
 
 ## Preconditions
 
 - <<AI>> 하나 이상의 Entry가 선택된 상태
 - <<AI>> 선택한 Entry에 대해 현재 사용자에게 최소 읽기 권한이 있는 상태
+
 ## Edge Cases
 
 - <<AI>> 선택된 Entry가 파일 시스템 상에서 더 이상 존재하지 않는 경우
@@ -28,9 +29,12 @@
 
 ## Acceptance Criteria
 
-- [ ] <<AI>> 하나 이상의 Entry가 선택된 상태일 때, 사용자가 해당 인터랙션을 호출하면, 선택한 Entry들을 시스템 기본 앱으로 실행함.
-- [ ] <<AI>> 일부 Entry가 실행 불가한 상태일 때, 사용자가 해당 인터랙션을 호출하면, 실행 가능한 Entry만 실행하고 실패 대상과 사유를 사용자에게 안내함.
-- [ ] <<AI>> Entry가 선택되지 않은 상태일 때, 사용자가 해당 인터랙션을 호출하면, 아무 변화도 발생하지 않도록 함.
+- [ ] <<AI>> 하나 이상의 Entry가 선택된 상태일 때, 사용자가 해당 인터랙션을 호출하면, 선택한
+      Entry들을 시스템 기본 앱으로 실행함.
+- [ ] <<AI>> 일부 Entry가 실행 불가한 상태일 때, 사용자가 해당 인터랙션을 호출하면, 실행 가능한
+      Entry만 실행하고 실패 대상과 사유를 사용자에게 안내함.
+- [ ] <<AI>> Entry가 선택되지 않은 상태일 때, 사용자가 해당 인터랙션을 호출하면, 아무 변화도
+      발생하지 않도록 함.
 
 ## Source
 

@@ -16,18 +16,18 @@
 
 ## Metadata
 
-| Field | Value |
-| --- | --- |
-| Interaction ID | TBD |
-| Interaction Type | TBD |
-| Feature | TBD |
-| Category Key | TBD |
-| Feature ID | TBD |
-| Status | TBD |
-| Summary | TBD |
-| Related Region | TBD |
-| Menu | TBD |
-| Shortcut | TBD |
+| Field            | Value |
+| ---------------- | ----- |
+| Interaction ID   | TBD   |
+| Interaction Type | TBD   |
+| Feature          | TBD   |
+| Category Key     | TBD   |
+| Feature ID       | TBD   |
+| Status           | TBD   |
+| Summary          | TBD   |
+| Related Region   | TBD   |
+| Menu             | TBD   |
+| Shortcut         | TBD   |
 
 ## Intent
 

@@ -3,16 +3,8 @@
     "default": true,
     "MD013": false,
     "MD033": false,
-    "MD041": false
+    "MD041": false,
   },
-  "globs": [
-    "README.md",
-    "META/**/*.md",
-    "PRODUCT/**/*.md"
-  ],
-  "ignores": [
-    "node_modules",
-    ".venv",
-    ".mypy_cache"
-  ]
+  "globs": ["README.md", "META/**/*.md", "PRODUCT/**/*.md"],
+  "ignores": ["node_modules", ".venv", ".mypy_cache"],
 }

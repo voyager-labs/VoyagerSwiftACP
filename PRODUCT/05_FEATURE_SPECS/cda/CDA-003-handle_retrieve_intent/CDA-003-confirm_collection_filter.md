@@ -2,22 +2,23 @@
 
 ## Metadata
 
-| Field | Value |
-| --- | --- |
-| Interaction ID | CDA-003-confirm_collection_filter |
-| Interaction Type | TBD |
-| Feature | Handle Retrieve Intent |
-| Category Key | CDA |
-| Feature ID | CDA-003 |
-| Status | 드래프트 |
-| Summary | TBD |
-| Related Region | - |
-| Menu | TBD |
-| Shortcut | TBD |
+| Field            | Value                             |
+| ---------------- | --------------------------------- |
+| Interaction ID   | CDA-003-confirm_collection_filter |
+| Interaction Type | TBD                               |
+| Feature          | Handle Retrieve Intent            |
+| Category Key     | CDA                               |
+| Feature ID       | CDA-003                           |
+| Status           | 드래프트                          |
+| Summary          | TBD                               |
+| Related Region   | -                                 |
+| Menu             | TBD                               |
+| Shortcut         | TBD                               |
 
 ## Preconditions
 
 - TBD
+
 ## Edge Cases
 
 - TBD

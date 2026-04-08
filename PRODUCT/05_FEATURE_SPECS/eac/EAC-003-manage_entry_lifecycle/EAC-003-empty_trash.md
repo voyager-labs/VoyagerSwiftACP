@@ -2,23 +2,24 @@
 
 ## Metadata
 
-| Field | Value |
-| --- | --- |
-| Interaction ID | EAC-003-empty_trash |
-| Interaction Type | command |
-| Feature | Manage Entry Lifecycle |
-| Category Key | EAC |
-| Feature ID | EAC-003 |
-| Status | 배포 완료 |
-| Summary | 휴지통에 있는 모든 Entry를 영구 삭제 |
-| Related Region | file_manager_window.content_pane.page_container.page_mode_directory |
-| Menu | File |
-| Shortcut | ⇧⌘⌫ |
+| Field            | Value                                                               |
+| ---------------- | ------------------------------------------------------------------- |
+| Interaction ID   | EAC-003-empty_trash                                                 |
+| Interaction Type | command                                                             |
+| Feature          | Manage Entry Lifecycle                                              |
+| Category Key     | EAC                                                                 |
+| Feature ID       | EAC-003                                                             |
+| Status           | 배포 완료                                                           |
+| Summary          | 휴지통에 있는 모든 Entry를 영구 삭제                                |
+| Related Region   | file_manager_window.content_pane.page_container.page_mode_directory |
+| Menu             | File                                                                |
+| Shortcut         | ⇧⌘⌫                                                                 |
 
 ## Preconditions
 
 - <<AI>> 휴지통에 하나 이상의 Entry가 존재하는 상태
 - <<AI>> 휴지통 비우기에 대한 사용자 확인을 획득한 상태
+
 ## Edge Cases
 
 - <<AI>> 사용자가 확인 다이얼로그에서 취소하는 경우
@@ -27,9 +28,12 @@
 
 ## Acceptance Criteria
 
-- [ ] <<AI>> 사용자 확인이 완료된 상태일 때, 사용자가 해당 인터랙션을 호출하면, 휴지통의 모든 Entry를 영구 삭제함.
-- [ ] <<AI>> 사용자가 취소한 상태일 때, 시스템이 처리를 종료하면, 휴지통 비우기를 수행하지 않도록 함.
-- [ ] <<AI>> 일부 항목 삭제가 실패하는 상태일 때, 시스템이 비우기를 수행하면, 성공/실패 항목과 사유를 사용자에게 안내함.
+- [ ] <<AI>> 사용자 확인이 완료된 상태일 때, 사용자가 해당 인터랙션을 호출하면, 휴지통의 모든
+      Entry를 영구 삭제함.
+- [ ] <<AI>> 사용자가 취소한 상태일 때, 시스템이 처리를 종료하면, 휴지통 비우기를 수행하지 않도록
+      함.
+- [ ] <<AI>> 일부 항목 삭제가 실패하는 상태일 때, 시스템이 비우기를 수행하면, 성공/실패 항목과
+      사유를 사용자에게 안내함.
 
 ## Source
 

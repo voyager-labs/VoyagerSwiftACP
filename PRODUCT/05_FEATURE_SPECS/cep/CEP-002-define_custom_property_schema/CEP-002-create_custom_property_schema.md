@@ -2,23 +2,24 @@
 
 ## Metadata
 
-| Field | Value |
-| --- | --- |
-| Interaction ID | CEP-002-create_custom_property_schema |
-| Interaction Type | command |
-| Feature | Define Custom Property Schema |
-| Category Key | CEP |
-| Feature ID | CEP-002 |
-| Status | 아이디어 |
-| Summary | <<AI>> 새 사용자 정의 프로퍼티 스키마를 생성하고 이름, 키, 타입, 기본값, 표시 옵션 등을 설정한다. |
-| Related Region | file_manager_window.inspector_pane.inspector_mode_property |
-| Menu | <<AI>> Edit |
-| Shortcut | - |
+| Field            | Value                                                                                             |
+| ---------------- | ------------------------------------------------------------------------------------------------- |
+| Interaction ID   | CEP-002-create_custom_property_schema                                                             |
+| Interaction Type | command                                                                                           |
+| Feature          | Define Custom Property Schema                                                                     |
+| Category Key     | CEP                                                                                               |
+| Feature ID       | CEP-002                                                                                           |
+| Status           | 아이디어                                                                                          |
+| Summary          | <<AI>> 새 사용자 정의 프로퍼티 스키마를 생성하고 이름, 키, 타입, 기본값, 표시 옵션 등을 설정한다. |
+| Related Region   | file_manager_window.inspector_pane.inspector_mode_property                                        |
+| Menu             | <<AI>> Edit                                                                                       |
+| Shortcut         | -                                                                                                 |
 
 ## Preconditions
 
 - <<AI>> 프로퍼티 스키마 생성 플로우를 시작할 수 있는 화면이 열린 상태
 - <<AI>> 프로퍼티 스키마를 생성할 권한을 보유한 상태
+
 ## Edge Cases
 
 - <<AI>> 입력한 스키마 키가 기존 스키마와 중복되는 경우
@@ -30,9 +31,12 @@
 
 ## Acceptance Criteria
 
-- [ ] <<AI>> 스키마 생성 화면이 열린 상태일 때, 사용자가 유효한 이름·키·타입·기본값·표시 옵션을 입력하고 저장하면, 새 스키마를 생성하고 스키마 목록에 표시함.
-- [ ] <<AI>> 키 또는 옵션·기본값 입력이 유효하지 않은 상태일 때, 사용자가 저장하면, 저장을 차단하고 유효성 오류를 표시함.
-- [ ] <<AI>> 스키마 키가 중복인 상태일 때, 사용자가 저장하면, 저장을 차단하고 충돌하는 스키마를 표시함.
+- [ ] <<AI>> 스키마 생성 화면이 열린 상태일 때, 사용자가 유효한 이름·키·타입·기본값·표시 옵션을
+      입력하고 저장하면, 새 스키마를 생성하고 스키마 목록에 표시함.
+- [ ] <<AI>> 키 또는 옵션·기본값 입력이 유효하지 않은 상태일 때, 사용자가 저장하면, 저장을 차단하고
+      유효성 오류를 표시함.
+- [ ] <<AI>> 스키마 키가 중복인 상태일 때, 사용자가 저장하면, 저장을 차단하고 충돌하는 스키마를
+      표시함.
 
 ## Source
 

@@ -2,22 +2,23 @@
 
 ## Metadata
 
-| Field | Value |
-| --- | --- |
-| Interaction ID | CDA-001-route_chuncks_to_intents |
-| Interaction Type | background |
-| Feature | Handle User Request |
-| Category Key | CDA |
-| Feature ID | CDA-001 |
-| Status | 취소 |
-| Summary | 분리된 각 Chunk의  내용을 분석해 적절한 Intent로 분류 |
-| Related Region | - |
-| Menu | - |
-| Shortcut | - |
+| Field            | Value                                                |
+| ---------------- | ---------------------------------------------------- |
+| Interaction ID   | CDA-001-route_chuncks_to_intents                     |
+| Interaction Type | background                                           |
+| Feature          | Handle User Request                                  |
+| Category Key     | CDA                                                  |
+| Feature ID       | CDA-001                                              |
+| Status           | 취소                                                 |
+| Summary          | 분리된 각 Chunk의 내용을 분석해 적절한 Intent로 분류 |
+| Related Region   | -                                                    |
+| Menu             | -                                                    |
+| Shortcut         | -                                                    |
 
 ## Preconditions
 
 - 대상 User Request Message에 하나 이상의 Chunk가 존재하는 상태
+
 ## Edge Cases
 
 - 특정 Chunk 텍스트가 너무 짧거나 모호해 어떤 Intent로도 명확히 판별하기 어려운 경우
@@ -26,9 +27,9 @@
 
 ## Acceptance Criteria
 
-- [ ] -
+-   -
 
 ## Source
 
-- Inventory: `PRODUCT/04_FEATURE_INVENTORY/INTERACTIONS/data.tsv`
+- [ ] Inventory: `PRODUCT/04_FEATURE_INVENTORY/INTERACTIONS/data.tsv`
 - Source line: `143`

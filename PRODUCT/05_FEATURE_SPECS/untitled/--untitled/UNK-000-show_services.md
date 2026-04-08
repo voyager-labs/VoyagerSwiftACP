@@ -2,22 +2,23 @@
 
 ## Metadata
 
-| Field | Value |
-| --- | --- |
-| Interaction ID | UNK-000-show_services |
-| Interaction Type | command |
-| Feature | - |
-| Category Key | - |
-| Feature ID | - |
-| Status | 드래프트 |
-| Summary | - |
-| Related Region | - |
-| Menu | - |
-| Shortcut | - |
+| Field            | Value                 |
+| ---------------- | --------------------- |
+| Interaction ID   | UNK-000-show_services |
+| Interaction Type | command               |
+| Feature          | -                     |
+| Category Key     | -                     |
+| Feature ID       | -                     |
+| Status           | 드래프트              |
+| Summary          | -                     |
+| Related Region   | -                     |
+| Menu             | -                     |
+| Shortcut         | -                     |
 
 ## Preconditions
 
 - TBD
+
 ## Edge Cases
 
 - TBD

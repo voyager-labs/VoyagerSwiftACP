@@ -2,18 +2,18 @@
 
 ## Metadata
 
-| Field | Value |
-| --- | --- |
-| Interaction ID | SET-007-enter_provider_api_key |
-| Interaction Type | input |
-| Feature | Manage AI Connections |
-| Category Key | SET |
-| Feature ID | SET-007 |
-| Status | 드래프트 |
-| Summary | <<AI>> 선택한 provider에 사용할 API key를 입력하고 저장 대기 상태로 유지한다. |
-| Related Region | settings_window.settings_body.tab_ai.provider_connection_area |
-| Menu | - |
-| Shortcut | - |
+| Field            | Value                                                                         |
+| ---------------- | ----------------------------------------------------------------------------- |
+| Interaction ID   | SET-007-enter_provider_api_key                                                |
+| Interaction Type | input                                                                         |
+| Feature          | Manage AI Connections                                                         |
+| Category Key     | SET                                                                           |
+| Feature ID       | SET-007                                                                       |
+| Status           | 드래프트                                                                      |
+| Summary          | <<AI>> 선택한 provider에 사용할 API key를 입력하고 저장 대기 상태로 유지한다. |
+| Related Region   | settings_window.settings_body.tab_ai.provider_connection_area                 |
+| Menu             | -                                                                             |
+| Shortcut         | -                                                                             |
 
 ## Intent
 
@@ -56,15 +56,19 @@
 - 긴 키가 붙여넣기된 경우 잘림 없이 저장 가능해야 하며, 과도하게 긴 값은 상한 안내로 제어한다.
 - provider가 API key 방식을 더 이상 지원하지 않게 되면 입력 UI를 비활성화한다.
 - 앱이 백그라운드로 갈 경우 입력 버퍼가 사라질 수 있으므로 경고 후 복구 경로를 남긴다.
-- 다중 provider에서 빠르게 전환할 경우, 이전 provider의 미검증 값을 임의로 대상 전환하지 않도록 격리해야 한다.
+- 다중 provider에서 빠르게 전환할 경우, 이전 provider의 미검증 값을 임의로 대상 전환하지 않도록
+  격리해야 한다.
 
 ## Acceptance Criteria
 
-- [ ] API key 방식 provider를 선택한 상황에서, 사용자가 키를 입력하면, 입력값이 즉시 `저장 대기` 상태로 표시되어야 한다.
+- [ ] API key 방식 provider를 선택한 상황에서, 사용자가 키를 입력하면, 입력값이 즉시 `저장 대기`
+      상태로 표시되어야 한다.
 - [ ] 잘못된 형식(공백/빈 값)으로 입력하면, 저장 대기가 아니라 유효성 경고가 표시되어야 한다.
 - [ ] 유효한 형식의 키를 입력하면, 검증/연결 버튼이 활성화되어야 한다.
-- [ ] API key 방식이 아닌 provider에서 해당 상호작용을 호출하면, 입력 영역은 비노출되거나 비활성화되어야 한다.
-- [ ] 입력 화면을 변경한 상태에서 앱이 강제로 종료된 뒤 복귀 시, 사용자는 입력 보존 또는 재입력 안내를 받게 된다.
+- [ ] API key 방식이 아닌 provider에서 해당 상호작용을 호출하면, 입력 영역은 비노출되거나
+      비활성화되어야 한다.
+- [ ] 입력 화면을 변경한 상태에서 앱이 강제로 종료된 뒤 복귀 시, 사용자는 입력 보존 또는 재입력
+      안내를 받게 된다.
 
 ## Permissions / Dependencies
 

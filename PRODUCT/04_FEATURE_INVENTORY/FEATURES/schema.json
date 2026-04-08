@@ -39,14 +39,7 @@
       "name": "release_phase",
       "type": "string",
       "required": false,
-      "enum": [
-        "BACKLOG",
-        "CBT-W1",
-        "CBT-NEXT",
-        "OBT",
-        "MVP",
-        "LATER"
-      ],
+      "enum": ["BACKLOG", "CBT-W1", "CBT-NEXT", "OBT", "MVP", "LATER"],
       "description": "릴리즈 단계 태그(예: BACKLOG, CBT-W1, CBT-NEXT, OBT, MVP, LATER)."
     },
     {

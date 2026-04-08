@@ -2,18 +2,18 @@
 
 ## Metadata
 
-| Field | Value |
-| --- | --- |
-| Interaction ID | RCL-003-mark_collection_results_as_stale |
-| Interaction Type | background |
-| Feature | Retrieve Entries with Filters |
-| Category Key | RCL |
-| Feature ID | RCL-003 |
-| Status | 기획 완료 |
-| Summary | 파일시스템 변경 등으로 결과 최신성이 깨졌다고 판단되면, 열린 collection은 stale 상태로 전환하고 저장된 collection record도 future reopen 판단용으로 invalidate |
-| Related Region | - |
-| Menu | - |
-| Shortcut | - |
+| Field            | Value                                                                                                                                                          |
+| ---------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Interaction ID   | RCL-003-mark_collection_results_as_stale                                                                                                                       |
+| Interaction Type | background                                                                                                                                                     |
+| Feature          | Retrieve Entries with Filters                                                                                                                                  |
+| Category Key     | RCL                                                                                                                                                            |
+| Feature ID       | RCL-003                                                                                                                                                        |
+| Status           | 기획 완료                                                                                                                                                      |
+| Summary          | 파일시스템 변경 등으로 결과 최신성이 깨졌다고 판단되면, 열린 collection은 stale 상태로 전환하고 저장된 collection record도 future reopen 판단용으로 invalidate |
+| Related Region   | -                                                                                                                                                              |
+| Menu             | -                                                                                                                                                              |
+| Shortcut         | -                                                                                                                                                              |
 
 ## Preconditions
 
@@ -31,11 +31,15 @@
 
 ## Acceptance Criteria
 
-- [ ] 파일시스템 변경 등으로 현재 결과의 최신성이 깨졌다고 판단되면, 시스템은 열린 collection 결과를 stale 상태로 전환할 수 있음
+- [ ] 파일시스템 변경 등으로 현재 결과의 최신성이 깨졌다고 판단되면, 시스템은 열린 collection 결과를
+      stale 상태로 전환할 수 있음
 - [ ] 시스템은 dirty와 stale를 같은 의미로 취급하지 않고, save 가능 여부는 dirty 기준으로만 판단함
-- [ ] stale 상태가 되더라도 시스템은 현재 snapshot 또는 현재 결과를 즉시 폐기하지 않고 후속 refresh 정책과 분리해 유지할 수 있음
-- [ ] collection route에서는 파일시스템 변경이 발생해도 즉시 reload/search를 다시 실행하지 않고 stale 표시/기록으로 처리함
-- [ ] 현재 열려 있지 않은 저장된 collection에 대해서도, future reopen freshness 판단을 위해 staleness record를 갱신할 수 있음
+- [ ] stale 상태가 되더라도 시스템은 현재 snapshot 또는 현재 결과를 즉시 폐기하지 않고 후속 refresh
+      정책과 분리해 유지할 수 있음
+- [ ] collection route에서는 파일시스템 변경이 발생해도 즉시 reload/search를 다시 실행하지 않고
+      stale 표시/기록으로 처리함
+- [ ] 현재 열려 있지 않은 저장된 collection에 대해서도, future reopen freshness 판단을 위해
+      staleness record를 갱신할 수 있음
 - [ ] refresh가 실패하면, 시스템은 stale 상태를 해제하지 않고 그대로 유지함
 
 ## Source

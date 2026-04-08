@@ -2,18 +2,18 @@
 
 ## Metadata
 
-| Field | Value |
-| --- | --- |
-| Interaction ID | SET-007-restore_ai_provider_connection_status |
-| Interaction Type | background |
-| Feature | Manage AI Connections |
-| Category Key | SET |
-| Feature ID | SET-007 |
-| Status | 드래프트 |
-| Summary | <<AI>> 앱 재실행 또는 설정 진입 시 저장된 연결 정보를 바탕으로 provider 연결 상태를 복원·재확인한다. |
-| Related Region | settings_window.settings_body.tab_ai.provider_status_area |
-| Menu | - |
-| Shortcut | - |
+| Field            | Value                                                                                                |
+| ---------------- | ---------------------------------------------------------------------------------------------------- |
+| Interaction ID   | SET-007-restore_ai_provider_connection_status                                                        |
+| Interaction Type | background                                                                                           |
+| Feature          | Manage AI Connections                                                                                |
+| Category Key     | SET                                                                                                  |
+| Feature ID       | SET-007                                                                                              |
+| Status           | 드래프트                                                                                             |
+| Summary          | <<AI>> 앱 재실행 또는 설정 진입 시 저장된 연결 정보를 바탕으로 provider 연결 상태를 복원·재확인한다. |
+| Related Region   | settings_window.settings_body.tab_ai.provider_status_area                                            |
+| Menu             | -                                                                                                    |
+| Shortcut         | -                                                                                                    |
 
 ## Intent
 
@@ -33,7 +33,8 @@
 
 ## Expected Outcome
 
-- 저장된 연결 정보와 실제 유효성 기준에 따라 UI 상태가 `연결됨`/`연결 실패`/`재연결 필요` 등으로 정합성 있게 표시되어야 한다.
+- 저장된 연결 정보와 실제 유효성 기준에 따라 UI 상태가 `연결됨`/`연결 실패`/`재연결 필요` 등으로
+  정합성 있게 표시되어야 한다.
 - 오래된 캐시가 살아있더라도 사용자에게 최신 동작을 보장하도록 보정되어야 한다.
 
 ## State Changes
@@ -51,18 +52,24 @@
 ## Edge Cases / Failure Handling
 
 - 저장된 자격정보가 손상된 경우, 즉시 `오류` 또는 `재설정 필요`로 처리하고 입력 가이드를 제공한다.
-- 네트워크/인증 서비스 장애로 조회를 못할 때는 전체 실패가 아니라 `현재 확인 불가` 상태로 구분해 표시한다.
-- 일부 provider만 조회 실패하면 성공 provider는 정상으로, 실패 provider만 재확인 필요로 각각 표시한다.
+- 네트워크/인증 서비스 장애로 조회를 못할 때는 전체 실패가 아니라 `현재 확인 불가` 상태로 구분해
+  표시한다.
+- 일부 provider만 조회 실패하면 성공 provider는 정상으로, 실패 provider만 재확인 필요로 각각
+  표시한다.
 - 조회 결과가 갑자기 서로 다른 provider로 엇갈리면 최근 타임스탬프/우선순위를 기준으로 동기화한다.
 - 대량 provider 조회가 길어질 때는 상태 갱신의 진행 중 안내를 지속한다.
 
 ## Acceptance Criteria
 
 - [ ] 앱 재실행 후 AI 탭 진입 시, 저장된 provider 연결 정보가 로드되어 상태 영역에 표시되어야 한다.
-- [ ] 저장된 토큰이 만료된 provider는 재확인 후 `재연결 필요` 또는 `연결되지 않음`으로 갱신되어야 한다.
-- [ ] 네트워크 장애가 발생한 상황에서 복원 동작을 실행하면, 성공 상태를 임의로 가정하지 않고 `확인 실패` 또는 재확인 안내가 표시되어야 한다.
-- [ ] 일부 provider 상태 조회가 실패하더라도, 다른 provider는 기존 정상 상태를 유지한 채 부분 실패로 표시되어야 한다.
-- [ ] 상태 복원 작업이 완료되면, 사용자 화면에서 status badge와 후속 액션이 일관된 상태로 렌더링되어야 한다.
+- [ ] 저장된 토큰이 만료된 provider는 재확인 후 `재연결 필요` 또는 `연결되지 않음`으로 갱신되어야
+      한다.
+- [ ] 네트워크 장애가 발생한 상황에서 복원 동작을 실행하면, 성공 상태를 임의로 가정하지 않고
+      `확인 실패` 또는 재확인 안내가 표시되어야 한다.
+- [ ] 일부 provider 상태 조회가 실패하더라도, 다른 provider는 기존 정상 상태를 유지한 채 부분 실패로
+      표시되어야 한다.
+- [ ] 상태 복원 작업이 완료되면, 사용자 화면에서 status badge와 후속 액션이 일관된 상태로
+      렌더링되어야 한다.
 
 ## Permissions / Dependencies
 

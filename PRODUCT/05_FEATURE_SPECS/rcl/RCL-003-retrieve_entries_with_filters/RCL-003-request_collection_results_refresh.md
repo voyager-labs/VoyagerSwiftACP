@@ -2,18 +2,18 @@
 
 ## Metadata
 
-| Field | Value |
-| --- | --- |
-| Interaction ID | RCL-003-request_collection_results_refresh |
-| Interaction Type | command |
-| Feature | Retrieve Entries with Filters |
-| Category Key | RCL |
-| Feature ID | RCL-003 |
-| Status | 아이디어 |
-| Summary | stale 상태를 알리는 affordance가 제공될 경우, 사용자가 기존 RCL-003-refresh_collection_results를 직접 호출할 수 있도록 하는 command interaction |
-| Related Region | file_manager_window.content_pane.content_header |
-| Menu | - |
-| Shortcut | - |
+| Field            | Value                                                                                                                                           |
+| ---------------- | ----------------------------------------------------------------------------------------------------------------------------------------------- |
+| Interaction ID   | RCL-003-request_collection_results_refresh                                                                                                      |
+| Interaction Type | command                                                                                                                                         |
+| Feature          | Retrieve Entries with Filters                                                                                                                   |
+| Category Key     | RCL                                                                                                                                             |
+| Feature ID       | RCL-003                                                                                                                                         |
+| Status           | 아이디어                                                                                                                                        |
+| Summary          | stale 상태를 알리는 affordance가 제공될 경우, 사용자가 기존 RCL-003-refresh_collection_results를 직접 호출할 수 있도록 하는 command interaction |
+| Related Region   | file_manager_window.content_pane.content_header                                                                                                 |
+| Menu             | -                                                                                                                                               |
+| Shortcut         | -                                                                                                                                               |
 
 ## Preconditions
 
@@ -28,10 +28,13 @@
 
 ## Acceptance Criteria
 
-- [ ] stale 상태를 알리는 UI affordance가 제공될 때, 사용자가 해당 affordance에서 직접 결과 refresh를 요청할 수 있어야 함
+- [ ] stale 상태를 알리는 UI affordance가 제공될 때, 사용자가 해당 affordance에서 직접 결과
+      refresh를 요청할 수 있어야 함
 - [ ] 시스템은 이 interaction을 자동 refresh와 구분되는 명시적 사용자 command로 취급함
-- [ ] refresh 요청은 현재 stale 상태의 collection 결과를 최신 결과로 갱신하기 위해 기존 `RCL-003-refresh_collection_results` 실행 경로를 트리거하는 명시적 시도로 연결됨
-- [ ] 이 interaction은 Task 9 범위의 planned affordance이며, 현재 브랜치에 이미 구현된 동작으로 간주하지 않음
+- [ ] refresh 요청은 현재 stale 상태의 collection 결과를 최신 결과로 갱신하기 위해 기존
+      `RCL-003-refresh_collection_results` 실행 경로를 트리거하는 명시적 시도로 연결됨
+- [ ] 이 interaction은 Task 9 범위의 planned affordance이며, 현재 브랜치에 이미 구현된 동작으로
+      간주하지 않음
 
 ## Source
 
