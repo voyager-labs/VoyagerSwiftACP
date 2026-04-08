@@ -1,8 +1,16 @@
 # FEATURE_SPECS
 
 - Source: `PRODUCT/04_FEATURE_INVENTORY/INTERACTIONS/data.tsv`
-- Generated specs: `274`
+- Generated specs: `283`
 - Structure: `PRODUCT/05_FEATURE_SPECS/<feature_category_slug>/<feature_id>-<feature_title_slug>/<interaction_id>.md`
+- Template: `PRODUCT/05_FEATURE_SPECS/template.md`
+- Writing guide: `META/feature_specs_writing.md`
+
+## Notes
+
+- 새 문서 또는 크게 다시 쓰는 문서부터 템플릿 / 작성 규칙을 적용합니다.
+- 기존 문서는 한 번에 전부 마이그레이션하지 않습니다.
+
 
 | Category | Feature ID | Feature Title | Interaction ID | Spec |
 | --- | --- | --- | --- | --- |
@@ -259,6 +267,15 @@
 | `SET` | `SET-005` | Customize Keyboard Shortcut | `SET-005-cutstomize_keyboard_shortcuts` | [SET-005-cutstomize_keyboard_shortcuts](set/SET-005-customize_keyboard_shortcut/SET-005-cutstomize_keyboard_shortcuts.md) |
 | `SET` | `SET-005` | Customize Keyboard Shortcut | `SET-005-highlight_keyboard_shortcut_conflicts` | [SET-005-highlight_keyboard_shortcut_conflicts](set/SET-005-customize_keyboard_shortcut/SET-005-highlight_keyboard_shortcut_conflicts.md) |
 | `SET` | `SET-005` | Customize Keyboard Shortcut | `SET-005-restore_default_keyboard_shortcuts` | [SET-005-restore_default_keyboard_shortcuts](set/SET-005-customize_keyboard_shortcut/SET-005-restore_default_keyboard_shortcuts.md) |
+| `SET` | `SET-007` | Manage AI Connections | `SET-007-show_ai_provider_status` | [SET-007-show_ai_provider_status](set/SET-007-manage_ai_connections/SET-007-show_ai_provider_status.md) |
+| `SET` | `SET-007` | Manage AI Connections | `SET-007-select_ai_provider` | [SET-007-select_ai_provider](set/SET-007-manage_ai_connections/SET-007-select_ai_provider.md) |
+| `SET` | `SET-007` | Manage AI Connections | `SET-007-start_provider_oauth_connection` | [SET-007-start_provider_oauth_connection](set/SET-007-manage_ai_connections/SET-007-start_provider_oauth_connection.md) |
+| `SET` | `SET-007` | Manage AI Connections | `SET-007-complete_provider_oauth_connection` | [SET-007-complete_provider_oauth_connection](set/SET-007-manage_ai_connections/SET-007-complete_provider_oauth_connection.md) |
+| `SET` | `SET-007` | Manage AI Connections | `SET-007-disconnect_ai_provider` | [SET-007-disconnect_ai_provider](set/SET-007-manage_ai_connections/SET-007-disconnect_ai_provider.md) |
+| `SET` | `SET-007` | Manage AI Connections | `SET-007-restore_ai_provider_connection_status` | [SET-007-restore_ai_provider_connection_status](set/SET-007-manage_ai_connections/SET-007-restore_ai_provider_connection_status.md) |
+| `SET` | `SET-007` | Manage AI Connections | `SET-007-enter_provider_api_key` | [SET-007-enter_provider_api_key](set/SET-007-manage_ai_connections/SET-007-enter_provider_api_key.md) |
+| `SET` | `SET-007` | Manage AI Connections | `SET-007-verify_provider_api_key` | [SET-007-verify_provider_api_key](set/SET-007-manage_ai_connections/SET-007-verify_provider_api_key.md) |
+| `SET` | `SET-007` | Manage AI Connections | `SET-007-reset_provider_api_key` | [SET-007-reset_provider_api_key](set/SET-007-manage_ai_connections/SET-007-reset_provider_api_key.md) |
 | `ONB` | `ONB-001` | Run User Onboarding | `ONB-001-start_onboarding_session` | [ONB-001-start_onboarding_session](onb/ONB-001-run_user_onboarding/ONB-001-start_onboarding_session.md) |
 | `ONB` | `ONB-001` | Run User Onboarding | `ONB-001-show_onboarding_step` | [ONB-001-show_onboarding_step](onb/ONB-001-run_user_onboarding/ONB-001-show_onboarding_step.md) |
 | `ONB` | `ONB-001` | Run User Onboarding | `ONB-001-update_onboarding_step_state` | [ONB-001-update_onboarding_step_state](onb/ONB-001-run_user_onboarding/ONB-001-update_onboarding_step_state.md) |

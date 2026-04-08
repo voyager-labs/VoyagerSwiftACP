@@ -52,6 +52,7 @@ User Settings	SET	Configure Appearance Settings	SET-003	CBT-W1	라이트/다크 
 User Settings	SET	Manage System Permissions	SET-004	CBT-W1	TBD	TBD
 User Settings	SET	Customize Keyboard Shortcut	SET-005	MVP	설정된 키보드 단축키를 수정하는 것과 관련된 기능	settings_window.settings_body.tab_shortcuts
 User Settings	SET	Customize Theme	SET-006	LATER	UI 요소별 색상 스타일을 수정해 앱 전반의 시각적 표현 방식을 조정하는 것과 관련된 기능	settings_window.settings_body.tab_appearance
+User Settings	SET	Manage AI Connections	SET-007	MVP	<<AI>> 설정의 AI 탭에서 허용된 외부 AI provider를 선택하고 OAuth/API key 기반 연결, 상태 확인, 재연결·해제를 관리하는 것과 관련된 기능	settings_window.settings_body.tab_ai
 Onboard	ONB	Run User Onboarding	ONB-001	CBT-W1	앱 실행 시 온보딩 필요 여부를 판정하고, 세션을 생성∙재개하며 스텝 단위 플로우를 처리하는 것과 관련된 기능	onboarding_window
 Entry Automation	EAU	Define Automation Rules	EAU-001	LATER	조건 기반 규칙을 생성해 엔트리 정리, 이동, 태깅, 패키징 등 반복 작업을 자동화하는 기능	TBD
 Entry Automation	EAU	Schedule Automation Rules	EAU-002	LATER	TBD	TBD
