@@ -369,6 +369,22 @@ extension EntryGridCoordinator: NSCollectionViewDelegate, NSCollectionViewDelega
 
         if let hoverIndexPath {
             proposedDropIndexPath.pointee = hoverIndexPath as NSIndexPath
+
+            // Restrict hit area to icon/thumbnail zone — reject drops on cell padding
+            if let item = collectionView.item(at: hoverIndexPath) as? EntryGridCollectionViewItem {
+                let itemPoint = item.view.convert(localPoint, from: collectionView)
+                let iconBg = item.view.subviews.first {
+                    $0.identifier == NSUserInterfaceItemIdentifier("entryGrid.iconBackground")
+                }
+                if let iconBg {
+                    let iconBounds = iconBg.convert(iconBg.bounds, to: item.view)
+                    if !iconBounds.insetBy(dx: -4, dy: -4).contains(itemPoint) {
+                        setDropTargetEntryId(nil)
+                        store.send(.view(.setDropTargeted(false)))
+                        return []
+                    }
+                }
+            }
         }
 
         let indexPath = hoverIndexPath ?? (proposedDropIndexPath.pointee as IndexPath)

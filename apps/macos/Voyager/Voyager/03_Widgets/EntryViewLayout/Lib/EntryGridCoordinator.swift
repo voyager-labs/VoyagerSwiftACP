@@ -297,9 +297,10 @@ extension EntryGridCoordinator {
         collectionView.reloadItems(at: visibleIndexPaths)
     }
 
-    func updateDropTargetBorder(isTargeted: Bool) {
-        scrollView.layer?.borderWidth = isTargeted ? 2 : 0
-        scrollView.layer?.borderColor = isTargeted ? NSColor.controlAccentColor.cgColor : nil
+    func updateDropTargetBorder(isTargeted _: Bool) {
+        // No-op: item-level icon-zone border (Task 2/3) is now the primary and sufficient
+        // drop target signal. A scroll-view-level border created double-emphasis that was
+        // Finder-unusual and competed with per-item targeting visual.
     }
 
     func setDropTargetEntryId(_ entryId: EntryModel.ID?) {
