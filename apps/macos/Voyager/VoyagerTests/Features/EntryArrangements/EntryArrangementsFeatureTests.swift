@@ -70,6 +70,122 @@ final class EntryArrangementsFeatureTests: XCTestCase {
         await store.finish()
     }
 
+    func testVOY213TagsGroupingCarriesColorCodeFromEntryArrangements() async {
+        let fixedDate = Date(timeIntervalSince1970: 1_700_000_000)
+
+        let blueTag = Tag(name: "Blue", colorCode: 6)
+        let redTag = Tag(name: "Red", colorCode: 1)
+
+        let itemA = makeEntry(fixedDate, "a.txt", "/tmp/a.txt", 10, ext: "txt", kind: "Text", tags: [blueTag])
+        let itemB = makeEntry(fixedDate, "b.txt", "/tmp/b.txt", 20, ext: "txt", kind: "Text", tags: [redTag, blueTag])
+        let itemC = makeEntry(fixedDate, "c.txt", "/tmp/c.txt", 30, ext: "txt", kind: "Text", tags: nil)
+
+        let store = TestStore(
+            initialState: EntryArrangementsState(
+                sortKey: .name,
+                sortOrder: .ascending,
+                groupKey: .tags,
+            ),
+        ) {
+            EntryArrangementsFeature()
+        } withDependencies: {
+            $0.date = .constant(fixedDate)
+        }
+
+        await store.send(.apply(items: [itemC, itemB, itemA], isCollectionMode: false)) {
+            $0.groupedItems = [
+                GroupedItems(groupName: "Red", items: [itemB], colorCode: 1),
+                GroupedItems(groupName: "Blue", items: [itemA, itemB], colorCode: 6),
+                GroupedItems(groupName: "No Tags", items: [itemC]),
+            ]
+        }
+        await store.receive(.delegate(.applied(sortedItems: [itemA, itemB, itemC], isCollectionMode: false)))
+        await store.finish()
+    }
+
+    func testVOY213DateLastOpenedFallsBackToEarlierForMissingDates() async {
+        let fixedDate = Date(timeIntervalSince1970: 1_700_000_000)
+        let today = fixedDate
+        let missing = makeEntry(
+            fixedDate,
+            "missing.txt",
+            "/tmp/missing.txt",
+            10,
+            ext: "txt",
+            kind: "Text",
+            lastOpenedDate: nil,
+        )
+        let opened = makeEntry(
+            fixedDate,
+            "opened.txt",
+            "/tmp/opened.txt",
+            20,
+            ext: "txt",
+            kind: "Text",
+            lastOpenedDate: today,
+        )
+
+        let store = TestStore(
+            initialState: EntryArrangementsState(
+                sortKey: .name,
+                sortOrder: .ascending,
+                groupKey: .dateLastOpened,
+            ),
+        ) {
+            EntryArrangementsFeature()
+        } withDependencies: {
+            $0.date = .constant(fixedDate)
+        }
+
+        await store.send(.apply(items: [missing, opened], isCollectionMode: false)) {
+            $0.groupedItems = [
+                GroupedItems(groupName: "Today", items: [opened]),
+                GroupedItems(groupName: "Earlier", items: [missing]),
+            ]
+        }
+        await store.receive(.delegate(.applied(sortedItems: [missing, opened], isCollectionMode: false)))
+        await store.finish()
+    }
+
+    func testVOY213GroupedItemsKeepVisibleTitlesForTagAndFallbackGroups() async {
+        let fixedDate = Date(timeIntervalSince1970: 1_700_000_000)
+
+        let blueTag = Tag(name: "Blue", colorCode: 6)
+        let tagged = makeEntry(
+            fixedDate,
+            "tagged.txt",
+            "/tmp/tagged.txt",
+            10,
+            ext: "txt",
+            kind: "Text",
+            tags: [blueTag],
+        )
+        let noTag = makeEntry(fixedDate, "untagged.txt", "/tmp/untagged.txt", 20, ext: "txt", kind: "Text", tags: nil)
+
+        let store = TestStore(
+            initialState: EntryArrangementsState(
+                sortKey: .name,
+                sortOrder: .ascending,
+                groupKey: .tags,
+            ),
+        ) {
+            EntryArrangementsFeature()
+        } withDependencies: {
+            $0.date = .constant(fixedDate)
+        }
+
+        await store.send(.apply(items: [tagged, noTag], isCollectionMode: false)) {
+            $0.groupedItems = [
+                GroupedItems(groupName: "Blue", items: [tagged], colorCode: 6),
+                GroupedItems(groupName: "No Tags", items: [noTag]),
+            ]
+        }
+        XCTAssertEqual(store.state.groupedItems.map(\.groupName), ["Blue", "No Tags"])
+        XCTAssertEqual(store.state.groupedItems.map(\.colorCode), [6, nil])
+        await store.receive(.delegate(.applied(sortedItems: [tagged, noTag], isCollectionMode: false)))
+        await store.finish()
+    }
+
     private func makeEntry(
         _ date: Date,
         _ name: String,
@@ -78,6 +194,8 @@ final class EntryArrangementsFeatureTests: XCTestCase {
         dir: Bool = false,
         ext: String = "",
         kind: String = "",
+        tags: [Tag]? = nil,
+        lastOpenedDate: Date? = nil,
     ) -> EntryModel {
         EntryModel(
             name: name,
@@ -90,10 +208,10 @@ final class EntryArrangementsFeatureTests: XCTestCase {
             facets: EntryFacets(
                 createdDate: date,
                 addedDate: date,
-                lastOpenedDate: nil,
+                lastOpenedDate: lastOpenedDate,
                 kind: kind,
                 creatorApplication: nil,
-                tags: nil,
+                tags: tags,
                 supplementaryMetadata: nil,
             ),
         )
