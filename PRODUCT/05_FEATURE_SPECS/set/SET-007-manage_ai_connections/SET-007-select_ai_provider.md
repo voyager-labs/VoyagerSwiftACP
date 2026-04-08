@@ -10,7 +10,7 @@
 | Category Key     | SET                                                                                                        |
 | Feature ID       | SET-007                                                                                                    |
 | Status           | 드래프트                                                                                                   |
-| Summary          | <<AI>> 설정 가능한 외부 AI provider를 선택해 연결 상세 영역과 상태 영역을 해당 provider 기준으로 전환한다. |
+| Summary          | <<AI>> 현재 빌드에서 지원되는 AI provider 중 하나를 선택해 연결 상세 영역과 상태 영역을 해당 provider 기준으로 전환한다. |
 | Related Region   | settings_window.settings_body.tab_ai.provider_list_area                                                    |
 | Menu             | -                                                                                                          |
 | Shortcut         | -                                                                                                          |

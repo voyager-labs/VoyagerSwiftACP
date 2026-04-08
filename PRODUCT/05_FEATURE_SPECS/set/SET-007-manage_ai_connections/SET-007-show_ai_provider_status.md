@@ -10,7 +10,7 @@
 | Category Key     | SET                                                                                           |
 | Feature ID       | SET-007                                                                                       |
 | Status           | 드래프트                                                                                      |
-| Summary          | <<AI>> 선택한 외부 AI provider의 현재 연결 상태와 사용 가능 여부를 상태 배지·문구로 표시한다. |
+| Summary          | <<AI>> 현재 빌드에서 지원되는 provider 중 사용자가 선택한 provider의 현재 연결 상태와 사용 가능 여부를 상태 배지·문구로 표시한다. |
 | Related Region   | settings_window.settings_body.tab_ai.provider_status_area                                     |
 | Menu             | -                                                                                             |
 | Shortcut         | -                                                                                             |
