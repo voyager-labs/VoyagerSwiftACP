@@ -90,7 +90,18 @@ extension EntryListCoordinator: NSOutlineViewDelegate {
         if let sortOrder = needed.sortOrder { sendEntryArrangements(.setSortOrder(sortOrder)) }
     }
 
-    func outlineViewColumnDidMove(_: Notification) {
+    func outlineViewColumnDidMove(_ notification: Notification) {
+        guard !isApplyingColumnsFromStore else { return }
+
+        let userInfo = notification.userInfo ?? [:]
+        let oldIndex = userInfo["NSOldColumn"] as? Int
+        let newIndex = userInfo["NSNewColumn"] as? Int
+
+        if let oldIndex, let newIndex {
+            store.send(.internal(.moveListColumn(from: oldIndex, to: newIndex)))
+            return
+        }
+
         syncVisibleColumnsFromTableView()
     }
 
@@ -292,7 +303,9 @@ extension EntryListCoordinator {
 
     func handleVisibleColumnsChange(previous: RenderSnapshot, snapshot: RenderSnapshot) {
         guard previous.listVisibleColumns != snapshot.listVisibleColumns else { return }
+        isApplyingColumnsFromStore = true
         view?.applyColumns(snapshot.listVisibleColumns)
+        isApplyingColumnsFromStore = false
         syncListSortIndicators(sortKey: snapshot.sortKey, sortOrder: snapshot.sortOrder)
         syncListRenamingFromStore()
         tableView.reloadData()
@@ -456,46 +469,5 @@ extension EntryListCoordinator {
             )
             cell.configure(configuration)
         }
-    }
-
-    func makeEntryCellConfiguration(
-        entry: EntryModel,
-        columnId: String,
-        dateModifiedWidth: CGFloat,
-        thumbnail: NSImage?,
-    ) -> EntryListEntryCellViewConfiguration {
-        let isCut = state.entryOperations.clipboardItems.contains(entry.fullPath)
-            && state.entryOperations.clipboardOperation == .cut
-
-        return .init(
-            context: .init(
-                model: entry,
-                columnId: columnId,
-                iconSize: state.listIconSize,
-                textSize: state.listTextSize,
-                dateModifiedWidth: dateModifiedWidth,
-                thumbnail: thumbnail,
-                isHidden: entry.isHidden,
-                isCut: isCut,
-                isRenaming: state.entryOperations.renamingItemId == entry.id,
-                renamingText: state.entryOperations.renamingText,
-                workspaceClient: workspaceClient,
-                onRenameUpdate: { [weak self] text in
-                    guard let self else { return }
-                    guard state.entryOperations.renamingItemId != nil else { return }
-                    sendEntryOperations(.edit(.updateRenamingText(text)))
-                },
-                onRenameCommit: { [weak self] in
-                    guard let self else { return }
-                    guard state.entryOperations.renamingItemId != nil else { return }
-                    sendEntryOperations(.edit(.commitRename))
-                },
-                onRenameCancel: { [weak self] in
-                    guard let self else { return }
-                    guard state.entryOperations.renamingItemId != nil else { return }
-                    sendEntryOperations(.edit(.cancelRename))
-                },
-            ),
-        )
     }
 }
