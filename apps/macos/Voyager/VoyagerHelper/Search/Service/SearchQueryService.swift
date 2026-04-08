@@ -101,6 +101,15 @@ struct SearchQueryService: Sendable {
             conditions: conversion.conditions,
         )
 
+        if plannedFilters == request.filters {
+            logger.warning("Gateway query interpretation produced no filter changes for non-empty query")
+            return makeErrorResponse(
+                code: "LLM_CONVERSION_FAILED",
+                details: nil,
+                fallbackFilters: request.filters,
+            )
+        }
+
         return SearchResponsePayload(
             itemCount: 0,
             appliedFilters: AppliedFiltersPayload(
