@@ -1,34 +1,34 @@
 import Foundation
 
-struct EntryViewLayoutCutClearHeuristic: Sendable {
-    var backoffSchedule: [TimeInterval]
+public struct EntryOperationsCutClearHeuristic: Sendable {
+    public var backoffSchedule: [TimeInterval]
 
-    struct PasteboardMetadata: Equatable, Sendable {
-        var changeCount: Int
+    public struct CutSession: Equatable, Sendable {
+        public var cutSessionId: String
+        public var pasteboard: PasteboardMetadata
+        public var sourcePaths: [String]
+        public var filePolling: FileExistencePolling
     }
 
-    struct FileExistencePolling: Equatable, Sendable {
-        var nextCheckAt: Date
-        var nextIntervalIndex: Int
+    public struct PasteboardMetadata: Equatable, Sendable {
+        public var changeCount: Int
     }
 
-    struct CutSession: Equatable, Sendable {
-        var cutSessionId: String
-        var pasteboard: PasteboardMetadata
-        var sourcePaths: [String]
-        var filePolling: FileExistencePolling
+    public struct FileExistencePolling: Equatable, Sendable {
+        public var nextCheckAt: Date
+        public var nextIntervalIndex: Int
     }
 
-    enum Decision: Equatable, Sendable {
+    public enum Decision: Equatable, Sendable {
         case keep(CutSession)
         case clear
     }
 
-    init(backoffSchedule: [TimeInterval] = Self.defaultBackoffSchedule) {
+    public init(backoffSchedule: [TimeInterval] = Self.defaultBackoffSchedule) {
         self.backoffSchedule = backoffSchedule
     }
 
-    func makeInitialSession(
+    public func makeInitialSession(
         cutSessionId: String,
         pasteboardChangeCount: Int,
         sourcePaths: [String],
@@ -43,7 +43,7 @@ struct EntryViewLayoutCutClearHeuristic: Sendable {
         )
     }
 
-    func evaluate(
+    public func evaluate(
         session: CutSession,
         now: Date,
         readPasteboardChangeCount: @Sendable () -> Int,
@@ -76,5 +76,5 @@ struct EntryViewLayoutCutClearHeuristic: Sendable {
         return .keep(updated)
     }
 
-    static let defaultBackoffSchedule: [TimeInterval] = [0.5, 1, 2, 4, 8, 10]
+    public static let defaultBackoffSchedule: [TimeInterval] = [0.5, 1, 2, 4, 8, 10]
 }

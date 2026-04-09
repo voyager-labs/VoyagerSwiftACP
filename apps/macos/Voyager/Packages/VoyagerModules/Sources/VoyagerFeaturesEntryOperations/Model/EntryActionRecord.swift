@@ -1,18 +1,18 @@
 import Foundation
 
-struct EntryActionRecord: Equatable, Identifiable, Sendable {
-    let id: UUID
-    let operationKind: OperationKind
-    let timestamp: Date
-    let targets: [Target]
+public struct EntryActionRecord: Equatable, Identifiable, Sendable {
+    public let id: UUID
+    public let operationKind: OperationKind
+    public let timestamp: Date
+    public let targets: [Target]
 
-    struct Target: Equatable, Sendable {
-        let beforePath: String?
-        let afterPath: String?
-        let beforeTags: [String]?
-        let afterTags: [String]?
+    public struct Target: Equatable, Sendable {
+        public let beforePath: String?
+        public let afterPath: String?
+        public let beforeTags: [String]?
+        public let afterTags: [String]?
 
-        nonisolated init(
+        public nonisolated init(
             beforePath: String?,
             afterPath: String?,
             beforeTags: [String]? = nil,
@@ -25,7 +25,7 @@ struct EntryActionRecord: Equatable, Identifiable, Sendable {
         }
     }
 
-    nonisolated init(
+    public nonisolated init(
         operationKind: OperationKind,
         targets: [Target],
         id: UUID = UUID(),

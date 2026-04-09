@@ -2,6 +2,9 @@ import AppKit
 import ComposableArchitecture
 import Foundation
 
+import VoyagerEntitiesEntry
+import VoyagerShared
+
 public struct EntryFileOpsClient: Sendable {
     public var createFolder: @Sendable (URL, String) async throws -> Void
     public var pasteFile: @Sendable (URL, URL) async throws -> Void

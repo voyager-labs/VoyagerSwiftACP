@@ -1,4 +1,4 @@
-enum OperationKind: Equatable, Hashable, Sendable {
+public enum OperationKind: Equatable, Hashable, Sendable {
     case openDefault
     case openWithApp(String)
     case setDefaultApp(String)
@@ -20,7 +20,7 @@ enum OperationKind: Equatable, Hashable, Sendable {
     case extract
     case setTags
 
-    nonisolated var isUndoable: Bool {
+    public nonisolated var isUndoable: Bool {
         switch self {
         case .createFolder,
              .createAlias,

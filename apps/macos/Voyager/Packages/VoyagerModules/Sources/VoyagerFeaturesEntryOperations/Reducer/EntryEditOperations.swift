@@ -1,6 +1,8 @@
 import ComposableArchitecture
 import Foundation
 
+import VoyagerEntitiesEntry
+
 @Reducer
 struct EntryEditOperationsReducer {
     typealias State = EntryOperationsState

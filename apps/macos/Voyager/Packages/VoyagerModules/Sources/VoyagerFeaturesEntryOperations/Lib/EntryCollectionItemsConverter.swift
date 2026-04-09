@@ -1,19 +1,17 @@
 import Foundation
+import VoyagerEntitiesEntry
+import VoyagerShared
 
 enum EntryCollectionItemsConverter {
     static func convert(
-        _ items: [JSONValue],
+        _ paths: [String],
         showHidden: Bool,
         entryLoadingClient: EntryLoadingClient,
         workspaceClient: WorkspaceClient,
     ) -> [EntryModel] {
         let favoriteTags = FinderFavoritesTagClient.liveValue.favoriteTags()
-        let converted: [EntryModel] = items.compactMap { value -> EntryModel? in
-            guard case let .string(path) = value,
-                  path.isEmpty == false
-            else {
-                return nil
-            }
+        let converted: [EntryModel] = paths.compactMap { path -> EntryModel? in
+            guard !path.isEmpty else { return nil }
 
             let url = URL(fileURLWithPath: path)
             return EntryModelConverterLive.convertURLToEntry(

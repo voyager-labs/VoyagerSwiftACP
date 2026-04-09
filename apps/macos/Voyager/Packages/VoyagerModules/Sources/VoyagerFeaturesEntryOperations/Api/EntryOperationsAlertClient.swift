@@ -1,28 +1,28 @@
 import ComposableArchitecture
 
-enum EntryOperationsReplaceContext: Sendable {
+public enum EntryOperationsReplaceContext: Sendable {
     case putBack
     case move
 }
 
-enum EntryOperationsReplaceAlertResponse: Sendable {
+public enum EntryOperationsReplaceAlertResponse: Sendable {
     case stop
     case replace
 }
 
-struct EntryOperationsAlertClient: Sendable {
-    var showTrashFileAlert: @Sendable (_ fileName: String, _ hasMoreFiles: Bool) async -> Bool
-    var showRenameConflictAlert: @Sendable (_ itemName: String) async -> Void
-    var showDeleteConfirmationAlert: @Sendable (_ itemNames: [String]) async -> Bool
-    var showEmptyTrashConfirmationAlert: @Sendable (_ itemCount: Int) async -> Bool
-    var showReplaceAlert: @Sendable (
+public struct EntryOperationsAlertClient: Sendable {
+    public var showTrashFileAlert: @Sendable (_ fileName: String, _ hasMoreFiles: Bool) async -> Bool
+    public var showRenameConflictAlert: @Sendable (_ itemName: String) async -> Void
+    public var showDeleteConfirmationAlert: @Sendable (_ itemNames: [String]) async -> Bool
+    public var showEmptyTrashConfirmationAlert: @Sendable (_ itemCount: Int) async -> Bool
+    public var showReplaceAlert: @Sendable (
         _ itemName: String,
         _ context: EntryOperationsReplaceContext,
     ) async -> EntryOperationsReplaceAlertResponse
-    var showGetInfoFailureAlert: @Sendable (_ message: String, _ suggestion: String?) async -> Void
-    var showRenameExtensionChangeAlert: @Sendable (_ oldName: String, _ newName: String) async -> Bool
+    public var showGetInfoFailureAlert: @Sendable (_ message: String, _ suggestion: String?) async -> Void
+    public var showRenameExtensionChangeAlert: @Sendable (_ oldName: String, _ newName: String) async -> Bool
 
-    nonisolated init(
+    public nonisolated init(
         showTrashFileAlert: @escaping @Sendable (_ fileName: String, _ hasMoreFiles: Bool) async -> Bool,
         showRenameConflictAlert: @escaping @Sendable (_ itemName: String) async -> Void,
         showDeleteConfirmationAlert: @escaping @Sendable (_ itemNames: [String]) async -> Bool,
@@ -46,7 +46,7 @@ struct EntryOperationsAlertClient: Sendable {
 }
 
 extension EntryOperationsAlertClient: DependencyKey {
-    nonisolated static var liveValue: EntryOperationsAlertClient {
+    public nonisolated static var liveValue: EntryOperationsAlertClient {
         EntryOperationsAlertClient(
             showTrashFileAlert: { fileName, hasMoreFiles in
                 await MainActor.run {
@@ -98,7 +98,7 @@ extension EntryOperationsAlertClient: DependencyKey {
         )
     }
 
-    nonisolated static var testValue: EntryOperationsAlertClient {
+    public nonisolated static var testValue: EntryOperationsAlertClient {
         EntryOperationsAlertClient(
             showTrashFileAlert: { _, _ in false },
             showRenameConflictAlert: { _ in },
@@ -110,12 +110,12 @@ extension EntryOperationsAlertClient: DependencyKey {
         )
     }
 
-    nonisolated static var previewValue: EntryOperationsAlertClient {
+    public nonisolated static var previewValue: EntryOperationsAlertClient {
         testValue
     }
 }
 
-extension DependencyValues {
+public extension DependencyValues {
     nonisolated var entryOperationsAlertClient: EntryOperationsAlertClient {
         get { self[EntryOperationsAlertClient.self] }
         set { self[EntryOperationsAlertClient.self] = newValue }

@@ -3,6 +3,8 @@ import ComposableArchitecture
 import Foundation
 import OSLog
 
+import VoyagerEntitiesEntry
+
 @Reducer
 struct EntryUndoRedoOperationsReducer { // swiftlint:disable:this type_body_length
     typealias State = EntryOperationsState

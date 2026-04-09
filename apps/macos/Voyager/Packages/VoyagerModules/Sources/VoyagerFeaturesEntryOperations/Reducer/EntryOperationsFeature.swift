@@ -1,11 +1,13 @@
 import ComposableArchitecture
 
 @Reducer
-struct EntryOperationsFeature {
-    typealias State = EntryOperationsState
-    typealias Action = EntryOperationsAction
+public struct EntryOperationsFeature {
+    public typealias State = EntryOperationsState
+    public typealias Action = EntryOperationsAction
 
-    var body: some Reducer<State, Action> {
+    public init() {}
+
+    public var body: some Reducer<State, Action> {
         CombineReducers {
             EntryOperationsCommandRoutingReducer()
             EntryOperationsLoadingReducer()

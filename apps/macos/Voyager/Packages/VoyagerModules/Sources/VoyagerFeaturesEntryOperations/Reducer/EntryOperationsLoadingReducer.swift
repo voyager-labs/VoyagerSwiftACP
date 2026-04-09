@@ -3,21 +3,23 @@ import Foundation
 import IdentifiedCollections
 
 @Reducer
-struct EntryOperationsLoadingReducer {
-    typealias State = EntryOperationsState
-    typealias Action = EntryOperationsAction
+public struct EntryOperationsLoadingReducer {
+    public typealias State = EntryOperationsState
+    public typealias Action = EntryOperationsAction
+
+    public init() {}
 
     @Dependency(\.entryLoadingClient)
     private var entryLoadingClient
     @Dependency(\.workspaceClient)
     private var workspaceClient
 
-    var body: some Reducer<State, Action> {
+    public var body: some Reducer<State, Action> {
         Reduce { state, action in
             switch action {
             case let .loading(.loadItems(path, showHidden)):
                 state.isLoading = true
-                return .run { send in
+                return .run { [entryLoadingClient] send in
                     let url = URL(fileURLWithPath: (path as NSString).expandingTildeInPath)
                     do {
                         let items = try await entryLoadingClient.loadItems(url, showHidden)
@@ -65,9 +67,9 @@ struct EntryOperationsLoadingReducer {
                 }
                 return .none
 
-            case let .loading(.collectionItemsLoadedFromSearch(items, showHidden)):
+            case let .loading(.collectionItemsLoadedFromSearch(paths, showHidden)):
                 let converted = EntryCollectionItemsConverter.convert(
-                    items,
+                    paths,
                     showHidden: showHidden,
                     entryLoadingClient: entryLoadingClient,
                     workspaceClient: workspaceClient,

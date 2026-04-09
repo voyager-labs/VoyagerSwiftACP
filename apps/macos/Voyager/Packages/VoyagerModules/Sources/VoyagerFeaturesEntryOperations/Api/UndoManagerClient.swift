@@ -3,17 +3,17 @@ import ObjectiveC
 
 import ComposableArchitecture
 
-struct UndoManagerClient: Sendable {
-    var registerUndo: @Sendable (
+public struct UndoManagerClient: Sendable {
+    public var registerUndo: @Sendable (
         _ windowID: UUID?,
         _ record: EntryActionRecord,
         _ onUndo: @escaping @Sendable (EntryActionRecord) async -> Void,
         _ onRedo: @escaping @Sendable (EntryActionRecord) async -> Void,
     ) async -> Void
-    var undo: @Sendable (_ windowID: UUID?) async -> Void
-    var redo: @Sendable (_ windowID: UUID?) async -> Void
+    public var undo: @Sendable (_ windowID: UUID?) async -> Void
+    public var redo: @Sendable (_ windowID: UUID?) async -> Void
 
-    nonisolated init(
+    public nonisolated init(
         registerUndo: @escaping @Sendable (
             _ windowID: UUID?,
             _ record: EntryActionRecord,
@@ -30,49 +30,29 @@ struct UndoManagerClient: Sendable {
 }
 
 extension UndoManagerClient: DependencyKey {
-    nonisolated static var liveValue: UndoManagerClient {
+    public nonisolated static var liveValue: UndoManagerClient {
+        // Use `live(undoManager:)` at the composition root to inject a concrete UndoManager.
+        // The default liveValue asserts to catch unconfigured usage.
         .init(
-            registerUndo: { windowID, record, onUndo, onRedo in
-                await MainActor.run {
-                    guard let undoManager = resolveFileManagerUndoManager(windowID: windowID) else {
-                        assertionFailure("undoManagerClient.registerUndo live dependency is not configured")
-                        return
-                    }
-
-                    let handlerStore = UndoManagerHandlerStore.store(for: undoManager)
-                    let handler = UndoManagerHandler(
-                        undoManager: undoManager,
-                        onUndo: onUndo,
-                        onRedo: onRedo,
-                    )
-                    handlerStore.add(handler)
-                    undoManager.registerUndo(withTarget: handler) { target in
-                        target.handleUndo(record)
-                    }
-                }
+            registerUndo: { _, _, _, _ in
+                assertionFailure(
+                    "UndoManagerClient.liveValue not configured — use .live(undoManager:) at the composition root",
+                )
             },
-            undo: { windowID in
-                await MainActor.run {
-                    guard let undoManager = resolveFileManagerUndoManager(windowID: windowID) else {
-                        assertionFailure("undoManagerClient.undo live dependency is not configured")
-                        return
-                    }
-                    undoManager.undo()
-                }
+            undo: { _ in
+                assertionFailure(
+                    "UndoManagerClient.liveValue not configured — use .live(undoManager:) at the composition root",
+                )
             },
-            redo: { windowID in
-                await MainActor.run {
-                    guard let undoManager = resolveFileManagerUndoManager(windowID: windowID) else {
-                        assertionFailure("undoManagerClient.redo live dependency is not configured")
-                        return
-                    }
-                    undoManager.redo()
-                }
+            redo: { _ in
+                assertionFailure(
+                    "UndoManagerClient.liveValue not configured — use .live(undoManager:) at the composition root",
+                )
             },
         )
     }
 
-    nonisolated static var testValue: UndoManagerClient {
+    public nonisolated static var testValue: UndoManagerClient {
         .init(
             registerUndo: { _, _, _, _ in
                 fatalError("undoManagerClient.registerUndo test dependency is not configured")
@@ -87,14 +67,14 @@ extension UndoManagerClient: DependencyKey {
     }
 }
 
-extension DependencyValues {
+public extension DependencyValues {
     nonisolated var undoManagerClient: UndoManagerClient {
         get { self[UndoManagerClient.self] }
         set { self[UndoManagerClient.self] = newValue }
     }
 }
 
-extension UndoManagerClient {
+public extension UndoManagerClient {
     static func live(undoManager: UndoManager) -> UndoManagerClient {
         .init(
             registerUndo: { _, record, onUndo, onRedo in
@@ -163,7 +143,7 @@ private final class UndoManagerHandler {
 }
 
 private enum UndoManagerHandlerStoreKey {
-    static var value = 0
+    nonisolated(unsafe) static var value = 0
 }
 
 private final class UndoManagerHandlerStore: @unchecked Sendable {

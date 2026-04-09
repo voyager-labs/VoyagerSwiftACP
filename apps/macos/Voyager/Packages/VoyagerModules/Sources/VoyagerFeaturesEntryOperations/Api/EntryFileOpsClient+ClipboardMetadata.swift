@@ -1,6 +1,8 @@
 import AppKit
 import ComposableArchitecture
 
+import VoyagerShared
+
 extension EntryFileOpsLive {
     nonisolated static var clipboardChangeCount: @Sendable () -> Int {
         {

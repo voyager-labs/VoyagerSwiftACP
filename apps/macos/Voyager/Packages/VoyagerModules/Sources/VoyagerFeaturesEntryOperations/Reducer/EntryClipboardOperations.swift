@@ -2,31 +2,46 @@ import AppKit
 import ComposableArchitecture
 import Foundation
 
-struct EntryViewLayoutCutClearMonitor: Sendable {
-    var heuristic: EntryViewLayoutCutClearHeuristic
+import VoyagerEntitiesEntry
+import VoyagerShared
 
-    struct RuntimeContext: Sendable {
-        var now: Date
-        var readPasteboardChangeCount: @Sendable () -> Int
-        var readPasteboardCutSessionId: @Sendable () -> String?
-        var fileExists: @Sendable (String) -> Bool
+public struct EntryClipboardOperationsCutClearMonitor: Sendable {
+    public var heuristic: EntryOperationsCutClearHeuristic
+
+    public struct RuntimeContext: Sendable {
+        public var now: Date
+        public var readPasteboardChangeCount: @Sendable () -> Int
+        public var readPasteboardCutSessionId: @Sendable () -> String?
+        public var fileExists: @Sendable (String) -> Bool
+
+        public init(
+            now: Date,
+            readPasteboardChangeCount: @Sendable @escaping () -> Int,
+            readPasteboardCutSessionId: @Sendable @escaping () -> String?,
+            fileExists: @Sendable @escaping (String) -> Bool,
+        ) {
+            self.now = now
+            self.readPasteboardChangeCount = readPasteboardChangeCount
+            self.readPasteboardCutSessionId = readPasteboardCutSessionId
+            self.fileExists = fileExists
+        }
     }
 
-    enum Decision: Equatable, Sendable {
+    public enum Decision: Equatable, Sendable {
         case noop
-        case keep(EntryViewLayoutCutClearHeuristic.CutSession)
+        case keep(EntryOperationsCutClearHeuristic.CutSession)
         case clear
     }
 
-    init(heuristic: EntryViewLayoutCutClearHeuristic = .init()) {
+    public init(heuristic: EntryOperationsCutClearHeuristic = .init()) {
         self.heuristic = heuristic
     }
 
-    func evaluateOnAppDidBecomeActive(
+    public func evaluateOnAppDidBecomeActive(
         clipboardOperation: ClipboardOperation,
         clipboardItems: [String],
-        session: EntryViewLayoutCutClearHeuristic.CutSession?,
-        makeSession: (_ now: Date, _ sourcePaths: [String]) -> EntryViewLayoutCutClearHeuristic.CutSession?,
+        session: EntryOperationsCutClearHeuristic.CutSession?,
+        makeSession: (_ now: Date, _ sourcePaths: [String]) -> EntryOperationsCutClearHeuristic.CutSession?,
         context: RuntimeContext,
     ) -> Decision {
         guard clipboardOperation == .cut, !clipboardItems.isEmpty else {
@@ -89,7 +104,7 @@ struct EntryClipboardOperationsReducer {
 
             case .lifecycle(.appDidBecomeActive):
                 let now = Date()
-                let monitor = EntryViewLayoutCutClearMonitor()
+                let monitor = EntryClipboardOperationsCutClearMonitor()
                 let decision = monitor.evaluateOnAppDidBecomeActive(
                     clipboardOperation: state.clipboardOperation,
                     clipboardItems: state.clipboardItems,
@@ -105,7 +120,7 @@ struct EntryClipboardOperationsReducer {
                             entryFileOpsClient.saveClipboardCutSessionId(sessionId)
                         }
 
-                        let heuristic = EntryViewLayoutCutClearHeuristic()
+                        let heuristic = EntryOperationsCutClearHeuristic()
                         return heuristic.makeInitialSession(
                             cutSessionId: sessionId,
                             pasteboardChangeCount: entryFileOpsClient.clipboardChangeCount(),
@@ -168,7 +183,7 @@ struct EntryClipboardOperationsReducer {
 
                     let cutSessionId = uuid().uuidString
                     entryFileOpsClient.saveClipboardCutSessionId(cutSessionId)
-                    let heuristic = EntryViewLayoutCutClearHeuristic()
+                    let heuristic = EntryOperationsCutClearHeuristic()
                     state.cutClearSession = heuristic.makeInitialSession(
                         cutSessionId: cutSessionId,
                         pasteboardChangeCount: entryFileOpsClient.clipboardChangeCount(),
@@ -197,7 +212,7 @@ struct EntryClipboardOperationsReducer {
                     entryFileOpsClient.saveClipboardCutSessionId(sessionId)
                 }
 
-                let heuristic = EntryViewLayoutCutClearHeuristic()
+                let heuristic = EntryOperationsCutClearHeuristic()
                 state.cutClearSession = heuristic.makeInitialSession(
                     cutSessionId: sessionId,
                     pasteboardChangeCount: entryFileOpsClient.clipboardChangeCount(),

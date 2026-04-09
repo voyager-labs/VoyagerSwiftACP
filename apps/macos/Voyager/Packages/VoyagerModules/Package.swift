@@ -69,6 +69,8 @@ let package = Package(
             dependencies: [
                 "VoyagerEntitiesEntry",
                 "VoyagerShared",
+                .product(name: "CasePaths", package: "swift-case-paths"),
+                .product(name: "ComposableArchitecture", package: "swift-composable-architecture"),
             ],
         ),
         .target(
@@ -117,5 +119,22 @@ let package = Package(
                 .product(name: "ComposableArchitecture", package: "swift-composable-architecture"),
             ],
         ),
+        .testTarget(
+            name: "VoyagerEntitiesEntryTests",
+            dependencies: [
+                "VoyagerEntitiesEntry",
+                "VoyagerShared",
+            ],
+        ),
+        .testTarget(
+            name: "VoyagerFeaturesEntryOperationsTests",
+            dependencies: [
+                "VoyagerEntitiesEntry",
+                "VoyagerFeaturesEntryOperations",
+                .product(name: "ComposableArchitecture", package: "swift-composable-architecture"),
+                .product(name: "IdentifiedCollections", package: "swift-identified-collections"),
+            ],
+        ),
+
     ],
 )

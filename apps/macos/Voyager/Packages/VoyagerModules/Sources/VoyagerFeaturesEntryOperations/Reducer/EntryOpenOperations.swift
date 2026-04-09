@@ -2,6 +2,9 @@ import AppKit
 import ComposableArchitecture
 import Foundation
 
+import VoyagerEntitiesEntry
+import VoyagerShared
+
 @Reducer
 struct EntryOpenOperationsReducer {
     typealias State = EntryOperationsState

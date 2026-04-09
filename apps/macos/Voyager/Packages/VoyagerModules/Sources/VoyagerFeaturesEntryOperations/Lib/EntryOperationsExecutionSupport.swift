@@ -2,6 +2,9 @@ import ComposableArchitecture
 import Foundation
 import UniformTypeIdentifiers
 
+import VoyagerEntitiesEntry
+import VoyagerShared
+
 enum EntryOperationsExecutionSupport {
     private struct FileInfo {
         let file: EntryModel

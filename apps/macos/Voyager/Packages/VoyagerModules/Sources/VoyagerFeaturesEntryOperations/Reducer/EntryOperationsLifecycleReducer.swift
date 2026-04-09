@@ -2,6 +2,8 @@ import ComposableArchitecture
 import Foundation
 import UniformTypeIdentifiers
 
+import VoyagerEntitiesEntry
+
 @Reducer
 struct EntryOperationsLifecycleReducer {
     typealias State = EntryOperationsState

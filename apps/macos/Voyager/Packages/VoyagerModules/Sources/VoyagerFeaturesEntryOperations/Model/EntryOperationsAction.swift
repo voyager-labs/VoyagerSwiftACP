@@ -1,10 +1,13 @@
-import AppKit
+@preconcurrency import AppKit
 import ComposableArchitecture
 import Foundation
-import UniformTypeIdentifiers
+@preconcurrency import UniformTypeIdentifiers
+
+import VoyagerEntitiesEntry
+import VoyagerShared
 
 @CasePathable
-enum EntryOperationsAction: CasePathable, Sendable {
+public enum EntryOperationsAction: CasePathable, Sendable {
     case delegate(Delegate)
     case routing(Routing)
     case loading(Loading)
@@ -19,13 +22,13 @@ enum EntryOperationsAction: CasePathable, Sendable {
     case undoRedo(UndoRedo)
 
     @CasePathable
-    enum Delegate: CasePathable, Sendable {
+    public enum Delegate: CasePathable, Sendable {
         case navigateToPath(String)
         case openCollectionFile(URL)
     }
 
     @CasePathable
-    enum Routing: CasePathable, Sendable {
+    public enum Routing: CasePathable, @unchecked Sendable {
         case executeCommand(command: EntryOperationsCommand, context: EntryOperationsCommandContext)
         case validateDrop(context: EntryDropValidationContext)
         case saveDragPaths([String])
@@ -35,19 +38,19 @@ enum EntryOperationsAction: CasePathable, Sendable {
     }
 
     @CasePathable
-    enum Loading: CasePathable, Sendable {
+    public enum Loading: CasePathable, Sendable {
         case loadItems(path: String, showHidden: Bool)
         case loadRecentItems(showHidden: Bool)
         case loadTagItems(tagName: String, showHidden: Bool)
         case loadComputerItems
         case itemsLoaded([EntryModel])
-        case collectionItemsLoadedFromSearch(items: [JSONValue], showHidden: Bool)
+        case collectionItemsLoadedFromSearch(paths: [String], showHidden: Bool)
         case setCollectionMode(Bool)
         case clearCollectionItems
     }
 
     @CasePathable
-    enum Lifecycle: CasePathable, Sendable {
+    public enum Lifecycle: CasePathable, Sendable {
         case syncSelectedEntryIDs(Set<EntryModel.ID>)
         case clearError(String)
         case operationStarted(String, OperationKind)
@@ -61,7 +64,7 @@ enum EntryOperationsAction: CasePathable, Sendable {
     }
 
     @CasePathable
-    enum Open: CasePathable, Sendable {
+    public enum Open: CasePathable, Sendable {
         case openFiles(paths: [String])
         case quickLookFiles(paths: [String])
         case openFinderInfo(paths: [String])
@@ -71,7 +74,7 @@ enum EntryOperationsAction: CasePathable, Sendable {
     }
 
     @CasePathable
-    enum OpenWith: CasePathable, Sendable {
+    public enum OpenWith: CasePathable, Sendable {
         case openFileWithApp(file: EntryModel)
         case openFileWithAppBundleID(filePath: String, bundleID: String, url: URL)
         case setDefaultAppForFile(type: UTType?, bundleID: String, file: EntryModel)
@@ -84,7 +87,7 @@ enum EntryOperationsAction: CasePathable, Sendable {
     }
 
     @CasePathable
-    enum Edit: CasePathable, Sendable {
+    public enum Edit: CasePathable, Sendable {
         case createNewFolder(parentPath: String)
         case createAliases(paths: [String])
         case renameItem(oldPath: String, newPath: String)
@@ -95,7 +98,7 @@ enum EntryOperationsAction: CasePathable, Sendable {
     }
 
     @CasePathable
-    enum Clipboard: CasePathable, Sendable {
+    public enum Clipboard: CasePathable, Sendable {
         case copySelectedItems(files: [EntryModel])
         case copyAbsolutePaths(paths: [String])
         case copyURLs(paths: [String])
@@ -110,7 +113,7 @@ enum EntryOperationsAction: CasePathable, Sendable {
     }
 
     @CasePathable
-    enum Trash: CasePathable, Sendable {
+    public enum Trash: CasePathable, Sendable {
         case moveToTrash(paths: [String])
         case deleteImmediately(paths: [String])
         case deleteImmediatelyConfirmed(paths: [String])
@@ -121,18 +124,18 @@ enum EntryOperationsAction: CasePathable, Sendable {
     }
 
     @CasePathable
-    enum Archive: CasePathable, Sendable {
+    public enum Archive: CasePathable, Sendable {
         case compressItems(paths: [String])
         case extractCompressedFile(path: String)
     }
 
     @CasePathable
-    enum Tagging: CasePathable, Sendable {
+    public enum Tagging: CasePathable, Sendable {
         case requestTagMutation(request: TagMutationRequest)
     }
 
     @CasePathable
-    enum UndoRedo: CasePathable, Sendable {
+    public enum UndoRedo: CasePathable, Sendable {
         case requestUndo
         case requestRedo
         case undoEntryAction(EntryActionRecord)
@@ -142,42 +145,64 @@ enum EntryOperationsAction: CasePathable, Sendable {
     }
 }
 
-struct TagMutationRequest: Equatable, Sendable {
+public struct TagMutationRequest: Equatable, Sendable {
     let mode: Mode
     let tagName: String
     let paths: [String]
 
-    enum Mode: Equatable, Sendable {
+    public enum Mode: Equatable, Sendable {
         case toggle
         case add
         case remove
     }
 }
 
-enum EntryActionDirection: Sendable {
+public enum EntryActionDirection: Sendable {
     case undo
     case redo
 }
 
-struct EntryDropValidationContext: Equatable, Sendable {
-    let sourcePaths: [String]
-    let destinationPath: String
-    let allowedOperationsRawValue: UInt
-    let prefersCopy: Bool
+public struct EntryDropValidationContext: Equatable, Sendable {
+    public let sourcePaths: [String]
+    public let destinationPath: String
+    public let allowedOperationsRawValue: UInt
+    public let prefersCopy: Bool
+
+    public init(
+        sourcePaths: [String],
+        destinationPath: String,
+        allowedOperationsRawValue: UInt,
+        prefersCopy: Bool,
+    ) {
+        self.sourcePaths = sourcePaths
+        self.destinationPath = destinationPath
+        self.allowedOperationsRawValue = allowedOperationsRawValue
+        self.prefersCopy = prefersCopy
+    }
 }
 
-enum EntryDropResolvedOperation: Equatable, Sendable {
+public enum EntryDropResolvedOperation: Equatable, Sendable {
     case none
     case copy
     case move
 }
 
-struct EntryDropValidationResult: Equatable, Sendable {
-    var destinationPath: String
-    var resolvedOperation: EntryDropResolvedOperation
-    var isOptionDrag: Bool
+public struct EntryDropValidationResult: Equatable, Sendable {
+    public var destinationPath: String
+    public var resolvedOperation: EntryDropResolvedOperation
+    public var isOptionDrag: Bool
 
-    static let empty = EntryDropValidationResult(
+    public init(
+        destinationPath: String,
+        resolvedOperation: EntryDropResolvedOperation,
+        isOptionDrag: Bool,
+    ) {
+        self.destinationPath = destinationPath
+        self.resolvedOperation = resolvedOperation
+        self.isOptionDrag = isOptionDrag
+    }
+
+    public static let empty = EntryDropValidationResult(
         destinationPath: "",
         resolvedOperation: .none,
         isOptionDrag: false,

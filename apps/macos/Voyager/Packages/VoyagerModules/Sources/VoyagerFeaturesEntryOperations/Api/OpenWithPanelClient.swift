@@ -3,6 +3,9 @@ import ComposableArchitecture
 import Foundation
 import UniformTypeIdentifiers
 
+import VoyagerEntitiesEntry
+import VoyagerShared
+
 struct OpenWithPanelSelection: Equatable, Sendable {
     let bundleID: String
     let setAsDefault: Bool

@@ -1,13 +1,15 @@
 import CoreGraphics
 import Foundation
 
-enum EntryOperationsCommand {
+import VoyagerEntitiesEntry
+
+public enum EntryOperationsCommand: Sendable {
     case navigation(EntryOperationsNavigationCommand)
     case clipboard(EntryOperationsClipboardCommand)
     case mutation(EntryOperationsMutationCommand)
 }
 
-enum EntryOperationsNavigationCommand {
+public enum EntryOperationsNavigationCommand: Sendable {
     case openSelectedItem
     case quickLookSelectedItem
     case getInfoForSelectedItems
@@ -17,7 +19,7 @@ enum EntryOperationsNavigationCommand {
     case openWithSelectedItem(bundleID: String?, shouldSetAsDefault: Bool)
 }
 
-enum EntryOperationsClipboardCommand {
+public enum EntryOperationsClipboardCommand: Sendable {
     case copySelectedItems
     case cutSelectedItems
     case pasteItems(destinationPath: String)
@@ -26,7 +28,7 @@ enum EntryOperationsClipboardCommand {
     case copySelectedURLs
 }
 
-enum EntryOperationsMutationCommand {
+public enum EntryOperationsMutationCommand: Sendable {
     case createAliasForSelectedItems
     case compressSelectedItems
     case extractSelectedItem
@@ -37,10 +39,16 @@ enum EntryOperationsMutationCommand {
     case emptyTrash
 }
 
-struct EntryOperationsCommandContext {
-    var selectedIds: Set<EntryModel.ID>
-    var displayItems: [EntryModel]
-    var currentPath: String
+public struct EntryOperationsCommandContext: Sendable {
+    public var selectedIds: Set<EntryModel.ID>
+    public var displayItems: [EntryModel]
+    public var currentPath: String
+
+    public init(selectedIds: Set<EntryModel.ID>, displayItems: [EntryModel], currentPath: String) {
+        self.selectedIds = selectedIds
+        self.displayItems = displayItems
+        self.currentPath = currentPath
+    }
 }
 
 enum EntryOperationsCommandOutput {
@@ -147,7 +155,7 @@ enum EntryOperationsCommandPlanner {
         guard !selected.isEmpty else { return [] }
         if selected.count == 1, let entry = selected.first {
             let url = URL(fileURLWithPath: entry.fullPath)
-            if CollectionFileUtils.isCollectionFile(url) {
+            if EntryOperationsCollectionFileHeuristic.isCollectionFile(url) {
                 return [.delegate(.openCollectionFile(url))]
             }
 
