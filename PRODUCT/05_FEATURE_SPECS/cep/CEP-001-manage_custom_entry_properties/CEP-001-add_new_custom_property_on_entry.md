@@ -1,19 +1,25 @@
+---
+interaction_id: "CEP-001-add_new_custom_property_on_entry"
+interaction_type: "command"
+feature: "Manage Custom Entry Properties"
+category_key: "CEP"
+feature_id: "CEP-001"
+status: "드래프트"
+summary: "<<AI>> 선택한 엔트리에 새 사용자 정의 프로퍼티를 추가하고 초기 값을 설정한다. 필요 시 워크스페이스 차원의 프로퍼티 스키마도 함께 생성한다."
+related_region: "file_manager_window.inspector_pane.inspector_mode_property"
+menu: "<<AI>> Edit"
+shortcut: "-"
+---
+
 # Add New Custom Property on Entry
 
-## Metadata
+## Intent
 
-| Field            | Value                                                                                                                                      |
-| ---------------- | ------------------------------------------------------------------------------------------------------------------------------------------ |
-| Interaction ID   | CEP-001-add_new_custom_property_on_entry                                                                                                   |
-| Interaction Type | command                                                                                                                                    |
-| Feature          | Manage Custom Entry Properties                                                                                                             |
-| Category Key     | CEP                                                                                                                                        |
-| Feature ID       | CEP-001                                                                                                                                    |
-| Status           | 드래프트                                                                                                                                   |
-| Summary          | <<AI>> 선택한 엔트리에 새 사용자 정의 프로퍼티를 추가하고 초기 값을 설정한다. 필요 시 워크스페이스 차원의 프로퍼티 스키마도 함께 생성한다. |
-| Related Region   | file_manager_window.inspector_pane.inspector_mode_property                                                                                 |
-| Menu             | <<AI>> Edit                                                                                                                                |
-| Shortcut         | -                                                                                                                                          |
+- TBD
+
+## Trigger / Entry Points
+
+- TBD
 
 ## Preconditions
 
@@ -21,7 +27,19 @@
   UI에 접근 가능한 상태
 - <<AI>> 선택된 엔트리(들)에 사용자 정의 프로퍼티를 기록할 수 있는 권한이 확보된 상태
 
-## Edge Cases
+## Expected Outcome
+
+- TBD
+
+## State Changes
+
+- TBD
+
+## User-visible Feedback
+
+- TBD
+
+## Edge Cases / Failure Handling
 
 - <<AI>> 입력한 프로퍼티 키가 워크스페이스에 이미 존재하는 경우
 - <<AI>> 입력한 프로퍼티 키가 비어있거나 허용되지 않은 문자·형식을 포함하는 경우
@@ -40,6 +58,18 @@
       유효성 오류를 표시함.
 - [ ] <<AI>> 복수 엔트리 중 일부에만 저장이 성공한 상태일 때, 시스템이 결과를 표시하면, 성공·실패
       대상을 구분해 표시하고 실패 사유를 제공함.
+
+## Permissions / Dependencies
+
+- TBD
+
+## Observability / Analytics
+
+- TBD
+
+## Related Interactions
+
+- TBD
 
 ## Source
 

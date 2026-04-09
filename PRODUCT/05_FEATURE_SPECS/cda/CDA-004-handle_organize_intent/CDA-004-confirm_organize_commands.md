@@ -1,19 +1,25 @@
+---
+interaction_id: "CDA-004-confirm_organize_commands"
+interaction_type: "command"
+feature: "Handle Organize Intent"
+category_key: "CDA"
+feature_id: "CDA-004"
+status: "기획 완료"
+summary: "사용자가 정돈 명령어 프리뷰를 확인 후 실행 승인 및 거절을 선택"
+related_region: "file_manager_window.inspector_pane.inspector_mode_chat"
+menu: "-"
+shortcut: "-"
+---
+
 # Confirm Organize Commands
 
-## Metadata
+## Intent
 
-| Field            | Value                                                          |
-| ---------------- | -------------------------------------------------------------- |
-| Interaction ID   | CDA-004-confirm_organize_commands                              |
-| Interaction Type | command                                                        |
-| Feature          | Handle Organize Intent                                         |
-| Category Key     | CDA                                                            |
-| Feature ID       | CDA-004                                                        |
-| Status           | 기획 완료                                                      |
-| Summary          | 사용자가 정돈 명령어 프리뷰를 확인 후 실행 승인 및 거절을 선택 |
-| Related Region   | file_manager_window.inspector_pane.inspector_mode_chat         |
-| Menu             | -                                                              |
-| Shortcut         | -                                                              |
+- TBD
+
+## Trigger / Entry Points
+
+- TBD
 
 ## Preconditions
 
@@ -22,7 +28,19 @@
 - <<AI>> 실행 가능한 Organize Command가 하나 이상 존재함
 - <<AI>> 현재 사용자에게 대상 entry에 대한 수정 권한이 있음
 
-## Edge Cases
+## Expected Outcome
+
+- TBD
+
+## State Changes
+
+- TBD
+
+## User-visible Feedback
+
+- TBD
+
+## Edge Cases / Failure Handling
 
 - <<AI>> 사용자가 승인 또는 거절 버튼을 빠르게 연속 클릭하는 경우
 - <<AI>> 승인 직전에 대상 entry가 외부 요인으로 변경되거나 삭제되는 경우
@@ -38,6 +56,18 @@
 - [ ] <<AI>> 같은 User Request에 대해 사용자가 Confirm Organize Commands 인터랙션을 반복 호출한
       상태일 때, 시스템이 후속 호출을 처리하면, 첫 승인 또는 거절 결과만 유효하게 유지되고 중복
       요청은 무시됨.
+
+## Permissions / Dependencies
+
+- TBD
+
+## Observability / Analytics
+
+- TBD
+
+## Related Interactions
+
+- TBD
 
 ## Source
 

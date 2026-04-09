@@ -1,19 +1,25 @@
+---
+interaction_id: "CEP-001-rename_custom_property_key"
+interaction_type: "input"
+feature: "Manage Custom Entry Properties"
+category_key: "CEP"
+feature_id: "CEP-001"
+status: "드래프트"
+summary: "<<AI>> 선택한 엔트리에서 사용 중인 커스텀 프로퍼티의 키 이름을 변경하고, 워크스페이스 전역에서 해당 키를 사용하는 모든 엔트리·규칙·컬렉션 정의를 함께 업데이트한다."
+related_region: "file_manager_window.inspector_pane.inspector_mode_property"
+menu: "-"
+shortcut: "-"
+---
+
 # Rename Custom Property Key
 
-## Metadata
+## Intent
 
-| Field            | Value                                                                                                                                                               |
-| ---------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Interaction ID   | CEP-001-rename_custom_property_key                                                                                                                                  |
-| Interaction Type | input                                                                                                                                                               |
-| Feature          | Manage Custom Entry Properties                                                                                                                                      |
-| Category Key     | CEP                                                                                                                                                                 |
-| Feature ID       | CEP-001                                                                                                                                                             |
-| Status           | 드래프트                                                                                                                                                            |
-| Summary          | <<AI>> 선택한 엔트리에서 사용 중인 커스텀 프로퍼티의 키 이름을 변경하고, 워크스페이스 전역에서 해당 키를 사용하는 모든 엔트리·규칙·컬렉션 정의를 함께 업데이트한다. |
-| Related Region   | file_manager_window.inspector_pane.inspector_mode_property                                                                                                          |
-| Menu             | -                                                                                                                                                                   |
-| Shortcut         | -                                                                                                                                                                   |
+- TBD
+
+## Trigger / Entry Points
+
+- TBD
 
 ## Preconditions
 
@@ -21,7 +27,19 @@
 - <<AI>> 대상 프로퍼티가 워크스페이스 스키마로 등록되어 있는 상태
 - <<AI>> 프로퍼티 스키마를 편집할 권한을 보유한 상태
 
-## Edge Cases
+## Expected Outcome
+
+- TBD
+
+## State Changes
+
+- TBD
+
+## User-visible Feedback
+
+- TBD
+
+## Edge Cases / Failure Handling
 
 - <<AI>> 입력한 새 키가 비어있거나 허용되지 않은 문자·형식을 포함하는 경우
 - <<AI>> 입력한 새 키가 기존 다른 스키마 키와 중복되는 경우
@@ -40,6 +58,18 @@
       실패 사유 및 재시도 옵션을 표시함.
 - [ ] <<AI>> 키 변경이 완료된 상태일 때, 사용자가 관련 화면을 새로 열거나 검색·필터를 수행하면, 기존
       키는 노출하지 않고 새 키만 일관되게 사용함.
+
+## Permissions / Dependencies
+
+- TBD
+
+## Observability / Analytics
+
+- TBD
+
+## Related Interactions
+
+- TBD
 
 ## Source
 

@@ -1,25 +1,43 @@
+---
+interaction_id: "CTM-001-close_content_tab"
+interaction_type: "command"
+feature: "Handle Content Tab"
+category_key: "CTM"
+feature_id: "CTM-001"
+status: "준비 완료"
+summary: "현재 Content Tab을 닫음"
+related_region: "file_manager_window.sidebar.sidebar_body.content_tabs_area"
+menu: "File"
+shortcut: "⌘W"
+---
+
 # Close Content Tab
 
-## Metadata
+## Intent
 
-| Field            | Value                                                      |
-| ---------------- | ---------------------------------------------------------- |
-| Interaction ID   | CTM-001-close_content_tab                                  |
-| Interaction Type | command                                                    |
-| Feature          | Handle Content Tab                                         |
-| Category Key     | CTM                                                        |
-| Feature ID       | CTM-001                                                    |
-| Status           | 준비 완료                                                  |
-| Summary          | 현재 Content Tab을 닫음                                    |
-| Related Region   | file_manager_window.sidebar.sidebar_body.content_tabs_area |
-| Menu             | File                                                       |
-| Shortcut         | ⌘W                                                         |
+- TBD
+
+## Trigger / Entry Points
+
+- TBD
 
 ## Preconditions
 
 - 닫을 Content Tab이 활성 상태거나 지정된 상태
 
-## Edge Cases
+## Expected Outcome
+
+- TBD
+
+## State Changes
+
+- TBD
+
+## User-visible Feedback
+
+- TBD
+
+## Edge Cases / Failure Handling
 
 - 마지막 남은 Content Tab을 닫는 경우
 - 닫으려는 Content Tab에 진행 중인 상태의 작업이 있는 경우
@@ -34,6 +52,18 @@
 - [ ] <<AI>> 해당 File Manager Window에 마지막 하나의 Content Tab만 남은 상태에서 사용자가 해당
       인터랙션을 호출하면, 정의된 정책(예: 빈 탭 생성 또는 창 닫기)에 따라 동작하고 그 결과를
       일관되게 유지함.
+
+## Permissions / Dependencies
+
+- TBD
+
+## Observability / Analytics
+
+- TBD
+
+## Related Interactions
+
+- TBD
 
 ## Source
 

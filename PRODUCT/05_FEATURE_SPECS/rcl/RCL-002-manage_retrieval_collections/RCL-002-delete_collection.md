@@ -1,25 +1,43 @@
+---
+interaction_id: "RCL-002-delete_collection"
+interaction_type: "command"
+feature: "Manage Retrieval Collections"
+category_key: "RCL"
+feature_id: "RCL-002"
+status: "배포 완료"
+summary: "현재 보고 있는 콜렉션 파일을 삭제하고 닫음"
+related_region: "file_manager_window.content_pane.content_header.page_menu_area"
+menu: "File"
+shortcut: "-"
+---
+
 # Delete Collection
 
-## Metadata
+## Intent
 
-| Field            | Value                                                          |
-| ---------------- | -------------------------------------------------------------- |
-| Interaction ID   | RCL-002-delete_collection                                      |
-| Interaction Type | command                                                        |
-| Feature          | Manage Retrieval Collections                                   |
-| Category Key     | RCL                                                            |
-| Feature ID       | RCL-002                                                        |
-| Status           | 배포 완료                                                      |
-| Summary          | 현재 보고 있는 콜렉션 파일을 삭제하고 닫음                     |
-| Related Region   | file_manager_window.content_pane.content_header.page_menu_area |
-| Menu             | File                                                           |
-| Shortcut         | -                                                              |
+- TBD
+
+## Trigger / Entry Points
+
+- TBD
 
 ## Preconditions
 
 - 현재 페이지가 콜렉션 페이지인 상태
 
-## Edge Cases
+## Expected Outcome
+
+- TBD
+
+## State Changes
+
+- TBD
+
+## User-visible Feedback
+
+- TBD
+
+## Edge Cases / Failure Handling
 
 - 다른 탭/뷰에서 동일 콜렉션 페이지가 열려 있는 경우
 
@@ -31,6 +49,18 @@
       삭제하고, 현재 페이지를 닫음
 - [ ] 사용자가 삭제를 확정했을 때, 다른 뷰에서 동일 콜렉션 페이지가 열려 있는 상태라면, 해당 뷰가
       대상 없음 상태로 전환됨
+
+## Permissions / Dependencies
+
+- TBD
+
+## Observability / Analytics
+
+- TBD
+
+## Related Interactions
+
+- TBD
 
 ## Source
 

@@ -1,25 +1,43 @@
+---
+interaction_id: "EVM-002-show_hide_hidden_entry"
+interaction_type: "command"
+feature: "Configure Entries View"
+category_key: "EVM"
+feature_id: "EVM-002"
+status: "배포 완료"
+summary: "Entries View에서 숨김 설정된 Entry의 Entry 목록 상에 보이게 하거나, 보이지 않도록 토글"
+related_region: "file_manager_window.content_pane"
+menu: "View"
+shortcut: "⌘⇧."
+---
+
 # Show/Hide Hidden Entry
 
-## Metadata
+## Intent
 
-| Field            | Value                                                                                  |
-| ---------------- | -------------------------------------------------------------------------------------- |
-| Interaction ID   | EVM-002-show_hide_hidden_entry                                                         |
-| Interaction Type | command                                                                                |
-| Feature          | Configure Entries View                                                                 |
-| Category Key     | EVM                                                                                    |
-| Feature ID       | EVM-002                                                                                |
-| Status           | 배포 완료                                                                              |
-| Summary          | Entries View에서 숨김 설정된 Entry의 Entry 목록 상에 보이게 하거나, 보이지 않도록 토글 |
-| Related Region   | file_manager_window.content_pane                                                       |
-| Menu             | View                                                                                   |
-| Shortcut         | ⌘⇧.                                                                                    |
+- TBD
+
+## Trigger / Entry Points
+
+- TBD
 
 ## Preconditions
 
 -   -
 
-## Edge Cases
+## Expected Outcome
+
+- TBD
+
+## State Changes
+
+- TBD
+
+## User-visible Feedback
+
+- TBD
+
+## Edge Cases / Failure Handling
 
 -   -
 
@@ -29,6 +47,18 @@
       엔트리가 뷰 상에 표시/해제됨
 - [ ] 해당 인터랙션이 호출될 때, View Entry Counts in Current Page가 정상적으로 동작하면, 개수를
       즉시 갱신함
+
+## Permissions / Dependencies
+
+- TBD
+
+## Observability / Analytics
+
+- TBD
+
+## Related Interactions
+
+- TBD
 
 ## Source
 

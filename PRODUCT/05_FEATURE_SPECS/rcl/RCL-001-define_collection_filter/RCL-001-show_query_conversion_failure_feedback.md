@@ -1,19 +1,25 @@
+---
+interaction_id: "RCL-001-show_query_conversion_failure_feedback"
+interaction_type: "display"
+feature: "Define Collection Filter"
+category_key: "RCL"
+feature_id: "RCL-001"
+status: "기획 완료"
+summary: "자연어 쿼리 해석 단계에서 변환 실패가 발생했을 때 입력 흐름을 막지 않는 가벼운 실패 피드백을 표시해 반영되지 않은 이유를 이해할 수 있게 함"
+related_region: "file_manager_window.content_pane.content_header.collection_filter_composer"
+menu: "-"
+shortcut: "-"
+---
+
 # Show Query Conversion Failure Feedback
 
-## Metadata
+## Intent
 
-| Field            | Value                                                                                                                                      |
-| ---------------- | ------------------------------------------------------------------------------------------------------------------------------------------ |
-| Interaction ID   | RCL-001-show_query_conversion_failure_feedback                                                                                             |
-| Interaction Type | display                                                                                                                                    |
-| Feature          | Define Collection Filter                                                                                                                   |
-| Category Key     | RCL                                                                                                                                        |
-| Feature ID       | RCL-001                                                                                                                                    |
-| Status           | 기획 완료                                                                                                                                  |
-| Summary          | 자연어 쿼리 해석 단계에서 변환 실패가 발생했을 때 입력 흐름을 막지 않는 가벼운 실패 피드백을 표시해 반영되지 않은 이유를 이해할 수 있게 함 |
-| Related Region   | file_manager_window.content_pane.content_header.collection_filter_composer                                                                 |
-| Menu             | -                                                                                                                                          |
-| Shortcut         | -                                                                                                                                          |
+- TBD
+
+## Trigger / Entry Points
+
+- TBD
 
 ## Preconditions
 
@@ -22,7 +28,11 @@
 - Generate Filter Changes from Query가 변환 실패로 종료된 상태
 - 저장된 collection open 실패 alert 경로가 아닌 일반 Composer 쿼리 제출 흐름인 상태
 
-## State Transitions
+## Expected Outcome
+
+- TBD
+
+## State Changes
 
 - `query_submitting` -> `query_conversion_failed`
     - 현재 쿼리 제출 흐름이 변환 실패로 종료되면, 요청 체인이 변환 실패 상태로 전환됨
@@ -35,7 +45,11 @@
 - `conversion_failure_feedback_visible` -> `query_resubmitting`
     - 사용자가 다시 제출하면 기존 feedback과 별개로 새 쿼리 제출 상태로 전환됨
 
-## Edge Cases
+## User-visible Feedback
+
+- TBD
+
+## Edge Cases / Failure Handling
 
 - 오래된 요청 응답이 늦게 도착하는 경우
 - 변환 실패 직후 사용자가 입력값을 수정해 다시 제출하는 경우
@@ -64,6 +78,18 @@
       alert 기반 경로를 유지함
 - [ ] 메인 앱에서 실제 변환 실패를 재현했을 때, 사용자가 Collection Filter Composer 상단 문맥에서
       local toast를 확인할 수 있음
+
+## Permissions / Dependencies
+
+- TBD
+
+## Observability / Analytics
+
+- TBD
+
+## Related Interactions
+
+- TBD
 
 ## Source
 

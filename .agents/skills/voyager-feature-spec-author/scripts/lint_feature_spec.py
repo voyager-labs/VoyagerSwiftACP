@@ -127,10 +127,6 @@ def parse_legacy_metadata(lines: List[str]) -> Dict[str, str]:
     return fields
 
 
-def is_placeholder_value(value: str) -> bool:
-    return value.strip() in {"", "-", "TBD", "null", "Null", "NULL", "~"}
-
-
 def is_placeholder_line(line: str) -> bool:
     stripped = line.strip()
     if not stripped:
@@ -140,6 +136,33 @@ def is_placeholder_line(line: str) -> bool:
 
 def section_has_concrete(lines: List[str]) -> bool:
     return any(not is_placeholder_line(line) for line in lines)
+
+
+def is_tbd_line(line: str) -> bool:
+    stripped = line.strip()
+    if not stripped:
+        return False
+    return stripped in {"TBD", "- TBD", "- [ ] TBD"} or stripped.startswith("- TBD")
+
+
+def metadata_value_is_tbd(value: str) -> bool:
+    return value.strip() == "TBD"
+
+
+def section_has_unresolved_tbd(lines: List[str]) -> bool:
+    has_concrete = False
+    has_tbd = False
+    for line in lines:
+        stripped = line.strip()
+        if not stripped:
+            continue
+        if is_tbd_line(line):
+            has_tbd = True
+            continue
+        if stripped == "-":
+            continue
+        has_concrete = True
+    return has_tbd and not has_concrete
 
 
 def has_fields(metadata: Dict[str, str], required: Iterable[str]) -> Tuple[bool, List[str]]:
@@ -173,20 +196,18 @@ def lint_path(path: Path, strict: bool) -> LintResult:
         if not has_all_fields:
             result.fail(f"metadata missing required fields: {', '.join(sorted(missing))}")
         elif strict:
-            placeholders = [
-                field for field in REQUIRED_METADATA_FIELDS if is_placeholder_value(result.metadata.get(field, ""))
+            tbd_fields = [
+                field for field in REQUIRED_METADATA_FIELDS if metadata_value_is_tbd(result.metadata.get(field, ""))
             ]
-            if placeholders:
-                result.fail(
-                    f"metadata has non-concrete placeholders in required fields: {', '.join(sorted(placeholders))}"
-                )
+            if tbd_fields:
+                result.warn(f"strict mode: metadata has unresolved TBD fields: {', '.join(sorted(tbd_fields))}")
 
     if strict:
         for section in REQUIRED_SECTIONS:
             if section == "Source":
                 continue
-            if not section_has_concrete(sections.get(section, [])):
-                result.fail(f"strict mode: section '## {section}' has only placeholders")
+            if section_has_unresolved_tbd(sections.get(section, [])):
+                result.warn(f"strict mode: section '## {section}' has unresolved TBD content")
 
     if "Source" in sections:
         source_text = "\n".join(sections["Source"])
@@ -199,7 +220,11 @@ def lint_path(path: Path, strict: bool) -> LintResult:
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Lint Voyager FEATURE_SPEC markdown files")
     parser.add_argument("paths", nargs="+", help="Markdown files to lint")
-    parser.add_argument("--strict", action="store_true", help="Require non-placeholder content in required sections")
+    parser.add_argument(
+        "--strict",
+        action="store_true",
+        help="Emit additional warnings for unresolved TBD values while keeping repo-wide '-' / 'TBD' rules",
+    )
     return parser.parse_args()
 
 

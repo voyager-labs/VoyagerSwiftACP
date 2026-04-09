@@ -1,25 +1,43 @@
+---
+interaction_id: "RCL-001-open_collection_scope_menu"
+interaction_type: "command"
+feature: "Define Collection Filter"
+category_key: "RCL"
+feature_id: "RCL-001"
+status: "배포 완료"
+summary: "스코프 드롭다운 메뉴를 열어 컨디션이 적용될 스코프를 선택할 수 있는 옵션을 제공"
+related_region: "file_manager_window.content_pane.content_header.collection_filter_composer"
+menu: "-"
+shortcut: "-"
+---
+
 # Open Collection Scope Menu
 
-## Metadata
+## Intent
 
-| Field            | Value                                                                           |
-| ---------------- | ------------------------------------------------------------------------------- |
-| Interaction ID   | RCL-001-open_collection_scope_menu                                              |
-| Interaction Type | command                                                                         |
-| Feature          | Define Collection Filter                                                        |
-| Category Key     | RCL                                                                             |
-| Feature ID       | RCL-001                                                                         |
-| Status           | 배포 완료                                                                       |
-| Summary          | 스코프 드롭다운 메뉴를 열어 컨디션이 적용될 스코프를 선택할 수 있는 옵션을 제공 |
-| Related Region   | file_manager_window.content_pane.content_header.collection_filter_composer      |
-| Menu             | -                                                                               |
-| Shortcut         | -                                                                               |
+- TBD
+
+## Trigger / Entry Points
+
+- TBD
 
 ## Preconditions
 
 - Collection Filter Composer가 열린 상태
 
-## Edge Cases
+## Expected Outcome
+
+- TBD
+
+## State Changes
+
+- TBD
+
+## User-visible Feedback
+
+- TBD
+
+## Edge Cases / Failure Handling
 
 - 스코프 메뉴가 이미 열린 상태에서 호출되는 경우
 
@@ -29,6 +47,18 @@
       목록이 노출됨
 - [ ] 스코프 메뉴가 이미 열린 상태일 때, 사용자가 해당 인터랙션을 호출하면, 열린 상태를 유지함 (닫기
       위해선 해당 요소 바깥을 클릭)
+
+## Permissions / Dependencies
+
+- TBD
+
+## Observability / Analytics
+
+- TBD
+
+## Related Interactions
+
+- TBD
 
 ## Source
 

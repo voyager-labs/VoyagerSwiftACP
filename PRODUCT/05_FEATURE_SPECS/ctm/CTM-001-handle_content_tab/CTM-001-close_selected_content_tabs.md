@@ -1,25 +1,43 @@
+---
+interaction_id: "CTM-001-close_selected_content_tabs"
+interaction_type: "command"
+feature: "Handle Content Tab"
+category_key: "CTM"
+feature_id: "CTM-001"
+status: "준비 완료"
+summary: "선택한 Content Tab들을 닫음"
+related_region: "file_manager_window.sidebar.sidebar_body.content_tabs_area"
+menu: "Context"
+shortcut: "⌘W"
+---
+
 # Close Selected Content Tabs
 
-## Metadata
+## Intent
 
-| Field            | Value                                                      |
-| ---------------- | ---------------------------------------------------------- |
-| Interaction ID   | CTM-001-close_selected_content_tabs                        |
-| Interaction Type | command                                                    |
-| Feature          | Handle Content Tab                                         |
-| Category Key     | CTM                                                        |
-| Feature ID       | CTM-001                                                    |
-| Status           | 준비 완료                                                  |
-| Summary          | 선택한 Content Tab들을 닫음                                |
-| Related Region   | file_manager_window.sidebar.sidebar_body.content_tabs_area |
-| Menu             | Context                                                    |
-| Shortcut         | ⌘W                                                         |
+- TBD
+
+## Trigger / Entry Points
+
+- TBD
 
 ## Preconditions
 
 - 1개 이상의 Content Tab이 지정된 상태
 
-## Edge Cases
+## Expected Outcome
+
+- TBD
+
+## State Changes
+
+- TBD
+
+## User-visible Feedback
+
+- TBD
+
+## Edge Cases / Failure Handling
 
 - 선택된 탭 전체가 해당 File Manager Window의 모든 탭인 경우.
 - 선택된 탭들 중 저장되지 않은 변경 사항이 있는 탭이 포함된 경우.
@@ -33,6 +51,18 @@
       탭들이 모두 닫힘.
 - [ ] <<AI>> 선택된 탭들이 현재 창의 모든 탭인 경우, 사용자가 해당 인터랙션을 호출하면, 정의된
       정책(예: 빈 탭 생성 또는 창 닫기)에 따라 동작하고 그 결과가 UI에 일관되게 반영됨.
+
+## Permissions / Dependencies
+
+- TBD
+
+## Observability / Analytics
+
+- TBD
+
+## Related Interactions
+
+- TBD
 
 ## Source
 

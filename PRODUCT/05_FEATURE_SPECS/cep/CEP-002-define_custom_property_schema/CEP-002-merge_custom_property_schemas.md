@@ -1,26 +1,44 @@
+---
+interaction_id: "CEP-002-merge_custom_property_schemas"
+interaction_type: "command"
+feature: "Define Custom Property Schema"
+category_key: "CEP"
+feature_id: "CEP-002"
+status: "아이디어"
+summary: "<<AI>> 선택한 여러 사용자 프로퍼티 스키마를 하나의 타깃 스키마로 병합하는 설정 플로우를 제공한다."
+related_region: "file_manager_window.inspector_pane.inspector_mode_property"
+menu: "<<AI>> Edit"
+shortcut: "-"
+---
+
 # Merge Custom Property Schemas
 
-## Metadata
+## Intent
 
-| Field            | Value                                                                                             |
-| ---------------- | ------------------------------------------------------------------------------------------------- |
-| Interaction ID   | CEP-002-merge_custom_property_schemas                                                             |
-| Interaction Type | command                                                                                           |
-| Feature          | Define Custom Property Schema                                                                     |
-| Category Key     | CEP                                                                                               |
-| Feature ID       | CEP-002                                                                                           |
-| Status           | 아이디어                                                                                          |
-| Summary          | <<AI>> 선택한 여러 사용자 프로퍼티 스키마를 하나의 타깃 스키마로 병합하는 설정 플로우를 제공한다. |
-| Related Region   | file_manager_window.inspector_pane.inspector_mode_property                                        |
-| Menu             | <<AI>> Edit                                                                                       |
-| Shortcut         | -                                                                                                 |
+- TBD
+
+## Trigger / Entry Points
+
+- TBD
 
 ## Preconditions
 
 - <<AI>> 병합할 스키마 2개 이상이 선택된 상태- 병합 결과로 남길 타깃 스키마가 지정된 상태
 - <<AI>> 병합 및 값 마이그레이션을 실행할 권한을 보유한 상태
 
-## Edge Cases
+## Expected Outcome
+
+- TBD
+
+## State Changes
+
+- TBD
+
+## User-visible Feedback
+
+- TBD
+
+## Edge Cases / Failure Handling
 
 - <<AI>> 선택한 스키마들의 타입이 서로 달라 병합 규칙을 정할 수 없는 경우
 - <<AI>> 동일 엔트리에 여러 스키마 값이 동시에 존재해 충돌 해결이 필요한 경우
@@ -37,6 +55,18 @@
       비활성화하고 모든 참조를 타깃 스키마로 통합함.
 - [ ] <<AI>> 병합 설정이 불가능한 조합인 상태일 때, 사용자가 실행을 시도하면, 실행을 차단하고 이유와
       대안을 표시함.
+
+## Permissions / Dependencies
+
+- TBD
+
+## Observability / Analytics
+
+- TBD
+
+## Related Interactions
+
+- TBD
 
 ## Source
 

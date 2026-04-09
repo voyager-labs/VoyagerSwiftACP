@@ -1,19 +1,25 @@
+---
+interaction_id: "CEP-002-edit_custom_property_schema"
+interaction_type: "input"
+feature: "Define Custom Property Schema"
+category_key: "CEP"
+feature_id: "CEP-002"
+status: "아이디어"
+summary: "<<AI>> 기존 사용자 프로퍼티 스키마의 이름, 설명, 타입, 표시 옵션 등을 수정해 워크스페이스 전역 정의를 업데이트한다."
+related_region: "file_manager_window.inspector_pane.inspector_mode_property"
+menu: "-"
+shortcut: "-"
+---
+
 # Edit Custom Property Schema
 
-## Metadata
+## Intent
 
-| Field            | Value                                                                                                               |
-| ---------------- | ------------------------------------------------------------------------------------------------------------------- |
-| Interaction ID   | CEP-002-edit_custom_property_schema                                                                                 |
-| Interaction Type | input                                                                                                               |
-| Feature          | Define Custom Property Schema                                                                                       |
-| Category Key     | CEP                                                                                                                 |
-| Feature ID       | CEP-002                                                                                                             |
-| Status           | 아이디어                                                                                                            |
-| Summary          | <<AI>> 기존 사용자 프로퍼티 스키마의 이름, 설명, 타입, 표시 옵션 등을 수정해 워크스페이스 전역 정의를 업데이트한다. |
-| Related Region   | file_manager_window.inspector_pane.inspector_mode_property                                                          |
-| Menu             | -                                                                                                                   |
-| Shortcut         | -                                                                                                                   |
+- TBD
+
+## Trigger / Entry Points
+
+- TBD
 
 ## Preconditions
 
@@ -21,7 +27,19 @@
 - <<AI>> 대상 스키마가 삭제되지 않고 접근 가능한 상태
 - <<AI>> 프로퍼티 스키마를 편집할 권한을 보유한 상태
 
-## Edge Cases
+## Expected Outcome
+
+- TBD
+
+## State Changes
+
+- TBD
+
+## User-visible Feedback
+
+- TBD
+
+## Edge Cases / Failure Handling
 
 - <<AI>> 스키마 타입 변경이 기존 엔트리 값과 호환되지 않는 경우- 옵션 값(enum) 변경으로 기존 값이
   제약을 위반하는 경우
@@ -37,6 +55,18 @@
       차단하거나 값 마이그레이션 플로우로 안내함.
 - [ ] <<AI>> 입력이 유효하지 않은 상태일 때, 사용자가 저장하면, 저장을 차단하고 유효성 오류를
       표시함.
+
+## Permissions / Dependencies
+
+- TBD
+
+## Observability / Analytics
+
+- TBD
+
+## Related Interactions
+
+- TBD
 
 ## Source
 

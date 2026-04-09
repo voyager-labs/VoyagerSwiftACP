@@ -1,19 +1,25 @@
+---
+interaction_id: "RCL-002-save_collection_filter_changes"
+interaction_type: "command"
+feature: "Manage Retrieval Collections"
+category_key: "RCL"
+feature_id: "RCL-002"
+status: "배포 완료"
+summary: "현재 콜렉션 파일에 필터 변경 사항을 저장해 정의를 갱신"
+related_region: "file_manager_window.content_pane.content_header.page_menu_area"
+menu: "File"
+shortcut: "⌘⌥S"
+---
+
 # Save Collection Filter Changes
 
-## Metadata
+## Intent
 
-| Field            | Value                                                          |
-| ---------------- | -------------------------------------------------------------- |
-| Interaction ID   | RCL-002-save_collection_filter_changes                         |
-| Interaction Type | command                                                        |
-| Feature          | Manage Retrieval Collections                                   |
-| Category Key     | RCL                                                            |
-| Feature ID       | RCL-002                                                        |
-| Status           | 배포 완료                                                      |
-| Summary          | 현재 콜렉션 파일에 필터 변경 사항을 저장해 정의를 갱신         |
-| Related Region   | file_manager_window.content_pane.content_header.page_menu_area |
-| Menu             | File                                                           |
-| Shortcut         | ⌘⌥S                                                            |
+- TBD
+
+## Trigger / Entry Points
+
+- TBD
 
 ## Preconditions
 
@@ -21,7 +27,19 @@
 - 현재 필터 구성이 기준점과 다른 상태
 - 미저장 필터 변경이 존재하는 상태
 
-## Edge Cases
+## Expected Outcome
+
+- TBD
+
+## State Changes
+
+- TBD
+
+## User-visible Feedback
+
+- TBD
+
+## Edge Cases / Failure Handling
 
 - 미완성 상태의 컨디션이 있는 경우
 - 저장 중 스토리지 오류가 발생하는 경우
@@ -37,6 +55,18 @@
       피드백을 표시함
 - [ ] 동일한 콜렉션이 다른 탭/윈도우에서 저장된 이후 상태일 때, 사용자가 저장을 시도하면, 저장을
       수행하지 않고 충돌 피드백을 표시함
+
+## Permissions / Dependencies
+
+- TBD
+
+## Observability / Analytics
+
+- TBD
+
+## Related Interactions
+
+- TBD
 
 ## Source
 

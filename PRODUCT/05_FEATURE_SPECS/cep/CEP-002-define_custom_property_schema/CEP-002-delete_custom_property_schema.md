@@ -1,26 +1,44 @@
+---
+interaction_id: "CEP-002-delete_custom_property_schema"
+interaction_type: "command"
+feature: "Define Custom Property Schema"
+category_key: "CEP"
+feature_id: "CEP-002"
+status: "아이디어"
+summary: "<<AI>> 선택한 사용자 프로퍼티 스키마를 완전히 삭제해 이후 어떤 엔트리에서도 사용할 수 없도록 한다."
+related_region: "file_manager_window.inspector_pane.inspector_mode_property"
+menu: "<<AI>> Edit"
+shortcut: "-"
+---
+
 # Delete Custom Property Schema
 
-## Metadata
+## Intent
 
-| Field            | Value                                                                                              |
-| ---------------- | -------------------------------------------------------------------------------------------------- |
-| Interaction ID   | CEP-002-delete_custom_property_schema                                                              |
-| Interaction Type | command                                                                                            |
-| Feature          | Define Custom Property Schema                                                                      |
-| Category Key     | CEP                                                                                                |
-| Feature ID       | CEP-002                                                                                            |
-| Status           | 아이디어                                                                                           |
-| Summary          | <<AI>> 선택한 사용자 프로퍼티 스키마를 완전히 삭제해 이후 어떤 엔트리에서도 사용할 수 없도록 한다. |
-| Related Region   | file_manager_window.inspector_pane.inspector_mode_property                                         |
-| Menu             | <<AI>> Edit                                                                                        |
-| Shortcut         | -                                                                                                  |
+- TBD
+
+## Trigger / Entry Points
+
+- TBD
 
 ## Preconditions
 
 - <<AI>> 삭제할 프로퍼티 스키마가 선택된 상태
 - <<AI>> 프로퍼티 스키마를 삭제할 권한을 보유한 상태
 
-## Edge Cases
+## Expected Outcome
+
+- TBD
+
+## State Changes
+
+- TBD
+
+## User-visible Feedback
+
+- TBD
+
+## Edge Cases / Failure Handling
 
 - <<AI>> 대상 스키마가 하나 이상의 엔트리에서 사용 중인 경우
 - <<AI>> 대상 스키마가 컬렉션 정의·규칙·Computed Property에서 참조되는 경우
@@ -36,6 +54,18 @@
       편집 UI에서 해당 프로퍼티를 더 이상 선택할 수 없게 함.
 - [ ] <<AI>> 삭제 작업이 부분 실패한 상태일 때, 시스템이 결과를 표시하면, 성공·실패 대상을 구분해
       표시하고 실패 사유 및 복구/재시도 옵션을 제공함.
+
+## Permissions / Dependencies
+
+- TBD
+
+## Observability / Analytics
+
+- TBD
+
+## Related Interactions
+
+- TBD
 
 ## Source
 

@@ -1,25 +1,43 @@
+---
+interaction_id: "CTM-003-rename_content_tab"
+interaction_type: "input"
+feature: "Manage Pinned Content Tabs"
+category_key: "CTM"
+feature_id: "CTM-003"
+status: "아이디어"
+summary: "해당 Content Tab의 이름을 수정"
+related_region: "file_manager_window.sidebar.sidebar_body.content_tabs_area"
+menu: "-"
+shortcut: "-"
+---
+
 # Rename Content Tab
 
-## Metadata
+## Intent
 
-| Field            | Value                                                      |
-| ---------------- | ---------------------------------------------------------- |
-| Interaction ID   | CTM-003-rename_content_tab                                 |
-| Interaction Type | input                                                      |
-| Feature          | Manage Pinned Content Tabs                                 |
-| Category Key     | CTM                                                        |
-| Feature ID       | CTM-003                                                    |
-| Status           | 아이디어                                                   |
-| Summary          | 해당 Content Tab의 이름을 수정                             |
-| Related Region   | file_manager_window.sidebar.sidebar_body.content_tabs_area |
-| Menu             | -                                                          |
-| Shortcut         | -                                                          |
+- TBD
+
+## Trigger / Entry Points
+
+- TBD
 
 ## Preconditions
 
 - 이름을 변경할 Content Tab이 활성 상태거나 지정된 상태
 
-## Edge Cases
+## Expected Outcome
+
+- TBD
+
+## State Changes
+
+- TBD
+
+## User-visible Feedback
+
+- TBD
+
+## Edge Cases / Failure Handling
 
 - <<TEMP>>
 - 입력된 이름이 비어있는 경우
@@ -35,6 +53,18 @@
       기존 이름을 유지하거나 유효하지 않은 이름에 대한 경고를 표시함.
 - [ ] <<AI>> 시스템 예약 문자열 등 허용되지 않은 이름으로 변경을 시도한 상태에서 사용자가 해당
       인터랙션을 호출하면, 이름이 변경되지 않고 이유를 안내하는 피드백을 표시함.
+
+## Permissions / Dependencies
+
+- TBD
+
+## Observability / Analytics
+
+- TBD
+
+## Related Interactions
+
+- TBD
 
 ## Source
 

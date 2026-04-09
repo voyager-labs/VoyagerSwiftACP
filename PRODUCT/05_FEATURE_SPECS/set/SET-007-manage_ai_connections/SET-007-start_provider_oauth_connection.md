@@ -1,19 +1,17 @@
+---
+interaction_id: "SET-007-start_provider_oauth_connection"
+interaction_type: "command"
+feature: "Manage AI Connections"
+category_key: "SET"
+feature_id: "SET-007"
+status: "드래프트"
+summary: "<<AI>> 선택한 provider의 OAuth 연결 절차를 시작하고, 외부 인증 플로우 진입을 준비한다."
+related_region: "settings_window.settings_body.tab_ai.provider_connection_area"
+menu: "-"
+shortcut: "-"
+---
+
 # Start Provider OAuth Connection
-
-## Metadata
-
-| Field            | Value                                                                                  |
-| ---------------- | -------------------------------------------------------------------------------------- |
-| Interaction ID   | SET-007-start_provider_oauth_connection                                                |
-| Interaction Type | command                                                                                |
-| Feature          | Manage AI Connections                                                                  |
-| Category Key     | SET                                                                                    |
-| Feature ID       | SET-007                                                                                |
-| Status           | 드래프트                                                                               |
-| Summary          | <<AI>> 선택한 provider의 OAuth 연결 절차를 시작하고, 외부 인증 플로우 진입을 준비한다. |
-| Related Region   | settings_window.settings_body.tab_ai.provider_connection_area                          |
-| Menu             | -                                                                                      |
-| Shortcut         | -                                                                                      |
 
 ## Intent
 

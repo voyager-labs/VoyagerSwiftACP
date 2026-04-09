@@ -1,19 +1,25 @@
+---
+interaction_id: "CEP-002-disable_custom_property_schema"
+interaction_type: "command"
+feature: "Define Custom Property Schema"
+category_key: "CEP"
+feature_id: "CEP-002"
+status: "아이디어"
+summary: "<<AI>> 더 이상 사용하지 않을 사용자 프로퍼티 스키마를 비활성화해 신규 편집 UI에서 선택되지 않도록 숨긴다."
+related_region: "file_manager_window.inspector_pane.inspector_mode_property"
+menu: "<<AI>> Edit"
+shortcut: "-"
+---
+
 # Disable Custom Property Schema
 
-## Metadata
+## Intent
 
-| Field            | Value                                                                                                     |
-| ---------------- | --------------------------------------------------------------------------------------------------------- |
-| Interaction ID   | CEP-002-disable_custom_property_schema                                                                    |
-| Interaction Type | command                                                                                                   |
-| Feature          | Define Custom Property Schema                                                                             |
-| Category Key     | CEP                                                                                                       |
-| Feature ID       | CEP-002                                                                                                   |
-| Status           | 아이디어                                                                                                  |
-| Summary          | <<AI>> 더 이상 사용하지 않을 사용자 프로퍼티 스키마를 비활성화해 신규 편집 UI에서 선택되지 않도록 숨긴다. |
-| Related Region   | file_manager_window.inspector_pane.inspector_mode_property                                                |
-| Menu             | <<AI>> Edit                                                                                               |
-| Shortcut         | -                                                                                                         |
+- TBD
+
+## Trigger / Entry Points
+
+- TBD
 
 ## Preconditions
 
@@ -21,7 +27,19 @@
 - <<AI>> 대상 스키마가 활성 상태인 상태
 - <<AI>> 프로퍼티 스키마를 편집할 권한을 보유한 상태
 
-## Edge Cases
+## Expected Outcome
+
+- TBD
+
+## State Changes
+
+- TBD
+
+## User-visible Feedback
+
+- TBD
+
+## Edge Cases / Failure Handling
 
 - <<AI>> 대상 스키마가 다른 스키마·Computed Property의 참조 대상으로 고정되어 있는 경우
 - <<AI>> 대상 스키마가 이미 비활성 상태인 경우
@@ -35,6 +53,18 @@
       옵션에 노출하지 않도록 함.
 - [ ] <<AI>> 비활성 스키마를 이미 사용 중인 엔트리를 조회할 때, 시스템이 값을 표시하면, 기존 값은
       유지하며 스키마가 비활성 상태임을 함께 표시함.
+
+## Permissions / Dependencies
+
+- TBD
+
+## Observability / Analytics
+
+- TBD
+
+## Related Interactions
+
+- TBD
 
 ## Source
 

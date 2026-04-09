@@ -1,26 +1,44 @@
+---
+interaction_id: "RCL-003-mark_open_collection_as_stale_on_external_change"
+interaction_type: "background"
+feature: "Retrieve Entries with Filters"
+category_key: "RCL"
+feature_id: "RCL-003"
+status: "기획 완료"
+summary: "열려 있는 콜렉션에서 외부 변경이 발생하면 자동 refresh 없이 현재 결과를 유지한 채 stale 상태만 남겨 후속 refresh 정책을 유지"
+related_region: "file_manager_window.content_pane.page_container.page_mode_collection"
+menu: "-"
+shortcut: "-"
+---
+
 # Mark Open Collection as Stale on External Change
 
-## Metadata
+## Intent
 
-| Field            | Value                                                                                                                        |
-| ---------------- | ---------------------------------------------------------------------------------------------------------------------------- |
-| Interaction ID   | RCL-003-mark_open_collection_as_stale_on_external_change                                                                     |
-| Interaction Type | background                                                                                                                   |
-| Feature          | Retrieve Entries with Filters                                                                                                |
-| Category Key     | RCL                                                                                                                          |
-| Feature ID       | RCL-003                                                                                                                      |
-| Status           | 기획 완료                                                                                                                    |
-| Summary          | 열려 있는 콜렉션에서 외부 변경이 발생하면 자동 refresh 없이 현재 결과를 유지한 채 stale 상태만 남겨 후속 refresh 정책을 유지 |
-| Related Region   | file_manager_window.content_pane.page_container.page_mode_collection                                                         |
-| Menu             | -                                                                                                                            |
-| Shortcut         | -                                                                                                                            |
+- TBD
+
+## Trigger / Entry Points
+
+- TBD
 
 ## Preconditions
 
 - 현재 Content Pane이 열린 콜렉션 페이지를 표시 중인 상태
 - 외부 파일시스템 변경 신호가 현재 열린 콜렉션의 scope 아래 경로와 관련된 상태
 
-## Edge Cases
+## Expected Outcome
+
+- TBD
+
+## State Changes
+
+- TBD
+
+## User-visible Feedback
+
+- TBD
+
+## Edge Cases / Failure Handling
 
 - 외부 변경이 짧은 시간 안에 반복 발생해 stale mark 요청이 연속으로 들어오는 경우
 - 현재 열린 콜렉션 scope와 무관한 경로 변경이 도착하는 경우
@@ -39,6 +57,18 @@
 - [ ] 현재 열린 콜렉션 scope와 무관한 경로 변경은 stale mark 대상으로 취급하지 않음
 - [ ] 사용자가 stale 상태 이후 수동 refresh를 호출하면, 시스템은 stale-only 정책과 별개로 명시적
       refresh 경로를 계속 허용함
+
+## Permissions / Dependencies
+
+- TBD
+
+## Observability / Analytics
+
+- TBD
+
+## Related Interactions
+
+- TBD
 
 ## Source
 

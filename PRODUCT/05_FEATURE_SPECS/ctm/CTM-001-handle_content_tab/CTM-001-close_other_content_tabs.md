@@ -1,25 +1,43 @@
+---
+interaction_id: "CTM-001-close_other_content_tabs"
+interaction_type: "command"
+feature: "Handle Content Tab"
+category_key: "CTM"
+feature_id: "CTM-001"
+status: "준비 완료"
+summary: "현재 Content Tab을 제외한 나머지 Content Tab을 모두 닫음"
+related_region: "file_manager_window.sidebar.sidebar_body.content_tabs_area"
+menu: "Context"
+shortcut: "-"
+---
+
 # Close Other Content Tabs
 
-## Metadata
+## Intent
 
-| Field            | Value                                                      |
-| ---------------- | ---------------------------------------------------------- |
-| Interaction ID   | CTM-001-close_other_content_tabs                           |
-| Interaction Type | command                                                    |
-| Feature          | Handle Content Tab                                         |
-| Category Key     | CTM                                                        |
-| Feature ID       | CTM-001                                                    |
-| Status           | 준비 완료                                                  |
-| Summary          | 현재 Content Tab을 제외한 나머지 Content Tab을 모두 닫음   |
-| Related Region   | file_manager_window.sidebar.sidebar_body.content_tabs_area |
-| Menu             | Context                                                    |
-| Shortcut         | -                                                          |
+- TBD
+
+## Trigger / Entry Points
+
+- TBD
 
 ## Preconditions
 
 - 2개 이상의 Content Tab이 열린 상태
 
-## Edge Cases
+## Expected Outcome
+
+- TBD
+
+## State Changes
+
+- TBD
+
+## User-visible Feedback
+
+- TBD
+
+## Edge Cases / Failure Handling
 
 - 닫으려는 Content Tab에 진행 중인 상태의 작업이 있는 경우
 
@@ -33,6 +51,18 @@
       닫힘.
 - [ ] <<AI>> 닫히는 탭들 중 Pinned Content Tab이 포함된 경우, 사용자가 해당 인터랙션을 호출하면,
       정의된 정책(예: Pinned 탭은 유지)을 따르며 실제로 닫힌 탭과 유지된 탭이 UI에 일관되게 반영됨.
+
+## Permissions / Dependencies
+
+- TBD
+
+## Observability / Analytics
+
+- TBD
+
+## Related Interactions
+
+- TBD
 
 ## Source
 

@@ -1,25 +1,43 @@
+---
+interaction_id: "CTM-001-move_content_tab_to_another_file_manager_window"
+interaction_type: "command"
+feature: "Handle Content Tab"
+category_key: "CTM"
+feature_id: "CTM-001"
+status: "준비 완료"
+summary: "해당 Content Tab을 다른 File Manager로 배치"
+related_region: "file_manager_window.sidebar.sidebar_body.content_tabs_area"
+menu: "-"
+shortcut: "-"
+---
+
 # Move Content Tab to Another File Manager Window
 
-## Metadata
+## Intent
 
-| Field            | Value                                                      |
-| ---------------- | ---------------------------------------------------------- |
-| Interaction ID   | CTM-001-move_content_tab_to_another_file_manager_window    |
-| Interaction Type | command                                                    |
-| Feature          | Handle Content Tab                                         |
-| Category Key     | CTM                                                        |
-| Feature ID       | CTM-001                                                    |
-| Status           | 준비 완료                                                  |
-| Summary          | 해당 Content Tab을 다른 File Manager로 배치                |
-| Related Region   | file_manager_window.sidebar.sidebar_body.content_tabs_area |
-| Menu             | -                                                          |
-| Shortcut         | -                                                          |
+- TBD
+
+## Trigger / Entry Points
+
+- TBD
 
 ## Preconditions
 
 - 2개 이상의 File Manager Window가 열린 상태
 
-## Edge Cases
+## Expected Outcome
+
+- TBD
+
+## State Changes
+
+- TBD
+
+## User-visible Feedback
+
+- TBD
+
+## Edge Cases / Failure Handling
 
 -   -
 
@@ -34,6 +52,18 @@
 - [ ] <<AI>> 이동 대상 창에 동일 세션의 탭이 이미 존재하는 상태에서 사용자가 해당 인터랙션을
       호출하면, 중복 세션 처리 정책(예: 중복 허용 또는 기존 탭 활성화)을 따르고 그 결과를 UI에
       일관되게 반영함.
+
+## Permissions / Dependencies
+
+- TBD
+
+## Observability / Analytics
+
+- TBD
+
+## Related Interactions
+
+- TBD
 
 ## Source
 

@@ -1,19 +1,17 @@
+---
+interaction_id: "SET-007-complete_provider_oauth_connection"
+interaction_type: "background"
+feature: "Manage AI Connections"
+category_key: "SET"
+feature_id: "SET-007"
+status: "드래프트"
+summary: "<<AI>> OAuth 인증 결과를 수신해 연결 성공·실패 상태를 저장하고 상태 영역을 갱신한다."
+related_region: "settings_window.settings_body.tab_ai.provider_status_area"
+menu: "-"
+shortcut: "-"
+---
+
 # Complete Provider OAuth Connection
-
-## Metadata
-
-| Field            | Value                                                                                |
-| ---------------- | ------------------------------------------------------------------------------------ |
-| Interaction ID   | SET-007-complete_provider_oauth_connection                                           |
-| Interaction Type | background                                                                           |
-| Feature          | Manage AI Connections                                                                |
-| Category Key     | SET                                                                                  |
-| Feature ID       | SET-007                                                                              |
-| Status           | 드래프트                                                                             |
-| Summary          | <<AI>> OAuth 인증 결과를 수신해 연결 성공·실패 상태를 저장하고 상태 영역을 갱신한다. |
-| Related Region   | settings_window.settings_body.tab_ai.provider_status_area                            |
-| Menu             | -                                                                                    |
-| Shortcut         | -                                                                                    |
 
 ## Intent
 

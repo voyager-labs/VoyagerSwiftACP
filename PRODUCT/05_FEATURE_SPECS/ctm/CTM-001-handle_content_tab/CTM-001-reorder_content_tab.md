@@ -1,25 +1,43 @@
+---
+interaction_id: "CTM-001-reorder_content_tab"
+interaction_type: "command"
+feature: "Handle Content Tab"
+category_key: "CTM"
+feature_id: "CTM-001"
+status: "준비 완료"
+summary: "해당 Content Tab의 순서를 재배치"
+related_region: "file_manager_window.sidebar.sidebar_body.content_tabs_area"
+menu: "-"
+shortcut: "-"
+---
+
 # Reorder Content Tab
 
-## Metadata
+## Intent
 
-| Field            | Value                                                      |
-| ---------------- | ---------------------------------------------------------- |
-| Interaction ID   | CTM-001-reorder_content_tab                                |
-| Interaction Type | command                                                    |
-| Feature          | Handle Content Tab                                         |
-| Category Key     | CTM                                                        |
-| Feature ID       | CTM-001                                                    |
-| Status           | 준비 완료                                                  |
-| Summary          | 해당 Content Tab의 순서를 재배치                           |
-| Related Region   | file_manager_window.sidebar.sidebar_body.content_tabs_area |
-| Menu             | -                                                          |
-| Shortcut         | -                                                          |
+- TBD
+
+## Trigger / Entry Points
+
+- TBD
 
 ## Preconditions
 
 - 2개 이상의 Content Tab이 열린 상태
 
-## Edge Cases
+## Expected Outcome
+
+- TBD
+
+## State Changes
+
+- TBD
+
+## User-visible Feedback
+
+- TBD
+
+## Edge Cases / Failure Handling
 
 - 재배치 중인 Content Tab을 다른 창으로 이동시키는 경우
 
@@ -29,6 +47,18 @@
       시작·종료 위치에 따라 Content Tab List 내 순서가 새로운 위치로 재배치됨.
 - [ ] <<AI>> 탭을 드래그하는 중 다른 동작으로 탭이 닫히거나 이동된 경우, 사용자가 해당 인터랙션을
       마무리하면, 실제 남아 있는 탭들에 대해서만 일관된 순서가 유지됨
+
+## Permissions / Dependencies
+
+- TBD
+
+## Observability / Analytics
+
+- TBD
+
+## Related Interactions
+
+- TBD
 
 ## Source
 

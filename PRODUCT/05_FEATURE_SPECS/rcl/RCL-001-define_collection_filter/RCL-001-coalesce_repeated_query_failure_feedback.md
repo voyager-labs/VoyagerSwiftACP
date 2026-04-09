@@ -1,19 +1,25 @@
+---
+interaction_id: "RCL-001-coalesce_repeated_query_failure_feedback"
+interaction_type: "background"
+feature: "Define Collection Filter"
+category_key: "RCL"
+feature_id: "RCL-001"
+status: "기획 완료"
+summary: "동일한 실패 상태가 짧은 시간 안에 반복될 때 실패 피드백을 중복 누적하지 않고 노출 정책에 따라 합치거나 갱신함"
+related_region: "-"
+menu: "-"
+shortcut: "-"
+---
+
 # Coalesce Repeated Query Failure Feedback
 
-## Metadata
+## Intent
 
-| Field            | Value                                                                                                         |
-| ---------------- | ------------------------------------------------------------------------------------------------------------- |
-| Interaction ID   | RCL-001-coalesce_repeated_query_failure_feedback                                                              |
-| Interaction Type | background                                                                                                    |
-| Feature          | Define Collection Filter                                                                                      |
-| Category Key     | RCL                                                                                                           |
-| Feature ID       | RCL-001                                                                                                       |
-| Status           | 기획 완료                                                                                                     |
-| Summary          | 동일한 실패 상태가 짧은 시간 안에 반복될 때 실패 피드백을 중복 누적하지 않고 노출 정책에 따라 합치거나 갱신함 |
-| Related Region   | -                                                                                                             |
-| Menu             | -                                                                                                             |
-| Shortcut         | -                                                                                                             |
+- TBD
+
+## Trigger / Entry Points
+
+- TBD
 
 ## Preconditions
 
@@ -22,7 +28,11 @@
 - 현재 실패 피드백이 표시 중인 상태
 - 짧은 시간 내 동일 유형의 실패가 반복 발생한 상태
 
-## State Transitions
+## Expected Outcome
+
+- TBD
+
+## State Changes
 
 - `failure_feedback_visible` -> `repeated_same_failure_detected`
     - 동일한 실패 문구가 짧은 시간 내 반복 감지되면, 시스템이 새 실패를 중복 표시 후보로 식별함
@@ -40,7 +50,11 @@
 - `failure_feedback_visible` -> `feedback_cleared`
     - 사용자가 typing / cancel / composer dismiss를 수행하면 현재 feedback이 즉시 정리됨
 
-## Edge Cases
+## User-visible Feedback
+
+- TBD
+
+## Edge Cases / Failure Handling
 
 - 오래된 요청 응답이 새 feedback 이후 늦게 도착하는 경우
 - 동일한 실패가 매우 짧은 간격으로 연속 제출되는 경우
@@ -66,6 +80,18 @@
       않음
 - [ ] 사용자가 실패 후 입력을 수정해 재시도하는 동안에도, 시스템이 과도한 중복 노출 없이 현재 실패
       상태만 이해할 수 있도록 피드백 수를 제어함
+
+## Permissions / Dependencies
+
+- TBD
+
+## Observability / Analytics
+
+- TBD
+
+## Related Interactions
+
+- TBD
 
 ## Source
 

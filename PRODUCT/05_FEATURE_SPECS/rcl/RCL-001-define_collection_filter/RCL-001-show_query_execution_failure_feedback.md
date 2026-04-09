@@ -1,19 +1,25 @@
+---
+interaction_id: "RCL-001-show_query_execution_failure_feedback"
+interaction_type: "display"
+feature: "Define Collection Filter"
+category_key: "RCL"
+feature_id: "RCL-001"
+status: "기획 완료"
+summary: "검색 실행 또는 Helper/XPC 계층 오류로 적용이 실패했을 때 입력 흐름을 막지 않는 가벼운 실패 피드백을 표시해 실패 원인을 구분할 수 있게 함"
+related_region: "file_manager_window.content_pane.content_header.collection_filter_composer"
+menu: "-"
+shortcut: "-"
+---
+
 # Show Query Execution Failure Feedback
 
-## Metadata
+## Intent
 
-| Field            | Value                                                                                                                                    |
-| ---------------- | ---------------------------------------------------------------------------------------------------------------------------------------- |
-| Interaction ID   | RCL-001-show_query_execution_failure_feedback                                                                                            |
-| Interaction Type | display                                                                                                                                  |
-| Feature          | Define Collection Filter                                                                                                                 |
-| Category Key     | RCL                                                                                                                                      |
-| Feature ID       | RCL-001                                                                                                                                  |
-| Status           | 기획 완료                                                                                                                                |
-| Summary          | 검색 실행 또는 Helper/XPC 계층 오류로 적용이 실패했을 때 입력 흐름을 막지 않는 가벼운 실패 피드백을 표시해 실패 원인을 구분할 수 있게 함 |
-| Related Region   | file_manager_window.content_pane.content_header.collection_filter_composer                                                               |
-| Menu             | -                                                                                                                                        |
-| Shortcut         | -                                                                                                                                        |
+- TBD
+
+## Trigger / Entry Points
+
+- TBD
 
 ## Preconditions
 
@@ -24,7 +30,11 @@
 - Helper/XPC 계층 또는 검색 실행 계층 오류가 확인된 상태
 - 저장된 collection open 실패 alert 경로가 아닌 일반 Composer 쿼리 제출 흐름인 상태
 
-## State Transitions
+## Expected Outcome
+
+- TBD
+
+## State Changes
 
 - `query_submitting` -> `query_execution_failed`
     - 현재 쿼리 제출 또는 필터 적용 흐름이 실행 실패로 종료되면, 요청 체인이 실행 실패 상태로 전환됨
@@ -37,7 +47,11 @@
 - `execution_failure_feedback_visible` -> `query_resubmitting`
     - 사용자가 같은 필드에서 즉시 다시 제출하면, 기존 실행 실패 상태와 별개로 새 제출 상태로 전환됨
 
-## Edge Cases
+## User-visible Feedback
+
+- TBD
+
+## Edge Cases / Failure Handling
 
 - 변환은 성공했지만 Apply Generated Filter Changes 이후 검색 실행이 실패하는 경우
 - Helper unavailable과 일반 execution failure가 모두 동일한 실행 실패 문구로 처리되는 경우
@@ -64,6 +78,18 @@
       rollback/reset 경로를 유지함
 - [ ] 메인 앱에서 실제 실행 실패를 재현했을 때, 사용자가 Collection Filter Composer 상단 문맥에서
       local toast를 확인할 수 있음
+
+## Permissions / Dependencies
+
+- TBD
+
+## Observability / Analytics
+
+- TBD
+
+## Related Interactions
+
+- TBD
 
 ## Source
 

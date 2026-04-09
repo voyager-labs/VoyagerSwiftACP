@@ -1,25 +1,43 @@
+---
+interaction_id: "FMW-001-enter_full_screen_for_file_manager_window"
+interaction_type: "command"
+feature: "Control File Manager Window"
+category_key: "FMW"
+feature_id: "FMW-001"
+status: "배포 완료"
+summary: "해당 File Manager 창을 전체 화면으로 전환"
+related_region: "file_manager_window"
+menu: "View"
+shortcut: "⌘⌃F"
+---
+
 # Enter Full Screen for File Manager Window
 
-## Metadata
+## Intent
 
-| Field            | Value                                             |
-| ---------------- | ------------------------------------------------- |
-| Interaction ID   | FMW-001-enter_full_screen_for_file_manager_window |
-| Interaction Type | command                                           |
-| Feature          | Control File Manager Window                       |
-| Category Key     | FMW                                               |
-| Feature ID       | FMW-001                                           |
-| Status           | 배포 완료                                         |
-| Summary          | 해당 File Manager 창을 전체 화면으로 전환         |
-| Related Region   | file_manager_window                               |
-| Menu             | View                                              |
-| Shortcut         | ⌘⌃F                                               |
+- TBD
+
+## Trigger / Entry Points
+
+- TBD
 
 ## Preconditions
 
 - 대상 창이 전체 화면이 아닌 상태
 
-## Edge Cases
+## Expected Outcome
+
+- TBD
+
+## State Changes
+
+- TBD
+
+## User-visible Feedback
+
+- TBD
+
+## Edge Cases / Failure Handling
 
 -   -
 
@@ -27,6 +45,18 @@
 
 - [ ] 대상 File Manager Window가 전체 화면이 아닌 상태일 때, 사용자가 해당 인터랙션을 호출하면, 대상
       창이 macOS 전체 화면 모드로 전환됨
+
+## Permissions / Dependencies
+
+- TBD
+
+## Observability / Analytics
+
+- TBD
+
+## Related Interactions
+
+- TBD
 
 ## Source
 

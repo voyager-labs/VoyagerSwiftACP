@@ -1,31 +1,61 @@
+---
+interaction_id: "UNK-000-show_services"
+interaction_type: "command"
+feature: "-"
+category_key: "-"
+feature_id: "-"
+status: "드래프트"
+summary: "-"
+related_region: "-"
+menu: "-"
+shortcut: "-"
+---
+
 # <<TEMP>> Show Services
 
-## Metadata
+## Intent
 
-| Field            | Value                 |
-| ---------------- | --------------------- |
-| Interaction ID   | UNK-000-show_services |
-| Interaction Type | command               |
-| Feature          | -                     |
-| Category Key     | -                     |
-| Feature ID       | -                     |
-| Status           | 드래프트              |
-| Summary          | -                     |
-| Related Region   | -                     |
-| Menu             | -                     |
-| Shortcut         | -                     |
+- TBD
+
+## Trigger / Entry Points
+
+- TBD
 
 ## Preconditions
 
 - TBD
 
-## Edge Cases
+## Expected Outcome
+
+- TBD
+
+## State Changes
+
+- TBD
+
+## User-visible Feedback
+
+- TBD
+
+## Edge Cases / Failure Handling
 
 - TBD
 
 ## Acceptance Criteria
 
 - [ ] TBD
+
+## Permissions / Dependencies
+
+- TBD
+
+## Observability / Analytics
+
+- TBD
+
+## Related Interactions
+
+- TBD
 
 ## Source
 

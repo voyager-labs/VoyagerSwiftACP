@@ -1,19 +1,17 @@
+---
+interaction_id: "SET-007-verify_provider_api_key"
+interaction_type: "background"
+feature: "Manage AI Connections"
+category_key: "SET"
+feature_id: "SET-007"
+status: "드래프트"
+summary: "<<AI>> 입력된 API key의 형식과 유효성을 확인하고 결과에 따라 연결 상태를 갱신한다."
+related_region: "settings_window.settings_body.tab_ai.provider_status_area"
+menu: "-"
+shortcut: "-"
+---
+
 # Verify Provider API Key
-
-## Metadata
-
-| Field            | Value                                                                              |
-| ---------------- | ---------------------------------------------------------------------------------- |
-| Interaction ID   | SET-007-verify_provider_api_key                                                    |
-| Interaction Type | background                                                                         |
-| Feature          | Manage AI Connections                                                              |
-| Category Key     | SET                                                                                |
-| Feature ID       | SET-007                                                                            |
-| Status           | 드래프트                                                                           |
-| Summary          | <<AI>> 입력된 API key의 형식과 유효성을 확인하고 결과에 따라 연결 상태를 갱신한다. |
-| Related Region   | settings_window.settings_body.tab_ai.provider_status_area                          |
-| Menu             | -                                                                                  |
-| Shortcut         | -                                                                                  |
 
 ## Intent
 

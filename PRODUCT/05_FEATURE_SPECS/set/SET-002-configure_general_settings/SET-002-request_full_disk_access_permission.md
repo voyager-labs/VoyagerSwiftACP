@@ -1,26 +1,44 @@
+---
+interaction_id: "SET-002-request_full_disk_access_permission"
+interaction_type: "command"
+feature: "Configure General Settings"
+category_key: "SET"
+feature_id: "SET-002"
+status: "개발 중"
+summary: "<<AI>> 설정(General)에서 Full Disk Access 권한의 현재 상태와 필요 사유를 안내하고, 사용자가 시스템 설정에서 권한을 부여할 수 있도록 이동 경로를 제공한다."
+related_region: "settings_window.settings_body.tab_general"
+menu: "-"
+shortcut: "-"
+---
+
 # Request Full Disk Access Permission
 
-## Metadata
+## Intent
 
-| Field            | Value                                                                                                                                                     |
-| ---------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Interaction ID   | SET-002-request_full_disk_access_permission                                                                                                               |
-| Interaction Type | command                                                                                                                                                   |
-| Feature          | Configure General Settings                                                                                                                                |
-| Category Key     | SET                                                                                                                                                       |
-| Feature ID       | SET-002                                                                                                                                                   |
-| Status           | 개발 중                                                                                                                                                   |
-| Summary          | <<AI>> 설정(General)에서 Full Disk Access 권한의 현재 상태와 필요 사유를 안내하고, 사용자가 시스템 설정에서 권한을 부여할 수 있도록 이동 경로를 제공한다. |
-| Related Region   | settings_window.settings_body.tab_general                                                                                                                 |
-| Menu             | -                                                                                                                                                         |
-| Shortcut         | -                                                                                                                                                         |
+- TBD
+
+## Trigger / Entry Points
+
+- TBD
 
 ## Preconditions
 
 - <<AI>> 설정 창이 열려 있고 General 탭이 표시된 상태
 - <<AI>> Full Disk Access 권한 상태를 조회할 수 있는 상태
 
-## Edge Cases
+## Expected Outcome
+
+- TBD
+
+## State Changes
+
+- TBD
+
+## User-visible Feedback
+
+- TBD
+
+## Edge Cases / Failure Handling
 
 - <<AI>> 사용자가 시스템 설정 열기를 취소하는 경우
 - <<AI>> OS 정책/버전 제약으로 특정 권한 패널로 직접 이동할 수 없는 경우
@@ -42,6 +60,18 @@
 - [ ] <<AI>> 사용자가 권한을 허용하지 않고 돌아온 상태일 때, 권한 상태를 재검증하면, 상태가
       “미허용”으로 유지되고 재시도 안내가 표시됨.
 - [ ] <<AI>> 권한 허용 후 재시작이 필요한 상태일 때, 상태를 갱신하면, 재시작 필요 안내가 표시됨.
+
+## Permissions / Dependencies
+
+- TBD
+
+## Observability / Analytics
+
+- TBD
+
+## Related Interactions
+
+- TBD
 
 ## Source
 

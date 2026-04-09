@@ -1,19 +1,25 @@
+---
+interaction_id: "EAC-002-move_entry_ies"
+interaction_type: "command"
+feature: "Organize Entries"
+category_key: "EAC"
+feature_id: "EAC-002"
+status: "배포 완료"
+summary: "선택한 Entry를 지정한 대상 디렉토리로 이동"
+related_region: "file_manager_window.content_pane.page_container.page_mode_directory"
+menu: "File"
+shortcut: "-"
+---
+
 # Move Entry(ies)
 
-## Metadata
+## Intent
 
-| Field            | Value                                                               |
-| ---------------- | ------------------------------------------------------------------- |
-| Interaction ID   | EAC-002-move_entry_ies                                              |
-| Interaction Type | command                                                             |
-| Feature          | Organize Entries                                                    |
-| Category Key     | EAC                                                                 |
-| Feature ID       | EAC-002                                                             |
-| Status           | 배포 완료                                                           |
-| Summary          | 선택한 Entry를 지정한 대상 디렉토리로 이동                          |
-| Related Region   | file_manager_window.content_pane.page_container.page_mode_directory |
-| Menu             | File                                                                |
-| Shortcut         | -                                                                   |
+- TBD
+
+## Trigger / Entry Points
+
+- TBD
 
 ## Preconditions
 
@@ -21,7 +27,19 @@
 - <<AI>> 이동 대상 디렉토리가 지정된 상태
 - <<AI>> 대상 디렉토리에 대해 쓰기 권한이 있는 상태
 
-## Edge Cases
+## Expected Outcome
+
+- TBD
+
+## State Changes
+
+- TBD
+
+## User-visible Feedback
+
+- TBD
+
+## Edge Cases / Failure Handling
 
 - <<AI>> 대상 디렉토리가 현재 위치와 동일한 경우
 - <<AI>> 폴더를 자기 자신 또는 자기 하위 디렉토리로 이동하려는 경우
@@ -36,6 +54,18 @@
       처리하고 최종적으로 대상에 존재하도록 함.
 - [ ] <<AI>> 이동이 부분 성공하는 상태일 때, 시스템이 이동을 수행하면, 성공/실패 항목을 구분해
       결과와 사유를 사용자에게 안내함.
+
+## Permissions / Dependencies
+
+- TBD
+
+## Observability / Analytics
+
+- TBD
+
+## Related Interactions
+
+- TBD
 
 ## Source
 

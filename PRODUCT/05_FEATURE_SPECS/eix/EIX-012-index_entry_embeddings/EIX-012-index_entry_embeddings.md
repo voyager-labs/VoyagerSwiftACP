@@ -1,26 +1,44 @@
+---
+interaction_id: "EIX-012-index_entry_embeddings"
+interaction_type: "background"
+feature: "Index Entry Embeddings"
+category_key: "EIX"
+feature_id: "EIX-012"
+status: "아이디어"
+summary: "선택한 Entry 집합에 대해 포맷별 Embeddings 계산 파이프라인을 실행해 임베딩 벡터를 재계산하고 임베딩 인덱스를 갱신"
+related_region: "-"
+menu: "-"
+shortcut: "-"
+---
+
 # Index Entry Embeddings
 
-## Metadata
+## Intent
 
-| Field            | Value                                                                                                             |
-| ---------------- | ----------------------------------------------------------------------------------------------------------------- |
-| Interaction ID   | EIX-012-index_entry_embeddings                                                                                    |
-| Interaction Type | background                                                                                                        |
-| Feature          | Index Entry Embeddings                                                                                            |
-| Category Key     | EIX                                                                                                               |
-| Feature ID       | EIX-012                                                                                                           |
-| Status           | 아이디어                                                                                                          |
-| Summary          | 선택한 Entry 집합에 대해 포맷별 Embeddings 계산 파이프라인을 실행해 임베딩 벡터를 재계산하고 임베딩 인덱스를 갱신 |
-| Related Region   | -                                                                                                                 |
-| Menu             | -                                                                                                                 |
-| Shortcut         | -                                                                                                                 |
+- TBD
+
+## Trigger / Entry Points
+
+- TBD
 
 ## Preconditions
 
 - <<AI>> 임베딩 인덱싱 기능이 활성화된 상태- 임베딩 계산에 사용할 입력 텍스트가 준비된 상태
 - <<AI>> 네트워크 연결 및 임베딩 계산 서비스 접근이 가능한 상태
 
-## Edge Cases
+## Expected Outcome
+
+- TBD
+
+## State Changes
+
+- TBD
+
+## User-visible Feedback
+
+- TBD
+
+## Edge Cases / Failure Handling
 
 - <<AI>> 임베딩 계산 서비스 오류·타임아웃·레이트 리밋으로 요청이 실패하는 경우
 - <<AI>> 입력 텍스트가 비어 있거나 너무 길어 전처리·요약이 필요한 경우
@@ -35,6 +53,18 @@
       스케줄링하지 않음.
 - [ ] <<AI>> 임베딩 계산이 실패한 상태일 때, 시스템이 실패를 기록하면, 실패 항목을 재시도 가능
       상태로 유지하고 오류 상세를 조회 가능하게 함.
+
+## Permissions / Dependencies
+
+- TBD
+
+## Observability / Analytics
+
+- TBD
+
+## Related Interactions
+
+- TBD
 
 ## Source
 

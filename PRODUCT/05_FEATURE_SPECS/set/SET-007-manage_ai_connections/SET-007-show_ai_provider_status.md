@@ -1,19 +1,17 @@
+---
+interaction_id: "SET-007-show_ai_provider_status"
+interaction_type: "display"
+feature: "Manage AI Connections"
+category_key: "SET"
+feature_id: "SET-007"
+status: "드래프트"
+summary: "<<AI>> 현재 빌드에서 지원되는 provider 중 사용자가 선택한 provider의 현재 연결 상태와 사용 가능 여부를 상태 배지·문구로 표시한다."
+related_region: "settings_window.settings_body.tab_ai.provider_status_area"
+menu: "-"
+shortcut: "-"
+---
+
 # Show AI Provider Status
-
-## Metadata
-
-| Field            | Value                                                                                         |
-| ---------------- | --------------------------------------------------------------------------------------------- |
-| Interaction ID   | SET-007-show_ai_provider_status                                                               |
-| Interaction Type | display                                                                                       |
-| Feature          | Manage AI Connections                                                                         |
-| Category Key     | SET                                                                                           |
-| Feature ID       | SET-007                                                                                       |
-| Status           | 드래프트                                                                                      |
-| Summary          | <<AI>> 현재 빌드에서 지원되는 provider 중 사용자가 선택한 provider의 현재 연결 상태와 사용 가능 여부를 상태 배지·문구로 표시한다. |
-| Related Region   | settings_window.settings_body.tab_ai.provider_status_area                                     |
-| Menu             | -                                                                                             |
-| Shortcut         | -                                                                                             |
 
 ## Intent
 

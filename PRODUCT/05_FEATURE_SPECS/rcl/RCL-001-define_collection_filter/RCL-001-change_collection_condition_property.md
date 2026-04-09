@@ -1,19 +1,25 @@
+---
+interaction_id: "RCL-001-change_collection_condition_property"
+interaction_type: "input"
+feature: "Define Collection Filter"
+category_key: "RCL"
+feature_id: "RCL-001"
+status: "배포 완료"
+summary: "선택한 컨디션의 기준 프로퍼티를 다른 프로퍼티로 변경"
+related_region: "file_manager_window.content_pane.content_header.collection_filter_composer"
+menu: "-"
+shortcut: "-"
+---
+
 # Change Collection Condition Property
 
-## Metadata
+## Intent
 
-| Field            | Value                                                                      |
-| ---------------- | -------------------------------------------------------------------------- |
-| Interaction ID   | RCL-001-change_collection_condition_property                               |
-| Interaction Type | input                                                                      |
-| Feature          | Define Collection Filter                                                   |
-| Category Key     | RCL                                                                        |
-| Feature ID       | RCL-001                                                                    |
-| Status           | 배포 완료                                                                  |
-| Summary          | 선택한 컨디션의 기준 프로퍼티를 다른 프로퍼티로 변경                       |
-| Related Region   | file_manager_window.content_pane.content_header.collection_filter_composer |
-| Menu             | -                                                                          |
-| Shortcut         | -                                                                          |
+- TBD
+
+## Trigger / Entry Points
+
+- TBD
 
 ## Preconditions
 
@@ -21,7 +27,19 @@
 - 편집 대상 컨디션이 존재하는 상태
 - 편집 대상 컨디션이 지정된 상태
 
-## Edge Cases
+## Expected Outcome
+
+- TBD
+
+## State Changes
+
+- TBD
+
+## User-visible Feedback
+
+- TBD
+
+## Edge Cases / Failure Handling
 
 - 프로퍼티 변경으로 기존 오퍼레이터·값 구성이 무효가 되는 경우
 
@@ -31,6 +49,18 @@
       프로퍼티가 갱신됨
 - [ ] 사용자가 기준 프로퍼티를 변경했을 때, 기존 오퍼레이터·값 구성이 무효가 된다면, 오퍼레이터는
       기본값으로 설정되며, 값은 초기화됨
+
+## Permissions / Dependencies
+
+- TBD
+
+## Observability / Analytics
+
+- TBD
+
+## Related Interactions
+
+- TBD
 
 ## Source
 

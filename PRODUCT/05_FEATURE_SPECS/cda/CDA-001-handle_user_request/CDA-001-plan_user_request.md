@@ -1,31 +1,61 @@
+---
+interaction_id: "CDA-001-plan_user_request"
+interaction_type: "background"
+feature: "Handle User Request"
+category_key: "CDA"
+feature_id: "CDA-001"
+status: "드래프트"
+summary: "TBD"
+related_region: "-"
+menu: "TBD"
+shortcut: "TBD"
+---
+
 # Plan User Request
 
-## Metadata
+## Intent
 
-| Field            | Value                     |
-| ---------------- | ------------------------- |
-| Interaction ID   | CDA-001-plan_user_request |
-| Interaction Type | background                |
-| Feature          | Handle User Request       |
-| Category Key     | CDA                       |
-| Feature ID       | CDA-001                   |
-| Status           | 드래프트                  |
-| Summary          | TBD                       |
-| Related Region   | -                         |
-| Menu             | TBD                       |
-| Shortcut         | TBD                       |
+- TBD
+
+## Trigger / Entry Points
+
+- TBD
 
 ## Preconditions
 
 - TBD
 
-## Edge Cases
+## Expected Outcome
+
+- TBD
+
+## State Changes
+
+- TBD
+
+## User-visible Feedback
+
+- TBD
+
+## Edge Cases / Failure Handling
 
 - TBD
 
 ## Acceptance Criteria
 
 - [ ] TBD
+
+## Permissions / Dependencies
+
+- TBD
+
+## Observability / Analytics
+
+- TBD
+
+## Related Interactions
+
+- TBD
 
 ## Source
 

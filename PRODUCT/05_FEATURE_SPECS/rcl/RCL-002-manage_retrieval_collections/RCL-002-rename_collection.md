@@ -1,25 +1,43 @@
+---
+interaction_id: "RCL-002-rename_collection"
+interaction_type: "input"
+feature: "Manage Retrieval Collections"
+category_key: "RCL"
+feature_id: "RCL-002"
+status: "배포 완료"
+summary: "현재 보고 있는 콜렉션의 파일 이름을 변경"
+related_region: "file_manager_window.content_pane.content_header.page_menu_area"
+menu: "-"
+shortcut: "-"
+---
+
 # Rename Collection
 
-## Metadata
+## Intent
 
-| Field            | Value                                                          |
-| ---------------- | -------------------------------------------------------------- |
-| Interaction ID   | RCL-002-rename_collection                                      |
-| Interaction Type | input                                                          |
-| Feature          | Manage Retrieval Collections                                   |
-| Category Key     | RCL                                                            |
-| Feature ID       | RCL-002                                                        |
-| Status           | 배포 완료                                                      |
-| Summary          | 현재 보고 있는 콜렉션의 파일 이름을 변경                       |
-| Related Region   | file_manager_window.content_pane.content_header.page_menu_area |
-| Menu             | -                                                              |
-| Shortcut         | -                                                              |
+- TBD
+
+## Trigger / Entry Points
+
+- TBD
 
 ## Preconditions
 
 - 현재 페이지가 콜렉션 페이지인 상태
 
-## Edge Cases
+## Expected Outcome
+
+- TBD
+
+## State Changes
+
+- TBD
+
+## User-visible Feedback
+
+- TBD
+
+## Edge Cases / Failure Handling
 
 - 입력된 이름이 비어 있는 경우
 - OS 파일시스템 상 허용되지 않는 문자를 포함하는 경우
@@ -35,6 +53,18 @@
       상태라면, 이름 변경을 수행하지 않고 오류 피드백을 표시함
 - [ ] 사용자가 이름 변경을 시도했을 때, 현재 콜렉션이 저장된 경로에 동일 이름의 콜렉션 파일이 이미
       존재한다면, 이름 변경을 수행하지 않고 충돌 피드백을 표시함
+
+## Permissions / Dependencies
+
+- TBD
+
+## Observability / Analytics
+
+- TBD
+
+## Related Interactions
+
+- TBD
 
 ## Source
 

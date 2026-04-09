@@ -1,19 +1,25 @@
+---
+interaction_id: "RCL-001-add_directory_to_collection_scope"
+interaction_type: "command"
+feature: "Define Collection Filter"
+category_key: "RCL"
+feature_id: "RCL-001"
+status: "배포 완료"
+summary: "스코프 메뉴에서 디렉토리를 추가해 콜렉션 스코프를 디렉토리 집합으로 확장"
+related_region: "file_manager_window.content_pane.content_header.collection_filter_composer"
+menu: "-"
+shortcut: "-"
+---
+
 # Add Directory To Collection Scope
 
-## Metadata
+## Intent
 
-| Field            | Value                                                                      |
-| ---------------- | -------------------------------------------------------------------------- |
-| Interaction ID   | RCL-001-add_directory_to_collection_scope                                  |
-| Interaction Type | command                                                                    |
-| Feature          | Define Collection Filter                                                   |
-| Category Key     | RCL                                                                        |
-| Feature ID       | RCL-001                                                                    |
-| Status           | 배포 완료                                                                  |
-| Summary          | 스코프 메뉴에서 디렉토리를 추가해 콜렉션 스코프를 디렉토리 집합으로 확장   |
-| Related Region   | file_manager_window.content_pane.content_header.collection_filter_composer |
-| Menu             | -                                                                          |
-| Shortcut         | -                                                                          |
+- TBD
+
+## Trigger / Entry Points
+
+- TBD
 
 ## Preconditions
 
@@ -21,7 +27,19 @@
 - 스코프 메뉴가 열린 상태
 - Generate Filter Changes from Query가 실행 중이지 않은 상태
 
-## Edge Cases
+## Expected Outcome
+
+- TBD
+
+## State Changes
+
+- TBD
+
+## User-visible Feedback
+
+- TBD
+
+## Edge Cases / Failure Handling
 
 - 상위/하위 관계의 디렉토리를 추가하는 경우
 - 추가하려는 디렉토리가 이미 스코프에 포함된 경우
@@ -39,6 +57,18 @@
       제거하고 상위 디렉토리로 교체함
 - [ ] 현재 전체 스토리지 스코프 상태일 때, 사용자가 특정 디렉토리를 추가하려 한다면, 현재 스코프를
       디렉토리 집합 상태로 전환함
+
+## Permissions / Dependencies
+
+- TBD
+
+## Observability / Analytics
+
+- TBD
+
+## Related Interactions
+
+- TBD
 
 ## Source
 

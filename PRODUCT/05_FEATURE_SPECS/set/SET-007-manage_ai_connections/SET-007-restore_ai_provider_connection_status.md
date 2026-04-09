@@ -1,19 +1,17 @@
+---
+interaction_id: "SET-007-restore_ai_provider_connection_status"
+interaction_type: "background"
+feature: "Manage AI Connections"
+category_key: "SET"
+feature_id: "SET-007"
+status: "드래프트"
+summary: "<<AI>> 앱 재실행 또는 설정 진입 시 저장된 연결 정보를 바탕으로 provider 연결 상태를 복원·재확인한다."
+related_region: "settings_window.settings_body.tab_ai.provider_status_area"
+menu: "-"
+shortcut: "-"
+---
+
 # Restore AI Provider Connection Status
-
-## Metadata
-
-| Field            | Value                                                                                                |
-| ---------------- | ---------------------------------------------------------------------------------------------------- |
-| Interaction ID   | SET-007-restore_ai_provider_connection_status                                                        |
-| Interaction Type | background                                                                                           |
-| Feature          | Manage AI Connections                                                                                |
-| Category Key     | SET                                                                                                  |
-| Feature ID       | SET-007                                                                                              |
-| Status           | 드래프트                                                                                             |
-| Summary          | <<AI>> 앱 재실행 또는 설정 진입 시 저장된 연결 정보를 바탕으로 provider 연결 상태를 복원·재확인한다. |
-| Related Region   | settings_window.settings_body.tab_ai.provider_status_area                                            |
-| Menu             | -                                                                                                    |
-| Shortcut         | -                                                                                                    |
 
 ## Intent
 

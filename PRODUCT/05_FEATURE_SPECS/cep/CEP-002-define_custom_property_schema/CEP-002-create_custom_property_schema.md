@@ -1,26 +1,44 @@
+---
+interaction_id: "CEP-002-create_custom_property_schema"
+interaction_type: "command"
+feature: "Define Custom Property Schema"
+category_key: "CEP"
+feature_id: "CEP-002"
+status: "아이디어"
+summary: "<<AI>> 새 사용자 정의 프로퍼티 스키마를 생성하고 이름, 키, 타입, 기본값, 표시 옵션 등을 설정한다."
+related_region: "file_manager_window.inspector_pane.inspector_mode_property"
+menu: "<<AI>> Edit"
+shortcut: "-"
+---
+
 # Create Custom Property Schema
 
-## Metadata
+## Intent
 
-| Field            | Value                                                                                             |
-| ---------------- | ------------------------------------------------------------------------------------------------- |
-| Interaction ID   | CEP-002-create_custom_property_schema                                                             |
-| Interaction Type | command                                                                                           |
-| Feature          | Define Custom Property Schema                                                                     |
-| Category Key     | CEP                                                                                               |
-| Feature ID       | CEP-002                                                                                           |
-| Status           | 아이디어                                                                                          |
-| Summary          | <<AI>> 새 사용자 정의 프로퍼티 스키마를 생성하고 이름, 키, 타입, 기본값, 표시 옵션 등을 설정한다. |
-| Related Region   | file_manager_window.inspector_pane.inspector_mode_property                                        |
-| Menu             | <<AI>> Edit                                                                                       |
-| Shortcut         | -                                                                                                 |
+- TBD
+
+## Trigger / Entry Points
+
+- TBD
 
 ## Preconditions
 
 - <<AI>> 프로퍼티 스키마 생성 플로우를 시작할 수 있는 화면이 열린 상태
 - <<AI>> 프로퍼티 스키마를 생성할 권한을 보유한 상태
 
-## Edge Cases
+## Expected Outcome
+
+- TBD
+
+## State Changes
+
+- TBD
+
+## User-visible Feedback
+
+- TBD
+
+## Edge Cases / Failure Handling
 
 - <<AI>> 입력한 스키마 키가 기존 스키마와 중복되는 경우
 - <<AI>> 입력한 키·이름이 비어있거나 허용되지 않은 문자·형식을 포함하는 경우
@@ -37,6 +55,18 @@
       유효성 오류를 표시함.
 - [ ] <<AI>> 스키마 키가 중복인 상태일 때, 사용자가 저장하면, 저장을 차단하고 충돌하는 스키마를
       표시함.
+
+## Permissions / Dependencies
+
+- TBD
+
+## Observability / Analytics
+
+- TBD
+
+## Related Interactions
+
+- TBD
 
 ## Source
 

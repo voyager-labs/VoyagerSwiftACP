@@ -61,7 +61,7 @@ python3 .agents/skills/voyager-feature-spec-author/scripts/lint_feature_spec.py 
 ### 3) Review and refine
 
 - review generated sections and replace draft wording with concrete behavior text where needed
-- keep metadata concrete enough to pass strict lint
+- keep metadata keys present and use the repo-wide `-` / `TBD` conventions consistently in frontmatter
 - commit as a focused docs change
 
 ## Guardrails
@@ -92,8 +92,14 @@ python3 .agents/skills/voyager-feature-spec-author/scripts/lint_feature_spec.py 
     - `related_region`
     - `menu`
     - `shortcut`
-- strict mode treats placeholder metadata like `-`, `TBD`, or `null` as invalid for required metadata fields.
-- Missing menu/shortcut are filled with concrete fallback labels (`메뉴 없음`, `바인딩 없음`) in generated drafts.
+- Frontmatter values follow the same repo-wide null conventions as TSV/body content:
+    - `-` = intentionally empty / not applicable
+    - `TBD` = not yet decided
+- Placeholder values in body sections are also allowed by repo rules.
+- strict mode is a review aid for unresolved `TBD` values and draft completeness.
+- strict mode does not fail a document solely because body/frontmatter contains `-` / `TBD`.
+- In strict mode, `-` is treated as confirmed not-applicable and does not emit a warning.
+- In strict mode, `TBD` is treated as unresolved and emits a warning.
 - Do not mass-edit unrelated spec files unless explicitly requested.
 
 ## Reference files
@@ -106,7 +112,7 @@ python3 .agents/skills/voyager-feature-spec-author/scripts/lint_feature_spec.py 
 - `scripts/generate_feature_spec.py`
     - `--output-dir` / `--overwrite` / `--template` / `--dry-run`
 - `scripts/lint_feature_spec.py`
-    - `--strict` for additional placeholder density checks
+    - `--strict` for additional `TBD`-density warnings
     - exits non-zero on missing required sections or required metadata keys
 
 ## Notes

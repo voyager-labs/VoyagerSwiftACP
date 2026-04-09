@@ -1,19 +1,25 @@
+---
+interaction_id: "RCL-001-delete_collection_condition"
+interaction_type: "command"
+feature: "Define Collection Filter"
+category_key: "RCL"
+feature_id: "RCL-001"
+status: "배포 완료"
+summary: "선택한 컨디션을 필터에서 제거"
+related_region: "file_manager_window.content_pane.content_header.collection_filter_composer"
+menu: "-"
+shortcut: "⌫"
+---
+
 # Delete Collection Condition
 
-## Metadata
+## Intent
 
-| Field            | Value                                                                      |
-| ---------------- | -------------------------------------------------------------------------- |
-| Interaction ID   | RCL-001-delete_collection_condition                                        |
-| Interaction Type | command                                                                    |
-| Feature          | Define Collection Filter                                                   |
-| Category Key     | RCL                                                                        |
-| Feature ID       | RCL-001                                                                    |
-| Status           | 배포 완료                                                                  |
-| Summary          | 선택한 컨디션을 필터에서 제거                                              |
-| Related Region   | file_manager_window.content_pane.content_header.collection_filter_composer |
-| Menu             | -                                                                          |
-| Shortcut         | ⌫                                                                          |
+- TBD
+
+## Trigger / Entry Points
+
+- TBD
 
 ## Preconditions
 
@@ -21,7 +27,19 @@
 - 삭제 대상 컨디션이 존재하는 상태
 - 삭제 대상 컨디션이 지정된 상태
 
-## Edge Cases
+## Expected Outcome
+
+- TBD
+
+## State Changes
+
+- TBD
+
+## User-visible Feedback
+
+- TBD
+
+## Edge Cases / Failure Handling
 
 - 마지막 남은 컨디션을 제거하는 경우
 
@@ -31,6 +49,18 @@
       필터에서 제거됨
 - [ ] 사용자가 컨디션을 제거하려할 때, 해당 컨디션이 마지막 남은 컨디션이라면, 콜렉션은 컨디션 없는
       상태가 됨
+
+## Permissions / Dependencies
+
+- TBD
+
+## Observability / Analytics
+
+- TBD
+
+## Related Interactions
+
+- TBD
 
 ## Source
 

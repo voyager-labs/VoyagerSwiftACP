@@ -1,25 +1,43 @@
+---
+interaction_id: "FMW-001-keep_file_manager_window_on_top"
+interaction_type: "command"
+feature: "Control File Manager Window"
+category_key: "FMW"
+feature_id: "FMW-001"
+status: "준비 완료"
+summary: "File Manager 창을 다른 앱보다 항상 위로 고정"
+related_region: "file_manager_window"
+menu: "Window"
+shortcut: "-"
+---
+
 # Keep File Manager Window on Top
 
-## Metadata
+## Intent
 
-| Field            | Value                                        |
-| ---------------- | -------------------------------------------- |
-| Interaction ID   | FMW-001-keep_file_manager_window_on_top      |
-| Interaction Type | command                                      |
-| Feature          | Control File Manager Window                  |
-| Category Key     | FMW                                          |
-| Feature ID       | FMW-001                                      |
-| Status           | 준비 완료                                    |
-| Summary          | File Manager 창을 다른 앱보다 항상 위로 고정 |
-| Related Region   | file_manager_window                          |
-| Menu             | Window                                       |
-| Shortcut         | -                                            |
+- TBD
+
+## Trigger / Entry Points
+
+- TBD
 
 ## Preconditions
 
 -   -
 
-## Edge Cases
+## Expected Outcome
+
+- TBD
+
+## State Changes
+
+- TBD
+
+## User-visible Feedback
+
+- TBD
+
+## Edge Cases / Failure Handling
 
 -   -
 
@@ -29,6 +47,18 @@
       “항상 위” 상태로 전환되어 다른 일반 창보다 위에 유지됨
 - [ ] 대상 File Manager Window이 이미 "항상 위" 상태 일 떄, 사용자가 해당 인터랙션을 다시 호출하면,
       해당 창은 일반 창 상태로 전환됨
+
+## Permissions / Dependencies
+
+- TBD
+
+## Observability / Analytics
+
+- TBD
+
+## Related Interactions
+
+- TBD
 
 ## Source
 

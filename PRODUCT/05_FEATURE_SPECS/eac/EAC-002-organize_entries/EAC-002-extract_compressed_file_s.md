@@ -1,26 +1,44 @@
+---
+interaction_id: "EAC-002-extract_compressed_file_s"
+interaction_type: "command"
+feature: "Organize Entries"
+category_key: "EAC"
+feature_id: "EAC-002"
+status: "배포 완료"
+summary: "선택한 압축 파일을 현재 디렉토리 또는 지정한 위치로 해제"
+related_region: "file_manager_window.content_pane.page_container.page_mode_directory"
+menu: "File"
+shortcut: "-"
+---
+
 # Extract Compressed File(s)
 
-## Metadata
+## Intent
 
-| Field            | Value                                                               |
-| ---------------- | ------------------------------------------------------------------- |
-| Interaction ID   | EAC-002-extract_compressed_file_s                                   |
-| Interaction Type | command                                                             |
-| Feature          | Organize Entries                                                    |
-| Category Key     | EAC                                                                 |
-| Feature ID       | EAC-002                                                             |
-| Status           | 배포 완료                                                           |
-| Summary          | 선택한 압축 파일을 현재 디렉토리 또는 지정한 위치로 해제            |
-| Related Region   | file_manager_window.content_pane.page_container.page_mode_directory |
-| Menu             | File                                                                |
-| Shortcut         | -                                                                   |
+- TBD
+
+## Trigger / Entry Points
+
+- TBD
 
 ## Preconditions
 
 - <<AI>> 하나 이상의 압축 파일 Entry가 선택된 상태
 - <<AI>> 압축 해제 대상 위치에 대해 쓰기 권한이 있는 상태
 
-## Edge Cases
+## Expected Outcome
+
+- TBD
+
+## State Changes
+
+- TBD
+
+## User-visible Feedback
+
+- TBD
+
+## Edge Cases / Failure Handling
 
 - <<AI>> 압축 파일이 손상되었거나 포맷을 지원하지 않는 경우
 - <<AI>> 암호가 필요한 압축 파일인 경우
@@ -35,6 +53,18 @@
       제공되면 해제를 진행함.
 - [ ] <<AI>> 해제가 불가능하거나 부분 성공하는 상태일 때, 시스템이 해제를 수행하면, 성공/실패 결과와
       사유를 사용자에게 안내함.
+
+## Permissions / Dependencies
+
+- TBD
+
+## Observability / Analytics
+
+- TBD
+
+## Related Interactions
+
+- TBD
 
 ## Source
 

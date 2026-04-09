@@ -1,19 +1,17 @@
+---
+interaction_id: "SET-007-select_ai_provider"
+interaction_type: "command"
+feature: "Manage AI Connections"
+category_key: "SET"
+feature_id: "SET-007"
+status: "드래프트"
+summary: "<<AI>> 현재 빌드에서 지원되는 AI provider 중 하나를 선택해 연결 상세 영역과 상태 영역을 해당 provider 기준으로 전환한다."
+related_region: "settings_window.settings_body.tab_ai.provider_list_area"
+menu: "-"
+shortcut: "-"
+---
+
 # Select AI Provider
-
-## Metadata
-
-| Field            | Value                                                                                                      |
-| ---------------- | ---------------------------------------------------------------------------------------------------------- |
-| Interaction ID   | SET-007-select_ai_provider                                                                                 |
-| Interaction Type | command                                                                                                    |
-| Feature          | Manage AI Connections                                                                                      |
-| Category Key     | SET                                                                                                        |
-| Feature ID       | SET-007                                                                                                    |
-| Status           | 드래프트                                                                                                   |
-| Summary          | <<AI>> 현재 빌드에서 지원되는 AI provider 중 하나를 선택해 연결 상세 영역과 상태 영역을 해당 provider 기준으로 전환한다. |
-| Related Region   | settings_window.settings_body.tab_ai.provider_list_area                                                    |
-| Menu             | -                                                                                                          |
-| Shortcut         | -                                                                                                          |
 
 ## Intent
 

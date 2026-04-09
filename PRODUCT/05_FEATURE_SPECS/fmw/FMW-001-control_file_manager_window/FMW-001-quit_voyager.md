@@ -1,31 +1,61 @@
+---
+interaction_id: "FMW-001-quit_voyager"
+interaction_type: "command"
+feature: "Control File Manager Window"
+category_key: "FMW"
+feature_id: "FMW-001"
+status: "배포 완료"
+summary: "앱을 종료"
+related_region: "file_manager_window"
+menu: "Voyager"
+shortcut: "⌘Q"
+---
+
 # Quit Voyager
 
-## Metadata
+## Intent
 
-| Field            | Value                       |
-| ---------------- | --------------------------- |
-| Interaction ID   | FMW-001-quit_voyager        |
-| Interaction Type | command                     |
-| Feature          | Control File Manager Window |
-| Category Key     | FMW                         |
-| Feature ID       | FMW-001                     |
-| Status           | 배포 완료                   |
-| Summary          | 앱을 종료                   |
-| Related Region   | file_manager_window         |
-| Menu             | Voyager                     |
-| Shortcut         | ⌘Q                          |
+- TBD
+
+## Trigger / Entry Points
+
+- TBD
 
 ## Preconditions
 
 - 앱 활성 상태
 
-## Edge Cases
+## Expected Outcome
+
+- TBD
+
+## State Changes
+
+- TBD
+
+## User-visible Feedback
+
+- TBD
+
+## Edge Cases / Failure Handling
 
 -   -
 
 ## Acceptance Criteria
 
 - [ ] TBD
+
+## Permissions / Dependencies
+
+- TBD
+
+## Observability / Analytics
+
+- TBD
+
+## Related Interactions
+
+- TBD
 
 ## Source
 

@@ -1,19 +1,25 @@
+---
+interaction_id: "CEP-002-migrate_custom_property_values"
+interaction_type: "command"
+feature: "Define Custom Property Schema"
+category_key: "CEP"
+feature_id: "CEP-002"
+status: "아이디어"
+summary: "<<AI>> 병합·변경된 스키마에 맞춰 기존 엔트리의 사용자 프로퍼티 값을 자동으로 이동·정규화하는 배치 작업을 실행한다."
+related_region: "file_manager_window.inspector_pane.inspector_mode_property"
+menu: "<<AI>> Edit"
+shortcut: "-"
+---
+
 # Migrate Custom Property Values
 
-## Metadata
+## Intent
 
-| Field            | Value                                                                                                              |
-| ---------------- | ------------------------------------------------------------------------------------------------------------------ |
-| Interaction ID   | CEP-002-migrate_custom_property_values                                                                             |
-| Interaction Type | command                                                                                                            |
-| Feature          | Define Custom Property Schema                                                                                      |
-| Category Key     | CEP                                                                                                                |
-| Feature ID       | CEP-002                                                                                                            |
-| Status           | 아이디어                                                                                                           |
-| Summary          | <<AI>> 병합·변경된 스키마에 맞춰 기존 엔트리의 사용자 프로퍼티 값을 자동으로 이동·정규화하는 배치 작업을 실행한다. |
-| Related Region   | file_manager_window.inspector_pane.inspector_mode_property                                                         |
-| Menu             | <<AI>> Edit                                                                                                        |
-| Shortcut         | -                                                                                                                  |
+- TBD
+
+## Trigger / Entry Points
+
+- TBD
 
 ## Preconditions
 
@@ -21,7 +27,19 @@
 - <<AI>> 마이그레이션 대상 엔트리 집합이 식별된 상태
 - <<AI>> 마이그레이션 작업이 실행 중이지 않은 상태
 
-## Edge Cases
+## Expected Outcome
+
+- TBD
+
+## State Changes
+
+- TBD
+
+## User-visible Feedback
+
+- TBD
+
+## Edge Cases / Failure Handling
 
 - <<AI>> 일부 엔트리에서 값 변환이 불가능해 타입 캐스팅 오류가 발생하는 경우
 - <<AI>> 일부 스토리지·엔트리에 접근할 수 없어 부분 실행만 가능한 경우
@@ -38,6 +56,18 @@
       실패로 표시하고 오류 이유 및 수동 처리 옵션을 제공함.
 - [ ] <<AI>> 마이그레이션이 중단된 상태일 때, 사용자가 상태를 조회하면, 재시도 및 롤백 옵션을
       표시함.
+
+## Permissions / Dependencies
+
+- TBD
+
+## Observability / Analytics
+
+- TBD
+
+## Related Interactions
+
+- TBD
 
 ## Source
 

@@ -1,26 +1,44 @@
+---
+interaction_id: "CEP-002-open_custom_property_schema_list"
+interaction_type: "command"
+feature: "Define Custom Property Schema"
+category_key: "CEP"
+feature_id: "CEP-002"
+status: "아이디어"
+summary: "<<AI>> 워크스페이스에 정의된 모든 사용자 프로퍼티 스키마를 리스트로 불러와 조회·검색·필터링할 수 있는 화면을 연다."
+related_region: "file_manager_window.inspector_pane.inspector_mode_property"
+menu: "<<AI>> View"
+shortcut: "-"
+---
+
 # Open Custom Property Schema List
 
-## Metadata
+## Intent
 
-| Field            | Value                                                                                                              |
-| ---------------- | ------------------------------------------------------------------------------------------------------------------ |
-| Interaction ID   | CEP-002-open_custom_property_schema_list                                                                           |
-| Interaction Type | command                                                                                                            |
-| Feature          | Define Custom Property Schema                                                                                      |
-| Category Key     | CEP                                                                                                                |
-| Feature ID       | CEP-002                                                                                                            |
-| Status           | 아이디어                                                                                                           |
-| Summary          | <<AI>> 워크스페이스에 정의된 모든 사용자 프로퍼티 스키마를 리스트로 불러와 조회·검색·필터링할 수 있는 화면을 연다. |
-| Related Region   | file_manager_window.inspector_pane.inspector_mode_property                                                         |
-| Menu             | <<AI>> View                                                                                                        |
-| Shortcut         | -                                                                                                                  |
+- TBD
+
+## Trigger / Entry Points
+
+- TBD
 
 ## Preconditions
 
 - <<AI>> 워크스페이스가 로드된 상태
 - <<AI>> 프로퍼티 스키마를 조회할 권한을 보유한 상태
 
-## Edge Cases
+## Expected Outcome
+
+- TBD
+
+## State Changes
+
+- TBD
+
+## User-visible Feedback
+
+- TBD
+
+## Edge Cases / Failure Handling
 
 - <<AI>> 워크스페이스에 스키마가 하나도 존재하지 않는 경우
 - <<AI>> 스키마 목록 로딩에 실패하는 경우
@@ -32,6 +50,18 @@
       화면을 열고 검색·필터링이 가능한 상태로 전환함.
 - [ ] <<AI>> 스키마가 없는 상태일 때, 화면을 열면, 빈 상태와 스키마 생성 CTA를 표시함.
 - [ ] <<AI>> 스키마 로딩이 실패한 상태일 때, 화면이 표시되면, 오류 메시지와 재시도 동작을 표시함.
+
+## Permissions / Dependencies
+
+- TBD
+
+## Observability / Analytics
+
+- TBD
+
+## Related Interactions
+
+- TBD
 
 ## Source
 

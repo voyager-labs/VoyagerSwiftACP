@@ -1,25 +1,43 @@
+---
+interaction_id: "CTM-001-open_new_content_tab"
+interaction_type: "command"
+feature: "Handle Content Tab"
+category_key: "CTM"
+feature_id: "CTM-001"
+status: "준비 완료"
+summary: "해당 File Manager 내, 새 Session Content Tab을 추가"
+related_region: "file_manager_window.sidebar.sidebar_body.content_tabs_area"
+menu: "FIle"
+shortcut: "⌘T"
+---
+
 # Open New Content Tab
 
-## Metadata
+## Intent
 
-| Field            | Value                                                      |
-| ---------------- | ---------------------------------------------------------- |
-| Interaction ID   | CTM-001-open_new_content_tab                               |
-| Interaction Type | command                                                    |
-| Feature          | Handle Content Tab                                         |
-| Category Key     | CTM                                                        |
-| Feature ID       | CTM-001                                                    |
-| Status           | 준비 완료                                                  |
-| Summary          | 해당 File Manager 내, 새 Session Content Tab을 추가        |
-| Related Region   | file_manager_window.sidebar.sidebar_body.content_tabs_area |
-| Menu             | FIle                                                       |
-| Shortcut         | ⌘T                                                         |
+- TBD
+
+## Trigger / Entry Points
+
+- TBD
 
 ## Preconditions
 
 -   -
 
-## Edge Cases
+## Expected Outcome
+
+- TBD
+
+## State Changes
+
+- TBD
+
+## User-visible Feedback
+
+- TBD
+
+## Edge Cases / Failure Handling
 
 -   -
 
@@ -33,6 +51,18 @@
 - [ ] <<AI>> 새로 생성된 Content Tab 초기 세션 로딩 중 오류가 발생한 상태에서 사용자가 해당
       인터랙션을 호출하면, 탭 셸은 생성되지만 내용 영역에 오류 메시지를 표시하거나 탭 생성 자체를
       롤백함.
+
+## Permissions / Dependencies
+
+- TBD
+
+## Observability / Analytics
+
+- TBD
+
+## Related Interactions
+
+- TBD
 
 ## Source
 

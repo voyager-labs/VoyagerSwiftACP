@@ -1,25 +1,43 @@
+---
+interaction_id: "EIX-002-resume_entry_indexing"
+interaction_type: "command"
+feature: "Monitor Indexing Status"
+category_key: "EIX"
+feature_id: "EIX-002"
+status: "준비 완료"
+summary: "일시 중지된 엔트리 인덱싱 작업을 재개"
+related_region: "file_manager_window.sidebar.sidebar_footer"
+menu: "-"
+shortcut: "-"
+---
+
 # Resume Entry Indexing
 
-## Metadata
+## Intent
 
-| Field            | Value                                      |
-| ---------------- | ------------------------------------------ |
-| Interaction ID   | EIX-002-resume_entry_indexing              |
-| Interaction Type | command                                    |
-| Feature          | Monitor Indexing Status                    |
-| Category Key     | EIX                                        |
-| Feature ID       | EIX-002                                    |
-| Status           | 준비 완료                                  |
-| Summary          | 일시 중지된 엔트리 인덱싱 작업을 재개      |
-| Related Region   | file_manager_window.sidebar.sidebar_footer |
-| Menu             | -                                          |
-| Shortcut         | -                                          |
+- TBD
+
+## Trigger / Entry Points
+
+- TBD
 
 ## Preconditions
 
 - 엔트리 인덱싱이 일시 중지된 상태
 
-## Edge Cases
+## Expected Outcome
+
+- TBD
+
+## State Changes
+
+- TBD
+
+## User-visible Feedback
+
+- TBD
+
+## Edge Cases / Failure Handling
 
 - 재개 시점에 스토리지 연결 해제 또는 권한 문제로 델타 스캔이 불완전한 경우
 - 재개 시점에 변경분이 매우 많아 큐 처리가 지연되는 경우
@@ -35,6 +53,18 @@
       누락으로 기록함
 - [ ] 재개 시점에 변경분이 매우 많아 큐 처리가 지연되는 경우일 때, 시스템이 인덱싱 큐를 처리하면,
       작업을 배치로 분할하고 처리량을 제어하면서 진행 상태를 갱신함
+
+## Permissions / Dependencies
+
+- TBD
+
+## Observability / Analytics
+
+- TBD
+
+## Related Interactions
+
+- TBD
 
 ## Source
 

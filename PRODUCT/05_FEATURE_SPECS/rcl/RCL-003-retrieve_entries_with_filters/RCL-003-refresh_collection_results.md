@@ -1,25 +1,43 @@
+---
+interaction_id: "RCL-003-refresh_collection_results"
+interaction_type: "command"
+feature: "Retrieve Entries with Filters"
+category_key: "RCL"
+feature_id: "RCL-003"
+status: "배포 완료"
+summary: "현재 설정된 필터를 기준으로 엔트리 검색을 수동 실행해 최신 결과 목록으로 갱신"
+related_region: "-"
+menu: "-"
+shortcut: "-"
+---
+
 # Refresh Collection Results
 
-## Metadata
+## Intent
 
-| Field            | Value                                                                         |
-| ---------------- | ----------------------------------------------------------------------------- |
-| Interaction ID   | RCL-003-refresh_collection_results                                            |
-| Interaction Type | command                                                                       |
-| Feature          | Retrieve Entries with Filters                                                 |
-| Category Key     | RCL                                                                           |
-| Feature ID       | RCL-003                                                                       |
-| Status           | 배포 완료                                                                     |
-| Summary          | 현재 설정된 필터를 기준으로 엔트리 검색을 수동 실행해 최신 결과 목록으로 갱신 |
-| Related Region   | -                                                                             |
-| Menu             | -                                                                             |
-| Shortcut         | -                                                                             |
+- TBD
+
+## Trigger / Entry Points
+
+- TBD
 
 ## Preconditions
 
 - 현재 콜렉션 결과가 표시 중인 상태
 
-## Edge Cases
+## Expected Outcome
+
+- TBD
+
+## State Changes
+
+- TBD
+
+## User-visible Feedback
+
+- TBD
+
+## Edge Cases / Failure Handling
 
 - 짧은 시간에 연속 호출되는 경우
 - 권한 부족이나 스토리지 연결 문제로 새로고침 실행이 실패하는 경우
@@ -31,6 +49,18 @@
 - [ ] 사용자가 새로고침을 짧은 시간안에 연속 호출했을 때, , 중복 실행을 제한하는 정책을 적용함
 - [ ] 권한 부족이나 스토리지 연결 문제로 새로고침 실행이 실패한다면, 사용자가 새로고침을 호출할 때,
       기존 결과를 유지하고 실패 피드백을 표시함
+
+## Permissions / Dependencies
+
+- TBD
+
+## Observability / Analytics
+
+- TBD
+
+## Related Interactions
+
+- TBD
 
 ## Source
 

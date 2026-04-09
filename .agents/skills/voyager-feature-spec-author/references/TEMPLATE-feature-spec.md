@@ -1,14 +1,14 @@
 ---
-interaction_id: { interaction_id }
-interaction_type: { interaction_type }
-feature: { feature_title }
-category_key: { category_key }
-feature_id: { feature_id }
-status: { status }
-summary: { summary }
-related_region: { related_region }
-menu: { menu }
-shortcut: { shortcut }
+interaction_id: {interaction_id_yaml}
+interaction_type: {interaction_type_yaml}
+feature: {feature_title_yaml}
+category_key: {category_key_yaml}
+feature_id: {feature_id_yaml}
+status: {status_yaml}
+summary: {summary_yaml}
+related_region: {related_region_yaml}
+menu: {menu_yaml}
+shortcut: {shortcut_yaml}
 ---
 
 # {Interaction Title}

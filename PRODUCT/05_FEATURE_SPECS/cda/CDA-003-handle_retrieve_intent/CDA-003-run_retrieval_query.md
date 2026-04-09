@@ -1,25 +1,43 @@
+---
+interaction_id: "CDA-003-run_retrieval_query"
+interaction_type: "background"
+feature: "Handle Retrieve Intent"
+category_key: "CDA"
+feature_id: "CDA-003"
+status: "기획 완료"
+summary: "TBD"
+related_region: "-"
+menu: "-"
+shortcut: "-"
+---
+
 # Run Retrieval Query
 
-## Metadata
+## Intent
 
-| Field            | Value                       |
-| ---------------- | --------------------------- |
-| Interaction ID   | CDA-003-run_retrieval_query |
-| Interaction Type | background                  |
-| Feature          | Handle Retrieve Intent      |
-| Category Key     | CDA                         |
-| Feature ID       | CDA-003                     |
-| Status           | 기획 완료                   |
-| Summary          | TBD                         |
-| Related Region   | -                           |
-| Menu             | -                           |
-| Shortcut         | -                           |
+- TBD
+
+## Trigger / Entry Points
+
+- TBD
 
 ## Preconditions
 
 - 유효한 Retrieval Query 객체가 준비된 상태
 
-## Edge Cases
+## Expected Outcome
+
+- TBD
+
+## State Changes
+
+- TBD
+
+## User-visible Feedback
+
+- TBD
+
+## Edge Cases / Failure Handling
 
 - <<AI>> 검색 엔진에서 타임아웃 또는 일시적 장애가 발생하는 경우
 - <<AI>> 검색 결과가 0건인 경우
@@ -34,6 +52,18 @@
 - [ ] <<AI>> 검색 결과가 최대 허용 개수를 초과하는 상태일 때, 시스템이 Run Retrieval Query
       인터랙션을 실행하면, 정의된 최대 개수까지만 결과를 반환하고 추가 조회를 위한 정보를 함께
       반환함.
+
+## Permissions / Dependencies
+
+- TBD
+
+## Observability / Analytics
+
+- TBD
+
+## Related Interactions
+
+- TBD
 
 ## Source
 

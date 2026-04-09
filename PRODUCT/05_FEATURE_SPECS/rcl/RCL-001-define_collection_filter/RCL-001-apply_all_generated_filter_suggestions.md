@@ -1,19 +1,25 @@
+---
+interaction_id: "RCL-001-apply_all_generated_filter_suggestions"
+interaction_type: "command"
+feature: "Define Collection Filter"
+category_key: "RCL"
+feature_id: "RCL-001"
+status: "취소"
+summary: "표시된 모든 제안 상태 항목을 한 번에 확정 적용"
+related_region: "file_manager_window.content_pane.content_header.collection_filter_composer"
+menu: "-"
+shortcut: "⌘⌥⏎"
+---
+
 # Apply All Generated Filter Suggestions
 
-## Metadata
+## Intent
 
-| Field            | Value                                                                      |
-| ---------------- | -------------------------------------------------------------------------- |
-| Interaction ID   | RCL-001-apply_all_generated_filter_suggestions                             |
-| Interaction Type | command                                                                    |
-| Feature          | Define Collection Filter                                                   |
-| Category Key     | RCL                                                                        |
-| Feature ID       | RCL-001                                                                    |
-| Status           | 취소                                                                       |
-| Summary          | 표시된 모든 제안 상태 항목을 한 번에 확정 적용                             |
-| Related Region   | file_manager_window.content_pane.content_header.collection_filter_composer |
-| Menu             | -                                                                          |
-| Shortcut         | ⌘⌥⏎                                                                        |
+- TBD
+
+## Trigger / Entry Points
+
+- TBD
 
 ## Preconditions
 
@@ -21,7 +27,19 @@
 - 제안 상태 항목이 1개 이상 존재하는 상태
 - Generate Filter Suggestions from Query가 실행 중이지 않은 상태
 
-## Edge Cases
+## Expected Outcome
+
+- TBD
+
+## State Changes
+
+- TBD
+
+## User-visible Feedback
+
+- TBD
+
+## Edge Cases / Failure Handling
 
 -   -
 
@@ -29,7 +47,19 @@
 
 -   -
 
+## Permissions / Dependencies
+
+- TBD
+
+## Observability / Analytics
+
+- TBD
+
+## Related Interactions
+
+- TBD
+
 ## Source
 
-- [ ] Inventory: `PRODUCT/04_FEATURE_INVENTORY/INTERACTIONS/data.tsv`
+- Inventory: `PRODUCT/04_FEATURE_INVENTORY/INTERACTIONS/data.tsv`
 - Source line: `111`

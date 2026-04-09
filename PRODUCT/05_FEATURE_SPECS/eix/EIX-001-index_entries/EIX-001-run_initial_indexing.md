@@ -1,19 +1,25 @@
+---
+interaction_id: "EIX-001-run_initial_indexing"
+interaction_type: "background"
+feature: "Index Entries"
+category_key: "EIX"
+feature_id: "EIX-001"
+status: "배포 완료"
+summary: "온보딩 완료 후 인덱싱 대상으로 설정된 전체 워크스페이스에 대해 초기 인덱싱을 실행해 검색·추천에 사용할 기본 인덱스를 생성"
+related_region: "-"
+menu: "-"
+shortcut: "-"
+---
+
 # Run Initial Indexing
 
-## Metadata
+## Intent
 
-| Field            | Value                                                                                                                     |
-| ---------------- | ------------------------------------------------------------------------------------------------------------------------- |
-| Interaction ID   | EIX-001-run_initial_indexing                                                                                              |
-| Interaction Type | background                                                                                                                |
-| Feature          | Index Entries                                                                                                             |
-| Category Key     | EIX                                                                                                                       |
-| Feature ID       | EIX-001                                                                                                                   |
-| Status           | 배포 완료                                                                                                                 |
-| Summary          | 온보딩 완료 후 인덱싱 대상으로 설정된 전체 워크스페이스에 대해 초기 인덱싱을 실행해 검색·추천에 사용할 기본 인덱스를 생성 |
-| Related Region   | -                                                                                                                         |
-| Menu             | -                                                                                                                         |
-| Shortcut         | -                                                                                                                         |
+- TBD
+
+## Trigger / Entry Points
+
+- TBD
 
 ## Preconditions
 
@@ -21,7 +27,19 @@
 - 인덱싱 대상으로 설정된 스토리지 경로에 대한 파일 접근 권한을 획득한 상태
 - Entry Indexing 진행이 일시 중지되지 않은 상태
 
-## Edge Cases
+## Expected Outcome
+
+- TBD
+
+## State Changes
+
+- TBD
+
+## User-visible Feedback
+
+- TBD
+
+## Edge Cases / Failure Handling
 
 - 대상 스토리지가 연결 해제되었거나 경로가 더 이상 존재하지 않는 경우
 - 권한이 일부만 허용되어 일부 하위 경로만 접근 가능한 경우
@@ -43,6 +61,18 @@
       상태를 복원하고 미완료 작업을 재개 또는 재큐잉함
 - [ ] 시스템이 초기 인덱싱을 수행 중인 상태일 때, 대상 엔트리 수가 매우 많다면, 작업을 배치로
       분할하고 스로틀링 정책에 따라 처리량을 제어하면서 진행 상태를 갱신함
+
+## Permissions / Dependencies
+
+- TBD
+
+## Observability / Analytics
+
+- TBD
+
+## Related Interactions
+
+- TBD
 
 ## Source
 

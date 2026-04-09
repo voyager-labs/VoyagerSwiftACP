@@ -158,16 +158,16 @@ def render_spec(
 
     summary = concrete_or_fallback(interaction.get("summary"), section_from_summary("", interaction_title, interaction_type))
     related_region = normalize(interaction.get("related_region"), "-")
-    menu = concrete_or_fallback(interaction.get("menu"), "메뉴 없음")
-    shortcut = concrete_or_fallback(interaction.get("shortcut"), "바인딩 없음")
+    menu = normalize(interaction.get("menu"), "-")
+    shortcut = normalize(interaction.get("shortcut"), "-")
 
     trigger_lines: List[str]
-    if menu != "메뉴 없음" or shortcut != "바인딩 없음":
-        trigger_lines = [
-            f"메뉴 경로({menu})에서 인터랙션을 호출하는 경우",
-            f"단축키({shortcut})로 인터랙션을 호출하는 경우",
-        ]
-    else:
+    trigger_lines = []
+    if menu not in {"-", "TBD"}:
+        trigger_lines.append(f"메뉴 경로({menu})에서 인터랙션을 호출하는 경우")
+    if shortcut not in {"-", "TBD"}:
+        trigger_lines.append(f"단축키({shortcut})로 인터랙션을 호출하는 경우")
+    if not trigger_lines:
         trigger_lines = [f"현재 화면/상태에서 {interaction_title}이(가) 노출되는 경로에서 호출되는 경우"]
     if related_region != "-":
         trigger_lines.append(f"{related_region} 연관 구간에서 노출되는 경우")

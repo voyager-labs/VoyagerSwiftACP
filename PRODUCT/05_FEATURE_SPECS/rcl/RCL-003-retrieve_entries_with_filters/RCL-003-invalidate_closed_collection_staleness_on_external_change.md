@@ -1,19 +1,25 @@
+---
+interaction_id: "RCL-003-invalidate_closed_collection_staleness_on_external_change"
+interaction_type: "background"
+feature: "Retrieve Entries with Filters"
+category_key: "RCL"
+feature_id: "RCL-003"
+status: "기획 완료"
+summary: "helper가 유지한 changed-path replay를 앱이 소비해, 닫혀 있는 등록된 콜렉션의 stale invalidation record를 갱신하고 다음 reopen 시 최신성 판단이 가능하게 함"
+related_region: "-"
+menu: "-"
+shortcut: "-"
+---
+
 # Invalidate Closed Collection Staleness on External Change
 
-## Metadata
+## Intent
 
-| Field            | Value                                                                                                                                                      |
-| ---------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Interaction ID   | RCL-003-invalidate_closed_collection_staleness_on_external_change                                                                                          |
-| Interaction Type | background                                                                                                                                                 |
-| Feature          | Retrieve Entries with Filters                                                                                                                              |
-| Category Key     | RCL                                                                                                                                                        |
-| Feature ID       | RCL-003                                                                                                                                                    |
-| Status           | 기획 완료                                                                                                                                                  |
-| Summary          | helper가 유지한 changed-path replay를 앱이 소비해, 닫혀 있는 등록된 콜렉션의 stale invalidation record를 갱신하고 다음 reopen 시 최신성 판단이 가능하게 함 |
-| Related Region   | -                                                                                                                                                          |
-| Menu             | -                                                                                                                                                          |
-| Shortcut         | -                                                                                                                                                          |
+- TBD
+
+## Trigger / Entry Points
+
+- TBD
 
 ## Preconditions
 
@@ -22,7 +28,19 @@
 - stale invalidation 대상 콜렉션이 이미 register된 상태
 - 앱이 helper replay 또는 브리지된 changed paths를 소비해 stale 판단 기록을 갱신할 수 있는 상태
 
-## Edge Cases
+## Expected Outcome
+
+- TBD
+
+## State Changes
+
+- TBD
+
+## User-visible Feedback
+
+- TBD
+
+## Edge Cases / Failure Handling
 
 - 여러 개의 닫힌 콜렉션이 동일 경로 범위를 공유해 동시에 stale invalidation 대상이 되는 경우
 - 메인 앱이 꺼져 있는 동안 helper가 유지한 changed-path replay가 앱 재활성화 후 한꺼번에 소비되는
@@ -43,6 +61,18 @@
 - [ ] 아직 register되지 않은 콜렉션은 stale invalidation record 갱신 대상에 포함되지 않음
 - [ ] stale invalidation 대상을 찾을 수 없는 경우, 시스템은 다른 콜렉션 기록 처리까지 중단하지 않고
       가능한 범위의 invalidation을 계속 수행함
+
+## Permissions / Dependencies
+
+- TBD
+
+## Observability / Analytics
+
+- TBD
+
+## Related Interactions
+
+- TBD
 
 ## Source
 

@@ -14,7 +14,10 @@ This document explains how to write or refactor `PRODUCT/05_FEATURE_SPECS` docum
 - Keep the fixed section titles defined by the template.
 - Write the actual section body prose in Korean.
 - Use `-` for intentionally empty values and `TBD` for values that are still undecided.
-- Fill strict metadata fields with concrete values whenever possible.
+- Apply the same `-` / `TBD` convention to frontmatter values as well as body sections.
+- Strict lint still requires all frontmatter keys and fixed sections to be present, but it does not reject `-` / `TBD` values in metadata or body sections.
+- In strict mode, `-` is treated as confirmed not-applicable and does not emit a warning.
+- In strict mode, `TBD` is treated as unresolved and is surfaced as a warning for review instead of a hard failure.
 
 ## Frontmatter fields
 

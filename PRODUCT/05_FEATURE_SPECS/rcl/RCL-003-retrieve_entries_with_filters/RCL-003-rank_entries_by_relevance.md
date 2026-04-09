@@ -1,25 +1,43 @@
+---
+interaction_id: "RCL-003-rank_entries_by_relevance"
+interaction_type: "background"
+feature: "Retrieve Entries with Filters"
+category_key: "RCL"
+feature_id: "RCL-003"
+status: "아이디어"
+summary: "최종 관련도 스코어 기준으로 결과 엔트리를 정렬하고, 동점 시 안정적인 동점 처리 규칙으로 일관된 순서를 보장"
+related_region: "-"
+menu: "-"
+shortcut: "-"
+---
+
 # Rank Entries by Relevance
 
-## Metadata
+## Intent
 
-| Field            | Value                                                                                                      |
-| ---------------- | ---------------------------------------------------------------------------------------------------------- |
-| Interaction ID   | RCL-003-rank_entries_by_relevance                                                                          |
-| Interaction Type | background                                                                                                 |
-| Feature          | Retrieve Entries with Filters                                                                              |
-| Category Key     | RCL                                                                                                        |
-| Feature ID       | RCL-003                                                                                                    |
-| Status           | 아이디어                                                                                                   |
-| Summary          | 최종 관련도 스코어 기준으로 결과 엔트리를 정렬하고, 동점 시 안정적인 동점 처리 규칙으로 일관된 순서를 보장 |
-| Related Region   | -                                                                                                          |
-| Menu             | -                                                                                                          |
-| Shortcut         | -                                                                                                          |
+- TBD
+
+## Trigger / Entry Points
+
+- TBD
 
 ## Preconditions
 
 - 결과 엔트리 후보 집합이 존재하는 상태
 
-## Edge Cases
+## Expected Outcome
+
+- TBD
+
+## State Changes
+
+- TBD
+
+## User-visible Feedback
+
+- TBD
+
+## Edge Cases / Failure Handling
 
 - 관련도 스코어 동점이 대량으로 발생해 안정적인 동점 처리 규칙이 필요한 경우
 - 일부 엔트리에 관련도 스코어가 없어 결측 값을 처리한 뒤 정렬해야 하는 경우
@@ -37,6 +55,18 @@
       적용한 뒤 정렬함
 - [ ] 결과 엔트리 수가 매우 커 정렬 비용이 크게 증가하는 상태일 때, 정렬을 수행하면, 성능 보호
       정책을 적용해 정렬 비용을 제한함
+
+## Permissions / Dependencies
+
+- TBD
+
+## Observability / Analytics
+
+- TBD
+
+## Related Interactions
+
+- TBD
 
 ## Source
 

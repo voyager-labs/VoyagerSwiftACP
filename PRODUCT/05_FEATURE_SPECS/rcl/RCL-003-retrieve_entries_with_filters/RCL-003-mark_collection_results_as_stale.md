@@ -1,26 +1,44 @@
+---
+interaction_id: "RCL-003-mark_collection_results_as_stale"
+interaction_type: "background"
+feature: "Retrieve Entries with Filters"
+category_key: "RCL"
+feature_id: "RCL-003"
+status: "기획 완료"
+summary: "파일시스템 변경 등으로 결과 최신성이 깨졌다고 판단되면, 열린 collection은 stale 상태로 전환하고 저장된 collection record도 future reopen 판단용으로 invalidate"
+related_region: "-"
+menu: "-"
+shortcut: "-"
+---
+
 # Mark Collection Results as Stale
 
-## Metadata
+## Intent
 
-| Field            | Value                                                                                                                                                          |
-| ---------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Interaction ID   | RCL-003-mark_collection_results_as_stale                                                                                                                       |
-| Interaction Type | background                                                                                                                                                     |
-| Feature          | Retrieve Entries with Filters                                                                                                                                  |
-| Category Key     | RCL                                                                                                                                                            |
-| Feature ID       | RCL-003                                                                                                                                                        |
-| Status           | 기획 완료                                                                                                                                                      |
-| Summary          | 파일시스템 변경 등으로 결과 최신성이 깨졌다고 판단되면, 열린 collection은 stale 상태로 전환하고 저장된 collection record도 future reopen 판단용으로 invalidate |
-| Related Region   | -                                                                                                                                                              |
-| Menu             | -                                                                                                                                                              |
-| Shortcut         | -                                                                                                                                                              |
+- TBD
+
+## Trigger / Entry Points
+
+- TBD
 
 ## Preconditions
 
 - 저장된 또는 열린 콜렉션 결과가 현재 표시되거나 복원 가능한 상태
 - 결과 최신성이 깨졌다고 판단할 수 있는 조건이 발생한 상태
 
-## Edge Cases
+## Expected Outcome
+
+- TBD
+
+## State Changes
+
+- TBD
+
+## User-visible Feedback
+
+- TBD
+
+## Edge Cases / Failure Handling
 
 - dirty 상태와 stale 상태가 동시에 존재해 서로 다른 의미를 구분해야 하는 경우
 - 현재 열린 collection이 아니더라도 저장된 closed collection record는 invalidation될 수 있는 경우
@@ -41,6 +59,18 @@
 - [ ] 현재 열려 있지 않은 저장된 collection에 대해서도, future reopen freshness 판단을 위해
       staleness record를 갱신할 수 있음
 - [ ] refresh가 실패하면, 시스템은 stale 상태를 해제하지 않고 그대로 유지함
+
+## Permissions / Dependencies
+
+- TBD
+
+## Observability / Analytics
+
+- TBD
+
+## Related Interactions
+
+- TBD
 
 ## Source
 

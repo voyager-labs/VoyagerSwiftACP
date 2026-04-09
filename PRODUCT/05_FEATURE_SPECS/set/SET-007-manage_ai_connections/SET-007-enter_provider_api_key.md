@@ -1,19 +1,17 @@
+---
+interaction_id: "SET-007-enter_provider_api_key"
+interaction_type: "input"
+feature: "Manage AI Connections"
+category_key: "SET"
+feature_id: "SET-007"
+status: "드래프트"
+summary: "<<AI>> 현재 빌드에서 지원되는 provider 중 API key 방식을 허용하는 provider를 선택한 상태에서 해당 provider에 사용할 API key를 입력하고 저장 대기 상태로 유지한다."
+related_region: "settings_window.settings_body.tab_ai.provider_connection_area"
+menu: "-"
+shortcut: "-"
+---
+
 # Enter Provider API Key
-
-## Metadata
-
-| Field            | Value                                                                                                                                                             |
-| ---------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Interaction ID   | SET-007-enter_provider_api_key                                                                                                                                    |
-| Interaction Type | input                                                                                                                                                             |
-| Feature          | Manage AI Connections                                                                                                                                             |
-| Category Key     | SET                                                                                                                                                               |
-| Feature ID       | SET-007                                                                                                                                                           |
-| Status           | 드래프트                                                                                                                                                          |
-| Summary          | <<AI>> 현재 빌드에서 지원되는 provider 중 API key 방식을 허용하는 provider를 선택한 상태에서 해당 provider에 사용할 API key를 입력하고 저장 대기 상태로 유지한다. |
-| Related Region   | settings_window.settings_body.tab_ai.provider_connection_area                                                                                                     |
-| Menu             | -                                                                                                                                                                 |
-| Shortcut         | -                                                                                                                                                                 |
 
 ## Intent
 

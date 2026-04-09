@@ -1,19 +1,25 @@
+---
+interaction_id: "EIX-016-compute_image_embeddings"
+interaction_type: "background"
+feature: "Compute Images Embeddings"
+category_key: "EIX"
+feature_id: "EIX-016"
+status: "아이디어"
+summary: "이미지·스크린샷 Entry의 캡션·설명 텍스트와 시각적 특징을 입력으로 사용해 이미지 의미를 표현하는 임베딩 벡터를 계산"
+related_region: "-"
+menu: "-"
+shortcut: "-"
+---
+
 # Compute Image Embeddings
 
-## Metadata
+## Intent
 
-| Field            | Value                                                                                                              |
-| ---------------- | ------------------------------------------------------------------------------------------------------------------ |
-| Interaction ID   | EIX-016-compute_image_embeddings                                                                                   |
-| Interaction Type | background                                                                                                         |
-| Feature          | Compute Images Embeddings                                                                                          |
-| Category Key     | EIX                                                                                                                |
-| Feature ID       | EIX-016                                                                                                            |
-| Status           | 아이디어                                                                                                           |
-| Summary          | 이미지·스크린샷 Entry의 캡션·설명 텍스트와 시각적 특징을 입력으로 사용해 이미지 의미를 표현하는 임베딩 벡터를 계산 |
-| Related Region   | -                                                                                                                  |
-| Menu             | -                                                                                                                  |
-| Shortcut         | -                                                                                                                  |
+- TBD
+
+## Trigger / Entry Points
+
+- TBD
 
 ## Preconditions
 
@@ -21,7 +27,19 @@
 - <<AI>> 캡션·설명 텍스트 또는 시각 특징 추출 결과가 준비된 상태
 - <<AI>> 임베딩 인덱싱 기능이 활성화된 상태
 
-## Edge Cases
+## Expected Outcome
+
+- TBD
+
+## State Changes
+
+- TBD
+
+## User-visible Feedback
+
+- TBD
+
+## Edge Cases / Failure Handling
 
 - <<AI>> 이미지 디코딩 또는 특징 추출 실패로 입력이 부족한 경우
 - <<AI>> 해상도가 매우 커서 다운샘플링 후 특징 추출이 필요한 경우
@@ -35,6 +53,18 @@
       활용할 수 있게 함.
 - [ ] <<AI>> 계산이 실패한 상태일 때, 시스템이 실패를 기록하면, 실패 원인을 오류 상세로 조회
       가능하게 함.
+
+## Permissions / Dependencies
+
+- TBD
+
+## Observability / Analytics
+
+- TBD
+
+## Related Interactions
+
+- TBD
 
 ## Source
 

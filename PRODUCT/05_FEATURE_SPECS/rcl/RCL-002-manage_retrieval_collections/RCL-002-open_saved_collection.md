@@ -1,26 +1,44 @@
+---
+interaction_id: "RCL-002-open_saved_collection"
+interaction_type: "command"
+feature: "Manage Retrieval Collections"
+category_key: "RCL"
+feature_id: "RCL-002"
+status: "기획 완료"
+summary: "저장된 콜렉션을 열고, usable snapshot이 있으면 snapshot-first 복원을 시작하고 그렇지 않으면 definition-first search fallback으로 전환"
+related_region: "file_manager_window.content_pane.page_container.page_mode_collection"
+menu: "-"
+shortcut: "-"
+---
+
 # Open Saved Collection
 
-## Metadata
+## Intent
 
-| Field            | Value                                                                                                                                 |
-| ---------------- | ------------------------------------------------------------------------------------------------------------------------------------- |
-| Interaction ID   | RCL-002-open_saved_collection                                                                                                         |
-| Interaction Type | command                                                                                                                               |
-| Feature          | Manage Retrieval Collections                                                                                                          |
-| Category Key     | RCL                                                                                                                                   |
-| Feature ID       | RCL-002                                                                                                                               |
-| Status           | 기획 완료                                                                                                                             |
-| Summary          | 저장된 콜렉션을 열고, usable snapshot이 있으면 snapshot-first 복원을 시작하고 그렇지 않으면 definition-first search fallback으로 전환 |
-| Related Region   | file_manager_window.content_pane.page_container.page_mode_collection                                                                  |
-| Menu             | -                                                                                                                                     |
-| Shortcut         | -                                                                                                                                     |
+- TBD
+
+## Trigger / Entry Points
+
+- TBD
 
 ## Preconditions
 
 - 저장된 콜렉션 파일 또는 목록 항목이 존재하는 상태
 - 사용자가 해당 콜렉션을 다시 열 수 있는 경로와 권한이 확보된 상태
 
-## Edge Cases
+## Expected Outcome
+
+- TBD
+
+## State Changes
+
+- TBD
+
+## User-visible Feedback
+
+- TBD
+
+## Edge Cases / Failure Handling
 
 - snapshot은 존재하지만 usable하지 않은 경우
 - unsupported filter가 포함되어 있지만 나머지 정의로 open 가능한 경우
@@ -38,6 +56,18 @@
       않으며, 가능한 경우 definition-first fallback으로 계속 진행함
 - [ ] 콜렉션 파일 자체가 손상되었거나 정의를 복원할 수 없으면, 시스템은 실패를 안내하고 화면 상태를
       일관되게 유지함
+
+## Permissions / Dependencies
+
+- TBD
+
+## Observability / Analytics
+
+- TBD
+
+## Related Interactions
+
+- TBD
 
 ## Source
 

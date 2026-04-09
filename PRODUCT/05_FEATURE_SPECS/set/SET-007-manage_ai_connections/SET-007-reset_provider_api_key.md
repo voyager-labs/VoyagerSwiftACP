@@ -1,19 +1,17 @@
+---
+interaction_id: "SET-007-reset_provider_api_key"
+interaction_type: "command"
+feature: "Manage AI Connections"
+category_key: "SET"
+feature_id: "SET-007"
+status: "드래프트"
+summary: "<<AI>> 저장된 API key를 제거하고 미연결 상태로 되돌려 사용자가 새 key를 다시 입력할 수 있게 한다."
+related_region: "settings_window.settings_body.tab_ai.provider_connection_area"
+menu: "-"
+shortcut: "-"
+---
+
 # Reset Provider API Key
-
-## Metadata
-
-| Field            | Value                                                                                             |
-| ---------------- | ------------------------------------------------------------------------------------------------- |
-| Interaction ID   | SET-007-reset_provider_api_key                                                                    |
-| Interaction Type | command                                                                                           |
-| Feature          | Manage AI Connections                                                                             |
-| Category Key     | SET                                                                                               |
-| Feature ID       | SET-007                                                                                           |
-| Status           | 드래프트                                                                                          |
-| Summary          | <<AI>> 저장된 API key를 제거하고 미연결 상태로 되돌려 사용자가 새 key를 다시 입력할 수 있게 한다. |
-| Related Region   | settings_window.settings_body.tab_ai.provider_connection_area                                     |
-| Menu             | -                                                                                                 |
-| Shortcut         | -                                                                                                 |
 
 ## Intent
 

@@ -1,19 +1,25 @@
+---
+interaction_id: "CDA-004-show_organize_results"
+interaction_type: "display"
+feature: "Handle Organize Intent"
+category_key: "CDA"
+feature_id: "CDA-004"
+status: "기획 완료"
+summary: "실행 완료된 Oragnize Intent Response를 Chat Pane에 표시"
+related_region: "file_manager_window.inspector_pane.inspector_mode_chat"
+menu: "-"
+shortcut: "-"
+---
+
 # Show Organize Results
 
-## Metadata
+## Intent
 
-| Field            | Value                                                   |
-| ---------------- | ------------------------------------------------------- |
-| Interaction ID   | CDA-004-show_organize_results                           |
-| Interaction Type | display                                                 |
-| Feature          | Handle Organize Intent                                  |
-| Category Key     | CDA                                                     |
-| Feature ID       | CDA-004                                                 |
-| Status           | 기획 완료                                               |
-| Summary          | 실행 완료된 Oragnize Intent Response를 Chat Pane에 표시 |
-| Related Region   | file_manager_window.inspector_pane.inspector_mode_chat  |
-| Menu             | -                                                       |
-| Shortcut         | -                                                       |
+- TBD
+
+## Trigger / Entry Points
+
+- TBD
 
 ## Preconditions
 
@@ -22,7 +28,19 @@
 - <<AI>> Inspector Pane이 Chat 모드로 표시되어 있음
 - <<AI>> 결과를 표시할 수 있는 UI 영역이 렌더링된 상태임
 
-## Edge Cases
+## Expected Outcome
+
+- TBD
+
+## State Changes
+
+- TBD
+
+## User-visible Feedback
+
+- TBD
+
+## Edge Cases / Failure Handling
 
 - <<AI>> Organize 실행 결과가 매우 많아 한 번에 표시하기 어려운 경우
 - <<AI>> Organize 실행 후 entry가 외부 요인으로 다시 변경되거나 삭제된 경우
@@ -36,6 +54,18 @@
       실행하면, 스크롤 또는 페이지네이션 등을 사용해 결과가 나누어 표시됨.
 - [ ] <<AI>> Organize 실행 후 entry가 외부 요인으로 다시 변경된 상태일 때, 시스템이 Show Organize
       Results 인터랙션을 실행하면, 원래 실행 결과와 현재 상태가 명확히 구분되어 표시됨.
+
+## Permissions / Dependencies
+
+- TBD
+
+## Observability / Analytics
+
+- TBD
+
+## Related Interactions
+
+- TBD
 
 ## Source
 

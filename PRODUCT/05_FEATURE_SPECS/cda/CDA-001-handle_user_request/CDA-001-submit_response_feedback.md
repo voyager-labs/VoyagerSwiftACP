@@ -1,25 +1,43 @@
+---
+interaction_id: "CDA-001-submit_response_feedback"
+interaction_type: "command"
+feature: "Handle User Request"
+category_key: "CDA"
+feature_id: "CDA-001"
+status: "기획 완료"
+summary: "생성된 응답에 대해 Good/Bad 평가와 선택적 코멘트를 저장"
+related_region: "file_manager_window.inspector_pane.inspector_mode_chat"
+menu: "-"
+shortcut: "-"
+---
+
 # Submit Response Feedback
 
-## Metadata
+## Intent
 
-| Field            | Value                                                   |
-| ---------------- | ------------------------------------------------------- |
-| Interaction ID   | CDA-001-submit_response_feedback                        |
-| Interaction Type | command                                                 |
-| Feature          | Handle User Request                                     |
-| Category Key     | CDA                                                     |
-| Feature ID       | CDA-001                                                 |
-| Status           | 기획 완료                                               |
-| Summary          | 생성된 응답에 대해 Good/Bad 평가와 선택적 코멘트를 저장 |
-| Related Region   | file_manager_window.inspector_pane.inspector_mode_chat  |
-| Menu             | -                                                       |
-| Shortcut         | -                                                       |
+- TBD
+
+## Trigger / Entry Points
+
+- TBD
 
 ## Preconditions
 
 - <<AI>> 대상 Message에 Assistant Response가 표시된 상태
 
-## Edge Cases
+## Expected Outcome
+
+- TBD
+
+## State Changes
+
+- TBD
+
+## User-visible Feedback
+
+- TBD
+
+## Edge Cases / Failure Handling
 
 - <<AI>> Good/Bad를 반복 변경하는 경우
 - <<AI>> 전송 실패/오프라인인 경우
@@ -30,6 +48,18 @@
       저장됨.
 - [ ] <<AI>> Bad 선택 후 코멘트를 입력하면, 코멘트가 함께 저장됨.
 - [ ] <<AI>> 반복 변경 시, 마지막 선택이 유효하게 반영됨.
+
+## Permissions / Dependencies
+
+- TBD
+
+## Observability / Analytics
+
+- TBD
+
+## Related Interactions
+
+- TBD
 
 ## Source
 

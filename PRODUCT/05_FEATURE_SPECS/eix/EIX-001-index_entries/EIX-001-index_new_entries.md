@@ -1,19 +1,25 @@
+---
+interaction_id: "EIX-001-index_new_entries"
+interaction_type: "background"
+feature: "Index Entries"
+category_key: "EIX"
+feature_id: "EIX-001"
+status: "배포 완료"
+summary: "파일 시스템에서 새로 생성·추가된 Entry를 감지해 해당 Entry에 대해 내용 기반 프로퍼티·임베딩 인덱스를 실행하고 인덱스를 생성"
+related_region: "-"
+menu: "-"
+shortcut: "-"
+---
+
 # Index New Entries
 
-## Metadata
+## Intent
 
-| Field            | Value                                                                                                                       |
-| ---------------- | --------------------------------------------------------------------------------------------------------------------------- |
-| Interaction ID   | EIX-001-index_new_entries                                                                                                   |
-| Interaction Type | background                                                                                                                  |
-| Feature          | Index Entries                                                                                                               |
-| Category Key     | EIX                                                                                                                         |
-| Feature ID       | EIX-001                                                                                                                     |
-| Status           | 배포 완료                                                                                                                   |
-| Summary          | 파일 시스템에서 새로 생성·추가된 Entry를 감지해 해당 Entry에 대해 내용 기반 프로퍼티·임베딩 인덱스를 실행하고 인덱스를 생성 |
-| Related Region   | -                                                                                                                           |
-| Menu             | -                                                                                                                           |
-| Shortcut         | -                                                                                                                           |
+- TBD
+
+## Trigger / Entry Points
+
+- TBD
 
 ## Preconditions
 
@@ -21,7 +27,19 @@
 - 신규 Entry가 인덱싱 제외 규칙에 포함되지 않은 상태
 - Entry Indexing 진행이 일시 중지되지 않은 상태
 
-## Edge Cases
+## Expected Outcome
+
+- TBD
+
+## State Changes
+
+- TBD
+
+## User-visible Feedback
+
+- TBD
+
+## Edge Cases / Failure Handling
 
 - 엔트리 생성 직후 아직 쓰기 중이거나 잠금 상태로 남아 있는 경우
 - 신규 엔트리 생성 감지 후 인덱싱 중에 변경·삭제되는 경우
@@ -40,6 +58,18 @@
       시간에 몰린다면, 큐 등록을 배치/스로틀링하고 중복 작업을 병합해 처리함
 - [ ] 시스템이 신규 엔트리 인덱싱을 수행 중인 상태일 때, 권한 또는 스토리지 연결 문제로 신규
       엔트리에 접근할 수 없다면, 실패 항목을 기록하고 재시도 가능 상태로 유지함
+
+## Permissions / Dependencies
+
+- TBD
+
+## Observability / Analytics
+
+- TBD
+
+## Related Interactions
+
+- TBD
 
 ## Source
 
