@@ -229,14 +229,14 @@ final class FileManagerWindowCoordinator: NSWindowController, NSWindowDelegate {
 
         let initialTitle = makeTitle(
             openedCollectionName: store.state.content.collectionSession.openedName,
-            isCollectionMode: store.state.content.entryViewLayout.entryOperations.isCollectionMode,
+            isCollectionMode: store.state.content.isCollectionMode,
             titlePath: store.state.content.navigation.titlePath,
             makeWindowTitle: makeWindowTitle,
         )
 
         Publishers.CombineLatest3(
             store.publisher.content.collectionSession.openedName.removeDuplicates(),
-            store.publisher.content.entryViewLayout.entryOperations.isCollectionMode.removeDuplicates(),
+            store.publisher.content.isCollectionMode.removeDuplicates(),
             store.publisher.content.navigation.titlePath.removeDuplicates(),
         )
         .map { openedCollectionName, isCollectionMode, titlePath in

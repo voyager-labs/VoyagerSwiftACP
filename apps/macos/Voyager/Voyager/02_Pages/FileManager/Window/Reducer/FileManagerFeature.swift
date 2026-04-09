@@ -119,7 +119,10 @@ struct FileManagerFeature {
         switch command {
         case .newFolder:
             .send(.content(.entryViewLayout(.entryOperations(
-                .edit(.createNewFolder(parentPath: currentPath)),
+                .edit(.createNewFolder(
+                    parentPath: currentPath,
+                    siblingNames: state.content.entryViewLayout.entries.map(\.name),
+                )),
             ))))
 
         case .paste:

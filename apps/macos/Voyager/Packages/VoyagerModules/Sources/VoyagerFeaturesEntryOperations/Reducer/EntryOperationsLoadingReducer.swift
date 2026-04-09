@@ -1,6 +1,8 @@
 import ComposableArchitecture
 import Foundation
 import IdentifiedCollections
+import VoyagerEntitiesEntry
+import VoyagerShared
 
 @Reducer
 public struct EntryOperationsLoadingReducer {
@@ -65,24 +67,6 @@ public struct EntryOperationsLoadingReducer {
                         return .send(.edit(.cancelRename))
                     }
                 }
-                return .none
-
-            case let .loading(.collectionItemsLoadedFromSearch(paths, showHidden)):
-                let converted = EntryCollectionItemsConverter.convert(
-                    paths,
-                    showHidden: showHidden,
-                    entryLoadingClient: entryLoadingClient,
-                    workspaceClient: workspaceClient,
-                )
-                state.loadingContext.collectionItems = IdentifiedArray(uniqueElements: converted)
-                return .none
-
-            case let .loading(.setCollectionMode(isCollectionMode)):
-                state.loadingContext.isCollectionMode = isCollectionMode
-                return .none
-
-            case .loading(.clearCollectionItems):
-                state.loadingContext.collectionItems = []
                 return .none
 
             default:

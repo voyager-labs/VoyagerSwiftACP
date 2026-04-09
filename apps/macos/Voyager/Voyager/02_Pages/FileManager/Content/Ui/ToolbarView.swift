@@ -144,7 +144,7 @@ struct ToolbarView: View {
                     canGoForward: state.navigation.canGoForward,
                     canGoToEnclosingDirectory: state.navigation.canGoToEnclosingDirectory,
                     toolbarTitle: currentNavigationTitle(for: state.navigation.navigationState),
-                    isCollectionMode: state.entryViewLayout.entryOperations.isCollectionMode,
+                    isCollectionMode: state.isCollectionMode,
                     isOpeningCollectionFile: state.collectionSession.isOpening,
                     openedCollectionName: state.collectionSession.openedName,
                     openedCollectionURLExists: state.collectionSession.openedURL != nil,

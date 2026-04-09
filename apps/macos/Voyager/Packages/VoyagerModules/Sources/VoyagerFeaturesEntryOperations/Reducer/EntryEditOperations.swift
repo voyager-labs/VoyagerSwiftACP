@@ -16,8 +16,8 @@ struct EntryEditOperationsReducer {
     var body: some Reducer<State, Action> {
         Reduce { state, action in
             switch action {
-            case let .edit(.createNewFolder(parentPath)):
-                let name = defaultNewFolderName(entries: Array(state.displayItems))
+            case let .edit(.createNewFolder(parentPath, siblingNames)):
+                let name = defaultNewFolderName(siblingNames: siblingNames)
                 let parentURL = URL(fileURLWithPath: parentPath)
                 let targetPath = parentURL.appendingPathComponent(name).path
 
@@ -102,10 +102,10 @@ struct EntryEditOperationsReducer {
                     }
                 }
 
-            case let .edit(.startRename(id, text)):
-                guard state.displayItems[id: id] != nil else { return .none }
-                state.renamingItemId = id
+            case let .edit(.startRename(item, text)):
+                state.renamingItemId = item.id
                 state.renamingText = text
+                state.renamingItem = item
                 return .none
 
             case let .edit(.updateRenamingText(text)):
@@ -115,10 +115,11 @@ struct EntryEditOperationsReducer {
 
             case .edit(.commitRename):
                 guard let itemId = state.renamingItemId,
-                      let item = state.displayItems[id: itemId]
+                      let item = state.renamingItem
                 else {
                     state.renamingItemId = nil
                     state.renamingText = ""
+                    state.renamingItem = nil
                     return .none
                 }
 
@@ -127,6 +128,7 @@ struct EntryEditOperationsReducer {
                 guard !trimmed.isEmpty, trimmed != item.name else {
                     state.renamingItemId = nil
                     state.renamingText = ""
+                    state.renamingItem = nil
                     return .none
                 }
 
@@ -154,6 +156,7 @@ struct EntryEditOperationsReducer {
             case .edit(.cancelRename):
                 state.renamingItemId = nil
                 state.renamingText = ""
+                state.renamingItem = nil
                 return .none
 
             default:
@@ -162,11 +165,11 @@ struct EntryEditOperationsReducer {
         }
     }
 
-    private func defaultNewFolderName(entries: [EntryModel]) -> String {
+    private func defaultNewFolderName(siblingNames: [String]) -> String {
         var folderName = "untitled folder"
         var counter = 2
 
-        while entries.contains(where: { $0.name == folderName }) {
+        while siblingNames.contains(folderName) {
             folderName = "untitled folder \(counter)"
             counter += 1
         }

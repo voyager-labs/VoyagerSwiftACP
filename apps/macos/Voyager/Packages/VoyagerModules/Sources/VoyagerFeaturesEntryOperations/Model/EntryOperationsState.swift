@@ -11,6 +11,7 @@ public struct EntryOperationsState: Equatable {
     public var isReloading: Bool = false
     public var renamingItemId: EntryModel.ID?
     public var renamingText: String = ""
+    public var renamingItem: EntryModel?
 
     public var windowID: UUID?
     public var itemStates: [String: ItemOperationState] = [:]
@@ -34,6 +35,7 @@ public struct EntryOperationsState: Equatable {
         isReloading = false
         renamingItemId = nil
         renamingText = ""
+        renamingItem = nil
         self.windowID = windowID
         itemStates = [:]
         undoRecords = []
@@ -49,17 +51,9 @@ public struct EntryOperationsState: Equatable {
         dropValidationResult = .empty
     }
 
-    public var displayItems: IdentifiedArrayOf<EntryModel> {
-        loadingContext.isCollectionMode ? loadingContext.collectionItems : loadingContext.items
-    }
-
-    public var displayOrderItems: [EntryModel] {
-        Array(displayItems)
-    }
-
     public var hasSelectableEntries: Bool {
         guard !selectedEntryIDs.isEmpty else { return false }
-        return displayItems.contains { selectedEntryIDs.contains($0.id) }
+        return loadingContext.items.contains { selectedEntryIDs.contains($0.id) }
     }
 
     public var latestUndoRecord: EntryActionRecord? {
@@ -95,24 +89,12 @@ public struct EntryOperationsState: Equatable {
 
 public struct EntryLoadingContextState: Equatable, Sendable {
     public var items: IdentifiedArrayOf<EntryModel> = []
-    public var collectionItems: IdentifiedArrayOf<EntryModel> = []
-    public var isCollectionMode: Bool = false
 }
 
 public extension EntryOperationsState {
     var items: IdentifiedArrayOf<EntryModel> {
         get { loadingContext.items }
         set { loadingContext.items = newValue }
-    }
-
-    var collectionItems: IdentifiedArrayOf<EntryModel> {
-        get { loadingContext.collectionItems }
-        set { loadingContext.collectionItems = newValue }
-    }
-
-    var isCollectionMode: Bool {
-        get { loadingContext.isCollectionMode }
-        set { loadingContext.isCollectionMode = newValue }
     }
 }
 
