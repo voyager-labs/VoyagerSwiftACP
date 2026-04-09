@@ -70,6 +70,7 @@ struct ComposerSearchLifecycleReducer {
                         state.isFilteringInFlight = false
                         state.activeFiltersRequestID = nil
                         state.filtersStartedAt = nil
+                        state.pendingSearchQuery = nil
                         applyQueryPhaseTransition(.reset, state: &state)
                         return .none
                     }
