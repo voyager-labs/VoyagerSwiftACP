@@ -36,7 +36,10 @@ final class ContentPaneContextMenuCoordinator: NSObject {
         store.send(
             .entryViewLayout(
                 .entryOperations(
-                    .edit(.createNewFolder(parentPath: store.state.navigation.currentPath)),
+                    .edit(.createNewFolder(
+                        parentPath: store.state.navigation.currentPath,
+                        siblingNames: store.state.entryViewLayout.entries.map(\.name),
+                    )),
                 ),
             ),
         )

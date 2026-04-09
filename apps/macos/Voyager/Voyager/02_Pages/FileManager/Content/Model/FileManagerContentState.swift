@@ -18,6 +18,10 @@ struct FileManagerContentState: Equatable {
     // 콜렉션 관련
     var collectionSession: CollectionDocumentSessionState = .init()
 
+    var isCollectionMode: Bool {
+        entryViewLayout.isCollectionMode
+    }
+
     mutating func resetComposer() {
         composer = .init()
         syncComposerCollectionState()
@@ -26,11 +30,11 @@ struct FileManagerContentState: Equatable {
     mutating func syncComposerCollectionState() {
         composer.collectionContext = collectionContext
         composer.openedCollectionURL = collectionSession.openedURL
-        composer.isCollectionMode = entryViewLayout.entryOperations.isCollectionMode
+        composer.isCollectionMode = isCollectionMode
     }
 
     var canSaveCollection: Bool {
-        guard entryViewLayout.entryOperations.isCollectionMode, collectionContext != nil else {
+        guard isCollectionMode, collectionContext != nil else {
             return false
         }
         if collectionSession.baseline == nil {
