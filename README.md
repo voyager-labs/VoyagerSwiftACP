@@ -8,7 +8,7 @@
 ### PRODUCT (제품 기획/스펙)
 
 - 제품 기획/문서 진입점: `PRODUCT/01_PRODUCT_THESIS/index.md`
-- 페르소나: `PRODUCT/02_USER_PERSONA/index.md`
+- 페르소나: `PRODUCT/02_USER_PERSONA/00_index.md`
 - 정보 구조(IA) 테이블: `PRODUCT/03_INFORMATION_ARCHITECTURE/`
 - 기능 인벤토리: `PRODUCT/04_FEATURE_INVENTORY/`
 - 기능 스펙: `PRODUCT/05_FEATURE_SPECS/`
