@@ -1,10 +1,26 @@
-# USER_PERSONA
+# 사용자 페르소나
 
-- Version: 1.0.0
-- Updated at: Mar 1, 2026
+- 버전: 1.2.0
+- 수정일: 2026-04-08
+- 상위 세그먼트: 직접 빌더형 초기 테크 스타트업 파운더
 
-## Map of Content
+## 목차
 
-- [Alex, AI Agent Tool Skilled Engineer](alex-ai_agent_engineer.md)
-- [Eric, Multi-project Indie Builder](eric-multi_project_indie_builder.md)
-- [Mia, Workflow Automation Creator](mia-workflow_automation_creator.md)
+- [Alex, 제품 개발형 파운더](01_alex-product_development_founder.md)
+- [Eric, 시장 진입형 파운더](02_eric-go_to_market_founder.md)
+- [Mia, 운영·투자 커뮤니케이션형 파운더](03_mia-operations_fundraising_founder.md)
+
+## 공통 특징
+
+- 한 사람이 제품 개발뿐 아니라 외부 커뮤니케이션과 후속 운영 정리까지 함께 떠안는 초기 스타트업 파운더들이다.
+- 문서, 코드, 화면 캡처, 데모 자료, 업데이트 메모처럼 서로 다른 파일 종류를 하나의 일 흐름 안에서 같이 다룬다.
+- 파일을 폴더 위치보다 지금 진행 중인 출시, 기능, 미팅, 업데이트 같은 현재 작업 맥락으로 먼저 떠올린다.
+- 이미 만든 자료가 있어도 필요할 때마다 다시 찾고 다시 묶고 다시 설명해야 하는 반복 재조립이 가장 큰 고통이다.
+
+## 페르소나 한눈에 보기
+
+| 페르소나 | 주도 흐름 | 가장 아픈 순간 |
+|---------|-----------|----------------|
+| Alex | 기능 구현 → QA 확인 → 데모 캡처로 이어지는 제품 개발 루프 | 다시 기능 맥락에 들어왔을 때 관련 코드, 스펙, QA 메모, 데모 자료가 한 번에 안 열려 빌드 흐름이 끊기는 순간 |
+| Eric | 출시 준비 → 자산 포장 → 채널별 재활용으로 이어지는 출시 루프 | 배포 직전에 스크린샷, 데모, 릴리즈 노트, 공유 세트를 최신 기준으로 다시 한 벌 조립해야 하는 순간 |
+| Mia | 릴리즈 후속 대응 → 운영 업데이트 → 투자자 공유로 이어지는 후속 운영 루프 | 주간 운영 리뷰나 투자자 업데이트를 만들 때 내부용·외부용 자료 세트를 다시 나누고 다시 검수해야 하는 순간 |
