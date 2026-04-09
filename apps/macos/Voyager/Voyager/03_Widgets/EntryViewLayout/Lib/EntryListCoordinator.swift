@@ -437,14 +437,9 @@ final class EntryListCoordinator: NSObject {
         for group in state.entryArrangements.groupedItems {
             let items = group.items.map { OutlineItem(kind: .entry($0)) }
             if !group.groupName.isEmpty, state.entryArrangements.groupKey != .name {
-                let colorCode: Int? = if state.entryArrangements.groupKey == .tags {
-                    resolveTagColorCode(tagName: group.groupName, items: group.items)
-                } else {
-                    nil
-                }
                 let isCollapsed = state.entryArrangements.collapsedGroups.contains(group.groupName)
                 let groupItem = OutlineItem(
-                    kind: .group(name: group.groupName, colorCode: colorCode, isCollapsed: isCollapsed),
+                    kind: .group(name: group.groupName, colorCode: group.colorCode, isCollapsed: isCollapsed),
                     children: items,
                 )
                 result.append(groupItem)
@@ -453,15 +448,6 @@ final class EntryListCoordinator: NSObject {
             }
         }
         return result
-    }
-
-    func resolveTagColorCode(tagName: String, items: [EntryModel]) -> Int? {
-        for item in items {
-            if let colorCode = item.facets.tags?.first(where: { $0.name == tagName })?.colorCode {
-                return colorCode
-            }
-        }
-        return nil
     }
 
     func applyGroupExpansionState() {

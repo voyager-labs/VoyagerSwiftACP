@@ -109,6 +109,23 @@ private extension EntryArrangementsApplyReducer {
         return groupItemsByKey(items, groupKey: groupKey, now: now)
     }
 
+    func resolveTagColorCode(tagName: String, items: [EntryModel]) -> Int? {
+        let candidateCodes = items
+            .compactMap { item in
+                item.facets.tags?.first(where: { $0.name == tagName })?.colorCode
+            }
+
+        guard !candidateCodes.isEmpty else { return nil }
+
+        for tagColor in TagColor.colorOrder {
+            if let matchedCode = candidateCodes.first(where: { TagColor(colorCode: $0) == tagColor }) {
+                return matchedCode
+            }
+        }
+
+        return candidateCodes.min()
+    }
+
     func groupItemsByKey(
         _ items: [EntryModel],
         groupKey: GroupKey,
@@ -352,13 +369,14 @@ private extension EntryArrangementsApplyReducer {
 
         for tagColor in TagColor.colorOrder {
             for (tagName, taggedItems) in tagToItems {
-                if let firstTag = taggedItems.first?.facets.tags?.first(where: { $0.name == tagName }),
-                   firstTag.tagColor == tagColor
+                if let resolvedColorCode = resolveTagColorCode(tagName: tagName, items: taggedItems),
+                   TagColor(colorCode: resolvedColorCode) == tagColor
                 {
                     result.append(GroupedItems(
                         groupName: tagName,
                         items: taggedItems
                             .sorted { $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending },
+                        colorCode: resolvedColorCode,
                     ))
                     processedTags.insert(tagName)
                 }
@@ -372,6 +390,7 @@ private extension EntryArrangementsApplyReducer {
                 result.append(GroupedItems(
                     groupName: tagName,
                     items: taggedItems.sorted { $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending },
+                    colorCode: resolveTagColorCode(tagName: tagName, items: taggedItems),
                 ))
             }
         }

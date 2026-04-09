@@ -166,29 +166,15 @@ final class EntryGridCoordinator: NSObject {
         }
         return state.entryArrangements.groupedItems.map { group in
             let showHeader = !group.groupName.isEmpty && state.entryArrangements.groupKey != .name
-            let colorCode: Int? = if state.entryArrangements.groupKey == .tags {
-                resolveTagColorCode(tagName: group.groupName, items: group.items)
-            } else {
-                nil
-            }
             let isCollapsed = state.entryArrangements.collapsedGroups.contains(group.groupName)
             return Section(
                 title: showHeader ? group.groupName : nil,
-                colorCode: colorCode,
+                colorCode: group.colorCode,
                 count: group.count,
                 items: isCollapsed ? [] : group.items,
                 isCollapsed: isCollapsed,
             )
         }
-    }
-
-    func resolveTagColorCode(tagName: String, items: [EntryModel]) -> Int? {
-        for item in items {
-            if let colorCode = item.facets.tags?.first(where: { $0.name == tagName })?.colorCode {
-                return colorCode
-            }
-        }
-        return nil
     }
 
     func updateLayout(for width: CGFloat) {
