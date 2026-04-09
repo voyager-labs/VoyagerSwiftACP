@@ -37,10 +37,8 @@ settings_window	settings_body	tab_indexing	Settings Indexing Tab	세팅 인덱�
 settings_window	settings_body	tab_appearance	Settings Appearance Tab	세팅 어피어런스 탭	3	mode	settings_window.settings_body.tab_appearance	테마·폰트·레이아웃 밀도 등 UI 외관 설정을 관리하는 탭	TBD	CBT
 settings_window	settings_body	tab_shortcuts	Settings Shortcuts Tab	세팅 숏컷 탭	3	mode	settings_window.settings_body.tab_shortcuts	키보드 단축키를 확인하고 커스터마이징하는 설정 탭	TBD	OBT
 settings_window	settings_body	tab_account	Settings Account Tab	세팅 어카운트 탭	3	mode	settings_window.settings_body.tab_account	계정 정보, 구독 상태, 라이선스 등을 관리하는 설정 탭	TBD	CBT
-settings_window	settings_body	tab_ai	Settings AI Tab	세팅 AI 탭	3	mode	settings_window.settings_body.tab_ai	허용된 외부 AI provider 연결 방식, 상태, 재설정 흐름을 관리하는 설정 탭	TBD	OBT
-settings_window	tab_ai	provider_list_area	Provider List Area	프로바이더 목록 영역	4	section	settings_window.settings_body.tab_ai.provider_list_area	<<AI>> 연결 가능한 외부 AI provider 목록과 각 provider의 현재 연결 여부를 보여주는 영역	TBD	OBT
-settings_window	tab_ai	provider_connection_area	Provider Connection Area	프로바이더 연결 영역	4	section	settings_window.settings_body.tab_ai.provider_connection_area	<<AI>> 선택한 provider의 OAuth 연결, API key 입력·검증, 재설정 액션을 제공하는 영역	TBD	OBT
-settings_window	tab_ai	provider_status_area	Provider Status Area	프로바이더 상태 영역	4	section	settings_window.settings_body.tab_ai.provider_status_area	<<AI>> 선택한 provider의 정상·미연결·오류·만료 상태와 다음 행동을 안내하는 영역	TBD	OBT
+settings_window	settings_body	tab_ai	Settings AI Tab	세팅 AI 탭	3	mode	settings_window.settings_body.tab_ai	지원되는 AI provider 목록을 보여주고, 각 provider row에서 상태 확인, 연결, 연결 해제를 하나의 연결 객체 기준으로 관리하는 설정 탭	TBD	OBT
+settings_window	tab_ai	provider_list_area	Provider List Area	프로바이더 목록 영역	4	section	settings_window.settings_body.tab_ai.provider_list_area	현재 빌드에서 지원되는 provider 목록을 표시하고 각 row에 연결 상태 배지, 지원 연결 방식, 기본 액션(Connect/Disconnect)을 함께 보여주는 영역	TBD	OBT
 settings_window	settings_body	tab_about	Settings About Tab	세팅 어바웃 탭	3	mode	settings_window.settings_body.tab_about	앱 버전, 라이선스 등 메타 정보를 표시하는 설정 탭	TBD	CBT
 onboarding_window	-	root	Onboarding Window	온보딩 스크린	1	root	onboarding_window	최초 실행·주요 업데이트 시 온보딩 플로우를 진행하는 온보딩 화면 루트	TBD	CBT
 onboarding_window	root	welcome_screen	Welcome Screen	웰컴 스크린	2	mode	onboarding_window.welcome_screen	제품 소개와 기본 안내, 시작 액션을 제공하는 온보딩 첫 화면	TBD	CBT
