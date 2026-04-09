@@ -1,4 +1,5 @@
 import Foundation
+import VoyagerShared
 
 struct SearchConditionSanitizer: Sendable {
     private let conditionBuilder: SearchConditionBuilder
