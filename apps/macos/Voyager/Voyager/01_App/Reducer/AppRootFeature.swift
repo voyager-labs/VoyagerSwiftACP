@@ -186,16 +186,38 @@ struct AppRootFeature {
 
 private nonisolated func helperGrantedWatchRoots(from access: FolderAccessResult) -> [String] {
     let fileManager = FileManager.default
-    let pairs: [(FolderAccessPermission, FileManager.SearchPathDirectory)] = [
-        (access.desktop, .desktopDirectory),
-        (access.documents, .documentDirectory),
-        (access.downloads, .downloadsDirectory),
-    ]
+    var roots: [String] = []
 
-    return pairs.compactMap { permission, directory in
-        guard permission == .granted else { return nil }
-        return fileManager.urls(for: directory, in: .userDomainMask).first?.standardizedFileURL.path
+    let homePath = URL(fileURLWithPath: NSHomeDirectory()).standardizedFileURL.path
+    roots.append(homePath)
+
+    let iCloudDrive = URL(fileURLWithPath: NSHomeDirectory())
+        .appendingPathComponent(FileManagerSpecialRootRelativePathConfig.iCloudDrive)
+        .standardizedFileURL
+    if fileManager.fileExists(atPath: iCloudDrive.path) {
+        roots.append(iCloudDrive.path)
     }
+
+    let cloudStorageRoot = URL(fileURLWithPath: NSHomeDirectory())
+        .appendingPathComponent(FileManagerSpecialRootRelativePathConfig.cloudStorage)
+        .standardizedFileURL
+    if let contents = try? fileManager.contentsOfDirectory(
+        at: cloudStorageRoot,
+        includingPropertiesForKeys: [.isDirectoryKey],
+        options: [.skipsHiddenFiles],
+    ) {
+        for itemURL in contents {
+            if let isDirectory = (try? itemURL.resourceValues(forKeys: [.isDirectoryKey]))?.isDirectory,
+               isDirectory == true
+            {
+                roots.append(itemURL.standardizedFileURL.path)
+            }
+        }
+    }
+
+    _ = access
+
+    return Array(Set(roots)).sorted()
 }
 
 private nonisolated func persistedHelperFolderAccess(userDefaultsClient: UserDefaultsClient) -> FolderAccessResult? {
