@@ -1,30 +1,61 @@
+---
+interaction_id: "SET-003-swtich_theme_mode"
+interaction_type: "input"
+feature: "Configure Appearance Settings"
+category_key: "SET"
+feature_id: "SET-003"
+status: "배포 완료"
+summary: "라이트/다크/자동 및 강조색, 폰트 사이즈 등을 편집합니다."
+related_region: "settings_window.settings_body.tab_appearance"
+menu: "-"
+shortcut: "-"
+---
+
 # Swtich Theme Mode
 
-## Metadata
+## Intent
 
-| Field | Value |
-| --- | --- |
-| Interaction ID | SET-003-swtich_theme_mode |
-| Interaction Type | input |
-| Feature | Configure Appearance Settings |
-| Category Key | SET |
-| Feature ID | SET-003 |
-| Status | 배포 완료 |
-| Summary | 라이트/다크/자동 및 강조색, 폰트 사이즈 등을 편집합니다. |
-| Related Region | settings_window.settings_body.tab_appearance |
-| Menu | - |
-| Shortcut | - |
+- TBD
+
+## Trigger / Entry Points
+
+- TBD
 
 ## Preconditions
 
 - TBD
-## Edge Cases
+
+## Expected Outcome
+
+- TBD
+
+## State Changes
+
+- TBD
+
+## User-visible Feedback
+
+- TBD
+
+## Edge Cases / Failure Handling
 
 - TBD
 
 ## Acceptance Criteria
 
-- [ ] -
+-   -
+
+## Permissions / Dependencies
+
+- TBD
+
+## Observability / Analytics
+
+- TBD
+
+## Related Interactions
+
+- TBD
 
 ## Source
 

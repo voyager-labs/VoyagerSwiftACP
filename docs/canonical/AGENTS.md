@@ -4,7 +4,8 @@
 
 ## OVERVIEW
 
-Voyager 문서를 GitHub SSOT로 운영하는 레포입니다. 문서는 Markdown, 표/인벤토리는 `data.tsv` + `schema.json`으로 관리합니다.
+Voyager 문서를 GitHub SSOT로 운영하는 레포입니다. 문서는 Markdown, 표/인벤토리는 `data.tsv` +
+`schema.json`으로 관리합니다.
 
 ## STRUCTURE
 
@@ -27,34 +28,34 @@ Voyager 문서를 GitHub SSOT로 운영하는 레포입니다. 문서는 Markdow
 
 ## WHERE TO LOOK
 
-| 작업 | 위치 | 노트 |
-|------|------|------|
-| 레포 운영 규칙 확인 | `META/README.md` | 규칙은 여기로 모음 |
-| TSV 작성 규칙 | `META/tsv_rules.md` | `-`/`TBD`, 빈 행 금지, 컬럼 수 고정 |
-| schema.json 포맷 | `META/schema_format.md` | `required` 중심, `ref`로 참조 |
-| 제품 기획 진입점 | `PRODUCT/01_PRODUCT_THESIS/index.md` | TL;DR/Problem/Target/Pillar/Core flow |
-| 페르소나 확인 | `PRODUCT/02_USER_PERSONA/00_index.md` | Alex/Eric/Mia |
-| IA(UI 구조/메뉴) 편집 | `PRODUCT/03_INFORMATION_ARCHITECTURE/index.md` | `WINDOW_STRUCTURE.structure_key`는 참조 키 |
-| 기능/인터랙션 편집 | `PRODUCT/04_FEATURE_INVENTORY/index.md` | FEATURES/INTERACTIONS 테이블 |
-| 기능 스펙 확인/편집 | `PRODUCT/05_FEATURE_SPECS/index.md` | interaction_id 기반 스펙 |
-| 유즈케이스 흐름 확인 | `PRODUCT/06_USE_CASES/index.md` | PREV/NEXT 내비 |
-| 특정 feature_id 검증 | `.agents/skills/voyager-feature-inventory/voyager-feature-inventory-checker/SKILL.md` | 빠른 lookup/정합성 체크 |
+| 작업                  | 위치                                                                                  | 노트                                       |
+| --------------------- | ------------------------------------------------------------------------------------- | ------------------------------------------ |
+| 레포 운영 규칙 확인   | `META/README.md`                                                                      | 규칙은 여기로 모음                         |
+| TSV 작성 규칙         | `META/tsv_rules.md`                                                                   | `-`/`TBD`, 빈 행 금지, 컬럼 수 고정        |
+| schema.json 포맷      | `META/schema_format.md`                                                               | `required` 중심, `ref`로 참조              |
+| 제품 기획 진입점      | `PRODUCT/01_PRODUCT_THESIS/00_index.md`                                               | TL;DR/Problem/Target/Pillar/Core flow      |
+| 페르소나 확인         | `PRODUCT/02_USER_PERSONA/00_index.md`                                                 | Alex/Eric/Mia                              |
+| IA(UI 구조/메뉴) 편집 | `PRODUCT/03_INFORMATION_ARCHITECTURE/index.md`                                        | `WINDOW_STRUCTURE.structure_key`는 참조 키 |
+| 기능/인터랙션 편집    | `PRODUCT/04_FEATURE_INVENTORY/index.md`                                               | FEATURES/INTERACTIONS 테이블               |
+| 기능 스펙 확인/편집   | `PRODUCT/05_FEATURE_SPECS/index.md`                                                   | interaction_id 기반 스펙                   |
+| 유즈케이스 흐름 확인  | `PRODUCT/06_USE_CASES/index.md`                                                       | PREV/NEXT 내비                             |
+| 특정 feature_id 검증  | `.agents/skills/voyager-feature-inventory/voyager-feature-inventory-checker/SKILL.md` | 빠른 lookup/정합성 체크                    |
 
 ## CONVENTIONS (THIS REPO)
 
 - **PR-first**: 의미 있는 변경은 PR로 남기고 리뷰/추적(blame)을 전제로 함
 - **링크는 상대경로**: 이동/포크에도 깨지지 않게 파일 기준 상대경로 사용
 - **TSV는 사람+머신 SSOT**: GitHub에서 TSV를 그대로 읽고 리뷰하는 것을 전제로 함
-  - 빈 행 금지
-  - 헤더 포함, 모든 행은 동일한 컬럼 수 유지
-  - 값 없음/해당 없음: `-`
-  - 아직 작성 못함: `TBD`
-  - AI 초안 표시(셀 맨 앞): `<<AI>> `
+    - 빈 행 금지
+    - 헤더 포함, 모든 행은 동일한 컬럼 수 유지
+    - 값 없음/해당 없음: `-`
+    - 아직 작성 못함: `TBD`
+    - AI 초안 표시(셀 맨 앞): `<<AI>>`
 - **schema.json**: `required`만 사용(= `nullable` 없음)
-  - `-`는 `null_values`로 취급
-  - `TBD`는 작성해야 하는 값으로 취급(= required에서도 허용)
-  - 단, `primary_key` 컬럼에는 `TBD`를 사용하지 않음
-  - 참조는 `ref` 메타로 기술
+    - `-`는 `null_values`로 취급
+    - `TBD`는 작성해야 하는 값으로 취급(= required에서도 허용)
+    - 단, `primary_key` 컬럼에는 `TBD`를 사용하지 않음
+    - 참조는 `ref` 메타로 기술
 
 ## COMMANDS
 

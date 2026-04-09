@@ -69,21 +69,21 @@ Use when the user asks "관련 기능 찾아줘" or "어떤 feature 변경 필�
 Important: this is not true vector semantic search. It is high-recall discovery via bilingual keyword expansion + deterministic ID validation.
 
 1. Build bilingual keyword packs from the request.
-   - Prefer inventory language, not implementation buzzwords.
-   - Example packs:
-     - `결정론`, `deterministic`, `후보`, `candidate`
-     - `시스템 프로퍼티`, `system property`, `메타데이터`, `metadata`
-     - `인덱싱`, `indexing`, `필터`, `filter`
+    - Prefer inventory language, not implementation buzzwords.
+    - Example packs:
+        - `결정론`, `deterministic`, `후보`, `candidate`
+        - `시스템 프로퍼티`, `system property`, `메타데이터`, `metadata`
+        - `인덱싱`, `indexing`, `필터`, `filter`
 2. Run broad searches with `vfi.py search` for each keyword.
-   - Use `--scope all` and larger `--limit` (50-100) for recall.
+    - Use `--scope all` and larger `--limit` (50-100) for recall.
 3. Run `check_feature.py "<keyword>" --match contains` for ambiguous terms.
-   - This searches `feature_id`, `feature_title`, `description`.
-   - If ambiguous, it prints candidate IDs; use those IDs next.
+    - This searches `feature_id`, `feature_title`, `description`.
+    - If ambiguous, it prints candidate IDs; use those IDs next.
 4. Validate each candidate ID with exact `check_feature.py <id>`.
 5. Classify output as:
-   - `must-update`: directly conflicts with requested change
-   - `consider-update`: adjacent behavior/wording likely affected
-   - `no-change`: related domain but no required row changes
+    - `must-update`: directly conflicts with requested change
+    - `consider-update`: adjacent behavior/wording likely affected
+    - `no-change`: related domain but no required row changes
 
 Recommended command pattern:
 
@@ -101,21 +101,21 @@ python3 .agents/skills/voyager-feature-inventory/voyager-feature-inventory-check
 
 - Finds the matching row(s) in FEATURES and prints a compact report
 - Matching modes:
-  - `id`: exact feature_id
-  - `title`: exact title
-  - `contains`: substring search over `feature_id`, `feature_title`, `description`
-  - `auto`: picks `id` for `ABC-123` patterns, otherwise `contains`
+    - `id`: exact feature_id
+    - `title`: exact title
+    - `contains`: substring search over `feature_id`, `feature_title`, `description`
+    - `auto`: picks `id` for `ABC-123` patterns, otherwise `contains`
 - Validates required fields (ex: `feature_category`, `category_key`, `feature_title`, `feature_id`)
 - Checks category consistency:
-  - FEATURES.category_key exists in FEATURE_CATEGORIES.category_key
-  - `feature_category` matches FEATURE_CATEGORIES.category_title (warn on mismatch)
-  - (fallback) if FEATURES.category_key is missing, uses the `feature_id` prefix (ex: `FMW`)
+    - FEATURES.category_key exists in FEATURE_CATEGORIES.category_key
+    - `feature_category` matches FEATURE_CATEGORIES.category_title (warn on mismatch)
+    - (fallback) if FEATURES.category_key is missing, uses the `feature_id` prefix (ex: `FMW`)
 - Checks UI reference consistency:
-  - FEATURES.related_ui exists in WINDOW_STRUCTURE.structure_key (warn on missing)
+    - FEATURES.related_ui exists in WINDOW_STRUCTURE.structure_key (warn on missing)
 - Lists related INTERACTIONS (same `feature_id`), with basic counts and a preview list
-  - Includes `interaction_id` (stable key, ex: `FMW-001-open_new_file_manager_window`)
-  - Validates INTERACTIONS.related_region exists in WINDOW_STRUCTURE.structure_key (warn on missing)
-  - Warns if INTERACTIONS.category_key mismatches FEATURES.category_key (fallback: feature_id prefix)
+    - Includes `interaction_id` (stable key, ex: `FMW-001-open_new_file_manager_window`)
+    - Validates INTERACTIONS.related_region exists in WINDOW_STRUCTURE.structure_key (warn on missing)
+    - Warns if INTERACTIONS.category_key mismatches FEATURES.category_key (fallback: feature_id prefix)
 
 ## Sources Of Truth (Repo)
 

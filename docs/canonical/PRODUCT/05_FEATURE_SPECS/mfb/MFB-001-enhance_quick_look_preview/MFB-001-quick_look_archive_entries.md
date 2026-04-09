@@ -1,30 +1,61 @@
+---
+interaction_id: "MFB-001-quick_look_archive_entries"
+interaction_type: "display"
+feature: "Enhance Quick Look Preview"
+category_key: "MFB"
+feature_id: "MFB-001"
+status: "드래프트"
+summary: "<<AI>> 아카이브(예: zip) 내부 파일 구조를 미리보기로 표시합니다."
+related_region: "-"
+menu: "TBD"
+shortcut: "TBD"
+---
+
 # Quick Look Archive Entries
 
-## Metadata
+## Intent
 
-| Field | Value |
-| --- | --- |
-| Interaction ID | MFB-001-quick_look_archive_entries |
-| Interaction Type | display |
-| Feature | Enhance Quick Look Preview |
-| Category Key | MFB |
-| Feature ID | MFB-001 |
-| Status | 드래프트 |
-| Summary | <<AI>> 아카이브(예: zip) 내부 파일 구조를 미리보기로 표시합니다. |
-| Related Region | - |
-| Menu | TBD |
-| Shortcut | TBD |
+- TBD
+
+## Trigger / Entry Points
+
+- TBD
 
 ## Preconditions
 
 - TBD
-## Edge Cases
+
+## Expected Outcome
+
+- TBD
+
+## State Changes
+
+- TBD
+
+## User-visible Feedback
+
+- TBD
+
+## Edge Cases / Failure Handling
 
 - TBD
 
 ## Acceptance Criteria
 
 - [ ] TBD
+
+## Permissions / Dependencies
+
+- TBD
+
+## Observability / Analytics
+
+- TBD
+
+## Related Interactions
+
+- TBD
 
 ## Source
 
