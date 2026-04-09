@@ -3,6 +3,9 @@ import ComposableArchitecture
 import Foundation
 import VoyagerShared
 
+import VoyagerEntitiesEntry
+import VoyagerFeaturesEntryOperations
+
 @Reducer
 struct FileManagerContentFeature {
     typealias State = FileManagerContentState
@@ -248,7 +251,7 @@ struct FileManagerContentFeature {
         switch action {
         case .delegate(.discardCollectionChanges):
             guard let baseline = state.collectionSession.baseline,
-                  state.entryViewLayout.entryOperations.loadingContext.isCollectionMode,
+                  state.entryViewLayout.entryOperations.isCollectionMode,
                   state.isOpenedCollectionDirty
             else {
                 return .none

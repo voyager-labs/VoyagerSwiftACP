@@ -1,5 +1,7 @@
 import Foundation
 
+import VoyagerEntitiesEntry
+
 struct EntryDisplayModel: Sendable {
     let entry: EntryModel
 

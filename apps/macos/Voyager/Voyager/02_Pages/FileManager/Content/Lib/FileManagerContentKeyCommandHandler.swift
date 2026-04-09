@@ -2,6 +2,9 @@ import AppKit
 import ComposableArchitecture
 import Foundation
 
+import VoyagerEntitiesEntry
+import VoyagerFeaturesEntryOperations
+
 enum FileManagerContentKeyCommandHandler {
     private static let undoSelector = Selector(("undo:"))
     private static let redoSelector = Selector(("redo:"))

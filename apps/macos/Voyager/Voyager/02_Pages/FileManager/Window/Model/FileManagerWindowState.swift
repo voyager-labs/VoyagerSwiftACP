@@ -1,6 +1,8 @@
 import ComposableArchitecture
 import Foundation
 
+import VoyagerFeaturesEntryOperations
+
 @ObservableState
 struct FileManagerWindowState: Equatable {
     var content: FileManagerContentFeature.State = .init()

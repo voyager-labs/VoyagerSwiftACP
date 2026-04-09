@@ -1,5 +1,7 @@
 import AppKit
 
+import VoyagerEntitiesEntry
+
 enum EntryContextMenuBuilder {
     struct Configuration {
         let target: EntryContextMenuCoordinator

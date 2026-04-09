@@ -2,6 +2,7 @@ import ComposableArchitecture
 import CoreGraphics
 import Foundation
 import SwiftUI
+import VoyagerFeaturesEntryOperations
 import VoyagerShared
 
 @ObservableState

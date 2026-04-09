@@ -1,5 +1,7 @@
 import Foundation
 
+import VoyagerEntitiesEntry
+
 enum TagColorFallbackResolver {
     nonisolated static func normalizedTags(_ tags: [Tag]?, favoriteTags: [Tag]) -> [Tag]? {
         guard let tags, !tags.isEmpty else {

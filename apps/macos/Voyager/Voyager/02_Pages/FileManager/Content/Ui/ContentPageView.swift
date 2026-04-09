@@ -2,6 +2,8 @@ import AppKit
 import ComposableArchitecture
 import SwiftUI
 
+import VoyagerFeaturesEntryOperations
+
 struct ContentPageView: View {
     let store: StoreOf<FileManagerContentFeature>
 

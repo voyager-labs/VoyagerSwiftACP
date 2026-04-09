@@ -2,6 +2,9 @@ import AppKit
 import ComposableArchitecture
 import CoreGraphics
 
+import VoyagerEntitiesEntry
+import VoyagerFeaturesEntryOperations
+
 final class EntryContextMenuCoordinator: NSObject {
     private let store: StoreOf<EntryViewLayoutFeature>
     private let rowEntry: EntryModel?

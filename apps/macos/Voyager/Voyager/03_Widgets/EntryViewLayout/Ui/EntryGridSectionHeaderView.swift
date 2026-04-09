@@ -1,5 +1,7 @@
 import AppKit
 
+import VoyagerEntitiesEntry
+
 final class EntryGridSectionHeaderView: NSView {
     private let titleLabel = NSTextField(labelWithString: "")
     private let countLabel = NSTextField(labelWithString: "")

@@ -1,6 +1,8 @@
 import AppKit
 import SwiftUI
 
+import VoyagerEntitiesEntry
+
 struct TagDotView: View {
     let tagColor: TagColor
     let size: CGFloat

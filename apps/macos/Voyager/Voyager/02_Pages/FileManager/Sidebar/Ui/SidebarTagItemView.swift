@@ -2,6 +2,8 @@ import AppKit
 import SwiftUI
 import UniformTypeIdentifiers
 
+import VoyagerEntitiesEntry
+
 struct SidebarTagItemView: View {
     let tag: Tag
     let isSelected: Bool

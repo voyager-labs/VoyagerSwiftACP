@@ -2,6 +2,9 @@ import ComposableArchitecture
 import Foundation
 import SwiftUI
 
+import VoyagerEntitiesEntry
+import VoyagerFeaturesEntryOperations
+
 @MainActor
 struct ContentPaneBreadcrumbBarView: View {
     let store: StoreOf<FileManagerContentFeature>

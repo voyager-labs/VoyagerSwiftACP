@@ -1,6 +1,8 @@
 import AppKit
 import UniformTypeIdentifiers
 
+import VoyagerEntitiesEntry
+
 final class EntryGridCollectionViewItem: NSCollectionViewItem {
     struct Configuration {
         let entry: EntryModel

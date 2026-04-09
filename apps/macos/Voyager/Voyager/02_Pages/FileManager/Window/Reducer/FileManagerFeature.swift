@@ -1,6 +1,8 @@
 import ComposableArchitecture
 import Foundation
 
+import VoyagerFeaturesEntryOperations
+
 @Reducer
 struct FileManagerFeature {
     typealias State = FileManagerWindowState
@@ -116,16 +118,17 @@ struct FileManagerFeature {
     ) -> Effect<Action>? {
         switch command {
         case .newFolder:
-            let entryOperationsAction: EntryOperationsAction = .edit(.createNewFolder(parentPath: currentPath))
-            return .send(.content(.entryViewLayout(.entryOperations(entryOperationsAction))))
+            .send(.content(.entryViewLayout(.entryOperations(
+                .edit(.createNewFolder(parentPath: currentPath)),
+            ))))
 
         case .paste:
-            return .send(.content(.entryViewLayout(.delegate(.executeCommand(.clipboard(
+            .send(.content(.entryViewLayout(.delegate(.executeCommand(.clipboard(
                 .pasteItems(destinationPath: currentPath),
             ))))))
 
         default:
-            return nil
+            nil
         }
     }
 
@@ -250,15 +253,13 @@ struct FileManagerFeature {
     private func handleUndoRedoRequest(_ command: Action.WindowCommand) -> Effect<Action> {
         switch command {
         case .requestUndo:
-            let entryOperationsAction: EntryOperationsAction = .undoRedo(.requestUndo)
-            return .send(.content(.entryViewLayout(.entryOperations(entryOperationsAction))))
+            .send(.content(.entryViewLayout(.entryOperations(.undoRedo(.requestUndo)))))
 
         case .requestRedo:
-            let entryOperationsAction: EntryOperationsAction = .undoRedo(.requestRedo)
-            return .send(.content(.entryViewLayout(.entryOperations(entryOperationsAction))))
+            .send(.content(.entryViewLayout(.entryOperations(.undoRedo(.requestRedo)))))
 
         default:
-            return .none
+            .none
         }
     }
 }

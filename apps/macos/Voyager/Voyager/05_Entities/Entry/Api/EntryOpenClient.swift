@@ -4,6 +4,8 @@ import CoreServices
 import Foundation
 import UniformTypeIdentifiers
 
+import VoyagerEntitiesEntry
+
 public struct EntryOpenClient: Sendable {
     public var open: @Sendable (URL, OpenKind) async throws -> Void
     public var setDefaultApp: @Sendable (UTType, String) async throws -> Void

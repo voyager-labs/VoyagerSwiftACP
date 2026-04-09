@@ -2,6 +2,8 @@ import ComposableArchitecture
 import Foundation
 import SwiftUI
 
+import VoyagerFeaturesEntryOperations
+
 struct ToolbarHistoryItem: Equatable {
     let iconSystemName: String
     let title: String
@@ -142,7 +144,7 @@ struct ToolbarView: View {
                     canGoForward: state.navigation.canGoForward,
                     canGoToEnclosingDirectory: state.navigation.canGoToEnclosingDirectory,
                     toolbarTitle: currentNavigationTitle(for: state.navigation.navigationState),
-                    isCollectionMode: state.entryViewLayout.entryOperations.loadingContext.isCollectionMode,
+                    isCollectionMode: state.entryViewLayout.entryOperations.isCollectionMode,
                     isOpeningCollectionFile: state.collectionSession.isOpening,
                     openedCollectionName: state.collectionSession.openedName,
                     openedCollectionURLExists: state.collectionSession.openedURL != nil,

@@ -1,5 +1,7 @@
 import IdentifiedCollections
 
+import VoyagerFeaturesEntryOperations
+
 struct MenuCommandsState: Equatable {
     var hasFocusedWindow: Bool
 

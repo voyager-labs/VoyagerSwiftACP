@@ -2,6 +2,8 @@ import ComposableArchitecture
 import Foundation
 import SwiftUI
 
+import VoyagerFeaturesEntryOperations
+
 struct ContentPaneContextMenu: View {
     let store: StoreOf<FileManagerContentFeature>
 

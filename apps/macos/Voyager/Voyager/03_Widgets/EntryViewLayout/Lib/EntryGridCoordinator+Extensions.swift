@@ -2,6 +2,8 @@ import AppKit
 import Combine
 import ComposableArchitecture
 import Foundation
+import VoyagerEntitiesEntry
+import VoyagerFeaturesEntryOperations
 import VoyagerShared
 
 extension EntryGridCoordinator {

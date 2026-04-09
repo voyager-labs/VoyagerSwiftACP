@@ -1,5 +1,6 @@
 import ComposableArchitecture
 import IdentifiedCollections
+import VoyagerFeaturesEntryOperations
 
 @Reducer
 struct EntryViewLayoutFeature {
@@ -197,16 +198,10 @@ struct EntryViewLayoutFeature {
                 case .delegate(.requestApply):
                     return .send(.entryArrangements(.apply(
                         items: state.entries,
-                        isCollectionMode: state.entryOperations.loadingContext.isCollectionMode,
+                        isCollectionMode: state.entryOperations.isCollectionMode,
                     )))
 
-                case let .delegate(.applied(sortedItems, isCollectionMode)):
-                    if isCollectionMode {
-                        state.entryOperations.loadingContext
-                            .collectionItems = IdentifiedArray(uniqueElements: sortedItems)
-                    } else {
-                        state.entryOperations.loadingContext.items = IdentifiedArray(uniqueElements: sortedItems)
-                    }
+                case let .delegate(.applied(sortedItems, _)):
                     state.entries = sortedItems
                     return .none
 

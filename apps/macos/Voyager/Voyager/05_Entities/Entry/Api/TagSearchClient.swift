@@ -1,7 +1,9 @@
 import ComposableArchitecture
+import VoyagerShared
 
 struct TagSearchClient: Sendable {
-    var search: @Sendable (_ request: TagSearchRequestPayload) async throws -> TagSearchResponsePayload
+    var search: @Sendable (_ request: VoyagerShared.TagSearchRequestPayload) async throws -> VoyagerShared
+        .TagSearchResponsePayload
 }
 
 extension TagSearchClient: DependencyKey {

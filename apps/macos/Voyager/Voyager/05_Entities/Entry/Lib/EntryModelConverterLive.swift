@@ -1,5 +1,7 @@
 import Foundation
 
+import VoyagerEntitiesEntry
+
 enum EntryModelConverterLive {
     nonisolated static func convertURLToEntry(
         _ itemURL: URL,

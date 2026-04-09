@@ -1,4 +1,5 @@
 import Foundation
+import VoyagerShared
 
 struct VoyagerCollectionFile: Codable, Equatable, Sendable {
     let schemaVersion: Int
@@ -15,7 +16,7 @@ struct VoyagerCollectionFile: Codable, Equatable, Sendable {
 struct CollectionCondition: Codable, Equatable, Sendable {
     let propertyKey: String
     let operatorCode: String
-    let value: JSONValue?
+    let value: VoyagerShared.JSONValue?
 
     enum CodingKeys: String, CodingKey {
         case propertyKey

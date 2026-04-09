@@ -1,6 +1,8 @@
 import ComposableArchitecture
 import SwiftUI
 
+import VoyagerEntitiesEntry
+
 struct SidebarTagsSectionView: View {
     let store: StoreOf<FileManagerSidebarFeature>
 

@@ -2,6 +2,8 @@ import AppKit
 import ComposableArchitecture
 import Foundation
 
+import VoyagerFeaturesEntryOperations
+
 @MainActor
 final class ContentPaneContextMenuCoordinator: NSObject {
     private let store: StoreOf<FileManagerContentFeature>

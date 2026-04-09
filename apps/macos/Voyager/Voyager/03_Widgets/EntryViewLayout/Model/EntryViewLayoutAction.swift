@@ -1,6 +1,7 @@
 import AppKit
 import ComposableArchitecture
 import Foundation
+import VoyagerFeaturesEntryOperations
 
 @CasePathable
 enum EntryViewLayoutAction: ViewAction, CasePathable, Sendable {
