@@ -34,6 +34,7 @@ struct ComposerSearchLifecycleReducer {
                 guard state.activeSearchRequestID == requestID else {
                     return .none
                 }
+                state.lastAcceptedSearchRequestID = requestID
                 switch response {
                 case let .success(response):
                     let baselineFilters = feedbackBaseline(from: state)
@@ -120,6 +121,7 @@ struct ComposerSearchLifecycleReducer {
                 guard state.activeFiltersRequestID == requestID else {
                     return .none
                 }
+                state.lastAcceptedFiltersRequestID = requestID
                 switch response {
                 case let .success(response):
                     state.isLoadingFilters = false
@@ -194,6 +196,8 @@ private func handleSubmit(
     state.submittedSearchFilters = filters
     state.activeSearchRequestID = searchRequestID
     state.activeFiltersRequestID = nil
+    state.lastAcceptedSearchRequestID = nil
+    state.lastAcceptedFiltersRequestID = nil
     state.lastFiltersResponse = nil
     applyQueryPhaseTransition(.startSearch, state: &state)
     state.text = ""
@@ -255,6 +259,7 @@ private func handleApplyFilters(
     state.isLoadingFilters = true
     state.isFilteringInFlight = true
     state.activeFiltersRequestID = filtersRequestID
+    state.lastAcceptedFiltersRequestID = nil
     applyQueryPhaseTransition(.reset, state: &state)
     VoyagerSentryMetricLogger.logMetric(
         "voyager_composer_filters_apply",

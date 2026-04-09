@@ -73,7 +73,10 @@ enum FileManagerContentComposerCoordinator {
         dependencies: Dependencies,
     ) -> Effect<FileManagerContentAction>? {
         switch action {
-        case let .internal(.filtersResponse(_, .success(response))):
+        case let .internal(.filtersResponse(requestID, .success(response))):
+            guard state.composer.lastAcceptedFiltersRequestID == requestID else {
+                return .none
+            }
             let effect = handleSearchSuccess(
                 items: response.items ?? [],
                 query: state.composer.pendingSearchQuery ?? "",
@@ -84,7 +87,10 @@ enum FileManagerContentComposerCoordinator {
                 .send(.delegate(.composerCollectionSearchSucceeded)),
             )
 
-        case let .internal(.searchResponse(_, .failure(error))):
+        case let .internal(.searchResponse(requestID, .failure(error))):
+            guard state.composer.lastAcceptedSearchRequestID == requestID else {
+                return .none
+            }
             let effect = handleSearchFailure(
                 error: error,
                 title: "Unable to Run Collection Search",
@@ -96,7 +102,10 @@ enum FileManagerContentComposerCoordinator {
                 .send(.delegate(.composerCollectionSearchFailed)),
             )
 
-        case let .internal(.filtersResponse(_, .failure(error))):
+        case let .internal(.filtersResponse(requestID, .failure(error))):
+            guard state.composer.lastAcceptedFiltersRequestID == requestID else {
+                return .none
+            }
             let title = state.composer.pendingSearchQuery == nil
                 ? "Unable to Apply Collection Filters"
                 : "Unable to Run Collection Search"

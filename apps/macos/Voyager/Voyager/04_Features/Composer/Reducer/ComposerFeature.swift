@@ -124,8 +124,13 @@ private func handleSetPresented(
         state.filtersStartedAt = nil
         state.transientFeedback = nil
         state.submittedSearchFilters = nil
+        state.isLoadingSearch = false
+        state.isLoadingFilters = false
+        state.isFilteringInFlight = false
         state.activeSearchRequestID = nil
         state.activeFiltersRequestID = nil
+        state.lastAcceptedSearchRequestID = nil
+        state.lastAcceptedFiltersRequestID = nil
         applyQueryPhaseTransition(.reset, state: &state)
 
         return .merge(
