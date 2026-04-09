@@ -1,5 +1,6 @@
 import Foundation
-@testable import Voyager
+@testable import VoyagerEntitiesEntry
+import VoyagerShared
 import XCTest
 
 @MainActor
@@ -11,9 +12,9 @@ final class EntryLoadingClientRecentTagAdapterTests: XCTestCase {
                 XCTAssertEqual(request.scopeMode, .allIndexed)
                 XCTAssertEqual(request.resultCap, 100)
                 XCTAssertFalse(request.includeHidden)
-                return RecentSearchResponsePayload(
+                return VoyagerShared.RecentSearchResponsePayload(
                     items: [
-                        SearchEntryPayload(
+                        VoyagerShared.SearchEntryPayload(
                             name: "Recent.txt",
                             fullPath: "/tmp/Recent.txt",
                             isFolder: false,
@@ -26,7 +27,7 @@ final class EntryLoadingClientRecentTagAdapterTests: XCTestCase {
                             lastOpenedDate: date,
                             kind: "Text",
                             creatorApplication: "TextEdit",
-                            tags: [SearchTagPayload(name: "Work", colorCode: 4)],
+                            tags: [VoyagerShared.SearchTagPayload(name: "Work", colorCode: 4)],
                             supplementaryMetadata: .compressedFileSize(12),
                         ),
                     ],
@@ -65,10 +66,10 @@ final class EntryLoadingClientRecentTagAdapterTests: XCTestCase {
             search: { request in
                 XCTAssertEqual(request.requestedTag, "Green")
                 XCTAssertTrue(request.exactTagVerification)
-                return TagSearchResponsePayload(
+                return VoyagerShared.TagSearchResponsePayload(
                     requestedTag: request.requestedTag,
                     items: [
-                        SearchEntryPayload(
+                        VoyagerShared.SearchEntryPayload(
                             name: "Tagged.txt",
                             fullPath: "/tmp/Tagged.txt",
                             isFolder: false,
@@ -81,7 +82,7 @@ final class EntryLoadingClientRecentTagAdapterTests: XCTestCase {
                             lastOpenedDate: date,
                             kind: "Text",
                             creatorApplication: "TextEdit",
-                            tags: [SearchTagPayload(name: "Green", colorCode: 2)],
+                            tags: [VoyagerShared.SearchTagPayload(name: "Green", colorCode: 2)],
                             supplementaryMetadata: nil,
                         ),
                     ],

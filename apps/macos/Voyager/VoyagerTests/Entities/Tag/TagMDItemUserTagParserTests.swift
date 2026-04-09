@@ -1,4 +1,5 @@
 @testable import Voyager
+import VoyagerEntitiesEntry
 import XCTest
 
 /// Characterization tests for TagMDItemUserTagParser behavior.

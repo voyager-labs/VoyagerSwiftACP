@@ -1,4 +1,5 @@
-@testable import Voyager
+import VoyagerEntitiesEntry
+@testable import VoyagerFeaturesEntryOperations
 import XCTest
 
 final class EntryClientFileOpsTests: XCTestCase {

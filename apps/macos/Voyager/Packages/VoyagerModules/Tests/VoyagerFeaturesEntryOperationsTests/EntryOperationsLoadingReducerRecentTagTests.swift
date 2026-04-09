@@ -1,7 +1,8 @@
 import ComposableArchitecture
 import Foundation
 import IdentifiedCollections
-@testable import Voyager
+import VoyagerEntitiesEntry
+@testable import VoyagerFeaturesEntryOperations
 import XCTest
 
 @MainActor

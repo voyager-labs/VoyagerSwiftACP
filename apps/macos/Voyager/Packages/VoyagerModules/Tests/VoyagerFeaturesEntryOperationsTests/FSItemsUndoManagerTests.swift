@@ -1,5 +1,5 @@
 import ComposableArchitecture
-@testable import Voyager
+@testable import VoyagerFeaturesEntryOperations
 import XCTest
 
 @MainActor
@@ -126,6 +126,11 @@ final class FSItemsUndoManagerTests: XCTestCase {
             $0.entryFileOpsClient.renameFile = { source, destination in
                 await renameCalls.append(source.path, destination.path)
             }
+            $0.undoManagerClient = UndoManagerClient(
+                registerUndo: { _, _, _, _ in },
+                undo: { _ in },
+                redo: { _ in },
+            )
         }
 
         // Non-exhaustive: focus on the key delegate/state change; intermediate actions are noisy.
@@ -161,6 +166,11 @@ final class FSItemsUndoManagerTests: XCTestCase {
             $0.entryFileOpsClient.renameFile = { source, destination in
                 await renameCalls.append(source.path, destination.path)
             }
+            $0.undoManagerClient = UndoManagerClient(
+                registerUndo: { _, _, _, _ in },
+                undo: { _ in },
+                redo: { _ in },
+            )
         }
 
         // Non-exhaustive: focus on the key delegate/state change; intermediate actions are noisy.

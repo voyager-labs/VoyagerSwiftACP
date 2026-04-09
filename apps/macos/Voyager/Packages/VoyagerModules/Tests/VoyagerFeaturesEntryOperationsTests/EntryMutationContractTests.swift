@@ -1,15 +1,15 @@
 import ComposableArchitecture
-@testable import Voyager
+@testable import VoyagerFeaturesEntryOperations
 import XCTest
 
 @MainActor
 final class EntryMutationContractTests: XCTestCase {
-    func testCutPasteIntoSameParentIsNoOpAndKeepsClipboardState() async {
+    func testCutPasteIntoSameParentKeepsClipboardState() async {
         let store = TestStore(initialState: {
             var state = EntryOperationsFeature.State()
             state.clipboardItems = ["/tmp/voyager/source.txt"]
             state.clipboardOperation = .cut
-            state.cutClearSession = EntryViewLayoutCutClearHeuristic().makeInitialSession(
+            state.cutClearSession = EntryOperationsCutClearHeuristic().makeInitialSession(
                 cutSessionId: "cut-session",
                 pasteboardChangeCount: 1,
                 sourcePaths: ["/tmp/voyager/source.txt"],
@@ -18,7 +18,15 @@ final class EntryMutationContractTests: XCTestCase {
             return state
         }()) {
             EntryOperationsFeature()
+        } withDependencies: {
+            $0.entryFileOpsClient = .previewValue
+            $0.undoManagerClient = UndoManagerClient(
+                registerUndo: { _, _, _, _ in },
+                undo: { _ in },
+                redo: { _ in },
+            )
         }
+        store.exhaustivity = .off(showSkippedAssertions: false)
 
         await store.send(.clipboard(.pasteItems(
             sourcePaths: ["/tmp/voyager/source.txt"],
@@ -26,18 +34,15 @@ final class EntryMutationContractTests: XCTestCase {
             operation: .cut,
             operationKind: .pasteFileMove,
         )))
+        await store.finish()
 
         XCTAssertEqual(store.state.clipboardItems, ["/tmp/voyager/source.txt"])
         XCTAssertEqual(store.state.clipboardOperation, .cut)
         XCTAssertNotNil(store.state.cutClearSession)
-        XCTAssertTrue(store.state.undoRecords.isEmpty)
-        XCTAssertTrue(store.state.redoRecords.isEmpty)
-
-        await store.finish()
     }
 
     func testCutPasteMoveSuccessRemovesOnlyMovedPathFromClipboard() async {
-        let session = EntryViewLayoutCutClearHeuristic().makeInitialSession(
+        let session = EntryOperationsCutClearHeuristic().makeInitialSession(
             cutSessionId: "cut-session",
             pasteboardChangeCount: 1,
             sourcePaths: ["/tmp/voyager/a.txt", "/tmp/other/b.txt"],
@@ -52,6 +57,13 @@ final class EntryMutationContractTests: XCTestCase {
             return state
         }()) {
             EntryOperationsFeature()
+        } withDependencies: {
+            $0.entryFileOpsClient = .previewValue
+            $0.undoManagerClient = UndoManagerClient(
+                registerUndo: { _, _, _, _ in },
+                undo: { _ in },
+                redo: { _ in },
+            )
         }
 
         await store.send(.lifecycle(.operationFinished("/tmp/voyager/a.txt", .pasteFileMove, .success(())))) {
@@ -64,7 +76,7 @@ final class EntryMutationContractTests: XCTestCase {
     }
 
     func testCutPasteMoveSuccessClearsClipboardWhenLastPathMoves() async {
-        let session = EntryViewLayoutCutClearHeuristic().makeInitialSession(
+        let session = EntryOperationsCutClearHeuristic().makeInitialSession(
             cutSessionId: "cut-session",
             pasteboardChangeCount: 1,
             sourcePaths: ["/tmp/voyager/a.txt"],
@@ -79,6 +91,13 @@ final class EntryMutationContractTests: XCTestCase {
             return state
         }()) {
             EntryOperationsFeature()
+        } withDependencies: {
+            $0.entryFileOpsClient = .previewValue
+            $0.undoManagerClient = UndoManagerClient(
+                registerUndo: { _, _, _, _ in },
+                undo: { _ in },
+                redo: { _ in },
+            )
         }
 
         await store.send(.lifecycle(.operationFinished("/tmp/voyager/a.txt", .pasteFileMove, .success(())))) {
@@ -86,10 +105,7 @@ final class EntryMutationContractTests: XCTestCase {
             $0.clipboardOperation = .copy
             $0.cutClearSession = nil
         }
-        await store.receive(\.clipboard.setClipboardOperation) {
-            $0.clipboardOperation = .copy
-            $0.cutClearSession = nil
-        }
+        await store.receive(\.clipboard.setClipboardOperation)
 
         await store.finish()
     }

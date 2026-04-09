@@ -1,6 +1,7 @@
 import XCTest
 
 @testable import Voyager
+import VoyagerShared
 
 @MainActor
 final class OperatorDslMappingExhaustiveTests: XCTestCase {
@@ -135,7 +136,7 @@ final class OperatorDslMappingExhaustiveTests: XCTestCase {
         }
     }
 
-    private func matchesExpectedShape(encoded: JSONValue, uiKind: String, expectedCount: Int) -> Bool {
+    private func matchesExpectedShape(encoded: VoyagerShared.JSONValue, uiKind: String, expectedCount: Int) -> Bool {
         if uiKind == "singleText" || uiKind == "singleDate" {
             return isStringValue(encoded)
         }
@@ -151,22 +152,22 @@ final class OperatorDslMappingExhaustiveTests: XCTestCase {
         return true
     }
 
-    private func isStringValue(_ encoded: JSONValue) -> Bool {
+    private func isStringValue(_ encoded: VoyagerShared.JSONValue) -> Bool {
         if case .string = encoded { return true }
         return false
     }
 
-    private func isNumberValue(_ encoded: JSONValue) -> Bool {
+    private func isNumberValue(_ encoded: VoyagerShared.JSONValue) -> Bool {
         if case .number = encoded { return true }
         return false
     }
 
-    private func isBoolValue(_ encoded: JSONValue) -> Bool {
+    private func isBoolValue(_ encoded: VoyagerShared.JSONValue) -> Bool {
         if case .bool = encoded { return true }
         return false
     }
 
-    private func isArrayValue(_ encoded: JSONValue, expectedCount: Int) -> Bool {
+    private func isArrayValue(_ encoded: VoyagerShared.JSONValue, expectedCount: Int) -> Bool {
         if case let .array(values) = encoded {
             return values.count == expectedCount
         }

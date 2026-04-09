@@ -1,4 +1,4 @@
-@testable import Voyager
+@testable import VoyagerFeaturesEntryOperations
 import XCTest
 
 @MainActor

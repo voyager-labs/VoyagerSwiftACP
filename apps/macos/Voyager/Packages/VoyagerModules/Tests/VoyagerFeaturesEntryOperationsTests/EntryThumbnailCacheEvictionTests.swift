@@ -1,6 +1,6 @@
 import ComposableArchitecture
 import Foundation
-@testable import Voyager
+@testable import VoyagerFeaturesEntryOperations
 import XCTest
 
 @MainActor
@@ -26,6 +26,11 @@ final class EntryThumbnailCacheEvictionTests: XCTestCase {
             $0.entryThumbnailCacheClient.removeThumbnails = { paths in
                 removedPaths.append(paths)
             }
+            $0.undoManagerClient = UndoManagerClient(
+                registerUndo: { _, _, _, _ in },
+                undo: { _ in },
+                redo: { _ in },
+            )
         }
         store.exhaustivity = .off(showSkippedAssertions: false)
 

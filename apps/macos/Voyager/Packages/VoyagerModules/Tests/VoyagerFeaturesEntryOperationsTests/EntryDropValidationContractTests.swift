@@ -1,5 +1,5 @@
 import ComposableArchitecture
-@testable import Voyager
+@testable import VoyagerFeaturesEntryOperations
 import XCTest
 
 @MainActor
@@ -7,6 +7,13 @@ final class EntryDropValidationContractTests: XCTestCase {
     func testValidateDropReturnsNoOpForSameParentInternalMove() async {
         let store = TestStore(initialState: EntryOperationsFeature.State()) {
             EntryOperationsFeature()
+        } withDependencies: {
+            $0.entryFileOpsClient = .previewValue
+            $0.undoManagerClient = UndoManagerClient(
+                registerUndo: { _, _, _, _ in },
+                undo: { _ in },
+                redo: { _ in },
+            )
         }
 
         let context = EntryDropValidationContext(
@@ -30,6 +37,13 @@ final class EntryDropValidationContractTests: XCTestCase {
     func testValidateDropReturnsNoOpForDescendantInternalMove() async {
         let store = TestStore(initialState: EntryOperationsFeature.State()) {
             EntryOperationsFeature()
+        } withDependencies: {
+            $0.entryFileOpsClient = .previewValue
+            $0.undoManagerClient = UndoManagerClient(
+                registerUndo: { _, _, _, _ in },
+                undo: { _ in },
+                redo: { _ in },
+            )
         }
 
         let context = EntryDropValidationContext(

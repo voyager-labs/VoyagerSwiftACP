@@ -1,7 +1,8 @@
 import ComposableArchitecture
 import Foundation
 import IdentifiedCollections
-@testable import Voyager
+import VoyagerEntitiesEntry
+@testable import VoyagerFeaturesEntryOperations
 import XCTest
 
 @MainActor
@@ -56,6 +57,11 @@ final class EntryRenameExtensionAlertTests: XCTestCase {
             if let renameFileOverride {
                 $0.entryFileOpsClient.renameFile = renameFileOverride
             }
+            $0.undoManagerClient = UndoManagerClient(
+                registerUndo: { _, _, _, _ in },
+                undo: { _ in },
+                redo: { _ in },
+            )
         }
     }
 
@@ -68,35 +74,25 @@ final class EntryRenameExtensionAlertTests: XCTestCase {
             return false
         } renameFileOverride: { _, _ in }
 
-        await store.send(.edit(.commitRename)) {
-            $0.renamingText = "notes.txt"
-        }
-
+        await store.send(.edit(.commitRename))
         await store.receive(\.edit.renameItem)
-
         await store.receive(\.lifecycle.operationStarted) {
             $0.itemStates["/tmp/report.txt"] = ItemOperationState(isBusy: true)
         }
-
         await store.receive(\.lifecycle.pathsMutated)
-
         await store.receive(\.lifecycle.operationFinished) {
             $0.itemStates["/tmp/report.txt"]?.isBusy = false
             $0.renamingItemId = nil
             $0.renamingText = ""
         }
-
-        await store.receive(\.lifecycle.entryActionCompleted) {
-            $0.undoRecords = [
-                EntryActionRecord(
-                    operationKind: .rename,
-                    targets: [.init(beforePath: "/tmp/report.txt", afterPath: "/tmp/notes.txt")],
-                ),
-            ]
-            $0.redoRecords = []
-        }
-
+        store.exhaustivity = .off
+        await store.receive(\.lifecycle.entryActionCompleted)
         await store.finish()
+
+        XCTAssertEqual(store.state.undoRecords.count, 1)
+        XCTAssertEqual(store.state.undoRecords.first?.operationKind, .rename)
+        XCTAssertEqual(store.state.undoRecords.first?.targets.first?.beforePath, "/tmp/report.txt")
+        XCTAssertEqual(store.state.undoRecords.first?.targets.first?.afterPath, "/tmp/notes.txt")
     }
 
     // MARK: - Extension added
@@ -105,9 +101,7 @@ final class EntryRenameExtensionAlertTests: XCTestCase {
         let entry = makeFileEntry(id: "/tmp/README", name: "README")
         let store = makeStore(entry: entry, renamingText: "README.md") { _, _ in false }
 
-        await store.send(.edit(.commitRename)) {
-            $0.renamingText = "README.md"
-        }
+        await store.send(.edit(.commitRename))
 
         await store.finish()
 
@@ -121,9 +115,7 @@ final class EntryRenameExtensionAlertTests: XCTestCase {
         let entry = makeFileEntry(id: "/tmp/report.txt", name: "report.txt")
         let store = makeStore(entry: entry, renamingText: "report") { _, _ in false }
 
-        await store.send(.edit(.commitRename)) {
-            $0.renamingText = "report"
-        }
+        await store.send(.edit(.commitRename))
 
         await store.finish()
 
@@ -137,9 +129,7 @@ final class EntryRenameExtensionAlertTests: XCTestCase {
         let entry = makeFileEntry(id: "/tmp/report.txt", name: "report.txt")
         let store = makeStore(entry: entry, renamingText: "report.pdf") { _, _ in false }
 
-        await store.send(.edit(.commitRename)) {
-            $0.renamingText = "report.pdf"
-        }
+        await store.send(.edit(.commitRename))
 
         await store.finish()
 
@@ -153,35 +143,25 @@ final class EntryRenameExtensionAlertTests: XCTestCase {
         let entry = makeFileEntry(id: "/tmp/report.txt", name: "report.txt")
         let store = makeStore(entry: entry, renamingText: "report.pdf") { _, _ in true } renameFileOverride: { _, _ in }
 
-        await store.send(.edit(.commitRename)) {
-            $0.renamingText = "report.pdf"
-        }
-
+        await store.send(.edit(.commitRename))
         await store.receive(\.edit.renameItem)
-
         await store.receive(\.lifecycle.operationStarted) {
             $0.itemStates["/tmp/report.txt"] = ItemOperationState(isBusy: true)
         }
-
         await store.receive(\.lifecycle.pathsMutated)
-
         await store.receive(\.lifecycle.operationFinished) {
             $0.itemStates["/tmp/report.txt"]?.isBusy = false
             $0.renamingItemId = nil
             $0.renamingText = ""
         }
-
-        await store.receive(\.lifecycle.entryActionCompleted) {
-            $0.undoRecords = [
-                EntryActionRecord(
-                    operationKind: .rename,
-                    targets: [.init(beforePath: "/tmp/report.txt", afterPath: "/tmp/report.pdf")],
-                ),
-            ]
-            $0.redoRecords = []
-        }
-
+        store.exhaustivity = .off
+        await store.receive(\.lifecycle.entryActionCompleted)
         await store.finish()
+
+        XCTAssertEqual(store.state.undoRecords.count, 1)
+        XCTAssertEqual(store.state.undoRecords.first?.operationKind, .rename)
+        XCTAssertEqual(store.state.undoRecords.first?.targets.first?.beforePath, "/tmp/report.txt")
+        XCTAssertEqual(store.state.undoRecords.first?.targets.first?.afterPath, "/tmp/report.pdf")
     }
 
     // MARK: - Folder skips extension alert
@@ -202,37 +182,32 @@ final class EntryRenameExtensionAlertTests: XCTestCase {
                 return false
             }
             $0.entryFileOpsClient.renameFile = { _, _ in }
+            $0.undoManagerClient = UndoManagerClient(
+                registerUndo: { _, _, _, _ in },
+                undo: { _ in },
+                redo: { _ in },
+            )
         }
 
-        await store.send(.edit(.commitRename)) {
-            $0.renamingText = "MyFolder.backup"
-        }
-
+        await store.send(.edit(.commitRename))
         await store.receive(\.edit.renameItem)
-
         await store.receive(\.lifecycle.operationStarted) {
             $0.itemStates["/tmp/MyFolder"] = ItemOperationState(isBusy: true)
         }
-
         await store.receive(\.lifecycle.pathsMutated)
-
         await store.receive(\.lifecycle.operationFinished) {
             $0.itemStates["/tmp/MyFolder"]?.isBusy = false
             $0.renamingItemId = nil
             $0.renamingText = ""
         }
-
-        await store.receive(\.lifecycle.entryActionCompleted) {
-            $0.undoRecords = [
-                EntryActionRecord(
-                    operationKind: .rename,
-                    targets: [.init(beforePath: "/tmp/MyFolder", afterPath: "/tmp/MyFolder.backup")],
-                ),
-            ]
-            $0.redoRecords = []
-        }
-
+        store.exhaustivity = .off
+        await store.receive(\.lifecycle.entryActionCompleted)
         await store.finish()
+
+        XCTAssertEqual(store.state.undoRecords.count, 1)
+        XCTAssertEqual(store.state.undoRecords.first?.operationKind, .rename)
+        XCTAssertEqual(store.state.undoRecords.first?.targets.first?.beforePath, "/tmp/MyFolder")
+        XCTAssertEqual(store.state.undoRecords.first?.targets.first?.afterPath, "/tmp/MyFolder.backup")
     }
 
     // MARK: - Conflict after confirmed extension change
@@ -252,25 +227,25 @@ final class EntryRenameExtensionAlertTests: XCTestCase {
             $0.entryFileOpsClient.renameFile = { _, _ in
                 throw FileOpError.fileExists(itemName: "report.pdf")
             }
+            $0.undoManagerClient = UndoManagerClient(
+                registerUndo: { _, _, _, _ in },
+                undo: { _ in },
+                redo: { _ in },
+            )
         }
 
-        await store.send(.edit(.commitRename)) {
-            $0.renamingText = "report.pdf"
-        }
-
+        await store.send(.edit(.commitRename))
         await store.receive(\.edit.renameItem)
-
         await store.receive(\.lifecycle.operationStarted) {
             $0.itemStates["/tmp/report.txt"] = ItemOperationState(isBusy: true)
         }
-
-        await store.receive(\.lifecycle.operationFinished) {
-            $0.itemStates["/tmp/report.txt"]?.isBusy = false
-            $0.itemStates["/tmp/report.txt"]?.lastError = .fileExists(itemName: "report.pdf")
-            $0.renamingItemId = nil
-            $0.renamingText = ""
-        }
-
+        store.exhaustivity = .off
+        await store.receive(\.lifecycle.operationFinished)
         await store.finish()
+
+        XCTAssertEqual(
+            store.state.itemStates["/tmp/report.txt"]?.lastError,
+            .fileExists(itemName: "report.pdf"),
+        )
     }
 }

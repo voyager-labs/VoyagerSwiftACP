@@ -1,5 +1,6 @@
 import ComposableArchitecture
-@testable import Voyager
+import VoyagerEntitiesEntry
+@testable import VoyagerFeaturesEntryOperations
 import XCTest
 
 @MainActor
@@ -21,6 +22,13 @@ final class EntryOperationsRenameLifecycleTests: XCTestCase {
             return state
         }()) {
             EntryOperationsFeature()
+        } withDependencies: {
+            $0.entryFileOpsClient = .previewValue
+            $0.undoManagerClient = UndoManagerClient(
+                registerUndo: { _, _, _, _ in },
+                undo: { _ in },
+                redo: { _ in },
+            )
         }
 
         // Action: itemsLoaded receives new items without file2 (it was deleted externally)
@@ -60,6 +68,13 @@ final class EntryOperationsRenameLifecycleTests: XCTestCase {
             return state
         }()) {
             EntryOperationsFeature()
+        } withDependencies: {
+            $0.entryFileOpsClient = .previewValue
+            $0.undoManagerClient = UndoManagerClient(
+                registerUndo: { _, _, _, _ in },
+                undo: { _ in },
+                redo: { _ in },
+            )
         }
 
         // Action: itemsLoaded receives new items that still include file2

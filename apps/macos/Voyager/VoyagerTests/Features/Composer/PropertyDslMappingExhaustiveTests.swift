@@ -1,5 +1,6 @@
 import Foundation
 @testable import Voyager
+import VoyagerShared
 import XCTest
 
 @MainActor
@@ -131,7 +132,7 @@ final class PropertyDslMappingExhaustiveTests: XCTestCase {
         }
     }
 
-    private func matchesExpectedShape(encoded: JSONValue, uiKind: String, rawValues: [String]) -> Bool {
+    private func matchesExpectedShape(encoded: VoyagerShared.JSONValue, uiKind: String, rawValues: [String]) -> Bool {
         if uiKind == "singleText" { return isString(encoded) }
         if uiKind == "singleNumber" { return isNumber(encoded) }
         if uiKind == "singleDate" { return isSingleDate(encoded) }
@@ -145,36 +146,36 @@ final class PropertyDslMappingExhaustiveTests: XCTestCase {
         return true
     }
 
-    private func isString(_ encoded: JSONValue) -> Bool {
+    private func isString(_ encoded: VoyagerShared.JSONValue) -> Bool {
         if case .string = encoded { return true }
         return false
     }
 
-    private func isNumber(_ encoded: JSONValue) -> Bool {
+    private func isNumber(_ encoded: VoyagerShared.JSONValue) -> Bool {
         if case .number = encoded { return true }
         return false
     }
 
-    private func isBool(_ encoded: JSONValue) -> Bool {
+    private func isBool(_ encoded: VoyagerShared.JSONValue) -> Bool {
         if case .bool = encoded { return true }
         return false
     }
 
-    private func isArrayWithCount(_ encoded: JSONValue, _ expectedCount: Int) -> Bool {
+    private func isArrayWithCount(_ encoded: VoyagerShared.JSONValue, _ expectedCount: Int) -> Bool {
         if case let .array(items) = encoded {
             return items.count == expectedCount
         }
         return false
     }
 
-    private func isSingleDate(_ encoded: JSONValue) -> Bool {
+    private func isSingleDate(_ encoded: VoyagerShared.JSONValue) -> Bool {
         if case let .string(value) = encoded {
             return value == "2026-02-26"
         }
         return false
     }
 
-    private func isRangeDate(_ encoded: JSONValue) -> Bool {
+    private func isRangeDate(_ encoded: VoyagerShared.JSONValue) -> Bool {
         if case let .array(items) = encoded {
             return items == [.string("2026-02-26"), .string("2026-02-27")]
         }
