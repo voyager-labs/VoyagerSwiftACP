@@ -100,5 +100,3 @@
 
 - Inventory: `PRODUCT/04_FEATURE_INVENTORY/INTERACTIONS/data.tsv`
 - Source line: `243`
-- Writing guide: `../../../../META/feature_specs_writing.md`
-- Template: `../../template.md`

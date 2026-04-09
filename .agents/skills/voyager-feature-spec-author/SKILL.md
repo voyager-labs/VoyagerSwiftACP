@@ -69,48 +69,48 @@ python3 .agents/skills/voyager-feature-spec-author/scripts/lint_feature_spec.py 
 - Metadata should live in YAML frontmatter, not in a markdown table.
 - Keep generated spec body content in Korean (`Intent`, `Expected Outcome`, `State Changes`, etc.). Section titles can remain the fixed contract names.
 - Required body sections are:
-  - `Intent`
-  - `Trigger / Entry Points`
-  - `Preconditions`
-  - `Expected Outcome`
-  - `State Changes`
-  - `User-visible Feedback`
-  - `Edge Cases / Failure Handling`
-  - `Acceptance Criteria`
-  - `Permissions / Dependencies`
-  - `Observability / Analytics`
-  - `Related Interactions`
-  - `Source`
+    - `Intent`
+    - `Trigger / Entry Points`
+    - `Preconditions`
+    - `Expected Outcome`
+    - `State Changes`
+    - `User-visible Feedback`
+    - `Edge Cases / Failure Handling`
+    - `Acceptance Criteria`
+    - `Permissions / Dependencies`
+    - `Observability / Analytics`
+    - `Related Interactions`
+    - `Source`
 - Required frontmatter fields are:
-  - `interaction_id`
-  - `interaction_type`
-  - `feature`
-  - `category_key`
-  - `feature_id`
-  - `status`
-  - `summary`
-  - `related_region`
-  - `menu`
-  - `shortcut`
+    - `interaction_id`
+    - `interaction_type`
+    - `feature`
+    - `category_key`
+    - `feature_id`
+    - `status`
+    - `summary`
+    - `related_region`
+    - `menu`
+    - `shortcut`
 - strict mode treats placeholder metadata like `-`, `TBD`, or `null` as invalid for required metadata fields.
 - Missing menu/shortcut are filled with concrete fallback labels (`메뉴 없음`, `바인딩 없음`) in generated drafts.
 - Do not mass-edit unrelated spec files unless explicitly requested.
 
 ## Reference files
 
-- `.agents/skills/voyager-feature-spec-author/references/TEMPLATE-feature-spec.md`
-- `.agents/skills/voyager-feature-spec-author/references/feature-spec-guide.md`
+- generation template
+- guide/reference document
 
 ## Scripts
 
 - `scripts/generate_feature_spec.py`
-  - `--output-dir` / `--overwrite` / `--template` / `--dry-run`
+    - `--output-dir` / `--overwrite` / `--template` / `--dry-run`
 - `scripts/lint_feature_spec.py`
-  - `--strict` for additional placeholder density checks
-  - exits non-zero on missing required sections or required metadata keys
+    - `--strict` for additional placeholder density checks
+    - exits non-zero on missing required sections or required metadata keys
 
 ## Notes
 
-- Generation uses `.agents/skills/voyager-feature-spec-author/references/TEMPLATE-feature-spec.md` by default.
-- Guide/reference material lives in `.agents/skills/voyager-feature-spec-author/references/feature-spec-guide.md` and should explain how to use the template, not duplicate the template body.
+- Generation uses the skill's default reference template by default.
+- Guide/reference material should explain how to use the template, not duplicate the template body.
 - The linter still accepts legacy `## Metadata` markdown tables during transition, but YAML frontmatter is the preferred format.

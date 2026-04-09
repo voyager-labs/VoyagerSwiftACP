@@ -4,8 +4,6 @@
 - Generated specs: `283`
 - Structure:
   `PRODUCT/05_FEATURE_SPECS/<feature_category_slug>/<feature_id>-<feature_title_slug>/<interaction_id>.md`
-- Template: `PRODUCT/05_FEATURE_SPECS/template.md`
-- Writing guide: `META/feature_specs_writing.md`
 
 ## Notes
 

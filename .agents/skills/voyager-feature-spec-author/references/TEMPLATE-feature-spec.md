@@ -63,5 +63,3 @@ shortcut: { shortcut }
 
 - Inventory: `PRODUCT/04_FEATURE_INVENTORY/INTERACTIONS/data.tsv`
 - Source line: `{source_line}`
-- Template: `.agents/skills/voyager-feature-spec-author/references/TEMPLATE-feature-spec.md`
-- Guide: `.agents/skills/voyager-feature-spec-author/references/feature-spec-guide.md`

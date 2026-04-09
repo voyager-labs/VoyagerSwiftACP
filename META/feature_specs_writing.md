@@ -291,4 +291,4 @@ FEATURE_SPEC는 아래 질문에 답할 수 있어야 합니다.
 
 ## 참고
 
-- 기본 템플릿: `PRODUCT/05_FEATURE_SPECS/template.md`
+- 기본 템플릿: `.agents/skills/voyager-feature-spec-author/references/feature-spec-guide.md`
