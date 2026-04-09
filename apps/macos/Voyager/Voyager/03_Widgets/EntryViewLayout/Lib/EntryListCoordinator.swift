@@ -257,9 +257,9 @@ final class EntryListCoordinator: NSObject {
         tableView.target = self
         tableView.doubleAction = #selector(handleDoubleClick)
         configureHeaderMenu()
-        view.applyColumns(state.listVisibleColumns)
+        applyColumnsFromStore(state.listVisibleColumns)
         guard !didBind else {
-            view.applyColumns(state.listVisibleColumns)
+            applyColumnsFromStore(state.listVisibleColumns)
             updateDropTargetBorder(isTargeted: state.isDropTargeted)
             return
         }
@@ -279,7 +279,13 @@ final class EntryListCoordinator: NSObject {
         tableView.target = self
         tableView.doubleAction = #selector(handleDoubleClick)
         configureHeaderMenu()
-        view.applyColumns(state.listVisibleColumns)
+        applyColumnsFromStore(state.listVisibleColumns)
+    }
+
+    func applyColumnsFromStore(_ visibleColumns: [EntryListColumn]) {
+        isApplyingColumnsFromStore = true
+        view?.applyColumns(visibleColumns)
+        isApplyingColumnsFromStore = false
     }
 
     func observeTableView() {
