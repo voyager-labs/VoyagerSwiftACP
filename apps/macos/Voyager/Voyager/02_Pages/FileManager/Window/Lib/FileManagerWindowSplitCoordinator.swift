@@ -277,15 +277,13 @@ final class FileManagerWindowSplitCoordinator: NSViewController, NSSplitViewDele
             syncSidebarWidthToStore(sidebarWidth)
         }
 
-        let shouldBeVisible = !isCollapsed
-        if store.sidebar.sidebarVisible != shouldBeVisible {
-            store.send(.sidebar(.view(.setSidebarVisible(shouldBeVisible))))
-            FileManagerWindowSplitLayout.updateMainContainerLeading(
-                constraints.mainContainerLeading,
-                isSidebarVisible: shouldBeVisible,
-                contentVerticalMargin: Constants.contentVerticalMargin,
-            )
-            mainContainerView?.layoutSubtreeIfNeeded()
+        // 임시조치: store가 sidebarVisible=true인데 NSSplitView가 collapse한 경우 강제 복구
+        // TODO: UserDefaults 저장 버그 수정 후 원복
+        if store.sidebar.sidebarVisible, isCollapsed {
+            let width = currentSidebarWidth
+            DispatchQueue.main.async { [weak self] in
+                self?.updateSidebarVisibility(isVisible: true, sidebarWidth: width)
+            }
         }
     }
 
