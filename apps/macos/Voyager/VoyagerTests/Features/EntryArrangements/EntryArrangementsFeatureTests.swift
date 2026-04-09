@@ -103,6 +103,36 @@ final class EntryArrangementsFeatureTests: XCTestCase {
         await store.finish()
     }
 
+    func testVOY213TagColorSelectionIsStableAcrossInputOrder() async {
+        let fixedDate = Date(timeIntervalSince1970: 1_700_000_000)
+
+        let lowPriorityBlue = Tag(name: "Blue", colorCode: 6)
+        let highPriorityBlue = Tag(name: "Blue", colorCode: 1)
+
+        let first = makeEntry(fixedDate, "z.txt", "/tmp/z.txt", 10, ext: "txt", kind: "Text", tags: [lowPriorityBlue])
+        let second = makeEntry(fixedDate, "a.txt", "/tmp/a.txt", 20, ext: "txt", kind: "Text", tags: [highPriorityBlue])
+
+        let store = TestStore(
+            initialState: EntryArrangementsState(
+                sortKey: .name,
+                sortOrder: .ascending,
+                groupKey: .tags,
+            ),
+        ) {
+            EntryArrangementsFeature()
+        } withDependencies: {
+            $0.date = .constant(fixedDate)
+        }
+
+        await store.send(.apply(items: [first, second], isCollectionMode: false)) {
+            $0.groupedItems = [
+                GroupedItems(groupName: "Blue", items: [second, first], colorCode: 1),
+            ]
+        }
+        await store.receive(.delegate(.applied(sortedItems: [second, first], isCollectionMode: false)))
+        await store.finish()
+    }
+
     func testVOY213DateLastOpenedFallsBackToEarlierForMissingDates() async {
         let fixedDate = Date(timeIntervalSince1970: 1_700_000_000)
         let today = fixedDate

@@ -110,12 +110,20 @@ private extension EntryArrangementsApplyReducer {
     }
 
     func resolveTagColorCode(tagName: String, items: [EntryModel]) -> Int? {
-        for item in items {
-            if let colorCode = item.facets.tags?.first(where: { $0.name == tagName })?.colorCode {
-                return colorCode
+        let candidateCodes = items
+            .compactMap { item in
+                item.facets.tags?.first(where: { $0.name == tagName })?.colorCode
+            }
+
+        guard !candidateCodes.isEmpty else { return nil }
+
+        for tagColor in TagColor.colorOrder {
+            if let matchedCode = candidateCodes.first(where: { TagColor(colorCode: $0) == tagColor }) {
+                return matchedCode
             }
         }
-        return nil
+
+        return candidateCodes.min()
     }
 
     func groupItemsByKey(
@@ -361,14 +369,14 @@ private extension EntryArrangementsApplyReducer {
 
         for tagColor in TagColor.colorOrder {
             for (tagName, taggedItems) in tagToItems {
-                if let firstTag = taggedItems.first?.facets.tags?.first(where: { $0.name == tagName }),
-                   firstTag.tagColor == tagColor
+                if let resolvedColorCode = resolveTagColorCode(tagName: tagName, items: taggedItems),
+                   TagColor(colorCode: resolvedColorCode) == tagColor
                 {
                     result.append(GroupedItems(
                         groupName: tagName,
                         items: taggedItems
                             .sorted { $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending },
-                        colorCode: firstTag.colorCode,
+                        colorCode: resolvedColorCode,
                     ))
                     processedTags.insert(tagName)
                 }
