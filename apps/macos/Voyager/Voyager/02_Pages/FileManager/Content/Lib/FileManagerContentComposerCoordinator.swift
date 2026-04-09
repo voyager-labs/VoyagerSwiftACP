@@ -142,7 +142,6 @@ enum FileManagerContentComposerCoordinator {
         guard isPresented else {
             state.composer.pendingSearchQuery = nil
             state.collectionSession.isOpening = false
-            state.collectionSession.openedName = nil
             return .none
         }
 
