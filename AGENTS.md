@@ -33,8 +33,8 @@ Voyager 문서를 GitHub SSOT로 운영하는 레포입니다. 문서는 Markdow
 | 레포 운영 규칙 확인   | `META/README.md`                                                                      | 규칙은 여기로 모음                         |
 | TSV 작성 규칙         | `META/tsv_rules.md`                                                                   | `-`/`TBD`, 빈 행 금지, 컬럼 수 고정        |
 | schema.json 포맷      | `META/schema_format.md`                                                               | `required` 중심, `ref`로 참조              |
-| 제품 기획 진입점      | `PRODUCT/01_PRODUCT_THESIS/index.md`                                                  | TL;DR/Problem/Target/Pillar/Core flow      |
-| 페르소나 확인         | `PRODUCT/02_USER_PERSONA/index.md`                                                    | Alex/Eric/Mia                              |
+| 제품 기획 진입점      | `PRODUCT/01_PRODUCT_THESIS/00_index.md`                                               | TL;DR/Problem/Target/Pillar/Core flow      |
+| 페르소나 확인         | `PRODUCT/02_USER_PERSONA/00_index.md`                                                 | Alex/Eric/Mia                              |
 | IA(UI 구조/메뉴) 편집 | `PRODUCT/03_INFORMATION_ARCHITECTURE/index.md`                                        | `WINDOW_STRUCTURE.structure_key`는 참조 키 |
 | 기능/인터랙션 편집    | `PRODUCT/04_FEATURE_INVENTORY/index.md`                                               | FEATURES/INTERACTIONS 테이블               |
 | 기능 스펙 확인/편집   | `PRODUCT/05_FEATURE_SPECS/index.md`                                                   | interaction_id 기반 스펙                   |
