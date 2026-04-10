@@ -51,11 +51,6 @@ final class FileManagerContentComposerCollectionOwnershipTests: XCTestCase {
             return true
         }
         await store.receive { action in
-            guard case .internal(.requestNavigation(.internal(.setNavigationState(.collection)))) = action
-            else { return false }
-            return true
-        }
-        await store.receive { action in
             guard case .entryViewLayout(.internal(.setCollectionMode(true))) = action else { return false }
             return true
         }

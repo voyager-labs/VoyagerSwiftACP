@@ -202,7 +202,7 @@ private struct HelperLifecycleInfo {
     let url: URL
 }
 
-private let voyagerHelperLog = Logger(label: "Voyager")
+private let kVoyagerHelperLog = Logger(label: "Voyager")
 
 @MainActor
 private func resolveHelperInfo() -> HelperLifecycleInfo {
