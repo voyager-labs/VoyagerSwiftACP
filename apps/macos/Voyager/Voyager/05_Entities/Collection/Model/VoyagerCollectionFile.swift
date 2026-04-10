@@ -9,9 +9,6 @@ struct VoyagerCollectionFile: Codable, Equatable, Sendable {
     let query: String
     let scopes: [String]
     let conditions: [CollectionCondition]
-    let sortKey: String?
-    let sortOrder: String?
-    let viewLayout: String?
     let appVersion: String?
 }
 

@@ -3,6 +3,7 @@ import SwiftUI
 
 struct ConditionPropertyPickerView: View {
     let store: StoreOf<ConditionPropertyPickerFeature>
+
     @Environment(\.colorScheme)
     private var colorScheme
     @FocusState private var isSearchFocused: Bool
@@ -100,11 +101,21 @@ struct ConditionPropertyPickerView: View {
     }
 
     private func rootContent(_ viewStore: ViewStoreOf<ConditionPropertyPickerFeature>) -> some View {
-        let filtered = filteredProperties(viewStore)
-        let recommended = filtered.filter { viewStore.propertyDefaults.contains($0) }
-        let grouped = Dictionary(grouping: filtered) { key in
-            viewStore.propertyCategories[key] ?? "misc"
-        }
+        let filtered = ConditionPropertyPickerDisplayUtils.filteredProperties(
+            properties: viewStore.properties,
+            existingKeys: viewStore.existingKeys,
+            editingKey: viewStore.editingConditionKey,
+            searchText: viewStore.searchText,
+            labels: viewStore.propertyLabels,
+        )
+        let recommended = ConditionPropertyPickerDisplayUtils.recommendedProperties(
+            from: filtered,
+            defaults: viewStore.propertyDefaults,
+        )
+        let grouped = ConditionPropertyPickerDisplayUtils.groupedByCategory(
+            filtered,
+            categories: viewStore.propertyCategories,
+        )
         let hasRecommended = !recommended.isEmpty
 
         return ScrollView {
@@ -120,7 +131,13 @@ struct ConditionPropertyPickerView: View {
         _ viewStore: ViewStoreOf<ConditionPropertyPickerFeature>,
         categoryKey: String,
     ) -> some View {
-        let filtered = filteredProperties(viewStore)
+        let filtered = ConditionPropertyPickerDisplayUtils.filteredProperties(
+            properties: viewStore.properties,
+            existingKeys: viewStore.existingKeys,
+            editingKey: viewStore.editingConditionKey,
+            searchText: viewStore.searchText,
+            labels: viewStore.propertyLabels,
+        )
         let items = filtered.filter { viewStore.propertyCategories[$0] == categoryKey }
 
         return VStack(spacing: 0) {
@@ -131,7 +148,7 @@ struct ConditionPropertyPickerView: View {
                     HStack(spacing: 4) {
                         Image(systemName: "chevron.left")
                             .font(.system(size: 11, weight: .semibold))
-                        Text(categoryTitle(for: categoryKey))
+                        Text(ConditionPropertyPickerDisplayUtils.categoryTitle(for: categoryKey))
                             .font(.system(size: 12, weight: .semibold))
                     }
                 }
@@ -215,11 +232,11 @@ struct ConditionPropertyPickerView: View {
         } label: {
             let isHovering = hoveredCategoryKey == categoryKey
             HStack(spacing: 8) {
-                Image(systemName: iconName(for: categoryKey))
+                Image(systemName: ConditionPropertyIconUtils.iconName(forCategory: categoryKey))
                     .font(.system(size: 12))
                     .foregroundColor(.secondary)
                     .frame(width: 16)
-                Text(categoryTitle(for: categoryKey))
+                Text(ConditionPropertyPickerDisplayUtils.categoryTitle(for: categoryKey))
                     .font(.system(size: 13))
                     .foregroundColor(.primary)
                 Spacer()
@@ -238,26 +255,6 @@ struct ConditionPropertyPickerView: View {
         .buttonStyle(.plain)
         .onHover { hovering in
             hoveredCategoryKey = hovering ? categoryKey : nil
-        }
-    }
-
-    private func filteredProperties(
-        _ viewStore: ViewStoreOf<ConditionPropertyPickerFeature>,
-    ) -> [String] {
-        let existingKeys = viewStore.existingKeys
-        let editingKey = viewStore.editingConditionKey
-        let props = viewStore.properties.filter { key in
-            if existingKeys.contains(key), key != editingKey {
-                return false
-            }
-            return true
-        }
-        let query = viewStore.searchText.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !query.isEmpty else { return props }
-
-        return props.filter { key in
-            let label = viewStore.propertyLabels[key] ?? key
-            return label.localizedCaseInsensitiveContains(query)
         }
     }
 
@@ -307,17 +304,6 @@ struct ConditionPropertyPickerView: View {
         .onHover { hovering in
             hoveredPropertyKey = hovering ? propertyKey : nil
         }
-    }
-
-    private func categoryTitle(for key: String) -> String {
-        let spaced = key
-            .replacingOccurrences(of: "_", with: " ")
-            .replacingOccurrences(of: "([a-z])([A-Z])", with: "$1 $2", options: .regularExpression)
-        return spaced.prefix(1).uppercased() + spaced.dropFirst()
-    }
-
-    private func iconName(for category: String) -> String {
-        ConditionPropertyIconUtils.iconName(forCategory: category)
     }
 }
 

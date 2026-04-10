@@ -1,0 +1,235 @@
+name: Sync Subtree PRs
+
+on:
+    push:
+        branches:
+            - main
+    workflow_dispatch:
+
+permissions:
+    contents: read
+
+jobs:
+    prepare:
+        runs-on: ubuntu-latest
+        outputs:
+            matrix: ${{ steps.collect.outputs.matrix }}
+            count: ${{ steps.collect.outputs.count }}
+        steps:
+            - name: Checkout docs repository
+              uses: actions/checkout@v4
+
+            - name: Collect enabled downstream targets
+              id: collect
+              shell: bash
+              run: |
+                  set -euo pipefail
+
+                  config_file=".github/downstreams.json"
+                  if [[ ! -f "$config_file" ]]; then
+                    echo "::warning file=$config_file::Config file not found. No downstream sync targets."
+                    echo "matrix=[]" >> "$GITHUB_OUTPUT"
+                    echo "count=0" >> "$GITHUB_OUTPUT"
+                    exit 0
+                  fi
+
+                  matrix_json="$({
+                    jq -c '
+                      . as $root
+                      | ($root.defaults // {}) as $defaults
+                      | [($root.downstreams // [])[]
+                          | select(.enabled == true)
+                          | {
+                              repository: .repository,
+                              prefix: .prefix,
+                              base_branch: (.base_branch // $defaults.base_branch // "main"),
+                              upstream_branch: (.upstream_branch // $defaults.upstream_branch // "main")
+                            }
+                        ]
+                    ' "$config_file"
+                  })"
+
+                  invalid_count="$({
+                    jq '[.[] | select((.repository | type != "string") or (.repository == "") or (.prefix | type != "string") or (.prefix == ""))] | length' <<<"$matrix_json"
+                  })"
+
+                  if [[ "$invalid_count" != "0" ]]; then
+                    echo "::error::Invalid enabled entries in $config_file. Each entry needs non-empty repository and prefix."
+                    exit 1
+                  fi
+
+                  echo "matrix=$matrix_json" >> "$GITHUB_OUTPUT"
+                  echo "count=$(jq 'length' <<<"$matrix_json")" >> "$GITHUB_OUTPUT"
+
+    sync:
+        needs: prepare
+        if: ${{ needs.prepare.outputs.count != '0' }}
+        runs-on: ubuntu-latest
+        strategy:
+            fail-fast: false
+            matrix:
+                target: ${{ fromJSON(needs.prepare.outputs.matrix) }}
+
+        steps:
+            - name: Validate GitHub App secrets
+              shell: bash
+              run: |
+                  if [[ -z "${{ secrets.VOYAGER_SUBTREE_SYNC_BOT_ID }}" ]]; then
+                    echo "::error::Missing VOYAGER_SUBTREE_SYNC_BOT_ID secret."
+                    exit 1
+                  fi
+                  if [[ -z "${{ secrets.VOYAGER_SUBTREE_SYNC_BOT_INSTALLATION_ID }}" ]]; then
+                    echo "::error::Missing VOYAGER_SUBTREE_SYNC_BOT_INSTALLATION_ID secret."
+                    exit 1
+                  fi
+                  if [[ -z "${{ secrets.VOYAGER_SUBTREE_SYNC_BOT_PRIVATE_KEY }}" ]]; then
+                    echo "::error::Missing VOYAGER_SUBTREE_SYNC_BOT_PRIVATE_KEY secret."
+                    exit 1
+                  fi
+
+            - name: Generate GitHub App token
+              id: app_token
+              uses: actions/create-github-app-token@v1
+              with:
+                  app-id: ${{ secrets.VOYAGER_SUBTREE_SYNC_BOT_ID }}
+                  private-key: ${{ secrets.VOYAGER_SUBTREE_SYNC_BOT_PRIVATE_KEY }}
+                  installation-id: ${{ secrets.VOYAGER_SUBTREE_SYNC_BOT_INSTALLATION_ID }}
+                  owner: ${{ github.repository_owner }}
+
+            - name: Checkout downstream repository
+              uses: actions/checkout@v4
+              with:
+                  repository: ${{ matrix.target.repository }}
+                  token: ${{ steps.app_token.outputs.token }}
+                  ref: ${{ matrix.target.base_branch }}
+                  fetch-depth: 0
+
+            - name: Configure git identity
+              shell: bash
+              run: |
+                  git config user.name "voyager-docs-bot"
+                  git config user.email "voyager-docs-bot@users.noreply.github.com"
+
+            - name: Find existing automation PR
+              id: existing_pr
+              shell: bash
+              env:
+                  GH_TOKEN: ${{ steps.app_token.outputs.token }}
+                  TARGET_REPOSITORY: ${{ matrix.target.repository }}
+                  BASE_BRANCH: ${{ matrix.target.base_branch }}
+                  PR_TITLE: "chore: sync voyager-documentation subtree"
+              run: |
+                  set -euo pipefail
+
+                  pr_json="$({
+                    gh pr list \
+                      --repo "$TARGET_REPOSITORY" \
+                      --state open \
+                      --base "$BASE_BRANCH" \
+                      --json number,headRefName,title,body \
+                      --jq '[.[] | select(.title == env.PR_TITLE and (.body | contains("<!-- voyager-subtree-sync -->")))][0] // {}'
+                  })"
+
+                  echo "number=$(jq -r '.number // empty' <<<"$pr_json")" >> "$GITHUB_OUTPUT"
+                  echo "head=$(jq -r '.headRefName // empty' <<<"$pr_json")" >> "$GITHUB_OUTPUT"
+
+            - name: Pull subtree into downstream branch
+              id: sync
+              shell: bash
+              env:
+                  GH_TOKEN: ${{ steps.app_token.outputs.token }}
+                  TARGET_REPOSITORY: ${{ matrix.target.repository }}
+                  PREFIX: ${{ matrix.target.prefix }}
+                  UPSTREAM_REPO: ${{ github.repository }}
+                  UPSTREAM_BRANCH: ${{ matrix.target.upstream_branch }}
+                  EXISTING_PR_HEAD: ${{ steps.existing_pr.outputs.head }}
+              run: |
+                  set -euo pipefail
+
+                  if [[ ! -d "$PREFIX" ]]; then
+                    echo "::error::Prefix path '$PREFIX' does not exist in $TARGET_REPOSITORY."
+                    echo "::error::Run initial 'git subtree add --prefix=$PREFIX ...' once before enabling automation."
+                    exit 1
+                  fi
+
+                  if [[ -n "$EXISTING_PR_HEAD" ]]; then
+                    git fetch origin "$EXISTING_PR_HEAD"
+                    git switch -c "$EXISTING_PR_HEAD" --track "origin/$EXISTING_PR_HEAD"
+                    sync_branch="$EXISTING_PR_HEAD"
+                  else
+                    repo_slug="$(echo "$TARGET_REPOSITORY" | tr '[:upper:]/' '[:lower:]-')"
+                    sync_branch="automation/voyager-docs-sync-${repo_slug}-${GITHUB_RUN_ID}"
+                    git switch -c "$sync_branch"
+                  fi
+
+                  old_head="$(git rev-parse HEAD)"
+                  remote_url="https://x-access-token:${GH_TOKEN}@github.com/${UPSTREAM_REPO}.git"
+
+                  if git remote get-url voyager-docs >/dev/null 2>&1; then
+                    git remote set-url voyager-docs "$remote_url"
+                  else
+                    git remote add voyager-docs "$remote_url"
+                  fi
+
+                  git fetch voyager-docs "$UPSTREAM_BRANCH"
+                  git subtree pull --prefix="$PREFIX" voyager-docs "$UPSTREAM_BRANCH" --squash
+
+                  new_head="$(git rev-parse HEAD)"
+                  if [[ "$old_head" == "$new_head" ]]; then
+                    echo "changed=false" >> "$GITHUB_OUTPUT"
+                    echo "sync_branch=$sync_branch" >> "$GITHUB_OUTPUT"
+                    exit 0
+                  fi
+
+                  echo "changed=true" >> "$GITHUB_OUTPUT"
+                  echo "sync_branch=$sync_branch" >> "$GITHUB_OUTPUT"
+
+            - name: Push sync branch
+              if: ${{ steps.sync.outputs.changed == 'true' }}
+              shell: bash
+              run: |
+                  git push origin "${{ steps.sync.outputs.sync_branch }}"
+
+            - name: Create or update pull request
+              if: ${{ steps.sync.outputs.changed == 'true' }}
+              shell: bash
+              env:
+                  GH_TOKEN: ${{ steps.app_token.outputs.token }}
+                  TARGET_REPOSITORY: ${{ matrix.target.repository }}
+                  BASE_BRANCH: ${{ matrix.target.base_branch }}
+                  PREFIX: ${{ matrix.target.prefix }}
+                  PR_TITLE: "chore: sync voyager-documentation subtree"
+                  PR_NUMBER: ${{ steps.existing_pr.outputs.number }}
+                  HEAD_BRANCH: ${{ steps.sync.outputs.sync_branch }}
+                  UPSTREAM_REPO: ${{ github.repository }}
+                  UPSTREAM_SHA: ${{ github.sha }}
+                  RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+              run: |
+                  set -euo pipefail
+
+                  printf -v pr_body '%s\n' \
+                    '<!-- voyager-subtree-sync -->' \
+                    '## Summary' \
+                    "- Sync docs subtree from \`${UPSTREAM_REPO}@${UPSTREAM_SHA}\`" \
+                    "- Prefix: \`${PREFIX}\`" \
+                    "- Triggered by: ${RUN_URL}"
+
+                  if [[ -n "$PR_NUMBER" ]]; then
+                    gh pr edit "$PR_NUMBER" \
+                      --repo "$TARGET_REPOSITORY" \
+                      --title "$PR_TITLE" \
+                      --body "$pr_body"
+                  else
+                    gh pr create \
+                      --repo "$TARGET_REPOSITORY" \
+                      --base "$BASE_BRANCH" \
+                      --head "$HEAD_BRANCH" \
+                      --title "$PR_TITLE" \
+                      --body "$pr_body"
+                  fi
+
+            - name: No changes to sync
+              if: ${{ steps.sync.outputs.changed != 'true' }}
+              shell: bash
+              run: |
+                  echo "No subtree updates for ${{ matrix.target.repository }}"

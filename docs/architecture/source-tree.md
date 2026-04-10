@@ -27,8 +27,9 @@ voyager-app/
 ├─ docs/                        # 문서 (PRD/아키텍처/기능)
 ├─ shared/                      # 레지스트리 JSON 파일
 ├─ scripts/                     # 빌드/CI 스크립트
-├─ .cursor/rules/               # 에이전트/자동화 규칙
-└─ .claude/skills/              # AI 에이전트 스킬 정의
+├─ .agents/rules/               # 에이전트/자동화 규칙
+├─ .agents/skills/              # AI 에이전트 스킬 정의(실체)
+└─ .claude/skills -> ../.agents/skills  # 호환용 심볼릭 링크
 ```
 
 ---
@@ -362,47 +363,40 @@ scripts/
 
 ---
 
-## .cursor/rules/ - 에이전트 규칙
+## .agents/rules/ - 에이전트 실행 규칙
 
-Cursor IDE와 AI 에이전트를 위한 규칙 파일들입니다.
+사람용 튜토리얼이 아니라 AI 에이전트가 직접 실행할 때 참고하는 계약형 규칙입니다.
 
 ```
-.cursor/rules/
-├─ 00-monorepo/                 # 모노레포 공통
-│  ├─ 00-monorepo-overview.mdc
-│  ├─ 01-dev-run-and-env.mdc
-│  ├─ 02-architecture-overview.mdc
-│  ├─ 03-error-handling-policy.mdc
-│  ├─ 04-security-and-secrets.mdc
-│  ├─ 05-logging-observability.mdc
-│  └─ 06-commit-messages.mdc
-├─ 01-macos-voyager/            # macOS 앱 규칙
-│  ├─ 00-frontend-overview.mdc
-│  ├─ 01-frontend-http-client-guidelines.mdc
-│  ├─ 02-frontend-tca-conventions.mdc
-│  └─ 03-macos-fsd-tca-structure.mdc
-├─ 02-macos-helper/             # Helper 규칙
-│  └─ 01-frontend-dotenv-integration.mdc
-├─ 03-backend/                  # 백엔드 규칙
-│  ├─ 00-backend-overview.mdc
-│  ├─ 01-backend-api-contracts.mdc
-│  ├─ 02-backend-testing.mdc
-│  ├─ 03-db-migrations.mdc
-│  ├─ 04-data-modeling-and-schemas.mdc
-│  └─ 05-backend-config.mdc
-└─ 99-agent/                    # 에이전트 모드
-   ├─ 00-agent-mode.mdc
-   └─ 01-rules-governance.mdc
+.agents/rules/
+├─ README.md                    # 로드 순서와 운영 원칙
+├─ 00-core/                     # 항상 적용되는 전역 규칙
+│  ├─ 00-execution-contract.md
+│  ├─ 01-safety-and-secrets.md
+│  ├─ 02-verification.md
+│  └─ 03-commit-and-pr.md
+├─ 10-routing/                  # 작업 경로 기반 규칙 라우팅
+│  └─ 00-routing.md
+├─ 20-backend/                  # 백엔드 도메인 규칙
+│  ├─ 00-backend-rules.md
+│  ├─ 01-api-and-schemas.md
+│  └─ 02-migrations-and-config.md
+├─ 30-macos/                    # macOS 도메인 규칙
+│  ├─ 00-macos-rules.md
+│  └─ 01-http-and-env.md
+└─ 99-agent/                    # 규칙 작성/품질 관리
+   └─ 00-rule-authoring.md
 ```
 
 ---
 
-## .claude/skills/ - AI 에이전트 스킬
+## .agents/skills/ - AI 에이전트 스킬
 
 OpenCode/Claude 에이전트를 위한 스킬 정의입니다.
+`.claude/skills`는 이 디렉터리를 가리키는 호환용 심볼릭 링크입니다.
 
 ```
-.claude/skills/
+.agents/skills/
 ├─ commit-message/              # 커밋 메시지 생성
 │  ├─ SKILL.md
 │  └─ scripts/
@@ -414,9 +408,7 @@ OpenCode/Claude 에이전트를 위한 스킬 정의입니다.
 │  └─ SKILL.md
 ├─ changelog/                   # 변경 로그
 │  └─ SKILL.md
-├─ macos-tca-orchestrator/      # TCA 오케스트레이터
-│  └─ SKILL.md
-└─ macos-tca-fsd-scaffold/      # TCA FSD 스캐폴딩
+└─ voyager-dev/                  # Voyager macOS TCA/FSD 통합 스킬
    └─ SKILL.md
 ```
 
@@ -430,8 +422,9 @@ OpenCode/Claude 에이전트를 위한 스킬 정의입니다.
 - `docs/`: 문서
 - `shared/`: 공유 데이터
 - `scripts/`: 자동화 스크립트
-- `.cursor/rules/`: IDE/에이전트 규칙
-- `.claude/skills/`: AI 스킬
+- `.agents/rules/`: IDE/에이전트 규칙
+- `.agents/skills/`: AI 스킬(실체)
+- `.claude/skills`: `.agents/skills/`를 가리키는 호환용 심볼릭 링크
 
 ### 2. 백엔드 레이어 분리
 

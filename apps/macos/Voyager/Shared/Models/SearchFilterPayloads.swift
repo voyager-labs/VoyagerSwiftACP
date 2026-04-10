@@ -1,3 +1,5 @@
+import Foundation
+
 nonisolated struct SearchRequestPayload: Codable, Equatable, Sendable {
     let query: String
     let filters: SearchFiltersPayload
@@ -39,6 +41,116 @@ nonisolated struct AppliedFiltersPayload: Codable, Equatable, Sendable {
 nonisolated struct SearchErrorPayload: Codable, Equatable, Sendable {
     let code: String
     let details: String?
+}
+
+nonisolated enum RecentTagSearchScopeModePayload: String, Codable, Equatable, Sendable {
+    case allIndexed
+    case scopedPaths
+}
+
+nonisolated enum RecentTagSearchSortPayload: String, Codable, Equatable, Sendable {
+    case lastUsedDateDescending
+}
+
+nonisolated struct RecentSearchRequestPayload: Codable, Equatable, Sendable {
+    let scopeMode: RecentTagSearchScopeModePayload
+    let scopes: [String]
+    let resultCap: Int
+    let includeHidden: Bool
+    let sort: RecentTagSearchSortPayload
+}
+
+nonisolated struct TagSearchRequestPayload: Codable, Equatable, Sendable {
+    let requestedTag: String
+    let scopeMode: RecentTagSearchScopeModePayload
+    let scopes: [String]
+    let resultCap: Int
+    let includeHidden: Bool
+    let sort: RecentTagSearchSortPayload
+    let exactTagVerification: Bool
+}
+
+nonisolated struct SearchTagPayload: Codable, Equatable, Sendable {
+    let name: String
+    let colorCode: Int
+}
+
+nonisolated enum SearchEntrySupplementaryMetadataPayload: Codable, Equatable, Sendable {
+    case folderItemCount(Int)
+    case imageResolution(width: Int, height: Int)
+    case compressedFileSize(Int64)
+
+    private enum CodingKeys: String, CodingKey {
+        case kind
+        case itemCount
+        case width
+        case height
+        case fileSize
+    }
+
+    private enum Kind: String, Codable {
+        case folderItemCount
+        case imageResolution
+        case compressedFileSize
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        let kind = try container.decode(Kind.self, forKey: .kind)
+        switch kind {
+        case .folderItemCount:
+            self = try .folderItemCount(container.decode(Int.self, forKey: .itemCount))
+        case .imageResolution:
+            self = try .imageResolution(
+                width: container.decode(Int.self, forKey: .width),
+                height: container.decode(Int.self, forKey: .height),
+            )
+        case .compressedFileSize:
+            self = try .compressedFileSize(container.decode(Int64.self, forKey: .fileSize))
+        }
+    }
+
+    func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        switch self {
+        case let .folderItemCount(itemCount):
+            try container.encode(Kind.folderItemCount, forKey: .kind)
+            try container.encode(itemCount, forKey: .itemCount)
+        case let .imageResolution(width, height):
+            try container.encode(Kind.imageResolution, forKey: .kind)
+            try container.encode(width, forKey: .width)
+            try container.encode(height, forKey: .height)
+        case let .compressedFileSize(fileSize):
+            try container.encode(Kind.compressedFileSize, forKey: .kind)
+            try container.encode(fileSize, forKey: .fileSize)
+        }
+    }
+}
+
+nonisolated struct SearchEntryPayload: Codable, Equatable, Sendable {
+    let name: String
+    let fullPath: String
+    let isFolder: Bool
+    let isHidden: Bool
+    let size: Int64
+    let modifiedDate: Date
+    let fileExtension: String
+    let createdDate: Date
+    let addedDate: Date
+    let lastOpenedDate: Date?
+    let kind: String
+    let creatorApplication: String?
+    let tags: [SearchTagPayload]?
+    let supplementaryMetadata: SearchEntrySupplementaryMetadataPayload?
+}
+
+nonisolated struct RecentSearchResponsePayload: Codable, Equatable, Sendable {
+    let items: [SearchEntryPayload]
+}
+
+nonisolated struct TagSearchResponsePayload: Codable, Equatable, Sendable {
+    let requestedTag: String
+    let items: [SearchEntryPayload]
 }
 
 nonisolated enum JSONValue: Codable, Equatable, Sendable {

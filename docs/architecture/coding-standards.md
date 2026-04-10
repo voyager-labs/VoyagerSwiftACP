@@ -274,6 +274,77 @@ struct FileManagerFeature {
 - `State`는 `@ObservableState` 적용 및 `Equatable` 준수
 - `Action`은 `Sendable` 준수
 
+**View Action 경계 (신규 표준)**:
+
+- 신규/수정되는 SwiftUI View는 `@ViewAction` 기반으로 작성
+- `WithViewStore`를 유지하는 기존 화면도 점진적으로 `@ViewAction`으로 통일
+- View에서 `perform(...)` 같은 커스텀 래퍼를 추가하기보다, `Action.view(View)` 또는 `@ViewAction`로 경계를 명시
+
+**Action 계층 보일러플레이트 (표준)**:
+
+- `case view(View)`: View(UI) 입력 이벤트 전용
+- `case delegate(Delegate)`: 부모/상위 리듀서로 전달할 이벤트 전용
+- ``case `internal`(Internal)``: Effect 결과/시스템 콜백/비동기 후속 처리 전용
+- View는 `view` 계층만 발화하고, `delegate`/`internal`은 Reducer 내부에서만 생성
+
+```swift
+@Reducer
+struct Feature {
+    @ObservableState
+    struct State: Equatable {}
+
+    enum Action: ViewAction, Sendable {
+        case view(View)
+        case delegate(Delegate)
+        case `internal`(Internal)
+
+        enum View: Sendable {
+            case newWindowTapped
+        }
+
+        enum Delegate: Sendable {
+            case openNewWindow
+        }
+
+        enum Internal: Sendable {
+            case newWindowOpened
+        }
+    }
+
+    var body: some ReducerOf<Self> {
+        Reduce { _, action in
+            switch action {
+            case .view(.newWindowTapped):
+                return .send(.delegate(.openNewWindow))
+
+            case .delegate(.openNewWindow):
+                return .send(.`internal`(.newWindowOpened))
+
+            case .`internal`(.newWindowOpened):
+                return .none
+
+            case .delegate:
+                return .none
+
+            case .`internal`:
+                return .none
+            }
+        }
+    }
+}
+
+@ViewAction(for: Feature.self)
+struct FeatureView: View {
+    let store: StoreOf<Feature>
+
+    var body: some View {
+        Button("New Window") {
+            send(.newWindowTapped)
+        }
+    }
+}
+```
+
 **State/Action 분리 패턴** (권장):
 
 ```swift

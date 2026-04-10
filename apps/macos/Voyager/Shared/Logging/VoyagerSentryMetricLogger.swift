@@ -120,7 +120,7 @@ enum VoyagerSentryMetricLogger {
 }
 
 private final class UserIdStore: @unchecked Sendable {
-    private nonisolated(unsafe) let lock = NSLock()
+    private let lock = NSLock()
     private nonisolated(unsafe) var value: String?
 
     nonisolated func set(_ value: String?) {

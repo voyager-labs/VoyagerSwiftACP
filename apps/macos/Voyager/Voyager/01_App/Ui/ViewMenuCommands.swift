@@ -2,37 +2,35 @@ import AppKit
 import ComposableArchitecture
 import SwiftUI
 
+@ViewAction(for: MenuCommandsFeature.self)
 struct ViewMenuCommands: Commands {
-    @ObservedObject private var appDelegate: AppDelegate
+    let store: StoreOf<MenuCommandsFeature>
 
-    init() {
-        guard let shared = AppDelegate.shared else {
-            fatalError("AppDelegate.shared must be initialized before ViewMenuCommands")
-        }
-        _appDelegate = ObservedObject(wrappedValue: shared)
+    @ObservedObject private var viewStore: ViewStore<MenuCommandsState, MenuCommandsAction>
+
+    init(appRootStore: StoreOf<AppRootFeature>) {
+        let menuStore = appRootStore.scope(state: \.menuCommands, action: \.menuCommands)
+        store = menuStore
+        viewStore = ViewStore(
+            menuStore,
+            observe: { $0 },
+        )
     }
 
     var body: some Commands {
         CommandGroup(replacing: .sidebar) {
-            Button(
-                appDelegate.currentFileManagerStore?.sidebarVisible == true
-                    ? "Hide Sidebar"
-                    : "Show Sidebar",
-            ) {
-                let newValue = !(appDelegate.currentFileManagerStore?.sidebarVisible ?? true)
-                appDelegate.currentFileManagerStore?.send(.setSidebarVisible(newValue))
+            Button(viewStore.sidebarVisible ? "Hide Sidebar" : "Show Sidebar") {
+                sendViewCommand(.toggleSidebar)
             }
             .keyboardShortcut("s", modifiers: [.command, .control])
-            .disabled(appDelegate.currentFileManagerStore == nil)
-            Button(
-                appDelegate.currentFileManagerStore?.showHiddenFiles == true
-                    ? "Hide Hidden Files"
-                    : "Show Hidden Files",
-            ) {
-                appDelegate.currentFileManagerStore?.send(.toggleShowHiddenFiles)
+            .disabled(!viewStore.hasFocusedWindow)
+
+            Button(viewStore.showHiddenFiles ? "Hide Hidden Files" : "Show Hidden Files") {
+                sendViewCommand(.toggleShowHiddenFiles)
             }
             .keyboardShortcut(".", modifiers: [.command, .shift])
-            .disabled(appDelegate.currentFileManagerStore == nil)
+            .disabled(!viewStore.hasFocusedWindow)
+
             Divider()
         }
 
@@ -52,74 +50,66 @@ struct ViewMenuCommands: Commands {
 
                 Divider()
 
-                Toggle("Name", isOn: groupKeyToggleBinding(.name))
-                Toggle("Kind", isOn: groupKeyToggleBinding(.kind))
-                Toggle("Application", isOn: groupKeyToggleBinding(.application))
-                Toggle("Date Last Opened", isOn: groupKeyToggleBinding(.dateLastOpened))
-                Toggle("Date Added", isOn: groupKeyToggleBinding(.dateAdded))
-                Toggle("Date Modified", isOn: groupKeyToggleBinding(.dateModified))
-                Toggle("Date Created", isOn: groupKeyToggleBinding(.dateCreated))
-                Toggle("Size", isOn: groupKeyToggleBinding(.size))
-                Toggle("Tags", isOn: groupKeyToggleBinding(.tags))
+                ForEach(EntryArrangementMenuItems.groupItems) { item in
+                    Toggle(item.title, isOn: groupKeyToggleBinding(item.key))
+                }
             }
 
             Menu("Sort By") {
-                Toggle("Name", isOn: sortKeyToggleBinding(.name))
-                Toggle("Kind", isOn: sortKeyToggleBinding(.kind))
-                Toggle("Application", isOn: sortKeyToggleBinding(.application))
-                Toggle("Date Last Opened", isOn: sortKeyToggleBinding(.dateLastOpened))
-                Toggle("Date Added", isOn: sortKeyToggleBinding(.dateAdded))
-                Toggle("Date Modified", isOn: sortKeyToggleBinding(.dateModified))
-                Toggle("Date Created", isOn: sortKeyToggleBinding(.dateCreated))
-                Toggle("Size", isOn: sortKeyToggleBinding(.size))
-                Toggle("Tags", isOn: sortKeyToggleBinding(.tags))
+                ForEach(EntryArrangementMenuItems.sortItems) { item in
+                    Toggle(item.title, isOn: sortKeyToggleBinding(item.key))
+                }
 
                 Divider()
 
                 Toggle("Ascending", isOn: sortOrderToggleBinding(.ascending))
                 Toggle("Descending", isOn: sortOrderToggleBinding(.descending))
             }
-            .disabled(appDelegate.currentFileManagerStore?.entries.groupKey != GroupKey.none)
+            .disabled(viewStore.groupKey != GroupKey.none)
         }
     }
 
-    private func viewLayoutToggleBinding(_ layout: FileManagerFeature.ViewLayout) -> Binding<Bool> {
+    private func viewLayoutToggleBinding(_ layout: EntryViewLayoutState.Mode) -> Binding<Bool> {
         Binding(
-            get: { appDelegate.currentFileManagerStore?.viewLayout == layout },
+            get: { viewStore.viewLayout == layout },
             set: { isOn in
                 guard isOn else { return }
-                appDelegate.currentFileManagerStore?.send(.changeLayout(layout))
+                sendViewCommand(.setViewLayout(layout))
             },
         )
     }
 
     private func groupKeyToggleBinding(_ key: GroupKey) -> Binding<Bool> {
         Binding(
-            get: { appDelegate.currentFileManagerStore?.entries.groupKey == key },
+            get: { viewStore.groupKey == key },
             set: { isOn in
                 guard isOn else { return }
-                appDelegate.currentFileManagerStore?.send(.changeGroupKey(key))
+                sendViewCommand(.setGroupKey(key))
             },
         )
     }
 
     private func sortKeyToggleBinding(_ key: SortKey) -> Binding<Bool> {
         Binding(
-            get: { appDelegate.currentFileManagerStore?.sortKey == key },
+            get: { viewStore.sortKey == key },
             set: { isOn in
                 guard isOn else { return }
-                appDelegate.currentFileManagerStore?.send(.changeSortKey(key))
+                sendViewCommand(.setSortKey(key))
             },
         )
     }
 
     private func sortOrderToggleBinding(_ order: SortOrder) -> Binding<Bool> {
         Binding(
-            get: { appDelegate.currentFileManagerStore?.sortOrder == order },
+            get: { viewStore.sortOrder == order },
             set: { isOn in
                 guard isOn else { return }
-                appDelegate.currentFileManagerStore?.send(.changeSortOrder(order))
+                sendViewCommand(.setSortOrder(order))
             },
         )
+    }
+
+    private func sendViewCommand(_ command: MenuCommandItem.ViewCommand) {
+        send(.viewCommand(command))
     }
 }

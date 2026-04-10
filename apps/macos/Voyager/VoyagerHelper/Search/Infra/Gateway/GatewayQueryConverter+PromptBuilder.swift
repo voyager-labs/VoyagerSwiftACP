@@ -59,14 +59,18 @@ extension GatewayQueryConverter {
             parts.append("conditions=\(conditionsJSON)")
         }
 
-        if existingScopes.isEmpty == false,
-           let scopesJSON = encodeJSONString(existingScopes)
+        let queryScopes = inferScopes(from: query)
+        if let queryScopes,
+           let queryScopesJSON = encodeJSONString(queryScopes)
         {
-            parts.append("scopes=\(scopesJSON)")
-        } else if let inferredScopes = inferScopes(from: query),
-                  let scopesJSON = encodeJSONString(inferredScopes)
+            parts.append("query_scopes=\(queryScopesJSON)")
+        }
+
+        let explicitExistingScopes = existingExplicitScopes(from: existingScopes)
+        if explicitExistingScopes.isEmpty == false,
+           let existingScopesJSON = encodeJSONString(explicitExistingScopes)
         {
-            parts.append("scopes=\(scopesJSON)")
+            parts.append("existing_scopes=\(existingScopesJSON)")
         }
 
         return parts.joined(separator: "\n")
@@ -169,6 +173,10 @@ extension GatewayQueryConverter {
         }
 
         return scopes.isEmpty ? nil : scopes
+    }
+
+    func existingExplicitScopes(from scopes: [String]) -> [String] {
+        SearchScopeNormalizer.normalizeScopes(scopes).filter { $0 != "/" }
     }
 
     func containsWordPattern(_ pattern: String, in text: String) -> Bool {
