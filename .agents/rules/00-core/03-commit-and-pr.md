@@ -10,7 +10,10 @@ description: 'Commit and PR rules for this repository.'
 
 ## Must
 - Use Conventional Commits: `<type>(<scope>): <subject>`.
-- Keep subject concise and imperative.
+- Keep subject concise.
+- When the subject is written in English, keep it imperative.
+- When the subject or commit-message body bullets are written in Korean, end them as noun phrases rather than verb-final sentences.
+- In Korean, avoid endings like `수정한다`, `이전한다`, `정리한다`; prefer noun-phrase endings like `수정`, `이전`, `정리`.
 - Use scope when helpful: `backend`, `macos`, `docs`, `infra`.
 - Keep commits logically atomic.
 - In PRs, include intent, scope, risks, validation, and rollback notes.
@@ -27,3 +30,4 @@ description: 'Commit and PR rules for this repository.'
 - `feat(backend): add asset ingestion endpoint`
 - `fix(macos): handle empty search response`
 - `docs: simplify agent rule architecture`
+- `fix(macos): 파일매니저 툴바 hover 표시 복구`

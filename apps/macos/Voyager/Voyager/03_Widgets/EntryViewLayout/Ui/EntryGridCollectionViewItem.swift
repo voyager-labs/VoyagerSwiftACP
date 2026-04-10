@@ -142,6 +142,7 @@ final class EntryGridCollectionViewItem: NSCollectionViewItem {
         iconBackgroundView.translatesAutoresizingMaskIntoConstraints = false
 
         iconView.translatesAutoresizingMaskIntoConstraints = false
+        iconView.unregisterDraggedTypes()
         iconBackgroundView.addSubview(iconView)
 
         tagStackView.orientation = .horizontal
@@ -216,7 +217,7 @@ final class EntryGridCollectionViewItem: NSCollectionViewItem {
 
             rootStack.leadingAnchor.constraint(equalTo: view.leadingAnchor, constant: 8),
             rootStack.trailingAnchor.constraint(equalTo: view.trailingAnchor, constant: -8),
-            rootStack.topAnchor.constraint(equalTo: view.topAnchor, constant: 8),
+            rootStack.topAnchor.constraint(equalTo: view.topAnchor, constant: 12),
             rootStack.bottomAnchor.constraint(lessThanOrEqualTo: view.bottomAnchor, constant: -8),
         ])
     }
@@ -236,21 +237,14 @@ final class EntryGridCollectionViewItem: NSCollectionViewItem {
     }
 
     private func updateAppearance() {
-        let selected = isSelected && !isRenaming
-        let targeted = isDropTargeted
+        let highlighted = (isSelected || isDropTargeted) && !isRenaming
 
         backgroundView.layer?.backgroundColor = nil
-        if targeted {
-            backgroundView.layer?.borderWidth = 1.5
-            backgroundView.layer?.borderColor = NSColor.selectedContentBackgroundColor
-                .withAlphaComponent(0.6).cgColor
-        } else {
-            backgroundView.layer?.borderWidth = 0
-            backgroundView.layer?.borderColor = nil
-        }
+        backgroundView.layer?.borderWidth = 0
+        backgroundView.layer?.borderColor = nil
 
         // Finder-like rounded thumbnail background behind the icon area
-        if selected {
+        if highlighted {
             iconBackgroundView.layer?.backgroundColor = NSColor(
                 white: 1.0, alpha: 0.08,
             ).cgColor
@@ -259,7 +253,7 @@ final class EntryGridCollectionViewItem: NSCollectionViewItem {
         }
 
         // Name-area highlight: Finder-like blue pill behind the label
-        if selected {
+        if highlighted {
             nameHighlightView.isHidden = false
             nameHighlightView.layer?.backgroundColor = NSColor.selectedContentBackgroundColor.cgColor
         } else {
@@ -267,8 +261,8 @@ final class EntryGridCollectionViewItem: NSCollectionViewItem {
             nameHighlightView.layer?.backgroundColor = nil
         }
 
-        let nameColor: NSColor = selected ? .white : .labelColor
-        let infoColor: NSColor = selected ? .white : .systemBlue
+        let nameColor: NSColor = highlighted ? .white : .labelColor
+        let infoColor: NSColor = highlighted ? .white : .systemBlue
         nameField.textColor = nameColor
         infoField.textColor = infoColor
 

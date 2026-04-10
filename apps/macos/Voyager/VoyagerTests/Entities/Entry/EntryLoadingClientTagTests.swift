@@ -12,6 +12,7 @@ import XCTest
 /// Note: EntryLoadingClient.entryTags(from:) is private, so we test through:
 /// - TagMetadataClient.loadTags (the xattr path)
 /// - Documenting the tagNamesKey fallback behavior
+@MainActor
 final class EntryLoadingClientTagTests: XCTestCase {
     // MARK: - TagMetadataClient.loadTags Tests
 
@@ -135,7 +136,7 @@ final class EntryLoadingClientTagTests: XCTestCase {
         }
 
         // Set tags using tagNamesKey (standard macOS API)
-        try testFile.setResourceValues([.tagNames: ["Red", "Green"]])
+        try (testFile as NSURL).setResourceValue(["Red", "Green"], forKey: .tagNamesKey)
 
         // Read back via tagNamesKey
         let resourceValues = try testFile.resourceValues(forKeys: [.tagNamesKey])
