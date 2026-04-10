@@ -231,48 +231,82 @@ final class EntryListEntryCellView: NSTableCellView {
 
         switch EntryListColumn(rawValue: context.columnId) {
         case .name:
-            customImageView.isHidden = false
-            iconWidthConstraint?.constant = context.iconSize
-            iconHeightConstraint?.constant = context.iconSize
-            textLeadingToViewConstraint?.isActive = false
-            textLeadingToIconConstraint?.isActive = true
-
-            customImageView.image = context.workspaceClient.entryIcon(for: context.model, thumbnail: context.thumbnail)
-
-            customTextField.font = .systemFont(ofSize: context.textSize)
-            customTextField.lineBreakMode = .byTruncatingMiddle
-            customTextField.usesSingleLineMode = true
-
-            if isRenaming {
-                applyRenamingStyle(text: context.renamingText)
-            } else {
-                applyDisplayStyle()
-                customTextField.stringValue = context.model.name
-            }
+            configureNameCell(context: context)
 
         case .dateModified:
-            hideIconAndSetupTextOnly(textSize: max(10, context.textSize - 1))
-            customTextField.stringValue = EntryListCellDateFormatting.format(
-                context.model.modifiedDate,
-                width: context.dateModifiedWidth,
-            )
+            configureDateCell(context: context, date: context.model.modifiedDate)
+
+        case .application:
+            configureTextOnlyCell(context: context, text: context.model.facets.creatorApplication ?? "—")
+
+        case .dateAdded:
+            configureDateCell(context: context, date: context.model.facets.addedDate)
+
+        case .dateCreated:
+            configureDateCell(context: context, date: context.model.facets.createdDate)
+
+        case .dateLastOpened:
+            configureOptionalDateCell(context: context, date: context.model.facets.lastOpenedDate)
 
         case .size:
-            hideIconAndSetupTextOnly(textSize: max(10, context.textSize - 1))
-            customTextField.stringValue = display.formattedSize
+            configureTextOnlyCell(context: context, text: display.formattedSize)
 
         case .kind:
-            hideIconAndSetupTextOnly(textSize: max(10, context.textSize - 1))
             let kindText = context.model.fileExtension.lowercased() == CollectionConstants
                 .fileExtension ? "Voyager Collection" : context.model.facets.kind
-            customTextField.stringValue = kindText
+            configureTextOnlyCell(context: context, text: kindText)
 
         default:
-            hideIconAndSetupTextOnly(textSize: context.textSize)
-            customTextField.stringValue = ""
+            configureTextOnlyCell(context: context, text: "", useCompactTextSize: false)
         }
 
         applyContentAlpha()
+    }
+
+    private func configureNameCell(context: EntryListEntryCellViewConfiguration.Context) {
+        customImageView.isHidden = false
+        iconWidthConstraint?.constant = context.iconSize
+        iconHeightConstraint?.constant = context.iconSize
+        textLeadingToViewConstraint?.isActive = false
+        textLeadingToIconConstraint?.isActive = true
+
+        customImageView.image = context.workspaceClient.entryIcon(for: context.model, thumbnail: context.thumbnail)
+
+        customTextField.font = .systemFont(ofSize: context.textSize)
+        customTextField.lineBreakMode = .byTruncatingMiddle
+        customTextField.usesSingleLineMode = true
+
+        if isRenaming {
+            applyRenamingStyle(text: context.renamingText)
+        } else {
+            applyDisplayStyle()
+            customTextField.stringValue = context.model.name
+        }
+    }
+
+    private func configureDateCell(context: EntryListEntryCellViewConfiguration.Context, date: Date) {
+        configureTextOnlyCell(
+            context: context,
+            text: EntryListCellDateFormatting.format(date, width: context.dateModifiedWidth),
+        )
+    }
+
+    private func configureOptionalDateCell(context: EntryListEntryCellViewConfiguration.Context, date: Date?) {
+        guard let date else {
+            configureTextOnlyCell(context: context, text: "—")
+            return
+        }
+        configureDateCell(context: context, date: date)
+    }
+
+    private func configureTextOnlyCell(
+        context: EntryListEntryCellViewConfiguration.Context,
+        text: String,
+        useCompactTextSize: Bool = true,
+    ) {
+        let textSize = useCompactTextSize ? max(10, context.textSize - 1) : context.textSize
+        hideIconAndSetupTextOnly(textSize: textSize)
+        customTextField.stringValue = text
     }
 
     private func hideIconAndSetupTextOnly(textSize: CGFloat) {
