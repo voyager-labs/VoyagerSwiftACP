@@ -39,7 +39,7 @@ final class EntryViewLayoutColumnsMenuModelTests: XCTestCase {
         XCTAssertEqual(model.resetItem.title, "Reset Columns")
     }
 
-    func testVOY212MenuIncludesOnlyNewMetadataColumnsBeforeTags() {
+    func testVOY216MenuStillCoversOnlyMetadataColumnsWithoutSeparateTagsColumn() {
         let model = EntryViewLayoutColumnsMenuModel(visibleColumns: EntryListColumn.defaultVisibleColumns)
         let columns = model.toggleItems.map(\.column)
 
@@ -50,7 +50,7 @@ final class EntryViewLayoutColumnsMenuModelTests: XCTestCase {
         XCTAssertFalse(columns.contains(where: { $0.rawValue == "tags" }))
     }
 
-    func testVOY212HiddenByDefaultColumnsRemainOffAfterNormalization() {
+    func testVOY216MetadataColumnsRemainOffByDefaultAfterNormalization() {
         let model = EntryViewLayoutColumnsMenuModel(visibleColumns: EntryListColumn.defaultVisibleColumns)
 
         let applicationItem = model.toggleItems.first(where: { $0.column == .application })

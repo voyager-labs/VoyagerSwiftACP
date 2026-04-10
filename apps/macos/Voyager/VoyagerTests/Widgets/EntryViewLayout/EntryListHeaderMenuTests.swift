@@ -132,7 +132,7 @@ final class EntryListHeaderMenuTests: XCTestCase {
         }
     }
 
-    func testVOY212MenuDoesNotExposeTagsBeforeVOY216() {
+    func testVOY216MenuDoesNotExposeSeparateTagsColumn() {
         let model = EntryViewLayoutColumnsMenuModel(visibleColumns: EntryListColumn.defaultVisibleColumns)
         let headerView = EntryListHeaderView()
         let menu = headerView.makeMenu(model: model)
@@ -140,7 +140,7 @@ final class EntryListHeaderMenuTests: XCTestCase {
         XCTAssertNil(menu.items.first(where: { $0.title == "Tags" }))
     }
 
-    func testVOY212ColumnsRenderConfiguredFallbacks() {
+    func testVOY216ColumnsRenderConfiguredFallbacks() {
         XCTAssertEqual(EntryListColumn.application.title, "Application")
         XCTAssertEqual(EntryListColumn.dateAdded.title, "Date Added")
         XCTAssertEqual(EntryListColumn.dateCreated.title, "Date Created")
