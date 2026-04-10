@@ -136,11 +136,14 @@ final class EntryListEmptyCellView: NSTableCellView {}
 final class EntryListEntryCellView: NSTableCellView {
     private let customImageView = NSImageView()
     private let customTextField = NSTextField(string: "")
+    private let tagStackView = NSStackView()
 
     private var iconWidthConstraint: NSLayoutConstraint?
     private var iconHeightConstraint: NSLayoutConstraint?
     private var textLeadingToIconConstraint: NSLayoutConstraint?
     private var textLeadingToViewConstraint: NSLayoutConstraint?
+    private var textTrailingToViewConstraint: NSLayoutConstraint?
+    private var textTrailingToTagsConstraint: NSLayoutConstraint?
 
     private var entryName: String = ""
     private var entryIsFolder: Bool = false
@@ -172,6 +175,12 @@ final class EntryListEntryCellView: NSTableCellView {
         addSubview(customTextField)
         textField = customTextField
 
+        tagStackView.translatesAutoresizingMaskIntoConstraints = false
+        tagStackView.orientation = .horizontal
+        tagStackView.alignment = .centerY
+        tagStackView.spacing = -3
+        addSubview(tagStackView)
+
         let iconLeading = customImageView.leadingAnchor.constraint(equalTo: leadingAnchor)
         let iconCenterY = customImageView.centerYAnchor.constraint(equalTo: centerYAnchor)
         let iconWidth = customImageView.widthAnchor.constraint(equalToConstant: 16)
@@ -185,7 +194,13 @@ final class EntryListEntryCellView: NSTableCellView {
             constant: 6,
         )
         textLeadingToViewConstraint = customTextField.leadingAnchor.constraint(equalTo: leadingAnchor)
-        let textTrailing = customTextField.trailingAnchor.constraint(lessThanOrEqualTo: trailingAnchor)
+        let textTrailingToView = customTextField.trailingAnchor.constraint(lessThanOrEqualTo: trailingAnchor)
+        textTrailingToViewConstraint = textTrailingToView
+        let textTrailingToTags = customTextField.trailingAnchor.constraint(
+            lessThanOrEqualTo: tagStackView.leadingAnchor,
+            constant: -8,
+        )
+        textTrailingToTagsConstraint = textTrailingToTags
         let textCenterY = customTextField.centerYAnchor.constraint(equalTo: centerYAnchor)
 
         NSLayoutConstraint.activate([
@@ -193,8 +208,10 @@ final class EntryListEntryCellView: NSTableCellView {
             iconCenterY,
             iconWidth,
             iconHeight,
-            textTrailing,
+            textTrailingToView,
             textCenterY,
+            tagStackView.trailingAnchor.constraint(equalTo: trailingAnchor),
+            tagStackView.centerYAnchor.constraint(equalTo: centerYAnchor),
         ])
 
         applyDisplayStyle()
@@ -269,6 +286,7 @@ final class EntryListEntryCellView: NSTableCellView {
         iconHeightConstraint?.constant = context.iconSize
         textLeadingToViewConstraint?.isActive = false
         textLeadingToIconConstraint?.isActive = true
+        tagStackView.isHidden = false
 
         customImageView.image = context.workspaceClient.entryIcon(for: context.model, thumbnail: context.thumbnail)
 
@@ -280,7 +298,7 @@ final class EntryListEntryCellView: NSTableCellView {
             applyRenamingStyle(text: context.renamingText)
         } else {
             applyDisplayStyle()
-            customTextField.stringValue = context.model.name
+            configureNameDisplay(name: context.model.name, tags: context.model.facets.tags, textSize: context.textSize)
         }
     }
 
@@ -309,9 +327,41 @@ final class EntryListEntryCellView: NSTableCellView {
         customTextField.stringValue = text
     }
 
+    private func configureNameDisplay(name: String, tags: [Tag]?, textSize: CGFloat) {
+        customTextField.attributedStringValue = NSAttributedString(
+            string: name,
+            attributes: [.font: NSFont.systemFont(ofSize: textSize)],
+        )
+
+        for view in tagStackView.arrangedSubviews {
+            tagStackView.removeArrangedSubview(view)
+            view.removeFromSuperview()
+        }
+
+        if let tags, !tags.isEmpty {
+            let visibleTags = Array(tags.prefix(3))
+            for tag in visibleTags {
+                let dot = TagDotNSView(tagColor: tag.tagColor, size: 8)
+                tagStackView.addArrangedSubview(dot)
+            }
+            tagStackView.isHidden = false
+            textTrailingToViewConstraint?.isActive = false
+            textTrailingToTagsConstraint?.isActive = true
+            customTextField.setAccessibilityLabel("\(name), Tags: \(tags.map(\.name).joined(separator: ", "))")
+        } else {
+            tagStackView.isHidden = true
+            textTrailingToTagsConstraint?.isActive = false
+            textTrailingToViewConstraint?.isActive = true
+            customTextField.setAccessibilityLabel(name)
+        }
+    }
+
     private func hideIconAndSetupTextOnly(textSize: CGFloat) {
         customImageView.isHidden = true
         customImageView.image = nil
+        tagStackView.isHidden = true
+        textTrailingToTagsConstraint?.isActive = false
+        textTrailingToViewConstraint?.isActive = true
         textLeadingToIconConstraint?.isActive = false
         textLeadingToViewConstraint?.isActive = true
         customTextField.font = .systemFont(ofSize: textSize)
