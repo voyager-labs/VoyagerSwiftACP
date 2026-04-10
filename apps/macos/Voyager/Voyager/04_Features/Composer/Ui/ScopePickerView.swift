@@ -3,77 +3,40 @@ import ComposableArchitecture
 import SwiftUI
 
 struct ScopePickerView: View {
-    @Binding var isPresented: Bool
     let oldPath: String?
     let onSelect: (String) -> Void
     let favorites: [ScopeFavoriteItem]
     let backHistory: [String]
 
-    @Dependency(\.entryClient)
-    private var entryClient
-
     @State private var searchText: String = ""
-    @State private var searchResults: [ComposerScopeUtils.DirectoryItem] = []
-    @State private var searchTask: Task<Void, Never>?
     @State private var hoveredPath: String?
+    @StateObject private var searchCoordinator: ScopePickerSearchCoordinator
     @FocusState private var isSearchFocused: Bool
     @Environment(\.colorScheme)
     private var colorScheme
 
-    var body: some View {
-        VStack(spacing: 0) {
-            searchField
+    @Binding var isPresented: Bool
 
-            listContent
-        }
-        .frame(width: 200)
-        .frame(maxHeight: 400)
-        .background(VoyagerDS.Surface.popoverBackground(for: colorScheme))
-        .overlay(
-            RoundedRectangle(cornerRadius: 8)
-                .stroke(VoyagerDS.Surface.popoverBorder, lineWidth: 1),
+    init(
+        isPresented: Binding<Bool>,
+        oldPath: String?,
+        onSelect: @escaping (String) -> Void,
+        favorites: [ScopeFavoriteItem],
+        backHistory: [String],
+        entryLoadingClient: EntryLoadingClient,
+    ) {
+        _isPresented = isPresented
+        self.oldPath = oldPath
+        self.onSelect = onSelect
+        self.favorites = favorites
+        self.backHistory = backHistory
+        _searchCoordinator = StateObject(
+            wrappedValue: ScopePickerSearchCoordinator(
+                entryLoadingClient: entryLoadingClient,
+                favorites: favorites,
+                backHistory: backHistory,
+            ),
         )
-        .shadow(
-            color: VoyagerDS.Shadow.popoverColor(for: colorScheme),
-            radius: VoyagerDS.Shadow.popoverRadius,
-            y: VoyagerDS.Shadow.popoverYOffset,
-        )
-        .onAppear {
-            isSearchFocused = true
-        }
-        .onChange(of: searchText) { _ in
-            searchTask?.cancel()
-
-            let query = searchText.trimmingCharacters(in: .whitespacesAndNewlines)
-
-            if query.isEmpty {
-                searchResults = []
-            } else {
-                searchTask = Task {
-                    try? await Task.sleep(nanoseconds: 300_000_000) // 300ms
-
-                    guard !Task.isCancelled else { return }
-
-                    let results = try? await ComposerScopeUtils.searchDirectories(
-                        query: query,
-                        entryClient: entryClient,
-                        maxResults: 60,
-                        initialMaxDepth: 6,
-                        timeout: 2.2,
-                    )
-
-                    guard !Task.isCancelled else { return }
-
-                    await MainActor.run {
-                        searchResults = results ?? []
-                    }
-                }
-            }
-        }
-        .onDisappear {
-            searchTask?.cancel()
-            searchTask = nil
-        }
     }
 
     private var searchField: some View {
@@ -111,22 +74,12 @@ struct ScopePickerView: View {
     private var listContent: some View {
         ScrollView {
             VStack(spacing: 0) {
-                if !searchResults.isEmpty {
-                    ForEach(searchResults) { item in
+                switch searchCoordinator.listState {
+                case let .defaultList(items), let .searchResults(items):
+                    ForEach(items) { item in
                         directoryRow(item: item)
                     }
-                } else if searchText.isEmpty {
-                    let combinedList = ComposerScopeUtils.buildCombinedList(
-                        history: backHistory,
-                        favorites: favorites,
-                        entryClient: entryClient,
-                        maxCount: 10,
-                    )
-
-                    ForEach(combinedList) { item in
-                        directoryRow(item: item)
-                    }
-                } else {
+                case .noResults:
                     Text("No directories found")
                         .font(.system(size: 12))
                         .foregroundColor(.secondary)
@@ -136,12 +89,33 @@ struct ScopePickerView: View {
         }
     }
 
-    private func applicationsIcon() -> NSImage? {
-        let appIcon = NSImage(
-            contentsOfFile: "/System/Library/CoreServices/CoreTypes.bundle/Contents/Resources/SidebarApplicationsFolder.icns",
+    var body: some View {
+        VStack(spacing: 0) {
+            searchField
+
+            listContent
+        }
+        .frame(width: 200)
+        .frame(maxHeight: 400)
+        .background(VoyagerDS.Surface.popoverBackground(for: colorScheme))
+        .overlay(
+            RoundedRectangle(cornerRadius: 8)
+                .stroke(VoyagerDS.Surface.popoverBorder, lineWidth: 1),
         )
-        appIcon?.isTemplate = true
-        return appIcon
+        .shadow(
+            color: VoyagerDS.Shadow.popoverColor(for: colorScheme),
+            radius: VoyagerDS.Shadow.popoverRadius,
+            y: VoyagerDS.Shadow.popoverYOffset,
+        )
+        .onAppear {
+            isSearchFocused = true
+        }
+        .onChange(of: searchText) { _ in
+            searchCoordinator.update(query: searchText)
+        }
+        .onDisappear {
+            searchCoordinator.stop()
+        }
     }
 
     @ViewBuilder
@@ -185,5 +159,13 @@ struct ScopePickerView: View {
         .onHover { hovering in
             hoveredPath = hovering ? item.path : nil
         }
+    }
+
+    private func applicationsIcon() -> NSImage? {
+        let appIcon = NSImage(
+            contentsOfFile: "/System/Library/CoreServices/CoreTypes.bundle/Contents/Resources/SidebarApplicationsFolder.icns",
+        )
+        appIcon?.isTemplate = true
+        return appIcon
     }
 }

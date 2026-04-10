@@ -1,0 +1,105 @@
+import ComposableArchitecture
+
+@Reducer
+struct MenuCommandsFeature {
+    typealias State = MenuCommandsState
+    typealias Action = MenuCommandsAction
+
+    var body: some Reducer<State, Action> {
+        Reduce { _, action in
+            switch action {
+            case let .view(.app(command)):
+                routeAppCommand(command)
+
+            case let .view(.viewCommand(command)):
+                routeViewCommand(command)
+
+            case let .view(.edit(command)):
+                routeEditCommand(command)
+
+            case .view:
+                .none
+
+            case .delegate:
+                .none
+            }
+        }
+    }
+
+    private func routeAppCommand(_ command: MenuCommandItem.AppCommand) -> Effect<Action> {
+        switch command {
+        case let .newWindow(path):
+            .send(.delegate(.windowManager(.file(.newWindow(path: path)))))
+        case let .newTab(path):
+            .send(.delegate(.windowManager(.file(.newTab(path: path)))))
+        case .newFolder:
+            .send(.delegate(.windowManager(.file(.newFolder))))
+        case .open:
+            .send(.delegate(.windowManager(.file(.open))))
+        case .quickLook:
+            .send(.delegate(.windowManager(.file(.quickLook))))
+        case .saveCollection:
+            .send(.delegate(.windowManager(.file(.saveCollection))))
+        case .saveCollectionAs:
+            .send(.delegate(.windowManager(.file(.saveCollectionAs))))
+        case .closeFocusedWindow:
+            .send(.delegate(.windowManager(.window(.closeFocusedWindow))))
+        case .closeAllWindows:
+            .send(.delegate(.windowManager(.window(.closeAllWindows))))
+        case .goBack:
+            .send(.delegate(.windowManager(.window(.goBack))))
+        case .goForward:
+            .send(.delegate(.windowManager(.window(.goForward))))
+        case .goToEnclosingDirectory:
+            .send(.delegate(.windowManager(.window(.goToEnclosingDirectory))))
+        case .checkForUpdates:
+            .send(.delegate(.updater(.checkForUpdates)))
+        case let .setAutomaticUpdate(enabled):
+            .send(.delegate(.updater(.setAutomaticUpdate(enabled))))
+        }
+    }
+
+    private func routeViewCommand(_ command: MenuCommandItem.ViewCommand) -> Effect<Action> {
+        switch command {
+        case .toggleSidebar:
+            .send(.delegate(.windowManager(.window(.toggleSidebar))))
+        case .toggleShowHiddenFiles:
+            .send(.delegate(.windowManager(.window(.toggleShowHiddenFiles))))
+        case let .setViewLayout(layout):
+            .send(.delegate(.windowManager(.view(.setViewLayout(layout)))))
+        case let .setGroupKey(key):
+            .send(.delegate(.windowManager(.view(.setGroupKey(key)))))
+        case let .setSortKey(key):
+            .send(.delegate(.windowManager(.view(.setSortKey(key)))))
+        case let .setSortOrder(order):
+            .send(.delegate(.windowManager(.view(.setSortOrder(order)))))
+        }
+    }
+
+    private func routeEditCommand(_ command: MenuCommandItem.EditCommand) -> Effect<Action> {
+        switch command {
+        case .requestUndo:
+            .send(.delegate(.windowManager(.edit(.requestUndo))))
+        case .requestRedo:
+            .send(.delegate(.windowManager(.edit(.requestRedo))))
+        case .toggleComposer:
+            .send(.delegate(.windowManager(.edit(.toggleComposer))))
+        case .cut:
+            .send(.delegate(.windowManager(.edit(.cut))))
+        case .copy:
+            .send(.delegate(.windowManager(.edit(.copy))))
+        case .paste:
+            .send(.delegate(.windowManager(.edit(.paste))))
+        case .duplicate:
+            .send(.delegate(.windowManager(.edit(.duplicate))))
+        case .makeAlias:
+            .send(.delegate(.windowManager(.edit(.makeAlias))))
+        case .selectAll:
+            .send(.delegate(.windowManager(.edit(.selectAll))))
+        case .copyAbsolutePaths:
+            .send(.delegate(.windowManager(.edit(.copyAbsolutePaths))))
+        case .copyURLs:
+            .send(.delegate(.windowManager(.edit(.copyURLs))))
+        }
+    }
+}

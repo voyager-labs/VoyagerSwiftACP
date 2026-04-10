@@ -2,10 +2,10 @@ import Foundation
 import Logging
 
 final class XPCSearchService: NSObject, FilterSearchXPCServiceProtocol {
-    private let service: SpotlightSearchService
+    private let service: any SearchExecutionServicing
     private let logger: Logger
 
-    nonisolated init(service: SpotlightSearchService, logger: Logger) {
+    nonisolated init(service: any SearchExecutionServicing, logger: Logger) {
         self.service = service
         self.logger = logger
     }
@@ -20,14 +20,61 @@ final class XPCSearchService: NSObject, FilterSearchXPCServiceProtocol {
         Task { @MainActor in
             do {
                 let request = try Self.decodeRequest(from: requestData)
+                let queryService = SearchQueryService(searchService: service)
                 let response = try await Task.detached(priority: .userInitiated) {
-                    try await service.applyFilters(request.filters)
+                    try await queryService.executeQuery(request.filters)
                 }
                 .value
                 let responseData = try Self.encodeResponse(response)
                 replyBox.call(responseData, nil)
             } catch {
                 logger.error("Filter search XPC failed: \(error)")
+                replyBox.call(nil, Self.makeNSError(from: error))
+            }
+        }
+    }
+
+    nonisolated func recentSearch(
+        _ requestData: Data,
+        withReply reply: @escaping (Data?, NSError?) -> Void,
+    ) {
+        let replyBox = ReplyBox(reply)
+        let service = service
+        let logger = logger
+        Task { @MainActor in
+            do {
+                let request = try Self.decodeRecentRequest(from: requestData)
+                let response = try await Task.detached(priority: .userInitiated) {
+                    try await service.searchRecent(request)
+                }
+                .value
+                let responseData = try Self.encodeResponse(response)
+                replyBox.call(responseData, nil)
+            } catch {
+                logger.error("Recent search XPC failed: \(error)")
+                replyBox.call(nil, Self.makeNSError(from: error))
+            }
+        }
+    }
+
+    nonisolated func tagSearch(
+        _ requestData: Data,
+        withReply reply: @escaping (Data?, NSError?) -> Void,
+    ) {
+        let replyBox = ReplyBox(reply)
+        let service = service
+        let logger = logger
+        Task { @MainActor in
+            do {
+                let request = try Self.decodeTagRequest(from: requestData)
+                let response = try await Task.detached(priority: .userInitiated) {
+                    try await service.searchTag(request)
+                }
+                .value
+                let responseData = try Self.encodeResponse(response)
+                replyBox.call(responseData, nil)
+            } catch {
+                logger.error("Tag search XPC failed: \(error)")
                 replyBox.call(nil, Self.makeNSError(from: error))
             }
         }
@@ -44,8 +91,8 @@ final class XPCSearchService: NSObject, FilterSearchXPCServiceProtocol {
             do {
                 let request = try Self.decodeQueryRequest(from: requestData)
                 let queryService = SearchQueryService(searchService: service)
-                let response = try await Task.detached(priority: .userInitiated) {
-                    try await queryService.querySearch(request)
+                let response = await Task.detached(priority: .userInitiated) {
+                    await queryService.querySearch(request)
                 }
                 .value
                 let responseData = try Self.encodeResponse(response)
@@ -61,7 +108,7 @@ final class XPCSearchService: NSObject, FilterSearchXPCServiceProtocol {
         try decodePayload(FiltersOnlyRequestPayload.self, from: data)
     }
 
-    private static func encodeResponse(_ response: SearchResponsePayload) throws -> Data {
+    private static func encodeResponse(_ response: some Encodable) throws -> Data {
         do {
             return try JSONEncoder().encode(response)
         } catch {
@@ -71,6 +118,14 @@ final class XPCSearchService: NSObject, FilterSearchXPCServiceProtocol {
 
     private static func decodeQueryRequest(from data: Data) throws -> SearchRequestPayload {
         try decodePayload(SearchRequestPayload.self, from: data)
+    }
+
+    private static func decodeRecentRequest(from data: Data) throws -> RecentSearchRequestPayload {
+        try decodePayload(RecentSearchRequestPayload.self, from: data)
+    }
+
+    private static func decodeTagRequest(from data: Data) throws -> TagSearchRequestPayload {
+        try decodePayload(TagSearchRequestPayload.self, from: data)
     }
 
     private static func decodePayload<T: Decodable>(_: T.Type, from data: Data) throws -> T {
@@ -126,7 +181,7 @@ final class XPCSearchService: NSObject, FilterSearchXPCServiceProtocol {
 }
 
 private final class ReplyBox: @unchecked Sendable {
-    private nonisolated(unsafe) let lock = NSLock()
+    private let lock = NSLock()
     private nonisolated(unsafe) var reply: ((Data?, NSError?) -> Void)?
 
     nonisolated init(_ reply: @escaping (Data?, NSError?) -> Void) {

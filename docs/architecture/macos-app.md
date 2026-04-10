@@ -55,7 +55,13 @@ Voyager 타깃은 메인 프론트엔드 앱입니다. TCA를 기반으로 하�
 - Reducer: `*Feature.swift` (예: `apps/macos/Voyager/Voyager/02_Pages/Onboarding/Reducer/OnboardingFeature.swift`)
 - Client: `*Client.swift` (예: `apps/macos/Voyager/Voyager/04_Features/Composer/Api/SearchClient.swift`)
 - View: `*View.swift` (예: `apps/macos/Voyager/Voyager/05_Entities/Entry/Ui/EntryListView.swift`)
+- Coordinator: `*Coordinator.swift` (예: `apps/macos/Voyager/Voyager/02_Pages/FileManager/Window/Lib/FileManagerWindowCoordinator.swift`)
 - Utils/Extension: `*Utils.swift` 또는 `Domain+Category.swift` (예: `EntryTagUtils.swift`, `EntryContextMenuContent+Sections.swift`)
+
+`Coordinator` 네이밍 기준:
+
+- 시스템 SDK(AppKit/QuickLook 등)의 delegate, listener, lifecycle 이벤트를 오케스트레이션하면서 TCA `Action` 라우팅에 관여하는 타입은 `*Coordinator.swift`를 사용합니다.
+- `NSView`/`NSViewController`가 렌더링과 로컬 UI 상태 관리 중심이면 `Ui/`에 두고, 오케스트레이션 책임이 커지면 `Lib/*Coordinator.swift`로 분리합니다.
 
 ## FSD 레이어 매핑 (실제 경로 기준)
 
@@ -65,7 +71,7 @@ Voyager 타깃은 메인 프론트엔드 앱입니다. TCA를 기반으로 하�
 | --------- | ----------------------------------------- | -------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | App       | `apps/macos/Voyager/Voyager/01_App/`      | `Config/`, `Ui/`, `Lib/`, `Reducer/`, `Api/`                   | `apps/macos/Voyager/Voyager/01_App/Ui/VoyagerApp.swift`, `apps/macos/Voyager/Voyager/01_App/Reducer/AppLifecycleFeature.swift`                                                                                                                            |
 | Pages     | `apps/macos/Voyager/Voyager/02_Pages/`    | 페이지별 `Api/`, `Lib/`, `Model/`, `Reducer/`, `Ui/`           | `apps/macos/Voyager/Voyager/02_Pages/FileManager/Reducer/FileManagerFeature.swift`, `apps/macos/Voyager/Voyager/02_Pages/Onboarding/Reducer/OnboardingFeature.swift`, `apps/macos/Voyager/Voyager/02_Pages/Settings/Reducer/SettingsFeature.swift`        |
-| Widgets   | `apps/macos/Voyager/Voyager/03_Widgets/`  | (현재 `.gitkeep`만 존재)                                       | `apps/macos/Voyager/Voyager/03_Widgets/.gitkeep`                                                                                                                                                                                                          |
+| Widgets   | `apps/macos/Voyager/Voyager/03_Widgets/`  | 위젯별 `Api?`, `Lib/`, `Model/`, `Reducer/`, `Ui/`              | `apps/macos/Voyager/Voyager/03_Widgets/EntryViewLayout/Reducer/EntryViewLayoutFeature.swift`, `apps/macos/Voyager/Voyager/03_Widgets/EntryViewLayout/Ui/EntryListView.swift`                                                                              |
 | Features  | `apps/macos/Voyager/Voyager/04_Features/` | 기능별 `Api/`, `Lib/`, `Model/`, `Reducer/`, `Ui/`             | `apps/macos/Voyager/Voyager/04_Features/Composer/Reducer/ComposerFeature.swift`, `apps/macos/Voyager/Voyager/04_Features/UpdateVersion/Reducer/UpdaterFeature.swift`, `apps/macos/Voyager/Voyager/04_Features/BetaAccess/Reducer/BetaAccessFeature.swift` |
 | Entities  | `apps/macos/Voyager/Voyager/05_Entities/` | 엔티티별 `Api/`, `Lib/`, `Model/`, `Reducer/`, `Ui/`/`Config/` | `apps/macos/Voyager/Voyager/05_Entities/Entry/Reducer/EntriesFeature.swift`, `apps/macos/Voyager/Voyager/05_Entities/Collection/Reducer/CollectionFeature.swift`                                                                                          |
 | Shared    | `apps/macos/Voyager/Voyager/06_Shared/`   | `Api/`, `Config/`, `Lib/`, `Model/`, `Assets/`                 | `apps/macos/Voyager/Voyager/06_Shared/Api/UserDefaultsClient.swift`, `apps/macos/Voyager/Voyager/06_Shared/Config/VoyagerDS.swift`                                                                                                                        |
@@ -76,6 +82,11 @@ Voyager 타깃은 메인 프론트엔드 앱입니다. TCA를 기반으로 하�
 
 - 원칙: 위 레이어는 아래 레이어에 의존할 수 있지만, 역방향 의존은 금지합니다.
 - `01_App`/`02_Pages`는 오케스트레이션 레이어로 유지하고, 실제 도메인 로직은 `04_Features`/`05_Entities`로 내려보냅니다.
+
+의존성 방향의 의미(명확화)
+
+- `A -> B`는 "A 레이어 코드가 B 레이어 타입/함수/리듀서를 import/참조해 조립할 수 있다"는 의미입니다.
+- 반대로 `B -> A` 참조가 생기면 역방향 의존 위반으로 봅니다.
 
 레이어 순서(상위 -> 하위)
 
@@ -314,7 +325,7 @@ Voyager는 macOS 특성상 "화면 전환"이 단일 NavigationStack만으로 �
 권장 기준
 
 - 라우팅 상태는 단일 소스(State)로 유지하고, 뷰는 state를 읽어 렌더링만 담당합니다.
-- 윈도우 오픈/클로즈 같은 AppKit 연동은 `Api/*Client.swift`로 캡슐화한 뒤 `@Dependency`로 호출합니다.
+- 윈도우 오픈/클로즈, QuickLook, 시스템 서비스 호출 같은 시스템 SDK 연동은 `Api/*Client.swift`로 캡슐화한 뒤 `@Dependency`로 호출합니다.
 
 ## 사이드이펙트(Effect)와 취소(Cancellation)
 
@@ -345,6 +356,24 @@ Voyager는 TCA Dependencies 패턴으로 "외부 세계"를 캡슐화합니다.
     - 예: `apps/macos/Voyager/Voyager/04_Features/Composer/Api/SearchClient.swift`
     - 예: `apps/macos/Voyager/Voyager/05_Entities/Collection/Api/RegistryClient.swift`
 
+### Client 도입 판정 기준(중요)
+
+아래 중 하나라도 해당하면 Client(`Api/*Client.swift`)로 캡슐화합니다.
+
+- 시스템 API/IO/외부 통신/프로세스 경계 접근
+    - 파일시스템 읽기/쓰기/이동/삭제, 디렉토리 스캔, 메타데이터 조회
+    - 권한/시스템 상태(Full Disk Access, Launch at Login, System Settings)
+    - IPC/XPC/Helper 프로세스, 네트워크 호출
+    - OS 전역 서비스(NSWorkspace, pasteboard, 전역 Notification)
+- 비결정 값/환경 의존 값
+    - 시간, UUID, 랜덤, 타이머/스케줄러
+- 테스트에서 fake/stub로 대체해야 안정적으로 검증 가능한 의존성
+
+아래는 기본적으로 Client 대상이 아닙니다.
+
+- 순수 계산/정렬/필터링 같은 도메인 로직
+- 외부 경계 없는 로컬 UI 상태/레이아웃/렌더링
+
 ### live/test 값 제공
 
 - `DependencyKey`를 채택하고 `static let liveValue`를 제공합니다.
@@ -371,11 +400,20 @@ Voyager는 TCA Dependencies 패턴으로 "외부 세계"를 캡슐화합니다.
 
 | 주제              | 권장                                                             | 금지                                                                |
 | ----------------- | ---------------------------------------------------------------- | ------------------------------------------------------------------- |
-| 액션 설계         | View는 `StoreOf<ParentFeature>`에만 `send(Parent.Action)`        | View가 내부 세부 리듀서(서비스/헬퍼)의 액션을 직접 발화             |
+| 액션 설계         | `view/delegate/internal` 3계층(`Action.view`, `Action.delegate`, `Action`의 internal 계층)으로 분리 | View가 내부 세부 리듀서(서비스/헬퍼) 액션을 직접 발화하거나 `internal` 액션을 직접 발화 |
 | 대형 Feature 분해 | 부모(오케스트레이터)에서 `Scope`/서브리듀서 주입으로 관심사 분리 | `Feature+Something.swift` 확장이 무제한으로 늘어나 로직 위치가 분산 |
 | 외부 의존성       | `Api/*Client.swift` + `@Dependency`로 캡슐화                     | 전역 싱글톤/정적 함수로 외부 호출을 흩뿌리기                        |
 | Effect 수명       | `.cancellable(id:)`로 취소 가능한 구조                           | 장기 실행 Task/Notification 스트림을 방치                           |
 | 레이어 의존성     | `App/Pages`는 조립, `Features/Entities`에 로직 집중              | `Entities`가 `Pages`에 의존하거나 `Shared`가 상위 레이어를 참조     |
+
+### View 액션 경계 통일 계획 (`WithViewStore` -> `@ViewAction`)
+
+- 기본 원칙: 신규 View/수정 View는 `@ViewAction`을 우선 사용합니다.
+- 전환 원칙: 기존 `WithViewStore` 기반 화면도 기능 변경 시점에 함께 `@ViewAction`으로 점진 전환합니다.
+- 액션 모델: `Action.view(View)` + `Action.delegate(Delegate)` + `Action`의 internal 계층(`Internal`)을 기본 골격으로 사용합니다.
+- `internal` 액션은 Effect 결과/시스템 이벤트/비동기 콜백 처리 전용이며, View에서 직접 `send`하지 않습니다.
+- 지양 패턴: UI 이벤트 전달 목적의 커스텀 래퍼(예: `perform(...)`)를 새로 늘리지 않습니다.
+- 리뷰 체크: PR에서 View가 `send(.view...)` 또는 `send(...)`(`@ViewAction`) 경계만 호출하는지 확인합니다.
 
 ### 새 모듈 추가 체크리스트
 

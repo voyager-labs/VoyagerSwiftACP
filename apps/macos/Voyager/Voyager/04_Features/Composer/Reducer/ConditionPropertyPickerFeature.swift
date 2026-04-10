@@ -3,41 +3,11 @@ import Foundation
 
 @Reducer
 struct ConditionPropertyPickerFeature {
+    typealias State = ConditionPropertyPickerState
+    typealias Action = ConditionPropertyPickerAction
+
     @Dependency(\.registryClient)
     var registryClient
-
-    @ObservableState
-    struct State: Equatable {
-        var isPresented: Bool = false
-        var properties: [String] = []
-        var propertyLabels: [String: String] = [:]
-        var propertyCategories: [String: String] = [:]
-        var propertyTypes: [String: String] = [:]
-        var propertyDefaults: Set<String> = []
-
-        var searchText: String = ""
-        var mode: Mode = .root
-        var selectedCategory: String?
-        var editingConditionKey: String?
-        var duplicateMessage: String?
-        var existingKeys: Set<String> = []
-    }
-
-    enum Mode: Equatable {
-        case root
-        case category(String)
-    }
-
-    enum Action: Sendable {
-        case setPresented(Bool)
-        case onAppear
-        case searchTextChanged(String)
-        case categoryTapped(String)
-        case backFromCategory
-        case propertyTapped(String)
-        case startEditing(String)
-        case clearDuplicateMessage
-    }
 
     var body: some Reducer<State, Action> {
         Reduce { state, action in

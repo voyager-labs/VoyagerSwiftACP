@@ -3,7 +3,7 @@ import Foundation
 enum ConditionPropertyIconUtils {
     private static let keyIconMap: [String: String] = [
         "name": "doc.text",
-        "file_allocated_size": "arrow.up.left.and.arrow.down.right",
+        "size": "arrow.up.left.and.arrow.down.right",
         "content_type": "doc.text.magnifyingglass",
         "kind": "tag",
         "is_hidden": "eye.slash",

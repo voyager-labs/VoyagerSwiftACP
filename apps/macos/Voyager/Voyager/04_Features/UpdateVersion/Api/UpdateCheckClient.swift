@@ -2,6 +2,7 @@ import AppKit
 import ComposableArchitecture
 import Foundation
 @preconcurrency import Sparkle
+import VoyagerShared
 
 public struct UpdateCheckClient: Sendable {
     public var startAtLaunch: @Sendable () async -> Void
@@ -36,10 +37,12 @@ public extension DependencyValues {
 
 public extension UpdateCheckClient {
     static func live(updater: SPUUpdater) -> UpdateCheckClient {
-        UpdateCheckClient(
+        let notificationCenterClient = NotificationCenterClient.liveValue
+        return UpdateCheckClient(
             startAtLaunch: {
-                let notifications = NotificationCenter.default.notifications(
-                    named: NSWindow.didBecomeMainNotification,
+                let notifications = notificationCenterClient.notifications(
+                    NSWindow.didBecomeMainNotification,
+                    nil,
                 )
                 let isReady = await MainActor.run { NSApp.keyWindow != nil }
                 if isReady {

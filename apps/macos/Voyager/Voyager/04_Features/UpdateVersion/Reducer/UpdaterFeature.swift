@@ -1,23 +1,16 @@
 import ComposableArchitecture
 import Foundation
+import VoyagerShared
 
 @Reducer
 struct UpdaterFeature {
-    @ObservableState
-    struct State: Equatable {
-        var didConfigure = false
-        var didStartAtLaunch = false
-    }
-
-    enum Action: Sendable {
-        case configureAtLaunch
-        case startAtLaunch
-        case checkForUpdates
-        case setAutomaticUpdate(Bool)
-    }
-
     @Dependency(\.updaterClient)
     var updaterClient
+    @Dependency(\.userDefaultsClient)
+    var userDefaultsClient
+
+    typealias State = UpdaterState
+    typealias Action = UpdaterAction
 
     var body: some Reducer<State, Action> {
         Reduce { state, action in
@@ -29,6 +22,8 @@ struct UpdaterFeature {
                 state.didConfigure = true
                 return .run { _ in
                     await updaterClient.configure()
+                    let enabled = await userDefaultsClient.object(SettingsKeys.automaticUpdate) as? Bool ?? false
+                    await updaterClient.setAutomaticUpdate(enabled)
                 }
             case .startAtLaunch:
                 if state.didStartAtLaunch {

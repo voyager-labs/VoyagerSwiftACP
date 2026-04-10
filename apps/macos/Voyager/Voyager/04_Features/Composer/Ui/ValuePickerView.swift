@@ -3,6 +3,7 @@ import SwiftUI
 
 struct ValuePickerView: View {
     let store: StoreOf<ValuePickerFeature>
+
     @Environment(\.colorScheme)
     private var colorScheme
 
@@ -15,8 +16,8 @@ struct ValuePickerView: View {
                         .foregroundColor(.secondary)
                 } else if viewStore.valueArity == 1 {
                     valueField(
-                        title: fieldTitle(for: viewStore.valueType),
-                        placeholder: fieldPlaceholder(for: viewStore.valueType),
+                        title: ValuePickerDisplayUtils.fieldTitle(for: viewStore.valueType),
+                        placeholder: ValuePickerDisplayUtils.fieldPlaceholder(for: viewStore.valueType),
                         text: viewStore.binding(
                             get: { $0.values.first ?? "" },
                             send: { .setValue(index: 0, text: $0) },
@@ -25,12 +26,28 @@ struct ValuePickerView: View {
                 } else {
                     ForEach(Array(viewStore.values.enumerated()), id: \.offset) { index, _ in
                         valueField(
-                            title: fieldTitle(for: viewStore.valueType, index: index),
-                            placeholder: fieldPlaceholder(for: viewStore.valueType),
+                            title: ValuePickerDisplayUtils.fieldTitle(for: viewStore.valueType, index: index),
+                            placeholder: ValuePickerDisplayUtils.fieldPlaceholder(for: viewStore.valueType),
                             text: viewStore.binding(
-                                get: { $0.values[safe: index] ?? "" },
+                                get: { $0.values.indices.contains(index) ? $0.values[index] : "" },
                                 send: { .setValue(index: index, text: $0) },
                             ),
+                        )
+                    }
+                }
+
+                if let unitValueState = viewStore.unitValueState {
+                    HStack {
+                        Spacer()
+                        UnitSelectorView(
+                            availableUnitCodes: unitValueState.availableUnitCodes,
+                            selectedUnitCode: unitValueState.selectedUnitCode,
+                            selectedUnitLabel: UnitValuePresentationUtils.label(
+                                for: unitValueState.selectedUnitCode,
+                                state: unitValueState,
+                            ),
+                            labelForUnit: { UnitValuePresentationUtils.label(for: $0, state: unitValueState) },
+                            onSelect: { viewStore.send(.selectUnit($0)) },
                         )
                     }
                 }
@@ -68,44 +85,5 @@ struct ValuePickerView: View {
                 .textFieldStyle(.roundedBorder)
                 .font(.system(size: 12))
         }
-    }
-
-    private func fieldTitle(for valueType: String, index: Int? = nil) -> String {
-        let base = switch valueType {
-        case "string":
-            "Text"
-        case "number":
-            "Number"
-        case "date", "datetime":
-            "Date"
-        case "boolean":
-            "Boolean"
-        case "string_list":
-            "List"
-        case "categorical":
-            "List"
-        default:
-            "Value"
-        }
-
-        if let index {
-            return index == 0 ? "\(base) (from)" : "\(base) (to)"
-        }
-        return base
-    }
-
-    private func fieldPlaceholder(for valueType: String) -> String {
-        switch valueType {
-        case "number":
-            "Number Value"
-        default:
-            "Enter value"
-        }
-    }
-}
-
-private extension Array {
-    subscript(safe index: Index) -> Element? {
-        indices.contains(index) ? self[index] : nil
     }
 }

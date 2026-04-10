@@ -16,19 +16,15 @@ final class VoyagerUITests: XCTestCase {
     }
 
     @MainActor
-    func testExample() throws {
-        // UI tests must launch the application that they test.
+    func testAppLaunchSmoke() throws {
         let app = XCUIApplication()
         app.launch()
 
-        // Use XCTAssert and related functions to verify your tests produce the correct results.
-    }
+        XCTAssertEqual(app.state, .runningForeground)
 
-    @MainActor
-    func testLaunchPerformance() throws {
-        // This measures how long it takes to launch your application.
-        measure(metrics: [XCTApplicationLaunchMetric()]) {
-            XCUIApplication().launch()
-        }
+        let attachment = XCTAttachment(screenshot: app.screenshot())
+        attachment.name = "Voyager UI Smoke"
+        attachment.lifetime = .keepAlways
+        add(attachment)
     }
 }

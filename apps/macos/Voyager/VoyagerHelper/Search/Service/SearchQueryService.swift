@@ -1,13 +1,19 @@
 import Foundation
 import Logging
 
+protocol SearchExecutionServicing: Sendable {
+    func applyFilters(_ filters: SearchFiltersPayload) async throws -> SearchResponsePayload
+    func searchRecent(_ request: RecentSearchRequestPayload) async throws -> RecentSearchResponsePayload
+    func searchTag(_ request: TagSearchRequestPayload) async throws -> TagSearchResponsePayload
+}
+
 struct SearchQueryService: Sendable {
-    private let searchService: SpotlightSearchService
+    private let searchService: any SearchExecutionServicing
     private let converter: GatewayQueryConverter
     private let logger: Logger
 
     init(
-        searchService: SpotlightSearchService,
+        searchService: any SearchExecutionServicing,
         converter: GatewayQueryConverter = GatewayQueryConverter(
             logger: Logger(label: "VoyagerHelper.GatewayQueryConverter"),
         ),
@@ -16,45 +22,6 @@ struct SearchQueryService: Sendable {
         self.searchService = searchService
         self.converter = converter
         self.logger = logger
-    }
-
-    nonisolated func querySearch(
-        _ request: SearchRequestPayload,
-    ) async throws -> SearchResponsePayload {
-        let trimmedQuery = request.query.trimmingCharacters(in: .whitespacesAndNewlines)
-
-        guard trimmedQuery.isEmpty == false else {
-            return try await searchService.applyFilters(request.filters)
-        }
-
-        let conversion = await converter.convert(query: trimmedQuery, existingFilters: request.filters)
-
-        if let llmError = conversion.error,
-           llmError.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty == false
-        {
-            logger.warning("Gateway query interpretation failed: \(llmError)")
-            return makeErrorResponse(
-                code: "LLM_CONVERSION_FAILED",
-                details: llmError,
-                fallbackFilters: request.filters,
-            )
-        }
-
-        let plannedFilters = SearchFiltersPayload(
-            scopes: conversion.scopes ?? request.filters.scopes,
-            conditions: conversion.conditions,
-        )
-
-        do {
-            return try await searchService.applyFilters(plannedFilters)
-        } catch {
-            logger.warning("Local query execution failed: \(error)")
-            return makeErrorResponse(
-                code: "QUERY_SEARCH_FAILED",
-                details: String(describing: error),
-                fallbackFilters: plannedFilters,
-            )
-        }
     }
 
     private nonisolated func makeErrorResponse(
@@ -71,5 +38,83 @@ struct SearchQueryService: Sendable {
             items: [],
             error: SearchErrorPayload(code: code, details: details),
         )
+    }
+
+    private nonisolated func resolveScopes(
+        queryScopes: [String]?,
+        chipsScopes: [String],
+    ) -> [String] {
+        if let queryScopes {
+            let cleanedQueryScopes = cleanScopes(queryScopes)
+            if cleanedQueryScopes.isEmpty == false {
+                return cleanedQueryScopes
+            }
+        }
+
+        return chipsScopes
+    }
+
+    private nonisolated func cleanScopes(_ scopes: [String]) -> [String] {
+        scopes
+            .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+            .filter { $0.isEmpty == false }
+    }
+
+    nonisolated func querySearch(
+        _ request: SearchRequestPayload,
+    ) async -> SearchResponsePayload {
+        let trimmedQuery = request.query.trimmingCharacters(in: .whitespacesAndNewlines)
+
+        guard trimmedQuery.isEmpty == false else {
+            return SearchResponsePayload(
+                itemCount: 0,
+                appliedFilters: AppliedFiltersPayload(
+                    scopes: request.filters.scopes,
+                    conditions: request.filters.conditions,
+                ),
+                items: nil,
+                error: nil,
+            )
+        }
+
+        let conversion = await converter.convert(query: trimmedQuery, existingFilters: request.filters)
+
+        if let llmError = conversion.error,
+           llmError.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty == false
+        {
+            logger.warning("Gateway query interpretation failed: \(llmError)")
+            return makeErrorResponse(
+                code: "LLM_CONVERSION_FAILED",
+                details: llmError,
+                fallbackFilters: request.filters,
+            )
+        }
+
+        let chipsScopes = cleanScopes(request.filters.scopes)
+        let resolvedScopes = resolveScopes(
+            queryScopes: conversion.scopes,
+            chipsScopes: chipsScopes,
+        )
+
+        let plannedFilters = SearchFiltersPayload(
+            scopes: resolvedScopes,
+            conditions: conversion.conditions,
+        )
+
+        return SearchResponsePayload(
+            itemCount: 0,
+            appliedFilters: AppliedFiltersPayload(
+                scopes: plannedFilters.scopes,
+                conditions: plannedFilters.conditions,
+            ),
+            items: nil,
+            error: nil,
+        )
+    }
+
+    nonisolated func executeQuery(
+        _ filters: SearchFiltersPayload,
+    ) async throws -> SearchResponsePayload {
+        try await searchService.applyFilters(filters)
     }
 }

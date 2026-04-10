@@ -1,36 +1,46 @@
 import ComposableArchitecture
 import Foundation
 import Logging
+import VoyagerPagesOnboarding
+import VoyagerShared
 
 @Reducer
 struct AppLifecycleFeature {
-    private enum CancelID {
-        static let helperMonitor = "helperMonitor"
-    }
-
-    @ObservableState
-    struct State: Equatable {
-        var didStartHelper = false
-    }
-
-    enum Action: Sendable {
-        case willFinishLaunching
-        case didFinishLaunching
-        case willTerminate
-    }
+    typealias State = AppLifecycleState
+    typealias Action = AppLifecycleAction
 
     @Dependency(\.helperAppClient)
     var helperAppClient
     @Dependency(\.helperStateClient)
     var helperStateClient
-
+    @Dependency(\.appearanceSettingsClient)
+    var appearanceSettingsClient
     @Dependency(\.onboardingWindowClient)
     var onboardingWindowClient
+    @Dependency(\.userDefaultsClient)
+    var userDefaultsClient
+    @Dependency(\.quitConfirmationClient)
+    var quitConfirmationClient
+    @Dependency(\.appTerminationReplyClient)
+    var appTerminationReplyClient
+    @Dependency(\.uuid)
+    var uuid
+
+    private enum CancelID {
+        static let helperMonitor = "helperMonitor"
+    }
 
     var body: some Reducer<State, Action> {
         Reduce { state, action in
             switch action {
-            case .willFinishLaunching:
+            case .launch(.willFinishLaunching):
+                let theme = appearanceSettingsClient.loadTheme()
+                appearanceSettingsClient.applyThemeSync(theme)
+
+                if isRunningXCTest() {
+                    return .none
+                }
+
                 try? EnvironmentLoader.loadEnvFiles()
                 let userId = DeviceIdentifierProvider.current()
                 let appVersion = AppVersionInfo.shortVersion
@@ -47,62 +57,175 @@ struct AppLifecycleFeature {
                 state.didStartHelper = true
                 let helperClient = helperAppClient
                 let stateClient = helperStateClient
-                return .run { _ in
-                    let logger = Logger(label: "Voyager")
 
+                return .run { _ in
                     let currentBundleVersion = Bundle.main.infoDictionary?["CFBundleVersion"] as? String
 
                     async let monitor: Void = {
-                        var recentRestarts: [Date] = []
-
-                        func recordRestartIfAllowed() -> Bool {
-                            let now = Date()
-                            recentRestarts = recentRestarts.filter { now.timeIntervalSince($0) <= 60 }
-                            if recentRestarts.count >= 3 {
-                                logger.error("helper_restart_rate_limited")
-                                return false
-                            }
-                            recentRestarts.append(now)
-                            return true
-                        }
+                        var policy = HelperSupervisionPolicy()
 
                         for await _ in helperClient.terminationEvents() {
                             if await VoyagerTerminationCoordinator.shared.isTerminating() {
-                                logger.info("helper_monitor_skip_due_to_termination")
-                                break
+                                continue
                             }
 
-                            guard recordRestartIfAllowed() else {
-                                break
-                            }
+                            let decision = policy.recordRestartAttempt()
 
-                            await helperClient.start()
-                            _ = await helperClient.resolveAlignedState(
-                                stateClient: stateClient,
-                                mainBundleVersion: currentBundleVersion,
-                                logger: logger,
-                            )
+                            switch decision {
+                            case .allowed:
+                                await helperClient.ensureRunning()
+
+                            case let .cooldown(activeUntil):
+                                let delay = activeUntil.timeIntervalSinceNow
+                                if delay > 0 {
+                                    try? await Task.sleep(nanoseconds: UInt64(delay * 1_000_000_000))
+                                    let isRunning = await helperClient.isRunning()
+                                    if !isRunning {
+                                        let newDecision = policy.recordRestartAttempt()
+                                        switch newDecision {
+                                        case .allowed:
+                                            await helperClient.ensureRunning()
+                                        default:
+                                            break
+                                        }
+                                    }
+                                }
+
+                            case let .graceWindow(activeUntil):
+                                let delay = activeUntil.timeIntervalSinceNow
+                                if delay > 0 {
+                                    try? await Task.sleep(nanoseconds: UInt64(delay * 1_000_000_000))
+                                    let isRunning = await helperClient.isRunning()
+                                    if !isRunning {
+                                        let newDecision = policy.recordRestartAttempt()
+                                        switch newDecision {
+                                        case .allowed:
+                                            await helperClient.ensureRunning()
+                                        default:
+                                            break
+                                        }
+                                    }
+                                }
+                            }
                         }
                     }()
 
                     let initialState = await helperClient.resolveAlignedState(
                         stateClient: stateClient,
                         mainBundleVersion: currentBundleVersion,
-                        logger: logger,
                     )
                     _ = initialState
                     _ = await monitor
                 }
                 .cancellable(id: CancelID.helperMonitor, cancelInFlight: true)
-            case .didFinishLaunching:
-                return .run { [onboardingWindowClient] _ in
-                    _ = onboardingWindowClient.showIfNeeded()
+
+            case .launch(.didFinishLaunching):
+                if isRunningXCTest() {
+                    return .none
                 }
-            case .willTerminate:
+                if onboardingWindowClient.showIfNeeded() {
+                    return .none
+                }
+                return .send(.delegate(.openInitialWindowIfNeeded))
+
+            case let .launch(.appReopen(hasVisibleWindows: flag)):
+                if isRunningXCTest() {
+                    return .none
+                }
+                if onboardingWindowClient.showIfNeeded() {
+                    return .none
+                }
+                return .send(.delegate(.reopenWindowIfNeeded(hasVisibleWindows: flag)))
+
+            case .termination(.requestTermination):
+                guard state.terminationAttemptID == nil else {
+                    return .none
+                }
+
+                let attemptID = uuid()
+                state.terminationAttemptID = attemptID
+
+                let shouldAlert = userDefaultsClient.bool(SettingsKeys.alertBeforeQuit)
+                guard shouldAlert else {
+                    return .send(.termination(.startTerminationCleanup(attemptID: attemptID)))
+                }
+
+                let quitConfirmationClient = quitConfirmationClient
+                return .run { send in
+                    let result = await quitConfirmationClient.confirmQuit(false, shouldAlert)
+                    await send(.termination(.quitConfirmationResponse(attemptID: attemptID, result: result)))
+                }
+
+            case let .termination(.quitConfirmationResponse(attemptID: attemptID, result: result)):
+                guard state.terminationAttemptID == attemptID else {
+                    return .none
+                }
+
+                userDefaultsClient.setBool(result.isAlertBeforeQuitEnabled, SettingsKeys.alertBeforeQuit)
+
+                guard result.shouldQuit else {
+                    state.terminationAttemptID = nil
+
+                    let appTerminationReplyClient = appTerminationReplyClient
+                    return .run { _ in
+                        await VoyagerTerminationCoordinator.shared.end()
+                        await appTerminationReplyClient.reply(false)
+                    }
+                }
+
+                return .send(.termination(.startTerminationCleanup(attemptID: attemptID)))
+
+            case let .termination(.startTerminationCleanup(attemptID: attemptID)):
+                guard state.terminationAttemptID == attemptID else {
+                    return .none
+                }
+
+                let helperAppClient = helperAppClient
+                return .merge(
+                    .run { send in
+                        await VoyagerTerminationCoordinator.shared.begin(.userQuit)
+                        await send(.termination(.willTerminate))
+
+                        await helperAppClient.stop()
+
+                        await send(.termination(.completeTerminationAttempt(
+                            attemptID: attemptID,
+                            shouldTerminate: true,
+                        )))
+                    },
+                    .run { send in
+                        try? await Task.sleep(nanoseconds: 5_000_000_000)
+                        await send(.termination(.completeTerminationAttempt(
+                            attemptID: attemptID,
+                            shouldTerminate: true,
+                        )))
+                    },
+                )
+
+            case let .termination(.completeTerminationAttempt(attemptID: attemptID, shouldTerminate: shouldTerminate)):
+                guard state.terminationAttemptID == attemptID else {
+                    return .none
+                }
+
+                state.terminationAttemptID = nil
+
+                let appTerminationReplyClient = appTerminationReplyClient
+                return .run { _ in
+                    await appTerminationReplyClient.reply(shouldTerminate)
+                }
+
+            case .termination(.willTerminate):
                 return .cancel(id: CancelID.helperMonitor)
+
+            case .delegate:
+                return .none
             }
         }
     }
+}
+
+private func isRunningXCTest() -> Bool {
+    ProcessInfo.processInfo.environment["XCTestConfigurationFilePath"] != nil
 }
 
 actor VoyagerTerminationCoordinator {

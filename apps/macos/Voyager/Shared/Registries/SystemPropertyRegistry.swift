@@ -8,7 +8,7 @@ struct SystemPropertyDefinition: Decodable, Equatable, Sendable {
     let legacyKeys: [String]?
     let systemKeys: [String]
     let availability: String?
-    let valueFormat: String?
+    let unitSpec: SystemPropertyUnitSpec?
     let dbIndexed: Bool?
     let uiPinned: Bool?
     let uiHidden: Bool?
@@ -21,10 +21,34 @@ struct SystemPropertyDefinition: Decodable, Equatable, Sendable {
         case legacyKeys = "legacy_keys"
         case systemKeys = "system_keys"
         case availability
-        case valueFormat = "value_format"
+        case unitSpec = "unit_spec"
         case dbIndexed = "db_indexed"
         case uiPinned = "ui_pinned"
         case uiHidden = "ui_hidden"
+    }
+}
+
+struct SystemPropertyUnitSpec: Decodable, Equatable, Sendable {
+    let canonicalUnit: String
+    let units: [SystemPropertyUnitOption]
+    let defaultDisplayUnit: String
+
+    private enum CodingKeys: String, CodingKey {
+        case canonicalUnit = "canonical_unit"
+        case units
+        case defaultDisplayUnit = "default_display_unit"
+    }
+}
+
+struct SystemPropertyUnitOption: Decodable, Equatable, Sendable {
+    let code: String
+    let label: String
+    let factorToCanonical: String
+
+    private enum CodingKeys: String, CodingKey {
+        case code
+        case label
+        case factorToCanonical = "factor_to_canonical"
     }
 }
 

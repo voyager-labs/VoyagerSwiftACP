@@ -3,19 +3,8 @@ import Foundation
 
 @Reducer
 struct OperatorPickerFeature {
-    @ObservableState
-    struct State: Equatable {
-        var isPresented: Bool = false
-        var options: [String] = []
-        var optionLabels: [String: String] = [:]
-        var propertyKey: String?
-    }
-
-    enum Action: Sendable {
-        case setPresented(Bool)
-        case prepare(propertyKey: String, options: [String], optionLabels: [String: String])
-        case select(String)
-    }
+    typealias State = OperatorPickerState
+    typealias Action = OperatorPickerAction
 
     var body: some Reducer<State, Action> {
         Reduce { state, action in
@@ -30,7 +19,9 @@ struct OperatorPickerFeature {
             case let .prepare(propertyKey, options, optionLabels):
                 state.propertyKey = propertyKey
                 state.options = options
-                state.optionLabels = optionLabels
+                if !optionLabels.isEmpty {
+                    state.optionLabels = optionLabels
+                }
                 state.isPresented = true
                 return .none
 

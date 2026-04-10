@@ -2,16 +2,115 @@ import AppKit
 import ComposableArchitecture
 import SwiftUI
 
+@ViewAction(for: MenuCommandsFeature.self)
 struct EditMenuCommands: Commands {
-    @ObservedObject private var appDelegate: AppDelegate
     private let undoSelector = Selector(("undo:"))
     private let redoSelector = Selector(("redo:"))
 
-    init() {
-        guard let shared = AppDelegate.shared else {
-            fatalError("AppDelegate.shared must be initialized before EditMenuCommands")
+    let store: StoreOf<MenuCommandsFeature>
+
+    @ObservedObject private var viewStore: ViewStore<MenuCommandsState, MenuCommandsAction>
+
+    init(appRootStore: StoreOf<AppRootFeature>) {
+        let menuStore = appRootStore.scope(state: \.menuCommands, action: \.menuCommands)
+        store = menuStore
+        viewStore = ViewStore(
+            menuStore,
+            observe: { $0 },
+        )
+    }
+
+    var body: some Commands {
+        let canUndoResponder = canUndoInTextResponder()
+        let canRedoResponder = canRedoInTextResponder()
+        let canUndo = canUndoResponder || viewStore.canUndo
+        let canRedo = canRedoResponder || viewStore.canRedo
+
+        let selectedCount = viewStore.selectedItemCount
+        let hasSelectedItems = selectedCount > 0
+        let copyAbsolutePathTitle = selectedCount == 1 ? "Copy Absolute Path" : "Copy Absolute Paths"
+        let copyURLTitle = selectedCount == 1 ? "Copy URL" : "Copy URLs"
+
+        CommandGroup(replacing: .undoRedo) {
+            Button("Undo") {
+                sendUndoRedoAction(
+                    canHandleByTextResponder: canUndoInTextResponder(),
+                    selector: undoSelector,
+                    fallback: .requestUndo,
+                )
+            }
+            .keyboardShortcut("z", modifiers: .command)
+            .disabled(!canUndo)
+
+            Button("Redo") {
+                sendUndoRedoAction(
+                    canHandleByTextResponder: canRedoInTextResponder(),
+                    selector: redoSelector,
+                    fallback: .requestRedo,
+                )
+            }
+            .keyboardShortcut("z", modifiers: [.command, .shift])
+            .disabled(!canRedo)
         }
-        appDelegate = shared
+
+        CommandGroup(after: .undoRedo) {
+            let isComposerPresented = viewStore.isComposerPresented
+            let composerTitle = isComposerPresented
+                ? "Close Collection Filter Composer"
+                : "Open Collection Filter Composer"
+            Button(composerTitle) {
+                sendEditCommand(.toggleComposer)
+            }
+            .keyboardShortcut("f", modifiers: .command)
+            .disabled(!viewStore.hasFocusedWindow)
+        }
+
+        CommandGroup(replacing: .pasteboard) {
+            Button("Cut") {
+                sendTextResponderAction(#selector(NSText.cut(_:)), fallback: .cut)
+            }
+            .keyboardShortcut("x", modifiers: .command)
+
+            Button("Copy") {
+                sendTextResponderAction(#selector(NSText.copy(_:)), fallback: .copy)
+            }
+            .keyboardShortcut("c", modifiers: .command)
+
+            Divider()
+
+            Button(copyAbsolutePathTitle) {
+                sendEditCommand(.copyAbsolutePaths)
+            }
+            .disabled(!hasSelectedItems)
+
+            Button(copyURLTitle) {
+                sendEditCommand(.copyURLs)
+            }
+            .disabled(!hasSelectedItems)
+
+            Button("Paste") {
+                sendTextResponderAction(#selector(NSText.paste(_:)), fallback: .paste)
+            }
+            .keyboardShortcut("v", modifiers: .command)
+
+            Button("Duplicate") {
+                sendEditCommand(.duplicate)
+            }
+            .keyboardShortcut("d", modifiers: .command)
+            .disabled(!hasSelectedItems)
+
+            Button("Make Alias") {
+                sendEditCommand(.makeAlias)
+            }
+            .disabled(!hasSelectedItems)
+        }
+
+        CommandGroup(replacing: .textEditing) {
+            Button("Select All") {
+                sendTextResponderAction(#selector(NSText.selectAll(_:)), fallback: .selectAll)
+            }
+            .keyboardShortcut("a", modifiers: .command)
+        }
     }
 
     private func isTextEditingResponder() -> Bool {
@@ -33,118 +132,26 @@ struct EditMenuCommands: Commands {
         return textResponderUndoManager()?.canRedo == true
     }
 
-    var body: some Commands {
-        let canUndoResponder = canUndoInTextResponder()
-        let canRedoResponder = canRedoInTextResponder()
-        let canUndo = canUndoResponder || appDelegate.canUndo
-        let canRedo = canRedoResponder || appDelegate.canRedo
+    private func sendEditCommand(_ command: MenuCommandItem.EditCommand) {
+        send(.edit(command))
+    }
 
-        let selectedCount = appDelegate.currentFileManagerStore?.entries.selectedIds.count ?? 0
-        let copyAbsolutePathTitle = selectedCount == 1 ? "Copy Absolute Path" : "Copy Absolute Paths"
-        let copyURLTitle = selectedCount == 1 ? "Copy URL" : "Copy URLs"
+    private func sendTextResponderAction(_ selector: Selector, fallback command: MenuCommandItem.EditCommand) {
+        guard !NSApp.sendAction(selector, to: nil, from: nil) else { return }
+        sendEditCommand(command)
+    }
 
-        CommandGroup(replacing: .undoRedo) {
-            Button("Undo") {
-                if canUndoInTextResponder(),
-                   NSApp.sendAction(undoSelector, to: nil, from: nil)
-                {
-                    return
-                }
-                appDelegate.currentFileManagerStore?.send(.entries(.requestUndo))
-            }
-            .keyboardShortcut("z", modifiers: .command)
-            .disabled(!canUndo)
-
-            Button("Redo") {
-                if canRedoInTextResponder(),
-                   NSApp.sendAction(redoSelector, to: nil, from: nil)
-                {
-                    return
-                }
-                appDelegate.currentFileManagerStore?.send(.entries(.requestRedo))
-            }
-            .keyboardShortcut("z", modifiers: [.command, .shift])
-            .disabled(!canRedo)
+    private func sendUndoRedoAction(
+        canHandleByTextResponder: Bool,
+        selector: Selector,
+        fallback command: MenuCommandItem.EditCommand,
+    ) {
+        if canHandleByTextResponder,
+           NSApp.sendAction(selector, to: nil, from: nil)
+        {
+            return
         }
 
-        CommandGroup(after: .undoRedo) {
-            let isComposerPresented = appDelegate.currentFileManagerStore?.composer.isPresented == true
-            let composerTitle = isComposerPresented
-                ? "Close Collection Filter Composer"
-                : "Open Collection Filter Composer"
-            Button(composerTitle) {
-                guard let store = appDelegate.currentFileManagerStore else { return }
-                if store.composer.isPresented {
-                    store.send(.exitComposer)
-                } else {
-                    store.send(.enterComposer)
-                }
-            }
-            .keyboardShortcut("f", modifiers: .command)
-            .disabled(appDelegate.currentFileManagerStore == nil)
-        }
-
-        CommandGroup(replacing: .pasteboard) {
-            Button("Cut") {
-                if NSApp.sendAction(#selector(NSText.cut(_:)), to: nil, from: nil) {
-                } else {
-                    appDelegate.currentFileManagerStore?.send(.entries(.cutSelectedItems))
-                }
-            }
-            .keyboardShortcut("x", modifiers: .command)
-            .disabled(false)
-
-            Button("Copy") {
-                if NSApp.sendAction(#selector(NSText.copy(_:)), to: nil, from: nil) {
-                } else {
-                    appDelegate.currentFileManagerStore?.send(.entries(.copySelectedItems))
-                }
-            }
-            .keyboardShortcut("c", modifiers: .command)
-            .disabled(false)
-
-            Divider()
-
-            Button(copyAbsolutePathTitle) {
-                appDelegate.currentFileManagerStore?.send(.entries(.copySelectedAbsolutePaths))
-            }
-            .disabled(appDelegate.currentFileManagerStore?.entries.selectedIds.isEmpty ?? true)
-
-            Button(copyURLTitle) {
-                appDelegate.currentFileManagerStore?.send(.entries(.copySelectedURLs))
-            }
-            .disabled(appDelegate.currentFileManagerStore?.entries.selectedIds.isEmpty ?? true)
-
-            Button("Paste") {
-                if NSApp.sendAction(#selector(NSText.paste(_:)), to: nil, from: nil) {
-                } else if let currentPath = appDelegate.currentFileManagerStore?.currentPath {
-                    appDelegate.currentFileManagerStore?.send(.entries(.pasteItems(destinationPath: currentPath)))
-                }
-            }
-            .keyboardShortcut("v", modifiers: .command)
-            .disabled(false)
-
-            Button("Duplicate") {
-                appDelegate.currentFileManagerStore?.send(.entries(.duplicateSelectedItems))
-            }
-            .keyboardShortcut("d", modifiers: .command)
-            .disabled(appDelegate.currentFileManagerStore?.entries.selectedIds.isEmpty ?? true)
-
-            Button("Make Alias") {
-                appDelegate.currentFileManagerStore?.send(.entries(.createAliasForSelectedItems))
-            }
-            .disabled(appDelegate.currentFileManagerStore?.entries.selectedIds.isEmpty ?? true)
-        }
-
-        CommandGroup(replacing: .textEditing) {
-            Button("Select All") {
-                if NSApp.sendAction(#selector(NSText.selectAll(_:)), to: nil, from: nil) {
-                } else {
-                    appDelegate.currentFileManagerStore?.send(.entries(.selectAll))
-                }
-            }
-            .keyboardShortcut("a", modifiers: .command)
-            .disabled(false)
-        }
+        sendEditCommand(command)
     }
 }

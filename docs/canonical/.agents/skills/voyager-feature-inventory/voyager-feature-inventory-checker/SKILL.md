@@ -69,6 +69,7 @@ Use when the user asks "관련 기능 찾아줘" or "어떤 feature 변경 필�
 Important: this is not true vector semantic search. It is high-recall discovery via bilingual keyword expansion + deterministic ID validation.
 
 1. Build bilingual keyword packs from the request.
+   <<<<<<< HEAD
     - Prefer inventory language, not implementation buzzwords.
     - Example packs:
         - `결정론`, `deterministic`, `후보`, `candidate`
@@ -83,7 +84,20 @@ Important: this is not true vector semantic search. It is high-recall discovery 
 5. Classify output as:
     - `must-update`: directly conflicts with requested change
     - `consider-update`: adjacent behavior/wording likely affected
-    - `no-change`: related domain but no required row changes
+    - # `no-change`: related domain but no required row changes
+    - Prefer inventory language, not implementation buzzwords.
+    - Example packs:
+        - `결정론`, `deterministic`, `후보`, `candidate`
+        - `시스템 프로퍼티`, `system property`, `메타데이터`, `metadata`
+        - `인덱싱`, `indexing`, `필터`, `filter`
+6. Run broad searches with `vfi.py search` for each keyword.
+    - Use `--scope all` and larger `--limit` (50-100) for recall.
+7. Run `check_feature.py "<keyword>" --match contains` for ambiguous terms.
+    - This searches `feature_id`, `feature_title`, `description`.
+    - If ambiguous, it prints candidate IDs; use those IDs next.
+8. Validate each candidate ID with exact `check_feature.py <id>`.
+9. Classify output as: - `must-update`: directly conflicts with requested change - `consider-update`: adjacent behavior/wording likely affected - `no-change`: related domain but no required row changes
+    > > > > > > > develop
 
 Recommended command pattern:
 
@@ -101,10 +115,16 @@ python3 .agents/skills/voyager-feature-inventory/voyager-feature-inventory-check
 
 - Finds the matching row(s) in FEATURES and prints a compact report
 - Matching modes:
+  <<<<<<< HEAD
     - `id`: exact feature_id
     - `title`: exact title
     - `contains`: substring search over `feature_id`, `feature_title`, `description`
-    - `auto`: picks `id` for `ABC-123` patterns, otherwise `contains`
+    - # `auto`: picks `id` for `ABC-123` patterns, otherwise `contains`
+            - `id`: exact feature_id
+            - `title`: exact title
+            - `contains`: substring search over `feature_id`, `feature_title`, `description`
+            - `auto`: picks `id` for `ABC-123` patterns, otherwise `contains`
+        > > > > > > > develop
 - Validates required fields (ex: `feature_category`, `category_key`, `feature_title`, `feature_id`)
 - Checks category consistency:
     - FEATURES.category_key exists in FEATURE_CATEGORIES.category_key
