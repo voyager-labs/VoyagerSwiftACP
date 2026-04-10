@@ -396,6 +396,7 @@ final class EntryListEntryCellView: NSTableCellView {
         let alpha: CGFloat = (isHiddenEntry || isCutEntry) ? 0.5 : 1.0
         customImageView.alphaValue = alpha
         customTextField.alphaValue = alpha
+        tagStackView.alphaValue = alpha
     }
 }
 

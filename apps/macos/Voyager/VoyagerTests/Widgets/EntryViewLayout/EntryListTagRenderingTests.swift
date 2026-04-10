@@ -79,14 +79,30 @@ final class EntryListTagRenderingTests: XCTestCase {
         XCTAssertEqual(tagStack.spacing, -3)
     }
 
-    private func makeCell(tags: [Tag]?) -> EntryListEntryCellView {
+    func testVOY216NameCellDimsTagDotsForHiddenEntries() throws {
+        let tags = [Tag(name: "Work", colorCode: 4)]
+        let cell = makeCell(tags: tags, isHidden: true)
+
+        let tagStack = try XCTUnwrap(findTagStack(in: cell))
+        XCTAssertEqual(tagStack.alphaValue, 0.5)
+    }
+
+    func testVOY216NameCellDimsTagDotsForCutEntries() throws {
+        let tags = [Tag(name: "Work", colorCode: 4)]
+        let cell = makeCell(tags: tags, isCut: true)
+
+        let tagStack = try XCTUnwrap(findTagStack(in: cell))
+        XCTAssertEqual(tagStack.alphaValue, 0.5)
+    }
+
+    private func makeCell(tags: [Tag]?, isHidden: Bool = false, isCut: Bool = false) -> EntryListEntryCellView {
         let cell = EntryListEntryCellView(frame: NSRect(x: 0, y: 0, width: 300, height: 28))
         let date = Date(timeIntervalSince1970: 1_700_000_000)
         let entry = EntryModel(
             name: "example.txt",
             fullPath: "/tmp/example.txt",
             isFolder: false,
-            isHidden: false,
+            isHidden: isHidden,
             size: 128,
             modifiedDate: date,
             fileExtension: "txt",
@@ -108,8 +124,8 @@ final class EntryListTagRenderingTests: XCTestCase {
             textSize: 13,
             dateModifiedWidth: 220,
             thumbnail: nil,
-            isHidden: false,
-            isCut: false,
+            isHidden: isHidden,
+            isCut: isCut,
             isRenaming: false,
             renamingText: "",
             workspaceClient: .testValue,
