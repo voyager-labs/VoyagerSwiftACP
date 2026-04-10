@@ -19,6 +19,14 @@ struct EntryOperationsLifecycleReducer {
     var body: some Reducer<State, Action> {
         Reduce { state, action in
             switch action {
+            case let .lifecycle(.windowIDChanged(id)):
+                state.windowID = id
+                return .none
+
+            case let .lifecycle(.resetForDuplicate(windowID)):
+                state.resetForDuplicate(windowID: windowID)
+                return .none
+
             case let .lifecycle(.syncSelectedEntryIDs(ids)):
                 state.selectedEntryIDs = ids
                 return .none

@@ -11,8 +11,8 @@ final class WindowManagerFeatureContractTests: XCTestCase {
 
         var initialState = WindowManagerFeature.State()
         initialState.windows = [
-            WindowSessionState(id: firstID, window: .makeInitial(windowID: firstID, path: "/a")),
-            WindowSessionState(id: secondID, window: .makeInitial(windowID: secondID, path: "/b")),
+            WindowSessionState(id: firstID, window: .makeInitial(path: "/a")),
+            WindowSessionState(id: secondID, window: .makeInitial(path: "/b")),
         ]
 
         var preferences = AppPreferencesState()
@@ -37,7 +37,7 @@ final class WindowManagerFeatureContractTests: XCTestCase {
 
         var initialState = WindowManagerFeature.State()
         initialState.windows = [
-            WindowSessionState(id: focusedID, window: .makeInitial(windowID: focusedID, path: "/tmp")),
+            WindowSessionState(id: focusedID, window: .makeInitial(path: "/tmp")),
         ]
         initialState.focusedWindowID = focusedID
 
@@ -54,7 +54,7 @@ final class WindowManagerFeatureContractTests: XCTestCase {
 
         var initialState = WindowManagerFeature.State()
         initialState.windows = [
-            WindowSessionState(id: focusedID, window: .makeInitial(windowID: focusedID, path: "/tmp")),
+            WindowSessionState(id: focusedID, window: .makeInitial(path: "/tmp")),
         ]
         initialState.focusedWindowID = focusedID
 
@@ -71,7 +71,7 @@ final class WindowManagerFeatureContractTests: XCTestCase {
 
         var initialState = WindowManagerFeature.State()
         initialState.windows = [
-            WindowSessionState(id: focusedID, window: .makeInitial(windowID: focusedID, path: "/tmp")),
+            WindowSessionState(id: focusedID, window: .makeInitial(path: "/tmp")),
         ]
         initialState.focusedWindowID = focusedID
 
@@ -88,7 +88,7 @@ final class WindowManagerFeatureContractTests: XCTestCase {
 
         var initialState = WindowManagerFeature.State()
         initialState.windows = [
-            WindowSessionState(id: focusedID, window: .makeInitial(windowID: focusedID, path: "/tmp")),
+            WindowSessionState(id: focusedID, window: .makeInitial(path: "/tmp")),
         ]
         initialState.focusedWindowID = focusedID
 

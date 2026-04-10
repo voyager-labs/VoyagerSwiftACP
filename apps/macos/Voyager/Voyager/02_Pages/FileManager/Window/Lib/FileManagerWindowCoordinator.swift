@@ -58,13 +58,20 @@ final class FileManagerWindowCoordinator: NSWindowController, NSWindowDelegate {
         makeContentViewController: ((StoreOf<FileManagerFeature>, String?) -> NSViewController)? = nil,
     ) {
         let windowID = UUID()
-        let state = Self.createInitialState(windowID: windowID, path: path, duplicateState: duplicateState)
+        let state = Self.createInitialState(path: path, duplicateState: duplicateState)
         let undoManager = UndoManager()
         let store = Self.createStore(
             state: state,
             undoManager: undoManager,
             registryClient: registryClient,
         )
+
+        // Route windowID initialization through the lifecycle reducer
+        if duplicateState != nil {
+            store.send(.content(.entryViewLayout(.entryOperations(.lifecycle(.resetForDuplicate(windowID: windowID))))))
+        } else {
+            store.send(.content(.entryViewLayout(.entryOperations(.lifecycle(.windowIDChanged(windowID))))))
+        }
 
         self.windowID = windowID
         self.store = store
@@ -92,18 +99,13 @@ final class FileManagerWindowCoordinator: NSWindowController, NSWindowDelegate {
     }
 
     static func createInitialState(
-        windowID: UUID,
         path: String?,
         duplicateState: FileManagerFeature.State?,
     ) -> FileManagerFeature.State {
-        var state: FileManagerFeature.State
-        if let duplicateState {
-            var newState = duplicateState
-            newState.content.entryViewLayout.entryOperations.resetForDuplicate(windowID: windowID)
-            state = newState
+        var state: FileManagerFeature.State = if let duplicateState {
+            duplicateState
         } else {
-            state = FileManagerFeature.State()
-            state.content.entryViewLayout.entryOperations.windowID = windowID
+            FileManagerFeature.State()
         }
 
         if let path {

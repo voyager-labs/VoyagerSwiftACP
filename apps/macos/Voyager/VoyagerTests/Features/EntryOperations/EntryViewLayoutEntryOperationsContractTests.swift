@@ -17,14 +17,17 @@ final class EntryViewLayoutEntryOpsContractTests: XCTestCase {
         XCTAssertEqual(state.entryOperations.items.first?.id, item.id)
     }
 
-    func testWindowIDAccessibleViaApprovedAccessor() {
-        var state = EntryViewLayoutState()
+    func testWindowIDSetThroughLifecycleAction() {
         let windowID = UUID()
+        let store = TestStore(initialState: EntryOperationsState()) {
+            EntryOperationsFeature()
+        }
 
-        XCTAssertNil(state.entryOperations.windowID)
+        XCTAssertNil(store.state.windowID)
 
-        state.entryOperations.windowID = windowID
-        XCTAssertEqual(state.entryOperations.windowID, windowID)
+        store.send(.lifecycle(.windowIDChanged(windowID))) {
+            $0.windowID = windowID
+        }
     }
 
     func testRenamingItemIdAccessibleViaApprovedAccessor() {
