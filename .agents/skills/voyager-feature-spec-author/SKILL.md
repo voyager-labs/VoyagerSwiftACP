@@ -1,6 +1,6 @@
 ---
 name: voyager-feature-spec-author
-description: Draft and concretize Voyager FEATURE_SPEC markdown documents from INVENTORY rows into the fixed interaction specification format, using YAML frontmatter for metadata and linting for completeness and placeholder quality.
+description: "Draft and concretize Voyager FEATURE_SPEC markdown documents from INVENTORY rows into the fixed interaction specification format, using YAML frontmatter for metadata and linting for completeness and placeholder quality."
 ---
 
 # Voyager Feature Spec Author

@@ -1,6 +1,6 @@
 ---
 name: voyager-fi-ia-fs-consistency-checker
-description: Audit and align Voyager feature documentation for a single feature_id across FI (Feature Inventory), IA (Information Architecture), and FS (Feature Specs). Use whenever the user asks to review, audit, sync, or fix a feature bundle for 정합성, mismatch, drift, stale spec metadata, or "FI/IA/FS 맞춰줘", especially when FEATURES, INTERACTIONS, WINDOW_STRUCTURE, and FEATURE_SPEC markdown need to be checked together instead of row-by-row.
+description: "Audit and align Voyager feature documentation for a single feature_id across FI (Feature Inventory), IA (Information Architecture), and FS (Feature Specs). Use whenever the user asks to review, audit, sync, or fix a feature bundle for 정합성, mismatch, drift, stale spec metadata, or \"FI/IA/FS 맞춰줘\", especially when FEATURES, INTERACTIONS, WINDOW_STRUCTURE, and FEATURE_SPEC markdown need to be checked together instead of row-by-row."
 ---
 
 # Voyager FI/IA/FS Consistency Checker

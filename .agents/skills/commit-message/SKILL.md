@@ -1,6 +1,6 @@
 ---
 name: commit-message
-description: Generate 3 numbered commit-message candidates from currently staged Git changes, explain each candidate briefly, collect user selection with an interactive option picker when available (fallback to text), support a `Reroll` option for new candidates, and execute `git commit` with the selected message. Use for `$commit-message`, commit-message drafting requests, or when the user wants message options before committing.
+description: "Generate 3 numbered commit-message candidates from currently staged Git changes, explain each candidate briefly, collect user selection with an interactive option picker when available (fallback to text), support a `Reroll` option for new candidates, and execute `git commit` with the selected message. Use for `$commit-message`, commit-message drafting requests, or when the user wants message options before committing."
 compatibility: opencode
 metadata:
     workflow: git
