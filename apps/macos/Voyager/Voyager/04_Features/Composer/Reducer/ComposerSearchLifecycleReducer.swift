@@ -64,7 +64,7 @@ struct ComposerSearchLifecycleReducer {
                         tags: ["result": response.itemCount > 0 ? "success" : "empty"],
                     )
                     state.searchStartedAt = nil
-                    if isNoOpResponse {
+                    if isNoOpResponse, state.openedCollectionURL == nil {
                         kComposerSearchLifecycleLogger.debug("Composer query search resolved to no-op filters")
                         state.isLoadingFilters = false
                         state.isFilteringInFlight = false

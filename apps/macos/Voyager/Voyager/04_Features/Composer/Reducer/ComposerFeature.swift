@@ -267,7 +267,6 @@ func applyFiltersIfNeeded(
             let response = try await searchClient.applyFilters(.init(filters: filters))
             await send(.filtersResponse(requestID, .success(response)))
         } catch is CancellationError {
-            await send(.cancelFilters)
             return
         } catch {
             guard !Task.isCancelled else { return }
