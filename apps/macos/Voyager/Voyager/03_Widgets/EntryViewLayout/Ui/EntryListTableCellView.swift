@@ -296,6 +296,7 @@ final class EntryListEntryCellView: NSTableCellView {
 
         if isRenaming {
             resetTagDisplayForEditing()
+            customTextField.setAccessibilityLabel(context.renamingText)
             applyRenamingStyle(text: context.renamingText)
         } else {
             applyDisplayStyle()
