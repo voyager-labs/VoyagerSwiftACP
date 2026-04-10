@@ -167,14 +167,14 @@ extension EntryListCoordinator: NSOutlineViewDelegate {
             ?? EntryListEntryCellView()
         view.identifier = entryIdentifier
 
-        let dateModifiedWidth = outlineView
-            .tableColumn(withIdentifier: NSUserInterfaceItemIdentifier(EntryListColumn.dateModified.rawValue))?
+        let columnWidth = outlineView
+            .tableColumn(withIdentifier: NSUserInterfaceItemIdentifier(columnId))?
             .width ?? 0
         let thumbnail = thumbnailImagesByPath[entry.fullPath]
         let configuration = makeEntryCellConfiguration(
             entry: entry,
             columnId: columnId,
-            dateModifiedWidth: dateModifiedWidth,
+            columnWidth: columnWidth,
             thumbnail: thumbnail,
         )
         view.configure(configuration)
@@ -436,7 +436,7 @@ extension EntryListCoordinator {
             let configuration = makeEntryCellConfiguration(
                 entry: entry,
                 columnId: EntryListColumn.name.rawValue,
-                dateModifiedWidth: dateModifiedWidth,
+                columnWidth: dateModifiedWidth,
                 thumbnail: thumbnail,
             )
             cell.configure(configuration)

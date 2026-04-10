@@ -1,4 +1,5 @@
 import AppKit
+import ComposableArchitecture
 
 extension EntryListCoordinator {
     @objc

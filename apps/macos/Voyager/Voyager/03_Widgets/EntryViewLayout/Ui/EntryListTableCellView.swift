@@ -8,7 +8,7 @@ struct EntryListEntryCellViewConfiguration {
         let columnId: String
         let iconSize: CGFloat
         let textSize: CGFloat
-        let dateModifiedWidth: CGFloat
+        let columnWidth: CGFloat
         let thumbnail: NSImage?
         let isHidden: Bool
         let isCut: Bool
@@ -287,7 +287,7 @@ final class EntryListEntryCellView: NSTableCellView {
     private func configureDateCell(context: EntryListEntryCellViewConfiguration.Context, date: Date) {
         configureTextOnlyCell(
             context: context,
-            text: EntryListCellDateFormatting.format(date, width: context.dateModifiedWidth),
+            text: EntryListCellDateFormatting.format(date, width: context.columnWidth),
         )
     }
 
