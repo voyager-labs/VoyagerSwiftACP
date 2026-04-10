@@ -26,6 +26,14 @@ struct EntryViewLayoutFeature {
                 state.lastSelectedId = lastSelectedId
                 state.rangeAnchorId = rangeAnchorId
                 state.shouldScrollToSelection = shouldScrollToSelection
+
+                if let renamingId = state.entryOperations.renamingItemId {
+                    let isRenamingItemSelected = ids == [renamingId]
+                    if !isRenamingItemSelected {
+                        return .send(.entryOperations(.edit(.cancelRename)))
+                    }
+                }
+
                 return .none
 
             case let .internal(.applySelectAll(orderedItemIds)):
@@ -119,13 +127,12 @@ struct EntryViewLayoutFeature {
                 var nextColumns = EntryListColumn.normalizeVisibleColumns(state.listVisibleColumns)
                 guard nextColumns.indices.contains(from) else { return .none }
 
-                let boundedDestination = max(0, min(to, nextColumns.count))
-                if from == boundedDestination || from + 1 == boundedDestination {
+                if from == to {
                     return .none
                 }
 
                 let moved = nextColumns.remove(at: from)
-                let destination = from < boundedDestination ? boundedDestination - 1 : boundedDestination
+                let destination = max(0, min(to, nextColumns.count))
                 nextColumns.insert(moved, at: destination)
                 state.listVisibleColumns = EntryListColumn.normalizeVisibleColumns(nextColumns)
                 return .none

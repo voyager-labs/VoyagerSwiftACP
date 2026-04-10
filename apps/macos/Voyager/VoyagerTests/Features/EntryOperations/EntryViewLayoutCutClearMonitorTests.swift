@@ -57,8 +57,8 @@ final class EntryViewLayoutCutClearMonitorTests: XCTestCase {
             $0.entryFileOpsClient.saveClipboardCutSessionId = { _ in }
         }
 
-        await store.send(.appDidBecomeActive)
-        await store.receive(\.setClipboardOperation) {
+        await store.send(.lifecycle(.appDidBecomeActive))
+        await store.receive(\.clipboard.setClipboardOperation) {
             $0.clipboardOperation = .copy
             $0.cutClearSession = nil
         }

@@ -16,10 +16,10 @@ final class EntryOperationsRecentTagTests: XCTestCase {
             $0.workspaceClient = .testValue
         }
 
-        await store.send(.loadRecentItems(showHidden: false)) {
+        await store.send(.loading(.loadRecentItems(showHidden: false))) {
             $0.isLoading = true
         }
-        await store.receive(\.itemsLoaded) {
+        await store.receive(\.loading.itemsLoaded) {
             $0.loadingContext.items = IdentifiedArray(uniqueElements: [item])
             $0.isLoading = false
             $0.isReloading = false
@@ -34,10 +34,10 @@ final class EntryOperationsRecentTagTests: XCTestCase {
             $0.workspaceClient = .testValue
         }
 
-        await store.send(.loadTagItems(tagName: "Work", showHidden: false)) {
+        await store.send(.loading(.loadTagItems(tagName: "Work", showHidden: false))) {
             $0.isLoading = true
         }
-        await store.receive(\.itemsLoaded) {
+        await store.receive(\.loading.itemsLoaded) {
             $0.loadingContext.items = []
             $0.isLoading = false
             $0.isReloading = false

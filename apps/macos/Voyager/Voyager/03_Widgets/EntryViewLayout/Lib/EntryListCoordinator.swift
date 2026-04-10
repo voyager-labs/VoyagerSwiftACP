@@ -220,6 +220,7 @@ final class EntryListCoordinator: NSObject {
     var entryItemById: [EntryModel.ID: OutlineItem] = [:]
     var groupItemByName: [String: OutlineItem] = [:]
     var sortSyncGate = EntryListCoordinatorSortSyncGate()
+    var isApplyingColumnsFromStore = false
     var isUpdatingSelectionFromStore = false
     var hasRestoredScrollPosition = false
     var isUpdatingGroupExpansion = false
@@ -256,9 +257,9 @@ final class EntryListCoordinator: NSObject {
         tableView.target = self
         tableView.doubleAction = #selector(handleDoubleClick)
         configureHeaderMenu()
-        view.applyColumns(state.listVisibleColumns)
+        applyColumnsFromStore(state.listVisibleColumns)
         guard !didBind else {
-            view.applyColumns(state.listVisibleColumns)
+            applyColumnsFromStore(state.listVisibleColumns)
             updateDropTargetBorder(isTargeted: state.isDropTargeted)
             return
         }
@@ -278,7 +279,13 @@ final class EntryListCoordinator: NSObject {
         tableView.target = self
         tableView.doubleAction = #selector(handleDoubleClick)
         configureHeaderMenu()
-        view.applyColumns(state.listVisibleColumns)
+        applyColumnsFromStore(state.listVisibleColumns)
+    }
+
+    func applyColumnsFromStore(_ visibleColumns: [EntryListColumn]) {
+        isApplyingColumnsFromStore = true
+        view?.applyColumns(visibleColumns)
+        isApplyingColumnsFromStore = false
     }
 
     func observeTableView() {
@@ -430,14 +437,9 @@ final class EntryListCoordinator: NSObject {
         for group in state.entryArrangements.groupedItems {
             let items = group.items.map { OutlineItem(kind: .entry($0)) }
             if !group.groupName.isEmpty, state.entryArrangements.groupKey != .name {
-                let colorCode: Int? = if state.entryArrangements.groupKey == .tags {
-                    resolveTagColorCode(tagName: group.groupName, items: group.items)
-                } else {
-                    nil
-                }
                 let isCollapsed = state.entryArrangements.collapsedGroups.contains(group.groupName)
                 let groupItem = OutlineItem(
-                    kind: .group(name: group.groupName, colorCode: colorCode, isCollapsed: isCollapsed),
+                    kind: .group(name: group.groupName, colorCode: group.colorCode, isCollapsed: isCollapsed),
                     children: items,
                 )
                 result.append(groupItem)
@@ -446,15 +448,6 @@ final class EntryListCoordinator: NSObject {
             }
         }
         return result
-    }
-
-    func resolveTagColorCode(tagName: String, items: [EntryModel]) -> Int? {
-        for item in items {
-            if let colorCode = item.facets.tags?.first(where: { $0.name == tagName })?.colorCode {
-                return colorCode
-            }
-        }
-        return nil
     }
 
     func applyGroupExpansionState() {
@@ -479,25 +472,5 @@ final class EntryListCoordinator: NSObject {
         }
         scrollView.contentView.scroll(to: savedOffset)
         hasRestoredScrollPosition = true
-    }
-}
-
-private extension EntryListCoordinator {
-    @objc
-    func handleDoubleClick() {
-        let clickedRow = tableView.clickedRow
-        guard clickedRow >= 0 else { return }
-        guard let item = tableView.item(atRow: clickedRow) as? OutlineItem else { return }
-        guard case let .entry(entry) = item.kind else { return }
-        EntryContextMenuCoordinator.sendWithSelection(
-            entry,
-            selectedIds: state.selectedIds,
-            entryViewLayoutStore: store,
-            action: { [weak self] in
-                guard let self else { return }
-                saveScrollPosition()
-                store.send(.delegate(.executeCommand(.navigation(.openSelectedItem))))
-            },
-        )
     }
 }

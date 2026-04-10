@@ -1,5 +1,6 @@
 import ComposableArchitecture
 @testable import Voyager
+import VoyagerShared
 import XCTest
 
 // MARK: - VOY-201 Task 5: Sidebar-Local Guardrail Tests
@@ -187,6 +188,142 @@ final class FileManagerSidebarFeatureTests: XCTestCase {
 
         // Send restore action when pending is nil, expect no state change
         await store.send(.internal(.restoreSidebarSelection))
+
+        await store.finish()
+    }
+
+    // MARK: - Tag Loading Tests (VOY-208 Task 1)
+
+    /// Test that loadTags action updates state.tags with favoriteTags from client.
+    /// Expected: loadTags → tagsLoaded → state.tags updated
+    func testLoadTags_UpdatesStateWithFavoriteTags() async {
+        let initialState = FileManagerSidebarState()
+
+        // Mock favoriteTags to return specific tags with color codes
+        let expectedTags = [
+            Tag(name: "Important", colorCode: 1),
+            Tag(name: "Work", colorCode: 6),
+            Tag(name: "Personal", colorCode: 5),
+        ]
+        let expectedTagNames = expectedTags.map { tag in tag.name }
+
+        let store = TestStore(initialState: initialState) {
+            FileManagerSidebarFeature()
+        } withDependencies: {
+            $0.userDefaultsClient = .testValue
+            $0.entryLoadingClient = .testValue
+            $0.fileManagerFavoritesClient = .testValue
+            $0.fileManagerLocationsClient = .testValue
+            $0.finderFavoritesTagClient = FinderFavoritesTagClient(
+                favoriteTagNames: { expectedTagNames },
+                favoriteTags: { expectedTags },
+            )
+            $0.notificationCenterClient = .testValue
+            $0.fileManagerIconClient = .testValue
+        }
+
+        // loadTags triggers tagsLoaded synchronously with the result from favoriteTags()
+        await store.send(.internal(.loadTags)) { state in
+            state.tags = expectedTags
+        }
+
+        await store.finish()
+    }
+
+    /// Test that loadTags with empty favoriteTags results in empty state.tags.
+    /// Expected: Empty tags → state.tags = []
+    func testLoadTags_WithEmptyFavoriteTags_SetsEmptyTags() async {
+        let initialState = FileManagerSidebarState()
+
+        let store = TestStore(initialState: initialState) {
+            FileManagerSidebarFeature()
+        } withDependencies: {
+            $0.userDefaultsClient = .testValue
+            $0.entryLoadingClient = .testValue
+            $0.fileManagerFavoritesClient = .testValue
+            $0.fileManagerLocationsClient = .testValue
+            $0.finderFavoritesTagClient = FinderFavoritesTagClient(
+                favoriteTagNames: { [] },
+                favoriteTags: { [] },
+            )
+            $0.notificationCenterClient = .testValue
+            $0.fileManagerIconClient = .testValue
+        }
+
+        await store.send(.internal(.loadTags)) { state in
+            state.tags = []
+        }
+
+        await store.finish()
+    }
+
+    /// Test that loadTags preserves color codes from favoriteTags client.
+    /// Expected: Tags with color codes are preserved exactly
+    func testLoadTags_PreservesColorCodes() async {
+        let initialState = FileManagerSidebarState()
+
+        // TagColor.rawValue: Red=6, Orange=7, Yellow=5, Green=2, Blue=4, Purple=3, Gray=1
+        let expectedTags = [
+            Tag(name: "Red", colorCode: 6),
+            Tag(name: "Orange", colorCode: 7),
+            Tag(name: "Yellow", colorCode: 5),
+            Tag(name: "Green", colorCode: 2),
+            Tag(name: "Blue", colorCode: 4),
+            Tag(name: "Purple", colorCode: 3),
+            Tag(name: "Gray", colorCode: 1),
+        ]
+        let expectedTagNames = expectedTags.map { tag in tag.name }
+
+        let store = TestStore(initialState: initialState) {
+            FileManagerSidebarFeature()
+        } withDependencies: {
+            $0.userDefaultsClient = .testValue
+            $0.entryLoadingClient = .testValue
+            $0.fileManagerFavoritesClient = .testValue
+            $0.fileManagerLocationsClient = .testValue
+            $0.finderFavoritesTagClient = FinderFavoritesTagClient(
+                favoriteTagNames: { expectedTagNames },
+                favoriteTags: { expectedTags },
+            )
+            $0.notificationCenterClient = .testValue
+            $0.fileManagerIconClient = .testValue
+        }
+
+        await store.send(.internal(.loadTags)) { state in
+            state.tags = expectedTags
+            // Verify color codes are preserved
+            XCTAssertEqual(state.tags.map(\.colorCode), [6, 7, 5, 2, 4, 3, 1])
+        }
+
+        await store.finish()
+    }
+
+    /// Test that tagsLoaded action directly sets state.tags.
+    /// Expected: tagsLoaded with tags → state.tags = tags
+    func testTagsLoaded_SetsStateTags() async {
+        var initialState = FileManagerSidebarState()
+        initialState.tags = [Tag(name: "Old", colorCode: 0)]
+
+        let newTags = [
+            Tag(name: "New1", colorCode: 3),
+            Tag(name: "New2", colorCode: 4),
+        ]
+
+        let store = TestStore(initialState: initialState) {
+            FileManagerSidebarFeature()
+        } withDependencies: {
+            $0.userDefaultsClient = .testValue
+            $0.entryLoadingClient = .testValue
+            $0.fileManagerFavoritesClient = .testValue
+            $0.fileManagerLocationsClient = .testValue
+            $0.finderFavoritesTagClient = .testValue
+            $0.notificationCenterClient = .testValue
+            $0.fileManagerIconClient = .testValue
+        }
+
+        await store.send(.internal(.tagsLoaded(newTags))) { state in
+            state.tags = newTags
+        }
 
         await store.finish()
     }

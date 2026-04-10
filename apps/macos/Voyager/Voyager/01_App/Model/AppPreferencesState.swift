@@ -46,7 +46,8 @@ struct AppPreferencesState: Equatable, Sendable {
             state.gridTextSize = gridTextSize
         }
 
-        state.sidebarVisible = userDefaultsClient.object(SettingsKeys.sidebarVisible) as? Bool ?? true
+        // TODO: UserDefaults sidebar 저장 버그 수정 후 원복
+        state.sidebarVisible = true
         if let sidebarWidth = userDefaultsClient.object(SettingsKeys.sidebarWidth) as? Double, sidebarWidth > 0 {
             state.sidebarWidth = CGFloat(sidebarWidth)
         }

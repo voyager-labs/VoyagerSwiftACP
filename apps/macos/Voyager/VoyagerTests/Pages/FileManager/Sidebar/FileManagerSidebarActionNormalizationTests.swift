@@ -1,5 +1,6 @@
 import ComposableArchitecture
 @testable import Voyager
+import VoyagerShared
 import XCTest
 
 // MARK: - VOY-201 Task 5: FileManagerSidebarAction Normalization Tests

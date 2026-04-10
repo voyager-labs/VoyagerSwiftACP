@@ -56,6 +56,13 @@ struct EntryOperationsLoadingReducer {
                 state.loadingContext.items = IdentifiedArray(uniqueElements: items)
                 state.isLoading = false
                 state.isReloading = false
+
+                if let renamingId = state.renamingItemId {
+                    let itemIds = Set(items.map(\.id))
+                    if !itemIds.contains(renamingId) {
+                        return .send(.edit(.cancelRename))
+                    }
+                }
                 return .none
 
             case let .loading(.collectionItemsLoadedFromSearch(items, showHidden)):

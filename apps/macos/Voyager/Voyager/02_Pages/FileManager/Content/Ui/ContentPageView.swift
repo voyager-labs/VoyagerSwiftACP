@@ -31,20 +31,18 @@ struct ContentPageView: View {
         }
     }
 
-    @ViewBuilder private var keyCommandOverlay: some View {
-        if store.entryViewLayout.mode.isGridLayout {
-            KeyCommandView(
-                onViewCreated: { [weak keyCommandFocusCoordinator] view in
-                    keyCommandFocusCoordinator?.register(view)
-                },
-                onKeyDown: { event in
-                    handleKeyboardEvent(event)
-                },
-            )
-            .focusable()
-            .focused($isKeyCommandFocused)
-            .allowsHitTesting(false)
-        }
+    private var keyCommandOverlay: some View {
+        KeyCommandView(
+            onViewCreated: { [weak keyCommandFocusCoordinator] view in
+                keyCommandFocusCoordinator?.register(view)
+            },
+            onKeyDown: { event in
+                handleKeyboardEvent(event)
+            },
+        )
+        .focusable()
+        .focused($isKeyCommandFocused)
+        .allowsHitTesting(false)
     }
 
     private var backgroundInteractionLayer: some View {
@@ -54,7 +52,7 @@ struct ContentPageView: View {
                 ContentPaneContextMenu(store: store)
             }
             .onTapGesture {
-                guard store.entryViewLayout.mode.isGridLayout else { return }
+                guard store.entryViewLayout.entryOperations.renamingItemId == nil else { return }
                 restoreKeyCommandFocus()
             }
     }
@@ -76,12 +74,12 @@ struct ContentPageView: View {
     var body: some View {
         mainContent
             .onChange(of: store.entryViewLayout.selectedIds) { _ in
-                guard store.entryViewLayout.mode.isGridLayout else { return }
+                guard store.entryViewLayout.entryOperations.renamingItemId == nil else { return }
                 restoreKeyCommandFocus()
             }
             .onAppear {
                 store.send(.internal(.startObservingSystemNotifications))
-                guard store.entryViewLayout.mode.isGridLayout else { return }
+                guard store.entryViewLayout.entryOperations.renamingItemId == nil else { return }
                 DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) {
                     restoreKeyCommandFocus()
                 }

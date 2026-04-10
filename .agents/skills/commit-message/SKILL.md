@@ -25,6 +25,8 @@ Generate 3 commit-message candidates from staged changes, ask the user to pick o
 - **Comprehensive Subject**: If multiple files are staged, the subject MUST cover the intent of ALL staged changes. Do not write a subject that only covers one file.
 - **Empty State**: If no files are staged, do not hallucinate a message. Inform the user to stage files.
 - **Body Optionality**: Omit the body when the staged change is small enough and the subject already communicates the change clearly.
+- **Korean Phrasing**: When the subject or body bullets are written in Korean, end them as noun phrases, not verb-final sentences.
+- **Korean Ending Examples**: Avoid endings like `수정한다`, `이전한다`, `정리한다`; prefer `수정`, `이전`, `정리`.
 - **Bullet Format**: If adding a body, use `- ` for all bullet points.
 - **No Bullet Padding**: Never add filler bullets just to make the message look balanced or complete. Use only as many bullets as the staged changes actually need.
 - **No Secrets**: Never include API keys, tokens, or PII in the commit message.

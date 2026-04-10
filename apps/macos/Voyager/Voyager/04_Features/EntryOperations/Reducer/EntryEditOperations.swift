@@ -131,7 +131,23 @@ struct EntryEditOperationsReducer {
                 state.renamingText = trimmed
                 let parentPath = URL(fileURLWithPath: item.fullPath).deletingLastPathComponent().path
                 let newPath = URL(fileURLWithPath: parentPath).appendingPathComponent(trimmed).path
-                return .send(.edit(.renameItem(oldPath: item.fullPath, newPath: newPath)))
+
+                let transition = EntryRenameExtensionPolicy.extensionTransition(
+                    from: item.name,
+                    to: trimmed,
+                    isFolder: item.isFolder,
+                )
+
+                if transition == .none {
+                    return .send(.edit(.renameItem(oldPath: item.fullPath, newPath: newPath)))
+                }
+
+                return .run { [alertClient] send in
+                    let confirmed = await alertClient.showRenameExtensionChangeAlert(item.name, trimmed)
+                    if confirmed {
+                        await send(.edit(.renameItem(oldPath: item.fullPath, newPath: newPath)))
+                    }
+                }
 
             case .edit(.cancelRename):
                 state.renamingItemId = nil

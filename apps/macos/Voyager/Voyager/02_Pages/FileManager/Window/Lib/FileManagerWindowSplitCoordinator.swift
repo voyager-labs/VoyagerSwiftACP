@@ -153,6 +153,7 @@ final class FileManagerWindowSplitCoordinator: NSViewController, NSSplitViewDele
 
         if currentSidebarVisible != sidebarVisible {
             updateSidebarVisibility(isVisible: sidebarVisible, sidebarWidth: clampedSidebarWidth)
+            updateTrafficLightVisibility(isSidebarVisible: sidebarVisible)
         } else if sidebarVisible, sidebarWidthChanged {
             windowSplitView?.setPosition(clampedSidebarWidth, ofDividerAt: 0)
             windowSplitView?.adjustSubviews()
@@ -185,6 +186,7 @@ final class FileManagerWindowSplitCoordinator: NSViewController, NSSplitViewDele
 
         splitView.adjustSubviews()
         hasSetInitialLayout = true
+        updateTrafficLightVisibility(isSidebarVisible: sidebarVisible)
     }
 
     private func updateSidebarVisibility(isVisible: Bool, sidebarWidth: CGFloat) {
@@ -214,6 +216,7 @@ final class FileManagerWindowSplitCoordinator: NSViewController, NSSplitViewDele
         }
 
         mainContainerView?.layoutSubtreeIfNeeded()
+        updateTrafficLightVisibility(isSidebarVisible: isVisible)
     }
 
     func splitView(
@@ -274,15 +277,13 @@ final class FileManagerWindowSplitCoordinator: NSViewController, NSSplitViewDele
             syncSidebarWidthToStore(sidebarWidth)
         }
 
-        let shouldBeVisible = !isCollapsed
-        if store.sidebar.sidebarVisible != shouldBeVisible {
-            store.send(.sidebar(.view(.setSidebarVisible(shouldBeVisible))))
-            FileManagerWindowSplitLayout.updateMainContainerLeading(
-                constraints.mainContainerLeading,
-                isSidebarVisible: shouldBeVisible,
-                contentVerticalMargin: Constants.contentVerticalMargin,
-            )
-            mainContainerView?.layoutSubtreeIfNeeded()
+        // 임시조치: store가 sidebarVisible=true인데 NSSplitView가 collapse한 경우 강제 복구
+        // TODO: UserDefaults 저장 버그 수정 후 원복
+        if store.sidebar.sidebarVisible, isCollapsed {
+            let width = currentSidebarWidth
+            DispatchQueue.main.async { [weak self] in
+                self?.updateSidebarVisibility(isVisible: true, sidebarWidth: width)
+            }
         }
     }
 
@@ -293,5 +294,13 @@ final class FileManagerWindowSplitCoordinator: NSViewController, NSSplitViewDele
         )
         guard abs(store.sidebar.sidebarWidth - clampedWidth) > 0.5 else { return }
         store.send(.sidebar(.view(.setSidebarWidth(clampedWidth))))
+    }
+
+    private func updateTrafficLightVisibility(isSidebarVisible: Bool) {
+        guard let window = view.window else { return }
+        FileManagerWindowCoordinator.applyTrafficLightVisibility(
+            to: window,
+            isSidebarVisible: isSidebarVisible,
+        )
     }
 }

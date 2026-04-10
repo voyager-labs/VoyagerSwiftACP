@@ -129,8 +129,11 @@ final class EntryGridLassoAutoscrollController {
 }
 
 enum EntryViewLayoutDragStateClearRuleSet {
-    nonisolated static func shouldClearAfterSessionEnd(operation _: NSDragOperation) -> Bool {
-        true
+    nonisolated static func shouldClearAfterSessionEnd(operation: NSDragOperation) -> Bool {
+        // Defer clearing for successful copy operations so the highlight persists
+        // until the file operation completes. Cancel/invalid (empty) and move
+        // operations clear immediately.
+        operation != .copy
     }
 
     nonisolated static func clearedDragPaths(
