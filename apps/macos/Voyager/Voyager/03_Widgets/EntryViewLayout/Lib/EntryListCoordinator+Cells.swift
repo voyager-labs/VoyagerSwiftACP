@@ -4,7 +4,7 @@ extension EntryListCoordinator {
     func makeEntryCellConfiguration(
         entry: EntryModel,
         columnId: String,
-        dateModifiedWidth: CGFloat,
+        columnWidth: CGFloat,
         thumbnail: NSImage?,
     ) -> EntryListEntryCellViewConfiguration {
         let isCut = state.entryOperations.clipboardItems.contains(entry.fullPath)
@@ -16,7 +16,7 @@ extension EntryListCoordinator {
                 columnId: columnId,
                 iconSize: state.listIconSize,
                 textSize: state.listTextSize,
-                dateModifiedWidth: dateModifiedWidth,
+                columnWidth: columnWidth,
                 thumbnail: thumbnail,
                 isHidden: entry.isHidden,
                 isCut: isCut,
