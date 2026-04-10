@@ -19,8 +19,8 @@ class Args(argparse.Namespace):
 
 def find_repo_root(start: Path) -> Path:
     for candidate in [start, *start.parents]:
-        if (candidate / "04_FEATURE_INVENTORY").exists() and (
-            candidate / "LINEAR_ISSUE_DRAFTS"
+        if (candidate / "PRODUCT/04_FEATURE_INVENTORY").exists() and (
+            candidate / "PRODUCT/LINEAR_ISSUE_DRAFTS"
         ).exists():
             return candidate
     raise RuntimeError("Could not locate repo root from script path")
@@ -53,7 +53,7 @@ def load_template(repo_root: Path) -> str:
         / "voyager-linear-issue-author"
         / "templates"
         / "TEMPLATE-feature-implementation.md",
-        repo_root / "LINEAR_ISSUE_DRAFTS" / "TEMPLATE-feature-implementation.md",
+        repo_root / "PRODUCT/LINEAR_ISSUE_DRAFTS" / "TEMPLATE-feature-implementation.md",
     ]
     for path in candidates:
         if path.exists():
@@ -68,7 +68,7 @@ def find_use_case_hits(
     repo_root: Path, feature_id: str, interaction_ids: list[str]
 ) -> list[str]:
     hits: list[str] = []
-    use_case_dir = repo_root / "06_USE_CASES"
+    use_case_dir = repo_root / "PRODUCT/06_USE_CASES"
 
     patterns = [feature_id, *interaction_ids]
     for md_path in sorted(use_case_dir.glob("*.md")):
@@ -178,7 +178,7 @@ def render_issue_markdown(
     rendered = rendered.replace("{use_case_id}", use_case_link_value)
     rendered = rendered.replace(
         "{link}",
-        f"`04_FEATURE_INVENTORY/INTERACTIONS/data.tsv` - {interaction_link_value}",
+        f"`PRODUCT/04_FEATURE_INVENTORY/INTERACTIONS/data.tsv` - {interaction_link_value}",
     )
 
     rendered = rendered.replace(
@@ -272,8 +272,8 @@ def main() -> int:
     script_path = Path(__file__).resolve()
     repo_root = find_repo_root(script_path.parent)
 
-    features_path = repo_root / "04_FEATURE_INVENTORY" / "FEATURES" / "data.tsv"
-    interactions_path = repo_root / "04_FEATURE_INVENTORY" / "INTERACTIONS" / "data.tsv"
+    features_path = repo_root / "PRODUCT/04_FEATURE_INVENTORY" / "FEATURES" / "data.tsv"
+    interactions_path = repo_root / "PRODUCT/04_FEATURE_INVENTORY" / "INTERACTIONS" / "data.tsv"
 
     features = read_tsv(features_path)
     interactions = read_tsv(interactions_path)
