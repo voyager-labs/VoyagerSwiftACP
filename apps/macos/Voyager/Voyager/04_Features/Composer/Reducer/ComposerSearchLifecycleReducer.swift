@@ -240,6 +240,7 @@ private func handleCancelFilters(state: inout ComposerFeature.State) -> Effect<C
     state.isLoadingFilters = false
     state.isFilteringInFlight = false
     state.activeFiltersRequestID = nil
+    state.pendingSearchQuery = nil
     applyQueryPhaseTransition(.reset, state: &state)
     VoyagerSentryMetricLogger.logMetric(
         "voyager_search_cancel",
