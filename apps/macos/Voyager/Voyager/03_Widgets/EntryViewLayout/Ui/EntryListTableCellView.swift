@@ -295,6 +295,7 @@ final class EntryListEntryCellView: NSTableCellView {
         customTextField.usesSingleLineMode = true
 
         if isRenaming {
+            resetTagDisplayForEditing()
             applyRenamingStyle(text: context.renamingText)
         } else {
             applyDisplayStyle()
@@ -354,6 +355,16 @@ final class EntryListEntryCellView: NSTableCellView {
             textTrailingToViewConstraint?.isActive = true
             customTextField.setAccessibilityLabel(name)
         }
+    }
+
+    private func resetTagDisplayForEditing() {
+        for view in tagStackView.arrangedSubviews {
+            tagStackView.removeArrangedSubview(view)
+            view.removeFromSuperview()
+        }
+        tagStackView.isHidden = true
+        textTrailingToTagsConstraint?.isActive = false
+        textTrailingToViewConstraint?.isActive = true
     }
 
     private func hideIconAndSetupTextOnly(textSize: CGFloat) {
