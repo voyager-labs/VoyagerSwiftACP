@@ -1,31 +1,61 @@
+---
+interaction_id: "CDA-004-update_execution_plan_options"
+interaction_type: "input"
+feature: "Handle Organize Intent"
+category_key: "CDA"
+feature_id: "CDA-004"
+status: "드래프트"
+summary: "정돈 실행 계획 옵션을 수정"
+related_region: "file_manager_window.inspector_pane.inspector_mode_chat"
+menu: "-"
+shortcut: "-"
+---
+
 # Update Execution Plan Options
 
-## Metadata
+## Intent
 
-| Field | Value |
-| --- | --- |
-| Interaction ID | CDA-004-update_execution_plan_options |
-| Interaction Type | input |
-| Feature | Handle Organize Intent |
-| Category Key | CDA |
-| Feature ID | CDA-004 |
-| Status | 드래프트 |
-| Summary | 정돈 실행 계획 옵션을 수정 |
-| Related Region | file_manager_window.inspector_pane.inspector_mode_chat |
-| Menu | - |
-| Shortcut | - |
+- TBD
+
+## Trigger / Entry Points
+
+- TBD
 
 ## Preconditions
 
-- -
+-   -
 
-## Edge Cases
+## Expected Outcome
 
-- -
+- TBD
+
+## State Changes
+
+- TBD
+
+## User-visible Feedback
+
+- TBD
+
+## Edge Cases / Failure Handling
+
+-   -
 
 ## Acceptance Criteria
 
-- [ ] -
+-   -
+
+## Permissions / Dependencies
+
+- TBD
+
+## Observability / Analytics
+
+- TBD
+
+## Related Interactions
+
+- TBD
 
 ## Source
 

@@ -16,22 +16,24 @@ Generate implementation issue drafts from current Voyager feature inventory data
 
 ## Workflow
 
-1) Pick target feature IDs
+1. Pick target feature IDs
+
 - Confirm one or more `feature_id` values from `FEATURES`.
 
-2) Generate draft markdown
+2. Generate draft markdown
 
 ```bash
 python3 .agents/skills/voyager-linear-issue-author/scripts/draft_linear_issue.py EVM-002
 ```
 
-3) Batch-generate files into draft directory
+3. Batch-generate files into draft directory
 
 ```bash
 python3 .agents/skills/voyager-linear-issue-author/scripts/draft_linear_issue.py EVM-002 EAC-005 --output-dir PRODUCT/LINEAR_ISSUE_DRAFTS/generated --overwrite
 ```
 
-4) Review and refine
+4. Review and refine
+
 - Verify In Scope/Out of Scope and AC fit current roadmap intent.
 - Keep title as one-line summary, and keep labels/type handling in Linear labels.
 

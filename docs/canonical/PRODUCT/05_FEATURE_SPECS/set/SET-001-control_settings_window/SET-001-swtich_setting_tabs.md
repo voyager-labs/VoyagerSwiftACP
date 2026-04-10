@@ -1,30 +1,61 @@
+---
+interaction_id: "SET-001-swtich_setting_tabs"
+interaction_type: "command"
+feature: "Control Settings Window"
+category_key: "SET"
+feature_id: "SET-001"
+status: "배포 완료"
+summary: "<<AI>> 세팅 탭 전환"
+related_region: "settings_window.toolbar.tabs_area"
+menu: "-"
+shortcut: "-"
+---
+
 # Swtich Setting Tabs
 
-## Metadata
+## Intent
 
-| Field | Value |
-| --- | --- |
-| Interaction ID | SET-001-swtich_setting_tabs |
-| Interaction Type | command |
-| Feature | Control Settings Window |
-| Category Key | SET |
-| Feature ID | SET-001 |
-| Status | 배포 완료 |
-| Summary | <<AI>> 세팅 탭 전환 |
-| Related Region | settings_window.toolbar.tabs_area |
-| Menu | - |
-| Shortcut | - |
+- TBD
+
+## Trigger / Entry Points
+
+- TBD
 
 ## Preconditions
 
 - TBD
-## Edge Cases
+
+## Expected Outcome
+
+- TBD
+
+## State Changes
+
+- TBD
+
+## User-visible Feedback
+
+- TBD
+
+## Edge Cases / Failure Handling
 
 - TBD
 
 ## Acceptance Criteria
 
 - [ ] TBD
+
+## Permissions / Dependencies
+
+- TBD
+
+## Observability / Analytics
+
+- TBD
+
+## Related Interactions
+
+- TBD
 
 ## Source
 

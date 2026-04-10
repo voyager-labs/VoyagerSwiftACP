@@ -6,12 +6,12 @@ Voyager의 핵심 페르소나(타깃 사용자) 정의 문서 묶음입니다.
 
 ## WHERE TO LOOK
 
-| 작업 | 위치 | 노트 |
-|------|------|------|
-| 섹션 진입점 | `PRODUCT/02_USER_PERSONA/index.md` | Map of Content(목차) |
-| 페르소나(AI Agent Skilled) | `PRODUCT/02_USER_PERSONA/alex-ai_agent_engineer.md` | 동기/컨텍스트 |
-| 페르소나(Indie Builder) | `PRODUCT/02_USER_PERSONA/eric-multi_project_indie_builder.md` | 동기/컨텍스트 |
-| 페르소나(Workflow Creator) | `PRODUCT/02_USER_PERSONA/mia-workflow_automation_creator.md` | 동기/컨텍스트 |
+| 작업           | 위치                                                               | 노트                          |
+| -------------- | ------------------------------------------------------------------ | ----------------------------- |
+| 섹션 진입점    | `PRODUCT/02_USER_PERSONA/00_index.md`                              | Map of Content(목차)          |
+| 페르소나(Alex) | `PRODUCT/02_USER_PERSONA/01_alex-product_development_founder.md`   | 제품 개발 주도형              |
+| 페르소나(Eric) | `PRODUCT/02_USER_PERSONA/02_eric-go_to_market_founder.md`          | GTM/외부 반응 주도형          |
+| 페르소나(Mia)  | `PRODUCT/02_USER_PERSONA/03_mia-operations_fundraising_founder.md` | 운영·투자 커뮤니케이션 주도형 |
 
 ## CONVENTIONS
 

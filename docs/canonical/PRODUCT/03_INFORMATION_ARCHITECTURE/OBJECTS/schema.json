@@ -7,13 +7,7 @@
       "name": "category",
       "type": "string",
       "required": true,
-      "enum": [
-        "Domain",
-        "Conversation",
-        "State",
-        "Operation",
-        "Rule"
-      ],
+      "enum": ["Domain", "Conversation", "State", "Operation", "Rule"],
       "description": "오브젝트 상위 분류(그룹)."
     },
     {

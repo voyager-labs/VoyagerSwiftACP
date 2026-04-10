@@ -49,13 +49,7 @@
       "name": "slot_type",
       "type": "string",
       "required": false,
-      "enum": [
-        "root",
-        "pane",
-        "section",
-        "overlay",
-        "mode"
-      ],
+      "enum": ["root", "pane", "section", "overlay", "mode"],
       "description": "영역 역할/타입(예: root, pane, section, overlay, mode)."
     },
     {
@@ -84,12 +78,7 @@
       "name": "release_phase",
       "type": "string",
       "required": false,
-      "enum": [
-        "CBT",
-        "OBT",
-        "MVP",
-        "LATER"
-      ],
+      "enum": ["CBT", "OBT", "MVP", "LATER"],
       "description": "릴리즈 단계 태그(예: CBT, OBT, MVP, LATER)."
     }
   ]

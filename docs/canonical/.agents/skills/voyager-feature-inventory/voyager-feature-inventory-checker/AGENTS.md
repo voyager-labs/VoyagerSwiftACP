@@ -7,12 +7,12 @@
 
 ## WHERE TO LOOK
 
-| 항목 | 위치 | 노트 |
-|------|------|------|
-| 스킬 설명/사용법 | `.agents/skills/voyager-feature-inventory/voyager-feature-inventory-checker/SKILL.md` | 체크 범위 요약 |
-| deterministic 체크 | `.agents/skills/voyager-feature-inventory/voyager-feature-inventory-checker/scripts/check_feature.py` | stdlib only |
-| polars 검색/조회 | `.agents/skills/voyager-feature-inventory/voyager-feature-inventory-checker/scripts/vfi.py` | venv auto-bootstrap |
-| 스키마 마이그레이션 | `.agents/skills/voyager-feature-inventory/voyager-feature-inventory-checker/scripts/migrate_inventory_schema_v2.py` | v2 헤더 추가 |
+| 항목                | 위치                                                                                                                | 노트                |
+| ------------------- | ------------------------------------------------------------------------------------------------------------------- | ------------------- |
+| 스킬 설명/사용법    | `.agents/skills/voyager-feature-inventory/voyager-feature-inventory-checker/SKILL.md`                               | 체크 범위 요약      |
+| deterministic 체크  | `.agents/skills/voyager-feature-inventory/voyager-feature-inventory-checker/scripts/check_feature.py`               | stdlib only         |
+| polars 검색/조회    | `.agents/skills/voyager-feature-inventory/voyager-feature-inventory-checker/scripts/vfi.py`                         | venv auto-bootstrap |
+| 스키마 마이그레이션 | `.agents/skills/voyager-feature-inventory/voyager-feature-inventory-checker/scripts/migrate_inventory_schema_v2.py` | v2 헤더 추가        |
 
 ## INPUTS
 

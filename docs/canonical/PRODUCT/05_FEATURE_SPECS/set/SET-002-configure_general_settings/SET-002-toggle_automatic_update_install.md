@@ -1,30 +1,61 @@
+---
+interaction_id: "SET-002-toggle_automatic_update_install"
+interaction_type: "input"
+feature: "Configure General Settings"
+category_key: "SET"
+feature_id: "SET-002"
+status: "배포 완료"
+summary: "<<AI>> 자동 업데이트 확인/설치 기능을 켜거나 끕니다."
+related_region: "settings_window.settings_body.tab_general"
+menu: "-"
+shortcut: "-"
+---
+
 # Toggle Automatic Update & Install
 
-## Metadata
+## Intent
 
-| Field | Value |
-| --- | --- |
-| Interaction ID | SET-002-toggle_automatic_update_install |
-| Interaction Type | input |
-| Feature | Configure General Settings |
-| Category Key | SET |
-| Feature ID | SET-002 |
-| Status | 배포 완료 |
-| Summary | <<AI>> 자동 업데이트 확인/설치 기능을 켜거나 끕니다. |
-| Related Region | settings_window.settings_body.tab_general |
-| Menu | - |
-| Shortcut | - |
+- TBD
+
+## Trigger / Entry Points
+
+- TBD
 
 ## Preconditions
 
 - TBD
-## Edge Cases
+
+## Expected Outcome
+
+- TBD
+
+## State Changes
+
+- TBD
+
+## User-visible Feedback
+
+- TBD
+
+## Edge Cases / Failure Handling
 
 - TBD
 
 ## Acceptance Criteria
 
 - [ ] TBD
+
+## Permissions / Dependencies
+
+- TBD
+
+## Observability / Analytics
+
+- TBD
+
+## Related Interactions
+
+- TBD
 
 ## Source
 

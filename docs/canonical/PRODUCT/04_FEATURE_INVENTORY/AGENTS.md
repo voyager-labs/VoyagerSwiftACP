@@ -6,13 +6,13 @@
 
 ## WHERE TO LOOK
 
-| 작업 | 위치 | 노트 |
-|------|------|------|
-| 섹션 진입점 | `PRODUCT/04_FEATURE_INVENTORY/index.md` | 테이블 목적/관계 요약 |
-| 기능 카테고리 | `PRODUCT/04_FEATURE_INVENTORY/FEATURE_CATEGORIES/data.tsv` | PK: `category_key` |
-| 기능 인벤토리 | `PRODUCT/04_FEATURE_INVENTORY/FEATURES/data.tsv` | PK: `feature_id` |
-| 인터랙션 인벤토리 | `PRODUCT/04_FEATURE_INVENTORY/INTERACTIONS/data.tsv` | FEATURES/카테고리/UI 참조 포함 |
-| UI 참조 키 | `PRODUCT/03_INFORMATION_ARCHITECTURE/WINDOW_STRUCTURE/data.tsv` | `structure_key`를 사용 |
+| 작업              | 위치                                                            | 노트                           |
+| ----------------- | --------------------------------------------------------------- | ------------------------------ |
+| 섹션 진입점       | `PRODUCT/04_FEATURE_INVENTORY/index.md`                         | 테이블 목적/관계 요약          |
+| 기능 카테고리     | `PRODUCT/04_FEATURE_INVENTORY/FEATURE_CATEGORIES/data.tsv`      | PK: `category_key`             |
+| 기능 인벤토리     | `PRODUCT/04_FEATURE_INVENTORY/FEATURES/data.tsv`                | PK: `feature_id`               |
+| 인터랙션 인벤토리 | `PRODUCT/04_FEATURE_INVENTORY/INTERACTIONS/data.tsv`            | FEATURES/카테고리/UI 참조 포함 |
+| UI 참조 키        | `PRODUCT/03_INFORMATION_ARCHITECTURE/WINDOW_STRUCTURE/data.tsv` | `structure_key`를 사용         |
 
 ## CONVENTIONS
 
