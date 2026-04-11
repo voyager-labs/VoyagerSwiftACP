@@ -189,6 +189,10 @@ struct FileManagerContentFeature {
         case .loading(.itemsLoaded):
             .none
 
+        case let .lifecycle(.entryActionCompleted(record)):
+            logEntryActionMetric(for: record)
+            return .none
+
         case .lifecycle(.operationFinished):
             reloadEntryItemsEffect(state: state)
 
@@ -223,6 +227,86 @@ struct FileManagerContentFeature {
         case .collection:
             .none
         }
+    }
+
+    private func logEntryActionMetric(for record: EntryActionRecord) {
+        guard let actionKind = dauEntryActionKind(for: record.operationKind),
+              let entryKind = dauEntryKind(for: record.targets)
+        else {
+            return
+        }
+
+        VoyagerSentryMetricLogger.logDAUEntryAction(
+            actionKind: actionKind,
+            entryKind: entryKind,
+        )
+    }
+
+    private func dauEntryActionKind(for operationKind: OperationKind) -> DAUEntryActionKind? {
+        switch operationKind {
+        case .openDefault:
+            .openDefault
+        case .openWithApp:
+            .openWithApp
+        case .setDefaultApp:
+            .setDefaultApp
+        case .quickLook:
+            .quickLook
+        case .getInfo:
+            .getInfo
+        case .share:
+            .share
+        case .performService:
+            .performService
+        case .revealInFinder:
+            .revealInFinder
+        case .createFolder:
+            .createFolder
+        case .createAlias:
+            .createAlias
+        case .pasteFileCopy:
+            .copy
+        case .pasteFileMove:
+            .move
+        case .pasteFileDuplicate:
+            .duplicate
+        case .rename:
+            .rename
+        case .moveToTrash:
+            .moveToTrash
+        case .deleteImmediately:
+            .deleteImmediately
+        case .putBack:
+            .putBack
+        case .compress:
+            .compress
+        case .extract:
+            .extract
+        case .setTags:
+            .setTags
+        }
+    }
+
+    private func dauEntryKind(for targets: [EntryActionRecord.Target]) -> DAUEntryKind? {
+        let paths = targets
+            .flatMap { [$0.beforePath, $0.afterPath] }
+            .compactMap(\.self)
+
+        guard !paths.isEmpty else { return nil }
+
+        let kinds = Set(paths.map(dauEntryKind(forPath:)))
+        if kinds.count == 1, let kind = kinds.first {
+            return kind
+        }
+        return .mixed
+    }
+
+    private func dauEntryKind(forPath path: String) -> DAUEntryKind {
+        let pathExtension = URL(fileURLWithPath: path).pathExtension.lowercased()
+        if pathExtension == "voycoll" {
+            return .collection
+        }
+        return .file
     }
 
     private func handleComposerAction(
