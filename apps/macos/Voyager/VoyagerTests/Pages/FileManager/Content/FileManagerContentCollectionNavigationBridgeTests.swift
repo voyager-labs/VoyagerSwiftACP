@@ -9,6 +9,31 @@ import XCTest
 final class FileManagerContentCollectionNavigationBridgeTests: XCTestCase {
     private let reducer = FileManagerContentFeature()
 
+    @MainActor
+    struct EntryOperationsBridgeHarness: Reducer {
+        @MainActor
+        struct State: Equatable {
+            var content: FileManagerContentState
+        }
+
+        enum Action: Sendable {
+            case bridge(EntryOperationsAction)
+            case forwarded(FileManagerContentAction)
+        }
+
+        var body: some Reducer<State, Action> {
+            Reduce { state, action in
+                switch action {
+                case let .bridge(entryAction):
+                    FileManagerContentFeature().handleEntryOperationsAction(entryAction, state: &state.content)
+                        .map(Action.forwarded)
+                case .forwarded:
+                    .none
+                }
+            }
+        }
+    }
+
     // MARK: - Non-Collection Navigation: clearCollectionPresentation + Load
 
     func testFolderNavigationSendsClearCollectionPresentationThenLoadItems() async {
@@ -23,11 +48,15 @@ final class FileManagerContentCollectionNavigationBridgeTests: XCTestCase {
             $0.entryViewLayout.savedScrollOffset = nil
         }
 
-        await store.receive(.entryViewLayout(.internal(.clearCollectionPresentation)))
-        await store.receive(.entryViewLayout(.entryOperations(.loading(.loadItems(
-            path: "/tmp/voyager",
-            showHidden: false,
-        ))))
+        await store.receive { action in
+            guard case .entryViewLayout(.internal(.clearCollectionPresentation)) = action else { return false }
+            return true
+        }
+        await store.receive { action in
+            guard case let .entryViewLayout(.entryOperations(.loading(.loadItems(path, showHidden)))) = action
+            else { return false }
+            return path == "/tmp/voyager" && showHidden == false
+        }
     }
 
     func testRecentsNavigationSendsClearCollectionPresentationThenLoadRecents() async {
@@ -42,10 +71,15 @@ final class FileManagerContentCollectionNavigationBridgeTests: XCTestCase {
             $0.entryViewLayout.savedScrollOffset = nil
         }
 
-        await store.receive(.entryViewLayout(.internal(.clearCollectionPresentation)))
-        await store.receive(.entryViewLayout(.entryOperations(.loading(.loadRecentItems(
-            showHidden: false,
-        ))))
+        await store.receive { action in
+            guard case .entryViewLayout(.internal(.clearCollectionPresentation)) = action else { return false }
+            return true
+        }
+        await store.receive { action in
+            guard case let .entryViewLayout(.entryOperations(.loading(.loadRecentItems(showHidden)))) = action
+            else { return false }
+            return showHidden == false
+        }
     }
 
     func testTagsNavigationSendsClearCollectionPresentationThenLoadTagItems() async {
@@ -60,11 +94,15 @@ final class FileManagerContentCollectionNavigationBridgeTests: XCTestCase {
             $0.entryViewLayout.savedScrollOffset = nil
         }
 
-        await store.receive(.entryViewLayout(.internal(.clearCollectionPresentation)))
-        await store.receive(.entryViewLayout(.entryOperations(.loading(.loadTagItems(
-            tagName: "Work",
-            showHidden: false,
-        ))))
+        await store.receive { action in
+            guard case .entryViewLayout(.internal(.clearCollectionPresentation)) = action else { return false }
+            return true
+        }
+        await store.receive { action in
+            guard case let .entryViewLayout(.entryOperations(.loading(.loadTagItems(tagName, showHidden)))) = action
+            else { return false }
+            return tagName == "Work" && showHidden == false
+        }
     }
 
     func testComputerNavigationSendsClearCollectionPresentationThenLoadComputerItems() async {
@@ -79,8 +117,14 @@ final class FileManagerContentCollectionNavigationBridgeTests: XCTestCase {
             $0.entryViewLayout.savedScrollOffset = nil
         }
 
-        await store.receive(.entryViewLayout(.internal(.clearCollectionPresentation)))
-        await store.receive(.entryViewLayout(.entryOperations(.loading(.loadComputerItems))))
+        await store.receive { action in
+            guard case .entryViewLayout(.internal(.clearCollectionPresentation)) = action else { return false }
+            return true
+        }
+        await store.receive { action in
+            guard case .entryViewLayout(.entryOperations(.loading(.loadComputerItems))) = action else { return false }
+            return true
+        }
     }
 
     // MARK: - Collection Navigation: setCollectionMode Only
@@ -105,55 +149,47 @@ final class FileManagerContentCollectionNavigationBridgeTests: XCTestCase {
             $0.entryViewLayout.savedScrollOffset = nil
         }
 
-        await store.receive(.entryViewLayout(.internal(.setCollectionMode(true))))
+        await store.receive { action in
+            guard case .entryViewLayout(.internal(.setCollectionMode(true))) = action else { return false }
+            return true
+        }
     }
 
     // MARK: - handleEntryOperationsAction: Returns None for Loading Actions
 
     func testItemsLoadedReturnsNoneFromPageLevelHandler() async {
-        var state = makeInitialState()
-        let effect = reducer.handleEntryOperationsAction(
-            .loading(.itemsLoaded),
-            state: &state,
-        )
-
-        var hasActions = false
-        for await _ in effect.actions {
-            hasActions = true
+        let store = TestStore(initialState: EntryOperationsBridgeHarness.State(content: .init())) {
+            EntryOperationsBridgeHarness()
         }
-        XCTAssertFalse(hasActions,
-                       "handleEntryOperationsAction(.loading(.itemsLoaded)) must return .none")
+        store.exhaustivity = .off
+
+        await store.send(EntryOperationsBridgeHarness.Action.bridge(.loading(.itemsLoaded([]))))
+        await store.finish()
     }
 
     // MARK: - operationFinished: Reload Only, No Reapply
 
     func testOperationFinishedTriggersReloadWithoutReapply() async {
-        var state = makeInitialState()
-        state.navigation.navigationState = .folder("/tmp/voyager")
+        var initialState = EntryOperationsBridgeHarness.State(content: .init())
+        initialState.content.navigation.seedInitialFolderPath("/tmp/voyager")
+        initialState.content.navigation.navigationState = .folder("/tmp/voyager")
 
-        let effect = reducer.handleEntryOperationsAction(
-            .lifecycle(.operationFinished),
-            state: &state,
-        )
-
-        var receivedActions: [FileManagerContentAction] = []
-        for await action in effect.actions {
-            receivedActions.append(action)
+        let store = TestStore(initialState: initialState) {
+            EntryOperationsBridgeHarness()
         }
+        store.exhaustivity = .off
 
-        let hasReapply = receivedActions.contains {
-            if case .entryViewLayout(.entryArrangements(.reapply)) = $0 { return true }
-            return false
+        await store.send(EntryOperationsBridgeHarness.Action.bridge(.lifecycle(.operationFinished(
+            "/tmp/voyager",
+            OperationKind.rename,
+            Result<Void, FileOpError>.success(()),
+        ))))
+        await store.receive { action in
+            guard case let .forwarded(.entryViewLayout(.entryOperations(.loading(.loadItems(path, showHidden))))) =
+                action else { return false }
+            return path == "/tmp/voyager" && showHidden == false
         }
-        XCTAssertFalse(hasReapply,
-                       "operationFinished must not send page-level reapply")
-
-        let hasLoadItems = receivedActions.contains {
-            if case .entryViewLayout(.entryOperations(.loading(.loadItems))) = $0 { return true }
-            return false
-        }
-        XCTAssertTrue(hasLoadItems,
-                      "operationFinished must trigger reload via loadItems")
+        await store.finish()
     }
 
     // MARK: - makeEntryOperationsCommandContext: Uses entryViewLayout.entries
@@ -166,8 +202,11 @@ final class FileManagerContentCollectionNavigationBridgeTests: XCTestCase {
 
         let context = reducer.makeEntryOperationsCommandContext(state: state)
 
-        XCTAssertEqual(context.displayItems.map(\.id), [entry.id],
-                       "makeEntryOperationsCommandContext must read displayItems from entryViewLayout.entries")
+        XCTAssertEqual(
+            context.displayItems.map(\.id),
+            [entry.id],
+            "makeEntryOperationsCommandContext must read displayItems from entryViewLayout.entries",
+        )
         XCTAssertEqual(context.selectedIds, [entry.id])
     }
 

@@ -1,81 +1,120 @@
 import ComposableArchitecture
 import Foundation
 @testable import Voyager
-import VoyagerEntitiesEntry
-import VoyagerFeaturesEntryOperations
 import VoyagerShared
 import XCTest
 
 @MainActor
 final class FileManagerContentComposerCollectionOwnershipTests: XCTestCase {
-    // MARK: - Search Success: Action Ordering
-
     func testSearchSuccessSendsSetCollectionModeBeforeApplyCollectionSearchPaths() async {
-        let items: [JSONValue] = [
+        let requestID = UUID()
+        let items: [VoyagerShared.JSONValue] = [
             .object(["fullPath": .string("/tmp/voyager/file1.txt")]),
             .object(["fullPath": .string("/tmp/voyager/file2.txt")]),
         ]
 
-        var state = makeInitialState()
-        state.composer.pendingSearchQuery = "test query"
+        var initialState = makeInitialState()
+        initialState.composer.pendingSearchQuery = "test query"
+        initialState.composer.activeFiltersRequestID = requestID
+        initialState.composer.lastAcceptedFiltersRequestID = requestID
 
-        var receivedActions: [FileManagerContentAction] = []
+        let store = TestStore(initialState: initialState) {
+            FileManagerContentFeature()
+        } withDependencies: {
+            $0.userDefaultsClient = VoyagerShared.UserDefaultsClient.testValue
+            $0.collectionAlertClient = CollectionAlertClient.testValue
+            $0.fileManagerClient = VoyagerShared.FileManagerClient.testValue
+            $0.thumbnailGeneratorClient = ThumbnailGeneratorClient.testValue
+            $0.entryThumbnailCacheClient = EntryThumbnailCacheClient.testValue
+            $0.notificationCenterClient = VoyagerShared.NotificationCenterClient.testValue
+        }
+        store.exhaustivity = .off
 
-        let effect = FileManagerContentComposerCoordinator.reduce(
-            .internal(.filtersResponse(.success(SearchResponsePayload(
-                itemCount: items.count, items: items,
-            )))),
-            state: &state,
-            dependencies: .init(
-                collectionAlertClient: .testValue,
-                computerName: "TestMac",
+        await store.send(
+            FileManagerContentAction.composer(
+                ComposerAction.filtersResponse(
+                    requestID,
+                    .success(VoyagerShared.SearchResponsePayload(
+                        itemCount: items.count,
+                        items: items,
+                    )),
+                ),
             ),
         )
 
-        for await action in effect.actions {
-            receivedActions.append(action)
+        await store.receive { action in
+            guard case .internal(.requestNavigation(.internal(.appendBackHistory))) = action else { return false }
+            return true
         }
-
-        let setModeIndex = receivedActions.firstIndex {
-            if case .entryViewLayout(.internal(.setCollectionMode(true))) = $0 { return true }
-            return false
+        await store.receive { action in
+            guard case .internal(.requestNavigation(.internal(.clearForwardHistory))) = action else { return false }
+            return true
         }
-        let applyPathsIndex = receivedActions.firstIndex {
-            if case .entryViewLayout(.internal(.applyCollectionSearchPaths)) = $0 { return true }
-            return false
+        await store.receive { action in
+            guard case .internal(.requestNavigation(.internal(.setNavigationState(.collection)))) = action
+            else { return false }
+            return true
         }
-
-        XCTAssertNotNil(setModeIndex, "Expected setCollectionMode(true) action")
-        XCTAssertNotNil(applyPathsIndex, "Expected applyCollectionSearchPaths action")
-        if let setModeIndex, let applyPathsIndex {
-            XCTAssertLessThan(setModeIndex, applyPathsIndex,
-                              "setCollectionMode(true) must be sent before applyCollectionSearchPaths")
+        await store.receive { action in
+            guard case .entryViewLayout(.internal(.setCollectionMode(true))) = action else { return false }
+            return true
+        }
+        await store.receive { action in
+            guard case .entryViewLayout(.internal(.applyCollectionSearchPaths)) = action else { return false }
+            return true
+        }
+        await store.receive { action in
+            guard case .delegate(.composerCollectionSearchSucceeded) = action else { return false }
+            return true
         }
     }
-
-    // MARK: - Clear Collection Mode: Uses Layout Internal Action
 
     func testClearCollectionModeSendsClearCollectionPresentation() async {
-        var state = makeInitialState()
-        state.entryViewLayout.isCollectionMode = true
-        state.collectionContext = CollectionContext(query: "test", scopes: [], conditions: [])
+        var initialState = makeInitialState()
+        initialState.collectionContext = CollectionContext(query: "test", scopes: [], conditions: [])
+        initialState.collectionSession.isOpening = true
+        initialState.navigation.navigationState = .collection(
+            ContentPageCollectionNavigation(
+                kind: .temporary,
+                context: .init(query: "test", scopes: [], conditions: []),
+                sortKey: .name,
+                sortOrder: .ascending,
+                viewLayout: .list,
+            ),
+        )
 
-        var receivedActions: [FileManagerContentAction] = []
-        let effect = clearCollectionMode(state: &state)
-
-        for await action in effect.actions {
-            receivedActions.append(action)
+        let store = TestStore(initialState: initialState) {
+            FileManagerContentFeature()
+        } withDependencies: {
+            $0.userDefaultsClient = VoyagerShared.UserDefaultsClient.testValue
+            $0.collectionAlertClient = CollectionAlertClient.testValue
+            $0.fileManagerClient = VoyagerShared.FileManagerClient.testValue
+            $0.thumbnailGeneratorClient = ThumbnailGeneratorClient.testValue
+            $0.entryThumbnailCacheClient = EntryThumbnailCacheClient.testValue
+            $0.notificationCenterClient = VoyagerShared.NotificationCenterClient.testValue
         }
+        store.exhaustivity = .off
 
-        let hasClearPresentation = receivedActions.contains {
-            if case .entryViewLayout(.internal(.clearCollectionPresentation)) = $0 { return true }
-            return false
+        await store.send(FileManagerContentAction.composer(.view(.setText(""))))
+
+        await store.receive { action in
+            guard case .internal(.requestNavigation(.internal(.setNavigationState))) = action else { return false }
+            return true
         }
-        XCTAssertTrue(hasClearPresentation,
-                      "clearCollectionMode must send entryViewLayout(.internal(.clearCollectionPresentation))")
+        await store.receive { action in
+            guard case .internal(.requestNavigation(.internal(.setPendingNavigation(nil)))) = action
+            else { return false }
+            return true
+        }
+        await store.receive { action in
+            guard case .entryViewLayout(.internal(.clearCollectionPresentation)) = action else { return false }
+            return true
+        }
+        await store.receive { action in
+            guard case .internal(.syncComposerCollectionState) = action else { return false }
+            return true
+        }
     }
-
-    // MARK: - State Reads: Uses Canonical Source
 
     func testSyncComposerCollectionStateReadsFromCanonicalSource() {
         var state = makeInitialState()
@@ -83,8 +122,10 @@ final class FileManagerContentComposerCollectionOwnershipTests: XCTestCase {
 
         state.syncComposerCollectionState()
 
-        XCTAssertTrue(state.composer.isCollectionMode,
-                      "syncComposerCollectionState must read from entryViewLayout.isCollectionMode (canonical)")
+        XCTAssertTrue(
+            state.composer.isCollectionMode,
+            "syncComposerCollectionState must read from entryViewLayout.isCollectionMode (canonical)",
+        )
     }
 
     func testCanSaveCollectionReadsFromCanonicalSource() {
@@ -92,11 +133,11 @@ final class FileManagerContentComposerCollectionOwnershipTests: XCTestCase {
         state.entryViewLayout.isCollectionMode = true
         state.collectionContext = CollectionContext(query: "test", scopes: [], conditions: [])
 
-        XCTAssertTrue(state.canSaveCollection,
-                      "canSaveCollection must read from entryViewLayout.isCollectionMode (canonical)")
+        XCTAssertTrue(
+            state.canSaveCollection,
+            "canSaveCollection must read from entryViewLayout.isCollectionMode (canonical)",
+        )
     }
-
-    // MARK: - Helpers
 
     private func makeInitialState() -> FileManagerContentState {
         var state = FileManagerContentState()
