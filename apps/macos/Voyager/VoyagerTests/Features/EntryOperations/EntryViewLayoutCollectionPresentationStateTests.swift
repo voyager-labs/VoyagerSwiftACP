@@ -5,7 +5,7 @@ import VoyagerFeaturesEntryOperations
 import XCTest
 
 @MainActor
-final class EntryViewLayoutCollectionPresentationStateTests: XCTestCase {
+final class EntryViewLayoutCollectionModeStateTests: XCTestCase {
     func testCollectionItemsDefaultEmpty() {
         let state = EntryViewLayoutState()
         XCTAssertTrue(state.collectionItems.isEmpty)

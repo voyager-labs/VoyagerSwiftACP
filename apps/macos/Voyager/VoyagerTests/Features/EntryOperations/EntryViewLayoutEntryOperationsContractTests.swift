@@ -5,7 +5,7 @@ import VoyagerFeaturesEntryOperations
 import XCTest
 
 @MainActor
-final class EntryViewLayoutEntryOperationsContractTests: XCTestCase {
+final class EntryViewLayoutEntryOpsContractTests: XCTestCase {
     func testItemsAccessibleViaLoadingContext() {
         var state = EntryViewLayoutState()
         let item = EntryModel.temporaryFolder(id: "/tmp/test.txt", name: "test.txt")

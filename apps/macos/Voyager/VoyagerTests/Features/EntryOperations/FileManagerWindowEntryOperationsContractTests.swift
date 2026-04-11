@@ -4,7 +4,7 @@ import VoyagerFeaturesEntryOperations
 import XCTest
 
 @MainActor
-final class FileManagerWindowEntryOperationsContractTests: XCTestCase {
+final class FileManagerWindowEntryOpsContractTests: XCTestCase {
     func testMakeInitialSetsWindowIDThroughApprovedAccessor() {
         let windowID = UUID()
         let state = FileManagerWindowState.makeInitial(windowID: windowID, path: nil)

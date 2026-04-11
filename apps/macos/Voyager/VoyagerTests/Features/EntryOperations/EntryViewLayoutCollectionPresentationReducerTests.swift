@@ -12,6 +12,37 @@ final class EntryViewLayoutCollectionPresentationReducerTests: XCTestCase {
         }
     }
 
+    private func receiveReapplySequence(
+        from store: TestStore<EntryViewLayoutState, EntryViewLayoutAction>,
+        applyItems: [EntryModel],
+        isCollectionMode: Bool,
+        resultingEntries: [EntryModel]? = nil,
+    ) async {
+        await store.receive { action in
+            guard case .entryArrangements(.reapply) = action else { return false }
+            return true
+        }
+        await store.receive { action in
+            guard case .entryArrangements(.delegate(.requestApply)) = action else { return false }
+            return true
+        }
+        await store.receive { action in
+            guard case let .entryArrangements(.apply(items, mode)) = action else { return false }
+            return items == applyItems && mode == isCollectionMode
+        }
+        await store.receive(
+            { action in
+                guard case let .entryArrangements(.delegate(.applied(sortedItems, mode))) = action else { return false }
+                return sortedItems == applyItems && mode == isCollectionMode
+            },
+            assert: { state in
+                if let resultingEntries {
+                    state.entries = resultingEntries
+                }
+            },
+        )
+    }
+
     func testSetCollectionModeUpdatesStateAndReapplies() async {
         let store = makeTestStore()
 
@@ -22,38 +53,33 @@ final class EntryViewLayoutCollectionPresentationReducerTests: XCTestCase {
             $0.entryOperations.items = [regularItem]
             $0.entries = [regularItem]
         }
-        await store.receive(.entryArrangements(.reapply))
-        await store.receive(.entryArrangements(.delegate(.requestApply)))
-        await store.receive(.entryArrangements(.apply(items: [regularItem], isCollectionMode: false)))
-        await store.receive(.entryArrangements(.delegate(.applied(
-            sortedItems: [regularItem],
+        await receiveReapplySequence(
+            from: store,
+            applyItems: [regularItem],
             isCollectionMode: false,
-        )))) {
-            $0.entries = [regularItem]
-        }
+            resultingEntries: [regularItem],
+        )
 
         await store.send(.internal(.setCollectionMode(true))) {
             $0.isCollectionMode = true
             $0.entries = []
         }
-        await store.receive(.entryArrangements(.reapply))
-        await store.receive(.entryArrangements(.delegate(.requestApply)))
-        await store.receive(.entryArrangements(.apply(items: [], isCollectionMode: true)))
-        await store.receive(.entryArrangements(.delegate(.applied(sortedItems: [], isCollectionMode: true))))
+        await receiveReapplySequence(
+            from: store,
+            applyItems: [],
+            isCollectionMode: true,
+        )
 
         await store.send(.internal(.setCollectionItems([collectionItem]))) {
             $0.collectionItems = [collectionItem]
             $0.entries = [collectionItem]
         }
-        await store.receive(.entryArrangements(.reapply))
-        await store.receive(.entryArrangements(.delegate(.requestApply)))
-        await store.receive(.entryArrangements(.apply(items: [collectionItem], isCollectionMode: true)))
-        await store.receive(.entryArrangements(.delegate(.applied(
-            sortedItems: [collectionItem],
+        await receiveReapplySequence(
+            from: store,
+            applyItems: [collectionItem],
             isCollectionMode: true,
-        )))) {
-            $0.entries = [collectionItem]
-        }
+            resultingEntries: [collectionItem],
+        )
     }
 
     func testSetCollectionItemsUpdatesStateAndReapplies() async {
@@ -66,10 +92,11 @@ final class EntryViewLayoutCollectionPresentationReducerTests: XCTestCase {
             $0.collectionItems = [item1, item2]
             $0.entries = []
         }
-        await store.receive(.entryArrangements(.reapply))
-        await store.receive(.entryArrangements(.delegate(.requestApply)))
-        await store.receive(.entryArrangements(.apply(items: [], isCollectionMode: false)))
-        await store.receive(.entryArrangements(.delegate(.applied(sortedItems: [], isCollectionMode: false))))
+        await receiveReapplySequence(
+            from: store,
+            applyItems: [],
+            isCollectionMode: false,
+        )
     }
 
     func testSetCollectionItemsWithCollectionModeOn() async {
@@ -81,21 +108,22 @@ final class EntryViewLayoutCollectionPresentationReducerTests: XCTestCase {
             $0.isCollectionMode = true
             $0.entries = []
         }
-        await store.receive(.entryArrangements(.reapply))
-        await store.receive(.entryArrangements(.delegate(.requestApply)))
-        await store.receive(.entryArrangements(.apply(items: [], isCollectionMode: true)))
-        await store.receive(.entryArrangements(.delegate(.applied(sortedItems: [], isCollectionMode: true))))
+        await receiveReapplySequence(
+            from: store,
+            applyItems: [],
+            isCollectionMode: true,
+        )
 
         await store.send(.internal(.setCollectionItems([item]))) {
             $0.collectionItems = [item]
             $0.entries = [item]
         }
-        await store.receive(.entryArrangements(.reapply))
-        await store.receive(.entryArrangements(.delegate(.requestApply)))
-        await store.receive(.entryArrangements(.apply(items: [item], isCollectionMode: true)))
-        await store.receive(.entryArrangements(.delegate(.applied(sortedItems: [item], isCollectionMode: true)))) {
-            $0.entries = [item]
-        }
+        await receiveReapplySequence(
+            from: store,
+            applyItems: [item],
+            isCollectionMode: true,
+            resultingEntries: [item],
+        )
     }
 
     func testClearCollectionPresentationFallsBackToRegularSource() async {
@@ -108,53 +136,45 @@ final class EntryViewLayoutCollectionPresentationReducerTests: XCTestCase {
             $0.entryOperations.items = [regularItem]
             $0.entries = [regularItem]
         }
-        await store.receive(.entryArrangements(.reapply))
-        await store.receive(.entryArrangements(.delegate(.requestApply)))
-        await store.receive(.entryArrangements(.apply(items: [regularItem], isCollectionMode: false)))
-        await store.receive(.entryArrangements(.delegate(.applied(
-            sortedItems: [regularItem],
+        await receiveReapplySequence(
+            from: store,
+            applyItems: [regularItem],
             isCollectionMode: false,
-        )))) {
-            $0.entries = [regularItem]
-        }
+            resultingEntries: [regularItem],
+        )
 
         await store.send(.internal(.setCollectionMode(true))) {
             $0.isCollectionMode = true
             $0.entries = []
         }
-        await store.receive(.entryArrangements(.reapply))
-        await store.receive(.entryArrangements(.delegate(.requestApply)))
-        await store.receive(.entryArrangements(.apply(items: [], isCollectionMode: true)))
-        await store.receive(.entryArrangements(.delegate(.applied(sortedItems: [], isCollectionMode: true))))
+        await receiveReapplySequence(
+            from: store,
+            applyItems: [],
+            isCollectionMode: true,
+        )
 
         await store.send(.internal(.setCollectionItems([collectionItem]))) {
             $0.collectionItems = [collectionItem]
             $0.entries = [collectionItem]
         }
-        await store.receive(.entryArrangements(.reapply))
-        await store.receive(.entryArrangements(.delegate(.requestApply)))
-        await store.receive(.entryArrangements(.apply(items: [collectionItem], isCollectionMode: true)))
-        await store.receive(.entryArrangements(.delegate(.applied(
-            sortedItems: [collectionItem],
+        await receiveReapplySequence(
+            from: store,
+            applyItems: [collectionItem],
             isCollectionMode: true,
-        )))) {
-            $0.entries = [collectionItem]
-        }
+            resultingEntries: [collectionItem],
+        )
 
         await store.send(.internal(.clearCollectionPresentation)) {
             $0.isCollectionMode = false
             $0.collectionItems = []
             $0.entries = [regularItem]
         }
-        await store.receive(.entryArrangements(.reapply))
-        await store.receive(.entryArrangements(.delegate(.requestApply)))
-        await store.receive(.entryArrangements(.apply(items: [regularItem], isCollectionMode: false)))
-        await store.receive(.entryArrangements(.delegate(.applied(
-            sortedItems: [regularItem],
+        await receiveReapplySequence(
+            from: store,
+            applyItems: [regularItem],
             isCollectionMode: false,
-        )))) {
-            $0.entries = [regularItem]
-        }
+            resultingEntries: [regularItem],
+        )
     }
 
     func testReapplyUsesDisplayOrderItemsSnapshot() async {
@@ -166,21 +186,22 @@ final class EntryViewLayoutCollectionPresentationReducerTests: XCTestCase {
             $0.isCollectionMode = true
             $0.entries = []
         }
-        await store.receive(.entryArrangements(.reapply))
-        await store.receive(.entryArrangements(.delegate(.requestApply)))
-        await store.receive(.entryArrangements(.apply(items: [], isCollectionMode: true)))
-        await store.receive(.entryArrangements(.delegate(.applied(sortedItems: [], isCollectionMode: true))))
+        await receiveReapplySequence(
+            from: store,
+            applyItems: [],
+            isCollectionMode: true,
+        )
 
         await store.send(.internal(.setCollectionItems([item]))) {
             $0.collectionItems = [item]
             $0.entries = [item]
         }
-        await store.receive(.entryArrangements(.reapply))
-        await store.receive(.entryArrangements(.delegate(.requestApply)))
-        await store.receive(.entryArrangements(.apply(items: [item], isCollectionMode: true)))
-        await store.receive(.entryArrangements(.delegate(.applied(sortedItems: [item], isCollectionMode: true)))) {
-            $0.entries = [item]
-        }
+        await receiveReapplySequence(
+            from: store,
+            applyItems: [item],
+            isCollectionMode: true,
+            resultingEntries: [item],
+        )
 
         let state = store.state
         XCTAssertTrue(state.isCollectionMode)
@@ -196,12 +217,12 @@ final class EntryViewLayoutCollectionPresentationReducerTests: XCTestCase {
             $0.entryOperations.items = [item]
             $0.entries = [item]
         }
-        await store.receive(.entryArrangements(.reapply))
-        await store.receive(.entryArrangements(.delegate(.requestApply)))
-        await store.receive(.entryArrangements(.apply(items: [item], isCollectionMode: false)))
-        await store.receive(.entryArrangements(.delegate(.applied(sortedItems: [item], isCollectionMode: false)))) {
-            $0.entries = [item]
-        }
+        await receiveReapplySequence(
+            from: store,
+            applyItems: [item],
+            isCollectionMode: false,
+            resultingEntries: [item],
+        )
 
         let state = store.state
         XCTAssertFalse(state.isCollectionMode)
