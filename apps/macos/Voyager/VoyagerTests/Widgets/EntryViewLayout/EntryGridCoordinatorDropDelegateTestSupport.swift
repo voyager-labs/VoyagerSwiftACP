@@ -1,6 +1,8 @@
 import AppKit
 import ComposableArchitecture
 @testable import Voyager
+import VoyagerEntitiesEntry
+@testable import VoyagerFeaturesEntryOperations
 import VoyagerShared
 
 typealias DepsConfig = (inout DependencyValues) -> Void
@@ -19,15 +21,15 @@ func makeHarness(
     state.entries = entries
 
     let deps: DepsConfig = {
-        $0.entryLoadingClient = .testValue
-        $0.entryLoadingClient.isPackageDirectory = { packagePaths.contains($0.path) }
-        $0.entryFileOpsClient = .testValue
+        $0[VoyagerEntitiesEntry.EntryLoadingClient.self] = VoyagerEntitiesEntry.EntryLoadingClient.testValue
+        $0[VoyagerEntitiesEntry.EntryLoadingClient.self].isPackageDirectory = { packagePaths.contains($0.path) }
+        $0.entryFileOpsClient = VoyagerFeaturesEntryOperations.EntryFileOpsClient.testValue
         $0.entryFileOpsClient.loadDragPaths = { internalDragPaths }
         $0.entryFileOpsClient.loadDragWithOption = { false }
-        $0.workspaceClient = .testValue
-        $0.finderFavoritesTagClient = .testValue
-        $0.entryThumbnailCacheClient = .testValue
-        $0.notificationCenterClient = .testValue
+        $0.workspaceClient = VoyagerShared.WorkspaceClient.testValue
+        $0.finderFavoritesTagClient = FinderFavoritesTagClient.testValue
+        $0.entryThumbnailCacheClient = VoyagerEntitiesEntry.EntryThumbnailCacheClient.testValue
+        $0.notificationCenterClient = VoyagerShared.NotificationCenterClient.testValue
     }
 
     let store = Store(initialState: state) {
