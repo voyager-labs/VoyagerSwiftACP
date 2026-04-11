@@ -1,6 +1,7 @@
 import ComposableArchitecture
 import Foundation
 @testable import Voyager
+import VoyagerShared
 import XCTest
 
 @MainActor
@@ -8,12 +9,12 @@ final class ComposerQueryFeedbackLifecycleTests: XCTestCase {
     func testChangedFiltersContinueToApplyFiltersWithoutShowingToast() async {
         let applyRecorder = ApplyFiltersRecorder()
         let activeRequestID = UUID()
-        let searchResponse = SearchResponsePayload(
+        let searchResponse = VoyagerShared.SearchResponsePayload(
             itemCount: 0,
-            appliedFilters: AppliedFiltersPayload(
+            appliedFilters: VoyagerShared.AppliedFiltersPayload(
                 scopes: ["/tmp"],
                 conditions: [
-                    SearchConditionPayload(
+                    VoyagerShared.SearchConditionPayload(
                         propertyKey: "name",
                         operator: "contains",
                         value: .string("draft"),
@@ -24,18 +25,19 @@ final class ComposerQueryFeedbackLifecycleTests: XCTestCase {
             error: nil,
         )
 
-        let store = TestStore(initialState: ComposerState(
-            scopes: ["/tmp"],
-            isLoadingSearch: true,
-            queryRenderPhase: .searching,
-            submittedSearchFilters: SearchFiltersPayload(scopes: ["/tmp"], conditions: []),
-            activeSearchRequestID: activeRequestID,
-        )) {
+        var initialState = ComposerState()
+        initialState.scopes = ["/tmp"]
+        initialState.isLoadingSearch = true
+        initialState.queryRenderPhase = .searching
+        initialState.submittedSearchFilters = VoyagerShared.SearchFiltersPayload(scopes: ["/tmp"], conditions: [])
+        initialState.activeSearchRequestID = activeRequestID
+
+        let store = TestStore(initialState: initialState) {
             ComposerFeature()
         } withDependencies: {
             $0.searchClient.applyFilters = { request in
                 await applyRecorder.record(request)
-                return .init(
+                return VoyagerShared.SearchResponsePayload(
                     itemCount: 2,
                     appliedFilters: request.filters.asAppliedFiltersPayload,
                     items: nil,
@@ -45,9 +47,9 @@ final class ComposerQueryFeedbackLifecycleTests: XCTestCase {
         }
         store.exhaustivity = .off
 
-        await store.send(.searchResponse(activeRequestID, .success(searchResponse)))
+        await store.send(ComposerAction.searchResponse(activeRequestID, .success(searchResponse)))
 
-        let recordedRequest = await applyRecorder.last()
+        let recordedRequest = applyRecorder.last()
         XCTAssertEqual(recordedRequest?.filters.conditions.count, 1)
         XCTAssertNil(store.state.transientFeedback)
         XCTAssertTrue(store.state.isLoadingFilters)
@@ -56,25 +58,26 @@ final class ComposerQueryFeedbackLifecycleTests: XCTestCase {
     func testNoOpSearchSkipsApplyFiltersWithoutShowingFeedback() async {
         let applyRecorder = ApplyFiltersRecorder()
         let activeRequestID = UUID()
-        let searchResponse = SearchResponsePayload(
+        let searchResponse = VoyagerShared.SearchResponsePayload(
             itemCount: 0,
-            appliedFilters: AppliedFiltersPayload(scopes: ["/tmp"], conditions: []),
+            appliedFilters: VoyagerShared.AppliedFiltersPayload(scopes: ["/tmp"], conditions: []),
             items: nil,
             error: nil,
         )
 
-        let store = TestStore(initialState: ComposerState(
-            scopes: ["/tmp"],
-            isLoadingSearch: true,
-            queryRenderPhase: .searching,
-            submittedSearchFilters: SearchFiltersPayload(scopes: ["/tmp"], conditions: []),
-            activeSearchRequestID: activeRequestID,
-        )) {
+        var initialState = ComposerState()
+        initialState.scopes = ["/tmp"]
+        initialState.isLoadingSearch = true
+        initialState.queryRenderPhase = .searching
+        initialState.submittedSearchFilters = VoyagerShared.SearchFiltersPayload(scopes: ["/tmp"], conditions: [])
+        initialState.activeSearchRequestID = activeRequestID
+
+        let store = TestStore(initialState: initialState) {
             ComposerFeature()
         } withDependencies: {
             $0.searchClient.applyFilters = { request in
                 await applyRecorder.record(request)
-                return .init(
+                return VoyagerShared.SearchResponsePayload(
                     itemCount: 0,
                     appliedFilters: request.filters.asAppliedFiltersPayload,
                     items: nil,
@@ -84,26 +87,27 @@ final class ComposerQueryFeedbackLifecycleTests: XCTestCase {
         }
         store.exhaustivity = .off
 
-        await store.send(.searchResponse(activeRequestID, .success(searchResponse)))
+        await store.send(ComposerAction.searchResponse(activeRequestID, .success(searchResponse)))
 
-        await XCTAssertNil(applyRecorder.last())
-        XCTAssertEqual(store.state.queryRenderPhase, .idle)
+        XCTAssertNil(applyRecorder.last())
+        XCTAssertEqual(store.state.queryRenderPhase, ComposerQueryRenderPhase.idle)
         XCTAssertNil(store.state.transientFeedback)
     }
 
     func testSearchFailureShowsPolicyErrorFeedback() async {
         let activeRequestID = UUID()
-        let store = TestStore(initialState: ComposerState(
-            scopes: ["/tmp"],
-            isLoadingSearch: true,
-            queryRenderPhase: .searching,
-            activeSearchRequestID: activeRequestID,
-        )) {
+        var initialState = ComposerState()
+        initialState.scopes = ["/tmp"]
+        initialState.isLoadingSearch = true
+        initialState.queryRenderPhase = .searching
+        initialState.activeSearchRequestID = activeRequestID
+
+        let store = TestStore(initialState: initialState) {
             ComposerFeature()
         }
         store.exhaustivity = .off
 
-        await store.send(.searchResponse(
+        await store.send(ComposerAction.searchResponse(
             activeRequestID,
             .failure(MockLocalizedError("LLM_CONVERSION_FAILED: timeout")),
         ))
@@ -131,7 +135,7 @@ final class ComposerQueryFeedbackLifecycleTests: XCTestCase {
         }
         store.exhaustivity = .off
 
-        await store.send(.filtersResponse(
+        await store.send(ComposerAction.filtersResponse(
             staleRequestID,
             .failure(MockLocalizedError("HELPER_UNAVAILABLE: xpc disconnected")),
         ))
@@ -142,14 +146,14 @@ final class ComposerQueryFeedbackLifecycleTests: XCTestCase {
     }
 }
 
-private actor ApplyFiltersRecorder {
-    private var requests: [FiltersOnlyRequestPayload] = []
+private final class ApplyFiltersRecorder: @unchecked Sendable {
+    private var requests: [VoyagerShared.FiltersOnlyRequestPayload] = []
 
-    func record(_ request: FiltersOnlyRequestPayload) {
+    func record(_ request: VoyagerShared.FiltersOnlyRequestPayload) {
         requests.append(request)
     }
 
-    func last() -> FiltersOnlyRequestPayload? {
+    func last() -> VoyagerShared.FiltersOnlyRequestPayload? {
         requests.last
     }
 }
@@ -166,8 +170,8 @@ private struct MockLocalizedError: LocalizedError, Equatable {
     }
 }
 
-private extension SearchFiltersPayload {
-    var asAppliedFiltersPayload: AppliedFiltersPayload {
-        AppliedFiltersPayload(scopes: scopes, conditions: conditions)
+private extension VoyagerShared.SearchFiltersPayload {
+    var asAppliedFiltersPayload: VoyagerShared.AppliedFiltersPayload {
+        VoyagerShared.AppliedFiltersPayload(scopes: scopes, conditions: conditions)
     }
 }

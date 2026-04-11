@@ -1,17 +1,20 @@
 import ComposableArchitecture
 import Foundation
 @testable import Voyager
+import VoyagerShared
 import XCTest
 
 @MainActor
 final class ComposerFeedbackResetTests: XCTestCase {
     func testTypingClearsFeedbackImmediately() async {
         let feedback = ComposerTransientFeedback(id: UUID(), kind: .error, message: "boom")
-        let store = TestStore(initialState: ComposerState(transientFeedback: feedback)) {
+        var initialState = ComposerState()
+        initialState.transientFeedback = feedback
+        let store = TestStore(initialState: initialState) {
             ComposerFeature()
         }
 
-        await store.send(.setText("abc")) {
+        await store.send(ComposerAction.setText("abc")) {
             $0.text = "abc"
             $0.transientFeedback = nil
         }
@@ -19,16 +22,16 @@ final class ComposerFeedbackResetTests: XCTestCase {
 
     func testCancelSearchClearsFeedbackImmediately() async {
         let feedback = ComposerTransientFeedback(id: UUID(), kind: .error, message: "boom")
-        let store = TestStore(initialState: ComposerState(
-            transientFeedback: feedback,
-            isLoadingSearch: true,
-            activeSearchRequestID: UUID(),
-            queryRenderPhase: .searching,
-        )) {
+        var initialState = ComposerState()
+        initialState.transientFeedback = feedback
+        initialState.isLoadingSearch = true
+        initialState.activeSearchRequestID = UUID()
+        initialState.queryRenderPhase = .searching
+        let store = TestStore(initialState: initialState) {
             ComposerFeature()
         }
 
-        await store.send(.cancelSearch) {
+        await store.send(ComposerAction.cancelSearch) {
             $0.transientFeedback = nil
             $0.isLoadingSearch = false
             $0.activeSearchRequestID = nil
@@ -44,19 +47,22 @@ final class ComposerFeedbackResetTests: XCTestCase {
             kind: .error,
             message: "Search couldn't be completed. Check Helper/Gateway and try again.",
         )
-        let store = TestStore(initialState: ComposerState(
-            transientFeedback: initialFeedback,
-            isLoadingSearch: true,
-            activeSearchRequestID: requestID,
-            queryRenderPhase: .searching,
-        )) {
+        var initialState = ComposerState()
+        initialState.transientFeedback = initialFeedback
+        initialState.isLoadingSearch = true
+        initialState.activeSearchRequestID = requestID
+        initialState.queryRenderPhase = .searching
+        let store = TestStore(initialState: initialState) {
             ComposerFeature()
         } withDependencies: {
             $0.continuousClock = clock
         }
         store.exhaustivity = .off
 
-        await store.send(.searchResponse(requestID, .failure(MockLocalizedError("HELPER_UNAVAILABLE: disconnected")))) {
+        await store.send(ComposerAction.searchResponse(
+            requestID,
+            .failure(MockLocalizedError("HELPER_UNAVAILABLE: disconnected")),
+        )) {
             $0.isLoadingSearch = false
             $0.activeSearchRequestID = nil
             $0.queryRenderPhase = .failed
@@ -66,7 +72,10 @@ final class ComposerFeedbackResetTests: XCTestCase {
         XCTAssertEqual(store.state.transientFeedback, initialFeedback)
 
         await clock.advance(by: .seconds(4))
-        await store.receive(.dismissTransientFeedback(id: initialFeedback.id)) {
+        await store.receive { action in
+            guard case let .internal(.dismissTransientFeedback(id)) = action else { return false }
+            return id == initialFeedback.id
+        } assert: {
             $0.transientFeedback = nil
         }
     }
@@ -74,11 +83,13 @@ final class ComposerFeedbackResetTests: XCTestCase {
     func testStaleDismissActionDoesNotClearReplacementFeedback() async {
         let oldFeedback = ComposerTransientFeedback(id: UUID(), kind: .error, message: "old")
         let newFeedback = ComposerTransientFeedback(id: UUID(), kind: .error, message: "new")
-        let store = TestStore(initialState: ComposerState(transientFeedback: newFeedback)) {
+        var initialState = ComposerState()
+        initialState.transientFeedback = newFeedback
+        let store = TestStore(initialState: initialState) {
             ComposerFeature()
         }
 
-        await store.send(.dismissTransientFeedback(id: oldFeedback.id))
+        await store.send(ComposerAction.dismissTransientFeedback(id: oldFeedback.id))
 
         XCTAssertEqual(store.state.transientFeedback, newFeedback)
     }
