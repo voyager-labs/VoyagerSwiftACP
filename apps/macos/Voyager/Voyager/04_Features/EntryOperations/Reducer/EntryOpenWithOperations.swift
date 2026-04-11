@@ -19,10 +19,10 @@ struct EntryOpenWithOperationsReducer {
     var body: some Reducer<State, Action> {
         Reduce { state, action in
             switch action {
-            case let .openFileWithApp(file):
+            case let .openWith(.openFileWithApp(file)):
                 return selectApplicationAndOpenFile(for: [file], defaultChecked: false)
 
-            case let .openFileWithAppBundleID(filePath, bundleID, url):
+            case let .openWith(.openFileWithAppBundleID(filePath, bundleID, url)):
                 return .run { [entryOpenClient, alertClient] send in
                     let isTrash = await MainActor.run {
                         guard let trashPath = entryOpenClient.trashDirectoryPath(), !trashPath.isEmpty else {
@@ -36,20 +36,20 @@ struct EntryOpenWithOperationsReducer {
                         return
                     }
 
-                    await send(.operationStarted(filePath, .openWithApp(bundleID)))
+                    await send(.lifecycle(.operationStarted(filePath, .openWithApp(bundleID))))
                     do {
                         try await entryOpenClient.open(url, .bundleID(bundleID))
-                        await send(.operationFinished(filePath, .openWithApp(bundleID), .success(())))
+                        await send(.lifecycle(.operationFinished(filePath, .openWithApp(bundleID), .success(()))))
                     } catch {
-                        await send(.operationFinished(
+                        await send(.lifecycle(.operationFinished(
                             filePath,
                             .openWithApp(bundleID),
                             .failure(error.fileOpError),
-                        ))
+                        )))
                     }
                 }
 
-            case let .setDefaultAppForFile(type, bundleID, file):
+            case let .openWith(.setDefaultAppForFile(type, bundleID, file)):
                 if let error = EntryOperationsExecutionSupport.validateDefaultAppSetting(file: file) {
                     state.itemStates[file.fullPath] = ItemOperationState(isBusy: false, lastError: error)
                     return .none
@@ -66,7 +66,7 @@ struct EntryOpenWithOperationsReducer {
                     try await entryOpenClient.setDefaultApp(fileType, bundleID)
                 }
 
-            case let .setDefaultAppWithOther(file):
+            case let .openWith(.setDefaultAppWithOther(file)):
                 if let error = EntryOperationsExecutionSupport.validateDefaultAppSetting(file: file) {
                     state.itemStates[file.fullPath] = ItemOperationState(isBusy: false, lastError: error)
                     return .none
@@ -74,7 +74,7 @@ struct EntryOpenWithOperationsReducer {
 
                 return selectApplicationAndOpenFile(for: [file], defaultChecked: true)
 
-            case let .openFilesWithAppFromOther(files, shouldSetAsDefault):
+            case let .openWith(.openFilesWithAppFromOther(files, shouldSetAsDefault)):
                 for file in files {
                     if let error = EntryOperationsExecutionSupport.validateDefaultAppSetting(file: file) {
                         state.itemStates[file.fullPath] = ItemOperationState(isBusy: false, lastError: error)
@@ -87,7 +87,7 @@ struct EntryOpenWithOperationsReducer {
                     defaultChecked: shouldSetAsDefault,
                 )
 
-            case let .loadApplicationsForFile(file):
+            case let .openWith(.loadApplicationsForFile(file)):
                 guard !file.isFolder else { return .none }
                 let filePath = file.fullPath
 
@@ -105,17 +105,17 @@ struct EntryOpenWithOperationsReducer {
                     entryOpenClient: entryOpenClient,
                 )
 
-            case let .applicationsLoaded(filePath, apps):
+            case let .openWith(.applicationsLoaded(filePath, apps)):
                 state.applicationsForItems[filePath] = apps
                 return .none
 
-            case let .loadCommonApplicationsForFiles(files):
+            case let .openWith(.loadCommonApplicationsForFiles(files)):
                 return EntryOperationsExecutionSupport.loadCommonApplications(
                     for: files,
                     entryOpenClient: entryOpenClient,
                 )
 
-            case let .commonApplicationsLoaded(apps):
+            case let .openWith(.commonApplicationsLoaded(apps)):
                 state.commonApplicationsForSelectedFiles = apps
                 return .none
 
@@ -142,19 +142,19 @@ struct EntryOpenWithOperationsReducer {
                 var actions: [Action] = []
 
                 if selection.setAsDefault, let type = UTType(filenameExtension: file.fileExtension) {
-                    actions.append(.setDefaultAppForFile(
+                    actions.append(.openWith(.setDefaultAppForFile(
                         type: type,
                         bundleID: selection.bundleID,
                         file: file,
-                    ))
+                    )))
                 }
 
                 let filePath = file.fullPath
-                actions.append(.openFileWithAppBundleID(
+                actions.append(.openWith(.openFileWithAppBundleID(
                     filePath: filePath,
                     bundleID: selection.bundleID,
                     url: URL(fileURLWithPath: filePath),
-                ))
+                )))
 
                 for nextAction in actions {
                     await send(nextAction)

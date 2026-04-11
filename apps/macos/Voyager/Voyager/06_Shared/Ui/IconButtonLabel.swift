@@ -59,7 +59,7 @@ struct IconButtonStyle {
             font: font,
             cornerRadius: VoyagerDS.Radius.toolbarButton,
             enabledColor: .primary,
-            disabledColor: .secondary,
+            disabledColor: Color(nsColor: .tertiaryLabelColor),
             hoverBackground: { scheme in
                 VoyagerDS.Surface.sidebarSelectionBackground(for: scheme)
             },
@@ -70,8 +70,8 @@ struct IconButtonStyle {
         size: 16,
         font: .system(size: 11),
         cornerRadius: 4,
-        enabledColor: .secondary,
-        disabledColor: .secondary,
+        enabledColor: Color(nsColor: .tertiaryLabelColor),
+        disabledColor: Color(nsColor: .tertiaryLabelColor),
         hoverBackground: { scheme in
             VoyagerDS.Surface.sidebarSelectionBackground(for: scheme)
         },

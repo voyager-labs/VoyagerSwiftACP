@@ -15,50 +15,57 @@ struct EntryOperationsLoadingReducer {
     var body: some Reducer<State, Action> {
         Reduce { state, action in
             switch action {
-            case let .loadItems(path, showHidden):
+            case let .loading(.loadItems(path, showHidden)):
                 state.isLoading = true
                 return .run { send in
                     let url = URL(fileURLWithPath: (path as NSString).expandingTildeInPath)
                     do {
                         let items = try await entryLoadingClient.loadItems(url, showHidden)
-                        await send(.itemsLoaded(items))
+                        await send(.loading(.itemsLoaded(items)))
                     } catch {
-                        await send(.itemsLoaded([]))
+                        await send(.loading(.itemsLoaded([])))
                     }
                 }
 
-            case let .loadRecentItems(showHidden):
+            case let .loading(.loadRecentItems(showHidden)):
                 state.isLoading = true
                 return .run { [entryLoadingClient, workspaceClient] send in
                     let recentItems = await entryLoadingClient.loadRecentItems(showHidden, workspaceClient)
-                    await send(.itemsLoaded(recentItems))
+                    await send(.loading(.itemsLoaded(recentItems)))
                 }
 
-            case let .loadTagItems(tagName, showHidden):
+            case let .loading(.loadTagItems(tagName, showHidden)):
                 state.isLoading = true
                 return .run { [entryLoadingClient, workspaceClient] send in
                     let taggedItems = await entryLoadingClient.loadFilesWithTag(tagName, showHidden, workspaceClient)
-                    await send(.itemsLoaded(taggedItems))
+                    await send(.loading(.itemsLoaded(taggedItems)))
                 }
 
-            case .loadComputerItems:
+            case .loading(.loadComputerItems):
                 state.isLoading = true
                 return .run { [entryLoadingClient] send in
                     do {
                         let computerItems = try await entryLoadingClient.loadComputerItems()
-                        await send(.itemsLoaded(computerItems))
+                        await send(.loading(.itemsLoaded(computerItems)))
                     } catch {
-                        await send(.itemsLoaded([]))
+                        await send(.loading(.itemsLoaded([])))
                     }
                 }
 
-            case let .itemsLoaded(items):
+            case let .loading(.itemsLoaded(items)):
                 state.loadingContext.items = IdentifiedArray(uniqueElements: items)
                 state.isLoading = false
                 state.isReloading = false
+
+                if let renamingId = state.renamingItemId {
+                    let itemIds = Set(items.map(\.id))
+                    if !itemIds.contains(renamingId) {
+                        return .send(.edit(.cancelRename))
+                    }
+                }
                 return .none
 
-            case let .collectionItemsLoadedFromSearch(items, showHidden):
+            case let .loading(.collectionItemsLoadedFromSearch(items, showHidden)):
                 let converted = EntryCollectionItemsConverter.convert(
                     items,
                     showHidden: showHidden,
@@ -68,11 +75,11 @@ struct EntryOperationsLoadingReducer {
                 state.loadingContext.collectionItems = IdentifiedArray(uniqueElements: converted)
                 return .none
 
-            case let .setCollectionMode(isCollectionMode):
+            case let .loading(.setCollectionMode(isCollectionMode)):
                 state.loadingContext.isCollectionMode = isCollectionMode
                 return .none
 
-            case .clearCollectionItems:
+            case .loading(.clearCollectionItems):
                 state.loadingContext.collectionItems = []
                 return .none
 

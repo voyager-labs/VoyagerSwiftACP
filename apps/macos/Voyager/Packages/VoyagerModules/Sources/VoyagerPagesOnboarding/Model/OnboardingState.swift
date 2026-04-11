@@ -5,10 +5,10 @@ import VoyagerFeaturesBetaAccess
 struct OnboardingState: Equatable {
     var currentStep: OnboardingStep = .welcome
 
-    var welcome = WelcomeFeature.State()
-    var betaAccess = BetaAccessFeature.State()
-    var permissions = PermissionsFeature.State()
-    var complete = CompleteFeature.State()
+    var welcome: WelcomeFeature.State = .init()
+    var betaAccess: BetaAccessFeature.State = .init()
+    var permissions: PermissionsFeature.State = .init()
+    var complete: CompleteFeature.State = .init()
 
     var totalSteps: Int {
         OnboardingStep.allCases.count

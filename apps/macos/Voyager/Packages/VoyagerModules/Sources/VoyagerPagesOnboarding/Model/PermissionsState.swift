@@ -6,7 +6,11 @@ import VoyagerEntitiesSettings
 struct PermissionsState: Equatable, Sendable {
     var isComplete: Bool = false
     var fullDiskAccessStatus: FullDiskAccessStatus = .unknown
-    var helperFolderAccess = FolderAccessResult(desktop: .notGranted, documents: .notGranted, downloads: .notGranted)
+    var helperFolderAccess: FolderAccessResult = .init(
+        desktop: .notGranted,
+        documents: .notGranted,
+        downloads: .notGranted,
+    )
     var systemSettingsError: String?
     var helperFolderAccessError: String?
     var isRequestingHelperFolderAccess: Bool = false
@@ -15,7 +19,16 @@ struct PermissionsState: Equatable, Sendable {
     var hasAttemptedFullDiskAccessEnable: Bool = false
 
     var fullDiskAccessStatusMessage: String {
-        fullDiskAccessStatus.message
+        switch fullDiskAccessStatus {
+        case .granted:
+            "You're all set for Full Disk Access."
+        case .needsAction:
+            "Turn on Full Disk Access to keep going."
+        case .denied:
+            "Full Disk Access is off. You can enable it anytime."
+        case .unknown:
+            "Check Full Disk Access in System Settings."
+        }
     }
 
     var showsFullDiskAccessAction: Bool {
@@ -56,9 +69,9 @@ struct PermissionsState: Equatable, Sendable {
 
     var helperFolderAccessItems: [FolderAccessItem] {
         [
-            FolderAccessItem(id: "helper-desktop", title: "Desktop", status: helperFolderAccess.desktop),
-            FolderAccessItem(id: "helper-documents", title: "Documents", status: helperFolderAccess.documents),
-            FolderAccessItem(id: "helper-downloads", title: "Downloads", status: helperFolderAccess.downloads),
+            .init(id: "helper-desktop", title: "Desktop", status: helperFolderAccess.desktop),
+            .init(id: "helper-documents", title: "Documents", status: helperFolderAccess.documents),
+            .init(id: "helper-downloads", title: "Downloads", status: helperFolderAccess.downloads),
         ]
     }
 

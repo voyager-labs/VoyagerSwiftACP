@@ -380,14 +380,26 @@ enum EntryFileOpsLive {
 
     nonisolated static var getTags: @Sendable (URL) async throws -> [String] {
         { url in
-            try TagMetadataClient.loadTagNames(from: url)
+            // MDItem 기반 로드 우선 (색상 포함 데이터에서 이름 추출)
+            if let tags = TagMetadataClient.loadTags(from: url), !tags.isEmpty {
+                return tags.map(\.name)
+            }
+            // fallback: resourceValues 기반
+            return (try? TagMetadataClient.loadTagNames(from: url)) ?? []
         }
     }
 
     nonisolated static var setTags: @Sendable (URL, [String]) async throws -> Void {
-        { url, tags in
+        { url, tagNames in
             do {
-                try TagMetadataClient.setTagNames(tags, for: url)
+                let existingTags = TagMetadataClient.loadTags(from: url) ?? []
+                let favoriteTags = FinderFavoritesTagClient.liveValue.favoriteTags()
+                let updatedTags = EntryFileOpsTagPersistenceResolver.makeTags(
+                    tagNames: tagNames,
+                    existingTags: existingTags,
+                    favoriteTags: favoriteTags,
+                )
+                try TagMetadataClient.setTags(updatedTags, for: url)
             } catch TagMetadataClient.Error.failedToRemoveTags {
                 throw FileOpError.system(message: "Failed to remove tags")
             } catch TagMetadataClient.Error.failedToSetTags {
@@ -468,7 +480,6 @@ enum EntryFileOpsLive {
             }
 
             let paths = urls.map(\.path)
-
             let opString = pasteboardClient
                 .string(NSPasteboard.PasteboardType("fm.voyager.clipboard.operation"))
             let operation: ClipboardOperation = opString == "cut" ? .cut : .copy

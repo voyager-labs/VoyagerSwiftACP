@@ -70,7 +70,7 @@ private struct CollectionStalenessRecord: Codable, Equatable {
 }
 
 private nonisolated func loadRecords(userDefaultsClient: UserDefaultsClient) -> [String: CollectionStalenessRecord] {
-    guard let data = userDefaultsClient.object(CollectionKeys.stalenessRecords) as? Data else {
+    guard let data = userDefaultsClient.object("collectionStalenessRecords") as? Data else {
         return [:]
     }
     return (try? JSONDecoder().decode([String: CollectionStalenessRecord].self, from: data)) ?? [:]
@@ -81,7 +81,7 @@ private nonisolated func saveRecords(
     userDefaultsClient: UserDefaultsClient,
 ) {
     let data = try? JSONEncoder().encode(records)
-    userDefaultsClient.setObject(data, CollectionKeys.stalenessRecords)
+    userDefaultsClient.setObject(data, "collectionStalenessRecords")
 }
 
 private nonisolated func normalizePath(_ path: String) -> String {

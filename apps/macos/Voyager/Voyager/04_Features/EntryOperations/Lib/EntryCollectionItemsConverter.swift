@@ -7,6 +7,7 @@ enum EntryCollectionItemsConverter {
         entryLoadingClient: EntryLoadingClient,
         workspaceClient: WorkspaceClient,
     ) -> [EntryModel] {
+        let favoriteTags = FinderFavoritesTagClient.liveValue.favoriteTags()
         let converted: [EntryModel] = items.compactMap { value -> EntryModel? in
             guard case let .string(path) = value,
                   path.isEmpty == false
@@ -21,8 +22,9 @@ enum EntryCollectionItemsConverter {
                 workspaceClient: workspaceClient,
             )
         }
+        let normalized = EntryModelTagColorNormalizer.normalize(converted, favoriteTags: favoriteTags)
 
-        guard !showHidden else { return converted }
-        return converted.filter { !$0.isHidden }
+        guard !showHidden else { return normalized }
+        return normalized.filter { !$0.isHidden }
     }
 }

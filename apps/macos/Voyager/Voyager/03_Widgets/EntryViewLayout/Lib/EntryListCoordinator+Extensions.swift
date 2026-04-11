@@ -1,4 +1,5 @@
 import AppKit
+import Combine
 import ComposableArchitecture
 
 extension EntryListCoordinator {
@@ -60,7 +61,7 @@ extension EntryListCoordinator: NSOutlineViewDelegate {
             return entry.fullPath
         }
         guard !paths.isEmpty else { return }
-        sendEntryOperations(.saveDragPaths(paths))
+        sendEntryOperations(.routing(.saveDragPaths(paths)))
     }
 
     func outlineView(
@@ -70,7 +71,7 @@ extension EntryListCoordinator: NSOutlineViewDelegate {
         operation: NSDragOperation,
     ) {
         guard EntryViewLayoutDragStateClearRuleSet.shouldClearAfterSessionEnd(operation: operation) else { return }
-        sendEntryOperations(.saveDragPaths([]))
+        sendEntryOperations(.routing(.saveDragPaths([])))
         store.send(.view(.setDropTargeted(false)))
     }
 
@@ -89,7 +90,18 @@ extension EntryListCoordinator: NSOutlineViewDelegate {
         if let sortOrder = needed.sortOrder { sendEntryArrangements(.setSortOrder(sortOrder)) }
     }
 
-    func outlineViewColumnDidMove(_: Notification) {
+    func outlineViewColumnDidMove(_ notification: Notification) {
+        guard !isApplyingColumnsFromStore else { return }
+
+        let userInfo = notification.userInfo ?? [:]
+        let oldIndex = userInfo["NSOldColumn"] as? Int
+        let newIndex = userInfo["NSNewColumn"] as? Int
+
+        if let oldIndex, let newIndex {
+            store.send(.internal(.moveListColumn(from: oldIndex, to: newIndex)))
+            return
+        }
+
         syncVisibleColumnsFromTableView()
     }
 
@@ -130,47 +142,19 @@ extension EntryListCoordinator: NSOutlineViewDelegate {
     func outlineView(_ outlineView: NSOutlineView, viewFor tableColumn: NSTableColumn?, item: Any) -> NSView? {
         guard let outlineItem = item as? OutlineItem else { return nil }
 
-        let columnId = tableColumn?.identifier.rawValue ?? "unknown"
-
         switch outlineItem.kind {
         case let .group(title, colorCode, _):
-            if columnId == EntryListColumn.name.rawValue {
-                return makeGroupHeaderCell(
-                    outlineView: outlineView,
-                    columnId: columnId,
-                    title: title,
-                    colorCode: colorCode,
-                )
-            }
-            return makeGroupEmptyCell(outlineView: outlineView, columnId: columnId)
+            return makeGroupRowView(
+                outlineView: outlineView,
+                tableColumn: tableColumn,
+                title: title,
+                colorCode: colorCode,
+            )
         case let .entry(entry):
+            let resolvedTableColumn = tableColumn ?? outlineView.outlineTableColumn
+            let columnId = resolvedTableColumn?.identifier.rawValue ?? EntryListColumn.name.rawValue
             return makeEntryCell(outlineView: outlineView, columnId: columnId, entry: entry)
         }
-    }
-
-    private func makeGroupHeaderCell(
-        outlineView: NSOutlineView,
-        columnId: String,
-        title: String,
-        colorCode: Int?,
-    ) -> EntryListGroupHeaderCellView {
-        let headerIdentifier = NSUserInterfaceItemIdentifier("group-header-cell-\(columnId)")
-        let header = (outlineView.makeView(
-            withIdentifier: headerIdentifier,
-            owner: self,
-        ) as? EntryListGroupHeaderCellView)
-            ?? EntryListGroupHeaderCellView()
-        header.identifier = headerIdentifier
-        header.configure(title: title, colorCode: colorCode)
-        return header
-    }
-
-    private func makeGroupEmptyCell(outlineView: NSOutlineView, columnId: String) -> EntryListEmptyCellView {
-        let emptyIdentifier = NSUserInterfaceItemIdentifier("group-empty-cell-\(columnId)")
-        let emptyCell = (outlineView.makeView(withIdentifier: emptyIdentifier, owner: self) as? EntryListEmptyCellView)
-            ?? EntryListEmptyCellView()
-        emptyCell.identifier = emptyIdentifier
-        return emptyCell
     }
 
     private func makeEntryCell(
@@ -183,14 +167,14 @@ extension EntryListCoordinator: NSOutlineViewDelegate {
             ?? EntryListEntryCellView()
         view.identifier = entryIdentifier
 
-        let dateModifiedWidth = outlineView
-            .tableColumn(withIdentifier: NSUserInterfaceItemIdentifier(EntryListColumn.dateModified.rawValue))?
+        let columnWidth = outlineView
+            .tableColumn(withIdentifier: NSUserInterfaceItemIdentifier(columnId))?
             .width ?? 0
         let thumbnail = thumbnailImagesByPath[entry.fullPath]
         let configuration = makeEntryCellConfiguration(
             entry: entry,
             columnId: columnId,
-            dateModifiedWidth: dateModifiedWidth,
+            columnWidth: columnWidth,
             thumbnail: thumbnail,
         )
         view.configure(configuration)
@@ -257,24 +241,28 @@ extension EntryListCoordinator {
     }
 
     func observeRenderLoop() {
-        observe { [weak self] in
-            guard let self else { return }
-            let snapshot = RenderSnapshot(state: state)
+        renderObservationCancellable?.cancel()
+        renderObservationCancellable = store.publisher
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] _ in
+                guard let self else { return }
+                let snapshot = RenderSnapshot(state: state)
 
-            guard let previous = lastRenderSnapshot else {
+                guard let previous = lastRenderSnapshot else {
+                    lastRenderSnapshot = snapshot
+                    return
+                }
+
+                handleSnapshotChanges(previous: previous, snapshot: snapshot)
+
                 lastRenderSnapshot = snapshot
-                return
             }
-
-            handleSnapshotChanges(previous: previous, snapshot: snapshot)
-
-            lastRenderSnapshot = snapshot
-        }
     }
 
     func handleSnapshotChanges(previous: RenderSnapshot, snapshot: RenderSnapshot) {
         handleVisibleColumnsChange(previous: previous, snapshot: snapshot)
         rebuildRowsIfNeeded(previous: previous, snapshot: snapshot)
+        updateListMetricsIfNeeded(previous: previous, snapshot: snapshot)
         resetThumbnailSessionIfNeeded(previous: previous, snapshot: snapshot)
         syncSelectionIfNeeded(previous: previous, snapshot: snapshot)
         reloadVisibleRowsIfNeeded(previous: previous, snapshot: snapshot)
@@ -283,11 +271,14 @@ extension EntryListCoordinator {
         saveScrollPositionIfNeeded(previous: previous, snapshot: snapshot)
         scrollToSelectionIfNeeded(previous: previous, snapshot: snapshot)
         updateDropTargetBorderIfNeeded(previous: previous, snapshot: snapshot)
+        syncThumbnailProjectionIfNeeded(previous: previous, snapshot: snapshot)
     }
 
     func handleVisibleColumnsChange(previous: RenderSnapshot, snapshot: RenderSnapshot) {
         guard previous.listVisibleColumns != snapshot.listVisibleColumns else { return }
+        isApplyingColumnsFromStore = true
         view?.applyColumns(snapshot.listVisibleColumns)
+        isApplyingColumnsFromStore = false
         syncListSortIndicators(sortKey: snapshot.sortKey, sortOrder: snapshot.sortOrder)
         syncListRenamingFromStore()
         tableView.reloadData()
@@ -441,51 +432,10 @@ extension EntryListCoordinator {
             let configuration = makeEntryCellConfiguration(
                 entry: entry,
                 columnId: EntryListColumn.name.rawValue,
-                dateModifiedWidth: dateModifiedWidth,
+                columnWidth: dateModifiedWidth,
                 thumbnail: thumbnail,
             )
             cell.configure(configuration)
         }
-    }
-
-    func makeEntryCellConfiguration(
-        entry: EntryModel,
-        columnId: String,
-        dateModifiedWidth: CGFloat,
-        thumbnail: NSImage?,
-    ) -> EntryListEntryCellViewConfiguration {
-        let isCut = state.entryOperations.clipboardItems.contains(entry.fullPath)
-            && state.entryOperations.clipboardOperation == .cut
-
-        return .init(
-            context: .init(
-                model: entry,
-                columnId: columnId,
-                iconSize: state.listIconSize,
-                textSize: state.listTextSize,
-                dateModifiedWidth: dateModifiedWidth,
-                thumbnail: thumbnail,
-                isHidden: entry.isHidden,
-                isCut: isCut,
-                isRenaming: state.entryOperations.renamingItemId == entry.id,
-                renamingText: state.entryOperations.renamingText,
-                workspaceClient: workspaceClient,
-                onRenameUpdate: { [weak self] text in
-                    guard let self else { return }
-                    guard state.entryOperations.renamingItemId != nil else { return }
-                    sendEntryOperations(.updateRenamingText(text))
-                },
-                onRenameCommit: { [weak self] in
-                    guard let self else { return }
-                    guard state.entryOperations.renamingItemId != nil else { return }
-                    sendEntryOperations(.commitRename)
-                },
-                onRenameCancel: { [weak self] in
-                    guard let self else { return }
-                    guard state.entryOperations.renamingItemId != nil else { return }
-                    sendEntryOperations(.cancelRename)
-                },
-            ),
-        )
     }
 }

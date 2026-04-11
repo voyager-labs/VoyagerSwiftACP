@@ -1,41 +1,6 @@
 import AppKit
 import UniformTypeIdentifiers
 
-public enum EntryGridRenameEditorRules {
-    public enum CommandAction: Equatable {
-        case commit
-        case cancel
-        case none
-    }
-
-    public static let maxLines = 3
-
-    public static func applyWrappingStyle(to textField: NSTextField) {
-        textField.usesSingleLineMode = false
-        textField.lineBreakMode = .byWordWrapping
-        textField.maximumNumberOfLines = maxLines
-        textField.cell?.wraps = true
-        textField.cell?.isScrollable = false
-    }
-
-    public static func sanitizeInput(_ value: String) -> String {
-        value.replacingOccurrences(of: "\n", with: "")
-            .replacingOccurrences(of: "\r", with: "")
-    }
-
-    public static func commandAction(for commandSelector: Selector) -> CommandAction {
-        if commandSelector == #selector(NSResponder.insertNewline(_:))
-            || commandSelector == #selector(NSResponder.insertTab(_:))
-        {
-            return .commit
-        }
-        if commandSelector == #selector(NSResponder.cancelOperation(_:)) {
-            return .cancel
-        }
-        return .none
-    }
-}
-
 final class EntryGridCollectionViewItem: NSCollectionViewItem {
     struct Configuration {
         let entry: EntryModel
@@ -129,7 +94,7 @@ final class EntryGridCollectionViewItem: NSCollectionViewItem {
         }
 
         let display = EntryDisplayModel(entry: configuration.entry)
-        if let supplementaryInfoText = display.supplementaryInfoText {
+        if !configuration.isRenaming, let supplementaryInfoText = display.supplementaryInfoText {
             infoField.isHidden = false
             infoField.stringValue = supplementaryInfoText
         } else {
@@ -144,6 +109,15 @@ final class EntryGridCollectionViewItem: NSCollectionViewItem {
         guard isRenaming else { return }
         view.window?.makeFirstResponder(nameField)
         nameField.selectText(nil)
+        if let entry,
+           let editor = nameField.currentEditor() as? NSTextView
+        {
+            let range = EntryInlineRenameEditorRules.initialSelectionRange(
+                for: entry.name,
+                isFolder: entry.isFolder,
+            )
+            editor.setSelectedRange(range)
+        }
     }
 
     // swiftlint:disable:next function_body_length
@@ -151,6 +125,7 @@ final class EntryGridCollectionViewItem: NSCollectionViewItem {
         view.wantsLayer = true
         view.layer?.cornerRadius = 8
 
+        backgroundView.identifier = NSUserInterfaceItemIdentifier("entryGrid.background")
         iconBackgroundView.identifier = NSUserInterfaceItemIdentifier("entryGrid.iconBackground")
         nameContainerView.identifier = NSUserInterfaceItemIdentifier("entryGrid.nameContainer")
         nameHighlightView.identifier = NSUserInterfaceItemIdentifier("entryGrid.nameHighlight")
@@ -167,6 +142,7 @@ final class EntryGridCollectionViewItem: NSCollectionViewItem {
         iconBackgroundView.translatesAutoresizingMaskIntoConstraints = false
 
         iconView.translatesAutoresizingMaskIntoConstraints = false
+        iconView.unregisterDraggedTypes()
         iconBackgroundView.addSubview(iconView)
 
         tagStackView.orientation = .horizontal
@@ -241,7 +217,7 @@ final class EntryGridCollectionViewItem: NSCollectionViewItem {
 
             rootStack.leadingAnchor.constraint(equalTo: view.leadingAnchor, constant: 8),
             rootStack.trailingAnchor.constraint(equalTo: view.trailingAnchor, constant: -8),
-            rootStack.topAnchor.constraint(equalTo: view.topAnchor, constant: 8),
+            rootStack.topAnchor.constraint(equalTo: view.topAnchor, constant: 12),
             rootStack.bottomAnchor.constraint(lessThanOrEqualTo: view.bottomAnchor, constant: -8),
         ])
     }
@@ -261,40 +237,34 @@ final class EntryGridCollectionViewItem: NSCollectionViewItem {
     }
 
     private func updateAppearance() {
-        let isHighlighted = isSelected
-        let dropHighlighted = isDropTargeted
-        let selectionBackground = (view.window?.isKeyWindow ?? true)
-            ? NSColor.selectedTextBackgroundColor
-            : NSColor.unemphasizedSelectedTextBackgroundColor
-        let dropBackground = NSColor.selectedTextBackgroundColor.withAlphaComponent(0.22)
+        let highlighted = (isSelected || isDropTargeted) && !isRenaming
 
-        // 선택 스타일은 라벨(name/info) 강조를 기본으로 하고,
-        // drop target 하이라이트만 타일(border/background)을 사용합니다.
-        if dropHighlighted {
-            backgroundView.layer?.backgroundColor = dropBackground.cgColor
-            backgroundView.layer?.borderWidth = 1.5
-            backgroundView.layer?.borderColor = NSColor.controlAccentColor.cgColor
+        backgroundView.layer?.backgroundColor = nil
+        backgroundView.layer?.borderWidth = 0
+        backgroundView.layer?.borderColor = nil
+
+        // Finder-like rounded thumbnail background behind the icon area
+        if highlighted {
+            iconBackgroundView.layer?.backgroundColor = NSColor(
+                white: 1.0, alpha: 0.08,
+            ).cgColor
         } else {
-            backgroundView.layer?.backgroundColor = NSColor.clear.cgColor
-            backgroundView.layer?.borderWidth = 0
-            backgroundView.layer?.borderColor = nil
+            iconBackgroundView.layer?.backgroundColor = nil
         }
-        iconBackgroundView.layer?.backgroundColor = NSColor.clear.cgColor
 
-        if isHighlighted, !isRenaming {
+        // Name-area highlight: Finder-like blue pill behind the label
+        if highlighted {
             nameHighlightView.isHidden = false
-            nameHighlightView.layer?.backgroundColor = selectionBackground.cgColor
-            nameField.textColor = .selectedTextColor
-        } else if !isRenaming {
+            nameHighlightView.layer?.backgroundColor = NSColor.selectedContentBackgroundColor.cgColor
+        } else {
             nameHighlightView.isHidden = true
             nameHighlightView.layer?.backgroundColor = nil
-            nameField.textColor = .labelColor
         }
 
-        infoField.isBordered = false
-        infoField.drawsBackground = isHighlighted
-        infoField.backgroundColor = isHighlighted ? selectionBackground : .clear
-        infoField.textColor = isHighlighted ? .selectedTextColor : .systemBlue
+        let nameColor: NSColor = highlighted ? .white : .labelColor
+        let infoColor: NSColor = highlighted ? .white : .systemBlue
+        nameField.textColor = nameColor
+        infoField.textColor = infoColor
 
         let alpha: CGFloat = (isHiddenEntry || isCut) ? 0.5 : 1.0
         iconView.alphaValue = alpha
@@ -312,8 +282,12 @@ final class EntryGridCollectionViewItem: NSCollectionViewItem {
         nameField.drawsBackground = true
         nameField.backgroundColor = NSColor.textBackgroundColor
         nameField.focusRingType = .default
-        EntryGridRenameEditorRules.applyWrappingStyle(to: nameField)
-        nameField.stringValue = EntryGridRenameEditorRules.sanitizeInput(text)
+        nameField.usesSingleLineMode = true
+        nameField.lineBreakMode = .byTruncatingTail
+        nameField.maximumNumberOfLines = 1
+        nameField.cell?.wraps = false
+        nameField.cell?.isScrollable = true
+        nameField.stringValue = EntryInlineRenameEditorRules.sanitizeInput(text)
         nameField.delegate = self
     }
 
@@ -353,7 +327,7 @@ extension EntryGridCollectionViewItem: NSTextFieldDelegate {
         guard isRenaming else { return }
         guard let textField = notification.object as? NSTextField else { return }
         guard textField === nameField else { return }
-        let sanitized = EntryGridRenameEditorRules.sanitizeInput(textField.stringValue)
+        let sanitized = EntryInlineRenameEditorRules.sanitizeInput(textField.stringValue)
         if sanitized != textField.stringValue {
             textField.stringValue = sanitized
         }
@@ -364,7 +338,7 @@ extension EntryGridCollectionViewItem: NSTextFieldDelegate {
         guard isRenaming else { return false }
         guard let textField = control as? NSTextField, textField === nameField else { return false }
 
-        switch EntryGridRenameEditorRules.commandAction(for: commandSelector) {
+        switch EntryInlineRenameEditorRules.commandAction(for: commandSelector) {
         case .commit:
             onRenameCommit?()
             return true

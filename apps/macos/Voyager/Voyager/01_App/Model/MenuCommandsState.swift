@@ -15,7 +15,7 @@ struct MenuCommandsState: Equatable {
     var sidebarVisible: Bool
     var showHiddenFiles: Bool
 
-    var viewLayout: ContentViewLayout
+    var viewLayout: EntryViewLayoutState.Mode
     var groupKey: GroupKey
     var sortKey: SortKey
     var sortOrder: SortOrder
@@ -57,21 +57,22 @@ struct MenuCommandsState: Equatable {
         let windowState = window.window
 
         hasFocusedWindow = true
-        canOpen = windowState.content.hasSelectableEntriesInLayout
-        canQuickLook = windowState.content.hasSelectableEntriesInLayout
+        let selectedIds = windowState.content.entryViewLayout.selectedIds
+        canOpen = !selectedIds.isEmpty
+        canQuickLook = !selectedIds.isEmpty
         canGoBack = windowState.content.navigation.canGoBack
         canGoForward = windowState.content.navigation.canGoForward
         canGoToEnclosingDirectory = windowState.content.navigation.canGoToEnclosingDirectory
         canSaveCollection = windowState.content.canSaveCollection
         sidebarVisible = windowState.sidebar.sidebarVisible
         showHiddenFiles = windowState.content.entryViewLayout.showHiddenFiles
-        viewLayout = windowState.content.viewLayout
+        viewLayout = windowState.content.entryViewLayout.mode
         groupKey = windowState.content.entryViewLayout.entryArrangements.groupKey
         sortKey = windowState.content.entryViewLayout.entryArrangements.sortKey
         sortOrder = windowState.content.entryViewLayout.entryArrangements.sortOrder
         canUndo = windowState.content.entryViewLayout.entryOperations.canUndoEntryAction
         canRedo = windowState.content.entryViewLayout.entryOperations.canRedoEntryAction
-        selectedItemCount = windowState.content.selectedEntryCount
+        selectedItemCount = selectedIds.count
         isComposerPresented = windowState.content.composer.isPresented
     }
 }

@@ -3,7 +3,7 @@ import AppKit
 enum ContentPaneContextMenuBuilder {
     struct Configuration {
         let isTrashFolder: Bool
-        let viewLayout: ContentViewLayout
+        let viewLayout: EntryViewLayoutState.Mode
         let sortKey: SortKey
         let sortOrder: SortOrder
         let groupKey: GroupKey
@@ -59,7 +59,7 @@ enum ContentPaneContextMenuBuilder {
             action: #selector(ContentPaneContextMenuCoordinator.contextMenuSetLayout(_:)),
             target: target,
         )
-        list.representedObject = ContentViewLayout.list.rawValue
+        list.representedObject = EntryViewLayoutState.Mode.list.rawValue
         list.state = configuration.viewLayout == .list ? .on : .off
         menu.addItem(list)
 
@@ -68,7 +68,7 @@ enum ContentPaneContextMenuBuilder {
             action: #selector(ContentPaneContextMenuCoordinator.contextMenuSetLayout(_:)),
             target: target,
         )
-        grid.representedObject = ContentViewLayout.grid.rawValue
+        grid.representedObject = EntryViewLayoutState.Mode.grid.rawValue
         grid.state = configuration.viewLayout == .grid ? .on : .off
         menu.addItem(grid)
         return menu

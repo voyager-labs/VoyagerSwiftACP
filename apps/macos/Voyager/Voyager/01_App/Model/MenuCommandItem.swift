@@ -28,7 +28,7 @@ struct MenuCommandItem: Identifiable, Equatable {
     enum ViewCommand: Equatable, Sendable {
         case toggleSidebar
         case toggleShowHiddenFiles
-        case setViewLayout(ContentViewLayout)
+        case setViewLayout(EntryViewLayoutState.Mode)
         case setGroupKey(GroupKey)
         case setSortKey(SortKey)
         case setSortOrder(SortOrder)

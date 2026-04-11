@@ -1,4 +1,5 @@
 import AppKit
+import Combine
 import ComposableArchitecture
 import Foundation
 import VoyagerShared
@@ -10,19 +11,22 @@ extension EntryGridCoordinator {
     }
 
     func observeRenderLoop() {
-        observe { [weak self] in
-            guard let self else { return }
-            let snapshot = RenderSnapshot(state: state)
+        renderObservationCancellable?.cancel()
+        renderObservationCancellable = store.publisher
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] _ in
+                guard let self else { return }
+                let snapshot = RenderSnapshot(state: state)
 
-            guard let previous = lastRenderSnapshot else {
+                guard let previous = lastRenderSnapshot else {
+                    lastRenderSnapshot = snapshot
+                    return
+                }
+
+                handleSnapshotChanges(previous: previous, snapshot: snapshot)
+
                 lastRenderSnapshot = snapshot
-                return
             }
-
-            handleSnapshotChanges(previous: previous, snapshot: snapshot)
-
-            lastRenderSnapshot = snapshot
-        }
     }
 
     func handleSnapshotChanges(previous: RenderSnapshot, snapshot: RenderSnapshot) {
@@ -36,6 +40,7 @@ extension EntryGridCoordinator {
         saveScrollPositionIfNeeded(previous: previous, snapshot: snapshot)
         scrollToSelectionIfNeeded(previous: previous, snapshot: snapshot)
         updateDropTargetBorderIfNeeded(previous: previous, snapshot: snapshot)
+        syncThumbnailProjectionIfNeeded(previous: previous, snapshot: snapshot)
         resetThumbnailSessionIfNeeded(previous: previous, snapshot: snapshot)
         restoreScrollOffsetIfNeeded(previous: previous, snapshot: snapshot)
     }
@@ -87,6 +92,11 @@ extension EntryGridCoordinator {
         }
     }
 
+    func syncThumbnailProjectionIfNeeded(previous: RenderSnapshot, snapshot: RenderSnapshot) {
+        guard previous.thumbnailRenderVersion != snapshot.thumbnailRenderVersion else { return }
+        refreshThumbnailProjectionForVisibleArea()
+    }
+
     func restoreScrollOffsetIfNeeded(previous: RenderSnapshot, snapshot: RenderSnapshot) {
         if previous.entriesCount != snapshot.entriesCount { restoreScrollPositionIfNeeded() }
     }
@@ -109,7 +119,6 @@ extension EntryGridCoordinator {
 
     func requestThumbnailsForVisibleArea() {
         guard let layout = collectionView.collectionViewLayout else { return }
-
         let visibleRect = collectionView.visibleRect
         guard visibleRect.height > 0 else { return }
 
@@ -130,7 +139,9 @@ extension EntryGridCoordinator {
         }
 
         guard !paths.isEmpty else { return }
-        requestThumbnails(paths: paths)
+        pruneThumbnailSession(keeping: paths)
+        store.send(.entryThumbnail(.requestThumbnails(paths: Array(paths))))
+        reloadItemsForUpdatedThumbnails(paths: refreshThumbnailProjection(paths: paths))
     }
 
     func reloadItemsForUpdatedThumbnails(paths: Set<String>) {
@@ -144,45 +155,50 @@ extension EntryGridCoordinator {
         collectionView.reloadItems(at: indexPaths)
     }
 
-    func requestThumbnails(paths: Set<String>) {
-        pruneThumbnailSession(keeping: paths)
-        let scale = NSScreen.main?.backingScaleFactor ?? 3.0
-        let size = CGSize(width: 256, height: 256)
-        let thumbnailGeneratorClient = thumbnailGeneratorClient
-        for path in paths where thumbnailImagesByPath[path] == nil && thumbnailTasksByPath[path] == nil {
-            let task = Task.detached(priority: .utility) { [weak self] in
-                let image = await thumbnailGeneratorClient.generateThumbnail(
-                    for: URL(fileURLWithPath: path),
-                    size: size,
-                    scale: scale,
-                )
-                await MainActor.run { [weak self] in
-                    guard let self else { return }
-                    guard self.thumbnailTasksByPath[path] != nil else { return }
-                    self.thumbnailTasksByPath[path] = nil
-                    guard let image else { return }
-                    self.thumbnailImagesByPath[path] = image
-                    self.reloadItemsForUpdatedThumbnails(paths: [path])
-                }
-            }
-            thumbnailTasksByPath[path] = task
-        }
-    }
-
     func pruneThumbnailSession(keeping paths: Set<String>) {
         thumbnailImagesByPath = thumbnailImagesByPath.filter { paths.contains($0.key) }
-        for (path, task) in thumbnailTasksByPath where !paths.contains(path) {
-            task.cancel()
-            thumbnailTasksByPath[path] = nil
-        }
     }
 
     func resetThumbnailSession() {
-        for task in thumbnailTasksByPath.values {
-            task.cancel()
-        }
-        thumbnailTasksByPath.removeAll(keepingCapacity: false)
         thumbnailImagesByPath.removeAll(keepingCapacity: false)
+    }
+
+    func refreshThumbnailProjection(paths: Set<String>) -> Set<String> {
+        var changedPaths: Set<String> = []
+
+        for path in paths {
+            let cachedImage = entryThumbnailCacheClient.getThumbnail(for: path)
+            if let cachedImage {
+                if thumbnailImagesByPath[path] == nil {
+                    changedPaths.insert(path)
+                }
+                thumbnailImagesByPath[path] = cachedImage
+            } else if thumbnailImagesByPath.removeValue(forKey: path) != nil {
+                changedPaths.insert(path)
+            }
+        }
+
+        return changedPaths
+    }
+
+    func refreshThumbnailProjectionForVisibleArea() {
+        guard let layout = collectionView.collectionViewLayout else { return }
+        let visibleRect = collectionView.visibleRect
+        guard visibleRect.height > 0 else { return }
+
+        let indexPaths: [IndexPath] = layout.layoutAttributesForElements(in: visibleRect).compactMap { attr in
+            guard attr.representedElementCategory == .item else { return nil }
+            return attr.indexPath
+        }
+        guard !indexPaths.isEmpty else { return }
+
+        var visiblePaths: Set<String> = []
+        for indexPath in indexPaths {
+            guard let entry = entry(at: indexPath), !entry.isFolder else { continue }
+            visiblePaths.insert(entry.fullPath)
+        }
+
+        reloadItemsForUpdatedThumbnails(paths: refreshThumbnailProjection(paths: visiblePaths))
     }
 }
 
@@ -225,13 +241,13 @@ extension EntryGridCoordinator: NSCollectionViewDataSource {
             isDropTargeted: isDropTargeted,
             workspaceClient: workspaceClient,
             onRenameUpdate: { [weak self] text in
-                self?.sendEntryOperations(.updateRenamingText(text))
+                self?.sendEntryOperations(.edit(.updateRenamingText(text)))
             },
             onRenameCommit: { [weak self] in
-                self?.sendEntryOperations(.commitRename)
+                self?.sendEntryOperations(.edit(.commitRename))
             },
             onRenameCancel: { [weak self] in
-                self?.sendEntryOperations(.cancelRename)
+                self?.sendEntryOperations(.edit(.cancelRename))
             },
         ))
 
@@ -319,7 +335,9 @@ extension EntryGridCoordinator: NSCollectionViewDelegate, NSCollectionViewDelega
             return entry.fullPath
         }
         guard !paths.isEmpty else { return }
-        sendEntryOperations(.saveDragPaths(paths))
+        let isOptionDrag = NSEvent.modifierFlags.contains(.option)
+        entryFileOpsClient.saveDragWithOption(isOptionDrag)
+        sendEntryOperations(.routing(.saveDragPaths(paths)))
     }
 
     func collectionView(
@@ -329,7 +347,9 @@ extension EntryGridCoordinator: NSCollectionViewDelegate, NSCollectionViewDelega
         dragOperation operation: NSDragOperation,
     ) {
         guard EntryViewLayoutDragStateClearRuleSet.shouldClearAfterSessionEnd(operation: operation) else { return }
-        sendEntryOperations(.saveDragPaths([]))
+        entryFileOpsClient.saveDragWithOption(false)
+        sendEntryOperations(.routing(.saveDragPaths([])))
+        clearDropTargetState()
         store.send(.view(.setDropTargeted(false)))
     }
 
@@ -340,20 +360,21 @@ extension EntryGridCoordinator: NSCollectionViewDelegate, NSCollectionViewDelega
         proposedIndexPath proposedDropIndexPath: AutoreleasingUnsafeMutablePointer<NSIndexPath>,
         dropOperation proposedDropOperation: UnsafeMutablePointer<NSCollectionView.DropOperation>,
     ) -> NSDragOperation {
-        // proposedIndexPath는 insertion position 기반이라 hover 타겟과 어긋날 수 있습니다.
-        // 실제 커서 위치로 hit-test 해서 drop target을 결정합니다.
         let draggingLocation = draggingInfo.draggingLocation
         let localPoint = collectionView.convert(draggingLocation, from: nil)
-        let hoverIndexPath = collectionView.indexPathForItem(at: localPoint)
-
-        if let hoverIndexPath {
-            proposedDropIndexPath.pointee = hoverIndexPath as NSIndexPath
+        let primaryIndexPath = collectionView.indexPathForItem(at: localPoint)
+        let fallbackIndexPath = primaryIndexPath == nil ? indexPathForVisibleItem(containing: localPoint) : nil
+        let pointResolvedIndexPath = primaryIndexPath ?? fallbackIndexPath
+        let hoverIndexPath = resolvedEntryTargetIndexPath(
+            pointResolved: pointResolvedIndexPath,
+            localPoint: localPoint,
+        )
+        if let hoverIndexPath = hoverIndexPath as? NSIndexPath {
+            proposedDropIndexPath.pointee = hoverIndexPath
         }
-
         let indexPath = hoverIndexPath ?? (proposedDropIndexPath.pointee as IndexPath)
         var destinationPath = state.currentPath
         var targetEntryId: EntryModel.ID?
-
         if let entry = entry(at: indexPath),
            entry.isFolder,
            !entryLoadingClient.isPackageDirectory(URL(fileURLWithPath: entry.fullPath))
@@ -364,97 +385,94 @@ extension EntryGridCoordinator: NSCollectionViewDelegate, NSCollectionViewDelega
         } else {
             proposedDropOperation.pointee = .before
         }
-
         let sourcePaths = entryFileOpsClient.loadDragPaths()
         let wantsCopy = sourcePaths.isEmpty
             ? NSEvent.modifierFlags.contains(.option)
             : entryFileOpsClient.loadDragWithOption()
         let allowed = draggingInfo.draggingSourceOperationMask
-        sendEntryOperations(.validateDrop(context: .init(
+        sendEntryOperations(.routing(.validateDrop(context: .init(
             sourcePaths: sourcePaths,
             destinationPath: destinationPath,
             allowedOperationsRawValue: allowed.rawValue,
             prefersCopy: wantsCopy,
-        )))
+        ))))
         let operation = dragOperation(from: state.entryOperations.dropValidationResult.resolvedOperation)
-
         setDropTargetEntryId(operation.isEmpty ? nil : targetEntryId)
+        validatedDropDestinationPath = operation.isEmpty ? nil : destinationPath
         store.send(.view(.setDropTargeted(!operation.isEmpty)))
+
         return operation
     }
 
+    // swiftlint:disable:next function_body_length
     func collectionView(
         _: NSCollectionView,
         acceptDrop draggingInfo: NSDraggingInfo,
-        indexPath: IndexPath,
-        dropOperation: NSCollectionView.DropOperation,
+        indexPath _: IndexPath,
+        dropOperation _: NSCollectionView.DropOperation,
     ) -> Bool {
-        var destinationPath = state.currentPath
-        if dropOperation == .on,
-           let entry = entry(at: indexPath),
-           entry.isFolder,
-           !entryLoadingClient.isPackageDirectory(URL(fileURLWithPath: entry.fullPath))
+        let destinationPath = validatedDropDestinationPath ?? state.currentPath
+        var internalPaths = entryFileOpsClient.loadDragPaths()
+        if internalPaths.isEmpty,
+           let source = draggingInfo.draggingSource,
+           (source as AnyObject) === collectionView
         {
-            destinationPath = entry.fullPath
+            let pb = draggingInfo.draggingPasteboard
+            let opts: [NSPasteboard.ReadingOptionKey: Any] = [.urlReadingFileURLsOnly: true]
+            if let urls = pb.readObjects(forClasses: [NSURL.self], options: opts) as? [URL],
+               !urls.isEmpty
+            {
+                let recovered = urls.map(\.path)
+                entryFileOpsClient.saveDragPaths(recovered)
+                entryFileOpsClient.saveDragWithOption(NSEvent.modifierFlags.contains(.option))
+                internalPaths = recovered
+            }
         }
-
-        let internalPaths = entryFileOpsClient.loadDragPaths()
         let wantsCopy = internalPaths.isEmpty
             ? NSEvent.modifierFlags.contains(.option)
             : entryFileOpsClient.loadDragWithOption()
         let allowed = draggingInfo.draggingSourceOperationMask
-        sendEntryOperations(.validateDrop(context: .init(
+        sendEntryOperations(.routing(.validateDrop(context: .init(
             sourcePaths: internalPaths,
             destinationPath: destinationPath,
             allowedOperationsRawValue: allowed.rawValue,
             prefersCopy: wantsCopy,
-        )))
+        ))))
         let validation = state.entryOperations.dropValidationResult
         let resolvedOperation = dragOperation(from: validation.resolvedOperation)
         guard !resolvedOperation.isEmpty else {
-            setDropTargetEntryId(nil)
+            clearDropTargetState()
             store.send(.view(.setDropTargeted(false)))
             return false
         }
-
         if !internalPaths.isEmpty {
-            sendEntryOperations(.handleDrop(providers: [], destinationPath: destinationPath))
-            setDropTargetEntryId(nil)
-            store.send(.view(.setDropTargeted(false)))
+            sendEntryOperations(.routing(.handleDrop(providers: [], destinationPath: destinationPath)))
             return true
         }
-
         let pasteboard = draggingInfo.draggingPasteboard
         let options: [NSPasteboard.ReadingOptionKey: Any] = [.urlReadingFileURLsOnly: true]
         guard let urls = pasteboard.readObjects(forClasses: [NSURL.self], options: options) as? [URL],
               !urls.isEmpty
         else {
-            setDropTargetEntryId(nil)
+            clearDropTargetState()
             store.send(.view(.setDropTargeted(false)))
             return false
         }
-        sendEntryOperations(.dropItems(
+        sendEntryOperations(.routing(.dropItems(
             sourcePaths: urls.map(\.path),
             destinationPath: destinationPath,
             isOptionDrag: validation.isOptionDrag,
-        ))
-        setDropTargetEntryId(nil)
-        store.send(.view(.setDropTargeted(false)))
+        )))
         return true
     }
 
     func updateSelectionFromCollectionView(_ collectionView: NSCollectionView) {
         guard !isUpdatingSelectionFromStore else { return }
-
         let selectedIndexPaths = collectionView.selectionIndexPaths
         let selectedIds: Set<EntryModel.ID> = Set(selectedIndexPaths.compactMap { indexPath in
             entry(at: indexPath)?.id
         })
-
-        let lastSelectedId = selectedIndexPaths
-            .max()
-            .flatMap { entry(at: $0)?.id }
-
+        let lastSelectedId = selectedIndexPaths.max().flatMap { entry(at: $0)?.id }
         let selectedEntries = selectedIndexPaths.compactMap { entry(at: $0) }
         preloadOpenWithApplications(selectedEntries: selectedEntries)
         store.send(.internal(.setSelectionState(
@@ -463,37 +481,5 @@ extension EntryGridCoordinator: NSCollectionViewDelegate, NSCollectionViewDelega
             rangeAnchorId: lastSelectedId,
             shouldScrollToSelection: false,
         )))
-    }
-}
-
-extension EntryGridCoordinator: EntryGridView.EntryGridCollectionViewMenuProviding {
-    func contextMenu(for indexPath: IndexPath?, event: NSEvent) -> NSMenu {
-        updateContextMenuAnchor(event)
-        let rowEntry = entry(at: indexPath)
-        let selectedEntries = selectedEntries(rowEntry: rowEntry)
-        preloadOpenWithApplications(selectedEntries: selectedEntries)
-        let menuSpec = EntryContextMenuSpecFactory.make(
-            selectedIds: state.selectedIds,
-            selectedEntries: selectedEntries,
-            rowEntry: rowEntry,
-            isTrashFolder: isTrashFolder,
-            canPaste: !state.entryOperations.clipboardItems.isEmpty,
-            favoriteTags: finderFavoritesTagClient.favoriteTags(),
-            openWithApplications: openWithApplications(selectedEntries: selectedEntries),
-        )
-        let coordinator = EntryContextMenuCoordinator(store: store, rowEntry: rowEntry)
-        contextMenuCoordinator = coordinator
-        return EntryContextMenuBuilder.makeMenu(configuration: .init(
-            target: coordinator,
-            selectedCount: menuSpec.selectedCount,
-            rowEntryPathForOpenInNewTab: menuSpec.rowEntryPathForOpenInNewTab,
-            canPaste: menuSpec.canPaste,
-            showCompress: menuSpec.showCompress,
-            showExtract: menuSpec.showExtract,
-            isTrashFolder: menuSpec.isTrashFolder,
-            openWithApplications: menuSpec.openWithApplications,
-            showOpenWith: menuSpec.showOpenWith,
-            tags: menuSpec.tags,
-        ))
     }
 }

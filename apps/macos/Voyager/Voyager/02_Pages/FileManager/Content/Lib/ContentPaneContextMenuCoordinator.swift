@@ -13,7 +13,7 @@ final class ContentPaneContextMenuCoordinator: NSObject {
     var configuration: ContentPaneContextMenuBuilder.Configuration {
         .init(
             isTrashFolder: isTrashFolder,
-            viewLayout: store.state.viewLayout,
+            viewLayout: store.state.entryViewLayout.mode,
             sortKey: store.state.entryViewLayout.entryArrangements.sortKey,
             sortOrder: store.state.entryViewLayout.entryArrangements.sortOrder,
             groupKey: store.state.entryViewLayout.entryArrangements.groupKey,
@@ -34,7 +34,7 @@ final class ContentPaneContextMenuCoordinator: NSObject {
         store.send(
             .entryViewLayout(
                 .entryOperations(
-                    .createNewFolder(parentPath: store.state.navigation.currentPath),
+                    .edit(.createNewFolder(parentPath: store.state.navigation.currentPath)),
                 ),
             ),
         )
@@ -43,9 +43,9 @@ final class ContentPaneContextMenuCoordinator: NSObject {
     @objc
     func contextMenuSetLayout(_ sender: NSMenuItem) {
         guard let rawValue = sender.representedObject as? String,
-              let layout = ContentViewLayout(rawValue: rawValue)
+              let layout = EntryViewLayoutState.Mode(rawValue: rawValue)
         else { return }
-        store.send(.changeLayout(layout))
+        store.send(.view(.changeLayout(layout)))
     }
 
     @objc
@@ -77,7 +77,7 @@ final class ContentPaneContextMenuCoordinator: NSObject {
         store.send(
             .entryViewLayout(
                 .entryOperations(
-                    .emptyTrash(paths: store.state.entryViewLayout.entries.map(\.fullPath)),
+                    .trash(.emptyTrash(paths: store.state.entryViewLayout.entries.map(\.fullPath))),
                 ),
             ),
         )

@@ -20,15 +20,15 @@ private struct FileManagerNavigationBridgeReducer {
     var body: some Reducer<State, Action> {
         Reduce { state, action in
             switch action {
-            case .sidebar(.favoritesLoaded),
-                 .sidebar(.locationsLoaded),
-                 .sidebar(.tagsLoaded):
+            case .sidebar(.internal(.favoritesLoaded)),
+                 .sidebar(.internal(.locationsLoaded)),
+                 .sidebar(.internal(.tagsLoaded)):
                 let computerName = state.sidebar.locations.first(where: { $0.isComputer })?.name
                     ?? state.content.navigation.currentPath
                 syncSidebarSelection(state: &state, computerName: computerName)
                 return .none
 
-            case let .sidebar(.openFavorite(favorite)):
+            case let .sidebar(.delegate(.openFavorite(favorite))):
                 if favorite.url.pathExtension.lowercased() == CollectionConstants.fileExtension {
                     state.sidebar.pendingSidebarSelectionRestore = state.sidebar.selectedSidebarItem
                     state.sidebar.selectedSidebarItem = favorite.displayName
@@ -36,35 +36,34 @@ private struct FileManagerNavigationBridgeReducer {
                 }
                 return .send(.navigation(.view(.navigateToPath(favorite.url.path))))
 
-            case let .sidebar(.openLocation(location)):
+            case let .sidebar(.delegate(.openLocation(location))):
                 return .send(.navigation(.view(.navigateToPath(location.url.path))))
 
-            case let .sidebar(.showTag(tag)):
-                return .send(.navigation(.view(.showTag(tag.name))))
+            case let .sidebar(.delegate(.showTag(tagName))):
+                return .send(.navigation(.view(.showTag(tagName))))
 
-            case .sidebar(.showRecents):
+            case .sidebar(.delegate(.showRecents)):
                 return .send(.navigation(.view(.showRecents)))
 
-            case .sidebar(.showComputer):
+            case .sidebar(.delegate(.showComputer)):
                 return .send(.navigation(.view(.showComputer)))
 
-            case let .content(.requestNavigation(navigationAction)):
+            case let .content(.internal(.requestNavigation(navigationAction))):
                 return .send(.navigation(navigationAction))
 
-            case let .content(.performPendingNavigation(pending)):
+            case let .content(.internal(.performPendingNavigation(pending))):
                 return .send(.navigation(.internal(.performNavigation(pending))))
 
-            case .content(.composerCollectionSearchSucceeded),
-                 .content(.discardCollectionChanges),
-                 .content(.collectionDraft(.discardChangesTapped)):
+            case .content(.delegate(.composerCollectionSearchSucceeded)),
+                 .content(.delegate(.discardCollectionChanges)):
                 let computerName = state.sidebar.locations.first(where: { $0.isComputer })?.name
                     ?? state.content.navigation.currentPath
                 syncSidebarSelection(state: &state, computerName: computerName)
                 return .none
 
-            case .content(.composerCollectionSearchFailed):
+            case .content(.delegate(.composerCollectionSearchFailed)):
                 if state.sidebar.pendingSidebarSelectionRestore != nil {
-                    return .send(.sidebar(.restoreSidebarSelection))
+                    return .send(.sidebar(.internal(.restoreSidebarSelection)))
                 }
                 return .none
 
@@ -127,11 +126,11 @@ func handleNavigateToState(
     switch navigationState {
     case let .collection(navigation):
         .concatenate(
-            .send(.content(.applyNavigationState(.collection(navigation)))),
+            .send(.content(.internal(.applyNavigationState(.collection(navigation))))),
             .send(.navigation(.internal(.navigateToCollection(navigation)))),
         )
 
     default:
-        .send(.content(.applyNavigationState(navigationState)))
+        .send(.content(.internal(.applyNavigationState(navigationState))))
     }
 }

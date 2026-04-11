@@ -5,82 +5,141 @@ import UniformTypeIdentifiers
 
 @CasePathable
 enum EntryOperationsAction: CasePathable, Sendable {
-    case delegate(EntryOperationsDelegate)
+    case delegate(Delegate)
+    case routing(Routing)
+    case loading(Loading)
+    case lifecycle(Lifecycle)
+    case open(Open)
+    case openWith(OpenWith)
+    case edit(Edit)
+    case clipboard(Clipboard)
+    case trash(Trash)
+    case archive(Archive)
+    case tagging(Tagging)
+    case undoRedo(UndoRedo)
 
-    case executeCommand(command: EntryOperationsCommand, context: EntryOperationsCommandContext)
-    case validateDrop(context: EntryDropValidationContext)
-    case saveDragPaths([String])
-    case handleDrop(providers: [NSItemProvider], destinationPath: String)
-    case dropItems(sourcePaths: [String], destinationPath: String, isOptionDrag: Bool)
-    case handleDropToTag(providers: [NSItemProvider], tagName: String)
+    @CasePathable
+    enum Delegate: CasePathable, Sendable {
+        case navigateToPath(String)
+        case openCollectionFile(URL)
+    }
 
-    case loadItems(path: String, showHidden: Bool)
-    case loadRecentItems(showHidden: Bool)
-    case loadTagItems(tagName: String, showHidden: Bool)
-    case loadComputerItems
-    case itemsLoaded([EntryModel])
-    case collectionItemsLoadedFromSearch(items: [JSONValue], showHidden: Bool)
-    case setCollectionMode(Bool)
-    case clearCollectionItems
+    @CasePathable
+    enum Routing: CasePathable, Sendable {
+        case executeCommand(command: EntryOperationsCommand, context: EntryOperationsCommandContext)
+        case validateDrop(context: EntryDropValidationContext)
+        case saveDragPaths([String])
+        case handleDrop(providers: [NSItemProvider], destinationPath: String)
+        case dropItems(sourcePaths: [String], destinationPath: String, isOptionDrag: Bool)
+        case handleDropToTag(providers: [NSItemProvider], tagName: String)
+    }
 
-    case openFiles(paths: [String])
-    case quickLookFiles(paths: [String])
-    case openFinderInfo(paths: [String])
-    case shareItems(paths: [String], anchor: CGPoint?)
-    case performService(paths: [String], name: String)
-    case revealInFinder(paths: [String])
-    case openFileWithApp(file: EntryModel)
-    case openFileWithAppBundleID(filePath: String, bundleID: String, url: URL)
-    case setDefaultAppForFile(type: UTType?, bundleID: String, file: EntryModel)
-    case setDefaultAppWithOther(file: EntryModel)
-    case openFilesWithAppFromOther(files: [EntryModel], shouldSetAsDefault: Bool)
-    case loadApplicationsForFile(file: EntryModel)
-    case createNewFolder(parentPath: String)
-    case createAliases(paths: [String])
-    case copySelectedItems(files: [EntryModel])
-    case loadClipboardState
-    case appDidBecomeActive
-    case copyAbsolutePaths(paths: [String])
-    case copyURLs(paths: [String])
-    case syncSelectedEntryIDs(Set<EntryModel.ID>)
-    case setClipboardOperation(operation: ClipboardOperation)
-    case startRename(id: EntryModel.ID, text: String)
-    case updateRenamingText(String)
-    case commitRename
-    case cancelRename
-    case pasteItemsFromClipboard(destinationPath: String)
-    case pasteItems(
-        sourcePaths: [String],
-        destinationPath: String,
-        operation: ClipboardOperation,
-        operationKind: OperationKind,
-    )
-    case syncClipboardState(paths: [String], operation: ClipboardOperation)
-    case renameItem(oldPath: String, newPath: String)
-    case moveToTrash(paths: [String])
-    case deleteImmediately(paths: [String])
-    case deleteImmediatelyConfirmed(paths: [String])
-    case putBackFromTrash(paths: [String])
-    case emptyTrash(paths: [String])
-    case emptyTrashConfirmed(paths: [String])
-    case emptyTrashCancelled
-    case compressItems(paths: [String])
-    case extractCompressedFile(path: String)
-    case requestTagMutation(request: TagMutationRequest)
-    case applicationsLoaded(String, [ApplicationInfo])
-    case loadCommonApplicationsForFiles(files: [EntryModel])
-    case commonApplicationsLoaded([ApplicationInfo])
-    case requestUndo
-    case requestRedo
-    case undoEntryAction(EntryActionRecord)
-    case redoEntryAction(EntryActionRecord)
-    case replayEntryAction(direction: EntryActionDirection, record: EntryActionRecord)
-    case entryActionApplied(direction: EntryActionDirection, record: EntryActionRecord)
-    case operationStarted(String, OperationKind)
-    case operationFinished(String, OperationKind, Result<Void, FileOpError>)
-    case entryActionCompleted(EntryActionRecord)
-    case emptyTrashCompleted
-    case clearError(String)
+    @CasePathable
+    enum Loading: CasePathable, Sendable {
+        case loadItems(path: String, showHidden: Bool)
+        case loadRecentItems(showHidden: Bool)
+        case loadTagItems(tagName: String, showHidden: Bool)
+        case loadComputerItems
+        case itemsLoaded([EntryModel])
+        case collectionItemsLoadedFromSearch(items: [JSONValue], showHidden: Bool)
+        case setCollectionMode(Bool)
+        case clearCollectionItems
+    }
+
+    @CasePathable
+    enum Lifecycle: CasePathable, Sendable {
+        case syncSelectedEntryIDs(Set<EntryModel.ID>)
+        case clearError(String)
+        case operationStarted(String, OperationKind)
+        case operationFinished(String, OperationKind, Result<Void, FileOpError>)
+        case entryActionCompleted(EntryActionRecord)
+        case emptyTrashCompleted
+        case loadClipboardState
+        case appDidBecomeActive
+        case syncClipboardState(paths: [String], operation: ClipboardOperation)
+        case pathsMutated([String])
+    }
+
+    @CasePathable
+    enum Open: CasePathable, Sendable {
+        case openFiles(paths: [String])
+        case quickLookFiles(paths: [String])
+        case openFinderInfo(paths: [String])
+        case shareItems(paths: [String], anchor: CGPoint?)
+        case performService(paths: [String], name: String)
+        case revealInFinder(paths: [String])
+    }
+
+    @CasePathable
+    enum OpenWith: CasePathable, Sendable {
+        case openFileWithApp(file: EntryModel)
+        case openFileWithAppBundleID(filePath: String, bundleID: String, url: URL)
+        case setDefaultAppForFile(type: UTType?, bundleID: String, file: EntryModel)
+        case setDefaultAppWithOther(file: EntryModel)
+        case openFilesWithAppFromOther(files: [EntryModel], shouldSetAsDefault: Bool)
+        case loadApplicationsForFile(file: EntryModel)
+        case applicationsLoaded(String, [ApplicationInfo])
+        case loadCommonApplicationsForFiles(files: [EntryModel])
+        case commonApplicationsLoaded([ApplicationInfo])
+    }
+
+    @CasePathable
+    enum Edit: CasePathable, Sendable {
+        case createNewFolder(parentPath: String)
+        case createAliases(paths: [String])
+        case renameItem(oldPath: String, newPath: String)
+        case startRename(id: EntryModel.ID, text: String)
+        case updateRenamingText(String)
+        case commitRename
+        case cancelRename
+    }
+
+    @CasePathable
+    enum Clipboard: CasePathable, Sendable {
+        case copySelectedItems(files: [EntryModel])
+        case copyAbsolutePaths(paths: [String])
+        case copyURLs(paths: [String])
+        case setClipboardOperation(operation: ClipboardOperation)
+        case pasteItemsFromClipboard(destinationPath: String)
+        case pasteItems(
+            sourcePaths: [String],
+            destinationPath: String,
+            operation: ClipboardOperation,
+            operationKind: OperationKind,
+        )
+    }
+
+    @CasePathable
+    enum Trash: CasePathable, Sendable {
+        case moveToTrash(paths: [String])
+        case deleteImmediately(paths: [String])
+        case deleteImmediatelyConfirmed(paths: [String])
+        case putBackFromTrash(paths: [String])
+        case emptyTrash(paths: [String])
+        case emptyTrashConfirmed(paths: [String])
+        case emptyTrashCancelled
+    }
+
+    @CasePathable
+    enum Archive: CasePathable, Sendable {
+        case compressItems(paths: [String])
+        case extractCompressedFile(path: String)
+    }
+
+    @CasePathable
+    enum Tagging: CasePathable, Sendable {
+        case requestTagMutation(request: TagMutationRequest)
+    }
+
+    @CasePathable
+    enum UndoRedo: CasePathable, Sendable {
+        case requestUndo
+        case requestRedo
+        case undoEntryAction(EntryActionRecord)
+        case redoEntryAction(EntryActionRecord)
+        case replayEntryAction(direction: EntryActionDirection, record: EntryActionRecord)
+        case entryActionApplied(direction: EntryActionDirection, record: EntryActionRecord)
+    }
 }
 
 struct TagMutationRequest: Equatable, Sendable {
@@ -123,10 +182,4 @@ struct EntryDropValidationResult: Equatable, Sendable {
         resolvedOperation: .none,
         isOptionDrag: false,
     )
-}
-
-@CasePathable
-enum EntryOperationsDelegate: CasePathable, Sendable {
-    case navigateToPath(String)
-    case openCollectionFile(URL)
 }

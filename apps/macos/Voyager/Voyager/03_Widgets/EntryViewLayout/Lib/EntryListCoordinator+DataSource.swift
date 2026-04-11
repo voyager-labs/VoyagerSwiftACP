@@ -52,12 +52,12 @@ extension EntryListCoordinator: NSOutlineViewDataSource {
             ? NSEvent.modifierFlags.contains(.option)
             : entryFileOpsClient.loadDragWithOption()
         let allowed = info.draggingSourceOperationMask
-        sendEntryOperations(.validateDrop(context: .init(
+        sendEntryOperations(.routing(.validateDrop(context: .init(
             sourcePaths: sourcePaths,
             destinationPath: destinationPath,
             allowedOperationsRawValue: allowed.rawValue,
             prefersCopy: wantsCopy,
-        )))
+        ))))
         let operation = dragOperation(from: state.entryOperations.dropValidationResult.resolvedOperation)
         store.send(.view(.setDropTargeted(!operation.isEmpty)))
         return operation
@@ -82,12 +82,12 @@ extension EntryListCoordinator: NSOutlineViewDataSource {
             ? NSEvent.modifierFlags.contains(.option)
             : entryFileOpsClient.loadDragWithOption()
         let allowed = info.draggingSourceOperationMask
-        sendEntryOperations(.validateDrop(context: .init(
+        sendEntryOperations(.routing(.validateDrop(context: .init(
             sourcePaths: internalPaths,
             destinationPath: destinationPath,
             allowedOperationsRawValue: allowed.rawValue,
             prefersCopy: wantsCopy,
-        )))
+        ))))
         let validation = state.entryOperations.dropValidationResult
         let resolvedOperation = dragOperation(from: validation.resolvedOperation)
         guard !resolvedOperation.isEmpty else {
@@ -96,7 +96,7 @@ extension EntryListCoordinator: NSOutlineViewDataSource {
         }
 
         if !internalPaths.isEmpty {
-            sendEntryOperations(.handleDrop(providers: [], destinationPath: destinationPath))
+            sendEntryOperations(.routing(.handleDrop(providers: [], destinationPath: destinationPath)))
             store.send(.view(.setDropTargeted(false)))
             return true
         }
@@ -111,12 +111,49 @@ extension EntryListCoordinator: NSOutlineViewDataSource {
             store.send(.view(.setDropTargeted(false)))
             return false
         }
-        sendEntryOperations(.dropItems(
+        sendEntryOperations(.routing(.dropItems(
             sourcePaths: urls.map(\.path),
             destinationPath: destinationPath,
             isOptionDrag: validation.isOptionDrag,
-        ))
+        )))
         store.send(.view(.setDropTargeted(false)))
         return true
+    }
+}
+
+extension EntryListCoordinator: NSTextFieldDelegate {
+    func controlTextDidChange(_ notification: Notification) {
+        guard state.entryOperations.renamingItemId != nil else { return }
+        guard let textField = notification.object as? NSTextField else { return }
+        guard (textField.delegate as AnyObject?) === self else { return }
+        sendEntryOperations(.edit(.updateRenamingText(textField.stringValue)))
+    }
+
+    func control(_ control: NSControl, textView _: NSTextView, doCommandBy commandSelector: Selector) -> Bool {
+        guard state.entryOperations.renamingItemId != nil else { return false }
+        guard let textField = control as? NSTextField else { return false }
+        guard (textField.delegate as AnyObject?) === self else { return false }
+
+        if commandSelector == #selector(NSResponder.insertNewline(_:)) {
+            sendEntryOperations(.edit(.commitRename))
+            return true
+        }
+        if commandSelector == #selector(NSResponder.cancelOperation(_:)) {
+            sendEntryOperations(.edit(.cancelRename))
+            return true
+        }
+        if commandSelector == #selector(NSResponder.insertTab(_:)) {
+            sendEntryOperations(.edit(.commitRename))
+            return true
+        }
+
+        return false
+    }
+
+    func controlTextDidEndEditing(_ notification: Notification) {
+        guard state.entryOperations.renamingItemId != nil else { return }
+        guard let textField = notification.object as? NSTextField else { return }
+        guard (textField.delegate as AnyObject?) === self else { return }
+        sendEntryOperations(.edit(.commitRename))
     }
 }

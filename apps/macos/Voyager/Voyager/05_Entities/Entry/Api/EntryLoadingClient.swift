@@ -1,4 +1,3 @@
-// swiftlint:disable file_length
 import ComposableArchitecture
 import CoreServices
 import Foundation
@@ -78,11 +77,25 @@ public struct EntryLoadingClient: Sendable {
 
 extension EntryLoadingClient: DependencyKey {
     public nonisolated static var liveValue: EntryLoadingClient {
-        EntryLoadingClient(
+        let recentSearchClient = RecentSearchClient.liveValue
+        let tagSearchClient = TagSearchClient.liveValue
+
+        return EntryLoadingClient(
             loadItems: EntryLoadingLive.loadItems,
             loadComputerItems: EntryLoadingLive.loadComputerItems,
-            loadRecentItems: EntryLoadingLive.loadRecentItems,
-            loadFilesWithTag: EntryLoadingLive.loadFilesWithTag,
+            loadRecentItems: { showHidden, _ in
+                await EntryLoadingLive.loadRecentItemsViaSearch(
+                    showHidden: showHidden,
+                    recentSearchClient: recentSearchClient,
+                )
+            },
+            loadFilesWithTag: { tag, showHidden, _ in
+                await EntryLoadingLive.loadFilesWithTagViaSearch(
+                    tag: tag,
+                    showHidden: showHidden,
+                    tagSearchClient: tagSearchClient,
+                )
+            },
             fileExists: EntryLoadingLive.fileExists,
             fileExistsAtPath: EntryLoadingLive.fileExistsAtPath,
             contentsOfDirectory: EntryLoadingLive.contentsOfDirectory,
@@ -153,6 +166,7 @@ enum EntryLoadingLive {
         { directoryURL, showHidden in
             try await Task.detached {
                 let entryLoadingClient = EntryLoadingClient.liveValue
+                let favoriteTags = FinderFavoritesTagClient.liveValue.favoriteTags()
                 let workspaceClient = WorkspaceClient.liveValue
                 let fileManagerClient = FileManagerClient.liveValue
                 let options: FileManager.DirectoryEnumerationOptions = showHidden ? [] : [.skipsHiddenFiles]
@@ -175,13 +189,15 @@ enum EntryLoadingLive {
                     options,
                 )
 
-                return entries.compactMap { url in
+                let loadedEntries = entries.compactMap { url in
                     EntryModelConverterLive.convertURLToEntry(
                         url,
                         entryLoadingClient: entryLoadingClient,
                         workspaceClient: workspaceClient,
                     )
                 }
+
+                return EntryModelTagColorNormalizer.normalize(loadedEntries, favoriteTags: favoriteTags)
             }.value
         }
     }
@@ -243,9 +259,7 @@ enum EntryLoadingLive {
     }
 
     nonisolated static var homeDirectory: @Sendable () -> String {
-        {
-            NSHomeDirectory()
-        }
+        { NSHomeDirectory() }
     }
 
     nonisolated static var trashDirectoryPath: @Sendable () -> String? {
@@ -374,317 +388,54 @@ enum EntryLoadingLive {
         }
     }
 
-    nonisolated static var loadRecentItems: @Sendable (Bool, WorkspaceClient) async -> [EntryModel] {
-        { showHidden, workspaceClient in
-            await EntryMetadataSearchLive.loadRecentItems(
-                showHidden: showHidden,
-                workspaceClient: workspaceClient,
-                fileExistsAtPath: fileExistsAtPath,
-            )
-        }
-    }
-
-    nonisolated static var loadFilesWithTag: @Sendable (String, Bool, WorkspaceClient) async -> [EntryModel] {
-        { tag, showHidden, workspaceClient in
-            await EntryMetadataSearchLive.loadFilesWithTag(
-                tag: tag,
-                showHidden: showHidden,
-                workspaceClient: workspaceClient,
-                fileExistsAtPath: fileExistsAtPath,
-            )
-        }
-    }
-}
-
-private final class MetadataQueryCompletionState: @unchecked Sendable {
-    private let lock = NSLock()
-    private nonisolated(unsafe) var hasCompleted = false
-
-    nonisolated func setCompleted() -> Bool {
-        lock.lock()
-        defer { lock.unlock() }
-        if hasCompleted {
-            return false
-        }
-        hasCompleted = true
-        return true
-    }
-}
-
-private final class MetadataQueryWrapper: @unchecked Sendable {
-    nonisolated(unsafe) let query: NSMetadataQuery
-
-    init(_ query: NSMetadataQuery) {
-        self.query = query
-    }
-}
-
-private final class MetadataObserverWrapper: @unchecked Sendable {
-    private let lock = NSLock()
-    private nonisolated(unsafe) var observer: NSObjectProtocol?
-    private let notificationCenterClient: NotificationCenterClient
-
-    init(_ observer: NSObjectProtocol?, notificationCenterClient: NotificationCenterClient) {
-        self.observer = observer
-        self.notificationCenterClient = notificationCenterClient
-    }
-
-    nonisolated func setObserver(_ observer: NSObjectProtocol?) {
-        lock.lock()
-        defer { lock.unlock() }
-        if let oldObserver = self.observer {
-            notificationCenterClient.removeObserver(oldObserver)
-        }
-        self.observer = observer
-    }
-
-    nonisolated func remove() {
-        lock.lock()
-        defer { lock.unlock() }
-        if let observer {
-            notificationCenterClient.removeObserver(observer)
-            self.observer = nil
-        }
-    }
-}
-
-enum EntryMetadataSearchLive {
-    nonisolated static func loadRecentItems(
+    nonisolated static func loadRecentItemsViaSearch(
         showHidden: Bool,
-        workspaceClient: WorkspaceClient,
-        fileExistsAtPath: @escaping @Sendable (String, UnsafeMutablePointer<ObjCBool>?) -> Bool,
+        recentSearchClient: RecentSearchClient,
     ) async -> [EntryModel] {
-        let entryLoadingClient = EntryLoadingClient.liveValue
-        let notificationCenterClient = NotificationCenterClient.liveValue
-        let predicate = NSPredicate(format: "kMDItemLastUsedDate > %@", Date.distantPast as NSDate)
-        let sortDescriptors = [NSSortDescriptor(key: "kMDItemLastUsedDate", ascending: false)]
-
-        let recentFiles = await searchFiles(
-            predicate: predicate,
-            fileExistsAtPath: fileExistsAtPath,
-            notificationCenterClient: notificationCenterClient,
-            sortDescriptors: sortDescriptors,
-            filterFiles: true,
-        )
-
-        let items = recentFiles.compactMap { url in
-            EntryModelConverterLive.convertURLToEntry(
-                url,
-                entryLoadingClient: entryLoadingClient,
-                workspaceClient: workspaceClient,
+        do {
+            let favoriteTags = FinderFavoritesTagClient.liveValue.favoriteTags()
+            let response = try await recentSearchClient.search(
+                .init(
+                    scopeMode: .allIndexed,
+                    scopes: [],
+                    resultCap: 100,
+                    includeHidden: showHidden,
+                    sort: .lastUsedDateDescending,
+                ),
             )
+            return EntryModelTagColorNormalizer.normalize(
+                response.items.map(EntryModelPayloadAdapter.makeEntry),
+                favoriteTags: favoriteTags,
+            )
+        } catch {
+            return []
         }
-        return showHidden ? items : items.filter { !$0.isHidden }
     }
 
-    nonisolated static func loadFilesWithTag(
+    nonisolated static func loadFilesWithTagViaSearch(
         tag: String,
         showHidden: Bool,
-        workspaceClient: WorkspaceClient,
-        fileExistsAtPath: @escaping @Sendable (String, UnsafeMutablePointer<ObjCBool>?) -> Bool,
+        tagSearchClient: TagSearchClient,
     ) async -> [EntryModel] {
-        let entryLoadingClient = EntryLoadingClient.liveValue
-        let notificationCenterClient = NotificationCenterClient.liveValue
-        let predicate = NSPredicate(format: "kMDItemUserTags CONTAINS %@", tag)
-        let sortDescriptors = [NSSortDescriptor(key: "kMDItemLastUsedDate", ascending: false)]
-
-        let taggedFiles = await searchFiles(
-            predicate: predicate,
-            fileExistsAtPath: fileExistsAtPath,
-            notificationCenterClient: notificationCenterClient,
-            sortDescriptors: sortDescriptors,
-        )
-
-        let items: [EntryModel] = taggedFiles.compactMap { url in
-            guard let item = EntryModelConverterLive.convertURLToEntry(
-                url,
-                entryLoadingClient: entryLoadingClient,
-                workspaceClient: workspaceClient,
-            ) else {
-                return nil
-            }
-
-            let hasTags = item.facets.tags?.contains(where: { $0.name == tag }) ?? false
-            return hasTags ? item : nil
+        do {
+            let favoriteTags = FinderFavoritesTagClient.liveValue.favoriteTags()
+            let response = try await tagSearchClient.search(
+                .init(
+                    requestedTag: tag,
+                    scopeMode: .allIndexed,
+                    scopes: [],
+                    resultCap: 100,
+                    includeHidden: showHidden,
+                    sort: .lastUsedDateDescending,
+                    exactTagVerification: true,
+                ),
+            )
+            return EntryModelTagColorNormalizer.normalize(
+                response.items.map(EntryModelPayloadAdapter.makeEntry),
+                favoriteTags: favoriteTags,
+            )
+        } catch {
+            return []
         }
-        return showHidden ? items : items.filter { !$0.isHidden }
-    }
-
-    @MainActor
-    private static func searchFiles(
-        predicate: NSPredicate,
-        fileExistsAtPath: @escaping @Sendable (String, UnsafeMutablePointer<ObjCBool>?) -> Bool,
-        notificationCenterClient: NotificationCenterClient,
-        sortDescriptors: [NSSortDescriptor] = [],
-        timeout: TimeInterval = 5,
-        filterFiles: Bool = false,
-    ) async -> [URL] {
-        await withCheckedContinuation { continuation in
-            DispatchQueue.main.async {
-                let query = NSMetadataQuery()
-                query.searchScopes = []
-                query.predicate = predicate
-                query.sortDescriptors = sortDescriptors
-
-                let completionState = MetadataQueryCompletionState()
-                let queryWrapper = MetadataQueryWrapper(query)
-                let observerWrapper = MetadataObserverWrapper(nil, notificationCenterClient: notificationCenterClient)
-
-                let observer = notificationCenterClient.addObserver(
-                    .NSMetadataQueryDidFinishGathering,
-                    queryWrapper.query,
-                ) { _ in
-                    let capturedQuery = queryWrapper.query
-                    Task { @MainActor in
-                        guard completionState.setCompleted() else { return }
-                        capturedQuery.stop()
-
-                        let urls: [URL] = Array(capturedQuery.results
-                            .compactMap { $0 as? NSMetadataItem }
-                            .compactMap { item -> URL? in
-                                guard let path = item.value(forAttribute: "kMDItemPath") as? String
-                                else { return nil }
-
-                                if filterFiles {
-                                    var isDirectory: ObjCBool = false
-                                    if fileExistsAtPath(path, &isDirectory), isDirectory.boolValue {
-                                        return nil
-                                    }
-                                }
-
-                                return URL(fileURLWithPath: path)
-                            }
-                            .prefix(100))
-
-                        continuation.resume(returning: urls)
-                        observerWrapper.remove()
-                    }
-                }
-
-                observerWrapper.setObserver(observer)
-                query.start()
-
-                DispatchQueue.main.asyncAfter(deadline: .now() + timeout) {
-                    let capturedQuery = queryWrapper.query
-                    Task { @MainActor in
-                        guard completionState.setCompleted() else { return }
-                        capturedQuery.stop()
-                        continuation.resume(returning: [])
-                        observerWrapper.remove()
-                    }
-                }
-            }
-        }
-    }
-}
-
-enum EntryModelConverterLive {
-    nonisolated static func convertURLToEntry(
-        _ itemURL: URL,
-        entryLoadingClient: EntryLoadingClient,
-        workspaceClient: WorkspaceClient,
-    ) -> EntryModel? {
-        var isDirectory: ObjCBool = false
-        guard entryLoadingClient.fileExistsAtPath(itemURL.path, &isDirectory) else {
-            return nil
-        }
-
-        let resourceValues = try? itemURL.resourceValues(forKeys: [
-            .nameKey,
-            .fileSizeKey,
-            .contentModificationDateKey,
-            .creationDateKey,
-            .addedToDirectoryDateKey,
-            .contentAccessDateKey,
-            .isHiddenKey,
-        ])
-
-        let name = resourceValues?.name ?? itemURL.lastPathComponent
-        let size = Int64(resourceValues?.fileSize ?? 0)
-        let modifiedDate = resourceValues?.contentModificationDate ?? Date()
-        let createdDate = resourceValues?.creationDate ?? Date()
-        let addedDate = resourceValues?.addedToDirectoryDate ?? Date()
-
-        let isHidden = resourceValues?.isHidden ?? false || name.hasPrefix(".")
-
-        let metadata = entryLoadingClient.getItemMetadata(itemURL, isDirectory.boolValue, workspaceClient)
-        let lastOpenedDate = metadata.lastUsedDate
-        let tags = entryTags(from: itemURL)
-
-        let supplementaryMetadata = entrySupplementaryMetadata(
-            url: itemURL,
-            isDirectory: isDirectory.boolValue,
-            entryLoadingClient: entryLoadingClient,
-        )
-
-        return EntryModel(
-            name: name,
-            fullPath: itemURL.path,
-            isFolder: isDirectory.boolValue,
-            isHidden: isHidden,
-            size: size,
-            modifiedDate: modifiedDate,
-            fileExtension: itemURL.pathExtension,
-            facets: EntryFacets(
-                createdDate: createdDate,
-                addedDate: addedDate,
-                lastOpenedDate: lastOpenedDate,
-                kind: metadata.kind,
-                creatorApplication: metadata.creatorApplication,
-                tags: tags,
-                supplementaryMetadata: supplementaryMetadata,
-            ),
-        )
-    }
-
-    private nonisolated static func entryTags(from itemURL: URL) -> [Tag]? {
-        if let tags = TagMetadataClient.loadTags(from: itemURL) {
-            return tags
-        }
-
-        if let tagNames = try? itemURL.resourceValues(forKeys: [.tagNamesKey]).tagNames {
-            let tags = tagNames
-                .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
-                .filter { !$0.isEmpty }
-                .map { Tag(name: $0, colorCode: 0) }
-            return tags.isEmpty ? nil : tags
-        }
-        return nil
-    }
-
-    private nonisolated static func entrySupplementaryMetadata(
-        url: URL,
-        isDirectory: Bool,
-        entryLoadingClient: EntryLoadingClient,
-    ) -> EntrySupplementaryMetadata? {
-        if isDirectory {
-            if entryLoadingClient.isPackageDirectory(url) {
-                return nil
-            }
-            let ext = url.pathExtension.lowercased()
-            if ext == CollectionConstants.fileExtension {
-                return nil
-            }
-            guard let itemCount = entryLoadingClient.getFolderItemCount(url) else {
-                return nil
-            }
-            return .folderItemCount(itemCount)
-        }
-
-        let ext = url.pathExtension.lowercased()
-
-        if ["jpg", "jpeg", "png", "heic", "gif", "webp", "bmp", "tiff"].contains(ext),
-           let resolution = entryLoadingClient.getImageResolution(url)
-        {
-            return .imageResolution(width: resolution.width, height: resolution.height)
-        }
-
-        if ["zip", "tar", "gz", "bz2", "xz", "rar", "7z", "dmg", "pkg"].contains(ext),
-           let fileSizeInBytes = entryLoadingClient.getFileSizeInBytes(url)
-        {
-            return .compressedFileSize(fileSizeInBytes)
-        }
-
-        return nil
     }
 }

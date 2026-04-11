@@ -4,6 +4,12 @@ import Foundation
 struct SpotlightQueryEngine: Sendable {
     private let maxCandidates: Int
 
+    struct QueryMatch: Equatable, Sendable {
+        let path: String
+        let lastUsedDate: Date?
+        let rawUserTags: [String]
+    }
+
     init(maxCandidates: Int) {
         self.maxCandidates = max(1, maxCandidates)
     }
@@ -12,15 +18,30 @@ struct SpotlightQueryEngine: Sendable {
         let query = try makeQuery(queryString: queryString, scopes: scopes)
         return loadPaths(query: query, limit: maxCandidates)
     }
+
+    func loadMatches(
+        queryString: String,
+        scopes: [URL]?,
+        limit: Int,
+        excludeDirectories: Bool,
+    ) throws -> [QueryMatch] {
+        let query = try makeQuery(queryString: queryString, scopes: scopes)
+        return loadMatches(query: query, limit: limit, excludeDirectories: excludeDirectories)
+    }
 }
 
 private extension SpotlightQueryEngine {
-    func makeQuery(queryString: String, scopes: [URL]) throws -> MDQuery {
+    func makeQuery(queryString: String, scopes: [URL]?) throws -> MDQuery {
         guard let query = MDQueryCreate(kCFAllocatorDefault, queryString as CFString, nil, nil) else {
             throw SpotlightSearchService.SearchError.queryCreationFailed
         }
-        let scopeRefs = scopes.map { $0 as CFURL } as CFArray
-        MDQuerySetSearchScope(query, scopeRefs, 0)
+
+        if let scopes,
+           scopes.isEmpty == false
+        {
+            let scopeRefs = scopes.map { $0 as CFURL } as CFArray
+            MDQuerySetSearchScope(query, scopeRefs, 0)
+        }
 
         let executed = MDQueryExecute(query, CFOptionFlags(kMDQuerySynchronous.rawValue))
         guard executed else {
@@ -85,5 +106,52 @@ private extension SpotlightQueryEngine {
         }
 
         return false
+    }
+
+    func loadMatches(query: MDQuery, limit: Int, excludeDirectories: Bool) -> [QueryMatch] {
+        let resultCount = Int(MDQueryGetResultCount(query))
+        let upperBound = min(resultCount, max(0, limit))
+
+        var seen: Set<String> = []
+        var matches: [QueryMatch] = []
+        matches.reserveCapacity(upperBound)
+
+        for index in 0 ..< upperBound {
+            guard let item = MDQueryGetResultAtIndex(query, index) else {
+                continue
+            }
+
+            let mdItem = unsafeBitCast(item, to: MDItem.self)
+            guard let rawPath = MDItemCopyAttribute(mdItem, kMDItemPath) as? String else {
+                continue
+            }
+
+            let standardizedPath = URL(fileURLWithPath: rawPath).standardizedFileURL.path
+            if excludeDirectories,
+               isDirectory(mdItem: mdItem, path: standardizedPath)
+            {
+                continue
+            }
+
+            guard FileManager.default.fileExists(atPath: standardizedPath) else {
+                continue
+            }
+
+            guard seen.insert(standardizedPath).inserted else {
+                continue
+            }
+
+            let lastUsedDate = MDItemCopyAttribute(mdItem, kMDItemLastUsedDate) as? Date
+            let rawUserTags = MDItemCopyAttribute(mdItem, "kMDItemUserTags" as CFString) as? [String] ?? []
+            matches.append(
+                QueryMatch(
+                    path: standardizedPath,
+                    lastUsedDate: lastUsedDate,
+                    rawUserTags: rawUserTags,
+                ),
+            )
+        }
+
+        return matches
     }
 }

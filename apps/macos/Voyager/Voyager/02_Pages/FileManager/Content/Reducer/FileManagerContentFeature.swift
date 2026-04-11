@@ -1,3 +1,4 @@
+import AppKit
 import ComposableArchitecture
 import Foundation
 import VoyagerShared
@@ -7,7 +8,7 @@ struct FileManagerContentFeature {
     typealias State = FileManagerContentState
     typealias Action = FileManagerContentAction
 
-    private let fileSystemChangedCancellationID = "FileManagerContent.fileSystemChanged"
+    private let systemNotificationsCancellationID = "FileManagerContent.systemNotifications"
 
     @Dependency(\.userDefaultsClient)
     private var userDefaultsClient
@@ -15,12 +16,8 @@ struct FileManagerContentFeature {
     private var collectionAlertClient
     @Dependency(\.fileManagerClient)
     private var fileManagerClient
-    @Dependency(\.entryWatchingClient)
-    private var entryWatchingClient
-    @Dependency(\.thumbnailGeneratorClient)
-    private var thumbnailGeneratorClient
-    @Dependency(\.entryThumbnailCacheClient)
-    private var entryThumbnailCacheClient
+    @Dependency(\.notificationCenterClient)
+    private var notificationCenterClient
 
     var body: some Reducer<State, Action> {
         Scope(state: \.composer, action: \.composer) {
@@ -32,19 +29,11 @@ struct FileManagerContentFeature {
         }
 
         Reduce { state, action in
-            if let effect = handleEntryAppearanceAction(action, state: &state) {
-                return effect
-            }
-
             if let effect = handleEntryViewLayoutDelegateBridgeAction(action, state: &state) {
                 return effect
             }
 
             if let effect = handleEntryOperationsBridgeAction(action, state: &state) {
-                return effect
-            }
-
-            if let effect = handleEntryThumbnailAction(action, state: &state) {
                 return effect
             }
 
@@ -57,17 +46,17 @@ struct FileManagerContentFeature {
             }
 
             switch action {
-            case let .applyNavigationState(navigationState):
+            case let .internal(.applyNavigationState(navigationState)):
                 state.entryViewLayout.currentPath = state.navigation.currentPath
                 state.entryViewLayout.savedScrollOffset = state.navigation.scrollPositions[state.navigation.currentPath]
                 return applyNavigationStateEffect(navigationState, state: state)
 
-            case .selectAllEntries:
+            case .view(.selectAllEntries):
                 return .send(.entryViewLayout(.internal(.applySelectAll(
                     orderedItemIds: state.entryViewLayout.entries.map(\.id),
                 ))))
 
-            case .toggleShowHiddenFilesAndReload:
+            case .view(.toggleShowHiddenFilesAndReload):
                 let showHidden = !state.entryViewLayout.showHiddenFiles
                 return .concatenate(
                     .send(.entryViewLayout(.view(.toggleShowHiddenFiles))),
@@ -77,86 +66,68 @@ struct FileManagerContentFeature {
                     ),
                 )
 
-            case let .handleKeyCommand(command):
+            case let .view(.handleKeyCommand(command)):
                 return FileManagerContentKeyCommandHandler.effect(for: command, state: state)
 
-            case .openPathInNewWindow,
-                 .openPathInNewTab,
-                 .closeWindow:
+            case .delegate(.openPathInNewWindow),
+                 .delegate(.openPathInNewTab),
+                 .delegate(.closeWindow):
                 return .none
 
-            case let .changeLayout(layout):
-                state.viewLayout = layout
+            case let .delegate(.dropItemsToSidebarFolder(providers, targetURL)):
+                return sendEntryOperations(.routing(.handleDrop(
+                    providers: providers,
+                    destinationPath: targetURL.path,
+                )))
+
+            case let .delegate(.dropItemsToTag(providers, tagName)):
+                return sendEntryOperations(.routing(.handleDropToTag(
+                    providers: providers,
+                    tagName: tagName,
+                )))
+
+            case let .view(.changeLayout(layout)):
+                let currentMode = state.entryViewLayout.mode
+                let isModeChanging = currentMode != layout
+                let hasActiveRename = state.entryViewLayout.entryOperations.renamingItemId != nil
+
+                state.entryViewLayout.mode = layout
                 state.syncComposerCollectionState()
                 userDefaultsClient.setString(layout.rawValue, SettingsKeys.viewLayout)
+
+                if isModeChanging, hasActiveRename {
+                    return .send(.entryViewLayout(.entryOperations(.edit(.cancelRename))))
+                }
                 return .none
 
-            case let .saveScrollOffset(offset, forPath: path):
+            case let .internal(.saveScrollOffset(offset, forPath: path)):
                 state.navigation.scrollPositions[path] = offset
                 if path == state.navigation.currentPath {
                     state.entryViewLayout.savedScrollOffset = offset
                 }
                 return .none
 
-            case .startObservingSystemNotifications:
-                return .run { [entryWatchingClient] send in
-                    for await paths in entryWatchingClient.observeFileSystemChanged() {
-                        await send(.entries(.fileSystemChanged(paths)))
+            case .internal(.startObservingSystemNotifications):
+                return .run { send in
+                    for await _ in await notificationCenterClient.notifications(
+                        NSApplication.didBecomeActiveNotification,
+                        nil,
+                    ) {
+                        await send(.internal(.systemAppDidBecomeActive))
                     }
                 }
-                .cancellable(id: fileSystemChangedCancellationID, cancelInFlight: true)
+                .cancellable(id: systemNotificationsCancellationID, cancelInFlight: true)
 
-            case .stopObservingSystemNotifications:
-                return .cancel(id: fileSystemChangedCancellationID)
+            case .internal(.stopObservingSystemNotifications):
+                return .cancel(id: systemNotificationsCancellationID)
 
-            case let .entries(.fileSystemChanged(paths)):
-                switch state.navigation.navigationState {
-                case .collection:
-                    if collectionPathsAffectCurrentContext(paths, state: state) {
-                        state.collectionSession.isStale = true
-                    }
-                    return .none
-
-                default:
-                    guard pathsAffectCurrentFolder(paths, currentPath: state.navigation.currentPath) else {
-                        return .none
-                    }
-                    return reloadEntryItemsEffect(state: state)
-                }
+            case .internal(.systemAppDidBecomeActive):
+                let entryOperationsAction = EntryOperationsAction.lifecycle(.appDidBecomeActive)
+                return sendEntryOperations(entryOperationsAction)
 
             default:
                 return .none
             }
-        }
-    }
-
-    private func handleEntryAppearanceAction(
-        _ action: Action,
-        state: inout State,
-    ) -> Effect<Action>? {
-        guard case let .entries(entryAction) = action else {
-            return nil
-        }
-
-        switch entryAction {
-        case let .setListIconSize(size):
-            state.listIconSize = size
-            return .none
-
-        case let .setGridIconSize(size):
-            state.gridIconSize = size
-            return .none
-
-        case let .setListTextSize(size):
-            state.listTextSize = size
-            return .none
-
-        case let .setGridTextSize(size):
-            state.gridTextSize = size
-            return .none
-
-        default:
-            return nil
         }
     }
 
@@ -185,19 +156,21 @@ struct FileManagerContentFeature {
 
         switch delegateAction {
         case let .executeCommand(command):
-            return .send(.entryViewLayout(.entryOperations(.executeCommand(
+            let entryOperationsAction = EntryOperationsAction.routing(.executeCommand(
                 command: command,
                 context: makeEntryOperationsCommandContext(state: state),
-            ))))
+            ))
+            return sendEntryOperations(entryOperationsAction)
 
         case let .saveScrollOffset(offset, path):
-            return .send(.saveScrollOffset(offset, forPath: path))
+            return .send(.internal(.saveScrollOffset(offset, forPath: path)))
 
         case let .openPathInNewTab(path):
-            return .send(.openPathInNewTab(path))
+            return .send(.delegate(.openPathInNewTab(path)))
 
         case let .startRename(id, text):
-            return .send(.entryViewLayout(.entryOperations(.startRename(id: id, text: text))))
+            let entryOperationsAction = EntryOperationsAction.edit(.startRename(id: id, text: text))
+            return sendEntryOperations(entryOperationsAction)
         }
     }
 
@@ -206,14 +179,19 @@ struct FileManagerContentFeature {
         state: inout State,
     ) -> Effect<Action> {
         switch action {
-        case .operationFinished:
+        case .loading(.itemsLoaded),
+             .loading(.collectionItemsLoadedFromSearch),
+             .loading(.setCollectionMode):
+            .send(.entryViewLayout(.entryArrangements(.reapply)))
+
+        case .lifecycle(.operationFinished):
             .merge(
                 .send(.entryViewLayout(.entryArrangements(.reapply))),
                 reloadEntryItemsEffect(state: state),
             )
 
-        case .emptyTrashCompleted:
-            .send(.closeWindow)
+        case .lifecycle(.emptyTrashCompleted):
+            .send(.delegate(.closeWindow))
 
         default:
             .none
@@ -233,55 +211,16 @@ struct FileManagerContentFeature {
     ) -> Effect<Action> {
         switch navigationState {
         case let .folder(path):
-            .send(.entryViewLayout(.entryOperations(.loadItems(path: path, showHidden: showHidden))))
+            sendEntryOperations(.loading(.loadItems(path: path, showHidden: showHidden)))
         case .recents:
-            .send(.entryViewLayout(.entryOperations(.loadRecentItems(showHidden: showHidden))))
+            sendEntryOperations(.loading(.loadRecentItems(showHidden: showHidden)))
         case let .tags(tagName):
-            .send(.entryViewLayout(.entryOperations(.loadTagItems(tagName: tagName, showHidden: showHidden))))
+            sendEntryOperations(.loading(.loadTagItems(tagName: tagName, showHidden: showHidden)))
         case .computer:
-            .send(.entryViewLayout(.entryOperations(.loadComputerItems)))
+            sendEntryOperations(.loading(.loadComputerItems))
         case .collection:
             .none
         }
-    }
-
-    private func pathsAffectCurrentFolder(_ paths: [String], currentPath: String) -> Bool {
-        let normalizedCurrentPath = URL(fileURLWithPath: currentPath).standardizedFileURL.path
-
-        return paths.contains { path in
-            let normalizedPath = URL(fileURLWithPath: path).standardizedFileURL.path
-            if normalizedPath == normalizedCurrentPath {
-                return true
-            }
-
-            let folderPrefix = normalizedCurrentPath == "/" ? "/" : normalizedCurrentPath + "/"
-            return normalizedPath.hasPrefix(folderPrefix)
-        }
-    }
-
-    private func collectionPathsAffectCurrentContext(_ paths: [String], state: State) -> Bool {
-        guard let context = state.collectionContext else {
-            return true
-        }
-        return collectionChangeIsRelevant(changedPaths: paths, scopes: context.scopes)
-    }
-
-    private func handleEntryThumbnailAction(
-        _ action: Action,
-        state: inout State,
-    ) -> Effect<Action>? {
-        guard case let .entries(entryAction) = action else {
-            return nil
-        }
-
-        return FileManagerContentThumbnailCoordinator.reduce(
-            entryAction,
-            state: &state,
-            dependencies: .init(
-                thumbnailGeneratorClient: thumbnailGeneratorClient,
-                entryThumbnailCacheClient: entryThumbnailCacheClient,
-            ),
-        )
     }
 
     private func handleComposerAction(
@@ -307,73 +246,113 @@ struct FileManagerContentFeature {
         state: inout State,
     ) -> Effect<Action>? {
         switch action {
-        case .discardCollectionChanges,
-             .collectionDraft(.discardChangesTapped):
-            state.restoreCollectionDraftFromBaseline()
+        case .delegate(.discardCollectionChanges):
+            guard let baseline = state.collectionSession.baseline,
+                  state.entryViewLayout.entryOperations.loadingContext.isCollectionMode,
+                  state.isOpenedCollectionDirty
+            else {
+                return .none
+            }
 
+            let trimmedQuery = baseline.context.query.trimmingCharacters(in: .whitespacesAndNewlines)
+            state.composer.pendingSearchQuery = trimmedQuery.isEmpty ? nil : trimmedQuery
+            state.collectionContext = baseline.context
+            state.syncComposerCollectionState()
+
+            if state.collectionSession.openedURL == nil {
+                state.composer.text = baseline.context.query
+            } else {
+                state.composer.text = ""
+            }
+            state.composer.scopes = baseline.context.scopes
+            state.composer.conditions = baseline.context.conditions
+            state.composer.propertyPicker = ConditionPropertyPickerFeature.State()
+            state.composer.operatorPicker = OperatorPickerFeature.State()
+            state.composer.valuePicker = ValuePickerFeature.State()
+            state.composer.clearHistory()
+            return .none
         default:
-            nil
+            return nil
         }
     }
 }
 
 private extension FileManagerContentFeature {
-    private func handleEntryOperationsDelegateAction(_ action: Action) -> Effect<Action>? {
+    func handleEntryOperationsDelegateAction(_ action: Action) -> Effect<Action>? {
         guard case let .entryViewLayout(.entryOperations(.delegate(delegate))) = action else {
             return nil
         }
 
         switch delegate {
         case let .navigateToPath(path):
-            return .send(.requestNavigation(.view(.navigateToPath(path))))
+            let navigationAction: ContentPageNavigationAction = .view(.navigateToPath(path))
+            let forwardedAction = FileManagerContentAction.internal(.requestNavigation(navigationAction))
+            return .send(forwardedAction)
 
         case let .openCollectionFile(url):
-            return .send(.requestNavigation(.view(.openCollectionFile(url))))
+            let navigationAction: ContentPageNavigationAction = .view(.openCollectionFile(url))
+            let forwardedAction = FileManagerContentAction.internal(.requestNavigation(navigationAction))
+            return .send(forwardedAction)
         }
     }
 
-    private func applyNavigationStateEffect(
+    func applyNavigationStateEffect(
         _ navigationState: ContentPageNavigationRoute,
         state: State,
     ) -> Effect<Action> {
         switch navigationState {
         case let .folder(path):
-            .merge(
-                .send(.entryViewLayout(.entryOperations(.setCollectionMode(false)))),
-                .send(.entryViewLayout(.entryOperations(.loadItems(
-                    path: path,
-                    showHidden: state.entryViewLayout.showHiddenFiles,
-                )))),
+            let clearCollectionMode = EntryOperationsAction.loading(.setCollectionMode(false))
+            let loadItems = EntryOperationsAction.loading(.loadItems(
+                path: path,
+                showHidden: state.entryViewLayout.showHiddenFiles,
+            ))
+            return .merge(
+                sendEntryOperations(clearCollectionMode),
+                sendEntryOperations(loadItems),
             )
 
         case .recents:
-            .merge(
-                .send(.entryViewLayout(.entryOperations(.setCollectionMode(false)))),
-                .send(.entryViewLayout(.entryOperations(.loadRecentItems(showHidden: state.entryViewLayout
-                        .showHiddenFiles)))),
+            let clearCollectionMode = EntryOperationsAction.loading(.setCollectionMode(false))
+            let loadRecents = EntryOperationsAction.loading(.loadRecentItems(
+                showHidden: state.entryViewLayout.showHiddenFiles,
+            ))
+            return .merge(
+                sendEntryOperations(clearCollectionMode),
+                sendEntryOperations(loadRecents),
             )
 
         case let .tags(tagName):
-            .merge(
-                .send(.entryViewLayout(.entryOperations(.setCollectionMode(false)))),
-                .send(.entryViewLayout(.entryOperations(.loadTagItems(
-                    tagName: tagName,
-                    showHidden: state.entryViewLayout.showHiddenFiles,
-                )))),
+            let clearCollectionMode = EntryOperationsAction.loading(.setCollectionMode(false))
+            let loadTagItems = EntryOperationsAction.loading(.loadTagItems(
+                tagName: tagName,
+                showHidden: state.entryViewLayout.showHiddenFiles,
+            ))
+            return .merge(
+                sendEntryOperations(clearCollectionMode),
+                sendEntryOperations(loadTagItems),
             )
 
         case .computer:
-            .merge(
-                .send(.entryViewLayout(.entryOperations(.setCollectionMode(false)))),
-                .send(.entryViewLayout(.entryOperations(.loadComputerItems))),
+            let clearCollectionMode = EntryOperationsAction.loading(.setCollectionMode(false))
+            let loadComputerItems = EntryOperationsAction.loading(.loadComputerItems)
+            return .merge(
+                sendEntryOperations(clearCollectionMode),
+                sendEntryOperations(loadComputerItems),
             )
 
         case .collection:
-            .send(.entryViewLayout(.entryOperations(.setCollectionMode(true))))
+            let enableCollectionMode = EntryOperationsAction.loading(.setCollectionMode(true))
+            return sendEntryOperations(enableCollectionMode)
         }
     }
 
-    private func makeEntryOperationsCommandContext(state: State) -> EntryOperationsCommandContext {
+    func sendEntryOperations(_ action: EntryOperationsAction) -> Effect<Action> {
+        let forwardedAction = FileManagerContentAction.entryViewLayout(.entryOperations(action))
+        return .send(forwardedAction)
+    }
+
+    func makeEntryOperationsCommandContext(state: State) -> EntryOperationsCommandContext {
         EntryOperationsCommandContext(
             selectedIds: state.entryViewLayout.selectedIds,
             displayItems: state.entryViewLayout.entries,

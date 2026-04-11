@@ -10,7 +10,7 @@ struct SidebarLocationsSectionView: View {
                 title: "Locations",
                 isCollapsed: store.isLocationsCollapsed,
                 onToggle: {
-                    store.send(.toggleLocationsSection)
+                    store.send(.view(.toggleLocationsSection))
                 },
             )
             .padding(.top, 8)
@@ -32,13 +32,13 @@ struct SidebarLocationsSectionView: View {
                         targetURL: location.isComputer ? nil : location.url,
                         action: {
                             if location.isComputer {
-                                store.send(.showComputer)
+                                store.send(.delegate(.showComputer))
                             } else {
-                                store.send(.openLocation(location))
+                                store.send(.delegate(.openLocation(location)))
                             }
                         },
                         onDrop: { providers, targetURL in
-                            store.send(.dropItemsToSidebarFolder(providers: providers, targetURL: targetURL))
+                            store.send(.delegate(.dropItemsToSidebarFolder(providers: providers, targetURL: targetURL)))
                         },
                         onContextMenuOpen: nil,
                     )

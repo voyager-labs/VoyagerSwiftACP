@@ -18,30 +18,6 @@ extension EntryListCoordinator {
         headerView.send = { [weak self] action in
             self?.store.send(action)
         }
-        headerView.onSortClick = { [weak self] column in
-            self?.handleHeaderSortClick(column)
-        }
-    }
-
-    func handleHeaderSortClick(_ column: EntryListColumn) {
-        guard let sortKey = column.sortKey else { return }
-
-        if state.entryArrangements.sortKey == sortKey {
-            let next: SortOrder = state.entryArrangements.sortOrder == .ascending ? .descending : .ascending
-            if next != state.entryArrangements.sortOrder { sendEntryArrangements(.setSortOrder(next)) }
-        } else {
-            sendEntryArrangements(.setSortKey(sortKey))
-            sendEntryArrangements(.setSortOrder(defaultSortOrder(for: sortKey)))
-        }
-    }
-
-    func defaultSortOrder(for key: SortKey) -> SortOrder {
-        switch key {
-        case .dateModified, .dateCreated, .dateAdded, .dateLastOpened:
-            .descending
-        case .name, .kind, .application, .size, .tags:
-            .ascending
-        }
     }
 
     func syncVisibleColumnsFromTableView() {
@@ -77,11 +53,11 @@ extension EntryListCoordinator {
         }
 
         if selectedFiles.count > 1 {
-            sendEntryOperations(.loadCommonApplicationsForFiles(files: selectedFiles))
+            sendEntryOperations(.openWith(.loadCommonApplicationsForFiles(files: selectedFiles)))
         } else if let file = selectedFiles.first,
                   state.entryOperations.applicationsForItems[file.fullPath] == nil
         {
-            sendEntryOperations(.loadApplicationsForFile(file: file))
+            sendEntryOperations(.openWith(.loadApplicationsForFile(file: file)))
         }
     }
 

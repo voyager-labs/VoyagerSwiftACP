@@ -14,27 +14,31 @@ struct EntryEditOperationsReducer {
     var body: some Reducer<State, Action> {
         Reduce { state, action in
             switch action {
-            case let .createNewFolder(parentPath):
+            case let .edit(.createNewFolder(parentPath)):
                 let name = defaultNewFolderName(entries: Array(state.displayItems))
                 let parentURL = URL(fileURLWithPath: parentPath)
                 let targetPath = parentURL.appendingPathComponent(name).path
 
                 return .run { send in
-                    await send(.operationStarted(targetPath, .createFolder))
+                    await send(.lifecycle(.operationStarted(targetPath, .createFolder)))
                     do {
                         try await entryFileOpsClient.createFolder(parentURL, name)
-                        await send(.operationFinished(targetPath, .createFolder, .success(())))
+                        await send(.lifecycle(.operationFinished(targetPath, .createFolder, .success(()))))
                         let record = EntryActionRecord(
                             operationKind: .createFolder,
                             targets: [.init(beforePath: nil, afterPath: targetPath)],
                         )
-                        await send(.entryActionCompleted(record))
+                        await send(.lifecycle(.entryActionCompleted(record)))
                     } catch {
-                        await send(.operationFinished(targetPath, .createFolder, .failure(error.fileOpError)))
+                        await send(.lifecycle(.operationFinished(
+                            targetPath,
+                            .createFolder,
+                            .failure(error.fileOpError),
+                        )))
                     }
                 }
 
-            case let .createAliases(paths):
+            case let .edit(.createAliases(paths)):
                 return .run { [entryFileOpsClient] send in
                     var targets: [EntryActionRecord.Target] = []
 
@@ -53,60 +57,61 @@ struct EntryEditOperationsReducer {
                             counter += 1
                         }
 
-                        await send(.operationStarted(path, .createAlias))
+                        await send(.lifecycle(.operationStarted(path, .createAlias)))
                         do {
                             try await entryFileOpsClient.createAlias(sourceURL, aliasURL)
-                            await send(.operationFinished(path, .createAlias, .success(())))
+                            await send(.lifecycle(.operationFinished(path, .createAlias, .success(()))))
                             targets.append(.init(beforePath: path, afterPath: aliasURL.path))
                             entryFileOpsClient.postFileSystemChanged([aliasURL.path])
                         } catch {
-                            await send(.operationFinished(path, .createAlias, .failure(error.fileOpError)))
+                            await send(.lifecycle(.operationFinished(path, .createAlias, .failure(error.fileOpError))))
                         }
                     }
 
                     guard !targets.isEmpty else { return }
                     let record = EntryActionRecord(operationKind: .createAlias, targets: targets)
-                    await send(.entryActionCompleted(record))
+                    await send(.lifecycle(.entryActionCompleted(record)))
                 }
 
-            case let .renameItem(oldPath, newPath):
+            case let .edit(.renameItem(oldPath, newPath)):
                 let sourceURL = URL(fileURLWithPath: oldPath)
                 let destURL = URL(fileURLWithPath: newPath)
 
-                return .run { send in
-                    await send(.operationStarted(oldPath, .rename))
+                return .run { [entryFileOpsClient, alertClient] send in
+                    await send(.lifecycle(.operationStarted(oldPath, .rename)))
                     do {
                         try await entryFileOpsClient.renameFile(sourceURL, destURL)
-                        await send(.operationFinished(oldPath, .rename, .success(())))
+                        await send(.lifecycle(.pathsMutated([oldPath, newPath])))
+                        await send(.lifecycle(.operationFinished(oldPath, .rename, .success(()))))
                         let record = EntryActionRecord(
                             operationKind: .rename,
                             targets: [.init(beforePath: oldPath, afterPath: newPath)],
                         )
-                        await send(.entryActionCompleted(record))
+                        await send(.lifecycle(.entryActionCompleted(record)))
                     } catch let error as FileOpError where error.isFileExists {
                         guard let itemName = error.itemName else {
-                            await send(.operationFinished(oldPath, .rename, .failure(error)))
+                            await send(.lifecycle(.operationFinished(oldPath, .rename, .failure(error))))
                             return
                         }
                         await alertClient.showRenameConflictAlert(itemName)
-                        await send(.operationFinished(oldPath, .rename, .failure(error)))
+                        await send(.lifecycle(.operationFinished(oldPath, .rename, .failure(error))))
                     } catch {
-                        await send(.operationFinished(oldPath, .rename, .failure(error.fileOpError)))
+                        await send(.lifecycle(.operationFinished(oldPath, .rename, .failure(error.fileOpError))))
                     }
                 }
 
-            case let .startRename(id, text):
+            case let .edit(.startRename(id, text)):
                 guard state.displayItems[id: id] != nil else { return .none }
                 state.renamingItemId = id
                 state.renamingText = text
                 return .none
 
-            case let .updateRenamingText(text):
+            case let .edit(.updateRenamingText(text)):
                 guard state.renamingItemId != nil else { return .none }
                 state.renamingText = text
                 return .none
 
-            case .commitRename:
+            case .edit(.commitRename):
                 guard let itemId = state.renamingItemId,
                       let item = state.displayItems[id: itemId]
                 else {
@@ -126,9 +131,25 @@ struct EntryEditOperationsReducer {
                 state.renamingText = trimmed
                 let parentPath = URL(fileURLWithPath: item.fullPath).deletingLastPathComponent().path
                 let newPath = URL(fileURLWithPath: parentPath).appendingPathComponent(trimmed).path
-                return .send(.renameItem(oldPath: item.fullPath, newPath: newPath))
 
-            case .cancelRename:
+                let transition = EntryRenameExtensionPolicy.extensionTransition(
+                    from: item.name,
+                    to: trimmed,
+                    isFolder: item.isFolder,
+                )
+
+                if transition == .none {
+                    return .send(.edit(.renameItem(oldPath: item.fullPath, newPath: newPath)))
+                }
+
+                return .run { [alertClient] send in
+                    let confirmed = await alertClient.showRenameExtensionChangeAlert(item.name, trimmed)
+                    if confirmed {
+                        await send(.edit(.renameItem(oldPath: item.fullPath, newPath: newPath)))
+                    }
+                }
+
+            case .edit(.cancelRename):
                 state.renamingItemId = nil
                 state.renamingText = ""
                 return .none

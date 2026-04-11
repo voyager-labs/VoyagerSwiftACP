@@ -14,20 +14,20 @@ class AppDelegate: NSObject, NSApplicationDelegate {
 
     func applicationWillFinishLaunching(_: Notification) {
         withAppRootStore {
-            $0.send(.lifecycle(.willFinishLaunching))
+            $0.send(.lifecycle(.launch(.willFinishLaunching)))
             $0.send(.updater(.configureAtLaunch))
         }
     }
 
     func applicationDidFinishLaunching(_: Notification) {
         withAppRootStore {
-            $0.send(.lifecycle(.didFinishLaunching))
+            $0.send(.lifecycle(.launch(.didFinishLaunching)))
         }
     }
 
     func applicationShouldHandleReopen(_: NSApplication, hasVisibleWindows flag: Bool) -> Bool {
         withAppRootStore {
-            $0.send(.lifecycle(.appReopen(hasVisibleWindows: flag)))
+            $0.send(.lifecycle(.launch(.appReopen(hasVisibleWindows: flag))))
             return true
         } onMissing: {
             true
@@ -40,7 +40,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
 
     func applicationShouldTerminate(_: NSApplication) -> NSApplication.TerminateReply {
         withAppRootStore {
-            $0.send(.lifecycle(.requestTermination))
+            $0.send(.lifecycle(.termination(.requestTermination)))
             return .terminateLater
         } onMissing: {
             .terminateNow

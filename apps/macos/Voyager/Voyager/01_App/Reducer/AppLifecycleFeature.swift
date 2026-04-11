@@ -33,7 +33,7 @@ struct AppLifecycleFeature {
     var body: some Reducer<State, Action> {
         Reduce { state, action in
             switch action {
-            case .willFinishLaunching:
+            case .launch(.willFinishLaunching):
                 let theme = appearanceSettingsClient.loadTheme()
                 appearanceSettingsClient.applyThemeSync(theme)
 
@@ -119,7 +119,7 @@ struct AppLifecycleFeature {
                 }
                 .cancellable(id: CancelID.helperMonitor, cancelInFlight: true)
 
-            case .didFinishLaunching:
+            case .launch(.didFinishLaunching):
                 if isRunningXCTest() {
                     return .none
                 }
@@ -128,7 +128,7 @@ struct AppLifecycleFeature {
                 }
                 return .send(.delegate(.openInitialWindowIfNeeded))
 
-            case let .appReopen(hasVisibleWindows: flag):
+            case let .launch(.appReopen(hasVisibleWindows: flag)):
                 if isRunningXCTest() {
                     return .none
                 }
@@ -137,7 +137,7 @@ struct AppLifecycleFeature {
                 }
                 return .send(.delegate(.reopenWindowIfNeeded(hasVisibleWindows: flag)))
 
-            case .requestTermination:
+            case .termination(.requestTermination):
                 guard state.terminationAttemptID == nil else {
                     return .none
                 }
@@ -147,16 +147,16 @@ struct AppLifecycleFeature {
 
                 let shouldAlert = userDefaultsClient.bool(SettingsKeys.alertBeforeQuit)
                 guard shouldAlert else {
-                    return .send(.startTerminationCleanup(attemptID: attemptID))
+                    return .send(.termination(.startTerminationCleanup(attemptID: attemptID)))
                 }
 
                 let quitConfirmationClient = quitConfirmationClient
                 return .run { send in
                     let result = await quitConfirmationClient.confirmQuit(false, shouldAlert)
-                    await send(.quitConfirmationResponse(attemptID: attemptID, result: result))
+                    await send(.termination(.quitConfirmationResponse(attemptID: attemptID, result: result)))
                 }
 
-            case let .quitConfirmationResponse(attemptID: attemptID, result: result):
+            case let .termination(.quitConfirmationResponse(attemptID: attemptID, result: result)):
                 guard state.terminationAttemptID == attemptID else {
                     return .none
                 }
@@ -173,9 +173,9 @@ struct AppLifecycleFeature {
                     }
                 }
 
-                return .send(.startTerminationCleanup(attemptID: attemptID))
+                return .send(.termination(.startTerminationCleanup(attemptID: attemptID)))
 
-            case let .startTerminationCleanup(attemptID: attemptID):
+            case let .termination(.startTerminationCleanup(attemptID: attemptID)):
                 guard state.terminationAttemptID == attemptID else {
                     return .none
                 }
@@ -183,17 +183,23 @@ struct AppLifecycleFeature {
                 return .merge(
                     .run { send in
                         await VoyagerTerminationCoordinator.shared.begin(.userQuit)
-                        await send(.willTerminate)
+                        await send(.termination(.willTerminate))
 
-                        await send(.completeTerminationAttempt(attemptID: attemptID, shouldTerminate: true))
+                        await send(.termination(.completeTerminationAttempt(
+                            attemptID: attemptID,
+                            shouldTerminate: true,
+                        )))
                     },
                     .run { send in
                         try? await Task.sleep(nanoseconds: 5_000_000_000)
-                        await send(.completeTerminationAttempt(attemptID: attemptID, shouldTerminate: true))
+                        await send(.termination(.completeTerminationAttempt(
+                            attemptID: attemptID,
+                            shouldTerminate: true,
+                        )))
                     },
                 )
 
-            case let .completeTerminationAttempt(attemptID: attemptID, shouldTerminate: shouldTerminate):
+            case let .termination(.completeTerminationAttempt(attemptID: attemptID, shouldTerminate: shouldTerminate)):
                 guard state.terminationAttemptID == attemptID else {
                     return .none
                 }
@@ -205,7 +211,7 @@ struct AppLifecycleFeature {
                     await appTerminationReplyClient.reply(shouldTerminate)
                 }
 
-            case .willTerminate:
+            case .termination(.willTerminate):
                 return .cancel(id: CancelID.helperMonitor)
 
             case .delegate:

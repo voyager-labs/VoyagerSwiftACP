@@ -8,11 +8,11 @@ struct GeneralSettingsFeature {
     typealias Action = GeneralSettingsAction
 
     @Dependency(\.userDefaultsClient)
-    var userDefaultsClient: UserDefaultsClient
+    var userDefaultsClient
     @Dependency(\.launchAtLoginClient)
     var launchAtLoginClient
     @Dependency(\.directorySelectionClient)
-    var directorySelectionClient: DirectorySelectionClient
+    var directorySelectionClient
 
     var body: some Reducer<State, Action> {
         Reduce { state, action in

@@ -3,6 +3,10 @@ import Foundation
 
 enum EntryListColumn: String, CaseIterable, Equatable, Sendable {
     case name
+    case application
+    case dateAdded
+    case dateCreated
+    case dateLastOpened
     case dateModified
     case size
     case kind
@@ -20,6 +24,14 @@ enum EntryListColumn: String, CaseIterable, Equatable, Sendable {
         switch self {
         case .name:
             "Name"
+        case .application:
+            "Application"
+        case .dateAdded:
+            "Date Added"
+        case .dateCreated:
+            "Date Created"
+        case .dateLastOpened:
+            "Date Last Opened"
         case .dateModified:
             "Date Modified"
         case .size:
@@ -33,7 +45,9 @@ enum EntryListColumn: String, CaseIterable, Equatable, Sendable {
         switch self {
         case .name:
             220
-        case .dateModified:
+        case .application:
+            140
+        case .dateAdded, .dateCreated, .dateLastOpened, .dateModified:
             150
         case .size:
             90
@@ -46,7 +60,9 @@ enum EntryListColumn: String, CaseIterable, Equatable, Sendable {
         switch self {
         case .name:
             2400
-        case .dateModified:
+        case .application:
+            360
+        case .dateAdded, .dateCreated, .dateLastOpened, .dateModified:
             420
         case .size:
             220
@@ -59,7 +75,9 @@ enum EntryListColumn: String, CaseIterable, Equatable, Sendable {
         switch self {
         case .name:
             420
-        case .dateModified:
+        case .application:
+            180
+        case .dateAdded, .dateCreated, .dateLastOpened, .dateModified:
             220
         case .size:
             110
@@ -72,6 +90,14 @@ enum EntryListColumn: String, CaseIterable, Equatable, Sendable {
         switch self {
         case .name:
             .name
+        case .application:
+            .application
+        case .dateAdded:
+            .dateAdded
+        case .dateCreated:
+            .dateCreated
+        case .dateLastOpened:
+            .dateLastOpened
         case .dateModified:
             .dateModified
         case .size:
@@ -84,6 +110,15 @@ enum EntryListColumn: String, CaseIterable, Equatable, Sendable {
     var sortDescriptorKey: String? {
         guard sortKey != nil else { return nil }
         return rawValue
+    }
+
+    var defaultSortAscending: Bool {
+        switch self {
+        case .dateAdded, .dateCreated, .dateLastOpened, .dateModified:
+            false
+        case .name, .application, .size, .kind:
+            true
+        }
     }
 
     static func normalizeVisibleColumns(_ columns: [EntryListColumn]) -> [EntryListColumn] {

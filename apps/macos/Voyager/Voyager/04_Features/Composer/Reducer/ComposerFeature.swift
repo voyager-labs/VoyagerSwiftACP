@@ -33,6 +33,7 @@ struct ComposerFeature {
     nonisolated enum CancelID: Hashable, Sendable {
         case search
         case filters
+        case feedbackDismiss
     }
 
     var body: some Reducer<State, Action> {
@@ -58,12 +59,12 @@ struct ComposerFeature {
         Reduce { state, action in
             switch action {
             case let .view(.setPresented(isPresented)):
-                handleSetPresented(state: &state, isPresented: isPresented)
-                return .none
+                return handleSetPresented(state: &state, isPresented: isPresented)
 
             case let .view(.setText(text)):
                 state.text = text
-                return .none
+                state.transientFeedback = nil
+                return .cancel(id: CancelID.feedbackDismiss)
 
             case .view(.focusQueryField):
                 state.focusRequestID += 1
@@ -73,10 +74,19 @@ struct ComposerFeature {
                  .view(.redo):
                 return .none
 
+            case let .internal(.dismissTransientFeedback(id)):
+                if state.transientFeedback?.id == id {
+                    state.transientFeedback = nil
+                }
+                return .none
+
             case .view(.submit),
                  .view(.cancelSearch),
-                 .view(.cancelFilters),
-                 .view(.applyFilters),
+                 .view(.cancelFilters):
+                state.transientFeedback = nil
+                return .cancel(id: CancelID.feedbackDismiss)
+
+            case .view(.applyFilters),
                  .view(.setDisplayUnit),
                  .view(.addCondition),
                  .view(.removeCondition),
@@ -103,14 +113,34 @@ struct ComposerFeature {
     }
 }
 
-private func handleSetPresented(state: inout ComposerFeature.State, isPresented: Bool) {
+private func handleSetPresented(
+    state: inout ComposerFeature.State,
+    isPresented: Bool,
+) -> Effect<ComposerFeature.Action> {
     state.isPresented = isPresented
     if !isPresented {
         state.hasSubmittedInSession = false
         state.searchStartedAt = nil
         state.filtersStartedAt = nil
+        state.transientFeedback = nil
+        state.submittedSearchFilters = nil
+        state.isLoadingSearch = false
+        state.isLoadingFilters = false
+        state.isFilteringInFlight = false
+        state.activeSearchRequestID = nil
+        state.activeFiltersRequestID = nil
+        state.lastAcceptedSearchRequestID = nil
+        state.lastAcceptedFiltersRequestID = nil
         applyQueryPhaseTransition(.reset, state: &state)
+
+        return .merge(
+            .cancel(id: ComposerFeature.CancelID.search),
+            .cancel(id: ComposerFeature.CancelID.filters),
+            .cancel(id: ComposerFeature.CancelID.feedbackDismiss),
+        )
     }
+
+    return .none
 }
 
 func applyQueryPhaseTransition(
@@ -219,21 +249,28 @@ func resetValuePicker(state: inout ComposerFeature.State) {
 func applyFiltersIfNeeded(
     state: inout ComposerFeature.State,
     searchClient: SearchClient,
+    requestID: UUID = UUID(),
 ) -> Effect<ComposerFeature.Action> {
     state.isLoadingFilters = true
     state.isFilteringInFlight = true
+    state.activeFiltersRequestID = requestID
     let filters = buildFilters(from: state)
     guard !filters.conditions.isEmpty else {
         state.isLoadingFilters = false
         state.isFilteringInFlight = false
+        state.activeFiltersRequestID = nil
+        state.pendingSearchQuery = nil
         return .cancel(id: ComposerFeature.CancelID.filters)
     }
     return .run { send in
         do {
             let response = try await searchClient.applyFilters(.init(filters: filters))
-            await send(.filtersResponse(.success(response)))
+            await send(.filtersResponse(requestID, .success(response)))
+        } catch is CancellationError {
+            return
         } catch {
-            await send(.filtersResponse(.failure(error)))
+            guard !Task.isCancelled else { return }
+            await send(.filtersResponse(requestID, .failure(error)))
         }
     }
     .cancellable(id: ComposerFeature.CancelID.filters, cancelInFlight: true)

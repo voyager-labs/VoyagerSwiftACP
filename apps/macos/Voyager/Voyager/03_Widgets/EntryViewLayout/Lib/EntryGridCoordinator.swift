@@ -1,4 +1,5 @@
 import AppKit
+import Combine
 import ComposableArchitecture
 import VoyagerShared
 
@@ -7,6 +8,7 @@ final class EntryGridCoordinator: NSObject {
     typealias RenderSnapshot = EntryGridRenderSnapshot
     let store: StoreOf<EntryViewLayoutFeature>
     var state: EntryViewLayoutState { store.state }
+
     func sendEntryOperations(_ action: EntryOperationsFeature.Action) {
         store.send(.entryOperations(action))
     }
@@ -39,15 +41,16 @@ final class EntryGridCoordinator: NSObject {
     var lastRenamingItemId: EntryModel.ID?
     var hasRestoredScrollPosition = false
     var dropTargetEntryId: EntryModel.ID?
+    var validatedDropDestinationPath: String?
     var contextMenuAnchor: CGPoint?
     var lastLassoSelectedIds: Set<EntryModel.ID> = []
     var contextMenuCoordinator: EntryContextMenuCoordinator?
     var lassoAutoscrollController: EntryGridLassoAutoscrollController?
     var boundsDidChangeObserver: NSObjectProtocol?
     var lastRenderSnapshot: RenderSnapshot?
+    var renderObservationCancellable: AnyCancellable?
     let thumbnailPrefetchThrottler = MainThreadThrottler(intervalMs: 150, latest: true)
     var thumbnailImagesByPath: [String: NSImage] = [:]
-    var thumbnailTasksByPath: [String: Task<Void, Never>] = [:]
     @Dependency(\.entryOpenClient)
     var entryOpenClient
     @Dependency(\.entryLoadingClient)
@@ -56,8 +59,8 @@ final class EntryGridCoordinator: NSObject {
     var entryFileOpsClient
     @Dependency(\.workspaceClient)
     var workspaceClient
-    @Dependency(\.thumbnailGeneratorClient)
-    var thumbnailGeneratorClient
+    @Dependency(\.entryThumbnailCacheClient)
+    var entryThumbnailCacheClient
     @Dependency(\.finderFavoritesTagClient)
     var finderFavoritesTagClient
     @Dependency(\.notificationCenterClient)
@@ -134,6 +137,14 @@ final class EntryGridCoordinator: NSObject {
     func rebuildSectionsAndReload() {
         sections = makeSections(state: state)
         indexPathByEntryId = [:]
+        let hadDropTarget = dropTargetEntryId != nil || validatedDropDestinationPath != nil || state.isDropTargeted
+        clearDropTargetState()
+        if hadDropTarget {
+            updateDropTargetBorder(isTargeted: false)
+            if state.isDropTargeted {
+                store.send(.view(.setDropTargeted(false)))
+            }
+        }
         for (sectionIndex, section) in sections.enumerated() {
             for (itemIndex, entry) in section.items.enumerated() {
                 indexPathByEntryId[entry.id] = IndexPath(item: itemIndex, section: sectionIndex)
@@ -164,29 +175,15 @@ final class EntryGridCoordinator: NSObject {
         }
         return state.entryArrangements.groupedItems.map { group in
             let showHeader = !group.groupName.isEmpty && state.entryArrangements.groupKey != .name
-            let colorCode: Int? = if state.entryArrangements.groupKey == .tags {
-                resolveTagColorCode(tagName: group.groupName, items: group.items)
-            } else {
-                nil
-            }
             let isCollapsed = state.entryArrangements.collapsedGroups.contains(group.groupName)
             return Section(
                 title: showHeader ? group.groupName : nil,
-                colorCode: colorCode,
+                colorCode: group.colorCode,
                 count: group.count,
                 items: isCollapsed ? [] : group.items,
                 isCollapsed: isCollapsed,
             )
         }
-    }
-
-    func resolveTagColorCode(tagName: String, items: [EntryModel]) -> Int? {
-        for item in items {
-            if let colorCode = item.facets.tags?.first(where: { $0.name == tagName })?.colorCode {
-                return colorCode
-            }
-        }
-        return nil
     }
 
     func updateLayout(for width: CGFloat) {
@@ -287,9 +284,10 @@ extension EntryGridCoordinator {
         collectionView.reloadItems(at: visibleIndexPaths)
     }
 
-    func updateDropTargetBorder(isTargeted: Bool) {
-        scrollView.layer?.borderWidth = isTargeted ? 2 : 0
-        scrollView.layer?.borderColor = isTargeted ? NSColor.controlAccentColor.cgColor : nil
+    func updateDropTargetBorder(isTargeted _: Bool) {
+        // No-op: item-level icon-zone border (Task 2/3) is now the primary and sufficient
+        // drop target signal. A scroll-view-level border created double-emphasis that was
+        // Finder-unusual and competed with per-item targeting visual.
     }
 
     func setDropTargetEntryId(_ entryId: EntryModel.ID?) {
@@ -306,6 +304,41 @@ extension EntryGridCoordinator {
         if !indexPathsToReload.isEmpty {
             collectionView.reloadItems(at: indexPathsToReload)
         }
+    }
+
+    func clearDropTargetState() {
+        setDropTargetEntryId(nil)
+        validatedDropDestinationPath = nil
+    }
+
+    func indexPathForVisibleItem(containing point: NSPoint) -> IndexPath? {
+        for indexPath in collectionView.indexPathsForVisibleItems() {
+            guard let item = collectionView.item(at: indexPath) else { continue }
+            if item.view.frame.contains(point) {
+                return indexPath
+            }
+        }
+        return nil
+    }
+
+    /// Stabilizes the drop target across subview boundaries within the same entry tile.
+    ///
+    /// Once a drag is resolved to an entry, the whole tile acts as the drop target
+    /// regardless of which subview (thumbnail, icon background, name) the point lands on.
+    /// If the current point is still within the established target's frame, keep it;
+    /// otherwise fall through to the fresh point-resolution result.
+    func resolvedEntryTargetIndexPath(
+        pointResolved: IndexPath?,
+        localPoint: NSPoint,
+    ) -> IndexPath? {
+        guard let currentId = dropTargetEntryId,
+              let currentIndexPath = indexPathByEntryId[currentId],
+              let item = collectionView.item(at: currentIndexPath),
+              item.view.frame.contains(localPoint)
+        else {
+            return pointResolved
+        }
+        return currentIndexPath
     }
 
     func entry(at indexPath: IndexPath?) -> EntryModel? {

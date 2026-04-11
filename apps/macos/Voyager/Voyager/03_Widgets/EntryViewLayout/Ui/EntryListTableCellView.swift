@@ -8,7 +8,7 @@ struct EntryListEntryCellViewConfiguration {
         let columnId: String
         let iconSize: CGFloat
         let textSize: CGFloat
-        let dateModifiedWidth: CGFloat
+        let columnWidth: CGFloat
         let thumbnail: NSImage?
         let isHidden: Bool
         let isCut: Bool
@@ -136,12 +136,17 @@ final class EntryListEmptyCellView: NSTableCellView {}
 final class EntryListEntryCellView: NSTableCellView {
     private let customImageView = NSImageView()
     private let customTextField = NSTextField(string: "")
+    private let tagStackView = NSStackView()
 
     private var iconWidthConstraint: NSLayoutConstraint?
     private var iconHeightConstraint: NSLayoutConstraint?
     private var textLeadingToIconConstraint: NSLayoutConstraint?
     private var textLeadingToViewConstraint: NSLayoutConstraint?
+    private var textTrailingToViewConstraint: NSLayoutConstraint?
+    private var textTrailingToTagsConstraint: NSLayoutConstraint?
 
+    private var entryName: String = ""
+    private var entryIsFolder: Bool = false
     private var isRenaming: Bool = false
     private var isHiddenEntry: Bool = false
     private var isCutEntry: Bool = false
@@ -170,6 +175,12 @@ final class EntryListEntryCellView: NSTableCellView {
         addSubview(customTextField)
         textField = customTextField
 
+        tagStackView.translatesAutoresizingMaskIntoConstraints = false
+        tagStackView.orientation = .horizontal
+        tagStackView.alignment = .centerY
+        tagStackView.spacing = -3
+        addSubview(tagStackView)
+
         let iconLeading = customImageView.leadingAnchor.constraint(equalTo: leadingAnchor)
         let iconCenterY = customImageView.centerYAnchor.constraint(equalTo: centerYAnchor)
         let iconWidth = customImageView.widthAnchor.constraint(equalToConstant: 16)
@@ -183,7 +194,13 @@ final class EntryListEntryCellView: NSTableCellView {
             constant: 6,
         )
         textLeadingToViewConstraint = customTextField.leadingAnchor.constraint(equalTo: leadingAnchor)
-        let textTrailing = customTextField.trailingAnchor.constraint(lessThanOrEqualTo: trailingAnchor)
+        let textTrailingToView = customTextField.trailingAnchor.constraint(lessThanOrEqualTo: trailingAnchor)
+        textTrailingToViewConstraint = textTrailingToView
+        let textTrailingToTags = customTextField.trailingAnchor.constraint(
+            lessThanOrEqualTo: tagStackView.leadingAnchor,
+            constant: -8,
+        )
+        textTrailingToTagsConstraint = textTrailingToTags
         let textCenterY = customTextField.centerYAnchor.constraint(equalTo: centerYAnchor)
 
         NSLayoutConstraint.activate([
@@ -191,8 +208,10 @@ final class EntryListEntryCellView: NSTableCellView {
             iconCenterY,
             iconWidth,
             iconHeight,
-            textTrailing,
+            textTrailingToView,
             textCenterY,
+            tagStackView.trailingAnchor.constraint(equalTo: trailingAnchor),
+            tagStackView.centerYAnchor.constraint(equalTo: centerYAnchor),
         ])
 
         applyDisplayStyle()
@@ -210,63 +229,151 @@ final class EntryListEntryCellView: NSTableCellView {
         guard isRenaming else { return }
         window?.makeFirstResponder(customTextField)
         customTextField.selectText(nil)
+        if let editor = customTextField.currentEditor() as? NSTextView {
+            let range = EntryInlineRenameEditorRules.initialSelectionRange(
+                for: entryName,
+                isFolder: entryIsFolder,
+            )
+            editor.setSelectedRange(range)
+        }
     }
 
     private func configureEntryCell(context: EntryListEntryCellViewConfiguration.Context) {
         isRenaming = context.isRenaming
         isHiddenEntry = context.isHidden
         isCutEntry = context.isCut
+        entryName = context.model.name
+        entryIsFolder = context.model.isFolder
         let display = EntryDisplayModel(entry: context.model)
 
         switch EntryListColumn(rawValue: context.columnId) {
         case .name:
-            customImageView.isHidden = false
-            iconWidthConstraint?.constant = context.iconSize
-            iconHeightConstraint?.constant = context.iconSize
-            textLeadingToViewConstraint?.isActive = false
-            textLeadingToIconConstraint?.isActive = true
-
-            customImageView.image = context.workspaceClient.entryIcon(for: context.model, thumbnail: context.thumbnail)
-
-            customTextField.font = .systemFont(ofSize: context.textSize)
-            customTextField.lineBreakMode = .byTruncatingMiddle
-            customTextField.usesSingleLineMode = true
-
-            if isRenaming {
-                applyRenamingStyle(text: context.renamingText)
-            } else {
-                applyDisplayStyle()
-                customTextField.stringValue = context.model.name
-            }
+            configureNameCell(context: context)
 
         case .dateModified:
-            hideIconAndSetupTextOnly(textSize: max(10, context.textSize - 1))
-            customTextField.stringValue = EntryListCellDateFormatting.format(
-                context.model.modifiedDate,
-                width: context.dateModifiedWidth,
-            )
+            configureDateCell(context: context, date: context.model.modifiedDate)
+
+        case .application:
+            configureTextOnlyCell(context: context, text: context.model.facets.creatorApplication ?? "—")
+
+        case .dateAdded:
+            configureDateCell(context: context, date: context.model.facets.addedDate)
+
+        case .dateCreated:
+            configureDateCell(context: context, date: context.model.facets.createdDate)
+
+        case .dateLastOpened:
+            configureOptionalDateCell(context: context, date: context.model.facets.lastOpenedDate)
 
         case .size:
-            hideIconAndSetupTextOnly(textSize: max(10, context.textSize - 1))
-            customTextField.stringValue = display.formattedSize
+            configureTextOnlyCell(context: context, text: display.formattedSize)
 
         case .kind:
-            hideIconAndSetupTextOnly(textSize: max(10, context.textSize - 1))
             let kindText = context.model.fileExtension.lowercased() == CollectionConstants
                 .fileExtension ? "Voyager Collection" : context.model.facets.kind
-            customTextField.stringValue = kindText
+            configureTextOnlyCell(context: context, text: kindText)
 
         default:
-            hideIconAndSetupTextOnly(textSize: context.textSize)
-            customTextField.stringValue = ""
+            configureTextOnlyCell(context: context, text: "", useCompactTextSize: false)
         }
 
         applyContentAlpha()
     }
 
+    private func configureNameCell(context: EntryListEntryCellViewConfiguration.Context) {
+        customImageView.isHidden = false
+        iconWidthConstraint?.constant = context.iconSize
+        iconHeightConstraint?.constant = context.iconSize
+        textLeadingToViewConstraint?.isActive = false
+        textLeadingToIconConstraint?.isActive = true
+        tagStackView.isHidden = false
+
+        customImageView.image = context.workspaceClient.entryIcon(for: context.model, thumbnail: context.thumbnail)
+
+        customTextField.font = .systemFont(ofSize: context.textSize)
+        customTextField.lineBreakMode = .byTruncatingMiddle
+        customTextField.usesSingleLineMode = true
+
+        if isRenaming {
+            resetTagDisplayForEditing()
+            customTextField.setAccessibilityLabel(context.renamingText)
+            applyRenamingStyle(text: context.renamingText)
+        } else {
+            applyDisplayStyle()
+            configureNameDisplay(name: context.model.name, tags: context.model.facets.tags, textSize: context.textSize)
+        }
+    }
+
+    private func configureDateCell(context: EntryListEntryCellViewConfiguration.Context, date: Date) {
+        configureTextOnlyCell(
+            context: context,
+            text: EntryListCellDateFormatting.format(date, width: context.columnWidth),
+        )
+    }
+
+    private func configureOptionalDateCell(context: EntryListEntryCellViewConfiguration.Context, date: Date?) {
+        guard let date else {
+            configureTextOnlyCell(context: context, text: "—")
+            return
+        }
+        configureDateCell(context: context, date: date)
+    }
+
+    private func configureTextOnlyCell(
+        context: EntryListEntryCellViewConfiguration.Context,
+        text: String,
+        useCompactTextSize: Bool = true,
+    ) {
+        let textSize = useCompactTextSize ? max(10, context.textSize - 1) : context.textSize
+        hideIconAndSetupTextOnly(textSize: textSize)
+        customTextField.stringValue = text
+    }
+
+    private func configureNameDisplay(name: String, tags: [Tag]?, textSize: CGFloat) {
+        customTextField.attributedStringValue = NSAttributedString(
+            string: name,
+            attributes: [.font: NSFont.systemFont(ofSize: textSize)],
+        )
+
+        for view in tagStackView.arrangedSubviews {
+            tagStackView.removeArrangedSubview(view)
+            view.removeFromSuperview()
+        }
+
+        if let tags, !tags.isEmpty {
+            let visibleTags = Array(tags.prefix(3))
+            for tag in visibleTags {
+                let dot = TagDotNSView(tagColor: tag.tagColor, size: 8)
+                tagStackView.addArrangedSubview(dot)
+            }
+            tagStackView.isHidden = false
+            textTrailingToViewConstraint?.isActive = false
+            textTrailingToTagsConstraint?.isActive = true
+            customTextField.setAccessibilityLabel("\(name), Tags: \(tags.map(\.name).joined(separator: ", "))")
+        } else {
+            tagStackView.isHidden = true
+            textTrailingToTagsConstraint?.isActive = false
+            textTrailingToViewConstraint?.isActive = true
+            customTextField.setAccessibilityLabel(name)
+        }
+    }
+
+    private func resetTagDisplayForEditing() {
+        for view in tagStackView.arrangedSubviews {
+            tagStackView.removeArrangedSubview(view)
+            view.removeFromSuperview()
+        }
+        tagStackView.isHidden = true
+        textTrailingToTagsConstraint?.isActive = false
+        textTrailingToViewConstraint?.isActive = true
+    }
+
     private func hideIconAndSetupTextOnly(textSize: CGFloat) {
         customImageView.isHidden = true
         customImageView.image = nil
+        tagStackView.isHidden = true
+        textTrailingToTagsConstraint?.isActive = false
+        textTrailingToViewConstraint?.isActive = true
         textLeadingToIconConstraint?.isActive = false
         textLeadingToViewConstraint?.isActive = true
         customTextField.font = .systemFont(ofSize: textSize)
@@ -292,7 +399,7 @@ final class EntryListEntryCellView: NSTableCellView {
         customTextField.backgroundColor = .textBackgroundColor
         customTextField.focusRingType = .default
 
-        customTextField.stringValue = EntryGridRenameEditorRules.sanitizeInput(text)
+        customTextField.stringValue = EntryInlineRenameEditorRules.sanitizeInput(text)
         customTextField.delegate = self
         applyContentAlpha()
     }
@@ -301,6 +408,7 @@ final class EntryListEntryCellView: NSTableCellView {
         let alpha: CGFloat = (isHiddenEntry || isCutEntry) ? 0.5 : 1.0
         customImageView.alphaValue = alpha
         customTextField.alphaValue = alpha
+        tagStackView.alphaValue = alpha
     }
 }
 
@@ -308,7 +416,7 @@ extension EntryListEntryCellView: NSTextFieldDelegate {
     func controlTextDidChange(_ notification: Notification) {
         guard isRenaming else { return }
         guard let textField = notification.object as? NSTextField, textField === customTextField else { return }
-        let sanitized = EntryGridRenameEditorRules.sanitizeInput(textField.stringValue)
+        let sanitized = EntryInlineRenameEditorRules.sanitizeInput(textField.stringValue)
         if sanitized != textField.stringValue {
             textField.stringValue = sanitized
         }
@@ -319,7 +427,7 @@ extension EntryListEntryCellView: NSTextFieldDelegate {
         guard isRenaming else { return false }
         guard let textField = control as? NSTextField, textField === customTextField else { return false }
 
-        switch EntryGridRenameEditorRules.commandAction(for: commandSelector) {
+        switch EntryInlineRenameEditorRules.commandAction(for: commandSelector) {
         case .commit:
             onRenameCommit?()
             return true

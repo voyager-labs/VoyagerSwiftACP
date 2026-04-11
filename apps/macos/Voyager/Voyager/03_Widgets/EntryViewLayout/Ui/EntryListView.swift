@@ -108,7 +108,7 @@ final class EntryListView: NSView {
         scrollView.hasHorizontalScroller = true
         scrollView.automaticallyAdjustsContentInsets = false
         scrollView.contentView.postsBoundsChangedNotifications = true
-        scrollView.contentInsets = NSEdgeInsets(top: 0, left: 16, bottom: 0, right: 16)
+        scrollView.contentInsets = NSEdgeInsets(top: 0, left: 0, bottom: 0, right: 0)
 
         tableView.wantsLayer = true
         tableView.layer?.backgroundColor = NSColor.clear.cgColor
@@ -118,7 +118,7 @@ final class EntryListView: NSView {
         tableView.allowsMultipleSelection = true
         tableView.allowsEmptySelection = true
         tableView.usesAlternatingRowBackgroundColors = true
-        tableView.intercellSpacing = NSSize(width: 8, height: 0)
+        tableView.intercellSpacing = NSSize(width: 4, height: 0)
         tableView.registerForDraggedTypes([.fileURL])
         tableView.setDraggingSourceOperationMask([.copy, .move], forLocal: true)
         tableView.setDraggingSourceOperationMask([.copy], forLocal: false)
@@ -186,7 +186,10 @@ final class EntryListView: NSView {
         tableColumn.resizingMask = [.userResizingMask, .autoresizingMask]
 
         if let sortDescriptorKey = column.sortDescriptorKey {
-            tableColumn.sortDescriptorPrototype = NSSortDescriptor(key: sortDescriptorKey, ascending: true)
+            tableColumn.sortDescriptorPrototype = NSSortDescriptor(
+                key: sortDescriptorKey,
+                ascending: column.defaultSortAscending,
+            )
         } else {
             tableColumn.sortDescriptorPrototype = nil
         }

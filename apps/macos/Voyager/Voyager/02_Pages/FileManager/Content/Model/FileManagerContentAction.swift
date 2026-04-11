@@ -4,39 +4,43 @@ import Foundation
 import SwiftUI
 
 @CasePathable
-enum FileManagerContentAction: CasePathable, Sendable {
-    case entries(EntryCommandAction)
-    case entryViewLayout(EntryViewLayoutAction)
+enum FileManagerContentAction: ViewAction, CasePathable, Sendable {
+    case view(View)
+    case `internal`(Internal)
+    case delegate(Delegate)
+
+    case entryViewLayout(EntryViewLayoutFeature.Action)
     case composer(ComposerFeature.Action)
+    case externalFileSystemChanged([String])
 
-    case delegate(FileManagerContentDelegateAction)
-    case collectionDraft(FileManagerContentCollectionDraftAction)
+    @CasePathable
+    enum View: Sendable {
+        case handleKeyCommand(KeyCommand)
+        case changeLayout(EntryViewLayoutState.Mode)
+        case selectAllEntries
+        case toggleShowHiddenFilesAndReload
+    }
 
-    case handleKeyCommand(KeyCommand)
+    @CasePathable
+    enum Internal: Sendable {
+        case applyNavigationState(ContentPageNavigationRoute)
+        case performPendingNavigation(ContentPageNavigationPending)
+        case requestNavigation(ContentPageNavigationAction)
+        case saveScrollOffset(CGPoint, forPath: String)
+        case startObservingSystemNotifications
+        case stopObservingSystemNotifications
+        case systemAppDidBecomeActive
+    }
 
-    case changeLayout(ContentViewLayout)
-    case applyNavigationState(ContentPageNavigationRoute)
-    case performPendingNavigation(ContentPageNavigationPending)
-    case requestNavigation(ContentPageNavigationAction)
-    case selectAllEntries
-    case toggleShowHiddenFilesAndReload
-
-    case saveScrollOffset(CGPoint, forPath: String)
-
-    case discardCollectionChanges
-    case composerCollectionSearchSucceeded
-    case composerCollectionSearchFailed
-
-    // NOTE: 이거 두 개는 ContentPane에 있어야 하는건가?
-    case dropItemsToSidebarFolder(providers: [NSItemProvider], targetURL: URL)
-    case dropItemsToTag(providers: [NSItemProvider], tagName: String)
-
-    case openPathInNewWindow(String)
-    case openPathInNewTab(String)
-    case closeWindow
-
-    // System lifecycle
-    case startObservingSystemNotifications
-    case stopObservingSystemNotifications
-    case systemAppDidBecomeActive
+    @CasePathable
+    enum Delegate: Sendable {
+        case discardCollectionChanges
+        case composerCollectionSearchSucceeded
+        case composerCollectionSearchFailed
+        case dropItemsToSidebarFolder(providers: [NSItemProvider], targetURL: URL)
+        case dropItemsToTag(providers: [NSItemProvider], tagName: String)
+        case openPathInNewWindow(String)
+        case openPathInNewTab(String)
+        case closeWindow
+    }
 }

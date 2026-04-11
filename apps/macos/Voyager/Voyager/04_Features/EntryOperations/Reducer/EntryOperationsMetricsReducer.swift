@@ -35,52 +35,28 @@ struct EntryOperationsMetricsReducer {
     }
 
     private func payloadForOpenActions(_ action: Action) -> EntryActionPayload? {
-        switch action {
-        case let .openFiles(paths):
-            guard let entryKind = entryKind(for: paths) else { return nil }
-            return EntryActionPayload(actionKind: .openDefault, entryKind: entryKind)
-
-        case let .quickLookFiles(paths):
-            guard let entryKind = entryKind(for: paths) else { return nil }
-            return EntryActionPayload(actionKind: .quickLook, entryKind: entryKind)
-
-        case let .openFinderInfo(paths):
-            guard let entryKind = entryKind(for: paths) else { return nil }
-            return EntryActionPayload(actionKind: .getInfo, entryKind: entryKind)
-
-        case let .shareItems(paths, _):
-            guard let entryKind = entryKind(for: paths) else { return nil }
-            return EntryActionPayload(actionKind: .share, entryKind: entryKind)
-
-        case let .performService(paths, _):
-            guard let entryKind = entryKind(for: paths) else { return nil }
-            return EntryActionPayload(actionKind: .performService, entryKind: entryKind)
-
-        case let .revealInFinder(paths):
-            guard let entryKind = entryKind(for: paths) else { return nil }
-            return EntryActionPayload(actionKind: .revealInFinder, entryKind: entryKind)
-
-        default:
+        guard case let .open(openAction) = action else {
             return nil
         }
+        return payloadForOpenAction(openAction)
     }
 
     private func payloadForAppActions(_ action: Action) -> EntryActionPayload? {
         switch action {
-        case let .openFileWithApp(file):
+        case let .openWith(.openFileWithApp(file)):
             return EntryActionPayload(actionKind: .openWithApp, entryKind: entryKind(for: file))
 
-        case let .openFileWithAppBundleID(filePath, _, _):
+        case let .openWith(.openFileWithAppBundleID(filePath, bundleID: _, url: _)):
             guard let entryKind = entryKind(for: [filePath]) else { return nil }
             return EntryActionPayload(actionKind: .openWithApp, entryKind: entryKind)
 
-        case let .setDefaultAppForFile(_, _, file):
+        case let .openWith(.setDefaultAppForFile(type: _, bundleID: _, file: file)):
             return EntryActionPayload(actionKind: .setDefaultApp, entryKind: entryKind(for: file))
 
-        case let .setDefaultAppWithOther(file):
+        case let .openWith(.setDefaultAppWithOther(file)):
             return EntryActionPayload(actionKind: .setDefaultApp, entryKind: entryKind(for: file))
 
-        case let .openFilesWithAppFromOther(files, _):
+        case let .openWith(.openFilesWithAppFromOther(files, shouldSetAsDefault: _)):
             guard let entryKind = entryKind(for: files) else { return nil }
             return EntryActionPayload(actionKind: .openWithApp, entryKind: entryKind)
 
@@ -90,47 +66,24 @@ struct EntryOperationsMetricsReducer {
     }
 
     private func payloadForCreateActions(_ action: Action) -> EntryActionPayload? {
-        switch action {
-        case .createNewFolder:
-            return EntryActionPayload(actionKind: .createFolder, entryKind: .directory)
-
-        case let .createAliases(paths):
-            guard let entryKind = entryKind(for: paths) else { return nil }
-            return EntryActionPayload(actionKind: .createAlias, entryKind: entryKind)
-
-        case let .copySelectedItems(files):
-            guard let entryKind = entryKind(for: files) else { return nil }
-            return EntryActionPayload(actionKind: .copy, entryKind: entryKind)
-
-        case let .pasteItems(sourcePaths, _, _, operationKind):
-            guard let entryKind = entryKind(for: sourcePaths) else { return nil }
-            guard let actionKind = dauActionKind(for: operationKind) else { return nil }
-            return EntryActionPayload(actionKind: actionKind, entryKind: entryKind)
-
-        case let .renameItem(oldPath, _):
-            guard let entryKind = entryKind(for: [oldPath]) else { return nil }
-            return EntryActionPayload(actionKind: .rename, entryKind: entryKind)
-
-        default:
-            return nil
-        }
+        payloadForEditCreateActions(action) ?? payloadForClipboardCreateActions(action)
     }
 
     private func payloadForTrashActions(_ action: Action) -> EntryActionPayload? {
         switch action {
-        case let .moveToTrash(paths):
+        case let .trash(.moveToTrash(paths)):
             guard let entryKind = entryKind(for: paths) else { return nil }
             return EntryActionPayload(actionKind: .moveToTrash, entryKind: entryKind)
 
-        case let .deleteImmediatelyConfirmed(paths):
+        case let .trash(.deleteImmediatelyConfirmed(paths)):
             guard let entryKind = entryKind(for: paths) else { return nil }
             return EntryActionPayload(actionKind: .deleteImmediately, entryKind: entryKind)
 
-        case let .putBackFromTrash(paths):
+        case let .trash(.putBackFromTrash(paths)):
             guard let entryKind = entryKind(for: paths) else { return nil }
             return EntryActionPayload(actionKind: .putBack, entryKind: entryKind)
 
-        case let .emptyTrashConfirmed(paths):
+        case let .trash(.emptyTrashConfirmed(paths)):
             guard let entryKind = entryKind(for: paths) else { return nil }
             return EntryActionPayload(actionKind: .emptyTrash, entryKind: entryKind)
 
@@ -141,11 +94,11 @@ struct EntryOperationsMetricsReducer {
 
     private func payloadForArchiveActions(_ action: Action) -> EntryActionPayload? {
         switch action {
-        case let .compressItems(paths):
+        case let .archive(.compressItems(paths)):
             guard let entryKind = entryKind(for: paths) else { return nil }
             return EntryActionPayload(actionKind: .compress, entryKind: entryKind)
 
-        case let .extractCompressedFile(path):
+        case let .archive(.extractCompressedFile(path)):
             return EntryActionPayload(actionKind: .extract, entryKind: entryKind(forPath: path))
 
         default:
@@ -155,7 +108,7 @@ struct EntryOperationsMetricsReducer {
 
     private func payloadForTagActions(_ action: Action) -> EntryActionPayload? {
         switch action {
-        case let .requestTagMutation(request):
+        case let .tagging(.requestTagMutation(request: request)):
             guard let entryKind = entryKind(for: request.paths) else { return nil }
             return EntryActionPayload(actionKind: .setTags, entryKind: entryKind)
 
@@ -199,38 +152,84 @@ struct EntryOperationsMetricsReducer {
 
     private func dauActionKind(for operationKind: OperationKind) -> DAUEntryActionKind? {
         guard operationKind.isUndoable else { return nil }
+        return Self.dauActionKindMap[operationKind]
+    }
 
-        switch operationKind {
-        case .rename:
-            return .rename
-        case .pasteFileMove:
-            return .move
-        case .pasteFileDuplicate:
-            return .duplicate
-        case .pasteFileCopy:
-            return .paste
-        case .createFolder:
-            return .createFolder
-        case .createAlias:
-            return .createAlias
-        case .moveToTrash:
-            return .moveToTrash
-        case .putBack:
-            return .putBack
-        case .setTags:
-            return .setTags
-        case .openDefault,
-             .openWithApp,
-             .setDefaultApp,
-             .quickLook,
-             .getInfo,
-             .share,
-             .performService,
-             .revealInFinder,
-             .deleteImmediately,
-             .compress,
-             .extract:
+    private func payloadForOpenAction(_ action: Action.Open) -> EntryActionPayload? {
+        guard let (actionKind, paths) = openMetricInputs(for: action) else {
+            return nil
+        }
+        return payload(actionKind: actionKind, paths: paths)
+    }
+
+    private func payloadForEditCreateActions(_ action: Action) -> EntryActionPayload? {
+        switch action {
+        case .edit(.createNewFolder):
+            return EntryActionPayload(actionKind: .createFolder, entryKind: .directory)
+        case let .edit(.createAliases(paths)):
+            guard let entryKind = entryKind(for: paths) else { return nil }
+            return EntryActionPayload(actionKind: .createAlias, entryKind: entryKind)
+        case let .edit(.renameItem(oldPath: oldPath, newPath: _)):
+            guard let entryKind = entryKind(for: [oldPath]) else { return nil }
+            return EntryActionPayload(actionKind: .rename, entryKind: entryKind)
+        default:
             return nil
         }
     }
+
+    private func payloadForClipboardCreateActions(_ action: Action) -> EntryActionPayload? {
+        switch action {
+        case let .clipboard(.copySelectedItems(files)):
+            guard let entryKind = entryKind(for: files) else { return nil }
+            return EntryActionPayload(actionKind: .copy, entryKind: entryKind)
+        case let .clipboard(.pasteItems(
+            sourcePaths: sourcePaths,
+            destinationPath: _,
+            operation: _,
+            operationKind: operationKind,
+        )):
+            guard let entryKind = entryKind(for: sourcePaths) else { return nil }
+            guard let actionKind = dauActionKind(for: operationKind) else { return nil }
+            return EntryActionPayload(actionKind: actionKind, entryKind: entryKind)
+        default:
+            return nil
+        }
+    }
+
+    private func openMetricInputs(for action: Action.Open) -> (DAUEntryActionKind, [String])? {
+        switch action {
+        case let .openFiles(paths):
+            (.openDefault, paths)
+        case let .quickLookFiles(paths):
+            (.quickLook, paths)
+        case let .openFinderInfo(paths):
+            (.getInfo, paths)
+        case let .shareItems(paths, _):
+            (.share, paths)
+        case let .performService(paths, _):
+            (.performService, paths)
+        case let .revealInFinder(paths):
+            (.revealInFinder, paths)
+        }
+    }
+
+    private func payload(
+        actionKind: DAUEntryActionKind,
+        paths: [String],
+    ) -> EntryActionPayload? {
+        guard let entryKind = entryKind(for: paths) else { return nil }
+        return EntryActionPayload(actionKind: actionKind, entryKind: entryKind)
+    }
+
+    private static let dauActionKindMap: [OperationKind: DAUEntryActionKind] = [
+        .rename: .rename,
+        .pasteFileMove: .move,
+        .pasteFileDuplicate: .duplicate,
+        .pasteFileCopy: .paste,
+        .createFolder: .createFolder,
+        .createAlias: .createAlias,
+        .moveToTrash: .moveToTrash,
+        .putBack: .putBack,
+        .setTags: .setTags,
+    ]
 }

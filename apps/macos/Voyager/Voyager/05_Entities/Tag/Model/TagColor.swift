@@ -11,7 +11,7 @@ public enum TagColor: Int, CaseIterable, Sendable, Hashable {
     case red = 6
     case orange = 7
 
-    static let colorOrder: [TagColor] = [.red, .orange, .yellow, .green, .blue, .purple, .gray]
+    nonisolated static let colorOrder: [TagColor] = [.red, .orange, .yellow, .green, .blue, .purple, .gray]
     public var colorCode: Int { rawValue }
 
     public var nsColor: NSColor {
@@ -29,5 +29,14 @@ public enum TagColor: Int, CaseIterable, Sendable, Hashable {
 
     public nonisolated init(colorCode: Int) {
         self = TagColor(rawValue: colorCode) ?? .none
+    }
+
+    nonisolated init(finderFavoriteSlotIndex index: Int) {
+        guard Self.colorOrder.indices.contains(index) else {
+            self = .none
+            return
+        }
+
+        self = Self.colorOrder[index]
     }
 }

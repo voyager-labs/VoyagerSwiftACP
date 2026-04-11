@@ -13,12 +13,11 @@ struct FileManagerWindowPreferencesReducer {
                 state.sidebar.sidebarVisible = preferences.sidebarVisible
                 state.sidebar.sidebarWidth = preferences.sidebarWidth
 
-                state.content.viewLayout = preferences.viewLayout
-                state.content.listIconSize = preferences.listIconSize
-                state.content.gridIconSize = preferences.gridIconSize
-                state.content.listTextSize = preferences.listTextSize
-                state.content.gridTextSize = preferences.gridTextSize
-
+                state.content.entryViewLayout.mode = preferences.viewLayout
+                state.content.entryViewLayout.listIconSize = preferences.listIconSize
+                state.content.entryViewLayout.gridIconSize = preferences.gridIconSize
+                state.content.entryViewLayout.listTextSize = preferences.listTextSize
+                state.content.entryViewLayout.gridTextSize = preferences.gridTextSize
                 state.content.entryViewLayout.showHiddenFiles = preferences.showHiddenFiles
                 state.content.entryViewLayout.entryArrangements.updateSortKey(preferences.sortKey)
                 state.content.entryViewLayout.entryArrangements.updateSortOrder(preferences.sortOrder)

@@ -11,23 +11,25 @@ struct EntryOperationsLifecycleReducer {
     var entryOpenClient
     @Dependency(\.entryOperationsAlertClient)
     var alertClient
+    @Dependency(\.entryThumbnailCacheClient)
+    var entryThumbnailCacheClient
 
     var body: some Reducer<State, Action> {
         Reduce { state, action in
             switch action {
-            case let .syncSelectedEntryIDs(ids):
+            case let .lifecycle(.syncSelectedEntryIDs(ids)):
                 state.selectedEntryIDs = ids
                 return .none
 
-            case let .clearError(filePath):
+            case let .lifecycle(.clearError(filePath)):
                 state.itemStates[filePath]?.lastError = nil
                 return .none
 
-            case let .operationStarted(filePath, _):
+            case let .lifecycle(.operationStarted(filePath, kind)):
                 state.itemStates[filePath] = ItemOperationState(isBusy: true, lastError: nil)
                 return .none
 
-            case let .operationFinished(filePath, kind, result):
+            case let .lifecycle(.operationFinished(filePath, kind, result)):
                 state.itemStates[filePath]?.isBusy = false
 
                 if case .rename = kind {
@@ -72,7 +74,16 @@ struct EntryOperationsLifecycleReducer {
 
                 return .none
 
-            case .entryActionCompleted:
+            case let .lifecycle(.pathsMutated(paths)):
+                let uniquePaths = Array(Set(paths))
+                guard !uniquePaths.isEmpty else { return .none }
+                return .run { [entryThumbnailCacheClient] _ in
+                    await MainActor.run {
+                        entryThumbnailCacheClient.removeThumbnails(for: uniquePaths)
+                    }
+                }
+
+            case .lifecycle(.entryActionCompleted):
                 return .none
 
             default:

@@ -24,7 +24,7 @@ struct EntryUndoRedoOperationsReducer { // swiftlint:disable:this type_body_leng
     var body: some Reducer<State, Action> {
         Reduce { state, action in
             switch action {
-            case let .entryActionCompleted(record):
+            case let .lifecycle(.entryActionCompleted(record: record)):
                 guard record.operationKind.isUndoable else {
                     return .none
                 }
@@ -36,15 +36,15 @@ struct EntryUndoRedoOperationsReducer { // swiftlint:disable:this type_body_leng
                         windowID,
                         record,
                         { record in
-                            await send(.undoEntryAction(record))
+                            await send(.undoRedo(.undoEntryAction(record)))
                         },
                         { record in
-                            await send(.redoEntryAction(record))
+                            await send(.undoRedo(.redoEntryAction(record)))
                         },
                     )
                 }
 
-            case .requestUndo:
+            case .undoRedo(.requestUndo):
                 guard let record = state.latestUndoRecord else {
                     Self.logger.error("Undo unavailable: no record")
                     return .none
@@ -59,7 +59,7 @@ struct EntryUndoRedoOperationsReducer { // swiftlint:disable:this type_body_leng
                     await undoManagerClient.undo(windowID)
                 }
 
-            case .requestRedo:
+            case .undoRedo(.requestRedo):
                 guard let record = state.latestRedoRecord else {
                     Self.logger.error("Redo unavailable: no record")
                     return .none
@@ -74,7 +74,7 @@ struct EntryUndoRedoOperationsReducer { // swiftlint:disable:this type_body_leng
                     await undoManagerClient.redo(windowID)
                 }
 
-            case let .undoEntryAction(record):
+            case let .undoRedo(.undoEntryAction(record: record)):
                 guard let latestRecord = state.latestUndoRecord, latestRecord.id == record.id else {
                     Self.logger.error("Undo unavailable: latest record mismatch")
                     return .none
@@ -86,9 +86,9 @@ struct EntryUndoRedoOperationsReducer { // swiftlint:disable:this type_body_leng
 
                 _ = state.undoRecords.popLast()
                 state.redoRecords.append(latestRecord)
-                return .send(.replayEntryAction(direction: .undo, record: latestRecord))
+                return .send(.undoRedo(.replayEntryAction(direction: .undo, record: latestRecord)))
 
-            case let .redoEntryAction(record):
+            case let .undoRedo(.redoEntryAction(record: record)):
                 guard let latestRecord = state.latestRedoRecord, latestRecord.id == record.id else {
                     Self.logger.error("Redo unavailable: latest record mismatch")
                     return .none
@@ -100,12 +100,12 @@ struct EntryUndoRedoOperationsReducer { // swiftlint:disable:this type_body_leng
 
                 _ = state.redoRecords.popLast()
                 state.undoRecords.append(latestRecord)
-                return .send(.replayEntryAction(direction: .redo, record: latestRecord))
+                return .send(.undoRedo(.replayEntryAction(direction: .redo, record: latestRecord)))
 
-            case let .replayEntryAction(direction, record):
+            case let .undoRedo(.replayEntryAction(direction: direction, record: record)):
                 return replayEntryAction(record, direction: direction)
 
-            case let .entryActionApplied(direction, record):
+            case let .undoRedo(.entryActionApplied(direction: direction, record: record)):
                 switch direction {
                 case .undo:
                     guard let recordIndex = state.redoRecords.firstIndex(where: { $0.id == record.id }) else {
@@ -124,7 +124,7 @@ struct EntryUndoRedoOperationsReducer { // swiftlint:disable:this type_body_leng
                     return .none
                 }
 
-            case let .operationFinished(path, kind, result):
+            case let .lifecycle(.operationFinished(path, kind, result)):
                 switch (kind, result) {
                 case (.pasteFileMove, .success):
                     guard state.clipboardOperation == .cut else {
@@ -143,7 +143,7 @@ struct EntryUndoRedoOperationsReducer { // swiftlint:disable:this type_body_leng
 
                     state.clipboardOperation = .copy
                     state.cutClearSession = nil
-                    return .send(.setClipboardOperation(operation: .copy))
+                    return .send(.clipboard(.setClipboardOperation(operation: .copy)))
 
                 case (.deleteImmediately, .success):
                     guard state.pendingEmptyTrashItemCount > 0 else {
@@ -157,7 +157,7 @@ struct EntryUndoRedoOperationsReducer { // swiftlint:disable:this type_body_leng
 
                     state.pendingEmptyTrashItemCount = 0
                     state.emptyTrashCompletedCount = 0
-                    return .send(.emptyTrashCompleted)
+                    return .send(.lifecycle(.emptyTrashCompleted))
 
                 default:
                     return .none
@@ -186,7 +186,7 @@ struct EntryUndoRedoOperationsReducer { // swiftlint:disable:this type_body_leng
                     id: record.id,
                     timestamp: record.timestamp,
                 )
-                await send(.entryActionApplied(direction: direction, record: updatedRecord))
+                await send(.undoRedo(.entryActionApplied(direction: direction, record: updatedRecord)))
             } catch {
                 Self.logger.error("Replay entry action failed: \(error.localizedDescription, privacy: .public)")
             }
@@ -211,22 +211,23 @@ struct EntryUndoRedoOperationsReducer { // swiftlint:disable:this type_body_leng
                 direction: direction,
             )
 
-            await send(.operationStarted(operation.operationPath, operation.operationKind))
+            await send(.lifecycle(.operationStarted(operation.operationPath, operation.operationKind)))
             do {
                 let updatedTarget = try await operation.perform()
-                await send(.operationFinished(
+                await send(.lifecycle(.pathsMutated([target.beforePath, target.afterPath].compactMap(\.self))))
+                await send(.lifecycle(.operationFinished(
                     operation.operationPath,
                     operation.operationKind,
                     .success(()),
-                ))
+                )))
                 updatedTargets.append(updatedTarget)
             } catch {
                 let fileError = error.fileOpError
-                await send(.operationFinished(
+                await send(.lifecycle(.operationFinished(
                     operation.operationPath,
                     operation.operationKind,
                     .failure(fileError),
-                ))
+                )))
                 throw fileError
             }
         }
@@ -454,7 +455,9 @@ struct EntryUndoRedoOperationsReducer { // swiftlint:disable:this type_body_leng
                 operationPath: originalPath,
                 operationKind: OperationKind.moveToTrash,
                 perform: {
-                    let trashPath = try await moveItemToTrash(path: originalPath)
+                    let trashPath = try await moveItemToTrash(
+                        path: originalPath,
+                    )
                     return EntryActionRecord.Target(beforePath: originalPath, afterPath: trashPath)
                 },
             )
@@ -472,7 +475,9 @@ struct EntryUndoRedoOperationsReducer { // swiftlint:disable:this type_body_leng
                 operationPath: originalPath,
                 operationKind: OperationKind.moveToTrash,
                 perform: {
-                    let trashPath = try await moveItemToTrash(path: originalPath)
+                    let trashPath = try await moveItemToTrash(
+                        path: originalPath,
+                    )
                     return EntryActionRecord.Target(beforePath: trashPath, afterPath: originalPath)
                 },
             )

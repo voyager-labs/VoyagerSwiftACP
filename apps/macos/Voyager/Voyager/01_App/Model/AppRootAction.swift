@@ -5,8 +5,10 @@ import VoyagerPagesSettings
 @CasePathable
 enum AppRootAction: CasePathable, Sendable {
     case lifecycle(AppLifecycleFeature.Action)
+    case startHelperExternalFileBridge
     case helperExternalFileChanged(HelperExternalFileChangeEvent)
     case flushPendingReplay
+    case pendingReplayLoaded([String])
     case registerHelperWatchRootsIfNeeded
     case registerHelperWatchRoots([String])
     case appPreferences(AppPreferencesFeature.Action)

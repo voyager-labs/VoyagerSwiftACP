@@ -20,36 +20,56 @@ struct ComposerView: View {
 
     private var isDark: Bool { colorScheme == .dark }
 
+    private struct ViewState: Equatable {
+        let isPresented: Bool
+        let transientFeedback: ComposerTransientFeedback?
+    }
+
     var body: some View {
         WithViewStore(
             store,
-            observe: { $0.isPresented },
+            observe: { state in
+                ViewState(
+                    isPresented: state.isPresented,
+                    transientFeedback: state.transientFeedback,
+                )
+            },
             content: { viewStore in
-                VStack(spacing: 0) {
-                    ComposerTopRowView(
-                        store: store,
-                        colorScheme: colorScheme,
-                        isDiscardEnabled: isDiscardEnabled,
-                        canSaveCollection: canSaveCollection,
-                        isTemporaryCollection: isTemporaryCollection,
-                        isOptionKeyPressed: keyboardMonitor.isOptionKeyPressed,
-                        onDiscardCollectionChanges: onDiscardCollectionChanges,
-                    )
-                    .fixedSize(horizontal: false, vertical: true)
+                ZStack(alignment: .top) {
+                    VStack(spacing: 0) {
+                        ComposerTopRowView(
+                            store: store,
+                            colorScheme: colorScheme,
+                            isDiscardEnabled: isDiscardEnabled,
+                            canSaveCollection: canSaveCollection,
+                            isTemporaryCollection: isTemporaryCollection,
+                            isOptionKeyPressed: keyboardMonitor.isOptionKeyPressed,
+                            onDiscardCollectionChanges: onDiscardCollectionChanges,
+                        )
+                        .fixedSize(horizontal: false, vertical: true)
 
-                    Rectangle()
-                        .fill(VoyagerDS.SystemColor.separator)
-                        .frame(height: 1)
-                        .padding(.horizontal, 16)
+                        Rectangle()
+                            .fill(VoyagerDS.SystemColor.separator)
+                            .frame(height: 1)
+                            .padding(.horizontal, 16)
 
-                    ComposerBottomRowView(
-                        store: store,
-                        favorites: favorites,
-                        historyPaths: historyPaths,
-                        colorScheme: colorScheme,
-                        isScopePickerPresented: $isScopePickerPresented,
-                    )
-                    .fixedSize(horizontal: false, vertical: true)
+                        ComposerBottomRowView(
+                            store: store,
+                            favorites: favorites,
+                            historyPaths: historyPaths,
+                            colorScheme: colorScheme,
+                            isScopePickerPresented: $isScopePickerPresented,
+                        )
+                        .fixedSize(horizontal: false, vertical: true)
+                    }
+
+                    if let feedback = viewStore.transientFeedback {
+                        ComposerFeedbackToastView(feedback: feedback)
+                            .frame(maxWidth: 360)
+                            .padding(.top, 54)
+                            .allowsHitTesting(false)
+                            .zIndex(1)
+                    }
                 }
                 .background(
                     VisualEffectBackgroundView(
@@ -78,7 +98,7 @@ struct ComposerView: View {
                 .onDisappear {
                     keyboardMonitor.stop()
                 }
-                .onChange(of: viewStore.state) { isPresented in
+                .onChange(of: viewStore.isPresented) { isPresented in
                     if !isPresented {
                         keyboardMonitor.stop()
                     }

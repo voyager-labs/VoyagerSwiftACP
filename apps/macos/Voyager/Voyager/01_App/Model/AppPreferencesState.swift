@@ -4,7 +4,7 @@ import VoyagerShared
 
 struct AppPreferencesState: Equatable, Sendable {
     var showHiddenFiles: Bool = false
-    var viewLayout: ContentViewLayout = .list
+    var viewLayout: EntryViewLayoutState.Mode = .list
     var sortKey: SortKey = .name
     var sortOrder: SortOrder = .ascending
     var groupKey: GroupKey = .none
@@ -20,7 +20,7 @@ struct AppPreferencesState: Equatable, Sendable {
     static func load(from userDefaultsClient: UserDefaultsClient) -> Self {
         var state = AppPreferencesState()
         state.showHiddenFiles = userDefaultsClient.bool(SettingsKeys.showHiddenFiles)
-        state.viewLayout = ContentViewLayout(
+        state.viewLayout = EntryViewLayoutState.Mode(
             rawValue: userDefaultsClient.string(SettingsKeys.viewLayout) ?? "",
         ) ?? .list
         state.sortKey = SortKey(
@@ -46,7 +46,8 @@ struct AppPreferencesState: Equatable, Sendable {
             state.gridTextSize = gridTextSize
         }
 
-        state.sidebarVisible = userDefaultsClient.object(SettingsKeys.sidebarVisible) as? Bool ?? true
+        // TODO: UserDefaults sidebar 저장 버그 수정 후 원복
+        state.sidebarVisible = true
         if let sidebarWidth = userDefaultsClient.object(SettingsKeys.sidebarWidth) as? Double, sidebarWidth > 0 {
             state.sidebarWidth = CGFloat(sidebarWidth)
         }
