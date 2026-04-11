@@ -41,7 +41,7 @@ struct ComposerState: Equatable {
     var isFilteringInFlight: Bool = false
     var queryRenderPhase: ComposerQueryRenderPhase = .idle
     var transientFeedback: ComposerTransientFeedback?
-    var submittedSearchFilters: SearchFiltersPayload?
+    var submittedSearchFilters: VoyagerShared.SearchFiltersPayload?
     var activeSearchRequestID: UUID?
     var activeFiltersRequestID: UUID?
     var lastAcceptedSearchRequestID: UUID?

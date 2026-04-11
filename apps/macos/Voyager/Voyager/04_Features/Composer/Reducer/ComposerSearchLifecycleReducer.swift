@@ -275,22 +275,22 @@ private func handleApplyFilters(
     )
 }
 
-private func feedbackBaseline(from state: ComposerFeature.State) -> SearchFiltersPayload {
-    state.submittedSearchFilters ?? SearchFiltersPayload(
+private func feedbackBaseline(from state: ComposerFeature.State) -> VoyagerShared.SearchFiltersPayload {
+    state.submittedSearchFilters ?? VoyagerShared.SearchFiltersPayload(
         scopes: state.scopes,
         conditions: buildFilters(from: state).conditions,
     )
 }
 
 private func feedbackAppliedFilters(
-    appliedFilters: AppliedFiltersPayload?,
-    baseline: SearchFiltersPayload,
-) -> AppliedFiltersPayload {
+    appliedFilters: VoyagerShared.AppliedFiltersPayload?,
+    baseline: VoyagerShared.SearchFiltersPayload,
+) -> VoyagerShared.AppliedFiltersPayload {
     let normalizedFilters = ComposerQueryFeedbackPolicy.normalizedFilters(
         appliedFilters: appliedFilters,
         fallback: baseline,
     )
-    return AppliedFiltersPayload(
+    return VoyagerShared.AppliedFiltersPayload(
         scopes: normalizedFilters.scopes,
         conditions: normalizedFilters.conditions,
     )
