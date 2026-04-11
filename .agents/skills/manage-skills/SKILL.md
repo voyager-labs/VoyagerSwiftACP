@@ -30,6 +30,16 @@ _(No registered verification skills yet)_
 |-------|-------------|-----------------------|
 -->
 
+## Non-Verification Skills (Discoverability Registry)
+
+The following skills are NOT `verify-*` skills and are excluded from `verify-implementation` execution. They are listed here for discoverability so agents can route to them correctly.
+
+| Skill             | Trigger                | Usage Boundary                                                                                                                                                                                                                                                                      |
+| ----------------- | ---------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `compound-review` | Manual, post-Work only | Reads `.sisyphus` artifacts from completed Work cycles. Synthesizes findings, compounds learnings, drafts skill/harness proposals. Does NOT plan, code, commit, create PRs, or run during active Work. Not a substitute for `pr-review`, `test-runner`, or `verify-implementation`. |
+
+<!-- Add new non-verification skills here as needed. -->
+
 ## Workflow
 
 ### Step 1: Analyze Session Changes
