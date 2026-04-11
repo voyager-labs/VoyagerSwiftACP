@@ -247,8 +247,8 @@ Verify Spotlight Indexing Status	SET-002-verify_spotlight_indexing_status	backgr
 Export User Settings Data	SET-002-export_user_settings_data	command	Configure General Settings	SET	SET-002	아이디어	<<AI>> 현재 사용자 설정(일반/외관/단축키 등)을 파일로 내보내 백업·이전할 수 있도록 함	settings_window.settings_body.tab_general	-	-
 Import User Settings Data	SET-002-import_user_settings_data	command	Configure General Settings	SET	SET-002	아이디어	<<AI>> 내보낸 설정 파일을 가져와 사용자 설정을 복원한다	settings_window.settings_body.tab_general	-	-
 Swtich Theme Mode	SET-003-swtich_theme_mode	input	Configure Appearance Settings	SET	SET-003	배포 완료	라이트/다크/자동 및 강조색, 폰트 사이즈 등을 편집합니다.	settings_window.settings_body.tab_appearance	-	-
-Adjust Text Size	SET-003-adjust_text_size	input	Configure Appearance Settings	SET	SET-003	배포 완료	Entires View에 표시되는 각 Entry의 이름 등 텍스트 정보 크기를 키우거나 줄임	settings_window.settings_body.tab_appearance	-	-
-Adjust Icon Size	SET-003-adjust_icon_size	input	Configure Appearance Settings	SET	SET-003	배포 완료	Entires View에 표시되는 각 Entry 아이콘(썸네일) 크기를 키우거나 줄임	settings_window.settings_body.tab_appearance	-	-
+Adjust Text Size	SET-003-adjust_text_size	input	Configure Appearance Settings	SET	SET-003	배포 완료	Entries View(리스트/그리드)의 텍스트 크기 설정을 변경하고, 열려 있는 창의 뷰에 즉시 반영	settings_window.settings_body.tab_appearance	-	-
+Adjust Icon Size	SET-003-adjust_icon_size	input	Configure Appearance Settings	SET	SET-003	배포 완료	Entries View(리스트/그리드)의 아이콘 크기 설정을 변경하고, 열려 있는 창의 뷰에 즉시 반영	settings_window.settings_body.tab_appearance	-	-
 Cutstomize Keyboard Shortcuts	SET-005-cutstomize_keyboard_shortcuts	input	Customize Keyboard Shortcut	SET	SET-005	기획 완료	<<AI>> 주요 명령의 단축키를 사용자 지정으로 재매핑합니다. 충돌/중복을 검출해 해결 안내.	settings_window.settings_body.tab_shortcuts	-	-
 Highlight Keyboard Shortcut Conflicts	SET-005-highlight_keyboard_shortcut_conflicts	display	Customize Keyboard Shortcut	SET	SET-005	기획 완료	<<AI>> 단축키 충돌 표시	settings_window.settings_body.tab_shortcuts	-	-
 Restore Default Keyboard Shortcuts	SET-005-restore_default_keyboard_shortcuts	command	Customize Keyboard Shortcut	SET	SET-005	기획 완료	<<AI>> 기본값으로 되돌리기	settings_window.settings_body.tab_shortcuts	-	-
