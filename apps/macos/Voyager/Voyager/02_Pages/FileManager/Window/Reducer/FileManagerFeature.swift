@@ -89,7 +89,7 @@ struct FileManagerFeature {
     private func handleEntryRequest(_ command: Action.WindowCommand, state: inout State) -> Effect<Action> {
         let currentPath = state.content.navigation.currentPath
 
-        if let effect = handleEntryRequestPathDependent(command, currentPath: currentPath) {
+        if let effect = handleEntryRequestPathDependent(command, currentPath: currentPath, state: state) {
             return effect
         }
 
@@ -115,6 +115,7 @@ struct FileManagerFeature {
     private func handleEntryRequestPathDependent(
         _ command: Action.WindowCommand,
         currentPath: String,
+        state: State,
     ) -> Effect<Action>? {
         switch command {
         case .newFolder:

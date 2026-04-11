@@ -187,20 +187,20 @@ struct FileManagerContentFeature {
     ) -> Effect<Action> {
         switch action {
         case .loading(.itemsLoaded):
-            .none
+            return .none
 
         case let .lifecycle(.entryActionCompleted(record)):
             logEntryActionMetric(for: record)
             return .none
 
         case .lifecycle(.operationFinished):
-            reloadEntryItemsEffect(state: state)
+            return reloadEntryItemsEffect(state: state)
 
         case .lifecycle(.emptyTrashCompleted):
-            .send(.delegate(.closeWindow))
+            return .send(.delegate(.closeWindow))
 
         default:
-            .none
+            return .none
         }
     }
 

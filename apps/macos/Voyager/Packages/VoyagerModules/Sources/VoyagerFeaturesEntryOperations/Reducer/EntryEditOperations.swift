@@ -115,7 +115,7 @@ struct EntryEditOperationsReducer {
 
             case .edit(.commitRename):
                 guard let itemId = state.renamingItemId,
-                      let item = state.renamingItem ?? state.displayItems[id: itemId]
+                      let item = state.renamingItem ?? state.items[id: itemId]
                 else {
                     state.renamingItemId = nil
                     state.renamingText = ""

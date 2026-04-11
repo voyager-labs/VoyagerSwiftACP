@@ -91,15 +91,17 @@ extension ComposerAction {
     static var undo: Self { .view(.undo) }
     static var redo: Self { .view(.redo) }
 
-    static func searchResponse(_ requestID: UUID,
-                               _ result: Result<VoyagerShared.SearchResponsePayload, Error>) -> Self
-    {
+    static func searchResponse(
+        _ requestID: UUID,
+        _ result: Result<VoyagerShared.SearchResponsePayload, Error>,
+    ) -> Self {
         .internal(.searchResponse(requestID, result))
     }
 
-    static func filtersResponse(_ requestID: UUID,
-                                _ result: Result<VoyagerShared.SearchResponsePayload, Error>) -> Self
-    {
+    static func filtersResponse(
+        _ requestID: UUID,
+        _ result: Result<VoyagerShared.SearchResponsePayload, Error>,
+    ) -> Self {
         .internal(.filtersResponse(requestID, result))
     }
 
