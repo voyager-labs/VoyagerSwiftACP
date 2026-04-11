@@ -1,4 +1,6 @@
 import CoreGraphics
+import VoyagerEntitiesEntry
+import VoyagerFeaturesEntryOperations
 
 struct EntryListCoordinatorRenderSnapshot: Equatable {
     let listVisibleColumns: [EntryListColumn]
