@@ -5,19 +5,17 @@ import XCTest
 
 @MainActor
 final class FileManagerWindowEntryOpsContractTests: XCTestCase {
-    func testMakeInitialSetsWindowIDThroughApprovedAccessor() {
-        let windowID = UUID()
-        let state = FileManagerWindowState.makeInitial(windowID: windowID, path: nil)
+    func testMakeInitialCreatesStateWithoutWindowID() {
+        let state = FileManagerWindowState.makeInitial(path: nil)
 
-        XCTAssertEqual(state.content.entryViewLayout.entryOperations.windowID, windowID)
+        XCTAssertNil(state.content.entryViewLayout.entryOperations.windowID)
     }
 
     func testMakeInitialSeedsPathThroughNavigationState() {
-        let windowID = UUID()
         let path = "/Users/test/Documents"
-        let state = FileManagerWindowState.makeInitial(windowID: windowID, path: path)
+        let state = FileManagerWindowState.makeInitial(path: path)
 
-        XCTAssertEqual(state.content.entryViewLayout.entryOperations.windowID, windowID)
+        XCTAssertNil(state.content.entryViewLayout.entryOperations.windowID)
     }
 
     func testContentStateCanSaveCollectionUsesLayoutIsCollectionMode() {
@@ -38,14 +36,14 @@ final class FileManagerWindowEntryOpsContractTests: XCTestCase {
         XCTAssertNil(state.content.entryViewLayout.entryOperations.windowID)
     }
 
-    func testContentEntryOperationsResetPreservesWindowID() {
+    func testContentEntryOperationsResetClearsWindowID() {
         let windowID = UUID()
-        var state = FileManagerWindowState.makeInitial(windowID: windowID, path: nil)
-        state.content.entryViewLayout.isCollectionMode = true
+        var state = FileManagerWindowState.makeInitial(path: nil)
+        state.content.entryViewLayout.entryOperations.windowID = windowID
+        XCTAssertEqual(state.content.entryViewLayout.entryOperations.windowID, windowID)
 
         state.content.entryViewLayout.entryOperations = EntryOperationsState()
         XCTAssertNil(state.content.entryViewLayout.entryOperations.windowID)
-        XCTAssertFalse(state.content.entryViewLayout.isCollectionMode)
 
         state.content.entryViewLayout.entryOperations.windowID = windowID
         XCTAssertEqual(state.content.entryViewLayout.entryOperations.windowID, windowID)

@@ -17,7 +17,7 @@ final class EntryViewLayoutEntryOpsContractTests: XCTestCase {
         XCTAssertEqual(state.entryOperations.items.first?.id, item.id)
     }
 
-    func testWindowIDSetThroughLifecycleAction() {
+    func testWindowIDSetThroughLifecycleAction() async {
         let windowID = UUID()
         let store = TestStore(initialState: EntryOperationsState()) {
             EntryOperationsFeature()
@@ -25,7 +25,7 @@ final class EntryViewLayoutEntryOpsContractTests: XCTestCase {
 
         XCTAssertNil(store.state.windowID)
 
-        store.send(.lifecycle(.windowIDChanged(windowID))) {
+        await store.send(.lifecycle(.windowIDChanged(windowID))) {
             $0.windowID = windowID
         }
     }
