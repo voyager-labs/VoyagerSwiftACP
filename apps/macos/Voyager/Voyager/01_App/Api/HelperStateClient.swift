@@ -84,6 +84,13 @@ private actor HelperStateResolver {
 
     func addObserver(_ continuation: AsyncStream<HelperState>.Continuation) async {
         let id = UUID()
+        let shouldRequestInitialState =
+            stateContinuations.isEmpty
+                && cachedState == nil
+                && waiters.isEmpty
+                && timeoutTask == nil
+                && retryTask == nil
+
         stateContinuations[id] = continuation
 
         if let cachedState {
@@ -91,6 +98,11 @@ private actor HelperStateResolver {
         }
 
         await ensureObserver()
+
+        if shouldRequestInitialState {
+            await sendRequest()
+            scheduleTimeoutAndRetry()
+        }
 
         continuation.onTermination = { [weak self] _ in
             Task { await self?.removeContinuation(id: id) }

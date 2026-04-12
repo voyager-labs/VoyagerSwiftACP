@@ -124,7 +124,7 @@ struct AppRootFeature {
                     effect = .merge(
                         forwardExternalFileChanges(event.paths, windowIDs: state.windowManager.windows.ids),
                         .run { _ in
-                            await helperExternalFileChangeClient.acknowledgeReplay(event.paths)
+                            await helperExternalFileChangeClient.acknowledgeReplay()
                         },
                     )
                 } else {
@@ -150,7 +150,7 @@ struct AppRootFeature {
                 effect = .merge(
                     forwardExternalFileChanges(paths, windowIDs: state.windowManager.windows.ids),
                     .run { _ in
-                        await helperExternalFileChangeClient.acknowledgeReplay(paths)
+                        await helperExternalFileChangeClient.acknowledgeReplay()
                     },
                 )
 
@@ -169,7 +169,9 @@ struct AppRootFeature {
                        let persisted = persistedHelperFolderAccess(userDefaultsClient: userDefaultsClient),
                        persisted.status == .granted
                     {
-                        access = persisted
+                        access = await helperFolderAccess.checkAccess()
+                        let data = try? JSONEncoder().encode(access)
+                        userDefaultsClient.setObject(data, SettingsKeys.helperFolderAccessSnapshot)
                     } else {
                         access = await helperFolderAccess.requestAccess()
                         let data = try? JSONEncoder().encode(access)
