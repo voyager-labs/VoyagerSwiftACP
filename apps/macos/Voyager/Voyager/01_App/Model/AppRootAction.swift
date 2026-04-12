@@ -6,6 +6,7 @@ import VoyagerPagesSettings
 enum AppRootAction: CasePathable, Sendable {
     case lifecycle(AppLifecycleFeature.Action)
     case startHelperExternalFileBridge
+    case helperStateUpdated(HelperState)
     case helperExternalFileChanged(HelperExternalFileChangeEvent)
     case flushPendingReplay
     case pendingReplayLoaded([String])

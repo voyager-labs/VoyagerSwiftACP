@@ -25,6 +25,7 @@ struct AppRootFeature {
 
     private enum CancelID {
         static let helperExternalFileBridge = "helperExternalFileBridge"
+        static let helperStateObserver = "helperStateObserver"
     }
 
     var body: some Reducer<State, Action> {
@@ -33,6 +34,12 @@ struct AppRootFeature {
         }
         Scope(state: \.appPreferences, action: \.appPreferences) {
             AppPreferencesFeature()
+        }
+        Reduce { state, action in
+            if case .windowManager = action {
+                state.windowPresenceBeforeWindowManagerAction = !state.windowManager.windows.isEmpty
+            }
+            return .none
         }
         Scope(state: \.windowManager, action: \.windowManager) {
             WindowManagerFeature()
@@ -48,13 +55,26 @@ struct AppRootFeature {
         }
 
         Reduce { state, action in
-            let hadWindowsBeforeAction = !state.windowManager.windows.isEmpty
             let effect: Effect<Action>
             switch action {
             case .lifecycle(.launch(.willFinishLaunching)):
-                effect = .send(.appPreferences(.load))
+                let helperStateClient = helperStateClient
+                effect = .merge(
+                    .send(.appPreferences(.load)),
+                    .run { send in
+                        for await helperState in helperStateClient.observe() {
+                            await send(.helperStateUpdated(helperState))
+                        }
+                    }
+                    .cancellable(id: CancelID.helperStateObserver, cancelInFlight: true),
+                )
 
             case .startHelperExternalFileBridge:
+                guard !state.isHelperExternalFileBridgeStarted else {
+                    effect = .none
+                    break
+                }
+                state.isHelperExternalFileBridgeStarted = true
                 let helperExternalFileChangeClient = helperExternalFileChangeClient
                 effect = .run { send in
                     for await event in helperExternalFileChangeClient.observeChangedPaths() {
@@ -76,10 +96,22 @@ struct AppRootFeature {
             case .lifecycle:
                 switch action {
                 case .lifecycle(.termination(.willTerminate)):
-                    effect = .cancel(id: CancelID.helperExternalFileBridge)
+                    state.isHelperExternalFileBridgeStarted = false
+                    state.lastHelperReady = false
+                    state.windowPresenceBeforeWindowManagerAction = nil
+                    effect = .merge(
+                        .cancel(id: CancelID.helperExternalFileBridge),
+                        .cancel(id: CancelID.helperStateObserver),
+                    )
                 default:
                     effect = .none
                 }
+
+            case let .helperStateUpdated(helperState):
+                let shouldRegister = !state.lastHelperReady && helperState.helperReady
+                    && !state.windowManager.windows.isEmpty
+                state.lastHelperReady = helperState.helperReady
+                effect = shouldRegister ? .send(.registerHelperWatchRootsIfNeeded) : .none
 
             case let .helperExternalFileChanged(event):
                 let helperExternalFileChangeClient = helperExternalFileChangeClient
@@ -92,7 +124,7 @@ struct AppRootFeature {
                     effect = .merge(
                         forwardExternalFileChanges(event.paths, windowIDs: state.windowManager.windows.ids),
                         .run { _ in
-                            await helperExternalFileChangeClient.acknowledgeReplay()
+                            await helperExternalFileChangeClient.acknowledgeReplay(event.paths)
                         },
                     )
                 } else {
@@ -118,7 +150,7 @@ struct AppRootFeature {
                 effect = .merge(
                     forwardExternalFileChanges(paths, windowIDs: state.windowManager.windows.ids),
                     .run { _ in
-                        await helperExternalFileChangeClient.acknowledgeReplay()
+                        await helperExternalFileChangeClient.acknowledgeReplay(paths)
                     },
                 )
 
@@ -176,11 +208,15 @@ struct AppRootFeature {
             case .windowManager, .updater, .settings:
                 switch action {
                 case .windowManager:
+                    let hadWindowsBeforeAction = state.windowPresenceBeforeWindowManagerAction ?? false
                     let hasWindowsAfterAction = !state.windowManager.windows.isEmpty
+                    let didOpenFirstWindow = !hadWindowsBeforeAction && hasWindowsAfterAction
+                    state.windowPresenceBeforeWindowManagerAction = nil
                     effect = .merge(
-                        hasWindowsAfterAction ? .send(.startHelperExternalFileBridge) : .none,
-                        (!hadWindowsBeforeAction && hasWindowsAfterAction) ? .send(.flushPendingReplay) : .none,
-                        hasWindowsAfterAction ? .send(.registerHelperWatchRootsIfNeeded) : .none,
+                        didOpenFirstWindow ? .send(.startHelperExternalFileBridge) : .none,
+                        didOpenFirstWindow ? .send(.flushPendingReplay) : .none,
+                        (didOpenFirstWindow && state.lastHelperReady) ? .send(.registerHelperWatchRootsIfNeeded) :
+                            .none,
                     )
                 default:
                     effect = .none
@@ -225,7 +261,9 @@ actor PendingReplayPathsStore {
     }
 }
 
-private nonisolated func helperGrantedWatchRoots(from _: FolderAccessResult) -> [String] {
+private nonisolated func helperGrantedWatchRoots(from access: FolderAccessResult) -> [String] {
+    guard access.status == .granted else { return [] }
+
     let fileManager = FileManager.default
     var roots: [String] = []
 
