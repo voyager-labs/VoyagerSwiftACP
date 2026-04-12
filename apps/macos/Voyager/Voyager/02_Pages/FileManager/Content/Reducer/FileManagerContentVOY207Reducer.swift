@@ -74,10 +74,31 @@ struct FileManagerContentVOY207Reducer {
     }
 
     private func collectionPathsAffectCurrentContext(_ paths: [String], state: State) -> Bool {
+        let relevantPaths = paths.filter {
+            !isOpenedCollectionDocumentPath($0, openedURL: state.collectionSession.openedURL)
+        }
+        guard !relevantPaths.isEmpty else {
+            return false
+        }
         guard let context = state.collectionContext else {
             return true
         }
-        return collectionChangeIsRelevant(changedPaths: paths, scopes: context.scopes)
+        return collectionChangeIsRelevant(changedPaths: relevantPaths, scopes: context.scopes)
+    }
+
+    private func isOpenedCollectionDocumentPath(_ path: String, openedURL: URL?) -> Bool {
+        guard let openedURL else {
+            return false
+        }
+
+        let normalizedPath = URL(fileURLWithPath: path).standardizedFileURL.path
+        let normalizedOpenedPath = openedURL.standardizedFileURL.path
+        if normalizedPath == normalizedOpenedPath {
+            return true
+        }
+
+        let packagePrefix = normalizedOpenedPath == "/" ? "/" : normalizedOpenedPath + "/"
+        return normalizedPath.hasPrefix(packagePrefix)
     }
 
     private func reloadEntryItemsEffect(
