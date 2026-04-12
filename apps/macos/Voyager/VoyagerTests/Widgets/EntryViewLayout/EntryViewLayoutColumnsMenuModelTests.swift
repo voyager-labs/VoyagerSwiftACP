@@ -38,4 +38,29 @@ final class EntryViewLayoutColumnsMenuModelTests: XCTestCase {
         let model = EntryViewLayoutColumnsMenuModel(visibleColumns: EntryListColumn.defaultVisibleColumns)
         XCTAssertEqual(model.resetItem.title, "Reset Columns")
     }
+
+    func testVOY216MenuStillCoversOnlyMetadataColumnsWithoutSeparateTagsColumn() {
+        let model = EntryViewLayoutColumnsMenuModel(visibleColumns: EntryListColumn.defaultVisibleColumns)
+        let columns = model.toggleItems.map(\.column)
+
+        XCTAssertTrue(columns.contains(.application))
+        XCTAssertTrue(columns.contains(.dateAdded))
+        XCTAssertTrue(columns.contains(.dateCreated))
+        XCTAssertTrue(columns.contains(.dateLastOpened))
+        XCTAssertFalse(columns.contains(where: { $0.rawValue == "tags" }))
+    }
+
+    func testVOY216MetadataColumnsRemainOffByDefaultAfterNormalization() {
+        let model = EntryViewLayoutColumnsMenuModel(visibleColumns: EntryListColumn.defaultVisibleColumns)
+
+        let applicationItem = model.toggleItems.first(where: { $0.column == .application })
+        let dateAddedItem = model.toggleItems.first(where: { $0.column == .dateAdded })
+        let dateCreatedItem = model.toggleItems.first(where: { $0.column == .dateCreated })
+        let dateLastOpenedItem = model.toggleItems.first(where: { $0.column == .dateLastOpened })
+
+        XCTAssertEqual(applicationItem?.isChecked, false)
+        XCTAssertEqual(dateAddedItem?.isChecked, false)
+        XCTAssertEqual(dateCreatedItem?.isChecked, false)
+        XCTAssertEqual(dateLastOpenedItem?.isChecked, false)
+    }
 }

@@ -3,17 +3,17 @@
 ## Task-shape expectations
 
 - `scaffold`
-  - Verify the new files land in the correct FSD layer.
-  - Verify `State`, `Action`, and reducer entry points match the selected module shape.
+    - Verify the new files land in the correct FSD layer.
+    - Verify `State`, `Action`, and reducer entry points match the selected module shape.
 - `decompose`
-  - Verify ownership boundaries are clearer after the split.
-  - Verify moved logic still routes through the parent feature and preserves cancellation ownership.
+    - Verify ownership boundaries are clearer after the split.
+    - Verify moved logic still routes through the parent feature and preserves cancellation ownership.
 - `observation-refactor`
-  - Verify target views no longer own external/system observation.
-  - Verify reducers own `startObserving...` / `stopObserving...` lifecycle plus `.cancellable` / `.cancel`.
-  - Verify a semantic internal action receives the routed signal.
+    - Verify target views no longer own external/system observation.
+    - Verify reducers own `startObserving...` / `stopObserving...` lifecycle plus `.cancellable` / `.cancel`.
+    - Verify a semantic internal action receives the routed signal.
 - `reuse-guard`
-  - Verify the chosen abstraction reuse decision is recorded and that duplicate structures were avoided.
+    - Verify the chosen abstraction reuse decision is recorded and that duplicate structures were avoided.
 
 ## Preferred execution surface
 
@@ -25,6 +25,8 @@
 ```bash
 xcodebuild test -scheme Voyager-Dev -project apps/macos/Voyager/Voyager.xcodeproj -only-testing:VoyagerTests/<TargetTests>
 ```
+
+For callback-heavy or lifecycle-heavy work, prefer focused suites that prove both boundary behavior and downstream execution-chain behavior before expanding outward.
 
 ## Full verification
 
@@ -62,6 +64,7 @@ Prefer running formatting/lint before the final test pass so style-only churn do
 - Use `grep` or `ast-grep` when architecture changes need a mechanical proof point.
 - For observation refactors, search the touched `Ui/*.swift` files for `.onReceive(` and `NotificationCenter.default.publisher`.
 - For decomposition or model splits, search for stale type names, dead extension files, or bypassed reducer routes.
+- For callback-heavy flows, search for duplicate cleanup ownership, weak-context re-derivation, and missing fallback paths where framework callbacks can lose detail.
 
 ## Layer checks
 
@@ -78,3 +81,13 @@ Prefer running formatting/lint before the final test pass so style-only churn do
 
 - When slice-boundary changes are involved, load and apply `public-boundary-spec.md` checks.
 - When reducer or integration tests change, load and apply `testing-playbook.md` checks.
+- When coordinator or adapter code changes, verify at least one focused test covers the real callback → reducer → effect chain instead of routing-only interception.
+- When semantics depend on branch kind or lifecycle outcome, verify the distinct success, failure, cancel, reload, and teardown paths separately.
+
+## Few-shot examples
+
+- **Bad:** Verification stops after a routing assertion because the callback reached the reducer boundary.
+  **Good:** Continue until at least one focused test proves the downstream reducer/effect behavior too.
+
+- **Bad:** Verification treats all lifecycle outcomes as equivalent because the same callback family handled them.
+  **Good:** Verify the distinct branch outcomes separately when success, failure, cancel, reload, or teardown are supposed to behave differently.

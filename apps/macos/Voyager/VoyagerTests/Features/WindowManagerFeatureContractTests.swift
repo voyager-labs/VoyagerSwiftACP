@@ -27,7 +27,7 @@ final class WindowManagerFeatureContractTests: XCTestCase {
         }
         store.exhaustivity = .off
 
-        await store.send(.applyAppPreferences(preferences)) {
+        await store.send(.lifecycle(.applyAppPreferences(preferences))) {
             $0.appPreferences = preferences
         }
     }
@@ -46,7 +46,7 @@ final class WindowManagerFeatureContractTests: XCTestCase {
         }
         store.exhaustivity = .off
 
-        await store.send(.quickLook)
+        await store.send(.file(.quickLook))
     }
 
     func testNewFolderRoutesToFocusedWindow() async {
@@ -63,7 +63,7 @@ final class WindowManagerFeatureContractTests: XCTestCase {
         }
         store.exhaustivity = .off
 
-        await store.send(.newFolder)
+        await store.send(.file(.newFolder))
     }
 
     func testCopyRoutesToFocusedWindow() async {
@@ -80,7 +80,7 @@ final class WindowManagerFeatureContractTests: XCTestCase {
         }
         store.exhaustivity = .off
 
-        await store.send(.copy)
+        await store.send(.edit(.copy))
     }
 
     func testToggleSidebarRoutesToFocusedWindow() async {
@@ -97,7 +97,7 @@ final class WindowManagerFeatureContractTests: XCTestCase {
         }
         store.exhaustivity = .off
 
-        await store.send(.toggleSidebar)
+        await store.send(.window(.toggleSidebar))
     }
 
     func testNoCommandSentWhenNoFocusedWindow() async {
@@ -105,7 +105,7 @@ final class WindowManagerFeatureContractTests: XCTestCase {
             WindowManagerFeature()
         }
 
-        await store.send(.quickLook)
+        await store.send(.file(.quickLook))
     }
 
     func testExternalFileSystemChangeFansOutToAllOpenWindows() async {

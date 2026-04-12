@@ -20,12 +20,12 @@ final class EntryMutationContractTests: XCTestCase {
             EntryOperationsFeature()
         }
 
-        await store.send(.pasteItems(
+        await store.send(.clipboard(.pasteItems(
             sourcePaths: ["/tmp/voyager/source.txt"],
             destinationPath: "/tmp/voyager",
             operation: .cut,
             operationKind: .pasteFileMove,
-        ))
+        )))
 
         XCTAssertEqual(store.state.clipboardItems, ["/tmp/voyager/source.txt"])
         XCTAssertEqual(store.state.clipboardOperation, .cut)
@@ -54,7 +54,7 @@ final class EntryMutationContractTests: XCTestCase {
             EntryOperationsFeature()
         }
 
-        await store.send(.operationFinished("/tmp/voyager/a.txt", .pasteFileMove, .success(()))) {
+        await store.send(.lifecycle(.operationFinished("/tmp/voyager/a.txt", .pasteFileMove, .success(())))) {
             $0.clipboardItems = ["/tmp/other/b.txt"]
             $0.clipboardOperation = .cut
             $0.cutClearSession?.sourcePaths = ["/tmp/other/b.txt"]
@@ -81,12 +81,12 @@ final class EntryMutationContractTests: XCTestCase {
             EntryOperationsFeature()
         }
 
-        await store.send(.operationFinished("/tmp/voyager/a.txt", .pasteFileMove, .success(()))) {
+        await store.send(.lifecycle(.operationFinished("/tmp/voyager/a.txt", .pasteFileMove, .success(())))) {
             $0.clipboardItems = []
             $0.clipboardOperation = .copy
             $0.cutClearSession = nil
         }
-        await store.receive(\.setClipboardOperation) {
+        await store.receive(\.clipboard.setClipboardOperation) {
             $0.clipboardOperation = .copy
             $0.cutClearSession = nil
         }

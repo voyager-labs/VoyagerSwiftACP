@@ -8,12 +8,11 @@ final class MenuCommandsFeatureTests: XCTestCase {
         let store = TestStore(initialState: MenuCommandsFeature.State()) {
             MenuCommandsFeature()
         }
-        // Non-exhaustive: focus on the key delegate/state change; intermediate actions are noisy.
         store.exhaustivity = .off
 
         await store.send(.view(.app(.newFolder)))
         await store.receive {
-            guard case .delegate(.windowManager(.newFolder)) = $0 else { return false }
+            guard case .delegate(.windowManager(.file(.newFolder))) = $0 else { return false }
             return true
         }
         await store.finish()
@@ -23,7 +22,6 @@ final class MenuCommandsFeatureTests: XCTestCase {
         let store = TestStore(initialState: MenuCommandsFeature.State()) {
             MenuCommandsFeature()
         }
-        // Non-exhaustive: focus on the key delegate/state change; intermediate actions are noisy.
         store.exhaustivity = .off
 
         await store.send(.view(.app(.checkForUpdates)))
@@ -38,12 +36,11 @@ final class MenuCommandsFeatureTests: XCTestCase {
         let store = TestStore(initialState: MenuCommandsFeature.State()) {
             MenuCommandsFeature()
         }
-        // Non-exhaustive: focus on the key delegate/state change; intermediate actions are noisy.
         store.exhaustivity = .off
 
         await store.send(.view(.viewCommand(.toggleSidebar)))
         await store.receive {
-            guard case .delegate(.windowManager(.toggleSidebar)) = $0 else { return false }
+            guard case .delegate(.windowManager(.window(.toggleSidebar))) = $0 else { return false }
             return true
         }
         await store.finish()
@@ -53,12 +50,11 @@ final class MenuCommandsFeatureTests: XCTestCase {
         let store = TestStore(initialState: MenuCommandsFeature.State()) {
             MenuCommandsFeature()
         }
-        // Non-exhaustive: focus on the key delegate/state change; intermediate actions are noisy.
         store.exhaustivity = .off
 
         await store.send(.view(.edit(.copy)))
         await store.receive {
-            guard case .delegate(.windowManager(.copy)) = $0 else { return false }
+            guard case .delegate(.windowManager(.edit(.copy))) = $0 else { return false }
             return true
         }
         await store.finish()
@@ -66,8 +62,8 @@ final class MenuCommandsFeatureTests: XCTestCase {
 
     func testTask3EntryCommandsRouteToWindowManagerDelegate() async {
         let appCases: [(MenuCommandItem.AppCommand, WindowManagerAction)] = [
-            (.open, .open),
-            (.quickLook, .quickLook),
+            (.open, .file(.open)),
+            (.quickLook, .file(.quickLook)),
         ]
 
         for (command, expected) in appCases {
@@ -75,13 +71,13 @@ final class MenuCommandsFeatureTests: XCTestCase {
         }
 
         let editCases: [(MenuCommandItem.EditCommand, WindowManagerAction)] = [
-            (.cut, .cut),
-            (.copy, .copy),
-            (.paste, .paste),
-            (.duplicate, .duplicate),
-            (.makeAlias, .makeAlias),
-            (.copyAbsolutePaths, .copyAbsolutePaths),
-            (.copyURLs, .copyURLs),
+            (.cut, .edit(.cut)),
+            (.copy, .edit(.copy)),
+            (.paste, .edit(.paste)),
+            (.duplicate, .edit(.duplicate)),
+            (.makeAlias, .edit(.makeAlias)),
+            (.copyAbsolutePaths, .edit(.copyAbsolutePaths)),
+            (.copyURLs, .edit(.copyURLs)),
         ]
 
         for (command, expected) in editCases {
@@ -96,7 +92,7 @@ final class MenuCommandsFeatureTests: XCTestCase {
         await store.send(.view(.viewCommand(.toggleShowHiddenFiles)))
         await store.receive {
             guard case let .delegate(.windowManager(action)) = $0 else { return false }
-            guard case .toggleShowHiddenFiles = action else { return false }
+            guard case .window(.toggleShowHiddenFiles) = action else { return false }
             return true
         }
         await store.finish()
@@ -115,7 +111,8 @@ final class MenuCommandsFeatureTests: XCTestCase {
         await store.receive {
             guard case let .delegate(.windowManager(action)) = $0 else { return false }
             switch (action, expected) {
-            case (.open, .open), (.quickLook, .quickLook):
+            case (.file(.open), .file(.open)),
+                 (.file(.quickLook), .file(.quickLook)):
                 return true
             default:
                 return false
@@ -137,13 +134,13 @@ final class MenuCommandsFeatureTests: XCTestCase {
         await store.receive {
             guard case let .delegate(.windowManager(action)) = $0 else { return false }
             switch (action, expected) {
-            case (.cut, .cut),
-                 (.copy, .copy),
-                 (.paste, .paste),
-                 (.duplicate, .duplicate),
-                 (.makeAlias, .makeAlias),
-                 (.copyAbsolutePaths, .copyAbsolutePaths),
-                 (.copyURLs, .copyURLs):
+            case (.edit(.cut), .edit(.cut)),
+                 (.edit(.copy), .edit(.copy)),
+                 (.edit(.paste), .edit(.paste)),
+                 (.edit(.duplicate), .edit(.duplicate)),
+                 (.edit(.makeAlias), .edit(.makeAlias)),
+                 (.edit(.copyAbsolutePaths), .edit(.copyAbsolutePaths)),
+                 (.edit(.copyURLs), .edit(.copyURLs)):
                 return true
             default:
                 return false

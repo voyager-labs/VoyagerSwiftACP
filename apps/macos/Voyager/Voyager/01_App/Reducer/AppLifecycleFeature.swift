@@ -184,7 +184,6 @@ struct AppLifecycleFeature {
                     .run { send in
                         await VoyagerTerminationCoordinator.shared.begin(.userQuit)
                         await send(.termination(.willTerminate))
-
                         await send(.termination(.completeTerminationAttempt(
                             attemptID: attemptID,
                             shouldTerminate: true,

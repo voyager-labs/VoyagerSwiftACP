@@ -16,7 +16,15 @@ final class VoyagerUITests: XCTestCase {
     }
 
     @MainActor
-    func testTemplatePlaceholder() throws {
-        throw XCTSkip("Xcode template tests removed. Add real tests here.")
+    func testAppLaunchSmoke() throws {
+        let app = XCUIApplication()
+        app.launch()
+
+        XCTAssertEqual(app.state, .runningForeground)
+
+        let attachment = XCTAttachment(screenshot: app.screenshot())
+        attachment.name = "Voyager UI Smoke"
+        attachment.lifetime = .keepAlways
+        add(attachment)
     }
 }

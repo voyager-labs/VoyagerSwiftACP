@@ -1,11 +1,11 @@
 ---
 name: voyager-feature-inventory-checker
-description: Look up and validate Voyager FEATURE_INVENTORY entries (04_FEATURE_INVENTORY/*). Use for (1) exact feature_id checks, and (2) impact discovery when users ask "which features need updates" from Korean/English requirement text. Triggers: FEATURE_INVENTORY, 기능 인벤토리, feature_id, related features, 영향 범위, 변경 필요한 feature.
+description: Look up and validate Voyager FEATURE_INVENTORY entries (PRODUCT/04_FEATURE_INVENTORY/*). Use for (1) exact feature_id checks, and (2) impact discovery when users ask "which features need updates" from Korean/English requirement text. Triggers: FEATURE_INVENTORY, 기능 인벤토리, feature_id, related features, 영향 범위, 변경 필요한 feature.
 ---
 
 # Voyager Feature Inventory Checker
 
-Check a specific feature entry in `04_FEATURE_INVENTORY/FEATURES/data.tsv`.
+Check a specific feature entry in `PRODUCT/04_FEATURE_INVENTORY/FEATURES/data.tsv`.
 
 This skill supports both:
 
@@ -69,21 +69,35 @@ Use when the user asks "관련 기능 찾아줘" or "어떤 feature 변경 필�
 Important: this is not true vector semantic search. It is high-recall discovery via bilingual keyword expansion + deterministic ID validation.
 
 1. Build bilingual keyword packs from the request.
-   - Prefer inventory language, not implementation buzzwords.
-   - Example packs:
-     - `결정론`, `deterministic`, `후보`, `candidate`
-     - `시스템 프로퍼티`, `system property`, `메타데이터`, `metadata`
-     - `인덱싱`, `indexing`, `필터`, `filter`
+   <<<<<<< HEAD
+    - Prefer inventory language, not implementation buzzwords.
+    - Example packs:
+        - `결정론`, `deterministic`, `후보`, `candidate`
+        - `시스템 프로퍼티`, `system property`, `메타데이터`, `metadata`
+        - `인덱싱`, `indexing`, `필터`, `filter`
 2. Run broad searches with `vfi.py search` for each keyword.
-   - Use `--scope all` and larger `--limit` (50-100) for recall.
+    - Use `--scope all` and larger `--limit` (50-100) for recall.
 3. Run `check_feature.py "<keyword>" --match contains` for ambiguous terms.
-   - This searches `feature_id`, `feature_title`, `description`.
-   - If ambiguous, it prints candidate IDs; use those IDs next.
+    - This searches `feature_id`, `feature_title`, `description`.
+    - If ambiguous, it prints candidate IDs; use those IDs next.
 4. Validate each candidate ID with exact `check_feature.py <id>`.
 5. Classify output as:
-   - `must-update`: directly conflicts with requested change
-   - `consider-update`: adjacent behavior/wording likely affected
-   - `no-change`: related domain but no required row changes
+    - `must-update`: directly conflicts with requested change
+    - `consider-update`: adjacent behavior/wording likely affected
+    - # `no-change`: related domain but no required row changes
+    - Prefer inventory language, not implementation buzzwords.
+    - Example packs:
+        - `결정론`, `deterministic`, `후보`, `candidate`
+        - `시스템 프로퍼티`, `system property`, `메타데이터`, `metadata`
+        - `인덱싱`, `indexing`, `필터`, `filter`
+6. Run broad searches with `vfi.py search` for each keyword.
+    - Use `--scope all` and larger `--limit` (50-100) for recall.
+7. Run `check_feature.py "<keyword>" --match contains` for ambiguous terms.
+    - This searches `feature_id`, `feature_title`, `description`.
+    - If ambiguous, it prints candidate IDs; use those IDs next.
+8. Validate each candidate ID with exact `check_feature.py <id>`.
+9. Classify output as: - `must-update`: directly conflicts with requested change - `consider-update`: adjacent behavior/wording likely affected - `no-change`: related domain but no required row changes
+    > > > > > > > develop
 
 Recommended command pattern:
 
@@ -101,31 +115,37 @@ python3 .agents/skills/voyager-feature-inventory/voyager-feature-inventory-check
 
 - Finds the matching row(s) in FEATURES and prints a compact report
 - Matching modes:
-  - `id`: exact feature_id
-  - `title`: exact title
-  - `contains`: substring search over `feature_id`, `feature_title`, `description`
-  - `auto`: picks `id` for `ABC-123` patterns, otherwise `contains`
+  <<<<<<< HEAD
+    - `id`: exact feature_id
+    - `title`: exact title
+    - `contains`: substring search over `feature_id`, `feature_title`, `description`
+    - # `auto`: picks `id` for `ABC-123` patterns, otherwise `contains`
+            - `id`: exact feature_id
+            - `title`: exact title
+            - `contains`: substring search over `feature_id`, `feature_title`, `description`
+            - `auto`: picks `id` for `ABC-123` patterns, otherwise `contains`
+        > > > > > > > develop
 - Validates required fields (ex: `feature_category`, `category_key`, `feature_title`, `feature_id`)
 - Checks category consistency:
-  - FEATURES.category_key exists in FEATURE_CATEGORIES.category_key
-  - `feature_category` matches FEATURE_CATEGORIES.category_title (warn on mismatch)
-  - (fallback) if FEATURES.category_key is missing, uses the `feature_id` prefix (ex: `FMW`)
+    - FEATURES.category_key exists in FEATURE_CATEGORIES.category_key
+    - `feature_category` matches FEATURE_CATEGORIES.category_title (warn on mismatch)
+    - (fallback) if FEATURES.category_key is missing, uses the `feature_id` prefix (ex: `FMW`)
 - Checks UI reference consistency:
-  - FEATURES.related_ui exists in WINDOW_STRUCTURE.structure_key (warn on missing)
+    - FEATURES.related_ui exists in WINDOW_STRUCTURE.structure_key (warn on missing)
 - Lists related INTERACTIONS (same `feature_id`), with basic counts and a preview list
-  - Includes `interaction_id` (stable key, ex: `FMW-001-open_new_file_manager_window`)
-  - Validates INTERACTIONS.related_region exists in WINDOW_STRUCTURE.structure_key (warn on missing)
-  - Warns if INTERACTIONS.category_key mismatches FEATURES.category_key (fallback: feature_id prefix)
+    - Includes `interaction_id` (stable key, ex: `FMW-001-open_new_file_manager_window`)
+    - Validates INTERACTIONS.related_region exists in WINDOW_STRUCTURE.structure_key (warn on missing)
+    - Warns if INTERACTIONS.category_key mismatches FEATURES.category_key (fallback: feature_id prefix)
 
 ## Sources Of Truth (Repo)
 
-- `04_FEATURE_INVENTORY/FEATURES/data.tsv`
-- `04_FEATURE_INVENTORY/FEATURES/schema.json`
-- `04_FEATURE_INVENTORY/FEATURE_CATEGORIES/data.tsv`
-- `04_FEATURE_INVENTORY/FEATURE_CATEGORIES/schema.json`
-- `04_FEATURE_INVENTORY/INTERACTIONS/data.tsv`
-- `04_FEATURE_INVENTORY/INTERACTIONS/schema.json`
-- `03_INFORMATION_ARCHITECTURE/WINDOW_STRUCTURE/data.tsv`
+- `PRODUCT/04_FEATURE_INVENTORY/FEATURES/data.tsv`
+- `PRODUCT/04_FEATURE_INVENTORY/FEATURES/schema.json`
+- `PRODUCT/04_FEATURE_INVENTORY/FEATURE_CATEGORIES/data.tsv`
+- `PRODUCT/04_FEATURE_INVENTORY/FEATURE_CATEGORIES/schema.json`
+- `PRODUCT/04_FEATURE_INVENTORY/INTERACTIONS/data.tsv`
+- `PRODUCT/04_FEATURE_INVENTORY/INTERACTIONS/schema.json`
+- `PRODUCT/03_INFORMATION_ARCHITECTURE/WINDOW_STRUCTURE/data.tsv`
 - `META/tsv_rules.md`
 
 ## Schema Migration (v2)
@@ -146,13 +166,13 @@ This adds:
 If you see noisy diffs caused by accidental spaces (ex: `- `, NBSP, padding in key columns), run:
 
 ```bash
-python3 .agents/skills/voyager-feature-inventory/voyager-feature-inventory-checker/scripts/format_tsv_whitespace.py 04_FEATURE_INVENTORY/INTERACTIONS/data.tsv
+python3 .agents/skills/voyager-feature-inventory/voyager-feature-inventory-checker/scripts/format_tsv_whitespace.py PRODUCT/04_FEATURE_INVENTORY/INTERACTIONS/data.tsv
 ```
 
 Apply in-place:
 
 ```bash
-python3 .agents/skills/voyager-feature-inventory/voyager-feature-inventory-checker/scripts/format_tsv_whitespace.py --write 04_FEATURE_INVENTORY/INTERACTIONS/data.tsv
+python3 .agents/skills/voyager-feature-inventory/voyager-feature-inventory-checker/scripts/format_tsv_whitespace.py --write PRODUCT/04_FEATURE_INVENTORY/INTERACTIONS/data.tsv
 ```
 
 ## Notes

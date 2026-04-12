@@ -1,0 +1,32 @@
+{
+  "schema_version": "1.0",
+  "name": "OBJECTS",
+  "primary_key": ["key"],
+  "columns": [
+    {
+      "name": "category",
+      "type": "string",
+      "required": true,
+      "enum": ["Domain", "Conversation", "State", "Operation", "Rule"],
+      "description": "오브젝트 상위 분류(그룹)."
+    },
+    {
+      "name": "key",
+      "type": "string",
+      "required": true,
+      "description": "오브젝트 식별자(PK). 안정적인 참조 키."
+    },
+    {
+      "name": "label_ko",
+      "type": "string",
+      "required": false,
+      "description": "한글 라벨."
+    },
+    {
+      "name": "summary",
+      "type": "string",
+      "required": false,
+      "description": "오브젝트 한 줄 정의(무엇인지)."
+    }
+  ]
+}

@@ -58,7 +58,30 @@ final class EntryContextMenuSemanticsTests: XCTestCase {
         XCTAssertEqual(spec.rowEntryPathForOpenInNewTab, "/tmp/folder")
     }
 
-    private func makeEntry(name: String, fullPath: String, isFolder: Bool) -> EntryModel {
+    func testTagMenuPrefersFavoriteColorWhenSelectedEntryTagColorIsNeutral() {
+        let selectedEntry = makeEntry(
+            name: "Tagged.txt",
+            fullPath: "/tmp/tagged.txt",
+            isFolder: false,
+            tags: [Tag(name: "Orange", colorCode: 0)],
+        )
+        let favoriteTags = [Tag(name: "Orange", colorCode: 7)]
+
+        let spec = EntryContextMenuSpecFactory.make(
+            selectedIds: [selectedEntry.id],
+            selectedEntries: [selectedEntry],
+            rowEntry: selectedEntry,
+            isTrashFolder: false,
+            canPaste: false,
+            favoriteTags: favoriteTags,
+            openWithApplications: [],
+        )
+
+        XCTAssertEqual(spec.tags.first?.name, "Orange")
+        XCTAssertEqual(spec.tags.first?.colorCode, 7)
+    }
+
+    private func makeEntry(name: String, fullPath: String, isFolder: Bool, tags: [Tag]? = nil) -> EntryModel {
         let date = Date(timeIntervalSince1970: 1_700_000_000)
         return EntryModel(
             name: name,
@@ -74,7 +97,7 @@ final class EntryContextMenuSemanticsTests: XCTestCase {
                 lastOpenedDate: nil,
                 kind: isFolder ? "Folder" : "Text",
                 creatorApplication: nil,
-                tags: nil,
+                tags: tags,
                 supplementaryMetadata: nil,
             ),
         )

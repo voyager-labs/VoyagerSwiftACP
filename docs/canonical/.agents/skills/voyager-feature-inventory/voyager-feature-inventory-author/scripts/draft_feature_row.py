@@ -87,7 +87,7 @@ def main(argv: list[str]) -> int:
     if not (repo_root / ".git").is_dir():
         repo_root = find_repo_root(Path.cwd())
 
-    features_path = repo_root / "04_FEATURE_INVENTORY/FEATURES/data.tsv"
+    features_path = repo_root / "PRODUCT/04_FEATURE_INVENTORY/FEATURES/data.tsv"
     header, rows = read_header_and_rows(features_path)
 
     if "feature_id" not in header:

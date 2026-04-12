@@ -37,8 +37,9 @@ jobs:
         with:
           apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          wranglerVersion: "3.90.0"
           command: |
-            r2 object get ${{ env.R2_BUCKET }}/${{ env.SPARKLE_APPCAST_KEY }} --remote --file ${{ env.BUILD_DIR }}/appcast.xml
+            r2 object get ${{ env.R2_BUCKET }}/${{ env.SPARKLE_APPCAST_KEY }} --file ${{ env.BUILD_DIR }}/appcast.xml
 
       - name: Resolve version from tag
         id: version
@@ -68,8 +69,9 @@ jobs:
         with:
           apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          wranglerVersion: "3.90.0"
           command: |
-            r2 object get ${{ env.R2_BUCKET }}/${{ steps.baseline-meta.outputs.prev_key }} --remote --file ${{ env.BUILD_DIR }}/baseline/${{ steps.baseline-meta.outputs.prev_name }}
+            r2 object get ${{ env.R2_BUCKET }}/${{ steps.baseline-meta.outputs.prev_key }} --file ${{ env.BUILD_DIR }}/baseline/${{ steps.baseline-meta.outputs.prev_name }}
 
       - name: Upload Sparkle baseline artifacts
         if: ${{ steps.baseline-meta.outputs.has_baseline == 'true' }}
@@ -214,9 +216,10 @@ jobs:
         with:
           apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          wranglerVersion: "3.90.0"
           command: |
-            r2 object put ${{ env.R2_BUCKET }}/${{ env.VERSION_PREFIX }}/${{ env.VERSION }}/Voyager.dmg --remote --file ${{ env.BUILD_DIR }}/Voyager.dmg
-            r2 object put ${{ env.R2_BUCKET }}/${{ env.RELEASES_PREFIX }}/Voyager.dmg --remote --file ${{ env.BUILD_DIR }}/Voyager.dmg
-            r2 object put ${{ env.R2_BUCKET }}/${{ env.RELEASES_PREFIX }}/latest.json --remote --file ${{ env.BUILD_DIR }}/latest.json
-            r2 object put ${{ env.R2_BUCKET }}/${{ env.VERSION_PREFIX }}/${{ env.VERSION }}/Voyager-${{ env.VERSION }}.zip --remote --file ${{ env.BUILD_DIR }}/Voyager-${{ env.VERSION }}.zip
-            r2 object put ${{ env.R2_BUCKET }}/${{ env.SPARKLE_APPCAST_KEY }} --remote --file ${{ env.BUILD_DIR }}/appcast.xml
+            r2 object put ${{ env.R2_BUCKET }}/${{ env.VERSION_PREFIX }}/${{ env.VERSION }}/Voyager.dmg --file ${{ env.BUILD_DIR }}/Voyager.dmg
+            r2 object put ${{ env.R2_BUCKET }}/${{ env.RELEASES_PREFIX }}/Voyager.dmg --file ${{ env.BUILD_DIR }}/Voyager.dmg
+            r2 object put ${{ env.R2_BUCKET }}/${{ env.RELEASES_PREFIX }}/latest.json --file ${{ env.BUILD_DIR }}/latest.json
+            r2 object put ${{ env.R2_BUCKET }}/${{ env.VERSION_PREFIX }}/${{ env.VERSION }}/Voyager-${{ env.VERSION }}.zip --file ${{ env.BUILD_DIR }}/Voyager-${{ env.VERSION }}.zip
+            r2 object put ${{ env.R2_BUCKET }}/${{ env.SPARKLE_APPCAST_KEY }} --file ${{ env.BUILD_DIR }}/appcast.xml
