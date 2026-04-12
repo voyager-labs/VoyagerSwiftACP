@@ -37,7 +37,10 @@ struct PermissionsFeature {
                 return .cancel(id: appDidBecomeActiveObserverCancelID)
 
             case .appDidBecomeActive:
-                return refreshFullDiskAccess()
+                return .merge(
+                    refreshFullDiskAccess(),
+                    refreshHelperFolderAccess(),
+                )
 
             case let .fullDiskAccessStatusResponse(status):
                 let resolvedStatus = resolveFullDiskAccessStatus(
@@ -45,6 +48,16 @@ struct PermissionsFeature {
                     hasAttempted: state.hasAttemptedFullDiskAccessEnable,
                 )
                 state.fullDiskAccessStatus = resolvedStatus
+                refreshCompletionState(state: &state)
+                return .none
+
+            case let .helperFolderAccessStatusLoaded(result):
+                state.helperFolderAccess = result
+                if result.status == .granted {
+                    state.helperFolderAccessError = nil
+                }
+                let data = try? JSONEncoder().encode(result)
+                userDefaultsClient.setObject(data, SettingsKeys.helperFolderAccessSnapshot)
                 refreshCompletionState(state: &state)
                 return .none
 
@@ -113,9 +126,11 @@ struct PermissionsFeature {
     }
 
     private func loadInitialState() -> Effect<Action> {
-        .run { [fullDiskAccessClient, launchAtLoginClient] send in
+        .run { [fullDiskAccessClient, helperFolderAccessClient, launchAtLoginClient] send in
             let status = fullDiskAccessClient.status()
             await send(.fullDiskAccessStatusResponse(status))
+            let helperFolderAccess = await helperFolderAccessClient.checkAccess()
+            await send(.helperFolderAccessStatusLoaded(helperFolderAccess))
             let isEnabled = launchAtLoginClient.isEnabled()
             await send(.launchAtLoginStateLoaded(isEnabled))
         }
@@ -137,6 +152,13 @@ struct PermissionsFeature {
         .run { [fullDiskAccessClient] send in
             let status = fullDiskAccessClient.status()
             await send(.fullDiskAccessStatusResponse(status))
+        }
+    }
+
+    private func refreshHelperFolderAccess() -> Effect<Action> {
+        .run { [helperFolderAccessClient] send in
+            let result = await helperFolderAccessClient.checkAccess()
+            await send(.helperFolderAccessStatusLoaded(result))
         }
     }
 
