@@ -333,6 +333,8 @@ private func handleCollectionFileLoadedSuccess(
     registryClient: RegistryClient,
     computerName: String,
 ) -> Effect<FileManagerWindowAction> {
+    let wasOpening = state.content.collectionSession.isOpening
+    state.content.collectionSession.isOpening = false
     state.content.composer.isPresented = false
     state.content.collectionSession.isStale = isStale
     let trimmedQuery = file.query.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -367,7 +369,7 @@ private func handleCollectionFileLoadedSuccess(
 
     if !isStale {
         effects.append(
-            state.content.collectionSession.isOpening
+            wasOpening
                 ? .send(.content(.composer(.applyFilters)))
                 :
                 (trimmedQuery

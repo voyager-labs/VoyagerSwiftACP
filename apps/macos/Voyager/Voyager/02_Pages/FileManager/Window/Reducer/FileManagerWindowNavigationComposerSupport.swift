@@ -1,3 +1,4 @@
+import ComposableArchitecture
 import Foundation
 
 func applyCollectionNavigationState(
