@@ -28,7 +28,10 @@ extension CollectionStalenessClient: DependencyKey {
             let normalizedChangedPaths = changedPaths.map(normalizePath)
 
             for (collectionPath, record) in records {
-                let isRelevant = collectionChangeIsRelevant(changedPaths: normalizedChangedPaths, scopes: record.scopes)
+                let relevantChangedPaths = normalizedChangedPaths.filter {
+                    !isCollectionDocumentPath($0, collectionPath: collectionPath)
+                }
+                let isRelevant = collectionChangeIsRelevant(changedPaths: relevantChangedPaths, scopes: record.scopes)
 
                 if isRelevant {
                     records[collectionPath] = .init(scopes: record.scopes, isInvalidated: true)
@@ -87,4 +90,13 @@ private nonisolated func saveRecords(
 private nonisolated func normalizePath(_ path: String) -> String {
     guard !path.isEmpty else { return path }
     return URL(fileURLWithPath: path).standardizedFileURL.path
+}
+
+private nonisolated func isCollectionDocumentPath(_ changedPath: String, collectionPath: String) -> Bool {
+    if changedPath == collectionPath {
+        return true
+    }
+
+    let packagePrefix = collectionPath == "/" ? "/" : collectionPath + "/"
+    return changedPath.hasPrefix(packagePrefix)
 }

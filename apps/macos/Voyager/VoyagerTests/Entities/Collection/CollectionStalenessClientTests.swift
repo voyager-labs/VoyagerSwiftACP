@@ -29,4 +29,20 @@ final class CollectionStalenessClientTests: XCTestCase {
         client.invalidateRecords(["/tmp/other/a.txt"])
         XCTAssertFalse(client.consumeInvalidation("/tmp/voyager/sample.voycoll"))
     }
+
+    func testCollectionDocumentPathDoesNotInvalidateClosedCollectionRecord() {
+        let client = CollectionStalenessClient.liveValue
+        client.registerCollection("/tmp/voyager/sample.voycoll", ["/tmp/voyager"])
+
+        client.invalidateRecords(["/tmp/voyager/sample.voycoll"])
+        XCTAssertFalse(client.consumeInvalidation("/tmp/voyager/sample.voycoll"))
+    }
+
+    func testCollectionPackagePayloadWriteDoesNotInvalidateClosedCollectionRecord() {
+        let client = CollectionStalenessClient.liveValue
+        client.registerCollection("/tmp/voyager/sample.voycoll", ["/tmp/voyager"])
+
+        client.invalidateRecords(["/tmp/voyager/sample.voycoll/collection.plist"])
+        XCTAssertFalse(client.consumeInvalidation("/tmp/voyager/sample.voycoll"))
+    }
 }
