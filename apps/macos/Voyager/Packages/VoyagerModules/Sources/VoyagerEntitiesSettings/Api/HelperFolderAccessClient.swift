@@ -67,6 +67,7 @@ private actor HelperFolderAccessResolver {
     private var waiters: [CheckedContinuation<FolderAccessResult, Never>] = []
     private var observer: NotificationObserver?
     private var timeoutTask: Task<Void, Never>?
+    private var pendingMode: Mode?
 
     deinit {
         timeoutTask?.cancel()
@@ -79,8 +80,10 @@ private actor HelperFolderAccessResolver {
     fileprivate func resolve(mode: Mode) async -> FolderAccessResult {
         await ensureObserver()
 
-        if waiters.isEmpty {
-            await sendRequest(mode: mode)
+        let nextMode = mergePendingMode(with: mode)
+        if nextMode != pendingMode || waiters.isEmpty {
+            pendingMode = nextMode
+            await sendRequest(mode: nextMode)
             scheduleTimeout()
         }
 
@@ -100,8 +103,12 @@ private actor HelperFolderAccessResolver {
             ) { [weak self] notification in
                 guard let self else { return }
                 let result = Self.parseResult(from: notification.userInfo)
+                let mode = Self.parseMode(from: notification.userInfo)
                 Task {
-                    await self.resolveAll(with: result ?? self.fallbackResult)
+                    await self.handleResponse(
+                        result: result ?? self.fallbackResult,
+                        mode: mode,
+                    )
                 }
             }
             return NotificationObserver(token: token)
@@ -135,9 +142,26 @@ private actor HelperFolderAccessResolver {
         }
     }
 
+    private func mergePendingMode(with mode: Mode) -> Mode {
+        switch (pendingMode, mode) {
+        case (.request, _), (_, .request):
+            .request
+        default:
+            .check
+        }
+    }
+
+    private func handleResponse(result: FolderAccessResult, mode: Mode?) {
+        if let pendingMode, let mode, pendingMode != mode {
+            return
+        }
+        resolveAll(with: result)
+    }
+
     private func resolveAll(with result: FolderAccessResult) {
         timeoutTask?.cancel()
         timeoutTask = nil
+        pendingMode = nil
 
         guard !waiters.isEmpty else { return }
         let currentWaiters = waiters
@@ -161,6 +185,13 @@ private actor HelperFolderAccessResolver {
         }
 
         return FolderAccessResult(desktop: desktop, documents: documents, downloads: downloads)
+    }
+
+    private nonisolated static func parseMode(from userInfo: [AnyHashable: Any]?) -> Mode? {
+        guard let rawValue = userInfo?[HelperFolderAccessUserInfoKey.mode] as? String else {
+            return nil
+        }
+        return Mode(rawValue: rawValue)
     }
 
     private nonisolated static func parsePermission(_ value: Any?) -> FolderAccessPermission? {
