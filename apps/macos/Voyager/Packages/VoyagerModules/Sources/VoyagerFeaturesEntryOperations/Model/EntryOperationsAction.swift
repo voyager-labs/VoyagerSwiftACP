@@ -145,9 +145,15 @@ public enum EntryOperationsAction: CasePathable, Sendable {
 }
 
 public struct TagMutationRequest: Equatable, Sendable {
-    let mode: Mode
-    let tagName: String
-    let paths: [String]
+    public let mode: Mode
+    public let tagName: String
+    public let paths: [String]
+
+    public init(mode: Mode, tagName: String, paths: [String]) {
+        self.mode = mode
+        self.tagName = tagName
+        self.paths = paths
+    }
 
     public enum Mode: Equatable, Sendable {
         case toggle

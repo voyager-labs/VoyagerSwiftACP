@@ -32,6 +32,11 @@ Use this file to accumulate Voyager-local development heuristics that are reusab
 - Treat compatibility-only action shells and legacy facades as temporary migration aids. Route new work directly to the canonical owner and remove the facade once call sites converge.
 - Prefer parent-owned bridge reducers or translator reducers for child-to-child, child-to-window, and child-to-navigation routing instead of scattering peer mutations across sibling features.
 - Keep one canonical owner per concern. When behavior such as lifecycle restore, rollback, derived navigation, or mode exit spans multiple reducers, choose one reducer/helper/state method as the owner and route other paths through it.
+- In multi-stage UI callback flows, keep one canonical owner for visual cleanup and state reset instead of splitting ownership across intermediate success paths, teardown hooks, and reload paths.
+- When earlier callbacks resolve critical context that later callbacks receive only partially, prefer carrying the resolved value forward explicitly over re-deriving it from weaker transient inputs.
+- When framework hit-testing or event context is known to be incomplete around nested subviews or transformed content, add a stable fallback that preserves the intended interaction contract.
+- Preserve behavior parity across sibling coordinators, presenters, or adapters before introducing one-off exclusions in only one path.
+- When mixed subview geometry can distort previews, hotspots, or interaction affordances, prefer representations aligned to the user's perceived whole interaction area.
 - File-scope helper functions are acceptable for dense orchestrator-only handlers when extracting another reducer or type would not create a real boundary. Keep the helper narrow and avoid turning it into a shadow owner.
 - Keep Voyager-specific heuristics here until they become stable enough to enforce repo-wide, then promote them into `.agents/rules/**`.
 
@@ -40,3 +45,14 @@ Use this file to accumulate Voyager-local development heuristics that are reusab
 - Keep a heuristic here while it is Voyager-specific, evolving, or mostly procedural.
 - Move a heuristic into `.agents/rules/**` when it becomes a stable invariant that should apply automatically by path.
 - When promoting a heuristic, rewrite it as a reusable rule. Do not carry forward issue IDs, exact type names, concrete file paths, or one-off ownership tables.
+
+## Few-shot examples
+
+- **Bad:** A success callback clears UI state, a teardown callback clears it again, and a reload helper also resets it "just in case."
+  **Good:** Pick one canonical owner for cleanup and route the other paths through that owner or remove the duplicate reset.
+
+- **Bad:** Validation resolves the correct destination early, but a later callback re-derives it from weaker transient data because the earlier value was not carried forward.
+  **Good:** Preserve the resolved context explicitly across the callback chain.
+
+- **Bad:** One coordinator adds a one-off exclusion to make a flaky interaction pass while sibling coordinators keep the original behavior.
+  **Good:** Check sibling paths first and either preserve parity or document the intentional divergence.

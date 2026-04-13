@@ -24,6 +24,7 @@ description: "macOS SwiftUI + TCA structure and dependency rules."
 - Route cross-feature or window-level commands through actions, delegate events, or dedicated handlers.
 - Follow `.agents/rules/30-macos/02-tca-observation-lifecycle.md` when moving external/system observation out of SwiftUI views.
 - Follow `.agents/rules/30-macos/03-voyager-app-workflow.md` for `apps/macos/Voyager/Voyager/**` work.
+- In multi-stage UI callback flows, keep state cleanup, resolved context, and visual ownership with one canonical owner instead of splitting them across success handlers, session-end hooks, and reload paths.
 - For scaffold/orchestrator-style TCA work, load:
     - `.agents/skills/voyager-dev/SKILL.md`
 

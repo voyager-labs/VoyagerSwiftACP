@@ -9,26 +9,38 @@ public struct HelperState: Sendable, Equatable {
 
 public struct HelperStateClient: Sendable {
     public var resolve: @Sendable () async -> HelperState?
+    public var observe: @Sendable () -> AsyncStream<HelperState>
 
-    public nonisolated init(resolve: @escaping @Sendable () async -> HelperState?) {
+    public nonisolated init(
+        resolve: @escaping @Sendable () async -> HelperState?,
+        observe: @escaping @Sendable () -> AsyncStream<HelperState>,
+    ) {
         self.resolve = resolve
+        self.observe = observe
     }
 }
 
 extension HelperStateClient: DependencyKey {
     public nonisolated static var liveValue: HelperStateClient {
         let resolver = HelperStateResolver()
-        return HelperStateClient(resolve: {
-            await resolver.resolveState()
-        })
+        return HelperStateClient(
+            resolve: {
+                await resolver.resolveState()
+            },
+            observe: {
+                AsyncStream { continuation in
+                    Task { await resolver.addObserver(continuation) }
+                }
+            },
+        )
     }
 
     public nonisolated static var testValue: HelperStateClient {
-        HelperStateClient(resolve: { nil })
+        HelperStateClient(resolve: { nil }, observe: { AsyncStream { $0.finish() } })
     }
 
     public nonisolated static var previewValue: HelperStateClient {
-        HelperStateClient(resolve: { nil })
+        HelperStateClient(resolve: { nil }, observe: { AsyncStream { $0.finish() } })
     }
 }
 
@@ -44,6 +56,7 @@ private actor HelperStateResolver {
     private let logger = Logger(label: "Voyager")
     private var cachedState: HelperState?
     private var waiters: [CheckedContinuation<HelperState?, Never>] = []
+    private var stateContinuations: [UUID: AsyncStream<HelperState>.Continuation] = [:]
     private var observer: NotificationObserver?
     private var timeoutTask: Task<Void, Never>?
     private var retryTask: Task<Void, Never>?
@@ -69,6 +82,33 @@ private actor HelperStateResolver {
         }
     }
 
+    func addObserver(_ continuation: AsyncStream<HelperState>.Continuation) async {
+        let id = UUID()
+        let shouldRequestInitialState =
+            stateContinuations.isEmpty
+                && cachedState == nil
+                && waiters.isEmpty
+                && timeoutTask == nil
+                && retryTask == nil
+
+        stateContinuations[id] = continuation
+
+        if let cachedState {
+            continuation.yield(cachedState)
+        }
+
+        await ensureObserver()
+
+        if shouldRequestInitialState {
+            await sendRequest()
+            scheduleTimeoutAndRetry()
+        }
+
+        continuation.onTermination = { [weak self] _ in
+            Task { await self?.removeContinuation(id: id) }
+        }
+    }
+
     // 응답 상태를 처리하고 캐시/대기자를 갱신한다
     private func handle(state: HelperState?, userInfoSummary: String) async {
         guard let state else {
@@ -78,6 +118,7 @@ private actor HelperStateResolver {
 
         cachedState = state
         cancelTimeouts()
+        stateContinuations.values.forEach { $0.yield(state) }
 
         if !waiters.isEmpty {
             let currentWaiters = waiters
@@ -140,6 +181,10 @@ private actor HelperStateResolver {
         timeoutTask = nil
         retryTask?.cancel()
         retryTask = nil
+    }
+
+    private func removeContinuation(id: UUID) {
+        stateContinuations[id] = nil
     }
 
     // 알림 옵저버를 보장한다

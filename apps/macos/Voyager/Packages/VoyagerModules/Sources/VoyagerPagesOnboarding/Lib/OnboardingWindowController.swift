@@ -15,6 +15,7 @@ final class OnboardingWindowController: NSWindowController, NSWindowDelegate {
         } withDependencies: {
             let base = $0.onboardingWindowClient
             $0.onboardingWindowClient = OnboardingWindowClient(
+                isRequired: base.isRequired,
                 showIfNeeded: base.showIfNeeded,
                 showWindow: base.showWindow,
                 closeWindow: base.closeWindow,

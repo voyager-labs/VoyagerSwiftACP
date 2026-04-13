@@ -13,6 +13,8 @@ struct FileManagerNavigationActionReducer {
     var collectionAlertClient
     @Dependency(\.registryClient)
     var registryClient
+    @Dependency(\.collectionStalenessClient)
+    var collectionStalenessClient
 
     typealias State = FileManagerWindowState
     typealias Action = FileManagerWindowAction
@@ -68,6 +70,7 @@ struct FileManagerNavigationActionReducer {
                 url,
                 state: &state,
                 collectionFileClient: collectionFileClient,
+                collectionStalenessClient: collectionStalenessClient,
             )
         }
     }
@@ -138,6 +141,7 @@ struct FileManagerNavigationActionReducer {
                 state: &state,
                 collectionAlertClient: collectionAlertClient,
                 registryClient: registryClient,
+                collectionStalenessClient: collectionStalenessClient,
                 computerName: fileManagerClient.displayName("/"),
             )
 
@@ -233,6 +237,7 @@ private func handleOpenCollectionFile(
     _ url: URL,
     state: inout FileManagerWindowState,
     collectionFileClient: CollectionFileClient,
+    collectionStalenessClient _: CollectionStalenessClient,
 ) -> Effect<FileManagerWindowAction> {
     if state.content.collectionSession.openedURL?.path != url.path {
         VoyagerSentryMetricLogger.logDAUNavigation(kind: .collection)
@@ -244,6 +249,7 @@ private func handleOpenCollectionFile(
 
     let clearEffect: Effect<FileManagerContentAction> = clearCollectionMode(state: &state.content)
     state.content.collectionSession.isOpening = true
+    state.content.collectionSession.isStale = false
     state.content.collectionSession.openedName = url.deletingPathExtension().lastPathComponent
     state.content.collectionSession.openedURL = url
     state.content.collectionSession.originURL = url
@@ -279,19 +285,26 @@ private func handleCollectionFileLoaded(
     state: inout FileManagerWindowState,
     collectionAlertClient: CollectionAlertClient,
     registryClient: RegistryClient,
+    collectionStalenessClient: CollectionStalenessClient,
     computerName: String,
 ) -> Effect<FileManagerWindowAction> {
     switch result {
     case let .success(file):
-        handleCollectionFileLoadedSuccess(
+        if let url = state.content.collectionSession.openedURL {
+            let isStale = collectionStalenessClient.consumeInvalidation(url.path)
+            state.content.collectionSession.isStale = isStale
+            collectionStalenessClient.registerCollection(url.path, file.scopes)
+        }
+        return handleCollectionFileLoadedSuccess(
             file,
+            isStale: state.content.collectionSession.isStale,
             state: &state,
             collectionAlertClient: collectionAlertClient,
             registryClient: registryClient,
             computerName: computerName,
         )
     case let .failure(error):
-        handleCollectionFileLoadedFailure(
+        return handleCollectionFileLoadedFailure(
             error,
             state: &state,
             collectionAlertClient: collectionAlertClient,
@@ -316,12 +329,16 @@ private func handleNavigateToCollection(
 
 private func handleCollectionFileLoadedSuccess(
     _ file: VoyagerCollectionFile,
+    isStale: Bool,
     state: inout FileManagerWindowState,
     collectionAlertClient: CollectionAlertClient,
     registryClient: RegistryClient,
     computerName: String,
 ) -> Effect<FileManagerWindowAction> {
+    let wasOpening = state.content.collectionSession.isOpening
+    state.content.collectionSession.isOpening = false
     state.content.composer.isPresented = false
+    state.content.collectionSession.isStale = isStale
     let trimmedQuery = file.query.trimmingCharacters(in: .whitespacesAndNewlines)
     state.content.composer.pendingSearchQuery = trimmedQuery.isEmpty ? nil : trimmedQuery
 
@@ -350,11 +367,17 @@ private func handleCollectionFileLoadedSuccess(
         ),
     )
 
-    var effects: [Effect<FileManagerWindowAction>] = [
-        state.content.collectionSession.isOpening
-            ? .send(.content(.composer(.applyFilters)))
-            : (trimmedQuery.isEmpty ? .send(.content(.composer(.applyFilters))) : .send(.content(.composer(.submit)))),
-    ]
+    var effects: [Effect<FileManagerWindowAction>] = []
+
+    if !isStale {
+        effects.append(
+            wasOpening
+                ? .send(.content(.composer(.applyFilters)))
+                :
+                (trimmedQuery
+                    .isEmpty ? .send(.content(.composer(.applyFilters))) : .send(.content(.composer(.submit)))),
+        )
+    }
 
     if !resolved.unknownKeys.isEmpty {
         let joinedKeys = resolved.unknownKeys.joined(separator: ", ")
@@ -418,71 +441,4 @@ private func handleEmptyCollectionFile(
             },
         ),
     )
-}
-
-private func applyCollectionNavigationState(
-    _ navigation: ContentPageCollectionNavigation,
-    state: inout FileManagerWindowState,
-) {
-    state.content.composer.isPresented = false
-    state.content.collectionContext = navigation.context
-    state.content.composer.pendingSearchQuery = navigation.context.query.isEmpty ? nil : navigation.context.query
-    state.content.entryViewLayout.entryArrangements.updateSortKey(navigation.sortKey)
-    state.content.entryViewLayout.entryArrangements.updateSortOrder(navigation.sortOrder)
-    state.content.entryViewLayout.mode = navigation.viewLayout
-
-    switch navigation.kind {
-    case .temporary:
-        state.content.collectionSession.openedName = nil
-        state.content.collectionSession.openedURL = nil
-        state.content.collectionSession.originURL = nil
-        state.content.collectionSession.baseline = nil
-    case let .file(url, name):
-        state.content.collectionSession.openedName = name
-        state.content.collectionSession.openedURL = url
-        state.content.collectionSession.originURL = url
-        state.content.collectionSession.baseline = CollectionBaseline(context: navigation.context)
-    }
-
-    state.content.syncComposerCollectionState()
-}
-
-private func configureCollectionNavigationComposer(
-    _ navigation: ContentPageCollectionNavigation,
-    state: inout FileManagerWindowState,
-) {
-    state.content.composer.text = {
-        if case .file = navigation.kind { return "" }
-        return navigation.context.query
-    }()
-    state.content.composer.scopes = navigation.context.scopes
-    state.content.composer.conditions = navigation.context.conditions
-    state.content.composer.propertyPicker = ConditionPropertyPickerFeature.State()
-    state.content.composer.operatorPicker = OperatorPickerFeature.State()
-    state.content.composer.valuePicker = ValuePickerFeature.State()
-    state.content.composer.clearHistory()
-}
-
-private func handleNavigationDelegate(
-    _ delegateAction: ContentPageNavigationAction.Delegate,
-    state: inout FileManagerWindowState,
-    computerName: String,
-) -> Effect<FileManagerWindowAction> {
-    switch delegateAction {
-    case let .navigateToState(navigationState):
-        syncSidebarSelection(state: &state, computerName: computerName)
-        return handleNavigateToState(navigationState, state: &state)
-
-    case let .logDAUNavigation(previous, next):
-        logContentPageNavigationDAUIfNeeded(previous: previous, next: next)
-        return .none
-
-    case .resetComposer:
-        let exitEffect = exitCollectionMode(
-            state: &state.content,
-            computerName: computerName,
-        )
-        state.content.resetComposer()
-        return exitEffect.map(FileManagerWindowAction.content)
-    }
 }

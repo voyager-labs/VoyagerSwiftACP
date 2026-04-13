@@ -43,6 +43,58 @@ struct PermissionsStepView: View {
                 .frame(maxWidth: .infinity, alignment: .leading)
 
                 VStack(alignment: .leading, spacing: 8) {
+                    Text("Files & Folders")
+                        .font(.system(size: 14, weight: .semibold))
+                    Text("Let Voyager Helper access Desktop, Documents, and Downloads.")
+                        .font(.system(size: 13))
+                        .foregroundStyle(.secondary)
+                    Text("macOS will ask. Choose Allow.")
+                        .font(.system(size: 12))
+                        .foregroundStyle(.secondary)
+
+                    HStack(spacing: 8) {
+                        Button(viewStore.allHelperFilesAndFoldersGranted ? "Done" : "Grant Access") {
+                            viewStore.send(.requestHelperFolderAccessTapped)
+                        }
+                        .disabled(viewStore.isRequestingHelperFolderAccess || viewStore.allHelperFilesAndFoldersGranted)
+
+                        if viewStore.isRequestingHelperFolderAccess {
+                            ProgressView()
+                                .controlSize(.small)
+                        }
+                    }
+
+                    Text(viewStore.helperFilesAndFoldersMessage)
+                        .font(.system(size: 12))
+                        .foregroundStyle(.secondary)
+
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text("Voyager Helper")
+                            .font(.system(size: 12, weight: .semibold))
+                            .foregroundStyle(.secondary)
+
+                        ForEach(viewStore.helperFolderAccessItems) { item in
+                            HStack {
+                                Text(item.title)
+                                    .font(.system(size: 13))
+                                Spacer()
+                                Text(item.status.rawValue)
+                                    .font(.system(size: 13, weight: .semibold))
+                                    .foregroundStyle(.secondary)
+                            }
+                        }
+                    }
+
+                    if let error = viewStore.helperFolderAccessError {
+                        Text(error)
+                            .font(.system(size: 12))
+                            .foregroundStyle(.red)
+                    }
+                }
+                .padding(12)
+                .frame(maxWidth: .infinity, alignment: .leading)
+
+                VStack(alignment: .leading, spacing: 8) {
                     HStack(spacing: 8) {
                         Text("Launch at Login")
                             .font(.system(size: 14, weight: .semibold))

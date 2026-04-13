@@ -2,6 +2,11 @@ import Foundation
 
 @MainActor
 final class HelperFolderAccessListener {
+    private enum RequestMode: String {
+        case check
+        case request
+    }
+
     private enum AccessValue: String {
         case granted = "Granted"
         case notGranted = "Not Granted"
@@ -22,20 +27,22 @@ final class HelperFolderAccessListener {
             forName: .voyagerHelperFolderAccessRequest,
             object: nil,
             queue: .main,
-        ) { [weak self] _ in
+        ) { [weak self] notification in
+            let mode = Self.parseMode(notification.userInfo) ?? .check
             Task { @MainActor in
-                self?.postCurrentFolderAccess()
+                self?.postCurrentFolderAccess(mode: mode)
             }
         }
         observer = token
     }
 
-    private func postCurrentFolderAccess() {
+    private func postCurrentFolderAccess(mode: RequestMode) {
         let payload: [String: Any] = [
             HelperFolderAccessUserInfoKey.schemaVersion: 1,
-            HelperFolderAccessUserInfoKey.desktop: requestFolderAccess(for: .desktopDirectory).rawValue,
-            HelperFolderAccessUserInfoKey.documents: requestFolderAccess(for: .documentDirectory).rawValue,
-            HelperFolderAccessUserInfoKey.downloads: requestFolderAccess(for: .downloadsDirectory).rawValue,
+            HelperFolderAccessUserInfoKey.mode: mode.rawValue,
+            HelperFolderAccessUserInfoKey.desktop: folderAccess(for: .desktopDirectory, mode: mode).rawValue,
+            HelperFolderAccessUserInfoKey.documents: folderAccess(for: .documentDirectory, mode: mode).rawValue,
+            HelperFolderAccessUserInfoKey.downloads: folderAccess(for: .downloadsDirectory, mode: mode).rawValue,
         ]
 
         DistributedNotificationCenter.default().post(
@@ -45,21 +52,32 @@ final class HelperFolderAccessListener {
         )
     }
 
-    private func requestFolderAccess(for directory: FileManager.SearchPathDirectory) -> AccessValue {
+    private func folderAccess(for directory: FileManager.SearchPathDirectory, mode: RequestMode) -> AccessValue {
         let fileManager = FileManager.default
         guard let url = fileManager.urls(for: directory, in: .userDomainMask).first else {
             return .notGranted
         }
 
-        do {
-            _ = try fileManager.contentsOfDirectory(
-                at: url,
-                includingPropertiesForKeys: nil,
-                options: [.skipsHiddenFiles],
-            )
-            return .granted
-        } catch {
-            return .notGranted
+        switch mode {
+        case .check:
+            return fileManager.isReadableFile(atPath: url.path) ? .granted : .notGranted
+
+        case .request:
+            do {
+                _ = try fileManager.contentsOfDirectory(
+                    at: url,
+                    includingPropertiesForKeys: nil,
+                    options: [.skipsHiddenFiles],
+                )
+                return .granted
+            } catch {
+                return .notGranted
+            }
         }
+    }
+
+    private nonisolated static func parseMode(_ userInfo: [AnyHashable: Any]?) -> RequestMode? {
+        guard let raw = userInfo?[HelperFolderAccessUserInfoKey.mode] as? String else { return nil }
+        return RequestMode(rawValue: raw)
     }
 }
