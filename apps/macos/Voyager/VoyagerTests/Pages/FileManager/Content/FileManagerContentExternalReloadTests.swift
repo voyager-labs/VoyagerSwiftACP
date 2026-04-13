@@ -72,4 +72,61 @@ final class FileManagerContentExternalReloadTests: XCTestCase {
         await store.send(.entries(.fileSystemChanged(["/tmp/voyager/a.txt"])))
         await store.finish()
     }
+
+    func testFileSystemChangedReloadsRecentsRoute() async {
+        var initialState = FileManagerContentState()
+        initialState.navigation.navigationState = .recents
+        initialState.navigation.currentPath = "Recents"
+
+        let store = TestStore(initialState: initialState) {
+            FileManagerContentFeature()
+        }
+
+        await store.send(.entries(.fileSystemChanged(["/tmp/voyager/a.txt"])))
+        await store.receive { action in
+            guard case let .entryViewLayout(.entryOperations(.loadRecentItems(showHidden: showHidden))) = action
+            else {
+                return false
+            }
+            return showHidden == false
+        }
+    }
+
+    func testFileSystemChangedReloadsTagRoute() async {
+        var initialState = FileManagerContentState()
+        initialState.navigation.navigationState = .tags(tagName: "blue")
+        initialState.navigation.currentPath = "Tags"
+
+        let store = TestStore(initialState: initialState) {
+            FileManagerContentFeature()
+        }
+
+        await store.send(.entries(.fileSystemChanged(["/tmp/voyager/a.txt"])))
+        await store.receive { action in
+            guard case let .entryViewLayout(.entryOperations(.loadTagItems(tagName: tagName, showHidden: showHidden))) =
+                action
+            else {
+                return false
+            }
+            return tagName == "blue" && showHidden == false
+        }
+    }
+
+    func testFileSystemChangedReloadsComputerRoute() async {
+        var initialState = FileManagerContentState()
+        initialState.navigation.navigationState = .computer
+        initialState.navigation.currentPath = "Computer"
+
+        let store = TestStore(initialState: initialState) {
+            FileManagerContentFeature()
+        }
+
+        await store.send(.entries(.fileSystemChanged(["/tmp/voyager/a.txt"])))
+        await store.receive { action in
+            guard case .entryViewLayout(.entryOperations(.loadComputerItems)) = action else {
+                return false
+            }
+            return true
+        }
+    }
 }

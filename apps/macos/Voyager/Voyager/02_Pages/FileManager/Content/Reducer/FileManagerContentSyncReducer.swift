@@ -2,7 +2,7 @@ import ComposableArchitecture
 import Foundation
 
 @Reducer
-struct FileManagerContentVOY207Reducer {
+struct FileManagerContentSyncReducer {
     typealias State = FileManagerContentState
     typealias Action = FileManagerContentAction
 
@@ -17,10 +17,16 @@ struct FileManagerContentVOY207Reducer {
                     }
                     return .none
 
-                default:
-                    guard pathsAffectCurrentFolder(paths, currentPath: state.navigation.currentPath) else {
+                case let .folder(path):
+                    guard pathsAffectCurrentFolder(paths, currentPath: path) else {
                         return .none
                     }
+                    return reloadEntryItemsEffect(
+                        navigationState: state.navigation.navigationState,
+                        showHidden: state.entryViewLayout.showHiddenFiles,
+                    )
+
+                case .recents, .tags, .computer:
                     return reloadEntryItemsEffect(
                         navigationState: state.navigation.navigationState,
                         showHidden: state.entryViewLayout.showHiddenFiles,
