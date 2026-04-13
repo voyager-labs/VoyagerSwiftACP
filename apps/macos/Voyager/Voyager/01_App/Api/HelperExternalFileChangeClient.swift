@@ -13,7 +13,7 @@ struct HelperExternalFileChangeEvent: Equatable, Sendable {
 
 struct HelperExternalFileChangeClient: Sendable {
     var observeChangedPaths: @Sendable () -> AsyncStream<HelperExternalFileChangeEvent>
-    var acknowledgeReplay: @Sendable () async -> Void
+    var acknowledgeDeliveredPaths: @Sendable ([String]) async -> Void
     var updateWatchRoots: @Sendable ([String]) async -> Void
 }
 
@@ -62,11 +62,12 @@ extension HelperExternalFileChangeClient: DependencyKey {
                 }
             }
         },
-        acknowledgeReplay: {
+        acknowledgeDeliveredPaths: { paths in
+            let payload = HelperExternalFileChangePayload(paths: paths)
             DistributedNotificationCenter.default().post(
                 name: .voyagerHelperFSReplayAck,
                 object: nil,
-                userInfo: nil,
+                userInfo: payload.asUserInfo(),
             )
         },
         updateWatchRoots: { paths in
@@ -81,7 +82,7 @@ extension HelperExternalFileChangeClient: DependencyKey {
 
     nonisolated static let testValue = Self(
         observeChangedPaths: { AsyncStream { $0.finish() } },
-        acknowledgeReplay: {},
+        acknowledgeDeliveredPaths: { _ in },
         updateWatchRoots: { _ in },
     )
 }

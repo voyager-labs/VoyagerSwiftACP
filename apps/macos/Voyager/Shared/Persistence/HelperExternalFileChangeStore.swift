@@ -90,6 +90,29 @@ actor HelperExternalFileChangeStore {
         try withExclusiveLock { try clearLocked() }
     }
 
+    func remove(_ paths: [String]) throws -> HelperExternalFileChangePayload? {
+        try withExclusiveLock {
+            guard let existing = try readLocked() else { return nil }
+
+            let removedPaths = Set(HelperExternalFileChangePayload.canonicalPaths(paths))
+            guard !removedPaths.isEmpty else { return existing }
+
+            let remainingPaths = existing.paths.filter { !removedPaths.contains($0) }
+            guard !remainingPaths.isEmpty else {
+                try clearLocked()
+                return nil
+            }
+
+            let nextPayload = HelperExternalFileChangePayload(
+                paths: remainingPaths,
+                schemaVersion: existing.schemaVersion,
+                generatedAt: existing.generatedAt,
+            )
+            try write(nextPayload)
+            return nextPayload
+        }
+    }
+
     private func readLocked() throws -> HelperExternalFileChangePayload? {
         guard fileManager.fileExists(atPath: payloadURL.path) else { return nil }
         let data = try Data(contentsOf: payloadURL)

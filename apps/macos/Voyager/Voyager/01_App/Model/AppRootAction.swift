@@ -5,6 +5,7 @@ import VoyagerPagesSettings
 @CasePathable
 enum AppRootAction: CasePathable, Sendable {
     case lifecycle(AppLifecycleFeature.Action)
+    case appDidBecomeActive
     case startHelperExternalFileBridge
     case helperStateUpdated(HelperState)
     case helperExternalFileChanged(HelperExternalFileChangeEvent)

@@ -36,10 +36,18 @@ final class HelperExternalFileChangeBridge {
             forName: .voyagerHelperFSReplayAck,
             object: nil,
             queue: .main,
-        ) { [weak self] _ in
+        ) { [weak self] notification in
             guard let self else { return }
+            let acknowledgedPayload = HelperExternalFileChangePayload.from(
+                userInfo: notification.userInfo,
+                allowEmptyPaths: true,
+            )
             Task { @MainActor in
-                try? await self.store.clear()
+                if let payload = acknowledgedPayload {
+                    _ = try? await self.store.remove(payload.paths)
+                } else {
+                    try? await self.store.clear()
+                }
             }
         }
     }

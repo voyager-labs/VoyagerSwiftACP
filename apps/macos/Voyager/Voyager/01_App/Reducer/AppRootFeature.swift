@@ -1,3 +1,4 @@
+import AppKit
 import ComposableArchitecture
 import Foundation
 import VoyagerEntitiesSettings
@@ -22,10 +23,13 @@ struct AppRootFeature {
     private var onboardingWindowClient
     @Dependency(\.userDefaultsClient)
     private var userDefaultsClient
+    @Dependency(\.notificationCenterClient)
+    private var notificationCenterClient
 
     private enum CancelID {
         static let helperExternalFileBridge = "helperExternalFileBridge"
         static let helperStateObserver = "helperStateObserver"
+        static let appDidBecomeActiveObserver = "appDidBecomeActiveObserver"
     }
 
     var body: some Reducer<State, Action> {
@@ -67,6 +71,15 @@ struct AppRootFeature {
                         }
                     }
                     .cancellable(id: CancelID.helperStateObserver, cancelInFlight: true),
+                    .run { [notificationCenterClient] send in
+                        for await _ in notificationCenterClient.notifications(
+                            NSApplication.didBecomeActiveNotification,
+                            nil,
+                        ) {
+                            await send(.appDidBecomeActive)
+                        }
+                    }
+                    .cancellable(id: CancelID.appDidBecomeActiveObserver, cancelInFlight: true),
                 )
 
             case .startHelperExternalFileBridge:
@@ -102,10 +115,16 @@ struct AppRootFeature {
                     effect = .merge(
                         .cancel(id: CancelID.helperExternalFileBridge),
                         .cancel(id: CancelID.helperStateObserver),
+                        .cancel(id: CancelID.appDidBecomeActiveObserver),
                     )
                 default:
                     effect = .none
                 }
+
+            case .appDidBecomeActive:
+                effect = state.lastHelperReady && !state.windowManager.windows.isEmpty
+                    ? .send(.registerHelperWatchRootsIfNeeded)
+                    : .none
 
             case let .helperStateUpdated(helperState):
                 let shouldRegister = !state.lastHelperReady && helperState.helperReady
@@ -124,11 +143,18 @@ struct AppRootFeature {
                     effect = .merge(
                         forwardExternalFileChanges(event.paths, windowIDs: state.windowManager.windows.ids),
                         .run { _ in
-                            await helperExternalFileChangeClient.acknowledgeReplay()
+                            await helperExternalFileChangeClient.acknowledgeDeliveredPaths(event.paths)
+                        },
+                    )
+                } else if !state.windowManager.windows.isEmpty {
+                    effect = .merge(
+                        forwardExternalFileChanges(event.paths, windowIDs: state.windowManager.windows.ids),
+                        .run { _ in
+                            await helperExternalFileChangeClient.acknowledgeDeliveredPaths(event.paths)
                         },
                     )
                 } else {
-                    effect = forwardExternalFileChanges(event.paths, windowIDs: state.windowManager.windows.ids)
+                    effect = .none
                 }
 
             case .flushPendingReplay:
@@ -150,7 +176,7 @@ struct AppRootFeature {
                 effect = .merge(
                     forwardExternalFileChanges(paths, windowIDs: state.windowManager.windows.ids),
                     .run { _ in
-                        await helperExternalFileChangeClient.acknowledgeReplay()
+                        await helperExternalFileChangeClient.acknowledgeDeliveredPaths(paths)
                     },
                 )
 

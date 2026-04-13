@@ -59,6 +59,31 @@ final class HelperExternalFileChangeBridgeTests: XCTestCase {
         XCTAssertNil(afterConsume)
     }
 
+    func testReplayAckRemovesOnlyAcknowledgedPaths() async throws {
+        let tempDirectory = try makeTemporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: tempDirectory) }
+
+        let store = HelperExternalFileChangeStore(
+            payloadURL: tempDirectory.appendingPathComponent("payload.json"),
+            lockURL: tempDirectory.appendingPathComponent("payload.lock"),
+        )
+        let bridge = HelperExternalFileChangeBridge(store: store)
+        bridge.startObservingReplayRequests()
+
+        _ = try await store.coalesce(["/tmp/demo/a", "/tmp/demo/b", "/tmp/demo/c"])
+
+        DistributedNotificationCenter.default().post(
+            name: .voyagerHelperFSReplayAck,
+            object: nil,
+            userInfo: HelperExternalFileChangePayload(paths: ["/tmp/demo/a", "/tmp/demo/c"]).asUserInfo(),
+        )
+
+        try? await Task.sleep(nanoseconds: 100_000_000)
+
+        let remaining = try await store.load()
+        XCTAssertEqual(remaining?.paths, ["/tmp/demo/b"])
+    }
+
     private func makeTemporaryDirectory() throws -> URL {
         let directory = FileManager.default.temporaryDirectory
             .appendingPathComponent(UUID().uuidString, isDirectory: true)
