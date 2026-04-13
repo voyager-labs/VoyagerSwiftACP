@@ -4,6 +4,7 @@ import ComposableArchitecture
 import VoyagerEntitiesEntry
 @testable import VoyagerFeaturesEntryOperations
 import VoyagerShared
+@testable import VoyagerWidgetsEntryViewLayout
 import XCTest
 
 @MainActor
@@ -128,7 +129,7 @@ private func makeThumbnailDropHarness(
         $0.entryFileOpsClient.loadDragPaths = { internalDragPaths }
         $0.entryFileOpsClient.loadDragWithOption = { false }
         $0.workspaceClient = VoyagerShared.WorkspaceClient.testValue
-        $0.finderFavoritesTagClient = .testValue
+        $0.finderFavoritesTagClient = Voyager.FinderFavoritesTagClient.testValue
         $0.entryThumbnailCacheClient = VoyagerEntitiesEntry.EntryThumbnailCacheClient.testValue
         $0.notificationCenterClient = VoyagerShared.NotificationCenterClient.testValue
     }

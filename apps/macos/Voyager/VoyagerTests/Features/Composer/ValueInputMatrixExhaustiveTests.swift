@@ -1,5 +1,6 @@
 import Foundation
 @testable import Voyager
+@testable import VoyagerEntitiesEntry
 import XCTest
 
 @MainActor
@@ -14,7 +15,7 @@ final class ValueInputMatrixExhaustiveTests: XCTestCase {
 
         for entry in matrix {
             let sample = validSample(for: entry.uiKind)
-            let result = ValueNormalizerUtils.normalize(
+            let result = Voyager.ValueNormalizerUtils.normalize(
                 kind: entry.uiKind,
                 rawValues: sample.rawValues,
                 editingIndex: sample.editingIndex,
@@ -37,7 +38,7 @@ final class ValueInputMatrixExhaustiveTests: XCTestCase {
 
         for entry in matrix {
             let sample = invalidSample(for: entry.uiKind)
-            let result = ValueNormalizerUtils.normalize(
+            let result = Voyager.ValueNormalizerUtils.normalize(
                 kind: entry.uiKind,
                 rawValues: sample.rawValues,
                 editingIndex: sample.editingIndex,

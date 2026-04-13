@@ -1,6 +1,8 @@
 import AppKit
 @testable import Voyager
 import VoyagerEntitiesEntry
+@testable import VoyagerShared
+@testable import VoyagerWidgetsEntryViewLayout
 import XCTest
 
 @MainActor

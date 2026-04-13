@@ -1,5 +1,6 @@
 import Foundation
 @testable import Voyager
+@testable import VoyagerWidgetsEntryViewLayout
 import XCTest
 
 @MainActor

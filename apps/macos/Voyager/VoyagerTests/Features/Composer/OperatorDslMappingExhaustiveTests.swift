@@ -1,6 +1,7 @@
 import XCTest
 
 @testable import Voyager
+@testable import VoyagerEntitiesEntry
 import VoyagerShared
 
 @MainActor
@@ -41,7 +42,7 @@ final class OperatorDslMappingExhaustiveTests: XCTestCase {
                     continue
                 }
 
-                let encoded = ConditionValueEncoder.encodeValues(
+                let encoded = Voyager.ConditionValueEncoder.encodeValues(
                     values: values,
                     valueType: valueType(for: typeKey),
                     operatorCode: operatorCode,
@@ -76,7 +77,7 @@ final class OperatorDslMappingExhaustiveTests: XCTestCase {
             guard case .fixed(0) = definition.valueCount else { continue }
             for (typeKey, uiKind) in definition.uiValueKind ?? [:] where uiKind == "none" {
                 checked += 1
-                let encoded = ConditionValueEncoder.encodeValues(
+                let encoded = Voyager.ConditionValueEncoder.encodeValues(
                     values: [],
                     valueType: valueType(for: typeKey),
                     operatorCode: operatorCode,

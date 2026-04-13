@@ -2,8 +2,9 @@
 import Foundation
 
 import ComposableArchitecture
-@testable import Voyager
-import VoyagerShared
+import VoyagerEntitiesEntry
+@testable import VoyagerPagesFileManager
+@testable import VoyagerShared
 import XCTest
 
 @MainActor
