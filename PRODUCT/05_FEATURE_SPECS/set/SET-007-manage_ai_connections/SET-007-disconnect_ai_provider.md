@@ -26,7 +26,7 @@ shortcut: "-"
 
 - 대상 provider가 row action으로 명확히 지정되어야 한다.
 - 해당 provider가 `Connected` 상태이거나 active credential을 가진 상태여야 한다.
-- 연결 해제 전 사용자 확인 모달을 표시할 수 있어야 한다.
+- 연결 해제 전 사용자 확인 모달을 표시해야 한다.
 
 ## Expected Outcome
 
@@ -72,7 +72,7 @@ shortcut: "-"
 
 - provider별 credential 폐기/삭제 API 또는 로컬 저장소 쓰기 권한이 필요하다.
 - 채팅/요청 파이프라인이 provider 변경 이벤트를 반영할 수 있어야 한다.
-- 기본 provider fallback 정책이 정의되어 있어야 한다.
+- 마지막으로 사용한 provider 내부 상태를 안전하게 정리할 수 있어야 한다.
 
 ## Observability / Analytics
 
@@ -86,6 +86,7 @@ shortcut: "-"
 - [SET-007-connect_ai_provider](SET-007-connect_ai_provider.md)
 - [SET-007-restore_ai_provider_connection_status](SET-007-restore_ai_provider_connection_status.md)
 - [SET-007-show_ai_provider_list](SET-007-show_ai_provider_list.md)
+
 ## Source
 
 - Inventory: `PRODUCT/04_FEATURE_INVENTORY/INTERACTIONS/data.tsv`

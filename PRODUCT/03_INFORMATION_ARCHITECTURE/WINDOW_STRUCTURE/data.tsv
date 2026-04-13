@@ -30,6 +30,7 @@ file_manager_window	inspector_mode_chat	chat_field	Chat Field	챗 필드	4	secti
 settings_window	-	root	Settings Window	세팅 창	1	root	settings_window	앱 전역 설정을 조회·변경하는 세팅 윈도우	TBD	CBT
 settings_window	root	toolbar	Settings Toolbar	세팅 툴바	2	pane	settings_window.toolbar	세팅의 공통 네비게이션과 액션을 제공하는 상단 툴바 영역	TBD	CBT
 settings_window	root	settings_body	Settings Body	세팅 바디	2	pane	settings_window.settings_body	현재 선택된 설정 탭의 실제 설정 폼·콘텐츠를 표시하는 본문 영역	TBD	CBT
+settings_window	root	ai_provider_disconnect_confirm_modal	AI Provider Disconnect Confirm Modal	AI 프로바이더 연결 해제 확인 모달	2	overlay	settings_window.ai_provider_disconnect_confirm_modal	AI provider 연결 해제 전에 대상 provider와 영향 범위를 확인하고 취소/연결 해제 액션을 받는 오버레이 모달	TBD	OBT
 settings_window	toolbar	title_area	Settings Title Area	타이틀 영역	3	section	settings_window.toolbar.title_area	세팅 탭의 제목을 표시하는 영역	TBD	CBT
 settings_window	toolbar	tabs_area	Settings Tabs	탭 영역	3	section	settings_window.toolbar.tabs_area	세팅 탭을 전환하는 탭 스위처 영역	TBD	CBT
 settings_window	settings_body	tab_general	Settings General Tab	세팅 제너럴 탭	3	mode	settings_window.settings_body.tab_general	기본 동작과 앱 사용 경험 관련 일반 설정 탭	TBD	CBT
@@ -37,8 +38,8 @@ settings_window	settings_body	tab_indexing	Settings Indexing Tab	세팅 인덱�
 settings_window	settings_body	tab_appearance	Settings Appearance Tab	세팅 어피어런스 탭	3	mode	settings_window.settings_body.tab_appearance	테마·폰트·레이아웃 밀도 등 UI 외관 설정을 관리하는 탭	TBD	CBT
 settings_window	settings_body	tab_shortcuts	Settings Shortcuts Tab	세팅 숏컷 탭	3	mode	settings_window.settings_body.tab_shortcuts	키보드 단축키를 확인하고 커스터마이징하는 설정 탭	TBD	OBT
 settings_window	settings_body	tab_account	Settings Account Tab	세팅 어카운트 탭	3	mode	settings_window.settings_body.tab_account	계정 정보, 구독 상태, 라이선스 등을 관리하는 설정 탭	TBD	CBT
-settings_window	settings_body	tab_ai	Settings AI Tab	세팅 AI 탭	3	mode	settings_window.settings_body.tab_ai	지원되는 AI provider 목록을 보여주고, 각 provider row에서 상태 확인, 연결, 연결 해제를 하나의 연결 객체 기준으로 관리하는 설정 탭	TBD	OBT
-settings_window	tab_ai	provider_list_area	Provider List Area	프로바이더 목록 영역	4	section	settings_window.settings_body.tab_ai.provider_list_area	현재 빌드에서 지원되는 provider 목록을 표시하고 각 row에 연결 상태 배지, 지원 연결 방식, 기본 액션(Connect/Disconnect)을 함께 보여주는 영역	TBD	OBT
+settings_window	settings_body	tab_ai	Settings AI Tab	세팅 AI 탭	3	mode	settings_window.settings_body.tab_ai	지원되는 AI provider 목록을 보여주고, 각 provider의 연결 상태를 확인하며 연결/해제를 관리하는 설정 탭	TBD	OBT
+settings_window	tab_ai	provider_list_area	Provider List Area	프로바이더 목록 영역	4	section	settings_window.settings_body.tab_ai.provider_list_area	지원되는 provider 목록을 표시하고 각 row에 연결 상태 배지, 지원 연결 방식, 기본 액션(Connect/Disconnect)을 함께 보여주는 영역	TBD	OBT
 settings_window	settings_body	tab_about	Settings About Tab	세팅 어바웃 탭	3	mode	settings_window.settings_body.tab_about	앱 버전, 라이선스 등 메타 정보를 표시하는 설정 탭	TBD	CBT
 onboarding_window	-	root	Onboarding Window	온보딩 스크린	1	root	onboarding_window	최초 실행·주요 업데이트 시 온보딩 플로우를 진행하는 온보딩 화면 루트	TBD	CBT
 onboarding_window	root	welcome_screen	Welcome Screen	웰컴 스크린	2	mode	onboarding_window.welcome_screen	제품 소개와 기본 안내, 시작 액션을 제공하는 온보딩 첫 화면	TBD	CBT

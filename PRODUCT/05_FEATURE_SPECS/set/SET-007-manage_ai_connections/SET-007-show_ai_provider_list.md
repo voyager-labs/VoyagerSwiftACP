@@ -16,7 +16,7 @@ shortcut: "-"
 ## Intent
 
 - 사용자가 현재 빌드에서 어떤 AI provider를 연결할 수 있는지 한눈에 파악할 수 있게 한다.
-- provider를 OAuth/API key 같은 방식이 아니라 하나의 연결 객체로 인식하고 row 단위로 연결·해제 흐름으로 진입할 수 있게 한다.
+- provider를 OAuth/API key 같은 방식의 차이와 무관하게 row 단위로 연결·해제 흐름으로 진입할 수 있게 한다.
 
 ## Trigger / Entry Points
 
@@ -28,7 +28,7 @@ shortcut: "-"
 
 - Settings 창이 열려 있고 AI 탭이 표시된 상태여야 한다.
 - 현재 빌드에서 노출 가능한 provider catalog가 준비되어야 한다.
-- 현재 빌드 기준 provider catalog에는 `ChatGPT Codex (OAuth only)`와 `OpenAI (API key only)`가 포함되어야 한다.
+- 현재 빌드 기준 provider catalog에는 `ChatGPT Codex (OAuth only)`, `OpenAI (API key only)`, `Anthropic (API key only)`가 포함되어야 한다.
 
 ## Expected Outcome
 
@@ -41,7 +41,7 @@ shortcut: "-"
 
 - provider catalog와 저장된 connection snapshot이 목록 view model로 결합된다.
 - 각 row의 primary action은 provider 상태와 지원 방식에 따라 `Connect`, `Disconnect`, `Reconnect` 등으로 계산된다.
-- row별 상태와 액션은 개별 provider connection object 기준으로 독립 계산된다.
+- row별 상태와 액션은 provider별로 독립 계산된다.
 - 마지막으로 실제 요청에 사용된 provider 정보는 내부 상태로만 유지하고, row 시각 표시에는 직접 노출하지 않는다.
 
 ## User-visible Feedback
@@ -64,7 +64,7 @@ shortcut: "-"
 
 ## Acceptance Criteria
 
-- [ ] AI 탭이 열리면 현재 빌드에서 지원되는 provider 목록에 `ChatGPT Codex`와 `OpenAI`가 표시되어야 한다.
+- [ ] AI 탭이 열리면 현재 빌드에서 지원되는 provider만 목록에 표시되어야 한다.
 - [ ] 각 provider row에는 provider 이름, 지원 연결 방식, 현재 연결 상태, 기본 액션이 함께 표시되어야 한다.
 - [ ] 연결된 provider가 있는 상태에서 목록을 다시 표시하면, 해당 provider row는 목록에서 제거되지 않고 상태 배지와 액션만 갱신되어야 한다.
 - [ ] provider catalog 로딩에 실패한 상태에서 목록을 표시하면, 빈 화면 대신 실패 안내와 재시도 액션이 제공되어야 한다.
