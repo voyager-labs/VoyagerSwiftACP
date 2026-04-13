@@ -34,8 +34,8 @@ shortcut: "-"
 
 ## State Changes
 
-- AppPreferences에 아이콘 크기 설정값이 저장된다.
-- 설정 변경은 AppPreferences에서 WindowManager로 전파되고, FileManagerWindowPreferencesReducer를 통해 각 창의 EntryViewLayout에 반영되어 뷰가 다시 렌더링된다.
+- 아이콘 크기 설정값이 사용자 설정에 저장된다.
+- 설정 변경은 열려 있는 각 창에 반영되어 뷰가 다시 렌더링된다.
 
 ## User-visible Feedback
 
@@ -48,13 +48,13 @@ shortcut: "-"
 
 ## Acceptance Criteria
 
-- [ ] Settings의 Appearance 탭이 열려 있는 상황에서, 사용자가 Icon Size 값을 변경하면, AppPreferences의 설정값이 갱신되어야 한다.
+- [ ] Settings의 Appearance 탭이 열려 있는 상황에서, 사용자가 Icon Size 값을 변경하면, 사용자 설정의 아이콘 크기 값이 갱신되어야 한다.
 - [ ] File Manager 창에 List View 또는 Icon View가 열려 있는 상황에서, 사용자가 Icon Size 값을 변경하면, 열려 있는 뷰가 즉시 다시 렌더링되어 변경된 아이콘 크기를 반영해야 한다.
 - [ ] List View와 Icon View가 모두 존재하는 상황에서, 각 뷰는 자신의 아이콘 크기 설정값을 사용해 렌더링되어야 한다.
 
 ## Permissions / Dependencies
 
-- AppPreferences에 설정을 저장할 수 있어야 한다.
+- 사용자 설정에 값을 저장할 수 있어야 한다.
 - 열려 있는 File Manager 창이 설정 변경 전파를 수신할 수 있어야 한다.
 
 ## Observability / Analytics

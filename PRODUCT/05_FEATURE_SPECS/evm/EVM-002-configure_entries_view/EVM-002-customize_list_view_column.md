@@ -5,7 +5,7 @@ feature: "Configure Entries View"
 category_key: "EVM"
 feature_id: "EVM-002"
 status: "준비 완료"
-summary: "List View에서 listVisibleColumns를 편집해 컬럼 표시 여부와 순서를 설정"
+summary: "List View에서 리스트 열 구성의 표시 여부와 순서를 설정"
 related_region: "file_manager_window.content_pane"
 menu: "-"
 shortcut: "-"
@@ -16,7 +16,7 @@ shortcut: "-"
 ## Intent
 
 - 사용자가 List View에서 보고 싶은 컬럼만 남기고, 필요한 순서로 재배치해 빠르게 스캔할 수 있어야 한다.
-- List View 컬럼의 순서·표시 여부는 listVisibleColumns가 정본으로 관리되어야 한다.
+- List View 컬럼의 순서·표시 여부는 리스트 열 구성 설정을 기준으로 관리되어야 한다.
 
 ## Trigger / Entry Points
 
@@ -32,8 +32,8 @@ shortcut: "-"
 
 ## State Changes
 
-- listVisibleColumns가 사용자의 편집 결과로 갱신된다.
-- listVisibleColumns는 List View 컬럼 순서·표시의 정본이며, 현재 열려 있는 List View는 해당 값으로 즉시 다시 렌더링된다.
+- 리스트 열 구성 설정이 사용자의 편집 결과로 갱신된다.
+- 리스트 열 구성 설정은 List View 컬럼 순서·표시의 기준이며, 현재 열려 있는 List View는 해당 값에 맞게 즉시 다시 렌더링된다.
 
 ## User-visible Feedback
 
@@ -48,18 +48,18 @@ shortcut: "-"
 
 - [ ] Entries View가 List View로 설정된 상태일 때, 사용자가 컬럼 종류·표시 여부·순서를 편집하면,
        리스트가 해당 설정대로 즉시 갱신됨
-- [ ] List View 상태에서, 사용자가 컬럼 설정을 변경하면, listVisibleColumns가 갱신되어 동일한 List View 렌더링의 정본으로 적용되어야 한다.
+- [ ] List View 상태에서, 사용자가 컬럼 설정을 변경하면, 리스트 열 구성 설정이 갱신되어 동일한 List View 렌더링 기준으로 적용되어야 한다.
 - [ ] 컬럼 편집 요청이 현재 정책에 맞지 않는 상황에서, 시스템은 허용 가능한 범위의 컬럼 구성만 반영해야 한다.
 
 ## Permissions / Dependencies
 
 - List View가 활성화되어 있어야 한다.
-- listVisibleColumns 설정을 저장하고 불러올 수 있어야 한다.
+- 리스트 열 구성 설정을 저장하고 불러올 수 있어야 한다.
 
 ## Observability / Analytics
 
 - List View 컬럼 편집 진입
-- listVisibleColumns 변경(컬럼 순서, 표시 여부)
+- 리스트 열 구성 변경(컬럼 순서, 표시 여부)
 
 ## Related Interactions
 

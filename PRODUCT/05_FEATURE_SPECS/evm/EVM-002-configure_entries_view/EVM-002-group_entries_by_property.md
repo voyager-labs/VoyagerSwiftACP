@@ -5,7 +5,7 @@ feature: "Configure Entries View"
 category_key: "EVM"
 feature_id: "EVM-002"
 status: "배포 완료"
-summary: "Entries View에서 선택한 Property 값으로 Entries를 그룹화해 섹션 헤더 아래에 표시하며, 그룹 라벨·색상 규칙은 EntryArrangements를 따름"
+summary: "Entries View에서 선택한 Property 값으로 Entries를 그룹화해 섹션 헤더 아래에 표시하며, 그룹 라벨과 색상은 동일한 규칙에 따라 표현"
 related_region: "file_manager_window.content_pane"
 menu: "View"
 shortcut: "-"
@@ -29,7 +29,7 @@ shortcut: "-"
 ## Expected Outcome
 
 - 선택한 Property의 값으로 Entries가 그룹 섹션으로 나뉘어 표시된다.
-- 각 그룹은 그룹 헤더를 가지며, 그룹 라벨과 색상 표현은 EntryArrangements가 소유한 규칙을 따른다.
+- 각 그룹은 그룹 헤더를 가지며, 그룹 라벨과 색상 표현은 동일한 규칙에 따라 적용된다.
 - Property 값이 없는 Entry는 “미지정” 그룹에 포함된다.
 - 동일한 그룹 데이터는 List View와 Icon View에서 일관되게 해석되어 표시된다.
 
@@ -52,13 +52,13 @@ shortcut: "-"
 - [ ] 현재 Entries View가 List View 또는 Icon View인 상황에서, 해당 인터랙션을 호출하면, 선택한 프로퍼티를 기준으로 Entries가 그룹 섹션으로 묶여 표시되어야 한다.
 - [ ] 특정 프로퍼티 그룹 섹션으로 묶여 표시될 때, 해당 프로퍼티가 없는 엔트리가 존재한다면, “미지정”
        그룹에 표시됨
-- [ ] 그룹 섹션이 표시되는 상황에서, 그룹 헤더의 라벨·색상 표현은 EntryArrangements 규칙을 따라야 한다.
+- [ ] 그룹 섹션이 표시되는 상황에서, 그룹 헤더의 라벨·색상 표현은 동일한 규칙에 따라 적용되어야 한다.
 - [ ] 동일한 그룹핑이 적용된 상황에서, List View와 Icon View는 동일한 그룹 데이터 의미로 렌더링되어야 한다.
 
 ## Permissions / Dependencies
 
 - Entries 목록 데이터가 로드되어 있어야 한다.
-- 그룹 라벨·색상 및 태그 색상 규칙을 위해 EntryArrangements 정보를 참조할 수 있어야 한다.
+- 그룹 라벨·색상 및 태그 색상 규칙에 필요한 정보를 참조할 수 있어야 한다.
 
 ## Observability / Analytics
 
