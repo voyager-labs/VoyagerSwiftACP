@@ -127,7 +127,7 @@ struct AppRootFeature {
                     : .none
 
             case let .helperStateUpdated(helperState):
-                let shouldRegister = !state.lastHelperReady && helperState.helperReady
+                let shouldRegister = helperState.helperReady
                     && !state.windowManager.windows.isEmpty
                 state.lastHelperReady = helperState.helperReady
                 effect = shouldRegister ? .send(.registerHelperWatchRootsIfNeeded) : .none

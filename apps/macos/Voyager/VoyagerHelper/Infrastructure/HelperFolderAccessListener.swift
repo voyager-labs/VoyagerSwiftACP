@@ -40,9 +40,9 @@ final class HelperFolderAccessListener {
         let payload: [String: Any] = [
             HelperFolderAccessUserInfoKey.schemaVersion: 1,
             HelperFolderAccessUserInfoKey.mode: mode.rawValue,
-            HelperFolderAccessUserInfoKey.desktop: folderAccess(for: .desktopDirectory).rawValue,
-            HelperFolderAccessUserInfoKey.documents: folderAccess(for: .documentDirectory).rawValue,
-            HelperFolderAccessUserInfoKey.downloads: folderAccess(for: .downloadsDirectory).rawValue,
+            HelperFolderAccessUserInfoKey.desktop: folderAccess(for: .desktopDirectory, mode: mode).rawValue,
+            HelperFolderAccessUserInfoKey.documents: folderAccess(for: .documentDirectory, mode: mode).rawValue,
+            HelperFolderAccessUserInfoKey.downloads: folderAccess(for: .downloadsDirectory, mode: mode).rawValue,
         ]
 
         DistributedNotificationCenter.default().post(
@@ -52,21 +52,27 @@ final class HelperFolderAccessListener {
         )
     }
 
-    private func folderAccess(for directory: FileManager.SearchPathDirectory) -> AccessValue {
+    private func folderAccess(for directory: FileManager.SearchPathDirectory, mode: RequestMode) -> AccessValue {
         let fileManager = FileManager.default
         guard let url = fileManager.urls(for: directory, in: .userDomainMask).first else {
             return .notGranted
         }
 
-        do {
-            _ = try fileManager.contentsOfDirectory(
-                at: url,
-                includingPropertiesForKeys: nil,
-                options: [.skipsHiddenFiles],
-            )
-            return .granted
-        } catch {
-            return .notGranted
+        switch mode {
+        case .check:
+            return fileManager.isReadableFile(atPath: url.path) ? .granted : .notGranted
+
+        case .request:
+            do {
+                _ = try fileManager.contentsOfDirectory(
+                    at: url,
+                    includingPropertiesForKeys: nil,
+                    options: [.skipsHiddenFiles],
+                )
+                return .granted
+            } catch {
+                return .notGranted
+            }
         }
     }
 
