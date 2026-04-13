@@ -1,6 +1,6 @@
 import ComposableArchitecture
-@testable import Voyager
 import VoyagerFeaturesEntryOperations
+@testable import VoyagerPagesFileManager
 import VoyagerShared
 import XCTest
 

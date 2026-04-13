@@ -1,6 +1,6 @@
 import AppKit
 import ComposableArchitecture
-@testable import Voyager
+@testable import VoyagerPagesFileManager
 import XCTest
 
 @MainActor

@@ -1,8 +1,8 @@
 import ComposableArchitecture
 import Foundation
-@testable import Voyager
 import VoyagerEntitiesEntry
 import VoyagerFeaturesEntryOperations
+@testable import VoyagerPagesFileManager
 import XCTest
 
 /// Tests for key command focus restoration policy in list and grid modes.
