@@ -1,10 +1,16 @@
 import ComposableArchitecture
 import Foundation
+import VoyagerShared
 
 public struct HelperFolderAccessClient: Sendable {
+    public var checkAccess: @Sendable () async -> FolderAccessResult
     public var requestAccess: @Sendable () async -> FolderAccessResult
 
-    public nonisolated init(requestAccess: @escaping @Sendable () async -> FolderAccessResult) {
+    public nonisolated init(
+        checkAccess: @escaping @Sendable () async -> FolderAccessResult,
+        requestAccess: @escaping @Sendable () async -> FolderAccessResult,
+    ) {
+        self.checkAccess = checkAccess
         self.requestAccess = requestAccess
     }
 }
@@ -12,19 +18,26 @@ public struct HelperFolderAccessClient: Sendable {
 extension HelperFolderAccessClient: DependencyKey {
     public nonisolated static var liveValue: HelperFolderAccessClient {
         let resolver = HelperFolderAccessResolver()
-        return HelperFolderAccessClient(requestAccess: {
-            await resolver.requestAccess()
-        })
+        return HelperFolderAccessClient(
+            checkAccess: {
+                await resolver.resolve(mode: .check)
+            },
+            requestAccess: {
+                await resolver.resolve(mode: .request)
+            },
+        )
     }
 
     public nonisolated static var testValue: HelperFolderAccessClient {
-        HelperFolderAccessClient(requestAccess: {
-            FolderAccessResult(
-                desktop: .notGranted,
-                documents: .notGranted,
-                downloads: .notGranted,
-            )
-        })
+        let fallback = FolderAccessResult(
+            desktop: .notGranted,
+            documents: .notGranted,
+            downloads: .notGranted,
+        )
+        return HelperFolderAccessClient(
+            checkAccess: { fallback },
+            requestAccess: { fallback },
+        )
     }
 
     public nonisolated static var previewValue: HelperFolderAccessClient {
@@ -40,6 +53,11 @@ public extension DependencyValues {
 }
 
 private actor HelperFolderAccessResolver {
+    fileprivate enum Mode: String {
+        case check
+        case request
+    }
+
     private let fallbackResult = FolderAccessResult(
         desktop: .notGranted,
         documents: .notGranted,
@@ -49,6 +67,7 @@ private actor HelperFolderAccessResolver {
     private var waiters: [CheckedContinuation<FolderAccessResult, Never>] = []
     private var observer: NotificationObserver?
     private var timeoutTask: Task<Void, Never>?
+    private var pendingMode: Mode?
 
     deinit {
         timeoutTask?.cancel()
@@ -58,11 +77,13 @@ private actor HelperFolderAccessResolver {
         }
     }
 
-    func requestAccess() async -> FolderAccessResult {
+    fileprivate func resolve(mode: Mode) async -> FolderAccessResult {
         await ensureObserver()
 
-        if waiters.isEmpty {
-            await sendRequest()
+        let nextMode = mergePendingMode(with: mode)
+        if nextMode != pendingMode || waiters.isEmpty {
+            pendingMode = nextMode
+            await sendRequest(mode: nextMode)
             scheduleTimeout()
         }
 
@@ -76,14 +97,18 @@ private actor HelperFolderAccessResolver {
 
         let token = await MainActor.run {
             let token = DistributedNotificationCenter.default().addObserver(
-                forName: .voyagerHelperFolderAccessDidUpdate,
+                forName: HelperFolderAccessContract.responseName,
                 object: nil,
                 queue: .main,
             ) { [weak self] notification in
                 guard let self else { return }
                 let result = Self.parseResult(from: notification.userInfo)
+                let mode = Self.parseMode(from: notification.userInfo)
                 Task {
-                    await self.resolveAll(with: result ?? self.fallbackResult)
+                    await self.handleResponse(
+                        result: result ?? self.fallbackResult,
+                        mode: mode,
+                    )
                 }
             }
             return NotificationObserver(token: token)
@@ -92,12 +117,15 @@ private actor HelperFolderAccessResolver {
         observer = token
     }
 
-    private func sendRequest() async {
+    private func sendRequest(mode: Mode) async {
         await MainActor.run {
             DistributedNotificationCenter.default().post(
-                name: .voyagerHelperFolderAccessRequest,
+                name: HelperFolderAccessContract.requestName,
                 object: nil,
-                userInfo: nil,
+                userInfo: [
+                    HelperFolderAccessUserInfoKey.schemaVersion: 1,
+                    HelperFolderAccessUserInfoKey.mode: mode.rawValue,
+                ],
             )
         }
     }
@@ -114,9 +142,26 @@ private actor HelperFolderAccessResolver {
         }
     }
 
+    private func mergePendingMode(with mode: Mode) -> Mode {
+        switch (pendingMode, mode) {
+        case (.request, _), (_, .request):
+            .request
+        default:
+            .check
+        }
+    }
+
+    private func handleResponse(result: FolderAccessResult, mode: Mode?) {
+        if let pendingMode, let mode, pendingMode != mode {
+            return
+        }
+        resolveAll(with: result)
+    }
+
     private func resolveAll(with result: FolderAccessResult) {
         timeoutTask?.cancel()
         timeoutTask = nil
+        pendingMode = nil
 
         guard !waiters.isEmpty else { return }
         let currentWaiters = waiters
@@ -140,6 +185,13 @@ private actor HelperFolderAccessResolver {
         }
 
         return FolderAccessResult(desktop: desktop, documents: documents, downloads: downloads)
+    }
+
+    private nonisolated static func parseMode(from userInfo: [AnyHashable: Any]?) -> Mode? {
+        guard let rawValue = userInfo?[HelperFolderAccessUserInfoKey.mode] as? String else {
+            return nil
+        }
+        return Mode(rawValue: rawValue)
     }
 
     private nonisolated static func parsePermission(_ value: Any?) -> FolderAccessPermission? {

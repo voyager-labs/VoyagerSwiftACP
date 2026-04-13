@@ -25,6 +25,7 @@ private actor OnboardingPresentationGate {
 }
 
 public struct OnboardingWindowClient: Sendable {
+    public var isRequired: @Sendable () -> Bool
     public var showIfNeeded: @Sendable () -> Bool
     public var showWindow: @Sendable () async -> Void
     public var closeWindow: @Sendable () async -> Void
@@ -32,12 +33,14 @@ public struct OnboardingWindowClient: Sendable {
     public var resetStoredProgress: @Sendable () -> Void
 
     public nonisolated init(
+        isRequired: @escaping @Sendable () -> Bool,
         showIfNeeded: @escaping @Sendable () -> Bool,
         showWindow: @escaping @Sendable () async -> Void,
         closeWindow: @escaping @Sendable () async -> Void,
         openMainWindow: @escaping @Sendable (_ request: OnboardingOpenMainWindowRequest) async -> Bool,
         resetStoredProgress: @escaping @Sendable () -> Void = {},
     ) {
+        self.isRequired = isRequired
         self.showIfNeeded = showIfNeeded
         self.showWindow = showWindow
         self.closeWindow = closeWindow
@@ -92,6 +95,9 @@ extension OnboardingWindowClient: DependencyKey {
         }
 
         return OnboardingWindowClient(
+            isRequired: {
+                isOnboardingRequired(progressClient)
+            },
             showIfNeeded: {
                 let required = isOnboardingRequired(progressClient)
 
@@ -122,6 +128,9 @@ extension OnboardingWindowClient: DependencyKey {
 
     public nonisolated static var testValue: OnboardingWindowClient {
         OnboardingWindowClient(
+            isRequired: {
+                fatalError("onboardingWindowClient.isRequired test dependency is not configured")
+            },
             showIfNeeded: {
                 fatalError("onboardingWindowClient.showIfNeeded test dependency is not configured")
             },

@@ -14,4 +14,5 @@ public enum SettingsKeys {
     public static let sidebarWidth = "sidebarWidth"
     public static let sidebarVisible = "sidebarVisible"
     public static let viewLayout = "viewLayout"
+    public static let helperFolderAccessSnapshot = "helperFolderAccessSnapshot"
 }

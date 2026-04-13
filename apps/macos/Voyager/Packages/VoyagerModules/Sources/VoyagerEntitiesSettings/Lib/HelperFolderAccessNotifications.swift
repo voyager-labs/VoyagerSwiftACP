@@ -7,6 +7,7 @@ extension Notification.Name {
 
 public nonisolated enum HelperFolderAccessUserInfoKey {
     public static let schemaVersion = "schema_version"
+    public static let mode = "mode"
     public static let desktop = "desktop"
     public static let documents = "documents"
     public static let downloads = "downloads"

@@ -1,4 +1,4 @@
 enum FileManagerSpecialRootRelativePathConfig {
-    static let iCloudDrive = "Library/Mobile Documents/com~apple~CloudDocs"
-    static let cloudStorage = "Library/CloudStorage"
+    nonisolated static let iCloudDrive = "Library/Mobile Documents/com~apple~CloudDocs"
+    nonisolated static let cloudStorage = "Library/CloudStorage"
 }
