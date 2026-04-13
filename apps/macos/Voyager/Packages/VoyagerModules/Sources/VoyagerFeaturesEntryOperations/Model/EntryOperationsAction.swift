@@ -44,13 +44,12 @@ public enum EntryOperationsAction: CasePathable, Sendable {
         case loadTagItems(tagName: String, showHidden: Bool)
         case loadComputerItems
         case itemsLoaded([EntryModel])
-        case collectionItemsLoadedFromSearch(paths: [String], showHidden: Bool)
-        case setCollectionMode(Bool)
-        case clearCollectionItems
     }
 
     @CasePathable
     public enum Lifecycle: CasePathable, Sendable {
+        case windowIDChanged(UUID)
+        case resetForDuplicate(windowID: UUID)
         case syncSelectedEntryIDs(Set<EntryModel.ID>)
         case clearError(String)
         case operationStarted(String, OperationKind)
@@ -88,10 +87,10 @@ public enum EntryOperationsAction: CasePathable, Sendable {
 
     @CasePathable
     public enum Edit: CasePathable, Sendable {
-        case createNewFolder(parentPath: String)
+        case createNewFolder(parentPath: String, siblingNames: [String])
         case createAliases(paths: [String])
         case renameItem(oldPath: String, newPath: String)
-        case startRename(id: EntryModel.ID, text: String)
+        case startRename(item: EntryModel, text: String)
         case updateRenamingText(String)
         case commitRename
         case cancelRename

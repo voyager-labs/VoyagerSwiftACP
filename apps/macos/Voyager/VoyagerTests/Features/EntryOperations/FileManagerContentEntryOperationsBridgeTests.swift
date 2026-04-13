@@ -4,14 +4,14 @@ import VoyagerFeaturesEntryOperations
 import XCTest
 
 @MainActor
-final class FileManagerContentEntryOperationsBridgeTests: XCTestCase {
-    func testIsCollectionModeAccessorReflectsLoadingContextState() {
+final class FileManagerContentEntryOpsBridgeTests: XCTestCase {
+    func testIsCollectionModeOnLayoutState() {
         var state = FileManagerContentState()
 
-        XCTAssertFalse(state.entryViewLayout.entryOperations.isCollectionMode)
+        XCTAssertFalse(state.entryViewLayout.isCollectionMode)
 
-        state.entryViewLayout.entryOperations.isCollectionMode = true
-        XCTAssertTrue(state.entryViewLayout.entryOperations.isCollectionMode)
+        state.entryViewLayout.isCollectionMode = true
+        XCTAssertTrue(state.entryViewLayout.isCollectionMode)
     }
 
     func testCanSaveCollectionRequiresIsCollectionMode() {
@@ -20,7 +20,7 @@ final class FileManagerContentEntryOperationsBridgeTests: XCTestCase {
 
         XCTAssertFalse(state.canSaveCollection)
 
-        state.entryViewLayout.entryOperations.isCollectionMode = true
+        state.entryViewLayout.isCollectionMode = true
         XCTAssertTrue(state.canSaveCollection)
     }
 
@@ -28,13 +28,13 @@ final class FileManagerContentEntryOperationsBridgeTests: XCTestCase {
         var state = FileManagerContentState()
         state.collectionContext = CollectionContext(query: "", scopes: [], conditions: [])
 
-        XCTAssertFalse(state.entryViewLayout.entryOperations.isCollectionMode)
+        XCTAssertFalse(state.entryViewLayout.isCollectionMode)
         XCTAssertFalse(state.canSaveCollection)
     }
 
     func testSyncComposerCollectionStateReadsIsCollectionMode() {
         var state = FileManagerContentState()
-        state.entryViewLayout.entryOperations.isCollectionMode = true
+        state.entryViewLayout.isCollectionMode = true
 
         state.syncComposerCollectionState()
 

@@ -1,13 +1,15 @@
 import Foundation
 @testable import Voyager
+import VoyagerShared
 import XCTest
 
+@MainActor
 final class ComposerQueryFeedbackPolicyTests: XCTestCase {
     func testIdenticalBaselineAndAppliedFiltersAreNoOp() {
-        let baseline = SearchFiltersPayload(
+        let baseline = VoyagerShared.SearchFiltersPayload(
             scopes: ["/tmp"],
             conditions: [
-                SearchConditionPayload(
+                VoyagerShared.SearchConditionPayload(
                     propertyKey: "name",
                     operator: "contains",
                     value: .string("draft"),
@@ -15,10 +17,10 @@ final class ComposerQueryFeedbackPolicyTests: XCTestCase {
             ],
         )
 
-        let applied = AppliedFiltersPayload(
+        let applied = VoyagerShared.AppliedFiltersPayload(
             scopes: ["/tmp"],
             conditions: [
-                SearchConditionPayload(
+                VoyagerShared.SearchConditionPayload(
                     propertyKey: "name",
                     operator: "contains",
                     value: .string("draft"),

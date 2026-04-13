@@ -69,8 +69,8 @@ final class FileManagerContentRenameKeyFocusTests: XCTestCase {
             )))
 
             await store.receive { action in
-                guard case let .entryViewLayout(.delegate(.startRename(id, text))) = action else { return false }
-                return id == selected.id && text == "document"
+                guard case let .entryViewLayout(.delegate(.startRename(item, text))) = action else { return false }
+                return item.id == selected.id && text == "document"
             }
 
             await store.finish()
@@ -99,8 +99,8 @@ final class FileManagerContentRenameKeyFocusTests: XCTestCase {
             )))
 
             await store.receive { action in
-                guard case let .entryViewLayout(.delegate(.startRename(id, text))) = action else { return false }
-                return id == selected.id && text == "spreadsheet"
+                guard case let .entryViewLayout(.delegate(.startRename(item, text))) = action else { return false }
+                return item.id == selected.id && text == "spreadsheet"
             }
 
             await store.finish()

@@ -48,7 +48,7 @@ struct ContentPaneBreadcrumbBarView: View {
     }
 
     private var statusText: String {
-        let total = store.entryViewLayout.entryOperations.displayItems.count
+        let total = store.entryViewLayout.displayItems.count
         let selected = store.entryViewLayout.selectedIds.count
 
         if selected == 0 {
@@ -135,6 +135,6 @@ struct ContentPaneBreadcrumbBarView: View {
         else {
             return nil
         }
-        return store.entryViewLayout.entryOperations.displayItems[id: selectedId]
+        return store.entryViewLayout.displayItems[id: selectedId]
     }
 }

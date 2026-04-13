@@ -160,7 +160,7 @@ private func makeStore(
     let collectionURL = URL(fileURLWithPath: "/tmp/test.voycoll")
 
     var state = FileManagerWindowState()
-    state.content.entryViewLayout.entryOperations.loadingContext.isCollectionMode = true
+    state.content.entryViewLayout.isCollectionMode = true
     state.content.collectionContext = CollectionContext(query: "Query", scopes: ["/tmp"], conditions: [])
     state.content.collectionSession.openedURL = collectionURL
     state.content.syncComposerCollectionState()

@@ -7,6 +7,11 @@ struct EntryViewLayoutFeature {
     typealias State = EntryViewLayoutState
     typealias Action = EntryViewLayoutAction
 
+    @Dependency(\.entryLoadingClient)
+    private var entryLoadingClient
+    @Dependency(\.workspaceClient)
+    private var workspaceClient
+
     var body: some Reducer<State, Action> {
         Scope(state: \.entryOperations, action: \.entryOperations) {
             EntryOperationsFeature()
@@ -175,6 +180,29 @@ struct EntryViewLayoutFeature {
                 state.showHiddenFiles.toggle()
                 return .none
 
+            case let .internal(.setCollectionMode(isCollectionMode)):
+                state.isCollectionMode = isCollectionMode
+                return Self.updateEntriesAndReapply(&state)
+
+            case let .internal(.setCollectionItems(items)):
+                state.collectionItems = IdentifiedArrayOf(uniqueElements: items)
+                return Self.updateEntriesAndReapply(&state)
+
+            case let .internal(.applyCollectionSearchPaths(paths, showHidden)):
+                let converted = EntryViewLayoutCollectionItemsConverter.convert(
+                    paths,
+                    showHidden: showHidden,
+                    entryLoadingClient: entryLoadingClient,
+                    workspaceClient: workspaceClient,
+                )
+                state.collectionItems = IdentifiedArrayOf(uniqueElements: converted)
+                return Self.updateEntriesAndReapply(&state)
+
+            case .internal(.clearCollectionPresentation):
+                state.isCollectionMode = false
+                state.collectionItems = []
+                return Self.updateEntriesAndReapply(&state)
+
             case .delegate:
                 return .none
 
@@ -183,11 +211,8 @@ struct EntryViewLayoutFeature {
 
             case let .entryOperations(entryOperationsAction):
                 switch entryOperationsAction {
-                case .loading(.itemsLoaded),
-                     .loading(.collectionItemsLoadedFromSearch),
-                     .loading(.setCollectionMode):
-                    state.entries = state.entryOperations.displayOrderItems
-                    return .send(.entryArrangements(.reapply))
+                case .loading(.itemsLoaded):
+                    return Self.updateEntriesAndReapply(&state)
 
                 default:
                     return .none
@@ -198,7 +223,7 @@ struct EntryViewLayoutFeature {
                 case .delegate(.requestApply):
                     return .send(.entryArrangements(.apply(
                         items: state.entries,
-                        isCollectionMode: state.entryOperations.isCollectionMode,
+                        isCollectionMode: state.isCollectionMode,
                     )))
 
                 case let .delegate(.applied(sortedItems, _)):
@@ -210,5 +235,12 @@ struct EntryViewLayoutFeature {
                 }
             }
         }
+    }
+
+    // MARK: - Helpers
+
+    static func updateEntriesAndReapply(_ state: inout State) -> Effect<Action> {
+        state.entries = state.displayOrderItems
+        return .send(.entryArrangements(.reapply))
     }
 }

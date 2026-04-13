@@ -128,6 +128,10 @@ struct FileManagerContentFeature {
                 let entryOperationsAction = EntryOperationsAction.lifecycle(.appDidBecomeActive)
                 return sendEntryOperations(entryOperationsAction)
 
+            case .internal(.syncComposerCollectionState):
+                state.syncComposerCollectionState()
+                return .none
+
             default:
                 return .none
             }
@@ -171,33 +175,32 @@ struct FileManagerContentFeature {
         case let .openPathInNewTab(path):
             return .send(.delegate(.openPathInNewTab(path)))
 
-        case let .startRename(id, text):
-            let entryOperationsAction = EntryOperationsAction.edit(.startRename(id: id, text: text))
+        case let .startRename(item, text):
+            let entryOperationsAction = EntryOperationsAction.edit(.startRename(item: item, text: text))
             return sendEntryOperations(entryOperationsAction)
         }
     }
 
-    private func handleEntryOperationsAction(
+    func handleEntryOperationsAction(
         _ action: EntryOperationsAction,
         state: inout State,
     ) -> Effect<Action> {
         switch action {
-        case .loading(.itemsLoaded),
-             .loading(.collectionItemsLoadedFromSearch),
-             .loading(.setCollectionMode):
-            .send(.entryViewLayout(.entryArrangements(.reapply)))
+        case .loading(.itemsLoaded):
+            return .none
+
+        case let .lifecycle(.entryActionCompleted(record)):
+            logEntryActionMetric(for: record)
+            return .none
 
         case .lifecycle(.operationFinished):
-            .merge(
-                .send(.entryViewLayout(.entryArrangements(.reapply))),
-                reloadEntryItemsEffect(state: state),
-            )
+            return reloadEntryItemsEffect(state: state)
 
         case .lifecycle(.emptyTrashCompleted):
-            .send(.delegate(.closeWindow))
+            return .send(.delegate(.closeWindow))
 
         default:
-            .none
+            return .none
         }
     }
 
@@ -226,6 +229,86 @@ struct FileManagerContentFeature {
         }
     }
 
+    private func logEntryActionMetric(for record: EntryActionRecord) {
+        guard let actionKind = dauEntryActionKind(for: record.operationKind),
+              let entryKind = dauEntryKind(for: record.targets)
+        else {
+            return
+        }
+
+        VoyagerSentryMetricLogger.logDAUEntryAction(
+            actionKind: actionKind,
+            entryKind: entryKind,
+        )
+    }
+
+    private func dauEntryActionKind(for operationKind: OperationKind) -> DAUEntryActionKind? {
+        switch operationKind {
+        case .openDefault:
+            .openDefault
+        case .openWithApp:
+            .openWithApp
+        case .setDefaultApp:
+            .setDefaultApp
+        case .quickLook:
+            .quickLook
+        case .getInfo:
+            .getInfo
+        case .share:
+            .share
+        case .performService:
+            .performService
+        case .revealInFinder:
+            .revealInFinder
+        case .createFolder:
+            .createFolder
+        case .createAlias:
+            .createAlias
+        case .pasteFileCopy:
+            .copy
+        case .pasteFileMove:
+            .move
+        case .pasteFileDuplicate:
+            .duplicate
+        case .rename:
+            .rename
+        case .moveToTrash:
+            .moveToTrash
+        case .deleteImmediately:
+            .deleteImmediately
+        case .putBack:
+            .putBack
+        case .compress:
+            .compress
+        case .extract:
+            .extract
+        case .setTags:
+            .setTags
+        }
+    }
+
+    private func dauEntryKind(for targets: [EntryActionRecord.Target]) -> DAUEntryKind? {
+        let paths = targets
+            .flatMap { [$0.beforePath, $0.afterPath] }
+            .compactMap(\.self)
+
+        guard !paths.isEmpty else { return nil }
+
+        let kinds = Set(paths.map(dauEntryKind(forPath:)))
+        if kinds.count == 1, let kind = kinds.first {
+            return kind
+        }
+        return .mixed
+    }
+
+    private func dauEntryKind(forPath path: String) -> DAUEntryKind {
+        let pathExtension = URL(fileURLWithPath: path).pathExtension.lowercased()
+        if pathExtension == "voycoll" {
+            return .collection
+        }
+        return .file
+    }
+
     private func handleComposerAction(
         _ action: Action,
         state: inout State,
@@ -251,7 +334,7 @@ struct FileManagerContentFeature {
         switch action {
         case .delegate(.discardCollectionChanges):
             guard let baseline = state.collectionSession.baseline,
-                  state.entryViewLayout.entryOperations.isCollectionMode,
+                  state.isCollectionMode,
                   state.isOpenedCollectionDirty
             else {
                 return .none
@@ -280,7 +363,7 @@ struct FileManagerContentFeature {
     }
 }
 
-private extension FileManagerContentFeature {
+extension FileManagerContentFeature {
     func handleEntryOperationsDelegateAction(_ action: Action) -> Effect<Action>? {
         guard case let .entryViewLayout(.entryOperations(.delegate(delegate))) = action else {
             return nil
@@ -305,48 +388,39 @@ private extension FileManagerContentFeature {
     ) -> Effect<Action> {
         switch navigationState {
         case let .folder(path):
-            let clearCollectionMode = EntryOperationsAction.loading(.setCollectionMode(false))
-            let loadItems = EntryOperationsAction.loading(.loadItems(
-                path: path,
-                showHidden: state.entryViewLayout.showHiddenFiles,
-            ))
-            return .merge(
-                sendEntryOperations(clearCollectionMode),
-                sendEntryOperations(loadItems),
+            .concatenate(
+                .send(.entryViewLayout(.internal(.clearCollectionPresentation))),
+                sendEntryOperations(.loading(.loadItems(
+                    path: path,
+                    showHidden: state.entryViewLayout.showHiddenFiles,
+                ))),
             )
 
         case .recents:
-            let clearCollectionMode = EntryOperationsAction.loading(.setCollectionMode(false))
-            let loadRecents = EntryOperationsAction.loading(.loadRecentItems(
-                showHidden: state.entryViewLayout.showHiddenFiles,
-            ))
-            return .merge(
-                sendEntryOperations(clearCollectionMode),
-                sendEntryOperations(loadRecents),
+            .concatenate(
+                .send(.entryViewLayout(.internal(.clearCollectionPresentation))),
+                sendEntryOperations(.loading(.loadRecentItems(
+                    showHidden: state.entryViewLayout.showHiddenFiles,
+                ))),
             )
 
         case let .tags(tagName):
-            let clearCollectionMode = EntryOperationsAction.loading(.setCollectionMode(false))
-            let loadTagItems = EntryOperationsAction.loading(.loadTagItems(
-                tagName: tagName,
-                showHidden: state.entryViewLayout.showHiddenFiles,
-            ))
-            return .merge(
-                sendEntryOperations(clearCollectionMode),
-                sendEntryOperations(loadTagItems),
+            .concatenate(
+                .send(.entryViewLayout(.internal(.clearCollectionPresentation))),
+                sendEntryOperations(.loading(.loadTagItems(
+                    tagName: tagName,
+                    showHidden: state.entryViewLayout.showHiddenFiles,
+                ))),
             )
 
         case .computer:
-            let clearCollectionMode = EntryOperationsAction.loading(.setCollectionMode(false))
-            let loadComputerItems = EntryOperationsAction.loading(.loadComputerItems)
-            return .merge(
-                sendEntryOperations(clearCollectionMode),
-                sendEntryOperations(loadComputerItems),
+            .concatenate(
+                .send(.entryViewLayout(.internal(.clearCollectionPresentation))),
+                sendEntryOperations(.loading(.loadComputerItems)),
             )
 
         case .collection:
-            let enableCollectionMode = EntryOperationsAction.loading(.setCollectionMode(true))
-            return sendEntryOperations(enableCollectionMode)
+            .send(.entryViewLayout(.internal(.setCollectionMode(true))))
         }
     }
 

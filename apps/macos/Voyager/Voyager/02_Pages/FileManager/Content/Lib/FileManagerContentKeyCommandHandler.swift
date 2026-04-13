@@ -73,10 +73,12 @@ enum FileManagerContentKeyCommandHandler {
         }
 
         let selectedIds = state.entryViewLayout.selectedIds
-        let selectedEntries = state.entryViewLayout.entries.filter { selectedIds.contains($0.id) }
-        guard selectedEntries.count == 1, let entry = selectedEntries.first else { return .none }
+        guard selectedIds.count == 1,
+              let selectedId = selectedIds.first,
+              let entry = state.entryViewLayout.displayItems[id: selectedId]
+        else { return .none }
 
-        return .send(.entryViewLayout(.delegate(.startRename(id: entry.id, text: entry.name))))
+        return .send(.entryViewLayout(.delegate(.startRename(item: entry, text: entry.name))))
     }
 
     private static func commandModifierEffect(

@@ -323,7 +323,7 @@ private func makeContentOverlayProps(from state: FileManagerWindowState) -> File
             }
             return nil
         },
-        isDiscardEnabled: state.content.entryViewLayout.entryOperations.isCollectionMode
+        isDiscardEnabled: state.content.isCollectionMode
             && state.content.collectionSession.baseline != nil
             && state.content.isOpenedCollectionDirty,
         canSaveCollection: state.content.canSaveCollection,

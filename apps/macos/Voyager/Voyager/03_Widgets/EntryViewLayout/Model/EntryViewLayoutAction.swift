@@ -38,7 +38,7 @@ enum EntryViewLayoutAction: ViewAction, CasePathable, Sendable {
     enum Delegate: Sendable {
         case executeCommand(EntryOperationsCommand)
         case openPathInNewTab(String)
-        case startRename(id: EntryModel.ID, text: String)
+        case startRename(item: EntryModel, text: String)
         case saveScrollOffset(CGPoint, forPath: String)
     }
 
@@ -61,5 +61,9 @@ enum EntryViewLayoutAction: ViewAction, CasePathable, Sendable {
         case resetScrollFlag
         case applyPreferences(EntryViewLayoutPreferences)
         case setShowHiddenFiles(Bool)
+        case setCollectionMode(Bool)
+        case setCollectionItems([EntryModel])
+        case applyCollectionSearchPaths(paths: [String], showHidden: Bool)
+        case clearCollectionPresentation
     }
 }
