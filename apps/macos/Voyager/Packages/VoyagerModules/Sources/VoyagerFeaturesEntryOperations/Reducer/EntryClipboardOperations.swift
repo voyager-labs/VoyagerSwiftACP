@@ -241,7 +241,7 @@ struct EntryClipboardOperationsReducer {
 
             case let .clipboard(.pasteItems(sourcePaths, destinationPath, operation, operationKind)):
                 let destinationURL = URL(fileURLWithPath: destinationPath)
-                let destinations = EntryOperationsExecutionSupport.avoidNameCollisions(
+                let destinations = EntryClipboardOperationsSupport.avoidNameCollisions(
                     sourcePaths: sourcePaths,
                     destinationURL: destinationURL,
                     operation: operation,
@@ -340,5 +340,54 @@ struct EntryClipboardOperationsReducer {
                 return .none
             }
         }
+    }
+}
+
+private enum EntryClipboardOperationsSupport {
+    static func avoidNameCollisions(
+        sourcePaths: [String],
+        destinationURL: URL,
+        operation: ClipboardOperation,
+        entryFileOpsClient: EntryFileOpsClient,
+    ) -> [(URL, URL)] {
+        var destinations: [(URL, URL)] = []
+
+        for sourcePath in sourcePaths {
+            let sourceURL = URL(fileURLWithPath: sourcePath)
+            let fileName = sourceURL.lastPathComponent
+            let sourceParent = sourceURL.deletingLastPathComponent()
+
+            var destURL = destinationURL.appendingPathComponent(fileName)
+
+            if operation == .copy, sourceParent == destinationURL {
+                let nameWithoutExtension = URL(fileURLWithPath: fileName)
+                    .deletingPathExtension()
+                    .lastPathComponent
+                let fileExtension = URL(fileURLWithPath: fileName).pathExtension
+                var counter = 1
+
+                while entryFileOpsClient.fileExists(destURL.path) {
+                    let name: String = if counter == 1 {
+                        fileExtension.isEmpty
+                            ? "\(nameWithoutExtension) copy"
+                            : "\(nameWithoutExtension) copy.\(fileExtension)"
+                    } else {
+                        fileExtension.isEmpty
+                            ? "\(nameWithoutExtension) copy \(counter)"
+                            : "\(nameWithoutExtension) copy \(counter).\(fileExtension)"
+                    }
+                    destURL = destinationURL.appendingPathComponent(name)
+                    counter += 1
+                }
+            }
+
+            if operation == .cut, sourceParent == destinationURL {
+                continue
+            }
+
+            destinations.append((sourceURL, destURL))
+        }
+
+        return destinations
     }
 }

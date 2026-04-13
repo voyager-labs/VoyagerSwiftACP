@@ -1,5 +1,6 @@
 import ComposableArchitecture
 import Foundation
+import VoyagerFeaturesEntryOperations
 import VoyagerPagesOnboarding
 
 typealias FileManagerWindowFeature = FileManagerFeature
@@ -182,6 +183,11 @@ struct WindowManagerFeature {
             return .concatenate(
                 .send(.windows(.element(
                     id: windowSession.id,
+                    action: .window(.content(.entryViewLayout(.entryOperations(.lifecycle(.windowIDChanged(windowSession
+                            .id)))))),
+                ))),
+                .send(.windows(.element(
+                    id: windowSession.id,
                     action: .window(.applyAppPreferences(state.appPreferences)),
                 ))),
                 .run { [id = windowSession.id] _ in
@@ -199,6 +205,11 @@ struct WindowManagerFeature {
             state.focusedWindowID = windowSession.id
 
             return .concatenate(
+                .send(.windows(.element(
+                    id: windowSession.id,
+                    action: .window(.content(.entryViewLayout(.entryOperations(.lifecycle(.windowIDChanged(windowSession
+                            .id)))))),
+                ))),
                 .send(.windows(.element(
                     id: windowSession.id,
                     action: .window(.applyAppPreferences(state.appPreferences)),
@@ -236,7 +247,7 @@ struct WindowManagerFeature {
 
     private func makeWindowSession(path: String?) -> WindowSessionState {
         let id = uuid()
-        let windowState = FileManagerWindowFeature.State.makeInitial(windowID: id, path: path)
+        let windowState = FileManagerWindowFeature.State.makeInitial(path: path)
         return .init(id: id, window: windowState)
     }
 }

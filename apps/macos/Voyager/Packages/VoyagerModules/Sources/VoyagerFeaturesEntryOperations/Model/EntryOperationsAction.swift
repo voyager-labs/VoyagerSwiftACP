@@ -48,6 +48,8 @@ public enum EntryOperationsAction: CasePathable, Sendable {
 
     @CasePathable
     public enum Lifecycle: CasePathable, Sendable {
+        case windowIDChanged(UUID)
+        case resetForDuplicate(windowID: UUID)
         case syncSelectedEntryIDs(Set<EntryModel.ID>)
         case clearError(String)
         case operationStarted(String, OperationKind)

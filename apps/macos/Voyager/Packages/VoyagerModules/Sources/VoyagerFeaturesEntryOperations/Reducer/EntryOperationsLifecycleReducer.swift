@@ -1,6 +1,5 @@
 import ComposableArchitecture
 import Foundation
-import UniformTypeIdentifiers
 
 import VoyagerEntitiesEntry
 
@@ -9,8 +8,6 @@ struct EntryOperationsLifecycleReducer {
     typealias State = EntryOperationsState
     typealias Action = EntryOperationsAction
 
-    @Dependency(\.entryOpenClient)
-    var entryOpenClient
     @Dependency(\.entryOperationsAlertClient)
     var alertClient
     @Dependency(\.entryThumbnailCacheClient)
@@ -19,6 +16,14 @@ struct EntryOperationsLifecycleReducer {
     var body: some Reducer<State, Action> {
         Reduce { state, action in
             switch action {
+            case let .lifecycle(.windowIDChanged(id)):
+                state.windowID = id
+                return .none
+
+            case let .lifecycle(.resetForDuplicate(windowID)):
+                state.resetForDuplicate(windowID: windowID)
+                return .none
+
             case let .lifecycle(.syncSelectedEntryIDs(ids)):
                 state.selectedEntryIDs = ids
                 return .none
@@ -27,7 +32,7 @@ struct EntryOperationsLifecycleReducer {
                 state.itemStates[filePath]?.lastError = nil
                 return .none
 
-            case let .lifecycle(.operationStarted(filePath, kind)):
+            case let .lifecycle(.operationStarted(filePath, _)):
                 state.itemStates[filePath] = ItemOperationState(isBusy: true, lastError: nil)
                 return .none
 
@@ -46,22 +51,6 @@ struct EntryOperationsLifecycleReducer {
                     if case .createFolder = kind {
                         state.renamingItemId = filePath
                         state.renamingText = URL(fileURLWithPath: filePath).lastPathComponent
-                    }
-
-                    if case .setDefaultApp = kind {
-                        state.applicationsForItems[filePath] = nil
-                        let url = URL(fileURLWithPath: filePath)
-                        let isDirectory = (try? url.resourceValues(forKeys: [.isDirectoryKey]))?.isDirectory ?? false
-                        let fileExtension = url.pathExtension
-                        guard !isDirectory else { return .none }
-                        let fileType = UTType(filenameExtension: fileExtension) ?? .data
-
-                        return EntryOperationsExecutionSupport.loadApplications(
-                            for: filePath,
-                            url: url,
-                            fileType: fileType,
-                            entryOpenClient: entryOpenClient,
-                        )
                     }
 
                 case let .failure(error):

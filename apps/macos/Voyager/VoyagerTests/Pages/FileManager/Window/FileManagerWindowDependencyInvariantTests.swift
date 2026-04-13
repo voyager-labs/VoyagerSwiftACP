@@ -5,32 +5,28 @@ import XCTest
 
 @MainActor
 final class WindowDependencyInvariantTests: XCTestCase {
-    func testCreateInitialStateSeedsWindowIDForFreshWindow() {
-        let windowID = UUID()
-
+    func testCreateInitialStateSeedsPathForFreshWindow() {
         let state = FileManagerWindowCoordinator.createInitialState(
-            windowID: windowID,
             path: "/tmp/voyager",
             duplicateState: nil,
         )
 
-        XCTAssertEqual(state.content.entryViewLayout.entryOperations.windowID, windowID)
+        XCTAssertNil(state.content.entryViewLayout.entryOperations.windowID)
         XCTAssertEqual(state.content.navigation.currentPath, "/tmp/voyager")
     }
 
-    func testCreateInitialStateSeedsWindowIDAndPathForDuplicateWindow() {
+    func testCreateInitialStatePreservesDuplicateStateAndOverridesPath() {
         let originalID = UUID()
-        let newID = UUID()
-        var duplicateState = FileManagerFeature.State.makeInitial(windowID: originalID, path: "/tmp/original")
+        var duplicateState = FileManagerFeature.State.makeInitial(path: "/tmp/original")
+        duplicateState.content.entryViewLayout.entryOperations.windowID = originalID
         duplicateState.content.navigation.seedInitialFolderPath("/tmp/original")
 
         let state = FileManagerWindowCoordinator.createInitialState(
-            windowID: newID,
             path: "/tmp/override",
             duplicateState: duplicateState,
         )
 
-        XCTAssertEqual(state.content.entryViewLayout.entryOperations.windowID, newID)
+        XCTAssertEqual(state.content.entryViewLayout.entryOperations.windowID, originalID)
         XCTAssertEqual(state.content.navigation.currentPath, "/tmp/override")
     }
 }
