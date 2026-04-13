@@ -1,4 +1,5 @@
 import ComposableArchitecture
+import VoyagerWidgetsEntryViewLayout
 
 @CasePathable
 enum WindowManagerAction: CasePathable, Sendable {

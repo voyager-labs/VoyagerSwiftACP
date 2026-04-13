@@ -1,35 +1,25 @@
 import CoreGraphics
 import Foundation
+import VoyagerPagesFileManager
 import VoyagerShared
+import VoyagerWidgetsEntryViewLayout
 
-struct AppPreferencesState: Equatable, Sendable {
-    var showHiddenFiles: Bool = false
-    var viewLayout: EntryViewLayoutState.Mode = .list
-    var sortKey: SortKey = .name
-    var sortOrder: SortOrder = .ascending
-    var groupKey: GroupKey = .none
+typealias AppPreferencesState = VoyagerPagesFileManager.AppPreferencesState
 
-    var listIconSize: CGFloat = AppearanceSettingsDefaults.listIconSize
-    var gridIconSize: CGFloat = AppearanceSettingsDefaults.gridIconSize
-    var listTextSize: CGFloat = AppearanceSettingsDefaults.listTextSize
-    var gridTextSize: CGFloat = AppearanceSettingsDefaults.gridTextSize
-
-    var sidebarVisible: Bool = true
-    var sidebarWidth: CGFloat = 220
-
+extension AppPreferencesState {
     static func load(from userDefaultsClient: UserDefaultsClient) -> Self {
         var state = AppPreferencesState()
         state.showHiddenFiles = userDefaultsClient.bool(SettingsKeys.showHiddenFiles)
         state.viewLayout = EntryViewLayoutState.Mode(
             rawValue: userDefaultsClient.string(SettingsKeys.viewLayout) ?? "",
         ) ?? .list
-        state.sortKey = SortKey(
+        state.sortKey = VoyagerWidgetsEntryViewLayout.SortKey(
             rawValue: userDefaultsClient.string(EntryArrangementsPersistenceKey.sortKey) ?? "",
         ) ?? .name
-        state.sortOrder = SortOrder(
+        state.sortOrder = VoyagerWidgetsEntryViewLayout.SortOrder(
             rawValue: userDefaultsClient.string(EntryArrangementsPersistenceKey.sortOrder) ?? "",
         ) ?? .ascending
-        state.groupKey = GroupKey(
+        state.groupKey = VoyagerWidgetsEntryViewLayout.GroupKey(
             rawValue: userDefaultsClient.string(EntryArrangementsPersistenceKey.groupKey) ?? "",
         ) ?? .none
 

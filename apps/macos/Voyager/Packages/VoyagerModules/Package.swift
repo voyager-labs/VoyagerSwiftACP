@@ -14,6 +14,8 @@ let package = Package(
         .library(name: "VoyagerFeaturesEntryOperations", targets: ["VoyagerFeaturesEntryOperations"]),
         .library(name: "VoyagerPagesOnboarding", targets: ["VoyagerPagesOnboarding"]),
         .library(name: "VoyagerPagesSettings", targets: ["VoyagerPagesSettings"]),
+        .library(name: "VoyagerPagesFileManager", targets: ["VoyagerPagesFileManager"]),
+        .library(name: "VoyagerWidgetsEntryViewLayout", targets: ["VoyagerWidgetsEntryViewLayout"]),
     ],
     dependencies: [
         .package(url: "https://github.com/apple/swift-collections", exact: "1.3.0"),
@@ -133,6 +135,41 @@ let package = Package(
                 "VoyagerFeaturesEntryOperations",
                 .product(name: "ComposableArchitecture", package: "swift-composable-architecture"),
                 .product(name: "IdentifiedCollections", package: "swift-identified-collections"),
+            ],
+        ),
+        .target(
+            name: "VoyagerWidgetsEntryViewLayout",
+            dependencies: [
+                "VoyagerEntitiesEntry",
+                "VoyagerFeaturesEntryOperations",
+                "VoyagerShared",
+                .product(name: "ComposableArchitecture", package: "swift-composable-architecture"),
+                .product(name: "IdentifiedCollections", package: "swift-identified-collections"),
+            ],
+        ),
+        .target(
+            name: "VoyagerPagesFileManager",
+            dependencies: [
+                "VoyagerEntitiesEntry",
+                "VoyagerFeaturesEntryOperations",
+                "VoyagerShared",
+                "VoyagerWidgetsEntryViewLayout",
+                .product(name: "CasePaths", package: "swift-case-paths"),
+                .product(name: "ComposableArchitecture", package: "swift-composable-architecture"),
+                .product(name: "IdentifiedCollections", package: "swift-identified-collections"),
+                .product(name: "Perception", package: "swift-perception"),
+                .product(name: "PerceptionCore", package: "swift-perception"),
+                .product(name: "Logging", package: "swift-log"),
+            ],
+        ),
+        .testTarget(
+            name: "VoyagerPagesFileManagerTests",
+            dependencies: [
+                "VoyagerPagesFileManager",
+                "VoyagerEntitiesEntry",
+                "VoyagerFeaturesEntryOperations",
+                "VoyagerShared",
+                .product(name: "ComposableArchitecture", package: "swift-composable-architecture"),
             ],
         ),
 

@@ -1,4 +1,4 @@
-enum CollectionConstants {
-    nonisolated static let fileExtension = "voycoll"
-    nonisolated static let fileIconName = "voycollFileIcon"
+public enum CollectionConstants {
+    public nonisolated static let fileExtension = "voycoll"
+    public nonisolated static let fileIconName = "voycollFileIcon"
 }

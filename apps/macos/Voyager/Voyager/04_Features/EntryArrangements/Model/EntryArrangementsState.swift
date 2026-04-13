@@ -1,4 +1,5 @@
 import Foundation
+import VoyagerWidgetsEntryViewLayout
 
 struct EntryArrangementsState: Equatable, Sendable {
     var sortKey: SortKey

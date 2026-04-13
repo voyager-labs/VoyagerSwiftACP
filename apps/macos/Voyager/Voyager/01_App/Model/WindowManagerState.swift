@@ -1,4 +1,5 @@
 import ComposableArchitecture
+import VoyagerPagesFileManager
 
 @ObservableState
 struct WindowManagerState: Equatable {

@@ -1,4 +1,5 @@
 import Foundation
+import VoyagerWidgetsEntryViewLayout
 
 struct EntryArrangementMenuItem<Key: Hashable & Equatable>: Identifiable, Equatable {
     let key: Key

@@ -1,7 +1,7 @@
 import Foundation
 
-enum TagColorFallbackResolver {
-    nonisolated static func normalizedTags(_ tags: [Tag]?, favoriteTags: [Tag]) -> [Tag]? {
+public enum TagColorFallbackResolver {
+    public nonisolated static func normalizedTags(_ tags: [Tag]?, favoriteTags: [Tag]) -> [Tag]? {
         guard let tags, !tags.isEmpty else {
             return tags
         }
@@ -22,7 +22,7 @@ enum TagColorFallbackResolver {
         }
     }
 
-    nonisolated static func resolvedColorCode(
+    public nonisolated static func resolvedColorCode(
         tagName: String,
         preferredColorCodes: [Int],
         favoriteTags: [Tag],

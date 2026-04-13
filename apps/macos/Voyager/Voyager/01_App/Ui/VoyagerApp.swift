@@ -3,6 +3,7 @@ import ComposableArchitecture
 import Foundation
 import Logging
 import SwiftUI
+import VoyagerPagesFileManager
 import VoyagerPagesOnboarding
 import VoyagerPagesSettings
 import VoyagerShared

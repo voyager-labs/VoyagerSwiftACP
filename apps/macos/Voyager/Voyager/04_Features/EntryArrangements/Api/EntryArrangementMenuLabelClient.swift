@@ -1,4 +1,5 @@
 import Foundation
+import VoyagerEntitiesEntry
 
 struct EntryArrangementMenuLabelClient {
     var labelForPropertyKey: (String) -> String
@@ -6,7 +7,7 @@ struct EntryArrangementMenuLabelClient {
 
 extension EntryArrangementMenuLabelClient {
     static let live: EntryArrangementMenuLabelClient = {
-        let registryClient = RegistryClient.live(snapshot: RegistrySnapshot.load())
+        let registryClient = RegistryClient.liveValue
         return EntryArrangementMenuLabelClient(
             labelForPropertyKey: { propertyKey in
                 registryClient.label(for: propertyKey)

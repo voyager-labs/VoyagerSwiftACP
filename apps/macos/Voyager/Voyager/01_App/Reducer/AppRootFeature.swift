@@ -1,7 +1,9 @@
 import AppKit
 import ComposableArchitecture
 import Foundation
+import VoyagerEntitiesEntry
 import VoyagerEntitiesSettings
+import VoyagerPagesFileManager
 import VoyagerPagesOnboarding
 import VoyagerPagesSettings
 import VoyagerShared

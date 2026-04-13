@@ -5,7 +5,7 @@ public struct FinderFavoritesTagClient: Sendable {
     public var favoriteTagNames: @Sendable () -> [String]
     public var favoriteTags: @Sendable () -> [Tag]
 
-    nonisolated init(
+    public nonisolated init(
         favoriteTagNames: @escaping @Sendable () -> [String],
         favoriteTags: @escaping @Sendable () -> [Tag],
     ) {
@@ -59,7 +59,7 @@ extension FinderFavoritesTagClient: DependencyKey {
     public nonisolated static var previewValue: FinderFavoritesTagClient { testValue }
 }
 
-extension DependencyValues {
+public extension DependencyValues {
     nonisolated var finderFavoritesTagClient: FinderFavoritesTagClient {
         get { self[FinderFavoritesTagClient.self] }
         set { self[FinderFavoritesTagClient.self] = newValue }
