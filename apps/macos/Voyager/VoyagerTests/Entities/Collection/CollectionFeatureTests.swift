@@ -13,8 +13,8 @@ final class CollectionFeatureTests: XCTestCase {
         let appliedFilters = AppliedFiltersPayload(
             scopes: ["/tmp"],
             conditions: [
-                .init(propertyKey: "name", operator: "eq", value: .string("report")),
-                .init(propertyKey: "legacy_key", operator: "eq", value: .string("legacy")),
+                .init(propertyKey: "name", operator: "eq", value: VoyagerShared.JSONValue.string("report")),
+                .init(propertyKey: "legacy_key", operator: "eq", value: VoyagerShared.JSONValue.string("legacy")),
             ],
         )
 
@@ -52,7 +52,7 @@ final class CollectionFeatureTests: XCTestCase {
                 .init(
                     propertyKey: "content_modified_at",
                     operator: "btw",
-                    value: .array([.string("2026-02-26"), .string("2026-02-27")]),
+                    value: VoyagerShared.JSONValue.array([.string("2026-02-26"), .string("2026-02-27")]),
                 ),
             ],
         )
@@ -494,7 +494,7 @@ private func runSaveToExistingTest(
     await store.finish()
 }
 
-private let kEmptySearchResponse = SearchResponsePayload(
+private let kEmptySearchResponse = VoyagerShared.SearchResponsePayload(
     itemCount: 0,
     appliedFilters: nil,
     items: nil,
@@ -514,13 +514,13 @@ private let kEmptyCollectionFile = VoyagerCollectionFile(
 )
 
 private actor FiltersRecorder {
-    private var payloads: [SearchFiltersPayload] = []
+    private var payloads: [VoyagerShared.SearchFiltersPayload] = []
 
-    func append(_ payload: SearchFiltersPayload) {
+    func append(_ payload: VoyagerShared.SearchFiltersPayload) {
         payloads.append(payload)
     }
 
-    func last() -> SearchFiltersPayload? {
+    func last() -> VoyagerShared.SearchFiltersPayload? {
         payloads.last
     }
 }

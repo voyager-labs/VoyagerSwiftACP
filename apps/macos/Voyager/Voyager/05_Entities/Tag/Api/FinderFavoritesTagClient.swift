@@ -1,6 +1,8 @@
 import ComposableArchitecture
 import Foundation
 
+import VoyagerEntitiesEntry
+
 struct FinderFavoritesTagClient: Sendable {
     var favoriteTagNames: @Sendable () -> [String]
     var favoriteTags: @Sendable () -> [Tag]
@@ -38,7 +40,7 @@ extension FinderFavoritesTagClient: DependencyKey {
 
                 return Tag(
                     name: name,
-                    colorCode: TagColor(finderFavoriteSlotIndex: finderFavoriteSlotIndex).rawValue,
+                    colorCode: TagColor(rawValue: finderFavoriteSlotIndex)?.rawValue ?? 0,
                 )
             }
         }

@@ -8,13 +8,16 @@ let package = Package(
     ],
     products: [
         .library(name: "VoyagerShared", targets: ["VoyagerShared"]),
+        .library(name: "VoyagerEntitiesEntry", targets: ["VoyagerEntitiesEntry"]),
         .library(name: "VoyagerEntitiesSettings", targets: ["VoyagerEntitiesSettings"]),
         .library(name: "VoyagerFeaturesBetaAccess", targets: ["VoyagerFeaturesBetaAccess"]),
+        .library(name: "VoyagerFeaturesEntryOperations", targets: ["VoyagerFeaturesEntryOperations"]),
         .library(name: "VoyagerPagesOnboarding", targets: ["VoyagerPagesOnboarding"]),
         .library(name: "VoyagerPagesSettings", targets: ["VoyagerPagesSettings"]),
     ],
     dependencies: [
         .package(url: "https://github.com/apple/swift-collections", exact: "1.3.0"),
+        .package(url: "https://github.com/apple/swift-log", exact: "1.8.0"),
         .package(url: "https://github.com/pointfreeco/swift-case-paths", exact: "1.7.2"),
         .package(url: "https://github.com/pointfreeco/swift-clocks", exact: "1.0.6"),
         .package(url: "https://github.com/pointfreeco/swift-composable-architecture", exact: "1.22.3"),
@@ -33,8 +36,16 @@ let package = Package(
                 .product(name: "Clocks", package: "swift-clocks"),
                 .product(name: "Dependencies", package: "swift-dependencies"),
                 .product(name: "IdentifiedCollections", package: "swift-identified-collections"),
+                .product(name: "Logging", package: "swift-log"),
                 .product(name: "OrderedCollections", package: "swift-collections"),
                 .product(name: "PerceptionCore", package: "swift-perception"),
+            ],
+        ),
+        .target(
+            name: "VoyagerEntitiesEntry",
+            dependencies: [
+                "VoyagerShared",
+                .product(name: "ComposableArchitecture", package: "swift-composable-architecture"),
             ],
         ),
         .target(
@@ -51,6 +62,15 @@ let package = Package(
                 .product(name: "CasePaths", package: "swift-case-paths"),
                 .product(name: "ComposableArchitecture", package: "swift-composable-architecture"),
                 .product(name: "SwiftDotenv", package: "swift-dotenv"),
+            ],
+        ),
+        .target(
+            name: "VoyagerFeaturesEntryOperations",
+            dependencies: [
+                "VoyagerEntitiesEntry",
+                "VoyagerShared",
+                .product(name: "CasePaths", package: "swift-case-paths"),
+                .product(name: "ComposableArchitecture", package: "swift-composable-architecture"),
             ],
         ),
         .target(
@@ -99,5 +119,22 @@ let package = Package(
                 .product(name: "ComposableArchitecture", package: "swift-composable-architecture"),
             ],
         ),
+        .testTarget(
+            name: "VoyagerEntitiesEntryTests",
+            dependencies: [
+                "VoyagerEntitiesEntry",
+                "VoyagerShared",
+            ],
+        ),
+        .testTarget(
+            name: "VoyagerFeaturesEntryOperationsTests",
+            dependencies: [
+                "VoyagerEntitiesEntry",
+                "VoyagerFeaturesEntryOperations",
+                .product(name: "ComposableArchitecture", package: "swift-composable-architecture"),
+                .product(name: "IdentifiedCollections", package: "swift-identified-collections"),
+            ],
+        ),
+
     ],
 )

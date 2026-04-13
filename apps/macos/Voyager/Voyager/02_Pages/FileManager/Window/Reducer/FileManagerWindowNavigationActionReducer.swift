@@ -1,6 +1,8 @@
 import ComposableArchitecture
 import Foundation
 
+import VoyagerFeaturesEntryOperations
+
 @Reducer
 struct FileManagerNavigationActionReducer {
     @Dependency(\.fileManagerClient)
@@ -227,7 +229,7 @@ struct FileManagerNavigationActionReducer {
     }
 
     private func shouldPromptForUnsavedNavigation(_ state: FileManagerContentState) -> Bool {
-        state.entryViewLayout.entryOperations.loadingContext.isCollectionMode && state.canSaveCollection
+        state.isCollectionMode && state.canSaveCollection
     }
 }
 

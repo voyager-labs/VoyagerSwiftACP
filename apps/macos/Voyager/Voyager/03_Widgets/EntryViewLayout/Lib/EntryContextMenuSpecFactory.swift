@@ -1,5 +1,8 @@
 import Foundation
 
+import VoyagerEntitiesEntry
+import VoyagerFeaturesEntryOperations
+
 struct EntryContextMenuTagSpec {
     let name: String
     let colorCode: Int

@@ -1,4 +1,5 @@
 import AppKit
+import VoyagerFeaturesEntryOperations
 
 extension EntryGridCoordinator: EntryGridView.EntryGridCollectionViewMenuProviding {
     func contextMenu(for indexPath: IndexPath?, event: NSEvent) -> NSMenu {

@@ -1,6 +1,8 @@
 import Darwin
 import Foundation
 
+import VoyagerEntitiesEntry
+
 enum TagMetadataClient {
     enum Error: Swift.Error {
         case failedToRemoveTags

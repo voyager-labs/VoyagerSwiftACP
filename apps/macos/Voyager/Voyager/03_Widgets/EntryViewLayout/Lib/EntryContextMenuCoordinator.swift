@@ -2,6 +2,9 @@ import AppKit
 import ComposableArchitecture
 import CoreGraphics
 
+import VoyagerEntitiesEntry
+import VoyagerFeaturesEntryOperations
+
 final class EntryContextMenuCoordinator: NSObject {
     private let store: StoreOf<EntryViewLayoutFeature>
     private let rowEntry: EntryModel?
@@ -71,13 +74,13 @@ final class EntryContextMenuCoordinator: NSObject {
     @objc
     func contextMenuStartRename() {
         if let rowEntry {
-            store.send(.delegate(.startRename(id: rowEntry.id, text: rowEntry.name)))
+            store.send(.delegate(.startRename(item: rowEntry, text: rowEntry.name)))
             return
         }
 
         let selectedEntries = store.state.entries.filter { store.state.selectedIds.contains($0.id) }
         guard selectedEntries.count == 1, let item = selectedEntries.first else { return }
-        store.send(.delegate(.startRename(id: item.id, text: item.name)))
+        store.send(.delegate(.startRename(item: item, text: item.name)))
     }
 
     @objc

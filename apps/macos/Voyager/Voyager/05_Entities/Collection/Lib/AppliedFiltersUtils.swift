@@ -1,4 +1,5 @@
 import Foundation
+import VoyagerShared
 
 enum AppliedFiltersUtils {
     struct ResolutionResult: Equatable {
@@ -13,7 +14,7 @@ enum AppliedFiltersUtils {
     }
 
     static func resolve(
-        _ appliedFilters: AppliedFiltersPayload?,
+        _ appliedFilters: VoyagerShared.AppliedFiltersPayload?,
         fallbackScopes: [String],
         fallbackConditions: [Condition],
         registryClient: RegistryClient,
@@ -28,7 +29,7 @@ enum AppliedFiltersUtils {
     }
 
     static func resolveDetailed(
-        _ appliedFilters: AppliedFiltersPayload?,
+        _ appliedFilters: VoyagerShared.AppliedFiltersPayload?,
         fallbackScopes: [String],
         fallbackConditions: [Condition],
         registryClient: RegistryClient,
@@ -55,7 +56,7 @@ enum AppliedFiltersUtils {
     }
 
     private static func makeResolvedCondition(
-        from payload: SearchConditionPayload,
+        from payload: VoyagerShared.SearchConditionPayload,
         registryClient: RegistryClient,
     ) -> ResolvedCondition {
         switch registryClient.resolveKey(payload.propertyKey) {
@@ -100,7 +101,7 @@ enum AppliedFiltersUtils {
     }
 
     private static func makeCondition(
-        from payload: SearchConditionPayload,
+        from payload: VoyagerShared.SearchConditionPayload,
         propertyKey: String,
         registryClient: RegistryClient,
     ) -> Condition {

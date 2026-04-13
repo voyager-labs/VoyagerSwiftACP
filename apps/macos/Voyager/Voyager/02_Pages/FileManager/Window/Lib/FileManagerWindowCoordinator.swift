@@ -2,6 +2,8 @@ import AppKit
 import Combine
 import ComposableArchitecture
 
+import VoyagerFeaturesEntryOperations
+
 final class FileManagerWindowCoordinator: NSWindowController, NSWindowDelegate {
     let windowID: UUID
     let windowUndoManager: UndoManager
@@ -56,13 +58,20 @@ final class FileManagerWindowCoordinator: NSWindowController, NSWindowDelegate {
         makeContentViewController: ((StoreOf<FileManagerFeature>, String?) -> NSViewController)? = nil,
     ) {
         let windowID = UUID()
-        let state = Self.createInitialState(windowID: windowID, path: path, duplicateState: duplicateState)
+        let state = Self.createInitialState(path: path, duplicateState: duplicateState)
         let undoManager = UndoManager()
         let store = Self.createStore(
             state: state,
             undoManager: undoManager,
             registryClient: registryClient,
         )
+
+        // Route windowID initialization through the lifecycle reducer
+        if duplicateState != nil {
+            store.send(.content(.entryViewLayout(.entryOperations(.lifecycle(.resetForDuplicate(windowID: windowID))))))
+        } else {
+            store.send(.content(.entryViewLayout(.entryOperations(.lifecycle(.windowIDChanged(windowID))))))
+        }
 
         self.windowID = windowID
         self.store = store
@@ -90,19 +99,13 @@ final class FileManagerWindowCoordinator: NSWindowController, NSWindowDelegate {
     }
 
     static func createInitialState(
-        windowID: UUID,
         path: String?,
         duplicateState: FileManagerFeature.State?,
     ) -> FileManagerFeature.State {
-        var state: FileManagerFeature.State
-        if let duplicateState {
-            var newState = duplicateState
-            newState.content.entryViewLayout.entryOperations = EntryOperationsState()
-            newState.content.entryViewLayout.entryOperations.windowID = windowID
-            state = newState
+        var state: FileManagerFeature.State = if let duplicateState {
+            duplicateState
         } else {
-            state = FileManagerFeature.State()
-            state.content.entryViewLayout.entryOperations.windowID = windowID
+            FileManagerFeature.State()
         }
 
         if let path {
@@ -228,14 +231,14 @@ final class FileManagerWindowCoordinator: NSWindowController, NSWindowDelegate {
 
         let initialTitle = makeTitle(
             openedCollectionName: store.state.content.collectionSession.openedName,
-            isCollectionMode: store.state.content.entryViewLayout.entryOperations.loadingContext.isCollectionMode,
+            isCollectionMode: store.state.content.isCollectionMode,
             titlePath: store.state.content.navigation.titlePath,
             makeWindowTitle: makeWindowTitle,
         )
 
         Publishers.CombineLatest3(
             store.publisher.content.collectionSession.openedName.removeDuplicates(),
-            store.publisher.content.entryViewLayout.entryOperations.loadingContext.isCollectionMode.removeDuplicates(),
+            store.publisher.content.isCollectionMode.removeDuplicates(),
             store.publisher.content.navigation.titlePath.removeDuplicates(),
         )
         .map { openedCollectionName, isCollectionMode, titlePath in

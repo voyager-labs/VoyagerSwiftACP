@@ -30,6 +30,7 @@ enum FileManagerContentAction: ViewAction, CasePathable, Sendable {
         case startObservingSystemNotifications
         case stopObservingSystemNotifications
         case systemAppDidBecomeActive
+        case syncComposerCollectionState
     }
 
     @CasePathable

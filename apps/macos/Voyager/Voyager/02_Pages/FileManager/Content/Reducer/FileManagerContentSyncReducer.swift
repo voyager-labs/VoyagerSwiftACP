@@ -1,5 +1,6 @@
 import ComposableArchitecture
 import Foundation
+import VoyagerFeaturesEntryOperations
 
 @Reducer
 struct FileManagerContentSyncReducer {
@@ -35,7 +36,7 @@ struct FileManagerContentSyncReducer {
 
             case .delegate(.discardCollectionChanges):
                 guard let baseline = state.collectionSession.baseline,
-                      state.entryViewLayout.entryOperations.loadingContext.isCollectionMode,
+                      state.isCollectionMode,
                       state.isOpenedCollectionDirty
                 else {
                     return .none

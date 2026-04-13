@@ -70,8 +70,8 @@ final class EntryViewLayoutModeOwnershipTests: XCTestCase {
     }
 
     func testModeDecodesFromRawValue() throws {
-        let listJson = "\"list\"".data(using: .utf8)!
-        let gridJson = "\"grid\"".data(using: .utf8)!
+        let listJson = Data("\"list\"".utf8)
+        let gridJson = Data("\"grid\"".utf8)
 
         let listMode = try JSONDecoder().decode(EntryViewLayoutState.Mode.self, from: listJson)
         let gridMode = try JSONDecoder().decode(EntryViewLayoutState.Mode.self, from: gridJson)

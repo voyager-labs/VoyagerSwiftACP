@@ -1,5 +1,8 @@
 import ComposableArchitecture
 import Foundation
+import VoyagerShared
+
+import VoyagerFeaturesEntryOperations
 
 enum FileManagerContentComposerCoordinator {
     struct Dependencies: Sendable {
@@ -50,7 +53,7 @@ enum FileManagerContentComposerCoordinator {
             return .none
 
         case .view(.clearAll):
-            if state.entryViewLayout.entryOperations.loadingContext.isCollectionMode {
+            if state.isCollectionMode {
                 state.composer.pendingSearchQuery = nil
                 state.collectionContext = CollectionContext(
                     query: "",
@@ -173,7 +176,7 @@ enum FileManagerContentComposerCoordinator {
     }
 
     private static func handleSearchSuccess(
-        items: [JSONValue],
+        items: [VoyagerShared.JSONValue],
         query: String,
         state: inout FileManagerContentState,
     ) -> Effect<FileManagerContentAction> {
@@ -187,8 +190,6 @@ enum FileManagerContentComposerCoordinator {
             scopes: state.composer.scopes,
             conditions: state.composer.conditions,
         )
-        state.entryViewLayout.entryOperations.loadingContext.isCollectionMode = true
-        state.syncComposerCollectionState()
         if wasOpeningCollectionFile, state.collectionSession.openedURL != nil {
             state.collectionSession.baseline = CollectionBaseline(
                 context: state.collectionContext ?? .init(query: "", scopes: [], conditions: []),
@@ -212,22 +213,19 @@ enum FileManagerContentComposerCoordinator {
             logContentPageNavigationDAUIfNeeded(previous: previousNavigationState, next: nextNavigationState)
         }
         let showHidden = state.entryViewLayout.showHiddenFiles
+        let paths = items.compactMap { item -> String? in
+            guard case let .object(dict) = item,
+                  case let .string(path) = dict["fullPath"]
+            else { return nil }
+            return path
+        }
 
         return .concatenate(
             .concatenate(navigationEffects),
-            .send(.entryViewLayout(.entryOperations(.loading(
-                EntryOperationsAction.Loading.setCollectionMode(true),
-            )))),
-            .run { send in
-                await Task.yield()
-                await send(.entryViewLayout(.entryOperations(.loading(
-                    EntryOperationsAction.Loading.collectionItemsLoadedFromSearch(
-                        items: items,
-                        showHidden: showHidden,
-                    ),
-                ))))
-                await send(.composer(.searchListApplied))
-            },
+            .send(.entryViewLayout(.internal(.setCollectionMode(true)))),
+            .send(.entryViewLayout(.internal(.applyCollectionSearchPaths(paths: paths, showHidden: showHidden)))),
+            .send(.internal(.syncComposerCollectionState)),
+            .send(.composer(.searchListApplied)),
         )
     }
 
@@ -388,17 +386,14 @@ func clearCollectionMode(state: inout FileManagerContentState) -> Effect<FileMan
     state.collectionContext = nil
     state.composer.pendingSearchQuery = nil
     state.collectionSession = .init()
-    state.entryViewLayout.entryOperations.loadingContext.isCollectionMode = false
-    state.entryViewLayout.entryOperations.loadingContext.collectionItems = []
-    state.syncComposerCollectionState()
 
-    return .merge(
+    return .concatenate(
         .send(.internal(.requestNavigation(.internal(.setPendingNavigation(nil))))),
         .cancel(id: "openCollectionFile"),
         .cancel(id: ComposerFeature.CancelID.search),
         .cancel(id: ComposerFeature.CancelID.filters),
-        .send(.entryViewLayout(.entryOperations(.loading(.setCollectionMode(false))))),
-        .send(.entryViewLayout(.entryOperations(.loading(.clearCollectionItems)))),
+        .send(.entryViewLayout(.internal(.clearCollectionPresentation))),
+        .send(.internal(.syncComposerCollectionState)),
     )
 }
 

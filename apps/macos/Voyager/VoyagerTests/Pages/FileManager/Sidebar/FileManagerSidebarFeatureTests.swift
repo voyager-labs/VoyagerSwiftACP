@@ -1,5 +1,6 @@
 import ComposableArchitecture
 @testable import Voyager
+import VoyagerEntitiesEntry
 import VoyagerShared
 import XCTest
 
@@ -23,7 +24,7 @@ final class FileManagerSidebarFeatureTests: XCTestCase {
             FileManagerSidebarFeature()
         } withDependencies: {
             $0.userDefaultsClient = .testValue
-            $0.entryLoadingClient = .testValue
+            $0[VoyagerEntitiesEntry.EntryLoadingClient.self] = VoyagerEntitiesEntry.EntryLoadingClient.testValue
             $0.fileManagerFavoritesClient = .testValue
             $0.fileManagerLocationsClient = .testValue
             $0.finderFavoritesTagClient = .testValue
@@ -49,7 +50,7 @@ final class FileManagerSidebarFeatureTests: XCTestCase {
             FileManagerSidebarFeature()
         } withDependencies: {
             $0.userDefaultsClient = .testValue
-            $0.entryLoadingClient = .testValue
+            $0[VoyagerEntitiesEntry.EntryLoadingClient.self] = VoyagerEntitiesEntry.EntryLoadingClient.testValue
             $0.fileManagerFavoritesClient = .testValue
             $0.fileManagerLocationsClient = .testValue
             $0.finderFavoritesTagClient = .testValue
@@ -75,7 +76,7 @@ final class FileManagerSidebarFeatureTests: XCTestCase {
             FileManagerSidebarFeature()
         } withDependencies: {
             $0.userDefaultsClient = .testValue
-            $0.entryLoadingClient = .testValue
+            $0[VoyagerEntitiesEntry.EntryLoadingClient.self] = VoyagerEntitiesEntry.EntryLoadingClient.testValue
             $0.fileManagerFavoritesClient = .testValue
             $0.fileManagerLocationsClient = .testValue
             $0.finderFavoritesTagClient = .testValue
@@ -99,7 +100,7 @@ final class FileManagerSidebarFeatureTests: XCTestCase {
             FileManagerSidebarFeature()
         } withDependencies: {
             $0.userDefaultsClient = .testValue
-            $0.entryLoadingClient = .testValue
+            $0[VoyagerEntitiesEntry.EntryLoadingClient.self] = VoyagerEntitiesEntry.EntryLoadingClient.testValue
             $0.fileManagerFavoritesClient = .testValue
             $0.fileManagerLocationsClient = .testValue
             $0.finderFavoritesTagClient = .testValue
@@ -127,7 +128,7 @@ final class FileManagerSidebarFeatureTests: XCTestCase {
             FileManagerSidebarFeature()
         } withDependencies: {
             $0.userDefaultsClient = .testValue
-            $0.entryLoadingClient = .testValue
+            $0[VoyagerEntitiesEntry.EntryLoadingClient.self] = VoyagerEntitiesEntry.EntryLoadingClient.testValue
             $0.fileManagerFavoritesClient = .testValue
             $0.fileManagerLocationsClient = .testValue
             $0.finderFavoritesTagClient = .testValue
@@ -153,7 +154,7 @@ final class FileManagerSidebarFeatureTests: XCTestCase {
             FileManagerSidebarFeature()
         } withDependencies: {
             $0.userDefaultsClient = .testValue
-            $0.entryLoadingClient = .testValue
+            $0[VoyagerEntitiesEntry.EntryLoadingClient.self] = VoyagerEntitiesEntry.EntryLoadingClient.testValue
             $0.fileManagerFavoritesClient = .testValue
             $0.fileManagerLocationsClient = .testValue
             $0.finderFavoritesTagClient = .testValue
@@ -178,7 +179,7 @@ final class FileManagerSidebarFeatureTests: XCTestCase {
             FileManagerSidebarFeature()
         } withDependencies: {
             $0.userDefaultsClient = .testValue
-            $0.entryLoadingClient = .testValue
+            $0[VoyagerEntitiesEntry.EntryLoadingClient.self] = VoyagerEntitiesEntry.EntryLoadingClient.testValue
             $0.fileManagerFavoritesClient = .testValue
             $0.fileManagerLocationsClient = .testValue
             $0.finderFavoritesTagClient = .testValue
@@ -211,7 +212,7 @@ final class FileManagerSidebarFeatureTests: XCTestCase {
             FileManagerSidebarFeature()
         } withDependencies: {
             $0.userDefaultsClient = .testValue
-            $0.entryLoadingClient = .testValue
+            $0[VoyagerEntitiesEntry.EntryLoadingClient.self] = VoyagerEntitiesEntry.EntryLoadingClient.testValue
             $0.fileManagerFavoritesClient = .testValue
             $0.fileManagerLocationsClient = .testValue
             $0.finderFavoritesTagClient = FinderFavoritesTagClient(
@@ -239,7 +240,7 @@ final class FileManagerSidebarFeatureTests: XCTestCase {
             FileManagerSidebarFeature()
         } withDependencies: {
             $0.userDefaultsClient = .testValue
-            $0.entryLoadingClient = .testValue
+            $0[VoyagerEntitiesEntry.EntryLoadingClient.self] = VoyagerEntitiesEntry.EntryLoadingClient.testValue
             $0.fileManagerFavoritesClient = .testValue
             $0.fileManagerLocationsClient = .testValue
             $0.finderFavoritesTagClient = FinderFavoritesTagClient(
@@ -278,7 +279,7 @@ final class FileManagerSidebarFeatureTests: XCTestCase {
             FileManagerSidebarFeature()
         } withDependencies: {
             $0.userDefaultsClient = .testValue
-            $0.entryLoadingClient = .testValue
+            $0[VoyagerEntitiesEntry.EntryLoadingClient.self] = VoyagerEntitiesEntry.EntryLoadingClient.testValue
             $0.fileManagerFavoritesClient = .testValue
             $0.fileManagerLocationsClient = .testValue
             $0.finderFavoritesTagClient = FinderFavoritesTagClient(
@@ -313,7 +314,7 @@ final class FileManagerSidebarFeatureTests: XCTestCase {
             FileManagerSidebarFeature()
         } withDependencies: {
             $0.userDefaultsClient = .testValue
-            $0.entryLoadingClient = .testValue
+            $0[VoyagerEntitiesEntry.EntryLoadingClient.self] = VoyagerEntitiesEntry.EntryLoadingClient.testValue
             $0.fileManagerFavoritesClient = .testValue
             $0.fileManagerLocationsClient = .testValue
             $0.finderFavoritesTagClient = .testValue

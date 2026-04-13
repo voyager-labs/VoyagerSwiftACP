@@ -1,6 +1,9 @@
 import AppKit
 import ComposableArchitecture
 
+import VoyagerEntitiesEntry
+import VoyagerFeaturesEntryOperations
+
 extension EntryListCoordinator: NSOutlineViewDataSource {
     func outlineView(_: NSOutlineView, numberOfChildrenOfItem item: Any?) -> Int {
         guard let item else { return outlineItems.count }

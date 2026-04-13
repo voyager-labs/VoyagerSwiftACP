@@ -1,5 +1,6 @@
 import ComposableArchitecture
 import Foundation
+import VoyagerShared
 
 @CasePathable
 enum ComposerAction: ViewAction, CasePathable, Sendable {
@@ -39,8 +40,8 @@ enum ComposerAction: ViewAction, CasePathable, Sendable {
 
     @CasePathable
     enum Internal: Sendable {
-        case searchResponse(UUID, Result<SearchResponsePayload, Error>)
-        case filtersResponse(UUID, Result<SearchResponsePayload, Error>)
+        case searchResponse(UUID, Result<VoyagerShared.SearchResponsePayload, Error>)
+        case filtersResponse(UUID, Result<VoyagerShared.SearchResponsePayload, Error>)
         case dismissTransientFeedback(UUID)
         case searchListApplied
     }
@@ -89,11 +90,18 @@ extension ComposerAction {
     static var saveCollectionAs: Self { .view(.saveCollectionAs) }
     static var undo: Self { .view(.undo) }
     static var redo: Self { .view(.redo) }
-    static func searchResponse(_ requestID: UUID, _ result: Result<SearchResponsePayload, Error>) -> Self {
+
+    static func searchResponse(
+        _ requestID: UUID,
+        _ result: Result<VoyagerShared.SearchResponsePayload, Error>,
+    ) -> Self {
         .internal(.searchResponse(requestID, result))
     }
 
-    static func filtersResponse(_ requestID: UUID, _ result: Result<SearchResponsePayload, Error>) -> Self {
+    static func filtersResponse(
+        _ requestID: UUID,
+        _ result: Result<VoyagerShared.SearchResponsePayload, Error>,
+    ) -> Self {
         .internal(.filtersResponse(requestID, result))
     }
 

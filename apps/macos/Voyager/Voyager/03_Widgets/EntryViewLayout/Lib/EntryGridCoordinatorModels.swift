@@ -1,5 +1,8 @@
 import AppKit
 
+import VoyagerEntitiesEntry
+import VoyagerFeaturesEntryOperations
+
 struct EntryGridSection {
     let title: String?
     let colorCode: Int?

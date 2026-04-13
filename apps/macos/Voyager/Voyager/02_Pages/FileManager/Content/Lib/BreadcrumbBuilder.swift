@@ -1,5 +1,7 @@
 import Foundation
 
+import VoyagerEntitiesEntry
+
 enum BreadcrumbBuilder {
     static func buildBreadcrumbPaths(from root: String, to target: String) -> [String] {
         var result = [root]

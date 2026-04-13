@@ -1,6 +1,8 @@
 import AppKit
 import Combine
 import ComposableArchitecture
+import VoyagerEntitiesEntry
+import VoyagerFeaturesEntryOperations
 import VoyagerShared
 
 struct EntryListCoordinatorSortDescriptorChange: Equatable {

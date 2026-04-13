@@ -2,6 +2,8 @@ import ComposableArchitecture
 import Foundation
 import SwiftUI
 
+import VoyagerFeaturesEntryOperations
+
 struct ContentPaneContextMenu: View {
     let store: StoreOf<FileManagerContentFeature>
 
@@ -28,6 +30,7 @@ struct ContentPaneContextMenu: View {
             Button("New Folder") {
                 store.send(.entryViewLayout(.entryOperations(.edit(.createNewFolder(
                     parentPath: store.navigation.currentPath,
+                    siblingNames: store.entryViewLayout.entries.map(\.name),
                 )))))
             }
             .keyboardShortcut("n", modifiers: [.command, .shift])

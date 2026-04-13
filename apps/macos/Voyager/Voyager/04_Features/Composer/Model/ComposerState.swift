@@ -1,5 +1,6 @@
 import ComposableArchitecture
 import Foundation
+import VoyagerShared
 
 struct FilterSnapshot: Equatable {
     let scopes: [String]
@@ -40,14 +41,14 @@ struct ComposerState: Equatable {
     var isFilteringInFlight: Bool = false
     var queryRenderPhase: ComposerQueryRenderPhase = .idle
     var transientFeedback: ComposerTransientFeedback?
-    var submittedSearchFilters: SearchFiltersPayload?
+    var submittedSearchFilters: VoyagerShared.SearchFiltersPayload?
     var activeSearchRequestID: UUID?
     var activeFiltersRequestID: UUID?
     var lastAcceptedSearchRequestID: UUID?
     var lastAcceptedFiltersRequestID: UUID?
 
-    var lastSearchResponse: SearchResponsePayload?
-    var lastFiltersResponse: SearchResponsePayload?
+    var lastSearchResponse: VoyagerShared.SearchResponsePayload?
+    var lastFiltersResponse: VoyagerShared.SearchResponsePayload?
     var searchStartedAt: Date?
     var filtersStartedAt: Date?
     var hasSubmittedInSession: Bool = false

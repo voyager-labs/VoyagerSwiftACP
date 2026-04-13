@@ -1,5 +1,7 @@
 import Foundation
 
+import VoyagerEntitiesEntry
+
 enum EntryModelTagColorNormalizer {
     nonisolated static func normalize(_ entries: [EntryModel], favoriteTags: [Tag]) -> [EntryModel] {
         entries.map { normalize($0, favoriteTags: favoriteTags) }

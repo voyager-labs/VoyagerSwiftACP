@@ -2,6 +2,8 @@ import AppKit
 import ComposableArchitecture
 import Foundation
 
+import VoyagerFeaturesEntryOperations
+
 @MainActor
 final class ContentPaneContextMenuCoordinator: NSObject {
     private let store: StoreOf<FileManagerContentFeature>
@@ -34,7 +36,10 @@ final class ContentPaneContextMenuCoordinator: NSObject {
         store.send(
             .entryViewLayout(
                 .entryOperations(
-                    .edit(.createNewFolder(parentPath: store.state.navigation.currentPath)),
+                    .edit(.createNewFolder(
+                        parentPath: store.state.navigation.currentPath,
+                        siblingNames: store.state.entryViewLayout.entries.map(\.name),
+                    )),
                 ),
             ),
         )

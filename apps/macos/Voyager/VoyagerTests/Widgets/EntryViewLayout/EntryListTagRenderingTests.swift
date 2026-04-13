@@ -1,5 +1,6 @@
 import AppKit
 @testable import Voyager
+import VoyagerEntitiesEntry
 import XCTest
 
 @MainActor
@@ -122,7 +123,7 @@ final class EntryListTagRenderingTests: XCTestCase {
             columnId: EntryListColumn.name.rawValue,
             iconSize: 16,
             textSize: 13,
-            dateModifiedWidth: 220,
+            columnWidth: 220,
             thumbnail: nil,
             isHidden: isHidden,
             isCut: isCut,

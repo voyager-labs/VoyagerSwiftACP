@@ -68,7 +68,7 @@ final class AppRootFeatureContractTests: XCTestCase {
         initialState.windowManager.windows = [
             WindowSessionState(
                 id: windowID,
-                window: .makeInitial(windowID: windowID, path: "/tmp"),
+                window: .makeInitial(path: "/tmp"),
             ),
         ]
         initialState.windowManager.focusedWindowID = windowID
