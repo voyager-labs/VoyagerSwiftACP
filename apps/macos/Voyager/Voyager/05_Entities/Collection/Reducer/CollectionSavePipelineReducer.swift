@@ -15,6 +15,9 @@ struct CollectionSavePipelineReducer {
     @Dependency(\.userDefaultsClient)
     var userDefaultsClient
 
+    @Dependency(\.collectionStalenessClient)
+    var collectionStalenessClient
+
     var body: some Reducer<State, Action> {
         Reduce { state, action in
             switch action {
@@ -31,6 +34,7 @@ struct CollectionSavePipelineReducer {
                     payload: payload,
                     url: url,
                     collectionFileClient: collectionFileClient,
+                    collectionStalenessClient: collectionStalenessClient,
                 )
 
             case let .savePanelResponse(url):
@@ -38,6 +42,7 @@ struct CollectionSavePipelineReducer {
                     state: &state,
                     selectedURL: url,
                     collectionFileClient: collectionFileClient,
+                    collectionStalenessClient: collectionStalenessClient,
                 )
 
             case let .saveCompleted(result):
@@ -45,13 +50,14 @@ struct CollectionSavePipelineReducer {
                     state: &state,
                     result: result,
                     userDefaultsClient: userDefaultsClient,
+                    collectionStalenessClient: collectionStalenessClient,
                 )
             }
         }
     }
 }
 
-private let kCollectionSchemaVersion: Int = 1
+private let kCollectionSchemaVersion: Int = 2
 
 private enum CollectionSaveValidationError: LocalizedError {
     case emptyContent
@@ -92,6 +98,7 @@ private func validateSavePayload(
     let validation = validateCollectionContext(
         context,
         query: trimmedQuery,
+        payload: payload,
     )
 
     switch validation {
@@ -108,6 +115,7 @@ private func validateSavePayload(
 private func validateCollectionContext(
     _ context: CollectionContext,
     query: String,
+    payload: SaveRequestPayload,
 ) -> Result<CollectionSaveSnapshot, CollectionSaveValidationError> {
     if query.isEmpty, context.scopes.isEmpty, context.conditions.isEmpty {
         return .failure(.emptyContent)
@@ -119,6 +127,10 @@ private func validateCollectionContext(
             query: query,
             scopes: context.scopes,
             conditions: conditions,
+            snapshotItems: payload.snapshotItems,
+            definitionFingerprint: payload.definitionFingerprint,
+            capturedAt: payload.capturedAt,
+            relevanceRoots: payload.relevanceRoots,
         ))
     } catch let error as CollectionSaveValidationError {
         return .failure(error)
@@ -199,6 +211,7 @@ func handleSaveToExisting(
     payload: SaveRequestPayload,
     url: URL,
     collectionFileClient: CollectionFileClient,
+    collectionStalenessClient: CollectionStalenessClient,
 ) -> Effect<CollectionAction> {
     guard canStartSave(state: state, payload: payload) else { return .none }
 
@@ -211,6 +224,7 @@ func handleSaveToExisting(
             snapshot: result.snapshot,
             url: url,
             collectionFileClient: collectionFileClient,
+            collectionStalenessClient: collectionStalenessClient,
         )
     }
 }
@@ -219,6 +233,7 @@ func handleSavePanelResponse(
     state: inout CollectionState,
     selectedURL: URL?,
     collectionFileClient: CollectionFileClient,
+    collectionStalenessClient: CollectionStalenessClient,
 ) -> Effect<CollectionAction> {
     guard let selectedURL, let snapshot = state.pendingSave else {
         resetPendingSave(&state)
@@ -229,18 +244,32 @@ func handleSavePanelResponse(
         snapshot: snapshot,
         url: selectedURL,
         collectionFileClient: collectionFileClient,
+        collectionStalenessClient: collectionStalenessClient,
     )
 }
 
 func handleSaveCompleted(
     state: inout CollectionState,
-    result: Result<URL, Error>,
+    result: Result<CollectionSaveCompletion, Error>,
     userDefaultsClient: UserDefaultsClient,
+    collectionStalenessClient: CollectionStalenessClient,
 ) -> Effect<CollectionAction> {
     resetPendingSave(&state)
 
     switch result {
-    case let .success(url):
+    case let .success(completion):
+        let url = completion.url
+        if let snapshotMeta = completion.file.snapshotMeta {
+            let previousInvalidatedAt = collectionStalenessClient.record(url.path)?.lastInvalidatedAt
+            collectionStalenessClient.upsertRecord(
+                url.path,
+                .init(
+                    definitionFingerprint: snapshotMeta.definitionFingerprint,
+                    relevanceRoots: snapshotMeta.relevanceRoots,
+                    lastInvalidatedAt: previousInvalidatedAt,
+                ),
+            )
+        }
         let directory = url.deletingLastPathComponent().path
         userDefaultsClient.setString(directory, CollectionKeys.lastCollectionSaveDirectory)
         return .none
@@ -325,8 +354,13 @@ private func makeCollectionFile(
         query: snapshot.query,
         scopes: snapshot.scopes,
         conditions: snapshot.conditions,
-        snapshot: nil,
-        snapshotMeta: nil,
+        snapshot: snapshot.snapshotItems.map(CollectionPersistedSnapshot.init(items:)),
+        snapshotMeta: .init(
+            definitionFingerprint: snapshot.definitionFingerprint,
+            capturedAt: snapshot.capturedAt,
+            itemCount: snapshot.snapshotItems?.count ?? 0,
+            relevanceRoots: snapshot.relevanceRoots,
+        ),
         appVersion: appVersion,
     )
 }
@@ -371,6 +405,7 @@ private func performSave(
     snapshot: CollectionSaveSnapshot,
     url: URL,
     collectionFileClient: CollectionFileClient,
+    collectionStalenessClient _: CollectionStalenessClient,
 ) -> Effect<CollectionAction> {
     let request = buildSaveRequest(
         snapshot: snapshot,
@@ -408,7 +443,7 @@ private func executeSave(
     .run { send in
         do {
             try await collectionFileClient.save(request.file, request.url)
-            await send(.saveCompleted(.success(request.url)))
+            await send(.saveCompleted(.success(.init(url: request.url, file: request.file))))
         } catch {
             await send(.saveCompleted(.failure(error)))
         }
