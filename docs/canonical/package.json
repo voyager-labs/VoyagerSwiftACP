@@ -1,0 +1,9 @@
+{
+  "name": "voyager-documentation",
+  "private": true,
+  "version": "0.0.0",
+  "devDependencies": {
+    "markdownlint-cli2": "^0.22.0",
+    "prettier": "^3.8.2"
+  }
+}
