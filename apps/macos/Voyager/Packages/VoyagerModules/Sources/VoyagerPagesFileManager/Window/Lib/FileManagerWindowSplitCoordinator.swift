@@ -7,10 +7,6 @@ import SwiftUI
 public final class FileManagerWindowSplitCoordinator: NSViewController, NSSplitViewDelegate {
     private enum Constants {
         static let contentVerticalMargin: CGFloat = 4
-
-        static let sidebarMinWidth: CGFloat = 150
-        static let sidebarMaxWidth: CGFloat = 280
-        static let sidebarCollapseThreshold: CGFloat = 2
     }
 
     private struct Constraints {
@@ -20,13 +16,9 @@ public final class FileManagerWindowSplitCoordinator: NSViewController, NSSplitV
     public let store: StoreOf<FileManagerFeature>
     public let keyCommandFocusCoordinator = FileManagerKeyCommandFocusCoordinator()
 
-    private var cancellables: Set<AnyCancellable> = []
-    private var hasStarted = false
+    private var sidebarSync: FileManagerSidebarSync!
     private var hasTornDown = false
 
-    private var hasSetInitialLayout = false
-    private var currentSidebarVisible: Bool?
-    private var currentSidebarWidth: CGFloat
     private var currentIsDark: Bool
 
     private var sidebarHosting: NSHostingController<AnyView>?
@@ -39,10 +31,6 @@ public final class FileManagerWindowSplitCoordinator: NSViewController, NSSplitV
 
     init(store: StoreOf<FileManagerFeature>, isDark: Bool) {
         self.store = store
-        currentSidebarWidth = max(
-            Constants.sidebarMinWidth,
-            min(Constants.sidebarMaxWidth, store.sidebar.sidebarWidth),
-        )
         currentIsDark = isDark
         super.init(nibName: nil, bundle: nil)
     }
@@ -77,12 +65,14 @@ public final class FileManagerWindowSplitCoordinator: NSViewController, NSSplitV
 
     override public func viewDidLoad() {
         super.viewDidLoad()
-        startIfNeeded()
+        setupSidebarSync()
+        sidebarSync.start(store: store)
+        store.send(.onAppear)
     }
 
     override public func viewDidLayout() {
         super.viewDidLayout()
-        applyInitialLayoutIfNeeded(
+        applyInitialLayoutViaSync(
             sidebarVisible: store.sidebar.sidebarVisible,
             sidebarWidth: store.sidebar.sidebarWidth,
         )
@@ -97,7 +87,7 @@ public final class FileManagerWindowSplitCoordinator: NSViewController, NSSplitV
     public func tearDown() {
         guard !hasTornDown else { return }
         hasTornDown = true
-        cancellables.removeAll()
+        sidebarSync.tearDown()
 
         windowSplitView?.delegate = nil
 
@@ -109,28 +99,36 @@ public final class FileManagerWindowSplitCoordinator: NSViewController, NSSplitV
         store.send(.onDisappear)
     }
 
-    private func startIfNeeded() {
-        guard !hasStarted else { return }
-        hasStarted = true
-        observeSidebarState()
-        applySidebarState(
-            sidebarVisible: store.sidebar.sidebarVisible,
-            sidebarWidth: store.sidebar.sidebarWidth,
+    private func setupSidebarSync() {
+        sidebarSync = FileManagerSidebarSync(
+            initialSidebarWidth: store.sidebar.sidebarWidth,
+            contentVerticalMargin: Constants.contentVerticalMargin,
         )
-        store.send(.onAppear)
-    }
-
-    private func observeSidebarState() {
-        store.publisher.sidebar
-            .removeDuplicates()
-            .receive(on: DispatchQueue.main)
-            .sink { [weak self] sidebarState in
-                self?.applySidebarState(
-                    sidebarVisible: sidebarState.sidebarVisible,
-                    sidebarWidth: sidebarState.sidebarWidth,
-                )
-            }
-            .store(in: &cancellables)
+        sidebarSync.onApplyInitialLayout = { [weak self] sidebarVisible, sidebarWidth, margin in
+            self?.applyInitialLayout(
+                sidebarVisible: sidebarVisible,
+                sidebarWidth: sidebarWidth,
+                contentVerticalMargin: margin,
+            )
+        }
+        sidebarSync.onToggleSidebar = { [weak self] isVisible, sidebarWidth, margin in
+            self?.updateSidebarVisibility(
+                isVisible: isVisible,
+                sidebarWidth: sidebarWidth,
+                contentVerticalMargin: margin,
+            )
+        }
+        sidebarSync.onAdjustDivider = { [weak self] sidebarWidth in
+            self?.windowSplitView?.setPosition(sidebarWidth, ofDividerAt: 0)
+            self?.windowSplitView?.adjustSubviews()
+        }
+        sidebarSync.onUpdateTrafficLights = { [weak self] isSidebarVisible in
+            guard let window = self?.view.window else { return }
+            FileManagerWindowChrome.applyTrafficLightVisibility(
+                to: window,
+                isSidebarVisible: isSidebarVisible,
+            )
+        }
     }
 
     private func makeMainContainerRootView() -> FileManagerWindowMainContainerView {
@@ -141,30 +139,21 @@ public final class FileManagerWindowSplitCoordinator: NSViewController, NSSplitV
         )
     }
 
-    private func applySidebarState(sidebarVisible: Bool, sidebarWidth: CGFloat) {
-        let clampedSidebarWidth = max(
-            Constants.sidebarMinWidth,
-            min(Constants.sidebarMaxWidth, sidebarWidth),
+    private func applyInitialLayoutViaSync(sidebarVisible: Bool, sidebarWidth: CGFloat) {
+        guard !sidebarSync.hasSetInitialLayout,
+              let splitView = windowSplitView,
+              splitView.bounds.width > 0
+        else { return }
+
+        applyInitialLayout(
+            sidebarVisible: sidebarVisible,
+            sidebarWidth: sidebarWidth,
+            contentVerticalMargin: Constants.contentVerticalMargin,
         )
-        let sidebarWidthChanged = abs(currentSidebarWidth - clampedSidebarWidth) > 0.5
-        currentSidebarWidth = clampedSidebarWidth
-
-        applyInitialLayoutIfNeeded(sidebarVisible: sidebarVisible, sidebarWidth: clampedSidebarWidth)
-
-        if currentSidebarVisible != sidebarVisible {
-            updateSidebarVisibility(isVisible: sidebarVisible, sidebarWidth: clampedSidebarWidth)
-            updateTrafficLightVisibility(isSidebarVisible: sidebarVisible)
-        } else if sidebarVisible, sidebarWidthChanged {
-            windowSplitView?.setPosition(clampedSidebarWidth, ofDividerAt: 0)
-            windowSplitView?.adjustSubviews()
-        }
-
-        currentSidebarVisible = sidebarVisible
     }
 
-    private func applyInitialLayoutIfNeeded(sidebarVisible: Bool, sidebarWidth: CGFloat) {
-        guard !hasSetInitialLayout,
-              let splitView = windowSplitView,
+    private func applyInitialLayout(sidebarVisible: Bool, sidebarWidth: CGFloat, contentVerticalMargin: CGFloat) {
+        guard let splitView = windowSplitView,
               splitView.bounds.width > 0
         else { return }
 
@@ -173,23 +162,22 @@ public final class FileManagerWindowSplitCoordinator: NSViewController, NSSplitV
             FileManagerWindowSplitLayout.updateMainContainerLeading(
                 constraints.mainContainerLeading,
                 isSidebarVisible: true,
-                contentVerticalMargin: Constants.contentVerticalMargin,
+                contentVerticalMargin: contentVerticalMargin,
             )
         } else {
             splitView.setPosition(0, ofDividerAt: 0)
             FileManagerWindowSplitLayout.updateMainContainerLeading(
                 constraints.mainContainerLeading,
                 isSidebarVisible: false,
-                contentVerticalMargin: Constants.contentVerticalMargin,
+                contentVerticalMargin: contentVerticalMargin,
             )
         }
 
         splitView.adjustSubviews()
-        hasSetInitialLayout = true
-        updateTrafficLightVisibility(isSidebarVisible: sidebarVisible)
+        sidebarSync.markInitialLayoutApplied(sidebarVisible: sidebarVisible, sidebarWidth: sidebarWidth)
     }
 
-    private func updateSidebarVisibility(isVisible: Bool, sidebarWidth: CGFloat) {
+    private func updateSidebarVisibility(isVisible: Bool, sidebarWidth: CGFloat, contentVerticalMargin: CGFloat) {
         guard let splitView = windowSplitView,
               let sidebarView = sidebarHosting?.view,
               splitView.bounds.width > 0
@@ -200,23 +188,22 @@ public final class FileManagerWindowSplitCoordinator: NSViewController, NSSplitV
             FileManagerWindowSplitLayout.updateMainContainerLeading(
                 constraints.mainContainerLeading,
                 isSidebarVisible: true,
-                contentVerticalMargin: Constants.contentVerticalMargin,
+                contentVerticalMargin: contentVerticalMargin,
             )
         } else {
             let currentWidth = sidebarView.frame.width
-            if currentWidth > Constants.sidebarCollapseThreshold {
-                syncSidebarWidthToStore(currentWidth)
+            if currentWidth > sidebarSync.sidebarCollapseThreshold {
+                sidebarSync.syncSidebarWidthToStore(currentWidth)
             }
             splitView.setPosition(0, ofDividerAt: 0)
             FileManagerWindowSplitLayout.updateMainContainerLeading(
                 constraints.mainContainerLeading,
                 isSidebarVisible: false,
-                contentVerticalMargin: Constants.contentVerticalMargin,
+                contentVerticalMargin: contentVerticalMargin,
             )
         }
 
         mainContainerView?.layoutSubtreeIfNeeded()
-        updateTrafficLightVisibility(isSidebarVisible: isVisible)
     }
 
     public func splitView(
@@ -226,7 +213,7 @@ public final class FileManagerWindowSplitCoordinator: NSViewController, NSSplitV
     ) -> CGFloat {
         guard splitView === windowSplitView else { return proposedMinimumPosition }
         switch dividerIndex {
-        case 0: return Constants.sidebarMinWidth
+        case 0: return sidebarSync.sidebarMinWidth
         default: return proposedMinimumPosition
         }
     }
@@ -238,7 +225,7 @@ public final class FileManagerWindowSplitCoordinator: NSViewController, NSSplitV
     ) -> CGFloat {
         guard splitView === windowSplitView else { return proposedMaximumPosition }
         switch dividerIndex {
-        case 0: return Constants.sidebarMaxWidth
+        case 0: return sidebarSync.sidebarMaxWidth
         default: return proposedMaximumPosition
         }
     }
@@ -259,48 +246,14 @@ public final class FileManagerWindowSplitCoordinator: NSViewController, NSSplitV
 
     public func splitViewDidResizeSubviews(_ notification: Notification) {
         guard let splitView = notification.object as? NSSplitView,
-              splitView === windowSplitView
-        else { return }
-        syncSidebarVisibilityWithWidth()
-    }
-
-    private func syncSidebarVisibilityWithWidth() {
-        guard hasSetInitialLayout,
-              let sidebarView = sidebarHosting?.view,
-              let splitView = windowSplitView
+              splitView === windowSplitView,
+              let sidebarView = sidebarHosting?.view
         else { return }
 
-        let sidebarWidth = sidebarView.frame.width
-        let isCollapsed = splitView.isSubviewCollapsed(sidebarView)
-
-        if !isCollapsed, sidebarWidth > Constants.sidebarCollapseThreshold {
-            syncSidebarWidthToStore(sidebarWidth)
-        }
-
-        // 임시조치: store가 sidebarVisible=true인데 NSSplitView가 collapse한 경우 강제 복구
-        // TODO: UserDefaults 저장 버그 수정 후 원복
-        if store.sidebar.sidebarVisible, isCollapsed {
-            let width = currentSidebarWidth
-            DispatchQueue.main.async { [weak self] in
-                self?.updateSidebarVisibility(isVisible: true, sidebarWidth: width)
-            }
-        }
-    }
-
-    private func syncSidebarWidthToStore(_ width: CGFloat) {
-        let clampedWidth = max(
-            Constants.sidebarMinWidth,
-            min(Constants.sidebarMaxWidth, width),
-        )
-        guard abs(store.sidebar.sidebarWidth - clampedWidth) > 0.5 else { return }
-        store.send(.sidebar(.view(.setSidebarWidth(clampedWidth))))
-    }
-
-    private func updateTrafficLightVisibility(isSidebarVisible: Bool) {
-        guard let window = view.window else { return }
-        FileManagerWindowCoordinator.applyTrafficLightVisibility(
-            to: window,
-            isSidebarVisible: isSidebarVisible,
+        sidebarSync.handleSplitViewResize(
+            sidebarViewFrame: sidebarView.frame,
+            isCollapsed: splitView.isSubviewCollapsed(sidebarView),
+            splitViewWidth: splitView.bounds.width,
         )
     }
 }
