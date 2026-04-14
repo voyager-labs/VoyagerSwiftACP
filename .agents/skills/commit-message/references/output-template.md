@@ -32,8 +32,11 @@ Rules:
 - Generate exactly 3 candidates.
 - Subject is a plain summary sentence — no type prefix, no scope, no `:` separator. Use imperative mood, capitalize first letter, no trailing period.
 - Subject must represent all staged changes.
+- When the subject is written in Korean, end it as a noun phrase rather than a verb-final sentence.
 - Omit the body when the subject alone is sufficient for the staged change.
 - Body is optional. If present, use `- ` for all bullets and cover all meaningful staged changes.
+- When body bullets are written in Korean, each bullet must also end as a noun phrase rather than a verb-final sentence.
+- In Korean, avoid endings like `수정한다`, `이전한다`, `정리한다`; prefer `수정`, `이전`, `정리`.
 - Do not force a fixed number of bullets.
 - Do not add filler bullets to make the body look even, symmetrical, or exhaustive when fewer bullets are enough.
 - Do not map bullets to generic categories like intent, impact, or risk when the staged diff contains multiple concrete change items.
@@ -62,3 +65,4 @@ Rules:
 - Keep the exact selected candidate content.
 - Keep a blank line between subject and body when body exists.
 - Subject-only output is valid when it already describes the staged change clearly.
+- When the selected message is written in Korean, keep both the subject and every bullet in noun-phrase ending form.
