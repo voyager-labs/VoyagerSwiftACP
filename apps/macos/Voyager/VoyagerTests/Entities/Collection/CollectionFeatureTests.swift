@@ -510,6 +510,8 @@ private let kEmptyCollectionFile = VoyagerCollectionFile(
     query: "",
     scopes: [],
     conditions: [],
+    snapshot: nil,
+    snapshotMeta: nil,
     appVersion: nil,
 )
 

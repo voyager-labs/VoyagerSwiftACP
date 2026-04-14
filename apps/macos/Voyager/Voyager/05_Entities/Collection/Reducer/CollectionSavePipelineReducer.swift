@@ -325,6 +325,8 @@ private func makeCollectionFile(
         query: snapshot.query,
         scopes: snapshot.scopes,
         conditions: snapshot.conditions,
+        snapshot: nil,
+        snapshotMeta: nil,
         appVersion: appVersion,
     )
 }
