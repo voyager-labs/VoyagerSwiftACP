@@ -1,11 +1,18 @@
 ---
 name: voyager-feature-spec-author
-description: Draft and concretize Voyager FEATURE_SPEC markdown documents from INVENTORY rows into the fixed interaction specification format, using YAML frontmatter for metadata and linting for completeness and placeholder quality.
+description: "Draft and concretize Voyager FEATURE_SPEC markdown documents from INVENTORY rows into the fixed interaction specification format, using YAML frontmatter for metadata and linting for completeness and placeholder quality."
 ---
 
 # Voyager Feature Spec Author
 
 Create and refine concrete, consistently structured `PRODUCT/05_FEATURE_SPECS` documents.
+
+In this repo:
+
+- `FS` = `Feature Specs`
+- `FI` = `Feature Inventory`
+
+This skill writes and refines `FS` documents using `FI` rows as source inputs.
 
 This skill is useful when you need to:
 
@@ -68,6 +75,10 @@ python3 .agents/skills/voyager-feature-spec-author/scripts/lint_feature_spec.py 
 
 - Metadata should live in YAML frontmatter, not in a markdown table.
 - Keep generated spec body content in Korean (`Intent`, `Expected Outcome`, `State Changes`, etc.). Section titles can remain the fixed contract names.
+- Prefer product-facing wording over implementation-facing wording.
+    - Frontmatter `summary` should describe the interaction as experienced or observed in the product.
+    - Body sections should focus on user-visible behavior, product rules, state changes, and operational constraints.
+    - Avoid internal abstractions or modeling terminology unless they are necessary for correctness and already part of the product language.
 - Required body sections are:
     - `Intent`
     - `Trigger / Entry Points`

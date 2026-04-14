@@ -1,11 +1,17 @@
 ---
 name: voyager-feature-inventory-author
-description: Draft and refine new FEATURE/INTERACTION inventory rows in Voyager documentation, matching existing TSV conventions and document tone. Use when creating a new feature (allocate ids, draft Korean descriptions with AI draft markers, suggest related UI/INTERACTIONS/FEATURES) and when expanding a feature with more concrete interactions/relationships.
+description: "Draft and refine new FEATURE/INTERACTION inventory rows in Voyager documentation, matching existing TSV conventions and document tone. Use when creating a new feature (allocate ids, draft Korean descriptions with AI draft markers, suggest related UI/INTERACTIONS/FEATURES) and when expanding a feature with more concrete interactions/relationships."
 ---
 
 # Voyager Feature Inventory Author
 
 Create and refine new feature inventory rows while keeping the repo SSOT rules intact.
+
+In this repo, `FI` means `Feature Inventory`.
+This skill writes and refines `FI` rows in:
+
+- `PRODUCT/04_FEATURE_INVENTORY/FEATURES/data.tsv`
+- `PRODUCT/04_FEATURE_INVENTORY/INTERACTIONS/data.tsv`
 
 This skill is for "authoring" tasks (drafting new rows, allocating IDs, suggesting relationships). For lookups and validation, use the companion skill:
 
@@ -26,6 +32,10 @@ This skill is for "authoring" tasks (drafting new rows, allocating IDs, suggesti
     - Do not use `<<AI>>` in key/ID/enum columns (ex: `feature_id`, `category_key`, `interaction_id`, `status`).
 - Do not write `TBD` into primary keys.
 - Keep output deterministic and diff-friendly (avoid reformatting unrelated rows).
+- Prefer product-facing wording in long-text cells.
+    - Describe what the user can do, what the system shows, or what is managed.
+    - Avoid explaining internal abstractions, implementation choices, or modeling terminology unless that term is already part of the product vocabulary.
+    - Write descriptions that would still read naturally even if the underlying implementation changes later.
 
 ## Workflow: Draft A New Feature
 
@@ -48,6 +58,7 @@ This skill is for "authoring" tasks (drafting new rows, allocating IDs, suggesti
 - `feature_id`: stable ID
 - `release_phase`, `status`
 - `description`: Korean one-liner; if AI-drafted or AI-edited, prefix `<<AI>> `
+    - Keep it at capability level, not architecture level.
 - `related_ui`: if known, set a `structure_key`; else `-`
 - `objects`: `-` unless you have specific keys
 
@@ -61,6 +72,7 @@ This skill is for "authoring" tasks (drafting new rows, allocating IDs, suggesti
 - `category_key`, `feature_id`
 - `status`
 - `summary`: Korean one-liner; if AI-drafted or AI-edited, prefix `<<AI>> `
+    - Prefer observable action/result wording over design or implementation wording.
 - `related_region`: `WINDOW_STRUCTURE.structure_key` when known; else `-`
 - `menu`/`shortcut`: `-` if unknown
 
