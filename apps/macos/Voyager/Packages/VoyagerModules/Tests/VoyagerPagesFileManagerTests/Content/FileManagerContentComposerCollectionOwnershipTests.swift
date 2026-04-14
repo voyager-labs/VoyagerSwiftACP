@@ -1,5 +1,6 @@
 import ComposableArchitecture
 import Foundation
+@testable import VoyagerEntitiesEntry
 @testable import VoyagerPagesFileManager
 import VoyagerShared
 import XCTest
@@ -27,6 +28,8 @@ final class FileManagerContentComposerCollectionOwnershipTests: XCTestCase {
             $0.thumbnailGeneratorClient = ThumbnailGeneratorClient.testValue
             $0.entryThumbnailCacheClient = EntryThumbnailCacheClient.testValue
             $0.notificationCenterClient = VoyagerShared.NotificationCenterClient.testValue
+            $0.date = .constant(Date(timeIntervalSince1970: 1_700_000_000))
+            $0.continuousClock = ImmediateClock()
         }
         store.exhaustivity = .off
 
@@ -87,6 +90,8 @@ final class FileManagerContentComposerCollectionOwnershipTests: XCTestCase {
             $0.thumbnailGeneratorClient = ThumbnailGeneratorClient.testValue
             $0.entryThumbnailCacheClient = EntryThumbnailCacheClient.testValue
             $0.notificationCenterClient = VoyagerShared.NotificationCenterClient.testValue
+            $0.date = .constant(Date(timeIntervalSince1970: 1_700_000_000))
+            $0.continuousClock = ImmediateClock()
         }
         store.exhaustivity = .off
 

@@ -181,7 +181,6 @@ private func makeStore(
     return store
 }
 
-@MainActor
 @Reducer
 private struct WindowNavUnsavedHarness {
     typealias State = FileManagerWindowState
