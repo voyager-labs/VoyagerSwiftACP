@@ -30,4 +30,23 @@ final class FileManagerCollectionMigrationTests: XCTestCase {
         XCTAssertEqual(resolved.conditions.map(\.propertyKey), ["name_full", "size"])
         XCTAssertTrue(resolved.conditions.allSatisfy(\.isActive))
     }
+
+    func testLegacyDefinitionOnlyFileHasNoUsableSnapshot() {
+        let file = VoyagerCollectionFile(
+            schemaVersion: 1,
+            id: "legacy",
+            name: "Legacy",
+            createdAt: .distantPast,
+            updatedAt: .distantPast,
+            query: "",
+            scopes: ["/tmp"],
+            conditions: [],
+            snapshot: nil,
+            snapshotMeta: nil,
+            appVersion: nil,
+        )
+
+        XCTAssertNil(CollectionSnapshotHydration.usableSnapshot(for: file))
+        XCTAssertNil(CollectionSnapshotHydration.syntheticSearchResponse(for: file))
+    }
 }
