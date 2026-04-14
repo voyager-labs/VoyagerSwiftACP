@@ -269,8 +269,8 @@ enum FileManagerContentComposerCoordinator {
         case .saveRequested, .saveToExisting, .savePanelResponse:
             .none
 
-        case let .saveCompleted(.success(url)):
-            handleCollectionSaveSuccess(url: url, state: &state)
+        case let .saveCompleted(.success(completion)):
+            handleCollectionSaveSuccess(url: completion.url, state: &state)
 
         case .saveCompleted(.failure):
             .send(.internal(.requestNavigation(.internal(.setPendingNavigation(nil)))))

@@ -48,4 +48,14 @@ struct FileManagerContentState: Equatable {
         if baseline.context != context { return true }
         return false
     }
+
+    var isOpenedCollectionStale: Bool {
+        isCollectionMode && collectionSession.isStale
+    }
+
+    var shouldRefreshOnOpen: Bool {
+        collectionSession.didHydrateSnapshotOnOpen
+            && collectionSession.isStale
+            && collectionSession.lastRefreshAt == nil
+    }
 }
