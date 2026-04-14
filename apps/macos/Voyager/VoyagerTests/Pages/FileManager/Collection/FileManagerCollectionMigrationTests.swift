@@ -18,6 +18,8 @@ final class FileManagerCollectionMigrationTests: XCTestCase {
                 CollectionCondition(propertyKey: "name", operatorCode: "eq", value: .string("Report")),
                 CollectionCondition(propertyKey: "file_allocated_size", operatorCode: "eq", value: .number(12)),
             ],
+            snapshot: nil,
+            snapshotMeta: nil,
             appVersion: nil,
         )
 

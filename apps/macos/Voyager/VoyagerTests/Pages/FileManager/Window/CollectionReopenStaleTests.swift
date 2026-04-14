@@ -15,6 +15,8 @@ final class CollectionReopenStaleTests: XCTestCase {
             query: "",
             scopes: ["/tmp/voyager"],
             conditions: [],
+            snapshot: nil,
+            snapshotMeta: nil,
             appVersion: nil,
         )
 
@@ -50,6 +52,8 @@ final class CollectionReopenStaleTests: XCTestCase {
             query: "needle",
             scopes: ["/tmp/voyager"],
             conditions: [],
+            snapshot: nil,
+            snapshotMeta: nil,
             appVersion: nil,
         )
 
