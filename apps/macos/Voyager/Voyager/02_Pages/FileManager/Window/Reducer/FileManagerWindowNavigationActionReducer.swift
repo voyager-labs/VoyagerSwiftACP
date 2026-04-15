@@ -361,21 +361,14 @@ private func handleCollectionFileLoadedSuccess(
         state: &state,
     )
 
-    if let navigation = openContext.navigation,
-       let hydrationEffects = hydrateOpenedCollectionSnapshot(
-           file: file,
-           navigation: navigation,
-           isStale: isStale,
-           state: &state,
-       )
-    {
-        var effects = hydrationEffects
-        if !resolved.unknownKeys.isEmpty {
-            effects.append(contentsOf: unsupportedFilterWarningEffects(
-                unknownKeys: resolved.unknownKeys,
-                collectionAlertClient: collectionAlertClient,
-            ))
-        }
+    if let effects = makeHydratedCollectionOpenEffects(
+        file: file,
+        openContext: openContext,
+        resolved: resolved,
+        isStale: isStale,
+        collectionAlertClient: collectionAlertClient,
+        state: &state,
+    ) {
         return .concatenate(effects)
     }
 

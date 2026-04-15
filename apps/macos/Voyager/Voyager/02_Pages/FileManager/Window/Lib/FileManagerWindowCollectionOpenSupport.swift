@@ -106,6 +106,43 @@ func hydrateOpenedCollectionSnapshot(
     ]
 }
 
+func makeHydratedCollectionOpenEffects(
+    file: VoyagerCollectionFile,
+    openContext: CollectionOpenContext,
+    resolved: CollectionFiltersResolutionResult,
+    isStale: Bool,
+    collectionAlertClient: CollectionAlertClient,
+    state: inout FileManagerWindowState,
+) -> [Effect<FileManagerWindowAction>]? {
+    guard let navigation = openContext.navigation,
+          let hydrationEffects = hydrateOpenedCollectionSnapshot(
+              file: file,
+              navigation: navigation,
+              isStale: isStale,
+              state: &state,
+          )
+    else {
+        return nil
+    }
+
+    var effects = hydrationEffects
+    if isStale, !state.content.isOpenedCollectionDirty {
+        state.content.collectionSession.isRefreshingHydratedSnapshot = true
+        effects.append(
+            openContext.trimmedQuery.isEmpty
+                ? .send(.content(.composer(.applyFilters)))
+                : .send(.content(.composer(.submit))),
+        )
+    }
+    if !resolved.unknownKeys.isEmpty {
+        effects.append(contentsOf: unsupportedFilterWarningEffects(
+            unknownKeys: resolved.unknownKeys,
+            collectionAlertClient: collectionAlertClient,
+        ))
+    }
+    return effects
+}
+
 func snapshotPaths(from response: SearchResponsePayload) -> [String]? {
     guard let items = response.items else { return nil }
     var paths: [String] = []
