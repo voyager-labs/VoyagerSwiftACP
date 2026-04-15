@@ -15,6 +15,10 @@ struct FileManagerContentSyncReducer {
                 case .collection:
                     if collectionPathsAffectCurrentContext(paths, state: state) {
                         state.collectionSession.isStale = true
+                        state.collectionSession.lastRefreshAt = nil
+                        if state.collectionSession.staleReason == nil {
+                            state.collectionSession.staleReason = .invalidatedLocally
+                        }
                     }
                     return .none
 
