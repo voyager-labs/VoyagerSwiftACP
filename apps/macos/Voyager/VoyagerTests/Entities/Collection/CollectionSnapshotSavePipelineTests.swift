@@ -105,6 +105,49 @@ final class CollectionSnapshotSavePipelineTests: XCTestCase {
         XCTAssertEqual(saved?.file.snapshotMeta?.itemCount, 0)
         XCTAssertEqual(stalenessClient.record(url.path)?.definitionFingerprint, "fingerprint")
     }
+
+    func testEmptySnapshotSavePersistsEmptySnapshotArray() async {
+        let recorder = SavedCollectionsRecorder()
+        let stalenessClient = CollectionStalenessClient.live(userDefaultsClient: .testValue)
+        let url = URL(fileURLWithPath: "/tmp/empty.voycoll")
+
+        let payload = SaveRequestPayload(
+            context: CollectionContext(query: "Report", scopes: ["/tmp"], conditions: []),
+            isSearchLoading: false,
+            isFiltersLoading: false,
+            snapshotItems: [],
+            definitionFingerprint: "fingerprint",
+            capturedAt: .distantFuture,
+            relevanceRoots: ["/tmp"],
+        )
+
+        let store = TestStore(initialState: CollectionFeature.State()) {
+            CollectionFeature()
+        } withDependencies: {
+            $0.collectionFileClient = CollectionFileClient(
+                save: { file, url in
+                    await recorder.append(file: file, url: url)
+                },
+                load: { _ in kEmptyCollectionFile },
+            )
+            $0.userDefaultsClient = .testValue
+            $0.collectionStalenessClient = stalenessClient
+        }
+        store.exhaustivity = .off
+
+        await store.send(.saveToExisting(payload, url)) {
+            $0.isSaving = true
+        }
+        await store.receive(\.saveCompleted) {
+            $0.isSaving = false
+            $0.pendingSave = nil
+        }
+        await store.finish()
+
+        let saved = await recorder.last()
+        XCTAssertEqual(saved?.file.snapshot?.items, [])
+        XCTAssertEqual(saved?.file.snapshotMeta?.itemCount, 0)
+    }
 }
 
 private let kEmptyCollectionFile = VoyagerCollectionFile(

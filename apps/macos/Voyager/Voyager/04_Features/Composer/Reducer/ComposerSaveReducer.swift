@@ -39,7 +39,7 @@ private func makeSavePayload(from state: ComposerState) -> SaveRequestPayload {
         context: context,
         isSearchLoading: state.isLoadingSearch,
         isFiltersLoading: state.isLoadingFilters,
-        snapshotItems: makeSnapshotItems(from: state.lastFiltersResponse?.items),
+        snapshotItems: CollectionSnapshotHydration.snapshotItems(from: state.lastFiltersResponse?.items),
         definitionFingerprint: CollectionSnapshotHydration.definitionFingerprint(
             query: query,
             scopes: scopes,
@@ -48,19 +48,6 @@ private func makeSavePayload(from state: ComposerState) -> SaveRequestPayload {
         capturedAt: Date(),
         relevanceRoots: scopes.map(standardizedPath).sorted(),
     )
-}
-
-private func makeSnapshotItems(from items: [JSONValue]?) -> [JSONValue]? {
-    guard let items else { return nil }
-    let pathItems = items.compactMap { item -> JSONValue? in
-        guard case let .object(values) = item,
-              case let .string(fullPath) = values["fullPath"]
-        else {
-            return nil
-        }
-        return .string(standardizedPath(fullPath))
-    }
-    return pathItems.isEmpty ? nil : pathItems
 }
 
 private func standardizedPath(_ path: String) -> String {

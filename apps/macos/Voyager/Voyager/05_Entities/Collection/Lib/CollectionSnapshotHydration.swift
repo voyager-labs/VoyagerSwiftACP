@@ -70,6 +70,20 @@ enum CollectionSnapshotHydration {
         )
     }
 
+    static func snapshotItems(from searchItems: [JSONValue]?) -> [JSONValue]? {
+        guard let searchItems else { return nil }
+        var paths: [JSONValue] = []
+        for item in searchItems {
+            guard case let .object(values) = item,
+                  case let .string(fullPath) = values["fullPath"]
+            else {
+                return nil
+            }
+            paths.append(.string(URL(fileURLWithPath: fullPath).standardizedFileURL.path))
+        }
+        return paths
+    }
+
     private static func normalizePaths(_ paths: [String]) -> [String] {
         paths
             .map { URL(fileURLWithPath: $0).standardizedFileURL.path }
