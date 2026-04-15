@@ -1,0 +1,166 @@
+import ComposableArchitecture
+import Foundation
+
+struct RefreshedSnapshotWriteBackRequest {
+    let payload: SaveRequestPayload
+    let url: URL
+}
+
+func handleCollectionSaveFailure(
+    state: inout FileManagerContentState,
+) -> Effect<FileManagerContentAction> {
+    if state.collectionSession.isWritingBackRefreshedSnapshot {
+        state.collectionSession.isWritingBackRefreshedSnapshot = false
+        state.collectionSession.isStale = true
+        if state.collectionSession.staleReason == nil {
+            state.collectionSession.staleReason = .snapshotHydratedOnOpen
+        }
+        state.collectionSession.lastRefreshAt = nil
+    }
+    return .send(.internal(.requestNavigation(.internal(.setPendingNavigation(nil)))))
+}
+
+func handleCollectionSaveSuccess(
+    completion: CollectionSaveCompletion,
+    state: inout FileManagerContentState,
+) -> Effect<FileManagerContentAction> {
+    let url = completion.url
+    let previousSnapshot = state.navigation.makeContentPageNavigationHistorySnapshot()
+    let previousCollectionURL = state.collectionSession.openedURL
+    let previousCollectionName = state.collectionSession.openedName
+    let previousBaseline = state.collectionSession.baseline
+    let shouldAppendHistory = previousCollectionURL?.path != url.path
+
+    if state.collectionSession.isWritingBackRefreshedSnapshot {
+        guard state.isCollectionMode,
+              state.collectionSession.openedURL?.path == url.path
+        else {
+            state.collectionSession.isWritingBackRefreshedSnapshot = false
+            return .none
+        }
+        applyWriteBackSuccessState(state: &state)
+    }
+
+    state.collectionSession.openedURL = url
+    state.collectionSession.openedName = url.deletingPathExtension().lastPathComponent
+    state.collectionSession.originURL = url
+    state.collectionSession.baseline = state.collectionContext.map(CollectionBaseline.init(context:))
+
+    var navigationEffects: [Effect<FileManagerContentAction>] = [
+        .send(.internal(.requestNavigation(.internal(.setNavigationState(.collection(
+            makeCollectionNavigation(state: state),
+        )))))),
+    ]
+
+    if shouldAppendHistory {
+        if let historyEntry = previousCollectionHistoryEntry(
+            baseline: previousBaseline,
+            previousURL: previousCollectionURL,
+            previousCollectionName: previousCollectionName,
+            state: state,
+        ) {
+            navigationEffects.append(.send(.internal(.requestNavigation(.internal(.appendBackHistory(historyEntry))))))
+        } else {
+            navigationEffects
+                .append(.send(.internal(.requestNavigation(.internal(.appendBackHistory(previousSnapshot))))))
+        }
+        navigationEffects.append(.send(.internal(.requestNavigation(.internal(.clearForwardHistory)))))
+    }
+
+    state.syncComposerCollectionState()
+
+    if let pending = state.navigation.pendingNavigation {
+        return .concatenate(
+            .concatenate(navigationEffects),
+            .send(.internal(.requestNavigation(.internal(.setPendingNavigation(nil))))),
+            .send(.internal(.performPendingNavigation(pending))),
+        )
+    }
+
+    return .concatenate(navigationEffects)
+}
+
+func applyWriteBackSuccessState(
+    state: inout FileManagerContentState,
+) {
+    state.collectionSession.isWritingBackRefreshedSnapshot = false
+    state.collectionSession.isStale = false
+    state.collectionSession.staleReason = nil
+    state.collectionSession.lastRefreshAt = Date()
+}
+
+func finalizeCollectionRefreshIfNeeded(
+    searchEffect: Effect<FileManagerContentAction>,
+    state: inout FileManagerContentState,
+) -> Effect<FileManagerContentAction> {
+    guard state.collectionSession.isRefreshingHydratedSnapshot else {
+        return .concatenate(
+            searchEffect,
+            .send(.delegate(.composerCollectionSearchSucceeded)),
+        )
+    }
+
+    state.collectionSession.isRefreshingHydratedSnapshot = false
+
+    guard !state.isOpenedCollectionDirty,
+          let writeBack = makeRefreshedSnapshotWriteBackRequest(state: state)
+    else {
+        state.collectionSession.isWritingBackRefreshedSnapshot = false
+        state.collectionSession.lastRefreshAt = nil
+        return .concatenate(
+            searchEffect,
+            .send(.delegate(.composerCollectionSearchSucceeded)),
+        )
+    }
+
+    state.collectionSession.isWritingBackRefreshedSnapshot = true
+
+    return .concatenate(
+        searchEffect,
+        .send(.composer(.collection(.saveToExisting(writeBack.payload, writeBack.url)))),
+        .send(.delegate(.composerCollectionSearchSucceeded)),
+    )
+}
+
+func failCollectionRefreshIfNeeded(
+    searchEffect: Effect<FileManagerContentAction>,
+    state: inout FileManagerContentState,
+) -> Effect<FileManagerContentAction> {
+    if state.collectionSession.isRefreshingHydratedSnapshot {
+        state.collectionSession.isRefreshingHydratedSnapshot = false
+        state.collectionSession.isWritingBackRefreshedSnapshot = false
+        state.collectionSession.lastRefreshAt = nil
+    }
+
+    return .concatenate(
+        searchEffect,
+        .send(.delegate(.composerCollectionSearchFailed)),
+    )
+}
+
+func makeRefreshedSnapshotWriteBackRequest(
+    state: FileManagerContentState,
+) -> RefreshedSnapshotWriteBackRequest? {
+    guard let context = state.collectionContext,
+          let url = state.collectionSession.openedURL,
+          let snapshotItems = CollectionSnapshotHydration.snapshotItems(from: state.composer.lastFiltersResponse?.items)
+    else {
+        return nil
+    }
+
+    let payload = SaveRequestPayload(
+        context: context,
+        isSearchLoading: false,
+        isFiltersLoading: false,
+        snapshotItems: snapshotItems,
+        definitionFingerprint: CollectionSnapshotHydration.definitionFingerprint(
+            query: context.query,
+            scopes: context.scopes,
+            conditions: context.conditions,
+        ),
+        capturedAt: Date(),
+        relevanceRoots: context.scopes.map { URL(fileURLWithPath: $0).standardizedFileURL.path }.sorted(),
+    )
+
+    return .init(payload: payload, url: url)
+}

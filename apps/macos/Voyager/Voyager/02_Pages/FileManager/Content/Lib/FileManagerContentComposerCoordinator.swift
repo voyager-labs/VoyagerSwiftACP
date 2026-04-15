@@ -85,9 +85,9 @@ enum FileManagerContentComposerCoordinator {
                 query: state.composer.pendingSearchQuery ?? "",
                 state: &state,
             )
-            return .concatenate(
-                effect,
-                .send(.delegate(.composerCollectionSearchSucceeded)),
+            return finalizeCollectionRefreshIfNeeded(
+                searchEffect: effect,
+                state: &state,
             )
 
         case let .internal(.searchResponse(requestID, .failure(error))):
@@ -100,9 +100,9 @@ enum FileManagerContentComposerCoordinator {
                 state: &state,
                 dependencies: dependencies,
             )
-            return .concatenate(
-                effect,
-                .send(.delegate(.composerCollectionSearchFailed)),
+            return failCollectionRefreshIfNeeded(
+                searchEffect: effect,
+                state: &state,
             )
 
         case let .internal(.filtersResponse(requestID, .failure(error))):
@@ -118,9 +118,9 @@ enum FileManagerContentComposerCoordinator {
                 state: &state,
                 dependencies: dependencies,
             )
-            return .concatenate(
-                effect,
-                .send(.delegate(.composerCollectionSearchFailed)),
+            return failCollectionRefreshIfNeeded(
+                searchEffect: effect,
+                state: &state,
             )
 
         default:
@@ -270,68 +270,11 @@ enum FileManagerContentComposerCoordinator {
             .none
 
         case let .saveCompleted(.success(completion)):
-            handleCollectionSaveSuccess(url: completion.url, state: &state)
+            handleCollectionSaveSuccess(completion: completion, state: &state)
 
         case .saveCompleted(.failure):
-            .send(.internal(.requestNavigation(.internal(.setPendingNavigation(nil)))))
+            handleCollectionSaveFailure(state: &state)
         }
-    }
-
-    private static func handleCollectionSaveSuccess(
-        url: URL,
-        state: inout FileManagerContentState,
-    ) -> Effect<FileManagerContentAction> {
-        let previousSnapshot = state.navigation.makeContentPageNavigationHistorySnapshot()
-        let previousCollectionURL = state.collectionSession.openedURL
-        let previousCollectionName = state.collectionSession.openedName
-        let previousBaseline = state.collectionSession.baseline
-        let shouldAppendHistory = previousCollectionURL?.path != url.path
-
-        state.collectionSession.openedURL = url
-        state.collectionSession.openedName = url.deletingPathExtension().lastPathComponent
-        state.collectionSession.originURL = url
-
-        if let context = state.collectionContext {
-            state.collectionSession.baseline = CollectionBaseline(
-                context: context,
-            )
-        } else {
-            state.collectionSession.baseline = nil
-        }
-
-        var navigationEffects: [Effect<FileManagerContentAction>] = [
-            .send(.internal(.requestNavigation(.internal(.setNavigationState(.collection(
-                makeCollectionNavigation(state: state),
-            )))))),
-        ]
-
-        if shouldAppendHistory {
-            if let historyEntry = previousCollectionHistoryEntry(
-                baseline: previousBaseline,
-                previousURL: previousCollectionURL,
-                previousCollectionName: previousCollectionName,
-                state: state,
-            ) {
-                navigationEffects
-                    .append(.send(.internal(.requestNavigation(.internal(.appendBackHistory(historyEntry))))))
-            } else {
-                navigationEffects
-                    .append(.send(.internal(.requestNavigation(.internal(.appendBackHistory(previousSnapshot))))))
-            }
-            navigationEffects.append(.send(.internal(.requestNavigation(.internal(.clearForwardHistory)))))
-        }
-
-        state.syncComposerCollectionState()
-
-        if let pending = state.navigation.pendingNavigation {
-            return .concatenate(
-                .concatenate(navigationEffects),
-                .send(.internal(.requestNavigation(.internal(.setPendingNavigation(nil))))),
-                .send(.internal(.performPendingNavigation(pending))),
-            )
-        }
-
-        return .concatenate(navigationEffects)
     }
 }
 
