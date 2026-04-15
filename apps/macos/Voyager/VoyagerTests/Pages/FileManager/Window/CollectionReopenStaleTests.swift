@@ -1,10 +1,11 @@
 import ComposableArchitecture
+import Foundation
 @testable import Voyager
 import XCTest
 
 @MainActor
 final class CollectionReopenStaleTests: XCTestCase {
-    func testOpenCollectionFileRestoresStaleStateFromStalenessClient() async {
+    func testCollectionFileLoadedRestoresStaleStateFromStalenessClient() async {
         let url = URL(fileURLWithPath: "/tmp/voyager/sample.voycoll")
         let file = VoyagerCollectionFile(
             schemaVersion: 1,
@@ -20,28 +21,38 @@ final class CollectionReopenStaleTests: XCTestCase {
             appVersion: nil,
         )
 
-        let store = TestStore(initialState: FileManagerFeature.State()) {
-            FileManagerFeature()
-        } withDependencies: {
-            $0.collectionFileClient.load = { _ in file }
-            $0.collectionStalenessClient.consumeInvalidation = { path in
-                path == url.path
-            }
-            $0.collectionStalenessClient.registerCollection = { _, _ in }
-        }
-        store.exhaustivity = .off
+        let stalenessClient = CollectionStalenessClient.live(userDefaultsClient: .testValue)
+        stalenessClient.upsertRecord(
+            url.path,
+            .init(
+                definitionFingerprint: "",
+                relevanceRoots: ["/tmp/voyager"],
+                lastInvalidatedAt: .distantFuture,
+            ),
+        )
 
-        await store.send(.navigation(.view(.openCollectionFile(url))))
-        await store.receive { action in
-            guard case let .navigation(.internal(.collectionFileLoaded(.success(_, isStale)))) = action else {
-                return false
-            }
-            return isStale == true
+        let store = makeDefinitionOnlyStore(openedURL: url, stalenessClient: stalenessClient)
+
+        await store.send(.navigation(.internal(.collectionFileLoaded(.success(file))))) {
+            $0.content.collectionSession.isOpening = false
+            $0.content.collectionSession.isStale = true
+            $0.content.collectionSession.staleReason = .invalidatedLocally
+            $0.content.composer.isPresented = false
+            $0.content.composer.pendingSearchQuery = nil
+            $0.content.composer.text = ""
+            $0.content.composer.scopes = ["/tmp/voyager"]
+            $0.content.composer.conditions = []
+            $0.content.collectionSession.baseline = .init(
+                context: .init(query: "", scopes: ["/tmp/voyager"], conditions: []),
+            )
         }
+
+        XCTAssertTrue(store.state.content.collectionSession.isStale)
+        XCTAssertEqual(store.state.content.collectionSession.staleReason, .invalidatedLocally)
         await store.finish()
     }
 
-    func testOpenStaleCollectionDoesNotAutoSearch() async {
+    func testOpenStaleDefinitionOnlyCollectionDoesNotAutoSearch() async {
         let url = URL(fileURLWithPath: "/tmp/voyager/sample.voycoll")
         let file = VoyagerCollectionFile(
             schemaVersion: 1,
@@ -57,23 +68,57 @@ final class CollectionReopenStaleTests: XCTestCase {
             appVersion: nil,
         )
 
-        let store = TestStore(initialState: FileManagerFeature.State()) {
-            FileManagerFeature()
-        } withDependencies: {
-            $0.collectionFileClient.load = { _ in file }
-            $0.collectionStalenessClient.consumeInvalidation = { path in
-                path == url.path
-            }
-            $0.collectionStalenessClient.registerCollection = { _, _ in }
+        let stalenessClient = CollectionStalenessClient.live(userDefaultsClient: .testValue)
+        stalenessClient.upsertRecord(
+            url.path,
+            .init(
+                definitionFingerprint: "",
+                relevanceRoots: ["/tmp/voyager"],
+                lastInvalidatedAt: .distantFuture,
+            ),
+        )
+
+        let store = makeDefinitionOnlyStore(openedURL: url, stalenessClient: stalenessClient)
+
+        await store.send(.navigation(.internal(.collectionFileLoaded(.success(file))))) {
+            $0.content.collectionSession.isOpening = false
+            $0.content.collectionSession.isStale = true
+            $0.content.collectionSession.staleReason = .invalidatedLocally
+            $0.content.composer.isPresented = false
+            $0.content.composer.pendingSearchQuery = "needle"
+            $0.content.composer.text = ""
+            $0.content.composer.scopes = ["/tmp/voyager"]
+            $0.content.composer.conditions = []
+            $0.content.collectionSession.baseline = .init(
+                context: .init(query: "needle", scopes: ["/tmp/voyager"], conditions: []),
+            )
         }
 
-        await store.send(.navigation(.view(.openCollectionFile(url))))
-        await store.receive { action in
-            guard case let .navigation(.internal(.collectionFileLoaded(.success(_, isStale)))) = action else {
-                return false
-            }
-            return isStale == true
-        }
+        XCTAssertTrue(store.state.content.collectionSession.isStale)
+        XCTAssertNil(store.state.content.composer.lastFiltersResponse)
+        XCTAssertNil(store.state.content.composer.lastSearchResponse)
         await store.finish()
+    }
+}
+
+@MainActor
+private func makeDefinitionOnlyStore(
+    openedURL: URL,
+    stalenessClient: CollectionStalenessClient,
+) -> TestStore<FileManagerWindowState, FileManagerWindowAction> {
+    var state = FileManagerWindowState()
+    state.content.collectionSession.isOpening = true
+    state.content.collectionSession.openedURL = openedURL
+    state.content.collectionSession.openedName = openedURL.deletingPathExtension().lastPathComponent
+
+    return TestStore(initialState: state) {
+        FileManagerFeature()
+    } withDependencies: {
+        $0.collectionAlertClient = .init(
+            showUnsavedNavigationAlert: { .save },
+            showCollectionOpenErrorAlert: { _, _ in },
+        )
+        $0.registryClient = .testValue
+        $0.collectionStalenessClient = stalenessClient
     }
 }
