@@ -9,7 +9,7 @@ struct CollectionOpenContext {
 
 func isEmptyCollectionDefinition(
     file: VoyagerCollectionFile,
-    resolved: CollectionFiltersResolutionResult,
+    resolved: AppliedFiltersUtils.ResolutionResult,
 ) -> Bool {
     file.query.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
         && resolved.scopes.isEmpty
@@ -18,7 +18,7 @@ func isEmptyCollectionDefinition(
 
 func prepareLoadedCollectionOpenState(
     file: VoyagerCollectionFile,
-    resolved: CollectionFiltersResolutionResult,
+    resolved: AppliedFiltersUtils.ResolutionResult,
     isStale: Bool,
     registryClient: RegistryClient,
     state: inout FileManagerWindowState,
@@ -57,7 +57,7 @@ func prepareLoadedCollectionOpenState(
 }
 
 func makeSnapshotNavigation(
-    resolved: CollectionFiltersResolutionResult,
+    resolved: AppliedFiltersUtils.ResolutionResult,
     state: FileManagerWindowState,
 ) -> ContentPageCollectionNavigation? {
     guard let openedURL = state.content.collectionSession.openedURL else { return nil }
@@ -109,7 +109,7 @@ func hydrateOpenedCollectionSnapshot(
 func makeHydratedCollectionOpenEffects(
     file: VoyagerCollectionFile,
     openContext: CollectionOpenContext,
-    resolved: CollectionFiltersResolutionResult,
+    resolved: AppliedFiltersUtils.ResolutionResult,
     isStale: Bool,
     collectionAlertClient: CollectionAlertClient,
     state: inout FileManagerWindowState,
@@ -143,7 +143,7 @@ func makeHydratedCollectionOpenEffects(
     return effects
 }
 
-func snapshotPaths(from response: SearchResponsePayload) -> [String]? {
+func snapshotPaths(from response: VoyagerShared.SearchResponsePayload) -> [String]? {
     guard let items = response.items else { return nil }
     var paths: [String] = []
     for item in items {
