@@ -213,12 +213,7 @@ enum FileManagerContentComposerCoordinator {
             logContentPageNavigationDAUIfNeeded(previous: previousNavigationState, next: nextNavigationState)
         }
         let showHidden = state.entryViewLayout.showHiddenFiles
-        let paths = items.compactMap { item -> String? in
-            guard case let .object(dict) = item,
-                  case let .string(path) = dict["fullPath"]
-            else { return nil }
-            return path
-        }
+        let paths = searchResultPaths(from: items)
 
         return .concatenate(
             .concatenate(navigationEffects),
@@ -274,6 +269,20 @@ enum FileManagerContentComposerCoordinator {
 
         case .saveCompleted(.failure):
             handleCollectionSaveFailure(state: &state)
+        }
+    }
+}
+
+private func searchResultPaths(from items: [VoyagerShared.JSONValue]) -> [String] {
+    items.compactMap { item in
+        switch item {
+        case let .string(path):
+            return path
+        case let .object(dict):
+            guard case let .string(path) = dict["fullPath"] else { return nil }
+            return path
+        default:
+            return nil
         }
     }
 }
