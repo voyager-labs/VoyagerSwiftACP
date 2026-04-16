@@ -58,4 +58,16 @@ struct FileManagerContentState: Equatable {
             && collectionSession.isStale
             && collectionSession.lastRefreshAt == nil
     }
+
+    var canRefreshStaleCollection: Bool {
+        isCollectionMode
+            && isOpenedCollectionStale
+            && !isOpenedCollectionDirty
+            && !composer.isCollectionSearching
+            && !collectionSession.isRefreshingHydratedSnapshot
+            && !collectionSession.isWritingBackRefreshedSnapshot
+            && collectionSession.openedURL != nil
+            && collectionContext != nil
+            && collectionSession.baseline != nil
+    }
 }
