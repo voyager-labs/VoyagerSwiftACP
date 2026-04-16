@@ -2,6 +2,8 @@ import ComposableArchitecture
 import Foundation
 import VoyagerEntitiesEntry
 
+import VoyagerFeaturesContentPageNavigation
+
 func applyCollectionNavigationState(
     _ navigation: ContentPageCollectionNavigation,
     state: inout FileManagerWindowState,

@@ -5,6 +5,8 @@ public struct ContentPageNavigationFeature {
     public typealias State = ContentPageNavigationState
     public typealias Action = ContentPageNavigationAction
 
+    public init() {}
+
     public var body: some Reducer<State, Action> {
         ContentPageNavigationDirectReducer()
         ContentPageNavigationHistoryReducer()

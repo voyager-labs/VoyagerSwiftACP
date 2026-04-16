@@ -1,6 +1,8 @@
 import ComposableArchitecture
 import SwiftUI
 
+import VoyagerFeaturesContentPageNavigation
+
 struct FileManagerContentPaneView: View {
     let store: StoreOf<FileManagerContentFeature>
     let chromeProps: FileManagerContentChromeProps

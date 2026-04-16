@@ -1,7 +1,7 @@
 import Foundation
 import VoyagerEntitiesEntry
 
-func logContentPageNavigationDAUIfNeeded(
+public func logContentPageNavigationDAUIfNeeded(
     previous: ContentPageNavigationRoute,
     next: ContentPageNavigationRoute,
 ) {

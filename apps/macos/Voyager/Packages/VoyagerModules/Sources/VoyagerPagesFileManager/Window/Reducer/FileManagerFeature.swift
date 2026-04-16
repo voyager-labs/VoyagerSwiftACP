@@ -1,6 +1,7 @@
 import ComposableArchitecture
 import Foundation
 
+import VoyagerFeaturesContentPageNavigation
 import VoyagerFeaturesEntryOperations
 @_exported import VoyagerWidgetsEntryViewLayout
 

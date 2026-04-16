@@ -43,4 +43,18 @@ public struct ContentPageCollectionNavigation: Equatable, Sendable {
     public var sortKey: VoyagerWidgetsEntryViewLayout.SortKey
     public var sortOrder: VoyagerWidgetsEntryViewLayout.SortOrder
     public var viewLayout: EntryViewLayoutState.Mode
+
+    public init(
+        kind: ContentPageCollectionKind,
+        context: CollectionContext,
+        sortKey: VoyagerWidgetsEntryViewLayout.SortKey,
+        sortOrder: VoyagerWidgetsEntryViewLayout.SortOrder,
+        viewLayout: EntryViewLayoutState.Mode,
+    ) {
+        self.kind = kind
+        self.context = context
+        self.sortKey = sortKey
+        self.sortOrder = sortOrder
+        self.viewLayout = viewLayout
+    }
 }

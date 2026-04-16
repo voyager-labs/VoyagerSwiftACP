@@ -2,6 +2,7 @@ import ComposableArchitecture
 import Foundation
 import SwiftUI
 
+import VoyagerFeaturesContentPageNavigation
 import VoyagerFeaturesEntryOperations
 
 struct ToolbarHistoryItem: Equatable {

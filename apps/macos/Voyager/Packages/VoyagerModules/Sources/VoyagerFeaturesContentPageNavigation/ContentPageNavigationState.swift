@@ -14,6 +14,22 @@ public struct ContentPageNavigationState: Equatable {
     public var forwardHistory: [ContentPageNavigationHistorySnapshot] = []
     public var pendingNavigation: ContentPageNavigationPending?
 
+    public init(
+        navigationState: ContentPageNavigationRoute = .folder(SettingsDefaults.defaultTabPath()),
+        titlePath: String = SettingsDefaults.defaultTabPath(),
+        scrollPositions: [String: CGPoint] = [:],
+        backHistory: [ContentPageNavigationHistorySnapshot] = [],
+        forwardHistory: [ContentPageNavigationHistorySnapshot] = [],
+        pendingNavigation: ContentPageNavigationPending? = nil,
+    ) {
+        self.navigationState = navigationState
+        self.titlePath = titlePath
+        self.scrollPositions = scrollPositions
+        self.backHistory = backHistory
+        self.forwardHistory = forwardHistory
+        self.pendingNavigation = pendingNavigation
+    }
+
     public var currentPath: String {
         switch navigationState {
         case let .folder(path):

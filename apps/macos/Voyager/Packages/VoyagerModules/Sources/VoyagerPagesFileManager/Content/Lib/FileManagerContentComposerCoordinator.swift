@@ -2,6 +2,7 @@ import ComposableArchitecture
 import Foundation
 import VoyagerShared
 
+import VoyagerFeaturesContentPageNavigation
 import VoyagerFeaturesEntryOperations
 import VoyagerWidgetsEntryViewLayout
 
