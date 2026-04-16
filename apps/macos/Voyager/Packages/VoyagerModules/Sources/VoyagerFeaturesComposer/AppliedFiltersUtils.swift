@@ -2,11 +2,17 @@ import Foundation
 import VoyagerEntitiesEntry
 import VoyagerShared
 
-enum AppliedFiltersUtils {
-    struct ResolutionResult: Equatable {
-        let scopes: [String]
-        let conditions: [Condition]
-        let unknownKeys: [String]
+public enum AppliedFiltersUtils {
+    public struct ResolutionResult: Equatable {
+        public let scopes: [String]
+        public let conditions: [Condition]
+        public let unknownKeys: [String]
+
+        public init(scopes: [String], conditions: [Condition], unknownKeys: [String]) {
+            self.scopes = scopes
+            self.conditions = conditions
+            self.unknownKeys = unknownKeys
+        }
     }
 
     private struct ResolvedCondition {
@@ -14,7 +20,7 @@ enum AppliedFiltersUtils {
         let unknownKey: String?
     }
 
-    static func resolve(
+    public static func resolve(
         _ appliedFilters: VoyagerShared.AppliedFiltersPayload?,
         fallbackScopes: [String],
         fallbackConditions: [Condition],
@@ -29,7 +35,7 @@ enum AppliedFiltersUtils {
         return (resolved.scopes, resolved.conditions)
     }
 
-    static func resolveDetailed(
+    public static func resolveDetailed(
         _ appliedFilters: VoyagerShared.AppliedFiltersPayload?,
         fallbackScopes: [String],
         fallbackConditions: [Condition],

@@ -7,4 +7,6 @@ public struct OperatorPickerState: Equatable {
     public var options: [String] = []
     public var optionLabels: [String: String] = [:]
     public var propertyKey: String?
+
+    public init() {}
 }

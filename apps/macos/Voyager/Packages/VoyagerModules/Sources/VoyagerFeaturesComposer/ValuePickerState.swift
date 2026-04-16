@@ -19,14 +19,30 @@ public struct ValuePickerState: Equatable {
     public var finderTagListState: FinderTagListState?
     public var errorMessage: String?
     public var editingIndex: Int?
+
+    public init() {}
 }
 
 public struct FinderTagListState: Equatable {
     public var options: [Tag]
+
+    public init(options: [Tag] = []) {
+        self.options = options
+    }
 }
 
 public struct UnitValueState: Equatable {
     public var selectedUnitCode: String
     public var availableUnitCodes: [String]
     public var unitLabelsByCode: [String: String]
+
+    public init(
+        selectedUnitCode: String = "",
+        availableUnitCodes: [String] = [],
+        unitLabelsByCode: [String: String] = [:],
+    ) {
+        self.selectedUnitCode = selectedUnitCode
+        self.availableUnitCodes = availableUnitCodes
+        self.unitLabelsByCode = unitLabelsByCode
+    }
 }

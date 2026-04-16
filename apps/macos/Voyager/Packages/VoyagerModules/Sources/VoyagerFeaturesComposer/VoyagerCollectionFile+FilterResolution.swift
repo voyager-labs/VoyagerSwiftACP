@@ -2,7 +2,7 @@ import Foundation
 import VoyagerEntitiesEntry
 import VoyagerShared
 
-extension VoyagerCollectionFile {
+public extension VoyagerCollectionFile {
     func resolveCollectionFilters(
         registryClient: RegistryClient,
     ) -> AppliedFiltersUtils.ResolutionResult {

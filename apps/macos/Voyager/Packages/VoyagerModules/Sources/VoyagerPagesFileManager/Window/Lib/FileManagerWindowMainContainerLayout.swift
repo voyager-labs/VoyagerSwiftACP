@@ -1,6 +1,7 @@
 import AppKit
 import ComposableArchitecture
 import SwiftUI
+import VoyagerShared
 
 public enum FileManagerWindowMainContainerLayout {
     public struct Components {

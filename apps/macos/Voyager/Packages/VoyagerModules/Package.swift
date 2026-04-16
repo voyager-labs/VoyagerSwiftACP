@@ -15,6 +15,7 @@ let package = Package(
         .library(name: "VoyagerPagesOnboarding", targets: ["VoyagerPagesOnboarding"]),
         .library(name: "VoyagerPagesSettings", targets: ["VoyagerPagesSettings"]),
         .library(name: "VoyagerFeaturesContentPageNavigation", targets: ["VoyagerFeaturesContentPageNavigation"]),
+        .library(name: "VoyagerFeaturesComposer", targets: ["VoyagerFeaturesComposer"]),
         .library(name: "VoyagerPagesFileManager", targets: ["VoyagerPagesFileManager"]),
         .library(name: "VoyagerWidgetsEntryViewLayout", targets: ["VoyagerWidgetsEntryViewLayout"]),
     ],
@@ -165,9 +166,29 @@ let package = Package(
             ],
         ),
         .target(
+            name: "VoyagerFeaturesComposer",
+            dependencies: [
+                "VoyagerEntitiesEntry",
+                "VoyagerShared",
+                "VoyagerFeaturesEntryOperations",
+                .product(name: "ComposableArchitecture", package: "swift-composable-architecture"),
+                .product(name: "Logging", package: "swift-log"),
+            ],
+        ),
+        .testTarget(
+            name: "VoyagerFeaturesComposerTests",
+            dependencies: [
+                "VoyagerFeaturesComposer",
+                "VoyagerEntitiesEntry",
+                "VoyagerShared",
+                .product(name: "ComposableArchitecture", package: "swift-composable-architecture"),
+            ],
+        ),
+        .target(
             name: "VoyagerPagesFileManager",
             dependencies: [
                 "VoyagerEntitiesEntry",
+                "VoyagerFeaturesComposer",
                 "VoyagerFeaturesContentPageNavigation",
                 "VoyagerFeaturesEntryOperations",
                 "VoyagerShared",
@@ -185,6 +206,7 @@ let package = Package(
             dependencies: [
                 "VoyagerPagesFileManager",
                 "VoyagerEntitiesEntry",
+                "VoyagerFeaturesComposer",
                 "VoyagerFeaturesEntryOperations",
                 "VoyagerShared",
                 .product(name: "ComposableArchitecture", package: "swift-composable-architecture"),

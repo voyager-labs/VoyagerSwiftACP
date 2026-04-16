@@ -27,6 +27,8 @@ public struct ComposerFeature {
     public typealias State = ComposerState
     public typealias Action = ComposerAction
 
+    public init() {}
+
     @Dependency(\.searchClient)
     public var searchClient
     @Dependency(\.registryClient)

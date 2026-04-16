@@ -7,11 +7,26 @@ public struct FilterSnapshot: Equatable {
     public let scopes: [String]
     public let conditions: [Condition]
     public let conditionDisplayByKey: [String: ConditionDisplayState]
+
+    public init(
+        scopes: [String] = [],
+        conditions: [Condition] = [],
+        conditionDisplayByKey: [String: ConditionDisplayState] = [:],
+    ) {
+        self.scopes = scopes
+        self.conditions = conditions
+        self.conditionDisplayByKey = conditionDisplayByKey
+    }
 }
 
 public struct ConditionDisplayState: Equatable {
     public var values: [String]
     public var unitValueState: UnitValueState?
+
+    public init(values: [String] = [], unitValueState: UnitValueState? = nil) {
+        self.values = values
+        self.unitValueState = unitValueState
+    }
 }
 
 @ObservableState
@@ -66,6 +81,8 @@ public struct ComposerState: Equatable {
             || !conditions.isEmpty
         return isSearching && hasContext
     }
+
+    public init() {}
 
     public mutating func pushHistory() {
         history.append(

@@ -16,6 +16,8 @@ public struct ConditionPropertyPickerState: Equatable {
     public var editingConditionKey: String?
     public var duplicateMessage: String?
     public var existingKeys: Set<String> = []
+
+    public init() {}
 }
 
 public enum ConditionPropertyPickerMode: Equatable {

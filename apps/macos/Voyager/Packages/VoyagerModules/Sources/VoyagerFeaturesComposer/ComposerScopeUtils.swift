@@ -2,12 +2,19 @@ import Foundation
 import VoyagerEntitiesEntry
 import VoyagerFeaturesEntryOperations
 
-enum ComposerScopeUtils {
-    struct DirectoryItem: Identifiable, Equatable {
-        let id: String
-        let path: String
-        let name: String
-        let iconName: String
+public enum ComposerScopeUtils {
+    public struct DirectoryItem: Identifiable, Equatable, Sendable {
+        public let id: String
+        public let path: String
+        public let name: String
+        public let iconName: String
+
+        public init(id: String, path: String, name: String, iconName: String) {
+            self.id = id
+            self.path = path
+            self.name = name
+            self.iconName = iconName
+        }
     }
 
     private struct IconMapping {
@@ -33,9 +40,9 @@ enum ComposerScopeUtils {
         let options: FileManager.DirectoryEnumerationOptions
     }
 
-    static let rootScopePath = "/"
+    public static let rootScopePath = "/"
 
-    nonisolated static func searchDirectories(
+    public nonisolated static func searchDirectories(
         query: String,
         entryLoadingClient: EntryLoadingClient,
         maxResults: Int = 50,
@@ -71,7 +78,7 @@ enum ComposerScopeUtils {
         return Array(sortSearchResults(results, query: queryLower).prefix(maxResults))
     }
 
-    static func buildCombinedList(
+    public static func buildCombinedList(
         history: [String],
         favorites: [ScopeFavoriteItem],
         entryLoadingClient: EntryLoadingClient,

@@ -2,6 +2,7 @@ import ComposableArchitecture
 import Foundation
 import VoyagerEntitiesEntry
 
+import VoyagerFeaturesComposer
 import VoyagerFeaturesContentPageNavigation
 
 func applyCollectionNavigationState(

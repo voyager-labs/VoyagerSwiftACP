@@ -4,6 +4,7 @@ import Foundation
 import SwiftUI
 
 import VoyagerEntitiesEntry
+import VoyagerFeaturesComposer
 import VoyagerFeaturesContentPageNavigation
 import VoyagerWidgetsEntryViewLayout
 

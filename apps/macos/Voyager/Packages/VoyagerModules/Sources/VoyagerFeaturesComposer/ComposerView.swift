@@ -2,15 +2,35 @@ import ComposableArchitecture
 import SwiftUI
 import VoyagerShared
 
-struct ComposerView: View {
-    let store: StoreOf<ComposerFeature>
-    let favorites: [ScopeFavoriteItem]
-    let historyPaths: [String]
-    let isDiscardEnabled: Bool
-    let canSaveCollection: Bool
-    let isTemporaryCollection: Bool
-    let onDiscardCollectionChanges: () -> Void
-    let onExitComposer: () -> Void
+public struct ComposerView: View {
+    public let store: StoreOf<ComposerFeature>
+    public let favorites: [ScopeFavoriteItem]
+    public let historyPaths: [String]
+    public let isDiscardEnabled: Bool
+    public let canSaveCollection: Bool
+    public let isTemporaryCollection: Bool
+    public let onDiscardCollectionChanges: () -> Void
+    public let onExitComposer: () -> Void
+
+    public init(
+        store: StoreOf<ComposerFeature>,
+        favorites: [ScopeFavoriteItem],
+        historyPaths: [String],
+        isDiscardEnabled: Bool,
+        canSaveCollection: Bool,
+        isTemporaryCollection: Bool,
+        onDiscardCollectionChanges: @escaping () -> Void,
+        onExitComposer: @escaping () -> Void,
+    ) {
+        self.store = store
+        self.favorites = favorites
+        self.historyPaths = historyPaths
+        self.isDiscardEnabled = isDiscardEnabled
+        self.canSaveCollection = canSaveCollection
+        self.isTemporaryCollection = isTemporaryCollection
+        self.onDiscardCollectionChanges = onDiscardCollectionChanges
+        self.onExitComposer = onExitComposer
+    }
 
     @Environment(\.colorScheme)
     private var colorScheme: ColorScheme
@@ -25,7 +45,7 @@ struct ComposerView: View {
         let transientFeedback: ComposerTransientFeedback?
     }
 
-    var body: some View {
+    public var body: some View {
         WithViewStore(
             store,
             observe: { state in
