@@ -67,19 +67,19 @@ extension VoyagerCollectionFile {
 }
 
 struct CollectionPersistedSnapshot: Codable, Equatable, Sendable {
-    let items: [JSONValue]
+    let items: [VoyagerShared.JSONValue]
 
     private enum CodingKeys: String, CodingKey {
         case items
     }
 
-    init(items: [JSONValue]) {
+    init(items: [VoyagerShared.JSONValue]) {
         self.items = items
     }
 
     init(from decoder: Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
-        let items = try container.decode([JSONValue].self, forKey: .items)
+        let items = try container.decode([VoyagerShared.JSONValue].self, forKey: .items)
         guard items.allSatisfy({
             if case .string = $0 { return true }
             return false
@@ -121,7 +121,7 @@ struct CollectionSnapshotMeta: Codable, Equatable, Sendable {
 struct CollectionCondition: Codable, Equatable, Sendable {
     let propertyKey: String
     let operatorCode: String
-    let value: JSONValue?
+    let value: VoyagerShared.JSONValue?
 
     enum CodingKeys: String, CodingKey {
         case propertyKey

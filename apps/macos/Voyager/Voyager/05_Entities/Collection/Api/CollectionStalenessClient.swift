@@ -43,7 +43,7 @@ private struct LegacyCollectionStalenessRecord: Codable, Equatable, Sendable {
 }
 
 extension CollectionStalenessClient {
-    static func live(userDefaultsClient: UserDefaultsClient) -> CollectionStalenessClient {
+    nonisolated static func live(userDefaultsClient: UserDefaultsClient) -> CollectionStalenessClient {
         .init(
             record: makeRecord(userDefaultsClient: userDefaultsClient),
             upsertRecord: makeUpsertRecord(userDefaultsClient: userDefaultsClient),
@@ -54,7 +54,7 @@ extension CollectionStalenessClient {
         )
     }
 
-    private static func makeRecord(
+    private nonisolated static func makeRecord(
         userDefaultsClient: UserDefaultsClient,
     ) -> @Sendable (String) -> CollectionStalenessRecord? {
         { path in
@@ -62,7 +62,7 @@ extension CollectionStalenessClient {
         }
     }
 
-    private static func makeUpsertRecord(
+    private nonisolated static func makeUpsertRecord(
         userDefaultsClient: UserDefaultsClient,
     ) -> @Sendable (String, CollectionStalenessRecord) -> Void {
         { path, record in
@@ -72,7 +72,7 @@ extension CollectionStalenessClient {
         }
     }
 
-    private static func makeInvalidateRecords(
+    private nonisolated static func makeInvalidateRecords(
         userDefaultsClient: UserDefaultsClient,
     ) -> @Sendable ([String]) -> Void {
         { affectedPaths in
@@ -102,7 +102,7 @@ extension CollectionStalenessClient {
         }
     }
 
-    private static func makeClearRecord(
+    private nonisolated static func makeClearRecord(
         userDefaultsClient: UserDefaultsClient,
     ) -> @Sendable (String) -> Void {
         { path in
@@ -112,7 +112,7 @@ extension CollectionStalenessClient {
         }
     }
 
-    private static func makeRegisterCollection(
+    private nonisolated static func makeRegisterCollection(
         userDefaultsClient: UserDefaultsClient,
     ) -> @Sendable (String, [String]) -> Void {
         { path, relevanceRoots in
@@ -129,7 +129,7 @@ extension CollectionStalenessClient {
         }
     }
 
-    private static func makeConsumeInvalidation(
+    private nonisolated static func makeConsumeInvalidation(
         userDefaultsClient: UserDefaultsClient,
     ) -> @Sendable (String) -> Bool {
         { path in
@@ -149,11 +149,11 @@ extension CollectionStalenessClient {
         }
     }
 
-    private static func storageKey() -> String {
+    private nonisolated static func storageKey() -> String {
         CollectionKeys.stalenessRecords
     }
 
-    private static func loadStorage(
+    private nonisolated static func loadStorage(
         userDefaultsClient: UserDefaultsClient,
     ) -> [String: CollectionStalenessRecord] {
         guard let data = userDefaultsClient.object(storageKey()) as? Data else { return [:] }
@@ -176,7 +176,7 @@ extension CollectionStalenessClient {
         return migratedStorage
     }
 
-    private static func saveStorage(
+    private nonisolated static func saveStorage(
         _ storage: [String: CollectionStalenessRecord],
         userDefaultsClient: UserDefaultsClient,
     ) {
@@ -184,7 +184,7 @@ extension CollectionStalenessClient {
         userDefaultsClient.setObject(data, storageKey())
     }
 
-    private static func normalizedRecord(_ record: CollectionStalenessRecord) -> CollectionStalenessRecord {
+    private nonisolated static func normalizedRecord(_ record: CollectionStalenessRecord) -> CollectionStalenessRecord {
         .init(
             definitionFingerprint: record.definitionFingerprint,
             relevanceRoots: normalizedRoots(record.relevanceRoots),
@@ -192,7 +192,9 @@ extension CollectionStalenessClient {
         )
     }
 
-    private static func normalizedRecord(_ legacyRecord: LegacyCollectionStalenessRecord) -> CollectionStalenessRecord {
+    private nonisolated static func normalizedRecord(_ legacyRecord: LegacyCollectionStalenessRecord)
+        -> CollectionStalenessRecord
+    {
         .init(
             definitionFingerprint: "",
             relevanceRoots: normalizedRoots(legacyRecord.scopes),
@@ -200,16 +202,16 @@ extension CollectionStalenessClient {
         )
     }
 
-    private static func normalizedRoots(_ roots: [String]) -> [String] {
+    private nonisolated static func normalizedRoots(_ roots: [String]) -> [String] {
         Array(Set(roots.map(normalizePath).filter { !$0.isEmpty })).sorted()
     }
 
-    private static func normalizePath(_ path: String) -> String {
+    private nonisolated static func normalizePath(_ path: String) -> String {
         guard !path.isEmpty else { return path }
         return URL(fileURLWithPath: path).standardizedFileURL.path
     }
 
-    private static func affects(relevanceRoot: String, affectedPath: String) -> Bool {
+    private nonisolated static func affects(relevanceRoot: String, affectedPath: String) -> Bool {
         let normalizedRoot = normalizePath(relevanceRoot)
         let normalizedAffectedPath = normalizePath(affectedPath)
         guard !normalizedRoot.isEmpty else { return false }
@@ -220,7 +222,7 @@ extension CollectionStalenessClient {
                 : normalizedAffectedPath.hasPrefix(normalizedRoot + "/"))
     }
 
-    private static func isCollectionDocumentPath(_ changedPath: String, collectionPath: String) -> Bool {
+    private nonisolated static func isCollectionDocumentPath(_ changedPath: String, collectionPath: String) -> Bool {
         if changedPath == collectionPath {
             return true
         }

@@ -54,15 +54,19 @@ enum CollectionSnapshotHydration {
         return snapshot
     }
 
-    static func syntheticSearchResponse(for file: VoyagerCollectionFile) -> SearchResponsePayload? {
+    static func syntheticSearchResponse(for file: VoyagerCollectionFile) -> VoyagerShared.SearchResponsePayload? {
         guard let snapshot = usableSnapshot(for: file) else { return nil }
 
-        return SearchResponsePayload(
+        return VoyagerShared.SearchResponsePayload(
             itemCount: file.snapshotMeta?.itemCount ?? snapshot.items.count,
-            appliedFilters: .init(
+            appliedFilters: VoyagerShared.AppliedFiltersPayload(
                 scopes: file.scopes,
                 conditions: file.conditions.map {
-                    .init(propertyKey: $0.propertyKey, operator: $0.operatorCode, value: $0.value)
+                    VoyagerShared.SearchConditionPayload(
+                        propertyKey: $0.propertyKey,
+                        operator: $0.operatorCode,
+                        value: $0.value,
+                    )
                 },
             ),
             items: snapshot.items,
@@ -70,9 +74,9 @@ enum CollectionSnapshotHydration {
         )
     }
 
-    static func snapshotItems(from searchItems: [JSONValue]?) -> [JSONValue]? {
+    static func snapshotItems(from searchItems: [VoyagerShared.JSONValue]?) -> [VoyagerShared.JSONValue]? {
         guard let searchItems else { return nil }
-        var paths: [JSONValue] = []
+        var paths: [VoyagerShared.JSONValue] = []
         for item in searchItems {
             guard case let .object(values) = item,
                   case let .string(fullPath) = values["fullPath"]
@@ -91,7 +95,7 @@ enum CollectionSnapshotHydration {
     }
 
     private static func collectionConditions(from conditions: [Condition]) -> [CollectionCondition] {
-        conditions.compactMap { condition in
+        conditions.compactMap { condition -> CollectionCondition? in
             guard condition.isActive,
                   let operatorCode = condition.operatorCode,
                   let arity = condition.operatorValueArity
@@ -129,7 +133,7 @@ enum CollectionSnapshotHydration {
         return digest.map { String(format: "%02x", $0) }.joined()
     }
 
-    private static func canonicalValueString(_ value: JSONValue?) -> String {
+    private static func canonicalValueString(_ value: VoyagerShared.JSONValue?) -> String {
         guard let value else { return "null" }
 
         switch value {

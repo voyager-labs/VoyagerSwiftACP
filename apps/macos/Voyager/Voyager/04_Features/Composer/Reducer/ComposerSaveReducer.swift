@@ -33,9 +33,9 @@ struct ComposerSaveReducer {
 private func makeSavePayload(from state: ComposerState) -> SaveRequestPayload {
     let context = state.collectionContext
     let query = context?.query ?? ""
-    let scopes = context?.scopes ?? []
-    let conditions = context?.conditions ?? []
-    return .init(
+    let scopes: [String] = context?.scopes ?? []
+    let conditions: [Condition] = context?.conditions ?? []
+    return SaveRequestPayload(
         context: context,
         isSearchLoading: state.isLoadingSearch,
         isFiltersLoading: state.isLoadingFilters,

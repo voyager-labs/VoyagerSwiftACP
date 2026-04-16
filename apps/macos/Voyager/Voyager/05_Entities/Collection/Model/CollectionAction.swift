@@ -14,7 +14,7 @@ struct SaveRequestPayload: Equatable, Sendable {
     let context: CollectionContext?
     let isSearchLoading: Bool
     let isFiltersLoading: Bool
-    let snapshotItems: [JSONValue]?
+    let snapshotItems: [VoyagerShared.JSONValue]?
     let definitionFingerprint: String
     let capturedAt: Date
     let relevanceRoots: [String]

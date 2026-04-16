@@ -12,7 +12,7 @@ struct CollectionSaveSnapshot: Equatable, Sendable {
     let query: String
     let scopes: [String]
     let conditions: [CollectionCondition]
-    let snapshotItems: [JSONValue]?
+    let snapshotItems: [VoyagerShared.JSONValue]?
     let definitionFingerprint: String
     let capturedAt: Date
     let relevanceRoots: [String]
