@@ -1,5 +1,6 @@
 import ComposableArchitecture
 import Foundation
+import VoyagerShared
 
 struct RefreshedSnapshotWriteBackRequest {
     let payload: SaveRequestPayload
@@ -53,7 +54,7 @@ func handleCollectionSaveSuccess(
     ]
 
     if shouldAppendHistory {
-        if let historyEntry = previousCollectionHistoryEntry(
+        if let historyEntry = previousCollectionHistoryEntryForRefreshSupport(
             baseline: previousBaseline,
             previousURL: previousCollectionURL,
             previousCollectionName: previousCollectionName,
@@ -163,4 +164,30 @@ func makeRefreshedSnapshotWriteBackRequest(
     )
 
     return .init(payload: payload, url: url)
+}
+
+func previousCollectionHistoryEntryForRefreshSupport(
+    baseline: CollectionBaseline?,
+    previousURL: URL?,
+    previousCollectionName: String?,
+    state: FileManagerContentState,
+) -> ContentPageNavigationHistorySnapshot? {
+    guard let baseline,
+          let previousURL
+    else {
+        return nil
+    }
+
+    let name = previousCollectionName
+        ?? previousURL.deletingPathExtension().lastPathComponent
+    let navigation = ContentPageCollectionNavigation(
+        kind: .file(url: previousURL, name: name),
+        context: baseline.context,
+        sortKey: state.entryViewLayout.entryArrangements.sortKey,
+        sortOrder: state.entryViewLayout.entryArrangements.sortOrder,
+        viewLayout: state.entryViewLayout.mode,
+    )
+    return ContentPageNavigationHistorySnapshot(
+        navigationState: .collection(navigation),
+    )
 }
