@@ -15,7 +15,6 @@ final class FileManagerContentCollectionStaleTests: XCTestCase {
                 viewLayout: .list,
             ),
         )
-        initialState.navigation.currentPath = "Collection"
         initialState.collectionSession.openedURL = URL(fileURLWithPath: "/tmp/voyager/sample.voycoll")
         initialState.collectionSession.openedName = "sample"
         initialState.collectionSession.isStale = false
@@ -43,7 +42,6 @@ final class FileManagerContentCollectionStaleTests: XCTestCase {
                 viewLayout: .list,
             ),
         )
-        initialState.navigation.currentPath = "Collection"
         initialState.collectionSession.openedURL = URL(fileURLWithPath: "/tmp/voyager/sample.voycoll")
         initialState.collectionSession.openedName = "sample"
         initialState.collectionSession.isStale = false
@@ -72,7 +70,6 @@ final class FileManagerContentCollectionStaleTests: XCTestCase {
                 viewLayout: .list,
             ),
         )
-        initialState.navigation.currentPath = "Collection"
         initialState.collectionSession.openedURL = URL(fileURLWithPath: "/tmp/voyager/sample.voycoll")
         initialState.collectionSession.openedName = "sample"
         initialState.collectionSession.isStale = false
