@@ -10,10 +10,13 @@ final class ToolbarCollectionStatusViewStateTests: XCTestCase {
             openedCollectionURLExists: true,
             isOpenedCollectionDirty: true,
             isOpenedCollectionStale: false,
+            canRefreshStaleCollection: false,
         )
 
         XCTAssertTrue(state.showsUnsavedIndicator)
         XCTAssertFalse(state.showsStaleIndicator)
+        XCTAssertFalse(state.showsRefreshAffordance)
+        XCTAssertFalse(state.isRefreshEnabled)
     }
 
     func testStaleOnlyShowsStaleIndicator() {
@@ -22,10 +25,13 @@ final class ToolbarCollectionStatusViewStateTests: XCTestCase {
             openedCollectionURLExists: true,
             isOpenedCollectionDirty: false,
             isOpenedCollectionStale: true,
+            canRefreshStaleCollection: true,
         )
 
         XCTAssertFalse(state.showsUnsavedIndicator)
         XCTAssertTrue(state.showsStaleIndicator)
+        XCTAssertTrue(state.showsRefreshAffordance)
+        XCTAssertTrue(state.isRefreshEnabled)
     }
 
     func testDirtyAndStaleShowBothIndicators() {
@@ -34,10 +40,26 @@ final class ToolbarCollectionStatusViewStateTests: XCTestCase {
             openedCollectionURLExists: true,
             isOpenedCollectionDirty: true,
             isOpenedCollectionStale: true,
+            canRefreshStaleCollection: false,
         )
 
         XCTAssertTrue(state.showsUnsavedIndicator)
         XCTAssertTrue(state.showsStaleIndicator)
+        XCTAssertTrue(state.showsRefreshAffordance)
+        XCTAssertFalse(state.isRefreshEnabled)
+    }
+
+    func testMissingCollectionPrerequisitesDisableRefreshAffordance() {
+        let state = ToolbarCollectionStatusViewState(
+            isCollectionMode: true,
+            openedCollectionURLExists: true,
+            isOpenedCollectionDirty: false,
+            isOpenedCollectionStale: true,
+            canRefreshStaleCollection: false,
+        )
+
+        XCTAssertTrue(state.showsRefreshAffordance)
+        XCTAssertFalse(state.isRefreshEnabled)
     }
 
     func testNonCollectionShowsNoIndicators() {
@@ -46,9 +68,12 @@ final class ToolbarCollectionStatusViewStateTests: XCTestCase {
             openedCollectionURLExists: false,
             isOpenedCollectionDirty: true,
             isOpenedCollectionStale: true,
+            canRefreshStaleCollection: false,
         )
 
         XCTAssertFalse(state.showsUnsavedIndicator)
         XCTAssertFalse(state.showsStaleIndicator)
+        XCTAssertFalse(state.showsRefreshAffordance)
+        XCTAssertFalse(state.isRefreshEnabled)
     }
 }

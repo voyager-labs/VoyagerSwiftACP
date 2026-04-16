@@ -151,6 +151,7 @@ struct ToolbarView: View {
                         openedCollectionURLExists: state.collectionSession.openedURL != nil,
                         isOpenedCollectionDirty: state.isOpenedCollectionDirty,
                         isOpenedCollectionStale: state.isOpenedCollectionStale,
+                        canRefreshStaleCollection: state.canRefreshStaleCollection,
                     ),
                 )
             },
@@ -189,13 +190,17 @@ struct ToolbarView: View {
                     label: {
                         HStack(spacing: 4) {
                             titleContent(viewStore: viewStore)
-                            Spacer()
+                            Spacer(minLength: 0)
                         }
                         .frame(maxWidth: .infinity)
                         .contentShape(Rectangle())
                     },
                 )
                 .buttonStyle(.borderless)
+
+                if viewStore.collectionStatus.showsRefreshAffordance {
+                    toolbarRefreshButton(viewStore: viewStore)
+                }
 
                 if isTitleAreaHovered {
                     ViewToggleButton(store: store)
@@ -270,5 +275,20 @@ struct ToolbarView: View {
                     .fixedSize(horizontal: true, vertical: false)
             }
         }
+    }
+
+    private func toolbarRefreshButton(viewStore: ViewStore<ViewState, FileManagerContentFeature.Action>) -> some View {
+        Button(
+            action: { store.send(.view(.refreshStaleCollection)) },
+            label: {
+                ToolbarHoverButtonLabel(
+                    systemName: "arrow.clockwise",
+                    isEnabled: viewStore.collectionStatus.isRefreshEnabled,
+                    font: .system(size: 11, weight: .semibold),
+                )
+            },
+        )
+        .buttonStyle(.borderless)
+        .disabled(!viewStore.collectionStatus.isRefreshEnabled)
     }
 }
