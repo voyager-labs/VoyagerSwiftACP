@@ -3,6 +3,8 @@ import Foundation
 import VoyagerShared
 
 enum CollectionSnapshotHydration {
+    // 이 fingerprint는 저장된 snapshot과 현재 collection definition의 동등성 비교에만 사용
+    // 보안 경계가 아니라 persisted shape를 compact하고 stable하게 유지하기 위한 고정 길이 digest
     static func definitionFingerprint(
         query: String,
         scopes: [String],
