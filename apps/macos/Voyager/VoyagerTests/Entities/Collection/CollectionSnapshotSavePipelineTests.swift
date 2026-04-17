@@ -6,7 +6,7 @@ import XCTest
 
 @MainActor
 final class CollectionSnapshotSavePipelineTests: XCTestCase {
-    func testSaveToExistingPersistsSnapshotAndPreservesInvalidationState() async {
+    func testSaveToExistingPersistsSnapshotAndClearsInvalidationState() async {
         let recorder = SavedCollectionsRecorder()
         let stalenessClient = CollectionStalenessClient.live(userDefaultsClient: .testValue)
         let url = URL(fileURLWithPath: "/tmp/collection.voycoll")
@@ -57,8 +57,8 @@ final class CollectionSnapshotSavePipelineTests: XCTestCase {
         XCTAssertEqual(saved?.file.snapshotMeta?.definitionFingerprint, "fingerprint")
         XCTAssertEqual(saved?.file.snapshotMeta?.relevanceRoots, ["/tmp"])
         XCTAssertEqual(saved?.file.snapshotMeta?.itemCount, 1)
-        XCTAssertEqual(stalenessClient.record(url.path)?.lastInvalidatedAt, .distantPast)
-        XCTAssertEqual(stalenessClient.record(url.path)?.definitionFingerprint, "fingerprint")
+        XCTAssertNil(stalenessClient.record(url.path)?.lastInvalidatedAt)
+        XCTAssertNil(stalenessClient.record(url.path))
     }
 
     func testDefinitionOnlySaveLeavesSnapshotNil() async {
@@ -103,7 +103,7 @@ final class CollectionSnapshotSavePipelineTests: XCTestCase {
         XCTAssertNil(saved?.file.snapshot)
         XCTAssertEqual(saved?.file.snapshotMeta?.definitionFingerprint, "fingerprint")
         XCTAssertEqual(saved?.file.snapshotMeta?.itemCount, 0)
-        XCTAssertEqual(stalenessClient.record(url.path)?.definitionFingerprint, "fingerprint")
+        XCTAssertNil(stalenessClient.record(url.path))
     }
 
     func testEmptySnapshotSavePersistsEmptySnapshotArray() async {

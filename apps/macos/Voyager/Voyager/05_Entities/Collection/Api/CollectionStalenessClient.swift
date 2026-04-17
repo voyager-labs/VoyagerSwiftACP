@@ -6,6 +6,7 @@ struct CollectionStalenessClient: Sendable {
     var record: @Sendable (_ path: String) -> CollectionStalenessRecord?
     var upsertRecord: @Sendable (_ path: String, _ record: CollectionStalenessRecord) -> Void
     var invalidateRecords: @Sendable (_ affectedPaths: [String]) -> Void
+    var suppressPaths: @Sendable (_ paths: [String]) -> Void
     var clearRecord: @Sendable (_ path: String) -> Void
     var registerCollection: @Sendable (_ path: String, _ relevanceRoots: [String]) -> Void
     var consumeInvalidation: @Sendable (_ path: String) -> Bool
@@ -18,6 +19,7 @@ extension CollectionStalenessClient: DependencyKey {
         record: { _ in nil },
         upsertRecord: { _, _ in },
         invalidateRecords: { _ in },
+        suppressPaths: { _ in },
         clearRecord: { _ in },
         registerCollection: { _, _ in },
         consumeInvalidation: { _ in false },
@@ -42,12 +44,44 @@ private struct LegacyCollectionStalenessRecord: Codable, Equatable, Sendable {
     var isInvalidated: Bool
 }
 
+private final class CollectionStalenessSuppressionStore: @unchecked Sendable {
+    private let lock = NSLock()
+    private nonisolated(unsafe) var suppressedPaths: [String: Int] = [:]
+
+    nonisolated func insert(_ paths: [String], count: Int = 3) {
+        lock.lock()
+        defer { lock.unlock() }
+        for path in paths {
+            suppressedPaths[path] = max(suppressedPaths[path] ?? 0, count)
+        }
+    }
+
+    nonisolated func consumeIfSuppressed(_ path: String) -> Bool {
+        lock.lock()
+        defer { lock.unlock() }
+        guard let remaining = suppressedPaths[path], remaining > 0 else {
+            return false
+        }
+        if remaining == 1 {
+            suppressedPaths.removeValue(forKey: path)
+        } else {
+            suppressedPaths[path] = remaining - 1
+        }
+        return true
+    }
+}
+
 extension CollectionStalenessClient {
     nonisolated static func live(userDefaultsClient: UserDefaultsClient) -> CollectionStalenessClient {
-        .init(
+        let suppressionStore = CollectionStalenessSuppressionStore()
+        return .init(
             record: makeRecord(userDefaultsClient: userDefaultsClient),
             upsertRecord: makeUpsertRecord(userDefaultsClient: userDefaultsClient),
-            invalidateRecords: makeInvalidateRecords(userDefaultsClient: userDefaultsClient),
+            invalidateRecords: makeInvalidateRecords(
+                userDefaultsClient: userDefaultsClient,
+                suppressionStore: suppressionStore,
+            ),
+            suppressPaths: makeSuppressPaths(suppressionStore: suppressionStore),
             clearRecord: makeClearRecord(userDefaultsClient: userDefaultsClient),
             registerCollection: makeRegisterCollection(userDefaultsClient: userDefaultsClient),
             consumeInvalidation: makeConsumeInvalidation(userDefaultsClient: userDefaultsClient),
@@ -74,9 +108,12 @@ extension CollectionStalenessClient {
 
     private nonisolated static func makeInvalidateRecords(
         userDefaultsClient: UserDefaultsClient,
+        suppressionStore: CollectionStalenessSuppressionStore,
     ) -> @Sendable ([String]) -> Void {
         { affectedPaths in
-            let normalizedAffectedPaths = affectedPaths.map(normalizePath)
+            let normalizedAffectedPaths = affectedPaths.map(normalizePath).filter {
+                !suppressionStore.consumeIfSuppressed($0)
+            }
             guard !normalizedAffectedPaths.isEmpty else { return }
 
             var storage = loadStorage(userDefaultsClient: userDefaultsClient)
@@ -102,6 +139,14 @@ extension CollectionStalenessClient {
         }
     }
 
+    private nonisolated static func makeSuppressPaths(
+        suppressionStore: CollectionStalenessSuppressionStore,
+    ) -> @Sendable ([String]) -> Void {
+        { paths in
+            suppressionStore.insert(paths.map(normalizePath))
+        }
+    }
+
     private nonisolated static func makeClearRecord(
         userDefaultsClient: UserDefaultsClient,
     ) -> @Sendable (String) -> Void {
@@ -123,7 +168,7 @@ extension CollectionStalenessClient {
             storage[normalizedPath] = .init(
                 definitionFingerprint: existing?.definitionFingerprint ?? "",
                 relevanceRoots: normalizedRoots(relevanceRoots),
-                lastInvalidatedAt: existing?.lastInvalidatedAt,
+                lastInvalidatedAt: nil,
             )
             saveStorage(storage, userDefaultsClient: userDefaultsClient)
         }

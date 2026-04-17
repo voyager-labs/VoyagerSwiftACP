@@ -259,17 +259,7 @@ func handleSaveCompleted(
     switch result {
     case let .success(completion):
         let url = completion.url
-        if let snapshotMeta = completion.file.snapshotMeta {
-            let previousInvalidatedAt = collectionStalenessClient.record(url.path)?.lastInvalidatedAt
-            collectionStalenessClient.upsertRecord(
-                url.path,
-                .init(
-                    definitionFingerprint: snapshotMeta.definitionFingerprint,
-                    relevanceRoots: snapshotMeta.relevanceRoots,
-                    lastInvalidatedAt: previousInvalidatedAt,
-                ),
-            )
-        }
+        collectionStalenessClient.clearRecord(url.path)
         let directory = url.deletingLastPathComponent().path
         userDefaultsClient.setString(directory, CollectionKeys.lastCollectionSaveDirectory)
         return .none
@@ -405,12 +395,17 @@ private func performSave(
     snapshot: CollectionSaveSnapshot,
     url: URL,
     collectionFileClient: CollectionFileClient,
-    collectionStalenessClient _: CollectionStalenessClient,
+    collectionStalenessClient: CollectionStalenessClient,
 ) -> Effect<CollectionAction> {
     let request = buildSaveRequest(
         snapshot: snapshot,
         destinationURL: url,
     )
+
+    collectionStalenessClient.suppressPaths([
+        request.url.path,
+        request.url.deletingLastPathComponent().path,
+    ])
 
     return executeSave(
         request: request,

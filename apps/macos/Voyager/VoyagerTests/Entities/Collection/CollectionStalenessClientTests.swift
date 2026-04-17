@@ -15,6 +15,24 @@ final class CollectionStalenessClientTests: XCTestCase {
         XCTAssertFalse(client.consumeInvalidation("/tmp/voyager/sample.voycoll"))
     }
 
+    func testRegisterCollectionClearsExistingInvalidationState() {
+        let client = CollectionStalenessClient.live(userDefaultsClient: .testValue)
+        let path = "/tmp/voyager/sample.voycoll"
+
+        client.upsertRecord(
+            path,
+            .init(
+                definitionFingerprint: "fp",
+                relevanceRoots: ["/tmp/voyager"],
+                lastInvalidatedAt: .distantPast,
+            ),
+        )
+
+        client.registerCollection(path, ["/tmp/voyager"])
+
+        XCTAssertNil(client.record(path)?.lastInvalidatedAt)
+    }
+
     func testUnrelatedPathDoesNotInvalidateClosedCollectionRecord() {
         let client = CollectionStalenessClient.live(userDefaultsClient: .testValue)
         client.registerCollection("/tmp/voyager/sample.voycoll", ["/tmp/voyager"])
@@ -36,6 +54,28 @@ final class CollectionStalenessClientTests: XCTestCase {
         client.registerCollection("/tmp/voyager/sample.voycoll", ["/tmp/voyager"])
 
         client.invalidateRecords(["/tmp/voyager/sample.voycoll/collection.plist"])
+        XCTAssertFalse(client.consumeInvalidation("/tmp/voyager/sample.voycoll"))
+    }
+
+    func testSuppressedParentDirectoryPathDoesNotInvalidateClosedCollectionRecord() {
+        let client = CollectionStalenessClient.live(userDefaultsClient: .testValue)
+        client.registerCollection("/tmp/voyager/sample.voycoll", ["/tmp/voyager"])
+        client.suppressPaths(["/tmp/voyager"])
+
+        client.invalidateRecords(["/tmp/voyager"])
+
+        XCTAssertFalse(client.consumeInvalidation("/tmp/voyager/sample.voycoll"))
+    }
+
+    func testSuppressedParentDirectoryPathIgnoresRepeatedEvents() {
+        let client = CollectionStalenessClient.live(userDefaultsClient: .testValue)
+        client.registerCollection("/tmp/voyager/sample.voycoll", ["/tmp/voyager"])
+        client.suppressPaths(["/tmp/voyager"])
+
+        client.invalidateRecords(["/tmp/voyager"])
+        client.invalidateRecords(["/tmp/voyager"])
+        client.invalidateRecords(["/tmp/voyager"])
+
         XCTAssertFalse(client.consumeInvalidation("/tmp/voyager/sample.voycoll"))
     }
 
