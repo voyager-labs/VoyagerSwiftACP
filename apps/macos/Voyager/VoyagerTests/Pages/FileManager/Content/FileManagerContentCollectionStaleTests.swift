@@ -59,6 +59,34 @@ final class FileManagerContentCollectionStaleTests: XCTestCase {
         await store.finish()
     }
 
+    func testFileSystemChangedDoesNotMarkCollectionStaleForSiblingCollectionDocument() async {
+        var initialState = FileManagerContentState()
+        initialState.navigation.navigationState = .collection(
+            .init(
+                kind: .file(url: URL(fileURLWithPath: "/tmp/voyager/sample.voycoll"), name: "sample"),
+                context: .init(query: "q", scopes: ["/tmp/voyager"], conditions: []),
+                sortKey: .name,
+                sortOrder: .ascending,
+                viewLayout: .list,
+            ),
+        )
+        initialState.collectionSession.openedURL = URL(fileURLWithPath: "/tmp/voyager/sample.voycoll")
+        initialState.collectionSession.openedName = "sample"
+        initialState.collectionSession.isStale = false
+        initialState.collectionContext = .init(
+            query: "q",
+            scopes: ["/tmp/voyager"],
+            conditions: [],
+        )
+
+        let store = TestStore(initialState: initialState) {
+            FileManagerContentFeature()
+        }
+
+        await store.send(.externalFileSystemChanged(["/tmp/voyager/other.voycoll"]))
+        await store.finish()
+    }
+
     func testFileSystemChangedMarksCollectionStaleForMatchingScope() async {
         var initialState = FileManagerContentState()
         initialState.navigation.navigationState = .collection(
