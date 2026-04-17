@@ -19,8 +19,7 @@ Voyager 문서를 GitHub SSOT로 운영하는 레포입니다. 문서는 Markdow
 │   ├── 03_INFORMATION_ARCHITECTURE/ # IA 테이블(MENUS/WINDOW_STRUCTURE/OBJECTS)
 │   ├── 04_FEATURE_INVENTORY/      # 기능/인터랙션 인벤토리 테이블
 │   ├── 05_FEATURE_SPECS/          # 인터랙션 기반 기능 스펙 문서
-│   ├── 06_USE_CASES/              # 유즈케이스(테이블 기반)
-│   └── LINEAR_ISSUE_DRAFTS/       # Linear 이슈 초안/정리
+│   └── 06_USE_CASES/              # 유즈케이스(테이블 기반)
 ├── BRANDING/                      # 브랜딩/메시징(추가 예정)
 ├── GROWTH/                        # 그로스/채널/실험(추가 예정)
 └── .agents/                       # 로컬 검증/조회 스크립트(스킬)

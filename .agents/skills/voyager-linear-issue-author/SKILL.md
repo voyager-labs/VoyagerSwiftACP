@@ -20,16 +20,16 @@ Generate implementation issue drafts from current Voyager feature inventory data
 
 - Confirm one or more `feature_id` values from `FEATURES`.
 
-2. Generate draft markdown
+2. Generate draft markdown to stdout
 
 ```bash
 python3 .agents/skills/voyager-linear-issue-author/scripts/draft_linear_issue.py EVM-002
 ```
 
-3. Batch-generate files into draft directory
+3. Batch-generate files into an explicit scratch/output directory only when needed
 
 ```bash
-python3 .agents/skills/voyager-linear-issue-author/scripts/draft_linear_issue.py EVM-002 EAC-005 --output-dir PRODUCT/LINEAR_ISSUE_DRAFTS/generated --overwrite
+python3 .agents/skills/voyager-linear-issue-author/scripts/draft_linear_issue.py EVM-002 EAC-005 --output-dir /tmp/voyager-linear-issues --overwrite
 ```
 
 4. Review and refine
@@ -51,3 +51,4 @@ python3 .agents/skills/voyager-linear-issue-author/scripts/draft_linear_issue.py
 - Do not modify SSOT TSV rows when asked only to draft issues.
 - Keep issue drafts deterministic and diff-friendly.
 - If a feature ID is missing, fail explicitly instead of guessing.
+- Do not treat any repo-tracked draft directory as canonical; use stdout by default, or a user-chosen scratch directory when file output is required.

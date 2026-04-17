@@ -19,9 +19,7 @@ class Args(argparse.Namespace):
 
 def find_repo_root(start: Path) -> Path:
     for candidate in [start, *start.parents]:
-        if (candidate / "PRODUCT/04_FEATURE_INVENTORY").exists() and (
-            candidate / "PRODUCT/LINEAR_ISSUE_DRAFTS"
-        ).exists():
+        if (candidate / "PRODUCT/04_FEATURE_INVENTORY").exists():
             return candidate
     raise RuntimeError("Could not locate repo root from script path")
 
@@ -46,22 +44,33 @@ def short(value: str | None, width: int = 120) -> str:
 
 
 def load_template(repo_root: Path) -> str:
-    candidates = [
+    path = (
         repo_root
         / ".agents"
         / "skills"
         / "voyager-linear-issue-author"
         / "templates"
-        / "TEMPLATE-feature-implementation.md",
-        repo_root / "PRODUCT/LINEAR_ISSUE_DRAFTS" / "TEMPLATE-feature-implementation.md",
-    ]
-    for path in candidates:
-        if path.exists():
-            return path.read_text(encoding="utf-8")
+        / "TEMPLATE-feature-implementation.md"
+    )
+    if path.exists():
+        return path.read_text(encoding="utf-8")
 
     raise FileNotFoundError(
         "Template not found. Expected .agents/skills/voyager-linear-issue-author/templates/TEMPLATE-feature-implementation.md"
     )
+
+
+def validate_output_dir(repo_root: Path, output_dir: Path | None) -> None:
+    if output_dir is None:
+        return
+
+    resolved = (Path.cwd() / output_dir).resolve()
+    product_root = (repo_root / "PRODUCT").resolve()
+
+    if resolved == product_root or product_root in resolved.parents:
+        raise ValueError(
+            "Repo-tracked PRODUCT subdirectories are not valid issue draft outputs. Choose an explicit scratch directory such as /tmp/voyager-linear-issues."
+        )
 
 
 def find_use_case_hits(
@@ -245,7 +254,7 @@ def parse_args() -> Args:
     _ = parser.add_argument(
         "--output-dir",
         type=Path,
-        help="Write one markdown file per feature_id to this directory",
+        help="Write one markdown file per feature_id to this explicit scratch/output directory",
     )
     _ = parser.add_argument(
         "--scope-limit",
@@ -271,6 +280,11 @@ def main() -> int:
     args = parse_args()
     script_path = Path(__file__).resolve()
     repo_root = find_repo_root(script_path.parent)
+    try:
+        validate_output_dir(repo_root, args.output_dir)
+    except ValueError as exc:
+        print(f"Error: {exc}", file=sys.stderr)
+        return 1
 
     features_path = repo_root / "PRODUCT/04_FEATURE_INVENTORY" / "FEATURES" / "data.tsv"
     interactions_path = repo_root / "PRODUCT/04_FEATURE_INVENTORY" / "INTERACTIONS" / "data.tsv"
