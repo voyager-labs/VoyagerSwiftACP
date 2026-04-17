@@ -38,13 +38,14 @@ func prepareLoadedCollectionOpenState(
         state: &state.content.composer,
         registryClient: registryClient,
     )
-    state.content.collectionSession.baseline = CollectionBaseline(
-        context: CollectionContext(
-            query: trimmedQuery,
-            scopes: resolved.scopes,
-            conditions: resolved.conditions,
-        ),
+    let context = CollectionContext(
+        query: trimmedQuery,
+        scopes: resolved.scopes,
+        conditions: resolved.conditions,
     )
+    state.content.collectionContext = context
+    state.content.collectionSession.baseline = CollectionBaseline(context: context)
+    state.content.syncComposerCollectionState()
     state.content.collectionSession.didHydrateSnapshotOnOpen = false
     state.content.collectionSession.staleReason = isStale ? .invalidatedLocally : nil
     state.content.composer.lastFiltersResponse = nil
@@ -96,6 +97,7 @@ func hydrateOpenedCollectionSnapshot(
     state.content.collectionSession.staleReason = isStale ? .snapshotHydratedOnOpen : nil
 
     return [
+        .send(.content(.internal(.requestNavigation(.internal(.setNavigationState(.collection(navigation))))))),
         .send(.content(.internal(.applyNavigationState(.collection(navigation))))),
         .send(.content(.entryViewLayout(.internal(.applyCollectionSearchPaths(
             paths: paths,

@@ -78,12 +78,17 @@ enum CollectionSnapshotHydration {
         guard let searchItems else { return nil }
         var paths: [VoyagerShared.JSONValue] = []
         for item in searchItems {
-            guard case let .object(values) = item,
-                  case let .string(fullPath) = values["fullPath"]
-            else {
+            switch item {
+            case let .string(path):
+                paths.append(.string(URL(fileURLWithPath: path).standardizedFileURL.path))
+            case let .object(values):
+                guard case let .string(fullPath) = values["fullPath"] else {
+                    return nil
+                }
+                paths.append(.string(URL(fileURLWithPath: fullPath).standardizedFileURL.path))
+            default:
                 return nil
             }
-            paths.append(.string(URL(fileURLWithPath: fullPath).standardizedFileURL.path))
         }
         return paths
     }
