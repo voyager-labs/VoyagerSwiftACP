@@ -25,7 +25,7 @@ func prepareLoadedCollectionOpenState(
 ) -> CollectionOpenContext {
     let trimmedQuery = file.query.trimmingCharacters(in: .whitespacesAndNewlines)
     state.content.composer.pendingSearchQuery = trimmedQuery.isEmpty ? nil : trimmedQuery
-    state.content.composer.text = ""
+    state.content.composer.text = trimmedQuery
     state.content.composer.scopes = resolved.scopes
     state.content.composer.conditions = resolved.conditions
     state.content.composer.propertyPicker = ConditionPropertyPickerFeature.State()

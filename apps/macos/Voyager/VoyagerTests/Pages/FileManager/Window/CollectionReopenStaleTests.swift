@@ -103,7 +103,7 @@ final class CollectionReopenStaleTests: XCTestCase {
             name: "sample",
             createdAt: .init(timeIntervalSince1970: 1),
             updatedAt: .init(timeIntervalSince1970: 2),
-            query: "needle",
+            query: "report",
             scopes: ["/tmp/voyager"],
             conditions: [],
             snapshot: nil,
@@ -174,12 +174,12 @@ final class CollectionReopenStaleTests: XCTestCase {
             $0.content.collectionSession.isStale = true
             $0.content.collectionSession.staleReason = .invalidatedLocally
             $0.content.composer.isPresented = false
-            $0.content.composer.pendingSearchQuery = "needle"
-            $0.content.composer.text = ""
+            $0.content.composer.pendingSearchQuery = "report"
+            $0.content.composer.text = "report"
             $0.content.composer.scopes = ["/tmp/voyager"]
             $0.content.composer.conditions = []
             $0.content.collectionSession.baseline = .init(
-                context: .init(query: "needle", scopes: ["/tmp/voyager"], conditions: []),
+                context: .init(query: "report", scopes: ["/tmp/voyager"], conditions: []),
             )
         }
 
