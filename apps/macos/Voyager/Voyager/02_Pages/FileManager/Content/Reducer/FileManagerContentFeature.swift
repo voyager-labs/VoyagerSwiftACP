@@ -20,6 +20,8 @@ struct FileManagerContentFeature {
     private var fileManagerClient
     @Dependency(\.notificationCenterClient)
     private var notificationCenterClient
+    @Dependency(\.date)
+    private var date
 
     var body: some Reducer<State, Action> {
         Scope(state: \.composer, action: \.composer) {
@@ -260,6 +262,7 @@ struct FileManagerContentFeature {
             dependencies: .init(
                 collectionAlertClient: collectionAlertClient,
                 computerName: fileManagerClient.displayName("/"),
+                currentDate: date,
             ),
         )
     }

@@ -8,6 +8,7 @@ enum FileManagerContentComposerCoordinator {
     struct Dependencies: Sendable {
         let collectionAlertClient: CollectionAlertClient
         let computerName: String
+        let currentDate: @Sendable () -> Date
     }
 
     static func reduce(
@@ -19,7 +20,7 @@ enum FileManagerContentComposerCoordinator {
             return effect
         }
 
-        if let effect = handleComposerCollectionAction(action, state: &state) {
+        if let effect = handleComposerCollectionAction(action, state: &state, dependencies: dependencies) {
             return effect
         }
 
@@ -88,6 +89,7 @@ enum FileManagerContentComposerCoordinator {
             return finalizeCollectionRefreshIfNeeded(
                 searchEffect: effect,
                 state: &state,
+                currentDate: dependencies.currentDate(),
             )
 
         case let .internal(.searchResponse(requestID, .failure(error))):
@@ -131,11 +133,16 @@ enum FileManagerContentComposerCoordinator {
     private static func handleComposerCollectionAction(
         _ action: ComposerFeature.Action,
         state: inout FileManagerContentState,
+        dependencies: Dependencies,
     ) -> Effect<FileManagerContentAction>? {
         guard case let ComposerAction.collection(collectionAction) = action else {
             return nil
         }
-        return handleCollectionAction(collectionAction, state: &state)
+        return handleCollectionAction(
+            collectionAction,
+            state: &state,
+            currentDate: dependencies.currentDate(),
+        )
     }
 
     private static func handleSetPresented(
@@ -259,13 +266,18 @@ enum FileManagerContentComposerCoordinator {
     private static func handleCollectionAction(
         _ action: CollectionFeature.Action,
         state: inout FileManagerContentState,
+        currentDate: Date,
     ) -> Effect<FileManagerContentAction> {
         switch action {
         case .saveRequested, .saveToExisting, .savePanelResponse:
             .none
 
         case let .saveCompleted(.success(completion)):
-            handleCollectionSaveSuccess(completion: completion, state: &state)
+            handleCollectionSaveSuccess(
+                completion: completion,
+                state: &state,
+                currentDate: currentDate,
+            )
 
         case .saveCompleted(.failure):
             handleCollectionSaveFailure(state: &state)

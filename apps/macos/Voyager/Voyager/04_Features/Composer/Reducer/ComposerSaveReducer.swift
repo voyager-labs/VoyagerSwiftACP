@@ -7,18 +7,21 @@ struct ComposerSaveReducer {
     typealias State = ComposerState
     typealias Action = ComposerAction
 
+    @Dependency(\.date)
+    var date
+
     var body: some Reducer<State, Action> {
         Reduce { state, action in
             switch action {
             case .view(.saveCollection):
-                let payload = makeSavePayload(from: state)
+                let payload = makeSavePayload(from: state, currentDate: date())
                 if let url = state.openedCollectionURL {
                     return .send(.collection(.saveToExisting(payload, url)))
                 }
                 return .send(.collection(.saveRequested(payload)))
 
             case .view(.saveCollectionAs):
-                return .send(.collection(.saveRequested(makeSavePayload(from: state))))
+                return .send(.collection(.saveRequested(makeSavePayload(from: state, currentDate: date()))))
 
             case .collection:
                 return .none
@@ -30,7 +33,7 @@ struct ComposerSaveReducer {
     }
 }
 
-private func makeSavePayload(from state: ComposerState) -> SaveRequestPayload {
+private func makeSavePayload(from state: ComposerState, currentDate: Date) -> SaveRequestPayload {
     let context = state.collectionContext
     let query = context?.query ?? ""
     let scopes: [String] = context?.scopes ?? []
@@ -45,7 +48,7 @@ private func makeSavePayload(from state: ComposerState) -> SaveRequestPayload {
             scopes: scopes,
             conditions: conditions,
         ),
-        capturedAt: Date(),
+        capturedAt: currentDate,
         relevanceRoots: scopes.map(standardizedPath).sorted(),
     )
 }

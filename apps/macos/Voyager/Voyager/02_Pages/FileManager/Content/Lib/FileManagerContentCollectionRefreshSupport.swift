@@ -24,6 +24,7 @@ func handleCollectionSaveFailure(
 func handleCollectionSaveSuccess(
     completion: CollectionSaveCompletion,
     state: inout FileManagerContentState,
+    currentDate: Date,
 ) -> Effect<FileManagerContentAction> {
     let url = completion.url
     let previousSnapshot = state.navigation.makeContentPageNavigationHistorySnapshot()
@@ -39,7 +40,7 @@ func handleCollectionSaveSuccess(
             state.collectionSession.isWritingBackRefreshedSnapshot = false
             return .none
         }
-        applyWriteBackSuccessState(state: &state)
+        applyWriteBackSuccessState(state: &state, currentDate: currentDate)
     }
 
     state.collectionSession.openedURL = url
@@ -83,16 +84,18 @@ func handleCollectionSaveSuccess(
 
 func applyWriteBackSuccessState(
     state: inout FileManagerContentState,
+    currentDate: Date,
 ) {
     state.collectionSession.isWritingBackRefreshedSnapshot = false
     state.collectionSession.isStale = false
     state.collectionSession.staleReason = nil
-    state.collectionSession.lastRefreshAt = Date()
+    state.collectionSession.lastRefreshAt = currentDate
 }
 
 func finalizeCollectionRefreshIfNeeded(
     searchEffect: Effect<FileManagerContentAction>,
     state: inout FileManagerContentState,
+    currentDate: Date,
 ) -> Effect<FileManagerContentAction> {
     guard state.collectionSession.isRefreshingHydratedSnapshot else {
         return .concatenate(
@@ -104,7 +107,7 @@ func finalizeCollectionRefreshIfNeeded(
     state.collectionSession.isRefreshingHydratedSnapshot = false
 
     guard !state.isOpenedCollectionDirty,
-          let writeBack = makeRefreshedSnapshotWriteBackRequest(state: state)
+          let writeBack = makeRefreshedSnapshotWriteBackRequest(state: state, currentDate: currentDate)
     else {
         state.collectionSession.isWritingBackRefreshedSnapshot = false
         state.collectionSession.lastRefreshAt = nil
@@ -141,6 +144,7 @@ func failCollectionRefreshIfNeeded(
 
 func makeRefreshedSnapshotWriteBackRequest(
     state: FileManagerContentState,
+    currentDate: Date,
 ) -> RefreshedSnapshotWriteBackRequest? {
     guard let context = state.collectionContext,
           let url = state.collectionSession.openedURL,
@@ -159,7 +163,7 @@ func makeRefreshedSnapshotWriteBackRequest(
             scopes: context.scopes,
             conditions: context.conditions,
         ),
-        capturedAt: Date(),
+        capturedAt: currentDate,
         relevanceRoots: context.scopes.map { URL(fileURLWithPath: $0).standardizedFileURL.path }.sorted(),
     )
 
