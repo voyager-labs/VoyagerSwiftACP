@@ -2,6 +2,8 @@ import Foundation
 import VoyagerShared
 
 struct VoyagerCollectionFile: Codable, Equatable, Sendable {
+    static let currentSchemaVersion = 2
+
     let schemaVersion: Int
     let id: String
     let name: String
@@ -27,6 +29,31 @@ struct VoyagerCollectionFile: Codable, Equatable, Sendable {
         case snapshotMeta
         case appVersion
     }
+
+    init(
+        id: String,
+        name: String,
+        createdAt: Date,
+        updatedAt: Date,
+        query: String,
+        scopes: [String],
+        conditions: [CollectionCondition],
+        snapshot: CollectionPersistedSnapshot?,
+        snapshotMeta: CollectionSnapshotMeta?,
+        appVersion: String?,
+    ) {
+        schemaVersion = Self.currentSchemaVersion
+        self.id = id
+        self.name = name
+        self.createdAt = createdAt
+        self.updatedAt = updatedAt
+        self.query = query
+        self.scopes = scopes
+        self.conditions = conditions
+        self.snapshot = snapshot
+        self.snapshotMeta = snapshotMeta
+        self.appVersion = appVersion
+    }
 }
 
 extension VoyagerCollectionFile {
@@ -50,19 +77,17 @@ extension VoyagerCollectionFile {
             snapshotMeta = nil
         }
 
-        try self.init(
-            schemaVersion: container.decode(Int.self, forKey: .schemaVersion),
-            id: container.decode(String.self, forKey: .id),
-            name: container.decode(String.self, forKey: .name),
-            createdAt: container.decode(Date.self, forKey: .createdAt),
-            updatedAt: container.decode(Date.self, forKey: .updatedAt),
-            query: container.decode(String.self, forKey: .query),
-            scopes: container.decode([String].self, forKey: .scopes),
-            conditions: container.decode([CollectionCondition].self, forKey: .conditions),
-            snapshot: snapshot,
-            snapshotMeta: snapshotMeta,
-            appVersion: container.decodeIfPresent(String.self, forKey: .appVersion),
-        )
+        schemaVersion = try container.decode(Int.self, forKey: .schemaVersion)
+        id = try container.decode(String.self, forKey: .id)
+        name = try container.decode(String.self, forKey: .name)
+        createdAt = try container.decode(Date.self, forKey: .createdAt)
+        updatedAt = try container.decode(Date.self, forKey: .updatedAt)
+        query = try container.decode(String.self, forKey: .query)
+        scopes = try container.decode([String].self, forKey: .scopes)
+        conditions = try container.decode([CollectionCondition].self, forKey: .conditions)
+        self.snapshot = snapshot
+        self.snapshotMeta = snapshotMeta
+        appVersion = try container.decodeIfPresent(String.self, forKey: .appVersion)
     }
 }
 

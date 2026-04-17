@@ -151,7 +151,6 @@ final class CollectionSnapshotSavePipelineTests: XCTestCase {
 }
 
 private let kEmptyCollectionFile = VoyagerCollectionFile(
-    schemaVersion: 2,
     id: "",
     name: "",
     createdAt: .distantPast,

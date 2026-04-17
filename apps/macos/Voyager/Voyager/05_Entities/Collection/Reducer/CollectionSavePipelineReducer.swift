@@ -57,8 +57,6 @@ struct CollectionSavePipelineReducer {
     }
 }
 
-private let kCollectionSchemaVersion: Int = 2
-
 private enum CollectionSaveValidationError: LocalizedError {
     case emptyContent
     case incompleteCondition(String)
@@ -336,7 +334,6 @@ private func makeCollectionFile(
 ) -> VoyagerCollectionFile {
     let timestamp = Date()
     return VoyagerCollectionFile(
-        schemaVersion: kCollectionSchemaVersion,
         id: UUID().uuidString,
         name: name,
         createdAt: timestamp,

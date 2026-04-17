@@ -124,7 +124,6 @@ private func makeSnapshotFile(
         )
 
     return VoyagerCollectionFile(
-        schemaVersion: 2,
         id: "snapshot",
         name: "Snapshot",
         createdAt: .distantPast,

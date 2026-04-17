@@ -12,7 +12,6 @@ final class CollectionSnapshotFileContractTests: XCTestCase {
         defer { try? fileManager.removeItem(at: url.deletingLastPathComponent()) }
 
         let file = VoyagerCollectionFile(
-            schemaVersion: 2,
             id: "snapshot-file",
             name: "Snapshot File",
             createdAt: .distantPast,
@@ -50,7 +49,6 @@ final class CollectionSnapshotFileContractTests: XCTestCase {
         defer { try? fileManager.removeItem(at: parent) }
 
         let file = VoyagerCollectionFile(
-            schemaVersion: 1,
             id: "legacy-file",
             name: "Legacy File",
             createdAt: .distantPast,
@@ -83,7 +81,6 @@ final class CollectionSnapshotFileContractTests: XCTestCase {
 
     func testEncodeDecodeV2SnapshotFileRoundTrips() throws {
         let file = VoyagerCollectionFile(
-            schemaVersion: 2,
             id: "snapshot-file",
             name: "Snapshot File",
             createdAt: .distantPast,
@@ -111,7 +108,6 @@ final class CollectionSnapshotFileContractTests: XCTestCase {
 
     func testDecodeDefinitionOnlyFileLeavesSnapshotNil() throws {
         let file = VoyagerCollectionFile(
-            schemaVersion: 1,
             id: "legacy",
             name: "Legacy",
             createdAt: .distantPast,
@@ -224,7 +220,6 @@ final class CollectionSnapshotFileContractTests: XCTestCase {
 
     func testEncodeRejectsNonStringSnapshotItems() throws {
         let file = VoyagerCollectionFile(
-            schemaVersion: 2,
             id: "invalid-encode",
             name: "Invalid Encode",
             createdAt: .distantPast,

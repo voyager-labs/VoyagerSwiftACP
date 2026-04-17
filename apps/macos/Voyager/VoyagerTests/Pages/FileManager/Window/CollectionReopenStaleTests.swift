@@ -8,7 +8,6 @@ final class CollectionReopenStaleTests: XCTestCase {
     func testOpenCollectionFileRestoresStaleStateFromStalenessClient() async {
         let url = URL(fileURLWithPath: "/tmp/voyager/sample.voycoll")
         let file = VoyagerCollectionFile(
-            schemaVersion: 1,
             id: "id",
             name: "sample",
             createdAt: .init(timeIntervalSince1970: 1),
@@ -51,7 +50,6 @@ final class CollectionReopenStaleTests: XCTestCase {
     func testCollectionFileLoadedRestoresStaleStateFromStalenessClient() async {
         let url = URL(fileURLWithPath: "/tmp/voyager/sample.voycoll")
         let file = VoyagerCollectionFile(
-            schemaVersion: 1,
             id: "id",
             name: "sample",
             createdAt: .init(timeIntervalSince1970: 1),
@@ -98,7 +96,6 @@ final class CollectionReopenStaleTests: XCTestCase {
     func testOpenStaleCollectionDoesNotAutoSearch() async {
         let url = URL(fileURLWithPath: "/tmp/voyager/sample.voycoll")
         let file = VoyagerCollectionFile(
-            schemaVersion: 1,
             id: "id",
             name: "sample",
             createdAt: .init(timeIntervalSince1970: 1),
@@ -144,7 +141,6 @@ final class CollectionReopenStaleTests: XCTestCase {
     func testOpenStaleDefinitionOnlyCollectionDoesNotAutoSearch() async {
         let url = URL(fileURLWithPath: "/tmp/voyager/sample.voycoll")
         let file = VoyagerCollectionFile(
-            schemaVersion: 1,
             id: "id",
             name: "sample",
             createdAt: .init(timeIntervalSince1970: 1),

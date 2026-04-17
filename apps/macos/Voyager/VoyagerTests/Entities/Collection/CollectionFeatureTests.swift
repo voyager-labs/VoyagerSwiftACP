@@ -507,7 +507,6 @@ private let kEmptySearchResponse = VoyagerShared.SearchResponsePayload(
 )
 
 private let kEmptyCollectionFile = VoyagerCollectionFile(
-    schemaVersion: 1,
     id: "",
     name: "",
     createdAt: .distantPast,

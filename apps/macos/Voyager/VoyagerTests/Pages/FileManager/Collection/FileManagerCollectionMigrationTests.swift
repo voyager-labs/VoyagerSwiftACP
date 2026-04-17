@@ -7,7 +7,6 @@ import XCTest
 final class FileManagerCollectionMigrationTests: XCTestCase {
     func testResolveCollectionFiltersMigratesLegacyConditions() {
         let file = VoyagerCollectionFile(
-            schemaVersion: 1,
             id: "legacy",
             name: "Legacy",
             createdAt: .distantPast,
@@ -33,7 +32,6 @@ final class FileManagerCollectionMigrationTests: XCTestCase {
 
     func testLegacyDefinitionOnlyFileHasNoUsableSnapshot() {
         let file = VoyagerCollectionFile(
-            schemaVersion: 1,
             id: "legacy",
             name: "Legacy",
             createdAt: .distantPast,

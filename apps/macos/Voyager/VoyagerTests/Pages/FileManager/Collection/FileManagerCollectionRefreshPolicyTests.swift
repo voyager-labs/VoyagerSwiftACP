@@ -124,7 +124,6 @@ private func makeContentStore(
             },
             load: { _ in
                 VoyagerCollectionFile(
-                    schemaVersion: 2,
                     id: "",
                     name: "",
                     createdAt: .distantPast,
