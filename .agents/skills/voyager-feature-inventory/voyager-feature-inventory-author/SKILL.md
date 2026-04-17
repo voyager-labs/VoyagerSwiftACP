@@ -36,6 +36,13 @@ This skill is for "authoring" tasks (drafting new rows, allocating IDs, suggesti
     - Describe what the user can do, what the system shows, or what is managed.
     - Avoid explaining internal abstractions, implementation choices, or modeling terminology unless that term is already part of the product vocabulary.
     - Write descriptions that would still read naturally even if the underlying implementation changes later.
+- When filling shortcut fields, use actual modifier glyphs instead of English key names.
+    - Example: `⌘L`, `⌘I`, `⌥⌘K`, `⇧⌘P`
+    - Do not write `Cmd`, `Ctrl`, `Shift`, or `Option` in shortcut cells unless the user explicitly asks for text-form labels.
+- When the user explicitly confirms that an FS long-text field has been human-reviewed and its `<<AI>>` marker should be removed, remove the marker from the matching FI long-text cell in the same pass.
+- Avoid vague near-synonyms for objects or states in FI long-text cells.
+    - Prefer the exact object and state vocabulary already used by the related FS bundle.
+    - If the object or state term is not settled, keep the wording narrow and surface the ambiguity instead of inventing alternate labels.
 
 ## Workflow: Draft A New Feature
 

@@ -1,0 +1,159 @@
+# Contract & Consistency Workflow
+
+Use this workflow when an interaction spec alone is no longer enough to keep object vocabulary, state vocabulary, and cross-feature consistency stable.
+
+## When To Use This Workflow
+
+Use this workflow when either condition is true:
+
+- the same object/state vocabulary appears in multiple interaction specs
+- one user flow spans multiple features and needs a single consistency source instead of repeated prose
+
+Do not force this structure onto isolated interactions that do not share vocabulary or flow.
+
+## Primary Goal
+
+The primary goal is not to create "shared documents" in the abstract.
+
+The primary goal is to create explicit contract artifacts that make these questions answerable:
+
+- what is the primary object?
+- what are the exact allowed states?
+- which interaction reads or writes which states?
+- which transitions are allowed?
+- which terms are forbidden because they would create drift?
+
+`flow` docs exist to support this consistency model, not as the primary artifact.
+
+## Document Types
+
+### 1. Category contract
+
+Path:
+
+- `PRODUCT/05_FEATURE_SPECS/<category>/contracts/<name>.toml`
+
+Use for:
+
+- shared object vocabulary
+- shared state vocabulary
+- allowed and forbidden user-visible states
+- ownership of reads/writes across interactions
+- transition definitions that multiple interaction specs rely on
+
+Rules:
+
+- use TOML, not markdown
+- keep it machine-readable first
+- use exact object names and exact state names
+- prefer keyed subtables when entries are naturally keyed by an identifier such as `interaction_id`
+- do not put long explanatory prose here
+
+Recommended structure:
+
+```toml
+[contract]
+id = "cbw.request_lifecycle"
+category = "CBW"
+primary_object = "request"
+
+[vocabulary]
+request = "..."
+
+[constraints]
+single_processing_run_per_request = true
+
+[user_visible_states]
+allowed = ["processing", "completed", "failed", "cancelled"]
+forbidden = ["queued", "cancelling"]
+
+[state.processing]
+description = "..."
+entered_by = ["CBW-001-submit_chat_request"]
+exits_to = ["completed", "failed", "cancelled"]
+
+[ownership."CBW-001-submit_chat_request"]
+reads = []
+writes = ["processing"]
+
+[transitions.processing_to_completed]
+from = "processing"
+to = "completed"
+trigger = "CBW-003-stream_contextual_chat_response"
+```
+
+### 2. Category flow
+
+Path:
+
+- `PRODUCT/05_FEATURE_SPECS/<category>/flows/<name>.md`
+
+Use for:
+
+- cross-feature sequence
+- happy path / cancel path / regenerate path
+- overview diagrams
+- feature handoff boundaries
+
+Rules:
+
+- use markdown
+- keep it human-readable
+- reference interaction specs and contract files directly
+- use this doc to explain sequence, not to redefine the contract vocabulary
+
+## How To Update Interaction Specs
+
+When a category contract or flow exists:
+
+- keep the interaction spec focused on that interaction only
+- reference the relevant `contracts/*.toml` and `flows/*.md`
+- do not restate the full shared lifecycle in each interaction spec
+- do not invent alternative object names or state names in prose
+
+## Semantic Review Use
+
+Use contract docs to narrow semantic review.
+
+Do not claim that prose alone can be deterministically checked for object/state identity.
+
+Instead:
+
+- compare interaction prose against the declared contract
+- flag drift when interaction prose uses different objects or states
+- surface ambiguity explicitly if the contract is still missing
+
+## Continuous Maintenance Workflow
+
+When a category already has `contracts/*.toml`, keep the contract and interaction specs in sync with this loop:
+
+1. Update the relevant contract file first.
+   Example:
+   - add a new allowed state
+   - remove a forbidden state
+   - add or change an ownership binding
+
+2. Update the affected interaction specs.
+   - use the exact object and state vocabulary declared in the contract
+   - add or update contract references in the interaction specs
+   - remove obsolete terms that the contract now forbids
+
+3. Run the contract consistency checker.
+
+```bash
+python3 .agents/skills/voyager-fi-ia-fs-consistency-checker/scripts/check_contract_consistency.py CBW
+```
+
+4. Run the existing FI/IA/FS bundle checker for the affected features.
+
+```bash
+python3 .agents/skills/voyager-fi-ia-fs-consistency-checker/scripts/check_feature_bundle.py CBW-001
+```
+
+5. Resolve warnings before widening the rollout.
+   - `spec.contract_reference_missing`: add the missing contract reference
+   - `spec.state_term_missing`: replace vague wording with the declared state term or one of its allowed terms
+   - `spec.object_term_missing`: name the correct object explicitly
+   - `spec.forbidden_state_term_present`: remove or rewrite the forbidden term
+
+6. If the user confirms human review of a long-text field, remove the `<<AI>>` marker from FI and FS in the same pass.

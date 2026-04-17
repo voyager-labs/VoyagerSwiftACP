@@ -20,15 +20,28 @@ This skill is useful when you need to:
 - bring existing specs into the current frontmatter + fixed-section format,
 - check that required sections and metadata fields are present before PR review.
 
+## Policy Reminders
+
+- Keep `SKILL.md` light; put detailed writing rules and contract/consistency workflow in the reference files.
+- Follow the guide for shortcut notation, interaction links, ambiguity avoidance, exact UI labels, and AI-marker handling.
+- Use the contract/consistency workflow when deciding whether to create category-level `contracts/*.toml` or `flows/*.md`.
+
 ## Source of Truths
 
 - `META/feature_specs_writing.md`
 - `.agents/skills/voyager-feature-spec-author/references/TEMPLATE-feature-spec.md` (actual generation template)
 - `.agents/skills/voyager-feature-spec-author/references/feature-spec-guide.md` (guide/reference)
+- `.agents/skills/voyager-feature-spec-author/references/contract-consistency-workflow.md` (contracts/flows workflow)
 - `PRODUCT/04_FEATURE_INVENTORY/INTERACTIONS/data.tsv`
 - `PRODUCT/04_FEATURE_INVENTORY/FEATURES/data.tsv`
 
 ## Workflow
+
+Before writing or refactoring a spec body, use the reference files for the document contract and writing rules:
+
+- `.agents/skills/voyager-feature-spec-author/references/TEMPLATE-feature-spec.md`
+- `.agents/skills/voyager-feature-spec-author/references/feature-spec-guide.md`
+- `.agents/skills/voyager-feature-spec-author/references/contract-consistency-workflow.md` when shared `contracts/` or `flows/` may be needed
 
 ### 1) Generate a concrete draft from `interaction_id`
 
@@ -51,7 +64,7 @@ Behavior:
 - reads matching row(s) from `PRODUCT/04_FEATURE_INVENTORY/INTERACTIONS/data.tsv`
 - resolves feature metadata from `PRODUCT/04_FEATURE_INVENTORY/FEATURES/data.tsv`
 - emits a markdown draft whose metadata lives in YAML frontmatter
-- writes to `PRODUCT/05_FEATURE_SPECS/<category>/<feature_id>-<slug>/<interaction_id>-<slug>.md` unless `--output-dir` is provided
+- writes to `PRODUCT/05_FEATURE_SPECS/<category>/<feature_id>-<slug>/<interaction_id>.md` unless `--output-dir` is provided
 
 ### 2) Lint existing specs
 
@@ -68,55 +81,22 @@ python3 .agents/skills/voyager-feature-spec-author/scripts/lint_feature_spec.py 
 ### 3) Review and refine
 
 - review generated sections and replace draft wording with concrete behavior text where needed
-- keep metadata keys present and use the repo-wide `-` / `TBD` conventions consistently in frontmatter
+- keep the document aligned with the template and guide
 - commit as a focused docs change
 
 ## Guardrails
 
-- Metadata should live in YAML frontmatter, not in a markdown table.
-- Keep generated spec body content in Korean (`Intent`, `Expected Outcome`, `State Changes`, etc.). Section titles can remain the fixed contract names.
+- Keep generation-time reminders in the skill or guide only; do not emit internal instruction comments into generated markdown files.
 - Prefer product-facing wording over implementation-facing wording.
-    - Frontmatter `summary` should describe the interaction as experienced or observed in the product.
-    - Body sections should focus on user-visible behavior, product rules, state changes, and operational constraints.
-    - Avoid internal abstractions or modeling terminology unless they are necessary for correctness and already part of the product language.
-- Required body sections are:
-    - `Intent`
-    - `Trigger / Entry Points`
-    - `Preconditions`
-    - `Expected Outcome`
-    - `State Changes`
-    - `User-visible Feedback`
-    - `Edge Cases / Failure Handling`
-    - `Acceptance Criteria`
-    - `Permissions / Dependencies`
-    - `Observability / Analytics`
-    - `Related Interactions`
-    - `Source`
-- Required frontmatter fields are:
-    - `interaction_id`
-    - `interaction_type`
-    - `feature`
-    - `category_key`
-    - `feature_id`
-    - `status`
-    - `summary`
-    - `related_region`
-    - `menu`
-    - `shortcut`
-- Frontmatter values follow the same repo-wide null conventions as TSV/body content:
-    - `-` = intentionally empty / not applicable
-    - `TBD` = not yet decided
-- Placeholder values in body sections are also allowed by repo rules.
-- strict mode is a review aid for unresolved `TBD` values and draft completeness.
-- strict mode does not fail a document solely because body/frontmatter contains `-` / `TBD`.
-- In strict mode, `-` is treated as confirmed not-applicable and does not emit a warning.
-- In strict mode, `TBD` is treated as unresolved and emits a warning.
+- Use the reference guide for frontmatter keys, fixed sections, shortcut notation, exact UI labels, interaction-link formatting, ambiguity avoidance, and `-` / `TBD` handling.
+- Use strict lint as a review aid for unresolved `TBD` values and draft completeness.
 - Do not mass-edit unrelated spec files unless explicitly requested.
 
 ## Reference files
 
 - generation template
 - guide/reference document
+- contract/consistency workflow
 
 ## Scripts
 

@@ -20,6 +20,10 @@ This skill exists for cross-document consistency work across those three documen
 - `IA (Information Architecture)`: `PRODUCT/03_INFORMATION_ARCHITECTURE/WINDOW_STRUCTURE/data.tsv`
 - `FS (Feature Specs)`: `PRODUCT/05_FEATURE_SPECS/**/*.md`
 
+Reference workflows:
+
+- `.agents/skills/voyager-fi-ia-fs-consistency-checker/references/evaluation-workflow.md`
+
 Do not use this skill for drafting brand new inventory rows from scratch. For authoring, use:
 
 - `voyager-feature-inventory-author`
@@ -38,6 +42,7 @@ Treat these as **in scope**:
 - stale `Related Interactions` links inside FEATURE_SPEC files
 - stale `Source line` values inside FEATURE_SPEC files
 - functional contract drift across FI/IA/FS, such as inconsistent state names, CTA names, supported provider set, or trigger/result boundaries
+- primary object drift across FI/IA/FS, such as one document talking about `request` while another talks about `response` for the same contract
 
 Treat these as **out of scope unless the user asks**:
 
@@ -55,13 +60,42 @@ python3 .agents/skills/voyager-fi-ia-fs-consistency-checker/scripts/check_featur
 
 This script audits one `feature_id` bundle across FI, IA, and FS.
 
+If the category has machine-readable contracts, run the contract checker first:
+
+```bash
+python3 .agents/skills/voyager-fi-ia-fs-consistency-checker/scripts/check_contract_consistency.py CBW
+```
+
+This script audits category-level `contracts/*.toml` against the corresponding interaction specs.
+
+For a repeatable category-wide evaluation pass, use:
+
+```bash
+python3 .agents/skills/voyager-fi-ia-fs-consistency-checker/scripts/evaluate_category_consistency.py CBW
+```
+
+For stable regression evals against managed fixtures, use:
+
+```bash
+python3 .agents/skills/voyager-fi-ia-fs-consistency-checker/scripts/run_skill_evals.py
+```
+
 ### 2. Read the output by severity
 
 - `FAIL`: broken references, missing specs, frontmatter mismatches, ambiguous spec mapping
 - `WARN`: likely drift, hierarchy mismatch, stale deterministic sections, semantic review needed
 - `INFO`: found rows, synced files, counts, expected layout
+- For the contract checker:
+  - `FAIL`: broken contract structure, unknown interactions, invalid transitions
+  - `WARN`: missing contract references, missing required object/state terms, forbidden state terms still present
 
 If the user asked only for review, stop after the audit and report findings before writing.
+
+Important limit:
+
+- The deterministic checker cannot prove that free-form prose is talking about the same object or the same state across documents.
+- Treat object/state identity as a semantic review problem unless the docs declare an explicit contract you can compare.
+- If category-level `contracts/*.toml` or `flows/` docs exist, read them during the semantic pass before judging interaction prose.
 
 ### 3. If the problem is deterministic, sync FEATURE_SPEC files
 
@@ -100,6 +134,7 @@ Generate only the missing specs, then rerun the bundle checker.
 
 After deterministic checks are clean, inspect the affected FI/IA/FS docs and verify that these contracts line up:
 
+- primary object ownership
 - state vocabulary
 - CTA vocabulary
 - supported provider set or capability set
@@ -108,6 +143,8 @@ After deterministic checks are clean, inspect the affected FI/IA/FS docs and ver
 - failure-state semantics
 
 Only flag semantic drift when it changes implementation or review interpretation. Repeated wording by itself is not a problem.
+
+If the user explicitly says an FS long-text field has been human-reviewed and its `<<AI>>` marker should be removed, mirror that removal in the corresponding FI long-text cell in the same edit pass.
 
 ### 6. Re-validate before finishing
 
