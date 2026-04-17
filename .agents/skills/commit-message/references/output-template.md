@@ -31,6 +31,9 @@ Rules:
 
 - Generate exactly 3 candidates.
 - Subject must use Conventional Commit format: `type(scope): summary` or `type: summary`.
+- `feat`, `fix`, `refactor`, `ui`, and `test` should include a scope.
+- `docs`, `ci`, `build`, `chore`, and `agent` may omit scope unless a narrower owner materially improves clarity.
+- Choose the scope that best identifies the owning target when using a scoped type: `helper`, `main-app` for `01_App`, Voyager layer scopes like `pages/<slice>`, `widgets/<slice>`, `features/<slice>`, `entities/<slice>`, `shared`, or `backend`.
 - Subject must represent all staged changes.
 - When the subject is written in Korean, end it as a noun phrase rather than a verb-final sentence.
 - Omit the body when the subject alone is sufficient for the staged change.
@@ -41,6 +44,8 @@ Rules:
 - Do not add filler bullets to make the body look even, symmetrical, or exhaustive when fewer bullets are enough.
 - Do not map bullets to generic categories like intent, impact, or risk when the staged diff contains multiple concrete change items.
 - Prefer enumerating concrete staged changes over compressing unrelated changes into a few abstract bullets.
+- Use subjects like `fix(helper): ...`, `feat(main-app): ...`, `refactor(features/entry-operations): ...`, `fix(pages/file-manager): ...`, or `feat(backend): ...` when the type expects a scope.
+- Use subjects like `docs: ...`, `ci: ...`, `build: ...`, `chore: ...`, or `agent: ...` when a scope does not add meaningful clarity.
 
 ## Final Commit Message (after user selection)
 

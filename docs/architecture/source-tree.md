@@ -374,7 +374,6 @@ scripts/
 │  ├─ 00-execution-contract.md
 │  ├─ 01-safety-and-secrets.md
 │  ├─ 02-verification.md
-│  └─ 03-commit-and-pr.md
 ├─ 10-routing/                  # 작업 경로 기반 규칙 라우팅
 │  └─ 00-routing.md
 ├─ 20-backend/                  # 백엔드 도메인 규칙
