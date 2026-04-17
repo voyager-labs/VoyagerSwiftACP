@@ -12,7 +12,7 @@
 2. **Mirror is downstream**: `.claude/skills/compound-review/` should reflect `.agents/` content, but mirroring is not automated in v1. Drift between the trees is possible and expected until a sync mechanism is added.
 3. **Conflict resolution**: When `.agents/` and `.claude/` disagree, `.agents/` wins. Always.
 4. **No split ownership**: Never edit `.claude/skills/compound-review/` independently. If you need to change the skill, change `.agents/` and then manually copy to `.claude/` if needed.
-5. **Discoverability**: `manage-skills` (the registry) lives in both trees but `.agents/skills/manage-skills/SKILL.md` is the authority copy for the Non-Verification Skills registry.
+5. **Discoverability**: `compound-review` serves as the synthesis hub for the governance skill lifecycle. Skills are discovered via the standard `.agents/skills/` directory structure — there is no central registry.
 
 ## Why This Matters
 
