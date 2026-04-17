@@ -4,8 +4,8 @@
 
 VOY-164 이후 backend search API는 **convert-only**로 동작합니다.
 
-1) 자연어 `query`를 LLM으로 해석해 `conditions`/`scopes`를 생성 또는 보정하고
-2) 그 결과를 `appliedFilters`로 반환합니다.
+1. 자연어 `query`를 LLM으로 해석해 `conditions`/`scopes`를 생성 또는 보정하고
+2. 그 결과를 `appliedFilters`로 반환합니다.
 
 중요: backend는 더 이상 로컬 SQLite 검색 실행을 하지 않습니다. 따라서 현재 응답의 `items`는 빈 배열(`[]`)입니다.
 
@@ -21,8 +21,8 @@ VOY-164 이후 backend search API는 **convert-only**로 동작합니다.
 ### 엔드포인트
 
 - `POST /api/collection`
-  - 자연어 검색 쿼리 + 선택적 필터를 입력으로 받음
-  - LLM 변환 결과를 `appliedFilters`로 반환
+    - 자연어 검색 쿼리 + 선택적 필터를 입력으로 받음
+    - LLM 변환 결과를 `appliedFilters`로 반환
 
 관련 코드
 
@@ -33,15 +33,15 @@ VOY-164 이후 backend search API는 **convert-only**로 동작합니다.
 ### 요청 스키마
 
 - `QuerySearchRequest`
-  - `query: str` (trim 후 공백만이면 422)
-  - `filters: SearchFilters | null`
+    - `query: str` (trim 후 공백만이면 422)
+    - `filters: SearchFilters | null`
 - `SearchFilters`
-  - `scopes: string[]` (default `[]`)
-  - `conditions: SearchCondition[]` (default `[]`)
+    - `scopes: string[]` (default `[]`)
+    - `conditions: SearchCondition[]` (default `[]`)
 - `SearchCondition`
-  - `propertyKey: string`
-  - `operator: string`
-  - `value: string | number | array | null`
+    - `propertyKey: string`
+    - `operator: string`
+    - `value: string | number | array | null`
 
 ### 요청 예시
 
@@ -80,7 +80,7 @@ curl -X POST http://localhost:8000/api/collection \
 관련 코드
 
 - `apps/backend/src/app/search/services.py`
-- `apps/macos/Voyager/Voyager/04_Features/Composer/Api/SearchClient.swift`
+- `apps/macos/Voyager/Packages/VoyagerModules/Sources/VoyagerFeaturesComposer/Api/SearchClient.swift`
 
 ## LLM 변환
 
@@ -103,9 +103,9 @@ curl -X POST http://localhost:8000/api/collection \
 ## 레지스트리
 
 - `shared/system_property_registry.json`
-  - 속성 키/타입/alias 등 정의
+    - 속성 키/타입/alias 등 정의
 - `shared/property_condition_registry.json`
-  - 연산자/값 형태 제약 정의
+    - 연산자/값 형태 제약 정의
 
 관련 코드
 

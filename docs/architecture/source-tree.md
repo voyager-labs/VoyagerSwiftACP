@@ -310,18 +310,12 @@ docs/
 │  ├─ coding-standards.md       # 코딩 표준
 │  ├─ environment.md            # 환경 설정
 │  └─ registries.md             # 레지스트리 시스템
-├─ features/                    # 기능 문서
-│  ├─ search.md                 # 검색 기능
-│  ├─ indexing.md               # 인덱싱 기능
-│  ├─ onboarding.md             # 온보딩
-│  ├─ settings.md               # 설정
-│  ├─ entries-collections.md    # 엔트리/컬렉션
-│  ├─ composer.md               # 컴포저
-│  └─ update.md                 # 업데이트
 ├─ macos/                       # macOS 특화 문서
+│  ├─ sparkle-update-runtime.md # Sparkle 업데이트 런타임
 │  └─ voyager-helper.md         # Helper 문서
 └─ integration/                 # 통합 문서
-   └─ backend-bootstrap.md      # 백엔드 부트스트랩
+   ├─ backend-bootstrap.md      # 백엔드 부트스트랩
+   └─ search-contract.md        # 검색 계약 문서
 ```
 
 ---
