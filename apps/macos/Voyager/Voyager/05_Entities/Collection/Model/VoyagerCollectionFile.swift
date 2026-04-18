@@ -31,6 +31,7 @@ struct VoyagerCollectionFile: Codable, Equatable, Sendable {
     }
 
     nonisolated init(
+        schemaVersion: Int,
         id: String,
         name: String,
         createdAt: Date,
@@ -42,7 +43,7 @@ struct VoyagerCollectionFile: Codable, Equatable, Sendable {
         snapshotMeta: CollectionSnapshotMeta?,
         appVersion: String?,
     ) {
-        schemaVersion = Self.currentSchemaVersion
+        self.schemaVersion = schemaVersion
         self.id = id
         self.name = name
         self.createdAt = createdAt
@@ -54,40 +55,32 @@ struct VoyagerCollectionFile: Codable, Equatable, Sendable {
         self.snapshotMeta = snapshotMeta
         self.appVersion = appVersion
     }
-}
 
-extension VoyagerCollectionFile {
-    init(from decoder: Decoder) throws {
-        let container = try decoder.container(keyedBy: CodingKeys.self)
-
-        let snapshot: CollectionPersistedSnapshot?
-        let snapshotMeta: CollectionSnapshotMeta?
-        do {
-            let decodedSnapshot = try container.decodeIfPresent(CollectionPersistedSnapshot.self, forKey: .snapshot)
-            let decodedSnapshotMeta = try container.decodeIfPresent(CollectionSnapshotMeta.self, forKey: .snapshotMeta)
-            if decodedSnapshot != nil, decodedSnapshotMeta != nil {
-                snapshot = decodedSnapshot
-                snapshotMeta = decodedSnapshotMeta
-            } else {
-                snapshot = nil
-                snapshotMeta = nil
-            }
-        } catch {
-            snapshot = nil
-            snapshotMeta = nil
-        }
-
-        schemaVersion = try container.decode(Int.self, forKey: .schemaVersion)
-        id = try container.decode(String.self, forKey: .id)
-        name = try container.decode(String.self, forKey: .name)
-        createdAt = try container.decode(Date.self, forKey: .createdAt)
-        updatedAt = try container.decode(Date.self, forKey: .updatedAt)
-        query = try container.decode(String.self, forKey: .query)
-        scopes = try container.decode([String].self, forKey: .scopes)
-        conditions = try container.decode([CollectionCondition].self, forKey: .conditions)
-        self.snapshot = snapshot
-        self.snapshotMeta = snapshotMeta
-        appVersion = try container.decodeIfPresent(String.self, forKey: .appVersion)
+    nonisolated init(
+        id: String,
+        name: String,
+        createdAt: Date,
+        updatedAt: Date,
+        query: String,
+        scopes: [String],
+        conditions: [CollectionCondition],
+        snapshot: CollectionPersistedSnapshot?,
+        snapshotMeta: CollectionSnapshotMeta?,
+        appVersion: String?,
+    ) {
+        self.init(
+            schemaVersion: Self.currentSchemaVersion,
+            id: id,
+            name: name,
+            createdAt: createdAt,
+            updatedAt: updatedAt,
+            query: query,
+            scopes: scopes,
+            conditions: conditions,
+            snapshot: snapshot,
+            snapshotMeta: snapshotMeta,
+            appVersion: appVersion,
+        )
     }
 }
 
