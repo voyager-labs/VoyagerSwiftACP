@@ -255,6 +255,7 @@ private func handleOpenCollectionFile(
     state.content.collectionSession.didHydrateSnapshotOnOpen = false
     state.content.collectionSession.isRefreshingHydratedSnapshot = false
     state.content.collectionSession.isWritingBackRefreshedSnapshot = false
+    state.content.collectionSession.openedCompatibility = nil
     state.content.collectionSession.openedName = url.deletingPathExtension().lastPathComponent
     state.content.collectionSession.openedURL = url
     state.content.collectionSession.originURL = url
@@ -303,11 +304,14 @@ private func handleCollectionFileLoaded(
         }
         return handleCollectionFileLoadedSuccess(
             file,
+            compatibility: loadResult.compatibility,
             isStale: state.content.collectionSession.isStale,
             state: &state,
-            collectionAlertClient: collectionAlertClient,
-            registryClient: registryClient,
-            computerName: computerName,
+            environment: .init(
+                collectionAlertClient: collectionAlertClient,
+                registryClient: registryClient,
+                computerName: computerName,
+            ),
         )
     case let .failure(error):
         return handleCollectionFileLoadedFailure(
@@ -335,22 +339,22 @@ private func handleNavigateToCollection(
 
 private func handleCollectionFileLoadedSuccess(
     _ file: VoyagerCollectionFile,
+    compatibility: CollectionFileCompatibilityMetadata,
     isStale: Bool,
     state: inout FileManagerWindowState,
-    collectionAlertClient: CollectionAlertClient,
-    registryClient: RegistryClient,
-    computerName: String,
+    environment: CollectionOpenEnvironment,
 ) -> Effect<FileManagerWindowAction> {
     state.content.collectionSession.isOpening = false
     state.content.composer.isPresented = false
     state.content.collectionSession.isStale = isStale
+    state.content.collectionSession.openedCompatibility = compatibility
     state.content.collectionSession.staleReason = isStale ? .invalidatedLocally : nil
-    let resolved = file.resolveCollectionFilters(registryClient: registryClient)
+    let resolved = file.resolveCollectionFilters(registryClient: environment.registryClient)
     if isEmptyCollectionDefinition(file: file, resolved: resolved) {
         return handleEmptyCollectionFile(
             state: &state,
-            collectionAlertClient: collectionAlertClient,
-            computerName: computerName,
+            collectionAlertClient: environment.collectionAlertClient,
+            computerName: environment.computerName,
         )
     }
 
@@ -358,7 +362,7 @@ private func handleCollectionFileLoadedSuccess(
         file: file,
         resolved: resolved,
         isStale: isStale,
-        registryClient: registryClient,
+        registryClient: environment.registryClient,
         state: &state,
     )
 
@@ -367,7 +371,7 @@ private func handleCollectionFileLoadedSuccess(
         openContext: openContext,
         resolved: resolved,
         isStale: isStale,
-        collectionAlertClient: collectionAlertClient,
+        collectionAlertClient: environment.collectionAlertClient,
         state: &state,
     ) {
         return .concatenate(effects)
@@ -385,11 +389,17 @@ private func handleCollectionFileLoadedSuccess(
     if !resolved.unknownKeys.isEmpty {
         effects.append(contentsOf: unsupportedFilterWarningEffects(
             unknownKeys: resolved.unknownKeys,
-            collectionAlertClient: collectionAlertClient,
+            collectionAlertClient: environment.collectionAlertClient,
         ))
     }
 
     return effects.isEmpty ? .none : .merge(effects)
+}
+
+private struct CollectionOpenEnvironment {
+    let collectionAlertClient: CollectionAlertClient
+    let registryClient: RegistryClient
+    let computerName: String
 }
 
 private func handleCollectionFileLoadedFailure(

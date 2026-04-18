@@ -13,6 +13,7 @@ struct CollectionDocumentSessionState: Equatable, Sendable {
     var didHydrateSnapshotOnOpen: Bool = false
     var isRefreshingHydratedSnapshot: Bool = false
     var isWritingBackRefreshedSnapshot: Bool = false
+    var openedCompatibility: CollectionFileCompatibilityMetadata?
 
     var openedURL: URL?
     var openedName: String?

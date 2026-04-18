@@ -140,7 +140,7 @@ final class CollectionSnapshotFileContractTests: XCTestCase {
             let query: String
             let scopes: [String]
             let conditions: [CollectionCondition]
-            let snapshot: [String: [JSONValue]]
+            let snapshot: [String: [VoyagerShared.JSONValue]]
             let snapshotMeta: CollectionSnapshotMeta
             let appVersion: String?
         }
@@ -154,7 +154,7 @@ final class CollectionSnapshotFileContractTests: XCTestCase {
             query: "",
             scopes: [],
             conditions: [],
-            snapshot: ["items": [.number(1)]],
+            snapshot: ["items": [VoyagerShared.JSONValue.number(1)]],
             snapshotMeta: .init(
                 definitionFingerprint: "fingerprint",
                 capturedAt: .distantPast,
@@ -182,7 +182,7 @@ final class CollectionSnapshotFileContractTests: XCTestCase {
             let query: String
             let scopes: [String]
             let conditions: [CollectionCondition]
-            let snapshot: [String: [JSONValue]]
+            let snapshot: [String: [VoyagerShared.JSONValue]]
             let snapshotMeta: CollectionSnapshotMeta
             let appVersion: String?
         }
@@ -200,7 +200,7 @@ final class CollectionSnapshotFileContractTests: XCTestCase {
             query: "query",
             scopes: ["/tmp"],
             conditions: [],
-            snapshot: ["items": [.number(1)]],
+            snapshot: ["items": [VoyagerShared.JSONValue.number(1)]],
             snapshotMeta: .init(
                 definitionFingerprint: "fingerprint",
                 capturedAt: .distantPast,

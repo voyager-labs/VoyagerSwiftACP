@@ -102,6 +102,43 @@ final class FileManagerCollectionRefreshPolicyTests: XCTestCase {
         XCTAssertTrue(store.state.collectionSession.isStale)
         XCTAssertNil(store.state.collectionSession.lastRefreshAt)
     }
+
+    func testRefreshSuccessSkipsWriteBackWhenCompatibilityBlocksWriteBack() async {
+        let requestID = UUID()
+        let response = makeFiltersResponse(paths: ["/tmp/report.txt"])
+        let recorder = SavedCollectionsRecorder()
+        let store = makeContentStore(
+            initialState: makeRefreshingState(
+                requestID: requestID,
+                openedURL: URL(fileURLWithPath: "/tmp/fallback.voycoll"),
+                query: "report",
+                scopes: ["/tmp"],
+                collectionContext: .init(query: "report", scopes: ["/tmp"], conditions: []),
+                compatibility: .init(
+                    sourceSchemaVersion: 2,
+                    migrationPath: [.currentSchemaV2, .definitionFallbackFromMalformedSnapshot],
+                    warnings: [.droppedMalformedSnapshot],
+                    usedDefinitionFallback: true,
+                    writeBackAllowed: false,
+                    writeBackReason: .blockedDefinitionFallback,
+                ),
+            ),
+            recorder: recorder,
+        )
+        store.exhaustivity = .off
+
+        await store.send(.composer(.internal(.filtersResponse(requestID, .success(response))))) {
+            $0.composer.lastFiltersResponse = response
+            $0.composer.isLoadingFilters = false
+            $0.collectionSession.isRefreshingHydratedSnapshot = false
+            $0.collectionSession.isWritingBackRefreshedSnapshot = false
+        }
+        await store.finish()
+
+        await XCTAssertNil(recorder.last())
+        XCTAssertTrue(store.state.collectionSession.isStale)
+        XCTAssertNil(store.state.collectionSession.lastRefreshAt)
+    }
 }
 
 @MainActor
@@ -152,6 +189,14 @@ private func makeRefreshingState(
     scopes: [String],
     collectionContext: CollectionContext,
     baselineContext: CollectionContext? = nil,
+    compatibility: CollectionFileCompatibilityMetadata? = .init(
+        sourceSchemaVersion: 2,
+        migrationPath: [.currentSchemaV2],
+        warnings: [],
+        usedDefinitionFallback: false,
+        writeBackAllowed: true,
+        writeBackReason: .allowed,
+    ),
 ) -> FileManagerContentState {
     var state = FileManagerContentState()
     state.entryViewLayout.isCollectionMode = true
@@ -161,6 +206,7 @@ private func makeRefreshingState(
     state.collectionSession.didHydrateSnapshotOnOpen = true
     state.collectionSession.openedURL = openedURL
     state.collectionSession.openedName = openedURL.deletingPathExtension().lastPathComponent
+    state.collectionSession.openedCompatibility = compatibility
     state.collectionSession.baseline = baselineContext.map(CollectionBaseline.init(context:))
     state.collectionContext = collectionContext
     state.composer.scopes = scopes
@@ -187,8 +233,8 @@ private actor SavedCollectionsRecorder {
     }
 }
 
-private func makeFiltersResponse(paths: [String]) -> SearchResponsePayload {
-    SearchResponsePayload(
+private func makeFiltersResponse(paths: [String]) -> VoyagerShared.SearchResponsePayload {
+    VoyagerShared.SearchResponsePayload(
         itemCount: paths.count,
         appliedFilters: .init(scopes: ["/tmp"], conditions: []),
         items: paths.map { path in

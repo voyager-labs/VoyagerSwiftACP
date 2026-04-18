@@ -43,10 +43,7 @@ func handleCollectionSaveSuccess(
         applyWriteBackSuccessState(state: &state, currentDate: currentDate)
     }
 
-    state.collectionSession.openedURL = url
-    state.collectionSession.openedName = url.deletingPathExtension().lastPathComponent
-    state.collectionSession.originURL = url
-    state.collectionSession.baseline = state.collectionContext.map(CollectionBaseline.init(context:))
+    applySavedCollectionSessionState(completion: completion, state: &state)
 
     var navigationEffects: [Effect<FileManagerContentAction>] = [
         .send(.internal(.requestNavigation(.internal(.setNavigationState(.collection(
@@ -82,6 +79,25 @@ func handleCollectionSaveSuccess(
     return .concatenate(navigationEffects)
 }
 
+func applySavedCollectionSessionState(
+    completion: CollectionSaveCompletion,
+    state: inout FileManagerContentState,
+) {
+    let url = completion.url
+    state.collectionSession.openedURL = url
+    state.collectionSession.openedName = url.deletingPathExtension().lastPathComponent
+    state.collectionSession.originURL = url
+    state.collectionSession.baseline = state.collectionContext.map(CollectionBaseline.init(context:))
+    state.collectionSession.openedCompatibility = .init(
+        sourceSchemaVersion: completion.file.schemaVersion,
+        migrationPath: [.currentSchemaV2],
+        warnings: [],
+        usedDefinitionFallback: false,
+        writeBackAllowed: true,
+        writeBackReason: .allowed,
+    )
+}
+
 func applyWriteBackSuccessState(
     state: inout FileManagerContentState,
     currentDate: Date,
@@ -107,6 +123,7 @@ func finalizeCollectionRefreshIfNeeded(
     state.collectionSession.isRefreshingHydratedSnapshot = false
 
     guard !state.isOpenedCollectionDirty,
+          state.collectionSession.openedCompatibility?.writeBackAllowed != false,
           let writeBack = makeRefreshedSnapshotWriteBackRequest(state: state, currentDate: currentDate)
     else {
         state.collectionSession.isWritingBackRefreshedSnapshot = false
