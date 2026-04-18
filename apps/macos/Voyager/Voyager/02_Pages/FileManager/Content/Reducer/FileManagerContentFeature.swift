@@ -256,13 +256,15 @@ struct FileManagerContentFeature {
             return nil
         }
 
+        let currentDate = date
+
         return FileManagerContentComposerCoordinator.reduce(
             composerAction,
             state: &state,
             dependencies: .init(
                 collectionAlertClient: collectionAlertClient,
                 computerName: fileManagerClient.displayName("/"),
-                currentDate: date,
+                currentDate: { currentDate() },
             ),
         )
     }

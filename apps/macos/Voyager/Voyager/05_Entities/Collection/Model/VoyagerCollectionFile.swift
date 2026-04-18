@@ -2,7 +2,7 @@ import Foundation
 import VoyagerShared
 
 struct VoyagerCollectionFile: Codable, Equatable, Sendable {
-    static let currentSchemaVersion = 2
+    nonisolated static let currentSchemaVersion = 2
 
     let schemaVersion: Int
     let id: String
@@ -30,7 +30,7 @@ struct VoyagerCollectionFile: Codable, Equatable, Sendable {
         case appVersion
     }
 
-    init(
+    nonisolated init(
         id: String,
         name: String,
         createdAt: Date,
