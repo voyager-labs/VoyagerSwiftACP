@@ -257,7 +257,15 @@ func handleSaveCompleted(
     switch result {
     case let .success(completion):
         let url = completion.url
-        collectionStalenessClient.clearRecord(url.path)
+        let file = completion.file
+        collectionStalenessClient.upsertRecord(
+            url.path,
+            .init(
+                definitionFingerprint: file.snapshotMeta?.definitionFingerprint ?? "",
+                relevanceRoots: file.snapshotMeta?.relevanceRoots ?? file.scopes,
+                lastInvalidatedAt: nil,
+            ),
+        )
         let directory = url.deletingLastPathComponent().path
         userDefaultsClient.setString(directory, CollectionKeys.lastCollectionSaveDirectory)
         return .none

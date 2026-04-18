@@ -53,12 +53,9 @@ final class CollectionSnapshotSavePipelineTests: XCTestCase {
         await store.finish()
 
         let saved = await recorder.last()
+        assertSnapshotMeta(saved?.file, itemCount: 1)
         XCTAssertEqual(saved?.file.snapshot?.items, [.string("/tmp/report.txt")])
-        XCTAssertEqual(saved?.file.snapshotMeta?.definitionFingerprint, "fingerprint")
-        XCTAssertEqual(saved?.file.snapshotMeta?.relevanceRoots, ["/tmp"])
-        XCTAssertEqual(saved?.file.snapshotMeta?.itemCount, 1)
-        XCTAssertNil(stalenessClient.record(url.path)?.lastInvalidatedAt)
-        XCTAssertNil(stalenessClient.record(url.path))
+        assertRecordUpdated(stalenessClient: stalenessClient, url: url)
     }
 
     func testDefinitionOnlySaveLeavesSnapshotNil() async {
@@ -101,9 +98,8 @@ final class CollectionSnapshotSavePipelineTests: XCTestCase {
 
         let saved = await recorder.last()
         XCTAssertNil(saved?.file.snapshot)
-        XCTAssertEqual(saved?.file.snapshotMeta?.definitionFingerprint, "fingerprint")
-        XCTAssertEqual(saved?.file.snapshotMeta?.itemCount, 0)
-        XCTAssertNil(stalenessClient.record(url.path))
+        assertSnapshotMeta(saved?.file, itemCount: 0)
+        assertRecordUpdated(stalenessClient: stalenessClient, url: url)
     }
 
     func testEmptySnapshotSavePersistsEmptySnapshotArray() async {
@@ -146,7 +142,28 @@ final class CollectionSnapshotSavePipelineTests: XCTestCase {
 
         let saved = await recorder.last()
         XCTAssertEqual(saved?.file.snapshot?.items, [])
-        XCTAssertEqual(saved?.file.snapshotMeta?.itemCount, 0)
+        assertSnapshotMeta(saved?.file, itemCount: 0)
+        assertRecordUpdated(stalenessClient: stalenessClient, url: url)
+    }
+
+    private func assertSnapshotMeta(_ file: VoyagerCollectionFile?, itemCount: Int) {
+        XCTAssertEqual(file?.snapshotMeta?.definitionFingerprint, "fingerprint")
+        XCTAssertEqual(file?.snapshotMeta?.relevanceRoots, ["/tmp"])
+        XCTAssertEqual(file?.snapshotMeta?.itemCount, itemCount)
+    }
+
+    private func assertRecordUpdated(
+        stalenessClient: CollectionStalenessClient,
+        url: URL,
+    ) {
+        XCTAssertEqual(
+            stalenessClient.record(url.path),
+            .init(
+                definitionFingerprint: "fingerprint",
+                relevanceRoots: ["/tmp"],
+                lastInvalidatedAt: nil,
+            ),
+        )
     }
 }
 
