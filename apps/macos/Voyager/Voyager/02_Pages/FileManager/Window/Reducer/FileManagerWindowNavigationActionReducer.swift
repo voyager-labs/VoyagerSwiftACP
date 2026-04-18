@@ -263,9 +263,9 @@ private func handleOpenCollectionFile(
 
     let loadEffect: Effect<FileManagerWindowAction> = .run { [url] send in
         do {
-            let file = try await collectionFileClient.load(url)
+            let result = try await collectionFileClient.load(url)
             try Task.checkCancellation()
-            await send(.navigation(.internal(.collectionFileLoaded(.success(file)))))
+            await send(.navigation(.internal(.collectionFileLoaded(.success(result)))))
         } catch is CancellationError {
             return
         } catch {
@@ -294,7 +294,8 @@ private func handleCollectionFileLoaded(
     computerName: String,
 ) -> Effect<FileManagerWindowAction> {
     switch result {
-    case let .success(file):
+    case let .success(loadResult):
+        let file = loadResult.file
         if let url = state.content.collectionSession.openedURL {
             let isStale = collectionStalenessClient.consumeInvalidation(url.path)
             state.content.collectionSession.isStale = isStale

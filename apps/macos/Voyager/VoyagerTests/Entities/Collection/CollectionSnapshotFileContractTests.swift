@@ -39,7 +39,8 @@ final class CollectionSnapshotFileContractTests: XCTestCase {
         XCTAssertTrue(fileManager.fileExists(atPath: url.appendingPathComponent("collection.plist").path))
 
         let loaded = try await CollectionFileClient.liveValue.load(url)
-        XCTAssertEqual(loaded, file)
+        XCTAssertEqual(loaded.file, file)
+        XCTAssertEqual(loaded.containerFormat, .package)
     }
 
     func testLoadLegacySingleFileRoundTrips() async throws {
@@ -65,7 +66,8 @@ final class CollectionSnapshotFileContractTests: XCTestCase {
         try data.write(to: url)
 
         let loaded = try await CollectionFileClient.liveValue.load(url)
-        XCTAssertEqual(loaded, file)
+        XCTAssertEqual(loaded.file, file)
+        XCTAssertEqual(loaded.containerFormat, .legacySingleFile)
     }
 
     func testLoadMissingPackagePayloadThrows() async {
@@ -212,10 +214,35 @@ final class CollectionSnapshotFileContractTests: XCTestCase {
         try data.write(to: url.appendingPathComponent("collection.plist"))
 
         let loaded = try await CollectionFileClient.liveValue.load(url)
-        XCTAssertEqual(loaded.id, invalid.id)
-        XCTAssertEqual(loaded.name, invalid.name)
-        XCTAssertNil(loaded.snapshot)
-        XCTAssertNil(loaded.snapshotMeta)
+        XCTAssertEqual(loaded.file.id, invalid.id)
+        XCTAssertEqual(loaded.file.name, invalid.name)
+        XCTAssertNil(loaded.file.snapshot)
+        XCTAssertNil(loaded.file.snapshotMeta)
+    }
+
+    func testSaveNormalizesLegacyFileToCurrentSchemaVersion() async throws {
+        let url = makeTemporaryCollectionURL(name: "normalize-save")
+        defer { try? fileManager.removeItem(at: url.deletingLastPathComponent()) }
+
+        let legacyFile = VoyagerCollectionFile(
+            schemaVersion: 1,
+            id: "legacy-file",
+            name: "Legacy File",
+            createdAt: .distantPast,
+            updatedAt: .distantPast,
+            query: "",
+            scopes: ["/tmp"],
+            conditions: [],
+            snapshot: nil,
+            snapshotMeta: nil,
+            appVersion: nil,
+        )
+
+        try await CollectionFileClient.liveValue.save(legacyFile, url)
+
+        let data = try Data(contentsOf: url.appendingPathComponent("collection.plist"))
+        let loaded = try PropertyListDecoder().decode(VoyagerCollectionFile.self, from: data)
+        XCTAssertEqual(loaded.schemaVersion, VoyagerCollectionFile.currentSchemaVersion)
     }
 
     func testEncodeRejectsNonStringSnapshotItems() throws {
