@@ -123,17 +123,20 @@ private func makeContentStore(
                 await recorder.append(file: file, url: url)
             },
             load: { _ in
-                VoyagerCollectionFile(
-                    id: "",
-                    name: "",
-                    createdAt: .distantPast,
-                    updatedAt: .distantPast,
-                    query: "",
-                    scopes: [],
-                    conditions: [],
-                    snapshot: nil,
-                    snapshotMeta: nil,
-                    appVersion: nil,
+                makeCollectionLoadResult(
+                    VoyagerCollectionFile(
+                        id: "",
+                        name: "",
+                        createdAt: .distantPast,
+                        updatedAt: .distantPast,
+                        query: "",
+                        scopes: [],
+                        conditions: [],
+                        snapshot: nil,
+                        snapshotMeta: nil,
+                        appVersion: nil,
+                    ),
+                    sourceSchemaVersion: 2,
                 )
             },
         )
@@ -192,5 +195,27 @@ private func makeFiltersResponse(paths: [String]) -> SearchResponsePayload {
             .object(["fullPath": .string(path)])
         },
         error: nil,
+    )
+}
+
+private func makeCollectionLoadResult(
+    _ file: VoyagerCollectionFile,
+    sourceSchemaVersion: Int?,
+) -> CollectionFileLoadResult {
+    .init(
+        file: file,
+        containerFormat: .package,
+        compatibility: .init(
+            sourceSchemaVersion: sourceSchemaVersion,
+            migrationPath: sourceSchemaVersion == VoyagerCollectionFile.currentSchemaVersion
+                ? [.currentSchemaV2]
+                : [.definitionOnlyV1, .currentSchemaV2],
+            warnings: [],
+            usedDefinitionFallback: false,
+            writeBackAllowed: sourceSchemaVersion == VoyagerCollectionFile.currentSchemaVersion,
+            writeBackReason: sourceSchemaVersion == VoyagerCollectionFile.currentSchemaVersion
+                ? .allowed
+                : .blockedLegacyVersionUpgrade,
+        ),
     )
 }

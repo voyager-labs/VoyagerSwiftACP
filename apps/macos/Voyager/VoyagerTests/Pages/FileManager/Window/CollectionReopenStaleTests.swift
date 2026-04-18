@@ -74,7 +74,10 @@ final class CollectionReopenStaleTests: XCTestCase {
 
         let store = makeDefinitionOnlyStore(openedURL: url, stalenessClient: stalenessClient)
 
-        await store.send(.navigation(.internal(.collectionFileLoaded(.success(file))))) {
+        await store.send(.navigation(.internal(.collectionFileLoaded(.success(makeCollectionLoadResult(
+            file,
+            sourceSchemaVersion: nil,
+        )))))) {
             $0.content.collectionSession.isOpening = false
             $0.content.collectionSession.isStale = true
             $0.content.collectionSession.staleReason = .invalidatedLocally
@@ -165,7 +168,10 @@ final class CollectionReopenStaleTests: XCTestCase {
 
         let store = makeDefinitionOnlyStore(openedURL: url, stalenessClient: stalenessClient)
 
-        await store.send(.navigation(.internal(.collectionFileLoaded(.success(file))))) {
+        await store.send(.navigation(.internal(.collectionFileLoaded(.success(makeCollectionLoadResult(
+            file,
+            sourceSchemaVersion: nil,
+        )))))) {
             $0.content.collectionSession.isOpening = false
             $0.content.collectionSession.isStale = true
             $0.content.collectionSession.staleReason = .invalidatedLocally
@@ -227,9 +233,31 @@ private func makeOpenCollectionStore(
         )
         $0.collectionFileClient = .init(
             save: { _, _ in },
-            load: { _ in file },
+            load: { _ in makeCollectionLoadResult(file, sourceSchemaVersion: nil) },
         )
         $0.registryClient = .testValue
         $0.collectionStalenessClient = stalenessClient
     }
+}
+
+private func makeCollectionLoadResult(
+    _ file: VoyagerCollectionFile,
+    sourceSchemaVersion: Int?,
+) -> CollectionFileLoadResult {
+    .init(
+        file: file,
+        containerFormat: .package,
+        compatibility: .init(
+            sourceSchemaVersion: sourceSchemaVersion,
+            migrationPath: sourceSchemaVersion == VoyagerCollectionFile.currentSchemaVersion
+                ? [.currentSchemaV2]
+                : [.definitionOnlyV1, .currentSchemaV2],
+            warnings: [],
+            usedDefinitionFallback: false,
+            writeBackAllowed: sourceSchemaVersion == VoyagerCollectionFile.currentSchemaVersion,
+            writeBackReason: sourceSchemaVersion == VoyagerCollectionFile.currentSchemaVersion
+                ? .allowed
+                : .blockedLegacyVersionUpgrade,
+        ),
+    )
 }

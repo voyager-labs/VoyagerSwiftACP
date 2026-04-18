@@ -475,7 +475,7 @@ private func makeCollectionStore(
         save: { file, url in
             await recorder.append(file: file, url: url)
         },
-        load: { _ in kEmptyCollectionFile },
+        load: { _ in makeCollectionLoadResult(kEmptyCollectionFile, sourceSchemaVersion: 2) },
     )
     let store = TestStore(initialState: CollectionFeature.State()) {
         CollectionFeature()
@@ -497,6 +497,28 @@ private func runSaveToExistingTest(
     await store.send(.saveToExisting(payload, url))
     await store.receive(\.saveCompleted)
     await store.finish()
+}
+
+private func makeCollectionLoadResult(
+    _ file: VoyagerCollectionFile,
+    sourceSchemaVersion: Int?,
+) -> CollectionFileLoadResult {
+    .init(
+        file: file,
+        containerFormat: .package,
+        compatibility: .init(
+            sourceSchemaVersion: sourceSchemaVersion,
+            migrationPath: sourceSchemaVersion == VoyagerCollectionFile.currentSchemaVersion
+                ? [.currentSchemaV2]
+                : [.definitionOnlyV1, .currentSchemaV2],
+            warnings: [],
+            usedDefinitionFallback: false,
+            writeBackAllowed: sourceSchemaVersion == VoyagerCollectionFile.currentSchemaVersion,
+            writeBackReason: sourceSchemaVersion == VoyagerCollectionFile.currentSchemaVersion
+                ? .allowed
+                : .blockedLegacyVersionUpgrade,
+        ),
+    )
 }
 
 private let kEmptySearchResponse = VoyagerShared.SearchResponsePayload(

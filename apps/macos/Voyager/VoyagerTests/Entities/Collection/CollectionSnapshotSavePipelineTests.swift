@@ -36,7 +36,7 @@ final class CollectionSnapshotSavePipelineTests: XCTestCase {
                 save: { file, url in
                     await recorder.append(file: file, url: url)
                 },
-                load: { _ in kEmptyCollectionFile },
+                load: { _ in makeCollectionLoadResult(kEmptyCollectionFile, sourceSchemaVersion: 2) },
             )
             $0.userDefaultsClient = .testValue
             $0.collectionStalenessClient = stalenessClient
@@ -80,7 +80,7 @@ final class CollectionSnapshotSavePipelineTests: XCTestCase {
                 save: { file, url in
                     await recorder.append(file: file, url: url)
                 },
-                load: { _ in kEmptyCollectionFile },
+                load: { _ in makeCollectionLoadResult(kEmptyCollectionFile, sourceSchemaVersion: 2) },
             )
             $0.userDefaultsClient = .testValue
             $0.collectionStalenessClient = stalenessClient
@@ -124,7 +124,7 @@ final class CollectionSnapshotSavePipelineTests: XCTestCase {
                 save: { file, url in
                     await recorder.append(file: file, url: url)
                 },
-                load: { _ in kEmptyCollectionFile },
+                load: { _ in makeCollectionLoadResult(kEmptyCollectionFile, sourceSchemaVersion: 2) },
             )
             $0.userDefaultsClient = .testValue
             $0.collectionStalenessClient = stalenessClient
@@ -179,6 +179,28 @@ private let kEmptyCollectionFile = VoyagerCollectionFile(
     snapshotMeta: nil,
     appVersion: nil,
 )
+
+private func makeCollectionLoadResult(
+    _ file: VoyagerCollectionFile,
+    sourceSchemaVersion: Int?,
+) -> CollectionFileLoadResult {
+    .init(
+        file: file,
+        containerFormat: .package,
+        compatibility: .init(
+            sourceSchemaVersion: sourceSchemaVersion,
+            migrationPath: sourceSchemaVersion == VoyagerCollectionFile.currentSchemaVersion
+                ? [.currentSchemaV2]
+                : [.definitionOnlyV1, .currentSchemaV2],
+            warnings: [],
+            usedDefinitionFallback: false,
+            writeBackAllowed: sourceSchemaVersion == VoyagerCollectionFile.currentSchemaVersion,
+            writeBackReason: sourceSchemaVersion == VoyagerCollectionFile.currentSchemaVersion
+                ? .allowed
+                : .blockedLegacyVersionUpgrade,
+        ),
+    )
+}
 
 private actor SavedCollectionsRecorder {
     struct Entry {
