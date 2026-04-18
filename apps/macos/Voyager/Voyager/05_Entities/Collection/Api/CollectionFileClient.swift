@@ -42,22 +42,18 @@ extension CollectionFileClient: DependencyKey {
                 let payloadURL = url.appendingPathComponent(packagePayloadFilename)
                 let payloadExists = fileManagerClient.fileExists(payloadURL.path)
                 guard payloadExists else {
-                    throw CocoaError(.fileReadNoSuchFile, userInfo: [
-                        NSLocalizedDescriptionKey: "Missing \(packagePayloadFilename) in .voycoll package.",
-                    ])
+                    throw CollectionFileCompatibilityError.missingPackagePayload
                 }
                 let data = try Data(contentsOf: payloadURL)
                 return try await MainActor.run {
-                    let decoder = PropertyListDecoder()
-                    return try decoder.decode(VoyagerCollectionFile.self, from: data)
+                    try VoyagerCollectionFileCompatibilityOwner.decode(data, containerFormat: .package).file
                 }
             }
 
             // 레거시: 단일 파일로 저장된 `.voycoll`도 열 수 있도록 유지
             let data = try Data(contentsOf: url)
             return try await MainActor.run {
-                let decoder = PropertyListDecoder()
-                return try decoder.decode(VoyagerCollectionFile.self, from: data)
+                try VoyagerCollectionFileCompatibilityOwner.decode(data, containerFormat: .legacySingleFile).file
             }
         },
     )
