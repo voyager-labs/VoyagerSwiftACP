@@ -62,8 +62,11 @@ final class CollectionFileCompatibilityTests: XCTestCase {
         )
 
         XCTAssertNil(legacyResult.compatibility.sourceSchemaVersion)
-        XCTAssertEqual(legacyResult.compatibility.migrationPath, [.legacySingleFileWithoutSchema, .definitionOnlyV1])
-        XCTAssertEqual(legacyResult.file.schemaVersion, 1)
+        XCTAssertEqual(
+            legacyResult.compatibility.migrationPath,
+            [.legacySingleFileWithoutSchema, .definitionOnlyV1, .currentSchemaV2],
+        )
+        XCTAssertEqual(legacyResult.file.schemaVersion, VoyagerCollectionFile.currentSchemaVersion)
         XCTAssertFalse(legacyResult.compatibility.writeBackAllowed)
         XCTAssertEqual(legacyResult.compatibility.writeBackReason, .blockedLegacyVersionUpgrade)
 
@@ -108,11 +111,11 @@ final class CollectionFileCompatibilityTests: XCTestCase {
             assertLoaded: { result, loaded in
                 XCTAssertEqual(result.containerFormat, .legacySingleFile)
                 XCTAssertEqual(result.compatibility.sourceSchemaVersion, 1)
-                XCTAssertEqual(result.compatibility.migrationPath, [.definitionOnlyV1])
+                XCTAssertEqual(result.compatibility.migrationPath, [.definitionOnlyV1, .currentSchemaV2])
                 XCTAssertFalse(result.compatibility.usedDefinitionFallback)
                 XCTAssertFalse(result.compatibility.writeBackAllowed)
                 XCTAssertEqual(result.compatibility.writeBackReason, .blockedLegacyVersionUpgrade)
-                XCTAssertEqual(loaded.schemaVersion, 1)
+                XCTAssertEqual(loaded.schemaVersion, VoyagerCollectionFile.currentSchemaVersion)
                 XCTAssertEqual(loaded.id, "definition-only")
                 XCTAssertEqual(loaded.name, "Definition Only")
                 XCTAssertNil(loaded.snapshot)
@@ -134,11 +137,14 @@ final class CollectionFileCompatibilityTests: XCTestCase {
             assertLoaded: { result, loaded in
                 XCTAssertEqual(result.containerFormat, .legacySingleFile)
                 XCTAssertNil(result.compatibility.sourceSchemaVersion)
-                XCTAssertEqual(result.compatibility.migrationPath, [.legacySingleFileWithoutSchema, .definitionOnlyV1])
+                XCTAssertEqual(
+                    result.compatibility.migrationPath,
+                    [.legacySingleFileWithoutSchema, .definitionOnlyV1, .currentSchemaV2],
+                )
                 XCTAssertFalse(result.compatibility.usedDefinitionFallback)
                 XCTAssertFalse(result.compatibility.writeBackAllowed)
                 XCTAssertEqual(result.compatibility.writeBackReason, .blockedLegacyVersionUpgrade)
-                XCTAssertEqual(loaded.schemaVersion, 1)
+                XCTAssertEqual(loaded.schemaVersion, VoyagerCollectionFile.currentSchemaVersion)
                 XCTAssertEqual(loaded.id, "legacy-no-schema")
                 XCTAssertEqual(loaded.name, "Legacy No Schema")
                 XCTAssertNil(loaded.snapshot)
@@ -159,11 +165,11 @@ final class CollectionFileCompatibilityTests: XCTestCase {
             assertLoaded: { result, loaded in
                 XCTAssertEqual(result.containerFormat, .package)
                 XCTAssertEqual(result.compatibility.sourceSchemaVersion, 1)
-                XCTAssertEqual(result.compatibility.migrationPath, [.definitionOnlyV1])
+                XCTAssertEqual(result.compatibility.migrationPath, [.definitionOnlyV1, .currentSchemaV2])
                 XCTAssertFalse(result.compatibility.usedDefinitionFallback)
                 XCTAssertFalse(result.compatibility.writeBackAllowed)
                 XCTAssertEqual(result.compatibility.writeBackReason, .blockedLegacyVersionUpgrade)
-                XCTAssertEqual(loaded.schemaVersion, 1)
+                XCTAssertEqual(loaded.schemaVersion, VoyagerCollectionFile.currentSchemaVersion)
                 XCTAssertEqual(loaded.id, "definition-only")
                 XCTAssertEqual(loaded.name, "Definition Only")
                 XCTAssertNil(loaded.snapshot)

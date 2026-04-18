@@ -84,7 +84,11 @@ final class CollectionFileFailurePolicyTests: XCTestCase {
             containerFormat: .legacySingleFile,
         )
         XCTAssertNil(legacyMissingSchema.compatibility.sourceSchemaVersion)
-        XCTAssertEqual(legacyMissingSchema.file.schemaVersion, 1)
+        XCTAssertEqual(
+            legacyMissingSchema.compatibility.migrationPath,
+            [.legacySingleFileWithoutSchema, .definitionOnlyV1, .currentSchemaV2],
+        )
+        XCTAssertEqual(legacyMissingSchema.file.schemaVersion, VoyagerCollectionFile.currentSchemaVersion)
         XCTAssertEqual(legacyMissingSchema.compatibility.writeBackReason, .blockedLegacyVersionUpgrade)
 
         let invalidSchemaData = try makeBinaryPlist(InvalidSchemaVersionTypePayload())
