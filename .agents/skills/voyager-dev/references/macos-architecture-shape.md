@@ -10,15 +10,19 @@ Use this file as the architecture navigation page for `voyager-dev`, not as the 
 ## Reference map
 
 - Layer choice, segment placement, dependency direction
-  - Read `layer-and-segment-rules.md`
+    - Read `layer-and-segment-rules.md`
 - Slice boundary, peer-slice imports, package-friendly public surfaces
-  - Read `public-boundary-spec.md`
+    - Read `public-boundary-spec.md`
 - Package extraction posture, extraction checks, current extracted targets
-  - Read `package-extraction-posture.md`
+    - Read `package-extraction-posture.md`
 - TCA ownership, dependency clients, effect and cancellation rules
-  - Read `tca-contract.md`
+    - Read `tca-contract.md`
 - Parent/child reducer decomposition
-  - Read `orchestrator-spec.md`
+    - Read `orchestrator-spec.md`
+- App-thin integration, package-to-app wiring, typealias bridges, XPC boundary contracts
+    - Read `app-thin-integration-spec.md`
+- Shell freeze, shared utility promotion into `06_Shared`, rollback/sunset guidance
+    - Read `shell-freeze-and-shared-promotion.md`
 
 ## Escalation rule
 
