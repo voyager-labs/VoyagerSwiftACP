@@ -245,6 +245,37 @@ final class CollectionSnapshotFileContractTests: XCTestCase {
         XCTAssertEqual(loaded.schemaVersion, CollectionFileSchemaVersion.current)
     }
 
+    func testSavePreservesCurrentSchemaVersionWithoutAdditionalMigration() async throws {
+        let url = makeTemporaryCollectionURL(name: "preserve-current-save")
+        defer { try? fileManager.removeItem(at: url.deletingLastPathComponent()) }
+
+        let currentFile = VoyagerCollectionFile(
+            id: "current-file",
+            name: "Current File",
+            createdAt: .distantPast,
+            updatedAt: .distantFuture,
+            query: "report",
+            scopes: ["/tmp"],
+            conditions: [],
+            snapshot: .init(items: [.string("/tmp/report.txt")]),
+            snapshotMeta: .init(
+                definitionFingerprint: "fingerprint",
+                capturedAt: .distantFuture,
+                itemCount: 1,
+                relevanceRoots: ["/tmp"],
+            ),
+            appVersion: "1.0",
+        )
+
+        try await CollectionFileClient.liveValue.save(currentFile, url)
+
+        let data = try Data(contentsOf: url.appendingPathComponent("collection.plist"))
+        let loaded = try PropertyListDecoder().decode(VoyagerCollectionFile.self, from: data)
+        XCTAssertEqual(loaded.schemaVersion, CollectionFileSchemaVersion.current)
+        XCTAssertEqual(loaded.snapshot?.items, [.string("/tmp/report.txt")])
+        XCTAssertEqual(loaded.snapshotMeta?.definitionFingerprint, "fingerprint")
+    }
+
     func testEncodeRejectsNonStringSnapshotItems() throws {
         let file = VoyagerCollectionFile(
             id: "invalid-encode",

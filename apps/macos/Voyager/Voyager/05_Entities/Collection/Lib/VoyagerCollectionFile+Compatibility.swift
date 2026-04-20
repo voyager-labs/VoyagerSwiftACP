@@ -130,25 +130,12 @@ enum VoyagerCollectionFileCompatibilityOwner {
             let decodedFile = try PropertyListDecoder().decode(VoyagerCollectionFile.self, from: data)
             let snapshotDecision = evaluateDecodedSnapshotPair(decodedFile)
             let file = normalizeForRead(snapshotDecision.file, schemaProbe: schemaProbe)
-            return .init(
+            return makeLoadResult(
                 file: file,
                 containerFormat: containerFormat,
-                compatibility: .init(
-                    sourceSchemaVersion: schemaProbe.sourceSchemaVersion,
-                    migrationPath: migrationPath(
-                        schemaProbe: schemaProbe,
-                        warning: snapshotDecision.warning,
-                    ),
-                    warnings: snapshotDecision.warning.map { [$0] } ?? [],
-                    usedDefinitionFallback: snapshotDecision.usedDefinitionFallback,
-                    writeBackAllowed: snapshotDecision.usedDefinitionFallback == false
-                        && schemaProbe.sourceSchemaVersion == CollectionFileSchemaVersion.current,
-                    writeBackReason: writeBackReason(
-                        schemaVersion: schemaProbe.effectiveSchemaVersion,
-                        sourceSchemaVersion: schemaProbe.sourceSchemaVersion,
-                        usedDefinitionFallback: snapshotDecision.usedDefinitionFallback,
-                    ),
-                ),
+                sourceSchemaVersion: schemaProbe.sourceSchemaVersion,
+                warning: snapshotDecision.warning,
+                usedDefinitionFallback: snapshotDecision.usedDefinitionFallback,
             )
         } catch {
             let fallback = try decodeDroppingSnapshotIfPossible(
@@ -188,22 +175,47 @@ enum VoyagerCollectionFileCompatibilityOwner {
     static func compatibilityForCurrentFile(_ file: VoyagerCollectionFile) -> CollectionFileCompatibilityMetadata {
         let snapshotDecision = evaluateDecodedSnapshotPair(file)
         let normalized = snapshotDecision.file
-        return .init(
+        return makeLoadResult(
+            file: normalized,
+            containerFormat: .package,
             sourceSchemaVersion: normalized.schemaVersion,
-            migrationPath: migrationPath(
-                schemaProbe: .init(
-                    sourceSchemaVersion: normalized.schemaVersion,
-                    effectiveSchemaVersion: normalized.schemaVersion,
-                ),
-                warning: snapshotDecision.warning,
-            ),
-            warnings: snapshotDecision.warning.map { [$0] } ?? [],
+            warning: snapshotDecision.warning,
             usedDefinitionFallback: snapshotDecision.usedDefinitionFallback,
-            writeBackAllowed: snapshotDecision.usedDefinitionFallback == false,
-            writeBackReason: writeBackReason(
-                schemaVersion: normalized.schemaVersion,
-                sourceSchemaVersion: normalized.schemaVersion,
-                usedDefinitionFallback: snapshotDecision.usedDefinitionFallback,
+        ).compatibility
+    }
+
+    nonisolated static func makeLoadResult(
+        file: VoyagerCollectionFile,
+        containerFormat: CollectionFileContainerFormat,
+        sourceSchemaVersion: Int?,
+        warning: CollectionFileCompatibilityWarning?,
+        usedDefinitionFallback: Bool,
+    ) -> CollectionFileLoadResult {
+        let effectiveSchemaVersion = sourceSchemaVersion ?? 1
+        let schemaProbe = SchemaProbe(
+            sourceSchemaVersion: sourceSchemaVersion,
+            effectiveSchemaVersion: effectiveSchemaVersion,
+        )
+        let warnings = warning.map { [$0] } ?? []
+
+        return .init(
+            file: file,
+            containerFormat: containerFormat,
+            compatibility: .init(
+                sourceSchemaVersion: sourceSchemaVersion,
+                migrationPath: migrationPath(
+                    schemaProbe: schemaProbe,
+                    warning: warning,
+                ),
+                warnings: warnings,
+                usedDefinitionFallback: usedDefinitionFallback,
+                writeBackAllowed: usedDefinitionFallback == false
+                    && sourceSchemaVersion == CollectionFileSchemaVersion.current,
+                writeBackReason: writeBackReason(
+                    schemaVersion: effectiveSchemaVersion,
+                    sourceSchemaVersion: sourceSchemaVersion,
+                    usedDefinitionFallback: usedDefinitionFallback,
+                ),
             ),
         )
     }
@@ -269,29 +281,16 @@ enum VoyagerCollectionFileCompatibilityOwner {
             appVersion: payload.appVersion,
         ), schemaProbe: schemaProbe)
 
-        return .init(
+        return makeLoadResult(
             file: file,
             containerFormat: containerFormat,
-            compatibility: .init(
-                sourceSchemaVersion: schemaProbe.sourceSchemaVersion,
-                migrationPath: migrationPath(
-                    schemaProbe: schemaProbe,
-                    warning: snapshotPair.warnings.first,
-                ),
-                warnings: snapshotPair.warnings,
-                usedDefinitionFallback: snapshotPair.usedDefinitionFallback,
-                writeBackAllowed: snapshotPair.usedDefinitionFallback == false
-                    && schemaProbe.effectiveSchemaVersion == CollectionFileSchemaVersion.current,
-                writeBackReason: writeBackReason(
-                    schemaVersion: schemaProbe.effectiveSchemaVersion,
-                    sourceSchemaVersion: schemaProbe.sourceSchemaVersion,
-                    usedDefinitionFallback: snapshotPair.usedDefinitionFallback,
-                ),
-            ),
+            sourceSchemaVersion: schemaProbe.sourceSchemaVersion,
+            warning: snapshotPair.warnings.first,
+            usedDefinitionFallback: snapshotPair.usedDefinitionFallback,
         )
     }
 
-    private static func writeBackReason(
+    private nonisolated static func writeBackReason(
         schemaVersion: Int,
         sourceSchemaVersion: Int?,
         usedDefinitionFallback: Bool,
@@ -307,7 +306,7 @@ enum VoyagerCollectionFileCompatibilityOwner {
         return .allowed
     }
 
-    private static func migrationPath(
+    private nonisolated static func migrationPath(
         schemaProbe: SchemaProbe,
         warning: CollectionFileCompatibilityWarning?,
     ) -> [CollectionFileMigrationStep] {

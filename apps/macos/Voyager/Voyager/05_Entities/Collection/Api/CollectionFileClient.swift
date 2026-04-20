@@ -59,7 +59,7 @@ extension CollectionFileClient: DependencyKey {
     nonisolated(unsafe) static var testValue: CollectionFileClient = .init(
         save: { _, _ in },
         load: { _ in
-            .init(
+            VoyagerCollectionFileCompatibilityOwner.makeLoadResult(
                 file: VoyagerCollectionFile(
                     id: "",
                     name: "",
@@ -73,14 +73,9 @@ extension CollectionFileClient: DependencyKey {
                     appVersion: nil,
                 ),
                 containerFormat: .package,
-                compatibility: .init(
-                    sourceSchemaVersion: CollectionFileSchemaVersion.current,
-                    migrationPath: [.currentSchemaV2],
-                    warnings: [],
-                    usedDefinitionFallback: false,
-                    writeBackAllowed: true,
-                    writeBackReason: .allowed,
-                ),
+                sourceSchemaVersion: CollectionFileSchemaVersion.current,
+                warning: nil,
+                usedDefinitionFallback: false,
             )
         },
     )

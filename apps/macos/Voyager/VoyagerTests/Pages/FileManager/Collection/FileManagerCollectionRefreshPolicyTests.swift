@@ -279,20 +279,11 @@ private func makeCollectionLoadResult(
     _ file: VoyagerCollectionFile,
     sourceSchemaVersion: Int?,
 ) -> CollectionFileLoadResult {
-    .init(
+    VoyagerCollectionFileCompatibilityOwner.makeLoadResult(
         file: file,
         containerFormat: .package,
-        compatibility: .init(
-            sourceSchemaVersion: sourceSchemaVersion,
-            migrationPath: sourceSchemaVersion == CollectionFileSchemaVersion.current
-                ? [.currentSchemaV2]
-                : [.definitionOnlyV1, .currentSchemaV2],
-            warnings: [],
-            usedDefinitionFallback: false,
-            writeBackAllowed: sourceSchemaVersion == CollectionFileSchemaVersion.current,
-            writeBackReason: sourceSchemaVersion == CollectionFileSchemaVersion.current
-                ? .allowed
-                : .blockedLegacyVersionUpgrade,
-        ),
+        sourceSchemaVersion: sourceSchemaVersion,
+        warning: nil,
+        usedDefinitionFallback: false,
     )
 }

@@ -146,6 +146,49 @@ final class CollectionSnapshotSavePipelineTests: XCTestCase {
         assertRecordUpdated(stalenessClient: stalenessClient, url: url)
     }
 
+    func testSavePipelinePersistsCanonicalCurrentSchemaVersionForConstructedPayload() async {
+        let recorder = SavedCollectionsRecorder()
+        let stalenessClient = CollectionStalenessClient.live(userDefaultsClient: .testValue)
+        let url = URL(fileURLWithPath: "/tmp/current-save.voycoll")
+
+        let payload = SaveRequestPayload(
+            context: CollectionContext(query: "Current", scopes: ["/tmp"], conditions: []),
+            isSearchLoading: false,
+            isFiltersLoading: false,
+            snapshotItems: nil,
+            definitionFingerprint: "fingerprint",
+            capturedAt: .distantFuture,
+            relevanceRoots: ["/tmp"],
+        )
+
+        let store = TestStore(initialState: CollectionFeature.State()) {
+            CollectionFeature()
+        } withDependencies: {
+            $0.collectionFileClient = CollectionFileClient(
+                save: { file, url in
+                    await recorder.append(file: file, url: url)
+                },
+                load: { _ in makeCollectionLoadResult(kEmptyCollectionFile, sourceSchemaVersion: 2) },
+            )
+            $0.userDefaultsClient = .testValue
+            $0.collectionStalenessClient = stalenessClient
+        }
+        store.exhaustivity = .off
+
+        await store.send(.saveToExisting(payload, url)) {
+            $0.isSaving = true
+        }
+        await store.receive(\.saveCompleted) {
+            $0.isSaving = false
+            $0.pendingSave = nil
+        }
+        await store.finish()
+
+        let saved = await recorder.last()
+        XCTAssertEqual(saved?.file.schemaVersion, CollectionFileSchemaVersion.current)
+        assertSnapshotMeta(saved?.file, itemCount: 0)
+    }
+
     private func assertSnapshotMeta(_ file: VoyagerCollectionFile?, itemCount: Int) {
         XCTAssertEqual(file?.snapshotMeta?.definitionFingerprint, "fingerprint")
         XCTAssertEqual(file?.snapshotMeta?.relevanceRoots, ["/tmp"])
@@ -184,21 +227,12 @@ private func makeCollectionLoadResult(
     _ file: VoyagerCollectionFile,
     sourceSchemaVersion: Int?,
 ) -> CollectionFileLoadResult {
-    .init(
+    VoyagerCollectionFileCompatibilityOwner.makeLoadResult(
         file: file,
         containerFormat: .package,
-        compatibility: .init(
-            sourceSchemaVersion: sourceSchemaVersion,
-            migrationPath: sourceSchemaVersion == CollectionFileSchemaVersion.current
-                ? [.currentSchemaV2]
-                : [.definitionOnlyV1, .currentSchemaV2],
-            warnings: [],
-            usedDefinitionFallback: false,
-            writeBackAllowed: sourceSchemaVersion == CollectionFileSchemaVersion.current,
-            writeBackReason: sourceSchemaVersion == CollectionFileSchemaVersion.current
-                ? .allowed
-                : .blockedLegacyVersionUpgrade,
-        ),
+        sourceSchemaVersion: sourceSchemaVersion,
+        warning: nil,
+        usedDefinitionFallback: false,
     )
 }
 
