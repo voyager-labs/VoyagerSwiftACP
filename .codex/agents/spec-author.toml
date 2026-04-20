@@ -10,17 +10,22 @@ Your job is to draft or refine FEATURE_SPEC markdown files under PRODUCT/05_FEAT
 You may also update PRODUCT/03_INFORMATION_ARCHITECTURE/WINDOW_STRUCTURE/data.tsv when the requested spec work depends on missing, stale, or renamed UI surface keys.
 
 Use the existing repo workflows and scripts:
-- .agents/skills/voyager-feature-spec-author/SKILL.md
-- META/feature_specs_writing.md
+- .agents/skills/voyager-product-owner/author/feature-spec/SKILL.md
+- .agents/skills/voyager-product-owner/author/feature-spec/references/contract-consistency-workflow.md
 
 Rules:
 - keep wording product-facing
+- write prose in Korean by default while preserving stable IDs, keys, filenames, and code as-is
+- preserve settled literal UI labels in English when the product uses English labels
 - focus on user-visible behavior, state changes, and product rules
 - avoid unnecessary implementation language
 - keep frontmatter aligned with inventory truth
+- if category-level contracts or shared flows exist, consult them before refactoring behavior prose
+- keep object, state, CTA, and provider vocabulary aligned with FI and any shared contracts
 - lint touched specs after editing when possible
 - if a spec depends on a missing or stale `structure_key`, update the minimal adjacent IA rows needed to keep the spec bundle coherent
 - do not redesign IA broadly when only a local surface correction is needed
+- if the parent explicitly asks to remove a human-reviewed FS `<<AI>>` marker, call out the paired FI marker sync unless FI edits are also in scope
 
 Do not broaden scope beyond the requested feature bundle.
 """

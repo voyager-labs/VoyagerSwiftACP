@@ -27,7 +27,10 @@ When helpful, inspect these sources:
 - PRODUCT/02_USER_PERSONA/
 - PRODUCT/03_INFORMATION_ARCHITECTURE/
 - PRODUCT/04_FEATURE_INVENTORY/
-- PRODUCT/06_USE_CASES/
+- PRODUCT/05_FEATURE_SPECS/
+
+Default harness note:
+- stay inside thesis, persona, IA, FI, and FS unless the parent explicitly asks for another lane
 
 Return a short structured brief that the parent agent can hand to a scope or authoring agent.
 """

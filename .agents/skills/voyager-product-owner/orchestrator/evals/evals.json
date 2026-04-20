@@ -1,0 +1,23 @@
+{
+  "skill_name": "product-owner",
+  "evals": [
+    {
+      "id": 1,
+      "prompt": "이 요구사항 좀 애매한데 PRODUCT_OWNER처럼 서브에이전트 돌려서 정리해줘. AI chat request 흐름 바꾸는 건데 FI랑 FS 둘 다 건드릴 수도 있어.",
+      "expected_output": "fuzzy product request로 분류하고 product_interviewer -> scope_reviewer -> spec/inventory author -> bundle_reviewer 순서를 제안한다.",
+      "files": []
+    },
+    {
+      "id": 2,
+      "prompt": "CBW-001 bundle 정합성만 병렬로 봐줘. 수정은 나중에 하고 일단 mismatch만 수집해.",
+      "expected_output": "consistency review only로 분류하고 bundle_reviewer 중심의 read-only route를 제안한다.",
+      "files": []
+    },
+    {
+      "id": 3,
+      "prompt": "이 feature들 리니어 이슈 초안까지 서브에이전트로 빼서 작성해줘. PRODUCT 밖 draft lane까지 포함해.",
+      "expected_output": "implementation issue drafting lane으로 분류하고 scope_reviewer -> linear_issue_author route를 제안한다.",
+      "files": []
+    }
+  ]
+}

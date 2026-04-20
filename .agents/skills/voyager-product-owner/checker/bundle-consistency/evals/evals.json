@@ -1,0 +1,134 @@
+{
+  "skill_name": "fi-ia-fs-consistency-checker",
+  "evals": [
+    {
+      "id": 1,
+      "family": "contract_terms_and_flows",
+      "prompt": "TCW 카테고리 전체 정합성을 한번에 평가해줘. contract랑 feature bundle 둘 다 보고 지금 clean한지 알려줘.",
+      "expected_output": "clean fixture repo를 대상으로 category-level eval을 실행하고 PASS 결과를 반환한다.",
+      "files": ["evals/fixtures/tcw_pass"],
+      "expectations": [
+        "evaluate_category_consistency.py returns ok=true for the clean fixture",
+        "The aggregated result contains no FAIL issues",
+        "The aggregated result contains no WARN issues"
+      ],
+      "runner": {
+        "script": "evaluate_category_consistency.py",
+        "target": "TCW",
+        "repo_root": "evals/fixtures/tcw_pass",
+        "expect_ok": true,
+        "expect_fail_count": 0,
+        "expect_warn_count": 0,
+        "expect_issue_codes_present": [],
+        "expect_issue_codes_absent": ["spec.contract_reference_missing", "spec.forbidden_state_term_present"]
+      }
+    },
+    {
+      "id": 2,
+      "family": "contract_terms_and_flows",
+      "prompt": "이 drift fixture에서 contract 위반을 잡아줘. spec이 계약 파일을 안 참조하는 문제랑 forbidden state 용어가 남아 있는 문제를 찾아야 해.",
+      "expected_output": "drift fixture를 대상으로 contract consistency check를 실행하고 expected warning codes를 검출한다.",
+      "files": ["evals/fixtures/tcw_drift"],
+      "expectations": [
+        "check_contract_consistency.py reports spec.contract_reference_missing",
+        "check_contract_consistency.py reports spec.forbidden_state_term_present",
+        "The contract checker emits no FAIL issues for this drift fixture"
+      ],
+      "runner": {
+        "script": "check_contract_consistency.py",
+        "target": "TCW",
+        "repo_root": "evals/fixtures/tcw_drift",
+        "expect_ok": true,
+        "expect_fail_count": 0,
+        "expect_warn_count": 2,
+        "expect_issue_codes_present": ["spec.contract_reference_missing", "spec.forbidden_state_term_present"],
+        "expect_issue_codes_absent": ["contract.unknown_interaction"]
+      }
+    },
+    {
+      "id": 3,
+      "family": "key_usage_and_structure",
+      "prompt": "TKY-001 feature bundle 하나만 deterministic audit했을 때 frontmatter, related_ui, related_region, source line이 clean한지 확인해줘.",
+      "expected_output": "clean key fixture repo를 대상으로 feature bundle audit을 실행하고 PASS 결과를 반환한다.",
+      "files": ["evals/fixtures/tky_pass"],
+      "expectations": [
+        "check_feature_bundle.py returns ok=true for the clean fixture",
+        "The bundle checker emits no FAIL issues",
+        "The bundle checker emits no WARN issues"
+      ],
+      "runner": {
+        "script": "check_feature_bundle.py",
+        "target": "TKY-001",
+        "repo_root": "evals/fixtures/tky_pass",
+        "expect_ok": true,
+        "expect_fail_count": 0,
+        "expect_warn_count": 0,
+        "expect_issue_codes_present": [],
+        "expect_issue_codes_absent": ["fs.related_interactions_mismatch", "fs.frontmatter_mismatch"]
+      }
+    },
+    {
+      "id": 4,
+      "family": "key_usage_and_structure",
+      "prompt": "이 fixture에서 INTERACTIONS.related_region이 WINDOW_STRUCTURE에 없는 키를 쓰는지 잡아줘.",
+      "expected_output": "missing related_region fixture를 대상으로 bundle checker를 실행하고 ia.related_region_missing fail을 검출한다.",
+      "files": ["evals/fixtures/tky_missing_region"],
+      "expectations": [
+        "check_feature_bundle.py reports ia.related_region_missing",
+        "The bundle checker returns ok=false for the missing related_region fixture"
+      ],
+      "runner": {
+        "script": "check_feature_bundle.py",
+        "target": "TKY-001",
+        "repo_root": "evals/fixtures/tky_missing_region",
+        "expect_ok": false,
+        "expect_fail_count": 1,
+        "expect_warn_count": 0,
+        "expect_issue_codes_present": ["ia.related_region_missing"],
+        "expect_issue_codes_absent": ["ia.feature_related_ui_missing"]
+      }
+    },
+    {
+      "id": 5,
+      "family": "key_usage_and_structure",
+      "prompt": "이 fixture에서 FEATURES.related_ui가 WINDOW_STRUCTURE에 없는 키를 쓰는지 잡아줘.",
+      "expected_output": "bad related_ui fixture를 대상으로 bundle checker를 실행하고 ia.feature_related_ui_missing fail을 검출한다.",
+      "files": ["evals/fixtures/tky_bad_related_ui"],
+      "expectations": [
+        "check_feature_bundle.py reports ia.feature_related_ui_missing",
+        "The bundle checker returns ok=false for the bad related_ui fixture"
+      ],
+      "runner": {
+        "script": "check_feature_bundle.py",
+        "target": "TKY-001",
+        "repo_root": "evals/fixtures/tky_bad_related_ui",
+        "expect_ok": false,
+        "expect_fail_count": 1,
+        "expect_warn_count": 1,
+        "expect_issue_codes_present": ["ia.feature_related_ui_missing", "ia.region_not_nested"],
+        "expect_issue_codes_absent": ["ia.related_region_missing"]
+      }
+    },
+    {
+      "id": 6,
+      "family": "key_usage_and_structure",
+      "prompt": "이 fixture에서 FS frontmatter의 related_region 값이 FI와 안 맞는지 잡아줘.",
+      "expected_output": "frontmatter drift fixture를 대상으로 bundle checker를 실행하고 fs.frontmatter_mismatch fail을 검출한다.",
+      "files": ["evals/fixtures/tky_frontmatter_drift"],
+      "expectations": [
+        "check_feature_bundle.py reports fs.frontmatter_mismatch",
+        "The bundle checker returns ok=false for the frontmatter drift fixture"
+      ],
+      "runner": {
+        "script": "check_feature_bundle.py",
+        "target": "TKY-001",
+        "repo_root": "evals/fixtures/tky_frontmatter_drift",
+        "expect_ok": false,
+        "expect_fail_count": 1,
+        "expect_warn_count": 0,
+        "expect_issue_codes_present": ["fs.frontmatter_mismatch"],
+        "expect_issue_codes_absent": ["ia.related_region_missing"]
+      }
+    }
+  ]
+}
