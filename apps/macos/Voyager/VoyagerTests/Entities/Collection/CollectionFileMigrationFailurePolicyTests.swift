@@ -70,7 +70,7 @@ final class CollectionFileFailurePolicyTests: XCTestCase {
                 return XCTFail("Unexpected error: \(error)")
             }
             XCTAssertEqual(found, 999)
-            XCTAssertEqual(current, VoyagerCollectionFile.currentSchemaVersion)
+            XCTAssertEqual(current, CollectionFileSchemaVersion.current)
         }
 
         let afterData = try Data(contentsOf: payloadURL)
@@ -88,7 +88,7 @@ final class CollectionFileFailurePolicyTests: XCTestCase {
             legacyMissingSchema.compatibility.migrationPath,
             [.legacySingleFileWithoutSchema, .definitionOnlyV1, .currentSchemaV2],
         )
-        XCTAssertEqual(legacyMissingSchema.file.schemaVersion, VoyagerCollectionFile.currentSchemaVersion)
+        XCTAssertEqual(legacyMissingSchema.file.schemaVersion, CollectionFileSchemaVersion.current)
         XCTAssertEqual(legacyMissingSchema.compatibility.writeBackReason, .blockedLegacyVersionUpgrade)
 
         let invalidSchemaData = try makeBinaryPlist(InvalidSchemaVersionTypePayload())

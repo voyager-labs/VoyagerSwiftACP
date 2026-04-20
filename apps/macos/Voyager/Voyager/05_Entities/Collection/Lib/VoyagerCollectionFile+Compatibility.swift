@@ -1,5 +1,9 @@
 import Foundation
 
+enum CollectionFileSchemaVersion {
+    nonisolated static let current = 2
+}
+
 enum CollectionFileContainerFormat: String, Sendable, Equatable {
     case package
     case legacySingleFile
@@ -38,6 +42,19 @@ struct CollectionFileLoadResult: Sendable, Equatable {
     let file: VoyagerCollectionFile
     let containerFormat: CollectionFileContainerFormat
     let compatibility: CollectionFileCompatibilityMetadata
+}
+
+private struct VoyagerCollectionFileHeader: Decodable {
+    let schemaVersion: Int?
+
+    private enum CodingKeys: String, CodingKey {
+        case schemaVersion
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        schemaVersion = try container.decodeIfPresent(Int.self, forKey: .schemaVersion)
+    }
 }
 
 enum CollectionFileCompatibilityError: LocalizedError, Equatable {
@@ -94,10 +111,10 @@ enum VoyagerCollectionFileCompatibilityOwner {
     ) throws -> CollectionFileLoadResult {
         let schemaProbe = try rawSchemaVersion(from: data, containerFormat: containerFormat)
 
-        guard schemaProbe.effectiveSchemaVersion <= VoyagerCollectionFile.currentSchemaVersion else {
+        guard schemaProbe.effectiveSchemaVersion <= CollectionFileSchemaVersion.current else {
             throw CollectionFileCompatibilityError.unsupportedFutureSchemaVersion(
                 found: schemaProbe.effectiveSchemaVersion,
-                current: VoyagerCollectionFile.currentSchemaVersion,
+                current: CollectionFileSchemaVersion.current,
             )
         }
 
@@ -125,7 +142,7 @@ enum VoyagerCollectionFileCompatibilityOwner {
                     warnings: snapshotDecision.warning.map { [$0] } ?? [],
                     usedDefinitionFallback: snapshotDecision.usedDefinitionFallback,
                     writeBackAllowed: snapshotDecision.usedDefinitionFallback == false
-                        && schemaProbe.sourceSchemaVersion == VoyagerCollectionFile.currentSchemaVersion,
+                        && schemaProbe.sourceSchemaVersion == CollectionFileSchemaVersion.current,
                     writeBackReason: writeBackReason(
                         schemaVersion: schemaProbe.effectiveSchemaVersion,
                         sourceSchemaVersion: schemaProbe.sourceSchemaVersion,
@@ -144,7 +161,7 @@ enum VoyagerCollectionFileCompatibilityOwner {
     }
 
     static func normalizeForSave(_ file: VoyagerCollectionFile) -> VoyagerCollectionFile {
-        if file.schemaVersion == VoyagerCollectionFile.currentSchemaVersion {
+        if file.schemaVersion == CollectionFileSchemaVersion.current {
             return file
         }
 
@@ -195,20 +212,28 @@ enum VoyagerCollectionFileCompatibilityOwner {
         from data: Data,
         containerFormat: CollectionFileContainerFormat,
     ) throws -> SchemaProbe {
-        let propertyList = try PropertyListSerialization.propertyList(from: data, options: [], format: nil)
-        guard let dictionary = propertyList as? [String: Any] else {
+        let header: VoyagerCollectionFileHeader
+        do {
+            header = try PropertyListDecoder().decode(VoyagerCollectionFileHeader.self, from: data)
+        } catch let DecodingError.typeMismatch(_, context)
+            where context.codingPath.last?.stringValue == "schemaVersion"
+        {
+            throw CollectionFileCompatibilityError.invalidSchemaVersionType
+        } catch let DecodingError.dataCorrupted(context)
+            where context.codingPath.isEmpty
+        {
+            throw CollectionFileCompatibilityError.invalidPropertyListPayload
+        } catch let DecodingError.typeMismatch(_, context) where context.codingPath.isEmpty {
+            throw CollectionFileCompatibilityError.invalidPropertyListPayload
+        } catch {
             throw CollectionFileCompatibilityError.invalidPropertyListPayload
         }
 
-        guard let rawValue = dictionary["schemaVersion"] else {
+        guard let schemaVersion = header.schemaVersion else {
             if containerFormat == .legacySingleFile {
                 return .init(sourceSchemaVersion: nil, effectiveSchemaVersion: 1)
             }
             throw CollectionFileCompatibilityError.missingSchemaVersion
-        }
-
-        guard let schemaVersion = rawValue as? Int else {
-            throw CollectionFileCompatibilityError.invalidSchemaVersionType
         }
 
         return .init(sourceSchemaVersion: schemaVersion, effectiveSchemaVersion: schemaVersion)
@@ -256,7 +281,7 @@ enum VoyagerCollectionFileCompatibilityOwner {
                 warnings: snapshotPair.warnings,
                 usedDefinitionFallback: snapshotPair.usedDefinitionFallback,
                 writeBackAllowed: snapshotPair.usedDefinitionFallback == false
-                    && schemaProbe.effectiveSchemaVersion == VoyagerCollectionFile.currentSchemaVersion,
+                    && schemaProbe.effectiveSchemaVersion == CollectionFileSchemaVersion.current,
                 writeBackReason: writeBackReason(
                     schemaVersion: schemaProbe.effectiveSchemaVersion,
                     sourceSchemaVersion: schemaProbe.sourceSchemaVersion,
@@ -275,7 +300,7 @@ enum VoyagerCollectionFileCompatibilityOwner {
             return .blockedDefinitionFallback
         }
 
-        if sourceSchemaVersion == nil || schemaVersion < VoyagerCollectionFile.currentSchemaVersion {
+        if sourceSchemaVersion == nil || schemaVersion < CollectionFileSchemaVersion.current {
             return .blockedLegacyVersionUpgrade
         }
 
@@ -316,8 +341,8 @@ enum VoyagerCollectionFileCompatibilityOwner {
         _ file: VoyagerCollectionFile,
         schemaProbe: SchemaProbe,
     ) -> VoyagerCollectionFile {
-        guard schemaProbe.sourceSchemaVersion == nil || schemaProbe.effectiveSchemaVersion < VoyagerCollectionFile
-            .currentSchemaVersion
+        guard schemaProbe.sourceSchemaVersion == nil || schemaProbe.effectiveSchemaVersion < CollectionFileSchemaVersion
+            .current
         else {
             return file
         }

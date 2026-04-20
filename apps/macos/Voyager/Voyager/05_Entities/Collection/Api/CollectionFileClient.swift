@@ -74,7 +74,7 @@ extension CollectionFileClient: DependencyKey {
                 ),
                 containerFormat: .package,
                 compatibility: .init(
-                    sourceSchemaVersion: VoyagerCollectionFile.currentSchemaVersion,
+                    sourceSchemaVersion: CollectionFileSchemaVersion.current,
                     migrationPath: [.currentSchemaV2],
                     warnings: [],
                     usedDefinitionFallback: false,

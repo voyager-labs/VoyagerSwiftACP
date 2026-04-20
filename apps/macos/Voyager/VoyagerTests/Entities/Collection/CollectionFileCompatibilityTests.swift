@@ -44,7 +44,7 @@ final class CollectionFileCompatibilityTests: XCTestCase {
 
         let result = try VoyagerCollectionFileCompatibilityOwner.decode(data, containerFormat: .package)
 
-        XCTAssertEqual(result.compatibility.sourceSchemaVersion, VoyagerCollectionFile.currentSchemaVersion)
+        XCTAssertEqual(result.compatibility.sourceSchemaVersion, CollectionFileSchemaVersion.current)
         XCTAssertTrue(result.compatibility.usedDefinitionFallback)
         XCTAssertEqual(result.compatibility.warnings, [.droppedMalformedSnapshot])
         XCTAssertFalse(result.compatibility.writeBackAllowed)
@@ -110,7 +110,7 @@ final class CollectionFileCompatibilityTests: XCTestCase {
             legacyResult.compatibility.migrationPath,
             [.legacySingleFileWithoutSchema, .definitionOnlyV1, .currentSchemaV2],
         )
-        XCTAssertEqual(legacyResult.file.schemaVersion, VoyagerCollectionFile.currentSchemaVersion)
+        XCTAssertEqual(legacyResult.file.schemaVersion, CollectionFileSchemaVersion.current)
         XCTAssertFalse(legacyResult.compatibility.writeBackAllowed)
         XCTAssertEqual(legacyResult.compatibility.writeBackReason, .blockedLegacyVersionUpgrade)
 
@@ -118,6 +118,59 @@ final class CollectionFileCompatibilityTests: XCTestCase {
             try VoyagerCollectionFileCompatibilityOwner.decode(data, containerFormat: .package),
         ) { error in
             XCTAssertEqual(error as? CollectionFileCompatibilityError, .missingSchemaVersion)
+        }
+    }
+
+    func testCurrentSchemaVersionDoesNotDependOnSnapshotPresence() throws {
+        let currentDefinitionOnly = VoyagerCollectionFile(
+            id: "current-definition-only",
+            name: "Current Definition Only",
+            createdAt: .distantPast,
+            updatedAt: .distantPast,
+            query: "",
+            scopes: ["/tmp"],
+            conditions: [],
+            snapshot: nil,
+            snapshotMeta: nil,
+            appVersion: nil,
+        )
+        let currentSnapshot = makeSnapshotFile()
+
+        let definitionResult = try VoyagerCollectionFileCompatibilityOwner.decode(
+            makeBinaryPlist(currentDefinitionOnly),
+            containerFormat: .package,
+        )
+        let snapshotResult = try VoyagerCollectionFileCompatibilityOwner.decode(
+            makeBinaryPlist(currentSnapshot),
+            containerFormat: .package,
+        )
+
+        XCTAssertEqual(definitionResult.file.schemaVersion, CollectionFileSchemaVersion.current)
+        XCTAssertEqual(snapshotResult.file.schemaVersion, CollectionFileSchemaVersion.current)
+        XCTAssertEqual(definitionResult.compatibility.migrationPath, [.currentSchemaV2])
+        XCTAssertEqual(snapshotResult.compatibility.migrationPath, [.currentSchemaV2])
+        XCTAssertTrue(definitionResult.compatibility.writeBackAllowed)
+        XCTAssertTrue(snapshotResult.compatibility.writeBackAllowed)
+    }
+
+    func testFailureMatrixExplicitlyDistinguishesFutureAndMalformedCases() throws {
+        let futureVersionData = try makeBinaryPlist(makeFutureVersionPayload())
+        XCTAssertThrowsError(
+            try VoyagerCollectionFileCompatibilityOwner.decode(futureVersionData, containerFormat: .package),
+        ) { error in
+            guard case let CollectionFileCompatibilityError.unsupportedFutureSchemaVersion(found, current) = error
+            else {
+                return XCTFail("Unexpected error: \(error)")
+            }
+            XCTAssertEqual(found, 999)
+            XCTAssertEqual(current, CollectionFileSchemaVersion.current)
+        }
+
+        let corruptionData = try makeBinaryPlist(makeUnrecoverableCorruptionPayload())
+        XCTAssertThrowsError(
+            try VoyagerCollectionFileCompatibilityOwner.decode(corruptionData, containerFormat: .package),
+        ) { error in
+            XCTAssertEqual(error as? CollectionFileCompatibilityError, .unrecoverableDocumentCorruption)
         }
     }
 
@@ -159,7 +212,7 @@ final class CollectionFileCompatibilityTests: XCTestCase {
                 XCTAssertFalse(result.compatibility.usedDefinitionFallback)
                 XCTAssertFalse(result.compatibility.writeBackAllowed)
                 XCTAssertEqual(result.compatibility.writeBackReason, .blockedLegacyVersionUpgrade)
-                XCTAssertEqual(loaded.schemaVersion, VoyagerCollectionFile.currentSchemaVersion)
+                XCTAssertEqual(loaded.schemaVersion, CollectionFileSchemaVersion.current)
                 XCTAssertEqual(loaded.id, "definition-only")
                 XCTAssertEqual(loaded.name, "Definition Only")
                 XCTAssertNil(loaded.snapshot)
@@ -188,7 +241,7 @@ final class CollectionFileCompatibilityTests: XCTestCase {
                 XCTAssertFalse(result.compatibility.usedDefinitionFallback)
                 XCTAssertFalse(result.compatibility.writeBackAllowed)
                 XCTAssertEqual(result.compatibility.writeBackReason, .blockedLegacyVersionUpgrade)
-                XCTAssertEqual(loaded.schemaVersion, VoyagerCollectionFile.currentSchemaVersion)
+                XCTAssertEqual(loaded.schemaVersion, CollectionFileSchemaVersion.current)
                 XCTAssertEqual(loaded.id, "legacy-no-schema")
                 XCTAssertEqual(loaded.name, "Legacy No Schema")
                 XCTAssertNil(loaded.snapshot)
@@ -213,7 +266,7 @@ final class CollectionFileCompatibilityTests: XCTestCase {
                 XCTAssertFalse(result.compatibility.usedDefinitionFallback)
                 XCTAssertFalse(result.compatibility.writeBackAllowed)
                 XCTAssertEqual(result.compatibility.writeBackReason, .blockedLegacyVersionUpgrade)
-                XCTAssertEqual(loaded.schemaVersion, VoyagerCollectionFile.currentSchemaVersion)
+                XCTAssertEqual(loaded.schemaVersion, CollectionFileSchemaVersion.current)
                 XCTAssertEqual(loaded.id, "definition-only")
                 XCTAssertEqual(loaded.name, "Definition Only")
                 XCTAssertNil(loaded.snapshot)
@@ -233,7 +286,7 @@ final class CollectionFileCompatibilityTests: XCTestCase {
             },
             assertLoaded: { result, loaded in
                 XCTAssertEqual(result.containerFormat, .package)
-                XCTAssertEqual(result.compatibility.sourceSchemaVersion, VoyagerCollectionFile.currentSchemaVersion)
+                XCTAssertEqual(result.compatibility.sourceSchemaVersion, CollectionFileSchemaVersion.current)
                 XCTAssertEqual(result.compatibility.migrationPath, [.currentSchemaV2])
                 XCTAssertFalse(result.compatibility.usedDefinitionFallback)
                 XCTAssertTrue(result.compatibility.writeBackAllowed)
@@ -256,7 +309,7 @@ final class CollectionFileCompatibilityTests: XCTestCase {
             },
             assertLoaded: { result, loaded in
                 XCTAssertEqual(result.containerFormat, .package)
-                XCTAssertEqual(result.compatibility.sourceSchemaVersion, VoyagerCollectionFile.currentSchemaVersion)
+                XCTAssertEqual(result.compatibility.sourceSchemaVersion, CollectionFileSchemaVersion.current)
                 XCTAssertEqual(
                     result.compatibility.migrationPath,
                     [.currentSchemaV2, .definitionFallbackFromMalformedSnapshot],
@@ -265,7 +318,7 @@ final class CollectionFileCompatibilityTests: XCTestCase {
                 XCTAssertEqual(result.compatibility.warnings, [.droppedMalformedSnapshot])
                 XCTAssertFalse(result.compatibility.writeBackAllowed)
                 XCTAssertEqual(result.compatibility.writeBackReason, .blockedDefinitionFallback)
-                XCTAssertEqual(loaded.schemaVersion, VoyagerCollectionFile.currentSchemaVersion)
+                XCTAssertEqual(loaded.schemaVersion, CollectionFileSchemaVersion.current)
                 XCTAssertEqual(loaded.id, "corrupt-snapshot")
                 XCTAssertEqual(loaded.name, "Corrupt Snapshot")
                 XCTAssertEqual(loaded.query, "query")
@@ -285,7 +338,7 @@ final class CollectionFileCompatibilityTests: XCTestCase {
                 try data.write(to: url.appendingPathComponent("collection.plist"))
             },
             assertLoaded: { result, loaded in
-                XCTAssertEqual(result.compatibility.sourceSchemaVersion, VoyagerCollectionFile.currentSchemaVersion)
+                XCTAssertEqual(result.compatibility.sourceSchemaVersion, CollectionFileSchemaVersion.current)
                 XCTAssertEqual(
                     result.compatibility.migrationPath,
                     [.currentSchemaV2, .definitionFallbackFromIncompletePair],
@@ -310,7 +363,7 @@ final class CollectionFileCompatibilityTests: XCTestCase {
                 try data.write(to: url.appendingPathComponent("collection.plist"))
             },
             assertLoaded: { result, loaded in
-                XCTAssertEqual(result.compatibility.sourceSchemaVersion, VoyagerCollectionFile.currentSchemaVersion)
+                XCTAssertEqual(result.compatibility.sourceSchemaVersion, CollectionFileSchemaVersion.current)
                 XCTAssertEqual(
                     result.compatibility.migrationPath,
                     [.currentSchemaV2, .definitionFallbackFromIncompletePair],
@@ -367,6 +420,36 @@ final class CollectionFileCompatibilityTests: XCTestCase {
         )
     }
 
+    private func makeFutureVersionPayload() -> FutureVersionPayload {
+        FutureVersionPayload(
+            schemaVersion: 999,
+            id: "future",
+            name: "Future",
+            createdAt: .distantPast,
+            updatedAt: .distantPast,
+            query: "",
+            scopes: ["/tmp"],
+            conditions: [],
+            snapshot: nil,
+            snapshotMeta: nil,
+            appVersion: nil,
+        )
+    }
+
+    private func makeUnrecoverableCorruptionPayload() -> UnrecoverableCorruptionPayload {
+        UnrecoverableCorruptionPayload(
+            schemaVersion: 1,
+            id: "broken",
+            name: "Broken",
+            createdAt: "not-a-date",
+            updatedAt: "also-not-a-date",
+            query: "",
+            scopes: ["/tmp"],
+            conditions: [],
+            appVersion: nil,
+        )
+    }
+
     private func makeLegacyNoSchemaPayload() -> LegacyNoSchemaPayload {
         LegacyNoSchemaPayload(
             id: "legacy-no-schema",
@@ -382,7 +465,7 @@ final class CollectionFileCompatibilityTests: XCTestCase {
 
     private func makeInvalidSnapshotPayload() -> InvalidSnapshotPayload {
         InvalidSnapshotPayload(
-            schemaVersion: VoyagerCollectionFile.currentSchemaVersion,
+            schemaVersion: CollectionFileSchemaVersion.current,
             id: "corrupt-snapshot",
             name: "Corrupt Snapshot",
             createdAt: .distantPast,
@@ -403,7 +486,7 @@ final class CollectionFileCompatibilityTests: XCTestCase {
 
     private func makeSnapshotOnlyPayload() -> SnapshotOnlyPayload {
         SnapshotOnlyPayload(
-            schemaVersion: VoyagerCollectionFile.currentSchemaVersion,
+            schemaVersion: CollectionFileSchemaVersion.current,
             id: "snapshot-only",
             name: "Snapshot Only",
             createdAt: .distantPast,
@@ -420,7 +503,7 @@ final class CollectionFileCompatibilityTests: XCTestCase {
 
     private func makeSnapshotMetaOnlyPayload() -> SnapshotMetaOnlyPayload {
         SnapshotMetaOnlyPayload(
-            schemaVersion: VoyagerCollectionFile.currentSchemaVersion,
+            schemaVersion: CollectionFileSchemaVersion.current,
             id: "snapshot-meta-only",
             name: "Snapshot Meta Only",
             createdAt: .distantPast,

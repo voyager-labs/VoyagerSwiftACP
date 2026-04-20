@@ -284,13 +284,13 @@ private func makeCollectionLoadResult(
         containerFormat: .package,
         compatibility: .init(
             sourceSchemaVersion: sourceSchemaVersion,
-            migrationPath: sourceSchemaVersion == VoyagerCollectionFile.currentSchemaVersion
+            migrationPath: sourceSchemaVersion == CollectionFileSchemaVersion.current
                 ? [.currentSchemaV2]
                 : [.definitionOnlyV1, .currentSchemaV2],
             warnings: [],
             usedDefinitionFallback: false,
-            writeBackAllowed: sourceSchemaVersion == VoyagerCollectionFile.currentSchemaVersion,
-            writeBackReason: sourceSchemaVersion == VoyagerCollectionFile.currentSchemaVersion
+            writeBackAllowed: sourceSchemaVersion == CollectionFileSchemaVersion.current,
+            writeBackReason: sourceSchemaVersion == CollectionFileSchemaVersion.current
                 ? .allowed
                 : .blockedLegacyVersionUpgrade,
         ),

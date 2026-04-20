@@ -242,7 +242,7 @@ final class CollectionSnapshotFileContractTests: XCTestCase {
 
         let data = try Data(contentsOf: url.appendingPathComponent("collection.plist"))
         let loaded = try PropertyListDecoder().decode(VoyagerCollectionFile.self, from: data)
-        XCTAssertEqual(loaded.schemaVersion, VoyagerCollectionFile.currentSchemaVersion)
+        XCTAssertEqual(loaded.schemaVersion, CollectionFileSchemaVersion.current)
     }
 
     func testEncodeRejectsNonStringSnapshotItems() throws {

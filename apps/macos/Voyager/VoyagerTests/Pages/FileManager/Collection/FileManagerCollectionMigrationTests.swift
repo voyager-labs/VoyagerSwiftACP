@@ -78,7 +78,7 @@ final class FileManagerCollectionMigrationTests: XCTestCase {
 
         XCTAssertEqual(result.compatibility.sourceSchemaVersion, 1)
         XCTAssertEqual(result.compatibility.migrationPath, [.definitionOnlyV1, .currentSchemaV2])
-        XCTAssertEqual(result.file.schemaVersion, VoyagerCollectionFile.currentSchemaVersion)
+        XCTAssertEqual(result.file.schemaVersion, CollectionFileSchemaVersion.current)
         XCTAssertNil(result.file.snapshot)
         XCTAssertNil(result.file.snapshotMeta)
         XCTAssertNil(CollectionSnapshotHydration.usableSnapshot(for: result.file))
