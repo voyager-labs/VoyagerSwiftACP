@@ -1,0 +1,4 @@
+window_id	parent_region_id	region_id	region_label	region_label_ko	level	slot_type	structure_key	description	objects	release_phase
+test_window	root	chat_panel	Chat Panel	챗 패널	1	pane	test_window.chat_panel	테스트용 chat panel	-	MVP
+test_window	chat_panel	chat_field	Chat Field	챗 필드	2	section	test_window.chat_panel.chat_field	테스트용 입력 영역	-	MVP
+test_window	chat_panel	message_area	Message Area	메시지 영역	2	section	test_window.chat_panel.message_area	테스트용 메시지 영역	-	MVP

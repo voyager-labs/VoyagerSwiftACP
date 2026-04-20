@@ -15,8 +15,6 @@ import time
 import webbrowser
 from pathlib import Path
 
-import anthropic
-
 from scripts.generate_report import generate_html
 from scripts.improve_description import improve_description
 from scripts.run_eval import find_project_root, run_eval
@@ -75,7 +73,6 @@ def run_loop(
         train_set = eval_set
         test_set = []
 
-    client = anthropic.Anthropic()
     history = []
     exit_reason = "unknown"
 
@@ -200,7 +197,6 @@ def run_loop(
             for h in history
         ]
         new_description = improve_description(
-            client=client,
             skill_name=name,
             skill_content=content,
             current_description=current_description,
@@ -256,7 +252,7 @@ def main():
     parser.add_argument("--runs-per-query", type=int, default=3, help="Number of runs per query")
     parser.add_argument("--trigger-threshold", type=float, default=0.5, help="Trigger rate threshold")
     parser.add_argument("--holdout", type=float, default=0.4, help="Fraction of eval set to hold out for testing (0 to disable)")
-    parser.add_argument("--model", required=True, help="Model for improvement")
+    parser.add_argument("--model", required=True, help="Model for the underlying Claude/Codex CLI when compatible")
     parser.add_argument("--verbose", action="store_true", help="Print progress to stderr")
     parser.add_argument("--report", default="auto", help="Generate HTML report at this path (default: 'auto' for temp file, 'none' to disable)")
     parser.add_argument("--results-dir", default=None, help="Save all outputs (results.json, report.html, log.txt) to a timestamped subdirectory here")

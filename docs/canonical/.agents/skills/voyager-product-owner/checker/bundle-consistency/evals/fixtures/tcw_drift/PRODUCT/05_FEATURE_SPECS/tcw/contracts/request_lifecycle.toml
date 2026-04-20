@@ -1,0 +1,57 @@
+[contract]
+id = "tcw.request_lifecycle"
+category = "TCW"
+primary_object = "request"
+
+[object_terms]
+request = ["request", "test request"]
+
+[user_visible_states]
+allowed = ["processing", "completed", "failed", "cancelled"]
+forbidden = ["queued", "cancelling"]
+
+[state.processing]
+description = "요청이 처리 중인 상태"
+entered_by = ["TCW-001-submit_request"]
+exits_to = ["completed", "failed", "cancelled"]
+terms = ["processing"]
+
+[state.completed]
+description = "요청이 완료된 상태"
+entered_by = ["TCW-001-show_request_state"]
+exits_to = []
+terms = ["completed"]
+
+[state.failed]
+description = "요청이 실패한 상태"
+entered_by = ["TCW-001-show_request_state"]
+exits_to = []
+terms = ["failed"]
+
+[state.cancelled]
+description = "요청이 취소된 상태"
+entered_by = ["TCW-001-show_request_state"]
+exits_to = []
+terms = ["cancelled"]
+
+[ownership."TCW-001-submit_request"]
+reads = []
+writes = ["processing"]
+target_object = "request"
+
+[ownership."TCW-001-show_request_state"]
+reads = ["processing", "completed", "failed", "cancelled"]
+writes = []
+target_object = "request"
+
+[transitions.processing_to_completed]
+from = "processing"
+to = "completed"
+
+[transitions.processing_to_failed]
+from = "processing"
+to = "failed"
+
+[transitions.processing_to_cancelled]
+from = "processing"
+to = "cancelled"
