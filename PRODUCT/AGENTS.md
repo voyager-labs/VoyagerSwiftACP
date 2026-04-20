@@ -58,6 +58,7 @@ Use the following canonical mapping between document-facing role names and actua
 | `feature_inventory_checker`  | `feature-inventory-checker`    | skill    | FI lookup and impact workflow  |
 | `feature_inventory_author`   | `feature-inventory-author`     | skill    | FI TSV authoring workflow      |
 | `feature_spec_author`        | `feature-spec-author`          | skill    | FS authoring and lint workflow |
+| `feature_spec_checker`       | `feature-spec-checker`         | skill    | FS contract/flow review        |
 | `bundle_consistency_checker` | `fi-ia-fs-consistency-checker` | skill    | Bundle consistency workflow    |
 | `linear_issue_skill`         | `linear-issue-author`          | skill    | Linear issue drafting workflow |
 
@@ -106,7 +107,16 @@ If the task is spec work for an existing `interaction_id`:
 2. `scope_reviewer` if needed
 3. `spec_author`
 4. `feature_spec_author`
-5. `bundle_consistency_checker` if needed
+5. `feature_spec_checker` if the task includes contract/flow vocabulary review
+6. `bundle_consistency_checker` if FI/IA/FS parity is also needed
+
+### 4a. FS contract/flow review
+
+If the task is specifically about whether FEATURE_SPEC docs match current `contracts/*.toml` or `flows/*.md`:
+
+1. `feature_spec_checker`
+2. re-enter `spec_author` only if fixes are requested
+3. rerun `feature_spec_checker`
 
 ### 5. Bundle audit
 

@@ -5,7 +5,7 @@ This script bootstraps a skill-scoped virtualenv and installs Polars into it,
 then uses Polars to load/join/search the FEATURE_INVENTORY TSV tables.
 
 Virtualenv location (not packaged into the .skill zip):
-  .agents/skills/.venvs/voyager-feature-inventory-checker/
+  .agents/skills/.venvs/feature-inventory/
 """
 
 from __future__ import annotations
@@ -418,7 +418,7 @@ def main() -> int:
             print(f"venv: {VENV_DIR}")
             print(f"error: {e}")
             print(
-                "Hint: run: python3 .agents/skills/voyager-feature-inventory-checker/scripts/vfi.py setup"
+                "Hint: run: python3 .agents/skills/voyager-product-owner/checker/feature-inventory/scripts/vfi.py setup"
             )
             return 2
         _reexec_in_venv()

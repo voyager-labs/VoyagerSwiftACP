@@ -377,7 +377,7 @@ def main(argv: Sequence[str] | None = None) -> int:
                     f"ERROR: required column '{col}' is empty ('{v.strip()}')"
                 )
 
-    # Empty cells (prefer '-' for readability per META/tsv_rules.md).
+    # Empty cells: prefer the repo-standard '-' sentinel for readability.
     empty_cells = [k for k, v in feature.items() if v.strip() == ""]
     if empty_cells:
         problems.append(
