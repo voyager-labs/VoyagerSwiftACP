@@ -84,18 +84,12 @@ func applySavedCollectionSessionState(
     state: inout FileManagerContentState,
 ) {
     let url = completion.url
+    let compatibility = VoyagerCollectionFileCompatibilityOwner.compatibilityForCurrentFile(completion.file)
     state.collectionSession.openedURL = url
     state.collectionSession.openedName = url.deletingPathExtension().lastPathComponent
     state.collectionSession.originURL = url
     state.collectionSession.baseline = state.collectionContext.map(CollectionBaseline.init(context:))
-    state.collectionSession.openedCompatibility = .init(
-        sourceSchemaVersion: completion.file.schemaVersion,
-        migrationPath: [.currentSchemaV2],
-        warnings: [],
-        usedDefinitionFallback: false,
-        writeBackAllowed: true,
-        writeBackReason: .allowed,
-    )
+    state.collectionSession.openedCompatibility = compatibility
 }
 
 func applyWriteBackSuccessState(

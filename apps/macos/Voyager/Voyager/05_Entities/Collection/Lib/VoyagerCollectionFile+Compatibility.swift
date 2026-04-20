@@ -168,6 +168,29 @@ enum VoyagerCollectionFileCompatibilityOwner {
         return try encoder.encode(normalizeForSave(file))
     }
 
+    static func compatibilityForCurrentFile(_ file: VoyagerCollectionFile) -> CollectionFileCompatibilityMetadata {
+        let snapshotDecision = evaluateDecodedSnapshotPair(file)
+        let normalized = snapshotDecision.file
+        return .init(
+            sourceSchemaVersion: normalized.schemaVersion,
+            migrationPath: migrationPath(
+                schemaProbe: .init(
+                    sourceSchemaVersion: normalized.schemaVersion,
+                    effectiveSchemaVersion: normalized.schemaVersion,
+                ),
+                warning: snapshotDecision.warning,
+            ),
+            warnings: snapshotDecision.warning.map { [$0] } ?? [],
+            usedDefinitionFallback: snapshotDecision.usedDefinitionFallback,
+            writeBackAllowed: snapshotDecision.usedDefinitionFallback == false,
+            writeBackReason: writeBackReason(
+                schemaVersion: normalized.schemaVersion,
+                sourceSchemaVersion: normalized.schemaVersion,
+                usedDefinitionFallback: snapshotDecision.usedDefinitionFallback,
+            ),
+        )
+    }
+
     private static func rawSchemaVersion(
         from data: Data,
         containerFormat: CollectionFileContainerFormat,
@@ -307,6 +330,13 @@ enum VoyagerCollectionFileCompatibilityOwner {
         let hasSnapshotMeta = file.snapshotMeta != nil
 
         guard hasSnapshot != hasSnapshotMeta else {
+            return .init(file: file, warning: nil, usedDefinitionFallback: false)
+        }
+
+        if hasSnapshot == false,
+           let snapshotMeta = file.snapshotMeta,
+           snapshotMeta.itemCount == 0
+        {
             return .init(file: file, warning: nil, usedDefinitionFallback: false)
         }
 

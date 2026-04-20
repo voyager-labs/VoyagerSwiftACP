@@ -139,6 +139,44 @@ final class FileManagerCollectionRefreshPolicyTests: XCTestCase {
         XCTAssertTrue(store.state.collectionSession.isStale)
         XCTAssertNil(store.state.collectionSession.lastRefreshAt)
     }
+
+    func testSaveSuccessKeepsDefinitionOnlyCollectionWriteBackEligible() async {
+        let url = URL(fileURLWithPath: "/tmp/definition-only.voycoll")
+        let completion = CollectionSaveCompletion(
+            url: url,
+            file: VoyagerCollectionFile(
+                id: "definition-only",
+                name: "Definition Only",
+                createdAt: .distantPast,
+                updatedAt: .distantFuture,
+                query: "report",
+                scopes: ["/tmp"],
+                conditions: [],
+                snapshot: nil,
+                snapshotMeta: .init(
+                    definitionFingerprint: "fingerprint",
+                    capturedAt: .distantFuture,
+                    itemCount: 0,
+                    relevanceRoots: ["/tmp"],
+                ),
+                appVersion: nil,
+            ),
+        )
+
+        var state = FileManagerContentState()
+        state.collectionContext = .init(query: "report", scopes: ["/tmp"], conditions: [])
+
+        _ = handleCollectionSaveSuccess(
+            completion: completion,
+            state: &state,
+            currentDate: .distantFuture,
+        )
+
+        XCTAssertEqual(state.collectionSession.openedCompatibility?.warnings, [])
+        XCTAssertFalse(state.collectionSession.openedCompatibility?.usedDefinitionFallback ?? true)
+        XCTAssertTrue(state.collectionSession.openedCompatibility?.writeBackAllowed ?? false)
+        XCTAssertEqual(state.collectionSession.openedCompatibility?.writeBackReason, .allowed)
+    }
 }
 
 @MainActor

@@ -66,6 +66,37 @@ final class CollectionFileCompatibilityTests: XCTestCase {
         XCTAssertNil(result.file.snapshotMeta)
     }
 
+    func testCompatibilityOwnerKeepsDefinitionOnlySnapshotMetaWithZeroItemCount() throws {
+        let file = VoyagerCollectionFile(
+            id: "definition-only-current",
+            name: "Definition Only Current",
+            createdAt: .distantPast,
+            updatedAt: .distantFuture,
+            query: "report",
+            scopes: ["/tmp"],
+            conditions: [],
+            snapshot: nil,
+            snapshotMeta: .init(
+                definitionFingerprint: "fingerprint",
+                capturedAt: .distantFuture,
+                itemCount: 0,
+                relevanceRoots: ["/tmp"],
+            ),
+            appVersion: nil,
+        )
+        let data = try makeBinaryPlist(file)
+
+        let result = try VoyagerCollectionFileCompatibilityOwner.decode(data, containerFormat: .package)
+
+        XCTAssertFalse(result.compatibility.usedDefinitionFallback)
+        XCTAssertEqual(result.compatibility.warnings, [])
+        XCTAssertTrue(result.compatibility.writeBackAllowed)
+        XCTAssertEqual(result.compatibility.writeBackReason, .allowed)
+        XCTAssertNil(result.file.snapshot)
+        XCTAssertEqual(result.file.snapshotMeta?.itemCount, 0)
+        XCTAssertEqual(result.file.snapshotMeta?.definitionFingerprint, "fingerprint")
+    }
+
     func testCompatibilityOwnerTreatsMissingSchemaAsLegacySingleFileOnly() throws {
         let data = try makeBinaryPlist(makeLegacyNoSchemaPayload())
 
@@ -421,66 +452,3 @@ final class CollectionFileCompatibilityTests: XCTestCase {
 }
 
 // swiftlint:enable type_body_length
-
-private struct LegacyDefinitionOnlyPayload: Codable {
-    let schemaVersion: Int
-    let id: String
-    let name: String
-    let createdAt: Date
-    let updatedAt: Date
-    let query: String
-    let scopes: [String]
-    let conditions: [CollectionCondition]
-    let appVersion: String?
-}
-
-private struct LegacyNoSchemaPayload: Codable {
-    let id: String
-    let name: String
-    let createdAt: Date
-    let updatedAt: Date
-    let query: String
-    let scopes: [String]
-    let conditions: [CollectionCondition]
-    let appVersion: String?
-}
-
-private struct InvalidSnapshotPayload: Codable {
-    let schemaVersion: Int
-    let id: String
-    let name: String
-    let createdAt: Date
-    let updatedAt: Date
-    let query: String
-    let scopes: [String]
-    let conditions: [CollectionCondition]
-    let snapshot: [String: [VoyagerShared.JSONValue]]
-    let snapshotMeta: CollectionSnapshotMeta
-    let appVersion: String?
-}
-
-private struct SnapshotOnlyPayload: Codable {
-    let schemaVersion: Int
-    let id: String
-    let name: String
-    let createdAt: Date
-    let updatedAt: Date
-    let query: String
-    let scopes: [String]
-    let conditions: [CollectionCondition]
-    let snapshot: CollectionPersistedSnapshot
-    let appVersion: String?
-}
-
-private struct SnapshotMetaOnlyPayload: Codable {
-    let schemaVersion: Int
-    let id: String
-    let name: String
-    let createdAt: Date
-    let updatedAt: Date
-    let query: String
-    let scopes: [String]
-    let conditions: [CollectionCondition]
-    let snapshotMeta: CollectionSnapshotMeta
-    let appVersion: String?
-}
