@@ -134,7 +134,22 @@ python3 .agents/skills/voyager-product-owner/checker/feature-inventory/scripts/c
 - `PRODUCT/04_FEATURE_INVENTORY/INTERACTIONS/data.tsv`
 - `PRODUCT/04_FEATURE_INVENTORY/INTERACTIONS/schema.json`
 - `PRODUCT/03_INFORMATION_ARCHITECTURE/WINDOW_STRUCTURE/data.tsv`
-- `META/tsv_rules.md`
+
+## Repo Conventions Enforced Or Assumed
+
+- TSV rows must be deterministic and diff-friendly:
+    - no empty lines
+    - fixed column count per row
+    - no multi-line cells
+    - tabs only as field separators
+- Use `-` for intentionally empty values and `TBD` for unresolved required content.
+- `<<AI>> ` is valid only as a long-text cell prefix and should not appear in key, ID, or enum-like columns.
+- `TBD` is never valid for a primary-key field.
+- When checking schema-aligned changes, assume:
+    - `columns[].name` order matches TSV header order
+    - `required` is the repo's constraint flag
+    - `-` is the null sentinel
+    - `ref` metadata is the preferred way to describe table relationships
 
 ## Schema Migration (v2)
 

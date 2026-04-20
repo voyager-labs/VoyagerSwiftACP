@@ -25,13 +25,14 @@ This skill is useful when you need to:
 - Keep `SKILL.md` light; put detailed writing rules and contract/consistency workflow in the reference files.
 - Follow the guide for shortcut notation, interaction links, ambiguity avoidance, exact UI labels, and AI-marker handling.
 - Use the contract/consistency workflow when deciding whether to create category-level `contracts/*.toml` or `flows/*.md`.
-- Keep category contracts simple: prefer `contract` + `vocabulary` + `policy/constraints` + `status/ownership/transitions`, and avoid extra alias layers such as `object_terms` unless the user explicitly asks for them.
+- Keep category contracts simple: prefer `contract` + `vocabulary` + `policy` + `status/ownership/transitions`, and avoid extra alias layers such as `object_terms` unless the user explicitly asks for them.
 
 ## Source of Truths
 
-- `META/feature_specs_writing.md`
 - `.agents/skills/voyager-product-owner/author/feature-spec/references/TEMPLATE-feature-spec.md` (actual generation template)
 - `.agents/skills/voyager-product-owner/author/feature-spec/references/feature-spec-guide.md` (guide/reference)
+- `.agents/skills/voyager-product-owner/author/feature-spec/references/contract-writing-guide.md` (contract authoring guide)
+- `.agents/skills/voyager-product-owner/author/feature-spec/references/contract-toml-spec.md` (contract TOML field spec)
 - `.agents/skills/voyager-product-owner/author/feature-spec/references/contract-consistency-workflow.md` (contracts/flows workflow)
 - `PRODUCT/04_FEATURE_INVENTORY/INTERACTIONS/data.tsv`
 - `PRODUCT/04_FEATURE_INVENTORY/FEATURES/data.tsv`
@@ -42,6 +43,8 @@ Before writing or refactoring a spec body, use the reference files for the docum
 
 - `.agents/skills/voyager-product-owner/author/feature-spec/references/TEMPLATE-feature-spec.md`
 - `.agents/skills/voyager-product-owner/author/feature-spec/references/feature-spec-guide.md`
+- `.agents/skills/voyager-product-owner/author/feature-spec/references/contract-writing-guide.md` when deciding object/state vocabulary or transition scope
+- `.agents/skills/voyager-product-owner/author/feature-spec/references/contract-toml-spec.md` when editing `contracts/*.toml`
 - `.agents/skills/voyager-product-owner/author/feature-spec/references/contract-consistency-workflow.md` when shared `contracts/` or `flows/` may be needed
 
 ### 1) Generate a concrete draft from `interaction_id`
@@ -89,7 +92,8 @@ python3 .agents/skills/voyager-product-owner/author/feature-spec/scripts/lint_fe
 
 - Keep generation-time reminders in the skill or guide only; do not emit internal instruction comments into generated markdown files.
 - Prefer product-facing wording over implementation-facing wording.
-- Use the reference guide for frontmatter keys, fixed sections, shortcut notation, exact UI labels, interaction-link formatting, ambiguity avoidance, and `-` / `TBD` handling.
+- Use the reference guide for frontmatter keys, fixed sections, section intent, shortcut notation, exact UI labels, interaction-link formatting, ambiguity avoidance, and `-` / `TBD` handling.
+- Keep generated prose Korean by default, but preserve literal product-facing UI copy in English when that is the settled label shown to users.
 - Use strict lint as a review aid for unresolved `TBD` values and draft completeness.
 - Do not mass-edit unrelated spec files unless explicitly requested.
 
@@ -97,6 +101,8 @@ python3 .agents/skills/voyager-product-owner/author/feature-spec/scripts/lint_fe
 
 - generation template
 - guide/reference document
+- contract writing guide
+- contract TOML spec
 - contract/consistency workflow
 
 ## Scripts

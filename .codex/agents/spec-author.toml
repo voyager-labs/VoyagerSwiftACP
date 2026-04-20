@@ -11,12 +11,12 @@ You may also update PRODUCT/03_INFORMATION_ARCHITECTURE/WINDOW_STRUCTURE/data.ts
 
 Use the existing repo workflows and scripts:
 - .agents/skills/voyager-product-owner/author/feature-spec/SKILL.md
-- META/feature_specs_writing.md
 - .agents/skills/voyager-product-owner/author/feature-spec/references/contract-consistency-workflow.md
 
 Rules:
 - keep wording product-facing
 - write prose in Korean by default while preserving stable IDs, keys, filenames, and code as-is
+- preserve settled literal UI labels in English when the product uses English labels
 - focus on user-visible behavior, state changes, and product rules
 - avoid unnecessary implementation language
 - keep frontmatter aligned with inventory truth

@@ -15,8 +15,11 @@ This document explains how to write or refactor `PRODUCT/05_FEATURE_SPECS` docum
 - Keep the fixed section titles defined by the template.
 - Write the actual section body prose in Korean.
 - Do not embed internal authoring comments, reminder comments, or generation instructions in the generated markdown body.
+- Keep one document scoped to one `interaction_id`.
+- Preserve the fixed section shell even when the section is sparse.
 - Use `-` for intentionally empty values and `TBD` for values that are still undecided.
 - Apply the same `-` / `TBD` convention to frontmatter values as well as body sections.
+- Do not use `NULL`.
 - When body prose references another `interaction_id`, use a markdown link to the target FEATURE_SPEC file instead of plain backticks.
 - Prefer relative links such as `[CBW-002-capture_request_context_snapshot](../CBW-002-manage-request-context/CBW-002-capture_request_context_snapshot.md)`.
 - Do not use vague hedge phrases when a concrete product term can be written.
@@ -24,6 +27,7 @@ This document explains how to write or refactor `PRODUCT/05_FEATURE_SPECS` docum
 - Prefer exact state names, button labels, UI regions, and trigger conditions.
 - When referring to a literal UI label, use the exact product label verbatim.
 - Do not translate a literal UI label into Korean if the UI itself uses English.
+- Default user-visible labels, status names, CTA examples, and menu labels to English unless the product truth already establishes another literal label.
 - If the user explicitly confirms that an FS long-text field has been human-reviewed and its `<<AI>>` marker should be removed, remove the marker from the corresponding FI long-text cell in the same pass.
 - Do not assume that prose-level object/state consistency can be proved from text alone.
     - Use exact object names and exact state names.
@@ -67,17 +71,13 @@ The document body must keep these fixed sections:
 11. `Related Interactions`
 12. `Source`
 
-## Shared document types
+Optional addition:
 
-`FEATURE_SPECS` now supports three document types:
+- `Boundary Notes`
 
-1. `interaction spec`
-2. `category contract`
-3. `category flow`
+## Interaction Spec Scope
 
-Use them for different purposes instead of forcing everything into one interaction document.
-
-### 1. Interaction spec
+This guide is only for `interaction spec` writing.
 
 Path shape:
 
@@ -89,90 +89,31 @@ Purpose:
 - define its trigger, preconditions, outcome, state changes, and dependencies
 - reference shared contracts and flows when they exist
 
-### 2. Category contract
+Do not use this guide as the authoring source for:
 
-Path shape:
+- `contracts/*.toml`
+- `flows/*.md`
 
-- `PRODUCT/05_FEATURE_SPECS/<category>/contracts/<name>.toml`
+For those, use:
 
-Purpose:
+- `contract-writing-guide.md`
+- `contract-toml-spec.md`
+- `contract-consistency-workflow.md`
 
-- define machine-readable shared object/state vocabulary
-- define allowed and forbidden user-visible states
-- define ownership of states and transitions across interactions
+## Contract Alignment Rules
 
-Writing rules:
+If a category-level contract already exists, interaction specs must align to it.
 
-- use TOML, not markdown
-- keep names explicit and stable
-- prefer keyed subtables over repeated array-of-table records when the entry is naturally keyed by an identifier
-- use exact object names and exact state names
-- keep the file machine-readable first; avoid prose-heavy commentary
-- keep the structure minimal
-    - start with `primary_object` and add `secondary_objects` only when they are true core objects
-    - define meanings in `vocabulary`
-    - do not add extra alias layers such as `object_terms`, `relation_terms`, or similar unless the user explicitly needs synonym normalization
-    - if a term is not a core object but a directional or relational concept, keep it as a plain vocabulary term instead of elevating it to an object list
-- prefer product-facing object names over invented technical abstractions
-    - if `request` and `response` are already sufficient, keep them
-    - do not introduce artificial execution-unit terms like `assistant_run` unless the user explicitly wants that abstraction
-    - when conversation structure matters, prefer `turn` for `request + response` grouping and `chat_session` for the session container
+That means:
 
-Recommended sections:
+- use the exact object names declared in the contract
+- use the exact allowed state names declared in the contract
+- do not use contract-forbidden state terms in interaction prose
+- do not invent alternate labels for the same object or state
+- add an explicit reference to the relevant `contracts/*.toml` file in the interaction spec
 
-```toml
-[contract]
-id = "cbw.request_lifecycle"
-category = "CBW"
-primary_object = "request"
-secondary_objects = ["turn", "response"]
-
-[vocabulary]
-request = "..."
-response = "..."
-turn = "..."
-
-[constraints]
-single_processing_response_per_request = true
-
-[user_visible_states]
-allowed = ["processing", "completed", "failed", "cancelled"]
-forbidden = ["queued", "cancelling"]
-
-[state.processing]
-description = "..."
-entered_by = ["CBW-001-submit_chat_request"]
-exits_to = ["completed", "failed", "cancelled"]
-
-[ownership."CBW-001-submit_chat_request"]
-reads = []
-writes = ["processing"]
-creates_objects = ["request", "turn", "response"]
-
-[transitions.processing_to_completed]
-from = "processing"
-to = "completed"
-trigger = "CBW-003-stream_contextual_chat_response"
-```
-
-### 3. Category flow
-
-Path shape:
-
-- `PRODUCT/05_FEATURE_SPECS/<category>/flows/<name>.md`
-
-Purpose:
-
-- describe a cross-feature user flow
-- show branching paths such as happy path, cancel path, regenerate path
-- carry human-readable diagrams and overview sequence
-
-Writing rules:
-
-- use markdown
-- keep the flow at category or multi-feature scope
-- reference interaction specs and contract files directly
-- prefer one flow doc over repeating the same end-to-end sequence in many interaction specs
+This guide does not explain how to design or author the contract itself.
+It only defines how an interaction spec must stay consistent with an existing contract.
 
 ## Section guidance
 
@@ -180,6 +121,7 @@ Writing rules:
 
 - Explain why the interaction exists.
 - Keep the purpose short and user-facing.
+- Do not restate implementation structure or acceptance-criteria wording.
 
 ### Trigger / Entry Points
 
@@ -193,11 +135,15 @@ Writing rules:
 ### Expected Outcome
 
 - Describe what must be true when execution succeeds.
+- Focus on what becomes true from the user's point of view.
 
 ### State Changes
 
 - Describe which states change and how.
 - Include state preservation behavior when failure matters.
+- Keep this distinct from `Expected Outcome`.
+    - `Expected Outcome` answers what should be established.
+    - `State Changes` answers what is updated, moved, cleared, preserved, or recalculated.
 
 ### User-visible Feedback
 
@@ -211,14 +157,17 @@ Writing rules:
 
 - Write testable statements in Korean using the pattern `...한 상황에서, ...하면, ...해야 한다.`
 - Keep each statement specific and verifiable.
+- Keep one AC line scoped to one observable result.
 
 ### Permissions / Dependencies
 
 - Describe permissions, system conditions, network constraints, and external dependencies.
+- Keep this at product-contract level, not architecture-design level.
 
 ### Observability / Analytics
 
 - Describe events worth tracking, such as entry, success, failure, and retry.
+- Prefer observable checkpoints over implementation plumbing.
 
 ### Related Interactions
 

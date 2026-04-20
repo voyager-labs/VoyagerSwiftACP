@@ -9,6 +9,7 @@ The goal is to keep `product-owner` as an orchestration entrypoint inside the `v
 ## Independent Skill Surfaces
 
 - `.agents/skills/voyager-product-owner/author/feature-spec/`
+- `.agents/skills/voyager-product-owner/checker/feature-spec/`
 - `.agents/skills/voyager-product-owner/checker/bundle-consistency/`
 - `.agents/skills/voyager-product-owner/author/linear-issue/`
 - `.agents/skills/voyager-product-owner/author/feature-inventory/`

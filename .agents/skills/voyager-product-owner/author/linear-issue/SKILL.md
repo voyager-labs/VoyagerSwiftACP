@@ -52,3 +52,7 @@ python3 .agents/skills/voyager-product-owner/author/linear-issue/scripts/draft_l
 - Keep issue drafts deterministic and diff-friendly.
 - If a feature ID is missing, fail explicitly instead of guessing.
 - Do not treat any repo-tracked draft directory as canonical; use stdout by default, or a user-chosen scratch directory when file output is required.
+- Preserve SSOT placeholder semantics when summarizing inventory truth:
+    - `-` means not applicable or intentionally empty
+    - `TBD` means unresolved and should surface as an open decision, not be silently normalized away
+- Keep explanatory prose in Korean by default, but preserve settled user-visible labels, status names, CTA text, and menu labels in English when they come from product truth.

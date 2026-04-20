@@ -1,6 +1,6 @@
 ---
 name: fi-ia-fs-consistency-checker
-description: "Audit and align Voyager feature documentation for a single feature_id across FI (Feature Inventory), IA (Information Architecture), and FS (Feature Specs). Use whenever the user asks to review, audit, sync, or fix a feature bundle for 정합성, mismatch, drift, stale spec metadata, or \"FI/IA/FS 맞춰줘\", especially when FEATURES, INTERACTIONS, WINDOW_STRUCTURE, and FEATURE_SPEC markdown need to be checked together instead of row-by-row."
+description: 'Audit and align Voyager feature documentation for a single feature_id across FI (Feature Inventory), IA (Information Architecture), and FS (Feature Specs). Use whenever the user asks to review, audit, sync, or fix a feature bundle for 정합성, mismatch, drift, stale spec metadata, or "FI/IA/FS 맞춰줘", especially when FEATURES, INTERACTIONS, WINDOW_STRUCTURE, and FEATURE_SPEC markdown need to be checked together instead of row-by-row.'
 ---
 
 # Voyager FI/IA/FS Consistency Checker
@@ -28,6 +28,10 @@ Do not use this skill for drafting brand new inventory rows from scratch. For au
 
 - `feature-inventory-author`
 - `feature-spec-author`
+
+If the user wants FS-only review against category-level `contracts/*.toml` or `flows/*.md` without FI/IA bundle audit, use:
+
+- `feature-spec-checker`
 
 ## What This Skill Optimizes For
 
@@ -86,8 +90,8 @@ python3 .agents/skills/voyager-product-owner/checker/bundle-consistency/scripts/
 - `WARN`: likely drift, hierarchy mismatch, stale deterministic sections, semantic review needed
 - `INFO`: found rows, synced files, counts, expected layout
 - For the contract checker:
-  - `FAIL`: broken contract structure, unknown interactions, invalid transitions
-  - `WARN`: missing contract references, missing required object/state terms, forbidden state terms still present
+    - `FAIL`: broken contract structure, unknown interactions, invalid transitions
+    - `WARN`: missing contract references, missing required object/state terms, forbidden state terms still present
 
 If the user asked only for review, stop after the audit and report findings before writing.
 

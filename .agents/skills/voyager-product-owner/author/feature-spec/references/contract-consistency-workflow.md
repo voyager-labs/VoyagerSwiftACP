@@ -48,8 +48,9 @@ Rules:
 - use exact object names and exact state names
 - prefer keyed subtables when entries are naturally keyed by an identifier such as `interaction_id`
 - do not put long explanatory prose here
+- follow `contract-toml-spec.md` for field-level conventions
 - keep the schema shallow unless the user explicitly needs more structure
-    - prefer `contract`, `vocabulary`, `policy` or `constraints`, `user_visible_states`, `status`, `ownership`, and `transitions`
+    - prefer `contract`, `vocabulary`, `policy`, `user_visible_states`, `status`, `ownership`, and `transitions`
     - avoid `object_terms`, `relation_terms`, and similar alias registries unless synonym normalization is an explicit requirement
 - only list true core objects in `primary_object` and `secondary_objects`
     - if a term is a directional or relational concept such as `downstream_turn`, keep it in `vocabulary` only
@@ -72,7 +73,7 @@ request = "..."
 response = "..."
 turn = "..."
 
-[constraints]
+[policy]
 single_processing_response_per_request = true
 
 [user_visible_states]
@@ -113,6 +114,7 @@ Rules:
 - keep it human-readable
 - reference interaction specs and contract files directly
 - use this doc to explain sequence, not to redefine the contract vocabulary
+- keep `.md` as the default extension so prose, links, and fenced mermaid diagrams can live together in one file
 
 ## How To Update Interaction Specs
 
