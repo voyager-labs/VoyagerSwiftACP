@@ -250,6 +250,11 @@ private func handleOpenCollectionFile(
     let clearEffect: Effect<FileManagerContentAction> = clearCollectionMode(state: &state.content)
     state.content.collectionSession.isOpening = true
     state.content.collectionSession.isStale = false
+    state.content.collectionSession.staleReason = nil
+    state.content.collectionSession.lastRefreshAt = nil
+    state.content.collectionSession.didHydrateSnapshotOnOpen = false
+    state.content.collectionSession.isRefreshingHydratedSnapshot = false
+    state.content.collectionSession.isWritingBackRefreshedSnapshot = false
     state.content.collectionSession.openedName = url.deletingPathExtension().lastPathComponent
     state.content.collectionSession.openedURL = url
     state.content.collectionSession.originURL = url
@@ -335,15 +340,12 @@ private func handleCollectionFileLoadedSuccess(
     registryClient: RegistryClient,
     computerName: String,
 ) -> Effect<FileManagerWindowAction> {
-    let wasOpening = state.content.collectionSession.isOpening
     state.content.collectionSession.isOpening = false
     state.content.composer.isPresented = false
     state.content.collectionSession.isStale = isStale
-    let trimmedQuery = file.query.trimmingCharacters(in: .whitespacesAndNewlines)
-    state.content.composer.pendingSearchQuery = trimmedQuery.isEmpty ? nil : trimmedQuery
-
+    state.content.collectionSession.staleReason = isStale ? .invalidatedLocally : nil
     let resolved = file.resolveCollectionFilters(registryClient: registryClient)
-    if trimmedQuery.isEmpty, resolved.scopes.isEmpty, resolved.conditions.isEmpty {
+    if isEmptyCollectionDefinition(file: file, resolved: resolved) {
         return handleEmptyCollectionFile(
             state: &state,
             collectionAlertClient: collectionAlertClient,
@@ -351,46 +353,42 @@ private func handleCollectionFileLoadedSuccess(
         )
     }
 
-    state.content.composer.text = ""
-    state.content.composer.scopes = resolved.scopes
-    state.content.composer.conditions = resolved.conditions
-    state.content.composer.propertyPicker = ConditionPropertyPickerFeature.State()
-    state.content.composer.operatorPicker = OperatorPickerFeature.State()
-    state.content.composer.valuePicker = ValuePickerFeature.State()
-    state.content.composer.clearHistory()
-
-    state.content.collectionSession.baseline = CollectionBaseline(
-        context: CollectionContext(
-            query: trimmedQuery,
-            scopes: resolved.scopes,
-            conditions: resolved.conditions,
-        ),
+    let openContext = prepareLoadedCollectionOpenState(
+        file: file,
+        resolved: resolved,
+        isStale: isStale,
+        registryClient: registryClient,
+        state: &state,
     )
+
+    if let effects = makeHydratedCollectionOpenEffects(
+        file: file,
+        openContext: openContext,
+        resolved: resolved,
+        isStale: isStale,
+        collectionAlertClient: collectionAlertClient,
+        state: &state,
+    ) {
+        return .concatenate(effects)
+    }
 
     var effects: [Effect<FileManagerWindowAction>] = []
 
     if !isStale {
         effects.append(
-            wasOpening
-                ? .send(.content(.composer(.applyFilters)))
-                :
-                (trimmedQuery
-                    .isEmpty ? .send(.content(.composer(.applyFilters))) : .send(.content(.composer(.submit)))),
+            openContext.trimmedQuery
+                .isEmpty ? .send(.content(.composer(.applyFilters))) : .send(.content(.composer(.submit))),
         )
     }
 
     if !resolved.unknownKeys.isEmpty {
-        let joinedKeys = resolved.unknownKeys.joined(separator: ", ")
-        let warningMessage = [
-            "Some filters in this collection are no longer supported and were disabled:",
-            "\(joinedKeys).",
-        ].joined(separator: " ")
-        effects.append(.run { _ in
-            await collectionAlertClient.showCollectionOpenErrorAlert("Unsupported Filters", warningMessage)
-        })
+        effects.append(contentsOf: unsupportedFilterWarningEffects(
+            unknownKeys: resolved.unknownKeys,
+            collectionAlertClient: collectionAlertClient,
+        ))
     }
 
-    return .merge(effects)
+    return effects.isEmpty ? .none : .merge(effects)
 }
 
 private func handleCollectionFileLoadedFailure(

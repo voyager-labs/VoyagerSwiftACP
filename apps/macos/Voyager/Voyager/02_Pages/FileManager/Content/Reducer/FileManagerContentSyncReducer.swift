@@ -13,8 +13,13 @@ struct FileManagerContentSyncReducer {
             case let .externalFileSystemChanged(paths):
                 switch state.navigation.navigationState {
                 case .collection:
-                    if collectionPathsAffectCurrentContext(paths, state: state) {
+                    let affectsCollection = collectionPathsAffectCurrentContext(paths, state: state)
+                    if affectsCollection {
                         state.collectionSession.isStale = true
+                        state.collectionSession.lastRefreshAt = nil
+                        if state.collectionSession.staleReason == nil {
+                            state.collectionSession.staleReason = .invalidatedLocally
+                        }
                     }
                     return .none
 

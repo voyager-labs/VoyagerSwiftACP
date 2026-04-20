@@ -460,6 +460,10 @@ private func makeSavePayload(conditions: [Condition]) -> SaveRequestPayload {
         context: CollectionContext(query: "Report", scopes: ["/tmp"], conditions: conditions),
         isSearchLoading: false,
         isFiltersLoading: false,
+        snapshotItems: nil,
+        definitionFingerprint: "",
+        capturedAt: .distantPast,
+        relevanceRoots: ["/tmp"],
     )
 }
 
@@ -478,6 +482,7 @@ private func makeCollectionStore(
     } withDependencies: {
         $0.collectionFileClient = collectionFileClient
         $0.userDefaultsClient = .testValue
+        $0.collectionStalenessClient = .testValue
     }
     store.exhaustivity = .off
     return store
@@ -502,7 +507,6 @@ private let kEmptySearchResponse = VoyagerShared.SearchResponsePayload(
 )
 
 private let kEmptyCollectionFile = VoyagerCollectionFile(
-    schemaVersion: 1,
     id: "",
     name: "",
     createdAt: .distantPast,
@@ -510,6 +514,8 @@ private let kEmptyCollectionFile = VoyagerCollectionFile(
     query: "",
     scopes: [],
     conditions: [],
+    snapshot: nil,
+    snapshotMeta: nil,
     appVersion: nil,
 )
 

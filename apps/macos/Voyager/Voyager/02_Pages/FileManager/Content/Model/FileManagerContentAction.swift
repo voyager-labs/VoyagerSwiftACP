@@ -18,6 +18,7 @@ enum FileManagerContentAction: ViewAction, CasePathable, Sendable {
         case handleKeyCommand(KeyCommand)
         case changeLayout(EntryViewLayoutState.Mode)
         case selectAllEntries
+        case refreshStaleCollection
         case toggleShowHiddenFilesAndReload
     }
 

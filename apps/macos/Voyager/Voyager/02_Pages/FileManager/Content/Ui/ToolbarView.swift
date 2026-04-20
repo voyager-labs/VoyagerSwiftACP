@@ -36,8 +36,7 @@ struct ToolbarView: View {
         let isCollectionMode: Bool
         let isOpeningCollectionFile: Bool
         let openedCollectionName: String?
-        let openedCollectionURLExists: Bool
-        let isOpenedCollectionDirty: Bool
+        let collectionStatus: ToolbarCollectionStatusViewState
     }
 
     @Environment(\.colorScheme)
@@ -147,8 +146,13 @@ struct ToolbarView: View {
                     isCollectionMode: state.isCollectionMode,
                     isOpeningCollectionFile: state.collectionSession.isOpening,
                     openedCollectionName: state.collectionSession.openedName,
-                    openedCollectionURLExists: state.collectionSession.openedURL != nil,
-                    isOpenedCollectionDirty: state.isOpenedCollectionDirty,
+                    collectionStatus: .init(
+                        isCollectionMode: state.isCollectionMode,
+                        openedCollectionURLExists: state.collectionSession.openedURL != nil,
+                        isOpenedCollectionDirty: state.isOpenedCollectionDirty,
+                        isOpenedCollectionStale: state.isOpenedCollectionStale,
+                        canRefreshStaleCollection: state.canRefreshStaleCollection,
+                    ),
                 )
             },
             content: { viewStore in
@@ -186,13 +190,17 @@ struct ToolbarView: View {
                     label: {
                         HStack(spacing: 4) {
                             titleContent(viewStore: viewStore)
-                            Spacer()
+                            Spacer(minLength: 0)
                         }
                         .frame(maxWidth: .infinity)
                         .contentShape(Rectangle())
                     },
                 )
                 .buttonStyle(.borderless)
+
+                if viewStore.collectionStatus.showsRefreshAffordance {
+                    toolbarRefreshButton(viewStore: viewStore)
+                }
 
                 if isTitleAreaHovered {
                     ViewToggleButton(store: store)
@@ -226,8 +234,8 @@ struct ToolbarView: View {
                 ? "New Collection"
                 : viewStore.toolbarTitle)
         let composeSuffix = "/ Compose a filter"
-        let showUnsavedIndicator = viewStore.isCollectionMode
-            && (!viewStore.openedCollectionURLExists || viewStore.isOpenedCollectionDirty)
+        let showUnsavedIndicator = viewStore.collectionStatus.showsUnsavedIndicator
+        let showStaleIndicator = viewStore.collectionStatus.showsStaleIndicator
 
         return HStack(spacing: 4) {
             if isShowingCollection {
@@ -240,6 +248,18 @@ struct ToolbarView: View {
             Text(titleText)
                 .font(.system(size: 15, weight: .semibold))
                 .foregroundColor(.primary)
+
+            if showStaleIndicator {
+                Text("Stale")
+                    .font(.system(size: 11, weight: .semibold))
+                    .foregroundColor(.orange)
+                    .padding(.horizontal, 6)
+                    .padding(.vertical, 2)
+                    .background(
+                        Capsule()
+                            .fill(Color.orange.opacity(0.14)),
+                    )
+            }
 
             if showUnsavedIndicator, !isTitleAreaHovered {
                 Image(systemName: "circle.fill")
@@ -255,5 +275,20 @@ struct ToolbarView: View {
                     .fixedSize(horizontal: true, vertical: false)
             }
         }
+    }
+
+    private func toolbarRefreshButton(viewStore: ViewStore<ViewState, FileManagerContentFeature.Action>) -> some View {
+        Button(
+            action: { store.send(.view(.refreshStaleCollection)) },
+            label: {
+                ToolbarHoverButtonLabel(
+                    systemName: "arrow.clockwise",
+                    isEnabled: viewStore.collectionStatus.isRefreshEnabled,
+                    font: .system(size: 11, weight: .semibold),
+                )
+            },
+        )
+        .buttonStyle(.borderless)
+        .disabled(!viewStore.collectionStatus.isRefreshEnabled)
     }
 }

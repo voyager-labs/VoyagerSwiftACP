@@ -66,7 +66,6 @@ extension CollectionFileClient: DependencyKey {
         save: { _, _ in },
         load: { _ in
             VoyagerCollectionFile(
-                schemaVersion: 0,
                 id: "",
                 name: "",
                 createdAt: .distantPast,
@@ -74,6 +73,8 @@ extension CollectionFileClient: DependencyKey {
                 query: "",
                 scopes: [],
                 conditions: [],
+                snapshot: nil,
+                snapshotMeta: nil,
                 appVersion: nil,
             )
         },

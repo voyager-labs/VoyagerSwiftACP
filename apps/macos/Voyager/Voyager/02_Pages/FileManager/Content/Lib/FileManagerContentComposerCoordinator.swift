@@ -8,6 +8,7 @@ enum FileManagerContentComposerCoordinator {
     struct Dependencies: Sendable {
         let collectionAlertClient: CollectionAlertClient
         let computerName: String
+        let currentDate: @Sendable () -> Date
     }
 
     static func reduce(
@@ -19,7 +20,7 @@ enum FileManagerContentComposerCoordinator {
             return effect
         }
 
-        if let effect = handleComposerCollectionAction(action, state: &state) {
+        if let effect = handleComposerCollectionAction(action, state: &state, dependencies: dependencies) {
             return effect
         }
 
@@ -85,9 +86,10 @@ enum FileManagerContentComposerCoordinator {
                 query: state.composer.pendingSearchQuery ?? "",
                 state: &state,
             )
-            return .concatenate(
-                effect,
-                .send(.delegate(.composerCollectionSearchSucceeded)),
+            return finalizeCollectionRefreshIfNeeded(
+                searchEffect: effect,
+                state: &state,
+                currentDate: dependencies.currentDate(),
             )
 
         case let .internal(.searchResponse(requestID, .failure(error))):
@@ -100,9 +102,9 @@ enum FileManagerContentComposerCoordinator {
                 state: &state,
                 dependencies: dependencies,
             )
-            return .concatenate(
-                effect,
-                .send(.delegate(.composerCollectionSearchFailed)),
+            return failCollectionRefreshIfNeeded(
+                searchEffect: effect,
+                state: &state,
             )
 
         case let .internal(.filtersResponse(requestID, .failure(error))):
@@ -118,9 +120,9 @@ enum FileManagerContentComposerCoordinator {
                 state: &state,
                 dependencies: dependencies,
             )
-            return .concatenate(
-                effect,
-                .send(.delegate(.composerCollectionSearchFailed)),
+            return failCollectionRefreshIfNeeded(
+                searchEffect: effect,
+                state: &state,
             )
 
         default:
@@ -131,11 +133,16 @@ enum FileManagerContentComposerCoordinator {
     private static func handleComposerCollectionAction(
         _ action: ComposerFeature.Action,
         state: inout FileManagerContentState,
+        dependencies: Dependencies,
     ) -> Effect<FileManagerContentAction>? {
         guard case let ComposerAction.collection(collectionAction) = action else {
             return nil
         }
-        return handleCollectionAction(collectionAction, state: &state)
+        return handleCollectionAction(
+            collectionAction,
+            state: &state,
+            currentDate: dependencies.currentDate(),
+        )
     }
 
     private static func handleSetPresented(
@@ -213,12 +220,7 @@ enum FileManagerContentComposerCoordinator {
             logContentPageNavigationDAUIfNeeded(previous: previousNavigationState, next: nextNavigationState)
         }
         let showHidden = state.entryViewLayout.showHiddenFiles
-        let paths = items.compactMap { item -> String? in
-            guard case let .object(dict) = item,
-                  case let .string(path) = dict["fullPath"]
-            else { return nil }
-            return path
-        }
+        let paths = searchResultPaths(from: items)
 
         return .concatenate(
             .concatenate(navigationEffects),
@@ -264,74 +266,36 @@ enum FileManagerContentComposerCoordinator {
     private static func handleCollectionAction(
         _ action: CollectionFeature.Action,
         state: inout FileManagerContentState,
+        currentDate: Date,
     ) -> Effect<FileManagerContentAction> {
         switch action {
         case .saveRequested, .saveToExisting, .savePanelResponse:
             .none
 
-        case let .saveCompleted(.success(url)):
-            handleCollectionSaveSuccess(url: url, state: &state)
+        case let .saveCompleted(.success(completion)):
+            handleCollectionSaveSuccess(
+                completion: completion,
+                state: &state,
+                currentDate: currentDate,
+            )
 
         case .saveCompleted(.failure):
-            .send(.internal(.requestNavigation(.internal(.setPendingNavigation(nil)))))
+            handleCollectionSaveFailure(state: &state)
         }
     }
+}
 
-    private static func handleCollectionSaveSuccess(
-        url: URL,
-        state: inout FileManagerContentState,
-    ) -> Effect<FileManagerContentAction> {
-        let previousSnapshot = state.navigation.makeContentPageNavigationHistorySnapshot()
-        let previousCollectionURL = state.collectionSession.openedURL
-        let previousCollectionName = state.collectionSession.openedName
-        let previousBaseline = state.collectionSession.baseline
-        let shouldAppendHistory = previousCollectionURL?.path != url.path
-
-        state.collectionSession.openedURL = url
-        state.collectionSession.openedName = url.deletingPathExtension().lastPathComponent
-        state.collectionSession.originURL = url
-
-        if let context = state.collectionContext {
-            state.collectionSession.baseline = CollectionBaseline(
-                context: context,
-            )
-        } else {
-            state.collectionSession.baseline = nil
+private func searchResultPaths(from items: [VoyagerShared.JSONValue]) -> [String] {
+    items.compactMap { item in
+        switch item {
+        case let .string(path):
+            return path
+        case let .object(dict):
+            guard case let .string(path) = dict["fullPath"] else { return nil }
+            return path
+        default:
+            return nil
         }
-
-        var navigationEffects: [Effect<FileManagerContentAction>] = [
-            .send(.internal(.requestNavigation(.internal(.setNavigationState(.collection(
-                makeCollectionNavigation(state: state),
-            )))))),
-        ]
-
-        if shouldAppendHistory {
-            if let historyEntry = previousCollectionHistoryEntry(
-                baseline: previousBaseline,
-                previousURL: previousCollectionURL,
-                previousCollectionName: previousCollectionName,
-                state: state,
-            ) {
-                navigationEffects
-                    .append(.send(.internal(.requestNavigation(.internal(.appendBackHistory(historyEntry))))))
-            } else {
-                navigationEffects
-                    .append(.send(.internal(.requestNavigation(.internal(.appendBackHistory(previousSnapshot))))))
-            }
-            navigationEffects.append(.send(.internal(.requestNavigation(.internal(.clearForwardHistory)))))
-        }
-
-        state.syncComposerCollectionState()
-
-        if let pending = state.navigation.pendingNavigation {
-            return .concatenate(
-                .concatenate(navigationEffects),
-                .send(.internal(.requestNavigation(.internal(.setPendingNavigation(nil))))),
-                .send(.internal(.performPendingNavigation(pending))),
-            )
-        }
-
-        return .concatenate(navigationEffects)
     }
 }
 

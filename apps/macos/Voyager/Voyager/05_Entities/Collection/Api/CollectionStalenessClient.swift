@@ -3,59 +3,25 @@ import Foundation
 import VoyagerShared
 
 struct CollectionStalenessClient: Sendable {
-    var registerCollection: @Sendable (String, [String]) -> Void
-    var invalidateRecords: @Sendable ([String]) -> Void
-    var consumeInvalidation: @Sendable (String) -> Bool
+    var record: @Sendable (_ path: String) -> CollectionStalenessRecord?
+    var upsertRecord: @Sendable (_ path: String, _ record: CollectionStalenessRecord) -> Void
+    var invalidateRecords: @Sendable (_ affectedPaths: [String]) -> Void
+    var suppressPaths: @Sendable (_ paths: [String]) -> Void
+    var clearRecord: @Sendable (_ path: String) -> Void
+    var registerCollection: @Sendable (_ path: String, _ relevanceRoots: [String]) -> Void
+    var consumeInvalidation: @Sendable (_ path: String) -> Bool
 }
 
 extension CollectionStalenessClient: DependencyKey {
-    nonisolated static let liveValue = CollectionStalenessClient(
-        registerCollection: { collectionPath, scopes in
-            let userDefaultsClient = UserDefaultsClient.liveValue
-            var records = loadRecords(userDefaultsClient: userDefaultsClient)
-            let normalizedPath = normalizePath(collectionPath)
-            let normalizedScopes = scopes.map(normalizePath).filter { !$0.isEmpty }
-
-            records[normalizedPath] = .init(
-                scopes: Array(Set(normalizedScopes)).sorted(),
-                isInvalidated: records[normalizedPath]?.isInvalidated ?? false,
-            )
-            saveRecords(records, userDefaultsClient: userDefaultsClient)
-        },
-        invalidateRecords: { changedPaths in
-            let userDefaultsClient = UserDefaultsClient.liveValue
-            var records = loadRecords(userDefaultsClient: userDefaultsClient)
-            let normalizedChangedPaths = changedPaths.map(normalizePath)
-
-            for (collectionPath, record) in records {
-                let relevantChangedPaths = normalizedChangedPaths.filter {
-                    !isCollectionDocumentPath($0, collectionPath: collectionPath)
-                }
-                let isRelevant = collectionChangeIsRelevant(changedPaths: relevantChangedPaths, scopes: record.scopes)
-
-                if isRelevant {
-                    records[collectionPath] = .init(scopes: record.scopes, isInvalidated: true)
-                }
-            }
-
-            saveRecords(records, userDefaultsClient: userDefaultsClient)
-        },
-        consumeInvalidation: { collectionPath in
-            let userDefaultsClient = UserDefaultsClient.liveValue
-            var records = loadRecords(userDefaultsClient: userDefaultsClient)
-            let normalizedPath = normalizePath(collectionPath)
-            guard let record = records[normalizedPath], record.isInvalidated else {
-                return false
-            }
-            records[normalizedPath] = .init(scopes: record.scopes, isInvalidated: false)
-            saveRecords(records, userDefaultsClient: userDefaultsClient)
-            return true
-        },
-    )
+    static let liveValue: CollectionStalenessClient = live(userDefaultsClient: UserDefaultsClient.liveValue)
 
     nonisolated static let testValue = CollectionStalenessClient(
-        registerCollection: { _, _ in },
+        record: { _ in nil },
+        upsertRecord: { _, _ in },
         invalidateRecords: { _ in },
+        suppressPaths: { _ in },
+        clearRecord: { _ in },
+        registerCollection: { _, _ in },
         consumeInvalidation: { _ in false },
     )
 }
@@ -67,36 +33,246 @@ extension DependencyValues {
     }
 }
 
-private struct CollectionStalenessRecord: Codable, Equatable {
+struct CollectionStalenessRecord: Codable, Equatable, Sendable {
+    var definitionFingerprint: String
+    var relevanceRoots: [String]
+    var lastInvalidatedAt: Date?
+}
+
+private struct LegacyCollectionStalenessRecord: Codable, Equatable, Sendable {
     var scopes: [String]
     var isInvalidated: Bool
 }
 
-private nonisolated func loadRecords(userDefaultsClient: UserDefaultsClient) -> [String: CollectionStalenessRecord] {
-    guard let data = userDefaultsClient.object("collectionStalenessRecords") as? Data else {
-        return [:]
+private final class CollectionStalenessSuppressionStore: @unchecked Sendable {
+    private let lock = NSLock()
+    private nonisolated(unsafe) var suppressedPaths: [String: Int] = [:]
+
+    nonisolated func insert(_ paths: [String], count: Int = 3) {
+        lock.lock()
+        defer { lock.unlock() }
+        for path in paths {
+            suppressedPaths[path] = max(suppressedPaths[path] ?? 0, count)
+        }
     }
-    return (try? JSONDecoder().decode([String: CollectionStalenessRecord].self, from: data)) ?? [:]
-}
 
-private nonisolated func saveRecords(
-    _ records: [String: CollectionStalenessRecord],
-    userDefaultsClient: UserDefaultsClient,
-) {
-    let data = try? JSONEncoder().encode(records)
-    userDefaultsClient.setObject(data, "collectionStalenessRecords")
-}
-
-private nonisolated func normalizePath(_ path: String) -> String {
-    guard !path.isEmpty else { return path }
-    return URL(fileURLWithPath: path).standardizedFileURL.path
-}
-
-private nonisolated func isCollectionDocumentPath(_ changedPath: String, collectionPath: String) -> Bool {
-    if changedPath == collectionPath {
+    nonisolated func consumeIfSuppressed(_ path: String) -> Bool {
+        lock.lock()
+        defer { lock.unlock() }
+        guard let remaining = suppressedPaths[path], remaining > 0 else {
+            return false
+        }
+        if remaining == 1 {
+            suppressedPaths.removeValue(forKey: path)
+        } else {
+            suppressedPaths[path] = remaining - 1
+        }
         return true
     }
+}
 
-    let packagePrefix = collectionPath == "/" ? "/" : collectionPath + "/"
-    return changedPath.hasPrefix(packagePrefix)
+extension CollectionStalenessClient {
+    nonisolated static func live(userDefaultsClient: UserDefaultsClient) -> CollectionStalenessClient {
+        let suppressionStore = CollectionStalenessSuppressionStore()
+        return .init(
+            record: makeRecord(userDefaultsClient: userDefaultsClient),
+            upsertRecord: makeUpsertRecord(userDefaultsClient: userDefaultsClient),
+            invalidateRecords: makeInvalidateRecords(
+                userDefaultsClient: userDefaultsClient,
+                suppressionStore: suppressionStore,
+            ),
+            suppressPaths: makeSuppressPaths(suppressionStore: suppressionStore),
+            clearRecord: makeClearRecord(userDefaultsClient: userDefaultsClient),
+            registerCollection: makeRegisterCollection(userDefaultsClient: userDefaultsClient),
+            consumeInvalidation: makeConsumeInvalidation(userDefaultsClient: userDefaultsClient),
+        )
+    }
+
+    private nonisolated static func makeRecord(
+        userDefaultsClient: UserDefaultsClient,
+    ) -> @Sendable (String) -> CollectionStalenessRecord? {
+        { path in
+            loadStorage(userDefaultsClient: userDefaultsClient)[normalizePath(path)]
+        }
+    }
+
+    private nonisolated static func makeUpsertRecord(
+        userDefaultsClient: UserDefaultsClient,
+    ) -> @Sendable (String, CollectionStalenessRecord) -> Void {
+        { path, record in
+            var storage = loadStorage(userDefaultsClient: userDefaultsClient)
+            storage[normalizePath(path)] = normalizedRecord(record)
+            saveStorage(storage, userDefaultsClient: userDefaultsClient)
+        }
+    }
+
+    private nonisolated static func makeInvalidateRecords(
+        userDefaultsClient: UserDefaultsClient,
+        suppressionStore: CollectionStalenessSuppressionStore,
+    ) -> @Sendable ([String]) -> Void {
+        { affectedPaths in
+            let normalizedAffectedPaths = affectedPaths.map(normalizePath).filter {
+                !suppressionStore.consumeIfSuppressed($0)
+            }
+            guard !normalizedAffectedPaths.isEmpty else { return }
+
+            var storage = loadStorage(userDefaultsClient: userDefaultsClient)
+            let invalidatedAt = Date()
+
+            for (path, record) in storage {
+                let relevantAffectedPaths = normalizedAffectedPaths.filter {
+                    !isCollectionDocumentPath($0, collectionPath: path)
+                }
+                let shouldInvalidate = relevantAffectedPaths.contains { affectedPath in
+                    record.relevanceRoots.contains { affects(relevanceRoot: $0, affectedPath: affectedPath) }
+                }
+                guard shouldInvalidate else { continue }
+
+                storage[path] = .init(
+                    definitionFingerprint: record.definitionFingerprint,
+                    relevanceRoots: record.relevanceRoots,
+                    lastInvalidatedAt: invalidatedAt,
+                )
+            }
+
+            saveStorage(storage, userDefaultsClient: userDefaultsClient)
+        }
+    }
+
+    private nonisolated static func makeSuppressPaths(
+        suppressionStore: CollectionStalenessSuppressionStore,
+    ) -> @Sendable ([String]) -> Void {
+        { paths in
+            suppressionStore.insert(paths.map(normalizePath))
+        }
+    }
+
+    private nonisolated static func makeClearRecord(
+        userDefaultsClient: UserDefaultsClient,
+    ) -> @Sendable (String) -> Void {
+        { path in
+            var storage = loadStorage(userDefaultsClient: userDefaultsClient)
+            storage.removeValue(forKey: normalizePath(path))
+            saveStorage(storage, userDefaultsClient: userDefaultsClient)
+        }
+    }
+
+    private nonisolated static func makeRegisterCollection(
+        userDefaultsClient: UserDefaultsClient,
+    ) -> @Sendable (String, [String]) -> Void {
+        { path, relevanceRoots in
+            let normalizedPath = normalizePath(path)
+            var storage = loadStorage(userDefaultsClient: userDefaultsClient)
+            let existing = storage[normalizedPath]
+
+            storage[normalizedPath] = .init(
+                definitionFingerprint: existing?.definitionFingerprint ?? "",
+                relevanceRoots: normalizedRoots(relevanceRoots),
+                lastInvalidatedAt: nil,
+            )
+            saveStorage(storage, userDefaultsClient: userDefaultsClient)
+        }
+    }
+
+    private nonisolated static func makeConsumeInvalidation(
+        userDefaultsClient: UserDefaultsClient,
+    ) -> @Sendable (String) -> Bool {
+        { path in
+            let normalizedPath = normalizePath(path)
+            var storage = loadStorage(userDefaultsClient: userDefaultsClient)
+            guard let existing = storage[normalizedPath], existing.lastInvalidatedAt != nil else {
+                return false
+            }
+
+            storage[normalizedPath] = .init(
+                definitionFingerprint: existing.definitionFingerprint,
+                relevanceRoots: existing.relevanceRoots,
+                lastInvalidatedAt: nil,
+            )
+            saveStorage(storage, userDefaultsClient: userDefaultsClient)
+            return true
+        }
+    }
+
+    private nonisolated static func storageKey() -> String {
+        CollectionKeys.stalenessRecords
+    }
+
+    private nonisolated static func loadStorage(
+        userDefaultsClient: UserDefaultsClient,
+    ) -> [String: CollectionStalenessRecord] {
+        guard let data = userDefaultsClient.object(storageKey()) as? Data else { return [:] }
+
+        if let storage = try? PropertyListDecoder().decode([String: CollectionStalenessRecord].self, from: data) {
+            return storage.reduce(into: [:]) { result, entry in
+                result[normalizePath(entry.key)] = normalizedRecord(entry.value)
+            }
+        }
+
+        guard let legacyStorage = try? JSONDecoder().decode([String: LegacyCollectionStalenessRecord].self, from: data)
+        else {
+            return [:]
+        }
+
+        let migratedStorage = legacyStorage.reduce(into: [:]) { result, entry in
+            result[normalizePath(entry.key)] = normalizedRecord(entry.value)
+        }
+        saveStorage(migratedStorage, userDefaultsClient: userDefaultsClient)
+        return migratedStorage
+    }
+
+    private nonisolated static func saveStorage(
+        _ storage: [String: CollectionStalenessRecord],
+        userDefaultsClient: UserDefaultsClient,
+    ) {
+        let data = try? PropertyListEncoder().encode(storage)
+        userDefaultsClient.setObject(data, storageKey())
+    }
+
+    private nonisolated static func normalizedRecord(_ record: CollectionStalenessRecord) -> CollectionStalenessRecord {
+        .init(
+            definitionFingerprint: record.definitionFingerprint,
+            relevanceRoots: normalizedRoots(record.relevanceRoots),
+            lastInvalidatedAt: record.lastInvalidatedAt,
+        )
+    }
+
+    private nonisolated static func normalizedRecord(_ legacyRecord: LegacyCollectionStalenessRecord)
+        -> CollectionStalenessRecord
+    {
+        .init(
+            definitionFingerprint: "",
+            relevanceRoots: normalizedRoots(legacyRecord.scopes),
+            lastInvalidatedAt: legacyRecord.isInvalidated ? .distantPast : nil,
+        )
+    }
+
+    private nonisolated static func normalizedRoots(_ roots: [String]) -> [String] {
+        Array(Set(roots.map(normalizePath).filter { !$0.isEmpty })).sorted()
+    }
+
+    private nonisolated static func normalizePath(_ path: String) -> String {
+        guard !path.isEmpty else { return path }
+        return URL(fileURLWithPath: path).standardizedFileURL.path
+    }
+
+    private nonisolated static func affects(relevanceRoot: String, affectedPath: String) -> Bool {
+        let normalizedRoot = normalizePath(relevanceRoot)
+        let normalizedAffectedPath = normalizePath(affectedPath)
+        guard !normalizedRoot.isEmpty else { return false }
+
+        return normalizedAffectedPath == normalizedRoot
+            || (normalizedRoot == "/"
+                ? normalizedAffectedPath.hasPrefix("/")
+                : normalizedAffectedPath.hasPrefix(normalizedRoot + "/"))
+    }
+
+    private nonisolated static func isCollectionDocumentPath(_ changedPath: String, collectionPath: String) -> Bool {
+        if changedPath == collectionPath {
+            return true
+        }
+
+        let packagePrefix = collectionPath == "/" ? "/" : collectionPath + "/"
+        return changedPath.hasPrefix(packagePrefix)
+    }
 }
