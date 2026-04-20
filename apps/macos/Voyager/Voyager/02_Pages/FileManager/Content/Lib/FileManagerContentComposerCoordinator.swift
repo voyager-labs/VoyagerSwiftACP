@@ -343,6 +343,7 @@ func makeCollectionNavigation(state: FileManagerContentState) -> ContentPageColl
         sortKey: state.entryViewLayout.entryArrangements.sortKey,
         sortOrder: state.entryViewLayout.entryArrangements.sortOrder,
         viewLayout: state.entryViewLayout.mode,
+        compatibility: state.collectionSession.openedCompatibility,
     )
 }
 

@@ -327,6 +327,7 @@ private func handleNavigateToCollection(
     _ navigation: ContentPageCollectionNavigation,
     state: inout FileManagerWindowState,
 ) -> Effect<FileManagerWindowAction> {
+    state.content.collectionSession.openedCompatibility = navigation.compatibility
     applyCollectionNavigationState(navigation, state: &state)
     configureCollectionNavigationComposer(navigation, state: &state)
 

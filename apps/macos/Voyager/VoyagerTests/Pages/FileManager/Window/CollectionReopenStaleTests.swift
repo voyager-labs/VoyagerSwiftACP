@@ -194,6 +194,48 @@ final class CollectionReopenStaleTests: XCTestCase {
         XCTAssertNil(store.state.content.composer.lastSearchResponse)
         await store.finish()
     }
+
+    func testNavigateToCollectionRestoresOpenedCompatibilityFromHistoryNavigation() async {
+        let compatibility = CollectionFileCompatibilityMetadata(
+            sourceSchemaVersion: 2,
+            migrationPath: [.currentSchemaV2, .definitionFallbackFromMalformedSnapshot],
+            warnings: [.droppedMalformedSnapshot],
+            usedDefinitionFallback: true,
+            writeBackAllowed: false,
+            writeBackReason: .blockedDefinitionFallback,
+        )
+        let navigation = ContentPageCollectionNavigation(
+            kind: .file(url: URL(fileURLWithPath: "/tmp/history.voycoll"), name: "history"),
+            context: .init(query: "report", scopes: ["/tmp"], conditions: []),
+            sortKey: .name,
+            sortOrder: .ascending,
+            viewLayout: .list,
+            compatibility: compatibility,
+        )
+
+        let store = TestStore(initialState: FileManagerWindowState()) {
+            FileManagerFeature()
+        } withDependencies: {
+            $0.collectionAlertClient = .init(
+                showUnsavedNavigationAlert: { .save },
+                showCollectionOpenErrorAlert: { _, _ in },
+            )
+        }
+        store.exhaustivity = .off
+
+        await store.send(.navigation(.internal(.navigateToCollection(navigation)))) {
+            $0.content.collectionSession.openedCompatibility = compatibility
+            $0.content.collectionSession.baseline = .init(context: navigation.context)
+            $0.content.collectionContext = navigation.context
+            $0.content.composer.collectionContext = navigation.context
+            $0.content.composer.pendingSearchQuery = "report"
+            $0.content.composer.text = "report"
+            $0.content.composer.scopes = ["/tmp"]
+            $0.content.composer.conditions = []
+        }
+
+        XCTAssertEqual(store.state.content.collectionSession.openedCompatibility, compatibility)
+    }
 }
 
 @MainActor

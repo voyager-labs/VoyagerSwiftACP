@@ -201,6 +201,7 @@ func previousCollectionHistoryEntryForRefreshSupport(
         sortKey: state.entryViewLayout.entryArrangements.sortKey,
         sortOrder: state.entryViewLayout.entryArrangements.sortOrder,
         viewLayout: state.entryViewLayout.mode,
+        compatibility: state.collectionSession.openedCompatibility,
     )
     return ContentPageNavigationHistorySnapshot(
         navigationState: .collection(navigation),

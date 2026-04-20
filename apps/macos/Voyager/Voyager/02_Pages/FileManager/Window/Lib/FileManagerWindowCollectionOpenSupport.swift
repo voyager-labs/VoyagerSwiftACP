@@ -76,6 +76,7 @@ func makeSnapshotNavigation(
         sortKey: state.content.entryViewLayout.entryArrangements.sortKey,
         sortOrder: state.content.entryViewLayout.entryArrangements.sortOrder,
         viewLayout: state.content.entryViewLayout.mode,
+        compatibility: state.content.collectionSession.openedCompatibility,
     )
 }
 
