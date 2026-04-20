@@ -4,6 +4,14 @@ import SwiftUI
 
 import VoyagerFeaturesEntryOperations
 
+func showsToolbarRefreshButton(_ collectionStatus: ToolbarCollectionStatusViewState) -> Bool {
+    collectionStatus.showsRefreshAffordance
+}
+
+func isToolbarRefreshButtonEnabled(_ collectionStatus: ToolbarCollectionStatusViewState) -> Bool {
+    collectionStatus.isRefreshEnabled
+}
+
 struct ToolbarHistoryItem: Equatable {
     let iconSystemName: String
     let title: String
@@ -198,7 +206,7 @@ struct ToolbarView: View {
                 )
                 .buttonStyle(.borderless)
 
-                if viewStore.collectionStatus.showsRefreshAffordance {
+                if showsToolbarRefreshButton(viewStore.collectionStatus) {
                     toolbarRefreshButton(viewStore: viewStore)
                 }
 
@@ -283,12 +291,12 @@ struct ToolbarView: View {
             label: {
                 ToolbarHoverButtonLabel(
                     systemName: "arrow.clockwise",
-                    isEnabled: viewStore.collectionStatus.isRefreshEnabled,
+                    isEnabled: isToolbarRefreshButtonEnabled(viewStore.collectionStatus),
                     font: .system(size: 11, weight: .semibold),
                 )
             },
         )
         .buttonStyle(.borderless)
-        .disabled(!viewStore.collectionStatus.isRefreshEnabled)
+        .disabled(!isToolbarRefreshButtonEnabled(viewStore.collectionStatus))
     }
 }

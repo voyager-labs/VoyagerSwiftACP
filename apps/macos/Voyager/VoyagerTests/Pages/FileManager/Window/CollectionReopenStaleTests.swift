@@ -93,6 +93,8 @@ final class CollectionReopenStaleTests: XCTestCase {
 
         XCTAssertTrue(store.state.content.collectionSession.isStale)
         XCTAssertEqual(store.state.content.collectionSession.staleReason, .invalidatedLocally)
+        await assertCollectionModeNavigation(store: store)
+        XCTAssertTrue(store.state.content.entryViewLayout.isCollectionMode)
         await store.finish()
     }
 
@@ -186,6 +188,8 @@ final class CollectionReopenStaleTests: XCTestCase {
         }
 
         XCTAssertTrue(store.state.content.collectionSession.isStale)
+        await assertCollectionModeNavigation(store: store)
+        XCTAssertTrue(store.state.content.entryViewLayout.isCollectionMode)
         XCTAssertNil(store.state.content.composer.lastFiltersResponse)
         XCTAssertNil(store.state.content.composer.lastSearchResponse)
         await store.finish()
@@ -260,4 +264,28 @@ private func makeCollectionLoadResult(
                 : .blockedLegacyVersionUpgrade,
         ),
     )
+}
+
+@MainActor
+private func assertCollectionModeNavigation(
+    store: TestStore<FileManagerWindowState, FileManagerWindowAction>,
+) async {
+    await store.receive {
+        guard case .content(.internal(.requestNavigation(.internal(.setNavigationState(.collection))))) = $0 else {
+            return false
+        }
+        return true
+    }
+    await store.receive {
+        guard case .content(.internal(.applyNavigationState(.collection))) = $0 else {
+            return false
+        }
+        return true
+    }
+    await store.receive {
+        guard case .content(.entryViewLayout(.internal(.setCollectionMode(true)))) = $0 else {
+            return false
+        }
+        return true
+    }
 }

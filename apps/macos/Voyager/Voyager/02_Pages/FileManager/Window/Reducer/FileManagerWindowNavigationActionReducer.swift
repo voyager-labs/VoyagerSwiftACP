@@ -379,6 +379,10 @@ private func handleCollectionFileLoadedSuccess(
 
     var effects: [Effect<FileManagerWindowAction>] = []
 
+    if isStale, let navigation = openContext.navigation {
+        effects.append(contentsOf: makeStaleNavigationRestoreEffects(navigation: navigation))
+    }
+
     if !isStale {
         effects.append(
             openContext.trimmedQuery
@@ -394,6 +398,15 @@ private func handleCollectionFileLoadedSuccess(
     }
 
     return effects.isEmpty ? .none : .merge(effects)
+}
+
+private func makeStaleNavigationRestoreEffects(
+    navigation: ContentPageCollectionNavigation,
+) -> [Effect<FileManagerWindowAction>] {
+    [
+        .send(.content(.internal(.requestNavigation(.internal(.setNavigationState(.collection(navigation))))))),
+        .send(.content(.internal(.applyNavigationState(.collection(navigation))))),
+    ]
 }
 
 private struct CollectionOpenEnvironment {
