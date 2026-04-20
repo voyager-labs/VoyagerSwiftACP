@@ -1,5 +1,5 @@
 ---
-name: voyager-linear-issue-author
+name: linear-issue-author
 description: "Draft Linear feature-implementation issue documents from Voyager SSOT tables. Use when converting one or more feature_id values from PRODUCT/04_FEATURE_INVENTORY into ready-to-paste Linear issue markdown with scope, requirements, and Given/When/Then acceptance criteria. Triggers: Linear issue, 리니어 이슈, feature_id, implementation issue."
 ---
 
@@ -12,7 +12,7 @@ Generate implementation issue drafts from current Voyager feature inventory data
 - `PRODUCT/04_FEATURE_INVENTORY/FEATURES/data.tsv`
 - `PRODUCT/04_FEATURE_INVENTORY/INTERACTIONS/data.tsv`
 - `PRODUCT/06_USE_CASES/*.md`
-- `.agents/skills/voyager-linear-issue-author/templates/TEMPLATE-feature-implementation.md`
+- `.agents/skills/voyager-product-owner/author/linear-issue/templates/TEMPLATE-feature-implementation.md`
 
 ## Workflow
 
@@ -23,13 +23,13 @@ Generate implementation issue drafts from current Voyager feature inventory data
 2. Generate draft markdown to stdout
 
 ```bash
-python3 .agents/skills/voyager-linear-issue-author/scripts/draft_linear_issue.py EVM-002
+python3 .agents/skills/voyager-product-owner/author/linear-issue/scripts/draft_linear_issue.py EVM-002
 ```
 
 3. Batch-generate files into an explicit scratch/output directory only when needed
 
 ```bash
-python3 .agents/skills/voyager-linear-issue-author/scripts/draft_linear_issue.py EVM-002 EAC-005 --output-dir /tmp/voyager-linear-issues --overwrite
+python3 .agents/skills/voyager-product-owner/author/linear-issue/scripts/draft_linear_issue.py EVM-002 EAC-005 --output-dir /tmp/voyager-linear-issues --overwrite
 ```
 
 4. Review and refine

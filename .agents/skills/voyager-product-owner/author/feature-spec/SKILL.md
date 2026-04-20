@@ -1,5 +1,5 @@
 ---
-name: voyager-feature-spec-author
+name: feature-spec-author
 description: "Draft and concretize Voyager FEATURE_SPEC markdown documents from INVENTORY rows into the fixed interaction specification format, using YAML frontmatter for metadata and linting for completeness and placeholder quality."
 ---
 
@@ -25,13 +25,14 @@ This skill is useful when you need to:
 - Keep `SKILL.md` light; put detailed writing rules and contract/consistency workflow in the reference files.
 - Follow the guide for shortcut notation, interaction links, ambiguity avoidance, exact UI labels, and AI-marker handling.
 - Use the contract/consistency workflow when deciding whether to create category-level `contracts/*.toml` or `flows/*.md`.
+- Keep category contracts simple: prefer `contract` + `vocabulary` + `policy/constraints` + `status/ownership/transitions`, and avoid extra alias layers such as `object_terms` unless the user explicitly asks for them.
 
 ## Source of Truths
 
 - `META/feature_specs_writing.md`
-- `.agents/skills/voyager-feature-spec-author/references/TEMPLATE-feature-spec.md` (actual generation template)
-- `.agents/skills/voyager-feature-spec-author/references/feature-spec-guide.md` (guide/reference)
-- `.agents/skills/voyager-feature-spec-author/references/contract-consistency-workflow.md` (contracts/flows workflow)
+- `.agents/skills/voyager-product-owner/author/feature-spec/references/TEMPLATE-feature-spec.md` (actual generation template)
+- `.agents/skills/voyager-product-owner/author/feature-spec/references/feature-spec-guide.md` (guide/reference)
+- `.agents/skills/voyager-product-owner/author/feature-spec/references/contract-consistency-workflow.md` (contracts/flows workflow)
 - `PRODUCT/04_FEATURE_INVENTORY/INTERACTIONS/data.tsv`
 - `PRODUCT/04_FEATURE_INVENTORY/FEATURES/data.tsv`
 
@@ -39,20 +40,20 @@ This skill is useful when you need to:
 
 Before writing or refactoring a spec body, use the reference files for the document contract and writing rules:
 
-- `.agents/skills/voyager-feature-spec-author/references/TEMPLATE-feature-spec.md`
-- `.agents/skills/voyager-feature-spec-author/references/feature-spec-guide.md`
-- `.agents/skills/voyager-feature-spec-author/references/contract-consistency-workflow.md` when shared `contracts/` or `flows/` may be needed
+- `.agents/skills/voyager-product-owner/author/feature-spec/references/TEMPLATE-feature-spec.md`
+- `.agents/skills/voyager-product-owner/author/feature-spec/references/feature-spec-guide.md`
+- `.agents/skills/voyager-product-owner/author/feature-spec/references/contract-consistency-workflow.md` when shared `contracts/` or `flows/` may be needed
 
 ### 1) Generate a concrete draft from `interaction_id`
 
 ```bash
-python3 .agents/skills/voyager-feature-spec-author/scripts/generate_feature_spec.py <interaction_id>
+python3 .agents/skills/voyager-product-owner/author/feature-spec/scripts/generate_feature_spec.py <interaction_id>
 ```
 
 For batch generation:
 
 ```bash
-python3 .agents/skills/voyager-feature-spec-author/scripts/generate_feature_spec.py \
+python3 .agents/skills/voyager-product-owner/author/feature-spec/scripts/generate_feature_spec.py \
   CDA-003-show_retrieval_results \
   FMW-001-open_new_file_manager_window \
   --output-dir PRODUCT/05_FEATURE_SPECS/_concrete-drafts \
@@ -69,13 +70,13 @@ Behavior:
 ### 2) Lint existing specs
 
 ```bash
-python3 .agents/skills/voyager-feature-spec-author/scripts/lint_feature_spec.py PRODUCT/05_FEATURE_SPECS/.../*.md
+python3 .agents/skills/voyager-product-owner/author/feature-spec/scripts/lint_feature_spec.py PRODUCT/05_FEATURE_SPECS/.../*.md
 ```
 
 Useful with strict mode:
 
 ```bash
-python3 .agents/skills/voyager-feature-spec-author/scripts/lint_feature_spec.py --strict PRODUCT/05_FEATURE_SPECS/cda/CDA-003-handle_retrieve_intent/*.md
+python3 .agents/skills/voyager-product-owner/author/feature-spec/scripts/lint_feature_spec.py --strict PRODUCT/05_FEATURE_SPECS/cda/CDA-003-handle_retrieve_intent/*.md
 ```
 
 ### 3) Review and refine

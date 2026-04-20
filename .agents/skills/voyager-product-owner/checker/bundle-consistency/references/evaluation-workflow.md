@@ -14,7 +14,7 @@ This is the default evaluation loop for categories that already have contract fi
 ## Default Command
 
 ```bash
-python3 .agents/skills/voyager-fi-ia-fs-consistency-checker/scripts/evaluate_category_consistency.py CBW
+python3 .agents/skills/voyager-product-owner/checker/bundle-consistency/scripts/evaluate_category_consistency.py CBW
 ```
 
 This command aggregates:
@@ -27,13 +27,13 @@ This command aggregates:
 For stable regression checks against managed fixtures, run:
 
 ```bash
-python3 .agents/skills/voyager-fi-ia-fs-consistency-checker/scripts/run_skill_evals.py
+python3 .agents/skills/voyager-product-owner/checker/bundle-consistency/scripts/run_skill_evals.py
 ```
 
 Optional JSON output:
 
 ```bash
-python3 .agents/skills/voyager-fi-ia-fs-consistency-checker/scripts/run_skill_evals.py \
+python3 .agents/skills/voyager-product-owner/checker/bundle-consistency/scripts/run_skill_evals.py \
   --output /tmp/vfi-checker-evals.json
 ```
 

@@ -2,7 +2,7 @@
 
 This document explains how to write or refactor `PRODUCT/05_FEATURE_SPECS` documents.
 
-- Use `.agents/skills/voyager-feature-spec-author/references/TEMPLATE-feature-spec.md` as the actual output template.
+- Use `.agents/skills/voyager-product-owner/author/feature-spec/references/TEMPLATE-feature-spec.md` as the actual output template.
 - Store metadata in YAML frontmatter, not in a markdown table.
 - This guide should explain the contract and writing rules, not duplicate the template body.
 - Guide prose should be written in English.
@@ -108,6 +108,15 @@ Writing rules:
 - prefer keyed subtables over repeated array-of-table records when the entry is naturally keyed by an identifier
 - use exact object names and exact state names
 - keep the file machine-readable first; avoid prose-heavy commentary
+- keep the structure minimal
+    - start with `primary_object` and add `secondary_objects` only when they are true core objects
+    - define meanings in `vocabulary`
+    - do not add extra alias layers such as `object_terms`, `relation_terms`, or similar unless the user explicitly needs synonym normalization
+    - if a term is not a core object but a directional or relational concept, keep it as a plain vocabulary term instead of elevating it to an object list
+- prefer product-facing object names over invented technical abstractions
+    - if `request` and `response` are already sufficient, keep them
+    - do not introduce artificial execution-unit terms like `assistant_run` unless the user explicitly wants that abstraction
+    - when conversation structure matters, prefer `turn` for `request + response` grouping and `chat_session` for the session container
 
 Recommended sections:
 
@@ -116,12 +125,15 @@ Recommended sections:
 id = "cbw.request_lifecycle"
 category = "CBW"
 primary_object = "request"
+secondary_objects = ["turn", "response"]
 
 [vocabulary]
 request = "..."
+response = "..."
+turn = "..."
 
 [constraints]
-single_processing_run_per_request = true
+single_processing_response_per_request = true
 
 [user_visible_states]
 allowed = ["processing", "completed", "failed", "cancelled"]
@@ -135,6 +147,7 @@ exits_to = ["completed", "failed", "cancelled"]
 [ownership."CBW-001-submit_chat_request"]
 reads = []
 writes = ["processing"]
+creates_objects = ["request", "turn", "response"]
 
 [transitions.processing_to_completed]
 from = "processing"

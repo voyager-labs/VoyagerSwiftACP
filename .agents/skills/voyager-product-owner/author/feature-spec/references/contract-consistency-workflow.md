@@ -48,6 +48,15 @@ Rules:
 - use exact object names and exact state names
 - prefer keyed subtables when entries are naturally keyed by an identifier such as `interaction_id`
 - do not put long explanatory prose here
+- keep the schema shallow unless the user explicitly needs more structure
+    - prefer `contract`, `vocabulary`, `policy` or `constraints`, `user_visible_states`, `status`, `ownership`, and `transitions`
+    - avoid `object_terms`, `relation_terms`, and similar alias registries unless synonym normalization is an explicit requirement
+- only list true core objects in `primary_object` and `secondary_objects`
+    - if a term is a directional or relational concept such as `downstream_turn`, keep it in `vocabulary` only
+- prefer product-native terms over invented execution abstractions
+    - keep `request` and `response` when they already model the product correctly
+    - use `turn` when the contract needs a unit that groups one `request` with its connected `response`
+    - use `chat_session` instead of `conversation_session` for the session container in CBW docs unless the user explicitly requests otherwise
 
 Recommended structure:
 
@@ -56,12 +65,15 @@ Recommended structure:
 id = "cbw.request_lifecycle"
 category = "CBW"
 primary_object = "request"
+secondary_objects = ["turn", "response"]
 
 [vocabulary]
 request = "..."
+response = "..."
+turn = "..."
 
 [constraints]
-single_processing_run_per_request = true
+single_processing_response_per_request = true
 
 [user_visible_states]
 allowed = ["processing", "completed", "failed", "cancelled"]
@@ -141,13 +153,13 @@ When a category already has `contracts/*.toml`, keep the contract and interactio
 3. Run the contract consistency checker.
 
 ```bash
-python3 .agents/skills/voyager-fi-ia-fs-consistency-checker/scripts/check_contract_consistency.py CBW
+python3 .agents/skills/voyager-product-owner/checker/bundle-consistency/scripts/check_contract_consistency.py CBW
 ```
 
 4. Run the existing FI/IA/FS bundle checker for the affected features.
 
 ```bash
-python3 .agents/skills/voyager-fi-ia-fs-consistency-checker/scripts/check_feature_bundle.py CBW-001
+python3 .agents/skills/voyager-product-owner/checker/bundle-consistency/scripts/check_feature_bundle.py CBW-001
 ```
 
 5. Resolve warnings before widening the rollout.

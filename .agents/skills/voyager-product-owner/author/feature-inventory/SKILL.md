@@ -1,5 +1,5 @@
 ---
-name: voyager-feature-inventory-author
+name: feature-inventory-author
 description: "Draft and refine new FEATURE/INTERACTION inventory rows in Voyager documentation, matching existing TSV conventions and document tone. Use when creating a new feature (allocate ids, draft Korean descriptions with AI draft markers, suggest related UI/INTERACTIONS/FEATURES) and when expanding a feature with more concrete interactions/relationships."
 ---
 
@@ -15,7 +15,7 @@ This skill writes and refines `FI` rows in:
 
 This skill is for "authoring" tasks (drafting new rows, allocating IDs, suggesting relationships). For lookups and validation, use the companion skill:
 
-- `.agents/skills/voyager-feature-inventory/voyager-feature-inventory-checker/`
+- `.agents/skills/voyager-product-owner/checker/feature-inventory/`
     - Deterministic checks: `scripts/check_feature.py`
     - Aggregated search: `scripts/vfi.py`
 
@@ -104,5 +104,5 @@ Do not apply changes unless the user explicitly asks to update the TSV files.
 Generate a draft FEATURES row (no file writes):
 
 ```bash
-python3 .agents/skills/voyager-feature-inventory/voyager-feature-inventory-author/scripts/draft_feature_row.py FMW "File Manager Window" "My New Feature" --release-phase BACKLOG --status 드래프트 --related-ui file_manager_window
+python3 .agents/skills/voyager-product-owner/author/feature-inventory/scripts/draft_feature_row.py FMW "File Manager Window" "My New Feature" --release-phase BACKLOG --status 드래프트 --related-ui file_manager_window
 ```

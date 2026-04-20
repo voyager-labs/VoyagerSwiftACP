@@ -1,5 +1,5 @@
 ---
-name: voyager-feature-inventory-checker
+name: feature-inventory-checker
 description: 'Look up and validate Voyager FEATURE_INVENTORY entries (PRODUCT/04_FEATURE_INVENTORY/*). Use for (1) exact feature_id checks, and (2) impact discovery when users ask "which features need updates" from Korean/English requirement text. Triggers: FEATURE_INVENTORY, 기능 인벤토리, 피쳐 인벤토리, feature_id, related features, 영향 범위, 변경 필요한 feature.'
 ---
 
@@ -9,7 +9,7 @@ Check a specific feature entry in `PRODUCT/04_FEATURE_INVENTORY/FEATURES/data.ts
 
 In this repo, `FI` means `Feature Inventory`.
 This skill validates FI rows only.
-If the user wants one feature bundle checked across `FI` + `IA (Information Architecture)` + `FS (Feature Specs)`, use `voyager-fi-ia-fs-consistency-checker` instead.
+If the user wants one feature bundle checked across `FI` + `IA (Information Architecture)` + `FS (Feature Specs)`, use `fi-ia-fs-consistency-checker` instead.
 
 This skill supports both:
 
@@ -18,19 +18,19 @@ This skill supports both:
 
 For cross-document consistency work spanning `FI` + `IA` + `FS`, do not stretch this skill beyond row-level inventory validation. Use:
 
-- `voyager-fi-ia-fs-consistency-checker`
+- `fi-ia-fs-consistency-checker`
 
 ## Setup (Polars)
 
 This skill installs Polars into a skill-scoped virtualenv:
 
-- venv: `.agents/skills/.venvs/voyager-feature-inventory-checker/`
-- deps: `.agents/skills/voyager-feature-inventory/voyager-feature-inventory-checker/requirements.txt`
+- venv: `.agents/skills/.venvs/feature-inventory-checker/`
+- deps: `.agents/skills/voyager-product-owner/checker/feature-inventory/requirements.txt`
 
 One-time setup:
 
 ```bash
-python3 .agents/skills/voyager-feature-inventory/voyager-feature-inventory-checker/scripts/vfi.py setup
+python3 .agents/skills/voyager-product-owner/checker/feature-inventory/scripts/vfi.py setup
 ```
 
 `show`/`search` commands will also auto-bootstrap the venv if needed.
@@ -40,25 +40,25 @@ python3 .agents/skills/voyager-feature-inventory/voyager-feature-inventory-check
 Show a single feature (Polars):
 
 ```bash
-python3 .agents/skills/voyager-feature-inventory/voyager-feature-inventory-checker/scripts/vfi.py show FMW-001
+python3 .agents/skills/voyager-product-owner/checker/feature-inventory/scripts/vfi.py show FMW-001
 ```
 
 Search across FEATURES + INTERACTIONS (Polars):
 
 ```bash
-python3 .agents/skills/voyager-feature-inventory/voyager-feature-inventory-checker/scripts/vfi.py search "Navigate Pages" --scope all
+python3 .agents/skills/voyager-product-owner/checker/feature-inventory/scripts/vfi.py search "Navigate Pages" --scope all
 ```
 
 Deterministic check (stdlib, no deps):
 
 ```bash
-python3 .agents/skills/voyager-feature-inventory/voyager-feature-inventory-checker/scripts/check_feature.py FMW-001
+python3 .agents/skills/voyager-product-owner/checker/feature-inventory/scripts/check_feature.py FMW-001
 ```
 
 Contains match check (title/description/feature_id substring):
 
 ```bash
-python3 .agents/skills/voyager-feature-inventory/voyager-feature-inventory-checker/scripts/check_feature.py "System Properties" --match contains
+python3 .agents/skills/voyager-product-owner/checker/feature-inventory/scripts/check_feature.py "System Properties" --match contains
 ```
 
 ## Operating Modes
@@ -96,11 +96,11 @@ Important: this is not true vector semantic search. It is high-recall discovery 
 Recommended command pattern:
 
 ```bash
-python3 .agents/skills/voyager-feature-inventory/voyager-feature-inventory-checker/scripts/vfi.py search "결정론" --scope all --limit 80
-python3 .agents/skills/voyager-feature-inventory/voyager-feature-inventory-checker/scripts/vfi.py search "deterministic" --scope all --limit 80
-python3 .agents/skills/voyager-feature-inventory/voyager-feature-inventory-checker/scripts/vfi.py search "시스템 프로퍼티" --scope all --limit 80
-python3 .agents/skills/voyager-feature-inventory/voyager-feature-inventory-checker/scripts/vfi.py search "system property" --scope all --limit 80
-python3 .agents/skills/voyager-feature-inventory/voyager-feature-inventory-checker/scripts/check_feature.py "System Properties" --match contains
+python3 .agents/skills/voyager-product-owner/checker/feature-inventory/scripts/vfi.py search "결정론" --scope all --limit 80
+python3 .agents/skills/voyager-product-owner/checker/feature-inventory/scripts/vfi.py search "deterministic" --scope all --limit 80
+python3 .agents/skills/voyager-product-owner/checker/feature-inventory/scripts/vfi.py search "시스템 프로퍼티" --scope all --limit 80
+python3 .agents/skills/voyager-product-owner/checker/feature-inventory/scripts/vfi.py search "system property" --scope all --limit 80
+python3 .agents/skills/voyager-product-owner/checker/feature-inventory/scripts/check_feature.py "System Properties" --match contains
 ```
 
 ## What This Checks (check_feature.py)
@@ -141,7 +141,7 @@ python3 .agents/skills/voyager-feature-inventory/voyager-feature-inventory-check
 If your local working tree still uses the older headers, migrate deterministically with:
 
 ```bash
-python3 .agents/skills/voyager-feature-inventory/voyager-feature-inventory-checker/scripts/migrate_inventory_schema_v2.py
+python3 .agents/skills/voyager-product-owner/checker/feature-inventory/scripts/migrate_inventory_schema_v2.py
 ```
 
 This adds:
@@ -154,13 +154,13 @@ This adds:
 If you see noisy diffs caused by accidental spaces (ex: `- `, NBSP, padding in key columns), run:
 
 ```bash
-python3 .agents/skills/voyager-feature-inventory/voyager-feature-inventory-checker/scripts/format_tsv_whitespace.py PRODUCT/04_FEATURE_INVENTORY/INTERACTIONS/data.tsv
+python3 .agents/skills/voyager-product-owner/checker/feature-inventory/scripts/format_tsv_whitespace.py PRODUCT/04_FEATURE_INVENTORY/INTERACTIONS/data.tsv
 ```
 
 Apply in-place:
 
 ```bash
-python3 .agents/skills/voyager-feature-inventory/voyager-feature-inventory-checker/scripts/format_tsv_whitespace.py --write PRODUCT/04_FEATURE_INVENTORY/INTERACTIONS/data.tsv
+python3 .agents/skills/voyager-product-owner/checker/feature-inventory/scripts/format_tsv_whitespace.py --write PRODUCT/04_FEATURE_INVENTORY/INTERACTIONS/data.tsv
 ```
 
 ## Notes

@@ -1,5 +1,5 @@
 ---
-name: voyager-fi-ia-fs-consistency-checker
+name: fi-ia-fs-consistency-checker
 description: "Audit and align Voyager feature documentation for a single feature_id across FI (Feature Inventory), IA (Information Architecture), and FS (Feature Specs). Use whenever the user asks to review, audit, sync, or fix a feature bundle for 정합성, mismatch, drift, stale spec metadata, or \"FI/IA/FS 맞춰줘\", especially when FEATURES, INTERACTIONS, WINDOW_STRUCTURE, and FEATURE_SPEC markdown need to be checked together instead of row-by-row."
 ---
 
@@ -22,12 +22,12 @@ This skill exists for cross-document consistency work across those three documen
 
 Reference workflows:
 
-- `.agents/skills/voyager-fi-ia-fs-consistency-checker/references/evaluation-workflow.md`
+- `.agents/skills/voyager-product-owner/checker/bundle-consistency/references/evaluation-workflow.md`
 
 Do not use this skill for drafting brand new inventory rows from scratch. For authoring, use:
 
-- `voyager-feature-inventory-author`
-- `voyager-feature-spec-author`
+- `feature-inventory-author`
+- `feature-spec-author`
 
 ## What This Skill Optimizes For
 
@@ -55,7 +55,7 @@ Treat these as **out of scope unless the user asks**:
 ### 1. Run deterministic audit first
 
 ```bash
-python3 .agents/skills/voyager-fi-ia-fs-consistency-checker/scripts/check_feature_bundle.py SET-007
+python3 .agents/skills/voyager-product-owner/checker/bundle-consistency/scripts/check_feature_bundle.py SET-007
 ```
 
 This script audits one `feature_id` bundle across FI, IA, and FS.
@@ -63,7 +63,7 @@ This script audits one `feature_id` bundle across FI, IA, and FS.
 If the category has machine-readable contracts, run the contract checker first:
 
 ```bash
-python3 .agents/skills/voyager-fi-ia-fs-consistency-checker/scripts/check_contract_consistency.py CBW
+python3 .agents/skills/voyager-product-owner/checker/bundle-consistency/scripts/check_contract_consistency.py CBW
 ```
 
 This script audits category-level `contracts/*.toml` against the corresponding interaction specs.
@@ -71,13 +71,13 @@ This script audits category-level `contracts/*.toml` against the corresponding i
 For a repeatable category-wide evaluation pass, use:
 
 ```bash
-python3 .agents/skills/voyager-fi-ia-fs-consistency-checker/scripts/evaluate_category_consistency.py CBW
+python3 .agents/skills/voyager-product-owner/checker/bundle-consistency/scripts/evaluate_category_consistency.py CBW
 ```
 
 For stable regression evals against managed fixtures, use:
 
 ```bash
-python3 .agents/skills/voyager-fi-ia-fs-consistency-checker/scripts/run_skill_evals.py
+python3 .agents/skills/voyager-product-owner/checker/bundle-consistency/scripts/run_skill_evals.py
 ```
 
 ### 2. Read the output by severity
@@ -102,7 +102,7 @@ Important limit:
 Use write mode only after reading the audit once:
 
 ```bash
-python3 .agents/skills/voyager-fi-ia-fs-consistency-checker/scripts/check_feature_bundle.py SET-007 --write
+python3 .agents/skills/voyager-product-owner/checker/bundle-consistency/scripts/check_feature_bundle.py SET-007 --write
 ```
 
 `--write` only syncs deterministic FEATURE_SPEC content:
@@ -117,7 +117,7 @@ It does **not** invent missing product behavior or rewrite body sections.
 Use `--json` when another tool or script needs a structured result:
 
 ```bash
-python3 .agents/skills/voyager-fi-ia-fs-consistency-checker/scripts/check_feature_bundle.py SET-007 --json
+python3 .agents/skills/voyager-product-owner/checker/bundle-consistency/scripts/check_feature_bundle.py SET-007 --json
 ```
 
 ### 4. If FEATURE_SPEC files are missing, generate them
@@ -125,7 +125,7 @@ python3 .agents/skills/voyager-fi-ia-fs-consistency-checker/scripts/check_featur
 Use the feature spec author's generator:
 
 ```bash
-python3 .agents/skills/voyager-feature-spec-author/scripts/generate_feature_spec.py SET-007-show_ai_provider_list
+python3 .agents/skills/voyager-product-owner/author/feature-spec/scripts/generate_feature_spec.py SET-007-show_ai_provider_list
 ```
 
 Generate only the missing specs, then rerun the bundle checker.
@@ -151,8 +151,8 @@ If the user explicitly says an FS long-text field has been human-reviewed and it
 Always rerun the bundle checker and lint any touched FEATURE_SPEC files:
 
 ```bash
-python3 .agents/skills/voyager-fi-ia-fs-consistency-checker/scripts/check_feature_bundle.py SET-007
-python3 .agents/skills/voyager-feature-spec-author/scripts/lint_feature_spec.py --strict PRODUCT/05_FEATURE_SPECS/set/SET-007-manage_ai_connections/*.md
+python3 .agents/skills/voyager-product-owner/checker/bundle-consistency/scripts/check_feature_bundle.py SET-007
+python3 .agents/skills/voyager-product-owner/author/feature-spec/scripts/lint_feature_spec.py --strict PRODUCT/05_FEATURE_SPECS/set/SET-007-manage_ai_connections/*.md
 ```
 
 ## Deterministic Rules Enforced By The Script
