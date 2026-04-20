@@ -82,6 +82,12 @@ enum VoyagerCollectionFileCompatibilityOwner {
         let usedDefinitionFallback: Bool
     }
 
+    private struct DecodedSnapshotPairDecision {
+        let file: VoyagerCollectionFile
+        let warning: CollectionFileCompatibilityWarning?
+        let usedDefinitionFallback: Bool
+    }
+
     static func decode(
         _ data: Data,
         containerFormat: CollectionFileContainerFormat,
@@ -105,7 +111,8 @@ enum VoyagerCollectionFileCompatibilityOwner {
 
         do {
             let decodedFile = try PropertyListDecoder().decode(VoyagerCollectionFile.self, from: data)
-            let file = normalizeForRead(decodedFile, schemaProbe: schemaProbe)
+            let snapshotDecision = evaluateDecodedSnapshotPair(decodedFile)
+            let file = normalizeForRead(snapshotDecision.file, schemaProbe: schemaProbe)
             return .init(
                 file: file,
                 containerFormat: containerFormat,
@@ -113,14 +120,17 @@ enum VoyagerCollectionFileCompatibilityOwner {
                     sourceSchemaVersion: schemaProbe.sourceSchemaVersion,
                     migrationPath: migrationPath(
                         schemaProbe: schemaProbe,
-                        warning: nil,
+                        warning: snapshotDecision.warning,
                     ),
-                    warnings: [],
-                    usedDefinitionFallback: false,
-                    writeBackAllowed: schemaProbe.sourceSchemaVersion == VoyagerCollectionFile.currentSchemaVersion,
-                    writeBackReason: schemaProbe.sourceSchemaVersion == VoyagerCollectionFile.currentSchemaVersion
-                        ? .allowed
-                        : .blockedLegacyVersionUpgrade,
+                    warnings: snapshotDecision.warning.map { [$0] } ?? [],
+                    usedDefinitionFallback: snapshotDecision.usedDefinitionFallback,
+                    writeBackAllowed: snapshotDecision.usedDefinitionFallback == false
+                        && schemaProbe.sourceSchemaVersion == VoyagerCollectionFile.currentSchemaVersion,
+                    writeBackReason: writeBackReason(
+                        schemaVersion: schemaProbe.effectiveSchemaVersion,
+                        sourceSchemaVersion: schemaProbe.sourceSchemaVersion,
+                        usedDefinitionFallback: snapshotDecision.usedDefinitionFallback,
+                    ),
                 ),
             )
         } catch {
@@ -290,6 +300,34 @@ enum VoyagerCollectionFileCompatibilityOwner {
         }
 
         return normalizeForSave(file)
+    }
+
+    private static func evaluateDecodedSnapshotPair(_ file: VoyagerCollectionFile) -> DecodedSnapshotPairDecision {
+        let hasSnapshot = file.snapshot != nil
+        let hasSnapshotMeta = file.snapshotMeta != nil
+
+        guard hasSnapshot != hasSnapshotMeta else {
+            return .init(file: file, warning: nil, usedDefinitionFallback: false)
+        }
+
+        let normalized = VoyagerCollectionFile(
+            schemaVersion: file.schemaVersion,
+            id: file.id,
+            name: file.name,
+            createdAt: file.createdAt,
+            updatedAt: file.updatedAt,
+            query: file.query,
+            scopes: file.scopes,
+            conditions: file.conditions,
+            snapshot: nil,
+            snapshotMeta: nil,
+            appVersion: file.appVersion,
+        )
+        return .init(
+            file: normalized,
+            warning: .droppedIncompleteSnapshotPair,
+            usedDefinitionFallback: true,
+        )
     }
 
     private static func decodeSnapshotPair(from payload: CompatibilityPayload) -> SnapshotPairDecision {

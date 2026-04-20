@@ -53,6 +53,19 @@ final class CollectionFileCompatibilityTests: XCTestCase {
         XCTAssertNil(result.file.snapshotMeta)
     }
 
+    func testCompatibilityOwnerDropsIncompleteSnapshotPairOnDirectDecodeSuccessPath() throws {
+        let data = try makeBinaryPlist(makeSnapshotOnlyPayload())
+
+        let result = try VoyagerCollectionFileCompatibilityOwner.decode(data, containerFormat: .package)
+
+        XCTAssertTrue(result.compatibility.usedDefinitionFallback)
+        XCTAssertEqual(result.compatibility.warnings, [.droppedIncompleteSnapshotPair])
+        XCTAssertFalse(result.compatibility.writeBackAllowed)
+        XCTAssertEqual(result.compatibility.writeBackReason, .blockedDefinitionFallback)
+        XCTAssertNil(result.file.snapshot)
+        XCTAssertNil(result.file.snapshotMeta)
+    }
+
     func testCompatibilityOwnerTreatsMissingSchemaAsLegacySingleFileOnly() throws {
         let data = try makeBinaryPlist(makeLegacyNoSchemaPayload())
 
