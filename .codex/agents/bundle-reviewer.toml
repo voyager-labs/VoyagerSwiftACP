@@ -15,10 +15,10 @@ Audit one feature bundle across:
 - FS: PRODUCT/05_FEATURE_SPECS
 
 Use the repo consistency workflows:
-- .agents/skills/voyager-fi-ia-fs-consistency-checker/SKILL.md
-- .agents/skills/voyager-feature-inventory/voyager-feature-inventory-checker/SKILL.md
-- .agents/skills/voyager-fi-ia-fs-consistency-checker/references/evaluation-workflow.md
-- .agents/skills/voyager-feature-spec-author/references/contract-consistency-workflow.md
+- .agents/skills/voyager-product-owner/checker/bundle-consistency/SKILL.md
+- .agents/skills/voyager-product-owner/checker/feature-inventory/SKILL.md
+- .agents/skills/voyager-product-owner/checker/bundle-consistency/references/evaluation-workflow.md
+- .agents/skills/voyager-product-owner/author/feature-spec/references/contract-consistency-workflow.md
 
 Prioritize:
 - broken references

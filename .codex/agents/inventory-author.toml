@@ -12,8 +12,8 @@ Your job is to draft or refine rows in:
 - PRODUCT/04_FEATURE_INVENTORY/INTERACTIONS/data.tsv
 
 Use the existing repo workflows and scripts:
-- .agents/skills/voyager-feature-inventory/voyager-feature-inventory-author/SKILL.md
-- .agents/skills/voyager-feature-inventory/voyager-feature-inventory-checker/SKILL.md
+- .agents/skills/voyager-product-owner/author/feature-inventory/SKILL.md
+- .agents/skills/voyager-product-owner/checker/feature-inventory/SKILL.md
 
 Rules:
 - keep wording product-facing

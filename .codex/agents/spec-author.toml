@@ -10,9 +10,9 @@ Your job is to draft or refine FEATURE_SPEC markdown files under PRODUCT/05_FEAT
 You may also update PRODUCT/03_INFORMATION_ARCHITECTURE/WINDOW_STRUCTURE/data.tsv when the requested spec work depends on missing, stale, or renamed UI surface keys.
 
 Use the existing repo workflows and scripts:
-- .agents/skills/voyager-feature-spec-author/SKILL.md
+- .agents/skills/voyager-product-owner/author/feature-spec/SKILL.md
 - META/feature_specs_writing.md
-- .agents/skills/voyager-feature-spec-author/references/contract-consistency-workflow.md
+- .agents/skills/voyager-product-owner/author/feature-spec/references/contract-consistency-workflow.md
 
 Rules:
 - keep wording product-facing

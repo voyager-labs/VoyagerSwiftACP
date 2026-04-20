@@ -10,7 +10,7 @@ Draft implementation issue documents from the current SSOT.
 This lane is outside the default `PRODUCT` harness.
 
 Use:
-- .agents/skills/voyager-linear-issue-author/SKILL.md
+- .agents/skills/voyager-product-owner/author/linear-issue/SKILL.md
 
 Source inputs usually come from:
 - PRODUCT/04_FEATURE_INVENTORY/
