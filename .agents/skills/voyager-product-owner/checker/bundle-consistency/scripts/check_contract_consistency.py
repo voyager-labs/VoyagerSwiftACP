@@ -93,7 +93,7 @@ def check_contract_file(
     contract = data.get("contract", {})
     contract_id = normalize(contract.get("id"), contract_path.stem)
     category = normalize(contract.get("category"), "")
-    primary_object = normalize(contract.get("primary_object"), "")
+    primary_object = normalize(contract.get("primary_object_key") or contract.get("primary_object"), "")
     if not category:
         issues.append(Issue("FAIL", "contract.missing_category", "Contract is missing category", str(contract_path)))
 

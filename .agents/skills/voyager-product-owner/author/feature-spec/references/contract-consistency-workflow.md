@@ -18,6 +18,7 @@ The primary goal is not to create "shared documents" in the abstract.
 The primary goal is to create explicit contract artifacts that make these questions answerable:
 
 - what is the primary object?
+- which `OBJECTS.key` owns that object name?
 - what are the exact allowed states?
 - which interaction reads or writes which states?
 - which transitions are allowed?
@@ -35,7 +36,7 @@ Path:
 
 Use for:
 
-- shared object vocabulary
+- shared object-key selection against IA `OBJECTS`
 - shared state vocabulary
 - allowed and forbidden user-visible states
 - ownership of reads/writes across interactions
@@ -45,15 +46,17 @@ Rules:
 
 - use TOML, not markdown
 - keep it machine-readable first
-- use exact object names and exact state names
+- use exact object names from `PRODUCT/03_INFORMATION_ARCHITECTURE/OBJECTS/data.tsv` and exact state names
 - prefer keyed subtables when entries are naturally keyed by an identifier such as `interaction_id`
 - do not put long explanatory prose here
 - follow `contract-toml-spec.md` for field-level conventions
 - keep the schema shallow unless the user explicitly needs more structure
     - prefer `contract`, `vocabulary`, `policy`, `user_visible_states`, `status`, `ownership`, and `transitions`
     - avoid `object_terms`, `relation_terms`, and similar alias registries unless synonym normalization is an explicit requirement
-- only list true core objects in `primary_object` and `secondary_objects`
+- only list true core object keys in `primary_object_key` and `secondary_object_keys`
     - if a term is a directional or relational concept such as `downstream_turn`, keep it in `vocabulary` only
+- use `[vocabulary]` only for category-local terms that do not already belong in `OBJECTS`
+- tolerate legacy `primary_object` and `secondary_objects` only as a migration bridge
 - prefer product-native terms over invented execution abstractions
     - keep `request` and `response` when they already model the product correctly
     - use `turn` when the contract needs a unit that groups one `request` with its connected `response`
@@ -65,13 +68,8 @@ Recommended structure:
 [contract]
 id = "cbw.request_lifecycle"
 category = "CBW"
-primary_object = "request"
-secondary_objects = ["turn", "response"]
-
-[vocabulary]
-request = "..."
-response = "..."
-turn = "..."
+primary_object_key = "request"
+secondary_object_keys = ["turn", "response"]
 
 [policy]
 single_processing_response_per_request = true
@@ -143,6 +141,7 @@ When a category already has `contracts/*.toml`, keep the contract and interactio
 
 1. Update the relevant contract file first.
    Example:
+   - add a new product-wide object to `OBJECTS` and then reference it from the contract
    - add a new allowed state
    - remove a forbidden state
    - add or change an ownership binding

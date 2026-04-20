@@ -8,6 +8,9 @@ Use it when authoring or updating category-level contract files.
 
 A contract TOML file exists to make shared object/state vocabulary explicit and machine-readable.
 
+Product-wide object definitions belong in `PRODUCT/03_INFORMATION_ARCHITECTURE/OBJECTS/data.tsv`.
+Contract TOML should reference those object keys and add only category-local semantics.
+
 It should answer:
 
 - what is the primary object?
@@ -35,7 +38,7 @@ Examples:
 Recommended sections:
 
 - `[contract]`
-- `[vocabulary]`
+- `[vocabulary]` for category-local terms only
 - `[policy]`
 - `[user_visible_states]` or `[user_visible_status]`
 - `[state.<state_name>]` or `[status.<status_name>]`
@@ -52,11 +55,11 @@ Required fields:
 
 - `id`
 - `category`
-- `primary_object`
+- `primary_object_key`
 
 Optional fields:
 
-- `secondary_objects`
+- `secondary_object_keys`
 - `display_region`
 - `scope_region`
 
@@ -66,28 +69,35 @@ Example:
 [contract]
 id = "cbw.request_lifecycle"
 category = "CBW"
-primary_object = "request"
-secondary_objects = ["response", "turn"]
+primary_object_key = "request"
+secondary_object_keys = ["response", "turn"]
 ```
+
+Rules:
+
+- `primary_object_key` and `secondary_object_keys` must reference `OBJECTS.key`
+- if a truly product-wide object is missing from `OBJECTS`, add it there first before standardizing the contract around it
+- keep category-local relational terms out of these fields
+- legacy `primary_object` and `secondary_objects` may remain temporarily during migration, but new or revised contracts should prefer the `_key` field names
 
 ### `[vocabulary]`
 
-Use this section to define the exact meaning of object names or shared terms.
+Use this section to define category-local terms that are needed by the contract but are not the product-wide object definitions owned by `OBJECTS`.
 
 Example:
 
 ```toml
 [vocabulary]
-request = "사용자가 chat prompt를 제출했을 때 생성되는 사용자 단위 요청 객체"
-response = "하나의 request에 연결된 assistant 출력"
-turn = "하나의 request와 그 request에 연결된 response를 묶는 대화 단위"
+downstream_turn = "특정 기준 turn 뒤에 이어지는 후속 turn"
 ```
 
 Rules:
 
 - use exact product-facing names
 - avoid invented abstractions unless the user explicitly wants them
-- if `request` and `response` are enough, do not add more objects
+- do not restate the base definitions of `request`, `response`, `provider`, and similar product-wide objects here when they already live in `OBJECTS`
+- if a term is shared broadly enough to behave like a product-wide object, add it to `OBJECTS` first instead of redefining it in multiple contracts
+- keep this section for category-local, directional, or relational terms such as `downstream_turn`
 
 ### `[policy]`
 
@@ -218,6 +228,7 @@ Rules:
 
 - use lowercase snake_case for TOML table keys where a free key name is needed
 - use exact `interaction_id` for ownership keys
+- use exact `OBJECTS.key` values for object-reference fields such as `primary_object_key`, `secondary_object_keys`, `target_object`, `creates_objects`, and `preserves_objects`
 - use exact state names in `allowed`, `forbidden`, `from`, `to`, `reads`, and `writes`
 
 ## What Not To Put Here
@@ -238,7 +249,9 @@ Those belong in:
 
 ## Flow Relationship
 
-Contract TOML defines vocabulary and transitions.
+`OBJECTS` defines product-wide object nouns.
+
+Contract TOML binds those object keys to category-specific state, ownership, policy, and transitions.
 
 Flow docs explain sequence and branching.
 

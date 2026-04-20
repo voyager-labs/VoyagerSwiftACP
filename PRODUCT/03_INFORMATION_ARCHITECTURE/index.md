@@ -16,6 +16,7 @@ Voyager의 제품 문서 SSOT에서 **정보 구조(IA)** 를 표 형태(TSV)로
       `PRODUCT/03_INFORMATION_ARCHITECTURE/WINDOW_STRUCTURE/schema.json`
 - OBJECTS
     - 목적: 제품에서 다루는 오브젝트(개념/엔티티) 키 사전
+    - `PRODUCT/05_FEATURE_SPECS/<category>/contracts/*.toml`의 object key 참조 기준
     - PK: `key`
     - 파일: `PRODUCT/03_INFORMATION_ARCHITECTURE/OBJECTS/data.tsv`,
       `PRODUCT/03_INFORMATION_ARCHITECTURE/OBJECTS/schema.json`
@@ -25,6 +26,10 @@ Voyager의 제품 문서 SSOT에서 **정보 구조(IA)** 를 표 형태(TSV)로
 - `WINDOW_STRUCTURE.structure_key`는 기능/인터랙션에서 UI 참조 키로 사용됩니다.
     - `PRODUCT/04_FEATURE_INVENTORY/FEATURES/data.tsv`의 `related_ui`
     - `PRODUCT/04_FEATURE_INVENTORY/INTERACTIONS/data.tsv`의 `related_region`
+- `OBJECTS.key`는 category contract의 canonical object key로 사용됩니다.
+    - `PRODUCT/05_FEATURE_SPECS/<category>/contracts/*.toml`의 `contract.primary_object_key`
+    - `PRODUCT/05_FEATURE_SPECS/<category>/contracts/*.toml`의 `contract.secondary_object_keys`
+    - `PRODUCT/05_FEATURE_SPECS/<category>/contracts/*.toml`의 `ownership.target_object`, `ownership.creates_objects`, `ownership.preserves_objects`
 
 ## 작성/변경 규칙
 

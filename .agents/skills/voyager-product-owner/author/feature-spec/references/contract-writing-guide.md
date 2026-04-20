@@ -20,6 +20,9 @@ A contract file should make shared product terms explicit enough that:
 Do not use a contract file just because a feature has states.
 Use it when the same vocabulary must stay aligned across multiple specs.
 
+Product-wide object nouns should be owned by `PRODUCT/03_INFORMATION_ARCHITECTURE/OBJECTS/data.tsv`.
+The contract should decide category semantics on top of those object keys, not redefine the same product object in multiple places.
+
 ## When To Create A Contract
 
 Create a contract when one or more of these are true:
@@ -36,13 +39,14 @@ Do not create a contract for a one-off interaction that has no shared vocabulary
 
 Write a contract in this order:
 
-1. decide the primary object
-2. decide whether any secondary objects are truly needed
-3. settle the exact vocabulary names
-4. declare allowed and forbidden user-visible states
-5. define state meanings
-6. assign ownership by interaction
-7. declare allowed transitions
+1. check whether the primary object already exists in `OBJECTS`
+2. decide the primary object key
+3. decide whether any secondary object keys are truly needed
+4. settle the remaining category-local vocabulary names
+5. declare allowed and forbidden user-visible states
+6. define state meanings
+7. assign ownership by interaction
+8. declare allowed transitions
 
 Do not start from transitions before the object and vocabulary are settled.
 
@@ -67,11 +71,29 @@ Bad:
 
 If an object is only needed to explain one local implementation detail, it probably does not belong in the contract.
 
+### Start from `OBJECTS`
+
+If the object is product-wide, use the existing `OBJECTS.key` as the contract object key.
+
+Good:
+
+- `request`
+- `response`
+- `provider`
+- `context`
+
+Rules:
+
+- add a new row to `OBJECTS` first when the contract introduces a product-wide object that does not exist yet
+- use `primary_object_key` and `secondary_object_keys` to reference those canonical keys
+- keep contract-specific semantics in state, policy, ownership, and transitions
+- do not use `[vocabulary]` to restate the base definition of an `OBJECTS` entry
+
 ### Add secondary objects only when they carry real contract weight
 
 If the contract can be expressed with one object, keep it to one object.
 
-Only add `secondary_objects` when:
+Only add `secondary_object_keys` when:
 
 - the secondary object has its own vocabulary burden
 - multiple interactions really refer to it
@@ -83,12 +105,15 @@ Only add `secondary_objects` when:
 - Do not smooth over ambiguity with near-synonyms.
 - Do not create alias registries unless synonym normalization is an explicit requirement.
 - If the user has not settled a term yet, surface that ambiguity instead of inventing a new one.
+- Keep `[vocabulary]` for category-local or relational terms that are not yet product-wide `OBJECTS` entries.
+- Do not duplicate the base definition of shared objects such as `request`, `response`, or `provider` when `OBJECTS` already owns them.
 
 Examples:
 
 - prefer `request` over `request object`
 - prefer `response` over `assistant output artifact`
 - prefer `chat_session` over `conversation_session` if the product language already uses `chat`
+- prefer `downstream_turn` in `[vocabulary]` when the term is a directional concept tied to one contract
 
 ## State Rules
 
@@ -170,7 +195,7 @@ If a contract seems to span multiple categories, stop and check whether the voca
 
 Use contracts for:
 
-- object vocabulary
+- object-key selection against `OBJECTS`
 - state vocabulary
 - ownership
 - transitions
@@ -189,6 +214,7 @@ Do not try to make one document do both jobs.
 Before finishing a contract change, ask:
 
 - does this contract have one clear primary object?
+- does that primary object resolve to the right `OBJECTS.key`?
 - are the object names the exact product terms?
 - are forbidden states excluded from user-visible vocabulary?
 - does each owned interaction really read/write the declared states?
