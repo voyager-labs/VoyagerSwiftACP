@@ -9,7 +9,8 @@ The parent agent follows these rules:
 
 - Always interpret the request inside the `PRODUCT` harness first.
 - Even for small direct edits, let the parent agent decide scope and validation from the `product_owner` perspective.
-- Spawn subagents only when there is clear value in parallelism.
+- Default to delegated read/author/review routing for non-trivial PRODUCT work when the runtime allows subagents.
+- Keep trivial single-file edits local only after the parent confirms that delegation adds little value.
 - The parent agent integrates and validates all subagent output.
 
 ## Scope
@@ -39,7 +40,8 @@ The default structure for `PRODUCT/` work is always:
 4. The parent agent edits the minimum necessary files and closes validation.
 
 In this harness, `product_owner` is not an optional helper skill. It is the default operating model.
-Actual subagent spawning is still conditional and should happen only when needed.
+Actual subagent spawning should happen by default for non-trivial PRODUCT work when the runtime permits it.
+If higher-priority runtime policy blocks automatic spawning, keep the same routing logic locally and surface that limitation honestly.
 
 ## Canonical Names
 
@@ -150,6 +152,7 @@ Use parallel subagents only when one of these applies:
 - Clarification and scoping can proceed independently.
 - FI authoring and bundle review are separable sidecars.
 - Research and authoring preparation depend on different inputs.
+- The task touches multiple PRODUCT layers and a read/author/review split will reduce integration risk.
 
 Rules for parallel execution:
 

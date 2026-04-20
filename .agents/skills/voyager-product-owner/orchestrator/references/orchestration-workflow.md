@@ -1,6 +1,6 @@
 # Orchestration Workflow
 
-Use this workflow when the user explicitly asks for PRODUCT_OWNER-style delegation, subagents, or parallel work on Voyager documentation.
+Use this workflow by default for requests that land inside the Voyager `PRODUCT` harness. Explicit requests for delegation or subagents strengthen the expectation, but are not required for orchestration routing.
 
 ## Scope
 
@@ -38,7 +38,15 @@ Do not delegate the whole task blindly.
 
 ## Trigger Condition
 
-Use this orchestration workflow only when the user explicitly asks for one of these:
+Use this orchestration workflow by default whenever the task belongs to:
+
+- `PRODUCT/01_PRODUCT_THESIS/`
+- `PRODUCT/02_USER_PERSONA/`
+- `PRODUCT/03_INFORMATION_ARCHITECTURE/`
+- `PRODUCT/04_FEATURE_INVENTORY/`
+- `PRODUCT/05_FEATURE_SPECS/`
+
+Explicit requests for:
 
 - subagents
 - delegation
@@ -46,7 +54,7 @@ Use this orchestration workflow only when the user explicitly asks for one of th
 - worker/team style execution
 - PRODUCT_OWNER orchestration
 
-If the user does not ask for delegation, stay in single-agent mode.
+mean the parent should bias harder toward actual delegation instead of a local fallback.
 
 ## Agent Routing
 
