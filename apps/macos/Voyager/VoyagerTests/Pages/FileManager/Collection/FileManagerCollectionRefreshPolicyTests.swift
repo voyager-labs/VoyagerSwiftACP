@@ -109,7 +109,7 @@ final class FileManagerCollectionRefreshPolicyTests: XCTestCase {
                 scopes: ["/tmp"],
                 collectionContext: .init(query: "report", scopes: ["/tmp"], conditions: []),
                 compatibility: .init(
-                    sourceSchemaVersion: 2,
+                    sourceSchemaVersion: CollectionFileSchemaVersion.snapshotBearingCurrent,
                     migrationPath: [.currentSchemaV2, .definitionFallbackFromMalformedSnapshot],
                     warnings: [.droppedMalformedSnapshot],
                     usedDefinitionFallback: true,
@@ -139,6 +139,7 @@ final class FileManagerCollectionRefreshPolicyTests: XCTestCase {
         let completion = CollectionSaveCompletion(
             url: url,
             file: VoyagerCollectionFile(
+                schemaVersion: CollectionFileSchemaVersion.definitionOnlyCurrent,
                 id: "definition-only",
                 name: "Definition Only",
                 createdAt: .distantPast,
@@ -147,12 +148,7 @@ final class FileManagerCollectionRefreshPolicyTests: XCTestCase {
                 scopes: ["/tmp"],
                 conditions: [],
                 snapshot: nil,
-                snapshotMeta: .init(
-                    definitionFingerprint: "fingerprint",
-                    capturedAt: .distantFuture,
-                    itemCount: 0,
-                    relevanceRoots: ["/tmp"],
-                ),
+                snapshotMeta: nil,
                 appVersion: nil,
             ),
         )
@@ -201,7 +197,7 @@ private func makeContentStore(
                         snapshotMeta: nil,
                         appVersion: nil,
                     ),
-                    sourceSchemaVersion: 2,
+                    sourceSchemaVersion: CollectionFileSchemaVersion.definitionOnlyCurrent,
                 )
             },
         )
@@ -220,7 +216,7 @@ private func makeRefreshingState(
     collectionContext: CollectionContext,
     baselineContext: CollectionContext? = nil,
     compatibility: CollectionFileCompatibilityMetadata? = .init(
-        sourceSchemaVersion: 2,
+        sourceSchemaVersion: CollectionFileSchemaVersion.snapshotBearingCurrent,
         migrationPath: [.currentSchemaV2],
         warnings: [],
         usedDefinitionFallback: false,
@@ -277,7 +273,7 @@ private func makeFiltersResponse(paths: [String]) -> VoyagerShared.SearchRespons
 
 private func makeCollectionLoadResult(
     _ file: VoyagerCollectionFile,
-    sourceSchemaVersion: Int?,
+    sourceSchemaVersion: SchemaVersion?,
 ) -> CollectionFileLoadResult {
     VoyagerCollectionFileCompatibilityOwner.makeLoadResult(
         file: file,

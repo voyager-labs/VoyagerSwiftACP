@@ -36,7 +36,8 @@ struct FileManagerContentState: Equatable {
 
     mutating func syncComposerCollectionState() {
         composer.collectionContext = collectionContext
-        composer.openedCollectionURL = collectionSession.document?.url
+        composer.openedCollectionURL = collectionSession.openedURL
+        composer.openedCollectionCompatibility = collectionSession.openedCompatibility
         composer.isCollectionMode = isCollectionMode
     }
 

@@ -112,3 +112,59 @@ func failCollectionRefreshIfNeeded(
         .send(.delegate(.composerCollectionSearchFailed)),
     )
 }
+
+func makeRefreshedSnapshotWriteBackRequest(
+    state: FileManagerContentState,
+    currentDate: Date,
+) -> RefreshedSnapshotWriteBackRequest? {
+    guard let context = state.collectionContext,
+          let url = state.collectionSession.openedURL,
+          let snapshotItems = CollectionSnapshotHydration.snapshotItems(from: state.composer.lastFiltersResponse?.items)
+    else {
+        return nil
+    }
+
+    let payload = SaveRequestPayload(
+        context: context,
+        isSearchLoading: false,
+        isFiltersLoading: false,
+        snapshotItems: snapshotItems,
+        definitionFingerprint: CollectionSnapshotHydration.definitionFingerprint(
+            query: context.query,
+            scopes: context.scopes,
+            conditions: context.conditions,
+        ),
+        capturedAt: currentDate,
+        relevanceRoots: context.scopes.map { URL(fileURLWithPath: $0).standardizedFileURL.path }.sorted(),
+        openedCompatibility: state.collectionSession.openedCompatibility,
+    )
+
+    return .init(payload: payload, url: url)
+}
+
+func previousCollectionHistoryEntryForRefreshSupport(
+    baseline: CollectionBaseline?,
+    previousURL: URL?,
+    previousCollectionName: String?,
+    state: FileManagerContentState,
+) -> ContentPageNavigationHistorySnapshot? {
+    guard let baseline,
+          let previousURL
+    else {
+        return nil
+    }
+
+    let name = previousCollectionName
+        ?? previousURL.deletingPathExtension().lastPathComponent
+    let navigation = ContentPageCollectionNavigation(
+        kind: .file(url: previousURL, name: name),
+        context: baseline.context,
+        sortKey: state.entryViewLayout.entryArrangements.sortKey,
+        sortOrder: state.entryViewLayout.entryArrangements.sortOrder,
+        viewLayout: state.entryViewLayout.mode,
+        compatibility: state.collectionSession.openedCompatibility,
+    )
+    return ContentPageNavigationHistorySnapshot(
+        navigationState: .collection(navigation),
+    )
+}
