@@ -69,7 +69,7 @@ final class CollectionFileFailurePolicyTests: XCTestCase {
             else {
                 return XCTFail("Unexpected error: \(error)")
             }
-            XCTAssertEqual(found, 999)
+            XCTAssertEqual(found, SchemaVersion(legacyInt: 999))
             XCTAssertEqual(current, CollectionFileSchemaVersion.current)
         }
 
@@ -86,9 +86,9 @@ final class CollectionFileFailurePolicyTests: XCTestCase {
         XCTAssertNil(legacyMissingSchema.compatibility.sourceSchemaVersion)
         XCTAssertEqual(
             legacyMissingSchema.compatibility.migrationPath,
-            [.legacySingleFileWithoutSchema, .definitionOnlyV1, .currentSchemaV2],
+            [.legacySingleFileWithoutSchema, .definitionOnlyV1],
         )
-        XCTAssertEqual(legacyMissingSchema.file.schemaVersion, CollectionFileSchemaVersion.current)
+        XCTAssertEqual(legacyMissingSchema.file.schemaVersion, .init(major: 1, minor: 0))
         XCTAssertEqual(legacyMissingSchema.compatibility.writeBackReason, .blockedLegacyVersionUpgrade)
 
         let invalidSchemaData = try makeBinaryPlist(InvalidSchemaVersionTypePayload())
@@ -181,6 +181,21 @@ final class CollectionFileFailurePolicyTests: XCTestCase {
         XCTAssertNil(result.file.snapshotMeta)
     }
 
+    func testFutureMinorStructuredVersionShouldBecomeReadOnlyInsteadOfHardFail() throws {
+        let data = try makeStructuredSchemaPropertyList(
+            schema: ["major": 1, "minor": 2],
+            includeSnapshot: true,
+            includeSnapshotMeta: true,
+        )
+
+        let result = try VoyagerCollectionFileCompatibilityOwner.decode(data, containerFormat: .package)
+
+        XCTAssertEqual(result.compatibility.sourceSchemaVersion, .init(major: 1, minor: 2))
+        XCTAssertEqual(result.compatibility.warnings, [.futureMinorVersionReadOnly])
+        XCTAssertFalse(result.compatibility.writeBackAllowed)
+        XCTAssertEqual(result.compatibility.writeBackReason, .blockedFutureMinorVersion)
+    }
+
     private func makeBinaryPlist(_ value: some Encodable) throws -> Data {
         let encoder = PropertyListEncoder()
         encoder.outputFormat = .binary
@@ -206,6 +221,40 @@ final class CollectionFileFailurePolicyTests: XCTestCase {
             errorHandler(error)
         }
     }
+}
+
+private func makeStructuredSchemaPropertyList(
+    schema: [String: Int],
+    includeSnapshot: Bool,
+    includeSnapshotMeta: Bool,
+) throws -> Data {
+    var payload: [String: Any] = [
+        "schemaVersion": schema,
+        "id": "structured-version",
+        "name": "Structured Version",
+        "createdAt": Date.distantPast,
+        "updatedAt": Date.distantPast,
+        "query": "",
+        "scopes": ["/tmp"],
+        "conditions": [],
+    ]
+
+    if includeSnapshot {
+        payload["snapshot"] = [
+            "items": ["/tmp/report.txt"],
+        ]
+    }
+
+    if includeSnapshotMeta {
+        payload["snapshotMeta"] = [
+            "definitionFingerprint": "fingerprint",
+            "capturedAt": Date.distantPast,
+            "itemCount": 1,
+            "relevanceRoots": ["/tmp"],
+        ]
+    }
+
+    return try PropertyListSerialization.data(fromPropertyList: payload, format: .binary, options: 0)
 }
 
 private struct MissingSchemaVersionPayload: Codable {
