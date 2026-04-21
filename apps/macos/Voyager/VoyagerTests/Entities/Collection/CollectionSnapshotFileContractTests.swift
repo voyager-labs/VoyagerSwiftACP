@@ -225,7 +225,7 @@ final class CollectionSnapshotFileContractTests: XCTestCase {
         defer { try? fileManager.removeItem(at: url.deletingLastPathComponent()) }
 
         let legacyFile = VoyagerCollectionFile(
-            schemaVersion: 1,
+            schemaVersion: SchemaVersion(legacyInt: 1),
             id: "legacy-file",
             name: "Legacy File",
             createdAt: .distantPast,
@@ -242,7 +242,7 @@ final class CollectionSnapshotFileContractTests: XCTestCase {
 
         let data = try Data(contentsOf: url.appendingPathComponent("collection.plist"))
         let loaded = try PropertyListDecoder().decode(VoyagerCollectionFile.self, from: data)
-        XCTAssertEqual(loaded.schemaVersion, CollectionFileSchemaVersion.current)
+        XCTAssertEqual(loaded.schemaVersion, CollectionFileSchemaVersion.definitionOnlyCurrent)
     }
 
     func testSavePreservesCurrentSchemaVersionWithoutAdditionalMigration() async throws {
@@ -271,7 +271,7 @@ final class CollectionSnapshotFileContractTests: XCTestCase {
 
         let data = try Data(contentsOf: url.appendingPathComponent("collection.plist"))
         let loaded = try PropertyListDecoder().decode(VoyagerCollectionFile.self, from: data)
-        XCTAssertEqual(loaded.schemaVersion, CollectionFileSchemaVersion.current)
+        XCTAssertEqual(loaded.schemaVersion, CollectionFileSchemaVersion.snapshotBearingCurrent)
         XCTAssertEqual(loaded.snapshot?.items, [.string("/tmp/report.txt")])
         XCTAssertEqual(loaded.snapshotMeta?.definitionFingerprint, "fingerprint")
     }

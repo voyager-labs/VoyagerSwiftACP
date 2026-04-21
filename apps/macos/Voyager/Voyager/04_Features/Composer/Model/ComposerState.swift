@@ -22,6 +22,7 @@ struct ComposerState: Equatable {
     var isPresented: Bool = false
     var collectionContext: CollectionContext?
     var openedCollectionURL: URL?
+    var openedCollectionCompatibility: CollectionFileCompatibilityMetadata?
     var isCollectionMode: Bool = false
     var pendingSearchQuery: String?
 

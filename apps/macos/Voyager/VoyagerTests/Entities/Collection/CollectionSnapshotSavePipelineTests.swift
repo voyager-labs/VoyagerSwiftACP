@@ -6,6 +6,7 @@ import XCTest
 
 @MainActor
 final class CollectionSnapshotSavePipelineTests: XCTestCase {
+    // swiftlint:disable:next function_body_length
     func testSaveToExistingPersistsSnapshotAndClearsInvalidationState() async {
         let recorder = SavedCollectionsRecorder()
         let stalenessClient = CollectionStalenessClient.live(userDefaultsClient: .testValue)
@@ -27,6 +28,7 @@ final class CollectionSnapshotSavePipelineTests: XCTestCase {
             definitionFingerprint: "fingerprint",
             capturedAt: .distantFuture,
             relevanceRoots: ["/tmp"],
+            openedCompatibility: nil,
         )
 
         let store = TestStore(initialState: CollectionFeature.State()) {
@@ -36,7 +38,12 @@ final class CollectionSnapshotSavePipelineTests: XCTestCase {
                 save: { file, url in
                     await recorder.append(file: file, url: url)
                 },
-                load: { _ in makeCollectionLoadResult(kEmptyCollectionFile, sourceSchemaVersion: 2) },
+                load: { _ in
+                    makeCollectionLoadResult(
+                        kEmptyCollectionFile,
+                        sourceSchemaVersion: CollectionFileSchemaVersion.definitionOnlyCurrent,
+                    )
+                },
             )
             $0.userDefaultsClient = .testValue
             $0.collectionStalenessClient = stalenessClient
@@ -71,6 +78,7 @@ final class CollectionSnapshotSavePipelineTests: XCTestCase {
             definitionFingerprint: "fingerprint",
             capturedAt: .distantFuture,
             relevanceRoots: ["/tmp"],
+            openedCompatibility: nil,
         )
 
         let store = TestStore(initialState: CollectionFeature.State()) {
@@ -80,7 +88,12 @@ final class CollectionSnapshotSavePipelineTests: XCTestCase {
                 save: { file, url in
                     await recorder.append(file: file, url: url)
                 },
-                load: { _ in makeCollectionLoadResult(kEmptyCollectionFile, sourceSchemaVersion: 2) },
+                load: { _ in
+                    makeCollectionLoadResult(
+                        kEmptyCollectionFile,
+                        sourceSchemaVersion: CollectionFileSchemaVersion.definitionOnlyCurrent,
+                    )
+                },
             )
             $0.userDefaultsClient = .testValue
             $0.collectionStalenessClient = stalenessClient
@@ -98,7 +111,7 @@ final class CollectionSnapshotSavePipelineTests: XCTestCase {
 
         let saved = await recorder.last()
         XCTAssertNil(saved?.file.snapshot)
-        assertSnapshotMeta(saved?.file, itemCount: 0)
+        XCTAssertNil(saved?.file.snapshotMeta)
         assertRecordUpdated(stalenessClient: stalenessClient, url: url)
     }
 
@@ -115,6 +128,7 @@ final class CollectionSnapshotSavePipelineTests: XCTestCase {
             definitionFingerprint: "fingerprint",
             capturedAt: .distantFuture,
             relevanceRoots: ["/tmp"],
+            openedCompatibility: nil,
         )
 
         let store = TestStore(initialState: CollectionFeature.State()) {
@@ -124,7 +138,12 @@ final class CollectionSnapshotSavePipelineTests: XCTestCase {
                 save: { file, url in
                     await recorder.append(file: file, url: url)
                 },
-                load: { _ in makeCollectionLoadResult(kEmptyCollectionFile, sourceSchemaVersion: 2) },
+                load: { _ in
+                    makeCollectionLoadResult(
+                        kEmptyCollectionFile,
+                        sourceSchemaVersion: CollectionFileSchemaVersion.definitionOnlyCurrent,
+                    )
+                },
             )
             $0.userDefaultsClient = .testValue
             $0.collectionStalenessClient = stalenessClient
@@ -159,6 +178,7 @@ final class CollectionSnapshotSavePipelineTests: XCTestCase {
             definitionFingerprint: "fingerprint",
             capturedAt: .distantFuture,
             relevanceRoots: ["/tmp"],
+            openedCompatibility: nil,
         )
 
         let store = TestStore(initialState: CollectionFeature.State()) {
@@ -168,7 +188,12 @@ final class CollectionSnapshotSavePipelineTests: XCTestCase {
                 save: { file, url in
                     await recorder.append(file: file, url: url)
                 },
-                load: { _ in makeCollectionLoadResult(kEmptyCollectionFile, sourceSchemaVersion: 2) },
+                load: { _ in
+                    makeCollectionLoadResult(
+                        kEmptyCollectionFile,
+                        sourceSchemaVersion: CollectionFileSchemaVersion.definitionOnlyCurrent,
+                    )
+                },
             )
             $0.userDefaultsClient = .testValue
             $0.collectionStalenessClient = stalenessClient
@@ -185,8 +210,56 @@ final class CollectionSnapshotSavePipelineTests: XCTestCase {
         await store.finish()
 
         let saved = await recorder.last()
-        XCTAssertEqual(saved?.file.schemaVersion, CollectionFileSchemaVersion.current)
-        assertSnapshotMeta(saved?.file, itemCount: 0)
+        XCTAssertEqual(saved?.file.schemaVersion, CollectionFileSchemaVersion.definitionOnlyCurrent)
+        XCTAssertNil(saved?.file.snapshotMeta)
+    }
+
+    func testSaveToExistingIsBlockedForFutureMinorCompatibility() async {
+        let recorder = SavedCollectionsRecorder()
+        let stalenessClient = CollectionStalenessClient.live(userDefaultsClient: .testValue)
+        let url = URL(fileURLWithPath: "/tmp/future-minor.voycoll")
+
+        let payload = SaveRequestPayload(
+            context: CollectionContext(query: "Blocked", scopes: ["/tmp"], conditions: []),
+            isSearchLoading: false,
+            isFiltersLoading: false,
+            snapshotItems: nil,
+            definitionFingerprint: "fingerprint",
+            capturedAt: .distantFuture,
+            relevanceRoots: ["/tmp"],
+            openedCompatibility: .init(
+                sourceSchemaVersion: .init(major: 1, minor: 2),
+                migrationPath: [.currentSchemaV2],
+                warnings: [.futureMinorVersionReadOnly],
+                usedDefinitionFallback: false,
+                writeBackAllowed: false,
+                writeBackReason: .blockedFutureMinorVersion,
+            ),
+        )
+
+        let store = TestStore(initialState: CollectionFeature.State()) {
+            CollectionFeature()
+        } withDependencies: {
+            $0.collectionFileClient = CollectionFileClient(
+                save: { file, url in
+                    await recorder.append(file: file, url: url)
+                },
+                load: { _ in
+                    makeCollectionLoadResult(
+                        kEmptyCollectionFile,
+                        sourceSchemaVersion: CollectionFileSchemaVersion.definitionOnlyCurrent,
+                    )
+                },
+            )
+            $0.userDefaultsClient = .testValue
+            $0.collectionStalenessClient = stalenessClient
+        }
+        store.exhaustivity = .off
+
+        await store.send(.saveToExisting(payload, url))
+        await store.finish()
+
+        await XCTAssertNil(recorder.last())
     }
 
     private func assertSnapshotMeta(_ file: VoyagerCollectionFile?, itemCount: Int) {
@@ -225,7 +298,7 @@ private let kEmptyCollectionFile = VoyagerCollectionFile(
 
 private func makeCollectionLoadResult(
     _ file: VoyagerCollectionFile,
-    sourceSchemaVersion: Int?,
+    sourceSchemaVersion: SchemaVersion?,
 ) -> CollectionFileLoadResult {
     VoyagerCollectionFileCompatibilityOwner.makeLoadResult(
         file: file,

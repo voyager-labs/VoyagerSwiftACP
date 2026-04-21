@@ -47,6 +47,7 @@ struct SaveRequestPayload: Equatable, Sendable {
     let definitionFingerprint: String
     let capturedAt: Date
     let relevanceRoots: [String]
+    let openedCompatibility: CollectionFileCompatibilityMetadata?
 }
 
 struct CollectionSaveCompletion: Equatable, Sendable {

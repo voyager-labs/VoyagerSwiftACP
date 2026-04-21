@@ -47,6 +47,7 @@ private func makeSavePayload(from state: ComposerState, currentDate: Date) -> Sa
         ),
         capturedAt: currentDate,
         relevanceRoots: scopes.map(standardizedPath).sorted(),
+        openedCompatibility: state.openedCollectionCompatibility,
     )
 }
 
