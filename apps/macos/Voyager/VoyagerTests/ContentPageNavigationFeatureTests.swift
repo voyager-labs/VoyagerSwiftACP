@@ -175,6 +175,22 @@ final class ContentPageNavigationFeatureTests: XCTestCase {
         await store.receive(.delegate(.navigateToState(collectionRoute)))
     }
 
+    func testPrepareCollectionFileOpenRecordsActualCurrentSnapshot() async {
+        var initial = ContentPageNavigationFeature.State()
+        initial.navigationState = .recents
+
+        let store = TestStore(initialState: initial) {
+            ContentPageNavigationFeature()
+        }
+
+        let url = URL(fileURLWithPath: "/folder/sample.voycoll")
+
+        await store.send(.internal(.prepareCollectionFileOpen(url))) {
+            $0.backHistory = [ContentPageNavigationHistorySnapshot(navigationState: .recents)]
+            $0.forwardHistory = []
+        }
+    }
+
     func testHistoryIsTrimmedToTenEntries() async {
         let store = makeStore(seedPath: "/seed")
         store.exhaustivity = .off
