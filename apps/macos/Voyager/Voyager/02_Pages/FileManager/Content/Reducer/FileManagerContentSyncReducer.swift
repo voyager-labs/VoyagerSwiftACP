@@ -14,13 +14,10 @@ struct FileManagerContentSyncReducer {
                 switch state.navigation.navigationState {
                 case .collection:
                     let affectsCollection = collectionPathsAffectCurrentContext(paths, state: state)
-                    if affectsCollection {
-                        state.collectionSession.isStale = true
-                        state.collectionSession.lastRefreshAt = nil
-                        if state.collectionSession.staleReason == nil {
-                            state.collectionSession.staleReason = .invalidatedLocally
-                        }
-                    }
+                    _ = CollectionDocumentSessionFeature.externalInvalidationPayload(
+                        state: &state.collectionSession,
+                        affectsCollection: affectsCollection,
+                    )
                     return .none
 
                 case let .folder(path):
@@ -38,32 +35,6 @@ struct FileManagerContentSyncReducer {
                         showHidden: state.entryViewLayout.showHiddenFiles,
                     )
                 }
-
-            case .delegate(.discardCollectionChanges):
-                guard let baseline = state.collectionSession.baseline,
-                      state.isCollectionMode,
-                      state.isOpenedCollectionDirty
-                else {
-                    return .none
-                }
-
-                let trimmedQuery = baseline.context.query.trimmingCharacters(in: .whitespacesAndNewlines)
-                state.composer.pendingSearchQuery = trimmedQuery.isEmpty ? nil : trimmedQuery
-                state.collectionContext = baseline.context
-                state.syncComposerCollectionState()
-
-                if state.collectionSession.openedURL == nil {
-                    state.composer.text = baseline.context.query
-                } else {
-                    state.composer.text = ""
-                }
-                state.composer.scopes = baseline.context.scopes
-                state.composer.conditions = baseline.context.conditions
-                state.composer.propertyPicker = ConditionPropertyPickerFeature.State()
-                state.composer.operatorPicker = OperatorPickerFeature.State()
-                state.composer.valuePicker = ValuePickerFeature.State()
-                state.composer.clearHistory()
-                return .none
 
             default:
                 return .none
