@@ -8,7 +8,6 @@ enum FileManagerContentComposerCoordinator {
     struct Dependencies: Sendable {
         let collectionAlertClient: CollectionAlertClient
         let computerName: String
-        let currentDate: @Sendable () -> Date
     }
 
     static func reduce(
@@ -48,9 +47,10 @@ enum FileManagerContentComposerCoordinator {
             return handleSetText(text, state: &state, dependencies: dependencies)
 
         case .view(.cancelSearch):
-            state.composer.pendingSearchQuery = nil
-            state.collectionSession.isOpening = false
-            state.collectionSession.openedName = nil
+            let payload = CollectionDocumentSessionFeature.openCancellationPayload(
+                state: &state.collectionSession,
+            )
+            state.composer.pendingSearchQuery = payload.pendingSearchQuery
             return .none
 
         case .view(.clearAll):
@@ -81,30 +81,29 @@ enum FileManagerContentComposerCoordinator {
             guard state.composer.lastAcceptedFiltersRequestID == requestID else {
                 return .none
             }
+            let wasDirtyBeforeApplyingResponse = state.isOpenedCollectionDirty
+            state.composer.lastFiltersResponse = response
             let effect = handleSearchSuccess(
                 items: response.items ?? [],
                 query: state.composer.pendingSearchQuery ?? "",
                 state: &state,
             )
             return finalizeCollectionRefreshIfNeeded(
+                wasDirtyBeforeApplyingResponse: wasDirtyBeforeApplyingResponse,
+                response: response,
                 searchEffect: effect,
                 state: &state,
-                currentDate: dependencies.currentDate(),
             )
 
         case let .internal(.searchResponse(requestID, .failure(error))):
             guard state.composer.lastAcceptedSearchRequestID == requestID else {
                 return .none
             }
-            let effect = handleSearchFailure(
+            return handleBlockedCollectionSearchFailure(
                 error: error,
                 title: "Unable to Run Collection Search",
                 state: &state,
                 dependencies: dependencies,
-            )
-            return failCollectionRefreshIfNeeded(
-                searchEffect: effect,
-                state: &state,
             )
 
         case let .internal(.filtersResponse(requestID, .failure(error))):
@@ -114,15 +113,11 @@ enum FileManagerContentComposerCoordinator {
             let title = state.composer.pendingSearchQuery == nil
                 ? "Unable to Apply Collection Filters"
                 : "Unable to Run Collection Search"
-            let effect = handleSearchFailure(
+            return handleBlockedCollectionSearchFailure(
                 error: error,
                 title: title,
                 state: &state,
                 dependencies: dependencies,
-            )
-            return failCollectionRefreshIfNeeded(
-                searchEffect: effect,
-                state: &state,
             )
 
         default:
@@ -133,7 +128,7 @@ enum FileManagerContentComposerCoordinator {
     private static func handleComposerCollectionAction(
         _ action: ComposerFeature.Action,
         state: inout FileManagerContentState,
-        dependencies: Dependencies,
+        dependencies _: Dependencies,
     ) -> Effect<FileManagerContentAction>? {
         guard case let ComposerAction.collection(collectionAction) = action else {
             return nil
@@ -141,7 +136,24 @@ enum FileManagerContentComposerCoordinator {
         return handleCollectionAction(
             collectionAction,
             state: &state,
-            currentDate: dependencies.currentDate(),
+        )
+    }
+
+    private static func handleBlockedCollectionSearchFailure(
+        error: Error,
+        title: String,
+        state: inout FileManagerContentState,
+        dependencies: Dependencies,
+    ) -> Effect<FileManagerContentAction> {
+        let effect = handleSearchFailure(
+            error: error,
+            title: title,
+            state: &state,
+            dependencies: dependencies,
+        )
+        return failCollectionRefreshIfNeeded(
+            searchEffect: effect,
+            state: &state,
         )
     }
 
@@ -151,7 +163,9 @@ enum FileManagerContentComposerCoordinator {
     ) -> Effect<FileManagerContentAction> {
         guard isPresented else {
             state.composer.pendingSearchQuery = nil
-            state.collectionSession.isOpening = false
+            _ = CollectionDocumentSessionFeature.openCancellationPayload(
+                state: &state.collectionSession,
+            )
             return .none
         }
 
@@ -187,28 +201,34 @@ enum FileManagerContentComposerCoordinator {
         query: String,
         state: inout FileManagerContentState,
     ) -> Effect<FileManagerContentAction> {
-        let wasOpeningCollectionFile = state.collectionSession.isOpening
-        state.collectionSession.isOpening = false
         let previousSnapshot = state.navigation.makeContentPageNavigationHistorySnapshot()
         let previousNavigationState = state.navigation.navigationState
+        let previousNavigationIsCollection = previousNavigationState.isCollection
         state.composer.pendingSearchQuery = nil
-        state.collectionContext = CollectionContext(
+        let nextContext = CollectionContext(
             query: query,
             scopes: state.composer.scopes,
             conditions: state.composer.conditions,
         )
-        if wasOpeningCollectionFile, state.collectionSession.openedURL != nil {
-            state.collectionSession.baseline = CollectionBaseline(
-                context: state.collectionContext ?? .init(query: "", scopes: [], conditions: []),
-            )
-        }
+        let proposedNextNavigationState = ContentPageNavigationRoute.collection(
+            makeCollectionNavigation(
+                context: nextContext,
+                state: state,
+            ),
+        )
+        let payload = CollectionDocumentSessionFeature.searchSuccessPayload(
+            state: &state.collectionSession,
+            query: query,
+            scopes: state.composer.scopes,
+            conditions: state.composer.conditions,
+            previousNavigationIsCollection: previousNavigationIsCollection,
+            nextNavigationDiffers: previousNavigationState != proposedNextNavigationState,
+        )
+        state.collectionContext = payload.context
         let nextNavigationState = ContentPageNavigationRoute.collection(makeCollectionNavigation(state: state))
-        let shouldAppendHistory = !wasOpeningCollectionFile
-            && previousNavigationState != nextNavigationState
-            && !(previousNavigationState.isCollection && nextNavigationState.isCollection)
 
         var navigationEffects: [Effect<FileManagerContentAction>] = []
-        if shouldAppendHistory {
+        if payload.shouldAppendHistory {
             navigationEffects
                 .append(.send(.internal(.requestNavigation(.internal(.appendBackHistory(previousSnapshot))))))
             navigationEffects.append(.send(.internal(.requestNavigation(.internal(.clearForwardHistory)))))
@@ -216,7 +236,7 @@ enum FileManagerContentComposerCoordinator {
         navigationEffects
             .append(.send(.internal(.requestNavigation(.internal(.setNavigationState(nextNavigationState))))))
 
-        if !wasOpeningCollectionFile, !previousNavigationState.isCollection {
+        if payload.shouldLogDAU {
             logContentPageNavigationDAUIfNeeded(previous: previousNavigationState, next: nextNavigationState)
         }
         let showHidden = state.entryViewLayout.showHiddenFiles
@@ -238,10 +258,12 @@ enum FileManagerContentComposerCoordinator {
         dependencies: Dependencies,
     ) -> Effect<FileManagerContentAction> {
         state.composer.pendingSearchQuery = nil
-        guard state.collectionSession.isOpening else {
+        let payload = CollectionDocumentSessionFeature.searchFailurePayload(
+            state: &state.collectionSession,
+        )
+        guard payload.shouldResetSession else {
             return .none
         }
-        state.collectionSession = .init()
         state.resetComposer()
         let exitEffect = exitCollectionMode(state: &state, computerName: dependencies.computerName)
         let collectionAlertClient = dependencies.collectionAlertClient
@@ -266,7 +288,6 @@ enum FileManagerContentComposerCoordinator {
     private static func handleCollectionAction(
         _ action: CollectionFeature.Action,
         state: inout FileManagerContentState,
-        currentDate: Date,
     ) -> Effect<FileManagerContentAction> {
         switch action {
         case .saveRequested, .saveToExisting, .savePanelResponse:
@@ -276,7 +297,6 @@ enum FileManagerContentComposerCoordinator {
             handleCollectionSaveSuccess(
                 completion: completion,
                 state: &state,
-                currentDate: currentDate,
             )
 
         case .saveCompleted(.failure):
@@ -325,7 +345,10 @@ private func previousCollectionHistoryEntry(
     )
 }
 
-func makeCollectionNavigation(state: FileManagerContentState) -> ContentPageCollectionNavigation {
+func makeCollectionNavigation(
+    context: CollectionContext,
+    state: FileManagerContentState,
+) -> ContentPageCollectionNavigation {
     let kind: ContentPageCollectionKind
     if let url = state.collectionSession.openedURL {
         let name = state.collectionSession.openedName ?? url.deletingPathExtension().lastPathComponent
@@ -333,9 +356,6 @@ func makeCollectionNavigation(state: FileManagerContentState) -> ContentPageColl
     } else {
         kind = .temporary
     }
-
-    let context = state.collectionContext
-        ?? CollectionContext(query: "", scopes: [], conditions: [])
 
     return ContentPageCollectionNavigation(
         kind: kind,
@@ -347,10 +367,19 @@ func makeCollectionNavigation(state: FileManagerContentState) -> ContentPageColl
     )
 }
 
+func makeCollectionNavigation(state: FileManagerContentState) -> ContentPageCollectionNavigation {
+    let context = state.collectionContext
+        ?? CollectionContext(query: "", scopes: [], conditions: [])
+
+    return makeCollectionNavigation(context: context, state: state)
+}
+
 func clearCollectionMode(state: inout FileManagerContentState) -> Effect<FileManagerContentAction> {
     state.collectionContext = nil
     state.composer.pendingSearchQuery = nil
-    state.collectionSession = .init()
+    _ = CollectionDocumentSessionFeature.resetPayload(
+        state: &state.collectionSession,
+    )
 
     return .concatenate(
         .send(.internal(.requestNavigation(.internal(.setPendingNavigation(nil))))),

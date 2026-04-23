@@ -20,9 +20,6 @@ struct FileManagerContentFeature {
     private var fileManagerClient
     @Dependency(\.notificationCenterClient)
     private var notificationCenterClient
-    @Dependency(\.date)
-    private var date
-
     var body: some Reducer<State, Action> {
         Scope(state: \.composer, action: \.composer) {
             ComposerFeature()
@@ -51,8 +48,11 @@ struct FileManagerContentFeature {
 
             switch action {
             case let .internal(.applyNavigationState(navigationState)):
-                state.entryViewLayout.currentPath = state.navigation.currentPath
-                state.entryViewLayout.savedScrollOffset = state.navigation.scrollPositions[state.navigation.currentPath]
+                if !navigationState.isCollection {
+                    state.entryViewLayout.currentPath = state.navigation.currentPath
+                    state.entryViewLayout.savedScrollOffset = state.navigation
+                        .scrollPositions[state.navigation.currentPath]
+                }
                 return applyNavigationStateEffect(navigationState, state: state)
 
             case .view(.selectAllEntries):
@@ -61,22 +61,30 @@ struct FileManagerContentFeature {
                 ))))
 
             case .view(.refreshStaleCollection):
-                guard state.canRefreshStaleCollection else {
+                var sessionState = state.collectionSession
+                let trigger = CollectionDocumentSessionFeature.refreshIntentTrigger(
+                    state: &sessionState,
+                    isCollectionMode: state.isCollectionMode,
+                    isDirty: state.isOpenedCollectionDirty,
+                    isSearching: state.composer.isCollectionSearching,
+                    hasCollectionContext: state.collectionContext != nil,
+                    query: state.collectionContext?.query,
+                )
+                state.collectionSession = sessionState
+
+                guard let trigger else {
                     return .none
                 }
 
-                state.collectionSession.isRefreshingHydratedSnapshot = true
-                state.collectionSession.isWritingBackRefreshedSnapshot = false
-
-                let trimmedQuery = state.collectionContext?.query
-                    .trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
-
-                return trimmedQuery.isEmpty
-                    ? .send(.composer(.applyFilters))
-                    : .concatenate(
-                        .send(.composer(.setText(trimmedQuery))),
+                switch trigger {
+                case .applyFilters:
+                    return .send(.composer(.applyFilters))
+                case let .submit(query):
+                    return .concatenate(
+                        .send(.composer(.setText(query))),
                         .send(.composer(.submit)),
                     )
+                }
 
             case .view(.toggleShowHiddenFilesAndReload):
                 let showHidden = !state.entryViewLayout.showHiddenFiles
@@ -256,15 +264,12 @@ struct FileManagerContentFeature {
             return nil
         }
 
-        let currentDate = date
-
         return FileManagerContentComposerCoordinator.reduce(
             composerAction,
             state: &state,
             dependencies: .init(
                 collectionAlertClient: collectionAlertClient,
                 computerName: fileManagerClient.displayName("/"),
-                currentDate: { currentDate() },
             ),
         )
     }
@@ -325,7 +330,7 @@ struct FileManagerContentFeature {
             )
 
         case .collection:
-            .send(.entryViewLayout(.internal(.setCollectionMode(true))))
+            .none
         }
     }
 

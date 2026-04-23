@@ -30,6 +30,21 @@ final class FileManagerCollectionRefreshPolicyTests: XCTestCase {
             $0.collectionSession.isRefreshingHydratedSnapshot = false
             $0.collectionSession.isWritingBackRefreshedSnapshot = true
         }
+        XCTAssertEqual(store.state.collectionSessionRefreshBlockingReason, .writeBackInFlight)
+
+        // Consume the save-completion boundary before asserting final teardown.
+        await store.receive(\.internal.requestNavigation)
+        await store.receive(\.internal.requestNavigation)
+        await store.receive(\.internal.requestNavigation)
+        await store.receive(\.entryViewLayout.internal.setCollectionMode)
+        await store.receive(\.entryViewLayout.internal.applyCollectionSearchPaths)
+        await store.receive(\.internal.syncComposerCollectionState)
+        await store.receive(\.composer.internal.searchListApplied)
+        await store.receive(\.composer.view.saveCollection)
+        await store.receive(\.delegate.composerCollectionSearchSucceeded)
+        await store.receive(\.composer.collection.saveToExisting)
+        await store.receive(\.composer.collection.saveCompleted)
+        await store.receive(\.internal.requestNavigation)
         await store.finish()
 
         let saved = await recorder.last()
@@ -68,6 +83,7 @@ final class FileManagerCollectionRefreshPolicyTests: XCTestCase {
         XCTAssertFalse(store.state.collectionSession.isWritingBackRefreshedSnapshot)
         XCTAssertTrue(store.state.collectionSession.isStale)
         XCTAssertNil(store.state.collectionSession.lastRefreshAt)
+        XCTAssertEqual(store.state.collectionSessionRefreshBlockingReason, .missingBaseline)
     }
 
     func testRefreshSuccessSkipsWriteBackWhenCollectionIsDirty() async {
@@ -101,6 +117,7 @@ final class FileManagerCollectionRefreshPolicyTests: XCTestCase {
         XCTAssertFalse(store.state.collectionSession.isWritingBackRefreshedSnapshot)
         XCTAssertTrue(store.state.collectionSession.isStale)
         XCTAssertNil(store.state.collectionSession.lastRefreshAt)
+        XCTAssertNil(store.state.collectionSessionRefreshBlockingReason)
     }
 
     func testRefreshSuccessSkipsWriteBackWhenCompatibilityBlocksWriteBack() async {
@@ -135,7 +152,8 @@ final class FileManagerCollectionRefreshPolicyTests: XCTestCase {
         }
         await store.finish()
 
-        await XCTAssertNil(recorder.last())
+        let saved = await recorder.last()
+        XCTAssertNil(saved)
         XCTAssertTrue(store.state.collectionSession.isStale)
         XCTAssertNil(store.state.collectionSession.lastRefreshAt)
     }
@@ -169,7 +187,6 @@ final class FileManagerCollectionRefreshPolicyTests: XCTestCase {
         _ = handleCollectionSaveSuccess(
             completion: completion,
             state: &state,
-            currentDate: .distantFuture,
         )
 
         XCTAssertEqual(state.collectionSession.openedCompatibility?.warnings, [])
@@ -217,9 +234,11 @@ private func makeContentStore(
         )
         $0.userDefaultsClient = .testValue
         $0.collectionStalenessClient = .testValue
+        $0.date = .constant(Date(timeIntervalSince1970: 1_234_567_890))
     }
 }
 
+@MainActor
 private func makeRefreshingState(
     requestID: UUID,
     openedURL: URL,
