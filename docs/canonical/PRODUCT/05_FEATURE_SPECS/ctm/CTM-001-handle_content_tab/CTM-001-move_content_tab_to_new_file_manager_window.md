@@ -23,7 +23,7 @@ shortcut: "-"
 
 ## Preconditions
 
--   -
+- -
 
 ## Expected Outcome
 

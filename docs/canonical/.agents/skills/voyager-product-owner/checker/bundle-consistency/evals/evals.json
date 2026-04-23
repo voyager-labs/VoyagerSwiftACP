@@ -31,17 +31,18 @@
       "files": ["evals/fixtures/tcw_drift"],
       "expectations": [
         "check_contract_consistency.py reports spec.contract_reference_missing",
+        "check_contract_consistency.py reports flow.contract_reference_missing",
         "check_contract_consistency.py reports spec.forbidden_state_term_present",
-        "The contract checker emits no FAIL issues for this drift fixture"
+        "The contract checker emits a flow-related FAIL issue for this drift fixture"
       ],
       "runner": {
         "script": "check_contract_consistency.py",
         "target": "TCW",
         "repo_root": "evals/fixtures/tcw_drift",
-        "expect_ok": true,
-        "expect_fail_count": 0,
+        "expect_ok": false,
+        "expect_fail_count": 1,
         "expect_warn_count": 2,
-        "expect_issue_codes_present": ["spec.contract_reference_missing", "spec.forbidden_state_term_present"],
+        "expect_issue_codes_present": ["spec.contract_reference_missing", "flow.contract_reference_missing", "spec.forbidden_state_term_present"],
         "expect_issue_codes_absent": ["contract.unknown_interaction"]
       }
     },

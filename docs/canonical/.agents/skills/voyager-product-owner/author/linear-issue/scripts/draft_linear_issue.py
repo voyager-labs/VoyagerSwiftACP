@@ -48,15 +48,17 @@ def load_template(repo_root: Path) -> str:
         repo_root
         / ".agents"
         / "skills"
-        / "voyager-linear-issue-author"
-        / "templates"
+        / "voyager-product-owner"
+        / "author"
+        / "linear-issue"
+        / "assets"
         / "TEMPLATE-feature-implementation.md"
     )
     if path.exists():
         return path.read_text(encoding="utf-8")
 
     raise FileNotFoundError(
-        "Template not found. Expected .agents/skills/voyager-linear-issue-author/templates/TEMPLATE-feature-implementation.md"
+        "Template not found. Expected .agents/skills/voyager-product-owner/author/linear-issue/assets/TEMPLATE-feature-implementation.md"
     )
 
 
@@ -246,7 +248,7 @@ def render_issue_markdown(
 
 def parse_args() -> Args:
     parser = argparse.ArgumentParser(
-        description="Draft Linear feature implementation issue markdown from Voyager feature inventory"
+        description="Draft Linear feature development / implementation issue markdown from Voyager feature inventory"
     )
     _ = parser.add_argument(
         "feature_ids", nargs="+", help="Target feature_id values (e.g., EVM-002)"

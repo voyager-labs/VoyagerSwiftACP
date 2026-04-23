@@ -40,7 +40,7 @@ shortcut: "⌘Z"
 
 ## Edge Cases / Failure Handling
 
--   -
+- -
 
 ## Acceptance Criteria
 

@@ -23,6 +23,7 @@ This skill exists for cross-document consistency work across those three documen
 Reference workflows:
 
 - `.agents/skills/voyager-product-owner/checker/bundle-consistency/references/evaluation-workflow.md`
+- `.agents/skills/voyager-product-owner/orchestrator/references/feature-spec-authoring-lifecycle.md`
 
 Do not use this skill for drafting brand new inventory rows from scratch. For authoring, use:
 
@@ -32,6 +33,9 @@ Do not use this skill for drafting brand new inventory rows from scratch. For au
 If the user wants FS-only review against category-level `contracts/*.toml` or `flows/*.md` without FI/IA bundle audit, use:
 
 - `feature-spec-checker`
+
+This skill is the deterministic part of `Gate 3. Bundle validation` in the feature-spec authoring lifecycle.
+Pair it with `bundle_reviewer` when the user also needs contradiction review, tone review, or a judgment about whether the bundle is ready for `AI Draft Complete`.
 
 ## What This Skill Optimizes For
 
@@ -44,7 +48,7 @@ Treat these as **in scope**:
 - missing FEATURE_SPEC files for known interactions
 - stale FEATURE_SPEC frontmatter values compared to INTERACTIONS
 - stale `Related Interactions` links inside FEATURE_SPEC files
-- stale `Source line` values inside FEATURE_SPEC files
+- stale `Inventory row` values inside FEATURE_SPEC files
 - functional contract drift across FI/IA/FS, such as inconsistent state names, CTA names, supported provider set, or trigger/result boundaries
 - primary object drift across FI/IA/FS, such as one document talking about `request` while another talks about `response` for the same contract
 
@@ -70,7 +74,7 @@ If the category has machine-readable contracts, run the contract checker first:
 python3 .agents/skills/voyager-product-owner/checker/bundle-consistency/scripts/check_contract_consistency.py CBW
 ```
 
-This script audits category-level `contracts/*.toml` against the corresponding interaction specs.
+This script audits category-level `contracts/*.toml` against the corresponding interaction specs and required flow docs.
 
 For a repeatable category-wide evaluation pass, use:
 
@@ -90,8 +94,8 @@ python3 .agents/skills/voyager-product-owner/checker/bundle-consistency/scripts/
 - `WARN`: likely drift, hierarchy mismatch, stale deterministic sections, semantic review needed
 - `INFO`: found rows, synced files, counts, expected layout
 - For the contract checker:
-    - `FAIL`: broken contract structure, unknown interactions, invalid transitions
-    - `WARN`: missing contract references, missing required object/state terms, forbidden state terms still present
+    - `FAIL`: broken contract structure, missing or unknown object keys, unknown interactions, invalid transitions, state/transition mismatches, missing required flow docs, or flow docs that fail to reference contracts/specs
+    - `WARN`: legacy object-key fields, unused vocabulary entries, vocabulary entries that redefine `OBJECTS` keys, object references outside declared contract scope, entered_by/trigger ownership mismatches, missing contract references, missing required object/state terms, or forbidden state terms still present
 
 If the user asked only for review, stop after the audit and report findings before writing.
 
@@ -114,7 +118,10 @@ python3 .agents/skills/voyager-product-owner/checker/bundle-consistency/scripts/
 - YAML frontmatter
 - document H1 title
 - `Related Interactions`
-- `Source`
+- required `Source` field (`Inventory row`)
+- deterministically recoverable `Source` lines such as `Flows:` when category flow docs already link the interaction spec
+
+Extra `Source` lines such as `Contracts:` must be preserved by sync instead of being dropped.
 
 It does **not** invent missing product behavior or rewrite body sections.
 
@@ -149,6 +156,10 @@ After deterministic checks are clean, inspect the affected FI/IA/FS docs and ver
 Only flag semantic drift when it changes implementation or review interpretation. Repeated wording by itself is not a problem.
 
 If the user explicitly says an FS long-text field has been human-reviewed and its `<<AI>>` marker should be removed, mirror that removal in the corresponding FI long-text cell in the same edit pass.
+Apply the same one-file sync when a named target FEATURE_SPEC already shows the file-state handoff signal:
+
+- the FEATURE_SPEC no longer carries `<<AI>>` markers while the matching FI `summary` still does
+- the FEATURE_SPEC frontmatter `status` is no longer `아이디어` / `드래프트` while the matching FI row still is
 
 ### 6. Re-validate before finishing
 
@@ -158,6 +169,8 @@ Always rerun the bundle checker and lint any touched FEATURE_SPEC files:
 python3 .agents/skills/voyager-product-owner/checker/bundle-consistency/scripts/check_feature_bundle.py SET-007
 python3 .agents/skills/voyager-product-owner/author/feature-spec/scripts/lint_feature_spec.py --strict PRODUCT/05_FEATURE_SPECS/set/SET-007-manage_ai_connections/*.md
 ```
+
+Treat the bundle as ready for `AI Draft Complete` only when deterministic bundle checks are clean and any remaining semantic notes are explicitly framed as `Phase 2. Human Review` items rather than hidden draft debt.
 
 ## Deterministic Rules Enforced By The Script
 
@@ -180,8 +193,9 @@ python3 .agents/skills/voyager-product-owner/author/feature-spec/scripts/lint_fe
     - `related_region`
     - `menu`
     - `shortcut`
-- FEATURE_SPEC `Source line` matches the current INTERACTIONS TSV line
+- FEATURE_SPEC `Inventory row` matches the current INTERACTIONS TSV file and line
 - FEATURE_SPEC `Related Interactions` matches sibling interactions for the same feature
+- one-file human-review handoff signals in FEATURE_SPEC are mirrored back to the matching FI interaction row
 
 ## Report Structure
 

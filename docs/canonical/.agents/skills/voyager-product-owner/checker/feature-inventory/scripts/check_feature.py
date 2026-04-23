@@ -183,17 +183,17 @@ def load_window_structure_keys(repo_root: Path) -> set[str]:
 
 def load_interactions_for_feature(
     repo_root: Path, feature_id: str
-) -> list[dict[str, str]]:
+) -> list[tuple[int, dict[str, str]]]:
     path = repo_root / INTERACTIONS_TSV
     if not path.exists():
         return []
     header, it = iter_tsv(path)
     if "feature_id" not in header:
         return []
-    rows: list[dict[str, str]] = []
-    for _line, row, _raw, _issues in it:
+    rows: list[tuple[int, dict[str, str]]] = []
+    for line_no, row, _raw, _issues in it:
         if row.get("feature_id", "").strip() == feature_id:
-            rows.append(row)
+            rows.append((line_no, row))
     return rows
 
 
@@ -462,7 +462,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         print_kv("count", str(len(interactions)))
         if interactions:
             by_status: dict[str, int] = {}
-            for it in interactions:
+            for _line_no, it in interactions:
                 s = it.get("status", "").strip() or "(empty)"
                 by_status[s] = by_status.get(s, 0) + 1
             status_summary = ", ".join(f"{k}={v}" for k, v in sorted(by_status.items()))
@@ -477,7 +477,7 @@ def main(argv: Sequence[str] | None = None) -> int:
             else:
                 invalid_regions = {
                     it.get("related_region", "").strip()
-                    for it in interactions
+                    for _line_no, it in interactions
                     if it.get("related_region", "").strip()
                     and it.get("related_region", "").strip() != "-"
                     and it.get("related_region", "").strip() not in structure_keys
@@ -498,7 +498,7 @@ def main(argv: Sequence[str] | None = None) -> int:
             if desired_category_key:
                 mismatched = {
                     it.get("category_key", "").strip()
-                    for it in interactions
+                    for _line_no, it in interactions
                     if it.get("category_key", "").strip()
                     and it.get("category_key", "").strip() != desired_category_key
                 }
@@ -513,7 +513,7 @@ def main(argv: Sequence[str] | None = None) -> int:
             if max_n < 0:
                 max_n = 50
             to_show = interactions if max_n == 0 else interactions[:max_n]
-            for it in to_show:
+            for _line_no, it in to_show:
                 title = it.get("interaction_title", "").strip()
                 iid = it.get("interaction_id", "").strip()
                 itype = it.get("interaction_type", "").strip()

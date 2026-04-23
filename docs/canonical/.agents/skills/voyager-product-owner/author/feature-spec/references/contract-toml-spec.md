@@ -15,6 +15,7 @@ It should answer:
 
 - what is the primary object?
 - what secondary objects are truly needed?
+- what repeated category-local terms must be defined before policy uses them?
 - what are the allowed user-visible states?
 - what state terms are forbidden?
 - which interactions read or write which states?
@@ -89,6 +90,7 @@ Example:
 ```toml
 [vocabulary]
 downstream_turn = "특정 기준 turn 뒤에 이어지는 후속 turn"
+regenerate = "기존 request를 다시 실행해 같은 turn 안에 새 response를 만드는 action"
 ```
 
 Rules:
@@ -98,6 +100,8 @@ Rules:
 - do not restate the base definitions of `request`, `response`, `provider`, and similar product-wide objects here when they already live in `OBJECTS`
 - if a term is shared broadly enough to behave like a product-wide object, add it to `OBJECTS` first instead of redefining it in multiple contracts
 - keep this section for category-local, directional, or relational terms such as `downstream_turn`
+- if the current contract shape has no dedicated action section, define repeated action or branch terms here before `[policy]` refers to them
+- keep the definition short; let the linked flow doc carry the full sequence semantics
 
 ### `[policy]`
 
@@ -108,6 +112,8 @@ Example:
 ```toml
 [policy]
 single_processing_response_per_request = true
+regenerate_reuses_existing_request = true
+regenerate_reuses_existing_request_note = "새 request를 만들지 않고 재생성 대상 request identity를 유지한다"
 cancel_allowed_from = ["processing"]
 ```
 
@@ -115,6 +121,9 @@ Rules:
 
 - use this section for category-wide invariants
 - avoid stuffing interaction-local behavior here
+- do not let a policy key become the first definition of a repeated term
+- if a policy mentions a repeated action or branch term such as `submit`, `regenerate`, `retry`, or `restore`, define that term in `[vocabulary]` or the linked flow doc first
+- use short `*_note` fields when the invariant would otherwise be easy to misread from the key name alone
 
 ### `[user_visible_states]` / `[user_visible_status]`
 
@@ -147,7 +156,6 @@ Recommended fields:
 - `allows_submit`
 - `fallback_status`
 - `requires_followup`
-- `terms`
 
 Example:
 
@@ -158,13 +166,12 @@ entered_by = ["CBW-001-submit_chat_request", "CBW-001-regenerate_chat_response"]
 exits_to = ["completed", "failed", "cancelled"]
 terminal = false
 user_visible = true
-terms = ["processing"]
 ```
 
 Rules:
 
-- `terms` should contain the exact prose terms the checker can look for
 - use one state name, not a list of near-synonyms
+- interaction spec prose should mention the exact state or status key in inline code form, such as `` `processing` ``
 - keep `entered_by` and `exits_to` deterministic
 
 ### `[ownership."<interaction_id>"]`
@@ -252,6 +259,8 @@ Those belong in:
 `OBJECTS` defines product-wide object nouns.
 
 Contract TOML binds those object keys to category-specific state, ownership, policy, and transitions.
+
+When policy depends on a repeated action or branch term, keep the minimum contract-local definition in `[vocabulary]` and keep the full sequence meaning in the linked flow doc.
 
 Flow docs explain sequence and branching.
 

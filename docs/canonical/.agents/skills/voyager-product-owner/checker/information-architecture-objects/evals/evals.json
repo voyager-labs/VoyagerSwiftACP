@@ -1,0 +1,23 @@
+{
+  "skill_name": "information-architecture-objects-checker",
+  "evals": [
+    {
+      "id": 1,
+      "prompt": "IA OBJECTS 전체 한번 점검해줘. 정의 빠진 거, 안 쓰는 key, contract에서 못 찾는 key, 겹치는 scope 있으면 알려줘.",
+      "expected_output": "OBJECTS 전체를 전수 점검하고 FAIL/WARN/INFO 구조로 유지보수 후보를 보고한다.",
+      "files": []
+    },
+    {
+      "id": 2,
+      "prompt": "context 계열 object들만 봐줘. context, context_entry, context_snapshot, request_context 사이 범위가 겹치는지랑 지금 설명이 충분한지 체크해줘.",
+      "expected_output": "`--focus context` 중심으로 family overlap, usage 요약, 정의 상태를 설명한다.",
+      "files": []
+    },
+    {
+      "id": 3,
+      "prompt": "새 contract를 추가했는데 OBJECTS가 못 따라간 것 같아. unknown object key랑 summary 누락을 같이 잡아줘.",
+      "expected_output": "contract object refs와 OBJECTS rows를 대조해 missing object refs와 약한 정의 상태를 함께 찾는다.",
+      "files": []
+    }
+  ]
+}

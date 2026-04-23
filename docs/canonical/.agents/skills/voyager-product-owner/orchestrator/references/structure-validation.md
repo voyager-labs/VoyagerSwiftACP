@@ -21,6 +21,7 @@ product-owner/
 ├── SKILL.md
 ├── references/
 │   ├── orchestration-workflow.md
+│   ├── feature-spec-authoring-lifecycle.md
 │   ├── structure-validation.md
 │   └── skill-map.md
 └── evals/
@@ -31,6 +32,7 @@ product-owner/
 
 - `SKILL.md` stays short and acts as the orchestration entrypoint only.
 - detailed routing and delegation procedure lives in `references/orchestration-workflow.md`
+- feature-spec lifecycle phase/gate definitions live in `references/feature-spec-authoring-lifecycle.md`
 - structure assumptions and validation criteria live in this file
 - existing author/reviewer skills remain separate skills
 - `.codex/agents/README.md` remains the routing source of truth
