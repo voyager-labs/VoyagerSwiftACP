@@ -4,8 +4,11 @@ import SwiftUI
 
 import VoyagerFeaturesEntryOperations
 
-func showsToolbarRefreshButton(_ collectionStatus: ToolbarCollectionStatusViewState) -> Bool {
-    collectionStatus.showsRefreshAffordance
+func showsToolbarRefreshButton(
+    _ collectionStatus: ToolbarCollectionStatusViewState,
+    isTitleAreaHovered: Bool,
+) -> Bool {
+    isTitleAreaHovered && collectionStatus.showsRefreshAffordance
 }
 
 func isToolbarRefreshButtonEnabled(_ collectionStatus: ToolbarCollectionStatusViewState) -> Bool {
@@ -159,7 +162,7 @@ struct ToolbarView: View {
                         openedCollectionURLExists: state.collectionSession.openedURL != nil,
                         isOpenedCollectionDirty: state.isOpenedCollectionDirty,
                         isOpenedCollectionStale: state.isOpenedCollectionStale,
-                        canRefreshStaleCollection: state.canRefreshStaleCollection,
+                        refreshBlockingReason: state.refreshBlockingReason,
                     ),
                 )
             },
@@ -206,7 +209,10 @@ struct ToolbarView: View {
                 )
                 .buttonStyle(.borderless)
 
-                if showsToolbarRefreshButton(viewStore.collectionStatus) {
+                if showsToolbarRefreshButton(
+                    viewStore.collectionStatus,
+                    isTitleAreaHovered: isTitleAreaHovered,
+                ) {
                     toolbarRefreshButton(viewStore: viewStore)
                 }
 
