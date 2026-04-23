@@ -13,6 +13,7 @@ final class FileManagerToolbarRefreshTests: XCTestCase {
         }
         store.exhaustivity = .off
 
+        XCTAssertNil(store.state.refreshBlockingReason)
         await store.send(.view(.refreshStaleCollection)) {
             $0.collectionSession.isRefreshingHydratedSnapshot = true
             $0.collectionSession.isWritingBackRefreshedSnapshot = false
@@ -39,6 +40,7 @@ final class FileManagerToolbarRefreshTests: XCTestCase {
         }
         store.exhaustivity = .off
 
+        XCTAssertNil(store.state.refreshBlockingReason)
         await store.send(.view(.refreshStaleCollection)) {
             $0.collectionSession.isRefreshingHydratedSnapshot = true
             $0.collectionSession.isWritingBackRefreshedSnapshot = false
@@ -61,6 +63,7 @@ final class FileManagerToolbarRefreshTests: XCTestCase {
 
         await store.send(.view(.refreshStaleCollection))
 
+        XCTAssertEqual(store.state.refreshBlockingReason, .dirtyCollection)
         XCTAssertFalse(store.state.collectionSession.isRefreshingHydratedSnapshot)
         XCTAssertFalse(store.state.collectionSession.isWritingBackRefreshedSnapshot)
     }
@@ -79,9 +82,9 @@ final class FileManagerToolbarRefreshTests: XCTestCase {
 
         await store.send(.view(.refreshStaleCollection))
 
+        XCTAssertEqual(store.state.refreshBlockingReason, .missingOpenedURL)
         XCTAssertFalse(store.state.collectionSession.isRefreshingHydratedSnapshot)
         XCTAssertFalse(store.state.collectionSession.isWritingBackRefreshedSnapshot)
-        XCTAssertFalse(store.state.canRefreshStaleCollection)
     }
 }
 
