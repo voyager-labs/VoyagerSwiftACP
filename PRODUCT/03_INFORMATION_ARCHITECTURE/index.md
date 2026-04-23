@@ -20,6 +20,12 @@ Voyager의 제품 문서 SSOT에서 **정보 구조(IA)** 를 표 형태(TSV)로
     - PK: `key`
     - 파일: `PRODUCT/03_INFORMATION_ARCHITECTURE/OBJECTS/data.tsv`,
       `PRODUCT/03_INFORMATION_ARCHITECTURE/OBJECTS/schema.json`
+    - category 분류:
+      `Domain` = 제품 전반에서 쓰는 기본 개체
+      `Conversation` = chat, session, request, response, turn 등 대화 흐름 개체
+      `State` = UI나 실행 중 유지되는 상태성 개체
+      `Operation` = 실행 가능한 동작 단위
+      `Rule` = 판정·적용 규칙 단위
 
 ## 참조 관계
 
@@ -34,3 +40,4 @@ Voyager의 제품 문서 SSOT에서 **정보 구조(IA)** 를 표 형태(TSV)로
 ## 작성/변경 규칙
 
 - TSV는 빈 행 없이 고정 컬럼 수를 유지하고, 결측은 `-`/`TBD`로 표기합니다.
+- `OBJECTS.summary` 작성 톤은 `.agents/skills/voyager-product-owner/author/information-architecture/references/objects-writing-guide.md`를 따른다.

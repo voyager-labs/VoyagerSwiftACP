@@ -4,14 +4,20 @@ Use this workflow by default for requests that land inside the Voyager `PRODUCT`
 
 ## Scope
 
-This workflow covers:
+This workflow writes and validates:
 
-- `PRODUCT/01_PRODUCT_THESIS/`
-- `PRODUCT/02_USER_PERSONA/`
 - `PRODUCT/03_INFORMATION_ARCHITECTURE/`
 - `PRODUCT/04_FEATURE_INVENTORY/`
 - `PRODUCT/05_FEATURE_SPECS/`
 - repo-tracked Linear draft work only when the user explicitly asks
+
+Reference-only inputs for scoping and validation:
+
+- `PRODUCT/01_PRODUCT_THESIS/`
+- `PRODUCT/02_USER_PERSONA/`
+
+Use these directories to check actor, problem, and success-language alignment for IA/FI/FS work.
+Do not route writes there unless the user explicitly asks.
 
 Do not route into `PRODUCT/06_USE_CASES/` or other lanes unless the user explicitly asks.
 
@@ -22,6 +28,7 @@ Do not route into `PRODUCT/06_USE_CASES/` or other lanes unless the user explici
 - Keep existing author/reviewer skills and project-scoped agents independent.
 - Do not physically move `inventory-author`, `spec-author`, `bundle-reviewer`, or related skills under this skill directory.
 - Treat them as stable delegate targets with their own trigger surfaces and evaluation histories.
+- Use `feature-spec-authoring-lifecycle.md` as the source of truth for docs-first issue drafting, Phase 1 AI drafting, validation gates, and the Phase 2 handoff.
 
 ## Parent Responsibilities
 
@@ -29,6 +36,7 @@ The parent agent must:
 
 - form a concise task brief first
 - decide which lanes actually need delegation
+- use `PRODUCT/01_PRODUCT_THESIS/` and `PRODUCT/02_USER_PERSONA/` as `reference_only` truth when checking whether IA/FI/FS changes still fit the product brief
 - keep the write scope narrow
 - integrate subagent outputs
 - make final edits
@@ -40,11 +48,11 @@ Do not delegate the whole task blindly.
 
 Use this orchestration workflow by default whenever the task belongs to:
 
-- `PRODUCT/01_PRODUCT_THESIS/`
-- `PRODUCT/02_USER_PERSONA/`
 - `PRODUCT/03_INFORMATION_ARCHITECTURE/`
 - `PRODUCT/04_FEATURE_INVENTORY/`
 - `PRODUCT/05_FEATURE_SPECS/`
+
+The parent may inspect `PRODUCT/01_PRODUCT_THESIS/` and `PRODUCT/02_USER_PERSONA/` as `reference_only` inputs when the user asks whether current IA/FI/FS docs still fit the top-level product truth.
 
 Explicit requests for:
 
@@ -62,6 +70,12 @@ Source of truth:
 
 - `.codex/agents/README.md`
 - `.codex/agents/*.toml`
+
+### Reference alignment review
+
+1. `scope_reviewer`
+2. `bundle_reviewer` and/or `feature_spec_checker` depending on whether the request is bundle parity or FS contract/flow wording
+3. keep thesis/persona read-only unless the user explicitly asks for a reference-doc rewrite
 
 ### Fuzzy product request
 
@@ -82,11 +96,40 @@ Source of truth:
 2. `inventory_author`
 3. `bundle_reviewer` when FI changes also affect IA or FS
 
+### Docs-first feature-spec issue drafting
+
+This lane is outside the default `PRODUCT` harness.
+
+1. `scope_reviewer`
+2. `feature_spec_issue_author`
+
+Use this lane when the output should be a docs-first issue body that defines the expected IA/FI/FS touch set and the handoff into `Phase 1. AI Draft Authoring`.
+
 ### FS drafting or refinement
 
-1. `scope_reviewer` when bundle impact is unclear
-2. `spec_author`
-3. `bundle_reviewer` when parity or contract review is needed
+Default lifecycle:
+
+1. `feature_inventory_checker`
+2. `inventory_author` and `feature_inventory_author` when the FI seed truth is missing or stale
+3. `information_architecture_author` when IA sidecar work such as `OBJECTS` or `WINDOW_STRUCTURE` support is needed
+4. `spec_author`
+5. `feature_spec_author`
+6. `feature_spec_checker`
+7. `bundle_reviewer` and `bundle_consistency_checker`
+8. `spec_style_reviewer`
+
+Use the fixed authoring order from `feature-spec-authoring-lifecycle.md`:
+
+- `FI.feature_category -> FI.feature -> FI.interaction`
+- `FS.contract -> FS.flow -> FS.interaction spec`
+
+Do not claim `AI Draft Complete` until the lifecycle gates in that reference pass.
+
+### FS tone or writing-style review
+
+1. `spec_style_reviewer`
+2. re-enter `spec_author` only if fixes are requested
+3. rerun `spec_style_reviewer` when the user wants confirmation that the style pass is clean
 
 ### Consistency review only
 
@@ -139,6 +182,7 @@ Examples:
 - FI/IA/FS bundle change: run the bundle checker
 - contract/category change: run the category eval if available
 - issue drafting only: no product-bundle checker unless the docs changed
+- feature-spec authoring lifecycle: clear Gate 1, Gate 2, and Gate 3 before handing off to `Phase 2. Human Review`
 
 ## Fallback Rule
 

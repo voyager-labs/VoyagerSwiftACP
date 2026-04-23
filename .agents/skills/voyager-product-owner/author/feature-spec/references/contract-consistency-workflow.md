@@ -1,15 +1,20 @@
 # Contract & Consistency Workflow
 
-Use this workflow when an interaction spec alone is no longer enough to keep object vocabulary, state vocabulary, and cross-feature consistency stable.
+Use this workflow when maintaining a contract-driven FEATURE_SPEC category.
+In this repo's target state, a contract-driven category keeps both category-level `contracts/*.toml` files and at least one category-level `flows/*.md` doc.
 
 ## When To Use This Workflow
 
-Use this workflow when either condition is true:
+Use this workflow whenever:
 
 - the same object/state vocabulary appears in multiple interaction specs
-- one user flow spans multiple features and needs a single consistency source instead of repeated prose
+- one user flow spans multiple features
+- an existing contract-driven category is being updated
 
-Do not force this structure onto isolated interactions that do not share vocabulary or flow.
+Migration note:
+
+- older categories may still be missing one or both artifacts
+- new or actively edited contract-driven categories should create or update both the contract set and the canonical flow doc in the same pass
 
 ## Primary Goal
 
@@ -24,7 +29,8 @@ The primary goal is to create explicit contract artifacts that make these questi
 - which transitions are allowed?
 - which terms are forbidden because they would create drift?
 
-`flow` docs exist to support this consistency model, not as the primary artifact.
+`flow` docs are required companion artifacts in this consistency model.
+They are not a substitute for the contract, but they are not optional support notes either.
 
 ## Document Types
 
@@ -61,6 +67,8 @@ Rules:
     - keep `request` and `response` when they already model the product correctly
     - use `turn` when the contract needs a unit that groups one `request` with its connected `response`
     - use `chat_session` instead of `conversation_session` for the session container in CBW docs unless the user explicitly requests otherwise
+- if a repeated action or branch term appears in policy, define that term first in `[vocabulary]` and the linked flow doc unless the current schema already has a more precise home for it
+- treat undefined repeated policy terms as contract debt even if the current checker does not emit a dedicated warning for them
 
 Recommended structure:
 
@@ -105,18 +113,21 @@ Use for:
 - happy path / cancel path / regenerate path
 - overview diagrams
 - feature handoff boundaries
+- a single canonical narrative that ties the linked interaction specs back to the contract vocabulary
 
 Rules:
 
 - use markdown
 - keep it human-readable
+- follow `flow-writing-guide.md` and `../assets/TEMPLATE-flow.md`
 - reference interaction specs and contract files directly
 - use this doc to explain sequence, not to redefine the contract vocabulary
 - keep `.md` as the default extension so prose, links, and fenced mermaid diagrams can live together in one file
+- keep at least one canonical flow doc per contract-driven category
 
 ## How To Update Interaction Specs
 
-When a category contract or flow exists:
+When a category contract and flow set exists:
 
 - keep the interaction spec focused on that interaction only
 - reference the relevant `contracts/*.toml` and `flows/*.md`
@@ -137,36 +148,50 @@ Instead:
 
 ## Continuous Maintenance Workflow
 
-When a category already has `contracts/*.toml`, keep the contract and interaction specs in sync with this loop:
+When a category already has `contracts/*.toml`, keep the contract, flow docs, and interaction specs in sync with this loop:
 
-1. Update the relevant contract file first.
+1. Resolve term ownership before editing policy.
+    - decide whether the repeated term belongs to `OBJECTS`, `[vocabulary]`, or the linked flow doc
+    - if the current contract shape has no dedicated action section, define repeated action or branch terms in `[vocabulary]` and the linked flow doc before using them in `[policy]`
+
+2. Update the relevant contract file.
    Example:
-   - add a new product-wide object to `OBJECTS` and then reference it from the contract
-   - add a new allowed state
-   - remove a forbidden state
-   - add or change an ownership binding
+    - add a new product-wide object to `OBJECTS` and then reference it from the contract
+    - add a missing category-local term definition that policy or ownership depends on
+    - add a new allowed state
+    - remove a forbidden state
+    - add or change an ownership binding
+    - add or revise policy only after the referenced terms are already defined
 
-2. Update the affected interaction specs.
-   - use the exact object and state vocabulary declared in the contract
-   - add or update contract references in the interaction specs
-   - remove obsolete terms that the contract now forbids
+3. Update the category flow doc.
+    - reference the current contract files directly
+    - link the interaction specs that own each step
+    - keep happy-path and branch semantics aligned with the contract vocabulary
+    - make the sequence consequence of repeated action or branch terms explicit instead of leaving policy keys to imply the meaning
 
-3. Run the contract consistency checker.
+4. Update the affected interaction specs.
+    - use the exact object and state vocabulary declared in the contract
+    - add or update contract references in the interaction specs
+    - add or update flow references in the interaction specs
+    - remove obsolete terms that the contract now forbids
+
+5. Run the contract consistency checker.
 
 ```bash
 python3 .agents/skills/voyager-product-owner/checker/bundle-consistency/scripts/check_contract_consistency.py CBW
 ```
 
-4. Run the existing FI/IA/FS bundle checker for the affected features.
+6. Run the existing FI/IA/FS bundle checker for the affected features.
 
 ```bash
 python3 .agents/skills/voyager-product-owner/checker/bundle-consistency/scripts/check_feature_bundle.py CBW-001
 ```
 
-5. Resolve warnings before widening the rollout.
-   - `spec.contract_reference_missing`: add the missing contract reference
-   - `spec.state_term_missing`: replace vague wording with the declared state term or one of its allowed terms
-   - `spec.object_term_missing`: name the correct object explicitly
-   - `spec.forbidden_state_term_present`: remove or rewrite the forbidden term
+7. Resolve warnings before widening the rollout.
+    - `spec.contract_reference_missing`: add the missing contract reference
+    - `spec.state_term_missing`: replace vague wording with the declared state term or one of its allowed terms
+    - `spec.object_term_missing`: name the correct object explicitly
+    - `spec.forbidden_state_term_present`: remove or rewrite the forbidden term
+    - undefined repeated policy term: treat as a manual review failure even if the current checker does not yet emit a dedicated code for it
 
-6. If the user confirms human review of a long-text field, remove the `<<AI>>` marker from FI and FS in the same pass.
+8. If the user confirms human review of a long-text field, remove the `<<AI>>` marker from FI and FS in the same pass.

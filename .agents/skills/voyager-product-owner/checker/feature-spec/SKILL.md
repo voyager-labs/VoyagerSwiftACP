@@ -29,12 +29,16 @@ For those, use:
 - `feature-inventory-author`
 - `feature-spec-author`
 
+This skill is `Gate 2. FS local check` in the feature-spec authoring lifecycle.
+Use it after `contract -> flow -> interaction spec` authoring and before claiming `AI Draft Complete`.
+
 ## Required References
 
 Read these before reviewing:
 
 - `references/spec-contract-flow-review.md`
 - `.agents/skills/voyager-product-owner/author/feature-spec/references/contract-consistency-workflow.md`
+- `.agents/skills/voyager-product-owner/orchestrator/references/feature-spec-authoring-lifecycle.md`
 
 ## Workflow
 
@@ -55,6 +59,9 @@ Use `--json` when structured output helps:
 python3 .agents/skills/voyager-product-owner/checker/bundle-consistency/scripts/check_contract_consistency.py CBW --json
 ```
 
+This pass should also catch missing category flow docs and flow docs that fail to reference the current contract/spec set.
+It also enforces OBJECTS-first contract checks such as unknown object keys, legacy object-key fields, unused or `OBJECTS`-redefining vocabulary entries, and state/transition ownership mismatches.
+
 3. Lint the affected interaction specs
 
 Run strict lint only on interaction spec markdown, not `flows/*.md`:
@@ -67,12 +74,14 @@ find PRODUCT/05_FEATURE_SPECS/cbw -name '*.md' ! -path '*/flows/*' | xargs pytho
 
 - Compare `flows/*.md` against the linked interaction specs.
 - Check that step ordering, state names, object names, and branch semantics match the current contracts and specs.
+- If the category has no flow doc, treat that as a structural failure, not a style preference.
 - Treat this as semantic review even when deterministic scripts pass.
 
 5. Report findings or re-validate after edits
 
 - If the user asked only for review, report findings before editing.
 - If the user asked for fixes, rerun the same checks after editing.
+- Do not hand the bundle to `Phase 2. Human Review` while this gate still has a blocking structural or semantic failure.
 
 ## Output Format
 

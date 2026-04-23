@@ -12,6 +12,7 @@ The goal is to keep `product-owner` as an orchestration entrypoint inside the `v
 - `.agents/skills/voyager-product-owner/checker/feature-spec/`
 - `.agents/skills/voyager-product-owner/checker/bundle-consistency/`
 - `.agents/skills/voyager-product-owner/author/linear-issue/`
+- `.agents/skills/voyager-product-owner/author/feature-spec-issue/`
 - `.agents/skills/voyager-product-owner/author/feature-inventory/`
 - `.agents/skills/voyager-product-owner/checker/feature-inventory/`
 
@@ -31,8 +32,10 @@ Primary delegate agents:
 - `inventory_author`
 - `spec_author`
 - `bundle_reviewer`
+- `spec_style_reviewer`
 - `product_researcher`
 - `linear_issue_author`
+- `feature_spec_issue_author`
 
 ## Routing Principle
 

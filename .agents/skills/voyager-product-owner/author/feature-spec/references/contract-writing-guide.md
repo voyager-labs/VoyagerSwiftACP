@@ -43,12 +43,14 @@ Write a contract in this order:
 2. decide the primary object key
 3. decide whether any secondary object keys are truly needed
 4. settle the remaining category-local vocabulary names
-5. declare allowed and forbidden user-visible states
-6. define state meanings
-7. assign ownership by interaction
-8. declare allowed transitions
+5. settle any repeated action or branch term that policy will rely on
+6. declare policy invariants on the settled terms
+7. declare allowed and forbidden user-visible states
+8. define state meanings
+9. assign ownership by interaction
+10. declare allowed transitions
 
-Do not start from transitions before the object and vocabulary are settled.
+Do not start from policy or transitions before the object and vocabulary are settled.
 
 ## Object Rules
 
@@ -115,6 +117,26 @@ Examples:
 - prefer `chat_session` over `conversation_session` if the product language already uses `chat`
 - prefer `downstream_turn` in `[vocabulary]` when the term is a directional concept tied to one contract
 
+## Term Definition Before Policy
+
+- If a repeated non-object term appears in spec prose, flow prose, and policy, define that term before writing the policy key that depends on it.
+- Decide term ownership in this order:
+    - product-wide noun -> `OBJECTS`
+    - category-local relational term -> `[vocabulary]`
+    - branch or sequence term -> linked `flows/*.md`
+    - invariant over already-defined terms -> `[policy]`
+- If the current contract shape has no dedicated section for an action or branch term that policy depends on, put the minimum contract-relevant definition in `[vocabulary]` and let the flow doc own the sequence semantics.
+- Do not let a boolean key such as `regenerate_reuses_existing_request` become the first place where a reviewer infers what `regenerate` means.
+- If the meaning of a repeated term is still unsettled, stop and resolve the term definition before adding policy, ownership, or transitions.
+
+## Policy Rules
+
+- Use `[policy]` to constrain already-defined objects, states, and repeated terms.
+- Keep policy values focused on invariants, allowed sets, forbidden sets, fallback rules, and ownership-neutral constraints.
+- When a policy key mentions a repeated action or branch term such as `submit`, `regenerate`, `retry`, or `restore`, the linked flow doc must already explain that term's sequence semantics.
+- Add a short note field when a boolean or enum policy would otherwise be easy to misread from the key name alone.
+- Do not use `[policy]` to smuggle in a new term definition that should live in `OBJECTS`, `[vocabulary]`, or a flow doc.
+
 ## State Rules
 
 ### Only declare user-visible states in `allowed`
@@ -154,6 +176,12 @@ For each `[state.<name>]` or `[status.<name>]`, the author should be able to ans
 - is it user-visible?
 
 If you cannot answer those clearly, the state is not ready.
+
+Interaction specs should mention contract-declared state or status names using the exact key in inline code form.
+Example:
+
+- use `` `processing` `` instead of prose variants like `running`
+- use `` `restore_failed` `` instead of label-only phrases like `restore failed`
 
 ## Ownership Rules
 
@@ -206,6 +234,8 @@ Use flow docs for:
 - branching paths
 - end-to-end explanation
 - diagrams
+
+For contract-driven categories, keep at least one flow doc as a required companion artifact.
 
 Do not try to make one document do both jobs.
 

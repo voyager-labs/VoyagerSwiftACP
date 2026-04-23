@@ -36,9 +36,8 @@ Voyager 문서를 GitHub SSOT로 운영하는 레포입니다. 문서는 Markdow
 | 페르소나 확인          | `PRODUCT/02_USER_PERSONA/00_index.md`                                                           | Alex/Eric/Mia                              |
 | IA(UI 구조/메뉴) 편집  | `PRODUCT/03_INFORMATION_ARCHITECTURE/index.md`                                                  | `WINDOW_STRUCTURE.structure_key`는 참조 키 |
 | 기능/인터랙션 편집     | `PRODUCT/04_FEATURE_INVENTORY/index.md`                                                         | FEATURES/INTERACTIONS 테이블               |
-| 기능 스펙 확인/편집    | `PRODUCT/05_FEATURE_SPECS/index.md`                                                             | interaction_id 기반 스펙                   |
 | 유즈케이스 흐름 확인   | `PRODUCT/06_USE_CASES/index.md`                                                                 | PREV/NEXT 내비                             |
-| 특정 feature_id 검증   | `.agents/skills/voyager-product-owner/checker/feature-inventory/SKILL.md`                        | 빠른 lookup/정합성 체크                    |
+| 특정 feature_id 검증   | `.agents/skills/voyager-product-owner/checker/feature-inventory/SKILL.md`                       | 빠른 lookup/정합성 체크                    |
 | Codex 서브에이전트     | `.codex/agents/README.md`                                                                       | 프로젝트 전용 custom agents                |
 
 ## CONVENTIONS (THIS REPO)
@@ -64,6 +63,20 @@ Voyager 문서를 GitHub SSOT로 운영하는 레포입니다. 문서는 Markdow
 ## COMMANDS
 
 ```bash
+# VSCode formatter parity
+# - Markdown / JSON / JSONC: Prettier (`esbenp.prettier-vscode`) + `.prettierrc.json` + `.editorconfig`
+# - TOML: Even Better TOML in VSCode, Taplo in CLI via `.taplo.toml`
+# - Markdownlint is lint/fix support, not the default formatter
+npm run format:prettier -- <paths...>
+npm run check:prettier -- <paths...>
+npm run lint:markdown
+npm run lint:markdown:fix
+npm run lint:markdown:paths -- <paths...>
+npm run lint:markdown:fix:paths -- <paths...>
+npm run format:toml -- <paths...>
+npm run check:format:toml -- <paths...>
+npm run check:toml -- <paths...>
+
 # 특정 feature_id를 FEATURES/INTERACTIONS/WINDOW_STRUCTURE 기준으로 빠르게 점검
 python3 .agents/skills/voyager-product-owner/checker/feature-inventory/scripts/check_feature.py FMW-001
 

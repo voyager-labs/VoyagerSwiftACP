@@ -2,6 +2,8 @@
 
 Use this guide when `feature-spec-checker` reviews one category's FEATURE_SPEC docs against `contracts/*.toml` and `flows/*.md`.
 
+This is the semantic and structural review guide for `Gate 2. FS local check` in the feature-spec authoring lifecycle.
+
 ## Scope
 
 This checker is narrower than bundle consistency.
@@ -18,14 +20,36 @@ It does not answer:
 - whether FI, IA, and FS tables all match each other
 - whether a missing `structure_key` or stale frontmatter should be synced from inventory
 
+## Precedence Reminder
+
+When reviewing one interaction spec, use this precedence order before raising style findings:
+
+1. matching FI `INTERACTIONS` row truth
+2. interaction-spec frontmatter exact-match fields
+3. frontmatter `summary` wording preference
+4. interaction-spec body prose wording preference
+5. contract/flow wording preference
+
+Implications:
+
+- If a frontmatter `summary` matches the FI row but uses wording you would not choose for body prose, do not report that as drift by default.
+- If a frontmatter `summary` uses preferred wording but no longer matches the FI row, treat that as a structural sync problem, not a style improvement.
+- Review body prose wording separately from frontmatter sync fields.
+
 ## Deterministic pass
 
 Start with `check_contract_consistency.py`.
 
 That script already checks:
 
+- missing `primary_object_key` migration or unknown `OBJECTS.key` references
+- unused contract vocabulary declarations
+- contract vocabulary that redefines an `OBJECTS` key
+- ownership object references that fall outside declared contract scope
 - unknown interactions referenced by a contract
 - invalid transition state references
+- `entered_by` and transition trigger ownership mismatches
+- `exits_to` and declared transitions that disagree
 - missing spec contract references
 - missing expected object terms in interaction specs
 - missing expected state terms in interaction specs
@@ -101,3 +125,5 @@ Name the drift directly:
 - which object or state term differs
 - which interaction or flow step owns the behavior
 - whether the disagreement changes implementation or review interpretation
+
+Clear this gate before handing the bundle to cross-layer bundle validation or `Phase 2. Human Review`.

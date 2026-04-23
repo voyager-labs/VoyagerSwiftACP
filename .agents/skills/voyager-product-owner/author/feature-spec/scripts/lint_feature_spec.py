@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import argparse
+import os
 import re
 from pathlib import Path
 from typing import Dict, Iterable, List, Tuple
@@ -35,6 +36,11 @@ REQUIRED_METADATA_FIELDS = {
     "shortcut",
 }
 
+REPO_MARKERS = [
+    Path("PRODUCT/04_FEATURE_INVENTORY/INTERACTIONS/data.tsv"),
+    Path("PRODUCT/05_FEATURE_SPECS"),
+]
+
 LEGACY_METADATA_FIELD_MAP = {
     "Interaction ID": "interaction_id",
     "Interaction Type": "interaction_type",
@@ -50,6 +56,7 @@ LEGACY_METADATA_FIELD_MAP = {
 
 SECTION_RE = re.compile(r"^##\s+(.*)$")
 TABLE_ROW_RE = re.compile(r"^\|\s*([^|]+?)\s*\|\s*([^|]*?)\s*\|")
+MARKDOWN_LINK_RE = re.compile(r"\]\(([^)]+)\)")
 
 
 class LintResult:
@@ -125,6 +132,57 @@ def parse_legacy_metadata(lines: List[str]) -> Dict[str, str]:
         if normalized_key:
             fields[normalized_key] = value
     return fields
+
+
+def find_repo_root(start: Path) -> Path:
+    for candidate in [start.resolve(), *start.resolve().parents]:
+        if all((candidate / marker).exists() for marker in REPO_MARKERS):
+            return candidate
+    raise RuntimeError("Could not locate voyager-documentation repo root")
+
+
+def relative_markdown_path(from_dir: Path, target_path: Path) -> str:
+    return Path(os.path.relpath(target_path, start=from_dir)).as_posix()
+
+
+def flow_references_spec(flow_path: Path, spec_path: Path) -> bool:
+    expected = spec_path.resolve()
+    text = flow_path.read_text(encoding="utf-8")
+    for raw_target in MARKDOWN_LINK_RE.findall(text):
+        target = raw_target.split("#", 1)[0].strip()
+        if not target or "://" in target:
+            continue
+        if (flow_path.parent / target).resolve() == expected:
+            return True
+    return False
+
+
+def expected_flow_source_line(repo_root: Path, spec_path: Path) -> str | None:
+    feature_specs_root = (repo_root / "PRODUCT/05_FEATURE_SPECS").resolve()
+    resolved_spec = spec_path.resolve()
+    try:
+        relative_spec = resolved_spec.relative_to(feature_specs_root)
+    except ValueError:
+        return None
+
+    if len(relative_spec.parts) < 3:
+        return None
+    if relative_spec.parts[1] in {"flows", "contracts"}:
+        return None
+
+    category_dir = feature_specs_root / relative_spec.parts[0]
+    flow_dir = category_dir / "flows"
+    if not flow_dir.exists():
+        return None
+
+    flow_paths = [path for path in sorted(flow_dir.glob("*.md")) if flow_references_spec(path, resolved_spec)]
+    if not flow_paths:
+        return None
+
+    flow_links = ", ".join(
+        f"[{path.name}]({relative_markdown_path(resolved_spec.parent, path)})" for path in flow_paths
+    )
+    return f"- Flows: {flow_links}"
 
 
 def is_placeholder_line(line: str) -> bool:
@@ -213,6 +271,18 @@ def lint_path(path: Path, strict: bool) -> LintResult:
         source_text = "\n".join(sections["Source"])
         if "Inventory" not in source_text and not strict:
             result.warn("Source section does not reference Inventory; check if intended.")
+        try:
+            repo_root = find_repo_root(path.parent)
+        except RuntimeError:
+            repo_root = None
+        if repo_root is not None:
+            actual_flow_lines = [line.strip() for line in sections["Source"] if line.strip().startswith("- Flows:")]
+            expected_flow_line = expected_flow_source_line(repo_root, path)
+            if expected_flow_line is not None:
+                if actual_flow_lines != [expected_flow_line]:
+                    result.warn("Source section has stale or missing Flows reference; check related category flow docs.")
+            elif actual_flow_lines:
+                result.warn("Source section has a Flows reference, but no category flow currently links this interaction spec.")
 
     return result
 

@@ -4,8 +4,8 @@ interaction_type: "command"
 feature: "Manage AI Connections"
 category_key: "SET"
 feature_id: "SET-007"
-status: "드래프트"
-summary: "<<AI>> provider 목록 row의 `Disconnect` 액션을 실행해 해당 provider connection을 해제하고 이후 요청에서 해당 provider credential이 사용되지 않도록 상태를 갱신한다."
+status: "기획 완료"
+summary: "프로바이더 카탈로그에서 해당 프로바이더 연결을 해제하고 이후 요청에서 해당 프로바이더 인증 정보가 사용되지 않도록 상태를 갱신한다."
 related_region: "settings_window.settings_body.tab_ai.provider_list_area"
 menu: "-"
 shortcut: "-"
@@ -15,8 +15,8 @@ shortcut: "-"
 
 ## Intent
 
-- 사용자가 현재 provider의 연결을 명시적으로 종료하고, 이후 요청에서 잘못된 provider가 사용되는 것을 막고자 한다.
-- 연결 정리를 통해 credential 오남용 위험을 줄이고 재연결 동선을 명확히 만든다.
+- 사용자가 `connected` 상태의 `provider` row를 명시적으로 해제하고, 이후 요청에서 그 연결이 계속 사용되지 않게 한다.
+- 연결 해제 이후 row를 `not_verified`로 되돌려 재연결 동선을 명확히 한다.
 
 ## Trigger / Entry Points
 
@@ -25,61 +25,61 @@ shortcut: "-"
 ## Preconditions
 
 - 대상 provider가 row action으로 명확히 지정되어야 한다.
-- 해당 provider가 `Connected` 상태이거나 active credential을 가진 상태여야 한다.
+- 해당 row가 `connected` 상태여야 한다.
 - 연결 해제 전 사용자 확인 모달을 표시해야 한다.
+- 대상 row가 이미 `disconnect_in_progress`이면 새 해제 시도를 시작하면 안 된다.
 
 ## Expected Outcome
 
-- 해당 provider의 active 연결 정보가 해제되어야 한다.
-- 이후 요청에서 해당 provider 연결이 사용되지 않아야 한다.
-- 해당 provider row는 연결 해제된 상태로 바뀌고, 필요 시 다시 연결할 수 있는 안내가 노출되어야 한다.
+- 사용자가 연결 해제를 확정하면 대상 row는 먼저 `disconnect_in_progress`로 진입해야 한다.
+- 연결 해제가 성공하면 저장된 연결 정보가 제거되고 대상 row는 `not_verified`로 바뀌어야 한다.
+- 연결 해제가 실패하거나 사용자가 확인 모달을 취소하면 대상 row는 `connected`를 유지해야 한다.
+- 연결 해제 후에도 default provider를 별도로 지정하거나 다른 provider를 자동 대체하면 안 된다.
 
 ## State Changes
 
-- 저장된 access token/credential을 제거하거나 비활성화한다.
-- provider 상태가 `Not verified`로 바뀐다.
-- 마지막으로 사용한 provider 기억값이 해당 provider를 가리키고 있었다면, 해당 기억값을 제거하거나 무효화한다.
-- 마지막 검증 시각, 마지막 오류/연결 기록은 감사용으로 유지하거나 규칙에 맞게 정리한다.
+- 사용자가 확인을 누르면 대상 row는 `disconnect_in_progress`로 전환된다.
+- 성공 시 저장된 provider 인증 정보가 제거되고 row는 `not_verified`로 정리된다.
+- 실패 또는 취소 시 row는 다시 `connected`로 돌아가며, 끊긴 것처럼 보이면 안 된다.
+- 마지막으로 사용한 provider 기억값이 해당 row를 가리키고 있었다면 성공 시에만 제거하거나 무효화한다.
 
 ## User-visible Feedback
 
-- 사용자가 `Disconnect`를 누르면 먼저 확인 모달을 보여주고, 확인 이후에만 연결 해제 진행 중임을 표시한다.
-- 성공 시 성공 메시지와 함께 row 상태 배지가 `Not verified`로 갱신된다.
-- 실패 시, 기존 연결은 유지/분리되지 않았음을 명확히 알리고 재시도 버튼을 제공한다.
-- 연결 해제 후에 사용 가능한 provider reconnect 경로를 이어서 안내한다.
-- 해제된 provider가 마지막으로 사용한 provider였다면, 해당 내부 기억값은 제거되거나 무효화되어야 한다.
+- 사용자가 `Disconnect`를 누르면 먼저 확인 모달을 보여주고, 확정 이후에만 `disconnect_in_progress`를 표시해야 한다.
+- 성공 시 대상 row는 `not_verified` badge와 `Connect` action으로 갱신되어야 한다.
+- 실패 시 대상 row는 `connected`를 유지한 채 실패 안내를 보여줘야 한다.
+- 취소 시 row status와 action은 변경되지 않고 `connected`를 유지해야 한다.
+- 연결 해제 후에도 마지막으로 사용한 provider 정보는 별도 UI badge로 노출하지 않아야 한다.
 
 ## Edge Cases / Failure Handling
 
-- 이미 `Not verified` 상태를 다시 해제 요청할 경우, 중복 요청 에러 없이 현재 상태를 반복 확인해 `Not verified` 상태를 보존한다.
-- 서버(혹은 토큰 폐기 API) 응답이 지연되면, 즉시 반영 가능한 상태와 완료 대기 상태를 분리해 표시한다.
-- 연결 해제 API가 실패하면 사용자에게 명시적으로 경고하고 재시도할 수 있게 한다.
-- 앱 재시작 이전에 임시 캐시 상태만 반영된 경우 영속 해제까지 지연될 수 있으므로 복구 안내를 표시한다.
-- 현재 사용 중인 provider를 즉시 강제 해제해야 하는 정책이라면, 진행 중이던 요청은 실패 처리된 후 실패 이유를 안내한다.
-- 사용자가 확인 모달에서 취소하면 실제 해제는 수행되지 않고 row 상태도 바뀌지 않아야 한다.
+- 대상 row가 이미 `disconnect_in_progress`이면 추가 해제 action을 받아도 중복 요청을 만들지 않아야 한다.
+- 해제 API 응답이 지연되면 row는 `disconnect_in_progress`를 유지하며 완료 전까지 `not_verified`로 앞서 보이면 안 된다.
+- 연결 해제가 실패하면 사용자에게 실패 사실을 알려야 하지만 최종 row status는 `connected`를 유지해야 한다.
+- 사용자가 확인 모달에서 취소하면 실제 해제는 수행되지 않고 row는 `connected`를 유지해야 한다.
+- 현재 사용 중인 provider를 해제한 경우에도 다른 provider를 자동으로 default 지정하면 안 된다.
 
 ## Acceptance Criteria
 
-- [ ] `Connected` 상태인 provider에서 해제 액션을 호출하면, 설정 화면에서 `Not verified` 상태로 바뀌고 provider row는 목록에 남아 있어야 한다.
-- [ ] 연결 해제 직후 즉시 채팅이나 요청에서 해당 provider credential이 사용되지 않아야 한다.
-- [ ] 이미 해제된 provider에 대해 해제 액션을 호출한 경우, 시스템은 오류를 내지 않고 현재 `Not verified` 상태를 유지해야 한다.
-- [ ] 해제 API 또는 토큰 폐기 과정이 실패한 경우, 기존 연결이 유지되었는지 또는 영구 해제가 완료되지 않았는지 명확하게 안내되어야 한다.
-- [ ] 연결 해제 이후 사용자가 다시 연결을 시도하면, 새 연결 시작 흐름으로 정상 진입해야 한다.
-- [ ] 사용자가 확인 모달에서 연결 해제를 취소하면, 실제 해제는 실행되지 않고 row 상태도 유지되어야 한다.
-- [ ] 마지막으로 사용한 provider를 해제한 경우, 해당 내부 기억값은 제거되거나 무효화되어야 하며 다른 provider가 자동으로 default 지정되지는 않아야 한다.
+- [ ] `connected` row인 상황에서, `Disconnect`를 확정하면, 대상 row는 `disconnect_in_progress`를 거쳐 `not_verified`로 바뀌어야 한다.
+- [ ] 연결 해제에 성공한 상황에서, 대상 row를 보면, 목록에 남아 있으면서 `Connect` action으로 되돌아가야 한다.
+- [ ] 연결 해제 직후인 상황에서, 이후 요청을 실행하면, 해당 provider 인증 정보가 계속 사용되지 않아야 한다.
+- [ ] 해제 처리 또는 토큰 폐기 과정이 실패한 상황에서, 대상 row를 보면, 실제로 끊긴 것처럼 `not_verified`로 보이면 안 되고 `connected`를 유지해야 한다.
+- [ ] 사용자가 확인 모달에서 연결 해제를 취소한 상황에서, 흐름이 종료되면, 실제 해제는 실행되지 않고 row는 `connected`를 유지해야 한다.
+- [ ] 마지막으로 사용한 provider를 해제한 상황에서, 해제가 성공하면, 해당 내부 기억값은 제거되거나 무효화되어야 하며 다른 provider가 자동으로 default 지정되지는 않아야 한다.
 
 ## Permissions / Dependencies
 
-- provider별 credential 폐기/삭제 API 또는 로컬 저장소 쓰기 권한이 필요하다.
-- 채팅/요청 파이프라인이 provider 변경 이벤트를 반영할 수 있어야 한다.
-- 마지막으로 사용한 provider 내부 상태를 안전하게 정리할 수 있어야 한다.
+- provider별 저장된 인증 정보를 제거하거나 갱신할 수 있어야 한다.
+- chat과 request 실행 흐름이 provider 연결 해제 결과를 반영할 수 있어야 한다.
+- status 전이와 confirmation 정책은 [ai_provider_connection_contract.toml](../contracts/ai_provider_connection_contract.toml)을 따른다.
 
 ## Observability / Analytics
 
 - 연결 해제 시도 횟수
+- `disconnect_in_progress` 진입 횟수
 - 연결 해제 성공/실패
-- 해제 후 provider 재연결 성공률
-- 해제 직후 채팅에서의 provider 사용 차단 이벤트
+- 해제 직후 provider 사용 차단 이벤트
 
 ## Related Interactions
 
@@ -89,5 +89,6 @@ shortcut: "-"
 
 ## Source
 
-- Inventory: `PRODUCT/04_FEATURE_INVENTORY/INTERACTIONS/data.tsv`
-- Source line: `257`
+- Inventory row: `PRODUCT/04_FEATURE_INVENTORY/INTERACTIONS/data.tsv:243`
+- Contracts: [ai_provider_connection_contract.toml](../contracts/ai_provider_connection_contract.toml)
+- Flows: [ai_provider_connection_flow.md](../flows/ai_provider_connection_flow.md)

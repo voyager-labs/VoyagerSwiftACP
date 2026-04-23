@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import argparse
 import csv
+import os
 import re
 from pathlib import Path
 from typing import Dict, Iterable, List, Optional, Tuple
@@ -13,6 +14,8 @@ REPO_MARKERS = [
     Path("PRODUCT/04_FEATURE_INVENTORY/FEATURES/data.tsv"),
     Path("PRODUCT/05_FEATURE_SPECS"),
 ]
+
+MARKDOWN_LINK_RE = re.compile(r"\]\(([^)]+)\)")
 
 
 class Args(argparse.Namespace):
@@ -75,7 +78,7 @@ def load_template(repo_root: Path, template_arg: Optional[Path]) -> str:
             raise FileNotFoundError(f"Template not found: {template_arg}")
         return custom.read_text(encoding="utf-8")
 
-    skill_template = repo_root / ".agents/skills/voyager-feature-spec-author/references/TEMPLATE-feature-spec.md"
+    skill_template = repo_root / ".agents/skills/voyager-product-owner/author/feature-spec/assets/TEMPLATE-feature-spec.md"
     if skill_template.exists():
         return skill_template.read_text(encoding="utf-8")
 
@@ -137,12 +140,64 @@ def infer_feature_dir(base_dir: Path, feature_id: str, feature_title: str) -> Pa
     return base_dir / f"{feature_id}-{slugify(feature_title, 'feature')}"
 
 
+def relative_markdown_path(from_dir: Path, target_path: Path) -> str:
+    return Path(os.path.relpath(target_path, start=from_dir)).as_posix()
+
+
+def flow_references_spec(flow_path: Path, spec_path: Path) -> bool:
+    expected = spec_path.resolve()
+    text = flow_path.read_text(encoding="utf-8")
+    for raw_target in MARKDOWN_LINK_RE.findall(text):
+        target = raw_target.split("#", 1)[0].strip()
+        if not target or "://" in target:
+            continue
+        if (flow_path.parent / target).resolve() == expected:
+            return True
+    return False
+
+
+def collect_contract_paths_for_interaction(category_dir: Path, interaction_id: str) -> List[Path]:
+    contract_dir = category_dir / "contracts"
+    if not contract_dir.exists():
+        return []
+
+    matches: List[Path] = []
+    for path in sorted(contract_dir.glob("*.toml")):
+        if interaction_id in path.read_text(encoding="utf-8"):
+            matches.append(path)
+    return matches
+
+
+def collect_flow_paths_for_spec(category_dir: Path, spec_path: Path) -> List[Path]:
+    flow_dir = category_dir / "flows"
+    if not flow_dir.exists():
+        return []
+
+    return [path for path in sorted(flow_dir.glob("*.md")) if flow_references_spec(path, spec_path)]
+
+
+def build_source_reference_lines(output_path: Path, contract_paths: List[Path], flow_paths: List[Path]) -> str:
+    lines: List[str] = []
+    if contract_paths:
+        contract_links = ", ".join(
+            f"[{path.name}]({relative_markdown_path(output_path.parent, path)})" for path in contract_paths
+        )
+        lines.append(f"- Contracts: {contract_links}")
+    if flow_paths:
+        flow_links = ", ".join(
+            f"[{path.name}]({relative_markdown_path(output_path.parent, path)})" for path in flow_paths
+        )
+        lines.append(f"- Flows: {flow_links}")
+    return "\n".join(lines)
+
+
 def render_spec(
     template: str,
     interaction: Dict[str, str],
     feature: Dict[str, str],
     related_interactions: List[Dict[str, str]],
     source_line: int,
+    source_reference_lines: str,
     feature_slug: str,
     interaction_slug: str,
     interaction_id: str,
@@ -239,6 +294,7 @@ def render_spec(
         "{observability_section}": build_bullets(observability),
         "{related_interactions_section}": "\n".join(related_md),
         "{source_line}": str(source_line),
+        "{source_reference_lines}": source_reference_lines,
         "{feature_slug}": feature_slug,
         "{interaction_slug}": interaction_slug,
     }
@@ -246,6 +302,8 @@ def render_spec(
     rendered = template
     for old, new in replacements.items():
         rendered = rendered.replace(old, new)
+        if old.startswith("{") and old.endswith("}"):
+            rendered = rendered.replace(f"{{ {old[1:-1]} }}", new)
     return rendered.strip() + "\n"
 
 
@@ -294,6 +352,18 @@ def main() -> int:
         category_key = normalize(interaction.get("category_key"), "")
         category_dir = repo_root / "PRODUCT/05_FEATURE_SPECS" / category_key.lower()
         feature_dir = infer_feature_dir(category_dir, feature_id, feature_title)
+        canonical_output_path = feature_dir / f"{interaction_id}.md"
+
+        if args.output_dir:
+            output_path = args.output_dir / f"{interaction_id}.md"
+        else:
+            output_path = canonical_output_path
+
+        source_reference_lines = build_source_reference_lines(
+            output_path=output_path,
+            contract_paths=collect_contract_paths_for_interaction(category_dir, interaction_id),
+            flow_paths=collect_flow_paths_for_spec(category_dir, canonical_output_path),
+        )
 
         content = render_spec(
             template=template,
@@ -301,15 +371,11 @@ def main() -> int:
             feature=feature,
             related_interactions=get_related_interactions(feature_id, interactions),
             source_line=source_line,
+            source_reference_lines=source_reference_lines,
             feature_slug=feature_slug,
             interaction_slug=interaction_slug,
             interaction_id=interaction_id,
         )
-
-        if args.output_dir:
-            output_path = args.output_dir / f"{interaction_id}-{interaction_slug}.md"
-        else:
-            output_path = feature_dir / f"{interaction_id}-{interaction_slug}.md"
 
         if output_path.exists() and not args.overwrite:
             print(f"Error: output exists: {output_path}. Use --overwrite to replace.")

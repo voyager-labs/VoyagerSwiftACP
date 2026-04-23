@@ -19,6 +19,7 @@ Use this skill as the default operating model for Voyager work inside the `PRODU
 ## Required References
 
 - `references/orchestration-workflow.md`
+- `references/feature-spec-authoring-lifecycle.md`
 - `references/structure-validation.md`
 - `references/skill-map.md`
 - `.codex/agents/README.md`

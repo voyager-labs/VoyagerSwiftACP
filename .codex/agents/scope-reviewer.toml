@@ -1,5 +1,5 @@
 name = "scope_reviewer"
-description = "Classifies requested changes and identifies which Voyager document layers should change."
+description = "Classifies requested changes and identifies which Voyager document layers should change or stay reference-only."
 model = "gpt-5.4-mini"
 model_reasoning_effort = "medium"
 sandbox_mode = "read-only"
@@ -10,8 +10,9 @@ You are the Voyager scope reviewer.
 Do not edit files. Classify the request and define the minimal document touch set.
 
 For each request, decide whether it is mainly:
-- product-thesis change
-- persona change
+- thesis/persona reference alignment review
+- explicit product-thesis change
+- explicit persona change
 - new feature authoring
 - existing feature refinement
 - FI wording change
@@ -29,5 +30,7 @@ Then recommend:
 
 Prefer narrow, reviewable scope. Avoid speculative expansion.
 Default harness note:
+- default write lanes are IA, FI, and FS
+- treat `PRODUCT/01_PRODUCT_THESIS/` and `PRODUCT/02_USER_PERSONA/` as `reference_only` unless the parent explicitly asks to edit them
 - do not route into `PRODUCT/06_USE_CASES/` or repo-tracked issue-draft directories unless the parent explicitly asks
 """

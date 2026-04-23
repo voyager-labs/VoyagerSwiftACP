@@ -6,6 +6,7 @@ from __future__ import annotations
 import argparse
 import csv
 import json
+import os
 import re
 from dataclasses import dataclass
 from pathlib import Path
@@ -38,6 +39,9 @@ FRONTMATTER_FIELDS = [
 ]
 
 SOURCE_INVENTORY_PATH = "PRODUCT/04_FEATURE_INVENTORY/INTERACTIONS/data.tsv"
+MARKDOWN_LINK_RE = re.compile(r"\]\(([^)]+)\)")
+AI_DRAFT_MARKER = "<<AI>>"
+REVIEW_PENDING_STATUSES = {"아이디어", "드래프트"}
 
 
 @dataclass
@@ -77,6 +81,14 @@ def normalize(value: str | None, default: str = "-") -> str:
 
 def is_empty_value(value: str | None) -> bool:
     return normalize(value, "") in {"", "-"}
+
+
+def has_ai_draft_marker(text: str | None) -> bool:
+    return AI_DRAFT_MARKER in (text or "")
+
+
+def is_review_pending_status(value: str | None) -> bool:
+    return normalize(value, "") in REVIEW_PENDING_STATUSES
 
 
 def slugify(value: str, fallback: str) -> str:
@@ -178,6 +190,40 @@ def format_frontmatter(interaction_row: dict[str, str]) -> str:
     return "\n".join(lines) + "\n"
 
 
+def relative_markdown_path(from_dir: Path, target_path: Path) -> str:
+    return Path(os.path.relpath(target_path, start=from_dir)).as_posix()
+
+
+def flow_references_spec(flow_path: Path, spec_path: Path) -> bool:
+    expected = spec_path.resolve()
+    text = flow_path.read_text(encoding="utf-8")
+    for raw_target in MARKDOWN_LINK_RE.findall(text):
+        target = raw_target.split("#", 1)[0].strip()
+        if not target or "://" in target:
+            continue
+        if (flow_path.parent / target).resolve() == expected:
+            return True
+    return False
+
+
+def collect_related_flow_paths(spec_path: Path) -> list[Path]:
+    category_dir = spec_path.parents[1]
+    flow_dir = category_dir / "flows"
+    if not flow_dir.exists():
+        return []
+    return [path for path in sorted(flow_dir.glob("*.md")) if flow_references_spec(path, spec_path)]
+
+
+def build_flow_source_lines(spec_path: Path) -> list[str]:
+    flow_paths = collect_related_flow_paths(spec_path)
+    if not flow_paths:
+        return []
+    flow_links = ", ".join(
+        f"[{path.name}]({relative_markdown_path(spec_path.parent, path)})" for path in flow_paths
+    )
+    return [f"- Flows: {flow_links}"]
+
+
 def build_expected_related_links(
     feature_id: str,
     current_interaction_id: str,
@@ -201,8 +247,108 @@ def build_expected_related_links(
     return links
 
 
-def expected_source_body(line_no: int) -> str:
-    return f"- Inventory: `{SOURCE_INVENTORY_PATH}`\n- Source line: `{line_no}`"
+def expected_source_lines(line_no: int) -> list[str]:
+    return [
+        f"- Inventory row: `{SOURCE_INVENTORY_PATH}:{line_no}`",
+    ]
+
+
+def parse_source_body(body: str | None) -> tuple[str, list[str], list[str]]:
+    inventory_row_line = ""
+    flow_lines: list[str] = []
+    extra_lines: list[str] = []
+
+    if body is None:
+        return inventory_row_line, flow_lines, extra_lines
+
+    for raw_line in body.splitlines():
+        line = raw_line.strip()
+        if not line:
+            continue
+        if line.startswith("- Inventory row:"):
+            inventory_row_line = line
+        elif line.startswith("- Inventory:"):
+            inventory_match = re.match(r"^- Inventory:\s+`(.+)`$", line)
+            continue
+        elif line.startswith("- Source line:"):
+            source_match = re.match(r"^- Source line:\s+`(.+)`$", line)
+            continue
+        elif line.startswith("- Flows:"):
+            flow_lines.append(line)
+        else:
+            extra_lines.append(line)
+
+    if not inventory_row_line:
+        inventory_path = ""
+        source_line = ""
+        for raw_line in body.splitlines():
+            line = raw_line.strip()
+            if line.startswith("- Inventory:"):
+                inventory_match = re.match(r"^- Inventory:\s+`(.+)`$", line)
+                if inventory_match:
+                    inventory_path = inventory_match.group(1)
+            elif line.startswith("- Source line:"):
+                source_match = re.match(r"^- Source line:\s+`(.+)`$", line)
+                if source_match:
+                    source_line = source_match.group(1)
+        if inventory_path and source_line:
+            inventory_row_line = f"- Inventory row: `{inventory_path}:{source_line}`"
+
+    return inventory_row_line, flow_lines, extra_lines
+
+
+def source_body_matches_required_fields(body: str | None, line_no: int, expected_flow_lines: list[str]) -> bool:
+    inventory_row_line, flow_lines, _extra_lines = parse_source_body(body)
+    (expected_inventory_row,) = expected_source_lines(line_no)
+    return inventory_row_line == expected_inventory_row and flow_lines == expected_flow_lines
+
+
+def detect_review_handoff_sync_issue(
+    interaction_id: str,
+    interaction_row: dict[str, str],
+    metadata: dict[str, str],
+    spec_text: str,
+    spec_path: Path,
+    repo_root: Path,
+) -> tuple[Issue | None, set[str]]:
+    skip_fields: set[str] = set()
+    reasons: list[str] = []
+
+    fi_summary = normalize(interaction_row.get("summary"), "")
+    fi_status = normalize(interaction_row.get("status"), "")
+    fs_status = normalize(metadata.get("status"), "")
+
+    summary_unsynced = fi_summary.startswith("<<AI>> ") and not has_ai_draft_marker(spec_text)
+    status_unsynced = is_review_pending_status(fi_status) and fs_status and not is_review_pending_status(fs_status)
+
+    if summary_unsynced:
+        skip_fields.add("summary")
+        reasons.append("FEATURE_SPEC no longer carries `<<AI>>` markers but FI `summary` still does")
+    if status_unsynced:
+        skip_fields.add("status")
+        reasons.append(f"FEATURE_SPEC status is '{fs_status}' but FI status is still '{fi_status}'")
+
+    if not reasons:
+        return None, skip_fields
+
+    return (
+        Issue(
+            "FAIL",
+            "fs.review_handoff_unsynced",
+            f"{interaction_id} shows a one-file human-review handoff signal that has not been mirrored back to FI: {'; '.join(reasons)}",
+            path=str(spec_path.relative_to(repo_root)),
+        ),
+        skip_fields,
+    )
+
+
+def merge_source_body(line_no: int, body: str | None, expected_flow_lines: list[str]) -> str:
+    (expected_inventory_row,) = expected_source_lines(line_no)
+    _inventory_row_line, _flow_lines, extra_lines = parse_source_body(body)
+    merged_lines = [expected_inventory_row]
+    merged_lines.extend(extra_lines)
+    merged_lines.extend(expected_flow_lines)
+    return "\n".join(merged_lines)
 
 
 def collect_window_keys(repo_root: Path) -> set[str]:
@@ -300,8 +446,8 @@ def sync_spec_file(
         if normalize(current_related, "") != normalize(related_body, ""):
             changed_parts.append("related_interactions")
 
-    source_body = expected_source_body(interaction_line_no)
     original_source = get_section_body(path.read_text(encoding="utf-8"), "Source")
+    source_body = merge_source_body(interaction_line_no, original_source, build_flow_source_lines(path))
     text, source_changed = replace_section_body(text, "Source", source_body)
     if source_changed and normalize(original_source, "") != normalize(source_body, ""):
         changed_parts.append("source")
@@ -489,8 +635,21 @@ def audit_feature_bundle(repo_root: Path, feature_id: str, write: bool) -> dict[
             )
             continue
 
+        review_handoff_issue, handoff_skip_fields = detect_review_handoff_sync_issue(
+            interaction_id=interaction_id,
+            interaction_row=interaction_row,
+            metadata=metadata,
+            spec_text=spec_text,
+            spec_path=spec_path,
+            repo_root=repo_root,
+        )
+        if review_handoff_issue is not None:
+            issues.append(review_handoff_issue)
+
         expected_frontmatter = build_expected_frontmatter(interaction_row)
         for field, expected_value in expected_frontmatter.items():
+            if field in handoff_skip_fields:
+                continue
             actual_value = normalize(metadata.get(field), "-")
             if actual_value != expected_value:
                 issues.append(
@@ -541,9 +700,8 @@ def audit_feature_bundle(repo_root: Path, feature_id: str, write: bool) -> dict[
                 )
             )
 
-        source_body = normalize(get_section_body(spec_text, "Source"), "")
-        expected_source = normalize(expected_source_body(interaction_line_no), "")
-        if source_body != expected_source:
+        source_body = get_section_body(spec_text, "Source")
+        if not source_body_matches_required_fields(source_body, interaction_line_no, build_flow_source_lines(spec_path)):
             issues.append(
                 Issue(
                     "WARN",
