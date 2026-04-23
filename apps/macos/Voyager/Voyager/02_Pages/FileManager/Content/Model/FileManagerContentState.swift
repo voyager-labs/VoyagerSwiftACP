@@ -54,20 +54,19 @@ struct FileManagerContentState: Equatable {
     }
 
     var shouldRefreshOnOpen: Bool {
-        collectionSession.didHydrateSnapshotOnOpen
-            && collectionSession.isStale
-            && collectionSession.lastRefreshAt == nil
+        let session = collectionSession
+        return session.didHydrateSnapshotOnOpen
+            && session.isStale
+            && session.lastRefreshAt == nil
     }
 
-    var canRefreshStaleCollection: Bool {
-        isCollectionMode
-            && isOpenedCollectionStale
-            && !isOpenedCollectionDirty
-            && !composer.isCollectionSearching
-            && !collectionSession.isRefreshingHydratedSnapshot
-            && !collectionSession.isWritingBackRefreshedSnapshot
-            && collectionSession.openedURL != nil
-            && collectionContext != nil
-            && collectionSession.baseline != nil
+    var refreshBlockingReason: CollectionSessionRefreshBlockingReason? {
+        CollectionDocumentSessionFeature.refreshBlockingReason(
+            session: collectionSession,
+            isCollectionMode: isCollectionMode,
+            isDirty: isOpenedCollectionDirty,
+            isSearching: composer.isCollectionSearching,
+            hasCollectionContext: collectionContext != nil,
+        )
     }
 }
