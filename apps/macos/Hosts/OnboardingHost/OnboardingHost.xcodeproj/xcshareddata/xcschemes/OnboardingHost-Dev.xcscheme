@@ -15,10 +15,10 @@
             buildForAnalyzing = "YES">
             <BuildableReference
                BuildableIdentifier = "primary"
-               BlueprintIdentifier = "A70000000000000000000001"
+               BlueprintIdentifier = "B10000000000000000000006"
                BuildableName = "OnboardingHost.app"
                BlueprintName = "OnboardingHost"
-               ReferencedContainer = "container:Voyager.xcodeproj">
+               ReferencedContainer = "container:OnboardingHost.xcodeproj">
             </BuildableReference>
          </BuildActionEntry>
       </BuildActionEntries>
@@ -46,10 +46,10 @@
          runnableDebuggingMode = "0">
          <BuildableReference
             BuildableIdentifier = "primary"
-            BlueprintIdentifier = "A70000000000000000000001"
+            BlueprintIdentifier = "B10000000000000000000006"
             BuildableName = "OnboardingHost.app"
             BlueprintName = "OnboardingHost"
-            ReferencedContainer = "container:Voyager.xcodeproj">
+            ReferencedContainer = "container:OnboardingHost.xcodeproj">
          </BuildableReference>
       </BuildableProductRunnable>
       <EnvironmentVariables>
@@ -70,10 +70,10 @@
          runnableDebuggingMode = "0">
          <BuildableReference
             BuildableIdentifier = "primary"
-            BlueprintIdentifier = "A70000000000000000000001"
+            BlueprintIdentifier = "B10000000000000000000006"
             BuildableName = "OnboardingHost.app"
             BlueprintName = "OnboardingHost"
-            ReferencedContainer = "container:Voyager.xcodeproj">
+            ReferencedContainer = "container:OnboardingHost.xcodeproj">
          </BuildableReference>
       </BuildableProductRunnable>
    </ProfileAction>
