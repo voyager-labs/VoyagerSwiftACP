@@ -100,6 +100,41 @@
       "launchEnv": {
         "VOYAGER_PROJECT_ROOT": "${workspaceFolder}"
       }
+    },
+    {
+      "type": "sweetpad",
+      "action": "debugging-launch",
+      "problemMatcher": [
+        "$sweetpad-watch",
+        "$sweetpad-xcodebuild-default",
+        "$sweetpad-xcbeautify-errors",
+        "$sweetpad-xcbeautify-warnings"
+      ],
+      "label": "OnboardingHost Dev: Launch (Debug)",
+      "detail": "Build and Run OnboardingHost in Development environment on Debug mode",
+      "isBackground": true,
+      "scheme": "OnboardingHost-Dev",
+      "configuration": "Debug",
+      "launchEnv": {
+        "VOYAGER_PROJECT_ROOT": "${workspaceFolder}"
+      }
+    },
+    {
+      "type": "sweetpad",
+      "action": "launch",
+      "problemMatcher": [
+        "$sweetpad-watch",
+        "$sweetpad-xcodebuild-default",
+        "$sweetpad-xcbeautify-errors",
+        "$sweetpad-xcbeautify-warnings"
+      ],
+      "label": "OnboardingHost Dev: Launch (Release)",
+      "detail": "Build and Run OnboardingHost in Development environment on Release mode",
+      "scheme": "OnboardingHost-Dev",
+      "configuration": "Release",
+      "launchEnv": {
+        "VOYAGER_PROJECT_ROOT": "${workspaceFolder}"
+      }
     }
   ]
 }

@@ -29,7 +29,10 @@ chmod +x scripts/xcodes.sh
 프로젝트는 `apps/macos/Voyager/` 아래에 있습니다.
 
 - Xcode Workspace (권장): `apps/macos/Voyager/Voyager.xcworkspace`
+    - Voyager.xcodeproj와 OnboardingHost.xcodeproj가 모두 포함되어 있습니다
 - Xcode Project (권장 for CLI): `apps/macos/Voyager/Voyager.xcodeproj`
+- OnboardingHost Project (별도): `apps/macos/Hosts/OnboardingHost/OnboardingHost.xcodeproj`
+    - 온보딩 전용 호스트 앱의 독립적인 Xcode 프로젝트입니다
 
 현재는 `xcodebuild -workspace ...`에서 scheme이 노출되지 않는 케이스가 있어, CLI/CI에서는 `-project` 사용을 권장합니다.
 
@@ -56,6 +59,16 @@ dotenv 로딩은 `APP_ENV`에 따라 `.env.{APP_ENV}`만 사용합니다.
 ```bash
 xcodebuild -project apps/macos/Voyager/Voyager.xcodeproj -scheme Voyager-Dev -configuration Debug
 ```
+
+### 4.1.1 개발 빌드 (OnboardingHost)
+
+OnboardingHost는 별도의 Xcode 프로젝트입니다. `-project` 경로를 명시적으로 지정합니다.
+
+```bash
+xcodebuild -project apps/macos/Hosts/OnboardingHost/OnboardingHost.xcodeproj -scheme OnboardingHost-Dev -configuration Debug
+```
+
+> 참고: OnboardingHost는 개발/테스트 전용 호스트로, 배포용 빌드(Voyager-Prod)에는 포함되지 않습니다.
 
 워크스페이스 기준(참고)
 
