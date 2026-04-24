@@ -1,0 +1,85 @@
+import ComposableArchitecture
+import Foundation
+
+import VoyagerEntitiesEntry
+
+@Reducer
+struct EntryOperationsLifecycleReducer {
+    typealias State = EntryOperationsState
+    typealias Action = EntryOperationsAction
+
+    @Dependency(\.entryOperationsAlertClient)
+    var alertClient
+    @Dependency(\.entryThumbnailCacheClient)
+    var entryThumbnailCacheClient
+
+    var body: some Reducer<State, Action> {
+        Reduce { state, action in
+            switch action {
+            case let .lifecycle(.windowIDChanged(id)):
+                state.windowID = id
+                return .none
+
+            case let .lifecycle(.resetForDuplicate(windowID)):
+                state.resetForDuplicate(windowID: windowID)
+                return .none
+
+            case let .lifecycle(.syncSelectedEntryIDs(ids)):
+                state.selectedEntryIDs = ids
+                return .none
+
+            case let .lifecycle(.clearError(filePath)):
+                state.itemStates[filePath]?.lastError = nil
+                return .none
+
+            case let .lifecycle(.operationStarted(filePath, _)):
+                state.itemStates[filePath] = ItemOperationState(isBusy: true, lastError: nil)
+                return .none
+
+            case let .lifecycle(.operationFinished(filePath, kind, result)):
+                state.itemStates[filePath]?.isBusy = false
+
+                if case .rename = kind {
+                    state.renamingItemId = nil
+                    state.renamingText = ""
+                }
+
+                switch result {
+                case .success:
+                    state.itemStates[filePath]?.lastError = nil
+
+                    if case .createFolder = kind {
+                        state.renamingItemId = filePath
+                        state.renamingText = URL(fileURLWithPath: filePath).lastPathComponent
+                    }
+
+                case let .failure(error):
+                    state.itemStates[filePath]?.lastError = error
+
+                    if case .getInfo = kind {
+                        return .run { [alertClient] _ in
+                            await alertClient.showGetInfoFailureAlert(error.message, error.suggestion)
+                        }
+                    }
+                }
+
+                return .none
+
+            case let .lifecycle(.pathsMutated(paths)):
+                let uniquePaths = Array(Set(paths))
+                guard !uniquePaths.isEmpty else { return .none }
+                return .run { [entryThumbnailCacheClient] _ in
+                    await MainActor.run {
+                        entryThumbnailCacheClient.removeThumbnails(for: uniquePaths)
+                    }
+                }
+
+            case .lifecycle(.entryActionCompleted):
+                return .none
+
+            default:
+                return .none
+            }
+        }
+    }
+}
