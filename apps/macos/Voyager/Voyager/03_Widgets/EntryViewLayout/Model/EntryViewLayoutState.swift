@@ -3,6 +3,7 @@ import CoreGraphics
 import Foundation
 import IdentifiedCollections
 import SwiftUI
+import VoyagerEntitiesAppPreferences
 import VoyagerFeaturesEntryOperations
 import VoyagerShared
 

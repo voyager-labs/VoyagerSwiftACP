@@ -1,10 +1,12 @@
 import AppKit
 import ComposableArchitecture
 import Foundation
-import VoyagerEntitiesSettings
+import VoyagerEntitiesAppPreferences
 import VoyagerPagesOnboarding
 import VoyagerPagesSettings
 import VoyagerShared
+
+private typealias HelperFolderAccessResult = VoyagerEntitiesAppPreferences.FolderAccessResult
 
 @Reducer
 struct AppRootFeature {
@@ -14,7 +16,7 @@ struct AppRootFeature {
     @Dependency(\.helperExternalFileChangeClient)
     private var helperExternalFileChangeClient
     @Dependency(\.helperFolderAccessClient)
-    private var helperFolderAccessClient
+    private var helperFolderAccessClient: VoyagerEntitiesAppPreferences.HelperFolderAccessClient
     @Dependency(\.helperStateClient)
     private var helperStateClient
     @Dependency(\.collectionStalenessClient)
@@ -190,7 +192,7 @@ struct AppRootFeature {
                     guard let helperState = await helperStateClient.resolve(), helperState.helperReady else {
                         return
                     }
-                    let access: FolderAccessResult
+                    let access: HelperFolderAccessResult
                     if onboardingWindowClient.isRequired() == false,
                        let persisted = persistedHelperFolderAccess(userDefaultsClient: userDefaultsClient),
                        persisted.status == .granted
@@ -289,7 +291,7 @@ actor PendingReplayPathsStore {
     }
 }
 
-private nonisolated func helperGrantedWatchRoots(from access: FolderAccessResult) -> [String] {
+private nonisolated func helperGrantedWatchRoots(from access: HelperFolderAccessResult) -> [String] {
     guard access.status == .granted else { return [] }
 
     let fileManager = FileManager.default
@@ -325,9 +327,11 @@ private nonisolated func helperGrantedWatchRoots(from access: FolderAccessResult
     return Array(Set(roots)).sorted()
 }
 
-private nonisolated func persistedHelperFolderAccess(userDefaultsClient: UserDefaultsClient) -> FolderAccessResult? {
+private nonisolated func persistedHelperFolderAccess(userDefaultsClient: UserDefaultsClient)
+    -> HelperFolderAccessResult?
+{
     guard let data = userDefaultsClient.object(SettingsKeys.helperFolderAccessSnapshot) as? Data else {
         return nil
     }
-    return try? JSONDecoder().decode(FolderAccessResult.self, from: data)
+    return try? JSONDecoder().decode(HelperFolderAccessResult.self, from: data)
 }
