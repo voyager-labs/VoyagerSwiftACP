@@ -9,13 +9,16 @@ final class FileManagerContentRefreshStaleTests: XCTestCase {
     func testRefreshStaleCollectionStartsRefreshingAndClearsWriteBackFlag() async {
         let store = makeRefreshStore(initialState: makeRefreshState())
 
-        XCTAssertNil(store.state.collectionSessionRefreshBlockingReason)
+        XCTAssertNil(store.state.refreshBlockingReason)
 
         await store.send(.view(.refreshStaleCollection)) {
-            $0.collectionSession.isRefreshingHydratedSnapshot = true
-            $0.collectionSession.isWritingBackRefreshedSnapshot = false
+            $0.collectionSession.phase = .opened(
+                kind: .hydratedSnapshot,
+                base: .stale,
+                inflight: .refreshingHydratedSnapshot,
+            )
         }
-        XCTAssertEqual(store.state.collectionSessionRefreshBlockingReason, .refreshInFlight)
+        XCTAssertEqual(store.state.refreshBlockingReason, .refreshInFlight)
         await store.receive { action in
             guard case .composer(.view(.setText("report"))) = action else {
                 return false
@@ -40,17 +43,15 @@ final class FileManagerContentRefreshStaleTests: XCTestCase {
         ))
 
         await store.send(.composer(.internal(.filtersResponse(requestID, .failure(RefreshError()))))) {
-            $0.collectionSession.isRefreshingHydratedSnapshot = false
-            $0.collectionSession.isWritingBackRefreshedSnapshot = false
+            $0.collectionSession.phase = .refreshFailed(kind: .hydratedSnapshot)
         }
         await store.finish()
 
         XCTAssertTrue(store.state.collectionSession.isStale)
-        XCTAssertEqual(store.state.collectionSession.staleReason, .snapshotHydratedOnOpen)
         XCTAssertNil(store.state.collectionSession.lastRefreshAt)
-        XCTAssertFalse(store.state.collectionSession.isRefreshingHydratedSnapshot)
-        XCTAssertFalse(store.state.collectionSession.isWritingBackRefreshedSnapshot)
-        XCTAssertNil(store.state.collectionSessionRefreshBlockingReason)
+        XCTAssertNotEqual(store.state.collectionSession.inflightStatus, .refreshingHydratedSnapshot)
+        XCTAssertNotEqual(store.state.collectionSession.inflightStatus, .writingBackRefreshedSnapshot)
+        XCTAssertNil(store.state.refreshBlockingReason)
     }
 
     func testRefreshSuccessTransitionsFromRefreshingToWriteBackBeforeSaveCompletes() async {
@@ -64,10 +65,13 @@ final class FileManagerContentRefreshStaleTests: XCTestCase {
         await store.send(.composer(.internal(.filtersResponse(requestID, .success(response))))) {
             $0.composer.lastFiltersResponse = response
             $0.composer.isLoadingFilters = false
-            $0.collectionSession.isRefreshingHydratedSnapshot = false
-            $0.collectionSession.isWritingBackRefreshedSnapshot = true
+            $0.collectionSession.phase = .opened(
+                kind: .hydratedSnapshot,
+                base: .stale,
+                inflight: .writingBackRefreshedSnapshot,
+            )
         }
-        XCTAssertEqual(store.state.collectionSessionRefreshBlockingReason, .writeBackInFlight)
+        XCTAssertEqual(store.state.refreshBlockingReason, .writeBackInFlight)
     }
 
     private func makeRefreshState(
@@ -87,10 +91,12 @@ final class FileManagerContentRefreshStaleTests: XCTestCase {
         )
         state.collectionSession.openedURL = URL(fileURLWithPath: "/tmp/voyager/sample.voycoll")
         state.collectionSession.openedName = "sample"
-        state.collectionSession.isStale = true
-        state.collectionSession.staleReason = .snapshotHydratedOnOpen
-        state.collectionSession.didHydrateSnapshotOnOpen = true
-        state.collectionSession.isRefreshingHydratedSnapshot = isRefreshing
+        state.collectionSession.phase = .opened(kind: .hydratedSnapshot, base: .stale, inflight: .none)
+        state.collectionSession.phase = .opened(
+            kind: .hydratedSnapshot,
+            base: .stale,
+            inflight: isRefreshing ? .refreshingHydratedSnapshot : .none,
+        )
         state.collectionSession.openedCompatibility = makeAllowedCompatibility()
         state.collectionContext = makeReportContext()
         state.collectionSession.baseline = state.collectionContext.map(CollectionBaseline.init(context:))

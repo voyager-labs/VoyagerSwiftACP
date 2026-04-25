@@ -80,9 +80,7 @@ final class CollectionReopenStaleTests: XCTestCase {
             file,
             sourceSchemaVersion: nil,
         )))))) {
-            $0.content.collectionSession.isOpening = false
-            $0.content.collectionSession.isStale = true
-            $0.content.collectionSession.staleReason = .invalidatedLocally
+            $0.content.collectionSession.phase = .opened(kind: .definition, base: .stale, inflight: .none)
             $0.content.composer.isPresented = false
             $0.content.composer.pendingSearchQuery = nil
             $0.content.composer.text = ""
@@ -94,8 +92,7 @@ final class CollectionReopenStaleTests: XCTestCase {
         }
 
         XCTAssertTrue(store.state.content.collectionSession.isStale)
-        XCTAssertEqual(store.state.content.collectionSession.staleReason, .invalidatedLocally)
-        XCTAssertFalse(store.state.content.collectionSession.didHydrateSnapshotOnOpen)
+        XCTAssertNotEqual(store.state.content.collectionSession.openKind, .hydratedSnapshot)
         XCTAssertFalse(store.state.content.shouldRefreshOnOpen)
         await assertCollectionModeNavigation(store: store)
         XCTAssertTrue(store.state.content.entryViewLayout.isCollectionMode)
@@ -172,9 +169,7 @@ final class CollectionReopenStaleTests: XCTestCase {
             file,
             sourceSchemaVersion: nil,
         )))))) {
-            $0.content.collectionSession.isOpening = false
-            $0.content.collectionSession.isStale = true
-            $0.content.collectionSession.staleReason = .invalidatedLocally
+            $0.content.collectionSession.phase = .opened(kind: .definition, base: .stale, inflight: .none)
             $0.content.composer.isPresented = false
             $0.content.composer.pendingSearchQuery = reopenContext.query
             $0.content.composer.text = reopenContext.query
@@ -186,7 +181,7 @@ final class CollectionReopenStaleTests: XCTestCase {
         }
 
         XCTAssertTrue(store.state.content.collectionSession.isStale)
-        XCTAssertFalse(store.state.content.collectionSession.didHydrateSnapshotOnOpen)
+        XCTAssertNotEqual(store.state.content.collectionSession.openKind, .hydratedSnapshot)
         XCTAssertFalse(store.state.content.shouldRefreshOnOpen)
         await assertCollectionModeNavigation(store: store)
         XCTAssertTrue(store.state.content.entryViewLayout.isCollectionMode)
@@ -262,7 +257,7 @@ private func makeDefinitionOnlyStore(
     reopenContext: CollectionContext? = nil,
 ) -> TestStore<FileManagerWindowState, FileManagerWindowAction> {
     var state = FileManagerWindowState()
-    state.content.collectionSession.isOpening = true
+    state.content.collectionSession.phase = .reopening(kind: .definition, base: .ready, inflight: .none)
     state.content.collectionSession.openedURL = openedURL
     state.content.collectionSession.openedName = openedURL.deletingPathExtension().lastPathComponent
     state.content.collectionSession.captureReopenContext(reopenContext)

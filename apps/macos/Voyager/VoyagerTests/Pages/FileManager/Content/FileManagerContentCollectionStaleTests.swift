@@ -19,7 +19,7 @@ final class FileManagerContentCollectionStaleTests: XCTestCase {
         )
         initialState.collectionSession.openedURL = URL(fileURLWithPath: "/tmp/voyager/sample.voycoll")
         initialState.collectionSession.openedName = "sample"
-        initialState.collectionSession.isStale = false
+        initialState.collectionSession.phase = .opened(kind: .definition, base: .ready, inflight: .none)
 
         let store = TestStore(initialState: initialState) {
             FileManagerContentFeature()
@@ -29,7 +29,6 @@ final class FileManagerContentCollectionStaleTests: XCTestCase {
         await store.finish()
 
         XCTAssertFalse(store.state.collectionSession.isStale)
-        XCTAssertNil(store.state.collectionSession.staleReason)
         XCTAssertNil(store.state.collectionSession.lastRefreshAt)
     }
 
@@ -46,7 +45,7 @@ final class FileManagerContentCollectionStaleTests: XCTestCase {
         )
         initialState.collectionSession.openedURL = URL(fileURLWithPath: "/tmp/voyager/sample.voycoll")
         initialState.collectionSession.openedName = "sample"
-        initialState.collectionSession.isStale = false
+        initialState.collectionSession.phase = .opened(kind: .definition, base: .ready, inflight: .none)
         initialState.collectionContext = .init(
             query: "q",
             scopes: ["/tmp/voyager"],
@@ -74,7 +73,7 @@ final class FileManagerContentCollectionStaleTests: XCTestCase {
         )
         initialState.collectionSession.openedURL = URL(fileURLWithPath: "/tmp/voyager/sample.voycoll")
         initialState.collectionSession.openedName = "sample"
-        initialState.collectionSession.isStale = false
+        initialState.collectionSession.phase = .opened(kind: .definition, base: .ready, inflight: .none)
         initialState.collectionContext = .init(
             query: "q",
             scopes: ["/tmp/voyager"],
@@ -102,7 +101,7 @@ final class FileManagerContentCollectionStaleTests: XCTestCase {
         )
         initialState.collectionSession.openedURL = URL(fileURLWithPath: "/tmp/voyager/sample.voycoll")
         initialState.collectionSession.openedName = "sample"
-        initialState.collectionSession.isStale = false
+        initialState.collectionSession.phase = .opened(kind: .definition, base: .ready, inflight: .none)
         initialState.collectionContext = .init(
             query: "q",
             scopes: ["/tmp/voyager"],
@@ -117,7 +116,6 @@ final class FileManagerContentCollectionStaleTests: XCTestCase {
         await store.finish()
 
         XCTAssertFalse(store.state.collectionSession.isStale)
-        XCTAssertNil(store.state.collectionSession.staleReason)
         XCTAssertNil(store.state.collectionSession.lastRefreshAt)
     }
 
@@ -134,7 +132,7 @@ final class FileManagerContentCollectionStaleTests: XCTestCase {
         )
         initialState.collectionSession.openedURL = URL(fileURLWithPath: "/tmp/voyager/sample.voycoll")
         initialState.collectionSession.openedName = "sample"
-        initialState.collectionSession.isStale = false
+        initialState.collectionSession.phase = .opened(kind: .definition, base: .ready, inflight: .none)
         initialState.collectionSession.lastRefreshAt = .distantFuture
         initialState.collectionContext = .init(
             query: "q",
@@ -150,7 +148,6 @@ final class FileManagerContentCollectionStaleTests: XCTestCase {
         await store.finish()
 
         XCTAssertFalse(store.state.collectionSession.isStale)
-        XCTAssertNil(store.state.collectionSession.staleReason)
         XCTAssertEqual(store.state.collectionSession.lastRefreshAt, .distantFuture)
     }
 
@@ -180,19 +177,18 @@ final class FileManagerContentCollectionStaleTests: XCTestCase {
         }
 
         XCTAssertTrue(store.state.isOpenedCollectionDirty)
-        XCTAssertEqual(store.state.collectionSessionRefreshBlockingReason, .notStale)
+        XCTAssertEqual(store.state.refreshBlockingReason, .notStale)
 
         await store.send(.externalFileSystemChanged(["/tmp/voyager/sub/a.txt"]))
         await store.finish()
 
         XCTAssertTrue(store.state.isOpenedCollectionDirty)
         XCTAssertFalse(store.state.collectionSession.isStale)
-        XCTAssertNil(store.state.collectionSession.staleReason)
         XCTAssertEqual(store.state.collectionSession.lastRefreshAt, .distantFuture)
-        XCTAssertEqual(store.state.collectionSessionRefreshBlockingReason, .notStale)
+        XCTAssertEqual(store.state.refreshBlockingReason, .notStale)
     }
 
-    func testFileSystemChangedPreservesExistingStaleReasonWhileKeepingRefreshMarker() async {
+    func testFileSystemChangedPreservesExistingRefreshMarker() async {
         var initialState = FileManagerContentState()
         initialState.entryViewLayout.isCollectionMode = true
         initialState.navigation.navigationState = .collection(
@@ -207,8 +203,7 @@ final class FileManagerContentCollectionStaleTests: XCTestCase {
         initialState.collectionSession.openedURL = URL(fileURLWithPath: "/tmp/voyager/sample.voycoll")
         initialState.collectionSession.openedName = "sample"
         initialState.collectionContext = .init(query: "report", scopes: ["/tmp/voyager"], conditions: [])
-        initialState.collectionSession.isStale = true
-        initialState.collectionSession.staleReason = .snapshotHydratedOnOpen
+        initialState.collectionSession.phase = .opened(kind: .definition, base: .stale, inflight: .none)
         initialState.collectionSession.lastRefreshAt = .distantFuture
 
         let store = TestStore(initialState: initialState) {
@@ -219,7 +214,6 @@ final class FileManagerContentCollectionStaleTests: XCTestCase {
         await store.finish()
 
         XCTAssertTrue(store.state.collectionSession.isStale)
-        XCTAssertEqual(store.state.collectionSession.staleReason, .snapshotHydratedOnOpen)
         XCTAssertEqual(store.state.collectionSession.lastRefreshAt, .distantFuture)
     }
 }

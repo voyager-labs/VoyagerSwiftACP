@@ -38,7 +38,7 @@ final class FileManagerComposerOwnershipTests: XCTestCase {
     func testClearCollectionModeSendsClearCollectionPresentation() async {
         var initialState = makeInitialState()
         initialState.collectionContext = CollectionContext(query: "test", scopes: [], conditions: [])
-        initialState.collectionSession.isOpening = true
+        initialState.collectionSession.phase = .reopening(kind: .definition, base: .ready, inflight: .none)
         initialState.navigation.navigationState = .collection(
             ContentPageCollectionNavigation(
                 kind: .temporary,

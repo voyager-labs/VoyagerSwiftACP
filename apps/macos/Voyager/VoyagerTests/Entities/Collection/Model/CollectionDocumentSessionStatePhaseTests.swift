@@ -10,109 +10,100 @@ final class CollectionDocumentSessionStatePhaseTests: XCTestCase {
         session.phase = .opened(kind: .hydratedSnapshot, base: .stale, inflight: .refreshingHydratedSnapshot)
         XCTAssertFalse(session.isOpening)
         XCTAssertTrue(session.isStale)
-        XCTAssertTrue(session.didHydrateSnapshotOnOpen)
-        XCTAssertTrue(session.isRefreshingHydratedSnapshot)
-        XCTAssertFalse(session.isWritingBackRefreshedSnapshot)
+        XCTAssertEqual(session.openKind, .hydratedSnapshot)
+        XCTAssertEqual(session.inflightStatus, .refreshingHydratedSnapshot)
+        XCTAssertNotEqual(session.inflightStatus, .writingBackRefreshedSnapshot)
 
         session.phase = .opened(kind: .hydratedSnapshot, base: .stale, inflight: .writingBackRefreshedSnapshot)
         XCTAssertTrue(session.isStale)
-        XCTAssertTrue(session.didHydrateSnapshotOnOpen)
-        XCTAssertFalse(session.isRefreshingHydratedSnapshot)
-        XCTAssertTrue(session.isWritingBackRefreshedSnapshot)
+        XCTAssertEqual(session.openKind, .hydratedSnapshot)
+        XCTAssertNotEqual(session.inflightStatus, .refreshingHydratedSnapshot)
+        XCTAssertEqual(session.inflightStatus, .writingBackRefreshedSnapshot)
 
         session.phase = .reopening(kind: .definition, base: .ready, inflight: .none)
         XCTAssertTrue(session.isOpening)
         XCTAssertFalse(session.isStale)
-        XCTAssertFalse(session.didHydrateSnapshotOnOpen)
-        XCTAssertFalse(session.isRefreshingHydratedSnapshot)
-        XCTAssertFalse(session.isWritingBackRefreshedSnapshot)
+        XCTAssertNotEqual(session.openKind, .hydratedSnapshot)
+        XCTAssertNotEqual(session.inflightStatus, .refreshingHydratedSnapshot)
+        XCTAssertNotEqual(session.inflightStatus, .writingBackRefreshedSnapshot)
     }
 
-    func testLegacyBoolBridgeSettersTranslateToPhaseTransitions() {
-        var session = CollectionDocumentSessionState()
+    func testExplicitPhaseHelpersTranslateToPhaseTransitions() {
+        var phase = CollectionSessionPhase.idle
 
-        session.isStale = true
-        XCTAssertEqual(session.phase, .opened(kind: .definition, base: .stale, inflight: .none))
+        phase = phase.withBaseStatus(.stale)
+        XCTAssertEqual(phase, .opened(kind: .definition, base: .stale, inflight: .none))
 
-        session.didHydrateSnapshotOnOpen = true
-        XCTAssertEqual(session.phase, .opened(kind: .hydratedSnapshot, base: .stale, inflight: .none))
+        phase = .opened(kind: .hydratedSnapshot, base: .stale, inflight: .none)
+        XCTAssertEqual(phase, .opened(kind: .hydratedSnapshot, base: .stale, inflight: .none))
 
-        session.isRefreshingHydratedSnapshot = true
+        phase = phase.withInflightStatus(.refreshingHydratedSnapshot)
         XCTAssertEqual(
-            session.phase,
+            phase,
             .opened(kind: .hydratedSnapshot, base: .stale, inflight: .refreshingHydratedSnapshot),
         )
 
-        session.isWritingBackRefreshedSnapshot = true
+        phase = phase.withInflightStatus(.writingBackRefreshedSnapshot)
         XCTAssertEqual(
-            session.phase,
+            phase,
             .opened(kind: .hydratedSnapshot, base: .stale, inflight: .writingBackRefreshedSnapshot),
         )
 
-        session.isWritingBackRefreshedSnapshot = false
-        XCTAssertEqual(session.phase, .opened(kind: .hydratedSnapshot, base: .stale, inflight: .none))
+        phase = phase.withInflightStatus(.none)
+        XCTAssertEqual(phase, .opened(kind: .hydratedSnapshot, base: .stale, inflight: .none))
 
-        session.isStale = false
-        XCTAssertEqual(session.phase, .opened(kind: .hydratedSnapshot, base: .ready, inflight: .none))
+        phase = phase.withBaseStatus(.ready)
+        XCTAssertEqual(phase, .opened(kind: .hydratedSnapshot, base: .ready, inflight: .none))
 
-        session.didHydrateSnapshotOnOpen = false
-        XCTAssertEqual(session.phase, .opened(kind: .definition, base: .ready, inflight: .none))
+        phase = .opened(kind: .definition, base: .ready, inflight: .none)
+        XCTAssertEqual(phase, .opened(kind: .definition, base: .ready, inflight: .none))
     }
 
-    func testReopeningPhaseIgnoresLegacyBoolResetsUntilOpenCompletes() {
-        var session = CollectionDocumentSessionState()
+    func testReopeningPhaseIgnoresBaseKindAndInflightRewritesUntilOpenCompletes() {
+        var phase: CollectionSessionPhase = .reopening(kind: .definition, base: .ready, inflight: .none)
 
-        session.isOpening = true
-        XCTAssertEqual(session.phase, .reopening(kind: .definition, base: .ready, inflight: .none))
+        phase = phase.withBaseStatus(.ready)
+        phase = phase.withInflightStatus(.none)
+        XCTAssertEqual(phase, .reopening(kind: .definition, base: .ready, inflight: .none))
 
-        session.isStale = false
-        session.didHydrateSnapshotOnOpen = false
-        session.isRefreshingHydratedSnapshot = false
-        session.isWritingBackRefreshedSnapshot = false
-        XCTAssertEqual(session.phase, .reopening(kind: .definition, base: .ready, inflight: .none))
-
-        session.isOpening = false
-        XCTAssertEqual(session.phase, .opened(kind: .definition, base: .ready, inflight: .none))
+        phase = phase.finishedOpeningTransition()
+        XCTAssertEqual(phase, .opened(kind: .definition, base: .ready, inflight: .none))
     }
 
     func testTransientRefreshStatusesReturnToStaleUntilExplicitlyCleared() {
         var session = CollectionDocumentSessionState()
 
-        session.didHydrateSnapshotOnOpen = true
-        session.isStale = true
-        session.isRefreshingHydratedSnapshot = true
+        session.phase = .opened(kind: .hydratedSnapshot, base: .stale, inflight: .none)
+        session.beginRefreshingStaleSession()
         XCTAssertEqual(
             session.phase,
             .opened(kind: .hydratedSnapshot, base: .stale, inflight: .refreshingHydratedSnapshot),
         )
 
-        session.isRefreshingHydratedSnapshot = false
+        session.finishRefreshWithoutWriteBack()
         XCTAssertEqual(session.phase, .opened(kind: .hydratedSnapshot, base: .stale, inflight: .none))
 
-        session.isWritingBackRefreshedSnapshot = true
+        session.beginWriteBackAfterRefresh()
         XCTAssertEqual(
             session.phase,
             .opened(kind: .hydratedSnapshot, base: .stale, inflight: .writingBackRefreshedSnapshot),
         )
 
-        session.isWritingBackRefreshedSnapshot = false
+        session.finishRefreshWithoutWriteBack()
         XCTAssertEqual(session.phase, .opened(kind: .hydratedSnapshot, base: .stale, inflight: .none))
     }
 
     func testRefreshFailureBecomesExplicitFailedPhase() {
         var session = CollectionDocumentSessionState()
 
-        session.didHydrateSnapshotOnOpen = true
-        session.isStale = true
-        session.isRefreshingHydratedSnapshot = true
+        session.phase = .opened(kind: .hydratedSnapshot, base: .stale, inflight: .refreshingHydratedSnapshot)
         session.failRefreshOrWriteBack()
 
         XCTAssertEqual(session.phase, .refreshFailed(kind: .hydratedSnapshot))
         XCTAssertTrue(session.isStale)
-        XCTAssertTrue(session.didHydrateSnapshotOnOpen)
-        XCTAssertFalse(session.isRefreshingHydratedSnapshot)
-        XCTAssertFalse(session.isWritingBackRefreshedSnapshot)
-        XCTAssertEqual(session.staleReason, .snapshotHydratedOnOpen)
+        XCTAssertEqual(session.openKind, .hydratedSnapshot)
+        XCTAssertNotEqual(session.inflightStatus, .refreshingHydratedSnapshot)
+        XCTAssertNotEqual(session.inflightStatus, .writingBackRefreshedSnapshot)
     }
 
     func testEqualityTracksPhaseIdentityDirectly() {
@@ -126,22 +117,21 @@ final class CollectionDocumentSessionStatePhaseTests: XCTestCase {
     }
 
     func testReopeningPreservesHydrationAndStaleSignalsUntilOpenCommits() {
-        var session = CollectionDocumentSessionState()
+        var phase: CollectionSessionPhase = .reopening(kind: .definition, base: .ready, inflight: .none)
 
-        session.isOpening = true
-        session.didHydrateSnapshotOnOpen = true
-        session.isStale = true
-        session.isRefreshingHydratedSnapshot = true
+        phase = .reopening(kind: .hydratedSnapshot, base: .ready, inflight: .none)
+        phase = phase.withBaseStatus(.stale)
+        phase = phase.withInflightStatus(.refreshingHydratedSnapshot)
 
         XCTAssertEqual(
-            session.phase,
+            phase,
             .reopening(kind: .hydratedSnapshot, base: .stale, inflight: .refreshingHydratedSnapshot),
         )
 
-        session.isOpening = false
+        phase = phase.finishedOpeningTransition()
 
         XCTAssertEqual(
-            session.phase,
+            phase,
             .opened(kind: .hydratedSnapshot, base: .stale, inflight: .refreshingHydratedSnapshot),
         )
     }
