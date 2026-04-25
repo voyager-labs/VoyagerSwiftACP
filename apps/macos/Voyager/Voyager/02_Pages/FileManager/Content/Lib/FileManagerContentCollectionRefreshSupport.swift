@@ -5,42 +5,34 @@ import VoyagerShared
 func handleCollectionSaveFailure(
     state: inout FileManagerContentState,
 ) -> Effect<FileManagerContentAction> {
-    if state.collectionSession.isWritingBackRefreshedSnapshot {
-        state.collectionSession.failRefreshOrWriteBack()
+    if state.collectionSession.phase.inflightStatus == .writingBackRefreshedSnapshot {
+        return .concatenate(
+            .send(.collection(.writeBackFailed)),
+            .send(.internal(.requestNavigation(.internal(.setPendingNavigation(nil))))),
+        )
     }
     return .send(.internal(.requestNavigation(.internal(.setPendingNavigation(nil)))))
 }
 
-func handleCollectionSaveSuccess(
-    completion: CollectionSaveCompletion,
+func handleCollectionWriteBackPrepared(
+    payload: CollectionWriteBackNavigationPayload,
     state: inout FileManagerContentState,
 ) -> Effect<FileManagerContentAction> {
     let previousSnapshot = state.navigation.makeContentPageNavigationHistorySnapshot()
-    let previousCollectionURL = state.collectionSession.openedURL
-    let previousCollectionName = state.collectionSession.openedName
-    let previousBaseline = state.collectionSession.baseline
-
-    let payload = CollectionDocumentSessionFeature.writeBackSuccessPayload(
-        state: &state.collectionSession,
-        completion: completion,
-        currentCollectionContext: state.collectionContext,
+    let nextNavigationState = ContentPageNavigationRoute.collection(
+        makeCollectionNavigation(payload.nextNavigation, state: state),
     )
 
-    let url = payload.url
-
     var navigationEffects: [Effect<FileManagerContentAction>] = [
-        .send(.internal(.requestNavigation(.internal(.setNavigationState(.collection(
-            makeCollectionNavigation(state: state),
-        )))))),
+        .send(.internal(.syncComposerCollectionState)),
+        .send(.internal(.requestNavigation(.internal(.setNavigationState(nextNavigationState))))),
     ]
 
     if payload.shouldAppendHistory {
-        if let historyEntry = previousCollectionHistoryEntryForRefreshSupport(
-            baseline: previousBaseline,
-            previousURL: previousCollectionURL,
-            previousCollectionName: previousCollectionName,
-            state: state,
-        ) {
+        if let historyNavigation = payload.previousHistoryNavigation {
+            let historyEntry = ContentPageNavigationHistorySnapshot(
+                navigationState: .collection(makeCollectionNavigation(historyNavigation, state: state)),
+            )
             navigationEffects.append(.send(.internal(.requestNavigation(.internal(.appendBackHistory(historyEntry))))))
         } else {
             navigationEffects
@@ -48,8 +40,6 @@ func handleCollectionSaveSuccess(
         }
         navigationEffects.append(.send(.internal(.requestNavigation(.internal(.clearForwardHistory)))))
     }
-
-    state.syncComposerCollectionState()
 
     if let pending = state.navigation.pendingNavigation {
         return .concatenate(
@@ -68,22 +58,25 @@ func finalizeCollectionRefreshIfNeeded(
     searchEffect: Effect<FileManagerContentAction>,
     state: inout FileManagerContentState,
 ) -> Effect<FileManagerContentAction> {
-    guard state.collectionSession.isRefreshingHydratedSnapshot else {
+    guard state.collectionSession.phase.inflightStatus == .refreshingHydratedSnapshot else {
         return .concatenate(
             searchEffect,
             .send(.delegate(.composerCollectionSearchSucceeded)),
         )
     }
     state.composer.lastFiltersResponse = response
-    let payload = CollectionDocumentSessionFeature.refreshResponsePayload(
-        state: &state.collectionSession,
+    var previewCollection = state.collection
+    let shouldWriteBack = previewCollection.applyRefreshResponse(
         wasDirtyBeforeApplyingResponse: wasDirtyBeforeApplyingResponse,
-        writeBackAllowed: state.collectionSession.openedCompatibility?.writeBackAllowed != false,
     )
     state.syncComposerCollectionState()
 
-    if payload.shouldWriteBack {
+    if shouldWriteBack {
         return .concatenate(
+            .send(.collection(.refreshResponseReceived(
+                response,
+                wasDirtyBeforeApplyingResponse: wasDirtyBeforeApplyingResponse,
+            ))),
             searchEffect,
             .send(.composer(.saveCollection)),
             .send(.delegate(.composerCollectionSearchSucceeded)),
@@ -91,6 +84,10 @@ func finalizeCollectionRefreshIfNeeded(
     }
 
     return .concatenate(
+        .send(.collection(.refreshResponseReceived(
+            response,
+            wasDirtyBeforeApplyingResponse: wasDirtyBeforeApplyingResponse,
+        ))),
         searchEffect,
         .send(.delegate(.composerCollectionSearchSucceeded)),
     )
@@ -100,39 +97,18 @@ func failCollectionRefreshIfNeeded(
     searchEffect: Effect<FileManagerContentAction>,
     state: inout FileManagerContentState,
 ) -> Effect<FileManagerContentAction> {
-    if state.collectionSession.isRefreshingHydratedSnapshot {
-        state.collectionSession.failRefreshOrWriteBack()
+    let shouldNotifyOwner = state.collectionSession.phase.inflightStatus == .refreshingHydratedSnapshot
+
+    if shouldNotifyOwner {
+        return .concatenate(
+            .send(.collection(.refreshFailed)),
+            searchEffect,
+            .send(.delegate(.composerCollectionSearchFailed)),
+        )
     }
 
     return .concatenate(
         searchEffect,
         .send(.delegate(.composerCollectionSearchFailed)),
-    )
-}
-
-func previousCollectionHistoryEntryForRefreshSupport(
-    baseline: CollectionBaseline?,
-    previousURL: URL?,
-    previousCollectionName: String?,
-    state: FileManagerContentState,
-) -> ContentPageNavigationHistorySnapshot? {
-    guard let baseline,
-          let previousURL
-    else {
-        return nil
-    }
-
-    let name = previousCollectionName
-        ?? previousURL.deletingPathExtension().lastPathComponent
-    let navigation = ContentPageCollectionNavigation(
-        kind: .file(url: previousURL, name: name),
-        context: baseline.context,
-        sortKey: state.entryViewLayout.entryArrangements.sortKey,
-        sortOrder: state.entryViewLayout.entryArrangements.sortOrder,
-        viewLayout: state.entryViewLayout.mode,
-        compatibility: state.collectionSession.openedCompatibility,
-    )
-    return ContentPageNavigationHistorySnapshot(
-        navigationState: .collection(navigation),
     )
 }

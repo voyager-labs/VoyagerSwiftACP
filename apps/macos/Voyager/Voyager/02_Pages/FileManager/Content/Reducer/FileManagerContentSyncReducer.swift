@@ -14,11 +14,10 @@ struct FileManagerContentSyncReducer {
                 switch state.navigation.navigationState {
                 case .collection:
                     let affectsCollection = collectionPathsAffectCurrentContext(paths, state: state)
-                    _ = CollectionDocumentSessionFeature.externalInvalidationPayload(
-                        state: &state.collectionSession,
-                        affectsCollection: affectsCollection,
-                    )
-                    return .none
+                    guard affectsCollection else {
+                        return .none
+                    }
+                    return .send(.collection(.externalPathsChanged(paths)))
 
                 case let .folder(path):
                     guard pathsAffectCurrentFolder(paths, currentPath: path) else {
@@ -58,7 +57,7 @@ struct FileManagerContentSyncReducer {
 
     private func collectionPathsAffectCurrentContext(_ paths: [String], state: State) -> Bool {
         let relevantPaths = paths.filter {
-            !isOpenedCollectionDocumentPath($0, openedURL: state.collectionSession.openedURL)
+            !isOpenedCollectionDocumentPath($0, openedURL: state.collectionSession.document?.url)
         }
         guard !relevantPaths.isEmpty else {
             return false

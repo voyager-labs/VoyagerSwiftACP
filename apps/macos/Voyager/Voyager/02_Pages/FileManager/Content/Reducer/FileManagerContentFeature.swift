@@ -25,6 +25,10 @@ struct FileManagerContentFeature {
             ComposerFeature()
         }
 
+        Scope(state: \.collection, action: \.collection) {
+            CollectionFeature()
+        }
+
         Scope(state: \.entryViewLayout, action: \.entryViewLayout) {
             EntryViewLayoutFeature()
         }
@@ -46,6 +50,10 @@ struct FileManagerContentFeature {
                 return effect
             }
 
+            if let effect = handleCollectionOwnerAction(action, state: &state) {
+                return effect
+            }
+
             switch action {
             case let .internal(.applyNavigationState(navigationState)):
                 if !navigationState.isCollection {
@@ -61,30 +69,25 @@ struct FileManagerContentFeature {
                 ))))
 
             case .view(.refreshStaleCollection):
-                var sessionState = state.collectionSession
-                let trigger = CollectionDocumentSessionFeature.refreshIntentTrigger(
-                    state: &sessionState,
-                    isCollectionMode: state.isCollectionMode,
-                    isDirty: state.isOpenedCollectionDirty,
-                    isSearching: state.composer.isCollectionSearching,
-                    hasCollectionContext: state.collectionContext != nil,
-                    query: state.collectionContext?.query,
-                )
-                state.collectionSession = sessionState
-
-                guard let trigger else {
+                guard state.refreshBlockingReason == nil else {
                     return .none
                 }
+                let trimmedQuery = state.collectionContext?
+                    .query
+                    .trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
 
-                switch trigger {
-                case .applyFilters:
-                    return .send(.composer(.applyFilters))
-                case let .submit(query):
+                if trimmedQuery.isEmpty {
                     return .concatenate(
-                        .send(.composer(.setText(query))),
-                        .send(.composer(.submit)),
+                        .send(.collection(.refreshRequested)),
+                        .send(.composer(.applyFilters)),
                     )
                 }
+
+                return .concatenate(
+                    .send(.collection(.refreshRequested)),
+                    .send(.composer(.setText(trimmedQuery))),
+                    .send(.composer(.submit)),
+                )
 
             case .view(.toggleShowHiddenFilesAndReload):
                 let showHidden = !state.entryViewLayout.showHiddenFiles

@@ -8,22 +8,12 @@ extension FileManagerContentFeature {
     ) -> Effect<Action>? {
         switch action {
         case .delegate(.discardCollectionChanges):
-            var sessionState = state.collectionSession
-            guard let payload = CollectionDocumentSessionFeature.restoreDraftPayload(
-                state: &sessionState,
-                baseline: state.collectionSession.baseline,
-                isCollectionMode: state.isCollectionMode,
-                isDirty: state.isOpenedCollectionDirty,
-            ) else {
-                state.collectionSession = sessionState
+            guard state.isCollectionMode,
+                  state.isOpenedCollectionDirty
+            else {
                 return .none
             }
-
-            state.collectionContext = payload.context
-            state.syncComposerCollectionState()
-            state.composer.applyCollectionDraftRestorePayload(payload)
-            state.collectionSession = sessionState
-            return .none
+            return .send(.collection(.draftDiscardRequested))
         default:
             return nil
         }
