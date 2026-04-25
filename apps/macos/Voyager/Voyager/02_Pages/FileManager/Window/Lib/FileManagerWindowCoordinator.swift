@@ -214,30 +214,32 @@ final class FileManagerWindowCoordinator: NSWindowController, NSWindowDelegate {
             return FileManagerClient.liveValue.displayName(path)
         }
 
-        func makeTitle(
-            openedCollectionName: String?,
-            isCollectionMode: Bool,
-            titlePath: String,
-            makeWindowTitle: (String) -> String,
-        ) -> String {
-            if let openedCollectionName {
-                return openedCollectionName
+        let initialTitle = currentWindowTitle(makeWindowTitle: makeWindowTitle)
+        makeWindowTitlePublisher(makeWindowTitle: makeWindowTitle)
+            .prepend(initialTitle)
+            .removeDuplicates()
+            .sink { [weak window] title in
+                window?.title = title
             }
-            if isCollectionMode {
-                return "New Collection"
-            }
-            return makeWindowTitle(titlePath)
-        }
+            .store(in: &cancellables)
+    }
 
-        let initialTitle = makeTitle(
-            openedCollectionName: store.state.content.collectionSession.openedName,
+    private func currentWindowTitle(makeWindowTitle: (String) -> String) -> String {
+        makeTitle(
+            openedCollectionName: store.state.content.collectionSession.document?.name,
             isCollectionMode: store.state.content.isCollectionMode,
             titlePath: store.state.content.navigation.titlePath,
             makeWindowTitle: makeWindowTitle,
         )
+    }
 
+    private func makeWindowTitlePublisher(
+        makeWindowTitle: @escaping (String) -> String,
+    ) -> some Publisher<String, Never> {
         Publishers.CombineLatest3(
-            store.publisher.content.collectionSession.openedName.removeDuplicates(),
+            store.publisher.content.collectionSession.document
+                .map { $0?.name }
+                .removeDuplicates(),
             store.publisher.content.isCollectionMode.removeDuplicates(),
             store.publisher.content.navigation.titlePath.removeDuplicates(),
         )
@@ -249,12 +251,21 @@ final class FileManagerWindowCoordinator: NSWindowController, NSWindowDelegate {
                 makeWindowTitle: makeWindowTitle,
             )
         }
-        .prepend(initialTitle)
-        .removeDuplicates()
-        .sink { [weak window] title in
-            window?.title = title
+    }
+
+    private func makeTitle(
+        openedCollectionName: String?,
+        isCollectionMode: Bool,
+        titlePath: String,
+        makeWindowTitle: (String) -> String,
+    ) -> String {
+        if let openedCollectionName {
+            return openedCollectionName
         }
-        .store(in: &cancellables)
+        if isCollectionMode {
+            return "New Collection"
+        }
+        return makeWindowTitle(titlePath)
     }
 
     private func tearDownBindings() {

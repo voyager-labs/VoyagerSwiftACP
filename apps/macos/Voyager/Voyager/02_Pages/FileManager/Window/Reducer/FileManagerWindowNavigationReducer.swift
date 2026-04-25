@@ -80,10 +80,10 @@ func syncSidebarSelection(
 ) {
     switch state.content.navigation.navigationState {
     case .collection:
-        if let url = state.content.collectionSession.openedURL {
+        if let url = state.content.collectionSession.document?.url {
             state.sidebar.selectedSidebarItem = state.sidebar.favorites
                 .first(where: { $0.url.path == url.path })
-                .map(\.displayName) ?? state.content.collectionSession.openedName
+                .map(\.displayName) ?? state.content.collectionSession.document?.name
         } else {
             state.sidebar.selectedSidebarItem = nil
         }

@@ -2,47 +2,35 @@ import ComposableArchitecture
 import Foundation
 import VoyagerShared
 
-struct CollectionOpenContext {
-    let navigation: ContentPageCollectionNavigation?
-}
-
 func prepareLoadedCollectionOpenState(
     restorationPayload: CollectionOpenRestorationPayload,
-    compatibility: CollectionFileCompatibilityMetadata?,
     registryClient: RegistryClient,
     state: inout FileManagerWindowState,
-) -> CollectionOpenContext {
-    let restoredContext = restorationPayload.context
+) {
     state.content.composer.applyCollectionOpenRestorationComposerPayload(
         restorationPayload,
         registryClient: registryClient,
     )
-    return .init(
-        navigation: makeSnapshotNavigation(
-            context: restoredContext,
-            compatibility: restorationPayload.compatibility ?? compatibility,
-            state: state,
-        ),
-    )
 }
 
-func makeSnapshotNavigation(
-    context: CollectionContext,
-    compatibility: CollectionFileCompatibilityMetadata?,
+func makeWindowCollectionNavigation(
+    _ payload: CollectionNavigationPresentationPayload,
     state: FileManagerWindowState,
-) -> ContentPageCollectionNavigation? {
-    guard let openedURL = state.content.collectionSession.openedURL else { return nil }
+) -> ContentPageCollectionNavigation {
+    let kind: ContentPageCollectionKind = switch payload.kind {
+    case .temporary:
+        .temporary
+    case let .file(url, name):
+        .file(url: url, name: name)
+    }
 
     return ContentPageCollectionNavigation(
-        kind: .file(
-            url: openedURL,
-            name: state.content.collectionSession.openedName ?? openedURL.deletingPathExtension().lastPathComponent,
-        ),
-        context: context,
+        kind: kind,
+        context: payload.context,
         sortKey: state.content.entryViewLayout.entryArrangements.sortKey,
         sortOrder: state.content.entryViewLayout.entryArrangements.sortOrder,
         viewLayout: state.content.entryViewLayout.mode,
-        compatibility: compatibility,
+        compatibility: payload.compatibility,
     )
 }
 
@@ -72,15 +60,14 @@ func hydrateOpenedCollectionSnapshot(
 
 func makeHydratedCollectionOpenEffects(
     payload: CollectionOpenRestorationPayload,
-    openContext: CollectionOpenContext,
     collectionAlertClient: CollectionAlertClient,
     state: inout FileManagerWindowState,
 ) -> [Effect<FileManagerWindowAction>]? {
-    guard let navigation = openContext.navigation,
+    guard let navigationPayload = payload.navigation,
           let hydratedOpenPayload = payload.hydratedOpenPayload,
           let hydrationEffects = hydrateOpenedCollectionSnapshot(
               payload: hydratedOpenPayload,
-              navigation: navigation,
+              navigation: makeWindowCollectionNavigation(navigationPayload, state: state),
               state: &state,
           )
     else {
@@ -99,12 +86,15 @@ func makeHydratedCollectionOpenEffects(
 
 func makeCollectionOpenFollowupEffects(
     payload: CollectionOpenRestorationPayload,
-    openContext: CollectionOpenContext,
     collectionAlertClient: CollectionAlertClient,
+    state: FileManagerWindowState,
 ) -> [Effect<FileManagerWindowAction>] {
     var effects: [Effect<FileManagerWindowAction>] = []
 
-    if payload.shouldRestoreStaleNavigation, let navigation = openContext.navigation {
+    if payload.shouldRestoreStaleNavigation,
+       let navigationPayload = payload.navigation
+    {
+        let navigation = makeWindowCollectionNavigation(navigationPayload, state: state)
         effects.append(contentsOf: [
             .send(.content(.internal(.requestNavigation(.internal(.setNavigationState(.collection(navigation))))))),
             .send(.content(.internal(.applyNavigationState(.collection(navigation))))),

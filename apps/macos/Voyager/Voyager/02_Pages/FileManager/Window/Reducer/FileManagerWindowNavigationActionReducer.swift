@@ -1,5 +1,6 @@
 import ComposableArchitecture
 import Foundation
+import VoyagerShared
 
 import VoyagerFeaturesEntryOperations
 
@@ -239,18 +240,18 @@ private func handleOpenCollectionFile(
     collectionFileClient: CollectionFileClient,
     collectionStalenessClient: CollectionStalenessClient,
 ) -> Effect<FileManagerWindowAction> {
-    if state.content.collectionSession.openedURL?.path != url.path {
+    if state.content.collectionSession.document?.url.path != url.path {
         VoyagerSentryMetricLogger.logDAUNavigation(kind: .collection)
     }
 
     let canonicalPath = url.standardizedFileURL.path
-    CollectionDocumentSessionFeature.prepareOpenIntent(
-        state: &state.content.collectionSession,
-        url: url,
-        reopenContext: state.content.collectionContext,
-        isAlreadyStale: collectionStalenessClient.record(canonicalPath)?.lastInvalidatedAt != nil,
-    )
-    state.content.syncComposerCollectionState()
+    let isAlreadyStale = collectionStalenessClient.record(canonicalPath)?.lastInvalidatedAt != nil
+    let reopenContext = state.content.collectionContext
+    let clearExistingCollectionEffect: Effect<FileManagerWindowAction> = if state.content.isCollectionMode {
+        clearCollectionMode(state: &state.content).map(FileManagerWindowAction.content)
+    } else {
+        .none
+    }
 
     let loadEffect: Effect<FileManagerWindowAction> = .run { [url] send in
         do {
@@ -270,6 +271,13 @@ private func handleOpenCollectionFile(
     .cancellable(id: "openCollectionFile", cancelInFlight: true)
 
     return .concatenate(
+        clearExistingCollectionEffect,
+        .send(.content(.collection(.openRequested(
+            url,
+            reopenContext: reopenContext,
+            isAlreadyStale: isAlreadyStale,
+        )))),
+        .send(.content(.internal(.syncComposerCollectionState))),
         .send(.navigation(.internal(.prepareCollectionFileOpen(url)))),
         loadEffect,
     )
@@ -287,7 +295,7 @@ private func handleCollectionFileLoaded(
     case let .success(loadResult):
         let file = loadResult.file
         var isStale = false
-        if let url = state.content.collectionSession.openedURL {
+        if let url = state.content.collectionSession.document?.url {
             let canonicalPath = url.standardizedFileURL.path
             isStale = collectionStalenessClient.record(canonicalPath)?.lastInvalidatedAt != nil
             _ = collectionStalenessClient.consumeInvalidation(canonicalPath)
@@ -316,20 +324,36 @@ private func handleCollectionFileLoaded(
 
 private func handleNavigateToCollection(
     _ navigation: ContentPageCollectionNavigation,
-    state: inout FileManagerWindowState,
+    state _: inout FileManagerWindowState,
 ) -> Effect<FileManagerWindowAction> {
-    applyCollectionNavigationState(navigation, state: &state)
-
-    let trigger = CollectionDocumentSessionFeature.queryTriggerPayload(
-        query: navigation.context.query,
-    )
-    let queryEffect: Effect<FileManagerWindowAction> = switch trigger {
-    case .applyFilters:
-        .send(.content(.composer(.applyFilters)))
-    case .submit:
-        .send(.content(.composer(.submit)))
+    let (openedURL, openedName): (URL?, String?) = switch navigation.kind {
+    case .temporary:
+        (nil, nil)
+    case let .file(url, name):
+        (url, name)
     }
-    return .merge(
+    let payload = CollectionNavigationStatePayload(
+        context: navigation.context,
+        document: openedURL.map {
+            CollectionOpenedDocumentState(
+                url: $0,
+                name: openedName ?? $0.deletingPathExtension().lastPathComponent,
+                compatibility: navigation.compatibility,
+            )
+        },
+        baseline: openedURL.map { _ in CollectionBaseline(context: navigation.context) },
+        composerText: navigation.context.query,
+        scopes: navigation.context.scopes,
+        conditions: navigation.context.conditions,
+    )
+
+    let trimmedQuery = navigation.context.query.trimmingCharacters(in: .whitespacesAndNewlines)
+    let queryEffect: Effect<FileManagerWindowAction> = trimmedQuery.isEmpty
+        ? .send(.content(.composer(.applyFilters)))
+        : .send(.content(.composer(.submit)))
+    return .concatenate(
+        .send(.content(.collection(.navigationStateApplied(payload)))),
+        .send(.content(.internal(.syncComposerCollectionState))),
         .send(.content(.entryViewLayout(.entryArrangements(.reapply)))),
         queryEffect,
     )
@@ -344,8 +368,7 @@ private func handleCollectionFileLoadedSuccess(
 ) -> Effect<FileManagerWindowAction> {
     state.content.composer.isPresented = false
     let resolved = file.resolveCollectionFilters(registryClient: environment.registryClient)
-    let openPayload = CollectionDocumentSessionFeature.loadedOpenPayload(
-        state: &state.content.collectionSession,
+    let openPayload = state.content.collection.makeOpenRestorationPayload(
         file: file,
         resolved: resolved,
         isStale: isStale,
@@ -360,16 +383,14 @@ private func handleCollectionFileLoadedSuccess(
         )
     }
 
-    let openContext = prepareLoadedCollectionOpenState(
+    prepareLoadedCollectionOpenState(
         restorationPayload: openPayload,
-        compatibility: state.content.collectionSession.openedCompatibility,
         registryClient: environment.registryClient,
         state: &state,
     )
 
     if let effects = makeHydratedCollectionOpenEffects(
         payload: openPayload,
-        openContext: openContext,
         collectionAlertClient: environment.collectionAlertClient,
         state: &state,
     ) {
@@ -378,8 +399,8 @@ private func handleCollectionFileLoadedSuccess(
 
     let effects = makeCollectionOpenFollowupEffects(
         payload: openPayload,
-        openContext: openContext,
         collectionAlertClient: environment.collectionAlertClient,
+        state: state,
     )
 
     return effects.isEmpty ? .none : .merge(effects)
@@ -397,9 +418,6 @@ private func handleCollectionFileLoadedFailure(
     collectionAlertClient: CollectionAlertClient,
     computerName: String,
 ) -> Effect<FileManagerWindowAction> {
-    _ = CollectionDocumentSessionFeature.resetPayload(
-        state: &state.content.collectionSession,
-    )
     state.content.resetComposer()
 
     let exitEffect = exitCollectionMode(
@@ -410,6 +428,7 @@ private func handleCollectionFileLoadedFailure(
     if state.sidebar.pendingSidebarSelectionRestore != nil {
         effects.append(.send(.sidebar(.internal(.restoreSidebarSelection))))
     }
+    effects.append(.send(.content(.collection(.sessionResetRequested))))
     effects.append(exitEffect.map(FileManagerWindowAction.content))
     effects.append(.run { _ in
         await collectionAlertClient.showCollectionOpenErrorAlert("Unable to Open Collection", error.message)
@@ -422,9 +441,6 @@ private func handleEmptyCollectionFile(
     collectionAlertClient: CollectionAlertClient,
     computerName: String,
 ) -> Effect<FileManagerWindowAction> {
-    _ = CollectionDocumentSessionFeature.resetPayload(
-        state: &state.content.collectionSession,
-    )
     state.content.resetComposer()
 
     let exitEffect = exitCollectionMode(
@@ -432,6 +448,7 @@ private func handleEmptyCollectionFile(
         computerName: computerName,
     )
     return .concatenate(
+        .send(.content(.collection(.sessionResetRequested))),
         .send(.navigation(.internal(.rollbackBackHistoryOnce))),
         .merge(
             exitEffect.map(FileManagerWindowAction.content),
