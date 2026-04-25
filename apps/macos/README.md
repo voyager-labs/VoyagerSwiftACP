@@ -49,11 +49,15 @@ brew install swiftformat
     - Helper schemes:
         - VoyagerHelper-Dev (개발용 헬퍼)
         - VoyagerHelper-Prod (배포/Archive 헬퍼)
+    - Host schemes (별도 프로젝트 — OnboardingHost.xcodeproj):
+        - OnboardingHost-Dev (온보딩 호스트 개발)
     - Test schemes: VoyagerTests, VoyagerUITests
 
 ## 빌드 및 실행
 
 ### CLI 빌드
+
+**Voyager.xcodeproj**
 
 ```bash
 # 프로젝트 빌드 (개발)
@@ -65,6 +69,15 @@ xcodebuild -project Voyager.xcodeproj -scheme Voyager-Prod -configuration Releas
 # 테스트 실행 (개발)
 xcodebuild -project Voyager.xcodeproj -scheme Voyager-Dev test
 ```
+
+**OnboardingHost.xcodeproj** (별도 프로젝트)
+
+```bash
+# 온보딩 호스트 빌드 (개발)
+xcodebuild -project apps/macos/Hosts/OnboardingHost/OnboardingHost.xcodeproj -scheme OnboardingHost-Dev -configuration Debug build
+```
+
+> 참고: OnboardingHost는 독립적인 Xcode 프로젝트입니다. `-project` 경로를 명시적으로 지정해야 합니다.
 
 ## 테스트
 
@@ -94,8 +107,16 @@ log stream --predicate 'subsystem == "com.voyager.app"'
 
 ### 타겟 설명
 
--   **Voyager**: 메인 macOS 파일 관리자 앱
--   **VoyagerHelper**: 인덱싱/검색 런타임(XPC, DB)을 관리하는 헬퍼 앱
+**Voyager.xcodeproj**
+
+- **Voyager**: 메인 macOS 파일 관리자 앱
+- **VoyagerHelper**: 인덱싱/검색 런타임(XPC, DB)을 관리하는 헬퍼 앱
+
+**OnboardingHost.xcodeproj** (별도 프로젝트)
+
+- **OnboardingHost**: 온보딩 전용 호스트 앱 (`apps/macos/Hosts/OnboardingHost/OnboardingHost.xcodeproj`)
+    - 독립적인 Xcode 프로젝트로, Voyager.xcworkspace에 통합되어 있습니다
+    - 배포용 타겟이 아닌 개발/테스트용 호스트입니다
 
 ## 의존성 관리
 
