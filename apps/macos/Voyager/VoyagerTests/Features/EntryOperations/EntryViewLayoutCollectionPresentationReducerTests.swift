@@ -5,7 +5,7 @@ import VoyagerFeaturesEntryOperations
 import XCTest
 
 @MainActor
-final class EntryViewLayoutCollectionPresentationReducerTests: XCTestCase {
+final class EntryViewLayoutCollectionReducerTests: XCTestCase {
     private func makeTestStore() -> TestStore<EntryViewLayoutState, EntryViewLayoutAction> {
         TestStore(initialState: EntryViewLayoutState()) {
             EntryViewLayoutFeature()
@@ -227,5 +227,60 @@ final class EntryViewLayoutCollectionPresentationReducerTests: XCTestCase {
         let state = store.state
         XCTAssertFalse(state.isCollectionMode)
         XCTAssertEqual(state.entries.map(\.id), [item.id])
+    }
+
+    func testRemoveCollectionPathsPrunesItemsAndSelection() async {
+        let store = makeTestStore()
+
+        let removedItem = EntryModel.temporaryFolder(id: "/tmp/a.txt", name: "a.txt")
+        let keptItem = EntryModel.temporaryFolder(id: "/tmp/b.txt", name: "b.txt")
+
+        await store.send(.internal(.setCollectionMode(true))) {
+            $0.isCollectionMode = true
+            $0.entries = []
+        }
+        await receiveReapplySequence(
+            from: store,
+            applyItems: [],
+            isCollectionMode: true,
+        )
+
+        await store.send(.internal(.setCollectionItems([removedItem, keptItem]))) {
+            $0.collectionItems = [removedItem, keptItem]
+            $0.entries = [removedItem, keptItem]
+        }
+        await receiveReapplySequence(
+            from: store,
+            applyItems: [removedItem, keptItem],
+            isCollectionMode: true,
+            resultingEntries: [removedItem, keptItem],
+        )
+
+        await store.send(.internal(.setSelectionState(
+            ids: [removedItem.id, keptItem.id],
+            lastSelectedId: removedItem.id,
+            rangeAnchorId: removedItem.id,
+            shouldScrollToSelection: true,
+        ))) {
+            $0.selectedIds = [removedItem.id, keptItem.id]
+            $0.lastSelectedId = removedItem.id
+            $0.rangeAnchorId = removedItem.id
+            $0.shouldScrollToSelection = true
+        }
+
+        await store.send(.internal(.removeCollectionPaths(["/tmp/a.txt"]))) {
+            $0.collectionItems = [keptItem]
+            $0.selectedIds = [keptItem.id]
+            $0.lastSelectedId = keptItem.id
+            $0.rangeAnchorId = keptItem.id
+            $0.shouldScrollToSelection = false
+            $0.entries = [keptItem]
+        }
+        await receiveReapplySequence(
+            from: store,
+            applyItems: [keptItem],
+            isCollectionMode: true,
+            resultingEntries: [keptItem],
+        )
     }
 }

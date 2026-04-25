@@ -223,6 +223,9 @@ struct FileManagerContentFeature {
         case .lifecycle(.entryActionCompleted):
             .none
 
+        case let .lifecycle(.pathsMutated(paths)):
+            handleMutatedPaths(paths, state: state)
+
         case .lifecycle(.operationFinished):
             reloadEntryItemsEffect(state: state)
 
@@ -239,6 +242,13 @@ struct FileManagerContentFeature {
             navigationState: state.navigation.navigationState,
             showHidden: state.entryViewLayout.showHiddenFiles,
         )
+    }
+
+    private func handleMutatedPaths(_ paths: [String], state: State) -> Effect<Action> {
+        guard case .collection = state.navigation.navigationState else {
+            return .none
+        }
+        return .send(.entryViewLayout(.internal(.removeCollectionPaths(paths))))
     }
 
     private func reloadEntryItemsEffect(
