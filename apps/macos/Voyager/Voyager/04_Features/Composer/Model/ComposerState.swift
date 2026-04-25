@@ -15,7 +15,6 @@ struct ConditionDisplayState: Equatable {
 
 @ObservableState
 struct ComposerState: Equatable {
-    var collection: CollectionFeature.State = .init()
     var propertyPicker: ConditionPropertyPickerFeature.State = .init()
     var operatorPicker: OperatorPickerFeature.State = .init()
     var valuePicker: ValuePickerFeature.State = .init()
@@ -102,7 +101,8 @@ struct ComposerState: Equatable {
     }
 
     mutating func applyCollectionNavigationComposerPayload(_ payload: CollectionNavigationStatePayload) {
-        pendingSearchQuery = payload.pendingSearchQuery
+        let trimmedQuery = payload.composerText.trimmingCharacters(in: .whitespacesAndNewlines)
+        pendingSearchQuery = trimmedQuery.isEmpty ? nil : trimmedQuery
         text = payload.composerText
         scopes = payload.scopes
         conditions = payload.conditions
