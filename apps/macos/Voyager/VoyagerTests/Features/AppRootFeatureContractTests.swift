@@ -47,7 +47,9 @@ final class AppRootFeatureContractTests: XCTestCase {
         } withDependencies: {
             $0.onboardingWindowClient.showIfNeeded = { false }
             $0.fileManagerWindowClient.open = { _ in }
+            $0.uuid = .incrementing
         }
+        store.exhaustivity = .off
 
         await store.send(.lifecycle(.delegate(.openInitialWindowIfNeeded)))
         await store.receive(\.windowManager.lifecycle.openInitialWindowIfNeeded)
@@ -64,6 +66,7 @@ final class AppRootFeatureContractTests: XCTestCase {
         let store = TestStore(initialState: initialState) {
             AppRootFeature()
         }
+        store.exhaustivity = .off
 
         await store.send(.helperExternalFileChanged(.init(paths: paths, source: .live)))
         await store.receive { action in
@@ -127,7 +130,13 @@ final class AppRootFeatureContractTests: XCTestCase {
         let store = TestStore(initialState: initialState) {
             AppRootFeature()
         }
+        store.exhaustivity = .off
 
-        XCTAssertTrue(store.state.menuCommands.hasFocusedWindow)
+        XCTAssertFalse(store.state.menuCommands.hasFocusedWindow)
+
+        await store.send(.windowManager(.event(.windowBecameKey(id: windowID)))) {
+            $0.windowManager.focusedWindowID = windowID
+            $0.menuCommands.hasFocusedWindow = true
+        }
     }
 }

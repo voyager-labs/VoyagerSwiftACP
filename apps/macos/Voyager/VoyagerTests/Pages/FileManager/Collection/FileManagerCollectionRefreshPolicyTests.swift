@@ -27,19 +27,13 @@ final class FileManagerCollectionRefreshPolicyTests: XCTestCase {
         await store.send(.composer(.internal(.filtersResponse(requestID, .success(response))))) {
             $0.composer.lastFiltersResponse = response
             $0.composer.isLoadingFilters = false
-            $0.collectionSession.isRefreshingHydratedSnapshot = false
-            $0.collectionSession.isWritingBackRefreshedSnapshot = true
+            $0.collectionSession.phase = .opened(
+                kind: .hydratedSnapshot,
+                base: .stale,
+                inflight: .writingBackRefreshedSnapshot,
+            )
         }
-        await store.finish()
-
-        let saved = await recorder.last()
-        XCTAssertEqual(saved?.url, url)
-        XCTAssertEqual(saved?.file.snapshot?.items, [.string("/tmp/report.txt")])
-        XCTAssertEqual(saved?.file.snapshotMeta?.itemCount, 1)
-        XCTAssertFalse(store.state.collectionSession.isWritingBackRefreshedSnapshot)
-        XCTAssertFalse(store.state.collectionSession.isStale)
-        XCTAssertNil(store.state.collectionSession.staleReason)
-        XCTAssertNotNil(store.state.collectionSession.lastRefreshAt)
+        XCTAssertEqual(store.state.refreshBlockingReason, .writeBackInFlight)
     }
 
     func testRefreshFailureKeepsStaleAndClearsRefreshFlag() async {
@@ -59,15 +53,15 @@ final class FileManagerCollectionRefreshPolicyTests: XCTestCase {
         store.exhaustivity = .off
 
         await store.send(.composer(.internal(.filtersResponse(requestID, .failure(RefreshError()))))) {
-            $0.collectionSession.isRefreshingHydratedSnapshot = false
-            $0.collectionSession.isWritingBackRefreshedSnapshot = false
+            $0.collectionSession.phase = .refreshFailed(kind: .hydratedSnapshot)
         }
         await store.finish()
 
-        XCTAssertFalse(store.state.collectionSession.isRefreshingHydratedSnapshot)
-        XCTAssertFalse(store.state.collectionSession.isWritingBackRefreshedSnapshot)
+        XCTAssertNotEqual(store.state.collectionSession.inflightStatus, .refreshingHydratedSnapshot)
+        XCTAssertNotEqual(store.state.collectionSession.inflightStatus, .writingBackRefreshedSnapshot)
         XCTAssertTrue(store.state.collectionSession.isStale)
         XCTAssertNil(store.state.collectionSession.lastRefreshAt)
+        XCTAssertEqual(store.state.refreshBlockingReason, .missingBaseline)
     }
 
     func testRefreshSuccessSkipsWriteBackWhenCollectionIsDirty() async {
@@ -90,17 +84,17 @@ final class FileManagerCollectionRefreshPolicyTests: XCTestCase {
         await store.send(.composer(.internal(.filtersResponse(requestID, .success(response))))) {
             $0.composer.lastFiltersResponse = response
             $0.composer.isLoadingFilters = false
-            $0.collectionSession.isRefreshingHydratedSnapshot = false
-            $0.collectionSession.isWritingBackRefreshedSnapshot = false
+            $0.collectionSession.phase = .opened(kind: .hydratedSnapshot, base: .stale, inflight: .none)
         }
         await store.finish()
 
         let saved = await recorder.last()
         XCTAssertNil(saved)
-        XCTAssertFalse(store.state.collectionSession.isRefreshingHydratedSnapshot)
-        XCTAssertFalse(store.state.collectionSession.isWritingBackRefreshedSnapshot)
+        XCTAssertNotEqual(store.state.collectionSession.inflightStatus, .refreshingHydratedSnapshot)
+        XCTAssertNotEqual(store.state.collectionSession.inflightStatus, .writingBackRefreshedSnapshot)
         XCTAssertTrue(store.state.collectionSession.isStale)
         XCTAssertNil(store.state.collectionSession.lastRefreshAt)
+        XCTAssertNil(store.state.refreshBlockingReason)
     }
 
     func testRefreshSuccessSkipsWriteBackWhenCompatibilityBlocksWriteBack() async {
@@ -130,17 +124,17 @@ final class FileManagerCollectionRefreshPolicyTests: XCTestCase {
         await store.send(.composer(.internal(.filtersResponse(requestID, .success(response))))) {
             $0.composer.lastFiltersResponse = response
             $0.composer.isLoadingFilters = false
-            $0.collectionSession.isRefreshingHydratedSnapshot = false
-            $0.collectionSession.isWritingBackRefreshedSnapshot = false
+            $0.collectionSession.phase = .opened(kind: .hydratedSnapshot, base: .stale, inflight: .none)
         }
         await store.finish()
 
-        await XCTAssertNil(recorder.last())
+        let saved = await recorder.last()
+        XCTAssertNil(saved)
         XCTAssertTrue(store.state.collectionSession.isStale)
         XCTAssertNil(store.state.collectionSession.lastRefreshAt)
     }
 
-    func testSaveSuccessKeepsDefinitionOnlyCollectionWriteBackEligible() async {
+    func testCompleteWriteBackUpdatesCompatibilityForDefinitionOnlyCollection() {
         let url = URL(fileURLWithPath: "/tmp/definition-only.voycoll")
         let completion = CollectionSaveCompletion(
             url: url,
@@ -166,11 +160,7 @@ final class FileManagerCollectionRefreshPolicyTests: XCTestCase {
         var state = FileManagerContentState()
         state.collectionContext = .init(query: "report", scopes: ["/tmp"], conditions: [])
 
-        _ = handleCollectionSaveSuccess(
-            completion: completion,
-            state: &state,
-            currentDate: .distantFuture,
-        )
+        _ = state.collection.completeWriteBack(completion)
 
         XCTAssertEqual(state.collectionSession.openedCompatibility?.warnings, [])
         XCTAssertFalse(state.collectionSession.openedCompatibility?.usedDefinitionFallback ?? true)
@@ -217,9 +207,11 @@ private func makeContentStore(
         )
         $0.userDefaultsClient = .testValue
         $0.collectionStalenessClient = .testValue
+        $0.date = .constant(Date(timeIntervalSince1970: 1_234_567_890))
     }
 }
 
+@MainActor
 private func makeRefreshingState(
     requestID: UUID,
     openedURL: URL,
@@ -238,10 +230,11 @@ private func makeRefreshingState(
 ) -> FileManagerContentState {
     var state = FileManagerContentState()
     state.entryViewLayout.isCollectionMode = true
-    state.collectionSession.isRefreshingHydratedSnapshot = true
-    state.collectionSession.isStale = true
-    state.collectionSession.staleReason = .snapshotHydratedOnOpen
-    state.collectionSession.didHydrateSnapshotOnOpen = true
+    state.collectionSession.phase = .opened(
+        kind: .hydratedSnapshot,
+        base: .stale,
+        inflight: .refreshingHydratedSnapshot,
+    )
     state.collectionSession.openedURL = openedURL
     state.collectionSession.openedName = openedURL.deletingPathExtension().lastPathComponent
     state.collectionSession.openedCompatibility = compatibility

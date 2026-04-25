@@ -10,10 +10,11 @@ final class ToolbarViewRefreshVisibilityTests: XCTestCase {
             openedCollectionURLExists: true,
             isOpenedCollectionDirty: false,
             isOpenedCollectionStale: true,
-            canRefreshStaleCollection: true,
+            refreshBlockingReason: nil,
         )
 
-        XCTAssertTrue(showsToolbarRefreshButton(status))
+        XCTAssertFalse(showsToolbarRefreshButton(status, isTitleAreaHovered: false))
+        XCTAssertTrue(showsToolbarRefreshButton(status, isTitleAreaHovered: true))
         XCTAssertTrue(isToolbarRefreshButtonEnabled(status))
     }
 
@@ -23,23 +24,25 @@ final class ToolbarViewRefreshVisibilityTests: XCTestCase {
             openedCollectionURLExists: false,
             isOpenedCollectionDirty: false,
             isOpenedCollectionStale: true,
-            canRefreshStaleCollection: false,
+            refreshBlockingReason: .notInCollectionMode,
         )
 
-        XCTAssertFalse(showsToolbarRefreshButton(status))
+        XCTAssertFalse(showsToolbarRefreshButton(status, isTitleAreaHovered: false))
+        XCTAssertFalse(showsToolbarRefreshButton(status, isTitleAreaHovered: true))
         XCTAssertFalse(isToolbarRefreshButtonEnabled(status))
     }
 
-    func testToolbarRefreshButtonCanBeVisibleButDisabled() {
+    func testToolbarRefreshButtonHidesWhenStaleIsNotResolvable() {
         let status = ToolbarCollectionStatusViewState(
             isCollectionMode: true,
             openedCollectionURLExists: true,
             isOpenedCollectionDirty: true,
             isOpenedCollectionStale: true,
-            canRefreshStaleCollection: false,
+            refreshBlockingReason: .dirtyCollection,
         )
 
-        XCTAssertTrue(showsToolbarRefreshButton(status))
+        XCTAssertFalse(showsToolbarRefreshButton(status, isTitleAreaHovered: false))
+        XCTAssertFalse(showsToolbarRefreshButton(status, isTitleAreaHovered: true))
         XCTAssertFalse(isToolbarRefreshButtonEnabled(status))
     }
 }

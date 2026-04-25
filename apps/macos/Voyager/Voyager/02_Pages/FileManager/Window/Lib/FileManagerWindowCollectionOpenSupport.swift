@@ -2,126 +2,72 @@ import ComposableArchitecture
 import Foundation
 import VoyagerShared
 
-struct CollectionOpenContext {
-    let trimmedQuery: String
-    let navigation: ContentPageCollectionNavigation?
-}
-
-func isEmptyCollectionDefinition(
-    file: VoyagerCollectionFile,
-    resolved: AppliedFiltersUtils.ResolutionResult,
-) -> Bool {
-    file.query.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-        && resolved.scopes.isEmpty
-        && resolved.conditions.isEmpty
-}
-
 func prepareLoadedCollectionOpenState(
-    file: VoyagerCollectionFile,
-    resolved: AppliedFiltersUtils.ResolutionResult,
-    isStale: Bool,
+    restorationPayload: CollectionOpenRestorationPayload,
     registryClient: RegistryClient,
     state: inout FileManagerWindowState,
-) -> CollectionOpenContext {
-    let trimmedQuery = file.query.trimmingCharacters(in: .whitespacesAndNewlines)
-    state.content.composer.pendingSearchQuery = trimmedQuery.isEmpty ? nil : trimmedQuery
-    state.content.composer.text = trimmedQuery
-    state.content.composer.scopes = resolved.scopes
-    state.content.composer.conditions = resolved.conditions
-    state.content.composer.propertyPicker = ConditionPropertyPickerFeature.State()
-    state.content.composer.operatorPicker = OperatorPickerFeature.State()
-    state.content.composer.valuePicker = ValuePickerFeature.State()
-    state.content.composer.clearHistory()
-    let filters = buildFilters(from: state.content.composer)
-    applyAppliedFilters(
-        .init(scopes: filters.scopes, conditions: filters.conditions),
-        state: &state.content.composer,
+) {
+    state.content.composer.applyCollectionOpenRestorationComposerPayload(
+        restorationPayload,
         registryClient: registryClient,
-    )
-    let context = CollectionContext(
-        query: trimmedQuery,
-        scopes: resolved.scopes,
-        conditions: resolved.conditions,
-    )
-    state.content.collectionContext = context
-    state.content.collectionSession.baseline = CollectionBaseline(context: context)
-    state.content.syncComposerCollectionState()
-    state.content.collectionSession.didHydrateSnapshotOnOpen = false
-    state.content.collectionSession.staleReason = isStale ? .invalidatedLocally : nil
-    state.content.composer.lastFiltersResponse = nil
-    state.content.composer.lastSearchResponse = nil
-
-    return .init(
-        trimmedQuery: trimmedQuery,
-        navigation: makeSnapshotNavigation(resolved: resolved, state: state),
     )
 }
 
-func makeSnapshotNavigation(
-    resolved: AppliedFiltersUtils.ResolutionResult,
+func makeWindowCollectionNavigation(
+    _ payload: CollectionNavigationPresentationPayload,
     state: FileManagerWindowState,
-) -> ContentPageCollectionNavigation? {
-    guard let openedURL = state.content.collectionSession.openedURL else { return nil }
+) -> ContentPageCollectionNavigation {
+    let kind: ContentPageCollectionKind = switch payload.kind {
+    case .temporary:
+        .temporary
+    case let .file(url, name):
+        .file(url: url, name: name)
+    }
 
     return ContentPageCollectionNavigation(
-        kind: .file(
-            url: openedURL,
-            name: state.content.collectionSession.openedName ?? openedURL.deletingPathExtension().lastPathComponent,
-        ),
-        context: .init(
-            query: state.content.composer.pendingSearchQuery ?? "",
-            scopes: resolved.scopes,
-            conditions: resolved.conditions,
-        ),
+        kind: kind,
+        context: payload.context,
         sortKey: state.content.entryViewLayout.entryArrangements.sortKey,
         sortOrder: state.content.entryViewLayout.entryArrangements.sortOrder,
         viewLayout: state.content.entryViewLayout.mode,
-        compatibility: state.content.collectionSession.openedCompatibility,
+        compatibility: payload.compatibility,
     )
 }
 
 func hydrateOpenedCollectionSnapshot(
-    file: VoyagerCollectionFile,
+    payload: CollectionHydratedOpenPayload,
     navigation: ContentPageCollectionNavigation,
-    isStale: Bool,
     state: inout FileManagerWindowState,
 ) -> [Effect<FileManagerWindowAction>]? {
-    guard let response = CollectionSnapshotHydration.syntheticSearchResponse(for: file),
-          let paths = snapshotPaths(from: response)
-    else {
-        return nil
-    }
+    state.content.composer.applyHydratedCollectionOpenComposerPayload(payload, navigation: navigation)
 
-    state.content.composer.lastFiltersResponse = response
-    state.content.composer.lastSearchResponse = navigation.context.query.isEmpty ? nil : response
-    state.content.collectionSession.didHydrateSnapshotOnOpen = true
-    state.content.collectionSession.staleReason = isStale ? .snapshotHydratedOnOpen : nil
+    let showHidden = state.content.entryViewLayout.showHiddenFiles
 
     return [
-        .send(.content(.internal(.requestNavigation(.internal(.setNavigationState(.collection(navigation))))))),
-        .send(.content(.internal(.applyNavigationState(.collection(navigation))))),
-        .send(.content(.entryViewLayout(.internal(.applyCollectionSearchPaths(
-            paths: paths,
-            showHidden: state.content.entryViewLayout.showHiddenFiles,
-        ))))),
-        .send(.content(.internal(.syncComposerCollectionState))),
-        .send(.content(.composer(.searchListApplied))),
+        .run { send in
+            await send(.content(.internal(.requestNavigation(.internal(.setNavigationState(.collection(navigation)))))))
+            await send(.content(.internal(.applyNavigationState(.collection(navigation)))))
+            await send(.content(.entryViewLayout(.internal(.setCollectionMode(true)))))
+            await send(.content(.entryViewLayout(.internal(.applyCollectionSearchPaths(
+                paths: payload.snapshotPaths,
+                showHidden: showHidden,
+            )))))
+            await send(.content(.internal(.syncComposerCollectionState)))
+            await send(.content(.composer(.searchListApplied)))
+        },
     ]
 }
 
 func makeHydratedCollectionOpenEffects(
-    file: VoyagerCollectionFile,
-    openContext: CollectionOpenContext,
-    resolved: AppliedFiltersUtils.ResolutionResult,
-    isStale: Bool,
+    payload: CollectionOpenRestorationPayload,
     collectionAlertClient: CollectionAlertClient,
     state: inout FileManagerWindowState,
 ) -> [Effect<FileManagerWindowAction>]? {
-    guard let navigation = openContext.navigation,
+    guard let navigationPayload = payload.navigation,
+          let hydratedOpenPayload = payload.hydratedOpenPayload,
           let hydrationEffects = hydrateOpenedCollectionSnapshot(
-              file: file,
-              navigation: navigation,
-              isStale: isStale,
+              payload: hydratedOpenPayload,
+              navigation: makeWindowCollectionNavigation(navigationPayload, state: state),
               state: &state,
           )
     else {
@@ -129,31 +75,51 @@ func makeHydratedCollectionOpenEffects(
     }
 
     var effects = hydrationEffects
-    if isStale, !state.content.isOpenedCollectionDirty {
-        state.content.collectionSession.isRefreshingHydratedSnapshot = true
-        effects.append(
-            openContext.trimmedQuery.isEmpty
-                ? .send(.content(.composer(.applyFilters)))
-                : .send(.content(.composer(.submit))),
-        )
-    }
-    if !resolved.unknownKeys.isEmpty {
+    if !payload.unsupportedFilterKeys.isEmpty {
         effects.append(contentsOf: unsupportedFilterWarningEffects(
-            unknownKeys: resolved.unknownKeys,
+            unknownKeys: payload.unsupportedFilterKeys,
             collectionAlertClient: collectionAlertClient,
         ))
     }
     return effects
 }
 
-func snapshotPaths(from response: VoyagerShared.SearchResponsePayload) -> [String]? {
-    guard let items = response.items else { return nil }
-    var paths: [String] = []
-    for item in items {
-        guard case let .string(path) = item else { return nil }
-        paths.append(path)
+func makeCollectionOpenFollowupEffects(
+    payload: CollectionOpenRestorationPayload,
+    collectionAlertClient: CollectionAlertClient,
+    state: FileManagerWindowState,
+) -> [Effect<FileManagerWindowAction>] {
+    var effects: [Effect<FileManagerWindowAction>] = []
+
+    if payload.shouldRestoreStaleNavigation,
+       let navigationPayload = payload.navigation
+    {
+        let navigation = makeWindowCollectionNavigation(navigationPayload, state: state)
+        effects.append(contentsOf: [
+            .send(.content(.internal(.requestNavigation(.internal(.setNavigationState(.collection(navigation))))))),
+            .send(.content(.internal(.applyNavigationState(.collection(navigation))))),
+            .send(.content(.entryViewLayout(.internal(.setCollectionMode(true))))),
+        ])
     }
-    return paths
+
+    if let trigger = payload.queryTrigger {
+        let queryEffect: Effect<FileManagerWindowAction> = switch trigger {
+        case .applyFilters:
+            .send(.content(.composer(.applyFilters)))
+        case .submit:
+            .send(.content(.composer(.submit)))
+        }
+        effects.append(queryEffect)
+    }
+
+    if !payload.unsupportedFilterKeys.isEmpty {
+        effects.append(contentsOf: unsupportedFilterWarningEffects(
+            unknownKeys: payload.unsupportedFilterKeys,
+            collectionAlertClient: collectionAlertClient,
+        ))
+    }
+
+    return effects
 }
 
 func unsupportedFilterWarningEffects(

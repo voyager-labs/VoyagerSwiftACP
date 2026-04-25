@@ -8,7 +8,6 @@ enum ComposerAction: ViewAction, CasePathable, Sendable {
     case delegate(Delegate)
     case `internal`(Internal)
 
-    case collection(CollectionFeature.Action)
     case propertyPicker(ConditionPropertyPickerFeature.Action)
     case operatorPicker(OperatorPickerFeature.Action)
     case valuePicker(ValuePickerFeature.Action)
@@ -47,7 +46,10 @@ enum ComposerAction: ViewAction, CasePathable, Sendable {
     }
 
     @CasePathable
-    enum Delegate: Sendable {}
+    enum Delegate: Sendable {
+        case saveRequested(SaveRequestPayload)
+        case saveToExisting(SaveRequestPayload, URL)
+    }
 }
 
 extension ComposerAction {

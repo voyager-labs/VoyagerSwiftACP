@@ -52,6 +52,9 @@ struct CollectionSavePipelineReducer {
                     userDefaultsClient: userDefaultsClient,
                     collectionStalenessClient: collectionStalenessClient,
                 )
+
+            default:
+                .none
             }
         }
     }

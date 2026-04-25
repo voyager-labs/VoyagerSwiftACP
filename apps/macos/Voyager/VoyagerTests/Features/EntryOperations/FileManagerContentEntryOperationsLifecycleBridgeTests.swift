@@ -6,18 +6,19 @@ import VoyagerFeaturesEntryOperations
 import XCTest
 
 @MainActor
-final class FileManagerContentEntryOperationsLifecycleBridgeTests: XCTestCase {
+final class FileManagerContentEntryOpsBridgeTests: XCTestCase {
     private let reducer = FileManagerContentFeature()
 
     // MARK: - Harness
 
     @MainActor
     struct LifecycleBridgeHarness: Reducer {
-        @MainActor
+        // swiftlint:disable:next nesting
         struct State: Equatable {
             var content: FileManagerContentState
         }
 
+// swiftlint:disable:next nesting
         enum Action: Sendable {
             case bridge(EntryOperationsAction)
             case forwarded(FileManagerContentAction)
@@ -211,6 +212,44 @@ final class FileManagerContentEntryOperationsLifecycleBridgeTests: XCTestCase {
         store.exhaustivity = .off
 
         await store.send(.bridge(.lifecycle(.pathsMutated(["/tmp/a.txt", "/tmp/b.txt"]))))
+        await store.finish()
+    }
+
+    func testPathsMutatedOnCollectionNavigationPrunesCollectionPresentation() async {
+        var initialState = makeInitialState()
+        let collectionItem = EntryModel.temporaryFolder(id: "/tmp/a.txt", name: "a.txt")
+        let retainedItem = EntryModel.temporaryFolder(id: "/tmp/keep.txt", name: "keep.txt")
+        initialState.content.navigation.navigationState = .collection(
+            ContentPageCollectionNavigation(
+                kind: .temporary,
+                context: CollectionContext(query: "test", scopes: [], conditions: []),
+                sortKey: .name,
+                sortOrder: .ascending,
+                viewLayout: .list,
+            ),
+        )
+        initialState.content.entryViewLayout.isCollectionMode = true
+        initialState.content.entryViewLayout.collectionItems = [collectionItem, retainedItem]
+        initialState.content.entryViewLayout.entries = [collectionItem, retainedItem]
+        initialState.content.entryViewLayout.selectedIds = [collectionItem.id]
+        initialState.content.entryViewLayout.lastSelectedId = collectionItem.id
+        initialState.content.entryViewLayout.rangeAnchorId = collectionItem.id
+
+        let store = TestStore(initialState: initialState) {
+            LifecycleBridgeHarness()
+        }
+        store.exhaustivity = .off
+
+        await store.send(.bridge(.lifecycle(.pathsMutated(["/tmp/a.txt"]))))
+        await store.receive(.forwarded(.entryViewLayout(.internal(.removeCollectionPaths(["/tmp/a.txt"]))))) {
+            $0.content.entryViewLayout.collectionItems = [retainedItem]
+            $0.content.entryViewLayout.selectedIds = []
+            $0.content.entryViewLayout.lastSelectedId = nil
+            $0.content.entryViewLayout.rangeAnchorId = nil
+            $0.content.entryViewLayout.shouldScrollToSelection = false
+            $0.content.entryViewLayout.entries = [retainedItem]
+        }
+        await store.receive(.forwarded(.entryViewLayout(.entryArrangements(.reapply))))
         await store.finish()
     }
 }

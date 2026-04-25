@@ -9,14 +9,21 @@ struct FileManagerContentState: Equatable {
     var navigation: ContentPageNavigationFeature.State = .init()
     var entryViewLayout: EntryViewLayoutFeature.State = .init()
     var composer: ComposerFeature.State = .init()
+    var collection: CollectionFeature.State = .init()
 
     // 컴포저 관련
-    var collectionContext: CollectionContext?
+    var collectionContext: CollectionContext? {
+        get { collection.collectionContext }
+        set { collection.collectionContext = newValue }
+    }
 
     var resetComposerOnNextDirectoryNavigation: Bool = false
 
     // 콜렉션 관련
-    var collectionSession: CollectionDocumentSessionState = .init()
+    var collectionSession: CollectionDocumentSessionState {
+        get { collection.collectionSession }
+        set { collection.collectionSession = newValue }
+    }
 
     var isCollectionMode: Bool {
         entryViewLayout.isCollectionMode
@@ -29,7 +36,7 @@ struct FileManagerContentState: Equatable {
 
     mutating func syncComposerCollectionState() {
         composer.collectionContext = collectionContext
-        composer.openedCollectionURL = collectionSession.openedURL
+        composer.openedCollectionURL = collectionSession.document?.url
         composer.isCollectionMode = isCollectionMode
     }
 
@@ -37,37 +44,27 @@ struct FileManagerContentState: Equatable {
         guard isCollectionMode, collectionContext != nil else {
             return false
         }
-        if collectionSession.baseline == nil {
+        if collectionSession.metadata.baseline == nil {
             return true
         }
         return isOpenedCollectionDirty
     }
 
     var isOpenedCollectionDirty: Bool {
-        guard let baseline = collectionSession.baseline, let context = collectionContext else { return false }
+        guard let baseline = collectionSession.metadata.baseline, let context = collectionContext else { return false }
         if baseline.context != context { return true }
         return false
     }
 
     var isOpenedCollectionStale: Bool {
-        isCollectionMode && collectionSession.isStale
+        isCollectionMode && collectionSession.phase.isStale
     }
 
-    var shouldRefreshOnOpen: Bool {
-        collectionSession.didHydrateSnapshotOnOpen
-            && collectionSession.isStale
-            && collectionSession.lastRefreshAt == nil
-    }
-
-    var canRefreshStaleCollection: Bool {
-        isCollectionMode
-            && isOpenedCollectionStale
-            && !isOpenedCollectionDirty
-            && !composer.isCollectionSearching
-            && !collectionSession.isRefreshingHydratedSnapshot
-            && !collectionSession.isWritingBackRefreshedSnapshot
-            && collectionSession.openedURL != nil
-            && collectionContext != nil
-            && collectionSession.baseline != nil
+    var refreshBlockingReason: CollectionSessionRefreshBlockingReason? {
+        collection.refreshBlockingReason(
+            isCollectionMode: isCollectionMode,
+            isDirty: isOpenedCollectionDirty,
+            isSearching: composer.isCollectionSearching,
+        )
     }
 }

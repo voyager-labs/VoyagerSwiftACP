@@ -16,15 +16,12 @@ struct ComposerSaveReducer {
             case .view(.saveCollection):
                 let payload = makeSavePayload(from: state, currentDate: date())
                 if let url = state.openedCollectionURL {
-                    return .send(.collection(.saveToExisting(payload, url)))
+                    return .send(.delegate(.saveToExisting(payload, url)))
                 }
-                return .send(.collection(.saveRequested(payload)))
+                return .send(.delegate(.saveRequested(payload)))
 
             case .view(.saveCollectionAs):
-                return .send(.collection(.saveRequested(makeSavePayload(from: state, currentDate: date()))))
-
-            case .collection:
-                return .none
+                return .send(.delegate(.saveRequested(makeSavePayload(from: state, currentDate: date()))))
 
             default:
                 return .none
