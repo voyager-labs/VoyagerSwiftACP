@@ -91,7 +91,7 @@ final class ComposerFeedbackGuardrailTests: XCTestCase {
 }
 
 private func assertCollectionOpenFailureRollback(
-    store: TestStore<FileManagerContentState, FileManagerContentAction>
+    store: TestStore<FileManagerContentState, FileManagerContentAction>,
 ) async {
     await store.receive { action in
         guard case .internal(.requestNavigation(.internal(.rollbackBackHistoryOnce))) = action else { return false }

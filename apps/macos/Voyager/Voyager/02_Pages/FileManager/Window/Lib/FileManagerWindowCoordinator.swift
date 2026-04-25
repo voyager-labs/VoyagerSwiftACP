@@ -243,8 +243,8 @@ final class FileManagerWindowCoordinator: NSWindowController, NSWindowDelegate {
             store.publisher.content.isCollectionMode.removeDuplicates(),
             store.publisher.content.navigation.titlePath.removeDuplicates(),
         )
-        .map { openedCollectionName, isCollectionMode, titlePath in
-            makeTitle(
+        .map { [self] openedCollectionName, isCollectionMode, titlePath in
+            self.makeTitle(
                 openedCollectionName: openedCollectionName,
                 isCollectionMode: isCollectionMode,
                 titlePath: titlePath,
