@@ -23,73 +23,43 @@ enum CollectionSessionPhase: Equatable, Sendable {
     }
 }
 
-struct CollectionDocumentSessionState: Equatable, Sendable {
-    enum StaleReason: Equatable, Sendable {
-        case invalidatedLocally
-        case snapshotHydratedOnOpen
-    }
+struct CollectionOpenedDocumentState: Equatable, Sendable {
+    var url: URL
+    var name: String
+    var compatibility: CollectionFileCompatibilityMetadata?
+}
 
-    var phase: CollectionSessionPhase = .idle
-    var staleReason: StaleReason?
+struct CollectionSessionMetadata: Equatable, Sendable {
     var lastRefreshAt: Date?
-    var openedCompatibility: CollectionFileCompatibilityMetadata?
-
-    var openedURL: URL?
-    var openedName: String?
-    var originURL: URL?
     var baseline: CollectionBaseline?
     var reopenContext: CollectionContext?
+}
 
-    var isOpening: Bool {
-        get { phase.isOpening }
-        set { phase = phase.settingIsOpening(newValue) }
-    }
-
-    var isStale: Bool {
-        get { phase.isStale }
-        set { phase = phase.settingIsStale(newValue) }
-    }
-
-    var didHydrateSnapshotOnOpen: Bool {
-        get { phase.didHydrateSnapshotOnOpen }
-        set { phase = phase.settingDidHydrateSnapshotOnOpen(newValue) }
-    }
-
-    var isRefreshingHydratedSnapshot: Bool {
-        get { phase.isRefreshingHydratedSnapshot }
-        set { phase = phase.settingIsRefreshingHydratedSnapshot(newValue) }
-    }
-
-    var isWritingBackRefreshedSnapshot: Bool {
-        get { phase.isWritingBackRefreshedSnapshot }
-        set { phase = phase.settingIsWritingBackRefreshedSnapshot(newValue) }
-    }
+struct CollectionDocumentSessionState: Equatable, Sendable {
+    var phase: CollectionSessionPhase = .idle
+    var document: CollectionOpenedDocumentState?
+    var metadata: CollectionSessionMetadata = .init()
 
     static func == (lhs: Self, rhs: Self) -> Bool {
         lhs.phase == rhs.phase
-            && lhs.staleReason == rhs.staleReason
-            && lhs.lastRefreshAt == rhs.lastRefreshAt
-            && lhs.openedCompatibility == rhs.openedCompatibility
-            && lhs.openedURL == rhs.openedURL
-            && lhs.openedName == rhs.openedName
-            && lhs.originURL == rhs.originURL
-            && lhs.baseline == rhs.baseline
-            && lhs.reopenContext == rhs.reopenContext
+            && lhs.document == rhs.document
+            && lhs.metadata == rhs.metadata
     }
 
     mutating func captureReopenContext(_ context: CollectionContext?) {
-        reopenContext = context
+        metadata.reopenContext = context
     }
 
     mutating func prepareForOpeningCollection(at url: URL) {
         phase = .reopening(kind: .definition, base: .ready, inflight: .none)
-        staleReason = nil
-        lastRefreshAt = nil
-        openedCompatibility = nil
-        openedName = url.deletingPathExtension().lastPathComponent
-        openedURL = url
-        originURL = url
-        baseline = nil
+        metadata.lastRefreshAt = nil
+        document?.compatibility = nil
+        document = .init(
+            url: url,
+            name: url.deletingPathExtension().lastPathComponent,
+            compatibility: nil,
+        )
+        metadata.baseline = nil
     }
 
     mutating func completeOpen(
@@ -98,50 +68,46 @@ struct CollectionDocumentSessionState: Equatable, Sendable {
         compatibility: CollectionFileCompatibilityMetadata?,
     ) {
         phase = .opened(kind: kind, base: isStale ? .stale : .ready, inflight: .none)
-        openedCompatibility = compatibility
-        staleReason = if isStale {
-            kind == .hydratedSnapshot ? .snapshotHydratedOnOpen : .invalidatedLocally
-        } else {
-            nil
-        }
+        document?.compatibility = compatibility
         if !isStale {
-            reopenContext = nil
+            metadata.reopenContext = nil
         }
+    }
+
+    mutating func finishOpeningTransition() {
+        phase = phase.finishedOpeningTransition()
+    }
+
+    mutating func markInvalidatedLocally() {
+        phase = phase.withBaseStatus(.stale)
+        metadata.lastRefreshAt = nil
     }
 
     mutating func beginRefreshingStaleSession() {
-        phase = phase.settingIsWritingBackRefreshedSnapshot(false)
-        phase = phase.settingIsRefreshingHydratedSnapshot(true)
-        lastRefreshAt = nil
+        phase = phase.withInflightStatus(.refreshingHydratedSnapshot)
+        metadata.lastRefreshAt = nil
     }
 
     mutating func finishRefreshWithoutWriteBack() {
-        phase = phase.settingIsRefreshingHydratedSnapshot(false)
-        phase = phase.settingIsWritingBackRefreshedSnapshot(false)
-        lastRefreshAt = nil
+        phase = phase.withInflightStatus(.none)
+        metadata.lastRefreshAt = nil
     }
 
     mutating func beginWriteBackAfterRefresh() {
-        phase = phase.settingIsRefreshingHydratedSnapshot(false)
-        phase = phase.settingIsWritingBackRefreshedSnapshot(true)
+        phase = phase.withInflightStatus(.writingBackRefreshedSnapshot)
     }
 
     mutating func failRefreshOrWriteBack() {
-        let kind = phase.openKind
+        let kind = phase.openKindForFailureFallback
         phase = .refreshFailed(kind: kind)
-        lastRefreshAt = nil
-        if staleReason == nil {
-            staleReason = .snapshotHydratedOnOpen
-        }
+        metadata.lastRefreshAt = nil
     }
 
     mutating func completeWriteBackSuccess(at currentDate: Date) {
-        phase = phase.settingIsRefreshingHydratedSnapshot(false)
-        phase = phase.settingIsWritingBackRefreshedSnapshot(false)
-        phase = phase.settingIsStale(false)
-        staleReason = nil
-        lastRefreshAt = currentDate
-        reopenContext = nil
+        phase = phase.withInflightStatus(.none)
+        phase = phase.withBaseStatus(.ready)
+        metadata.lastRefreshAt = currentDate
+        metadata.reopenContext = nil
     }
 }
 
@@ -164,189 +130,73 @@ extension CollectionSessionPhase {
         }
     }
 
-    var didHydrateSnapshotOnOpen: Bool {
+    var openKind: OpenKind? {
         switch self {
         case let .reopening(kind, _, _), let .opened(kind, _, _), let .refreshFailed(kind):
-            kind == .hydratedSnapshot
+            kind
         case .idle:
-            false
+            nil
         }
     }
 
-    var isRefreshingHydratedSnapshot: Bool {
+    var inflightStatus: InflightStatus? {
         switch self {
         case let .reopening(_, _, inflight), let .opened(_, _, inflight):
-            inflight == .refreshingHydratedSnapshot
+            inflight
         case .refreshFailed, .idle:
-            false
+            nil
         }
     }
 
-    var isWritingBackRefreshedSnapshot: Bool {
-        switch self {
-        case let .reopening(_, _, inflight), let .opened(_, _, inflight):
-            inflight == .writingBackRefreshedSnapshot
-        case .refreshFailed, .idle:
-            false
-        }
-    }
-
-    func settingIsOpening(_ isOpening: Bool) -> Self {
-        if isOpening {
-            switch self {
-            case .idle:
-                return .reopening(kind: .definition, base: .ready, inflight: .none)
-            case let .refreshFailed(kind):
-                return .reopening(kind: kind, base: .stale, inflight: .none)
-            case let .reopening(kind, base, inflight), let .opened(kind, base, inflight):
-                return .reopening(kind: kind, base: base, inflight: inflight)
-            }
-        }
-
+    func finishedOpeningTransition() -> Self {
         switch self {
         case let .reopening(kind, base, inflight):
-            return .opened(kind: kind, base: base, inflight: inflight)
+            .opened(kind: kind, base: base, inflight: inflight)
         case .idle, .opened, .refreshFailed:
-            return self
+            self
         }
     }
 
-    func settingIsStale(_ isStale: Bool) -> Self {
+    func withBaseStatus(_ baseStatus: BaseStatus) -> Self {
         switch self {
         case .idle:
-            guard isStale else {
-                return self
-            }
-            return .opened(kind: .definition, base: .stale, inflight: .none)
+            baseStatus == .stale
+                ? .opened(kind: .definition, base: .stale, inflight: .none)
+                : self
         case let .refreshFailed(kind):
-            return isStale ? .refreshFailed(kind: kind) : .opened(kind: kind, base: .ready, inflight: .none)
+            if baseStatus == .stale {
+                .refreshFailed(kind: kind)
+            } else {
+                .opened(kind: kind, base: .ready, inflight: .none)
+            }
         case let .reopening(kind, _, inflight):
-            return .reopening(kind: kind, base: isStale ? .stale : .ready, inflight: inflight)
+            .reopening(kind: kind, base: baseStatus, inflight: inflight)
         case let .opened(kind, _, inflight):
-            return .opened(kind: kind, base: isStale ? .stale : .ready, inflight: inflight)
+            .opened(kind: kind, base: baseStatus, inflight: inflight)
         }
     }
 
-    func settingDidHydrateSnapshotOnOpen(_ didHydrateSnapshotOnOpen: Bool) -> Self {
+    func withInflightStatus(_ inflightStatus: InflightStatus) -> Self {
         switch self {
         case .idle:
-            guard didHydrateSnapshotOnOpen else {
+            guard inflightStatus != .none else {
                 return self
             }
-            return .opened(kind: .hydratedSnapshot, base: .ready, inflight: .none)
-        case .refreshFailed:
-            return .refreshFailed(kind: didHydrateSnapshotOnOpen ? .hydratedSnapshot : .definition)
-        case let .reopening(_, base, inflight):
-            return .reopening(
-                kind: didHydrateSnapshotOnOpen ? .hydratedSnapshot : .definition,
-                base: base,
-                inflight: inflight,
-            )
-        case let .opened(_, base, inflight):
-            return .opened(
-                kind: didHydrateSnapshotOnOpen ? .hydratedSnapshot : .definition,
-                base: base,
-                inflight: inflight,
-            )
-        }
-    }
-
-    func settingIsRefreshingHydratedSnapshot(_ isRefreshingHydratedSnapshot: Bool) -> Self {
-        switch self {
-        case .idle:
-            guard isRefreshingHydratedSnapshot else {
-                return self
-            }
-            return .opened(kind: .definition, base: .ready, inflight: .refreshingHydratedSnapshot)
+            return .opened(kind: .definition, base: .ready, inflight: inflightStatus)
         case let .refreshFailed(kind):
-            return isRefreshingHydratedSnapshot ? .opened(
-                kind: kind,
-                base: .stale,
-                inflight: .refreshingHydratedSnapshot,
-            ) : self
-        case let .reopening(kind, base, inflight):
-            return .reopening(
-                kind: kind,
-                base: base,
-                inflight: inflight.settingIsRefreshingHydratedSnapshot(isRefreshingHydratedSnapshot),
-            )
-        case let .opened(kind, base, inflight):
-            return .opened(
-                kind: kind,
-                base: base,
-                inflight: inflight.settingIsRefreshingHydratedSnapshot(isRefreshingHydratedSnapshot),
-            )
-        }
-    }
-
-    func settingIsWritingBackRefreshedSnapshot(_ isWritingBackRefreshedSnapshot: Bool) -> Self {
-        switch self {
-        case .idle:
-            guard isWritingBackRefreshedSnapshot else {
-                return self
-            }
-            return .opened(kind: .definition, base: .ready, inflight: .writingBackRefreshedSnapshot)
-        case let .refreshFailed(kind):
-            return isWritingBackRefreshedSnapshot ? .opened(
-                kind: kind,
-                base: .stale,
-                inflight: .writingBackRefreshedSnapshot,
-            ) : self
-        case let .reopening(kind, base, inflight):
-            return .reopening(
-                kind: kind,
-                base: base,
-                inflight: inflight.settingIsWritingBackRefreshedSnapshot(isWritingBackRefreshedSnapshot),
-            )
-        case let .opened(kind, base, inflight):
-            return .opened(
-                kind: kind,
-                base: base,
-                inflight: inflight.settingIsWritingBackRefreshedSnapshot(isWritingBackRefreshedSnapshot),
-            )
+            return inflightStatus == .none
+                ? self
+                : .opened(kind: kind, base: .stale, inflight: inflightStatus)
+        case let .reopening(kind, base, _):
+            return .reopening(kind: kind, base: base, inflight: inflightStatus)
+        case let .opened(kind, base, _):
+            return .opened(kind: kind, base: base, inflight: inflightStatus)
         }
     }
 }
 
 private extension CollectionSessionPhase {
-    var openKind: OpenKind {
-        switch self {
-        case let .reopening(kind, _, _), let .opened(kind, _, _), let .refreshFailed(kind):
-            kind
-        case .idle:
-            .definition
-        }
-    }
-}
-
-private extension CollectionSessionPhase.InflightStatus {
-    func settingIsRefreshingHydratedSnapshot(_ isRefreshingHydratedSnapshot: Bool) -> Self {
-        if isRefreshingHydratedSnapshot {
-            return .refreshingHydratedSnapshot
-        }
-
-        switch self {
-        case .refreshingHydratedSnapshot:
-            return .none
-        case .none:
-            return .none
-        case .writingBackRefreshedSnapshot:
-            return .writingBackRefreshedSnapshot
-        }
-    }
-
-    func settingIsWritingBackRefreshedSnapshot(_ isWritingBackRefreshedSnapshot: Bool) -> Self {
-        if isWritingBackRefreshedSnapshot {
-            return .writingBackRefreshedSnapshot
-        }
-
-        switch self {
-        case .writingBackRefreshedSnapshot:
-            return .none
-        case .none:
-            return .none
-        case .refreshingHydratedSnapshot:
-            return .refreshingHydratedSnapshot
-        }
+    var openKindForFailureFallback: OpenKind {
+        openKind ?? .definition
     }
 }
