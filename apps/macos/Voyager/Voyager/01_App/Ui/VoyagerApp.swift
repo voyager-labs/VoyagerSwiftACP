@@ -3,6 +3,7 @@ import ComposableArchitecture
 import Foundation
 import Logging
 import SwiftUI
+import VoyagerEntitiesAppPreferences
 import VoyagerFeaturesEntryOperations
 import VoyagerPagesOnboarding
 import VoyagerPagesSettings
