@@ -51,7 +51,10 @@ struct FileManagerContentFeature {
                 return effect
             }
 
-            if let effect = handleCollectionOwnerAction(action, state: &state) {
+            if let effect = FileManagerContentCollectionCoordinator.handleCollectionOwnerAction(
+                action,
+                state: &state,
+            ) {
                 return effect
             }
 
@@ -94,7 +97,7 @@ struct FileManagerContentFeature {
                 let showHidden = !state.entryViewLayout.showHiddenFiles
                 return .concatenate(
                     .send(.entryViewLayout(.view(.toggleShowHiddenFiles))),
-                    reloadEntryItemsEffect(
+                    FileManagerContentEntryOpsCoordinator.reloadEntryItemsEffect(
                         navigationState: state.navigation.navigationState,
                         showHidden: showHidden,
                     ),
@@ -182,7 +185,10 @@ struct FileManagerContentFeature {
         }
 
         logEntryActionMetricIfNeeded(for: entryOperationsAction)
-        return handleEntryOperationsAction(entryOperationsAction, state: &state)
+        return FileManagerContentEntryOpsCoordinator.handleEntryOperationsAction(
+            entryOperationsAction,
+            state: &state,
+        )
     }
 
     private func handleEntryViewLayoutDelegateBridgeAction(

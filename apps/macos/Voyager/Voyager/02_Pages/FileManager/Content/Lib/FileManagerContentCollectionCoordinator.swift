@@ -1,10 +1,10 @@
 import ComposableArchitecture
 
-extension FileManagerContentFeature {
-    func handleCollectionOwnerAction(
-        _ action: Action,
-        state: inout State,
-    ) -> Effect<Action>? {
+enum FileManagerContentCollectionCoordinator {
+    static func handleCollectionOwnerAction(
+        _ action: FileManagerContentAction,
+        state: inout FileManagerContentState,
+    ) -> Effect<FileManagerContentAction>? {
         switch action {
         case let .collection(.saveCompleted(.success(completion))):
             return .send(.collection(.writeBackCompleted(completion)))

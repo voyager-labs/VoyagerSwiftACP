@@ -1,11 +1,12 @@
 import ComposableArchitecture
 import VoyagerFeaturesEntryOperations
+import VoyagerShared
 
-extension FileManagerContentFeature {
-    func handleEntryOperationsAction(
+enum FileManagerContentEntryOpsCoordinator {
+    static func handleEntryOperationsAction(
         _ action: EntryOperationsAction,
-        state: inout State,
-    ) -> Effect<Action> {
+        state: inout FileManagerContentState,
+    ) -> Effect<FileManagerContentAction> {
         switch action {
         case .loading(.itemsLoaded):
             .none
@@ -30,14 +31,38 @@ extension FileManagerContentFeature {
         }
     }
 
-    func reloadEntryItemsEffect(state: State) -> Effect<Action> {
+    static func reloadEntryItemsEffect(state: FileManagerContentState) -> Effect<FileManagerContentAction> {
         reloadEntryItemsEffect(
             navigationState: state.navigation.navigationState,
             showHidden: state.entryViewLayout.showHiddenFiles,
         )
     }
 
-    private func handleEntryActionCompleted(_ record: EntryActionRecord, state: State) -> Effect<Action> {
+    static func reloadEntryItemsEffect(
+        navigationState: ContentPageNavigationRoute,
+        showHidden: Bool,
+    ) -> Effect<FileManagerContentAction> {
+        switch navigationState {
+        case let .folder(path):
+            sendEntryOperations(.loading(.loadItems(path: path, showHidden: showHidden)))
+        case .recents:
+            sendEntryOperations(.loading(.loadRecentItems(showHidden: showHidden)))
+        case let .tags(tagName):
+            sendEntryOperations(.loading(.loadTagItems(
+                tagName: tagName,
+                showHidden: showHidden,
+            )))
+        case .computer:
+            sendEntryOperations(.loading(.loadComputerItems))
+        case .collection:
+            .none
+        }
+    }
+
+    private static func handleEntryActionCompleted(
+        _ record: EntryActionRecord,
+        state: FileManagerContentState,
+    ) -> Effect<FileManagerContentAction> {
         guard case .collection = state.navigation.navigationState,
               record.operationKind == .putBack
         else {
@@ -50,11 +75,11 @@ extension FileManagerContentFeature {
         )
     }
 
-    private func handleEntryActionApplied(
+    private static func handleEntryActionApplied(
         direction: EntryActionDirection,
         record: EntryActionRecord,
-        state: State,
-    ) -> Effect<Action> {
+        state: FileManagerContentState,
+    ) -> Effect<FileManagerContentAction> {
         guard case .collection = state.navigation.navigationState,
               direction == .undo,
               record.operationKind == .moveToTrash
@@ -68,35 +93,27 @@ extension FileManagerContentFeature {
         )
     }
 
-    private func restoreCollectionPathsEffect(_ restoredPaths: [String], state _: State) -> Effect<Action> {
+    private static func restoreCollectionPathsEffect(
+        _ restoredPaths: [String],
+        state _: FileManagerContentState,
+    ) -> Effect<FileManagerContentAction> {
         guard !restoredPaths.isEmpty else {
             return .none
         }
         return .send(.entryViewLayout(.internal(.addCollectionPaths(restoredPaths))))
     }
 
-    private func handleMutatedPaths(_ paths: [String], state: State) -> Effect<Action> {
+    private static func handleMutatedPaths(
+        _ paths: [String],
+        state: FileManagerContentState,
+    ) -> Effect<FileManagerContentAction> {
         guard case .collection = state.navigation.navigationState else {
             return .none
         }
         return .send(.entryViewLayout(.internal(.removeCollectionPaths(paths))))
     }
 
-    func reloadEntryItemsEffect(
-        navigationState: ContentPageNavigationRoute,
-        showHidden: Bool,
-    ) -> Effect<Action> {
-        switch navigationState {
-        case let .folder(path):
-            sendEntryOperations(.loading(.loadItems(path: path, showHidden: showHidden)))
-        case .recents:
-            sendEntryOperations(.loading(.loadRecentItems(showHidden: showHidden)))
-        case let .tags(tagName):
-            sendEntryOperations(.loading(.loadTagItems(tagName: tagName, showHidden: showHidden)))
-        case .computer:
-            sendEntryOperations(.loading(.loadComputerItems))
-        case .collection:
-            .none
-        }
+    private static func sendEntryOperations(_ action: EntryOperationsAction) -> Effect<FileManagerContentAction> {
+        .send(.entryViewLayout(.entryOperations(action)))
     }
 }
