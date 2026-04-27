@@ -200,6 +200,23 @@ struct EntryViewLayoutFeature {
                 state.collectionItems = IdentifiedArrayOf(uniqueElements: converted)
                 return Self.updateEntriesAndReapply(&state)
 
+            case let .internal(.addCollectionPaths(paths)):
+                guard state.isCollectionMode else { return .none }
+                let restoredItems = EntryViewLayoutCollectionItemsConverter.convert(
+                    paths,
+                    showHidden: state.showHiddenFiles,
+                    entryLoadingClient: entryLoadingClient,
+                    workspaceClient: workspaceClient,
+                )
+                guard !restoredItems.isEmpty else { return .none }
+
+                let existingIDs = Set(state.collectionItems.map(\.id))
+                let appendedItems = restoredItems.filter { !existingIDs.contains($0.id) }
+                guard !appendedItems.isEmpty else { return .none }
+
+                state.collectionItems.append(contentsOf: appendedItems)
+                return Self.updateEntriesAndReapply(&state)
+
             case let .internal(.removeCollectionPaths(paths)):
                 guard state.isCollectionMode else { return .none }
                 let mutatedPaths = Set(paths.map(Self.normalizedPath(_:)))
