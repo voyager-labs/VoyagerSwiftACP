@@ -29,8 +29,12 @@ extension FileManagerContentFeature {
         case .collection(.saveCompleted(.failure)):
             return handleCollectionSaveFailure(state: &state)
 
-        case .collection(.navigationStateApplied),
-             .collection(.openSearchPresentationCancelled),
+        case let .collection(.navigationStateApplied(payload)):
+            state.composer.applyCollectionNavigationComposerPayload(payload)
+            state.syncComposerCollectionState()
+            return .none
+
+        case .collection(.openSearchPresentationCancelled),
              .collection(.temporaryContextResetRequested):
             state.syncComposerCollectionState()
             return .none

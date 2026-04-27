@@ -257,9 +257,9 @@ extension CollectionState {
     private func makeOpenQueryTrigger(
         trimmedQuery: String,
         kind: CollectionSessionPhase.OpenKind,
-        isStale: Bool,
+        isStale _: Bool,
     ) -> CollectionRefreshTriggerPayload? {
-        guard !isStale, kind == .definition else {
+        guard kind == .definition else {
             return nil
         }
         return trimmedQuery.isEmpty ? .applyFilters : .submit
