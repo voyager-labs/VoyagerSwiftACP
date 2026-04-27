@@ -126,6 +126,11 @@ enum VoyagerCollectionFileCompatibilityOwner {
         let usedDefinitionFallback: Bool
     }
 
+    private enum CurrentSemanticMeaning: Sendable {
+        case definitionOnlyCurrent
+        case snapshotBearingCurrent
+    }
+
     static func decode(
         _ data: Data,
         containerFormat: CollectionFileContainerFormat,
@@ -229,6 +234,16 @@ enum VoyagerCollectionFileCompatibilityOwner {
             : nil
         let combinedWarnings = warnings + (futureMinorWarning.map { [$0] } ?? [])
 
+        let semanticMeaning = currentSemanticMeaning(for: schemaProbe)
+        let writeBackAllowed: Bool = switch semanticMeaning {
+        case .definitionOnlyCurrent:
+            false
+        case .snapshotBearingCurrent:
+            usedDefinitionFallback == false
+                && sourceSchemaVersion == file.schemaVersion
+                && !isFutureMinorVersion(sourceSchemaVersion)
+        }
+
         return .init(
             file: file,
             containerFormat: containerFormat,
@@ -237,12 +252,11 @@ enum VoyagerCollectionFileCompatibilityOwner {
                 migrationPath: migrationPath(
                     schemaProbe: schemaProbe,
                     warning: warning,
+                    currentSemanticMeaning: semanticMeaning,
                 ),
                 warnings: combinedWarnings,
                 usedDefinitionFallback: usedDefinitionFallback,
-                writeBackAllowed: usedDefinitionFallback == false
-                    && sourceSchemaVersion == file.schemaVersion
-                    && !isFutureMinorVersion(sourceSchemaVersion),
+                writeBackAllowed: writeBackAllowed,
                 writeBackReason: writeBackReason(
                     schemaVersion: effectiveSchemaVersion,
                     fileSchemaVersion: file.schemaVersion,
@@ -347,6 +361,7 @@ enum VoyagerCollectionFileCompatibilityOwner {
     private nonisolated static func migrationPath(
         schemaProbe: SchemaProbe,
         warning: CollectionFileCompatibilityWarning?,
+        currentSemanticMeaning: CurrentSemanticMeaning,
     ) -> [CollectionFileMigrationStep] {
         var path: [CollectionFileMigrationStep] = []
 
@@ -354,11 +369,10 @@ enum VoyagerCollectionFileCompatibilityOwner {
             path.append(.legacySingleFileWithoutSchema)
         }
 
-        switch schemaProbe.effectiveSchemaVersion {
-        case SchemaVersion(major: 1, minor: 0):
+        switch currentSemanticMeaning {
+        case .definitionOnlyCurrent:
             path.append(.definitionOnlyV1)
-            path.append(.currentSchemaV2)
-        default:
+        case .snapshotBearingCurrent:
             path.append(.currentSchemaV2)
         }
 
@@ -374,6 +388,17 @@ enum VoyagerCollectionFileCompatibilityOwner {
         }
 
         return path
+    }
+
+    // Policy reads semantic meaning first (definition-only current vs snapshot-bearing current),
+    // rather than branching directly on ad-hoc numeric cases at each call site.
+    private nonisolated static func currentSemanticMeaning(
+        for schemaProbe: SchemaProbe,
+    ) -> CurrentSemanticMeaning {
+        if schemaProbe.effectiveSchemaVersion == CollectionFileSchemaVersion.definitionOnlyCurrent {
+            return .definitionOnlyCurrent
+        }
+        return .snapshotBearingCurrent
     }
 
     private static func normalizeForRead(
