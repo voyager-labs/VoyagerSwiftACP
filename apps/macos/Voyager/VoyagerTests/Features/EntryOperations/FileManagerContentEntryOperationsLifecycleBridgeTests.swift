@@ -18,7 +18,7 @@ final class FileManagerContentEntryOpsBridgeTests: XCTestCase {
             var content: FileManagerContentState
         }
 
-// swiftlint:disable:next nesting
+        // swiftlint:disable:next nesting
         enum Action: Sendable {
             case bridge(EntryOperationsAction)
             case forwarded(FileManagerContentAction)
@@ -179,6 +179,66 @@ final class FileManagerContentEntryOpsBridgeTests: XCTestCase {
         )
 
         await store.send(.bridge(.lifecycle(.entryActionCompleted(record))))
+        await store.finish()
+    }
+
+    func testPutBackEntryActionCompletedOnCollectionNavigationRestoresCollectionPresentation() async {
+        var initialState = makeInitialState()
+        initialState.content.navigation.navigationState = .collection(
+            ContentPageCollectionNavigation(
+                kind: .temporary,
+                context: CollectionContext(query: "test", scopes: [], conditions: []),
+                sortKey: .name,
+                sortOrder: .ascending,
+                viewLayout: .list,
+            ),
+        )
+        initialState.content.entryViewLayout.isCollectionMode = true
+
+        let restoredRecord = EntryActionRecord(
+            operationKind: .putBack,
+            targets: [EntryActionRecord.Target(beforePath: "/Users/me/.Trash/a.txt", afterPath: "/tmp/a.txt")],
+        )
+
+        let store = TestStore(initialState: initialState) {
+            LifecycleBridgeHarness()
+        }
+        store.exhaustivity = .off
+
+        await store.send(.bridge(.lifecycle(.entryActionCompleted(restoredRecord))))
+        await store.receive(
+            .forwarded(.entryViewLayout(.internal(.addCollectionPaths(["/tmp/a.txt"])))),
+        )
+        await store.finish()
+    }
+
+    func testUndoAppliedMoveToTrashOnCollectionNavigationRestoresCollectionPresentation() async {
+        var initialState = makeInitialState()
+        initialState.content.navigation.navigationState = .collection(
+            ContentPageCollectionNavigation(
+                kind: .temporary,
+                context: CollectionContext(query: "test", scopes: [], conditions: []),
+                sortKey: .name,
+                sortOrder: .ascending,
+                viewLayout: .list,
+            ),
+        )
+        initialState.content.entryViewLayout.isCollectionMode = true
+
+        let trashedRecord = EntryActionRecord(
+            operationKind: .moveToTrash,
+            targets: [EntryActionRecord.Target(beforePath: "/tmp/a.txt", afterPath: "/Users/me/.Trash/a.txt")],
+        )
+
+        let store = TestStore(initialState: initialState) {
+            LifecycleBridgeHarness()
+        }
+        store.exhaustivity = .off
+
+        await store.send(.bridge(.undoRedo(.entryActionApplied(direction: .undo, record: trashedRecord))))
+        await store.receive(
+            .forwarded(.entryViewLayout(.internal(.addCollectionPaths(["/tmp/a.txt"])))),
+        )
         await store.finish()
     }
 

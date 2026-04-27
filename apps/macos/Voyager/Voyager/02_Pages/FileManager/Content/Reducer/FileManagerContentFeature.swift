@@ -213,63 +213,6 @@ struct FileManagerContentFeature {
         }
     }
 
-    func handleEntryOperationsAction(
-        _ action: EntryOperationsAction,
-        state: inout State,
-    ) -> Effect<Action> {
-        switch action {
-        case .loading(.itemsLoaded):
-            .none
-
-        case .lifecycle(.entryActionCompleted):
-            .none
-
-        case let .lifecycle(.pathsMutated(paths)):
-            handleMutatedPaths(paths, state: state)
-
-        case .lifecycle(.operationFinished):
-            reloadEntryItemsEffect(state: state)
-
-        case .lifecycle(.emptyTrashCompleted):
-            .send(.delegate(.closeWindow))
-
-        default:
-            .none
-        }
-    }
-
-    private func reloadEntryItemsEffect(state: State) -> Effect<Action> {
-        reloadEntryItemsEffect(
-            navigationState: state.navigation.navigationState,
-            showHidden: state.entryViewLayout.showHiddenFiles,
-        )
-    }
-
-    private func handleMutatedPaths(_ paths: [String], state: State) -> Effect<Action> {
-        guard case .collection = state.navigation.navigationState else {
-            return .none
-        }
-        return .send(.entryViewLayout(.internal(.removeCollectionPaths(paths))))
-    }
-
-    private func reloadEntryItemsEffect(
-        navigationState: ContentPageNavigationRoute,
-        showHidden: Bool,
-    ) -> Effect<Action> {
-        switch navigationState {
-        case let .folder(path):
-            sendEntryOperations(.loading(.loadItems(path: path, showHidden: showHidden)))
-        case .recents:
-            sendEntryOperations(.loading(.loadRecentItems(showHidden: showHidden)))
-        case let .tags(tagName):
-            sendEntryOperations(.loading(.loadTagItems(tagName: tagName, showHidden: showHidden)))
-        case .computer:
-            sendEntryOperations(.loading(.loadComputerItems))
-        case .collection:
-            .none
-        }
-    }
-
     private func handleComposerAction(
         _ action: Action,
         state: inout State,
