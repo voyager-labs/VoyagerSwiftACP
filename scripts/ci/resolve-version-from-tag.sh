@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-TAG="${1:-${GITHUB_REF_NAME:-}}"
+TAG="${1:-${TAG:-${GITHUB_REF_NAME:-}}}"
 if [[ -z "${TAG}" ]]; then
   echo "Missing tag name." >&2
   exit 1
