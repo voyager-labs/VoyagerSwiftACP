@@ -1,5 +1,3 @@
-import VoyagerWidgetsEntryViewLayout
-
 struct MenuCommandItem: Identifiable, Equatable {
     let id: String
     let title: String

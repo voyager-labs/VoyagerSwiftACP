@@ -1,5 +1,4 @@
 @testable import Voyager
-@testable import VoyagerWidgetsEntryViewLayout
 import XCTest
 
 final class EntryViewLayoutDateFormattingTests: XCTestCase {

@@ -2,9 +2,8 @@ import AppKit
 import ComposableArchitecture
 @testable import Voyager
 import VoyagerEntitiesEntry
-@testable import VoyagerFeaturesEntryOperations
+import VoyagerFeaturesEntryOperations
 import VoyagerShared
-@testable import VoyagerWidgetsEntryViewLayout
 import XCTest
 
 @MainActor

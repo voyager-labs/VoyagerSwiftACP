@@ -1,7 +1,6 @@
 import AppKit
 import ComposableArchitecture
 import SwiftUI
-import VoyagerWidgetsEntryViewLayout
 
 @ViewAction(for: MenuCommandsFeature.self)
 struct ViewMenuCommands: Commands {

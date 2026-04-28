@@ -1,8 +1,6 @@
 import IdentifiedCollections
 
 import VoyagerFeaturesEntryOperations
-import VoyagerPagesFileManager
-import VoyagerWidgetsEntryViewLayout
 
 struct MenuCommandsState: Equatable {
     var hasFocusedWindow: Bool
@@ -20,9 +18,9 @@ struct MenuCommandsState: Equatable {
     var showHiddenFiles: Bool
 
     var viewLayout: EntryViewLayoutState.Mode
-    var groupKey: VoyagerWidgetsEntryViewLayout.GroupKey
-    var sortKey: VoyagerWidgetsEntryViewLayout.SortKey
-    var sortOrder: VoyagerWidgetsEntryViewLayout.SortOrder
+    var groupKey: GroupKey
+    var sortKey: SortKey
+    var sortOrder: SortOrder
 
     var canUndo: Bool
     var canRedo: Bool

@@ -1,6 +1,5 @@
 import Foundation
 @testable import Voyager
-@testable import VoyagerEntitiesEntry
 import VoyagerShared
 import XCTest
 
@@ -16,7 +15,7 @@ final class PropertyDslMappingExhaustiveTests: XCTestCase {
         var failures: [String] = []
 
         for property in properties {
-            guard let typeKey = Voyager.SystemPropertyTypeKey.operatorKeyOrNil(from: property.definition.type) else {
+            guard let typeKey = SystemPropertyTypeKey.operatorKeyOrNil(from: property.definition.type) else {
                 failures.append("\(property.key): unsupported type \(property.definition.type)")
                 continue
             }
@@ -58,7 +57,7 @@ final class PropertyDslMappingExhaustiveTests: XCTestCase {
         var failures: [String] = []
 
         for property in properties {
-            guard let typeKey = Voyager.SystemPropertyTypeKey.operatorKeyOrNil(from: property.definition.type) else {
+            guard let typeKey = SystemPropertyTypeKey.operatorKeyOrNil(from: property.definition.type) else {
                 failures.append("\(property.key): unsupported type \(property.definition.type)")
                 continue
             }
@@ -79,7 +78,7 @@ final class PropertyDslMappingExhaustiveTests: XCTestCase {
                 }
 
                 let rawValues = sampleValues(for: uiKind)
-                let condition = Voyager.Condition(
+                let condition = Condition(
                     propertyKey: property.key,
                     propertyLabel: registry.label(for: property.key),
                     propertyType: property.definition.type,

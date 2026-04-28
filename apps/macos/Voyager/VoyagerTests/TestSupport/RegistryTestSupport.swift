@@ -2,7 +2,6 @@ import Foundation
 
 #if canImport(Voyager)
 @testable import Voyager
-@testable import VoyagerEntitiesEntry
 
 @MainActor
 enum RegistryTestSupport {
@@ -14,11 +13,11 @@ enum RegistryTestSupport {
         "total_bit_rate": "Total bit rate",
     ]
 
-    private static let registryOperatorDefinition = VoyagerEntitiesEntry.OperatorDefinition(
+    private static let registryOperatorDefinition = OperatorDefinition(
         uiLabel: "Equals",
         mdqueryOperator: nil as String?,
-        valueShape: nil as VoyagerEntitiesEntry.ValueShape?,
-        valueCount: nil as VoyagerEntitiesEntry.ValueCount?,
+        valueShape: nil as ValueShape?,
+        valueCount: nil as ValueCount?,
         allowedTypes: nil as [String]?,
         inverseOf: nil as String?,
         aliases: nil as [String]?,
@@ -30,12 +29,12 @@ enum RegistryTestSupport {
         ] as [String: String]?,
     )
 
-    static func makeRegistryClient() -> VoyagerEntitiesEntry.RegistryClient {
+    static func makeRegistryClient() -> RegistryClient {
         let labels = registryLabels
         let unitSpecs = registryUnitSpecs()
         let opDef = registryOperatorDefinition
 
-        return VoyagerEntitiesEntry.RegistryClient(
+        return RegistryClient(
             allProperties: { [] },
             labelForKey: { labels[$0] ?? $0 },
             propertyTypeString: propertyTypeString(for:),
@@ -58,13 +57,13 @@ enum RegistryTestSupport {
         }
     }
 
-    private static func registrySnapshot() -> VoyagerEntitiesEntry.RegistrySnapshot {
+    private static func registrySnapshot() -> RegistrySnapshot {
         MainActor.assumeIsolated {
-            VoyagerEntitiesEntry.RegistrySnapshot.load()
+            RegistrySnapshot.load()
         }
     }
 
-    private nonisolated static func registryUnitSpecs() -> [String: VoyagerEntitiesEntry.SystemPropertyUnitSpec] {
+    private nonisolated static func registryUnitSpecs() -> [String: SystemPropertyUnitSpec] {
         MainActor.assumeIsolated {
             registrySnapshot().propertyKeyToUnitSpec
         }
@@ -83,7 +82,7 @@ enum RegistryTestSupport {
         }
     }
 
-    private nonisolated static func registryResolution(for key: String) -> VoyagerEntitiesEntry.PropertyKeyResolution {
+    private nonisolated static func registryResolution(for key: String) -> PropertyKeyResolution {
         switch key {
         case "name_full":
             .canonical(key)

@@ -1,6 +1,5 @@
 import Foundation
-import VoyagerEntitiesEntry
-@testable import VoyagerPagesFileManager
+@testable import Voyager
 import XCTest
 
 @MainActor

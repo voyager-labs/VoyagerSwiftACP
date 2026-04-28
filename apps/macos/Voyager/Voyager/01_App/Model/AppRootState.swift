@@ -1,5 +1,4 @@
 import ComposableArchitecture
-import VoyagerPagesFileManager
 import VoyagerPagesSettings
 
 @ObservableState

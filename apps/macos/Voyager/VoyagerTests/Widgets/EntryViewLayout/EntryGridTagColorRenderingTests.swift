@@ -1,7 +1,5 @@
 @testable import Voyager
 import VoyagerEntitiesEntry
-@testable import VoyagerShared
-@testable import VoyagerWidgetsEntryViewLayout
 import XCTest
 
 /// Regression tests for tag color rendering in the grid view.

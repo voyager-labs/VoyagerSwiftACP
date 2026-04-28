@@ -2,7 +2,6 @@ import ComposableArchitecture
 import Foundation
 
 import VoyagerEntitiesEntry
-import VoyagerWidgetsEntryViewLayout
 
 @Reducer
 struct EntryArrangementsApplyReducer {

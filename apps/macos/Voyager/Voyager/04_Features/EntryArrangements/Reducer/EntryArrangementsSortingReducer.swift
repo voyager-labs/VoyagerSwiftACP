@@ -1,7 +1,6 @@
 import ComposableArchitecture
 import Foundation
 import VoyagerShared
-import VoyagerWidgetsEntryViewLayout
 
 @Reducer
 struct EntryArrangementsSortingReducer {
